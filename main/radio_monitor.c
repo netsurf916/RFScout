@@ -9,13 +9,10 @@
 static const char *TAG = "radio_monitor";
 static radio_observation_fn sink;
 static uint8_t channel = 1;
+static uint8_t max_channel = 14;
 static int64_t last_hop_us;
+static rf_wifi_region_t region = RF_WIFI_REGION_EXTENDED_RX;
 
-/* US 2.4 GHz regulatory domain: channels 1-11. Keep this explicit rather
-   than silently listening on channels that may not be legal in the selected
-   country. A future settings screen can derive this list from country config. */
-static const uint8_t channels[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
-#define CHANNEL_COUNT (sizeof(channels) / sizeof(channels[0]))
 #define CHANNEL_DWELL_US 350000LL
 
 static void emit_mac(const uint8_t mac[6], int8_t rssi, uint8_t ch)
@@ -43,15 +40,79 @@ static void promiscuous(void *buf, wifi_promiscuous_pkt_type_t type)
     const uint8_t from_ds = (fc >> 9) & 1U;
     if (pkt->rx_ctrl.sig_len < 24 || frame_type == 1) return;
 
-    /* Address 2 is transmitter for management and ordinary data frames. */
     emit_mac(f + 10, pkt->rx_ctrl.rssi, pkt->rx_ctrl.channel);
-    /* Management frames expose the peer/BSSID cheaply; data frames can expose
-       another endpoint without attempting payload inspection. */
     if (frame_type == 0) {
         emit_mac(f + 16, pkt->rx_ctrl.rssi, pkt->rx_ctrl.channel);
     } else if (frame_type == 2 && !(to_ds && from_ds)) {
         emit_mac(to_ds ? f + 4 : f + 16, pkt->rx_ctrl.rssi, pkt->rx_ctrl.channel);
     }
+}
+
+const char *radio_monitor_region_name(rf_wifi_region_t value)
+{
+    switch (value) {
+        case RF_WIFI_REGION_US: return "US (1-11)";
+        case RF_WIFI_REGION_ETSI: return "ETSI (1-13)";
+        case RF_WIFI_REGION_JAPAN: return "Japan (1-14)";
+        case RF_WIFI_REGION_EXTENDED_RX: return "Extended RX (1-14)";
+        default: return "Unknown";
+    }
+}
+
+rf_wifi_region_t radio_monitor_get_region(void)
+{
+    return region;
+}
+
+esp_err_t radio_monitor_set_region(rf_wifi_region_t value)
+{
+    wifi_country_t country = {
+        .schan = 1,
+        .max_tx_power = 20,
+        .policy = WIFI_COUNTRY_POLICY_MANUAL,
+    };
+
+    switch (value) {
+        case RF_WIFI_REGION_US:
+            memcpy(country.cc, "US", 3);
+            country.nchan = 11;
+            max_channel = 11;
+            break;
+        case RF_WIFI_REGION_ETSI:
+            memcpy(country.cc, "DE", 3); /* representative ETSI domain */
+            country.nchan = 13;
+            max_channel = 13;
+            break;
+        case RF_WIFI_REGION_JAPAN:
+            memcpy(country.cc, "JP", 3);
+            country.nchan = 14;
+            max_channel = 14;
+            break;
+        case RF_WIFI_REGION_EXTENDED_RX:
+            /* JP exposes the full 2.4 GHz channel range to the driver. RFScout
+               remains in promiscuous/WIFI_MODE_NULL and does not associate or
+               intentionally transmit. Availability of channel 14 still depends
+               on ESP-IDF/ESP32-S3 driver support. */
+            memcpy(country.cc, "JP", 3);
+            country.nchan = 14;
+            max_channel = 14;
+            break;
+        default:
+            return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t err = esp_wifi_set_country(&country);
+    if (err != ESP_OK) return err;
+
+    region = value;
+    if (channel > max_channel) {
+        channel = 1;
+        err = esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
+        if (err != ESP_OK) return err;
+    }
+
+    ESP_LOGI(TAG, "Wi-Fi region: %s", radio_monitor_region_name(region));
+    return ESP_OK;
 }
 
 esp_err_t radio_monitor_init(radio_observation_fn callback)
@@ -63,24 +124,17 @@ esp_err_t radio_monitor_init(radio_observation_fn callback)
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_NULL));
 
-    /* Explicitly select the US regulatory domain for this baseline build.
-       This permits channels 1-11 and prevents accidental use of 12-14. */
-    wifi_country_t country = {
-        .cc = "US",
-        .schan = 1,
-        .nchan = 11,
-        .max_tx_power = 20,
-        .policy = WIFI_COUNTRY_POLICY_MANUAL,
-    };
-    ESP_ERROR_CHECK(esp_wifi_set_country(&country));
+    /* Prototype default: widest passive 2.4 GHz visibility. This is exposed as
+       a named mode so the UI/settings layer can switch to a regional preset. */
+    ESP_ERROR_CHECK(radio_monitor_set_region(RF_WIFI_REGION_EXTENDED_RX));
 
     ESP_ERROR_CHECK(esp_wifi_start());
     ESP_ERROR_CHECK(esp_wifi_set_promiscuous_rx_cb(promiscuous));
     ESP_ERROR_CHECK(esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE));
     ESP_ERROR_CHECK(esp_wifi_set_promiscuous(true));
     last_hop_us = esp_timer_get_time();
-    ESP_LOGI(TAG, "passive Wi-Fi monitor scanning channels 1-11 (%lld ms dwell)",
-             CHANNEL_DWELL_US / 1000LL);
+    ESP_LOGI(TAG, "passive Wi-Fi monitor scanning channels 1-%u (%lld ms dwell)",
+             max_channel, CHANNEL_DWELL_US / 1000LL);
     return ESP_OK;
 }
 
@@ -89,11 +143,8 @@ void radio_monitor_step(void)
     const int64_t now = esp_timer_get_time();
     if (now - last_hop_us < CHANNEL_DWELL_US) return;
 
-    size_t i = 0;
-    for (; i < CHANNEL_COUNT; ++i) {
-        if (channels[i] == channel) break;
-    }
-    channel = channels[(i + 1U) % CHANNEL_COUNT];
+    channel++;
+    if (channel > max_channel) channel = 1;
 
     esp_err_t err = esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
     if (err != ESP_OK) {
