@@ -1,6 +1,6 @@
 # Architecture
 
-RFScout should combine Brandalize and OUI-SPY at the **observation/classification layer**, not by running two independent applications or duplicate device tables.
+RFScout combines Brandalize and OUI-SPY at the **observation/classification layer**, not by running two independent applications or duplicate device tables.
 
 ## Data flow
 
@@ -13,6 +13,17 @@ NFC -------|                            rolling device store     alert events
 IR --------/                                  |
                                                v
                                       UI / logging / summaries
+```
+
+Board telemetry follows a separate path because it describes RFScout itself rather than an observed device:
+
+```text
+BQ27220 ----\
+             +--> battery module --> cached battery_status_t --> UI
+BQ25896 ----/
+                 ^
+                 |
+          shared board_i2c bus
 ```
 
 ## Unified device store
@@ -28,7 +39,7 @@ The core maintains a fixed-memory rolling set of approximately 1,000 unique addr
 
 Wi-Fi and BLE observations of the same meaningful public MAC should not create two census entries. Random/private addresses need different treatment because they cannot safely be attributed to an IEEE OUI.
 
-The initial store implementation is intentionally simple. Before production use it should be refined into a true most-recently-seen eviction policy and should preserve/merge source metadata rather than overwriting it when one identity appears on multiple transports.
+The live device store expires records after the configured current-RF window and uses swap removal within a fixed PSRAM allocation. Surveillance detections are copied into a separate, smaller fixed-capacity history so they can remain visible longer without inflating the live brand, Wi-Fi, BLE, or device counts.
 
 ## Classification
 
@@ -52,9 +63,17 @@ Alerts are events generated when a device transitions into a noteworthy classifi
 
 Audio should run asynchronously so Morse playback never blocks radio observation callbacks.
 
+## Battery and shared I2C boundary
+
+`board_i2c.c/.h` exclusively owns initialization of the T-Embed shared I2C controller. Feature modules request device handles through that interface instead of independently configuring SDA/SCL or competing for the peripheral.
+
+`battery.c/.h` owns all BQ27220 and BQ25896 addresses, registers, polling, decoding, and cached state. The UI knows only `battery_status_t`; it does not perform I2C operations or include charger/fuel-gauge register definitions. Missing power-management devices are treated as a feature-level unavailable state rather than an application-fatal error.
+
+The one-second battery poll is intentionally decoupled from the faster LCD refresh. Future NFC support should reuse `board_i2c` while remaining isolated from battery behavior.
+
 ## Platform boundary
 
-`platform.*` is currently a safe stub. T-Embed-specific code should be divided further as implementation grows:
+T-Embed-specific code is divided by capability:
 
 - display/UI driver;
 - encoder/input;
@@ -67,9 +86,10 @@ Audio should run asynchronously so Morse playback never blocks radio observation
 - PN532;
 - IR;
 - SD/logging;
+- shared board I2C;
 - battery/power.
 
-The core observation/classification modules should not include board pin definitions.
+The core observation/classification modules do not include board pin definitions. Hardware pins and fixed board addresses are centralized in `board.h`.
 
 ## Hardware targets
 
