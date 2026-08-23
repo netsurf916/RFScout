@@ -10,6 +10,7 @@
 #include "display.h"
 #include "observation_store.h"
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 
@@ -35,11 +36,13 @@ typedef struct
 
 static const char *TAG = "ui";
 static int64_t last_refresh_us;
+static rf_device_t *snapshot;
 
 /** @brief Insert one vendor into the fixed-size descending brand ranking. */
 static void add_brand( brand_count_t *a_brands, size_t a_capacity, const char *a_name )
 {
-    if( ( NULL == a_brands ) || ( 0U == a_capacity ) || ( NULL == a_name ) || ( '\0' == a_name[ 0 ] ) )
+    if( ( NULL == a_brands ) || ( 0U == a_capacity ) ||
+        ( NULL == a_name ) || ( '\0' == a_name[ 0 ] ) )
     {
         return;
     }
@@ -47,7 +50,8 @@ static void add_brand( brand_count_t *a_brands, size_t a_capacity, const char *a
     size_t slot = a_capacity;
     for( size_t i = 0; i < a_capacity; ++i )
     {
-        if( ( 0U != a_brands[ i ].count ) && ( 0 == strcmp( a_brands[ i ].name, a_name ) ) )
+        if( ( 0U != a_brands[ i ].count ) &&
+            ( 0 == strcmp( a_brands[ i ].name, a_name ) ) )
         {
             slot = i;
             break;
@@ -64,11 +68,13 @@ static void add_brand( brand_count_t *a_brands, size_t a_capacity, const char *a
 
     if( 0U == a_brands[ slot ].count )
     {
-        strlcpy( a_brands[ slot ].name, a_name, sizeof( a_brands[ slot ].name ) );
+        strlcpy( a_brands[ slot ].name, a_name,
+                 sizeof( a_brands[ slot ].name ) );
     }
     ++a_brands[ slot ].count;
 
-    while( ( slot > 0U ) && ( a_brands[ slot ].count > a_brands[ slot - 1U ].count ) )
+    while( ( slot > 0U ) &&
+           ( a_brands[ slot ].count > a_brands[ slot - 1U ].count ) )
     {
         const brand_count_t temporary = a_brands[ slot - 1U ];
         a_brands[ slot - 1U ] = a_brands[ slot ];
@@ -80,20 +86,27 @@ static void add_brand( brand_count_t *a_brands, size_t a_capacity, const char *a
 /** @brief Render one complete RFScout summary frame. */
 static void render_summary( void )
 {
-    static rf_device_t snapshot[ RFSCOUT_DEVICE_CAPACITY ];
+    if( NULL == snapshot )
+    {
+        return;
+    }
+
     brand_count_t brands[ UI_MAX_BRANDS ] = { 0 };
-    const size_t device_count = observation_store_snapshot( snapshot, RFSCOUT_DEVICE_CAPACITY );
+    const size_t device_count =
+        observation_store_snapshot( snapshot, RFSCOUT_DEVICE_CAPACITY );
     size_t wifi_count = 0;
     size_t ble_count = 0;
     size_t alert_count = 0;
 
     for( size_t i = 0; i < device_count; ++i )
     {
-        if( 0U != ( snapshot[ i ].source_mask & RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) )
+        if( 0U != ( snapshot[ i ].source_mask &
+                    RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) )
         {
             ++wifi_count;
         }
-        if( 0U != ( snapshot[ i ].source_mask & RF_SOURCE_BIT( RF_SOURCE_BLE ) ) )
+        if( 0U != ( snapshot[ i ].source_mask &
+                    RF_SOURCE_BIT( RF_SOURCE_BLE ) ) )
         {
             ++ble_count;
         }
@@ -110,11 +123,14 @@ static void render_summary( void )
 
     char line[ 64 ];
     snprintf( line, sizeof( line ), "DEV %u   WIFI %u   BLE %u",
-              (unsigned)device_count, (unsigned)wifi_count, (unsigned)ble_count );
+              (unsigned)device_count, (unsigned)wifi_count,
+              (unsigned)ble_count );
     display_draw_text( 6, 25, line, COLOR_WHITE, 1 );
 
-    snprintf( line, sizeof( line ), "SURVEILLANCE %u", (unsigned)alert_count );
-    display_draw_text( 210, 25, line, ( 0U == alert_count ) ? COLOR_CYAN : COLOR_RED, 1 );
+    snprintf( line, sizeof( line ), "SURVEILLANCE %u",
+              (unsigned)alert_count );
+    display_draw_text( 210, 25, line,
+                       ( 0U == alert_count ) ? COLOR_CYAN : COLOR_RED, 1 );
     display_fill_rect( 5, 36, 310, 1, COLOR_GRAY );
 
     display_draw_text( 6, 43, "TOP NEARBY BRANDS", COLOR_YELLOW, 1 );
@@ -125,8 +141,10 @@ static void render_summary( void )
         {
             break;
         }
-        snprintf( line, sizeof( line ), "%-27.27s %3u", brands[ i ].name, (unsigned)brands[ i ].count );
-        display_draw_text( 6, y, line, ( i < 3U ) ? COLOR_GREEN : COLOR_WHITE, 1 );
+        snprintf( line, sizeof( line ), "%-27.27s %3u",
+                  brands[ i ].name, (unsigned)brands[ i ].count );
+        display_draw_text( 6, y, line,
+                           ( i < 3U ) ? COLOR_GREEN : COLOR_WHITE, 1 );
         y += 12;
     }
 
@@ -138,11 +156,22 @@ static void render_summary( void )
 
 esp_err_t ui_init( void )
 {
+    snapshot = heap_caps_calloc( RFSCOUT_DEVICE_CAPACITY,
+                                 sizeof( *snapshot ),
+                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
+    if( NULL == snapshot )
+    {
+        return ESP_ERR_NO_MEM;
+    }
+
     const esp_err_t result = display_init();
     if( ESP_OK != result )
     {
+        heap_caps_free( snapshot );
+        snapshot = NULL;
         return result;
     }
+
     last_refresh_us = 0;
     render_summary();
     return ESP_OK;
