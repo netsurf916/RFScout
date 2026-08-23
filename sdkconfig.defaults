@@ -18,3 +18,10 @@ CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_USE_MALLOC=y
+
+# The board has 16 MB of flash. RFScout's complete IEEE OUI registry makes the
+# firmware larger than ESP-IDF's default 1 MB factory application partition, so
+# use the project partition table with a 4 MB factory slot.
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
