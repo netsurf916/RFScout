@@ -19,8 +19,8 @@
 
 #define UI_REFRESH_INTERVAL_US 500000LL
 #define UI_MAX_BRANDS 9
-#define UI_BRAND_BASE_ATTENTION_THRESHOLD 5U
-#define UI_MAX_ATTENTION_BRANDS 3U
+#define UI_BRAND_ATTENTION_THRESHOLD 5U
+#define UI_MAX_ATTENTION_ROWS 3U
 
 #define COLOR_BLACK  0x0000
 #define COLOR_WHITE  0xFFFF
@@ -85,39 +85,6 @@ static void add_brand( brand_count_t *a_brands, size_t a_capacity, const char *a
     }
 }
 
-/**
- * @brief Calculate the adaptive count threshold for yellow brand rows.
- * @param a_brands Descending brand ranking.
- * @param a_count Number of populated ranking entries.
- * @return A count that a brand must strictly exceed to be highlighted.
- * @details The baseline threshold is five devices. If more than three displayed
- *          brands exceed that baseline, the threshold rises to the count of the
- *          first row beyond the highlight cap. Rows tied at the cutoff remain
- *          cyan rather than being split arbitrarily by ranking position.
- */
-static uint16_t calculate_attention_threshold( const brand_count_t *a_brands,
-                                               size_t a_count )
-{
-    uint16_t threshold = UI_BRAND_BASE_ATTENTION_THRESHOLD;
-    size_t attention_count = 0;
-
-    for( size_t i = 0; i < a_count; ++i )
-    {
-        if( a_brands[ i ].count > threshold )
-        {
-            ++attention_count;
-        }
-    }
-
-    if( ( attention_count > UI_MAX_ATTENTION_BRANDS ) &&
-        ( UI_MAX_ATTENTION_BRANDS < a_count ) )
-    {
-        threshold = a_brands[ UI_MAX_ATTENTION_BRANDS ].count;
-    }
-
-    return threshold;
-}
-
 /** @brief Render one complete RFScout summary frame. */
 static void render_summary( void )
 {
@@ -158,8 +125,6 @@ static void render_summary( void )
     {
         ++brand_count;
     }
-    const uint16_t attention_threshold =
-        calculate_attention_threshold( brands, brand_count );
 
     display_clear( COLOR_BLACK );
     display_draw_text( 6, 5, "RFSCOUT", COLOR_GREEN, 2 );
@@ -179,14 +144,22 @@ static void render_summary( void )
 
     display_draw_text( 6, 43, "TOP NEARBY BRANDS", COLOR_YELLOW, 1 );
     int y = 57;
+    size_t attention_rows = 0;
     for( size_t i = 0; i < brand_count; ++i )
     {
         snprintf( line, sizeof( line ), "%-27.27s %3u",
                   brands[ i ].name, (unsigned)brands[ i ].count );
 
-        const uint16_t row_color =
-            ( brands[ i ].count > attention_threshold ) ? COLOR_YELLOW : COLOR_CYAN;
-        display_draw_text( 6, y, line, row_color, 1 );
+        const bool highlight =
+            ( brands[ i ].count > UI_BRAND_ATTENTION_THRESHOLD ) &&
+            ( attention_rows < UI_MAX_ATTENTION_ROWS );
+        if( highlight )
+        {
+            ++attention_rows;
+        }
+
+        display_draw_text( 6, y, line,
+                           highlight ? COLOR_YELLOW : COLOR_CYAN, 1 );
         y += 12;
     }
 
