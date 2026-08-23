@@ -10,6 +10,8 @@
 #ifndef _RFSCOUT_OBSERVATION_STORE_H_
 #define _RFSCOUT_OBSERVATION_STORE_H_
 
+#include "esp_err.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -62,8 +64,11 @@ typedef struct
     bool has_manufacturer_data;
 } rf_device_t;
 
-/** @brief Reset the in-memory observation store. */
-void observation_store_init( void );
+/**
+ * @brief Initialize the observation store in external PSRAM.
+ * @return ESP_OK on success or ESP_ERR_NO_MEM when the configured store cannot be allocated.
+ */
+esp_err_t observation_store_init( void );
 
 /** @brief Add or refresh one normalized device observation. */
 bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new );
