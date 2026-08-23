@@ -5,6 +5,7 @@
     SPDX-License-Identifier: MIT
 */
 
+#include "battery.h"
 #include "ble_monitor.h"
 #include "morse.h"
 #include "observation_store.h"
@@ -95,6 +96,14 @@ void app_main( void )
     ESP_ERROR_CHECK( observation_store_init() );
     ESP_ERROR_CHECK( surveillance_history_init() );
     ESP_ERROR_CHECK( platform_init() );
+
+    result = battery_init();
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG, "battery telemetry unavailable: %s",
+                  esp_err_to_name( result ) );
+    }
+
     ESP_ERROR_CHECK( ui_init() );
     ESP_ERROR_CHECK( radio_monitor_init( on_observation ) );
     ESP_ERROR_CHECK( ble_monitor_init( on_observation ) );
@@ -107,6 +116,7 @@ void app_main( void )
     {
         radio_monitor_step();
         platform_poll();
+        battery_poll();
         ui_poll();
         vTaskDelay( pdMS_TO_TICKS( 10 ) );
     }
