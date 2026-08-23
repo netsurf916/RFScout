@@ -17,6 +17,8 @@ RFScout is intended as an awareness instrument, not an active network client. Wi
 
 The first LCD view is a dense live summary showing total unique devices, Wi-Fi/BLE counts, current surveillance matches, and the top nearby OUI brands. The display uses the same compact built-in 5x7 font established in OUI-SPY/Brandalize and a native ESP-IDF ST7789 driver rather than adding a large GUI dependency.
 
+Brand rows are cyan during normal activity. A brand becomes yellow when its active-device count is greater than five. In a noisy environment, the threshold rises automatically so no more than three displayed brands are yellow. If multiple brands tie at the adaptive cutoff, tied rows remain cyan rather than being split arbitrarily by ranking position. The baseline and highlight cap are module constants intended to be tuned after field experience.
+
 The LCD, SD card, CC1101, and nRF24 share the board SPI bus. RFScout centralizes those pin definitions in `main/board.h` and keeps all unused chip-select signals deasserted during display operation.
 
 ## Planned primary screens
