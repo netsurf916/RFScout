@@ -4,6 +4,7 @@ idf_component_register(
         "observation_store.c"
         "morse.c"
         "surveillance.c"
+        "surveillance_history.c"
         "platform.c"
         "display.c"
         "ui.c"
