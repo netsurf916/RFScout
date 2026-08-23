@@ -40,10 +40,10 @@ static void on_observation(rf_device_t *o)
         char letter = surveillance_morse_letter(o->surveillance);
         ESP_LOGW(TAG, "ALERT %s [%c]", surveillance_name(o->surveillance), letter);
         platform_set_alert_led(true);
-        /* morse_play_character is currently synchronous; this runs only once per
+        /* morse_play_letter is currently synchronous; this runs only once per
            newly observed address. It will move to the platform audio queue when
            the MAX98357A I2S worker lands. */
-        morse_play_character(letter, 100, 900, platform_audio_tone, NULL);
+        morse_play_letter(letter, 100, 900, platform_audio_tone, NULL);
         platform_set_alert_led(false);
     }
 }
