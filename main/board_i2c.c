@@ -1,0 +1,83 @@
+/**
+    board_i2c.c : Shared RFScout board I2C bus
+    Copyright 2026 Daniel Wilson
+    SPDX-License-Identifier: MIT
+*/
+
+#include "board_i2c.h"
+
+#include "board.h"
+
+#include "esp_log.h"
+
+#define BOARD_I2C_FREQUENCY_HZ 400000U
+#define BOARD_I2C_PROBE_TIMEOUT_MS 50
+
+static const char *TAG = "board_i2c";
+static i2c_master_bus_handle_t bus_handle;
+
+esp_err_t board_i2c_init( void )
+{
+    if( NULL != bus_handle )
+    {
+        return ESP_OK;
+    }
+
+    i2c_master_bus_config_t bus_config =
+    {
+        .i2c_port = I2C_NUM_0,
+        .sda_io_num = RFSCOUT_BOARD_I2C_SDA_PIN,
+        .scl_io_num = RFSCOUT_BOARD_I2C_SCL_PIN,
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = true
+    };
+
+    const esp_err_t result = i2c_new_master_bus( &bus_config, &bus_handle );
+    if( ESP_OK == result )
+    {
+        ESP_LOGI( TAG, "shared board I2C initialized on SDA=%d SCL=%d",
+                  RFSCOUT_BOARD_I2C_SDA_PIN,
+                  RFSCOUT_BOARD_I2C_SCL_PIN );
+    }
+    return result;
+}
+
+esp_err_t board_i2c_probe( uint16_t a_address )
+{
+    const esp_err_t result = board_i2c_init();
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
+    return i2c_master_probe( bus_handle,
+                             a_address,
+                             BOARD_I2C_PROBE_TIMEOUT_MS );
+}
+
+esp_err_t board_i2c_add_device( uint16_t a_address,
+                                i2c_master_dev_handle_t *a_device )
+{
+    if( NULL == a_device )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const esp_err_t result = board_i2c_init();
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
+    i2c_device_config_t device_config =
+    {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = a_address,
+        .scl_speed_hz = BOARD_I2C_FREQUENCY_HZ
+    };
+
+    return i2c_master_bus_add_device( bus_handle,
+                                      &device_config,
+                                      a_device );
+}
