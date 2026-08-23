@@ -23,11 +23,14 @@
 
 #define DISPLAY_SPI_HOST SPI2_HOST
 #define DISPLAY_PIXEL_COUNT ( RFSCOUT_DISPLAY_WIDTH * RFSCOUT_DISPLAY_HEIGHT )
+#define DISPLAY_DMA_ROWS 10
+#define DISPLAY_DMA_PIXEL_COUNT ( RFSCOUT_DISPLAY_WIDTH * DISPLAY_DMA_ROWS )
 
 static const char *TAG = "display";
 static esp_lcd_panel_handle_t panel;
 static volatile bool transfer_done;
 static uint16_t *framebuffer;
+static uint16_t *dma_buffer;
 
 /** @brief Compact 5x7 printable ASCII font shared with Brandalize/OUI-SPY. */
 static const uint8_t font[ 95 ][ 5 ] =
@@ -47,6 +50,14 @@ static bool transfer_complete( esp_lcd_panel_io_handle_t a_io,
     (void)a_event;
     *(volatile bool *)a_context = true;
     return false;
+}
+
+/** @brief Wait for the active LCD DMA transfer to complete. */
+static void wait_for_transfer( void )
+{
+    while( !transfer_done )
+    {
+    }
 }
 
 /** @brief Write one scaled glyph to the local framebuffer. */
@@ -87,9 +98,20 @@ esp_err_t display_init( void )
     ESP_ERROR_CHECK( gpio_config( &backlight ) );
     gpio_set_level( RFSCOUT_BOARD_DISPLAY_BACKLIGHT_PIN, 0 );
 
-    framebuffer = heap_caps_calloc( DISPLAY_PIXEL_COUNT, sizeof( *framebuffer ), MALLOC_CAP_DMA );
+    framebuffer = heap_caps_calloc( DISPLAY_PIXEL_COUNT,
+                                    sizeof( *framebuffer ),
+                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
     if( NULL == framebuffer )
     {
+        return ESP_ERR_NO_MEM;
+    }
+
+    dma_buffer = heap_caps_malloc( DISPLAY_DMA_PIXEL_COUNT * sizeof( *dma_buffer ),
+                                   MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL );
+    if( NULL == dma_buffer )
+    {
+        heap_caps_free( framebuffer );
+        framebuffer = NULL;
         return ESP_ERR_NO_MEM;
     }
 
@@ -100,7 +122,7 @@ esp_err_t display_init( void )
         .sclk_io_num = RFSCOUT_BOARD_SPI_SCLK_PIN,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
-        .max_transfer_sz = DISPLAY_PIXEL_COUNT * sizeof( *framebuffer )
+        .max_transfer_sz = DISPLAY_DMA_PIXEL_COUNT * sizeof( *dma_buffer )
     };
     ESP_ERROR_CHECK( spi_bus_initialize( DISPLAY_SPI_HOST, &bus, SPI_DMA_CH_AUTO ) );
 
@@ -212,22 +234,34 @@ void display_draw_text( int a_x, int a_y, const char *a_text, uint16_t a_color, 
 
 esp_err_t display_present( void )
 {
-    if( ( NULL == panel ) || ( NULL == framebuffer ) )
+    if( ( NULL == panel ) || ( NULL == framebuffer ) || ( NULL == dma_buffer ) )
     {
         return ESP_ERR_INVALID_STATE;
     }
 
-    transfer_done = false;
-    const esp_err_t result = esp_lcd_panel_draw_bitmap( panel, 0, 0,
-                                                        RFSCOUT_DISPLAY_WIDTH,
-                                                        RFSCOUT_DISPLAY_HEIGHT,
-                                                        framebuffer );
-    if( ESP_OK != result )
+    for( int y = 0; y < RFSCOUT_DISPLAY_HEIGHT; y += DISPLAY_DMA_ROWS )
     {
-        return result;
-    }
-    while( !transfer_done )
-    {
+        int rows = DISPLAY_DMA_ROWS;
+        if( y + rows > RFSCOUT_DISPLAY_HEIGHT )
+        {
+            rows = RFSCOUT_DISPLAY_HEIGHT - y;
+        }
+
+        const size_t pixel_count = (size_t)rows * RFSCOUT_DISPLAY_WIDTH;
+        memcpy( dma_buffer,
+                &framebuffer[ (size_t)y * RFSCOUT_DISPLAY_WIDTH ],
+                pixel_count * sizeof( *dma_buffer ) );
+
+        transfer_done = false;
+        const esp_err_t result = esp_lcd_panel_draw_bitmap( panel,
+                                                            0, y,
+                                                            RFSCOUT_DISPLAY_WIDTH, y + rows,
+                                                            dma_buffer );
+        if( ESP_OK != result )
+        {
+            return result;
+        }
+        wait_for_transfer();
     }
     return ESP_OK;
 }
