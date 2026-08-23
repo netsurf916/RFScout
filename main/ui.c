@@ -19,6 +19,8 @@
 
 #define UI_REFRESH_INTERVAL_US 500000LL
 #define UI_MAX_BRANDS 9
+#define UI_BRAND_ATTENTION_THRESHOLD 5U
+#define UI_MAX_ATTENTION_ROWS 3U
 
 #define COLOR_BLACK  0x0000
 #define COLOR_WHITE  0xFFFF
@@ -117,6 +119,13 @@ static void render_summary( void )
         add_brand( brands, UI_MAX_BRANDS, snapshot[ i ].vendor );
     }
 
+    size_t brand_count = 0;
+    while( ( brand_count < UI_MAX_BRANDS ) &&
+           ( 0U != brands[ brand_count ].count ) )
+    {
+        ++brand_count;
+    }
+
     display_clear( COLOR_BLACK );
     display_draw_text( 6, 5, "RFSCOUT", COLOR_GREEN, 2 );
     display_draw_text( 104, 8, "SITUATIONAL AWARENESS", COLOR_GRAY, 1 );
@@ -135,16 +144,22 @@ static void render_summary( void )
 
     display_draw_text( 6, 43, "TOP NEARBY BRANDS", COLOR_YELLOW, 1 );
     int y = 57;
-    for( size_t i = 0; i < UI_MAX_BRANDS; ++i )
+    size_t attention_rows = 0;
+    for( size_t i = 0; i < brand_count; ++i )
     {
-        if( 0U == brands[ i ].count )
-        {
-            break;
-        }
         snprintf( line, sizeof( line ), "%-27.27s %3u",
                   brands[ i ].name, (unsigned)brands[ i ].count );
+
+        const bool highlight =
+            ( brands[ i ].count > UI_BRAND_ATTENTION_THRESHOLD ) &&
+            ( attention_rows < UI_MAX_ATTENTION_ROWS );
+        if( highlight )
+        {
+            ++attention_rows;
+        }
+
         display_draw_text( 6, y, line,
-                           ( i < 3U ) ? COLOR_GREEN : COLOR_WHITE, 1 );
+                           highlight ? COLOR_YELLOW : COLOR_CYAN, 1 );
         y += 12;
     }
 
