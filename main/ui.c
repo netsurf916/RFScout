@@ -18,17 +18,20 @@
 #include <string.h>
 
 #define UI_REFRESH_INTERVAL_US 500000LL
-#define UI_MAX_BRANDS 9
+#define UI_MAX_BRANDS 10
 #define UI_BRAND_ATTENTION_THRESHOLD 5U
 #define UI_MAX_ATTENTION_ROWS 3U
 
-#define COLOR_BLACK  0x0000
-#define COLOR_WHITE  0xFFFF
-#define COLOR_GREEN  0x07E0
-#define COLOR_YELLOW 0xFFE0
-#define COLOR_RED    0xF800
-#define COLOR_CYAN   0x07FF
-#define COLOR_GRAY   0x8410
+/* Canonical RGB565 values. The ST7789 driver is configured to consume the
+   little-endian uint16_t framebuffer directly; these constants are not
+   byte-swapped as they were for the earlier T-Dongle-C5 display path. */
+#define COLOR_BLACK  0x0000U
+#define COLOR_WHITE  0xFFFFU
+#define COLOR_GREEN  0x07E0U
+#define COLOR_YELLOW 0xFFE0U
+#define COLOR_RED    0xF800U
+#define COLOR_CYAN   0x07FFU
+#define COLOR_GRAY   0x8410U
 
 typedef struct
 {
@@ -128,7 +131,9 @@ static void render_summary( void )
 
     display_clear( COLOR_BLACK );
     display_draw_text( 6, 5, "RFSCOUT", COLOR_GREEN, 2 );
-    display_draw_text( 104, 8, "SITUATIONAL AWARENESS", COLOR_GRAY, 1 );
+
+    /* The remainder of the title row is intentionally reserved for compact
+       radio, storage, alert, mute, and battery status symbols. */
 
     char line[ 64 ];
     snprintf( line, sizeof( line ), "DEV %u   WIFI %u   BLE %u",
@@ -142,8 +147,7 @@ static void render_summary( void )
                        ( 0U == alert_count ) ? COLOR_CYAN : COLOR_RED, 1 );
     display_fill_rect( 5, 36, 310, 1, COLOR_GRAY );
 
-    display_draw_text( 6, 43, "TOP NEARBY BRANDS", COLOR_YELLOW, 1 );
-    int y = 57;
+    int y = 43;
     size_t attention_rows = 0;
     for( size_t i = 0; i < brand_count; ++i )
     {
