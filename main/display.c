@@ -148,7 +148,7 @@ esp_err_t display_init( void )
     esp_lcd_panel_dev_config_t panel_config =
     {
         .reset_gpio_num = RFSCOUT_BOARD_DISPLAY_RESET_PIN,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
         .data_endian = LCD_RGB_DATA_ENDIAN_LITTLE,
         .bits_per_pixel = 16
     };
