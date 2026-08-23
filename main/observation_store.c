@@ -6,12 +6,13 @@
 
 #include "observation_store.h"
 
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
 #include <string.h>
 
-static rf_device_t devices[ RFSCOUT_DEVICE_CAPACITY ];
+static rf_device_t *devices;
 static size_t device_count;
 static SemaphoreHandle_t store_lock;
 
@@ -36,16 +37,31 @@ static size_t oldest_slot( void )
     return oldest;
 }
 
-void observation_store_init( void )
+esp_err_t observation_store_init( void )
 {
-    memset( devices, 0, sizeof( devices ) );
     device_count = 0;
     store_lock = xSemaphoreCreateMutex();
+    if( NULL == store_lock )
+    {
+        return ESP_ERR_NO_MEM;
+    }
+
+    devices = heap_caps_calloc( RFSCOUT_DEVICE_CAPACITY,
+                                sizeof( *devices ),
+                                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
+    if( NULL == devices )
+    {
+        vSemaphoreDelete( store_lock );
+        store_lock = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+
+    return ESP_OK;
 }
 
 bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new )
 {
-    if( ( NULL == a_observation ) || ( NULL == store_lock ) )
+    if( ( NULL == a_observation ) || ( NULL == store_lock ) || ( NULL == devices ) )
     {
         return false;
     }
@@ -103,7 +119,7 @@ bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new
 
 size_t observation_store_count( void )
 {
-    if( NULL == store_lock )
+    if( ( NULL == store_lock ) || ( NULL == devices ) )
     {
         return 0;
     }
@@ -115,7 +131,7 @@ size_t observation_store_count( void )
 
 size_t observation_store_surveillance_count( void )
 {
-    if( NULL == store_lock )
+    if( ( NULL == store_lock ) || ( NULL == devices ) )
     {
         return 0;
     }
@@ -134,7 +150,8 @@ size_t observation_store_surveillance_count( void )
 
 size_t observation_store_snapshot( rf_device_t *a_output, size_t a_capacity )
 {
-    if( ( NULL == a_output ) || ( 0U == a_capacity ) || ( NULL == store_lock ) )
+    if( ( NULL == a_output ) || ( 0U == a_capacity ) ||
+        ( NULL == store_lock ) || ( NULL == devices ) )
     {
         return 0;
     }
