@@ -8,6 +8,7 @@ idf_component_register(
         "platform.c"
         "board_i2c.c"
         "battery.c"
+        "battery_indicator.c"
         "display.c"
         "ui.c"
         "radio_monitor.c"
