@@ -76,7 +76,7 @@ void app_main( void )
     }
     ESP_ERROR_CHECK( result );
 
-    observation_store_init();
+    ESP_ERROR_CHECK( observation_store_init() );
     ESP_ERROR_CHECK( platform_init() );
     ESP_ERROR_CHECK( ui_init() );
     ESP_ERROR_CHECK( radio_monitor_init( on_observation ) );
