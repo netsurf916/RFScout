@@ -7,6 +7,7 @@
 
 #include "ui.h"
 
+#include "battery.h"
 #include "display.h"
 #include "observation_store.h"
 #include "surveillance_history.h"
@@ -26,6 +27,14 @@
 #define UI_LIST_ROW_HEIGHT 12
 #define UI_COLUMN_DIVIDER_X 198
 #define UI_SURVEILLANCE_X 205
+
+#define UI_BATTERY_BODY_X 282
+#define UI_BATTERY_BODY_Y 4
+#define UI_BATTERY_BODY_WIDTH 28
+#define UI_BATTERY_BODY_HEIGHT 14
+#define UI_BATTERY_TERMINAL_WIDTH 3
+#define UI_BATTERY_TERMINAL_HEIGHT 6
+#define UI_BATTERY_TEXT_GAP 5
 
 /* Canonical RGB565 values. The ST7789 driver consumes the little-endian
    uint16_t framebuffer directly; these constants are not byte-swapped. */
@@ -66,6 +75,121 @@ static const char *surveillance_label( surveillance_class_t a_classification )
             return "OTHER";
         default:
             return "";
+    }
+}
+
+/** @brief Return the battery color associated with its current urgency. */
+static uint16_t battery_color( const battery_status_t *a_status )
+{
+    if( ( NULL == a_status ) || !a_status->available )
+    {
+        return COLOR_GRAY;
+    }
+    if( ( BATTERY_CHARGE_COMPLETE == a_status->charge_state ) &&
+        a_status->external_power )
+    {
+        return COLOR_GREEN;
+    }
+    if( a_status->percentage <= 10U )
+    {
+        return COLOR_RED;
+    }
+    if( a_status->percentage <= 20U )
+    {
+        return COLOR_YELLOW;
+    }
+    return COLOR_CYAN;
+}
+
+/** @brief Draw a compact lightning bolt inside the battery body. */
+static void draw_charging_bolt( int a_x, int a_y, uint16_t a_color )
+{
+    display_fill_rect( a_x + 3, a_y,     2, 3, a_color );
+    display_fill_rect( a_x + 1, a_y + 2, 4, 2, a_color );
+    display_fill_rect( a_x + 2, a_y + 4, 2, 2, a_color );
+    display_fill_rect( a_x,     a_y + 5, 3, 2, a_color );
+    display_fill_rect( a_x + 1, a_y + 7, 2, 2, a_color );
+}
+
+/** @brief Draw the battery percentage, outline, proportional fill, and charge state. */
+static void draw_battery_indicator( void )
+{
+    battery_status_t status = { 0 };
+    (void)battery_get_status( &status );
+
+    const uint16_t color = battery_color( &status );
+    char percentage[ 6 ];
+    if( status.available )
+    {
+        snprintf( percentage, sizeof( percentage ), "%u%%",
+                  (unsigned)status.percentage );
+    }
+    else
+    {
+        strlcpy( percentage, "--%", sizeof( percentage ) );
+    }
+
+    const int text_width = (int)strlen( percentage ) * 6;
+    const int text_x = UI_BATTERY_BODY_X - UI_BATTERY_TEXT_GAP - text_width;
+    display_draw_text( text_x, 7, percentage, color, 1 );
+
+    display_fill_rect( UI_BATTERY_BODY_X,
+                       UI_BATTERY_BODY_Y,
+                       UI_BATTERY_BODY_WIDTH,
+                       1,
+                       color );
+    display_fill_rect( UI_BATTERY_BODY_X,
+                       UI_BATTERY_BODY_Y + UI_BATTERY_BODY_HEIGHT - 1,
+                       UI_BATTERY_BODY_WIDTH,
+                       1,
+                       color );
+    display_fill_rect( UI_BATTERY_BODY_X,
+                       UI_BATTERY_BODY_Y,
+                       1,
+                       UI_BATTERY_BODY_HEIGHT,
+                       color );
+    display_fill_rect( UI_BATTERY_BODY_X + UI_BATTERY_BODY_WIDTH - 1,
+                       UI_BATTERY_BODY_Y,
+                       1,
+                       UI_BATTERY_BODY_HEIGHT,
+                       color );
+
+    const int terminal_y =
+        UI_BATTERY_BODY_Y +
+        ( UI_BATTERY_BODY_HEIGHT - UI_BATTERY_TERMINAL_HEIGHT ) / 2;
+    display_fill_rect( UI_BATTERY_BODY_X + UI_BATTERY_BODY_WIDTH,
+                       terminal_y,
+                       UI_BATTERY_TERMINAL_WIDTH,
+                       UI_BATTERY_TERMINAL_HEIGHT,
+                       color );
+
+    if( status.available )
+    {
+        const int inner_x = UI_BATTERY_BODY_X + 2;
+        const int inner_y = UI_BATTERY_BODY_Y + 2;
+        const int inner_width = UI_BATTERY_BODY_WIDTH - 4;
+        const int inner_height = UI_BATTERY_BODY_HEIGHT - 4;
+        int fill_width =
+            ( (int)status.percentage * inner_width + 99 ) / 100;
+        if( fill_width > inner_width )
+        {
+            fill_width = inner_width;
+        }
+        if( fill_width > 0 )
+        {
+            display_fill_rect( inner_x,
+                               inner_y,
+                               fill_width,
+                               inner_height,
+                               color );
+        }
+    }
+
+    if( BATTERY_CHARGE_CHARGING == status.charge_state )
+    {
+        draw_charging_bolt( UI_BATTERY_BODY_X + 10,
+                            UI_BATTERY_BODY_Y + 2,
+                            COLOR_WHITE );
     }
 }
 
@@ -157,9 +281,10 @@ static void render_summary( void )
 
     display_clear( COLOR_BLACK );
     display_draw_text( 6, 5, "RFSCOUT", COLOR_GREEN, 2 );
+    draw_battery_indicator();
 
-    /* The remainder of the title row is reserved for compact radio, storage,
-       alert, mute, and battery status symbols. */
+    /* The title-row space between RFSCOUT and the battery remains reserved for
+       compact radio, storage, alert, and mute status symbols. */
 
     char line[ 64 ];
     snprintf( line, sizeof( line ), "DEV %u   WIFI %u   BLE %u",
