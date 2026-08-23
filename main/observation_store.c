@@ -7,6 +7,7 @@
 #include "observation_store.h"
 
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
@@ -16,11 +17,42 @@ static rf_device_t *devices;
 static size_t device_count;
 static SemaphoreHandle_t store_lock;
 
+/** @brief Return the current monotonic time in milliseconds. */
+static uint32_t current_time_ms( void )
+{
+    return (uint32_t)( esp_timer_get_time() / 1000ULL );
+}
+
 /** @brief Determine whether two observations represent the same tracked identity. */
 static bool same_identity( const rf_device_t *a_left, const rf_device_t *a_right )
 {
     return ( a_left->address_type == a_right->address_type ) &&
            ( 0 == memcmp( a_left->address, a_right->address, 6 ) );
+}
+
+/**
+ * @brief Remove observations that have not been refreshed within the live window.
+ * @details Removal swaps the last active record into the expired slot. The fixed
+ *          PSRAM allocation is retained, avoiding malloc/free churn and heap fragmentation.
+ */
+static void expire_stale_devices( uint32_t a_now_ms )
+{
+    size_t i = 0;
+    while( i < device_count )
+    {
+        if( (uint32_t)( a_now_ms - devices[ i ].last_seen_ms ) < RFSCOUT_DEVICE_TIMEOUT_MS )
+        {
+            ++i;
+            continue;
+        }
+
+        --device_count;
+        if( i != device_count )
+        {
+            devices[ i ] = devices[ device_count ];
+        }
+        memset( &devices[ device_count ], 0, sizeof( devices[ device_count ] ) );
+    }
 }
 
 /** @brief Find the least-recently-seen slot when the store is full. */
@@ -66,6 +98,7 @@ bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new
         return false;
     }
     xSemaphoreTake( store_lock, portMAX_DELAY );
+    expire_stale_devices( current_time_ms() );
 
     for( size_t i = 0; i < device_count; ++i )
     {
@@ -124,6 +157,7 @@ size_t observation_store_count( void )
         return 0;
     }
     xSemaphoreTake( store_lock, portMAX_DELAY );
+    expire_stale_devices( current_time_ms() );
     const size_t result = device_count;
     xSemaphoreGive( store_lock );
     return result;
@@ -136,6 +170,7 @@ size_t observation_store_surveillance_count( void )
         return 0;
     }
     xSemaphoreTake( store_lock, portMAX_DELAY );
+    expire_stale_devices( current_time_ms() );
     size_t result = 0;
     for( size_t i = 0; i < device_count; ++i )
     {
@@ -156,6 +191,7 @@ size_t observation_store_snapshot( rf_device_t *a_output, size_t a_capacity )
         return 0;
     }
     xSemaphoreTake( store_lock, portMAX_DELAY );
+    expire_stale_devices( current_time_ms() );
     const size_t count = ( device_count < a_capacity ) ? device_count : a_capacity;
     memcpy( a_output, devices, count * sizeof( *a_output ) );
     xSemaphoreGive( store_lock );
