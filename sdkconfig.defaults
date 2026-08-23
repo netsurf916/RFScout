@@ -10,3 +10,11 @@ CONFIG_BT_NIMBLE_ROLE_OBSERVER=y
 CONFIG_BT_NIMBLE_ROLE_BROADCASTER=n
 CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
 CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=n
+
+# The T-Embed CC1101 Plus includes 8 MB of external OPI PSRAM. Large RFScout
+# working sets such as the 1,000-device observation history live there rather
+# than consuming the ESP32-S3's limited internal DRAM.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_USE_MALLOC=y

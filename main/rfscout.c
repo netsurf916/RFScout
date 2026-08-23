@@ -1,3 +1,10 @@
+/**
+    rfscout.c : RFScout application entry point
+    Description: Initializes passive RF collectors, classification, alerts, and UI.
+    Copyright 2026 Daniel Wilson
+    SPDX-License-Identifier: MIT
+*/
+
 #include "ble_monitor.h"
 #include "morse.h"
 #include "observation_store.h"
@@ -5,68 +12,84 @@
 #include "platform.h"
 #include "radio_monitor.h"
 #include "surveillance.h"
+#include "ui.h"
+
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
+
 #include <string.h>
 
 static const char *TAG = "rfscout";
 
-static void on_observation(rf_device_t *o)
+/** @brief Process one normalized radio observation. */
+static void on_observation( rf_device_t *a_observation )
 {
-    if (!o) return;
-
-    /* IEEE OUIs are meaningful for Wi-Fi and public BLE addresses. Random BLE
-       addresses deliberately remain unbranded rather than generating false vendors. */
-    if (o->last_source != RF_SOURCE_BLE || o->address_type == 0) {
-        const char *vendor = oui_database_lookup(o->address);
-        if (vendor) strlcpy(o->vendor, vendor, sizeof(o->vendor));
+    if( NULL == a_observation )
+    {
+        return;
     }
-    o->surveillance = surveillance_classify(o);
+
+    if( ( RF_SOURCE_BLE != a_observation->last_source ) || ( 0U == a_observation->address_type ) )
+    {
+        const char *vendor = oui_database_lookup( a_observation->address );
+        if( NULL != vendor )
+        {
+            strlcpy( a_observation->vendor, vendor, sizeof( a_observation->vendor ) );
+        }
+    }
+    a_observation->surveillance = surveillance_classify( a_observation );
 
     bool is_new = false;
-    if (!observation_store_observe(o, &is_new)) return;
-    if (!is_new) return;
+    if( !observation_store_observe( a_observation, &is_new ) || !is_new )
+    {
+        return;
+    }
 
-    ESP_LOGI(TAG, "%s %s %02X:%02X:%02X:%02X:%02X:%02X rssi=%d ch=%u%s",
-             o->last_source == RF_SOURCE_BLE ? "BLE" : "WiFi",
-             o->vendor[0] ? o->vendor : (o->has_name ? o->name : "Unknown"),
-             o->address[0], o->address[1], o->address[2], o->address[3], o->address[4], o->address[5],
-             o->rssi, o->channel,
-             o->surveillance != SURVEILLANCE_NONE ? " SURVEILLANCE" : "");
+    ESP_LOGI( TAG, "%s %s %02X:%02X:%02X:%02X:%02X:%02X rssi=%d ch=%u%s",
+              ( RF_SOURCE_BLE == a_observation->last_source ) ? "BLE" : "WiFi",
+              ( '\0' != a_observation->vendor[ 0 ] ) ? a_observation->vendor :
+                  ( a_observation->has_name ? a_observation->name : "Unknown" ),
+              a_observation->address[ 0 ], a_observation->address[ 1 ], a_observation->address[ 2 ],
+              a_observation->address[ 3 ], a_observation->address[ 4 ], a_observation->address[ 5 ],
+              a_observation->rssi, a_observation->channel,
+              ( SURVEILLANCE_NONE != a_observation->surveillance ) ? " SURVEILLANCE" : "" );
 
-    if (o->surveillance != SURVEILLANCE_NONE) {
-        char letter = surveillance_morse_letter(o->surveillance);
-        ESP_LOGW(TAG, "ALERT %s [%c]", surveillance_name(o->surveillance), letter);
-        platform_set_alert_led(true);
-        /* morse_play_letter is currently synchronous; this runs only once per
-           newly observed address. It will move to the platform audio queue when
-           the MAX98357A I2S worker lands. */
-        morse_play_letter(letter, 100, 900, platform_audio_tone, NULL);
-        platform_set_alert_led(false);
+    if( SURVEILLANCE_NONE != a_observation->surveillance )
+    {
+        const char letter = surveillance_morse_letter( a_observation->surveillance );
+        ESP_LOGW( TAG, "ALERT %s [%c]", surveillance_name( a_observation->surveillance ), letter );
+        platform_set_alert_led( true );
+        morse_play_letter( letter, 100U, 900U, platform_audio_tone, NULL );
+        platform_set_alert_led( false );
     }
 }
 
-void app_main(void)
+void app_main( void )
 {
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
+    esp_err_t result = nvs_flash_init();
+    if( ( ESP_ERR_NVS_NO_FREE_PAGES == result ) || ( ESP_ERR_NVS_NEW_VERSION_FOUND == result ) )
+    {
+        ESP_ERROR_CHECK( nvs_flash_erase() );
+        result = nvs_flash_init();
     }
-    ESP_ERROR_CHECK(ret);
+    ESP_ERROR_CHECK( result );
 
-    observation_store_init();
-    ESP_ERROR_CHECK(platform_init());
-    ESP_ERROR_CHECK(radio_monitor_init(on_observation));
-    ESP_ERROR_CHECK(ble_monitor_init(on_observation));
-    ESP_LOGI(TAG, "RFScout started: Wi-Fi + BLE passive situational awareness, region=%s",
-             radio_monitor_region_name(radio_monitor_get_region()));
+    ESP_ERROR_CHECK( observation_store_init() );
+    ESP_ERROR_CHECK( platform_init() );
+    ESP_ERROR_CHECK( ui_init() );
+    ESP_ERROR_CHECK( radio_monitor_init( on_observation ) );
+    ESP_ERROR_CHECK( ble_monitor_init( on_observation ) );
 
-    while (1) {
+    ESP_LOGI( TAG, "RFScout started: Wi-Fi + BLE passive situational awareness, region=%s",
+              radio_monitor_region_name( radio_monitor_get_region() ) );
+
+    while( true )
+    {
         radio_monitor_step();
         platform_poll();
-        vTaskDelay(pdMS_TO_TICKS(10));
+        ui_poll();
+        vTaskDelay( pdMS_TO_TICKS( 10 ) );
     }
 }

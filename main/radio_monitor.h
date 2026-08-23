@@ -1,19 +1,40 @@
+/**
+    radio_monitor.h : RFScout passive Wi-Fi observation interface
+    Copyright 2026 Daniel Wilson
+    SPDX-License-Identifier: MIT
+*/
+
 #pragma once
+
+#ifndef _RFSCOUT_RADIO_MONITOR_H_
+#define _RFSCOUT_RADIO_MONITOR_H_
 
 #include "esp_err.h"
 #include "observation_store.h"
 
-typedef void (*radio_observation_fn)(rf_device_t *observation);
+typedef void ( *radio_observation_fn )( rf_device_t *a_observation );
 
-typedef enum {
-    RF_WIFI_REGION_US = 0,        /* channels 1-11 */
-    RF_WIFI_REGION_ETSI,          /* channels 1-13 */
-    RF_WIFI_REGION_JAPAN,         /* channels 1-14 */
-    RF_WIFI_REGION_EXTENDED_RX,   /* passive sweep attempt across 1-14 */
+typedef enum
+{
+    RF_WIFI_REGION_US = 0,
+    RF_WIFI_REGION_ETSI,
+    RF_WIFI_REGION_JAPAN,
+    RF_WIFI_REGION_EXTENDED_RX
 } rf_wifi_region_t;
 
-esp_err_t radio_monitor_init(radio_observation_fn callback);
-void radio_monitor_step(void);
-esp_err_t radio_monitor_set_region(rf_wifi_region_t region);
-rf_wifi_region_t radio_monitor_get_region(void);
-const char *radio_monitor_region_name(rf_wifi_region_t region);
+/** @brief Initialize passive Wi-Fi promiscuous monitoring. */
+esp_err_t radio_monitor_init( radio_observation_fn a_callback );
+
+/** @brief Advance the channel-hopping state machine when required. */
+void radio_monitor_step( void );
+
+/** @brief Select the configured 2.4 GHz channel region. */
+esp_err_t radio_monitor_set_region( rf_wifi_region_t a_region );
+
+/** @brief Return the current Wi-Fi region setting. */
+rf_wifi_region_t radio_monitor_get_region( void );
+
+/** @brief Return a human-readable region name. */
+const char *radio_monitor_region_name( rf_wifi_region_t a_region );
+
+#endif // _RFSCOUT_RADIO_MONITOR_H_
