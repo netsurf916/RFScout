@@ -228,7 +228,6 @@ esp_err_t display_present( void )
     }
     while( !transfer_done )
     {
-        taskYIELD();
     }
     return ESP_OK;
 }
