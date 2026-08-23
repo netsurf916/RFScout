@@ -16,10 +16,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define RFSCOUT_DEVICE_CAPACITY 1000
-#define RFSCOUT_VENDOR_NAME_MAX 32
-#define RFSCOUT_DEVICE_NAME_MAX 32
-#define RFSCOUT_MFG_DATA_MAX 16
+#define RFSCOUT_DEVICE_CAPACITY   1000
+#define RFSCOUT_DEVICE_TIMEOUT_MS 20000U
+#define RFSCOUT_VENDOR_NAME_MAX   32
+#define RFSCOUT_DEVICE_NAME_MAX   32
+#define RFSCOUT_MFG_DATA_MAX      16
 
 typedef enum
 {
@@ -73,13 +74,13 @@ esp_err_t observation_store_init( void );
 /** @brief Add or refresh one normalized device observation. */
 bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new );
 
-/** @brief Return the number of stored unique observations. */
+/** @brief Return the number of currently active observations. */
 size_t observation_store_count( void );
 
-/** @brief Return the number of observations classified as surveillance. */
+/** @brief Return the number of currently active observations classified as surveillance. */
 size_t observation_store_surveillance_count( void );
 
-/** @brief Copy a consistent snapshot of the observation store. */
+/** @brief Copy a consistent snapshot of the currently active observation store. */
 size_t observation_store_snapshot( rf_device_t *a_output, size_t a_capacity );
 
 #endif // _RFSCOUT_OBSERVATION_STORE_H_
