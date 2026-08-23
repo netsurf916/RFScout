@@ -9,6 +9,7 @@
 
 #include "display.h"
 #include "observation_store.h"
+#include "surveillance_history.h"
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -21,10 +22,13 @@
 #define UI_MAX_BRANDS 10
 #define UI_BRAND_ATTENTION_THRESHOLD 5U
 #define UI_MAX_ATTENTION_ROWS 3U
+#define UI_LIST_START_Y 43
+#define UI_LIST_ROW_HEIGHT 12
+#define UI_COLUMN_DIVIDER_X 198
+#define UI_SURVEILLANCE_X 205
 
-/* Canonical RGB565 values. The ST7789 driver is configured to consume the
-   little-endian uint16_t framebuffer directly; these constants are not
-   byte-swapped as they were for the earlier T-Dongle-C5 display path. */
+/* Canonical RGB565 values. The ST7789 driver consumes the little-endian
+   uint16_t framebuffer directly; these constants are not byte-swapped. */
 #define COLOR_BLACK  0x0000U
 #define COLOR_WHITE  0xFFFFU
 #define COLOR_GREEN  0x07E0U
@@ -43,8 +47,31 @@ static const char *TAG = "ui";
 static int64_t last_refresh_us;
 static rf_device_t *snapshot;
 
+/** @brief Return a compact label for the surveillance summary column. */
+static const char *surveillance_label( surveillance_class_t a_classification )
+{
+    switch( a_classification )
+    {
+        case SURVEILLANCE_FLOCK:
+            return "FLOCK/ALPR";
+        case SURVEILLANCE_BODY_CAMERA:
+            return "BODY CAM";
+        case SURVEILLANCE_DRONE:
+            return "DRONE";
+        case SURVEILLANCE_CAMERA:
+            return "CAMERA";
+        case SURVEILLANCE_SMART_GLASSES:
+            return "GLASSES";
+        case SURVEILLANCE_OTHER:
+            return "OTHER";
+        default:
+            return "";
+    }
+}
+
 /** @brief Insert one vendor into the fixed-size descending brand ranking. */
-static void add_brand( brand_count_t *a_brands, size_t a_capacity, const char *a_name )
+static void add_brand( brand_count_t *a_brands, size_t a_capacity,
+                       const char *a_name )
 {
     if( ( NULL == a_brands ) || ( 0U == a_capacity ) ||
         ( NULL == a_name ) || ( '\0' == a_name[ 0 ] ) )
@@ -97,11 +124,14 @@ static void render_summary( void )
     }
 
     brand_count_t brands[ UI_MAX_BRANDS ] = { 0 };
+    uint16_t surveillance_counts[ RFSCOUT_SURVEILLANCE_CLASS_COUNT ] = { 0 };
     const size_t device_count =
         observation_store_snapshot( snapshot, RFSCOUT_DEVICE_CAPACITY );
+    const size_t surveillance_count =
+        surveillance_history_counts( surveillance_counts,
+                                     RFSCOUT_SURVEILLANCE_CLASS_COUNT );
     size_t wifi_count = 0;
     size_t ble_count = 0;
-    size_t alert_count = 0;
 
     for( size_t i = 0; i < device_count; ++i )
     {
@@ -114,10 +144,6 @@ static void render_summary( void )
                     RF_SOURCE_BIT( RF_SOURCE_BLE ) ) )
         {
             ++ble_count;
-        }
-        if( SURVEILLANCE_NONE != snapshot[ i ].surveillance )
-        {
-            ++alert_count;
         }
         add_brand( brands, UI_MAX_BRANDS, snapshot[ i ].vendor );
     }
@@ -132,8 +158,8 @@ static void render_summary( void )
     display_clear( COLOR_BLACK );
     display_draw_text( 6, 5, "RFSCOUT", COLOR_GREEN, 2 );
 
-    /* The remainder of the title row is intentionally reserved for compact
-       radio, storage, alert, mute, and battery status symbols. */
+    /* The remainder of the title row is reserved for compact radio, storage,
+       alert, mute, and battery status symbols. */
 
     char line[ 64 ];
     snprintf( line, sizeof( line ), "DEV %u   WIFI %u   BLE %u",
@@ -142,12 +168,15 @@ static void render_summary( void )
     display_draw_text( 6, 25, line, COLOR_WHITE, 1 );
 
     snprintf( line, sizeof( line ), "SURVEILLANCE %u",
-              (unsigned)alert_count );
+              (unsigned)surveillance_count );
     display_draw_text( 210, 25, line,
-                       ( 0U == alert_count ) ? COLOR_CYAN : COLOR_RED, 1 );
+                       ( 0U == surveillance_count ) ? COLOR_CYAN : COLOR_RED,
+                       1 );
     display_fill_rect( 5, 36, 310, 1, COLOR_GRAY );
+    display_fill_rect( UI_COLUMN_DIVIDER_X, 36, 1,
+                       RFSCOUT_DISPLAY_HEIGHT - 36, COLOR_GRAY );
 
-    int y = 43;
+    int y = UI_LIST_START_Y;
     size_t attention_rows = 0;
     for( size_t i = 0; i < brand_count; ++i )
     {
@@ -164,7 +193,24 @@ static void render_summary( void )
 
         display_draw_text( 6, y, line,
                            highlight ? COLOR_YELLOW : COLOR_CYAN, 1 );
-        y += 12;
+        y += UI_LIST_ROW_HEIGHT;
+    }
+
+    y = UI_LIST_START_Y;
+    for( size_t classification = (size_t)SURVEILLANCE_FLOCK;
+         classification <= (size_t)SURVEILLANCE_OTHER;
+         ++classification )
+    {
+        if( 0U == surveillance_counts[ classification ] )
+        {
+            continue;
+        }
+
+        snprintf( line, sizeof( line ), "%-10.10s %3u",
+                  surveillance_label( (surveillance_class_t)classification ),
+                  (unsigned)surveillance_counts[ classification ] );
+        display_draw_text( UI_SURVEILLANCE_X, y, line, COLOR_RED, 1 );
+        y += UI_LIST_ROW_HEIGHT;
     }
 
     if( ESP_OK != display_present() )
