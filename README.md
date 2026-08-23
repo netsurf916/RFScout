@@ -15,9 +15,13 @@ RFScout is intended as an awareness instrument, not an active network client. Wi
 
 ## Current display
 
-The first LCD view is a dense live summary showing total unique devices, Wi-Fi/BLE counts, current surveillance matches, and the top nearby OUI brands. The display uses the same compact built-in 5x7 font established in OUI-SPY/Brandalize and a native ESP-IDF ST7789 driver rather than adding a large GUI dependency.
+The first LCD view is a dense live summary showing total unique devices, Wi-Fi/BLE counts, current surveillance matches, and the highest-count nearby OUI brands. The display uses the same compact built-in 5x7 font established in OUI-SPY/Brandalize and a native ESP-IDF ST7789 driver rather than adding a large GUI dependency.
+
+The title row contains only `RFSCOUT`; its remaining space is reserved for compact radio, storage, alert, mute, and battery status symbols as those capabilities are implemented. The brand list begins immediately below the summary divider without a redundant section heading, allowing ten brand rows to fit on screen.
 
 Brand rows are cyan during normal activity. A brand is eligible for yellow highlighting when its active-device count is greater than five, but only the first three eligible rows in the descending ranking are highlighted. The threshold remains fixed rather than changing with environmental density, so the visual meaning of yellow stays consistent while the row cap prevents a busy screen from becoming entirely yellow. The threshold and row cap are module constants intended to be tuned after field experience.
+
+RFScout stores canonical RGB565 values such as `0x07E0` for green and `0xFFE0` for yellow. The ST7789 is configured for little-endian 16-bit pixel data so those native `uint16_t` framebuffer values can be transferred directly. This differs from the earlier T-Dongle-C5 path, which used manually byte-swapped color constants.
 
 The LCD, SD card, CC1101, and nRF24 share the board SPI bus. RFScout centralizes those pin definitions in `main/board.h` and keeps all unused chip-select signals deasserted during display operation.
 
