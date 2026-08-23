@@ -36,6 +36,23 @@ python3 tools/update_oui.py
 
 The **Refresh IEEE OUI database** GitHub Action can also be run manually and runs weekly. It regenerates `main/oui_database.inc` and commits it only when the IEEE registry has changed.
 
+The complete registry substantially increases the firmware image size. RFScout therefore configures the T-Embed's 16 MB flash and uses the custom `partitions.csv` layout described below.
+
+## Flash and partition layout
+
+The T-Embed CC1101 Plus has 16 MB of flash. ESP-IDF's default single-app table provides only a 1 MB factory application partition, which is too small once the full IEEE OUI registry is compiled into RFScout.
+
+RFScout uses a custom partition table:
+
+| Partition | Offset | Size | Purpose |
+|---|---:|---:|---|
+| `nvs` | `0x9000` | 24 KB | Persistent settings |
+| `phy_init` | `0xF000` | 4 KB | PHY initialization data |
+| `factory` | `0x10000` | 4 MB | RFScout firmware |
+| `storage` | `0x410000` | 11.94 MB | Reserved SPIFFS storage for future logs and assets |
+
+The application remains a single factory image with no OTA slots. Adding OTA later will require a different partition layout with two sufficiently large application partitions.
+
 ## Coding style
 
 Firmware code follows the `netsurf916/libutils` conventions: readable Allman formatting, `a_` argument prefixes, explicit comparisons, strict header/implementation separation, centralized board definitions, and Doxygen documentation for public interfaces. Generated OUI data is exempt from manual formatting.
@@ -51,12 +68,21 @@ See [docs/CAPABILITIES.md](docs/CAPABILITIES.md), [docs/ARCHITECTURE.md](docs/AR
 RFScout targets the ESP32-S3 used by the T-Embed CC1101 Plus:
 
 ```sh
+python3 tools/update_oui.py
 idf.py set-target esp32s3
 idf.py build
 idf.py flash monitor
 ```
 
-NimBLE observer support is enabled by `sdkconfig.defaults` for passive BLE scanning.
+NimBLE observer support, OPI PSRAM, 16 MB flash, and the custom partition table are enabled by `sdkconfig.defaults`.
+
+After pulling a change to `sdkconfig.defaults` or `partitions.csv`, regenerate the local configuration before building:
+
+```sh
+rm -rf build sdkconfig
+idf.py set-target esp32s3
+idf.py build
+```
 
 ## License
 
