@@ -87,7 +87,7 @@ Future 2.4 GHz proprietary-radio activity view. Keep this separate from Wi-Fi/BL
 
 ### PN532 NFC
 
-Selectable tool for local NFC/tag inspection. Not part of continuous background device census by default.
+Selectable tool for local NFC/tag inspection. Not part of continuous background device census by default. The shared board-I2C module is already separated so NFC can later reuse the same controller as the power-management devices.
 
 ### IR transmit/receive
 
@@ -99,7 +99,18 @@ No baseline continuous audio recording. Potential future uses should be privacy-
 
 ### Battery / power telemetry
 
-Show useful battery state and eventually support power-aware radio/display behavior.
+Implemented baseline behavior:
+
+- BQ27220 state-of-charge percentage, battery voltage, and signed current;
+- BQ25896 external-power and charge-state detection;
+- one-second telemetry polling with a cached public status interface;
+- exact percentage plus proportional battery fill in the top-right LCD header;
+- lightning bolt inside the battery body while charging;
+- cyan, yellow, and red level colors with green for charge-complete on external power;
+- gray unavailable state when the power-management devices cannot be read;
+- isolated `battery` and shared `board_i2c` modules so register and bus details do not leak into the UI.
+
+Future power work can add estimated runtime, battery-health details, low-power display behavior, and configurable radio throttling without changing the battery UI interface.
 
 ## Future ideas
 
