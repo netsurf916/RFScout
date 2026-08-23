@@ -20,11 +20,13 @@
 #include <string.h>
 
 #define UI_REFRESH_INTERVAL_US 500000LL
-#define UI_MAX_BRANDS 10
+#define UI_MAX_KNOWN_BRANDS 9
 #define UI_BRAND_ATTENTION_THRESHOLD 5U
 #define UI_MAX_ATTENTION_ROWS 3U
 #define UI_LIST_START_Y 43
 #define UI_LIST_ROW_HEIGHT 12
+#define UI_UNKNOWN_DIVIDER_Y 151
+#define UI_UNKNOWN_ROW_Y 158
 #define UI_COLUMN_DIVIDER_X 198
 #define UI_SURVEILLANCE_X 205
 
@@ -239,6 +241,21 @@ static void add_brand( brand_count_t *a_brands, size_t a_capacity,
     }
 }
 
+/** @brief Draw the fixed unresolved-device row beneath the known brand ranking. */
+static void draw_unknown_row( size_t a_unknown_count )
+{
+    display_fill_rect( 5,
+                       UI_UNKNOWN_DIVIDER_Y,
+                       UI_COLUMN_DIVIDER_X - 10,
+                       1,
+                       COLOR_GRAY );
+
+    char line[ 64 ];
+    snprintf( line, sizeof( line ), "%-27.27s %3u",
+              "UNKNOWN", (unsigned)a_unknown_count );
+    display_draw_text( 6, UI_UNKNOWN_ROW_Y, line, COLOR_CYAN, 1 );
+}
+
 /** @brief Render one complete RFScout summary frame. */
 static void render_summary( void )
 {
@@ -247,7 +264,7 @@ static void render_summary( void )
         return;
     }
 
-    brand_count_t brands[ UI_MAX_BRANDS ] = { 0 };
+    brand_count_t brands[ UI_MAX_KNOWN_BRANDS ] = { 0 };
     uint16_t surveillance_counts[ RFSCOUT_SURVEILLANCE_CLASS_COUNT ] = { 0 };
     const size_t device_count =
         observation_store_snapshot( snapshot, RFSCOUT_DEVICE_CAPACITY );
@@ -256,6 +273,7 @@ static void render_summary( void )
                                      RFSCOUT_SURVEILLANCE_CLASS_COUNT );
     size_t wifi_count = 0;
     size_t ble_count = 0;
+    size_t unknown_count = 0;
 
     for( size_t i = 0; i < device_count; ++i )
     {
@@ -269,11 +287,21 @@ static void render_summary( void )
         {
             ++ble_count;
         }
-        add_brand( brands, UI_MAX_BRANDS, snapshot[ i ].vendor );
+
+        if( '\0' == snapshot[ i ].vendor[ 0 ] )
+        {
+            ++unknown_count;
+        }
+        else
+        {
+            add_brand( brands,
+                       UI_MAX_KNOWN_BRANDS,
+                       snapshot[ i ].vendor );
+        }
     }
 
     size_t brand_count = 0;
-    while( ( brand_count < UI_MAX_BRANDS ) &&
+    while( ( brand_count < UI_MAX_KNOWN_BRANDS ) &&
            ( 0U != brands[ brand_count ].count ) )
     {
         ++brand_count;
@@ -320,6 +348,7 @@ static void render_summary( void )
                            highlight ? COLOR_YELLOW : COLOR_CYAN, 1 );
         y += UI_LIST_ROW_HEIGHT;
     }
+    draw_unknown_row( unknown_count );
 
     y = UI_LIST_START_Y;
     for( size_t classification = (size_t)SURVEILLANCE_FLOCK;
