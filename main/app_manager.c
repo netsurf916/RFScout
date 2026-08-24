@@ -176,6 +176,9 @@ static void leave_app( rfscout_app_id_t a_app )
     else if( RFSCOUT_APP_CC1101 == a_app )
     {
         cc1101_stop();
+        cc1101_activity_reset();
+        cc1101_activity_reset_counts();
+        cc_item = 0U;
     }
     else if( RFSCOUT_APP_NRF24 == a_app )
     {
