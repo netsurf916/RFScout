@@ -40,6 +40,7 @@
 #define COLOR_RED 0xF800U
 #define COLOR_CYAN 0x07FFU
 #define COLOR_GRAY 0x8410U
+#define COLOR_SUBDUED_TEAL 0x03F0U
 
 typedef struct
 {
@@ -241,7 +242,7 @@ static void render_summary( void )
     }
 
     display_clear( COLOR_BLACK );
-    display_draw_text( 6, 5, "RFSCOUT", COLOR_GREEN, 2 );
+    display_draw_text( 6, 5, "RFSCOUT", COLOR_SUBDUED_TEAL, 2 );
     battery_indicator_draw();
     status_bar_draw();
 
