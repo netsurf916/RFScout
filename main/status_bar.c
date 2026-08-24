@@ -8,6 +8,7 @@
 #include "status_bar.h"
 
 #include "display.h"
+#include "gps.h"
 #include "log_writer.h"
 #include "storage.h"
 
@@ -21,6 +22,7 @@
 #define STATUS_BAR_ICON_GAP 4
 
 #define STATUS_BAR_COLOR_NORMAL 0x03F0U
+#define STATUS_BAR_COLOR_GOOD 0x03E0U
 #define STATUS_BAR_COLOR_ERROR 0xF800U
 #define STATUS_BAR_COLOR_BACKGROUND 0x0000U
 
@@ -29,21 +31,17 @@ static void draw_sd_icon( int a_x, uint16_t a_color )
 {
     const int y = STATUS_BAR_ICON_Y;
 
-    /* Card body with the familiar clipped upper-right corner. */
     display_fill_rect( a_x, y + 2, 1, 11, a_color );
     display_fill_rect( a_x + 1, y + 1, 8, 1, a_color );
     display_fill_rect( a_x + 9, y + 2, 2, 1, a_color );
     display_fill_rect( a_x + 11, y + 3, 1, 10, a_color );
     display_fill_rect( a_x, y + 12, 12, 1, a_color );
-
-    /* Three contacts distinguish the tiny glyph from a generic document. */
     display_fill_rect( a_x + 2, y + 4, 2, 3, a_color );
     display_fill_rect( a_x + 5, y + 4, 2, 3, a_color );
     display_fill_rect( a_x + 8, y + 4, 2, 3, a_color );
 
     if( log_writer_has_error() )
     {
-        /* A dark center keeps the red error mark readable inside the outline. */
         display_fill_rect( a_x + 3,
                            y + 8,
                            6,
@@ -52,6 +50,23 @@ static void draw_sd_icon( int a_x, uint16_t a_color )
         display_fill_rect( a_x + 5, y + 8, 2, 2, a_color );
         display_fill_rect( a_x + 5, y + 11, 2, 1, a_color );
     }
+}
+
+/** @brief Draw a compact satellite-style GPS glyph. */
+static void draw_gps_icon( int a_x, uint16_t a_color )
+{
+    const int y = STATUS_BAR_ICON_Y;
+
+    /* Central receiver/satellite body. */
+    display_fill_rect( a_x + 5, y + 5, 4, 4, a_color );
+    display_fill_rect( a_x + 3, y + 3, 2, 3, a_color );
+    display_fill_rect( a_x + 9, y + 8, 2, 3, a_color );
+
+    /* Sparse corner marks read as radio/location activity at icon scale. */
+    display_fill_rect( a_x + 2, y + 8, 1, 3, a_color );
+    display_fill_rect( a_x + 3, y + 11, 3, 1, a_color );
+    display_fill_rect( a_x + 8, y + 2, 3, 1, a_color );
+    display_fill_rect( a_x + 11, y + 3, 1, 3, a_color );
 }
 
 void status_bar_draw( void )
@@ -67,6 +82,16 @@ void status_bar_draw( void )
         x -= STATUS_BAR_ICON_WIDTH + STATUS_BAR_ICON_GAP;
     }
 
-    /* Future status icons consume x from right to left here. */
+    gps_status_t gps;
+    gps_get_status( &gps );
+    if( gps.detected )
+    {
+        draw_gps_icon( x,
+                       gps.has_fix
+                           ? STATUS_BAR_COLOR_GOOD
+                           : STATUS_BAR_COLOR_NORMAL );
+        x -= STATUS_BAR_ICON_WIDTH + STATUS_BAR_ICON_GAP;
+    }
+
     (void)x;
 }
