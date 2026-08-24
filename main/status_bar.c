@@ -9,6 +9,7 @@
 
 #include "display.h"
 #include "log_writer.h"
+#include "mlx90640.h"
 #include "storage.h"
 
 #include <stdbool.h>
@@ -50,6 +51,18 @@ static void draw_sd_icon( int a_x, uint16_t a_color )
     }
 }
 
+/** @brief Draw a subdued thermal-camera glyph when the MLX90640 is available. */
+static void draw_thermal_icon( int a_x )
+{
+    const int y = STATUS_BAR_ICON_Y;
+    const uint16_t color = STATUS_BAR_COLOR_NORMAL;
+
+    display_fill_rect( a_x + 1, y + 3, 11, 8, color );
+    display_fill_rect( a_x + 3, y + 1, 5, 2, color );
+    display_fill_rect( a_x + 3, y + 5, 7, 4, STATUS_BAR_COLOR_BACKGROUND );
+    display_fill_rect( a_x + 5, y + 5, 3, 4, color );
+}
+
 void status_bar_draw( void )
 {
     int x = STATUS_BAR_RIGHT_X - STATUS_BAR_ICON_WIDTH;
@@ -60,6 +73,12 @@ void status_bar_draw( void )
                                    ? STATUS_BAR_COLOR_ERROR
                                    : STATUS_BAR_COLOR_NORMAL;
         draw_sd_icon( x, color );
+        x -= STATUS_BAR_ICON_WIDTH + STATUS_BAR_ICON_GAP;
+    }
+
+    if( mlx90640_is_detected() )
+    {
+        draw_thermal_icon( x );
         x -= STATUS_BAR_ICON_WIDTH + STATUS_BAR_ICON_GAP;
     }
 
