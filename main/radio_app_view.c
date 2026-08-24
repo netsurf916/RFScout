@@ -144,6 +144,7 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
     if( !a_detected )
     {
         display_draw_text( 8, 70, "nRF24 NOT DETECTED", YELLOW, 1U );
+        display_draw_text( 8, 126, "CENTER: SETTINGS", SUBDUED, 1U );
         (void)display_present(); return;
     }
     const int x0 = 8, y0 = 48, width = APP_COLUMN_DIVIDER_X - 14, height = 92;
@@ -183,13 +184,15 @@ void radio_app_view_nrf24_menu( unsigned a_selected, bool a_editing,
 {
     display_clear( BG );
     display_draw_text( 8, 7, "nRF24 SETTINGS", SUBDUED, 2U );
-    const char *labels[] = { "LOW CH", "HIGH CH", "DWELL", "BACK" };
+    const char *labels[] = { "LOW CH", "HIGH CH", "DWELL", "RESET COUNTS", "BACK" };
     char value[ 32 ];
-    for( unsigned i = 0U; i < 4U; ++i )
+    for( unsigned i = 0U; i < 5U; ++i )
     {
-        const int y = 42 + (int)i * 28;
+        const int y = 34 + (int)i * 24;
         const bool active = ( i == a_selected );
-        display_draw_text( 8, y, active ? ( a_editing ? "*" : ">" ) : " ",
+        const bool action = ( i >= 3U );
+        display_draw_text( 8, y,
+                           active ? ( action ? ">" : ( a_editing ? "*" : ">" ) ) : " ",
                            active ? YELLOW : DIM, 1U );
         display_draw_text( 22, y, labels[ i ], active ? TEXT : DIM, 1U );
         value[ 0 ] = '\0';
@@ -209,8 +212,8 @@ void radio_app_view_nrf24_menu( unsigned a_selected, bool a_editing,
         }
     }
     display_draw_text( 8, 158,
-                       a_editing ? "TURN: CHANGE       CENTER: DONE" :
-                                   "TURN: SELECT      CENTER: ENTER",
+                       a_editing ? "TURN: CHANGE  CENTER: DONE" :
+                                   "TURN: SELECT CENTER: ENTER",
                        a_editing ? YELLOW : SUBDUED, 1U );
     (void)display_present();
 }
