@@ -17,6 +17,7 @@ typedef enum
     RFSCOUT_APP_WIFI_BT = 0,
     RFSCOUT_APP_CC1101,
     RFSCOUT_APP_NRF24,
+    RFSCOUT_APP_AUDIO,
     RFSCOUT_APP_THERMAL,
     RFSCOUT_APP_COUNT
 } rfscout_app_id_t;
