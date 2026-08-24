@@ -6,16 +6,14 @@
 */
 
 #include "nrf24.h"
-
+#include "nrf24_activity.h"
 #include "board.h"
-
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include "esp_log.h"
 #include "esp_rom_sys.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
 #include <string.h>
 
 #define NRF24_SPI_HOST SPI2_HOST
@@ -73,11 +71,9 @@ static esp_err_t read_register( uint8_t a_register, uint8_t *a_value )
 {
     uint8_t tx[ 2 ] =
     {
-        NRF24_CMD_R_REGISTER | ( a_register & 0x1FU ),
-        NRF24_CMD_NOP
+        NRF24_CMD_R_REGISTER | ( a_register & 0x1FU ), NRF24_CMD_NOP
     };
     uint8_t rx[ 2 ] = { 0U, 0U };
-
     const esp_err_t result = transfer( tx, rx, sizeof( tx ) );
     if( ( ESP_OK == result ) && ( NULL != a_value ) )
     {
@@ -90,8 +86,7 @@ static esp_err_t write_register( uint8_t a_register, uint8_t a_value )
 {
     uint8_t tx[ 2 ] =
     {
-        NRF24_CMD_W_REGISTER | ( a_register & 0x1FU ),
-        a_value
+        NRF24_CMD_W_REGISTER | ( a_register & 0x1FU ), a_value
     };
     uint8_t rx[ 2 ] = { 0U, 0U };
     return transfer( tx, rx, sizeof( tx ) );
@@ -200,7 +195,6 @@ static void scan_worker( void *a_argument )
                 }
 
                 acquisition[ channel ] = ( rpd & 0x01U ) ? 1U : 0U;
-
                 ++channels_since_break;
                 if( channels_since_break >= NRF24_CHANNELS_PER_SCHEDULER_BREAK )
                 {
@@ -218,6 +212,10 @@ static void scan_worker( void *a_argument )
                 running = false;
                 break;
             }
+
+            /* A completed sweep is one histogram observation. Keep this out
+               of the display path so scan timing remains independent of LCD. */
+            nrf24_activity_observe_sweep( acquisition, NRF24_CHANNEL_COUNT );
 
             portENTER_CRITICAL( &state_lock );
             memcpy( completed, acquisition, sizeof( completed ) );
