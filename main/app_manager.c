@@ -20,12 +20,16 @@
 
 #define APP_REFRESH_INTERVAL_US 125000LL
 #define APP_FEATURE_PROBE_INTERVAL_US 10000000LL
+#define APP_RADIO_RETRY_INTERVAL_US 1000000LL
 
 static const char *TAG = "app_manager";
 static rfscout_app_id_t active_app;
 static int64_t last_app_refresh_us;
 static int64_t last_thermal_probe_us;
+static int64_t last_radio_retry_us;
 static bool cc1101_settings_open;
+static bool wifi_monitor_ready;
+static bool ble_monitor_ready;
 
 static bool probe_thermal( void )
 {
@@ -41,12 +45,41 @@ static bool app_available( rfscout_app_id_t a_app )
     return ( RFSCOUT_APP_THERMAL != a_app ) || mlx90640_is_detected();
 }
 
+static void start_wifi_bt_collectors( void )
+{
+    esp_err_t result;
+
+    if( !wifi_monitor_ready )
+    {
+        result = radio_monitor_start();
+        wifi_monitor_ready = ( ESP_OK == result );
+        if( !wifi_monitor_ready )
+        {
+            ESP_LOGW( TAG, "Wi-Fi monitor start failed: %s; retrying",
+                      esp_err_to_name( result ) );
+        }
+    }
+
+    if( !ble_monitor_ready )
+    {
+        result = ble_monitor_start();
+        ble_monitor_ready = ( ESP_OK == result );
+        if( !ble_monitor_ready )
+        {
+            ESP_LOGW( TAG, "BLE monitor start failed: %s; retrying",
+                      esp_err_to_name( result ) );
+        }
+    }
+}
+
 static void leave_app( rfscout_app_id_t a_app )
 {
     if( RFSCOUT_APP_WIFI_BT == a_app )
     {
         (void)ble_monitor_stop();
         (void)radio_monitor_stop();
+        wifi_monitor_ready = false;
+        ble_monitor_ready = false;
     }
     cc1101_settings_open = false;
 }
@@ -57,8 +90,10 @@ static void enter_app( rfscout_app_id_t a_app )
     switch( a_app )
     {
         case RFSCOUT_APP_WIFI_BT:
-            (void)radio_monitor_start();
-            (void)ble_monitor_start();
+            wifi_monitor_ready = false;
+            ble_monitor_ready = false;
+            last_radio_retry_us = esp_timer_get_time();
+            start_wifi_bt_collectors();
             ESP_LOGI( TAG, "switched to WiFi/BT app" );
             break;
         case RFSCOUT_APP_CC1101:
@@ -102,7 +137,10 @@ esp_err_t app_manager_init( void )
     active_app = RFSCOUT_APP_WIFI_BT;
     last_app_refresh_us = 0;
     last_thermal_probe_us = esp_timer_get_time();
+    last_radio_retry_us = 0;
     cc1101_settings_open = false;
+    wifi_monitor_ready = true;
+    ble_monitor_ready = true;
     const esp_err_t result = ui_init();
     if( ESP_OK != result ) return result;
     (void)mlx90640_init();
@@ -122,13 +160,10 @@ void app_manager_poll( void )
         last_thermal_probe_us = now_us;
     }
 
-    if( platform_encoder_button_pressed() )
+    if( platform_encoder_button_pressed() && RFSCOUT_APP_CC1101 == active_app )
     {
-        if( RFSCOUT_APP_CC1101 == active_app )
-        {
-            cc1101_settings_open = !cc1101_settings_open;
-            radio_app_view_cc1101( cc1101_settings_open );
-        }
+        cc1101_settings_open = !cc1101_settings_open;
+        radio_app_view_cc1101( cc1101_settings_open );
     }
 
     const int delta = platform_encoder_delta();
@@ -145,6 +180,12 @@ void app_manager_poll( void )
 
     if( RFSCOUT_APP_WIFI_BT == active_app )
     {
+        if( ( !wifi_monitor_ready || !ble_monitor_ready ) &&
+            ( now_us - last_radio_retry_us ) >= APP_RADIO_RETRY_INTERVAL_US )
+        {
+            last_radio_retry_us = now_us;
+            start_wifi_bt_collectors();
+        }
         radio_monitor_step();
         ui_poll();
         return;
