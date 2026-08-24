@@ -36,6 +36,7 @@
 #define NRF24_TASK_STACK_SIZE 3072U
 #define NRF24_TASK_PRIORITY 4U
 #define NRF24_DELAY_SLICE_US 1000U
+#define NRF24_CHANNELS_PER_SCHEDULER_BREAK 16U
 
 static const char *TAG = "nrf24";
 static spi_device_handle_t device;
@@ -126,11 +127,12 @@ static nrf24_scan_config_t config_snapshot( void )
 }
 
 /**
- * @brief Wait for an RPD dwell without monopolizing the FreeRTOS core.
- * @details Sub-tick waits use short ROM delays, but the task yields between
- *          slices so IDLE0 and other work can run. Millisecond portions use
- *          vTaskDelay() directly. This keeps the requested dwell reasonably
- *          accurate without busy-spinning for an entire sweep.
+ * @brief Wait for one RPD observation window.
+ * @details Millisecond portions block the task. The final sub-millisecond
+ *          portion uses the ROM delay because the nRF24 RPD window is shorter
+ *          than a FreeRTOS tick. The scan loop itself periodically performs a
+ *          real blocking scheduler break so the idle task cannot be starved by
+ *          a long sequence of short busy waits.
  */
 static void dwell_wait( uint16_t a_dwell_us )
 {
@@ -145,7 +147,6 @@ static void dwell_wait( uint16_t a_dwell_us )
         }
         else
         {
-            taskYIELD();
             esp_rom_delay_us( NRF24_DELAY_SLICE_US );
         }
         remaining_us -= NRF24_DELAY_SLICE_US;
@@ -154,7 +155,6 @@ static void dwell_wait( uint16_t a_dwell_us )
     if( running && ( remaining_us > 0U ) )
     {
         esp_rom_delay_us( remaining_us );
-        taskYIELD();
     }
 }
 
@@ -178,6 +178,7 @@ static void scan_worker( void *a_argument )
 
             memset( acquisition, 0, sizeof( acquisition ) );
             bool scan_ok = true;
+            unsigned channels_since_break = 0U;
 
             for( uint16_t channel = snapshot.low_channel;
                  running && ( channel <= snapshot.high_channel );
@@ -216,6 +217,16 @@ static void scan_worker( void *a_argument )
                 }
 
                 acquisition[ channel ] = ( rpd & 0x01U ) ? 1U : 0U;
+
+                /* taskYIELD() is insufficient here because this worker has a
+                   higher priority than IDLE0. Block for one tick periodically
+                   so the idle task can reset the task watchdog. */
+                ++channels_since_break;
+                if( channels_since_break >= NRF24_CHANNELS_PER_SCHEDULER_BREAK )
+                {
+                    channels_since_break = 0U;
+                    vTaskDelay( 1U );
+                }
             }
 
             if( !running )
@@ -234,8 +245,6 @@ static void scan_worker( void *a_argument )
             frame_ready = true;
             portEXIT_CRITICAL( &state_lock );
 
-            /* Always give the scheduler/idle task a real scheduling point
-               between complete sweeps, even at the shortest dwell. */
             vTaskDelay( 1U );
         }
     }
