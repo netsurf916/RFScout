@@ -37,27 +37,22 @@ typedef struct
     battery_charge_state_t charge_state; /**< Current charging/discharging state. */
 } battery_status_t;
 
-/**
- * @brief Initialize the isolated battery telemetry feature.
- * @return ESP_OK when the shared I2C bus is available; an ESP-IDF error when
- *         the bus itself cannot be initialized.
- * @details Missing battery devices are nonfatal. In that case the cached status
- *          remains unavailable and the UI renders a gray placeholder.
- */
+/** @brief Initialize the isolated battery telemetry feature. */
 esp_err_t battery_init( void );
 
-/**
- * @brief Refresh cached battery telemetry when its polling interval elapses.
- * @details The function is inexpensive between polls and is intended to be
- *          called from the main application loop.
- */
+/** @brief Refresh cached battery telemetry when its polling interval elapses. */
 void battery_poll( void );
 
-/**
- * @brief Copy the most recently cached battery status.
- * @param a_status Receives the cached battery telemetry.
- * @return True when either the fuel gauge or charger has produced valid data.
- */
+/** @brief Copy the most recently cached battery status. */
 bool battery_get_status( battery_status_t *a_status );
+
+/**
+ * @brief Disable the BQ25896 battery power path for a true power-off.
+ * @return ESP_OK when the BATFET disable bit is written; ESP_ERR_NOT_FOUND when
+ *         the charger is unavailable; otherwise the I2C transaction error.
+ * @note With external power connected the charger cannot fully remove system
+ *       power, matching the BQ25896 hardware behavior.
+ */
+esp_err_t battery_shutdown( void );
 
 #endif // _RFSCOUT_BATTERY_H_
