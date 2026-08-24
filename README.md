@@ -8,7 +8,7 @@ RFScout is a handheld **RF situational-awareness** project for the LILYGO T-Embe
 
 <p align="center"><em>RFScout running on real T-Embed CC1101 Plus hardware with live nearby-device and surveillance detection.</em></p>
 
-The project combines the useful ideas from Brandalize and OUI-SPY into one passive nearby-device view:
+RFScout provides a passive nearby-device view designed for quick situational awareness:
 
 - identify nearby devices by OUI/vendor when a globally administered MAC permits it;
 - maintain a rolling view of recently observed unique devices;
@@ -21,7 +21,7 @@ RFScout is intended as an awareness instrument, not an active network client. Wi
 
 ## Current display
 
-The first LCD view is a dense live summary showing total unique devices, Wi-Fi/BLE counts, retained surveillance detections, and the highest-count nearby OUI brands. The display uses the same compact built-in 5x7 font established in OUI-SPY/Brandalize and a native ESP-IDF ST7789 driver rather than adding a large GUI dependency.
+The first LCD view is a dense live summary showing total unique devices, Wi-Fi/BLE counts, retained surveillance detections, and the highest-count nearby OUI brands. The display uses a compact built-in 5x7 font and a native ESP-IDF ST7789 driver rather than adding a large GUI dependency.
 
 The title row contains `RFSCOUT` on the left, a compact battery indicator on the right, and a dedicated status-bar region between them. Status icons use the same subdued visual language as the normal battery indicator and populate from right to left, keeping transient/system state close to the battery while preserving clear space beside the project title. Subsystems own their state while the isolated `status_bar.c/.h` renderer decides how that state appears. An SD-card icon is the first status item: it appears in subdued teal whenever the card is mounted and turns red if the logging path encounters a write, flush, sync, close, rotation, or other filesystem error. Logging I/O errors are sticky for the current runtime so an intermittent media problem remains visible rather than disappearing before the user notices it.
 
@@ -37,7 +37,7 @@ Ordinary nearby-device and brand observations expire after 20 seconds without an
 
 Brand rows are cyan during normal activity. A brand is eligible for yellow highlighting when its active-device count is greater than five, but only the first three eligible rows in the descending ranking are highlighted. The threshold remains fixed rather than changing with environmental density, so the visual meaning of yellow stays consistent while the row cap prevents a busy screen from becoming entirely yellow. The threshold and row cap are module constants intended to be tuned after field experience.
 
-RFScout stores canonical RGB565 values such as `0x07E0` for green and `0xFFE0` for yellow. The ST7789 is configured for little-endian 16-bit pixel data and RGB element order so those native `uint16_t` framebuffer values can be transferred directly. This differs from the earlier T-Dongle-C5 path, which used manually byte-swapped color constants.
+RFScout stores canonical RGB565 values such as `0x07E0` for green and `0xFFE0` for yellow. The ST7789 is configured for little-endian 16-bit pixel data and RGB element order so native `uint16_t` framebuffer values can be transferred directly.
 
 The LCD, SD card, CC1101, and nRF24 share the board SPI bus. RFScout centralizes those pin definitions in `main/board.h` and keeps all unused chip-select signals deasserted during display operation. Board I2C is likewise centralized so the power-management and future NFC features can share one controller without duplicating bus initialization.
 
@@ -67,13 +67,13 @@ Storage ownership is isolated in `storage.c/.h`; asynchronous file rotation and 
 ## Planned primary screens
 
 1. **Nearby** — unique devices, brands, RSSI/channel/source and recent activity.
-2. **Surveillance** — high-confidence OUI-SPY-style detections and alert history.
+2. **Surveillance** — high-confidence surveillance detections and alert history.
 3. **RF Activity** — Wi-Fi/BLE plus future CC1101 and nRF24 activity summaries.
 4. **Tools** — NFC, IR, logging, settings, mute/alert controls and device information.
 
 ## OUI database
 
-RFScout uses the same IEEE MA-L/OUI refresh mechanism as Brandalize. Refresh the compiled vendor table locally with:
+RFScout maintains a compiled IEEE MA-L/OUI vendor table. Refresh it locally with:
 
 ```sh
 python3 tools/update_oui.py
@@ -100,7 +100,7 @@ The application remains a single factory image with no OTA slots. Adding OTA lat
 
 ## Coding style
 
-Firmware code follows the `netsurf916/libutils` conventions: readable Allman formatting, `a_` argument prefixes, explicit comparisons, strict header/implementation separation, centralized board definitions, and Doxygen documentation for public interfaces. Generated OUI data is exempt from manual formatting.
+Firmware code follows the project's documented conventions: readable Allman formatting, `a_` argument prefixes, explicit comparisons, strict header/implementation separation, centralized board definitions, and Doxygen documentation for public interfaces. Generated OUI data is exempt from manual formatting.
 
 See [docs/CODING_STYLE.md](docs/CODING_STYLE.md) for the complete project rules. Existing code should be brought into compliance when it is touched; new code must follow the guide.
 
