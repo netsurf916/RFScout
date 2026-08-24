@@ -40,6 +40,8 @@ typedef struct
 } cc1101_fingerprint_t;
 
 void cc1101_activity_reset( void );
+/** @brief Clear accumulated likely-device counts without clearing spectrum history. */
+void cc1101_activity_reset_counts( void );
 void cc1101_activity_observe_sweep( const int8_t *a_rssi,
                                     size_t a_count,
                                     uint32_t a_low_khz,
