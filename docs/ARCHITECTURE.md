@@ -1,6 +1,6 @@
 # Architecture
 
-RFScout combines Brandalize and OUI-SPY at the **observation/classification layer**, not by running two independent applications or duplicate device tables.
+RFScout uses a unified **observation/classification layer** so nearby-device identity, surveillance classification, UI state, and logging all operate from the same normalized observations rather than duplicate device tables.
 
 ## Data flow
 
@@ -46,10 +46,10 @@ The live device store expires records after the configured current-RF window and
 Classification is layered:
 
 1. **Identity validity** — decide whether an address is usable for OUI/device identity.
-2. **Vendor/OUI** — Brandalize-style general manufacturer attribution.
-3. **Surveillance signature** — OUI-SPY-style narrow detection using the strongest available evidence.
+2. **Vendor/OUI** — general manufacturer attribution from the current IEEE registry.
+3. **Surveillance signature** — narrow multi-signal detection using curated OUI, name, manufacturer, service, and protocol evidence.
 
-A surveillance result should be explainable. The mature classifier should eventually return a confidence/evidence structure rather than only an enum.
+A surveillance result should be explainable. The classifier preserves confidence and evidence information alongside the broad category and specific type/brand signature.
 
 ## Alert manager
 
@@ -102,8 +102,8 @@ A future secondary target can preserve **ESP32-C5** support for users who value 
 1. Baseline data model, platform boundary, Morse/classifier interfaces and documentation.
 2. Verify exact T-Embed CC1101 Plus board revision and pin map.
 3. Bring up display, encoder, speaker, LEDs and power telemetry.
-4. Port passive Wi-Fi/BLE observation and Brandalize OUI generation/database.
-5. Port and refine OUI-SPY surveillance signatures.
+4. Implement passive Wi-Fi/BLE observation and IEEE OUI generation/database.
+5. Build and refine curated multi-signal surveillance signatures.
 6. Implement Nearby/Surveillance UI and asynchronous alert manager.
 7. Add SD event logging.
 8. Add CC1101/nRF24 RF-activity screens.
