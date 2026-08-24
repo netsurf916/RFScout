@@ -67,11 +67,13 @@ static int hex_value( char a_character )
     {
         return a_character - '0';
     }
+
     a_character = (char)toupper( (unsigned char)a_character );
     if( ( a_character >= 'A' ) && ( a_character <= 'F' ) )
     {
         return 10 + ( a_character - 'A' );
     }
+
     return -1;
 }
 
@@ -211,7 +213,7 @@ static void set_probe_baud( size_t a_index )
         uart_flush_input( GPS_UART );
         sentence_length = 0U;
         received_bytes = false;
-        ESP_LOGI( TAG, "probing GPS UART at %lu baud", (unsigned long)baud );
+        ESP_LOGI( TAG, "probing GPS UART RX at %lu baud", (unsigned long)baud );
     }
     else
     {
@@ -249,7 +251,7 @@ esp_err_t gps_init( void )
     if( ESP_OK == result )
     {
         result = uart_set_pin( GPS_UART,
-                               RFSCOUT_BOARD_GPS_TX_PIN,
+                               UART_PIN_NO_CHANGE,
                                RFSCOUT_BOARD_GPS_RX_PIN,
                                UART_PIN_NO_CHANGE,
                                UART_PIN_NO_CHANGE );
@@ -271,11 +273,10 @@ esp_err_t gps_init( void )
     last_probe_us = esp_timer_get_time();
 
     ESP_LOGI( TAG,
-              "GPS UART enabled on TX=%d RX=%d; probing common NMEA baud rates",
-              RFSCOUT_BOARD_GPS_TX_PIN,
+              "GPS UART receive-only mode on RX=%d; probing common NMEA baud rates",
               RFSCOUT_BOARD_GPS_RX_PIN );
     ESP_LOGI( TAG,
-              "probing GPS UART at %lu baud",
+              "probing GPS UART RX at %lu baud",
               (unsigned long)probe_baud_rates[ probe_baud_index ] );
     return ESP_OK;
 }
@@ -289,7 +290,7 @@ void gps_poll( void )
         if( !received_bytes && !detected )
         {
             ESP_LOGI( TAG,
-                      "GPS UART receiving bytes at %lu baud",
+                      "GPS UART RX receiving bytes at %lu baud",
                       (unsigned long)probe_baud_rates[ probe_baud_index ] );
         }
         received_bytes = true;
