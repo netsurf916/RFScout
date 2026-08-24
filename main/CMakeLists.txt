@@ -4,6 +4,7 @@ idf_component_register(
         "app_manager.c"
         "radio_app_view.c"
         "cc1101.c"
+        "nrf24.c"
         "observation_store.c"
         "morse.c"
         "surveillance.c"
