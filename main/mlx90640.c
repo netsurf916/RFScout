@@ -1,6 +1,6 @@
 /**
     mlx90640.c : RFScout MLX90640 thermal-array implementation
-    Description: Acquires raw 32x24 IR frames over the shared expansion I2C bus.
+    Description: Acquires stable 32x24 IR frames over the shared expansion I2C bus.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -12,6 +12,7 @@
 
 #include "esp_log.h"
 
+#include <limits.h>
 #include <stddef.h>
 #include <string.h>
 
@@ -26,12 +27,16 @@
 #define MLX90640_SUBPAGE_MASK_0 0x01U
 #define MLX90640_SUBPAGE_MASK_1 0x02U
 #define MLX90640_SUBPAGE_MASK_BOTH 0x03U
+#define MLX90640_FILTER_OLD_WEIGHT 3
+#define MLX90640_FILTER_DIVISOR 4
 
 static const char *TAG = "mlx90640";
 static i2c_master_dev_handle_t device;
 static bool detected;
 static int16_t merged_pixels[ MLX90640_PIXEL_COUNT ];
+static int16_t filtered_pixels[ MLX90640_PIXEL_COUNT ];
 static uint8_t merged_subpages;
+static bool filter_valid;
 
 /** @brief Read big-endian 16-bit MLX90640 registers in bounded I2C transfers. */
 static esp_err_t read_words( uint16_t a_register,
@@ -95,18 +100,29 @@ static bool pixel_in_subpage( size_t a_index, uint8_t a_subpage, bool a_chess_mo
 {
     const unsigned row = (unsigned)( a_index / MLX90640_WIDTH );
     const unsigned column = (unsigned)( a_index % MLX90640_WIDTH );
-    unsigned pattern;
-
-    if( a_chess_mode )
-    {
-        pattern = ( row + column ) & 1U;
-    }
-    else
-    {
-        pattern = row & 1U;
-    }
-
+    const unsigned pattern = a_chess_mode
+                                 ? ( ( row & 1U ) ^ ( column & 1U ) )
+                                 : ( row & 1U );
     return pattern == (unsigned)a_subpage;
+}
+
+/** @brief Apply a light temporal low-pass filter to one complete native frame. */
+static void filter_frame( void )
+{
+    if( !filter_valid )
+    {
+        memcpy( filtered_pixels, merged_pixels, sizeof( filtered_pixels ) );
+        filter_valid = true;
+        return;
+    }
+
+    for( size_t index = 0U; index < MLX90640_PIXEL_COUNT; ++index )
+    {
+        const int32_t value =
+            ( (int32_t)filtered_pixels[ index ] * MLX90640_FILTER_OLD_WEIGHT ) +
+            (int32_t)merged_pixels[ index ];
+        filtered_pixels[ index ] = (int16_t)( value / MLX90640_FILTER_DIVISOR );
+    }
 }
 
 /** @brief Recompute display metadata after both alternating subpages are present. */
@@ -115,7 +131,8 @@ static void finalize_frame( mlx90640_frame_t *a_frame )
     int16_t minimum = INT16_MAX;
     int16_t maximum = INT16_MIN;
 
-    memcpy( a_frame->pixels, merged_pixels, sizeof( merged_pixels ) );
+    filter_frame();
+    memcpy( a_frame->pixels, filtered_pixels, sizeof( filtered_pixels ) );
     for( size_t index = 0U; index < MLX90640_PIXEL_COUNT; ++index )
     {
         const int16_t value = a_frame->pixels[ index ];
@@ -159,7 +176,8 @@ esp_err_t mlx90640_probe( void )
 
     if( !detected )
     {
-        ESP_LOGI( TAG, "MLX90640 detected at I2C address 0x%02X",
+        ESP_LOGI( TAG,
+                  "MLX90640 detected at I2C address 0x%02X",
                   RFSCOUT_BOARD_MLX90640_I2C_ADDRESS );
     }
     detected = true;
@@ -169,7 +187,9 @@ esp_err_t mlx90640_probe( void )
 esp_err_t mlx90640_init( void )
 {
     merged_subpages = 0U;
+    filter_valid = false;
     memset( merged_pixels, 0, sizeof( merged_pixels ) );
+    memset( filtered_pixels, 0, sizeof( filtered_pixels ) );
     return mlx90640_probe();
 }
 
@@ -205,8 +225,6 @@ esp_err_t mlx90640_read_frame( mlx90640_frame_t *a_frame )
 
     const uint8_t subpage = (uint8_t)( status & MLX90640_STATUS_SUBPAGE );
 
-    /* Clear the new-data flag before reading RAM, matching the sensor's frame
-       acquisition sequence so a newly completed subpage can be detected. */
     result = write_word( MLX90640_STATUS_REGISTER, MLX90640_STATUS_CLEAR_VALUE );
     if( ESP_OK != result )
     {
@@ -250,5 +268,10 @@ esp_err_t mlx90640_read_frame( mlx90640_frame_t *a_frame )
     }
 
     finalize_frame( a_frame );
+
+    /* Require a fresh pair for the next displayed frame. Without resetting
+       this mask, a newly arrived half-frame could be rendered together with a
+       stale complementary half and reintroduce checkerboard motion artifacts. */
+    merged_subpages = 0U;
     return ESP_OK;
 }
