@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: MIT
  */
 #include "audio_spectrum.h"
-#include "driver/i2s.h"
+#include "driver/gpio.h"
+#include "driver/i2s_pdm.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -14,10 +15,10 @@
 #define AUDIO_SAMPLE_RATE 48000U
 #define AUDIO_FFT_SIZE 1024U
 #define AUDIO_HOP_SIZE ( AUDIO_FFT_SIZE / 2U )
-#define AUDIO_MIC_CLK_GPIO 39
-#define AUDIO_MIC_DATA_GPIO 42
-#define AUDIO_DMA_BUFFER_COUNT 8
-#define AUDIO_DMA_BUFFER_LENGTH 256
+#define AUDIO_MIC_CLK_GPIO GPIO_NUM_39
+#define AUDIO_MIC_DATA_GPIO GPIO_NUM_42
+#define AUDIO_DMA_BUFFER_COUNT 8U
+#define AUDIO_DMA_BUFFER_LENGTH 256U
 #define AUDIO_TASK_STACK 6144U
 #define AUDIO_TASK_PRIORITY 5U
 #define AUDIO_PEAK_DECAY 4U
@@ -25,6 +26,7 @@
 
 static const char *TAG = "audio_spectrum";
 static TaskHandle_t task_handle;
+static i2s_chan_handle_t rx_channel;
 static volatile bool running;
 static volatile bool frame_ready;
 static volatile uint32_t overruns;
@@ -50,24 +52,36 @@ static void fft( float *a_real, float *a_imag )
     for( unsigned i = 1U; i < AUDIO_FFT_SIZE; ++i )
     {
         unsigned bit = AUDIO_FFT_SIZE >> 1U;
-        while( j & bit ) { j ^= bit; bit >>= 1U; }
+        while( j & bit )
+        {
+            j ^= bit;
+            bit >>= 1U;
+        }
         j ^= bit;
         if( i < j )
         {
-            float t = a_real[ i ]; a_real[ i ] = a_real[ j ]; a_real[ j ] = t;
-            t = a_imag[ i ]; a_imag[ i ] = a_imag[ j ]; a_imag[ j ] = t;
+            float temp = a_real[ i ];
+            a_real[ i ] = a_real[ j ];
+            a_real[ j ] = temp;
+            temp = a_imag[ i ];
+            a_imag[ i ] = a_imag[ j ];
+            a_imag[ j ] = temp;
         }
     }
-    for( unsigned len = 2U; len <= AUDIO_FFT_SIZE; len <<= 1U )
+
+    for( unsigned length = 2U; length <= AUDIO_FFT_SIZE; length <<= 1U )
     {
-        const float angle = -2.0f * (float)M_PI / (float)len;
-        const float wr0 = cosf( angle ), wi0 = sinf( angle );
-        for( unsigned i = 0U; i < AUDIO_FFT_SIZE; i += len )
+        const float angle = -2.0f * (float)M_PI / (float)length;
+        const float wr0 = cosf( angle );
+        const float wi0 = sinf( angle );
+        for( unsigned i = 0U; i < AUDIO_FFT_SIZE; i += length )
         {
-            float wr = 1.0f, wi = 0.0f;
-            for( unsigned k = 0U; k < len / 2U; ++k )
+            float wr = 1.0f;
+            float wi = 0.0f;
+            for( unsigned k = 0U; k < length / 2U; ++k )
             {
-                const unsigned even = i + k, odd = even + len / 2U;
+                const unsigned even = i + k;
+                const unsigned odd = even + length / 2U;
                 const float tr = wr * a_real[ odd ] - wi * a_imag[ odd ];
                 const float ti = wr * a_imag[ odd ] + wi * a_real[ odd ];
                 a_real[ odd ] = a_real[ even ] - tr;
@@ -88,8 +102,13 @@ static void publish_fft( const int16_t *a_pcm )
     float imag[ AUDIO_FFT_SIZE ];
     uint8_t next[ AUDIO_SPECTRUM_BINS ];
     int64_t sum = 0;
-    for( unsigned i = 0U; i < AUDIO_FFT_SIZE; ++i ) sum += a_pcm[ i ];
+
+    for( unsigned i = 0U; i < AUDIO_FFT_SIZE; ++i )
+    {
+        sum += a_pcm[ i ];
+    }
     const float mean = (float)sum / (float)AUDIO_FFT_SIZE;
+
     for( unsigned i = 0U; i < AUDIO_FFT_SIZE; ++i )
     {
         const float window = 0.5f - 0.5f * cosf( 2.0f * (float)M_PI * (float)i /
@@ -99,7 +118,8 @@ static void publish_fft( const int16_t *a_pcm )
     }
     fft( real, imag );
 
-    uint32_t low, high;
+    uint32_t low;
+    uint32_t high;
     range_bounds( selected_range, &low, &high );
     for( unsigned x = 0U; x < AUDIO_SPECTRUM_BINS; ++x )
     {
@@ -107,9 +127,13 @@ static void publish_fft( const int16_t *a_pcm )
                          (float)( AUDIO_SPECTRUM_BINS - 1U );
         unsigned bin = (unsigned)lroundf( hz * (float)AUDIO_FFT_SIZE /
                                           (float)AUDIO_SAMPLE_RATE );
-        if( bin >= AUDIO_FFT_SIZE / 2U ) bin = AUDIO_FFT_SIZE / 2U - 1U;
-        const float mag = sqrtf( real[ bin ] * real[ bin ] + imag[ bin ] * imag[ bin ] );
-        float db = 20.0f * log10f( mag / 32768.0f + AUDIO_EPSILON );
+        if( bin >= AUDIO_FFT_SIZE / 2U )
+        {
+            bin = AUDIO_FFT_SIZE / 2U - 1U;
+        }
+        const float magnitude = sqrtf( real[ bin ] * real[ bin ] +
+                                       imag[ bin ] * imag[ bin ] );
+        float db = 20.0f * log10f( magnitude / 32768.0f + AUDIO_EPSILON );
         if( db < -70.0f ) db = -70.0f;
         if( db > 10.0f ) db = 10.0f;
         next[ x ] = (uint8_t)( ( db + 70.0f ) * 255.0f / 80.0f );
@@ -119,11 +143,20 @@ static void publish_fft( const int16_t *a_pcm )
     memcpy( current_bins, next, sizeof( next ) );
     for( unsigned i = 0U; i < AUDIO_SPECTRUM_BINS; ++i )
     {
-        if( next[ i ] >= peak_bins[ i ] ) peak_bins[ i ] = next[ i ];
-        else peak_bins[ i ] = ( peak_bins[ i ] > AUDIO_PEAK_DECAY ) ?
-                              (uint8_t)( peak_bins[ i ] - AUDIO_PEAK_DECAY ) : 0U;
+        if( next[ i ] >= peak_bins[ i ] )
+        {
+            peak_bins[ i ] = next[ i ];
+        }
+        else
+        {
+            peak_bins[ i ] = ( peak_bins[ i ] > AUDIO_PEAK_DECAY ) ?
+                             (uint8_t)( peak_bins[ i ] - AUDIO_PEAK_DECAY ) : 0U;
+        }
     }
-    if( frame_ready ) ++overruns;
+    if( frame_ready )
+    {
+        ++overruns;
+    }
     frame_ready = true;
     portEXIT_CRITICAL( &state_lock );
 }
@@ -133,84 +166,166 @@ static void audio_worker( void *a_arg )
     (void)a_arg;
     int16_t pcm[ AUDIO_FFT_SIZE ];
     unsigned fill = 0U;
+
     while( running )
     {
         size_t bytes = 0U;
-        esp_err_t result = i2s_read( I2S_NUM_0, &pcm[ fill ],
-                                     ( AUDIO_FFT_SIZE - fill ) * sizeof( int16_t ),
-                                     &bytes, pdMS_TO_TICKS( 100 ) );
-        if( ESP_OK != result ) continue;
+        const esp_err_t result =
+            i2s_channel_read( rx_channel,
+                              &pcm[ fill ],
+                              ( AUDIO_FFT_SIZE - fill ) * sizeof( int16_t ),
+                              &bytes,
+                              pdMS_TO_TICKS( 100 ) );
+        if( ESP_ERR_TIMEOUT == result )
+        {
+            continue;
+        }
+        if( ESP_OK != result )
+        {
+            if( running )
+            {
+                ESP_LOGW( TAG, "PDM read failed: %s", esp_err_to_name( result ) );
+            }
+            continue;
+        }
+
         fill += (unsigned)( bytes / sizeof( int16_t ) );
         if( fill >= AUDIO_FFT_SIZE )
         {
             publish_fft( pcm );
-            memmove( pcm, &pcm[ AUDIO_HOP_SIZE ], AUDIO_HOP_SIZE * sizeof( int16_t ) );
+            memmove( pcm,
+                     &pcm[ AUDIO_HOP_SIZE ],
+                     AUDIO_HOP_SIZE * sizeof( int16_t ) );
             fill = AUDIO_HOP_SIZE;
         }
     }
+
+    task_handle = NULL;
     vTaskDelete( NULL );
+}
+
+static void release_channel( void )
+{
+    if( NULL == rx_channel )
+    {
+        return;
+    }
+    (void)i2s_channel_disable( rx_channel );
+    (void)i2s_del_channel( rx_channel );
+    rx_channel = NULL;
 }
 
 esp_err_t audio_spectrum_start( void )
 {
-    if( running ) return ESP_OK;
-    i2s_config_t config = {
-        .mode = I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_PDM,
-        .sample_rate = AUDIO_SAMPLE_RATE,
-        .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
-        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
-        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
-        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL2,
-        .dma_buf_count = AUDIO_DMA_BUFFER_COUNT,
-        .dma_buf_len = AUDIO_DMA_BUFFER_LENGTH,
-        .use_apll = false
+    if( running )
+    {
+        return ESP_OK;
+    }
+
+    i2s_chan_config_t channel_config =
+        I2S_CHANNEL_DEFAULT_CONFIG( I2S_NUM_0, I2S_ROLE_MASTER );
+    channel_config.dma_desc_num = AUDIO_DMA_BUFFER_COUNT;
+    channel_config.dma_frame_num = AUDIO_DMA_BUFFER_LENGTH;
+
+    esp_err_t result = i2s_new_channel( &channel_config, NULL, &rx_channel );
+    if( ESP_OK != result )
+    {
+        rx_channel = NULL;
+        return result;
+    }
+
+    i2s_pdm_rx_config_t pdm_config =
+    {
+        .clk_cfg = I2S_PDM_RX_CLK_DEFAULT_CONFIG( AUDIO_SAMPLE_RATE ),
+        .slot_cfg = I2S_PDM_RX_SLOT_PCM_FMT_DEFAULT_CONFIG(
+            I2S_DATA_BIT_WIDTH_16BIT,
+            I2S_SLOT_MODE_MONO ),
+        .gpio_cfg =
+        {
+            .clk = AUDIO_MIC_CLK_GPIO,
+            .din = AUDIO_MIC_DATA_GPIO,
+            .invert_flags =
+            {
+                .clk_inv = false
+            }
+        }
     };
-    i2s_pin_config_t pins = {
-        .mck_io_num = I2S_PIN_NO_CHANGE,
-        .bck_io_num = I2S_PIN_NO_CHANGE,
-        .ws_io_num = AUDIO_MIC_CLK_GPIO,
-        .data_out_num = I2S_PIN_NO_CHANGE,
-        .data_in_num = AUDIO_MIC_DATA_GPIO
-    };
-    esp_err_t result = i2s_driver_install( I2S_NUM_0, &config, 0, NULL );
-    if( ESP_OK != result ) return result;
-    result = i2s_set_pin( I2S_NUM_0, &pins );
-    if( ESP_OK == result ) result = i2s_set_clk( I2S_NUM_0, AUDIO_SAMPLE_RATE,
-                                                 I2S_BITS_PER_SAMPLE_16BIT,
-                                                 I2S_CHANNEL_MONO );
-    if( ESP_OK != result ) { (void)i2s_driver_uninstall( I2S_NUM_0 ); return result; }
+
+    result = i2s_channel_init_pdm_rx_mode( rx_channel, &pdm_config );
+    if( ESP_OK == result )
+    {
+        result = i2s_channel_enable( rx_channel );
+    }
+    if( ESP_OK != result )
+    {
+        release_channel();
+        return result;
+    }
+
     portENTER_CRITICAL( &state_lock );
     memset( current_bins, 0, sizeof( current_bins ) );
     memset( peak_bins, 0, sizeof( peak_bins ) );
     frame_ready = false;
     overruns = 0U;
     portEXIT_CRITICAL( &state_lock );
+
     running = true;
-    if( pdPASS != xTaskCreate( audio_worker, "audio_fft", AUDIO_TASK_STACK, NULL,
-                               AUDIO_TASK_PRIORITY, &task_handle ) )
+    if( pdPASS != xTaskCreate( audio_worker,
+                               "audio_fft",
+                               AUDIO_TASK_STACK,
+                               NULL,
+                               AUDIO_TASK_PRIORITY,
+                               &task_handle ) )
     {
         running = false;
-        (void)i2s_driver_uninstall( I2S_NUM_0 );
+        release_channel();
         return ESP_ERR_NO_MEM;
     }
-    ESP_LOGI( TAG, "PDM microphone started at %u Hz", AUDIO_SAMPLE_RATE );
+
+    ESP_LOGI( TAG,
+              "PDM microphone started at %u Hz with DMA %ux%u",
+              AUDIO_SAMPLE_RATE,
+              AUDIO_DMA_BUFFER_COUNT,
+              AUDIO_DMA_BUFFER_LENGTH );
     return ESP_OK;
 }
 
 void audio_spectrum_stop( void )
 {
-    if( !running ) return;
+    if( !running && ( NULL == rx_channel ) )
+    {
+        return;
+    }
+
     running = false;
-    vTaskDelay( pdMS_TO_TICKS( 120 ) );
-    task_handle = NULL;
-    (void)i2s_driver_uninstall( I2S_NUM_0 );
+
+    /* The read has a 100 ms timeout, so allow the worker to leave cleanly
+       before deleting the I2S channel it is using. */
+    for( unsigned attempt = 0U;
+         ( NULL != task_handle ) && ( attempt < 20U );
+         ++attempt )
+    {
+        vTaskDelay( pdMS_TO_TICKS( 10 ) );
+    }
+
+    release_channel();
 }
 
-bool audio_spectrum_is_running( void ) { return running; }
-
-bool audio_spectrum_take_frame( uint8_t *a_current, uint8_t *a_peak, size_t a_count )
+bool audio_spectrum_is_running( void )
 {
-    if( ( NULL == a_current ) || ( NULL == a_peak ) || ( a_count < AUDIO_SPECTRUM_BINS ) ) return false;
+    return running;
+}
+
+bool audio_spectrum_take_frame( uint8_t *a_current,
+                                uint8_t *a_peak,
+                                size_t a_count )
+{
+    if( ( NULL == a_current ) || ( NULL == a_peak ) ||
+        ( a_count < AUDIO_SPECTRUM_BINS ) )
+    {
+        return false;
+    }
+
     bool ready;
     portENTER_CRITICAL( &state_lock );
     ready = frame_ready;
@@ -226,7 +341,11 @@ bool audio_spectrum_take_frame( uint8_t *a_current, uint8_t *a_peak, size_t a_co
 
 void audio_spectrum_set_range( audio_range_t a_range )
 {
-    if( a_range >= AUDIO_RANGE_COUNT ) return;
+    if( a_range >= AUDIO_RANGE_COUNT )
+    {
+        return;
+    }
+
     portENTER_CRITICAL( &state_lock );
     selected_range = a_range;
     memset( current_bins, 0, sizeof( current_bins ) );
@@ -235,12 +354,36 @@ void audio_spectrum_set_range( audio_range_t a_range )
     portEXIT_CRITICAL( &state_lock );
 }
 
-audio_range_t audio_spectrum_range( void ) { return selected_range; }
+audio_range_t audio_spectrum_range( void )
+{
+    return selected_range;
+}
+
 const char *audio_spectrum_range_name( audio_range_t a_range )
 {
     static const char *names[] = { "INFRASONIC", "AUDIBLE", "ULTRASONIC" };
     return ( a_range < AUDIO_RANGE_COUNT ) ? names[ a_range ] : "UNKNOWN";
 }
-uint32_t audio_spectrum_low_hz( void ) { uint32_t l, h; range_bounds( selected_range, &l, &h ); return l; }
-uint32_t audio_spectrum_high_hz( void ) { uint32_t l, h; range_bounds( selected_range, &l, &h ); return h; }
-uint32_t audio_spectrum_overruns( void ) { return overruns; }
+
+uint32_t audio_spectrum_low_hz( void )
+{
+    uint32_t low;
+    uint32_t high;
+    range_bounds( selected_range, &low, &high );
+    (void)high;
+    return low;
+}
+
+uint32_t audio_spectrum_high_hz( void )
+{
+    uint32_t low;
+    uint32_t high;
+    range_bounds( selected_range, &low, &high );
+    (void)low;
+    return high;
+}
+
+uint32_t audio_spectrum_overruns( void )
+{
+    return overruns;
+}
