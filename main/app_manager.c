@@ -18,15 +18,8 @@
 #define APP_REFRESH_INTERVAL_US 125000LL
 #define APP_FEATURE_PROBE_INTERVAL_US 10000000LL
 
-typedef enum
-{
-    APP_RF_SUMMARY = 0,
-    APP_THERMAL,
-    APP_COUNT
-} app_id_t;
-
 static const char *TAG = "app_manager";
-static app_id_t active_app;
+static rfscout_app_id_t active_app;
 static int64_t last_app_refresh_us;
 static int64_t last_thermal_probe_us;
 
@@ -48,13 +41,13 @@ static bool probe_thermal( void )
 }
 
 /** @brief Return whether the requested app is currently selectable. */
-static bool app_available( app_id_t a_app )
+static bool app_available( rfscout_app_id_t a_app )
 {
-    if( APP_RF_SUMMARY == a_app )
+    if( RFSCOUT_APP_RF_SUMMARY == a_app )
     {
         return true;
     }
-    if( APP_THERMAL == a_app )
+    if( RFSCOUT_APP_THERMAL == a_app )
     {
         return mlx90640_is_detected();
     }
@@ -63,7 +56,7 @@ static bool app_available( app_id_t a_app )
 
 esp_err_t app_manager_init( void )
 {
-    active_app = APP_RF_SUMMARY;
+    active_app = RFSCOUT_APP_RF_SUMMARY;
     last_app_refresh_us = 0;
     last_thermal_probe_us = esp_timer_get_time();
 
@@ -81,10 +74,15 @@ esp_err_t app_manager_init( void )
     return ESP_OK;
 }
 
+rfscout_app_id_t app_manager_current( void )
+{
+    return active_app;
+}
+
 void app_manager_poll( void )
 {
     const int64_t now_us = esp_timer_get_time();
-    if( ( APP_THERMAL != active_app ) &&
+    if( ( RFSCOUT_APP_THERMAL != active_app ) &&
         ( ( now_us - last_thermal_probe_us ) >= APP_FEATURE_PROBE_INTERVAL_US ) )
     {
         (void)probe_thermal();
@@ -98,21 +96,21 @@ void app_manager_poll( void )
         int next = (int)active_app + direction;
         if( next < 0 )
         {
-            next = APP_COUNT - 1;
+            next = RFSCOUT_APP_COUNT - 1;
         }
-        else if( next >= APP_COUNT )
+        else if( next >= RFSCOUT_APP_COUNT )
         {
             next = 0;
         }
 
-        app_id_t candidate = (app_id_t)next;
-        if( ( APP_THERMAL == candidate ) && !app_available( candidate ) )
+        rfscout_app_id_t candidate = (rfscout_app_id_t)next;
+        if( ( RFSCOUT_APP_THERMAL == candidate ) && !app_available( candidate ) )
         {
             /* A navigation request is also an immediate hot-plug probe. */
             last_thermal_probe_us = now_us;
             if( !probe_thermal() )
             {
-                candidate = APP_RF_SUMMARY;
+                candidate = RFSCOUT_APP_RF_SUMMARY;
                 ESP_LOGI( TAG, "Thermal app skipped: MLX90640 not detected" );
             }
         }
@@ -121,7 +119,7 @@ void app_manager_poll( void )
         {
             active_app = candidate;
             last_app_refresh_us = 0;
-            if( APP_THERMAL == active_app )
+            if( RFSCOUT_APP_THERMAL == active_app )
             {
                 thermal_view_enter();
                 ESP_LOGI( TAG, "switched to Thermal app" );
@@ -133,7 +131,7 @@ void app_manager_poll( void )
         }
     }
 
-    if( APP_RF_SUMMARY == active_app )
+    if( RFSCOUT_APP_RF_SUMMARY == active_app )
     {
         ui_poll();
         return;
@@ -141,7 +139,7 @@ void app_manager_poll( void )
 
     if( !mlx90640_is_detected() )
     {
-        active_app = APP_RF_SUMMARY;
+        active_app = RFSCOUT_APP_RF_SUMMARY;
         last_app_refresh_us = 0;
         ESP_LOGW( TAG, "Thermal app closed after sensor disconnect" );
         return;
@@ -157,7 +155,7 @@ void app_manager_poll( void )
     if( ( ESP_OK != result ) && ( ESP_ERR_NOT_FINISHED != result ) &&
         !mlx90640_is_detected() )
     {
-        active_app = APP_RF_SUMMARY;
+        active_app = RFSCOUT_APP_RF_SUMMARY;
         last_app_refresh_us = 0;
         ESP_LOGW( TAG, "Thermal app closed after I2C failure" );
     }
