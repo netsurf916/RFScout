@@ -93,6 +93,7 @@ void app_main( void )
         platform_poll();
         power_poll();
         battery_poll();
+        observation_store_housekeeping();
         app_manager_poll();
         vTaskDelay( pdMS_TO_TICKS( 10 ) );
     }
