@@ -1,6 +1,6 @@
 /**
     log_writer.c : RFScout asynchronous SD log writer
-    Description: Writes normalized observations to a 100-segment circular text log.
+    Description: Writes device-list lifecycle events to a 100-segment circular text log.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -35,6 +35,7 @@
 typedef struct
 {
     uint32_t timestamp_ms;
+    observation_store_event_t event;
     rf_source_t source;
     uint8_t address[ 6 ];
     int8_t rssi;
@@ -78,22 +79,13 @@ static bool read_sequence( unsigned a_slot, uint32_t *a_sequence )
     char path[ 64 ];
     segment_path( a_slot, path, sizeof( path ) );
     FILE *file = fopen( path, "r" );
-    if( NULL == file )
-    {
-        return false;
-    }
+    if( NULL == file ) return false;
     char line[ 64 ];
     const bool read_ok = ( NULL != fgets( line, sizeof( line ), file ) );
     fclose( file );
-    if( !read_ok )
-    {
-        return false;
-    }
+    if( !read_ok ) return false;
     unsigned long sequence = 0;
-    if( 1 != sscanf( line, LOG_SEQUENCE_PREFIX "%lu", &sequence ) )
-    {
-        return false;
-    }
+    if( 1 != sscanf( line, LOG_SEQUENCE_PREFIX "%lu", &sequence ) ) return false;
     *a_sequence = (uint32_t)sequence;
     return true;
 }
@@ -106,10 +98,7 @@ static void find_next_segment( void )
     for( unsigned slot = 0; slot < RFSCOUT_LOG_SEGMENT_COUNT; ++slot )
     {
         uint32_t sequence = 0;
-        if( !read_sequence( slot, &sequence ) )
-        {
-            continue;
-        }
+        if( !read_sequence( slot, &sequence ) ) continue;
         if( !found || ( (int32_t)( sequence - newest_sequence ) > 0 ) )
         {
             found = true;
@@ -128,15 +117,9 @@ static bool delete_oldest_segment( void )
     unsigned oldest_slot = 0;
     for( unsigned slot = 0; slot < RFSCOUT_LOG_SEGMENT_COUNT; ++slot )
     {
-        if( slot == active_slot )
-        {
-            continue;
-        }
+        if( slot == active_slot ) continue;
         uint32_t sequence = 0;
-        if( !read_sequence( slot, &sequence ) )
-        {
-            continue;
-        }
+        if( !read_sequence( slot, &sequence ) ) continue;
         if( !found || ( (int32_t)( sequence - oldest_sequence ) < 0 ) )
         {
             found = true;
@@ -144,10 +127,7 @@ static bool delete_oldest_segment( void )
             oldest_slot = slot;
         }
     }
-    if( !found )
-    {
-        return false;
-    }
+    if( !found ) return false;
     char path[ 64 ];
     segment_path( oldest_slot, path, sizeof( path ) );
     if( 0 != unlink( path ) )
@@ -205,22 +185,10 @@ static bool open_segment( void )
 
 static void close_segment( void )
 {
-    if( NULL == active_file )
-    {
-        return;
-    }
-    if( 0 != fflush( active_file ) )
-    {
-        mark_io_error( "log flush" );
-    }
-    if( 0 != fsync( fileno( active_file ) ) )
-    {
-        mark_io_error( "log sync" );
-    }
-    if( 0 != fclose( active_file ) )
-    {
-        mark_io_error( "log close" );
-    }
+    if( NULL == active_file ) return;
+    if( 0 != fflush( active_file ) ) mark_io_error( "log flush" );
+    if( 0 != fsync( fileno( active_file ) ) ) mark_io_error( "log sync" );
+    if( 0 != fclose( active_file ) ) mark_io_error( "log close" );
     active_file = NULL;
     active_size = 0U;
 }
@@ -248,29 +216,17 @@ static void format_evidence( uint8_t a_evidence, char *a_output, size_t a_capaci
     a_output[ 0 ] = '\0';
     for( size_t i = 0; i < sizeof( names ) / sizeof( names[ 0 ] ); ++i )
     {
-        if( 0U == ( a_evidence & names[ i ].bit ) )
-        {
-            continue;
-        }
-        if( '\0' != a_output[ 0 ] )
-        {
-            strlcat( a_output, "|", a_capacity );
-        }
+        if( 0U == ( a_evidence & names[ i ].bit ) ) continue;
+        if( '\0' != a_output[ 0 ] ) strlcat( a_output, "|", a_capacity );
         strlcat( a_output, names[ i ].name, a_capacity );
     }
-    if( '\0' == a_output[ 0 ] )
-    {
-        strlcpy( a_output, "-", a_capacity );
-    }
+    if( '\0' == a_output[ 0 ] ) strlcpy( a_output, "-", a_capacity );
 }
 
 static void format_identity( const char *a_input, char *a_output, size_t a_capacity )
 {
     size_t output = 0U;
-    if( 0U == a_capacity )
-    {
-        return;
-    }
+    if( 0U == a_capacity ) return;
     for( size_t input = 0U; ( NULL != a_input ) && ( '\0' != a_input[ input ] ); ++input )
     {
         const unsigned char value = (unsigned char)a_input[ input ];
@@ -305,23 +261,45 @@ static void format_identity( const char *a_input, char *a_output, size_t a_capac
 static bool write_record( const log_record_t *a_record )
 {
     if( ( NULL == active_file ) && !open_segment() ) return false;
-    char evidence[ 64 ];
-    format_evidence( a_record->evidence, evidence, sizeof( evidence ) );
+
     const char *source = ( RF_SOURCE_WIFI == a_record->source ) ? "WIFI" :
                          ( RF_SOURCE_BLE == a_record->source ) ? "BLE" : "RF";
     const char *raw_identity = ( '\0' != a_record->vendor[ 0 ] ) ? a_record->vendor :
                                ( '\0' != a_record->name[ 0 ] ) ? a_record->name : "UNKNOWN";
     char identity[ LOG_IDENTITY_MAX ];
     format_identity( raw_identity, identity, sizeof( identity ) );
-    const char *signature = ( SURVEILLANCE_SIGNATURE_NONE != a_record->signature ) ?
-                            surveillance_signature_label( a_record->signature ) : "-";
+
     char line[ LOG_LINE_MAX ];
-    const int length = snprintf( line, sizeof( line ),
-        "%lu %s rssi=%d ch=%u mac=%02X:%02X:%02X:%02X:%02X:%02X identity=\"%s\" surveillance=%s score=%u evidence=%s\n",
-        (unsigned long)a_record->timestamp_ms, source, a_record->rssi,
-        (unsigned)a_record->channel, a_record->address[ 0 ], a_record->address[ 1 ],
-        a_record->address[ 2 ], a_record->address[ 3 ], a_record->address[ 4 ],
-        a_record->address[ 5 ], identity, signature, (unsigned)a_record->score, evidence );
+    int length = 0;
+    if( OBSERVATION_STORE_EVENT_ADDED == a_record->event )
+    {
+        char evidence[ 64 ];
+        format_evidence( a_record->evidence, evidence, sizeof( evidence ) );
+        const char *signature =
+            ( SURVEILLANCE_SIGNATURE_NONE != a_record->signature )
+                ? surveillance_signature_label( a_record->signature )
+                : "-";
+        length = snprintf( line, sizeof( line ),
+            "%lu ADDED %s rssi=%d ch=%u mac=%02X:%02X:%02X:%02X:%02X:%02X identity=\"%s\" surveillance=%s score=%u evidence=%s\n",
+            (unsigned long)a_record->timestamp_ms, source, a_record->rssi,
+            (unsigned)a_record->channel, a_record->address[ 0 ], a_record->address[ 1 ],
+            a_record->address[ 2 ], a_record->address[ 3 ], a_record->address[ 4 ],
+            a_record->address[ 5 ], identity, signature, (unsigned)a_record->score, evidence );
+    }
+    else
+    {
+        const char *reason =
+            ( OBSERVATION_STORE_EVENT_DROPPED_CAPACITY == a_record->event )
+                ? "capacity"
+                : "timeout";
+        length = snprintf( line, sizeof( line ),
+            "%lu DROPPED %s mac=%02X:%02X:%02X:%02X:%02X:%02X identity=\"%s\" reason=%s\n",
+            (unsigned long)a_record->timestamp_ms, source,
+            a_record->address[ 0 ], a_record->address[ 1 ], a_record->address[ 2 ],
+            a_record->address[ 3 ], a_record->address[ 4 ], a_record->address[ 5 ],
+            identity, reason );
+    }
+
     if( ( length <= 0 ) || ( (size_t)length >= sizeof( line ) ) )
     {
         io_error = true;
@@ -392,28 +370,40 @@ esp_err_t log_writer_init( void )
     return ESP_OK;
 }
 
-bool log_writer_observation( const rf_device_t *a_observation )
+bool log_writer_device_event(
+    observation_store_event_t a_event,
+    const rf_device_t *a_device )
 {
-    if( !accepting || ( NULL == queue ) || ( NULL == a_observation ) ) return false;
+    if( !accepting || ( NULL == queue ) || ( NULL == a_device ) ) return false;
     log_record_t record =
     {
         .timestamp_ms = (uint32_t)( esp_timer_get_time() / 1000ULL ),
-        .source = a_observation->last_source,
-        .rssi = a_observation->rssi,
-        .channel = a_observation->channel,
-        .signature = a_observation->surveillance_signature,
-        .score = a_observation->surveillance_score,
-        .evidence = a_observation->surveillance_evidence
+        .event = a_event,
+        .source = a_device->last_source,
+        .rssi = a_device->rssi,
+        .channel = a_device->channel,
+        .signature = a_device->surveillance_signature,
+        .score = a_device->surveillance_score,
+        .evidence = a_device->surveillance_evidence
     };
-    memcpy( record.address, a_observation->address, sizeof( record.address ) );
-    strlcpy( record.vendor, a_observation->vendor, sizeof( record.vendor ) );
-    if( a_observation->has_name ) strlcpy( record.name, a_observation->name, sizeof( record.name ) );
+    memcpy( record.address, a_device->address, sizeof( record.address ) );
+    strlcpy( record.vendor, a_device->vendor, sizeof( record.vendor ) );
+    if( a_device->has_name ) strlcpy( record.name, a_device->name, sizeof( record.name ) );
     if( pdTRUE != xQueueSend( queue, &record, 0 ) )
     {
         ++dropped_records;
         return false;
     }
     return true;
+}
+
+void log_writer_store_event(
+    observation_store_event_t a_event,
+    const rf_device_t *a_device,
+    void *a_context )
+{
+    (void)a_context;
+    (void)log_writer_device_event( a_event, a_device );
 }
 
 bool log_writer_shutdown( uint32_t a_timeout_ms )
