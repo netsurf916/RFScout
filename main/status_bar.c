@@ -8,7 +8,6 @@
 #include "status_bar.h"
 
 #include "display.h"
-#include "gps.h"
 #include "log_writer.h"
 #include "storage.h"
 
@@ -22,7 +21,6 @@
 #define STATUS_BAR_ICON_GAP 4
 
 #define STATUS_BAR_COLOR_NORMAL 0x03F0U
-#define STATUS_BAR_COLOR_GOOD 0x03E0U
 #define STATUS_BAR_COLOR_ERROR 0xF800U
 #define STATUS_BAR_COLOR_BACKGROUND 0x0000U
 
@@ -52,23 +50,6 @@ static void draw_sd_icon( int a_x, uint16_t a_color )
     }
 }
 
-/** @brief Draw a compact satellite-style GPS glyph. */
-static void draw_gps_icon( int a_x, uint16_t a_color )
-{
-    const int y = STATUS_BAR_ICON_Y;
-
-    /* Central receiver/satellite body. */
-    display_fill_rect( a_x + 5, y + 5, 4, 4, a_color );
-    display_fill_rect( a_x + 3, y + 3, 2, 3, a_color );
-    display_fill_rect( a_x + 9, y + 8, 2, 3, a_color );
-
-    /* Sparse corner marks read as radio/location activity at icon scale. */
-    display_fill_rect( a_x + 2, y + 8, 1, 3, a_color );
-    display_fill_rect( a_x + 3, y + 11, 3, 1, a_color );
-    display_fill_rect( a_x + 8, y + 2, 3, 1, a_color );
-    display_fill_rect( a_x + 11, y + 3, 1, 3, a_color );
-}
-
 void status_bar_draw( void )
 {
     int x = STATUS_BAR_RIGHT_X - STATUS_BAR_ICON_WIDTH;
@@ -79,17 +60,6 @@ void status_bar_draw( void )
                                    ? STATUS_BAR_COLOR_ERROR
                                    : STATUS_BAR_COLOR_NORMAL;
         draw_sd_icon( x, color );
-        x -= STATUS_BAR_ICON_WIDTH + STATUS_BAR_ICON_GAP;
-    }
-
-    gps_status_t gps;
-    gps_get_status( &gps );
-    if( gps.detected )
-    {
-        draw_gps_icon( x,
-                       gps.has_fix
-                           ? STATUS_BAR_COLOR_GOOD
-                           : STATUS_BAR_COLOR_NORMAL );
         x -= STATUS_BAR_ICON_WIDTH + STATUS_BAR_ICON_GAP;
     }
 
