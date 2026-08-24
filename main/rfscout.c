@@ -1,18 +1,20 @@
 /**
     rfscout.c : RFScout application entry point
-    Description: Initializes passive RF collectors, classification, alerts, and UI.
+    Description: Initializes passive RF collectors, classification, logging, alerts, and UI.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
 
 #include "battery.h"
 #include "ble_monitor.h"
+#include "log_writer.h"
 #include "morse.h"
 #include "observation_store.h"
 #include "oui_database.h"
 #include "platform.h"
 #include "power.h"
 #include "radio_monitor.h"
+#include "storage.h"
 #include "surveillance.h"
 #include "surveillance_history.h"
 #include "ui.h"
@@ -26,7 +28,7 @@
 
 static const char *TAG = "rfscout";
 
-/** @brief Normalize, classify, retain, and report one passive RF observation. */
+/** @brief Normalize, classify, retain, log, and report one passive RF observation. */
 static void on_observation( rf_device_t *a_observation )
 {
     if( NULL == a_observation )
@@ -56,6 +58,8 @@ static void on_observation( rf_device_t *a_observation )
     {
         surveillance_history_observe( a_observation );
     }
+
+    log_writer_observation( a_observation );
 
     bool is_new = false;
     if( !observation_store_observe( a_observation, &is_new ) || !is_new )
@@ -121,6 +125,19 @@ void app_main( void )
     }
 
     ESP_ERROR_CHECK( ui_init() );
+
+    result = storage_init();
+    if( ESP_OK == result )
+    {
+        result = log_writer_init();
+        if( ESP_OK != result )
+        {
+            ESP_LOGW( TAG,
+                      "SD logging unavailable: %s",
+                      esp_err_to_name( result ) );
+        }
+    }
+
     ESP_ERROR_CHECK( radio_monitor_init( on_observation ) );
     ESP_ERROR_CHECK( ble_monitor_init( on_observation ) );
 

@@ -11,6 +11,7 @@
 #include "display.h"
 #include "observation_store.h"
 #include "power.h"
+#include "status_bar.h"
 #include "surveillance.h"
 #include "surveillance_history.h"
 
@@ -242,6 +243,7 @@ static void render_summary( void )
     display_clear( COLOR_BLACK );
     display_draw_text( 6, 5, "RFSCOUT", COLOR_GREEN, 2 );
     battery_indicator_draw();
+    status_bar_draw();
 
     char line[ 64 ];
     snprintf( line,
