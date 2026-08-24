@@ -39,6 +39,8 @@ The LCD, SD card, CC1101, and nRF24 share the board SPI bus. RFScout centralizes
 
 When an SD card is present, RFScout mounts it at `/sdcard` and writes normalized passive observations to `/sdcard/logs`. SD-card failure is nonfatal; the rest of RFScout continues operating when no card is installed or mounting fails. A mounted card is reflected by the SD icon in the top status bar; a logging/filesystem failure changes that icon to red for the remainder of the runtime.
 
+LILYGO documents **SanDisk microSD cards of 32 GB or less** as the tested configuration for the T-Embed CC1101 family and notes that some other cards may not work reliably. RFScout therefore treats a 32 GB or smaller FAT32-formatted SanDisk card as the known-good baseline; larger cards and other manufacturers may work but are outside LILYGO's stated tested configuration. See [docs/SD_CARD.md](docs/SD_CARD.md) for compatibility and detection details.
+
 Logging uses a dedicated low-priority FreeRTOS task and a fixed queue. RF callbacks only copy a compact observation into that queue and never perform filesystem I/O, keeping SD-card write latency and FAT metadata stalls away from packet collection. The writer flushes the stdio buffer approximately once per second and performs a full flush/sync/close when a segment rotates or RFScout enters sleep or powers off.
 
 Logs use a bounded two-digit circular ring:
@@ -98,7 +100,7 @@ See [docs/CODING_STYLE.md](docs/CODING_STYLE.md) for the complete project rules.
 
 ## Documentation
 
-See [docs/CAPABILITIES.md](docs/CAPABILITIES.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and [docs/CODING_STYLE.md](docs/CODING_STYLE.md).
+See [docs/CAPABILITIES.md](docs/CAPABILITIES.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/CODING_STYLE.md](docs/CODING_STYLE.md), and [docs/SD_CARD.md](docs/SD_CARD.md).
 
 ## Build
 
