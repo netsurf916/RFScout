@@ -45,4 +45,12 @@ void log_writer_shutdown( uint32_t a_timeout_ms );
  */
 uint32_t log_writer_dropped_count( void );
 
+/**
+ * @brief Determine whether the SD logging path has encountered an I/O error.
+ * @return True after an open, write, flush, sync, or close failure.
+ * @details The state is sticky for the current runtime so transient media
+ *          failures remain visible in the status bar instead of disappearing.
+ */
+bool log_writer_has_error( void );
+
 #endif // _RFSCOUT_LOG_WRITER_H_
