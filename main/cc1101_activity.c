@@ -1,5 +1,5 @@
 /**
-    cc1101_activity.c : adaptive CC1101 activity histogram and passive fingerprints
+    cc1101_activity.c : direct CC1101 RSSI levels, peak hold, and passive fingerprints
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -13,6 +13,7 @@
 #define CC1101_ACTIVITY_CEILING_DBM (-35)
 #define CC1101_ACTIVE_THRESHOLD 54U
 #define CC1101_STRONG_THRESHOLD 110U
+#define CC1101_PEAK_DECAY_DIVISOR 32U
 #define CC1101_BURST_MARGIN 28U
 #define CC1101_MAX_SEGMENTS 8U
 
@@ -20,12 +21,12 @@ typedef struct
 {
     size_t start;
     size_t end;
-    uint8_t max_fast;
-    uint8_t max_slow;
+    uint8_t max_current;
+    uint8_t max_peak;
     int8_t peak_rssi;
 } activity_segment_t;
 
-static uint8_t fast_activity[ CC1101_SPECTRUM_BINS ];
+static uint8_t current_level[ CC1101_SPECTRUM_BINS ];
 static uint8_t slow_peak[ CC1101_SPECTRUM_BINS ];
 static int8_t last_rssi[ CC1101_SPECTRUM_BINS ];
 static uint32_t last_low_khz;
@@ -45,11 +46,6 @@ static uint8_t strength_from_rssi( int8_t a_rssi )
 
     return (uint8_t)( ( (int)a_rssi - CC1101_ACTIVITY_FLOOR_DBM ) * 255 /
                       ( CC1101_ACTIVITY_CEILING_DBM - CC1101_ACTIVITY_FLOOR_DBM ) );
-}
-
-static uint8_t fast_update( uint8_t a_old, uint8_t a_sample )
-{
-    return (uint8_t)( ( (uint16_t)a_old * 7U + a_sample ) / 8U );
 }
 
 static uint32_t frequency_for_bin( size_t a_bin )
@@ -80,7 +76,7 @@ static size_t collect_segments( activity_segment_t *a_segments,
 
     while( ( index < CC1101_SPECTRUM_BINS ) && ( count < a_capacity ) )
     {
-        if( fast_activity[ index ] < CC1101_ACTIVE_THRESHOLD )
+        if( current_level[ index ] < CC1101_ACTIVE_THRESHOLD )
         {
             ++index;
             continue;
@@ -92,15 +88,15 @@ static size_t collect_segments( activity_segment_t *a_segments,
         segment->peak_rssi = -127;
 
         while( ( index < CC1101_SPECTRUM_BINS ) &&
-               ( fast_activity[ index ] >= CC1101_ACTIVE_THRESHOLD ) )
+               ( current_level[ index ] >= CC1101_ACTIVE_THRESHOLD ) )
         {
-            if( fast_activity[ index ] > segment->max_fast )
+            if( current_level[ index ] > segment->max_current )
             {
-                segment->max_fast = fast_activity[ index ];
+                segment->max_current = current_level[ index ];
             }
-            if( slow_peak[ index ] > segment->max_slow )
+            if( slow_peak[ index ] > segment->max_peak )
             {
-                segment->max_slow = slow_peak[ index ];
+                segment->max_peak = slow_peak[ index ];
             }
             if( last_rssi[ index ] > segment->peak_rssi )
             {
@@ -126,16 +122,15 @@ static void classify_segment( const activity_segment_t *a_segment,
     const uint32_t center_khz = start_khz + ( end_khz - start_khz ) / 2U;
     const uint32_t bandwidth_khz = end_khz - start_khz;
     const bool narrow = ( a_segment->end - a_segment->start ) <= 4U;
-    const bool bursty = a_segment->max_slow >
-                        (uint8_t)( a_segment->max_fast +
-                                   ( a_segment->max_fast <= ( 255U - CC1101_BURST_MARGIN ) ?
-                                     CC1101_BURST_MARGIN : 0U ) );
+    const bool recently_stronger =
+        ( a_segment->max_peak > a_segment->max_current ) &&
+        ( (uint8_t)( a_segment->max_peak - a_segment->max_current ) >= CC1101_BURST_MARGIN );
 
     a_output->center_khz = center_khz;
     a_output->bandwidth_khz = bandwidth_khz;
     a_output->peak_rssi = a_segment->peak_rssi;
 
-    if( narrow && in_common_ism_region( center_khz ) && bursty )
+    if( narrow && in_common_ism_region( center_khz ) && recently_stronger )
     {
         a_output->type = CC1101_FP_REMOTE_SENSOR_LIKE;
         a_output->confidence = 62U;
@@ -144,8 +139,8 @@ static void classify_segment( const activity_segment_t *a_segment,
                   "Remote/sensor-like" );
     }
     else if( narrow &&
-             ( a_segment->max_fast >= CC1101_STRONG_THRESHOLD ) &&
-             ( a_segment->max_slow <= a_segment->max_fast + 12U ) )
+             ( a_segment->max_current >= CC1101_STRONG_THRESHOLD ) &&
+             ( a_segment->max_peak <= a_segment->max_current + 12U ) )
     {
         a_output->type = CC1101_FP_CONTINUOUS_CARRIER;
         a_output->confidence = 58U;
@@ -153,7 +148,7 @@ static void classify_segment( const activity_segment_t *a_segment,
                   sizeof( a_output->label ),
                   "Carrier-like" );
     }
-    else if( narrow && bursty )
+    else if( narrow && recently_stronger )
     {
         a_output->type = CC1101_FP_BURSTY_SIGNAL;
         a_output->confidence = 52U;
@@ -181,7 +176,7 @@ static void classify_segment( const activity_segment_t *a_segment,
 
 void cc1101_activity_reset( void )
 {
-    memset( fast_activity, 0, sizeof( fast_activity ) );
+    memset( current_level, 0, sizeof( current_level ) );
     memset( slow_peak, 0, sizeof( slow_peak ) );
     memset( last_rssi, -120, sizeof( last_rssi ) );
     last_low_khz = 0U;
@@ -211,15 +206,18 @@ void cc1101_activity_observe_sweep( const int8_t *a_rssi,
         const int8_t rssi = ( i < count ) ? a_rssi[ i ] : -120;
         const uint8_t strength = strength_from_rssi( rssi );
         last_rssi[ i ] = rssi;
-        fast_activity[ i ] = fast_update( fast_activity[ i ], strength );
 
-        if( fast_activity[ i ] >= slow_peak[ i ] )
+        /* CC1101 provides an actual RSSI measurement. Use the latest completed
+           sweep directly for the visible level rather than averaging sweeps. */
+        current_level[ i ] = strength;
+
+        if( strength >= slow_peak[ i ] )
         {
-            slow_peak[ i ] = fast_activity[ i ];
+            slow_peak[ i ] = strength;
         }
         else if( slow_peak[ i ] > 0U )
         {
-            uint8_t decay = (uint8_t)( slow_peak[ i ] / 32U );
+            uint8_t decay = (uint8_t)( slow_peak[ i ] / CC1101_PEAK_DECAY_DIVISOR );
             if( 0U == decay )
             {
                 decay = 1U;
@@ -230,19 +228,19 @@ void cc1101_activity_observe_sweep( const int8_t *a_rssi,
     }
 }
 
-size_t cc1101_activity_histogram( uint8_t *a_fast,
-                                  uint8_t *a_slow,
-                                  size_t a_capacity )
+size_t cc1101_activity_levels( uint8_t *a_current,
+                               uint8_t *a_peak,
+                               size_t a_capacity )
 {
-    if( ( NULL == a_fast ) || ( NULL == a_slow ) || ( 0U == a_capacity ) )
+    if( ( NULL == a_current ) || ( NULL == a_peak ) || ( 0U == a_capacity ) )
     {
         return 0U;
     }
 
     const size_t count = a_capacity < CC1101_SPECTRUM_BINS ?
                          a_capacity : CC1101_SPECTRUM_BINS;
-    memcpy( a_fast, fast_activity, count );
-    memcpy( a_slow, slow_peak, count );
+    memcpy( a_current, current_level, count );
+    memcpy( a_peak, slow_peak, count );
     return count;
 }
 
