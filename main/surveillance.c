@@ -1,6 +1,6 @@
 /**
     surveillance.c : RFScout surveillance classification
-    Description: Matches observations against curated generated OUI and name signatures.
+    Description: Correlates curated OUIs, BLE names, manufacturer IDs, services, and Remote ID.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -9,6 +9,15 @@
 
 #include <ctype.h>
 #include <string.h>
+
+#define SCORE_OUI_MEDIUM       45U
+#define SCORE_OUI_HIGH         70U
+#define SCORE_NAME             55U
+#define SCORE_COMPANY          75U
+#define SCORE_SERVICE          35U
+#define SCORE_REMOTE_ID       100U
+#define SCORE_ALERT_THRESHOLD  60U
+#define FLOCK_COMPANY_ID     0x09C8U
 
 typedef struct
 {
@@ -21,25 +30,25 @@ typedef struct
 {
     const char *fragment;
     surveillance_class_t classification;
+    surveillance_signature_id_t signature;
+    uint8_t score;
 } name_signature_t;
 
 #include "surveillance_signatures.inc"
 
 static const name_signature_t name_signatures[] =
 {
-    { "AXON", SURVEILLANCE_BODY_CAMERA },
-    { "BODY", SURVEILLANCE_BODY_CAMERA },
-    { "DJI", SURVEILLANCE_DRONE },
-    { "PARROT", SURVEILLANCE_DRONE },
-    { "SKYDIO", SURVEILLANCE_DRONE },
-    { "RING", SURVEILLANCE_CAMERA },
-    { "RAY-BAN", SURVEILLANCE_SMART_GLASSES },
-    { "RAYBAN", SURVEILLANCE_SMART_GLASSES },
-    { "VUZI", SURVEILLANCE_SMART_GLASSES },
-    { "SMART GLASS", SURVEILLANCE_SMART_GLASSES },
+    { "AXON", SURVEILLANCE_BODY_CAMERA, SURVEILLANCE_SIGNATURE_AXON, SCORE_NAME },
+    { "FLOCKCAM", SURVEILLANCE_FLOCK, SURVEILLANCE_SIGNATURE_FLOCK, SCORE_NAME },
+    { "FS EXT BATTERY", SURVEILLANCE_FLOCK, SURVEILLANCE_SIGNATURE_FLOCK, SCORE_NAME },
+    { "PENGUIN", SURVEILLANCE_FLOCK, SURVEILLANCE_SIGNATURE_FLOCK, SCORE_NAME },
+    { "PIGVISION", SURVEILLANCE_FLOCK, SURVEILLANCE_SIGNATURE_FLOCK, SCORE_NAME },
+    { "FS-", SURVEILLANCE_FLOCK, SURVEILLANCE_SIGNATURE_FLOCK, SCORE_NAME },
+    { "RING", SURVEILLANCE_CAMERA, SURVEILLANCE_SIGNATURE_RING, SCORE_NAME },
+    { "RAY-BAN", SURVEILLANCE_SMART_GLASSES, SURVEILLANCE_SIGNATURE_META, SCORE_NAME },
+    { "RAYBAN", SURVEILLANCE_SMART_GLASSES, SURVEILLANCE_SIGNATURE_META, SCORE_NAME },
 };
 
-/** @brief Determine whether one string contains another without case sensitivity. */
 static bool contains_ci( const char *a_value, const char *a_fragment )
 {
     if( ( NULL == a_value ) || ( NULL == a_fragment ) ) return false;
@@ -55,7 +64,6 @@ static bool contains_ci( const char *a_value, const char *a_fragment )
     return false;
 }
 
-/** @brief Return the 24-bit IEEE prefix from a six-byte device address. */
 static uint32_t address_prefix( const uint8_t *a_address )
 {
     return ( (uint32_t)a_address[ 0 ] << 16U ) |
@@ -63,42 +71,132 @@ static uint32_t address_prefix( const uint8_t *a_address )
            (uint32_t)a_address[ 2 ];
 }
 
-surveillance_class_t surveillance_classify( const rf_device_t *a_observation )
+static bool has_service( const rf_device_t *a_observation, uint16_t a_uuid )
 {
-    if( NULL == a_observation ) return SURVEILLANCE_NONE;
+    for( size_t i = 0; i < a_observation->service_uuid_count; ++i )
+        if( a_observation->service_uuids[ i ] == a_uuid ) return true;
+    return false;
+}
 
-    /* BLE random/private addresses must never be interpreted as IEEE OUIs. */
-    if( ( RF_SOURCE_BLE != a_observation->last_source ) ||
-        ( 0U == a_observation->address_type ) )
+static uint8_t oui_score( surveillance_signature_id_t a_signature )
+{
+    switch( a_signature )
     {
-        const uint32_t prefix = address_prefix( a_observation->address );
-        for( size_t i = 0; i < SURVEILLANCE_OUI_SIGNATURE_COUNT; ++i )
-        {
-            if( prefix == surveillance_oui_signatures[ i ].prefix )
-                return surveillance_oui_signatures[ i ].classification;
-        }
+        case SURVEILLANCE_SIGNATURE_FLOCK:
+        case SURVEILLANCE_SIGNATURE_AXON:
+        case SURVEILLANCE_SIGNATURE_RING:
+        case SURVEILLANCE_SIGNATURE_VERKADA:
+            return SCORE_OUI_HIGH;
+        case SURVEILLANCE_SIGNATURE_AXIS:
+        case SURVEILLANCE_SIGNATURE_HIKVISION:
+        case SURVEILLANCE_SIGNATURE_DAHUA:
+        case SURVEILLANCE_SIGNATURE_META:
+            return SCORE_OUI_MEDIUM;
+        default:
+            return SCORE_OUI_MEDIUM;
+    }
+}
+
+static void consider( surveillance_match_t *a_best,
+                      surveillance_class_t a_classification,
+                      surveillance_signature_id_t a_signature,
+                      uint8_t a_score, uint8_t a_evidence )
+{
+    if( ( NULL == a_best ) || ( a_score <= a_best->score ) ) return;
+    a_best->classification = a_classification;
+    a_best->signature = a_signature;
+    a_best->score = a_score;
+    a_best->evidence = a_evidence;
+}
+
+surveillance_match_t surveillance_match( const rf_device_t *a_observation )
+{
+    surveillance_match_t best = { 0 };
+    if( NULL == a_observation ) return best;
+
+    /* Curated prefixes intentionally include one field-verified locally
+       administered Flock prefix (82:6B:F2), so do not reject LAA addresses
+       here. Randomized addresses simply fail to match the curated table. */
+    const uint32_t prefix = address_prefix( a_observation->address );
+    for( size_t i = 0; i < SURVEILLANCE_OUI_SIGNATURE_COUNT; ++i )
+    {
+        if( prefix == surveillance_oui_signatures[ i ].prefix )
+            consider( &best, surveillance_oui_signatures[ i ].classification,
+                      surveillance_oui_signatures[ i ].signature,
+                      oui_score( surveillance_oui_signatures[ i ].signature ),
+                      SURVEILLANCE_EVIDENCE_OUI );
     }
 
     if( a_observation->has_name )
     {
         for( size_t i = 0; i < sizeof( name_signatures ) / sizeof( name_signatures[ 0 ] ); ++i )
-        {
             if( contains_ci( a_observation->name, name_signatures[ i ].fragment ) )
-                return name_signatures[ i ].classification;
-        }
+                consider( &best, name_signatures[ i ].classification,
+                          name_signatures[ i ].signature, name_signatures[ i ].score,
+                          SURVEILLANCE_EVIDENCE_NAME );
     }
-    return SURVEILLANCE_NONE;
+
+    if( FLOCK_COMPANY_ID == a_observation->company_id )
+        consider( &best, SURVEILLANCE_FLOCK, SURVEILLANCE_SIGNATURE_FLOCK,
+                  SCORE_COMPANY, SURVEILLANCE_EVIDENCE_COMPANY_ID );
+
+    /* Raven Acoustic Monitoring uses a distinctive family of adjacent BLE
+       services. Require at least two to avoid treating one generic UUID as a
+       sufficient surveillance signature. */
+    unsigned raven_services = 0;
+    for( uint16_t uuid = 0x3100U; uuid <= 0x3500U; uuid += 0x0100U )
+        if( has_service( a_observation, uuid ) ) ++raven_services;
+    if( raven_services >= 2U )
+        consider( &best, SURVEILLANCE_AUDIO, SURVEILLANCE_SIGNATURE_RAVEN,
+                  (uint8_t)( SCORE_SERVICE + raven_services * 10U ),
+                  SURVEILLANCE_EVIDENCE_SERVICE_UUID );
+
+    if( a_observation->has_remote_id )
+        consider( &best, SURVEILLANCE_DRONE, SURVEILLANCE_SIGNATURE_REMOTE_ID,
+                  SCORE_REMOTE_ID, SURVEILLANCE_EVIDENCE_REMOTE_ID );
+
+    if( best.score < SCORE_ALERT_THRESHOLD )
+    {
+        best.classification = SURVEILLANCE_NONE;
+        best.signature = SURVEILLANCE_SIGNATURE_NONE;
+    }
+    return best;
+}
+
+surveillance_class_t surveillance_classify( const rf_device_t *a_observation )
+{
+    return surveillance_match( a_observation ).classification;
+}
+
+const char *surveillance_signature_label( surveillance_signature_id_t a_signature )
+{
+    switch( a_signature )
+    {
+        case SURVEILLANCE_SIGNATURE_FLOCK: return "ALPR/Flock";
+        case SURVEILLANCE_SIGNATURE_VIGILANT: return "ALPR/Vigilant";
+        case SURVEILLANCE_SIGNATURE_RAVEN: return "AUDIO/Raven";
+        case SURVEILLANCE_SIGNATURE_AXON: return "BODY/Axon";
+        case SURVEILLANCE_SIGNATURE_RING: return "CAM/Ring";
+        case SURVEILLANCE_SIGNATURE_VERKADA: return "CAM/Verkada";
+        case SURVEILLANCE_SIGNATURE_AXIS: return "CAM/Axis";
+        case SURVEILLANCE_SIGNATURE_HIKVISION: return "CAM/Hikvision";
+        case SURVEILLANCE_SIGNATURE_DAHUA: return "CAM/Dahua";
+        case SURVEILLANCE_SIGNATURE_REMOTE_ID: return "DRONE/RemoteID";
+        case SURVEILLANCE_SIGNATURE_META: return "GLASS/Meta";
+        default: return "OTHER";
+    }
 }
 
 const char *surveillance_name( surveillance_class_t a_classification )
 {
     switch( a_classification )
     {
-        case SURVEILLANCE_FLOCK: return "Flock / ALPR";
+        case SURVEILLANCE_FLOCK: return "ALPR";
         case SURVEILLANCE_BODY_CAMERA: return "Body camera";
         case SURVEILLANCE_DRONE: return "Drone";
         case SURVEILLANCE_CAMERA: return "Camera / doorbell";
         case SURVEILLANCE_SMART_GLASSES: return "Smart glasses";
+        case SURVEILLANCE_AUDIO: return "Acoustic sensor";
         case SURVEILLANCE_OTHER: return "Surveillance";
         default: return "None";
     }
@@ -113,6 +211,7 @@ char surveillance_morse_letter( surveillance_class_t a_classification )
         case SURVEILLANCE_DRONE: return 'D';
         case SURVEILLANCE_CAMERA: return 'C';
         case SURVEILLANCE_SMART_GLASSES: return 'G';
+        case SURVEILLANCE_AUDIO: return 'R';
         case SURVEILLANCE_OTHER: return 'S';
         default: return '\0';
     }
