@@ -6,8 +6,6 @@ RFScout is a **situational-awareness** instrument: build a useful, glanceable pi
 
 ## Nearby / Brand awareness
 
-Derived from Brandalize:
-
 - passive Wi-Fi and BLE observations;
 - global deduplication by device address where that identity is meaningful;
 - rolling history of at least 1,000 recently observed unique devices;
@@ -18,14 +16,13 @@ Derived from Brandalize:
 
 ## Surveillance awareness
 
-Derived from OUI-SPY:
-
 - identify narrow, high-confidence surveillance signatures;
 - initial classes: Flock/ALPR, body cameras, drones, cameras/doorbells and smart glasses;
 - do not classify a generic product as surveillance merely because its vendor also makes surveillance products;
+- combine available OUI, advertised-name, manufacturer, service, and protocol evidence where possible;
 - highlight new unique detections visually;
 - maintain a surveillance-specific recent/history view;
-- allow details to show the evidence/source that caused a classification.
+- retain confidence and evidence information for classified observations.
 
 ## Alerts
 
@@ -106,7 +103,7 @@ Implemented baseline behavior:
 - one-second telemetry polling with a cached public status interface;
 - exact percentage plus proportional battery fill in the top-right LCD header;
 - lightning bolt inside the battery body while charging;
-- cyan, yellow, and red level colors with green for charge-complete on external power;
+- subdued normal-state colors with yellow/red low-charge indications and a muted charge-complete state;
 - gray unavailable state when the power-management devices cannot be read;
 - isolated `battery` and shared `board_i2c` modules so register and bus details do not leak into the UI.
 
@@ -122,4 +119,4 @@ Future power work can add estimated runtime, battery-health details, low-power d
 - configurable alert confidence thresholds;
 - SD export;
 - signature/database update tooling;
-- multiple hardware targets, keeping the original ESP32-C5/T-Dongle path possible where 5 GHz Wi-Fi is important.
+- additional hardware targets where their radio capabilities provide useful situational-awareness coverage.
