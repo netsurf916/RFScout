@@ -28,7 +28,7 @@
 
 static const char *TAG = "rfscout";
 
-/** @brief Normalize, classify, retain, log, and report one passive RF observation. */
+/** @brief Normalize, classify, retain, and report one passive RF observation. */
 static void on_observation( rf_device_t *a_observation )
 {
     if( NULL == a_observation )
@@ -58,8 +58,6 @@ static void on_observation( rf_device_t *a_observation )
     {
         surveillance_history_observe( a_observation );
     }
-
-    log_writer_observation( a_observation );
 
     bool is_new = false;
     if( !observation_store_observe( a_observation, &is_new ) || !is_new )
@@ -135,6 +133,10 @@ void app_main( void )
             ESP_LOGW( TAG,
                       "SD logging unavailable: %s",
                       esp_err_to_name( result ) );
+        }
+        else
+        {
+            observation_store_set_event_callback( log_writer_store_event, NULL );
         }
     }
 
