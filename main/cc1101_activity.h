@@ -9,6 +9,7 @@
 
 #include "cc1101.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -22,7 +23,8 @@ typedef enum
     CC1101_FP_REMOTE_SENSOR_LIKE,
     CC1101_FP_CONTINUOUS_CARRIER,
     CC1101_FP_BURSTY_SIGNAL,
-    CC1101_FP_WIDEBAND_ACTIVITY
+    CC1101_FP_WIDEBAND_ACTIVITY,
+    CC1101_FP_TYPE_COUNT
 } cc1101_fingerprint_type_t;
 
 typedef struct
@@ -32,6 +34,8 @@ typedef struct
     uint32_t center_khz;
     uint32_t bandwidth_khz;
     int8_t peak_rssi;
+    uint16_t count;
+    bool active;
     char label[ CC1101_FINGERPRINT_LABEL_MAX ];
 } cc1101_fingerprint_t;
 
@@ -44,6 +48,7 @@ void cc1101_activity_observe_sweep( const int8_t *a_rssi,
 size_t cc1101_activity_levels( uint8_t *a_current,
                                uint8_t *a_peak,
                                size_t a_capacity );
+/** @brief Return the fixed likely-device rows and their cumulative counts. */
 size_t cc1101_activity_fingerprints( cc1101_fingerprint_t *a_output,
                                      size_t a_capacity );
 const char *cc1101_activity_fingerprint_name( cc1101_fingerprint_type_t a_type );
