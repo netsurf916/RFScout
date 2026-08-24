@@ -1,110 +1,127 @@
 # Architecture
 
-RFScout uses a unified **observation/classification layer** so nearby-device identity, surveillance classification, UI state, and logging all operate from the same normalized observations rather than duplicate device tables.
-
-## Data flow
+RFScout is organized around a small **application manager** plus capability-specific radio/sensor modules. The current top-level application order is:
 
 ```text
-Wi-Fi ----\
-BLE -------+--> normalized observation --> identity/vendor --> surveillance classifier
-CC1101 ----|                                  |                    |
-nRF24 -----|                                  v                    v
-NFC -------|                            rolling device store     alert events
-IR --------/                                  |
-                                               v
-                                      UI / logging / summaries
+WiFi / BT -> CC1101 -> nRF24 -> Thermal (when MLX90640 is present)
 ```
 
-Board telemetry follows a separate path because it describes RFScout itself rather than an observed device:
+The rotary encoder changes applications unless an application menu is open. The center button enters/leaves application settings. Optional applications are capability-driven: Thermal is skipped when the MLX90640 is not detected.
+
+## Resource lifecycle
+
+A core design rule is that inactive applications should not continue doing expensive work.
+
+- Leaving **WiFi / BT** stops the Wi-Fi monitor and BLE scanner.
+- Leaving **CC1101** stops its scanner and clears runtime RSSI/peak/classification state.
+- Leaving **nRF24** stops its scanner and clears runtime histogram/peak/classification state.
+- Thermal acquisition is performed only while the Thermal application is active.
+
+Application-specific configuration such as CC1101 frequency range/step and nRF24 channel/dwell settings remains configured across view changes even when runtime observations are reset.
+
+## Wi-Fi / BLE data path
 
 ```text
-BQ27220 ----\
-             +--> battery module --> cached battery_status_t --> UI
-BQ25896 ----/
-                 ^
-                 |
-          shared board_i2c bus
+Wi-Fi monitor ---\
+                  +--> normalized observation --> identity/OUI --> surveillance classifier
+BLE monitor -----/              |                       |
+                                v                       v
+                         rolling device store      alert/history state
+                                |
+                                v
+                            WiFi / BT UI
 ```
 
-## Unified device store
+The live store is fixed-memory and rolling. OUI/vendor attribution is applied only where the address can defensibly represent an IEEE identity. Random/private addresses remain unknown rather than being assigned a misleading vendor.
 
-The core maintains a fixed-memory rolling set of approximately 1,000 unique addressable devices. A normalized device record includes:
+Surveillance detections use separate retained state so short-lived observations can remain visible longer than the ordinary nearby-device window.
 
-- address/identity;
-- source radio;
-- vendor/brand when meaningful;
-- RSSI/channel where meaningful;
-- first/last seen timestamps;
-- optional surveillance classification.
+## CC1101 data path
 
-Wi-Fi and BLE observations of the same meaningful public MAC should not create two census entries. Random/private addresses need different treatment because they cannot safely be attributed to an IEEE OUI.
+```text
+CC1101 scanner -> completed RSSI sweep -> direct display levels
+                                      \-> slow peak hold
+                                      \-> conservative RF-shape classifier
+                                              |
+                                              v
+                                      category count panel
+```
 
-The live device store expires records after the configured current-RF window and uses swap removal within a fixed PSRAM allocation. Surveillance detections are copied into a separate, smaller fixed-capacity history so they can remain visible longer without inflating the live brand, Wi-Fi, BLE, or device counts.
+The visible CC1101 spectrum uses the most recently completed direct RSSI sweep; it is not an accumulated histogram. Historical information is limited to the slow-decay peak markers and the category counts.
 
-## Classification
+Sweep configuration is bounded to 128 samples. LOW/HIGH/STEP adjustments that would exceed the limit are rejected instead of changing another setting automatically. This provides a predictable upper bound on sweep work and display latency.
 
-Classification is layered:
+## nRF24 data path
 
-1. **Identity validity** — decide whether an address is usable for OUI/device identity.
-2. **Vendor/OUI** — general manufacturer attribution from the current IEEE registry.
-3. **Surveillance signature** — narrow multi-signal detection using curated OUI, name, manufacturer, service, and protocol evidence.
+```text
+nRF24 RPD sweep -> fast activity histogram -> slow peak hold
+                                      |
+                                      +-> spectrum-shape inference
 
-A surveillance result should be explainable. The classifier preserves confidence and evidence information alongside the broad category and specific type/brand signature.
+validated ESB observation -> active packet classifier cache
+                                      |
+                                      +-> persistent address ledger
+                                      |
+                                      v
+                               category count panel
+```
 
-## Alert manager
+The nRF24 activity display intentionally differs from CC1101 because nRF24 RPD provides thresholded channel activity rather than calibrated RSSI. Fast/slow history therefore gives a more useful visual representation than a raw single sweep.
 
-Alerts are events generated when a device transitions into a noteworthy classification. The alert manager will own:
+Validated Enhanced ShockBurst metadata is classified conservatively using address, bitrate, payload size, repetition timing, and known high-confidence signatures. The small active classifier cache is separate from a larger address ledger used for count deduplication. This prevents an identity from being counted again merely because its detailed classifier record was evicted.
 
-- unique-device suppression;
-- cooldown/re-alert policy;
-- mute state;
-- Morse selection/timing;
-- visual/LED/audio fan-out.
+Category names with question marks (`Logitech?`, `Input?`, `Sensor?`) communicate that these are inferred identities/types unless the evidence is sufficiently specific.
 
-Audio should run asynchronously so Morse playback never blocks radio observation callbacks.
+## Likely Devices UX
 
-## Battery and shared I2C boundary
+CC1101 and nRF24 share the same right-side UI convention:
 
-`board_i2c.c/.h` exclusively owns initialization of the T-Embed shared I2C controller. Feature modules request device handles through that interface instead of independently configuring SDA/SCL or competing for the peripheral.
+- fixed category rows remain visible even when zero;
+- zero counts are subdued;
+- nonzero counts are red;
+- counts persist while the application session is active;
+- `RESET COUNTS` clears the tally and immediately closes the menu so changes can be observed without an extra navigation step;
+- leaving the application starts a fresh runtime observation session when it is entered again.
 
-`battery.c/.h` owns all BQ27220 and BQ25896 addresses, registers, polling, decoding, and cached state. The UI knows only `battery_status_t`; it does not perform I2C operations or include charger/fuel-gauge register definitions. Missing power-management devices are treated as a feature-level unavailable state rather than an application-fatal error.
+The two apps use the same vertical divider position so switching between them does not visually rearrange the primary content regions.
 
-The one-second battery poll is intentionally decoupled from the faster LCD refresh. Future NFC support should reuse `board_i2c` while remaining isolated from battery behavior.
+## Thermal path
 
-## Platform boundary
+The MLX90640 is an optional external I2C/Qwiic device. RFScout periodically probes for it while another application is active. When detected, the Thermal application becomes available as the final application in the rotation.
 
-T-Embed-specific code is divided by capability:
+The sensor's native 32x24 frame is processed for display interpolation/scaling, but the renderer does not imply higher underlying sensor resolution.
 
-- display/UI driver;
-- encoder/input;
-- speaker/audio;
-- RGB LEDs;
-- Wi-Fi monitor;
-- BLE monitor;
-- CC1101;
-- nRF24;
-- PN532;
-- IR;
-- SD/logging;
-- shared board I2C;
-- battery/power.
+## Shared hardware boundaries
 
-The core observation/classification modules do not include board pin definitions. Hardware pins and fixed board addresses are centralized in `board.h`.
+### SPI
 
-## Hardware targets
+The LCD, microSD, CC1101, and nRF24 share board SPI resources. Fixed board pins and chip-select ownership are centralized in `board.h` and the associated platform/radio modules. Inactive radio applications are stopped before another view takes ownership of shared resources.
 
-Primary target: **LILYGO T-Embed CC1101 Plus / ESP32-S3**.
+### I2C
 
-A future secondary target can preserve **ESP32-C5** support for users who value dual-band 2.4/5 GHz Wi-Fi observation over the T-Embed form factor. Feature availability should therefore be capability-driven rather than scattered `#ifdef` assumptions throughout the core.
+`board_i2c.c/.h` owns initialization of the shared board I2C controller. Battery/power modules and optional external I2C devices use that shared controller instead of independently configuring SDA/SCL.
 
-## Implementation phases
+`battery.c/.h` owns BQ27220/BQ25896 register access and exposes cached telemetry to the UI. Missing power-management telemetry is nonfatal.
 
-1. Baseline data model, platform boundary, Morse/classifier interfaces and documentation.
-2. Verify exact T-Embed CC1101 Plus board revision and pin map.
-3. Bring up display, encoder, speaker, LEDs and power telemetry.
-4. Implement passive Wi-Fi/BLE observation and IEEE OUI generation/database.
-5. Build and refine curated multi-signal surveillance signatures.
-6. Implement Nearby/Surveillance UI and asynchronous alert manager.
-7. Add SD event logging.
-8. Add CC1101/nRF24 RF-activity screens.
-9. Add NFC/IR tools.
+## Storage boundary
+
+`storage.c/.h` owns SD mount/state. Logging runs asynchronously so filesystem writes do not execute in radio callbacks. Log files rotate through a bounded two-digit ring with 4 MiB segments.
+
+Filesystem errors are surfaced through the shared top status bar rather than terminating RFScout.
+
+## UI boundary
+
+The display driver is kept below application renderers. Application views use common visual conventions:
+
+- subdued app titles;
+- subdued normal/status colors;
+- red for actionable detections/errors;
+- yellow/amber for editing or limits;
+- consistent encoder semantics;
+- fixed right-side category panels where applicable.
+
+## Current versus future capabilities
+
+Implemented application-level capabilities are Wi-Fi/BLE awareness, CC1101 spectrum awareness, nRF24 activity/fingerprinting, optional MLX90640 thermal imaging, SD logging, battery/status telemetry, and encoder-driven navigation.
+
+NFC, IR, microphone-based features, GPS, and active/replay functions are not part of the current active application set and should not be presented as implemented functionality until they are actually enabled.

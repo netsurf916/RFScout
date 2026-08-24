@@ -18,6 +18,7 @@ typedef struct
 } nrf24_packet_observation_t;
 
 void nrf24_activity_reset( void );
+void nrf24_activity_reset_counts( void );
 void nrf24_activity_observe_sweep( const uint8_t *a_hits, size_t a_count );
 void nrf24_activity_observe_packet( const nrf24_packet_observation_t *a_packet );
 size_t nrf24_activity_histogram( uint8_t *a_fast, uint8_t *a_slow, size_t a_capacity );
