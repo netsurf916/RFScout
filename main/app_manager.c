@@ -21,8 +21,11 @@
 #define APP_REFRESH_INTERVAL_US 125000LL
 #define APP_FEATURE_PROBE_INTERVAL_US 10000000LL
 #define APP_RADIO_RETRY_INTERVAL_US 1000000LL
-#define CC1101_MIN_STEP_KHZ 10U
+#define CC1101_MIN_STEP_KHZ 1U
 #define CC1101_MAX_STEP_KHZ 1000U
+#define CC1101_MENU_RESET_COUNTS 4U
+#define CC1101_MENU_BACK 5U
+#define CC1101_MENU_ITEM_COUNT 6U
 
 static const char *TAG = "app_manager";
 static rfscout_app_id_t active_app;
@@ -281,6 +284,14 @@ static bool cc_step_at_endpoint( uint32_t a_step_khz, int a_delta )
            ( ( a_delta < 0 ) && ( a_step_khz <= CC1101_MIN_STEP_KHZ ) );
 }
 
+static void close_cc_menu( void )
+{
+    cc_menu = false;
+    cc_edit = false;
+    cc_limit = false;
+    render_cc_spectrum();
+}
+
 static void cc_input( bool a_pressed, int a_delta )
 {
     if( !cc_menu )
@@ -297,14 +308,18 @@ static void cc_input( bool a_pressed, int a_delta )
 
     if( a_pressed )
     {
-        if( 4U == cc_item )
+        if( CC1101_MENU_RESET_COUNTS == cc_item )
         {
-            cc_menu = false;
-            cc_edit = false;
-            cc_limit = false;
-            render_cc_spectrum();
+            cc1101_activity_reset_counts();
+            close_cc_menu();
             return;
         }
+        if( CC1101_MENU_BACK == cc_item )
+        {
+            close_cc_menu();
+            return;
+        }
+
         cc_edit = !cc_edit;
         cc_limit = false;
         render_cc_menu();
@@ -319,8 +334,8 @@ static void cc_input( bool a_pressed, int a_delta )
     if( !cc_edit )
     {
         int item = (int)cc_item + ( a_delta > 0 ? 1 : -1 );
-        if( item < 0 ) item = 4;
-        if( item > 4 ) item = 0;
+        if( item < 0 ) item = (int)CC1101_MENU_ITEM_COUNT - 1;
+        if( item >= (int)CC1101_MENU_ITEM_COUNT ) item = 0;
         cc_item = (unsigned)item;
         cc_limit = false;
     }
