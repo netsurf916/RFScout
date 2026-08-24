@@ -1,0 +1,346 @@
+/**
+    nrf24.c : RFScout nRF24 receive-only channel activity scanner
+    Description: Sweeps nRF24 2.4 GHz channels using the RPD energy detector.
+    Copyright 2026 Daniel Wilson
+    SPDX-License-Identifier: MIT
+*/
+
+#include "nrf24.h"
+
+#include "board.h"
+
+#include "driver/gpio.h"
+#include "driver/spi_master.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+
+#include <string.h>
+
+#define NRF24_SPI_HOST SPI2_HOST
+#define NRF24_CMD_R_REGISTER 0x00U
+#define NRF24_CMD_W_REGISTER 0x20U
+#define NRF24_CMD_NOP 0xFFU
+#define NRF24_REG_CONFIG 0x00U
+#define NRF24_REG_EN_AA 0x01U
+#define NRF24_REG_EN_RXADDR 0x02U
+#define NRF24_REG_SETUP_AW 0x03U
+#define NRF24_REG_RF_CH 0x05U
+#define NRF24_REG_RF_SETUP 0x06U
+#define NRF24_REG_STATUS 0x07U
+#define NRF24_REG_RPD 0x09U
+#define NRF24_CONFIG_PRIM_RX 0x01U
+#define NRF24_CONFIG_PWR_UP 0x02U
+#define NRF24_MIN_RX_SETTLE_US 170U
+
+static const char *TAG = "nrf24";
+static spi_device_handle_t device;
+static bool initialized;
+static bool detected;
+static bool running;
+static bool frame_ready;
+static size_t scan_channel;
+static int64_t channel_started_us;
+static uint8_t acquisition[ NRF24_CHANNEL_COUNT ];
+static uint8_t completed[ NRF24_CHANNEL_COUNT ];
+static nrf24_scan_config_t config =
+{
+    .low_channel = 0U,
+    .high_channel = 125U,
+    .dwell_us = 250U
+};
+
+static esp_err_t transfer( const uint8_t *a_tx,
+                           uint8_t *a_rx,
+                           size_t a_length )
+{
+    spi_transaction_t transaction =
+    {
+        .length = a_length * 8U,
+        .rxlength = a_length * 8U,
+        .tx_buffer = a_tx,
+        .rx_buffer = a_rx
+    };
+    return spi_device_transmit( device, &transaction );
+}
+
+static esp_err_t read_register( uint8_t a_register, uint8_t *a_value )
+{
+    uint8_t tx[ 2 ] = { NRF24_CMD_R_REGISTER | ( a_register & 0x1FU ), NRF24_CMD_NOP };
+    uint8_t rx[ 2 ] = { 0U, 0U };
+    const esp_err_t result = transfer( tx, rx, sizeof( tx ) );
+    if( ( ESP_OK == result ) && ( NULL != a_value ) )
+    {
+        *a_value = rx[ 1 ];
+    }
+    return result;
+}
+
+static esp_err_t write_register( uint8_t a_register, uint8_t a_value )
+{
+    uint8_t tx[ 2 ] = { NRF24_CMD_W_REGISTER | ( a_register & 0x1FU ), a_value };
+    uint8_t rx[ 2 ] = { 0U, 0U };
+    return transfer( tx, rx, sizeof( tx ) );
+}
+
+static void ce( bool a_enabled )
+{
+    gpio_set_level( RFSCOUT_BOARD_NRF24_CE_PIN, a_enabled ? 1 : 0 );
+}
+
+static void begin_channel( uint8_t a_channel )
+{
+    ce( false );
+    (void)write_register( NRF24_REG_RF_CH, a_channel );
+    ce( true );
+    channel_started_us = esp_timer_get_time();
+}
+
+static void restart_scan( void )
+{
+    memset( acquisition, 0, sizeof( acquisition ) );
+    scan_channel = config.low_channel;
+    frame_ready = false;
+
+    if( running )
+    {
+        begin_channel( (uint8_t)scan_channel );
+    }
+}
+
+esp_err_t nrf24_init( void )
+{
+    if( initialized )
+    {
+        return detected ? ESP_OK : ESP_ERR_NOT_FOUND;
+    }
+
+    gpio_reset_pin( RFSCOUT_BOARD_NRF24_CS_PIN );
+    gpio_set_direction( RFSCOUT_BOARD_NRF24_CE_PIN, GPIO_MODE_OUTPUT );
+    ce( false );
+
+    spi_device_interface_config_t device_config =
+    {
+        .clock_speed_hz = 4000000,
+        .mode = 0,
+        .spics_io_num = RFSCOUT_BOARD_NRF24_CS_PIN,
+        .queue_size = 1
+    };
+
+    esp_err_t result = spi_bus_add_device( NRF24_SPI_HOST,
+                                           &device_config,
+                                           &device );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
+    initialized = true;
+
+    uint8_t setup_aw = 0xFFU;
+    uint8_t rf_channel = 0xFFU;
+    uint8_t status = 0xFFU;
+    (void)read_register( NRF24_REG_SETUP_AW, &setup_aw );
+    (void)read_register( NRF24_REG_RF_CH, &rf_channel );
+    (void)read_register( NRF24_REG_STATUS, &status );
+
+    detected = ( setup_aw >= 1U ) &&
+               ( setup_aw <= 3U ) &&
+               ( rf_channel <= 125U ) &&
+               ( 0xFFU != status );
+
+    ESP_LOGI( TAG,
+              "probe setup_aw=0x%02x rf_ch=%u status=0x%02x detected=%d",
+              setup_aw,
+              rf_channel,
+              status,
+              detected );
+
+    memset( acquisition, 0, sizeof( acquisition ) );
+    memset( completed, 0, sizeof( completed ) );
+    return detected ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+esp_err_t nrf24_start( void )
+{
+    esp_err_t result = nrf24_init();
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
+    ce( false );
+
+    /* Disable packet-level features; this view uses only the radio's receive
+       power detector and never transmits or attempts to decode payloads. */
+    result = write_register( NRF24_REG_EN_AA, 0x00U );
+    if( ESP_OK == result )
+    {
+        result = write_register( NRF24_REG_EN_RXADDR, 0x00U );
+    }
+    if( ESP_OK == result )
+    {
+        result = write_register( NRF24_REG_RF_SETUP, 0x06U );
+    }
+    if( ESP_OK == result )
+    {
+        result = write_register( NRF24_REG_CONFIG,
+                                 NRF24_CONFIG_PWR_UP |
+                                 NRF24_CONFIG_PRIM_RX );
+    }
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
+    running = true;
+    restart_scan();
+    return ESP_OK;
+}
+
+void nrf24_stop( void )
+{
+    if( !initialized )
+    {
+        return;
+    }
+
+    running = false;
+    ce( false );
+    (void)write_register( NRF24_REG_CONFIG, 0x00U );
+}
+
+void nrf24_poll( void )
+{
+    if( !running || !detected )
+    {
+        return;
+    }
+
+    const int64_t now_us = esp_timer_get_time();
+    uint16_t dwell_us = config.dwell_us;
+    if( dwell_us < NRF24_MIN_RX_SETTLE_US )
+    {
+        dwell_us = NRF24_MIN_RX_SETTLE_US;
+    }
+
+    if( ( now_us - channel_started_us ) < dwell_us )
+    {
+        return;
+    }
+
+    uint8_t rpd = 0U;
+    if( ESP_OK == read_register( NRF24_REG_RPD, &rpd ) )
+    {
+        acquisition[ scan_channel ] = ( rpd & 0x01U ) ? 1U : 0U;
+    }
+
+    ce( false );
+
+    if( scan_channel >= config.high_channel )
+    {
+        memcpy( completed, acquisition, sizeof( completed ) );
+        memset( acquisition, 0, sizeof( acquisition ) );
+        frame_ready = true;
+        scan_channel = config.low_channel;
+    }
+    else
+    {
+        ++scan_channel;
+    }
+
+    begin_channel( (uint8_t)scan_channel );
+}
+
+bool nrf24_is_detected( void )
+{
+    return detected;
+}
+
+const nrf24_scan_config_t *nrf24_config( void )
+{
+    return &config;
+}
+
+void nrf24_adjust_low( int a_delta )
+{
+    int value = (int)config.low_channel + a_delta;
+    if( value < 0 )
+    {
+        value = 0;
+    }
+    if( value >= config.high_channel )
+    {
+        value = (int)config.high_channel - 1;
+    }
+    config.low_channel = (uint8_t)value;
+    restart_scan();
+}
+
+void nrf24_adjust_high( int a_delta )
+{
+    int value = (int)config.high_channel + a_delta;
+    if( value > 125 )
+    {
+        value = 125;
+    }
+    if( value <= config.low_channel )
+    {
+        value = (int)config.low_channel + 1;
+    }
+    config.high_channel = (uint8_t)value;
+    restart_scan();
+}
+
+void nrf24_adjust_dwell( int a_delta )
+{
+    static const uint16_t dwell_values[] =
+    {
+        200U,
+        250U,
+        500U,
+        1000U,
+        2000U,
+        5000U
+    };
+
+    size_t index = 0U;
+    while( ( index + 1U < ( sizeof( dwell_values ) / sizeof( dwell_values[ 0 ] ) ) ) &&
+           ( dwell_values[ index ] < config.dwell_us ) )
+    {
+        ++index;
+    }
+
+    if( ( a_delta > 0 ) &&
+        ( index + 1U < ( sizeof( dwell_values ) / sizeof( dwell_values[ 0 ] ) ) ) )
+    {
+        ++index;
+    }
+    else if( ( a_delta < 0 ) && ( index > 0U ) )
+    {
+        --index;
+    }
+
+    config.dwell_us = dwell_values[ index ];
+    restart_scan();
+}
+
+bool nrf24_take_frame_ready( void )
+{
+    const bool ready = frame_ready;
+    frame_ready = false;
+    return ready;
+}
+
+size_t nrf24_spectrum( uint8_t *a_output, size_t a_capacity )
+{
+    if( ( NULL == a_output ) || ( 0U == a_capacity ) )
+    {
+        return 0U;
+    }
+
+    const size_t count =
+        ( a_capacity < NRF24_CHANNEL_COUNT ) ?
+        a_capacity : NRF24_CHANNEL_COUNT;
+    memcpy( a_output, completed, count );
+    return count;
+}
