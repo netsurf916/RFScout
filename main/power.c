@@ -9,6 +9,8 @@
 
 #include "battery.h"
 #include "board.h"
+#include "log_writer.h"
+#include "storage.h"
 
 #include "driver/gpio.h"
 #include "esp_log.h"
@@ -18,6 +20,7 @@
 #define POWER_DEBOUNCE_US          30000LL
 #define POWER_COUNTDOWN_START_US  500000LL
 #define POWER_SHUTDOWN_HOLD_US   3000000LL
+#define POWER_LOG_FLUSH_TIMEOUT_MS 3000U
 
 static const char *TAG = "power";
 static bool raw_pressed;
@@ -26,10 +29,23 @@ static int64_t raw_changed_us;
 static int64_t pressed_since_us;
 static power_status_t status;
 
+/** @brief Flush and unmount removable storage before entering a power state. */
+static void prepare_storage_for_power_state( void )
+{
+    if( !storage_is_available() )
+    {
+        return;
+    }
+
+    log_writer_shutdown( POWER_LOG_FLUSH_TIMEOUT_MS );
+    storage_shutdown();
+}
+
 /** @brief Enter deep sleep and wake when the active-low user key is pressed. */
 static void enter_sleep( void )
 {
     ESP_LOGI( TAG, "entering deep sleep; user key wakes device" );
+    prepare_storage_for_power_state();
     ESP_ERROR_CHECK( esp_sleep_enable_ext1_wakeup_io(
         1ULL << RFSCOUT_BOARD_USER_KEY_PIN,
         ESP_EXT1_WAKEUP_ANY_LOW ) );
@@ -117,6 +133,7 @@ void power_poll( void )
         status.state = POWER_HOLD_SHUTDOWN;
         status.seconds_remaining = 0U;
         ESP_LOGI( TAG, "user key held for 3 seconds; requesting power off" );
+        prepare_storage_for_power_state();
         const esp_err_t result = battery_shutdown();
         if( ESP_OK != result )
         {
