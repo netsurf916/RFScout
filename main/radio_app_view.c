@@ -4,6 +4,7 @@
     SPDX-License-Identifier: MIT
 */
 #include "radio_app_view.h"
+#include "cc1101.h"
 #include "display.h"
 #include "nrf24_activity.h"
 #include <stdio.h>
