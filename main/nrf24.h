@@ -12,6 +12,7 @@
 #include <stdint.h>
 #define NRF24_CHANNEL_COUNT 126U
 #define NRF24_FINGERPRINT_MAX 5U
+#define NRF24_FINGERPRINT_LABEL_MAX 24U
 
 typedef struct
 {
@@ -27,7 +28,8 @@ typedef enum
     NRF24_FP_INPUT,
     NRF24_FP_SENSOR,
     NRF24_FP_WIFI_LIKE,
-    NRF24_FP_BLE_LIKE
+    NRF24_FP_BLE_LIKE,
+    NRF24_FP_LOGITECH_LIKE
 } nrf24_fingerprint_type_t;
 
 typedef struct
@@ -40,6 +42,7 @@ typedef struct
     uint8_t address[ 5 ];
     uint8_t address_len;
     uint32_t packets;
+    char label[ NRF24_FINGERPRINT_LABEL_MAX ];
 } nrf24_fingerprint_t;
 
 esp_err_t nrf24_init( void );
