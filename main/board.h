@@ -43,8 +43,9 @@
 #define RFSCOUT_BOARD_CC1101_SWITCH_1_PIN      47
 #define RFSCOUT_BOARD_CC1101_SWITCH_0_PIN      48
 
-/* The bottom expansion UART shares GPIO43/44 with the optional nRF24
-   CE/CS assignment. RFScout currently reserves these pins for GPS. */
+/* GPIO43/44 are owned by the onboard nRF24 when that radio is enabled. The
+   dormant GPS experiment also used these expansion pins and must not be
+   initialized concurrently with nRF24 operation. */
 #define RFSCOUT_BOARD_GPS_TX_PIN               43
 #define RFSCOUT_BOARD_GPS_RX_PIN               44
 #define RFSCOUT_BOARD_NRF24_CS_PIN             44
@@ -53,6 +54,7 @@
 #define RFSCOUT_BOARD_I2C_SDA_PIN               8
 #define RFSCOUT_BOARD_I2C_SCL_PIN              18
 #define RFSCOUT_BOARD_PN532_I2C_ADDRESS       0x24
+#define RFSCOUT_BOARD_MLX90640_I2C_ADDRESS    0x33
 #define RFSCOUT_BOARD_BQ27220_I2C_ADDRESS     0x55
 #define RFSCOUT_BOARD_BQ25896_I2C_ADDRESS     0x6B
 #define RFSCOUT_BOARD_PN532_RESET_PIN          45
