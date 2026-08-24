@@ -4,6 +4,7 @@ idf_component_register(
         "app_manager.c"
         "radio_app_view.c"
         "cc1101.c"
+        "cc1101_activity.c"
         "nrf24.c"
         "nrf24_activity.c"
         "observation_store.c"
