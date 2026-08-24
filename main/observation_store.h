@@ -45,6 +45,22 @@ typedef enum
     SURVEILLANCE_OTHER
 } surveillance_class_t;
 
+/**
+ * @brief Specific curated surveillance signature matched by an observation.
+ * @details Broad classes remain useful for alert policy, while this identifier
+ *          preserves the type/brand identity required by the LCD and history.
+ */
+typedef enum
+{
+    SURVEILLANCE_SIGNATURE_NONE = 0,
+    SURVEILLANCE_SIGNATURE_FLOCK,
+    SURVEILLANCE_SIGNATURE_AXON,
+    SURVEILLANCE_SIGNATURE_DRONE_DJI_PLUS,
+    SURVEILLANCE_SIGNATURE_RING,
+    SURVEILLANCE_SIGNATURE_GLASSES_META_PLUS,
+    SURVEILLANCE_SIGNATURE_COUNT
+} surveillance_signature_id_t;
+
 typedef struct
 {
     uint8_t address[ 6 ];
@@ -56,6 +72,7 @@ typedef struct
     uint32_t first_seen_ms;
     uint32_t last_seen_ms;
     surveillance_class_t surveillance;
+    surveillance_signature_id_t surveillance_signature;
     char vendor[ RFSCOUT_VENDOR_NAME_MAX ];
     char name[ RFSCOUT_DEVICE_NAME_MAX ];
     bool has_name;
