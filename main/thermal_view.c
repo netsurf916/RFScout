@@ -30,20 +30,19 @@
 #define COLOR_SUBDUED_TEAL 0x03F0U
 
 static const char *TAG = "thermal_view";
-static bool initialized;
-static bool available;
 static mlx90640_frame_t frame;
 
-/** @brief Convert normalized intensity to a compact blue/cyan/yellow/red palette. */
-static uint16_t palette( uint16_t a_value, uint16_t a_minimum, uint16_t a_maximum )
+/** @brief Convert normalized signed raw intensity to blue/cyan/yellow/red. */
+static uint16_t palette( int16_t a_value, int16_t a_minimum, int16_t a_maximum )
 {
     if( a_maximum <= a_minimum )
     {
         return 0x0010U;
     }
 
-    uint32_t level = ( (uint32_t)( a_value - a_minimum ) * 255U ) /
-                     (uint32_t)( a_maximum - a_minimum );
+    const int32_t offset = (int32_t)a_value - (int32_t)a_minimum;
+    const int32_t range = (int32_t)a_maximum - (int32_t)a_minimum;
+    uint32_t level = (uint32_t)( ( offset * 255 ) / range );
     uint8_t red = 0U;
     uint8_t green = 0U;
     uint8_t blue = 0U;
@@ -74,24 +73,17 @@ static uint16_t palette( uint16_t a_value, uint16_t a_minimum, uint16_t a_maximu
 
 void thermal_view_enter( void )
 {
-    if( initialized )
-    {
-        return;
-    }
-
-    initialized = true;
-    available = ( ESP_OK == mlx90640_init() );
+    /* Availability is owned by the app manager; no I2C probing is done here. */
 }
 
 esp_err_t thermal_view_render( void )
 {
-    thermal_view_enter();
     display_clear( COLOR_BLACK );
     display_draw_text( 6, 5, "THERMAL", COLOR_SUBDUED_TEAL, 2 );
     status_bar_draw();
     battery_indicator_draw();
 
-    if( !available )
+    if( !mlx90640_is_detected() )
     {
         display_draw_text( 56, 70, "MLX90640 NOT DETECTED", COLOR_RED, 2 );
         display_draw_text( 73, 98, "I2C ADDRESS 0x33", COLOR_GRAY, 1 );
@@ -99,6 +91,10 @@ esp_err_t thermal_view_render( void )
     }
 
     const esp_err_t result = mlx90640_read_frame( &frame );
+    if( ESP_ERR_NOT_FINISHED == result )
+    {
+        return ESP_OK;
+    }
     if( ESP_OK != result )
     {
         display_draw_text( 72, 76, "THERMAL READ ERROR", COLOR_RED, 2 );
@@ -110,7 +106,7 @@ esp_err_t thermal_view_render( void )
     {
         for( int x = 0; x < MLX90640_WIDTH; ++x )
         {
-            const uint16_t value = frame.pixels[ ( y * MLX90640_WIDTH ) + x ];
+            const int16_t value = frame.pixels[ ( y * MLX90640_WIDTH ) + x ];
             display_fill_rect( THERMAL_IMAGE_X + ( x * THERMAL_PIXEL_SCALE ),
                                THERMAL_IMAGE_Y + ( y * THERMAL_PIXEL_SCALE ),
                                THERMAL_PIXEL_SCALE,
@@ -119,7 +115,6 @@ esp_err_t thermal_view_render( void )
         }
     }
 
-    /* Center reticle. */
     display_fill_rect( THERMAL_IMAGE_X + ( THERMAL_IMAGE_WIDTH / 2 ) - 5,
                        THERMAL_IMAGE_Y + ( THERMAL_IMAGE_HEIGHT / 2 ), 11, 1,
                        COLOR_WHITE );
@@ -129,11 +124,11 @@ esp_err_t thermal_view_render( void )
 
     char text[ 24 ];
     display_draw_text( THERMAL_INFO_X, 30, "RELATIVE IR", COLOR_GRAY, 1 );
-    snprintf( text, sizeof( text ), "MAX %5u", (unsigned)frame.maximum );
+    snprintf( text, sizeof( text ), "MAX %6d", (int)frame.maximum );
     display_draw_text( THERMAL_INFO_X, 52, text, COLOR_WHITE, 1 );
-    snprintf( text, sizeof( text ), "MIN %5u", (unsigned)frame.minimum );
+    snprintf( text, sizeof( text ), "MIN %6d", (int)frame.minimum );
     display_draw_text( THERMAL_INFO_X, 68, text, COLOR_WHITE, 1 );
-    snprintf( text, sizeof( text ), "CTR %5u", (unsigned)frame.center );
+    snprintf( text, sizeof( text ), "CTR %6d", (int)frame.center );
     display_draw_text( THERMAL_INFO_X, 84, text, COLOR_WHITE, 1 );
     display_draw_text( THERMAL_INFO_X, 116, "RAW SENSOR", COLOR_GRAY, 1 );
     display_draw_text( THERMAL_INFO_X, 130, "CAL PENDING", COLOR_GRAY, 1 );
