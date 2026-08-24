@@ -11,10 +11,12 @@
 
 #include "esp_err.h"
 
-/** @brief Full-screen applications managed by RFScout. */
+/** @brief Full-screen applications in encoder navigation order. */
 typedef enum
 {
-    RFSCOUT_APP_RF_SUMMARY = 0,
+    RFSCOUT_APP_WIFI_BT = 0,
+    RFSCOUT_APP_CC1101,
+    RFSCOUT_APP_NRF24,
     RFSCOUT_APP_THERMAL,
     RFSCOUT_APP_COUNT
 } rfscout_app_id_t;
@@ -22,7 +24,7 @@ typedef enum
 /** @brief Initialize the primary RF view and application manager. */
 esp_err_t app_manager_init( void );
 
-/** @brief Process encoder view changes and update the active application. */
+/** @brief Process app navigation, lifecycle, button input, and active rendering. */
 void app_manager_poll( void );
 
 /** @brief Return the application currently visible on the LCD. */

@@ -22,8 +22,14 @@ typedef enum
     RF_WIFI_REGION_EXTENDED_RX
 } rf_wifi_region_t;
 
-/** @brief Initialize passive Wi-Fi promiscuous monitoring. */
+/** @brief Initialize passive Wi-Fi monitoring and start the initial scan. */
 esp_err_t radio_monitor_init( radio_observation_fn a_callback );
+
+/** @brief Start Wi-Fi hardware and promiscuous reception after app entry. */
+esp_err_t radio_monitor_start( void );
+
+/** @brief Stop promiscuous reception and Wi-Fi hardware while app is inactive. */
+esp_err_t radio_monitor_stop( void );
 
 /** @brief Advance the channel-hopping state machine when required. */
 void radio_monitor_step( void );

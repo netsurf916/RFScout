@@ -27,6 +27,12 @@ void platform_poll( void );
  */
 int platform_encoder_delta( void );
 
+/**
+ * @brief Consume one debounced encoder-center-button press.
+ * @return true once for each completed button press.
+ */
+bool platform_encoder_button_pressed( void );
+
 /** @brief Set the visual surveillance-alert state. */
 void platform_set_alert_led( bool a_active );
 
