@@ -12,6 +12,7 @@
 
 #define BOARD_I2C_FREQUENCY_HZ 400000U
 #define BOARD_I2C_PROBE_TIMEOUT_MS 50
+#define BOARD_I2C_TRANSFER_TIMEOUT_MS 100
 
 static const char *TAG = "board_i2c";
 static i2c_master_bus_handle_t bus_handle;
@@ -80,4 +81,40 @@ esp_err_t board_i2c_add_device( uint16_t a_address,
     return i2c_master_bus_add_device( bus_handle,
                                       &device_config,
                                       a_device );
+}
+
+esp_err_t board_i2c_transmit_receive( i2c_master_dev_handle_t a_device,
+                                      const uint8_t *a_write,
+                                      size_t a_write_length,
+                                      uint8_t *a_read,
+                                      size_t a_read_length )
+{
+    if( ( NULL == a_device ) || ( NULL == a_write ) ||
+        ( 0U == a_write_length ) || ( NULL == a_read ) ||
+        ( 0U == a_read_length ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    return i2c_master_transmit_receive( a_device,
+                                        a_write,
+                                        a_write_length,
+                                        a_read,
+                                        a_read_length,
+                                        BOARD_I2C_TRANSFER_TIMEOUT_MS );
+}
+
+esp_err_t board_i2c_transmit( i2c_master_dev_handle_t a_device,
+                              const uint8_t *a_data,
+                              size_t a_length )
+{
+    if( ( NULL == a_device ) || ( NULL == a_data ) || ( 0U == a_length ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    return i2c_master_transmit( a_device,
+                                a_data,
+                                a_length,
+                                BOARD_I2C_TRANSFER_TIMEOUT_MS );
 }
