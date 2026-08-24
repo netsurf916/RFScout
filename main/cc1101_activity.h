@@ -1,5 +1,5 @@
 /**
-    cc1101_activity.h : adaptive CC1101 activity histogram and passive fingerprints
+    cc1101_activity.h : CC1101 direct RSSI levels, peak hold, and passive fingerprints
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -40,9 +40,10 @@ void cc1101_activity_observe_sweep( const int8_t *a_rssi,
                                     size_t a_count,
                                     uint32_t a_low_khz,
                                     uint32_t a_high_khz );
-size_t cc1101_activity_histogram( uint8_t *a_fast,
-                                  uint8_t *a_slow,
-                                  size_t a_capacity );
+/** @brief Copy current direct RSSI levels plus slow-decay peak-hold levels. */
+size_t cc1101_activity_levels( uint8_t *a_current,
+                               uint8_t *a_peak,
+                               size_t a_capacity );
 size_t cc1101_activity_fingerprints( cc1101_fingerprint_t *a_output,
                                      size_t a_capacity );
 const char *cc1101_activity_fingerprint_name( cc1101_fingerprint_type_t a_type );
