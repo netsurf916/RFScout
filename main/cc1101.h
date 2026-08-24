@@ -24,5 +24,8 @@ void cc1101_adjust_low( int a_delta );
 void cc1101_adjust_high( int a_delta );
 void cc1101_adjust_step( int a_delta );
 const char *cc1101_profile_name( cc1101_profile_t a_profile );
+/** @brief Copy the most recently completed spectrum frame. */
 size_t cc1101_spectrum( int8_t *a_output, size_t a_capacity );
+/** @brief Consume the notification that a complete sweep is ready to render. */
+bool cc1101_take_frame_ready( void );
 #endif
