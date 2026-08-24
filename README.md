@@ -1,55 +1,77 @@
 # RFScout
 
-RFScout is a handheld **RF situational-awareness** project for the LILYGO T-Embed CC1101 Plus.
+RFScout is a handheld **RF situational-awareness** instrument for the LILYGO T-Embed CC1101 Plus / ESP32-S3. It combines passive Wi-Fi/BLE observation, sub-GHz spectrum awareness, 2.4 GHz nRF24 activity analysis, optional thermal imaging, battery/status telemetry, and SD logging in a rotary-encoder-driven interface.
 
 <p align="center">
   <img src="assets/device.jpg" alt="RFScout running on a LILYGO T-Embed CC1101 Plus" width="800">
 </p>
 
-<p align="center"><em>RFScout running on real T-Embed CC1101 Plus hardware with live nearby-device and surveillance detection.</em></p>
+<p align="center"><em>A functional RFScout device running on T-Embed CC1101 Plus hardware.</em></p>
 
-RFScout provides a passive nearby-device view designed for quick situational awareness:
+RFScout is intentionally passive wherever the underlying radio APIs allow it. It is designed to answer "what electronic activity is around me?" without requiring the user to inspect raw packets continuously.
 
-- identify nearby devices by OUI/vendor when a globally administered MAC permits it;
-- maintain a rolling view of recently observed unique devices;
-- rank nearby brands on the 320x170 LCD;
-- identify narrow, high-confidence surveillance-device signatures;
-- provide visual, LED, and Morse-code audio alerts for new surveillance detections;
-- expand the same UI to the CC1101, nRF24, NFC, IR, audio, and storage capabilities available on the T-Embed CC1101 Plus.
+## Current applications
 
-RFScout is intended as an awareness instrument, not an active network client. Wi-Fi/BLE collection should remain passive wherever the hardware/API permits it.
+Rotating the encoder switches applications in this order:
 
-## Current display
+1. **WiFi / BT**
+2. **CC1101**
+3. **nRF24**
+4. **Thermal** — shown only when an MLX90640 is detected on the shared I2C/Qwiic bus
 
-The first LCD view is a dense live summary showing total unique devices, Wi-Fi/BLE counts, retained surveillance detections, and the highest-count nearby OUI brands. The display uses a compact built-in 5x7 font and a native ESP-IDF ST7789 driver rather than adding a large GUI dependency.
+The center button opens an application's settings/action menu where one exists. Radio subsystems are stopped when their application is left so inactive views do not continue consuming RF, CPU, and power resources.
 
-The title row contains `RFSCOUT` on the left, a compact battery indicator on the right, and a dedicated status-bar region between them. Status icons use the same subdued visual language as the normal battery indicator and populate from right to left, keeping transient/system state close to the battery while preserving clear space beside the project title. Subsystems own their state while the isolated `status_bar.c/.h` renderer decides how that state appears. An SD-card icon is the first status item: it appears in subdued teal whenever the card is mounted and turns red if the logging path encounters a write, flush, sync, close, rotation, or other filesystem error. Logging I/O errors are sticky for the current runtime so an intermittent media problem remains visible rather than disappearing before the user notices it.
+### WiFi / BT
 
-The lower display is divided into a brand column and a surveillance column. The surveillance column contains a fixed list of supported type/brand signatures. Zero-count rows remain gray and detections turn red, so supported capabilities remain visible even in a quiet environment.
+The WiFi / BT application is the primary nearby-device view. It passively observes Wi-Fi and BLE traffic, maintains a rolling set of recently seen devices, resolves IEEE OUI/vendor information for addresses where that attribution is defensible, and shows ranked nearby vendors.
 
-The brand column reserves its bottom row for an exact `UNKNOWN` count. The nine rows above it contain the highest-count resolved vendors. `UNKNOWN` includes every active observation for which RFScout has no defensible vendor attribution, including private/randomized MAC addresses and globally administered addresses that are absent from the current registry. The fixed row remains visible even when the count is zero, so unresolved devices are never silently omitted from the live summary.
+The right-side surveillance panel uses fixed categories: zero-count rows remain subdued and detected categories turn red. Random/private MAC addresses are not assigned an OUI vendor, and unresolved devices contribute to the visible `UNKNOWN` count instead of disappearing from the census.
 
-The battery indicator combines an exact percentage with a proportionally filled battery body. Normal charge levels use a subdued teal rather than full-intensity cyan, and charge-complete on external power uses a muted green rather than the dominant full-brightness green used elsewhere in the UI. Low charge remains amber or red so urgency is still obvious. While charging, a bright yellow lightning bolt is drawn over a small dark backing patch inside the battery body, keeping it visible regardless of the current fill color. Unavailable telemetry is shown as a gray `--%` and empty outline.
+Ordinary nearby-device observations expire after the live RF window; surveillance detections are retained longer so brief events remain visible. Leaving this application stops both the Wi-Fi monitor and BLE scanner.
 
-Battery support is isolated in `battery.c/.h`, with shared board-bus ownership in `board_i2c.c/.h` and all battery rendering contained in `battery_indicator.c/.h`. The BQ27220 fuel gauge supplies state of charge, voltage, and current; the BQ25896 charger supplies external-power and charging state. Telemetry is polled once per second and cached, while the indicator consumes only the public `battery_status_t` interface. Missing power-management devices are nonfatal and do not prevent RFScout from starting.
+### CC1101
 
-Ordinary nearby-device and brand observations expire after 20 seconds without another sighting. Surveillance detections use a separate fixed history store with a three-times multiplier, so they remain visible for 60 seconds after their most recent packet. The surveillance counter and category list use that same retained window, while the normal device, Wi-Fi, BLE, and brand counts continue to represent the shorter live RF window. Both stores use fixed-capacity arrays and swap removal, avoiding runtime allocation churn.
+The CC1101 application is a direct-RSSI sub-GHz spectrum view. The display is split at the same point as the nRF24 view:
 
-Brand rows are cyan during normal activity. A brand is eligible for yellow highlighting when its active-device count is greater than five, but only the first three eligible rows in the descending ranking are highlighted. The threshold remains fixed rather than changing with environmental density, so the visual meaning of yellow stays consistent while the row cap prevents a busy screen from becoming entirely yellow. The threshold and row cap are module constants intended to be tuned after field experience.
+- the left side shows the most recent completed RSSI sweep;
+- brighter markers provide a slow-decay peak hold;
+- the right side shows cumulative **Likely Devices** category counts.
 
-RFScout stores canonical RGB565 values such as `0x07E0` for green and `0xFFE0` for yellow. The ST7789 is configured for little-endian 16-bit pixel data and RGB element order so native `uint16_t` framebuffer values can be transferred directly.
+The current 433 MHz preset defaults to **432.800–433.200 MHz at 5 kHz steps**. Available manual step sizes include 1, 5, 10, 25, 50, 100, 200, 250, 500, and 1000 kHz. A sweep is limited to **128 samples** to keep update time bounded; an attempted LOW/HIGH/STEP change that would exceed that budget is refused and indicated in the settings UI rather than silently changing another setting.
 
-The LCD, SD card, CC1101, and nRF24 share the board SPI bus. RFScout centralizes those pin definitions in `main/board.h` and keeps all unused chip-select signals deasserted during display operation. Board I2C is likewise centralized so the power-management and future NFC features can share one controller without duplicating bus initialization.
+Likely-device categories are deliberately conservative (for example remote/sensor, bursty RF, carrier, narrowband, and wide RF). These are RF-behavior classifications, not claims that RFScout has decoded a specific product. `RESET COUNTS` clears the category tally and immediately returns to the live spectrum. Leaving the application clears its runtime spectrum/peak and count state while retaining the selected tuning configuration.
+
+### nRF24
+
+The nRF24 application scans the 2.4 GHz nRF24 channel range and displays:
+
+- a fast-decay activity histogram;
+- a brighter slow-decay peak hold;
+- a right-side **Likely Devices** category count panel.
+
+Validated Enhanced ShockBurst observations can contribute to `Logitech?`, `Input?`, `Sensor?`, and generic `ESB device` counts. Broader spectrum-only patterns are grouped under `Other 2.4 RF`. Question marks are intentional: except where the evidence is strong, these are behavior-based inferences rather than definitive product identification.
+
+ESB addresses are counted as identities rather than packet totals, and later classification can move an identity from a generic category into a more specific one without double-counting it. The settings menu provides channel bounds, dwell time, `RESET COUNTS`, and `BACK`; reset counts returns directly to the live display. Leaving the nRF24 application clears its runtime histogram, peak, classifier, and count state.
+
+### Thermal
+
+The Thermal application becomes available dynamically when an **MLX90640** is detected on the external I2C/Qwiic connection. RFScout periodically probes for optional thermal hardware while other applications are active, and the Thermal view remains last in the application order. The renderer interpolates the sensor's native 32x24 thermal frame for a more useful full-screen image while retaining the underlying sensor data rate and resolution limits.
+
+## Shared UI and status bar
+
+Application titles use subdued styling so the content remains visually dominant. CC1101 and nRF24 use the same left/right divider and the same `LIKELY DEVICES` visual language: fixed category rows, subdued zero values, and red nonzero counts.
+
+The top status area sits between the application title and the battery indicator. Status icons populate from right to left. A mounted SD card is shown with a subdued SD icon; filesystem/logging errors make that icon red and sticky for the runtime. Optional hardware such as the thermal sensor can also advertise availability through the status area.
+
+The battery indicator shows exact state of charge plus proportional fill. Battery and charger telemetry come from the board's BQ27220/BQ25896 devices through the shared board-I2C layer. Missing telemetry is nonfatal.
 
 ## SD logging
 
-When an SD card is present, RFScout mounts it at `/sdcard` and writes normalized passive observations to `/sdcard/logs`. SD-card failure is nonfatal; the rest of RFScout continues operating when no card is installed or mounting fails. A mounted card is reflected by the SD icon in the top status bar; a logging/filesystem failure changes that icon to red for the remainder of the runtime.
+RFScout mounts an available microSD card at `/sdcard`. SD failure is nonfatal and does not prevent the radio applications from operating.
 
-LILYGO documents **SanDisk microSD cards of 32 GB or less** as the tested configuration for the T-Embed CC1101 family and notes that some other cards may not work reliably. RFScout therefore treats a 32 GB or smaller FAT32-formatted SanDisk card as the known-good baseline; larger cards and other manufacturers may work but are outside LILYGO's stated tested configuration. See [docs/SD_CARD.md](docs/SD_CARD.md) for compatibility and detection details.
+LILYGO documents **SanDisk cards of 32 GB or less** as the tested baseline for the T-Embed CC1101 family; other cards and larger capacities may work but are outside that stated compatibility baseline. See [docs/SD_CARD.md](docs/SD_CARD.md).
 
-Logging uses a dedicated low-priority FreeRTOS task and a fixed queue. RF callbacks only copy a compact observation into that queue and never perform filesystem I/O, keeping SD-card write latency and FAT metadata stalls away from packet collection. The writer flushes the stdio buffer approximately once per second and performs a full flush/sync/close when a segment rotates or RFScout enters sleep or powers off.
-
-Logs use a bounded two-digit circular ring:
+Logging runs asynchronously so filesystem latency does not block RF collection. Files use a bounded two-digit ring:
 
 ```text
 rfscout-00.log
@@ -58,59 +80,33 @@ rfscout-01.log
 rfscout-99.log
 ```
 
-Each segment is capped at 4 MiB, limiting the normal log footprint to approximately 400 MiB. A monotonically increasing sequence marker in each file header lets RFScout reconstruct the newest and oldest segments after an unexpected reset without maintaining a separate index file. When `99` is followed by `00`, the destination slot is replaced. RFScout also attempts to preserve at least 64 MiB of free filesystem space by deleting the oldest RFScout log segments before opening a new one when necessary.
+Each segment is capped at **4 MiB**, for an approximate maximum normal footprint of 400 MiB. Rotation replaces the oldest ring slot and the storage layer also attempts to preserve free filesystem space.
 
-The initial format is deliberately human-readable text because logging is expected to evolve into more specialized output later. Each record includes uptime, RF source, RSSI, channel, MAC address, resolved identity, surveillance type/brand, confidence score, and evidence sources. Queue overflow is counted rather than blocking RF collection.
+## Hardware/resource ownership
 
-Storage ownership is isolated in `storage.c/.h`; asynchronous file rotation and serialization are isolated in `log_writer.c/.h`. Future packet captures or structured data exports should reuse the storage layer rather than adding filesystem operations to radio collectors.
+The LCD, microSD, CC1101, and nRF24 share board SPI resources. Pin definitions and bus ownership are centralized so application switching can stop inactive radio work cleanly rather than leaving competing peripherals active.
 
-## Planned primary screens
-
-1. **Nearby** — unique devices, brands, RSSI/channel/source and recent activity.
-2. **Surveillance** — high-confidence surveillance detections and alert history.
-3. **RF Activity** — Wi-Fi/BLE plus future CC1101 and nRF24 activity summaries.
-4. **Tools** — NFC, IR, logging, settings, mute/alert controls and device information.
+The board I2C controller is shared by power telemetry and optional external I2C devices such as the MLX90640. Feature modules use the shared bus layer rather than independently reinitializing the controller.
 
 ## OUI database
 
-RFScout maintains a compiled IEEE MA-L/OUI vendor table. Refresh it locally with:
+RFScout compiles an IEEE MA-L/OUI vendor table for Wi-Fi/BLE attribution. Refresh it locally with:
 
 ```sh
 python3 tools/update_oui.py
 ```
 
-The **Refresh IEEE OUI database** GitHub Action can also be run manually and runs weekly. It regenerates `main/oui_database.inc` and commits it only when the IEEE registry has changed.
+The **Refresh IEEE OUI database** GitHub Action can also update the generated database.
 
-The complete registry substantially increases the firmware image size. RFScout therefore configures the T-Embed's 16 MB flash and uses the custom `partitions.csv` layout described below.
+## Flash layout
 
-## Flash and partition layout
+The T-Embed CC1101 Plus has 16 MB of flash. RFScout uses the repository's custom `partitions.csv` because the compiled OUI database and firmware exceed ESP-IDF's small default factory partition.
 
-The T-Embed CC1101 Plus has 16 MB of flash. ESP-IDF's default single-app table provides only a 1 MB factory application partition, which is too small once the full IEEE OUI registry is compiled into RFScout.
-
-RFScout uses a custom partition table:
-
-| Partition | Offset | Size | Purpose |
-|---|---:|---:|---|
-| `nvs` | `0x9000` | 24 KB | Persistent settings |
-| `phy_init` | `0xF000` | 4 KB | PHY initialization data |
-| `factory` | `0x10000` | 4 MB | RFScout firmware |
-| `storage` | `0x410000` | 11.94 MB | Reserved SPIFFS storage for future logs and assets |
-
-The application remains a single factory image with no OTA slots. Adding OTA later will require a different partition layout with two sufficiently large application partitions.
-
-## Coding style
-
-Firmware code follows the project's documented conventions: readable Allman formatting, `a_` argument prefixes, explicit comparisons, strict header/implementation separation, centralized board definitions, and Doxygen documentation for public interfaces. Generated OUI data is exempt from manual formatting.
-
-See [docs/CODING_STYLE.md](docs/CODING_STYLE.md) for the complete project rules. Existing code should be brought into compliance when it is touched; new code must follow the guide.
-
-## Documentation
-
-See [docs/CAPABILITIES.md](docs/CAPABILITIES.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/CODING_STYLE.md](docs/CODING_STYLE.md), and [docs/SD_CARD.md](docs/SD_CARD.md).
+The application currently uses a single large factory image rather than OTA slots.
 
 ## Build
 
-RFScout targets the ESP32-S3 used by the T-Embed CC1101 Plus:
+RFScout targets ESP32-S3 with ESP-IDF:
 
 ```sh
 python3 tools/update_oui.py
@@ -119,15 +115,24 @@ idf.py build
 idf.py flash monitor
 ```
 
-NimBLE observer support, OPI PSRAM, 16 MB flash, and the custom partition table are enabled by `sdkconfig.defaults`.
-
-After pulling a change to `sdkconfig.defaults` or `partitions.csv`, regenerate the local configuration before building:
+After changes to `sdkconfig.defaults` or `partitions.csv`, regenerate configuration before building:
 
 ```sh
 rm -rf build sdkconfig
 idf.py set-target esp32s3
 idf.py build
 ```
+
+## Documentation
+
+- [Capabilities](docs/CAPABILITIES.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [SD card behavior](docs/SD_CARD.md)
+- [Coding style](docs/CODING_STYLE.md)
+
+## Coding style
+
+New and touched firmware code should follow [docs/CODING_STYLE.md](docs/CODING_STYLE.md): readable Allman formatting, `a_` argument prefixes, explicit interfaces, centralized hardware definitions, and documented public APIs.
 
 ## License
 
