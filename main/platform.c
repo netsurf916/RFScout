@@ -10,6 +10,8 @@
 #include "driver/gpio.h"
 #include "esp_attr.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
 
 static const char *TAG = "platform";
 static volatile uint8_t encoder_state;
