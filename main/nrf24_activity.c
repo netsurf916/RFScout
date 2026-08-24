@@ -40,35 +40,26 @@ static bool spectrum_latched;
 
 static uint8_t fast_update( uint8_t a_old, bool a_hit )
 {
-    return (uint8_t)( ( (uint16_t)a_old * 7U +
-                        ( a_hit ? 255U : 0U ) ) / 8U );
+    return (uint8_t)( ( (uint16_t)a_old * 7U + ( a_hit ? 255U : 0U ) ) / 8U );
 }
 
 static bool address_equal( const nrf24_fingerprint_t *a_record,
                            const nrf24_packet_observation_t *a_packet )
 {
     return ( a_record->address_len == a_packet->address_len ) &&
-           ( 0 == memcmp( a_record->address,
-                          a_packet->address,
-                          a_packet->address_len ) );
+           ( 0 == memcmp( a_record->address, a_packet->address, a_packet->address_len ) );
 }
 
-static bool is_logitech_pairing_address( const uint8_t *a_address,
-                                         uint8_t a_length )
+static bool is_logitech_pairing_address( const uint8_t *a_address, uint8_t a_length )
 {
     static const uint8_t pairing[ 5 ] = { 0xBBU, 0x0AU, 0xDCU, 0xA5U, 0x75U };
-    return ( 5U == a_length ) &&
-           ( 0 == memcmp( a_address, pairing, sizeof( pairing ) ) );
+    return ( 5U == a_length ) && ( 0 == memcmp( a_address, pairing, sizeof( pairing ) ) );
 }
 
 static void bump_category( nrf24_fingerprint_type_t a_type )
 {
-    if( ( a_type > NRF24_FP_UNKNOWN ) &&
-        ( a_type <= NRF24_FP_LOGITECH_LIKE ) &&
-        ( category_counts[ a_type ] < UINT32_MAX ) )
-    {
-        ++category_counts[ a_type ];
-    }
+    if( ( a_type > NRF24_FP_UNKNOWN ) && ( a_type <= NRF24_FP_LOGITECH_LIKE ) &&
+        ( category_counts[ a_type ] < UINT32_MAX ) ) ++category_counts[ a_type ];
 }
 
 static void classify_packet_record( packet_record_t *a_record )
@@ -78,24 +69,17 @@ static void classify_packet_record( packet_record_t *a_record )
     fingerprint->confidence = 55U;
     snprintf( fingerprint->label, sizeof( fingerprint->label ), "ESB device" );
 
-    if( is_logitech_pairing_address( fingerprint->address,
-                                     fingerprint->address_len ) )
+    if( is_logitech_pairing_address( fingerprint->address, fingerprint->address_len ) )
     {
         fingerprint->type = NRF24_FP_LOGITECH_LIKE;
         fingerprint->confidence = 98U;
-        snprintf( fingerprint->label,
-                  sizeof( fingerprint->label ),
-                  "Logitech-like" );
+        snprintf( fingerprint->label, sizeof( fingerprint->label ), "Logitech-like" );
     }
     else if( fingerprint->packets >= 6U )
     {
-        const uint32_t average_interval =
-            ( a_record->interval_samples > 0U ) ?
-            ( a_record->interval_total_ms / a_record->interval_samples ) :
-            UINT32_MAX;
-        const uint8_t payload_span =
-            (uint8_t)( a_record->max_payload - a_record->min_payload );
-
+        const uint32_t average_interval = a_record->interval_samples > 0U ?
+            a_record->interval_total_ms / a_record->interval_samples : UINT32_MAX;
+        const uint8_t payload_span = (uint8_t)( a_record->max_payload - a_record->min_payload );
         if( ( average_interval <= 25U ) && ( a_record->max_payload <= 20U ) )
         {
             fingerprint->type = NRF24_FP_INPUT;
@@ -108,14 +92,9 @@ static void classify_packet_record( packet_record_t *a_record )
             fingerprint->confidence = fingerprint->packets >= 12U ? 78U : 66U;
             snprintf( fingerprint->label, sizeof( fingerprint->label ), "Sensor-like" );
         }
-        else
-        {
-            fingerprint->confidence = fingerprint->packets >= 12U ? 68U : 60U;
-        }
+        else fingerprint->confidence = fingerprint->packets >= 12U ? 68U : 60U;
     }
 
-    /* Count a validated address once. If additional observations improve the
-       classification, move that device from the old bucket to the new one. */
     if( !a_record->counted )
     {
         bump_category( fingerprint->type );
@@ -124,32 +103,22 @@ static void classify_packet_record( packet_record_t *a_record )
     }
     else if( a_record->counted_type != fingerprint->type )
     {
-        if( category_counts[ a_record->counted_type ] > 0U )
-        {
-            --category_counts[ a_record->counted_type ];
-        }
+        if( category_counts[ a_record->counted_type ] > 0U ) --category_counts[ a_record->counted_type ];
         bump_category( fingerprint->type );
         a_record->counted_type = fingerprint->type;
     }
 }
 
-static packet_record_t *find_or_allocate_record(
-    const nrf24_packet_observation_t *a_packet )
+static packet_record_t *find_or_allocate_record( const nrf24_packet_observation_t *a_packet )
 {
     packet_record_t *oldest = NULL;
     for( size_t i = 0U; i < PACKET_RECORD_MAX; ++i )
     {
         if( packet_records[ i ].used )
         {
-            if( address_equal( &packet_records[ i ].public, a_packet ) )
-            {
-                return &packet_records[ i ];
-            }
-            if( ( NULL == oldest ) ||
-                ( packet_records[ i ].last_seen_ms < oldest->last_seen_ms ) )
-            {
+            if( address_equal( &packet_records[ i ].public, a_packet ) ) return &packet_records[ i ];
+            if( ( NULL == oldest ) || ( packet_records[ i ].last_seen_ms < oldest->last_seen_ms ) )
                 oldest = &packet_records[ i ];
-            }
         }
         else
         {
@@ -181,12 +150,8 @@ void nrf24_activity_reset( void )
 
 static nrf24_fingerprint_type_t spectrum_signature( void )
 {
-    unsigned longest_run = 0U;
-    unsigned current_run = 0U;
-    unsigned islands = 0U;
+    unsigned longest_run = 0U, current_run = 0U, islands = 0U, busy_channels = 0U;
     bool in_island = false;
-    unsigned busy_channels = 0U;
-
     for( size_t channel = 0U; channel < NRF24_CHANNEL_COUNT; ++channel )
     {
         const bool busy = fast_activity[ channel ] >= ACTIVITY_BUSY_THRESHOLD;
@@ -195,22 +160,12 @@ static nrf24_fingerprint_type_t spectrum_signature( void )
             ++busy_channels;
             ++current_run;
             if( current_run > longest_run ) longest_run = current_run;
-            if( !in_island )
-            {
-                ++islands;
-                in_island = true;
-            }
+            if( !in_island ) { ++islands; in_island = true; }
         }
-        else
-        {
-            current_run = 0U;
-            in_island = false;
-        }
+        else { current_run = 0U; in_island = false; }
     }
-
     if( longest_run >= WIFI_LIKE_MIN_RUN ) return NRF24_FP_WIFI_LIKE;
-    if( ( islands >= BLE_LIKE_MIN_ISLANDS ) && ( busy_channels < 28U ) )
-        return NRF24_FP_BLE_LIKE;
+    if( ( islands >= BLE_LIKE_MIN_ISLANDS ) && ( busy_channels < 28U ) ) return NRF24_FP_BLE_LIKE;
     return NRF24_FP_UNKNOWN;
 }
 
@@ -224,7 +179,6 @@ static void observe_spectrum_signature( void )
         spectrum_latched = false;
         return;
     }
-
     if( signature != spectrum_candidate )
     {
         spectrum_candidate = signature;
@@ -232,10 +186,8 @@ static void observe_spectrum_signature( void )
         spectrum_latched = false;
         return;
     }
-
     if( spectrum_candidate_sweeps < UINT8_MAX ) ++spectrum_candidate_sweeps;
-    if( !spectrum_latched &&
-        ( spectrum_candidate_sweeps >= SPECTRUM_CONFIRM_SWEEPS ) )
+    if( !spectrum_latched && ( spectrum_candidate_sweeps >= SPECTRUM_CONFIRM_SWEEPS ) )
     {
         bump_category( signature );
         spectrum_latched = true;
@@ -249,16 +201,12 @@ void nrf24_activity_observe_sweep( const uint8_t *a_hits, size_t a_count )
     for( size_t i = 0U; i < count; ++i )
     {
         fast_activity[ i ] = fast_update( fast_activity[ i ], 0U != a_hits[ i ] );
-        if( fast_activity[ i ] >= slow_peak[ i ] )
-        {
-            slow_peak[ i ] = fast_activity[ i ];
-        }
+        if( fast_activity[ i ] >= slow_peak[ i ] ) slow_peak[ i ] = fast_activity[ i ];
         else if( slow_peak[ i ] > 0U )
         {
             uint8_t decay = (uint8_t)( slow_peak[ i ] / 32U );
             if( 0U == decay ) decay = 1U;
-            slow_peak[ i ] = slow_peak[ i ] > decay ?
-                             (uint8_t)( slow_peak[ i ] - decay ) : 0U;
+            slow_peak[ i ] = slow_peak[ i ] > decay ? (uint8_t)( slow_peak[ i ] - decay ) : 0U;
         }
     }
     observe_spectrum_signature();
@@ -266,10 +214,8 @@ void nrf24_activity_observe_sweep( const uint8_t *a_hits, size_t a_count )
 
 void nrf24_activity_observe_packet( const nrf24_packet_observation_t *a_packet )
 {
-    if( ( NULL == a_packet ) || !a_packet->crc_valid ||
-        ( a_packet->address_len < 3U ) || ( a_packet->address_len > 5U ) ||
-        ( a_packet->payload_len > 32U ) ) return;
-
+    if( ( NULL == a_packet ) || !a_packet->crc_valid || ( a_packet->address_len < 3U ) ||
+        ( a_packet->address_len > 5U ) || ( a_packet->payload_len > 32U ) ) return;
     packet_record_t *record = find_or_allocate_record( a_packet );
     nrf24_fingerprint_t *fingerprint = &record->public;
     if( 0U == fingerprint->packets )
@@ -287,7 +233,6 @@ void nrf24_activity_observe_packet( const nrf24_packet_observation_t *a_packet )
         record->interval_total_ms += a_packet->timestamp_ms - record->last_seen_ms;
         ++record->interval_samples;
     }
-
     record->last_seen_ms = a_packet->timestamp_ms;
     fingerprint->channel = a_packet->channel;
     fingerprint->payload_len = a_packet->payload_len;
@@ -298,9 +243,7 @@ void nrf24_activity_observe_packet( const nrf24_packet_observation_t *a_packet )
     classify_packet_record( record );
 }
 
-size_t nrf24_activity_histogram( uint8_t *a_fast,
-                                 uint8_t *a_slow,
-                                 size_t a_capacity )
+size_t nrf24_activity_histogram( uint8_t *a_fast, uint8_t *a_slow, size_t a_capacity )
 {
     if( ( NULL == a_fast ) || ( NULL == a_slow ) || ( 0U == a_capacity ) ) return 0U;
     const size_t count = a_capacity < NRF24_CHANNEL_COUNT ? a_capacity : NRF24_CHANNEL_COUNT;
@@ -309,31 +252,30 @@ size_t nrf24_activity_histogram( uint8_t *a_fast,
     return count;
 }
 
-size_t nrf24_activity_fingerprints( nrf24_fingerprint_t *a_output,
-                                    size_t a_capacity )
+size_t nrf24_activity_fingerprints( nrf24_fingerprint_t *a_output, size_t a_capacity )
 {
-    static const nrf24_fingerprint_type_t rows[] =
+    static const nrf24_fingerprint_type_t rows[ NRF24_FINGERPRINT_MAX ] =
     {
-        NRF24_FP_LOGITECH_LIKE,
-        NRF24_FP_INPUT,
-        NRF24_FP_SENSOR,
-        NRF24_FP_ESB,
-        NRF24_FP_WIFI_LIKE,
-        NRF24_FP_BLE_LIKE
+        NRF24_FP_LOGITECH_LIKE, NRF24_FP_INPUT, NRF24_FP_SENSOR,
+        NRF24_FP_ESB, NRF24_FP_WIFI_LIKE
     };
     if( ( NULL == a_output ) || ( 0U == a_capacity ) ) return 0U;
-
-    const size_t available = sizeof( rows ) / sizeof( rows[ 0 ] );
-    const size_t count = a_capacity < available ? a_capacity : available;
+    const size_t count = a_capacity < NRF24_FINGERPRINT_MAX ? a_capacity : NRF24_FINGERPRINT_MAX;
     for( size_t i = 0U; i < count; ++i )
     {
         memset( &a_output[ i ], 0, sizeof( a_output[ i ] ) );
         a_output[ i ].type = rows[ i ];
         a_output[ i ].packets = category_counts[ rows[ i ] ];
-        snprintf( a_output[ i ].label,
-                  sizeof( a_output[ i ].label ),
-                  "%s",
-                  nrf24_activity_fingerprint_name( rows[ i ] ) );
+        if( NRF24_FP_WIFI_LIKE == rows[ i ] )
+        {
+            a_output[ i ].packets += category_counts[ NRF24_FP_BLE_LIKE ];
+            snprintf( a_output[ i ].label, sizeof( a_output[ i ].label ), "Other 2.4 RF" );
+        }
+        else
+        {
+            snprintf( a_output[ i ].label, sizeof( a_output[ i ].label ), "%s",
+                      nrf24_activity_fingerprint_name( rows[ i ] ) );
+        }
     }
     return count;
 }
