@@ -1,6 +1,6 @@
 # RFScout coding style
 
-RFScout follows the conventions used by `netsurf916/libutils`. Readability and predictable interfaces take priority over compact source.
+RFScout prioritizes readability, predictable interfaces, and consistent formatting over compact source.
 
 ## C source
 
@@ -20,7 +20,7 @@ RFScout follows the conventions used by `netsurf916/libutils`. Readability and p
 - Every functional module has a `.h` interface and a `.c` implementation.
 - Headers contain public types, constants, and function declarations; non-trivial function bodies belong in `.c` files.
 - Hardware pin definitions are centralized in `board.h`; drivers should not scatter literal GPIO numbers through implementations.
-- Include guards are used in addition to `#pragma once` to match the libutils convention.
+- Include guards are used in addition to `#pragma once`.
 - Public functions and public data types require Doxygen documentation.
 - Internal helpers should have a concise Doxygen `@brief` when their purpose is not self-evident.
 
