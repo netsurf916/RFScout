@@ -17,7 +17,9 @@ RFScout is intended as an awareness instrument, not an active network client. Wi
 
 The first LCD view is a dense live summary showing total unique devices, Wi-Fi/BLE counts, retained surveillance detections, and the highest-count nearby OUI brands. The display uses the same compact built-in 5x7 font established in OUI-SPY/Brandalize and a native ESP-IDF ST7789 driver rather than adding a large GUI dependency.
 
-The title row contains `RFSCOUT` on the left and a compact battery indicator on the right. The space between them remains reserved for future radio, storage, alert, and mute symbols. The lower display is divided into a brand column and a surveillance column. The surveillance column contains a fixed list of supported type/brand signatures. Zero-count rows remain gray and detections turn red, so supported capabilities remain visible even in a quiet environment.
+The title row contains `RFSCOUT` on the left, a compact battery indicator on the right, and a dedicated status-bar region between them. Status icons use the same subdued visual language as the normal battery indicator and populate from right to left, keeping transient/system state close to the battery while preserving clear space beside the project title. Subsystems own their state while the isolated `status_bar.c/.h` renderer decides how that state appears. An SD-card icon is the first status item: it appears in subdued teal whenever the card is mounted and turns red if the logging path encounters a write, flush, sync, close, rotation, or other filesystem error. Logging I/O errors are sticky for the current runtime so an intermittent media problem remains visible rather than disappearing before the user notices it.
+
+The lower display is divided into a brand column and a surveillance column. The surveillance column contains a fixed list of supported type/brand signatures. Zero-count rows remain gray and detections turn red, so supported capabilities remain visible even in a quiet environment.
 
 The brand column reserves its bottom row for an exact `UNKNOWN` count. The nine rows above it contain the highest-count resolved vendors. `UNKNOWN` includes every active observation for which RFScout has no defensible vendor attribution, including private/randomized MAC addresses and globally administered addresses that are absent from the current registry. The fixed row remains visible even when the count is zero, so unresolved devices are never silently omitted from the live summary.
 
@@ -35,7 +37,7 @@ The LCD, SD card, CC1101, and nRF24 share the board SPI bus. RFScout centralizes
 
 ## SD logging
 
-When an SD card is present, RFScout mounts it at `/sdcard` and writes normalized passive observations to `/sdcard/logs`. SD-card failure is nonfatal; the rest of RFScout continues operating when no card is installed or mounting fails.
+When an SD card is present, RFScout mounts it at `/sdcard` and writes normalized passive observations to `/sdcard/logs`. SD-card failure is nonfatal; the rest of RFScout continues operating when no card is installed or mounting fails. A mounted card is reflected by the SD icon in the top status bar; a logging/filesystem failure changes that icon to red for the remainder of the runtime.
 
 Logging uses a dedicated low-priority FreeRTOS task and a fixed queue. RF callbacks only copy a compact observation into that queue and never perform filesystem I/O, keeping SD-card write latency and FAT metadata stalls away from packet collection. The writer flushes the stdio buffer approximately once per second and performs a full flush/sync/close when a segment rotates or RFScout enters sleep or powers off.
 
