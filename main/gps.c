@@ -13,24 +13,36 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define GPS_UART UART_NUM_1
-#define GPS_BAUD_RATE 9600
 #define GPS_RX_BUFFER_SIZE 1024
 #define GPS_READ_BUFFER_SIZE 128
 #define GPS_SENTENCE_SIZE 128
+#define GPS_PROBE_INTERVAL_US 2000000LL
 #define GPS_DETECTION_TIMEOUT_US 5000000LL
 #define GPS_FIX_TIMEOUT_US 3000000LL
+
+static const uint32_t probe_baud_rates[] =
+{
+    9600U,
+    38400U,
+    115200U,
+    4800U,
+};
 
 static const char *TAG = "gps";
 static char sentence[ GPS_SENTENCE_SIZE ];
 static size_t sentence_length;
+static size_t probe_baud_index;
 static bool detected;
 static bool has_fix;
+static bool received_bytes;
 static int64_t last_sentence_us;
 static int64_t last_fix_us;
+static int64_t last_probe_us;
 
 /** @brief Return the field at the requested comma-separated NMEA position. */
 static const char *field_at( char *a_sentence, unsigned a_index )
@@ -48,16 +60,69 @@ static const char *field_at( char *a_sentence, unsigned a_index )
     return field;
 }
 
-/** @brief Parse one complete NMEA sentence and update receiver/fix state. */
-static void parse_sentence( const char *a_sentence )
+/** @brief Convert one hexadecimal character to its numeric value. */
+static int hex_value( char a_character )
+{
+    if( ( a_character >= '0' ) && ( a_character <= '9' ) )
+    {
+        return a_character - '0';
+    }
+    a_character = (char)toupper( (unsigned char)a_character );
+    if( ( a_character >= 'A' ) && ( a_character <= 'F' ) )
+    {
+        return 10 + ( a_character - 'A' );
+    }
+    return -1;
+}
+
+/** @brief Validate an NMEA checksum when a sentence supplies one. */
+static bool valid_checksum( const char *a_sentence )
 {
     if( ( NULL == a_sentence ) || ( '$' != a_sentence[ 0 ] ) )
     {
-        return;
+        return false;
     }
 
-    if( ( NULL == strstr( a_sentence, "GGA," ) ) &&
-        ( NULL == strstr( a_sentence, "RMC," ) ) )
+    const char *asterisk = strchr( a_sentence, '*' );
+    if( NULL == asterisk )
+    {
+        return true;
+    }
+    if( ( '\0' == asterisk[ 1 ] ) || ( '\0' == asterisk[ 2 ] ) )
+    {
+        return false;
+    }
+
+    uint8_t checksum = 0U;
+    for( const char *cursor = a_sentence + 1; cursor < asterisk; ++cursor )
+    {
+        checksum ^= (uint8_t)*cursor;
+    }
+
+    const int high = hex_value( asterisk[ 1 ] );
+    const int low = hex_value( asterisk[ 2 ] );
+    if( ( high < 0 ) || ( low < 0 ) )
+    {
+        return false;
+    }
+
+    return checksum == (uint8_t)( ( high << 4 ) | low );
+}
+
+/** @brief Return true when a sentence looks like a standard NMEA talker sentence. */
+static bool is_nmea_sentence( const char *a_sentence )
+{
+    return ( NULL != a_sentence ) &&
+           ( '$' == a_sentence[ 0 ] ) &&
+           isalpha( (unsigned char)a_sentence[ 1 ] ) &&
+           isalpha( (unsigned char)a_sentence[ 2 ] ) &&
+           valid_checksum( a_sentence );
+}
+
+/** @brief Parse one complete NMEA sentence and update receiver/fix state. */
+static void parse_sentence( const char *a_sentence )
+{
+    if( !is_nmea_sentence( a_sentence ) )
     {
         return;
     }
@@ -65,7 +130,9 @@ static void parse_sentence( const char *a_sentence )
     const int64_t now_us = esp_timer_get_time();
     if( !detected )
     {
-        ESP_LOGI( TAG, "NMEA GPS receiver detected" );
+        ESP_LOGI( TAG,
+                  "NMEA GPS receiver detected at %lu baud",
+                  (unsigned long)probe_baud_rates[ probe_baud_index ] );
     }
     detected = true;
     last_sentence_us = now_us;
@@ -77,10 +144,12 @@ static void parse_sentence( const char *a_sentence )
     if( NULL != strstr( copy, "GGA," ) )
     {
         const char *quality = field_at( copy, 6U );
-        valid_fix = ( NULL != quality ) && ( '0' != quality[ 0 ] ) &&
-                    ( '\0' != quality[ 0 ] ) && ( ',' != quality[ 0 ] );
+        valid_fix = ( NULL != quality ) &&
+                    ( '0' != quality[ 0 ] ) &&
+                    ( '\0' != quality[ 0 ] ) &&
+                    ( ',' != quality[ 0 ] );
     }
-    else
+    else if( NULL != strstr( copy, "RMC," ) )
     {
         const char *status = field_at( copy, 2U );
         valid_fix = ( NULL != status ) && ( 'A' == status[ 0 ] );
@@ -130,11 +199,34 @@ static void consume_byte( uint8_t a_byte )
     }
 }
 
+/** @brief Select one candidate baud rate while probing for NMEA traffic. */
+static void set_probe_baud( size_t a_index )
+{
+    probe_baud_index = a_index %
+                       ( sizeof( probe_baud_rates ) / sizeof( probe_baud_rates[ 0 ] ) );
+    const uint32_t baud = probe_baud_rates[ probe_baud_index ];
+    const esp_err_t result = uart_set_baudrate( GPS_UART, baud );
+    if( ESP_OK == result )
+    {
+        uart_flush_input( GPS_UART );
+        sentence_length = 0U;
+        received_bytes = false;
+        ESP_LOGI( TAG, "probing GPS UART at %lu baud", (unsigned long)baud );
+    }
+    else
+    {
+        ESP_LOGW( TAG,
+                  "unable to set GPS UART baud %lu: %s",
+                  (unsigned long)baud,
+                  esp_err_to_name( result ) );
+    }
+}
+
 esp_err_t gps_init( void )
 {
     const uart_config_t config =
     {
-        .baud_rate = GPS_BAUD_RATE,
+        .baud_rate = (int)probe_baud_rates[ 0 ],
         .data_bits = UART_DATA_8_BITS,
         .parity = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1,
@@ -170,15 +262,21 @@ esp_err_t gps_init( void )
     }
 
     sentence_length = 0U;
+    probe_baud_index = 0U;
     detected = false;
     has_fix = false;
+    received_bytes = false;
     last_sentence_us = 0;
     last_fix_us = 0;
+    last_probe_us = esp_timer_get_time();
+
     ESP_LOGI( TAG,
-              "GPS UART initialized at %u baud TX=%d RX=%d",
-              GPS_BAUD_RATE,
+              "GPS UART enabled on TX=%d RX=%d; probing common NMEA baud rates",
               RFSCOUT_BOARD_GPS_TX_PIN,
               RFSCOUT_BOARD_GPS_RX_PIN );
+    ESP_LOGI( TAG,
+              "probing GPS UART at %lu baud",
+              (unsigned long)probe_baud_rates[ probe_baud_index ] );
     return ESP_OK;
 }
 
@@ -186,17 +284,35 @@ void gps_poll( void )
 {
     uint8_t data[ GPS_READ_BUFFER_SIZE ];
     const int length = uart_read_bytes( GPS_UART, data, sizeof( data ), 0 );
-    for( int i = 0; i < length; ++i )
+    if( length > 0 )
     {
-        consume_byte( data[ i ] );
+        if( !received_bytes && !detected )
+        {
+            ESP_LOGI( TAG,
+                      "GPS UART receiving bytes at %lu baud",
+                      (unsigned long)probe_baud_rates[ probe_baud_index ] );
+        }
+        received_bytes = true;
+
+        for( int i = 0; i < length; ++i )
+        {
+            consume_byte( data[ i ] );
+        }
     }
 
     const int64_t now_us = esp_timer_get_time();
+    if( !detected && ( ( now_us - last_probe_us ) >= GPS_PROBE_INTERVAL_US ) )
+    {
+        set_probe_baud( probe_baud_index + 1U );
+        last_probe_us = now_us;
+    }
+
     if( detected && ( ( now_us - last_sentence_us ) > GPS_DETECTION_TIMEOUT_US ) )
     {
         detected = false;
         has_fix = false;
-        ESP_LOGW( TAG, "GPS receiver no longer responding" );
+        last_probe_us = now_us;
+        ESP_LOGW( TAG, "GPS receiver no longer responding; baud probing resumed" );
     }
     else if( has_fix && ( ( now_us - last_fix_us ) > GPS_FIX_TIMEOUT_US ) )
     {
