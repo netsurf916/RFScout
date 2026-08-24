@@ -15,6 +15,9 @@
 #include "freertos/portmacro.h"
 
 #define ENCODER_BUTTON_DEBOUNCE_US 30000LL
+#define ENCODER_LATCH_STATE_0 0U
+#define ENCODER_LATCH_STATE_3 3U
+#define ENCODER_TRANSITIONS_PER_DETENT 2
 
 static const char *TAG = "platform";
 static volatile uint8_t encoder_state;
@@ -43,18 +46,29 @@ static void IRAM_ATTR encoder_isr( void *a_argument )
                    gpio_get_level( RFSCOUT_BOARD_ENCODER_B_PIN ) );
 
     portENTER_CRITICAL_ISR( &encoder_lock );
-    encoder_accumulator += transitions[ ( ( encoder_state << 2 ) | current ) & 0x0FU ];
+    encoder_accumulator +=
+        transitions[ ( ( encoder_state << 2 ) | current ) & 0x0FU ];
     encoder_state = current;
-    while( encoder_accumulator >= 4 )
+
+    /* LILYGO's own T-Embed encoder example uses the TWO03 latch mode: each
+       physical detent completes two valid quadrature transitions and rests at
+       state 0 or 3. Emit movement only at those latch states so contact bounce
+       cannot create a half-detent event. */
+    if( ( ENCODER_LATCH_STATE_0 == current ) ||
+        ( ENCODER_LATCH_STATE_3 == current ) )
     {
-        ++encoder_delta;
-        encoder_accumulator -= 4;
+        if( encoder_accumulator >= ENCODER_TRANSITIONS_PER_DETENT )
+        {
+            ++encoder_delta;
+            encoder_accumulator = 0;
+        }
+        else if( encoder_accumulator <= -ENCODER_TRANSITIONS_PER_DETENT )
+        {
+            --encoder_delta;
+            encoder_accumulator = 0;
+        }
     }
-    while( encoder_accumulator <= -4 )
-    {
-        --encoder_delta;
-        encoder_accumulator += 4;
-    }
+
     portEXIT_CRITICAL_ISR( &encoder_lock );
 }
 
@@ -97,7 +111,8 @@ esp_err_t platform_init( void )
                    gpio_get_level( RFSCOUT_BOARD_ENCODER_B_PIN ) );
     encoder_accumulator = 0;
     encoder_delta = 0;
-    encoder_button_raw = ( 0 == gpio_get_level( RFSCOUT_BOARD_ENCODER_KEY_PIN ) );
+    encoder_button_raw =
+        ( 0 == gpio_get_level( RFSCOUT_BOARD_ENCODER_KEY_PIN ) );
     encoder_button_stable = encoder_button_raw;
     encoder_button_event = false;
     encoder_button_change_us = esp_timer_get_time();
@@ -120,7 +135,8 @@ esp_err_t platform_init( void )
 
 void platform_poll( void )
 {
-    const bool pressed = ( 0 == gpio_get_level( RFSCOUT_BOARD_ENCODER_KEY_PIN ) );
+    const bool pressed =
+        ( 0 == gpio_get_level( RFSCOUT_BOARD_ENCODER_KEY_PIN ) );
     const int64_t now_us = esp_timer_get_time();
 
     if( pressed != encoder_button_raw )
@@ -129,7 +145,8 @@ void platform_poll( void )
         encoder_button_change_us = now_us;
     }
     else if( ( pressed != encoder_button_stable ) &&
-             ( ( now_us - encoder_button_change_us ) >= ENCODER_BUTTON_DEBOUNCE_US ) )
+             ( ( now_us - encoder_button_change_us ) >=
+               ENCODER_BUTTON_DEBOUNCE_US ) )
     {
         encoder_button_stable = pressed;
         if( pressed )
@@ -160,7 +177,9 @@ void platform_set_alert_led( bool a_active )
     (void)a_active;
 }
 
-void platform_audio_tone( bool a_enabled, uint16_t a_frequency_hz, void *a_context )
+void platform_audio_tone( bool a_enabled,
+                          uint16_t a_frequency_hz,
+                          void *a_context )
 {
     (void)a_enabled;
     (void)a_frequency_hz;
