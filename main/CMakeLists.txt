@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "rfscout.c"
+        "app_manager.c"
         "observation_store.c"
         "morse.c"
         "surveillance.c"
@@ -10,6 +11,8 @@ idf_component_register(
         "board_i2c.c"
         "battery.c"
         "battery_indicator.c"
+        "mlx90640.c"
+        "thermal_view.c"
         "status_bar.c"
         "display.c"
         "ui.c"
