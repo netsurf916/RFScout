@@ -35,6 +35,7 @@
 #define NRF24_MIN_RX_SETTLE_US 170U
 #define NRF24_TASK_STACK_SIZE 3072U
 #define NRF24_TASK_PRIORITY 4U
+#define NRF24_DELAY_SLICE_US 1000U
 
 static const char *TAG = "nrf24";
 static spi_device_handle_t device;
@@ -124,6 +125,39 @@ static nrf24_scan_config_t config_snapshot( void )
     return snapshot;
 }
 
+/**
+ * @brief Wait for an RPD dwell without monopolizing the FreeRTOS core.
+ * @details Sub-tick waits use short ROM delays, but the task yields between
+ *          slices so IDLE0 and other work can run. Millisecond portions use
+ *          vTaskDelay() directly. This keeps the requested dwell reasonably
+ *          accurate without busy-spinning for an entire sweep.
+ */
+static void dwell_wait( uint16_t a_dwell_us )
+{
+    uint32_t remaining_us = a_dwell_us;
+    const TickType_t one_ms_ticks = pdMS_TO_TICKS( 1U );
+
+    while( running && ( remaining_us >= NRF24_DELAY_SLICE_US ) )
+    {
+        if( one_ms_ticks > 0U )
+        {
+            vTaskDelay( one_ms_ticks );
+        }
+        else
+        {
+            taskYIELD();
+            esp_rom_delay_us( NRF24_DELAY_SLICE_US );
+        }
+        remaining_us -= NRF24_DELAY_SLICE_US;
+    }
+
+    if( running && ( remaining_us > 0U ) )
+    {
+        esp_rom_delay_us( remaining_us );
+        taskYIELD();
+    }
+}
+
 /** @brief Run complete nRF24 sweeps independently of the 10 ms UI poll cadence. */
 static void scan_worker( void *a_argument )
 {
@@ -161,7 +195,12 @@ static void scan_worker( void *a_argument )
                     break;
                 }
 
-                esp_rom_delay_us( dwell_us );
+                dwell_wait( dwell_us );
+                if( !running )
+                {
+                    ce( false );
+                    break;
+                }
 
                 uint8_t rpd = 0U;
                 result = read_register( NRF24_REG_RPD, &rpd );
@@ -195,7 +234,9 @@ static void scan_worker( void *a_argument )
             frame_ready = true;
             portEXIT_CRITICAL( &state_lock );
 
-            taskYIELD();
+            /* Always give the scheduler/idle task a real scheduling point
+               between complete sweeps, even at the shortest dwell. */
+            vTaskDelay( 1U );
         }
     }
 }
@@ -400,7 +441,7 @@ void nrf24_adjust_dwell( int a_delta )
     }
 
     if( ( a_delta > 0 ) &&
-        ( index + 1U < ( sizeof( dwell_values ) / sizeof( dwell_values[ 0 ] ) ) ) )
+        ( index + 1U < ( sizeof( dwell_values ) / sizeof( dwell_values[ 0 ] ) ) )
     {
         ++index;
     }
