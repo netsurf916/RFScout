@@ -39,23 +39,21 @@
 #define COLOR_GRAY   0x8410U
 
 typedef struct { char name[ RFSCOUT_VENDOR_NAME_MAX ]; uint16_t count; } brand_count_t;
+typedef struct { surveillance_class_t classification; const char *label; } surveillance_row_t;
+
+static const surveillance_row_t surveillance_rows[] =
+{
+    { SURVEILLANCE_FLOCK, "ALPR/Flock" },
+    { SURVEILLANCE_BODY_CAMERA, "BODY/Axon" },
+    { SURVEILLANCE_DRONE, "DRONE/DJI+" },
+    { SURVEILLANCE_CAMERA, "CAM/Ring" },
+    { SURVEILLANCE_SMART_GLASSES, "GLASS/Meta+" },
+    { SURVEILLANCE_OTHER, "OTHER" },
+};
+
 static const char *TAG = "ui";
 static int64_t last_refresh_us;
 static rf_device_t *snapshot;
-
-static const char *surveillance_label( surveillance_class_t a_classification )
-{
-    switch( a_classification )
-    {
-        case SURVEILLANCE_FLOCK: return "FLOCK/ALPR";
-        case SURVEILLANCE_BODY_CAMERA: return "BODY CAM";
-        case SURVEILLANCE_DRONE: return "DRONE";
-        case SURVEILLANCE_CAMERA: return "CAMERA";
-        case SURVEILLANCE_SMART_GLASSES: return "GLASSES";
-        case SURVEILLANCE_OTHER: return "OTHER";
-        default: return "";
-    }
-}
 
 static void add_brand( brand_count_t *a_brands, size_t a_capacity, const char *a_name )
 {
@@ -91,19 +89,16 @@ static void draw_power_overlay( void )
     power_status_t power_status;
     power_get_status( &power_status );
     if( POWER_HOLD_IDLE == power_status.state ) return;
-
     display_fill_rect( 42, 50, 236, 70, COLOR_BLACK );
     display_fill_rect( 42, 50, 236, 2, COLOR_RED );
     display_fill_rect( 42, 118, 236, 2, COLOR_RED );
     display_fill_rect( 42, 50, 2, 70, COLOR_RED );
     display_fill_rect( 276, 50, 2, 70, COLOR_RED );
-
     if( POWER_HOLD_SHUTDOWN == power_status.state )
     {
         display_draw_text( 91, 77, "POWERING OFF...", COLOR_RED, 2 );
         return;
     }
-
     display_draw_text( 69, 63, "HOLD TO POWER OFF", COLOR_YELLOW, 2 );
     char countdown[ 4 ];
     snprintf( countdown, sizeof( countdown ), "%u", (unsigned)power_status.seconds_remaining );
@@ -118,7 +113,6 @@ static void render_summary( void )
     const size_t device_count = observation_store_snapshot( snapshot, RFSCOUT_DEVICE_CAPACITY );
     const size_t surveillance_count = surveillance_history_counts( surveillance_counts, RFSCOUT_SURVEILLANCE_CLASS_COUNT );
     size_t wifi_count = 0, ble_count = 0, unknown_count = 0;
-
     for( size_t i = 0; i < device_count; ++i )
     {
         if( 0U != ( snapshot[ i ].source_mask & RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) ) ++wifi_count;
@@ -126,19 +120,17 @@ static void render_summary( void )
         if( '\0' == snapshot[ i ].vendor[ 0 ] ) ++unknown_count;
         else add_brand( brands, UI_MAX_KNOWN_BRANDS, snapshot[ i ].vendor );
     }
-
     size_t brand_count = 0;
     while( ( brand_count < UI_MAX_KNOWN_BRANDS ) && ( 0U != brands[ brand_count ].count ) ) ++brand_count;
 
     display_clear( COLOR_BLACK );
     display_draw_text( 6, 5, "RFSCOUT", COLOR_GREEN, 2 );
     battery_indicator_draw();
-
     char line[ 64 ];
     snprintf( line, sizeof( line ), "DEV %u   WIFI %u   BLE %u", (unsigned)device_count, (unsigned)wifi_count, (unsigned)ble_count );
     display_draw_text( 6, 25, line, COLOR_WHITE, 1 );
     snprintf( line, sizeof( line ), "SURVEILLANCE %u", (unsigned)surveillance_count );
-    display_draw_text( 210, 25, line, ( 0U == surveillance_count ) ? COLOR_CYAN : COLOR_RED, 1 );
+    display_draw_text( 210, 25, line, ( 0U == surveillance_count ) ? COLOR_GRAY : COLOR_RED, 1 );
     display_fill_rect( 5, 36, 310, 1, COLOR_GRAY );
     display_fill_rect( UI_COLUMN_DIVIDER_X, 36, 1, RFSCOUT_DISPLAY_HEIGHT - 36, COLOR_GRAY );
 
@@ -155,11 +147,12 @@ static void render_summary( void )
     draw_unknown_row( unknown_count );
 
     y = UI_LIST_START_Y;
-    for( size_t classification = (size_t)SURVEILLANCE_FLOCK; classification <= (size_t)SURVEILLANCE_OTHER; ++classification )
+    for( size_t i = 0; i < sizeof( surveillance_rows ) / sizeof( surveillance_rows[ 0 ] ); ++i )
     {
-        if( 0U == surveillance_counts[ classification ] ) continue;
-        snprintf( line, sizeof( line ), "%-10.10s %3u", surveillance_label( (surveillance_class_t)classification ), (unsigned)surveillance_counts[ classification ] );
-        display_draw_text( UI_SURVEILLANCE_X, y, line, COLOR_RED, 1 );
+        const size_t classification = (size_t)surveillance_rows[ i ].classification;
+        const uint16_t count = surveillance_counts[ classification ];
+        snprintf( line, sizeof( line ), "%-12.12s %3u", surveillance_rows[ i ].label, (unsigned)count );
+        display_draw_text( UI_SURVEILLANCE_X, y, line, ( 0U == count ) ? COLOR_GRAY : COLOR_RED, 1 );
         y += UI_LIST_ROW_HEIGHT;
     }
 
