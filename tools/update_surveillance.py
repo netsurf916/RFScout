@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Generate RFScout's compiled surveillance signature table.
-
-The curated CSV decides what constitutes a surveillance signature. The current
-compiled IEEE MA-L table is used only to provide advisory validation metadata;
-an IEEE vendor name never creates or removes a surveillance classification.
-"""
+"""Generate RFScout's compiled surveillance OUI table and advisory report."""
 
 import csv
 import pathlib
@@ -20,65 +15,50 @@ REPORT = ROOT / "data" / "surveillance_oui_validation.csv"
 CLASS_MAP = {
     "ALPR": "SURVEILLANCE_FLOCK",
     "BODY": "SURVEILLANCE_BODY_CAMERA",
-    "DRONE": "SURVEILLANCE_DRONE",
     "CAM": "SURVEILLANCE_CAMERA",
     "GLASS": "SURVEILLANCE_SMART_GLASSES",
 }
-
 ID_MAP = {
     ( "ALPR", "Flock" ): "SURVEILLANCE_SIGNATURE_FLOCK",
     ( "BODY", "Axon" ): "SURVEILLANCE_SIGNATURE_AXON",
-    ( "DRONE", "DJI+" ): "SURVEILLANCE_SIGNATURE_DRONE_DJI_PLUS",
     ( "CAM", "Ring" ): "SURVEILLANCE_SIGNATURE_RING",
-    ( "GLASS", "Meta+" ): "SURVEILLANCE_SIGNATURE_GLASSES_META_PLUS",
+    ( "CAM", "Verkada" ): "SURVEILLANCE_SIGNATURE_VERKADA",
+    ( "CAM", "Axis" ): "SURVEILLANCE_SIGNATURE_AXIS",
+    ( "CAM", "Hikvision" ): "SURVEILLANCE_SIGNATURE_HIKVISION",
+    ( "CAM", "Dahua" ): "SURVEILLANCE_SIGNATURE_DAHUA",
+    ( "GLASS", "Meta" ): "SURVEILLANCE_SIGNATURE_META",
 }
-
 IEEE_RECORD_RE = re.compile(
     r'^\s*\{\s*0x([0-9A-Fa-f]{6})\s*,\s*"((?:\\.|[^"])*)"\s*\},\s*$'
 )
 
 
 def load_ieee_snapshot() -> dict[int, str]:
-    """Load the currently compiled IEEE OUI snapshot without network access."""
     result = {}
     if not IEEE_SOURCE.exists():
-        print(
-            "warning: compiled IEEE OUI table is unavailable; validation will be empty",
-            file=sys.stderr,
-        )
+        print("warning: IEEE snapshot unavailable; advisory validation empty", file=sys.stderr)
         return result
-
     with IEEE_SOURCE.open(encoding="utf-8") as stream:
         for line in stream:
             match = IEEE_RECORD_RE.match(line)
-            if match is None:
-                continue
-            prefix = int(match.group(1), 16)
-            owner = bytes(match.group(2), "utf-8").decode("unicode_escape")
-            result[prefix] = owner
+            if match is not None:
+                result[int(match.group(1), 16)] = match.group(2)
     return result
 
 
 def main() -> None:
-    """Generate signatures and an advisory IEEE cross-reference report."""
     ieee = load_ieee_snapshot()
     rows = []
-
     with SOURCE.open(newline="", encoding="utf-8") as stream:
-        reader = csv.DictReader(stream)
-        for line, row in enumerate(reader, start=2):
+        for line, row in enumerate(csv.DictReader(stream), start=2):
             kind = row["type"].strip().upper()
             brand = row["brand"].strip()
             raw_oui = re.sub(r"[^0-9A-Fa-f]", "", row["oui"])
             evidence = row["evidence"].strip()
-
             if kind not in CLASS_MAP or ( kind, brand ) not in ID_MAP:
-                raise RuntimeError(
-                    f"unsupported curated signature at line {line}: {kind}/{brand}"
-                )
+                raise RuntimeError(f"unsupported curated signature at line {line}: {kind}/{brand}")
             if len(raw_oui) != 6:
                 raise RuntimeError(f"invalid curated OUI at line {line}: {row['oui']}")
-
             prefix = int(raw_oui, 16)
             rows.append(( prefix, kind, brand, evidence, ieee.get(prefix, "") ))
 
@@ -89,10 +69,8 @@ def main() -> None:
         "{",
     ]
     for prefix, kind, brand, _evidence, _owner in rows:
-        lines.append(
-            "    { 0x%06XU, %s, %s },"
-            % ( prefix, CLASS_MAP[kind], ID_MAP[( kind, brand )] )
-        )
+        lines.append("    { 0x%06XU, %s, %s }," %
+                     ( prefix, CLASS_MAP[kind], ID_MAP[( kind, brand )] ))
     lines += [
         "};",
         "#define SURVEILLANCE_OUI_SIGNATURE_COUNT \\",
@@ -103,25 +81,13 @@ def main() -> None:
 
     with REPORT.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.writer(stream)
-        writer.writerow(
-            (
-                "type",
-                "brand",
-                "oui",
-                "evidence",
-                "ieee_owner",
-                "registry_status",
-            )
-        )
+        writer.writerow(( "type", "brand", "oui", "evidence", "ieee_owner", "registry_status" ))
         for prefix, kind, brand, evidence, owner in rows:
             status = "present" if owner else "not-in-current-snapshot"
             writer.writerow(( kind, brand, f"{prefix:06X}", evidence, owner, status ))
             if not owner:
-                print(
-                    f"notice: {prefix:06X} {kind}/{brand} is absent from the current IEEE snapshot; review only",
-                    file=sys.stderr,
-                )
-
+                print(f"notice: {prefix:06X} {kind}/{brand} absent from current IEEE snapshot; review only",
+                      file=sys.stderr)
     print(f"wrote {len(rows)} curated surveillance signatures to {OUT}")
     print(f"wrote advisory IEEE cross-reference report to {REPORT}")
 
