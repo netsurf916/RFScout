@@ -6,6 +6,7 @@ idf_component_register(
         "surveillance.c"
         "surveillance_history.c"
         "platform.c"
+        "power.c"
         "board_i2c.c"
         "battery.c"
         "battery_indicator.c"
