@@ -43,6 +43,10 @@
 #define RFSCOUT_BOARD_CC1101_SWITCH_1_PIN      47
 #define RFSCOUT_BOARD_CC1101_SWITCH_0_PIN      48
 
+/* The bottom expansion UART shares GPIO43/44 with the optional nRF24
+   CE/CS assignment. RFScout currently reserves these pins for GPS. */
+#define RFSCOUT_BOARD_GPS_TX_PIN               43
+#define RFSCOUT_BOARD_GPS_RX_PIN               44
 #define RFSCOUT_BOARD_NRF24_CS_PIN             44
 #define RFSCOUT_BOARD_NRF24_CE_PIN             43
 
