@@ -10,6 +10,7 @@ idf_component_register(
         "board_i2c.c"
         "battery.c"
         "battery_indicator.c"
+        "status_bar.c"
         "display.c"
         "ui.c"
         "radio_monitor.c"
