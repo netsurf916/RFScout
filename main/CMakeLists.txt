@@ -3,6 +3,7 @@ idf_component_register(
         "rfscout.c"
         "app_manager.c"
         "radio_app_view.c"
+        "cc1101.c"
         "observation_store.c"
         "morse.c"
         "surveillance.c"
