@@ -52,7 +52,5 @@ void nrf24_adjust_low( int a_delta );
 void nrf24_adjust_high( int a_delta );
 void nrf24_adjust_dwell( int a_delta );
 bool nrf24_take_frame_ready( void );
-size_t nrf24_histogram( uint8_t *a_fast, uint8_t *a_slow, size_t a_capacity );
-size_t nrf24_fingerprints( nrf24_fingerprint_t *a_output, size_t a_capacity );
-const char *nrf24_fingerprint_name( nrf24_fingerprint_type_t a_type );
+size_t nrf24_spectrum( uint8_t *a_output, size_t a_capacity );
 #endif
