@@ -19,6 +19,7 @@
 #define CC1101_FP_CONFIRM_SWEEPS 2U
 #define CC1101_FP_HOLD_SWEEPS 24U
 #define CC1101_FP_MATCH_TOLERANCE_KHZ 12U
+#define CC1101_CLASSIFIER_WARMUP_SWEEPS 3U
 
 typedef struct
 {
@@ -44,6 +45,7 @@ static int8_t last_rssi[ CC1101_SPECTRUM_BINS ];
 static uint32_t last_low_khz;
 static uint32_t last_high_khz;
 static bool have_sweep;
+static uint8_t classifier_warmup_sweeps;
 static tracked_fingerprint_t tracked[ CC1101_FINGERPRINT_MAX ];
 static uint16_t fingerprint_counts[ CC1101_FP_TYPE_COUNT ];
 
@@ -82,10 +84,12 @@ static bool in_common_ism_region( uint32_t a_frequency_khz )
            ( ( a_frequency_khz >= 902000U ) && ( a_frequency_khz <= 928000U ) );
 }
 
-static bool bin_is_recently_active( size_t a_index )
+static bool bin_is_currently_active( size_t a_index )
 {
-    return ( current_level[ a_index ] >= CC1101_ACTIVE_THRESHOLD ) ||
-           ( slow_peak[ a_index ] >= CC1101_ACTIVE_THRESHOLD );
+    /* Peak hold is display history, not evidence that RF is still present.
+       Classification must be based on the current completed sweep so a
+       startup transient or an old peak cannot satisfy a later confirmation. */
+    return current_level[ a_index ] >= CC1101_ACTIVE_THRESHOLD;
 }
 
 static size_t collect_segments( activity_segment_t *a_segments,
@@ -96,7 +100,7 @@ static size_t collect_segments( activity_segment_t *a_segments,
 
     while( ( index < CC1101_SPECTRUM_BINS ) && ( count < a_capacity ) )
     {
-        if( !bin_is_recently_active( index ) )
+        if( !bin_is_currently_active( index ) )
         {
             ++index;
             continue;
@@ -108,7 +112,7 @@ static size_t collect_segments( activity_segment_t *a_segments,
         segment->peak_rssi = -127;
 
         while( ( index < CC1101_SPECTRUM_BINS ) &&
-               bin_is_recently_active( index ) )
+               bin_is_currently_active( index ) )
         {
             if( current_level[ index ] > segment->max_current )
             {
@@ -317,6 +321,7 @@ void cc1101_activity_reset( void )
     last_low_khz = 0U;
     last_high_khz = 0U;
     have_sweep = false;
+    classifier_warmup_sweeps = CC1101_CLASSIFIER_WARMUP_SWEEPS;
 }
 
 void cc1101_activity_reset_counts( void )
@@ -363,6 +368,21 @@ void cc1101_activity_observe_sweep( const int8_t *a_rssi,
             slow_peak[ i ] = slow_peak[ i ] > decay ?
                              (uint8_t)( slow_peak[ i ] - decay ) : 0U;
         }
+    }
+
+    if( classifier_warmup_sweeps > 0U )
+    {
+        --classifier_warmup_sweeps;
+        memset( tracked, 0, sizeof( tracked ) );
+
+        /* Drop peak history collected during receiver startup once the
+           quarantine period ends. The current trace remains live, but later
+           burst inference starts from a clean baseline. */
+        if( 0U == classifier_warmup_sweeps )
+        {
+            memset( slow_peak, 0, sizeof( slow_peak ) );
+        }
+        return;
     }
 
     update_tracked_fingerprints();
