@@ -1,54 +1,18 @@
 /**
-    radio_app_view.c : RFScout placeholder radio application views
-    Description: Provides UI scaffolding before the radio drivers are enabled.
+    radio_app_view.c : RFScout radio application views
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
-
 #include "radio_app_view.h"
-
 #include "display.h"
-
-#define COLOR_BACKGROUND 0x0000U
-#define COLOR_SUBDUED 0x03F0U
-#define COLOR_TEXT 0xBDF7U
-#define COLOR_DIM 0x7BEFU
-#define COLOR_YELLOW 0xFFE0U
-
-void radio_app_view_cc1101( bool a_settings_open )
-{
-    display_clear( COLOR_BACKGROUND );
-    display_draw_text( 8, 7, "CC1101", COLOR_SUBDUED, 2U );
-
-    if( a_settings_open )
-    {
-        display_draw_text( 8, 34, "BAND / RANGE", COLOR_TEXT, 1U );
-        display_draw_text( 8, 54, "> 433 ISM", COLOR_YELLOW, 1U );
-        display_draw_text( 8, 70, "  315 MHz", COLOR_DIM, 1U );
-        display_draw_text( 8, 86, "  868 MHz", COLOR_DIM, 1U );
-        display_draw_text( 8, 102, "  915 MHz", COLOR_DIM, 1U );
-        display_draw_text( 8, 118, "  MANUAL", COLOR_DIM, 1U );
-        display_draw_text( 170, 54, "433.050 - 434.790", COLOR_DIM, 1U );
-        display_draw_text( 170, 70, "CENTER: CLOSE", COLOR_DIM, 1U );
-    }
-    else
-    {
-        display_draw_text( 8, 42, "SUB-GHZ SITUATIONAL AWARENESS", COLOR_TEXT, 1U );
-        display_draw_text( 8, 66, "433 ISM PROFILE", COLOR_DIM, 1U );
-        display_draw_text( 8, 86, "SPECTRUM / EVENTS COMING NEXT", COLOR_DIM, 1U );
-        display_draw_text( 8, 126, "CENTER: BAND SETTINGS", COLOR_SUBDUED, 1U );
-    }
-
-    (void)display_present();
-}
-
-void radio_app_view_nrf24( void )
-{
-    display_clear( COLOR_BACKGROUND );
-    display_draw_text( 8, 7, "nRF24", COLOR_SUBDUED, 2U );
-    display_draw_text( 8, 42, "2.4 GHz RADIO AWARENESS", COLOR_TEXT, 1U );
-    display_draw_text( 8, 70, "ONBOARD RADIO RESERVED", COLOR_DIM, 1U );
-    display_draw_text( 8, 90, "DRIVER / VIEW COMING NEXT", COLOR_DIM, 1U );
-    display_draw_text( 8, 126, "GPIO43 CE / GPIO44 CSN", COLOR_SUBDUED, 1U );
-    (void)display_present();
-}
+#include <stdio.h>
+#define BG 0x0000U
+#define SUBDUED 0x03F0U
+#define TEXT 0xBDF7U
+#define DIM 0x7BEFU
+#define YELLOW 0xFFE0U
+#define GRAPH 0x07E0U
+static void mhz(char *b,size_t n,uint32_t k){snprintf(b,n,"%lu.%03lu",(unsigned long)(k/1000U),(unsigned long)(k%1000U));}
+void radio_app_view_cc1101_spectrum(const int8_t *bins,size_t count,uint32_t low,uint32_t high,bool detected){display_clear(BG);display_draw_text(8,7,"CC1101",SUBDUED,2U);char a[24],b[24],line[64];mhz(a,sizeof(a),low);mhz(b,sizeof(b),high);snprintf(line,sizeof(line),"%s - %s MHz",a,b);display_draw_text(8,30,line,DIM,1U);if(!detected){display_draw_text(8,70,"CC1101 NOT DETECTED",YELLOW,1U);display_draw_text(8,126,"CENTER: SETTINGS",SUBDUED,1U);(void)display_present();return;}const int x0=8,y0=45,w=304,h=100;display_fill_rect(x0,y0,w,1,DIM);display_fill_rect(x0,y0+h,w,1,DIM);for(size_t i=0;i<count;i++){int r=bins[i];if(r<-120)r=-120;if(r>-20)r=-20;int bh=(r+120)*(h-4)/100;if(bh<1)bh=1;int x=x0+(int)((i*(size_t)(w-1))/(count>1?count-1:1));display_fill_rect(x,y0+h-bh,2,bh,GRAPH);}display_draw_text(250,151,"SETTINGS",SUBDUED,1U);(void)display_present();}
+void radio_app_view_cc1101_menu(unsigned selected,const char *profile,uint32_t low,uint32_t high,uint32_t step){display_clear(BG);display_draw_text(8,7,"CC1101 SETTINGS",SUBDUED,2U);const char *labels[]={"PROFILE","LOW","HIGH","STEP","BACK"};char val[32];for(unsigned i=0;i<5;i++){int y=38+(int)i*24;display_draw_text(8,y,i==selected?">":" ",YELLOW,1U);display_draw_text(22,y,labels[i],i==selected?TEXT:DIM,1U);val[0]='\0';if(i==0)snprintf(val,sizeof(val),"%s",profile);else if(i==1)snprintf(val,sizeof(val),"%lu.%03lu MHz",(unsigned long)(low/1000),(unsigned long)(low%1000));else if(i==2)snprintf(val,sizeof(val),"%lu.%03lu MHz",(unsigned long)(high/1000),(unsigned long)(high%1000));else if(i==3)snprintf(val,sizeof(val),"%lu kHz",(unsigned long)step);if(val[0])display_draw_text(130,y,val,i==selected?YELLOW:DIM,1U);}display_draw_text(8,158,"TURN: SELECT/CHANGE   CENTER: ENTER",SUBDUED,1U);(void)display_present();}
+void radio_app_view_nrf24(void){display_clear(BG);display_draw_text(8,7,"nRF24",SUBDUED,2U);display_draw_text(8,42,"2.4 GHz RADIO AWARENESS",TEXT,1U);display_draw_text(8,70,"ONBOARD RADIO RESERVED",DIM,1U);display_draw_text(8,90,"DRIVER / VIEW COMING NEXT",DIM,1U);display_draw_text(8,126,"GPIO43 CE / GPIO44 CSN",SUBDUED,1U);(void)display_present();}
