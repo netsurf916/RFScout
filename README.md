@@ -2,6 +2,12 @@
 
 RFScout is a handheld **RF situational-awareness** project for the LILYGO T-Embed CC1101 Plus.
 
+<p align="center">
+  <img src="assets/device.jpg" alt="RFScout running on a LILYGO T-Embed CC1101 Plus" width="800">
+</p>
+
+<p align="center"><em>RFScout running on real T-Embed CC1101 Plus hardware with live nearby-device and surveillance detection.</em></p>
+
 The project combines the useful ideas from Brandalize and OUI-SPY into one passive nearby-device view:
 
 - identify nearby devices by OUI/vendor when a globally administered MAC permits it;
