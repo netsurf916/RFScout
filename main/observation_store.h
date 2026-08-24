@@ -16,11 +16,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define RFSCOUT_DEVICE_CAPACITY   1000
-#define RFSCOUT_DEVICE_TIMEOUT_MS 20000U
-#define RFSCOUT_VENDOR_NAME_MAX   32
-#define RFSCOUT_DEVICE_NAME_MAX   32
-#define RFSCOUT_MFG_DATA_MAX      16
+#define RFSCOUT_DEVICE_CAPACITY       1000
+#define RFSCOUT_DEVICE_TIMEOUT_MS     20000U
+#define RFSCOUT_VENDOR_NAME_MAX       32
+#define RFSCOUT_DEVICE_NAME_MAX       32
+#define RFSCOUT_MFG_DATA_MAX          24
+#define RFSCOUT_BLE_SERVICE_UUID_MAX  12
 
 typedef enum
 {
@@ -42,24 +43,42 @@ typedef enum
     SURVEILLANCE_DRONE,
     SURVEILLANCE_CAMERA,
     SURVEILLANCE_SMART_GLASSES,
+    SURVEILLANCE_AUDIO,
     SURVEILLANCE_OTHER
 } surveillance_class_t;
 
 /**
  * @brief Specific curated surveillance signature matched by an observation.
- * @details Broad classes remain useful for alert policy, while this identifier
- *          preserves the type/brand identity required by the LCD and history.
+ * @details Broad classes drive alert policy while the signature preserves the
+ *          type/vendor identity required by retained history and the LCD.
  */
 typedef enum
 {
     SURVEILLANCE_SIGNATURE_NONE = 0,
     SURVEILLANCE_SIGNATURE_FLOCK,
+    SURVEILLANCE_SIGNATURE_VIGILANT,
+    SURVEILLANCE_SIGNATURE_RAVEN,
     SURVEILLANCE_SIGNATURE_AXON,
-    SURVEILLANCE_SIGNATURE_DRONE_DJI_PLUS,
     SURVEILLANCE_SIGNATURE_RING,
-    SURVEILLANCE_SIGNATURE_GLASSES_META_PLUS,
+    SURVEILLANCE_SIGNATURE_VERKADA,
+    SURVEILLANCE_SIGNATURE_AXIS,
+    SURVEILLANCE_SIGNATURE_HIKVISION,
+    SURVEILLANCE_SIGNATURE_DAHUA,
+    SURVEILLANCE_SIGNATURE_REMOTE_ID,
+    SURVEILLANCE_SIGNATURE_META,
     SURVEILLANCE_SIGNATURE_COUNT
 } surveillance_signature_id_t;
+
+/** @brief Evidence channels that contributed to a surveillance match. */
+typedef enum
+{
+    SURVEILLANCE_EVIDENCE_OUI = 1U << 0,
+    SURVEILLANCE_EVIDENCE_NAME = 1U << 1,
+    SURVEILLANCE_EVIDENCE_COMPANY_ID = 1U << 2,
+    SURVEILLANCE_EVIDENCE_SERVICE_UUID = 1U << 3,
+    SURVEILLANCE_EVIDENCE_REMOTE_ID = 1U << 4,
+    SURVEILLANCE_EVIDENCE_PAYLOAD = 1U << 5
+} surveillance_evidence_t;
 
 typedef struct
 {
@@ -73,6 +92,8 @@ typedef struct
     uint32_t last_seen_ms;
     surveillance_class_t surveillance;
     surveillance_signature_id_t surveillance_signature;
+    uint8_t surveillance_score;
+    uint8_t surveillance_evidence;
     char vendor[ RFSCOUT_VENDOR_NAME_MAX ];
     char name[ RFSCOUT_DEVICE_NAME_MAX ];
     bool has_name;
@@ -80,6 +101,9 @@ typedef struct
     uint8_t manufacturer_data[ RFSCOUT_MFG_DATA_MAX ];
     uint8_t manufacturer_data_len;
     bool has_manufacturer_data;
+    uint16_t service_uuids[ RFSCOUT_BLE_SERVICE_UUID_MAX ];
+    uint8_t service_uuid_count;
+    bool has_remote_id;
 } rf_device_t;
 
 /**
