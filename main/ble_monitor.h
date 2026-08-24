@@ -14,7 +14,13 @@
 
 typedef void ( *ble_observation_fn )( rf_device_t *a_observation );
 
-/** @brief Initialize continuous passive BLE advertisement scanning. */
+/** @brief Initialize NimBLE and start the initial passive scan. */
 esp_err_t ble_monitor_init( ble_observation_fn a_callback );
+
+/** @brief Start passive BLE scanning when the WiFi/BT app is active. */
+esp_err_t ble_monitor_start( void );
+
+/** @brief Stop BLE scanning while another app is active. */
+esp_err_t ble_monitor_stop( void );
 
 #endif // _RFSCOUT_BLE_MONITOR_H_
