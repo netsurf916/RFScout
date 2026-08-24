@@ -26,6 +26,9 @@
 #define CC1101_MENU_RESET_COUNTS 4U
 #define CC1101_MENU_BACK 5U
 #define CC1101_MENU_ITEM_COUNT 6U
+#define NRF24_MENU_RESET_COUNTS 3U
+#define NRF24_MENU_BACK 4U
+#define NRF24_MENU_ITEM_COUNT 5U
 
 static const char *TAG = "app_manager";
 static rfscout_app_id_t active_app;
@@ -183,6 +186,8 @@ static void leave_app( rfscout_app_id_t a_app )
     else if( RFSCOUT_APP_NRF24 == a_app )
     {
         nrf24_stop();
+        nrf24_activity_reset();
+        nr_item = 0U;
     }
     cc_menu = false;
     cc_edit = false;
@@ -381,6 +386,13 @@ static void cc_input( bool a_pressed, int a_delta )
     render_cc_menu();
 }
 
+static void close_nr_menu( void )
+{
+    nr_menu = false;
+    nr_edit = false;
+    render_nr_spectrum();
+}
+
 static void nr_input( bool a_pressed, int a_delta )
 {
     if( !nr_menu )
@@ -393,28 +405,36 @@ static void nr_input( bool a_pressed, int a_delta )
         }
         return;
     }
+
     if( a_pressed )
     {
-        if( 3U == nr_item )
+        if( NRF24_MENU_RESET_COUNTS == nr_item )
         {
-            nr_menu = false;
-            nr_edit = false;
-            render_nr_spectrum();
+            nrf24_activity_reset_counts();
+            close_nr_menu();
             return;
         }
+        if( NRF24_MENU_BACK == nr_item )
+        {
+            close_nr_menu();
+            return;
+        }
+
         nr_edit = !nr_edit;
         render_nr_menu();
         return;
     }
+
     if( 0 == a_delta )
     {
         return;
     }
+
     if( !nr_edit )
     {
         int item = (int)nr_item + ( a_delta > 0 ? 1 : -1 );
-        if( item < 0 ) item = 3;
-        if( item > 3 ) item = 0;
+        if( item < 0 ) item = (int)NRF24_MENU_ITEM_COUNT - 1;
+        if( item >= (int)NRF24_MENU_ITEM_COUNT ) item = 0;
         nr_item = (unsigned)item;
     }
     else
