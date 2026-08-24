@@ -10,7 +10,6 @@ idf_component_register(
         "board_i2c.c"
         "battery.c"
         "battery_indicator.c"
-        "gps.c"
         "status_bar.c"
         "display.c"
         "ui.c"
@@ -21,5 +20,5 @@ idf_component_register(
         "log_writer.c"
     INCLUDE_DIRS "."
     PRIV_REQUIRES bt
-    REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_timer driver esp_driver_i2c esp_driver_uart esp_lcd fatfs sdmmc
+    REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_timer driver esp_driver_i2c esp_lcd fatfs sdmmc
 )
