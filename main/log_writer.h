@@ -37,8 +37,11 @@ bool log_writer_observation( const rf_device_t *a_observation );
 /**
  * @brief Flush queued records, close the active file, and stop the writer task.
  * @param a_timeout_ms Maximum time to wait for queued records to drain.
+ * @return True only when the worker has stopped and storage may be unmounted.
+ * @details If the timeout expires, shutdown is cancelled and logging resumes so
+ *          callers can safely leave the filesystem mounted and continue running.
  */
-void log_writer_shutdown( uint32_t a_timeout_ms );
+bool log_writer_shutdown( uint32_t a_timeout_ms );
 
 /**
  * @brief Return the number of records dropped because the queue was full.
@@ -47,7 +50,7 @@ uint32_t log_writer_dropped_count( void );
 
 /**
  * @brief Determine whether the SD logging path has encountered an I/O error.
- * @return True after an open, write, flush, sync, or close failure.
+ * @return True after an open, write, flush, sync, close, or rotation failure.
  * @details The state is sticky for the current runtime so transient media
  *          failures remain visible in the status bar instead of disappearing.
  */
