@@ -7,7 +7,6 @@
 
 #include "battery.h"
 #include "ble_monitor.h"
-#include "gps.h"
 #include "log_writer.h"
 #include "morse.h"
 #include "observation_store.h"
@@ -123,14 +122,6 @@ void app_main( void )
                   esp_err_to_name( result ) );
     }
 
-    result = gps_init();
-    if( ESP_OK != result )
-    {
-        ESP_LOGW( TAG,
-                  "GPS UART unavailable: %s",
-                  esp_err_to_name( result ) );
-    }
-
     ESP_ERROR_CHECK( ui_init() );
 
     result = storage_init();
@@ -162,7 +153,6 @@ void app_main( void )
         platform_poll();
         power_poll();
         battery_poll();
-        gps_poll();
         ui_poll();
         vTaskDelay( pdMS_TO_TICKS( 10 ) );
     }
