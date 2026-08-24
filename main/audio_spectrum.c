@@ -4,9 +4,11 @@
  * SPDX-License-Identifier: MIT
  */
 #include "audio_spectrum.h"
+#include "board.h"
 #include "driver/gpio.h"
 #include "driver/i2s_pdm.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <math.h>
@@ -15,14 +17,14 @@
 #define AUDIO_SAMPLE_RATE 48000U
 #define AUDIO_FFT_SIZE 1024U
 #define AUDIO_HOP_SIZE ( AUDIO_FFT_SIZE / 2U )
-#define AUDIO_MIC_CLK_GPIO GPIO_NUM_39
-#define AUDIO_MIC_DATA_GPIO GPIO_NUM_42
 #define AUDIO_DMA_BUFFER_COUNT 8U
 #define AUDIO_DMA_BUFFER_LENGTH 256U
-#define AUDIO_TASK_STACK 6144U
+/* pcm[] + FFT real/imag arrays require >10 KiB at the deepest call point. */
+#define AUDIO_TASK_STACK 14336U
 #define AUDIO_TASK_PRIORITY 5U
 #define AUDIO_PEAK_DECAY 4U
 #define AUDIO_EPSILON 1.0e-9f
+#define AUDIO_DIAGNOSTIC_INTERVAL_US 1000000LL
 
 static const char *TAG = "audio_spectrum";
 static TaskHandle_t task_handle;
@@ -166,6 +168,10 @@ static void audio_worker( void *a_arg )
     (void)a_arg;
     int16_t pcm[ AUDIO_FFT_SIZE ];
     unsigned fill = 0U;
+    int64_t last_diagnostic_us = esp_timer_get_time();
+    int16_t diagnostic_peak = 0;
+    uint64_t diagnostic_sum_sq = 0U;
+    uint32_t diagnostic_samples = 0U;
 
     while( running )
     {
@@ -189,7 +195,17 @@ static void audio_worker( void *a_arg )
             continue;
         }
 
-        fill += (unsigned)( bytes / sizeof( int16_t ) );
+        const unsigned samples_read = (unsigned)( bytes / sizeof( int16_t ) );
+        for( unsigned i = 0U; i < samples_read; ++i )
+        {
+            const int32_t sample = pcm[ fill + i ];
+            const int32_t absolute = sample < 0 ? -sample : sample;
+            if( absolute > diagnostic_peak ) diagnostic_peak = (int16_t)absolute;
+            diagnostic_sum_sq += (uint64_t)( sample * sample );
+        }
+        diagnostic_samples += samples_read;
+
+        fill += samples_read;
         if( fill >= AUDIO_FFT_SIZE )
         {
             publish_fft( pcm );
@@ -197,6 +213,23 @@ static void audio_worker( void *a_arg )
                      &pcm[ AUDIO_HOP_SIZE ],
                      AUDIO_HOP_SIZE * sizeof( int16_t ) );
             fill = AUDIO_HOP_SIZE;
+        }
+
+        const int64_t now_us = esp_timer_get_time();
+        if( ( now_us - last_diagnostic_us ) >= AUDIO_DIAGNOSTIC_INTERVAL_US )
+        {
+            const uint32_t rms = diagnostic_samples > 0U ?
+                (uint32_t)sqrt( (double)diagnostic_sum_sq / diagnostic_samples ) : 0U;
+            ESP_LOGI( TAG,
+                      "mic PCM samples=%lu rms=%lu peak=%d stack_free=%u",
+                      (unsigned long)diagnostic_samples,
+                      (unsigned long)rms,
+                      (int)diagnostic_peak,
+                      (unsigned)uxTaskGetStackHighWaterMark( NULL ) );
+            diagnostic_peak = 0;
+            diagnostic_sum_sq = 0U;
+            diagnostic_samples = 0U;
+            last_diagnostic_us = now_us;
         }
     }
 
@@ -242,14 +275,21 @@ esp_err_t audio_spectrum_start( void )
             I2S_SLOT_MODE_MONO ),
         .gpio_cfg =
         {
-            .clk = AUDIO_MIC_CLK_GPIO,
-            .din = AUDIO_MIC_DATA_GPIO,
+            .clk = (gpio_num_t)RFSCOUT_BOARD_MIC_CLOCK_PIN,
+            .din = (gpio_num_t)RFSCOUT_BOARD_MIC_DATA_PIN,
             .invert_flags =
             {
                 .clk_inv = false
             }
         }
     };
+
+#if SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER
+    /* The default helper enables a ~35.5 Hz high-pass filter on newer S3 I2S
+       hardware. RFScout needs the raw low-frequency content for Infrasonic
+       mode, so explicitly disable that hardware filter. */
+    pdm_config.slot_cfg.hp_en = false;
+#endif
 
     result = i2s_channel_init_pdm_rx_mode( rx_channel, &pdm_config );
     if( ESP_OK == result )
@@ -283,7 +323,9 @@ esp_err_t audio_spectrum_start( void )
     }
 
     ESP_LOGI( TAG,
-              "PDM microphone started at %u Hz with DMA %ux%u",
+              "PDM microphone started: I2S0 clk=GPIO%d data=GPIO%d PCM=%u Hz DMA=%ux%u",
+              RFSCOUT_BOARD_MIC_CLOCK_PIN,
+              RFSCOUT_BOARD_MIC_DATA_PIN,
               AUDIO_SAMPLE_RATE,
               AUDIO_DMA_BUFFER_COUNT,
               AUDIO_DMA_BUFFER_LENGTH );
@@ -299,8 +341,6 @@ void audio_spectrum_stop( void )
 
     running = false;
 
-    /* The read has a 100 ms timeout, so allow the worker to leave cleanly
-       before deleting the I2S channel it is using. */
     for( unsigned attempt = 0U;
          ( NULL != task_handle ) && ( attempt < 20U );
          ++attempt )
