@@ -47,11 +47,6 @@ typedef enum
     SURVEILLANCE_OTHER
 } surveillance_class_t;
 
-/**
- * @brief Specific curated surveillance signature matched by an observation.
- * @details Broad classes drive alert policy while the signature preserves the
- *          type/vendor identity required by retained history and the LCD.
- */
 typedef enum
 {
     SURVEILLANCE_SIGNATURE_NONE = 0,
@@ -69,7 +64,6 @@ typedef enum
     SURVEILLANCE_SIGNATURE_COUNT
 } surveillance_signature_id_t;
 
-/** @brief Evidence channels that contributed to a surveillance match. */
 typedef enum
 {
     SURVEILLANCE_EVIDENCE_OUI = 1U << 0,
@@ -106,7 +100,6 @@ typedef struct
     bool has_remote_id;
 } rf_device_t;
 
-/** @brief Lifecycle events emitted when membership in the live device list changes. */
 typedef enum
 {
     OBSERVATION_STORE_EVENT_ADDED = 0,
@@ -114,36 +107,27 @@ typedef enum
     OBSERVATION_STORE_EVENT_DROPPED_CAPACITY
 } observation_store_event_t;
 
-/**
- * @brief Callback invoked when a device is added to or removed from the live list.
- * @param a_event Lifecycle event that changed list membership.
- * @param a_device Snapshot of the device being added or removed.
- * @param a_context Caller-owned callback context.
- * @note The callback is invoked while the store lock is held and must not block
- *       or call back into the observation store.
- */
 typedef void ( *observation_store_event_callback_t )(
     observation_store_event_t a_event,
     const rf_device_t *a_device,
     void *a_context );
 
-/**
- * @brief Initialize the observation store in external PSRAM.
- * @return ESP_OK on success or ESP_ERR_NO_MEM when the configured store cannot be allocated.
- */
+/** @brief Initialize the observation store in external PSRAM. */
 esp_err_t observation_store_init( void );
 
-/**
- * @brief Register the live-list lifecycle callback.
- * @param a_callback Callback to invoke, or NULL to disable lifecycle notifications.
- * @param a_context Caller-owned context passed to the callback.
- */
+/** @brief Register the live-list lifecycle callback. */
 void observation_store_set_event_callback(
     observation_store_event_callback_t a_callback,
     void *a_context );
 
 /** @brief Add or refresh one normalized device observation. */
 bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new );
+
+/**
+ * @brief Expire stale observations without requiring active radio collection or UI rendering.
+ * @details This keeps timeout lifecycle events timely while another app owns the screen and radios.
+ */
+void observation_store_housekeeping( void );
 
 /** @brief Return the number of currently active observations. */
 size_t observation_store_count( void );
