@@ -66,7 +66,6 @@ static const char *TAG = "ui";
 static int64_t last_refresh_us;
 static rf_device_t *snapshot;
 
-/** @brief Add one vendor observation to the descending brand summary. */
 static void add_brand( brand_count_t *a_brands,
                        size_t a_capacity,
                        const char *a_name )
@@ -88,7 +87,6 @@ static void add_brand( brand_count_t *a_brands,
             slot = i;
             break;
         }
-
         if( ( a_capacity == slot ) && ( 0U == a_brands[ i ].count ) )
         {
             slot = i;
@@ -99,12 +97,9 @@ static void add_brand( brand_count_t *a_brands,
     {
         return;
     }
-
     if( 0U == a_brands[ slot ].count )
     {
-        strlcpy( a_brands[ slot ].name,
-                 a_name,
-                 sizeof( a_brands[ slot ].name ) );
+        strlcpy( a_brands[ slot ].name, a_name, sizeof( a_brands[ slot ].name ) );
     }
     ++a_brands[ slot ].count;
 
@@ -118,25 +113,14 @@ static void add_brand( brand_count_t *a_brands,
     }
 }
 
-/** @brief Draw the fixed unknown-device row below the known brand list. */
 static void draw_unknown_row( size_t a_unknown_count )
 {
-    display_fill_rect( 5,
-                       UI_UNKNOWN_DIVIDER_Y,
-                       UI_COLUMN_DIVIDER_X - 10,
-                       1,
-                       COLOR_GRAY );
-
+    display_fill_rect( 5, UI_UNKNOWN_DIVIDER_Y, UI_COLUMN_DIVIDER_X - 10, 1, COLOR_GRAY );
     char line[ 64 ];
-    snprintf( line,
-              sizeof( line ),
-              "%-27.27s %3u",
-              "UNKNOWN",
-              (unsigned)a_unknown_count );
+    snprintf( line, sizeof( line ), "%-27.27s %3u", "UNKNOWN", (unsigned)a_unknown_count );
     display_draw_text( 6, UI_UNKNOWN_ROW_Y, line, COLOR_CYAN, 1 );
 }
 
-/** @brief Draw the user-button shutdown countdown over the normal UI. */
 static void draw_power_overlay( void )
 {
     power_status_t status;
@@ -159,20 +143,14 @@ static void draw_power_overlay( void )
     }
 
     display_draw_text( 69, 63, "HOLD TO POWER OFF", COLOR_YELLOW, 2 );
-
     char countdown[ 4 ];
-    snprintf( countdown,
-              sizeof( countdown ),
-              "%u",
-              (unsigned)status.seconds_remaining );
+    snprintf( countdown, sizeof( countdown ), "%u", (unsigned)status.seconds_remaining );
     display_draw_text( 150, 88, countdown, COLOR_RED, 3 );
 }
 
-/** @brief Draw every supported surveillance signature as a persistent status row. */
 static void draw_surveillance_rows( const uint16_t *a_signature_counts )
 {
     int y = UI_LIST_START_Y;
-
     for( size_t row = 0;
          row < sizeof( surveillance_rows ) / sizeof( surveillance_rows[ 0 ] );
          ++row )
@@ -181,10 +159,7 @@ static void draw_surveillance_rows( const uint16_t *a_signature_counts )
         const uint16_t count = a_signature_counts[ signature ];
         const uint16_t color = ( 0U == count ) ? COLOR_GRAY : COLOR_RED;
         char line[ 32 ];
-
-        snprintf( line,
-                  sizeof( line ),
-                  "%-*.*s %3u",
+        snprintf( line, sizeof( line ), "%-*.*s %3u",
                   UI_SURVEILLANCE_LABEL_WIDTH,
                   UI_SURVEILLANCE_LABEL_WIDTH,
                   surveillance_signature_label( signature ),
@@ -194,7 +169,6 @@ static void draw_surveillance_rows( const uint16_t *a_signature_counts )
     }
 }
 
-/** @brief Render the complete situational-awareness summary. */
 static void render_summary( void )
 {
     if( NULL == snapshot )
@@ -204,97 +178,53 @@ static void render_summary( void )
 
     brand_count_t brands[ UI_MAX_KNOWN_BRANDS ] = { 0 };
     uint16_t signature_counts[ SURVEILLANCE_SIGNATURE_COUNT ] = { 0 };
-    const size_t device_count =
-        observation_store_snapshot( snapshot, RFSCOUT_DEVICE_CAPACITY );
-    const size_t surveillance_count =
-        surveillance_history_signature_counts( signature_counts,
-                                               SURVEILLANCE_SIGNATURE_COUNT );
+    const size_t device_count = observation_store_snapshot( snapshot, RFSCOUT_DEVICE_CAPACITY );
+    const size_t surveillance_count = surveillance_history_signature_counts( signature_counts, SURVEILLANCE_SIGNATURE_COUNT );
     size_t wifi_count = 0;
     size_t ble_count = 0;
     size_t unknown_count = 0;
 
     for( size_t i = 0; i < device_count; ++i )
     {
-        if( 0U != ( snapshot[ i ].source_mask & RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) )
-        {
-            ++wifi_count;
-        }
-        if( 0U != ( snapshot[ i ].source_mask & RF_SOURCE_BIT( RF_SOURCE_BLE ) ) )
-        {
-            ++ble_count;
-        }
-
-        if( '\0' == snapshot[ i ].vendor[ 0 ] )
-        {
-            ++unknown_count;
-        }
-        else
-        {
-            add_brand( brands, UI_MAX_KNOWN_BRANDS, snapshot[ i ].vendor );
-        }
+        if( 0U != ( snapshot[ i ].source_mask & RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) ) ++wifi_count;
+        if( 0U != ( snapshot[ i ].source_mask & RF_SOURCE_BIT( RF_SOURCE_BLE ) ) ) ++ble_count;
+        if( '\0' == snapshot[ i ].vendor[ 0 ] ) ++unknown_count;
+        else add_brand( brands, UI_MAX_KNOWN_BRANDS, snapshot[ i ].vendor );
     }
 
     size_t brand_count = 0;
-    while( ( brand_count < UI_MAX_KNOWN_BRANDS ) &&
-           ( 0U != brands[ brand_count ].count ) )
-    {
-        ++brand_count;
-    }
+    while( ( brand_count < UI_MAX_KNOWN_BRANDS ) && ( 0U != brands[ brand_count ].count ) ) ++brand_count;
 
     display_clear( COLOR_BLACK );
-    display_draw_text( 6, 5, "RFSCOUT", COLOR_SUBDUED_TEAL, 2 );
+    display_draw_text( 6, 5, "WIFI / BT", COLOR_SUBDUED_TEAL, 2 );
     battery_indicator_draw();
     status_bar_draw();
 
     char line[ 64 ];
-    snprintf( line,
-              sizeof( line ),
-              "DEV %u   WIFI %u   BLE %u",
-              (unsigned)device_count,
-              (unsigned)wifi_count,
-              (unsigned)ble_count );
+    snprintf( line, sizeof( line ), "DEV %u   WIFI %u   BLE %u",
+              (unsigned)device_count, (unsigned)wifi_count, (unsigned)ble_count );
     display_draw_text( 6, 25, line, COLOR_WHITE, 1 );
 
-    snprintf( line,
-              sizeof( line ),
-              "SURVEILLANCE %u",
-              (unsigned)surveillance_count );
-    display_draw_text( 210,
-                       25,
-                       line,
-                       ( 0U == surveillance_count ) ? COLOR_GRAY : COLOR_RED,
-                       1 );
+    snprintf( line, sizeof( line ), "SURVEILLANCE %u", (unsigned)surveillance_count );
+    display_draw_text( 210, 25, line,
+                       ( 0U == surveillance_count ) ? COLOR_GRAY : COLOR_RED, 1 );
 
     display_fill_rect( 5, 36, 310, 1, COLOR_GRAY );
-    display_fill_rect( UI_COLUMN_DIVIDER_X,
-                       36,
-                       1,
-                       RFSCOUT_DISPLAY_HEIGHT - 36,
-                       COLOR_GRAY );
+    display_fill_rect( UI_COLUMN_DIVIDER_X, 36, 1,
+                       RFSCOUT_DISPLAY_HEIGHT - 36, COLOR_GRAY );
 
     int y = UI_LIST_START_Y;
     size_t attention_rows = 0;
     for( size_t i = 0; i < brand_count; ++i )
     {
-        snprintf( line,
-                  sizeof( line ),
-                  "%-27.27s %3u",
-                  brands[ i ].name,
-                  (unsigned)brands[ i ].count );
-
+        snprintf( line, sizeof( line ), "%-27.27s %3u",
+                  brands[ i ].name, (unsigned)brands[ i ].count );
         const bool highlight =
             ( brands[ i ].count > UI_BRAND_ATTENTION_THRESHOLD ) &&
             ( attention_rows < UI_MAX_ATTENTION_ROWS );
-        if( highlight )
-        {
-            ++attention_rows;
-        }
-
-        display_draw_text( 6,
-                           y,
-                           line,
-                           highlight ? COLOR_YELLOW : COLOR_CYAN,
-                           1 );
+        if( highlight ) ++attention_rows;
+        display_draw_text( 6, y, line,
+                           highlight ? COLOR_YELLOW : COLOR_CYAN, 1 );
         y += UI_LIST_ROW_HEIGHT;
     }
 
@@ -313,11 +243,7 @@ esp_err_t ui_init( void )
     snapshot = heap_caps_calloc( RFSCOUT_DEVICE_CAPACITY,
                                  sizeof( *snapshot ),
                                  MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
-    if( NULL == snapshot )
-    {
-        return ESP_ERR_NO_MEM;
-    }
-
+    if( NULL == snapshot ) return ESP_ERR_NO_MEM;
     const esp_err_t result = display_init();
     if( ESP_OK != result )
     {
@@ -325,7 +251,6 @@ esp_err_t ui_init( void )
         snapshot = NULL;
         return result;
     }
-
     last_refresh_us = 0;
     render_summary();
     return ESP_OK;
@@ -334,11 +259,7 @@ esp_err_t ui_init( void )
 void ui_poll( void )
 {
     const int64_t now_us = esp_timer_get_time();
-    if( ( now_us - last_refresh_us ) < UI_REFRESH_INTERVAL_US )
-    {
-        return;
-    }
-
+    if( ( now_us - last_refresh_us ) < UI_REFRESH_INTERVAL_US ) return;
     last_refresh_us = now_us;
     render_summary();
 }
