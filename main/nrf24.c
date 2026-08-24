@@ -102,22 +102,18 @@ static void ce( bool a_enabled )
     gpio_set_level( RFSCOUT_BOARD_NRF24_CE_PIN, a_enabled ? 1 : 0 );
 }
 
-/** @brief Tune one channel and begin its receive-energy observation window. */
 static esp_err_t begin_channel( uint8_t a_channel )
 {
     ce( false );
-
     const esp_err_t result = write_register( NRF24_REG_RF_CH, a_channel );
     if( ESP_OK != result )
     {
         return result;
     }
-
     ce( true );
     return ESP_OK;
 }
 
-/** @brief Copy the current scan configuration atomically for the worker. */
 static nrf24_scan_config_t config_snapshot( void )
 {
     portENTER_CRITICAL( &state_lock );
@@ -126,14 +122,6 @@ static nrf24_scan_config_t config_snapshot( void )
     return snapshot;
 }
 
-/**
- * @brief Wait for one RPD observation window.
- * @details Millisecond portions block the task. The final sub-millisecond
- *          portion uses the ROM delay because the nRF24 RPD window is shorter
- *          than a FreeRTOS tick. The scan loop itself periodically performs a
- *          real blocking scheduler break so the idle task cannot be starved by
- *          a long sequence of short busy waits.
- */
 static void dwell_wait( uint16_t a_dwell_us )
 {
     uint32_t remaining_us = a_dwell_us;
@@ -158,7 +146,6 @@ static void dwell_wait( uint16_t a_dwell_us )
     }
 }
 
-/** @brief Run complete nRF24 sweeps independently of the 10 ms UI poll cadence. */
 static void scan_worker( void *a_argument )
 {
     (void)a_argument;
@@ -187,10 +174,8 @@ static void scan_worker( void *a_argument )
                 esp_err_t result = begin_channel( (uint8_t)channel );
                 if( ESP_OK != result )
                 {
-                    ESP_LOGW( TAG,
-                              "RF_CH write failed for channel %u: %s",
-                              (unsigned)channel,
-                              esp_err_to_name( result ) );
+                    ESP_LOGW( TAG, "RF_CH write failed for channel %u: %s",
+                              (unsigned)channel, esp_err_to_name( result ) );
                     ce( false );
                     scan_ok = false;
                     break;
@@ -208,19 +193,14 @@ static void scan_worker( void *a_argument )
                 ce( false );
                 if( ESP_OK != result )
                 {
-                    ESP_LOGW( TAG,
-                              "RPD read failed for channel %u: %s",
-                              (unsigned)channel,
-                              esp_err_to_name( result ) );
+                    ESP_LOGW( TAG, "RPD read failed for channel %u: %s",
+                              (unsigned)channel, esp_err_to_name( result ) );
                     scan_ok = false;
                     break;
                 }
 
                 acquisition[ channel ] = ( rpd & 0x01U ) ? 1U : 0U;
 
-                /* taskYIELD() is insufficient here because this worker has a
-                   higher priority than IDLE0. Block for one tick periodically
-                   so the idle task can reset the task watchdog. */
                 ++channels_since_break;
                 if( channels_since_break >= NRF24_CHANNELS_PER_SCHEDULER_BREAK )
                 {
@@ -233,7 +213,6 @@ static void scan_worker( void *a_argument )
             {
                 break;
             }
-
             if( !scan_ok )
             {
                 running = false;
@@ -244,7 +223,6 @@ static void scan_worker( void *a_argument )
             memcpy( completed, acquisition, sizeof( completed ) );
             frame_ready = true;
             portEXIT_CRITICAL( &state_lock );
-
             vTaskDelay( 1U );
         }
     }
@@ -269,16 +247,13 @@ esp_err_t nrf24_init( void )
         .queue_size = 1
     };
 
-    esp_err_t result = spi_bus_add_device( NRF24_SPI_HOST,
-                                           &device_config,
-                                           &device );
+    esp_err_t result = spi_bus_add_device( NRF24_SPI_HOST, &device_config, &device );
     if( ESP_OK != result )
     {
         return result;
     }
 
     initialized = true;
-
     uint8_t setup_aw = 0xFFU;
     uint8_t rf_channel = 0xFFU;
     uint8_t status = 0xFFU;
@@ -286,35 +261,24 @@ esp_err_t nrf24_init( void )
     (void)read_register( NRF24_REG_RF_CH, &rf_channel );
     (void)read_register( NRF24_REG_STATUS, &status );
 
-    detected = ( setup_aw >= 1U ) &&
-               ( setup_aw <= 3U ) &&
-               ( rf_channel <= 125U ) &&
-               ( 0xFFU != status );
-
-    ESP_LOGI( TAG,
-              "probe setup_aw=0x%02x rf_ch=%u status=0x%02x detected=%d",
-              setup_aw,
-              rf_channel,
-              status,
-              detected );
+    detected = ( setup_aw >= 1U ) && ( setup_aw <= 3U ) &&
+               ( rf_channel <= 125U ) && ( 0xFFU != status );
+    ESP_LOGI( TAG, "probe setup_aw=0x%02x rf_ch=%u status=0x%02x detected=%d",
+              setup_aw, rf_channel, status, detected );
 
     memset( acquisition, 0, sizeof( acquisition ) );
     memset( completed, 0, sizeof( completed ) );
 
     if( detected && ( NULL == scan_task ) )
     {
-        if( pdPASS != xTaskCreate( scan_worker,
-                                   "nrf24_scan",
-                                   NRF24_TASK_STACK_SIZE,
-                                   NULL,
-                                   NRF24_TASK_PRIORITY,
-                                   &scan_task ) )
+        if( pdPASS != xTaskCreate( scan_worker, "nrf24_scan",
+                                   NRF24_TASK_STACK_SIZE, NULL,
+                                   NRF24_TASK_PRIORITY, &scan_task ) )
         {
             scan_task = NULL;
             return ESP_ERR_NO_MEM;
         }
     }
-
     return detected ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
@@ -327,23 +291,13 @@ esp_err_t nrf24_start( void )
     }
 
     ce( false );
-
-    /* Disable packet-level features; this view uses only the radio's receive
-       power detector and never transmits or attempts to decode payloads. */
     result = write_register( NRF24_REG_EN_AA, 0x00U );
-    if( ESP_OK == result )
-    {
-        result = write_register( NRF24_REG_EN_RXADDR, 0x00U );
-    }
-    if( ESP_OK == result )
-    {
-        result = write_register( NRF24_REG_RF_SETUP, 0x06U );
-    }
+    if( ESP_OK == result ) result = write_register( NRF24_REG_EN_RXADDR, 0x00U );
+    if( ESP_OK == result ) result = write_register( NRF24_REG_RF_SETUP, 0x06U );
     if( ESP_OK == result )
     {
         result = write_register( NRF24_REG_CONFIG,
-                                 NRF24_CONFIG_PWR_UP |
-                                 NRF24_CONFIG_PRIM_RX );
+                                 NRF24_CONFIG_PWR_UP | NRF24_CONFIG_PRIM_RX );
     }
     if( ESP_OK != result )
     {
@@ -355,18 +309,13 @@ esp_err_t nrf24_start( void )
     frame_ready = false;
     running = true;
     portEXIT_CRITICAL( &state_lock );
-
     xTaskNotifyGive( scan_task );
     return ESP_OK;
 }
 
 void nrf24_stop( void )
 {
-    if( !initialized )
-    {
-        return;
-    }
-
+    if( !initialized ) return;
     running = false;
     ce( false );
     (void)write_register( NRF24_REG_CONFIG, 0x00U );
@@ -374,8 +323,6 @@ void nrf24_stop( void )
 
 void nrf24_poll( void )
 {
-    /* Acquisition runs in scan_worker() so sub-millisecond dwell values are
-       independent of the application's 10 ms polling cadence. */
 }
 
 bool nrf24_is_detected( void )
@@ -399,14 +346,8 @@ void nrf24_adjust_low( int a_delta )
 {
     portENTER_CRITICAL( &state_lock );
     int value = (int)config.low_channel + a_delta;
-    if( value < 0 )
-    {
-        value = 0;
-    }
-    if( value >= config.high_channel )
-    {
-        value = (int)config.high_channel - 1;
-    }
+    if( value < 0 ) value = 0;
+    if( value >= config.high_channel ) value = (int)config.high_channel - 1;
     config.low_channel = (uint8_t)value;
     portEXIT_CRITICAL( &state_lock );
     restart_scan();
@@ -416,14 +357,8 @@ void nrf24_adjust_high( int a_delta )
 {
     portENTER_CRITICAL( &state_lock );
     int value = (int)config.high_channel + a_delta;
-    if( value > 125 )
-    {
-        value = 125;
-    }
-    if( value <= config.low_channel )
-    {
-        value = (int)config.low_channel + 1;
-    }
+    if( value > 125 ) value = 125;
+    if( value <= config.low_channel ) value = (int)config.low_channel + 1;
     config.high_channel = (uint8_t)value;
     portEXIT_CRITICAL( &state_lock );
     restart_scan();
@@ -433,12 +368,7 @@ void nrf24_adjust_dwell( int a_delta )
 {
     static const uint16_t dwell_values[] =
     {
-        200U,
-        250U,
-        500U,
-        1000U,
-        2000U,
-        5000U
+        200U, 250U, 500U, 1000U, 2000U, 5000U
     };
 
     portENTER_CRITICAL( &state_lock );
@@ -450,7 +380,7 @@ void nrf24_adjust_dwell( int a_delta )
     }
 
     if( ( a_delta > 0 ) &&
-        ( index + 1U < ( sizeof( dwell_values ) / sizeof( dwell_values[ 0 ] ) ) )
+        ( index + 1U < ( sizeof( dwell_values ) / sizeof( dwell_values[ 0 ] ) ) ) )
     {
         ++index;
     }
@@ -475,15 +405,9 @@ bool nrf24_take_frame_ready( void )
 
 size_t nrf24_spectrum( uint8_t *a_output, size_t a_capacity )
 {
-    if( ( NULL == a_output ) || ( 0U == a_capacity ) )
-    {
-        return 0U;
-    }
-
-    const size_t count =
-        ( a_capacity < NRF24_CHANNEL_COUNT ) ?
-        a_capacity : NRF24_CHANNEL_COUNT;
-
+    if( ( NULL == a_output ) || ( 0U == a_capacity ) ) return 0U;
+    const size_t count = ( a_capacity < NRF24_CHANNEL_COUNT ) ?
+                         a_capacity : NRF24_CHANNEL_COUNT;
     portENTER_CRITICAL( &state_lock );
     memcpy( a_output, completed, count );
     portEXIT_CRITICAL( &state_lock );
