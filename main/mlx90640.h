@@ -23,24 +23,35 @@ typedef struct
 {
     bool detected;
     bool frame_valid;
-    uint16_t pixels[ MLX90640_PIXEL_COUNT ];
-    uint16_t minimum;
-    uint16_t maximum;
-    uint16_t center;
+    int16_t pixels[ MLX90640_PIXEL_COUNT ];
+    int16_t minimum;
+    int16_t maximum;
+    int16_t center;
 } mlx90640_frame_t;
 
-/** @brief Probe and attach the optional MLX90640 at its standard address. */
+/**
+ * @brief Probe for the optional MLX90640 at its standard address.
+ * @return ESP_OK when the device acknowledges or the underlying I2C error.
+ * @details The device handle is attached lazily on first successful detection.
+ */
+esp_err_t mlx90640_probe( void );
+
+/** @brief Initialize the optional MLX90640 by probing its standard address. */
 esp_err_t mlx90640_init( void );
 
-/** @brief Return whether the sensor acknowledged during initialization. */
+/** @brief Return whether the sensor is currently known to be present. */
 bool mlx90640_is_detected( void );
 
 /**
- * @brief Acquire the current raw IR frame.
+ * @brief Acquire and merge the current MLX90640 subpage into the raw frame.
  * @param a_frame Destination for the 32x24 frame and range metadata.
- * @return ESP_OK on success or an I2C/device-state error.
- * @note Values are sensor IR data, not calibrated degrees Celsius. The module
- *       intentionally keeps acquisition separate from calibration/conversion.
+ * @return ESP_OK when a complete two-subpage frame is available,
+ *         ESP_ERR_NOT_FINISHED while waiting for the complementary subpage,
+ *         or an I2C/device-state error.
+ * @note Values are signed raw IR data, not calibrated degrees Celsius. The
+ *       MLX90640 updates alternating pixel subpages; this routine merges both
+ *       subpages before reporting a valid image to avoid checkerboard/striped
+ *       artifacts caused by treating inactive pixels as a complete frame.
  */
 esp_err_t mlx90640_read_frame( mlx90640_frame_t *a_frame );
 
