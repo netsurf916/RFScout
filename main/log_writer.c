@@ -56,7 +56,15 @@ static size_t active_size;
 static volatile bool accepting;
 static volatile bool shutdown_requested;
 static volatile bool writer_stopped;
+static volatile bool io_error;
 static uint32_t dropped_records;
+
+/** @brief Mark a persistent logging error and emit its diagnostic context. */
+static void mark_io_error( const char *a_operation )
+{
+    io_error = true;
+    ESP_LOGE( TAG, "%s failed: errno=%d", a_operation, errno );
+}
 
 /** @brief Build the path for one circular log slot. */
 static void segment_path( unsigned a_slot, char *a_path, size_t a_capacity )
@@ -158,7 +166,13 @@ static bool delete_oldest_segment( void )
 
     char path[ 64 ];
     segment_path( oldest_slot, path, sizeof( path ) );
-    return ( 0 == unlink( path ) );
+    if( 0 != unlink( path ) )
+    {
+        mark_io_error( "oldest log deletion" );
+        return false;
+    }
+
+    return true;
 }
 
 /** @brief Preserve the configured filesystem free-space reserve when possible. */
@@ -183,15 +197,15 @@ static bool open_segment( void )
 
     char path[ 64 ];
     segment_path( active_slot, path, sizeof( path ) );
-    if( 0 != unlink( path ) && ( ENOENT != errno ) )
+    if( ( 0 != unlink( path ) ) && ( ENOENT != errno ) )
     {
-        ESP_LOGW( TAG, "could not replace %s: errno=%d", path, errno );
+        mark_io_error( "log replacement" );
     }
 
     active_file = fopen( path, "w" );
     if( NULL == active_file )
     {
-        ESP_LOGE( TAG, "could not open %s: errno=%d", path, errno );
+        mark_io_error( "log open" );
         return false;
     }
 
@@ -200,13 +214,16 @@ static bool open_segment( void )
                                        (unsigned long)active_sequence );
     if( header_length < 0 )
     {
+        mark_io_error( "log header write" );
         fclose( active_file );
         active_file = NULL;
         return false;
     }
 
     active_size = (size_t)header_length;
-    ESP_LOGI( TAG, "logging to %s sequence=%lu", path,
+    ESP_LOGI( TAG,
+              "logging to %s sequence=%lu",
+              path,
               (unsigned long)active_sequence );
     return true;
 }
@@ -219,9 +236,18 @@ static void close_segment( void )
         return;
     }
 
-    fflush( active_file );
-    fsync( fileno( active_file ) );
-    fclose( active_file );
+    if( 0 != fflush( active_file ) )
+    {
+        mark_io_error( "log flush" );
+    }
+    if( 0 != fsync( fileno( active_file ) ) )
+    {
+        mark_io_error( "log sync" );
+    }
+    if( 0 != fclose( active_file ) )
+    {
+        mark_io_error( "log close" );
+    }
     active_file = NULL;
     active_size = 0U;
 }
@@ -308,6 +334,7 @@ static bool write_record( const log_record_t *a_record )
         evidence );
     if( ( length <= 0 ) || ( (size_t)length >= sizeof( line ) ) )
     {
+        io_error = true;
         return false;
     }
 
@@ -321,7 +348,7 @@ static bool write_record( const log_record_t *a_record )
 
     if( (size_t)length != fwrite( line, 1U, (size_t)length, active_file ) )
     {
-        ESP_LOGE( TAG, "SD log write failed: errno=%d", errno );
+        mark_io_error( "SD log write" );
         return false;
     }
 
@@ -350,7 +377,10 @@ static void writer_task_main( void *a_argument )
         if( ( NULL != active_file ) &&
             ( ( now_us - last_flush_us ) >= LOG_FLUSH_INTERVAL_US ) )
         {
-            fflush( active_file );
+            if( 0 != fflush( active_file ) )
+            {
+                mark_io_error( "periodic log flush" );
+            }
             last_flush_us = now_us;
         }
     }
@@ -363,6 +393,8 @@ static void writer_task_main( void *a_argument )
 
 esp_err_t log_writer_init( void )
 {
+    io_error = false;
+
     if( !storage_is_available() )
     {
         return ESP_ERR_INVALID_STATE;
@@ -371,7 +403,7 @@ esp_err_t log_writer_init( void )
     if( ( 0 != mkdir( RFSCOUT_STORAGE_LOG_DIRECTORY, 0775 ) ) &&
         ( EEXIST != errno ) )
     {
-        ESP_LOGE( TAG, "could not create log directory: errno=%d", errno );
+        mark_io_error( "log directory creation" );
         return ESP_FAIL;
     }
 
@@ -459,4 +491,9 @@ void log_writer_shutdown( uint32_t a_timeout_ms )
 uint32_t log_writer_dropped_count( void )
 {
     return dropped_records;
+}
+
+bool log_writer_has_error( void )
+{
+    return io_error;
 }
