@@ -45,6 +45,7 @@ static uint32_t last_low_khz;
 static uint32_t last_high_khz;
 static bool have_sweep;
 static tracked_fingerprint_t tracked[ CC1101_FINGERPRINT_MAX ];
+static uint16_t fingerprint_counts[ CC1101_FP_TYPE_COUNT ];
 
 static uint8_t strength_from_rssi( int8_t a_rssi )
 {
@@ -154,9 +155,6 @@ static void classify_segment( const activity_segment_t *a_segment,
     {
         a_output->type = CC1101_FP_REMOTE_SENSOR_LIKE;
         a_output->confidence = 62U;
-        snprintf( a_output->label,
-                  sizeof( a_output->label ),
-                  "Remote/sensor-like" );
     }
     else if( narrow &&
              ( a_segment->max_current >= CC1101_STRONG_THRESHOLD ) &&
@@ -164,34 +162,27 @@ static void classify_segment( const activity_segment_t *a_segment,
     {
         a_output->type = CC1101_FP_CONTINUOUS_CARRIER;
         a_output->confidence = 58U;
-        snprintf( a_output->label,
-                  sizeof( a_output->label ),
-                  "Carrier-like" );
     }
     else if( narrow && recently_stronger )
     {
         a_output->type = CC1101_FP_BURSTY_SIGNAL;
         a_output->confidence = 52U;
-        snprintf( a_output->label,
-                  sizeof( a_output->label ),
-                  "Bursty narrowband" );
     }
     else if( narrow )
     {
         a_output->type = CC1101_FP_NARROW_ISM;
         a_output->confidence = 48U;
-        snprintf( a_output->label,
-                  sizeof( a_output->label ),
-                  "Narrowband RF" );
     }
     else
     {
         a_output->type = CC1101_FP_WIDEBAND_ACTIVITY;
         a_output->confidence = 40U;
-        snprintf( a_output->label,
-                  sizeof( a_output->label ),
-                  "Wide RF activity" );
     }
+
+    snprintf( a_output->label,
+              sizeof( a_output->label ),
+              "%s",
+              cc1101_activity_fingerprint_name( a_output->type ) );
 }
 
 static uint32_t frequency_delta( uint32_t a_left, uint32_t a_right )
@@ -241,6 +232,23 @@ static int find_free_or_oldest_slot( void )
     return (int)oldest;
 }
 
+static void record_confirmation( tracked_fingerprint_t *a_entry )
+{
+    if( a_entry->confirmed ||
+        ( a_entry->fingerprint.type <= CC1101_FP_UNKNOWN ) ||
+        ( a_entry->fingerprint.type >= CC1101_FP_TYPE_COUNT ) )
+    {
+        return;
+    }
+
+    a_entry->confirmed = true;
+    uint16_t *count = &fingerprint_counts[ a_entry->fingerprint.type ];
+    if( *count < UINT16_MAX )
+    {
+        ++( *count );
+    }
+}
+
 static void update_tracked_fingerprints( void )
 {
     for( size_t i = 0U; i < CC1101_FINGERPRINT_MAX; ++i )
@@ -265,7 +273,9 @@ static void update_tracked_fingerprints( void )
         }
 
         tracked_fingerprint_t *entry = &tracked[ slot ];
+        const bool was_confirmed = entry->confirmed;
         entry->fingerprint = candidate;
+        entry->confirmed = was_confirmed;
         entry->matched_this_sweep = true;
         entry->missed_sweeps = 0U;
         if( entry->seen_streak < 255U )
@@ -274,7 +284,7 @@ static void update_tracked_fingerprints( void )
         }
         if( entry->seen_streak >= CC1101_FP_CONFIRM_SWEEPS )
         {
-            entry->confirmed = true;
+            record_confirmation( entry );
         }
     }
 
@@ -372,33 +382,49 @@ size_t cc1101_activity_levels( uint8_t *a_current,
 size_t cc1101_activity_fingerprints( cc1101_fingerprint_t *a_output,
                                      size_t a_capacity )
 {
-    if( ( NULL == a_output ) || ( 0U == a_capacity ) || !have_sweep )
+    if( ( NULL == a_output ) || ( 0U == a_capacity ) )
     {
         return 0U;
     }
 
-    size_t count = 0U;
-    for( size_t i = 0U;
-         ( i < CC1101_FINGERPRINT_MAX ) && ( count < a_capacity );
-         ++i )
+    static const cc1101_fingerprint_type_t rows[] =
     {
-        if( tracked[ i ].confirmed )
-        {
-            a_output[ count++ ] = tracked[ i ].fingerprint;
-        }
-    }
+        CC1101_FP_REMOTE_SENSOR_LIKE,
+        CC1101_FP_BURSTY_SIGNAL,
+        CC1101_FP_CONTINUOUS_CARRIER,
+        CC1101_FP_NARROW_ISM,
+        CC1101_FP_WIDEBAND_ACTIVITY
+    };
 
-    for( size_t i = 1U; i < count; ++i )
+    const size_t row_count = sizeof( rows ) / sizeof( rows[ 0 ] );
+    const size_t count = a_capacity < row_count ? a_capacity : row_count;
+
+    for( size_t row = 0U; row < count; ++row )
     {
-        cc1101_fingerprint_t current = a_output[ i ];
-        size_t position = i;
-        while( ( position > 0U ) &&
-               ( current.confidence > a_output[ position - 1U ].confidence ) )
+        cc1101_fingerprint_t *output = &a_output[ row ];
+        memset( output, 0, sizeof( *output ) );
+        output->type = rows[ row ];
+        output->count = fingerprint_counts[ output->type ];
+        snprintf( output->label,
+                  sizeof( output->label ),
+                  "%s",
+                  cc1101_activity_fingerprint_name( output->type ) );
+
+        for( size_t i = 0U; i < CC1101_FINGERPRINT_MAX; ++i )
         {
-            a_output[ position ] = a_output[ position - 1U ];
-            --position;
+            if( tracked[ i ].confirmed &&
+                ( tracked[ i ].fingerprint.type == output->type ) )
+            {
+                output->active = true;
+                if( tracked[ i ].fingerprint.confidence > output->confidence )
+                {
+                    output->confidence = tracked[ i ].fingerprint.confidence;
+                    output->center_khz = tracked[ i ].fingerprint.center_khz;
+                    output->bandwidth_khz = tracked[ i ].fingerprint.bandwidth_khz;
+                    output->peak_rssi = tracked[ i ].fingerprint.peak_rssi;
+                }
+            }
         }
-        a_output[ position ] = current;
     }
 
     return count;
@@ -408,12 +434,13 @@ const char *cc1101_activity_fingerprint_name( cc1101_fingerprint_type_t a_type )
 {
     switch( a_type )
     {
-        case CC1101_FP_NARROW_ISM: return "Narrowband RF";
-        case CC1101_FP_REMOTE_SENSOR_LIKE: return "Remote/sensor-like";
-        case CC1101_FP_CONTINUOUS_CARRIER: return "Carrier-like";
-        case CC1101_FP_BURSTY_SIGNAL: return "Bursty narrowband";
-        case CC1101_FP_WIDEBAND_ACTIVITY: return "Wide RF activity";
+        case CC1101_FP_NARROW_ISM: return "Narrowband";
+        case CC1101_FP_REMOTE_SENSOR_LIKE: return "Remote/sensor";
+        case CC1101_FP_CONTINUOUS_CARRIER: return "Carrier";
+        case CC1101_FP_BURSTY_SIGNAL: return "Bursty RF";
+        case CC1101_FP_WIDEBAND_ACTIVITY: return "Wide RF";
         case CC1101_FP_UNKNOWN:
+        case CC1101_FP_TYPE_COUNT:
         default: return "Unknown RF";
     }
 }
