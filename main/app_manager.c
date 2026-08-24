@@ -357,8 +357,6 @@ static void cc_input( bool a_pressed, int a_delta )
             cc1101_activity_reset();
         }
 
-        /* A failed range/step change means the 128-sample budget was hit,
-           except when STEP simply reached the end of its supported values. */
         cc_limit = !changed && !endpoint;
     }
 
@@ -503,14 +501,31 @@ void app_manager_poll( void )
             last_radio_retry_us = now;
             start_wifi_bt_collectors();
         }
-        if( now - last_app_refresh_us >= APP_REFRESH_INTERVAL_US )
-        {
-            radio_app_view_render();
-            last_app_refresh_us = now;
-        }
+        radio_monitor_step();
+        ui_poll();
+        return;
     }
-    else if( RFSCOUT_APP_THERMAL == active_app )
+
+    if( RFSCOUT_APP_THERMAL != active_app ) return;
+
+    if( !mlx90640_is_detected() )
     {
-        thermal_view_poll();
+        leave_app( active_app );
+        active_app = RFSCOUT_APP_WIFI_BT;
+        enter_app( active_app );
+        return;
+    }
+
+    if( now - last_app_refresh_us < APP_REFRESH_INTERVAL_US ) return;
+
+    last_app_refresh_us = now;
+    const esp_err_t result = thermal_view_render();
+    if( ( ESP_OK != result ) &&
+        ( ESP_ERR_NOT_FINISHED != result ) &&
+        !mlx90640_is_detected() )
+    {
+        leave_app( active_app );
+        active_app = RFSCOUT_APP_WIFI_BT;
+        enter_app( active_app );
     }
 }
