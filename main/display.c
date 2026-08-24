@@ -32,7 +32,7 @@ static volatile bool transfer_done;
 static uint16_t *framebuffer;
 static uint16_t *dma_buffer;
 
-/** @brief Compact 5x7 printable ASCII font shared with Brandalize/OUI-SPY. */
+/** @brief Compact 5x7 printable ASCII font used by the RFScout LCD UI. */
 static const uint8_t font[ 95 ][ 5 ] =
 {
     {0,0,0,0,0},{0,0,95,0,0},{0,7,0,7,0},{20,127,20,127,20},{36,42,127,42,18},{35,19,8,100,98},{54,73,85,34,80},{0,5,3,0,0},{0,28,34,65,0},{0,65,34,28,0},{20,8,62,8,20},{8,8,62,8,8},{0,80,48,0,0},{8,8,8,8,8},{0,96,96,0,0},{32,16,8,4,2},
