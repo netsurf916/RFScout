@@ -17,7 +17,7 @@ RFScout is intended as an awareness instrument, not an active network client. Wi
 
 The first LCD view is a dense live summary showing total unique devices, Wi-Fi/BLE counts, retained surveillance detections, and the highest-count nearby OUI brands. The display uses the same compact built-in 5x7 font established in OUI-SPY/Brandalize and a native ESP-IDF ST7789 driver rather than adding a large GUI dependency.
 
-The title row contains `RFSCOUT` on the left and a compact battery indicator on the right. The space between them remains reserved for future radio, storage, alert, and mute symbols. The lower display is divided into a brand column and a surveillance column. The surveillance column lists detected categories such as Flock/ALPR, body cameras, drones, cameras, and smart glasses with their retained unique-device counts.
+The title row contains `RFSCOUT` on the left and a compact battery indicator on the right. The space between them remains reserved for future radio, storage, alert, and mute symbols. The lower display is divided into a brand column and a surveillance column. The surveillance column contains a fixed list of supported type/brand signatures. Zero-count rows remain gray and detections turn red, so supported capabilities remain visible even in a quiet environment.
 
 The brand column reserves its bottom row for an exact `UNKNOWN` count. The nine rows above it contain the highest-count resolved vendors. `UNKNOWN` includes every active observation for which RFScout has no defensible vendor attribution, including private/randomized MAC addresses and globally administered addresses that are absent from the current registry. The fixed row remains visible even when the count is zero, so unresolved devices are never silently omitted from the live summary.
 
@@ -32,6 +32,27 @@ Brand rows are cyan during normal activity. A brand is eligible for yellow highl
 RFScout stores canonical RGB565 values such as `0x07E0` for green and `0xFFE0` for yellow. The ST7789 is configured for little-endian 16-bit pixel data and RGB element order so those native `uint16_t` framebuffer values can be transferred directly. This differs from the earlier T-Dongle-C5 path, which used manually byte-swapped color constants.
 
 The LCD, SD card, CC1101, and nRF24 share the board SPI bus. RFScout centralizes those pin definitions in `main/board.h` and keeps all unused chip-select signals deasserted during display operation. Board I2C is likewise centralized so the power-management and future NFC features can share one controller without duplicating bus initialization.
+
+## SD logging
+
+When an SD card is present, RFScout mounts it at `/sdcard` and writes normalized passive observations to `/sdcard/logs`. SD-card failure is nonfatal; the rest of RFScout continues operating when no card is installed or mounting fails.
+
+Logging uses a dedicated low-priority FreeRTOS task and a fixed queue. RF callbacks only copy a compact observation into that queue and never perform filesystem I/O, keeping SD-card write latency and FAT metadata stalls away from packet collection. The writer flushes the stdio buffer approximately once per second and performs a full flush/sync/close when a segment rotates or RFScout enters sleep or powers off.
+
+Logs use a bounded two-digit circular ring:
+
+```text
+rfscout-00.log
+rfscout-01.log
+...
+rfscout-99.log
+```
+
+Each segment is capped at 4 MiB, limiting the normal log footprint to approximately 400 MiB. A monotonically increasing sequence marker in each file header lets RFScout reconstruct the newest and oldest segments after an unexpected reset without maintaining a separate index file. When `99` is followed by `00`, the destination slot is replaced. RFScout also attempts to preserve at least 64 MiB of free filesystem space by deleting the oldest RFScout log segments before opening a new one when necessary.
+
+The initial format is deliberately human-readable text because logging is expected to evolve into more specialized output later. Each record includes uptime, RF source, RSSI, channel, MAC address, resolved identity, surveillance type/brand, confidence score, and evidence sources. Queue overflow is counted rather than blocking RF collection.
+
+Storage ownership is isolated in `storage.c/.h`; asynchronous file rotation and serialization are isolated in `log_writer.c/.h`. Future packet captures or structured data exports should reuse the storage layer rather than adding filesystem operations to radio collectors.
 
 ## Planned primary screens
 
