@@ -319,6 +319,12 @@ void cc1101_activity_reset( void )
     have_sweep = false;
 }
 
+void cc1101_activity_reset_counts( void )
+{
+    memset( fingerprint_counts, 0, sizeof( fingerprint_counts ) );
+    memset( tracked, 0, sizeof( tracked ) );
+}
+
 void cc1101_activity_observe_sweep( const int8_t *a_rssi,
                                     size_t a_count,
                                     uint32_t a_low_khz,
