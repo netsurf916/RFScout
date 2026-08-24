@@ -7,6 +7,7 @@
 
 #include "app_manager.h"
 
+#include "mlx90640.h"
 #include "platform.h"
 #include "thermal_view.h"
 #include "ui.h"
@@ -15,6 +16,7 @@
 #include "esp_timer.h"
 
 #define APP_REFRESH_INTERVAL_US 125000LL
+#define APP_FEATURE_PROBE_INTERVAL_US 10000000LL
 
 typedef enum
 {
@@ -26,20 +28,74 @@ typedef enum
 static const char *TAG = "app_manager";
 static app_id_t active_app;
 static int64_t last_app_refresh_us;
+static int64_t last_thermal_probe_us;
+
+/** @brief Probe the optional thermal module and log availability transitions. */
+static bool probe_thermal( void )
+{
+    const bool was_available = mlx90640_is_detected();
+    const bool available = ( ESP_OK == mlx90640_probe() );
+
+    if( available && !was_available )
+    {
+        ESP_LOGI( TAG, "Thermal app available" );
+    }
+    else if( !available && was_available )
+    {
+        ESP_LOGW( TAG, "Thermal app unavailable" );
+    }
+    return available;
+}
+
+/** @brief Return whether the requested app is currently selectable. */
+static bool app_available( app_id_t a_app )
+{
+    if( APP_RF_SUMMARY == a_app )
+    {
+        return true;
+    }
+    if( APP_THERMAL == a_app )
+    {
+        return mlx90640_is_detected();
+    }
+    return false;
+}
 
 esp_err_t app_manager_init( void )
 {
     active_app = APP_RF_SUMMARY;
     last_app_refresh_us = 0;
-    return ui_init();
+    last_thermal_probe_us = esp_timer_get_time();
+
+    const esp_err_t result = ui_init();
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
+    (void)mlx90640_init();
+    if( mlx90640_is_detected() )
+    {
+        ESP_LOGI( TAG, "Thermal app available" );
+    }
+    return ESP_OK;
 }
 
 void app_manager_poll( void )
 {
+    const int64_t now_us = esp_timer_get_time();
+    if( ( APP_THERMAL != active_app ) &&
+        ( ( now_us - last_thermal_probe_us ) >= APP_FEATURE_PROBE_INTERVAL_US ) )
+    {
+        (void)probe_thermal();
+        last_thermal_probe_us = now_us;
+    }
+
     const int delta = platform_encoder_delta();
     if( 0 != delta )
     {
-        int next = (int)active_app + ( ( delta > 0 ) ? 1 : -1 );
+        const int direction = ( delta > 0 ) ? 1 : -1;
+        int next = (int)active_app + direction;
         if( next < 0 )
         {
             next = APP_COUNT - 1;
@@ -48,16 +104,32 @@ void app_manager_poll( void )
         {
             next = 0;
         }
-        active_app = (app_id_t)next;
-        last_app_refresh_us = 0;
-        if( APP_THERMAL == active_app )
+
+        app_id_t candidate = (app_id_t)next;
+        if( ( APP_THERMAL == candidate ) && !app_available( candidate ) )
         {
-            thermal_view_enter();
-            ESP_LOGI( TAG, "switched to Thermal app" );
+            /* A navigation request is also an immediate hot-plug probe. */
+            last_thermal_probe_us = now_us;
+            if( !probe_thermal() )
+            {
+                candidate = APP_RF_SUMMARY;
+                ESP_LOGI( TAG, "Thermal app skipped: MLX90640 not detected" );
+            }
         }
-        else
+
+        if( candidate != active_app )
         {
-            ESP_LOGI( TAG, "switched to RF Summary app" );
+            active_app = candidate;
+            last_app_refresh_us = 0;
+            if( APP_THERMAL == active_app )
+            {
+                thermal_view_enter();
+                ESP_LOGI( TAG, "switched to Thermal app" );
+            }
+            else
+            {
+                ESP_LOGI( TAG, "switched to RF Summary app" );
+            }
         }
     }
 
@@ -67,11 +139,26 @@ void app_manager_poll( void )
         return;
     }
 
-    const int64_t now_us = esp_timer_get_time();
+    if( !mlx90640_is_detected() )
+    {
+        active_app = APP_RF_SUMMARY;
+        last_app_refresh_us = 0;
+        ESP_LOGW( TAG, "Thermal app closed after sensor disconnect" );
+        return;
+    }
+
     if( ( now_us - last_app_refresh_us ) < APP_REFRESH_INTERVAL_US )
     {
         return;
     }
     last_app_refresh_us = now_us;
-    (void)thermal_view_render();
+
+    const esp_err_t result = thermal_view_render();
+    if( ( ESP_OK != result ) && ( ESP_ERR_NOT_FINISHED != result ) &&
+        !mlx90640_is_detected() )
+    {
+        active_app = APP_RF_SUMMARY;
+        last_app_refresh_us = 0;
+        ESP_LOGW( TAG, "Thermal app closed after I2C failure" );
+    }
 }
