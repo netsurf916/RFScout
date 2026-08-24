@@ -16,6 +16,8 @@
 static rf_device_t *devices;
 static size_t device_count;
 static SemaphoreHandle_t store_lock;
+static observation_store_event_callback_t event_callback;
+static void *event_context;
 
 /** @brief Return the current monotonic time in milliseconds. */
 static uint32_t current_time_ms( void )
@@ -28,6 +30,17 @@ static bool same_identity( const rf_device_t *a_left, const rf_device_t *a_right
 {
     return ( a_left->address_type == a_right->address_type ) &&
            ( 0 == memcmp( a_left->address, a_right->address, 6 ) );
+}
+
+/** @brief Emit a list-membership lifecycle event when a callback is registered. */
+static void emit_event(
+    observation_store_event_t a_event,
+    const rf_device_t *a_device )
+{
+    if( NULL != event_callback )
+    {
+        event_callback( a_event, a_device, event_context );
+    }
 }
 
 /**
@@ -47,12 +60,14 @@ static void expire_stale_devices( uint32_t a_now_ms )
             continue;
         }
 
+        rf_device_t dropped = devices[ i ];
         --device_count;
         if( i != device_count )
         {
             devices[ i ] = devices[ device_count ];
         }
         memset( &devices[ device_count ], 0, sizeof( devices[ device_count ] ) );
+        emit_event( OBSERVATION_STORE_EVENT_DROPPED_TIMEOUT, &dropped );
     }
 }
 
@@ -73,6 +88,8 @@ static size_t oldest_slot( void )
 esp_err_t observation_store_init( void )
 {
     device_count = 0;
+    event_callback = NULL;
+    event_context = NULL;
     store_lock = xSemaphoreCreateMutex();
     if( NULL == store_lock )
     {
@@ -90,6 +107,23 @@ esp_err_t observation_store_init( void )
     }
 
     return ESP_OK;
+}
+
+void observation_store_set_event_callback(
+    observation_store_event_callback_t a_callback,
+    void *a_context )
+{
+    if( NULL == store_lock )
+    {
+        event_callback = a_callback;
+        event_context = a_context;
+        return;
+    }
+
+    xSemaphoreTake( store_lock, portMAX_DELAY );
+    event_callback = a_callback;
+    event_context = a_context;
+    xSemaphoreGive( store_lock );
 }
 
 bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new )
@@ -157,9 +191,20 @@ bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new
         return true;
     }
 
-    const size_t slot =
-        ( device_count < RFSCOUT_DEVICE_CAPACITY ) ? device_count++ : oldest_slot();
+    size_t slot = device_count;
+    if( device_count < RFSCOUT_DEVICE_CAPACITY )
+    {
+        ++device_count;
+    }
+    else
+    {
+        slot = oldest_slot();
+        rf_device_t dropped = devices[ slot ];
+        emit_event( OBSERVATION_STORE_EVENT_DROPPED_CAPACITY, &dropped );
+    }
+
     devices[ slot ] = *a_observation;
+    emit_event( OBSERVATION_STORE_EVENT_ADDED, &devices[ slot ] );
 
     if( NULL != a_is_new )
     {
