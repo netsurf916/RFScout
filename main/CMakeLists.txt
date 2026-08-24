@@ -2,6 +2,7 @@ idf_component_register(
     SRCS
         "rfscout.c"
         "app_manager.c"
+        "radio_app_view.c"
         "observation_store.c"
         "morse.c"
         "surveillance.c"
