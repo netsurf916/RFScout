@@ -2,7 +2,7 @@
 
 ## Core goal
 
-RFScout is a **situational-awareness** instrument: provide a useful, glanceable picture of nearby electronic devices and RF activity without requiring the user to inspect raw packets continuously.
+RFScout is a **situational-awareness** instrument: provide a useful, glanceable picture of nearby electronic devices, RF activity, and selected sensor data without requiring the user to inspect raw packets continuously.
 
 ## Implemented applications
 
@@ -14,7 +14,7 @@ Implemented capabilities include:
 - rolling recent-device state;
 - IEEE OUI/vendor attribution for globally administered addresses;
 - explicit `UNKNOWN` handling for private/randomized or unresolved identities;
-- ranked vendor counts;
+- ranked vendor counts across the full active observation set;
 - surveillance-oriented classification using narrow, explainable evidence;
 - visual detection highlighting;
 - automatic stop of Wi-Fi/BLE collectors when another application is selected.
@@ -26,7 +26,7 @@ The WiFi / BT application is the only current view that treats IEEE MAC/OUI iden
 The CC1101 application currently provides:
 
 - direct RSSI spectrum sweeps across supported sub-GHz tuning ranges;
-- slow-decay peak-hold markers;
+- optional slow-decay peak-hold markers;
 - manual LOW/HIGH/STEP controls;
 - 1, 5, 10, 25, 50, 100, 200, 250, 500, and 1000 kHz step options;
 - a hard 128-sample maximum per sweep;
@@ -44,7 +44,7 @@ The nRF24 application currently provides:
 - configurable low/high channel bounds;
 - configurable dwell time;
 - fast-decay channel activity histogram;
-- slow-decay peak-hold markers;
+- optional slow-decay peak-hold markers;
 - passive Enhanced ShockBurst metadata classification when validated observations are available;
 - fixed likely-device count categories;
 - per-address count deduplication independent of the small active classifier cache;
@@ -53,6 +53,24 @@ The nRF24 application currently provides:
 - runtime histogram/classifier/count reset when the application is exited.
 
 Spectrum-only patterns that cannot support a device-level identity are grouped under `Other 2.4 RF` rather than presented as a specific product.
+
+### Audio
+
+The Audio application uses the T-Embed CC1101 Plus internal PDM microphone through ESP-IDF's I2S PDM receive path.
+
+Implemented behavior includes:
+
+- DMA-fed microphone acquisition;
+- 48 kHz native PCM conversion;
+- Hann-windowed FFT processing;
+- automatically scaled spectrum display;
+- focused Voice, Mid, High, Audible, and Ultrasonic ranges;
+- filtered 2x decimation for Voice and Mid;
+- selectable LEFT/RIGHT PDM receive slot for hardware validation;
+- optional peak hold, disabled by default for a more responsive live trace;
+- overrun accounting when a newer FFT frame replaces an unpublished frame.
+
+The Audio application is currently an exploratory spectrum analyzer, not a calibrated sound-level instrument. Microphone/PDM interpretation and FFT behavior still require additional hardware validation before tuner, DTMF, or measurement-oriented features should be considered reliable.
 
 ### Thermal
 
@@ -70,7 +88,8 @@ Current app order:
 1. WiFi / BT
 2. CC1101
 3. nRF24
-4. Thermal, when available
+4. Audio
+5. Thermal, when available
 
 Encoder conventions are intentionally shared:
 
@@ -84,7 +103,7 @@ Encoder conventions are intentionally shared:
 - red denotes detections/counts or error states;
 - normal application labels/status information use subdued colors.
 
-CC1101 and nRF24 use the same spectrum/right-panel divider and the same fixed-row Likely Devices presentation.
+CC1101 and nRF24 use the same spectrum/right-panel divider and the same fixed-row Likely Devices presentation. Applications that expose peak hold use a common ON/OFF menu concept while retaining app-specific defaults.
 
 ## Surveillance awareness
 
@@ -97,7 +116,7 @@ The WiFi / BT path supports targeted surveillance classifications. The design ru
 
 ## Alerts and status
 
-The UI includes a shared top status region between the application label and battery indicator. Status icons populate from right to left and use subdued normal-state colors.
+The UI includes a shared top status region between the application label and battery indicator. Status icons populate from right to left and use subdued normal-state colors. The shared status and battery chrome is used across the application views rather than only on WiFi / BT.
 
 Implemented status behavior includes SD-card presence and sticky logging/filesystem errors. Battery state is shown continuously when telemetry is available.
 
@@ -109,7 +128,9 @@ Implemented storage behavior includes:
 
 - optional microSD mount at runtime;
 - nonfatal operation when media is missing or cannot be mounted;
-- asynchronous logging rather than filesystem I/O in radio callbacks;
+- asynchronous logging rather than filesystem I/O in radio or audio acquisition callbacks;
+- detailed Wi-Fi/BLE lifecycle records;
+- application-owned ENTER/EXIT and rate-limited telemetry records for WiFi/BT, CC1101, nRF24, Audio, and Thermal;
 - two-digit circular filenames (`00` through `99`);
 - 4 MiB maximum per segment;
 - approximate 400 MiB bounded normal log footprint;
@@ -140,8 +161,7 @@ The T-Embed hardware exposes additional capabilities, but the following should b
 
 - NFC/PN532 tools;
 - IR analyzer/transmit tools;
-- microphone/audio-analysis applications;
-- GPS support;
+- GPS user interface;
 - active RF transmission/replay functions.
 
 ## Future ideas
@@ -151,6 +171,7 @@ Useful next steps include:
 - stronger protocol-level nRF24 fingerprints;
 - time-windowed rather than session-only radio category counts;
 - CC1101 burst timing/modulation analysis;
+- audio FFT/PDM validation followed by tuner and DTMF features;
 - per-category drill-down views;
 - configurable classifier thresholds;
 - structured SD exports/captures;
