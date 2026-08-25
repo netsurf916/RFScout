@@ -21,11 +21,19 @@
 #define AUDIO_DMA_READ_SAMPLES 512U
 #define AUDIO_TASK_STACK 16384U
 #define AUDIO_TASK_PRIORITY 5U
-#define AUDIO_PEAK_DECAY 4U
 #define AUDIO_EPSILON 1.0e-9f
 #define AUDIO_FFT_INTERVAL_US 40000LL
 #define AUDIO_WARMUP_FRAMES 3U
 #define AUDIO_FFT_NORMALIZATION ( 32768.0f * ( (float)AUDIO_FFT_SIZE / 2.0f ) )
+#define AUDIO_DB_MIN (-120.0f)
+#define AUDIO_DB_MAX 0.0f
+#define AUDIO_DB_HISTOGRAM_BINS 121U
+#define AUDIO_AUTO_FLOOR_PERCENT 15U
+#define AUDIO_AUTO_CEILING_PERCENT 95U
+#define AUDIO_AUTO_FLOOR_MARGIN_DB 4.0f
+#define AUDIO_AUTO_CEILING_MARGIN_DB 8.0f
+#define AUDIO_AUTO_MIN_SPAN_DB 24.0f
+#define AUDIO_PEAK_DECAY_DB 1.25f
 
 static const char *TAG = "audio_spectrum";
 static TaskHandle_t task_handle;
@@ -38,6 +46,10 @@ static audio_channel_t selected_channel = AUDIO_CHANNEL_LEFT;
 static unsigned warmup_frames;
 static uint8_t current_bins[ AUDIO_SPECTRUM_BINS ];
 static uint8_t peak_bins[ AUDIO_SPECTRUM_BINS ];
+static float peak_db[ AUDIO_SPECTRUM_BINS ];
+static float scale_floor_db = -80.0f;
+static float scale_ceiling_db = 0.0f;
+static bool scale_ready;
 static float hann_window[ AUDIO_FFT_SIZE ];
 static bool hann_ready;
 static portMUX_TYPE state_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -57,6 +69,10 @@ static void reset_display_state( void )
 {
     memset( current_bins, 0, sizeof( current_bins ) );
     memset( peak_bins, 0, sizeof( peak_bins ) );
+    for( unsigned i = 0U; i < AUDIO_SPECTRUM_BINS; ++i ) peak_db[ i ] = AUDIO_DB_MIN;
+    scale_floor_db = -80.0f;
+    scale_ceiling_db = 0.0f;
+    scale_ready = false;
     frame_ready = false;
     warmup_frames = AUDIO_WARMUP_FRAMES;
 }
@@ -122,11 +138,32 @@ static void fft( float *a_real, float *a_imag )
     }
 }
 
+static float percentile_db( const unsigned *a_histogram, unsigned a_percent )
+{
+    const unsigned target =
+        ( AUDIO_SPECTRUM_BINS * a_percent + 99U ) / 100U;
+    unsigned cumulative = 0U;
+    for( unsigned i = 0U; i < AUDIO_DB_HISTOGRAM_BINS; ++i )
+    {
+        cumulative += a_histogram[ i ];
+        if( cumulative >= target ) return AUDIO_DB_MIN + (float)i;
+    }
+    return AUDIO_DB_MAX;
+}
+
+static uint8_t scale_db( float a_db, float a_floor, float a_ceiling )
+{
+    if( a_db <= a_floor ) return 0U;
+    if( a_db >= a_ceiling ) return 255U;
+    return (uint8_t)( ( a_db - a_floor ) * 255.0f / ( a_ceiling - a_floor ) );
+}
+
 static void publish_fft( const int16_t *a_pcm )
 {
     float real[ AUDIO_FFT_SIZE ];
     float imag[ AUDIO_FFT_SIZE ];
-    uint8_t next[ AUDIO_SPECTRUM_BINS ];
+    float db_bins[ AUDIO_SPECTRUM_BINS ];
+    unsigned histogram[ AUDIO_DB_HISTOGRAM_BINS ] = { 0U };
     int64_t sum = 0;
 
     for( unsigned i = 0U; i < AUDIO_FFT_SIZE; ++i ) sum += a_pcm[ i ];
@@ -152,9 +189,35 @@ static void publish_fft( const int16_t *a_pcm )
         const float magnitude = sqrtf( real[ bin ] * real[ bin ] +
                                        imag[ bin ] * imag[ bin ] );
         float db = 20.0f * log10f( magnitude / AUDIO_FFT_NORMALIZATION + AUDIO_EPSILON );
-        if( db < -80.0f ) db = -80.0f;
-        if( db > 0.0f ) db = 0.0f;
-        next[ x ] = (uint8_t)( ( db + 80.0f ) * 255.0f / 80.0f );
+        if( db < AUDIO_DB_MIN ) db = AUDIO_DB_MIN;
+        if( db > AUDIO_DB_MAX ) db = AUDIO_DB_MAX;
+        db_bins[ x ] = db;
+        unsigned bucket = (unsigned)( db - AUDIO_DB_MIN );
+        if( bucket >= AUDIO_DB_HISTOGRAM_BINS ) bucket = AUDIO_DB_HISTOGRAM_BINS - 1U;
+        ++histogram[ bucket ];
+    }
+
+    float target_floor = percentile_db( histogram, AUDIO_AUTO_FLOOR_PERCENT ) -
+                         AUDIO_AUTO_FLOOR_MARGIN_DB;
+    float target_ceiling = percentile_db( histogram, AUDIO_AUTO_CEILING_PERCENT ) +
+                           AUDIO_AUTO_CEILING_MARGIN_DB;
+    if( target_floor < AUDIO_DB_MIN ) target_floor = AUDIO_DB_MIN;
+    if( target_ceiling > AUDIO_DB_MAX ) target_ceiling = AUDIO_DB_MAX;
+    if( ( target_ceiling - target_floor ) < AUDIO_AUTO_MIN_SPAN_DB )
+    {
+        const float center = ( target_ceiling + target_floor ) * 0.5f;
+        target_floor = center - AUDIO_AUTO_MIN_SPAN_DB * 0.5f;
+        target_ceiling = center + AUDIO_AUTO_MIN_SPAN_DB * 0.5f;
+        if( target_floor < AUDIO_DB_MIN )
+        {
+            target_ceiling += AUDIO_DB_MIN - target_floor;
+            target_floor = AUDIO_DB_MIN;
+        }
+        if( target_ceiling > AUDIO_DB_MAX )
+        {
+            target_floor -= target_ceiling - AUDIO_DB_MAX;
+            target_ceiling = AUDIO_DB_MAX;
+        }
     }
 
     portENTER_CRITICAL( &state_lock );
@@ -168,13 +231,34 @@ static void publish_fft( const int16_t *a_pcm )
         return;
     }
 
-    memcpy( current_bins, next, sizeof( next ) );
+    if( !scale_ready )
+    {
+        scale_floor_db = target_floor;
+        scale_ceiling_db = target_ceiling;
+        scale_ready = true;
+    }
+    else
+    {
+        /* Fast attack when the signal gets louder, slow release so the graph
+           does not visibly pump as room noise changes. */
+        const float floor_alpha = ( target_floor < scale_floor_db ) ? 0.30f : 0.08f;
+        const float ceiling_alpha = ( target_ceiling > scale_ceiling_db ) ? 0.35f : 0.08f;
+        scale_floor_db += ( target_floor - scale_floor_db ) * floor_alpha;
+        scale_ceiling_db += ( target_ceiling - scale_ceiling_db ) * ceiling_alpha;
+    }
+
     for( unsigned i = 0U; i < AUDIO_SPECTRUM_BINS; ++i )
     {
-        if( next[ i ] >= peak_bins[ i ] ) peak_bins[ i ] = next[ i ];
-        else peak_bins[ i ] = ( peak_bins[ i ] > AUDIO_PEAK_DECAY ) ?
-                              (uint8_t)( peak_bins[ i ] - AUDIO_PEAK_DECAY ) : 0U;
+        if( db_bins[ i ] >= peak_db[ i ] ) peak_db[ i ] = db_bins[ i ];
+        else
+        {
+            peak_db[ i ] -= AUDIO_PEAK_DECAY_DB;
+            if( peak_db[ i ] < AUDIO_DB_MIN ) peak_db[ i ] = AUDIO_DB_MIN;
+        }
+        current_bins[ i ] = scale_db( db_bins[ i ], scale_floor_db, scale_ceiling_db );
+        peak_bins[ i ] = scale_db( peak_db[ i ], scale_floor_db, scale_ceiling_db );
     }
+
     if( frame_ready ) ++overruns;
     frame_ready = true;
     portEXIT_CRITICAL( &state_lock );
@@ -224,10 +308,7 @@ static void audio_worker( void *a_arg )
         if( ESP_ERR_TIMEOUT == result )
         {
             ++timeout_streak;
-            if( 10U == timeout_streak )
-            {
-                ESP_LOGW( TAG, "PDM input timed out repeatedly" );
-            }
+            if( 10U == timeout_streak ) ESP_LOGW( TAG, "PDM input timed out repeatedly" );
             continue;
         }
         if( ESP_OK != result )
@@ -427,6 +508,16 @@ uint32_t audio_spectrum_high_hz( void )
     range_bounds( selected_range, &low, &high );
     (void)low;
     return high;
+}
+
+int audio_spectrum_scale_floor_db( void )
+{
+    return (int)lroundf( scale_floor_db );
+}
+
+int audio_spectrum_scale_ceiling_db( void )
+{
+    return (int)lroundf( scale_ceiling_db );
 }
 
 uint32_t audio_spectrum_overruns( void )
