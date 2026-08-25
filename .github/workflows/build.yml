@@ -10,7 +10,31 @@ permissions:
   contents: read
 
 jobs:
+  formatting:
+    name: Formatting
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-format
+
+      - name: Check changed C formatting
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            python3 tools/check_format.py --base "${{ github.event.pull_request.base.sha }}"
+          else
+            python3 tools/check_format.py --base HEAD^
+          fi
+
   build:
+    name: ESP-IDF Build
     runs-on: ubuntu-latest
     container: espressif/idf:release-v5.5
 
@@ -23,15 +47,6 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends clang-format
-
-      - name: Check changed C formatting
-        shell: bash
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            python3 tools/check_format.py --base "origin/${{ github.base_ref }}"
-          else
-            python3 tools/check_format.py --base HEAD^
-          fi
 
       - name: Build ESP32-S3 firmware
         run: |
