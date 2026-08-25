@@ -21,6 +21,7 @@
 #include "esp_timer.h"
 
 #define APP_REFRESH_INTERVAL_US 125000LL
+#define AUDIO_REFRESH_INTERVAL_US 40000LL
 #define APP_FEATURE_PROBE_INTERVAL_US 10000000LL
 #define APP_RADIO_RETRY_INTERVAL_US 1000000LL
 #define CC1101_MIN_STEP_KHZ 1U
@@ -118,8 +119,8 @@ static void render_nr_spectrum( void )
 
 static void render_audio( void )
 {
-    uint8_t current[ AUDIO_SPECTRUM_BINS ] = { 0 };
-    uint8_t peaks[ AUDIO_SPECTRUM_BINS ] = { 0 };
+    static uint8_t current[ AUDIO_SPECTRUM_BINS ];
+    static uint8_t peaks[ AUDIO_SPECTRUM_BINS ];
     (void)audio_spectrum_take_frame( current, peaks, AUDIO_SPECTRUM_BINS );
     audio_view_render( current, peaks );
 }
@@ -334,7 +335,7 @@ void app_manager_poll( void )
         if( audio_menu ) { audio_input( pressed, delta ); return; }
         if( pressed ) { audio_input( true, 0 ); return; }
         if( switch_app_for_delta( delta, now ) ) return;
-        if( now - last_app_refresh_us >= APP_REFRESH_INTERVAL_US ) { last_app_refresh_us = now; render_audio(); }
+        if( now - last_app_refresh_us >= AUDIO_REFRESH_INTERVAL_US ) { last_app_refresh_us = now; render_audio(); }
         return;
     }
     if( switch_app_for_delta( delta, now ) ) return;
