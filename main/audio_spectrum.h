@@ -16,6 +16,10 @@
 typedef enum
 {
     AUDIO_RANGE_INFRASONIC = 0,
+    AUDIO_RANGE_LOW,
+    AUDIO_RANGE_VOICE,
+    AUDIO_RANGE_MID,
+    AUDIO_RANGE_HIGH,
     AUDIO_RANGE_AUDIBLE,
     AUDIO_RANGE_ULTRASONIC,
     AUDIO_RANGE_COUNT
@@ -40,6 +44,7 @@ audio_channel_t audio_spectrum_channel( void );
 const char *audio_spectrum_channel_name( audio_channel_t a_channel );
 uint32_t audio_spectrum_low_hz( void );
 uint32_t audio_spectrum_high_hz( void );
+uint32_t audio_spectrum_effective_sample_rate( void );
 int audio_spectrum_scale_floor_db( void );
 int audio_spectrum_scale_ceiling_db( void );
 uint32_t audio_spectrum_overruns( void );
