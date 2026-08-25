@@ -51,14 +51,18 @@ The `Description:` line may be omitted when the short description is already com
 
 The repository root contains `.clang-format` and `.editorconfig`. The clang-format policy is enforced by `tools/check_format.py`.
 
-Normal `idf.py build` runs the format checker automatically for locally modified or staged `main/*.c` and `main/*.h` files. Pull-request CI runs the same checker against C/header files changed relative to the PR base. This prevents a legacy untouched file from blocking an unrelated build while ensuring new and modified firmware code follows the repository policy.
+Normal `idf.py build` runs the format checker automatically for locally modified or staged `main/*.c` and `main/*.h` files. Pull-request CI runs the same checker against C/header files changed relative to the PR base.
+
+PR #17 introduced clang-format after a large hand-formatting cleanup. To avoid immediately reflowing thousands of already-reviewed lines, the checker contains a migration baseline for the exact cleaned blobs produced by that PR. A baseline file is accepted only while its contents remain byte-for-byte identical to that recorded blob. As soon as the file changes, it must match the repository clang-format policy exactly. This provides progressive enforcement without making unrelated legacy formatting an immediate build blocker.
+
+The explicit `--all` mode ignores the migration baseline and reports every hand-maintained C/header file that is not yet canonical clang-format output. It is therefore an audit/migration tool and can report files that do not block a normal build.
 
 Useful commands are:
 
 ```sh
 python3 tools/check_format.py --fix          # format locally modified C/header files
 python3 tools/check_format.py --base main    # check changes relative to a branch/ref
-python3 tools/check_format.py --all          # audit all hand-maintained C/header files
+python3 tools/check_format.py --all          # audit all files, ignoring migration baseline
 ```
 
 `clang-format` must be installed and available on `PATH`. In an emergency, the CMake format target can be disabled with `-DRFSCOUT_FORMAT_CHECK=OFF`; this should not be used for normal development or CI.
