@@ -1,9 +1,11 @@
 /**
-    nrf24_activity.c : adaptive nRF24 activity histogram and fingerprint store
+    nrf24_activity.c : Adaptive nRF24 activity histogram and fingerprint store
     Description: Maintains fast/slow spectrum history and conservative passive
                  classifications from validated ESB packet metadata.
+    Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
+
 #include "nrf24_activity.h"
 
 #include <stdio.h>
@@ -16,6 +18,7 @@
 #define ADDRESS_LEDGER_MAX 64U
 #define SPECTRUM_CONFIRM_SWEEPS 2U
 
+/** @brief Active classifier state for one recently observed ESB address. */
 typedef struct
 {
     bool used;
@@ -29,6 +32,7 @@ typedef struct
     uint8_t no_ack_count;
 } packet_record_t;
 
+/** @brief Longer-lived address ledger used to deduplicate category counts. */
 typedef struct
 {
     bool used;
@@ -47,12 +51,14 @@ static nrf24_fingerprint_type_t spectrum_candidate;
 static uint8_t spectrum_candidate_sweeps;
 static bool spectrum_latched;
 
+/** @brief Update the fast EWMA activity value for one channel. */
 static uint8_t fast_update( uint8_t a_old, bool a_hit )
 {
     return (uint8_t)( ( (uint16_t)a_old * 7U +
                         ( a_hit ? 255U : 0U ) ) / 8U );
 }
 
+/** @brief Compare variable-length ESB addresses. */
 static bool address_bytes_equal( const uint8_t *a_left,
                                  uint8_t a_left_len,
                                  const uint8_t *a_right,
@@ -62,6 +68,7 @@ static bool address_bytes_equal( const uint8_t *a_left,
            ( 0 == memcmp( a_left, a_right, a_left_len ) );
 }
 
+/** @brief Compare a public fingerprint identity with one packet observation. */
 static bool address_equal( const nrf24_fingerprint_t *a_record,
                            const nrf24_packet_observation_t *a_packet )
 {
@@ -71,18 +78,24 @@ static bool address_equal( const nrf24_fingerprint_t *a_record,
                                 a_packet->address_len );
 }
 
+/** @brief Recognize the known Logitech pairing address used as strong evidence. */
 static bool is_logitech_pairing_address( const uint8_t *a_address,
                                          uint8_t a_length )
 {
     static const uint8_t pairing[ 5 ] =
     {
-        0xBBU, 0x0AU, 0xDCU, 0xA5U, 0x75U
+        0xBBU,
+        0x0AU,
+        0xDCU,
+        0xA5U,
+        0x75U
     };
 
     return ( 5U == a_length ) &&
            ( 0 == memcmp( a_address, pairing, sizeof( pairing ) ) );
 }
 
+/** @brief Increment a bounded likely-device category counter. */
 static void bump_category( nrf24_fingerprint_type_t a_type )
 {
     if( ( a_type > NRF24_FP_UNKNOWN ) &&
@@ -93,6 +106,7 @@ static void bump_category( nrf24_fingerprint_type_t a_type )
     }
 }
 
+/** @brief Find or allocate the deduplication ledger entry for a fingerprint. */
 static address_ledger_t *find_or_allocate_ledger(
     const nrf24_fingerprint_t *a_fingerprint,
     uint32_t a_last_seen_ms )
@@ -157,11 +171,13 @@ static address_ledger_t *find_or_allocate_ledger(
     return oldest;
 }
 
+/** @brief Reconcile a classifier result with its deduplicated category count. */
 static void reconcile_category( const packet_record_t *a_record )
 {
     const nrf24_fingerprint_t *fingerprint = &a_record->public;
     address_ledger_t *ledger =
         find_or_allocate_ledger( fingerprint, a_record->last_seen_ms );
+
     if( NULL == ledger )
     {
         return;
@@ -183,6 +199,7 @@ static void reconcile_category( const packet_record_t *a_record )
     }
 }
 
+/** @brief Classify one active packet record from timing, payload, and address evidence. */
 static void classify_packet_record( packet_record_t *a_record )
 {
     nrf24_fingerprint_t *fingerprint = &a_record->public;
@@ -204,7 +221,7 @@ static void classify_packet_record( packet_record_t *a_record )
     else if( fingerprint->packets >= 6U )
     {
         const uint32_t average_interval =
-            a_record->interval_samples > 0U ?
+            ( a_record->interval_samples > 0U ) ?
             a_record->interval_total_ms / a_record->interval_samples :
             UINT32_MAX;
         const uint8_t payload_span =
@@ -215,7 +232,7 @@ static void classify_packet_record( packet_record_t *a_record )
         {
             fingerprint->type = NRF24_FP_INPUT;
             fingerprint->confidence =
-                fingerprint->packets >= 20U ? 82U : 70U;
+                ( fingerprint->packets >= 20U ) ? 82U : 70U;
             snprintf( fingerprint->label,
                       sizeof( fingerprint->label ),
                       "Input?" );
@@ -225,7 +242,7 @@ static void classify_packet_record( packet_record_t *a_record )
         {
             fingerprint->type = NRF24_FP_SENSOR;
             fingerprint->confidence =
-                fingerprint->packets >= 12U ? 78U : 66U;
+                ( fingerprint->packets >= 12U ) ? 78U : 66U;
             snprintf( fingerprint->label,
                       sizeof( fingerprint->label ),
                       "Sensor?" );
@@ -233,13 +250,14 @@ static void classify_packet_record( packet_record_t *a_record )
         else
         {
             fingerprint->confidence =
-                fingerprint->packets >= 12U ? 68U : 60U;
+                ( fingerprint->packets >= 12U ) ? 68U : 60U;
         }
     }
 
     reconcile_category( a_record );
 }
 
+/** @brief Find or allocate one entry in the small active packet classifier cache. */
 static packet_record_t *find_or_allocate_record(
     const nrf24_packet_observation_t *a_packet )
 {
@@ -293,6 +311,7 @@ void nrf24_activity_reset( void )
     nrf24_activity_reset_counts();
 }
 
+/** @brief Infer broad Wi-Fi/BLE-like spectrum shapes from the fast histogram. */
 static nrf24_fingerprint_type_t spectrum_signature( void )
 {
     unsigned longest_run = 0U;
@@ -305,6 +324,7 @@ static nrf24_fingerprint_type_t spectrum_signature( void )
     {
         const bool busy =
             fast_activity[ channel ] >= ACTIVITY_BUSY_THRESHOLD;
+
         if( busy )
         {
             ++busy_channels;
@@ -338,9 +358,11 @@ static nrf24_fingerprint_type_t spectrum_signature( void )
     return NRF24_FP_UNKNOWN;
 }
 
+/** @brief Debounce broad spectrum-shape fingerprints across consecutive sweeps. */
 static void observe_spectrum_signature( void )
 {
     const nrf24_fingerprint_type_t signature = spectrum_signature();
+
     if( NRF24_FP_UNKNOWN == signature )
     {
         spectrum_candidate = NRF24_FP_UNKNOWN;
@@ -376,12 +398,14 @@ void nrf24_activity_observe_sweep( const uint8_t *a_hits, size_t a_count )
         return;
     }
 
-    const size_t count = a_count < NRF24_CHANNEL_COUNT ?
-                         a_count : NRF24_CHANNEL_COUNT;
+    const size_t count =
+        ( a_count < NRF24_CHANNEL_COUNT ) ? a_count : NRF24_CHANNEL_COUNT;
+
     for( size_t i = 0U; i < count; ++i )
     {
         fast_activity[ i ] =
             fast_update( fast_activity[ i ], 0U != a_hits[ i ] );
+
         if( fast_activity[ i ] >= slow_peak[ i ] )
         {
             slow_peak[ i ] = fast_activity[ i ];
@@ -393,10 +417,12 @@ void nrf24_activity_observe_sweep( const uint8_t *a_hits, size_t a_count )
             {
                 decay = 1U;
             }
-            slow_peak[ i ] = slow_peak[ i ] > decay ?
-                             (uint8_t)( slow_peak[ i ] - decay ) : 0U;
+            slow_peak[ i ] =
+                ( slow_peak[ i ] > decay ) ?
+                (uint8_t)( slow_peak[ i ] - decay ) : 0U;
         }
     }
+
     observe_spectrum_signature();
 }
 
@@ -470,8 +496,9 @@ size_t nrf24_activity_histogram( uint8_t *a_fast,
         return 0U;
     }
 
-    const size_t count = a_capacity < NRF24_CHANNEL_COUNT ?
-                         a_capacity : NRF24_CHANNEL_COUNT;
+    const size_t count =
+        ( a_capacity < NRF24_CHANNEL_COUNT ) ?
+        a_capacity : NRF24_CHANNEL_COUNT;
     memcpy( a_fast, fast_activity, count );
     memcpy( a_slow, slow_peak, count );
     return count;
@@ -494,8 +521,10 @@ size_t nrf24_activity_fingerprints( nrf24_fingerprint_t *a_output,
         return 0U;
     }
 
-    const size_t count = a_capacity < NRF24_FINGERPRINT_MAX ?
-                         a_capacity : NRF24_FINGERPRINT_MAX;
+    const size_t count =
+        ( a_capacity < NRF24_FINGERPRINT_MAX ) ?
+        a_capacity : NRF24_FINGERPRINT_MAX;
+
     for( size_t i = 0U; i < count; ++i )
     {
         memset( &a_output[ i ], 0, sizeof( a_output[ i ] ) );
@@ -517,6 +546,7 @@ size_t nrf24_activity_fingerprints( nrf24_fingerprint_t *a_output,
                       nrf24_activity_fingerprint_name( rows[ i ] ) );
         }
     }
+
     return count;
 }
 
@@ -524,12 +554,19 @@ const char *nrf24_activity_fingerprint_name( nrf24_fingerprint_type_t a_type )
 {
     switch( a_type )
     {
-        case NRF24_FP_ESB: return "ESB device";
-        case NRF24_FP_INPUT: return "Input?";
-        case NRF24_FP_SENSOR: return "Sensor?";
-        case NRF24_FP_WIFI_LIKE: return "Wi-Fi?";
-        case NRF24_FP_BLE_LIKE: return "Hopping RF?";
-        case NRF24_FP_LOGITECH_LIKE: return "Logitech?";
-        default: return "Unknown";
+        case NRF24_FP_ESB:
+            return "ESB device";
+        case NRF24_FP_INPUT:
+            return "Input?";
+        case NRF24_FP_SENSOR:
+            return "Sensor?";
+        case NRF24_FP_WIFI_LIKE:
+            return "Wi-Fi?";
+        case NRF24_FP_BLE_LIKE:
+            return "Hopping RF?";
+        case NRF24_FP_LOGITECH_LIKE:
+            return "Logitech?";
+        default:
+            return "Unknown";
     }
 }
