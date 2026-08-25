@@ -50,5 +50,5 @@ jobs:
 
       - name: Build ESP32-S3 firmware
         run: |
-          idf.py set-target esp32s3
-          idf.py build
+          python3 "$IDF_PATH/tools/idf.py" set-target esp32s3
+          python3 "$IDF_PATH/tools/idf.py" build
