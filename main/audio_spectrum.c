@@ -5,7 +5,6 @@
  */
 #include "audio_spectrum.h"
 #include "board.h"
-#include "driver/gpio.h"
 #include "driver/i2s_pdm.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -24,9 +23,8 @@
 #define AUDIO_TASK_PRIORITY 5U
 #define AUDIO_PEAK_DECAY 4U
 #define AUDIO_EPSILON 1.0e-9f
-#define AUDIO_DIAGNOSTIC_INTERVAL_US 1000000LL
 #define AUDIO_FFT_INTERVAL_US 40000LL
-#define AUDIO_FIXED_SLOT 0U
+#define AUDIO_WARMUP_FRAMES 3U
 #define AUDIO_FFT_NORMALIZATION ( 32768.0f * ( (float)AUDIO_FFT_SIZE / 2.0f ) )
 
 static const char *TAG = "audio_spectrum";
@@ -36,6 +34,8 @@ static volatile bool running;
 static volatile bool frame_ready;
 static volatile uint32_t overruns;
 static audio_range_t selected_range = AUDIO_RANGE_AUDIBLE;
+static audio_channel_t selected_channel = AUDIO_CHANNEL_LEFT;
+static unsigned warmup_frames;
 static uint8_t current_bins[ AUDIO_SPECTRUM_BINS ];
 static uint8_t peak_bins[ AUDIO_SPECTRUM_BINS ];
 static float hann_window[ AUDIO_FFT_SIZE ];
@@ -51,6 +51,14 @@ static void range_bounds( audio_range_t a_range, uint32_t *a_low, uint32_t *a_hi
         case AUDIO_RANGE_AUDIBLE:
         default: *a_low = 20U; *a_high = 20000U; break;
     }
+}
+
+static void reset_display_state( void )
+{
+    memset( current_bins, 0, sizeof( current_bins ) );
+    memset( peak_bins, 0, sizeof( peak_bins ) );
+    frame_ready = false;
+    warmup_frames = AUDIO_WARMUP_FRAMES;
 }
 
 static void prepare_hann_window( void )
@@ -150,6 +158,16 @@ static void publish_fft( const int16_t *a_pcm )
     }
 
     portENTER_CRITICAL( &state_lock );
+    if( warmup_frames > 0U )
+    {
+        --warmup_frames;
+        memset( current_bins, 0, sizeof( current_bins ) );
+        memset( peak_bins, 0, sizeof( peak_bins ) );
+        frame_ready = false;
+        portEXIT_CRITICAL( &state_lock );
+        return;
+    }
+
     memcpy( current_bins, next, sizeof( next ) );
     for( unsigned i = 0U; i < AUDIO_SPECTRUM_BINS; ++i )
     {
@@ -191,17 +209,8 @@ static void audio_worker( void *a_arg )
     int16_t pcm[ AUDIO_FFT_SIZE ];
     int16_t dma_samples[ AUDIO_DMA_READ_SAMPLES ];
     unsigned fill = 0U;
-    int64_t last_diagnostic_us = esp_timer_get_time();
-    int64_t last_fft_us = last_diagnostic_us - AUDIO_FFT_INTERVAL_US;
-    uint64_t diagnostic_sum_sq = 0U;
-    uint32_t diagnostic_samples = 0U;
-    uint32_t diagnostic_reads = 0U;
-    uint32_t diagnostic_timeouts = 0U;
-    int32_t diagnostic_peak = 0;
-
-    ESP_LOGI( TAG, "audio worker started stack_free=%u fixed_slot=%u",
-              (unsigned)uxTaskGetStackHighWaterMark( NULL ),
-              AUDIO_FIXED_SLOT );
+    int64_t last_fft_us = esp_timer_get_time() - AUDIO_FFT_INTERVAL_US;
+    unsigned timeout_streak = 0U;
 
     while( running )
     {
@@ -214,54 +223,25 @@ static void audio_worker( void *a_arg )
 
         if( ESP_ERR_TIMEOUT == result )
         {
-            ++diagnostic_timeouts;
+            ++timeout_streak;
+            if( 10U == timeout_streak )
+            {
+                ESP_LOGW( TAG, "PDM input timed out repeatedly" );
+            }
+            continue;
         }
-        else if( ESP_OK != result )
+        if( ESP_OK != result )
         {
             if( running ) ESP_LOGW( TAG, "PDM read failed: %s", esp_err_to_name( result ) );
-        }
-        else
-        {
-            ++diagnostic_reads;
-            const unsigned samples_read = (unsigned)( bytes / sizeof( int16_t ) );
-
-            /* LILYGO's legacy driver configures ONLY_LEFT. The S3 channel API
-               needs all slots enabled to receive on this board, but dynamically
-               switching between slots makes the PCM stream discontinuous. Keep
-               the legacy-left equivalent (slot 0) fixed for the whole session. */
-            for( unsigned i = AUDIO_FIXED_SLOT; i < samples_read; i += 2U )
-            {
-                const int32_t sample = dma_samples[ i ];
-                const int32_t absolute = sample < 0 ? -sample : sample;
-                if( absolute > diagnostic_peak ) diagnostic_peak = absolute;
-                diagnostic_sum_sq += (uint64_t)( sample * sample );
-                ++diagnostic_samples;
-                append_pcm_sample( pcm, &fill, (int16_t)sample, &last_fft_us );
-            }
+            continue;
         }
 
-        const int64_t now_us = esp_timer_get_time();
-        if( ( now_us - last_diagnostic_us ) >= AUDIO_DIAGNOSTIC_INTERVAL_US )
+        timeout_streak = 0U;
+        const unsigned samples_read = (unsigned)( bytes / sizeof( int16_t ) );
+        const unsigned slot = ( AUDIO_CHANNEL_RIGHT == selected_channel ) ? 1U : 0U;
+        for( unsigned i = slot; i < samples_read; i += 2U )
         {
-            const uint32_t rms = diagnostic_samples > 0U ?
-                (uint32_t)sqrt( (double)diagnostic_sum_sq / diagnostic_samples ) : 0U;
-            ESP_LOGI( TAG,
-                      "mic reads=%lu timeouts=%lu pcm=%lu slot=%u rms=%lu peak=%ld clk=%d data=%d stack_free=%u",
-                      (unsigned long)diagnostic_reads,
-                      (unsigned long)diagnostic_timeouts,
-                      (unsigned long)diagnostic_samples,
-                      AUDIO_FIXED_SLOT,
-                      (unsigned long)rms,
-                      (long)diagnostic_peak,
-                      gpio_get_level( RFSCOUT_BOARD_MIC_CLOCK_PIN ),
-                      gpio_get_level( RFSCOUT_BOARD_MIC_DATA_PIN ),
-                      (unsigned)uxTaskGetStackHighWaterMark( NULL ) );
-            diagnostic_sum_sq = 0U;
-            diagnostic_samples = 0U;
-            diagnostic_reads = 0U;
-            diagnostic_timeouts = 0U;
-            diagnostic_peak = 0;
-            last_diagnostic_us = now_us;
+            append_pcm_sample( pcm, &fill, dma_samples[ i ], &last_fft_us );
         }
     }
 
@@ -327,9 +307,7 @@ esp_err_t audio_spectrum_start( void )
     }
 
     portENTER_CRITICAL( &state_lock );
-    memset( current_bins, 0, sizeof( current_bins ) );
-    memset( peak_bins, 0, sizeof( peak_bins ) );
-    frame_ready = false;
+    reset_display_state();
     overruns = 0U;
     portEXIT_CRITICAL( &state_lock );
 
@@ -347,13 +325,11 @@ esp_err_t audio_spectrum_start( void )
     }
 
     ESP_LOGI( TAG,
-              "PDM microphone started: I2S0 clk=GPIO%d data=GPIO%d PCM=%u Hz DMA=%ux%u fixed slot=%u FFT<=25Hz",
+              "PDM microphone started: I2S0 clk=GPIO%d data=GPIO%d PCM=%u Hz channel=%s",
               RFSCOUT_BOARD_MIC_CLOCK_PIN,
               RFSCOUT_BOARD_MIC_DATA_PIN,
               AUDIO_SAMPLE_RATE,
-              AUDIO_DMA_BUFFER_COUNT,
-              AUDIO_DMA_BUFFER_LENGTH,
-              AUDIO_FIXED_SLOT );
+              audio_spectrum_channel_name( selected_channel ) );
     return ESP_OK;
 }
 
@@ -400,9 +376,7 @@ void audio_spectrum_set_range( audio_range_t a_range )
     if( a_range >= AUDIO_RANGE_COUNT ) return;
     portENTER_CRITICAL( &state_lock );
     selected_range = a_range;
-    memset( current_bins, 0, sizeof( current_bins ) );
-    memset( peak_bins, 0, sizeof( peak_bins ) );
-    frame_ready = false;
+    reset_display_state();
     portEXIT_CRITICAL( &state_lock );
 }
 
@@ -415,6 +389,26 @@ const char *audio_spectrum_range_name( audio_range_t a_range )
 {
     static const char *names[] = { "INFRASONIC", "AUDIBLE", "ULTRASONIC" };
     return ( a_range < AUDIO_RANGE_COUNT ) ? names[ a_range ] : "UNKNOWN";
+}
+
+void audio_spectrum_set_channel( audio_channel_t a_channel )
+{
+    if( a_channel >= AUDIO_CHANNEL_COUNT ) return;
+    portENTER_CRITICAL( &state_lock );
+    selected_channel = a_channel;
+    reset_display_state();
+    portEXIT_CRITICAL( &state_lock );
+}
+
+audio_channel_t audio_spectrum_channel( void )
+{
+    return selected_channel;
+}
+
+const char *audio_spectrum_channel_name( audio_channel_t a_channel )
+{
+    static const char *names[] = { "LEFT", "RIGHT" };
+    return ( a_channel < AUDIO_CHANNEL_COUNT ) ? names[ a_channel ] : "UNKNOWN";
 }
 
 uint32_t audio_spectrum_low_hz( void )
