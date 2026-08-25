@@ -22,17 +22,17 @@
 #include <stdio.h>
 #include <string.h>
 
-#define UI_REFRESH_INTERVAL_US 100000LL
 #define UI_MAX_KNOWN_BRANDS 9
 #define UI_BRAND_ATTENTION_THRESHOLD 5U
 #define UI_MAX_ATTENTION_ROWS 3U
+#define UI_REFRESH_INTERVAL_US 100000LL
 #define UI_LIST_START_Y 43
 #define UI_LIST_ROW_HEIGHT 12
 #define UI_UNKNOWN_DIVIDER_Y 151
 #define UI_UNKNOWN_ROW_Y 158
 #define UI_COLUMN_DIVIDER_X 198
 #define UI_SURVEILLANCE_X 205
-#define UI_SURVEILLANCE_LABEL_WIDTH 12
+#define UI_SURVEILLANCE_LABEL_WIDTH 14
 #define COLOR_BLACK 0x0000U
 #define COLOR_WHITE 0xFFFFU
 #define COLOR_GREEN 0x07E0U
@@ -65,50 +65,46 @@ static const surveillance_signature_id_t surveillance_rows[] =
 static const char *TAG = "ui";
 static int64_t last_refresh_us;
 static rf_device_t *snapshot;
+static brand_count_t *brands;
 
-static void add_brand( brand_count_t *a_brands,
-                       size_t a_capacity,
-                       const char *a_name )
+static void add_brand( const char *a_name )
 {
-    if( ( NULL == a_brands ) ||
-        ( 0U == a_capacity ) ||
-        ( NULL == a_name ) ||
-        ( '\0' == a_name[ 0 ] ) )
+    if( ( NULL == brands ) || ( NULL == a_name ) || ( '\0' == a_name[ 0 ] ) )
     {
         return;
     }
 
-    size_t slot = a_capacity;
-    for( size_t i = 0; i < a_capacity; ++i )
+    size_t slot = RFSCOUT_DEVICE_CAPACITY;
+    for( size_t i = 0; i < RFSCOUT_DEVICE_CAPACITY; ++i )
     {
-        if( ( 0U != a_brands[ i ].count ) &&
-            ( 0 == strcmp( a_brands[ i ].name, a_name ) ) )
+        if( ( 0U != brands[ i ].count ) &&
+            ( 0 == strcmp( brands[ i ].name, a_name ) ) )
         {
             slot = i;
             break;
         }
-        if( ( a_capacity == slot ) && ( 0U == a_brands[ i ].count ) )
+        if( ( RFSCOUT_DEVICE_CAPACITY == slot ) && ( 0U == brands[ i ].count ) )
         {
             slot = i;
         }
     }
 
-    if( a_capacity == slot )
+    if( RFSCOUT_DEVICE_CAPACITY == slot )
     {
         return;
     }
-    if( 0U == a_brands[ slot ].count )
+    if( 0U == brands[ slot ].count )
     {
-        strlcpy( a_brands[ slot ].name, a_name, sizeof( a_brands[ slot ].name ) );
+        strlcpy( brands[ slot ].name, a_name, sizeof( brands[ slot ].name ) );
     }
-    ++a_brands[ slot ].count;
+    ++brands[ slot ].count;
 
     while( ( slot > 0U ) &&
-           ( a_brands[ slot ].count > a_brands[ slot - 1U ].count ) )
+           ( brands[ slot ].count > brands[ slot - 1U ].count ) )
     {
-        const brand_count_t temporary = a_brands[ slot - 1U ];
-        a_brands[ slot - 1U ] = a_brands[ slot ];
-        a_brands[ slot ] = temporary;
+        const brand_count_t temporary = brands[ slot - 1U ];
+        brands[ slot - 1U ] = brands[ slot ];
+        brands[ slot ] = temporary;
         --slot;
     }
 }
@@ -171,12 +167,12 @@ static void draw_surveillance_rows( const uint16_t *a_signature_counts )
 
 static void render_summary( void )
 {
-    if( NULL == snapshot )
+    if( ( NULL == snapshot ) || ( NULL == brands ) )
     {
         return;
     }
 
-    brand_count_t brands[ UI_MAX_KNOWN_BRANDS ] = { 0 };
+    memset( brands, 0, RFSCOUT_DEVICE_CAPACITY * sizeof( *brands ) );
     uint16_t signature_counts[ SURVEILLANCE_SIGNATURE_COUNT ] = { 0 };
     const size_t device_count = observation_store_snapshot( snapshot, RFSCOUT_DEVICE_CAPACITY );
     const size_t surveillance_count = surveillance_history_signature_counts( signature_counts, SURVEILLANCE_SIGNATURE_COUNT );
@@ -189,7 +185,7 @@ static void render_summary( void )
         if( 0U != ( snapshot[ i ].source_mask & RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) ) ++wifi_count;
         if( 0U != ( snapshot[ i ].source_mask & RF_SOURCE_BIT( RF_SOURCE_BLE ) ) ) ++ble_count;
         if( '\0' == snapshot[ i ].vendor[ 0 ] ) ++unknown_count;
-        else add_brand( brands, UI_MAX_KNOWN_BRANDS, snapshot[ i ].vendor );
+        else add_brand( snapshot[ i ].vendor );
     }
 
     size_t brand_count = 0;
@@ -243,12 +239,25 @@ esp_err_t ui_init( void )
     snapshot = heap_caps_calloc( RFSCOUT_DEVICE_CAPACITY,
                                  sizeof( *snapshot ),
                                  MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
-    if( NULL == snapshot ) return ESP_ERR_NO_MEM;
+    brands = heap_caps_calloc( RFSCOUT_DEVICE_CAPACITY,
+                               sizeof( *brands ),
+                               MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
+    if( ( NULL == snapshot ) || ( NULL == brands ) )
+    {
+        heap_caps_free( snapshot );
+        heap_caps_free( brands );
+        snapshot = NULL;
+        brands = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+
     const esp_err_t result = display_init();
     if( ESP_OK != result )
     {
         heap_caps_free( snapshot );
+        heap_caps_free( brands );
         snapshot = NULL;
+        brands = NULL;
         return result;
     }
     last_refresh_us = 0;
