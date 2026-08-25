@@ -15,7 +15,7 @@ BinPackArguments: false
 BinPackParameters: false
 BreakBeforeBinaryOperators: None
 PointerAlignment: Right
-SpaceBeforeParens: Always
+SpaceBeforeParens: Never
 SpacesInParentheses: true
 SpacesInSquareBrackets: true
 SortIncludes: Never
