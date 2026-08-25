@@ -45,17 +45,25 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
     const int height = 82;
     display_fill_rect( x0, y0 + height, width, 1, DIM );
 
-    unsigned strongest = 0U;
-    for( unsigned i = 0U; i < AUDIO_SPECTRUM_BINS; ++i )
+    size_t bin_count = audio_spectrum_display_bin_count();
+    if( bin_count > AUDIO_SPECTRUM_BINS ) bin_count = AUDIO_SPECTRUM_BINS;
+
+    size_t strongest = 0U;
+    if( bin_count > 0U )
     {
-        if( a_peak[ i ] > a_peak[ strongest ] ) strongest = i;
-        const int x = x0 + (int)( i * (unsigned)( width - 1 ) /
-                                     ( AUDIO_SPECTRUM_BINS - 1U ) );
-        const int bar = (int)a_current[ i ] * ( height - 3 ) / 255;
-        if( bar > 0 ) display_fill_rect( x, y0 + height - bar, 2, bar, GRAPH );
-        int py = y0 + height - (int)a_peak[ i ] * ( height - 3 ) / 255;
-        if( py < y0 ) py = y0;
-        display_fill_rect( x, py, 2, 2, PEAK );
+        for( size_t i = 0U; i < bin_count; ++i )
+        {
+            if( a_current[ i ] > a_current[ strongest ] ) strongest = i;
+            const int left = x0 + (int)( i * (size_t)width / bin_count );
+            const int right = x0 + (int)( ( i + 1U ) * (size_t)width / bin_count );
+            int bar_width = right - left;
+            if( bar_width < 1 ) bar_width = 1;
+            const int bar = (int)a_current[ i ] * ( height - 3 ) / 255;
+            if( bar > 0 ) display_fill_rect( left, y0 + height - bar, bar_width, bar, GRAPH );
+            int py = y0 + height - (int)a_peak[ i ] * ( height - 3 ) / 255;
+            if( py < y0 ) py = y0;
+            display_fill_rect( left, py, bar_width, 2, PEAK );
+        }
     }
 
     const uint32_t low = audio_spectrum_low_hz();
@@ -71,9 +79,13 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
     display_draw_text( 145, 132, mid_text, DIM, 1U );
     display_draw_text( 274, 132, high_text, DIM, 1U );
 
-    const uint32_t peak_hz = low +
-        (uint32_t)( ( (uint64_t)( high - low ) * strongest ) /
-                    ( AUDIO_SPECTRUM_BINS - 1U ) );
+    uint32_t peak_hz = low;
+    if( bin_count > 1U )
+    {
+        peak_hz = low +
+            (uint32_t)( ( (uint64_t)( high - low ) * strongest ) /
+                        ( bin_count - 1U ) );
+    }
     char peak_text[ 12 ];
     format_frequency( peak_text, sizeof( peak_text ), peak_hz );
     snprintf( line,
