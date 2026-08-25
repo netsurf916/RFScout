@@ -36,19 +36,12 @@ esp_err_t storage_init( void )
     slot.host_id = STORAGE_SPI_HOST;
     slot.gpio_cs = RFSCOUT_BOARD_SD_CS_PIN;
 
-    const esp_vfs_fat_sdmmc_mount_config_t mount_config =
-    {
-        .format_if_mount_failed = false,
-        .max_files = STORAGE_MAX_OPEN_FILES,
-        .allocation_unit_size = 16U * 1024U
-    };
+    const esp_vfs_fat_sdmmc_mount_config_t mount_config = { .format_if_mount_failed = false,
+                                                            .max_files = STORAGE_MAX_OPEN_FILES,
+                                                            .allocation_unit_size = 16U * 1024U };
 
-    const esp_err_t result = esp_vfs_fat_sdspi_mount(
-        RFSCOUT_STORAGE_MOUNT_POINT,
-        &host,
-        &slot,
-        &mount_config,
-        &card );
+    const esp_err_t result =
+        esp_vfs_fat_sdspi_mount( RFSCOUT_STORAGE_MOUNT_POINT, &host, &slot, &mount_config, &card );
     if( ESP_OK != result )
     {
         card = NULL;
@@ -59,9 +52,8 @@ esp_err_t storage_init( void )
     mounted = true;
     ESP_LOGI( TAG,
               "SD card mounted: %llu MiB",
-              (unsigned long long)( ( (uint64_t)card->csd.capacity *
-                                       card->csd.sector_size ) /
-                                     ( 1024ULL * 1024ULL ) ) );
+              (unsigned long long)( ( (uint64_t)card->csd.capacity * card->csd.sector_size ) /
+                                    ( 1024ULL * 1024ULL ) ) );
     return ESP_OK;
 }
 
@@ -72,9 +64,7 @@ void storage_shutdown( void )
         return;
     }
 
-    const esp_err_t result = esp_vfs_fat_sdcard_unmount(
-        RFSCOUT_STORAGE_MOUNT_POINT,
-        card );
+    const esp_err_t result = esp_vfs_fat_sdcard_unmount( RFSCOUT_STORAGE_MOUNT_POINT, card );
     if( ESP_OK != result )
     {
         ESP_LOGW( TAG, "SD unmount failed: %s", esp_err_to_name( result ) );
@@ -89,8 +79,7 @@ bool storage_is_available( void )
     return mounted;
 }
 
-esp_err_t storage_get_capacity( uint64_t *a_total_bytes,
-                                uint64_t *a_free_bytes )
+esp_err_t storage_get_capacity( uint64_t *a_total_bytes, uint64_t *a_free_bytes )
 {
     if( !mounted )
     {
@@ -99,10 +88,8 @@ esp_err_t storage_get_capacity( uint64_t *a_total_bytes,
 
     uint64_t total_bytes = 0U;
     uint64_t free_bytes = 0U;
-    const esp_err_t result = esp_vfs_fat_info(
-        RFSCOUT_STORAGE_MOUNT_POINT,
-        &total_bytes,
-        &free_bytes );
+    const esp_err_t result =
+        esp_vfs_fat_info( RFSCOUT_STORAGE_MOUNT_POINT, &total_bytes, &free_bytes );
     if( ESP_OK != result )
     {
         return result;
