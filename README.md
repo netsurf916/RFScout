@@ -117,13 +117,25 @@ The application currently uses a single large factory image rather than OTA slot
 
 ## Build
 
-RFScout targets ESP32-S3 with ESP-IDF:
+RFScout targets ESP32-S3 with ESP-IDF. `clang-format` is also required for normal development builds because `idf.py build` checks locally changed C/header files before completing.
 
 ```sh
 python3 tools/update_oui.py
 idf.py set-target esp32s3
 idf.py build
 idf.py flash monitor
+```
+
+To format locally modified firmware sources before building:
+
+```sh
+python3 tools/check_format.py --fix
+```
+
+To audit the entire hand-maintained firmware tree:
+
+```sh
+python3 tools/check_format.py --all
 ```
 
 After changes to `sdkconfig.defaults` or `partitions.csv`, regenerate configuration before building:
@@ -144,6 +156,8 @@ idf.py build
 ## Coding style
 
 All hand-maintained firmware code should follow [docs/CODING_STYLE.md](docs/CODING_STYLE.md): readable Allman formatting, `a_` argument prefixes, explicit interfaces, complete file headers, centralized hardware definitions, and documented public APIs. Generated `.inc` tables are exempt from hand formatting and should be changed through their generators.
+
+The repository provides `.clang-format` and `.editorconfig`. Pull requests run the same clang-format gate used by normal `idf.py build`, plus a complete ESP-IDF build for ESP32-S3.
 
 ## License
 

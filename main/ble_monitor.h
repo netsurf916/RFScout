@@ -1,5 +1,6 @@
 /**
     ble_monitor.h : RFScout passive BLE observation interface
+    Description: Declares BLE scanner lifecycle control and observation delivery callbacks.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -12,6 +13,10 @@
 #include "esp_err.h"
 #include "observation_store.h"
 
+/**
+ * @brief Callback invoked when passive BLE scanning produces an observation.
+ * @param a_observation Mutable observation populated from the received BLE advertisement.
+ */
 typedef void ( *ble_observation_fn )( rf_device_t *a_observation );
 
 /** @brief Initialize NimBLE and start the initial passive scan. */

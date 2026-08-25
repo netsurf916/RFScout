@@ -1,0 +1,39 @@
+name: Build and formatting
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: espressif/idf:release-v5.5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install clang-format
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends clang-format
+
+      - name: Check changed C formatting
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            python3 tools/check_format.py --base "origin/${{ github.base_ref }}"
+          else
+            python3 tools/check_format.py --base HEAD^
+          fi
+
+      - name: Build ESP32-S3 firmware
+        run: |
+          idf.py set-target esp32s3
+          idf.py build

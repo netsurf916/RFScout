@@ -1,5 +1,6 @@
 /**
     app_manager.h : RFScout application view manager
+    Description: Declares application navigation order and the primary application lifecycle interface.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */

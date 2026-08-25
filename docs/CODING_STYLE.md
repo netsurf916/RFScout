@@ -26,7 +26,7 @@ RFScout prioritizes readability, predictable interfaces, and consistent formatti
 - Hardware pin definitions are centralized in `board.h`; drivers should not scatter literal GPIO numbers through implementations.
 - Include guards are used in addition to `#pragma once`.
 - Keep project headers, SDK headers, and C library headers in visually separate include groups when practical.
-- Public functions and public data types require Doxygen documentation.
+- Public functions, callback typedefs, and public data types require Doxygen documentation.
 - Public functions with non-obvious arguments should document `@param` values and meaningful return values with `@return`.
 - Public enums and structures require a concise `@brief` describing what they represent.
 - Internal helpers should have a concise Doxygen `@brief` when their purpose is not self-evident from the function name and signature.
@@ -47,6 +47,22 @@ Every hand-maintained `.c` and `.h` file begins with a block identifying the fil
 
 The `Description:` line may be omitted when the short description is already complete, but the file name, copyright, and SPDX identifier are required.
 
+## Automated formatting checks
+
+The repository root contains `.clang-format` and `.editorconfig`. The clang-format policy is enforced by `tools/check_format.py`.
+
+Normal `idf.py build` runs the format checker automatically for locally modified or staged `main/*.c` and `main/*.h` files. Pull-request CI runs the same checker against C/header files changed relative to the PR base. This prevents a legacy untouched file from blocking an unrelated build while ensuring new and modified firmware code follows the repository policy.
+
+Useful commands are:
+
+```sh
+python3 tools/check_format.py --fix          # format locally modified C/header files
+python3 tools/check_format.py --base main    # check changes relative to a branch/ref
+python3 tools/check_format.py --all          # audit all hand-maintained C/header files
+```
+
+`clang-format` must be installed and available on `PATH`. In an emergency, the CMake format target can be disabled with `-DRFSCOUT_FORMAT_CHECK=OFF`; this should not be used for normal development or CI.
+
 ## Layout and readability review
 
 Before a code change is considered complete, review each touched C or header file for the following:
@@ -59,6 +75,7 @@ Before a code change is considered complete, review each touched C or header fil
 6. Long expressions are split at readable boundaries rather than allowed to run across the screen.
 7. Comments explain intent or hardware/protocol constraints rather than restating the code.
 8. Generated code has not been hand-edited.
+9. `python3 tools/check_format.py` succeeds for the files being changed.
 
 Formatting-only changes should not intentionally alter behavior. If cleanup exposes a correctness issue, keep the functional fix small and call it out separately in the commit or pull-request description.
 
