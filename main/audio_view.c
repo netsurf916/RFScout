@@ -78,9 +78,10 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
     format_frequency( peak_text, sizeof( peak_text ), peak_hz );
     snprintf( line,
               sizeof( line ),
-              "PK:%sHz DROP:%lu",
+              "PK:%sHz AUTO:%d..%ddB",
               peak_text,
-              (unsigned long)audio_spectrum_overruns() );
+              audio_spectrum_scale_floor_db(),
+              audio_spectrum_scale_ceiling_db() );
     display_draw_text( 8, 151, line, DIM, 1U );
     display_draw_text( 250, 151, "SETTINGS", SUBDUED, 1U );
     (void)display_present();
