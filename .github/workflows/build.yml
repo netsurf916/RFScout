@@ -49,6 +49,8 @@ jobs:
           apt-get install -y --no-install-recommends clang-format
 
       - name: Build ESP32-S3 firmware
+        shell: bash
         run: |
-          python3 "$IDF_PATH/tools/idf.py" set-target esp32s3
-          python3 "$IDF_PATH/tools/idf.py" build
+          . "$IDF_PATH/export.sh"
+          idf.py set-target esp32s3
+          idf.py build
