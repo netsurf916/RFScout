@@ -119,6 +119,8 @@ The application currently uses a single large factory image rather than OTA slot
 
 RFScout targets ESP32-S3 with ESP-IDF. `clang-format` is also required for normal development builds because `idf.py build` checks locally changed C/header files before completing.
 
+For a complete Fedora Linux workstation setup, including system dependencies, ESP-IDF installation, serial-port setup, formatting, build, flash, and monitor commands, see [Getting started on Fedora Linux](docs/GETTING_STARTED.md).
+
 ```sh
 python3 tools/update_oui.py
 idf.py set-target esp32s3
@@ -148,6 +150,7 @@ idf.py build
 
 ## Documentation
 
+- [Getting started on Fedora Linux](docs/GETTING_STARTED.md) — dependencies, ESP-IDF setup, formatting, build, flash, and monitor workflow
 - [Capabilities](docs/CAPABILITIES.md) — user-visible features and current limitations
 - [Architecture](docs/ARCHITECTURE.md) — module ownership, application lifecycle, and shared resources
 - [SD card behavior](docs/SD_CARD.md) — storage compatibility, rotation, and record behavior
