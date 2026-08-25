@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import shutil
 import subprocess
 import sys
@@ -120,6 +121,20 @@ def baseline_accepted(path: str) -> bool:
     return expected is not None and current_blob(path) == expected
 
 
+def print_format_diff(path: str, original: bytes, formatted: bytes) -> None:
+    """Print a concise unified diff showing clang-format's required changes."""
+    original_lines = original.decode("utf-8").splitlines(keepends=True)
+    formatted_lines = formatted.decode("utf-8").splitlines(keepends=True)
+    sys.stderr.writelines(
+        difflib.unified_diff(
+            original_lines,
+            formatted_lines,
+            fromfile=path,
+            tofile=f"{path} (clang-format)",
+        )
+    )
+
+
 def main() -> int:
     """Check selected sources and report files that require clang-format."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -165,6 +180,7 @@ def main() -> int:
             print(f"formatted {path}")
         else:
             failures.append(path)
+            print_format_diff(path, original, formatted)
 
     if failures:
         print("RFScout format check failed for:", file=sys.stderr)
