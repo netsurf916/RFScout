@@ -1,7 +1,10 @@
 /** audio_view.c : RFScout microphone analyzer UI */
 #include "audio_view.h"
+#include "battery_indicator.h"
 #include "display.h"
+#include "status_bar.h"
 #include <stdio.h>
+
 #define BG 0x0000U
 #define SUBDUED 0x03F0U
 #define TEXT 0xBDF7U
@@ -9,6 +12,12 @@
 #define YELLOW 0xFFE0U
 #define GRAPH 0x03E0U
 #define PEAK 0x07FFU
+
+static void draw_status_chrome( void )
+{
+    status_bar_draw();
+    battery_indicator_draw();
+}
 
 static void format_frequency( char *a_text, size_t a_size, uint32_t a_hz )
 {
@@ -30,6 +39,7 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
 {
     display_clear( BG );
     display_draw_text( 8, 7, "AUDIO", SUBDUED, 2U );
+    draw_status_chrome();
 
     char line[ 64 ];
     snprintf( line,
@@ -59,7 +69,14 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
             int bar_width = right - left;
             if( bar_width < 1 ) bar_width = 1;
             const int bar = (int)a_current[ i ] * ( height - 3 ) / 255;
-            if( bar > 0 ) display_fill_rect( left, y0 + height - bar, bar_width, bar, GRAPH );
+            if( bar > 0 )
+            {
+                display_fill_rect( left,
+                                   y0 + height - bar,
+                                   bar_width,
+                                   bar,
+                                   GRAPH );
+            }
             int py = y0 + height - (int)a_peak[ i ] * ( height - 3 ) / 255;
             if( py < y0 ) py = y0;
             display_fill_rect( left, py, bar_width, 2, PEAK );
@@ -103,6 +120,8 @@ void audio_view_menu( unsigned a_selected, bool a_editing )
 {
     display_clear( BG );
     display_draw_text( 8, 7, "AUDIO SETTINGS", SUBDUED, 2U );
+    draw_status_chrome();
+
     const char *labels[] = { "RANGE", "CHANNEL", "BACK" };
     for( unsigned i = 0U; i < 3U; ++i )
     {
