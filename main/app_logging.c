@@ -4,6 +4,7 @@
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
+
 #include "app_logging.h"
 
 #include "app_manager.h"
@@ -26,22 +27,32 @@ static rfscout_app_id_t last_app;
 static int64_t last_record_us;
 static bool initialized;
 
+/** @brief Return the stable log token for an application identifier. */
 static const char *app_name( rfscout_app_id_t a_app )
 {
     static const char *names[ RFSCOUT_APP_COUNT ] =
     {
-        "WIFI_BT", "CC1101", "NRF24", "AUDIO", "THERMAL"
+        "WIFI_BT",
+        "CC1101",
+        "NRF24",
+        "AUDIO",
+        "THERMAL"
     };
+
     return ( a_app < RFSCOUT_APP_COUNT ) ? names[ a_app ] : "UNKNOWN";
 }
 
+/** @brief Emit one compact, application-specific telemetry record. */
 static void write_periodic_record( rfscout_app_id_t a_app )
 {
     char detail[ 160 ];
+
     switch( a_app )
     {
         case RFSCOUT_APP_WIFI_BT:
-            snprintf( detail, sizeof( detail ), "active=%u surveillance=%u",
+            snprintf( detail,
+                      sizeof( detail ),
+                      "active=%u surveillance=%u",
                       (unsigned)observation_store_count(),
                       (unsigned)observation_store_surveillance_count() );
             break;
@@ -50,12 +61,16 @@ static void write_periodic_record( rfscout_app_id_t a_app )
         {
             const cc1101_scan_config_t *config = cc1101_config();
             cc1101_fingerprint_t fingerprints[ CC1101_FINGERPRINT_MAX ];
-            const size_t count = cc1101_activity_fingerprints(
-                fingerprints, CC1101_FINGERPRINT_MAX );
-            snprintf( detail, sizeof( detail ),
+            const size_t count =
+                cc1101_activity_fingerprints( fingerprints,
+                                              CC1101_FINGERPRINT_MAX );
+            snprintf( detail,
+                      sizeof( detail ),
                       "range_khz=%lu-%lu step_khz=%lu likely=%u detected=%u",
-                      (unsigned long)config->low_khz, (unsigned long)config->high_khz,
-                      (unsigned long)config->step_khz, (unsigned)count,
+                      (unsigned long)config->low_khz,
+                      (unsigned long)config->high_khz,
+                      (unsigned long)config->step_khz,
+                      (unsigned)count,
                       cc1101_is_detected() ? 1U : 0U );
             break;
         }
@@ -64,18 +79,23 @@ static void write_periodic_record( rfscout_app_id_t a_app )
         {
             const nrf24_scan_config_t *config = nrf24_config();
             nrf24_fingerprint_t fingerprints[ NRF24_FINGERPRINT_MAX ];
-            const size_t count = nrf24_activity_fingerprints(
-                fingerprints, NRF24_FINGERPRINT_MAX );
-            snprintf( detail, sizeof( detail ),
+            const size_t count =
+                nrf24_activity_fingerprints( fingerprints,
+                                             NRF24_FINGERPRINT_MAX );
+            snprintf( detail,
+                      sizeof( detail ),
                       "channels=%u-%u dwell_us=%lu likely=%u detected=%u",
-                      (unsigned)config->low_channel, (unsigned)config->high_channel,
-                      (unsigned long)config->dwell_us, (unsigned)count,
+                      (unsigned)config->low_channel,
+                      (unsigned)config->high_channel,
+                      (unsigned long)config->dwell_us,
+                      (unsigned)count,
                       nrf24_is_detected() ? 1U : 0U );
             break;
         }
 
         case RFSCOUT_APP_AUDIO:
-            snprintf( detail, sizeof( detail ),
+            snprintf( detail,
+                      sizeof( detail ),
                       "range=%s channel=%s hz=%lu-%lu sample_hz=%lu overruns=%lu",
                       audio_spectrum_range_name( audio_spectrum_range() ),
                       audio_spectrum_channel_name( audio_spectrum_channel() ),
@@ -86,13 +106,16 @@ static void write_periodic_record( rfscout_app_id_t a_app )
             break;
 
         case RFSCOUT_APP_THERMAL:
-            snprintf( detail, sizeof( detail ), "detected=%u",
+            snprintf( detail,
+                      sizeof( detail ),
+                      "detected=%u",
                       mlx90640_is_detected() ? 1U : 0U );
             break;
 
         default:
             return;
     }
+
     (void)log_writer_app_record( app_name( a_app ), detail );
 }
 
@@ -106,9 +129,14 @@ void app_logging_init( void )
 
 void app_logging_poll( void )
 {
-    if( !initialized ) return;
+    if( !initialized )
+    {
+        return;
+    }
+
     const rfscout_app_id_t current = app_manager_current();
     const int64_t now = esp_timer_get_time();
+
     if( current != last_app )
     {
         (void)log_writer_app_record( app_name( last_app ), "EXIT" );
@@ -116,7 +144,9 @@ void app_logging_poll( void )
         last_app = current;
         last_record_us = 0;
     }
-    if( ( 0 == last_record_us ) || ( ( now - last_record_us ) >= APP_LOG_INTERVAL_US ) )
+
+    if( ( 0 == last_record_us ) ||
+        ( ( now - last_record_us ) >= APP_LOG_INTERVAL_US ) )
     {
         last_record_us = now;
         write_periodic_record( current );
