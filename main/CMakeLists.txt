@@ -2,6 +2,7 @@ idf_component_register(
     SRCS
         "rfscout.c"
         "app_manager.c"
+        "app_logging.c"
         "radio_app_view.c"
         "audio_spectrum.c"
         "audio_view.c"

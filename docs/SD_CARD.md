@@ -16,6 +16,22 @@ The T-Embed CC1101 Plus does not expose a separate microSD card-detect GPIO in t
 
 Failure to mount an SD card is nonfatal. RFScout continues operating without logging, and the SD status icon is shown only after storage has mounted successfully.
 
+## Unified logging
+
+All applications feed the same asynchronous SD writer and therefore share the same rotation, queueing, error handling, and free-space policy. Wi-Fi/BLE device lifecycle records retain their detailed `ADDED`/`DROPPED` format. Application-owned records use the form:
+
+`<milliseconds> APP <application> <key=value details>`
+
+Application transitions are recorded as `ENTER` and `EXIT`. While an application is active, a compact telemetry record is queued at most once per second:
+
+- `WIFI_BT`: active observation and surveillance counts. Individual Wi-Fi/BLE device lifecycle records are also logged as they occur.
+- `CC1101`: configured frequency range/step, likely-device count, and radio detection state.
+- `NRF24`: configured channel range/dwell, likely-device count, and radio detection state.
+- `AUDIO`: selected range/channel, effective frequency/sample range, and overrun count.
+- `THERMAL`: sensor detection state. More detailed calibrated temperature logging can be added when thermal calibration is implemented.
+
+The one-second application telemetry cadence is intentionally independent of display refresh rate so fast spectrum rendering cannot flood the SD queue or steal time from acquisition tasks.
+
 ## RFScout logging footprint
 
-The current diagnostic logger uses up to 100 rotating files of 4 MiB each (`rfscout-00.log` through `rfscout-99.log`), for an approximate maximum log footprint of 400 MiB. RFScout also attempts to preserve at least 64 MiB of free filesystem space.
+The logger uses up to 100 rotating files of 4 MiB each (`rfscout-00.log` through `rfscout-99.log`), for an approximate maximum log footprint of 400 MiB. RFScout also attempts to preserve at least 64 MiB of free filesystem space.
