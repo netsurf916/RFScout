@@ -31,8 +31,8 @@
 #define NRF24_MENU_RESET_COUNTS 3U
 #define NRF24_MENU_BACK 4U
 #define NRF24_MENU_ITEM_COUNT 5U
-#define AUDIO_MENU_BACK 1U
-#define AUDIO_MENU_ITEM_COUNT 2U
+#define AUDIO_MENU_BACK 2U
+#define AUDIO_MENU_ITEM_COUNT 3U
 
 static const char *TAG = "app_manager";
 static rfscout_app_id_t active_app;
@@ -287,6 +287,13 @@ static void audio_input( bool a_pressed, int a_delta )
         if( range < 0 ) range = AUDIO_RANGE_COUNT - 1;
         if( range >= AUDIO_RANGE_COUNT ) range = 0;
         audio_spectrum_set_range( (audio_range_t)range );
+    }
+    else if( 1U == audio_item )
+    {
+        int channel = (int)audio_spectrum_channel() + ( a_delta > 0 ? 1 : -1 );
+        if( channel < 0 ) channel = AUDIO_CHANNEL_COUNT - 1;
+        if( channel >= AUDIO_CHANNEL_COUNT ) channel = 0;
+        audio_spectrum_set_channel( (audio_channel_t)channel );
     }
     audio_view_menu( audio_item, audio_edit );
 }
