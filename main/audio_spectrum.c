@@ -21,10 +21,9 @@
 #define AUDIO_DMA_READ_SAMPLES 512U
 #define AUDIO_TASK_STACK 16384U
 #define AUDIO_TASK_PRIORITY 5U
-#define AUDIO_EPSILON 1.0e-9f
+#define AUDIO_EPSILON 1.0e-12f
 #define AUDIO_FFT_INTERVAL_US 40000LL
 #define AUDIO_WARMUP_FRAMES 3U
-#define AUDIO_FFT_NORMALIZATION ( 32768.0f * ( (float)AUDIO_FFT_SIZE / 2.0f ) )
 #define AUDIO_DB_MIN (-120.0f)
 #define AUDIO_DB_MAX 0.0f
 #define AUDIO_DB_HISTOGRAM_BINS 121U
@@ -34,6 +33,26 @@
 #define AUDIO_AUTO_CEILING_MARGIN_DB 8.0f
 #define AUDIO_AUTO_MIN_SPAN_DB 24.0f
 #define AUDIO_PEAK_DECAY_DB 1.25f
+#define AUDIO_DECIMATOR_STAGES 3U
+
+typedef struct
+{
+    uint32_t low_hz;
+    uint32_t high_hz;
+    unsigned decimation;
+    const char *name;
+} audio_range_config_t;
+
+static const audio_range_config_t range_configs[ AUDIO_RANGE_COUNT ] =
+{
+    [ AUDIO_RANGE_INFRASONIC ] = { 1U, 20U, 64U, "INFRASONIC" },
+    [ AUDIO_RANGE_LOW ]        = { 20U, 500U, 32U, "LOW" },
+    [ AUDIO_RANGE_VOICE ]      = { 80U, 4000U, 4U, "VOICE" },
+    [ AUDIO_RANGE_MID ]        = { 500U, 5000U, 4U, "MID" },
+    [ AUDIO_RANGE_HIGH ]       = { 4000U, 12000U, 1U, "HIGH" },
+    [ AUDIO_RANGE_AUDIBLE ]    = { 20U, 20000U, 1U, "AUDIBLE" },
+    [ AUDIO_RANGE_ULTRASONIC ] = { 20000U, 24000U, 1U, "ULTRASONIC" }
+};
 
 static const char *TAG = "audio_spectrum";
 static TaskHandle_t task_handle;
@@ -41,6 +60,7 @@ static i2s_chan_handle_t rx_channel;
 static volatile bool running;
 static volatile bool frame_ready;
 static volatile uint32_t overruns;
+static volatile uint32_t config_generation;
 static audio_range_t selected_range = AUDIO_RANGE_AUDIBLE;
 static audio_channel_t selected_channel = AUDIO_CHANNEL_LEFT;
 static unsigned warmup_frames;
@@ -51,18 +71,14 @@ static float scale_floor_db = -80.0f;
 static float scale_ceiling_db = 0.0f;
 static bool scale_ready;
 static float hann_window[ AUDIO_FFT_SIZE ];
+static float hann_coherent_gain;
 static bool hann_ready;
 static portMUX_TYPE state_lock = portMUX_INITIALIZER_UNLOCKED;
 
-static void range_bounds( audio_range_t a_range, uint32_t *a_low, uint32_t *a_high )
+static const audio_range_config_t *range_config( audio_range_t a_range )
 {
-    switch( a_range )
-    {
-        case AUDIO_RANGE_INFRASONIC: *a_low = 1U; *a_high = 20U; break;
-        case AUDIO_RANGE_ULTRASONIC: *a_low = 20000U; *a_high = 24000U; break;
-        case AUDIO_RANGE_AUDIBLE:
-        default: *a_low = 20U; *a_high = 20000U; break;
-    }
+    if( a_range >= AUDIO_RANGE_COUNT ) a_range = AUDIO_RANGE_AUDIBLE;
+    return &range_configs[ a_range ];
 }
 
 static void reset_display_state( void )
@@ -80,11 +96,14 @@ static void reset_display_state( void )
 static void prepare_hann_window( void )
 {
     if( hann_ready ) return;
+    float sum = 0.0f;
     for( unsigned i = 0U; i < AUDIO_FFT_SIZE; ++i )
     {
         hann_window[ i ] = 0.5f - 0.5f * cosf( 2.0f * (float)M_PI * (float)i /
                                               (float)( AUDIO_FFT_SIZE - 1U ) );
+        sum += hann_window[ i ];
     }
+    hann_coherent_gain = sum / (float)AUDIO_FFT_SIZE;
     hann_ready = true;
 }
 
@@ -140,8 +159,7 @@ static void fft( float *a_real, float *a_imag )
 
 static float percentile_db( const unsigned *a_histogram, unsigned a_percent )
 {
-    const unsigned target =
-        ( AUDIO_SPECTRUM_BINS * a_percent + 99U ) / 100U;
+    const unsigned target = ( AUDIO_SPECTRUM_BINS * a_percent + 99U ) / 100U;
     unsigned cumulative = 0U;
     for( unsigned i = 0U; i < AUDIO_DB_HISTOGRAM_BINS; ++i )
     {
@@ -158,10 +176,13 @@ static uint8_t scale_db( float a_db, float a_floor, float a_ceiling )
     return (uint8_t)( ( a_db - a_floor ) * 255.0f / ( a_ceiling - a_floor ) );
 }
 
-static void publish_fft( const int16_t *a_pcm )
+static void publish_fft( const int16_t *a_pcm,
+                         uint32_t a_sample_rate,
+                         const audio_range_config_t *a_config )
 {
     float real[ AUDIO_FFT_SIZE ];
     float imag[ AUDIO_FFT_SIZE ];
+    float power_db[ AUDIO_FFT_SIZE / 2U ];
     float db_bins[ AUDIO_SPECTRUM_BINS ];
     unsigned histogram[ AUDIO_DB_HISTOGRAM_BINS ] = { 0U };
     int64_t sum = 0;
@@ -176,21 +197,37 @@ static void publish_fft( const int16_t *a_pcm )
     }
     fft( real, imag );
 
-    uint32_t low;
-    uint32_t high;
-    range_bounds( selected_range, &low, &high );
-    for( unsigned x = 0U; x < AUDIO_SPECTRUM_BINS; ++x )
+    const float amplitude_norm = 32768.0f * ( (float)AUDIO_FFT_SIZE / 2.0f ) * hann_coherent_gain;
+    const float power_norm = amplitude_norm * amplitude_norm;
+    for( unsigned bin = 0U; bin < AUDIO_FFT_SIZE / 2U; ++bin )
     {
-        const float hz = (float)low + (float)( high - low ) * (float)x /
-                         (float)( AUDIO_SPECTRUM_BINS - 1U );
-        unsigned bin = (unsigned)lroundf( hz * (float)AUDIO_FFT_SIZE /
-                                          (float)AUDIO_SAMPLE_RATE );
-        if( bin >= AUDIO_FFT_SIZE / 2U ) bin = AUDIO_FFT_SIZE / 2U - 1U;
-        const float magnitude = sqrtf( real[ bin ] * real[ bin ] +
-                                       imag[ bin ] * imag[ bin ] );
-        float db = 20.0f * log10f( magnitude / AUDIO_FFT_NORMALIZATION + AUDIO_EPSILON );
+        const float power = real[ bin ] * real[ bin ] + imag[ bin ] * imag[ bin ];
+        float db = 10.0f * log10f( power / power_norm + AUDIO_EPSILON );
         if( db < AUDIO_DB_MIN ) db = AUDIO_DB_MIN;
         if( db > AUDIO_DB_MAX ) db = AUDIO_DB_MAX;
+        power_db[ bin ] = db;
+    }
+
+    const float low = (float)a_config->low_hz;
+    const float high = (float)a_config->high_hz;
+    const float span = high - low;
+    const float bin_hz = (float)a_sample_rate / (float)AUDIO_FFT_SIZE;
+
+    for( unsigned x = 0U; x < AUDIO_SPECTRUM_BINS; ++x )
+    {
+        const float left_hz = low + span * (float)x / (float)AUDIO_SPECTRUM_BINS;
+        const float right_hz = low + span * (float)( x + 1U ) / (float)AUDIO_SPECTRUM_BINS;
+        unsigned first = (unsigned)floorf( left_hz / bin_hz );
+        unsigned last = (unsigned)ceilf( right_hz / bin_hz );
+        if( last <= first ) last = first + 1U;
+        if( first >= AUDIO_FFT_SIZE / 2U ) first = AUDIO_FFT_SIZE / 2U - 1U;
+        if( last > AUDIO_FFT_SIZE / 2U ) last = AUDIO_FFT_SIZE / 2U;
+
+        float db = AUDIO_DB_MIN;
+        for( unsigned bin = first; bin < last; ++bin )
+        {
+            if( power_db[ bin ] > db ) db = power_db[ bin ];
+        }
         db_bins[ x ] = db;
         unsigned bucket = (unsigned)( db - AUDIO_DB_MIN );
         if( bucket >= AUDIO_DB_HISTOGRAM_BINS ) bucket = AUDIO_DB_HISTOGRAM_BINS - 1U;
@@ -239,8 +276,6 @@ static void publish_fft( const int16_t *a_pcm )
     }
     else
     {
-        /* Fast attack when the signal gets louder, slow release so the graph
-           does not visibly pump as room noise changes. */
         const float floor_alpha = ( target_floor < scale_floor_db ) ? 0.30f : 0.08f;
         const float ceiling_alpha = ( target_ceiling > scale_ceiling_db ) ? 0.35f : 0.08f;
         scale_floor_db += ( target_floor - scale_floor_db ) * floor_alpha;
@@ -264,9 +299,57 @@ static void publish_fft( const int16_t *a_pcm )
     portEXIT_CRITICAL( &state_lock );
 }
 
+static float decimator_cutoff_hz( const audio_range_config_t *a_config )
+{
+    const float effective_rate = (float)AUDIO_SAMPLE_RATE / (float)a_config->decimation;
+    const float nyquist = effective_rate * 0.5f;
+    float cutoff = (float)a_config->high_hz * 1.15f;
+    if( cutoff > nyquist * 0.80f ) cutoff = nyquist * 0.80f;
+    return cutoff;
+}
+
+static void reset_decimator( float *a_state, unsigned *a_phase )
+{
+    for( unsigned i = 0U; i < AUDIO_DECIMATOR_STAGES; ++i ) a_state[ i ] = 0.0f;
+    *a_phase = 0U;
+}
+
+static bool decimate_sample( int16_t a_sample,
+                             const audio_range_config_t *a_config,
+                             float *a_state,
+                             unsigned *a_phase,
+                             int16_t *a_output )
+{
+    if( a_config->decimation <= 1U )
+    {
+        *a_output = a_sample;
+        return true;
+    }
+
+    const float cutoff = decimator_cutoff_hz( a_config );
+    const float alpha = 1.0f - expf( -2.0f * (float)M_PI * cutoff /
+                                      (float)AUDIO_SAMPLE_RATE );
+    float value = (float)a_sample;
+    for( unsigned stage = 0U; stage < AUDIO_DECIMATOR_STAGES; ++stage )
+    {
+        a_state[ stage ] += alpha * ( value - a_state[ stage ] );
+        value = a_state[ stage ];
+    }
+
+    ++( *a_phase );
+    if( *a_phase < a_config->decimation ) return false;
+    *a_phase = 0U;
+    if( value > 32767.0f ) value = 32767.0f;
+    if( value < -32768.0f ) value = -32768.0f;
+    *a_output = (int16_t)lroundf( value );
+    return true;
+}
+
 static void append_pcm_sample( int16_t *a_pcm,
                                unsigned *a_fill,
                                int16_t a_sample,
+                               uint32_t a_sample_rate,
+                               const audio_range_config_t *a_config,
                                int64_t *a_last_fft_us )
 {
     a_pcm[ *a_fill ] = a_sample;
@@ -276,7 +359,7 @@ static void append_pcm_sample( int16_t *a_pcm,
     const int64_t now_us = esp_timer_get_time();
     if( ( now_us - *a_last_fft_us ) >= AUDIO_FFT_INTERVAL_US )
     {
-        publish_fft( a_pcm );
+        publish_fft( a_pcm, a_sample_rate, a_config );
         *a_last_fft_us = now_us;
         taskYIELD();
     }
@@ -292,12 +375,23 @@ static void audio_worker( void *a_arg )
     (void)a_arg;
     int16_t pcm[ AUDIO_FFT_SIZE ];
     int16_t dma_samples[ AUDIO_DMA_READ_SAMPLES ];
+    float decimator_state[ AUDIO_DECIMATOR_STAGES ] = { 0.0f };
+    unsigned decimator_phase = 0U;
     unsigned fill = 0U;
     int64_t last_fft_us = esp_timer_get_time() - AUDIO_FFT_INTERVAL_US;
     unsigned timeout_streak = 0U;
+    uint32_t worker_generation = config_generation;
 
     while( running )
     {
+        if( worker_generation != config_generation )
+        {
+            worker_generation = config_generation;
+            fill = 0U;
+            reset_decimator( decimator_state, &decimator_phase );
+            last_fft_us = esp_timer_get_time() - AUDIO_FFT_INTERVAL_US;
+        }
+
         size_t bytes = 0U;
         const esp_err_t result = i2s_channel_read( rx_channel,
                                                    dma_samples,
@@ -318,11 +412,28 @@ static void audio_worker( void *a_arg )
         }
 
         timeout_streak = 0U;
-        const unsigned samples_read = (unsigned)( bytes / sizeof( int16_t ) );
+        const audio_range_t range = selected_range;
+        const audio_range_config_t *config = range_config( range );
+        const uint32_t effective_rate = AUDIO_SAMPLE_RATE / config->decimation;
         const unsigned slot = ( AUDIO_CHANNEL_RIGHT == selected_channel ) ? 1U : 0U;
+        const unsigned samples_read = (unsigned)( bytes / sizeof( int16_t ) );
+
         for( unsigned i = slot; i < samples_read; i += 2U )
         {
-            append_pcm_sample( pcm, &fill, dma_samples[ i ], &last_fft_us );
+            int16_t filtered;
+            if( decimate_sample( dma_samples[ i ],
+                                 config,
+                                 decimator_state,
+                                 &decimator_phase,
+                                 &filtered ) )
+            {
+                append_pcm_sample( pcm,
+                                   &fill,
+                                   filtered,
+                                   effective_rate,
+                                   config,
+                                   &last_fft_us );
+            }
         }
     }
 
@@ -390,6 +501,7 @@ esp_err_t audio_spectrum_start( void )
     portENTER_CRITICAL( &state_lock );
     reset_display_state();
     overruns = 0U;
+    ++config_generation;
     portEXIT_CRITICAL( &state_lock );
 
     running = true;
@@ -458,6 +570,7 @@ void audio_spectrum_set_range( audio_range_t a_range )
     portENTER_CRITICAL( &state_lock );
     selected_range = a_range;
     reset_display_state();
+    ++config_generation;
     portEXIT_CRITICAL( &state_lock );
 }
 
@@ -468,8 +581,7 @@ audio_range_t audio_spectrum_range( void )
 
 const char *audio_spectrum_range_name( audio_range_t a_range )
 {
-    static const char *names[] = { "INFRASONIC", "AUDIBLE", "ULTRASONIC" };
-    return ( a_range < AUDIO_RANGE_COUNT ) ? names[ a_range ] : "UNKNOWN";
+    return range_config( a_range )->name;
 }
 
 void audio_spectrum_set_channel( audio_channel_t a_channel )
@@ -478,6 +590,7 @@ void audio_spectrum_set_channel( audio_channel_t a_channel )
     portENTER_CRITICAL( &state_lock );
     selected_channel = a_channel;
     reset_display_state();
+    ++config_generation;
     portEXIT_CRITICAL( &state_lock );
 }
 
@@ -494,20 +607,17 @@ const char *audio_spectrum_channel_name( audio_channel_t a_channel )
 
 uint32_t audio_spectrum_low_hz( void )
 {
-    uint32_t low;
-    uint32_t high;
-    range_bounds( selected_range, &low, &high );
-    (void)high;
-    return low;
+    return range_config( selected_range )->low_hz;
 }
 
 uint32_t audio_spectrum_high_hz( void )
 {
-    uint32_t low;
-    uint32_t high;
-    range_bounds( selected_range, &low, &high );
-    (void)low;
-    return high;
+    return range_config( selected_range )->high_hz;
+}
+
+uint32_t audio_spectrum_effective_sample_rate( void )
+{
+    return AUDIO_SAMPLE_RATE / range_config( selected_range )->decimation;
 }
 
 int audio_spectrum_scale_floor_db( void )
