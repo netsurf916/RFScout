@@ -40,5 +40,7 @@ audio_channel_t audio_spectrum_channel( void );
 const char *audio_spectrum_channel_name( audio_channel_t a_channel );
 uint32_t audio_spectrum_low_hz( void );
 uint32_t audio_spectrum_high_hz( void );
+int audio_spectrum_scale_floor_db( void );
+int audio_spectrum_scale_ceiling_db( void );
 uint32_t audio_spectrum_overruns( void );
 #endif
