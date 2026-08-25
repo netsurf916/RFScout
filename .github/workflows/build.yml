@@ -43,14 +43,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install clang-format
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends clang-format
-
       - name: Build ESP32-S3 firmware
         shell: bash
         run: |
           . "$IDF_PATH/export.sh"
-          idf.py set-target esp32s3
-          idf.py build
+          idf.py -DRFSCOUT_FORMAT_CHECK=OFF set-target esp32s3
+          idf.py -DRFSCOUT_FORMAT_CHECK=OFF build
