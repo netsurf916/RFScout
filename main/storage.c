@@ -15,8 +15,6 @@
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
 
-#include <sys/statvfs.h>
-
 #define STORAGE_SPI_HOST SPI2_HOST
 #define STORAGE_MAX_OPEN_FILES 5
 
@@ -99,19 +97,24 @@ esp_err_t storage_get_capacity( uint64_t *a_total_bytes,
         return ESP_ERR_INVALID_STATE;
     }
 
-    struct statvfs status;
-    if( 0 != statvfs( RFSCOUT_STORAGE_MOUNT_POINT, &status ) )
+    uint64_t total_bytes = 0U;
+    uint64_t free_bytes = 0U;
+    const esp_err_t result = esp_vfs_fat_info(
+        RFSCOUT_STORAGE_MOUNT_POINT,
+        &total_bytes,
+        &free_bytes );
+    if( ESP_OK != result )
     {
-        return ESP_FAIL;
+        return result;
     }
 
     if( NULL != a_total_bytes )
     {
-        *a_total_bytes = (uint64_t)status.f_blocks * status.f_frsize;
+        *a_total_bytes = total_bytes;
     }
     if( NULL != a_free_bytes )
     {
-        *a_free_bytes = (uint64_t)status.f_bavail * status.f_frsize;
+        *a_free_bytes = free_bytes;
     }
 
     return ESP_OK;
