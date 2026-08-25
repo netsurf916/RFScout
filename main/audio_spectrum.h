@@ -21,6 +21,13 @@ typedef enum
     AUDIO_RANGE_COUNT
 } audio_range_t;
 
+typedef enum
+{
+    AUDIO_CHANNEL_LEFT = 0,
+    AUDIO_CHANNEL_RIGHT,
+    AUDIO_CHANNEL_COUNT
+} audio_channel_t;
+
 esp_err_t audio_spectrum_start( void );
 void audio_spectrum_stop( void );
 bool audio_spectrum_is_running( void );
@@ -28,6 +35,9 @@ bool audio_spectrum_take_frame( uint8_t *a_current, uint8_t *a_peak, size_t a_co
 void audio_spectrum_set_range( audio_range_t a_range );
 audio_range_t audio_spectrum_range( void );
 const char *audio_spectrum_range_name( audio_range_t a_range );
+void audio_spectrum_set_channel( audio_channel_t a_channel );
+audio_channel_t audio_spectrum_channel( void );
+const char *audio_spectrum_channel_name( audio_channel_t a_channel );
 uint32_t audio_spectrum_low_hz( void );
 uint32_t audio_spectrum_high_hz( void );
 uint32_t audio_spectrum_overruns( void );
