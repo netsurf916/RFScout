@@ -20,12 +20,14 @@
 #define AUDIO_DMA_BUFFER_COUNT 8U
 #define AUDIO_DMA_BUFFER_LENGTH 256U
 #define AUDIO_DMA_READ_SAMPLES 512U
-/* pcm[] + dma[] + FFT real/imag arrays require >11 KiB at the deepest call point. */
 #define AUDIO_TASK_STACK 16384U
 #define AUDIO_TASK_PRIORITY 5U
 #define AUDIO_PEAK_DECAY 4U
 #define AUDIO_EPSILON 1.0e-9f
 #define AUDIO_DIAGNOSTIC_INTERVAL_US 1000000LL
+#define AUDIO_FFT_INTERVAL_US 40000LL
+#define AUDIO_FIXED_SLOT 0U
+#define AUDIO_FFT_NORMALIZATION ( 32768.0f * ( (float)AUDIO_FFT_SIZE / 2.0f ) )
 
 static const char *TAG = "audio_spectrum";
 static TaskHandle_t task_handle;
@@ -36,6 +38,8 @@ static volatile uint32_t overruns;
 static audio_range_t selected_range = AUDIO_RANGE_AUDIBLE;
 static uint8_t current_bins[ AUDIO_SPECTRUM_BINS ];
 static uint8_t peak_bins[ AUDIO_SPECTRUM_BINS ];
+static float hann_window[ AUDIO_FFT_SIZE ];
+static bool hann_ready;
 static portMUX_TYPE state_lock = portMUX_INITIALIZER_UNLOCKED;
 
 static void range_bounds( audio_range_t a_range, uint32_t *a_low, uint32_t *a_high )
@@ -47,6 +51,17 @@ static void range_bounds( audio_range_t a_range, uint32_t *a_low, uint32_t *a_hi
         case AUDIO_RANGE_AUDIBLE:
         default: *a_low = 20U; *a_high = 20000U; break;
     }
+}
+
+static void prepare_hann_window( void )
+{
+    if( hann_ready ) return;
+    for( unsigned i = 0U; i < AUDIO_FFT_SIZE; ++i )
+    {
+        hann_window[ i ] = 0.5f - 0.5f * cosf( 2.0f * (float)M_PI * (float)i /
+                                              (float)( AUDIO_FFT_SIZE - 1U ) );
+    }
+    hann_ready = true;
 }
 
 static void fft( float *a_real, float *a_imag )
@@ -106,17 +121,12 @@ static void publish_fft( const int16_t *a_pcm )
     uint8_t next[ AUDIO_SPECTRUM_BINS ];
     int64_t sum = 0;
 
-    for( unsigned i = 0U; i < AUDIO_FFT_SIZE; ++i )
-    {
-        sum += a_pcm[ i ];
-    }
+    for( unsigned i = 0U; i < AUDIO_FFT_SIZE; ++i ) sum += a_pcm[ i ];
     const float mean = (float)sum / (float)AUDIO_FFT_SIZE;
 
     for( unsigned i = 0U; i < AUDIO_FFT_SIZE; ++i )
     {
-        const float window = 0.5f - 0.5f * cosf( 2.0f * (float)M_PI * (float)i /
-                                                (float)( AUDIO_FFT_SIZE - 1U ) );
-        real[ i ] = ( (float)a_pcm[ i ] - mean ) * window;
+        real[ i ] = ( (float)a_pcm[ i ] - mean ) * hann_window[ i ];
         imag[ i ] = 0.0f;
     }
     fft( real, imag );
@@ -130,52 +140,49 @@ static void publish_fft( const int16_t *a_pcm )
                          (float)( AUDIO_SPECTRUM_BINS - 1U );
         unsigned bin = (unsigned)lroundf( hz * (float)AUDIO_FFT_SIZE /
                                           (float)AUDIO_SAMPLE_RATE );
-        if( bin >= AUDIO_FFT_SIZE / 2U )
-        {
-            bin = AUDIO_FFT_SIZE / 2U - 1U;
-        }
+        if( bin >= AUDIO_FFT_SIZE / 2U ) bin = AUDIO_FFT_SIZE / 2U - 1U;
         const float magnitude = sqrtf( real[ bin ] * real[ bin ] +
                                        imag[ bin ] * imag[ bin ] );
-        float db = 20.0f * log10f( magnitude / 32768.0f + AUDIO_EPSILON );
-        if( db < -70.0f ) db = -70.0f;
-        if( db > 10.0f ) db = 10.0f;
-        next[ x ] = (uint8_t)( ( db + 70.0f ) * 255.0f / 80.0f );
+        float db = 20.0f * log10f( magnitude / AUDIO_FFT_NORMALIZATION + AUDIO_EPSILON );
+        if( db < -80.0f ) db = -80.0f;
+        if( db > 0.0f ) db = 0.0f;
+        next[ x ] = (uint8_t)( ( db + 80.0f ) * 255.0f / 80.0f );
     }
 
     portENTER_CRITICAL( &state_lock );
     memcpy( current_bins, next, sizeof( next ) );
     for( unsigned i = 0U; i < AUDIO_SPECTRUM_BINS; ++i )
     {
-        if( next[ i ] >= peak_bins[ i ] )
-        {
-            peak_bins[ i ] = next[ i ];
-        }
-        else
-        {
-            peak_bins[ i ] = ( peak_bins[ i ] > AUDIO_PEAK_DECAY ) ?
-                             (uint8_t)( peak_bins[ i ] - AUDIO_PEAK_DECAY ) : 0U;
-        }
+        if( next[ i ] >= peak_bins[ i ] ) peak_bins[ i ] = next[ i ];
+        else peak_bins[ i ] = ( peak_bins[ i ] > AUDIO_PEAK_DECAY ) ?
+                              (uint8_t)( peak_bins[ i ] - AUDIO_PEAK_DECAY ) : 0U;
     }
-    if( frame_ready )
-    {
-        ++overruns;
-    }
+    if( frame_ready ) ++overruns;
     frame_ready = true;
     portEXIT_CRITICAL( &state_lock );
 }
 
-static void append_pcm_sample( int16_t *a_pcm, unsigned *a_fill, int16_t a_sample )
+static void append_pcm_sample( int16_t *a_pcm,
+                               unsigned *a_fill,
+                               int16_t a_sample,
+                               int64_t *a_last_fft_us )
 {
     a_pcm[ *a_fill ] = a_sample;
     ++( *a_fill );
-    if( *a_fill >= AUDIO_FFT_SIZE )
+    if( *a_fill < AUDIO_FFT_SIZE ) return;
+
+    const int64_t now_us = esp_timer_get_time();
+    if( ( now_us - *a_last_fft_us ) >= AUDIO_FFT_INTERVAL_US )
     {
         publish_fft( a_pcm );
-        memmove( a_pcm,
-                 &a_pcm[ AUDIO_HOP_SIZE ],
-                 AUDIO_HOP_SIZE * sizeof( int16_t ) );
-        *a_fill = AUDIO_HOP_SIZE;
+        *a_last_fft_us = now_us;
+        taskYIELD();
     }
+
+    memmove( a_pcm,
+             &a_pcm[ AUDIO_HOP_SIZE ],
+             AUDIO_HOP_SIZE * sizeof( int16_t ) );
+    *a_fill = AUDIO_HOP_SIZE;
 }
 
 static void audio_worker( void *a_arg )
@@ -185,25 +192,25 @@ static void audio_worker( void *a_arg )
     int16_t dma_samples[ AUDIO_DMA_READ_SAMPLES ];
     unsigned fill = 0U;
     int64_t last_diagnostic_us = esp_timer_get_time();
+    int64_t last_fft_us = last_diagnostic_us - AUDIO_FFT_INTERVAL_US;
     uint64_t diagnostic_sum_sq = 0U;
     uint32_t diagnostic_samples = 0U;
     uint32_t diagnostic_reads = 0U;
     uint32_t diagnostic_timeouts = 0U;
     int32_t diagnostic_peak = 0;
-    unsigned active_slot = 0U;
 
-    ESP_LOGI( TAG, "audio worker started stack_free=%u",
-              (unsigned)uxTaskGetStackHighWaterMark( NULL ) );
+    ESP_LOGI( TAG, "audio worker started stack_free=%u fixed_slot=%u",
+              (unsigned)uxTaskGetStackHighWaterMark( NULL ),
+              AUDIO_FIXED_SLOT );
 
     while( running )
     {
         size_t bytes = 0U;
-        const esp_err_t result =
-            i2s_channel_read( rx_channel,
-                              dma_samples,
-                              sizeof( dma_samples ),
-                              &bytes,
-                              pdMS_TO_TICKS( 100 ) );
+        const esp_err_t result = i2s_channel_read( rx_channel,
+                                                   dma_samples,
+                                                   sizeof( dma_samples ),
+                                                   &bytes,
+                                                   pdMS_TO_TICKS( 100 ) );
 
         if( ESP_ERR_TIMEOUT == result )
         {
@@ -211,37 +218,25 @@ static void audio_worker( void *a_arg )
         }
         else if( ESP_OK != result )
         {
-            if( running )
-            {
-                ESP_LOGW( TAG, "PDM read failed: %s", esp_err_to_name( result ) );
-            }
+            if( running ) ESP_LOGW( TAG, "PDM read failed: %s", esp_err_to_name( result ) );
         }
         else
         {
             ++diagnostic_reads;
             const unsigned samples_read = (unsigned)( bytes / sizeof( int16_t ) );
 
-            /* ESP-IDF's ESP32-S3 PDM example enables both slots. A single PDM
-               microphone can be strapped to either clock edge, so inspect both
-               interleaved PCM slots and consume whichever actually carries the
-               stronger signal. This avoids depending on legacy-driver LEFT/RIGHT
-               semantics, which changed with the channel-based PDM API. */
-            uint64_t slot_energy[ 2 ] = { 0U, 0U };
-            for( unsigned i = 0U; i < samples_read; ++i )
-            {
-                const int32_t sample = dma_samples[ i ];
-                slot_energy[ i & 1U ] += (uint64_t)( sample * sample );
-            }
-            active_slot = ( slot_energy[ 1 ] > slot_energy[ 0 ] ) ? 1U : 0U;
-
-            for( unsigned i = active_slot; i < samples_read; i += 2U )
+            /* LILYGO's legacy driver configures ONLY_LEFT. The S3 channel API
+               needs all slots enabled to receive on this board, but dynamically
+               switching between slots makes the PCM stream discontinuous. Keep
+               the legacy-left equivalent (slot 0) fixed for the whole session. */
+            for( unsigned i = AUDIO_FIXED_SLOT; i < samples_read; i += 2U )
             {
                 const int32_t sample = dma_samples[ i ];
                 const int32_t absolute = sample < 0 ? -sample : sample;
                 if( absolute > diagnostic_peak ) diagnostic_peak = absolute;
                 diagnostic_sum_sq += (uint64_t)( sample * sample );
                 ++diagnostic_samples;
-                append_pcm_sample( pcm, &fill, (int16_t)sample );
+                append_pcm_sample( pcm, &fill, (int16_t)sample, &last_fft_us );
             }
         }
 
@@ -255,7 +250,7 @@ static void audio_worker( void *a_arg )
                       (unsigned long)diagnostic_reads,
                       (unsigned long)diagnostic_timeouts,
                       (unsigned long)diagnostic_samples,
-                      active_slot,
+                      AUDIO_FIXED_SLOT,
                       (unsigned long)rms,
                       (long)diagnostic_peak,
                       gpio_get_level( RFSCOUT_BOARD_MIC_CLOCK_PIN ),
@@ -276,10 +271,7 @@ static void audio_worker( void *a_arg )
 
 static void release_channel( void )
 {
-    if( NULL == rx_channel )
-    {
-        return;
-    }
+    if( NULL == rx_channel ) return;
     (void)i2s_channel_disable( rx_channel );
     (void)i2s_del_channel( rx_channel );
     rx_channel = NULL;
@@ -287,10 +279,9 @@ static void release_channel( void )
 
 esp_err_t audio_spectrum_start( void )
 {
-    if( running )
-    {
-        return ESP_OK;
-    }
+    if( running ) return ESP_OK;
+
+    prepare_hann_window();
 
     i2s_chan_config_t channel_config =
         I2S_CHANNEL_DEFAULT_CONFIG( I2S_NUM_0, I2S_ROLE_MASTER );
@@ -314,32 +305,21 @@ esp_err_t audio_spectrum_start( void )
         {
             .clk = (gpio_num_t)RFSCOUT_BOARD_MIC_CLOCK_PIN,
             .din = (gpio_num_t)RFSCOUT_BOARD_MIC_DATA_PIN,
-            .invert_flags =
-            {
-                .clk_inv = false
-            }
+            .invert_flags = { .clk_inv = false }
         }
     };
 
 #if CONFIG_IDF_TARGET_ESP32S3
-    /* Espressif's own S3 PDM RX example explicitly enables stereo/all slots.
-       This also lets us tolerate a board microphone strapped to either edge. */
     pdm_config.slot_cfg.slot_mode = I2S_SLOT_MODE_STEREO;
     pdm_config.slot_cfg.slot_mask = I2S_PDM_LINE_SLOT_ALL;
 #endif
 
 #if SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER
-    /* The default helper enables a ~35.5 Hz high-pass filter on newer S3 I2S
-       hardware. RFScout needs the raw low-frequency content for Infrasonic
-       mode, so explicitly disable that hardware filter. */
     pdm_config.slot_cfg.hp_en = false;
 #endif
 
     result = i2s_channel_init_pdm_rx_mode( rx_channel, &pdm_config );
-    if( ESP_OK == result )
-    {
-        result = i2s_channel_enable( rx_channel );
-    }
+    if( ESP_OK == result ) result = i2s_channel_enable( rx_channel );
     if( ESP_OK != result )
     {
         release_channel();
@@ -367,31 +347,26 @@ esp_err_t audio_spectrum_start( void )
     }
 
     ESP_LOGI( TAG,
-              "PDM microphone started: I2S0 clk=GPIO%d data=GPIO%d PCM=%u Hz DMA=%ux%u stereo-slot probe",
+              "PDM microphone started: I2S0 clk=GPIO%d data=GPIO%d PCM=%u Hz DMA=%ux%u fixed slot=%u FFT<=25Hz",
               RFSCOUT_BOARD_MIC_CLOCK_PIN,
               RFSCOUT_BOARD_MIC_DATA_PIN,
               AUDIO_SAMPLE_RATE,
               AUDIO_DMA_BUFFER_COUNT,
-              AUDIO_DMA_BUFFER_LENGTH );
+              AUDIO_DMA_BUFFER_LENGTH,
+              AUDIO_FIXED_SLOT );
     return ESP_OK;
 }
 
 void audio_spectrum_stop( void )
 {
-    if( !running && ( NULL == rx_channel ) )
-    {
-        return;
-    }
-
+    if( !running && ( NULL == rx_channel ) ) return;
     running = false;
-
     for( unsigned attempt = 0U;
          ( NULL != task_handle ) && ( attempt < 20U );
          ++attempt )
     {
         vTaskDelay( pdMS_TO_TICKS( 10 ) );
     }
-
     release_channel();
 }
 
@@ -405,10 +380,7 @@ bool audio_spectrum_take_frame( uint8_t *a_current,
                                 size_t a_count )
 {
     if( ( NULL == a_current ) || ( NULL == a_peak ) ||
-        ( a_count < AUDIO_SPECTRUM_BINS ) )
-    {
-        return false;
-    }
+        ( a_count < AUDIO_SPECTRUM_BINS ) ) return false;
 
     bool ready;
     portENTER_CRITICAL( &state_lock );
@@ -425,11 +397,7 @@ bool audio_spectrum_take_frame( uint8_t *a_current,
 
 void audio_spectrum_set_range( audio_range_t a_range )
 {
-    if( a_range >= AUDIO_RANGE_COUNT )
-    {
-        return;
-    }
-
+    if( a_range >= AUDIO_RANGE_COUNT ) return;
     portENTER_CRITICAL( &state_lock );
     selected_range = a_range;
     memset( current_bins, 0, sizeof( current_bins ) );
