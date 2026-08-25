@@ -5,6 +5,7 @@
     SPDX-License-Identifier: MIT
 */
 
+#include "app_logging.h"
 #include "app_manager.h"
 #include "battery.h"
 #include "ble_monitor.h"
@@ -82,7 +83,11 @@ void app_main( void )
     {
         result = log_writer_init();
         if( ESP_OK != result ) ESP_LOGW( TAG, "SD logging unavailable: %s", esp_err_to_name( result ) );
-        else observation_store_set_event_callback( log_writer_store_event, NULL );
+        else
+        {
+            observation_store_set_event_callback( log_writer_store_event, NULL );
+            app_logging_init();
+        }
     }
     ESP_ERROR_CHECK( radio_monitor_init( on_observation ) );
     ESP_ERROR_CHECK( ble_monitor_init( on_observation ) );
@@ -95,6 +100,7 @@ void app_main( void )
         battery_poll();
         observation_store_housekeeping();
         app_manager_poll();
+        app_logging_poll();
         vTaskDelay( pdMS_TO_TICKS( 10 ) );
     }
 }
