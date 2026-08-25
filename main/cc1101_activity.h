@@ -1,9 +1,12 @@
 /**
     cc1101_activity.h : CC1101 direct RSSI levels, peak hold, and passive fingerprints
+    Description: Declares spectrum history and conservative sub-GHz likely-device classification.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
+
 #pragma once
+
 #ifndef _RFSCOUT_CC1101_ACTIVITY_H_
 #define _RFSCOUT_CC1101_ACTIVITY_H_
 
@@ -16,6 +19,7 @@
 #define CC1101_FINGERPRINT_MAX 5U
 #define CC1101_FINGERPRINT_LABEL_MAX 24U
 
+/** @brief Conservative CC1101 signal-shape fingerprint categories. */
 typedef enum
 {
     CC1101_FP_UNKNOWN = 0,
@@ -27,6 +31,7 @@ typedef enum
     CC1101_FP_TYPE_COUNT
 } cc1101_fingerprint_type_t;
 
+/** @brief Accumulated evidence for one CC1101 likely-device category. */
 typedef struct
 {
     cc1101_fingerprint_type_t type;
@@ -39,20 +44,45 @@ typedef struct
     char label[ CC1101_FINGERPRINT_LABEL_MAX ];
 } cc1101_fingerprint_t;
 
+/** @brief Clear spectrum history, peak state, classifier state, and counts. */
 void cc1101_activity_reset( void );
+
 /** @brief Clear accumulated likely-device counts without clearing spectrum history. */
 void cc1101_activity_reset_counts( void );
+
+/**
+ * @brief Add one completed RSSI sweep to the activity model.
+ * @param a_rssi Per-bin signed RSSI values.
+ * @param a_count Number of values in a_rssi.
+ * @param a_low_khz Lower edge of the scanned range in kHz.
+ * @param a_high_khz Upper edge of the scanned range in kHz.
+ */
 void cc1101_activity_observe_sweep( const int8_t *a_rssi,
                                     size_t a_count,
                                     uint32_t a_low_khz,
                                     uint32_t a_high_khz );
-/** @brief Copy current direct RSSI levels plus slow-decay peak-hold levels. */
+
+/**
+ * @brief Copy current direct RSSI levels plus slow-decay peak-hold levels.
+ * @param a_current Destination for current normalized signal values.
+ * @param a_peak Destination for slow-decay peak-hold values.
+ * @param a_capacity Capacity of each destination array.
+ * @return Number of values copied.
+ */
 size_t cc1101_activity_levels( uint8_t *a_current,
                                uint8_t *a_peak,
                                size_t a_capacity );
-/** @brief Return the fixed likely-device rows and their cumulative counts. */
+
+/**
+ * @brief Copy the fixed likely-device rows and their cumulative counts.
+ * @param a_output Destination fingerprint array.
+ * @param a_capacity Destination capacity.
+ * @return Number of fingerprint rows copied.
+ */
 size_t cc1101_activity_fingerprints( cc1101_fingerprint_t *a_output,
                                      size_t a_capacity );
+
+/** @brief Return a stable display name for a CC1101 fingerprint category. */
 const char *cc1101_activity_fingerprint_name( cc1101_fingerprint_type_t a_type );
 
-#endif
+#endif // _RFSCOUT_CC1101_ACTIVITY_H_
