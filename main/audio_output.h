@@ -35,7 +35,10 @@ bool audio_output_play_tone( uint16_t a_frequency_hz, uint32_t a_duration_ms );
  */
 bool audio_output_play_morse( char a_character, uint16_t a_frequency_hz, uint32_t a_unit_ms );
 
-/** @brief Drop speaker commands that are queued but have not started playing yet. */
+/**
+ * @brief Drop speaker commands that are queued but have not started playing yet.
+ * @note A command already executing on the output worker is allowed to finish.
+ */
 void audio_output_cancel_pending( void );
 
 #endif // _RFSCOUT_AUDIO_OUTPUT_H_
