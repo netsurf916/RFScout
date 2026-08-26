@@ -26,6 +26,7 @@ idf_component_register(
         "thermal_view.c"
         "status_bar.c"
         "display.c"
+        "display_brightness.c"
         "ui_present.c"
         "ui.c"
         "radio_monitor.c"
