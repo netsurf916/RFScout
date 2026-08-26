@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #define CONFIG_TEMP_PATH RFSCOUT_CONFIG_PATH ".tmp"
+#define CONFIG_BACKUP_PATH RFSCOUT_CONFIG_PATH ".bak"
 #define CONFIG_BAD_PATH RFSCOUT_CONFIG_PATH ".bad"
 #define CONFIG_BRIGHTNESS_DEFAULT 70U
 #define CONFIG_MIN_VALID_EPOCH 1577836800LL
@@ -41,10 +42,8 @@ static void copy_string( char *a_destination, size_t a_capacity, const char *a_s
 }
 
 /** @brief Populate one compiled timezone option. */
-static void timezone_default( size_t a_index,
-                              const char *a_name,
-                              const char *a_label,
-                              const char *a_posix )
+static void
+timezone_default( size_t a_index, const char *a_name, const char *a_label, const char *a_posix )
 {
     device_timezone_t *zone = &config.timezones[ a_index ];
     copy_string( zone->name, sizeof( zone->name ), a_name );
@@ -96,7 +95,8 @@ static void load_apps( const cJSON *a_root )
 
     for( size_t index = 0; index < RFSCOUT_APP_COUNT; ++index )
     {
-        config.apps_enabled[ index ] = json_bool( apps, names[ index ], config.apps_enabled[ index ] );
+        config.apps_enabled[ index ] =
+            json_bool( apps, names[ index ], config.apps_enabled[ index ] );
     }
     config.apps_enabled[ RFSCOUT_APP_DEVICE ] = true;
 }
@@ -180,7 +180,8 @@ static void load_timezones( const cJSON *a_root )
     const cJSON *selected = cJSON_GetObjectItemCaseSensitive( timezone, "selected" );
     if( cJSON_IsString( selected ) && ( NULL != selected->valuestring ) )
     {
-        copy_string( config.timezone_selected, sizeof( config.timezone_selected ), selected->valuestring );
+        copy_string(
+            config.timezone_selected, sizeof( config.timezone_selected ), selected->valuestring );
     }
 }
 
@@ -222,6 +223,29 @@ static bool timezone_selected_valid( void )
     return false;
 }
 
+/** @brief Quarantine a configuration document that cannot safely be loaded. */
+static void quarantine_config( void )
+{
+    (void)unlink( CONFIG_BAD_PATH );
+    (void)rename( RFSCOUT_CONFIG_PATH, CONFIG_BAD_PATH );
+}
+
+/** @brief Recover the previous configuration after an interrupted replacement. */
+static void recover_interrupted_save( void )
+{
+    if( 0 == access( RFSCOUT_CONFIG_PATH, F_OK ) )
+    {
+        return;
+    }
+    if( 0 == access( CONFIG_BACKUP_PATH, F_OK ) )
+    {
+        if( 0 == rename( CONFIG_BACKUP_PATH, RFSCOUT_CONFIG_PATH ) )
+        {
+            ESP_LOGW( TAG, "recovered configuration after interrupted save" );
+        }
+    }
+}
+
 /** @brief Parse and apply the configuration file from SD. */
 static esp_err_t load_file( void )
 {
@@ -260,9 +284,17 @@ static esp_err_t load_file( void )
     free( buffer );
     if( NULL == root )
     {
-        (void)unlink( CONFIG_BAD_PATH );
-        (void)rename( RFSCOUT_CONFIG_PATH, CONFIG_BAD_PATH );
+        quarantine_config();
         return ESP_ERR_INVALID_RESPONSE;
+    }
+
+    const cJSON *version = cJSON_GetObjectItemCaseSensitive( root, "version" );
+    if( !cJSON_IsNumber( version ) ||
+        ( version->valueint != (int)RFSCOUT_CONFIG_SCHEMA_VERSION ) )
+    {
+        cJSON_Delete( root );
+        quarantine_config();
+        return ESP_ERR_INVALID_VERSION;
     }
 
     load_display( root );
@@ -293,8 +325,8 @@ static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_tim
 
     if( a_update_time )
     {
-        saved_time_valid = ( a_epoch >= CONFIG_MIN_VALID_EPOCH ) &&
-                           ( a_epoch <= CONFIG_MAX_VALID_EPOCH );
+        saved_time_valid =
+            ( a_epoch >= CONFIG_MIN_VALID_EPOCH ) && ( a_epoch <= CONFIG_MAX_VALID_EPOCH );
         saved_time_epoch = saved_time_valid ? a_epoch : 0;
         copy_string( saved_time_source,
                      sizeof( saved_time_source ),
@@ -337,11 +369,32 @@ static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_tim
     {
         cJSON *time = cJSON_AddObjectToObject( root, "time" );
         cJSON_AddNumberToObject( time, "epoch", (double)saved_time_epoch );
-        cJSON_AddStringToObject( time,
-                                 "source",
-                                 saved_time_source[ 0 ] ? saved_time_source : "config" );
+        cJSON_AddStringToObject(
+            time, "source", saved_time_source[ 0 ] ? saved_time_source : "config" );
     }
     return root;
+}
+
+/** @brief Replace the active configuration while retaining crash recovery. */
+static esp_err_t replace_config_file( void )
+{
+    (void)unlink( CONFIG_BACKUP_PATH );
+
+    if( ( 0 != rename( RFSCOUT_CONFIG_PATH, CONFIG_BACKUP_PATH ) ) && ( ENOENT != errno ) )
+    {
+        (void)unlink( CONFIG_TEMP_PATH );
+        return ESP_FAIL;
+    }
+
+    if( 0 != rename( CONFIG_TEMP_PATH, RFSCOUT_CONFIG_PATH ) )
+    {
+        (void)rename( CONFIG_BACKUP_PATH, RFSCOUT_CONFIG_PATH );
+        (void)unlink( CONFIG_TEMP_PATH );
+        return ESP_FAIL;
+    }
+
+    (void)unlink( CONFIG_BACKUP_PATH );
+    return ESP_OK;
 }
 
 esp_err_t device_config_init( void )
@@ -352,6 +405,7 @@ esp_err_t device_config_init( void )
         return ESP_OK;
     }
 
+    recover_interrupted_save();
     const esp_err_t result = load_file();
     if( ESP_OK == result )
     {
@@ -361,7 +415,8 @@ esp_err_t device_config_init( void )
 
     if( ESP_ERR_NOT_FOUND != result )
     {
-        ESP_LOGW( TAG, "configuration invalid; regenerating defaults: %s", esp_err_to_name( result ) );
+        ESP_LOGW(
+            TAG, "configuration invalid; regenerating defaults: %s", esp_err_to_name( result ) );
     }
     return device_config_save( false, 0, NULL );
 }
@@ -495,10 +550,5 @@ esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a
         (void)unlink( CONFIG_TEMP_PATH );
         return ESP_FAIL;
     }
-    if( 0 != rename( CONFIG_TEMP_PATH, RFSCOUT_CONFIG_PATH ) )
-    {
-        (void)unlink( CONFIG_TEMP_PATH );
-        return ESP_FAIL;
-    }
-    return ESP_OK;
+    return replace_config_file();
 }
