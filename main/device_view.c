@@ -139,31 +139,16 @@ static void render_page_one( void )
 static void render_page_two( void )
 {
     const device_config_t *config = device_config_get();
-    draw_row( 28,
-              DEVICE_ITEM_WIFI,
-              "WiFi / BT",
-              on_off( config->apps_enabled[ RFSCOUT_APP_WIFI_BT ] ) );
-    draw_row( 43,
-              DEVICE_ITEM_CC1101,
-              "CC1101",
-              on_off( config->apps_enabled[ RFSCOUT_APP_CC1101 ] ) );
-    draw_row( 58,
-              DEVICE_ITEM_NRF24,
-              "nRF24",
-              on_off( config->apps_enabled[ RFSCOUT_APP_NRF24 ] ) );
-    draw_row( 73,
-              DEVICE_ITEM_AUDIO,
-              "Audio",
-              on_off( config->apps_enabled[ RFSCOUT_APP_AUDIO ] ) );
-    draw_row( 88,
-              DEVICE_ITEM_THERMAL,
-              "Thermal",
-              on_off( config->apps_enabled[ RFSCOUT_APP_THERMAL ] ) );
+    draw_row(
+        28, DEVICE_ITEM_WIFI, "WiFi / BT", on_off( config->apps_enabled[ RFSCOUT_APP_WIFI_BT ] ) );
+    draw_row(
+        43, DEVICE_ITEM_CC1101, "CC1101", on_off( config->apps_enabled[ RFSCOUT_APP_CC1101 ] ) );
+    draw_row( 58, DEVICE_ITEM_NRF24, "nRF24", on_off( config->apps_enabled[ RFSCOUT_APP_NRF24 ] ) );
+    draw_row( 73, DEVICE_ITEM_AUDIO, "Audio", on_off( config->apps_enabled[ RFSCOUT_APP_AUDIO ] ) );
+    draw_row(
+        88, DEVICE_ITEM_THERMAL, "Thermal", on_off( config->apps_enabled[ RFSCOUT_APP_THERMAL ] ) );
     draw_row( 103, DEVICE_ITEM_LOGGING, "SD logging", on_off( config->logging_enabled ) );
-    draw_row( 118,
-              DEVICE_ITEM_SAVE,
-              "Save config",
-              storage_is_available() ? "SD" : "No SD" );
+    draw_row( 118, DEVICE_ITEM_SAVE, "Save config", storage_is_available() ? "SD" : "No SD" );
     draw_row( 133, DEVICE_ITEM_BACK, "Back", "" );
 
     char source[ 48 ];
@@ -245,8 +230,9 @@ static void adjust_timezone( int a_delta )
             break;
         }
     }
-    const size_t next = ( a_delta > 0 ) ? ( current + 1U ) % config->timezone_count
-                                        : ( current + config->timezone_count - 1U ) % config->timezone_count;
+    const size_t next = ( a_delta > 0 )
+                            ? ( current + 1U ) % config->timezone_count
+                            : ( current + config->timezone_count - 1U ) % config->timezone_count;
 
     char old_name[ RFSCOUT_TIMEZONE_NAME_MAX ];
     snprintf( old_name, sizeof( old_name ), "%s", config->timezone_selected );
@@ -303,16 +289,33 @@ static void adjust_time_field( unsigned a_item, int a_delta )
     }
 }
 
+/** @brief Return whether mktime preserved every user-edited local calendar field. */
+static bool manual_time_round_trip_valid( const struct tm *a_requested, time_t a_epoch )
+{
+    struct tm normalized;
+    if( NULL == localtime_r( &a_epoch, &normalized ) )
+    {
+        return false;
+    }
+    return ( normalized.tm_year == a_requested->tm_year ) &&
+           ( normalized.tm_mon == a_requested->tm_mon ) &&
+           ( normalized.tm_mday == a_requested->tm_mday ) &&
+           ( normalized.tm_hour == a_requested->tm_hour ) &&
+           ( normalized.tm_min == a_requested->tm_min );
+}
+
 /** @brief Commit manually edited local date/time to the authoritative system wall clock. */
 static void commit_manual_time( void )
 {
     time_t old_epoch = 0;
     const bool had_old = device_time_now( &old_epoch );
 
-    edited_time.tm_sec = 0;
-    edited_time.tm_isdst = -1;
-    const time_t new_epoch = mktime( &edited_time );
-    if( new_epoch < (time_t)1577836800 )
+    struct tm requested = edited_time;
+    requested.tm_sec = 0;
+    requested.tm_isdst = -1;
+    struct tm conversion = requested;
+    const time_t new_epoch = mktime( &conversion );
+    if( ( new_epoch < (time_t)1577836800 ) || !manual_time_round_trip_valid( &requested, new_epoch ) )
     {
         save_error = true;
         return;
@@ -323,6 +326,7 @@ static void commit_manual_time( void )
         return;
     }
 
+    edited_time = conversion;
     char old_text[ 32 ];
     char new_text[ 32 ];
     format_epoch( had_old, old_epoch, old_text, sizeof( old_text ) );
