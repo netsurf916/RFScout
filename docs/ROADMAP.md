@@ -60,7 +60,20 @@ Remaining hardware validation includes physical speaker channel, loudness, and p
 - Automate release artifact generation so releases are reproducible.
 - Prefer a release workflow that can validate the same ESP-IDF 6.x build before publishing artifacts.
 
-## 5. Audio application expansion
+## 5. Navigation and menu consistency
+
+**Status:** Planned — near term
+
+- Change the Device/global-settings application to behave as a pass-through landing screen by default rather than immediately taking ownership of the encoder.
+- Require a deliberate center-button press to enter Device settings/edit mode.
+- While the Device landing screen is not entered, encoder rotation should continue normal application navigation so simply arriving at Device does not trap the user in settings.
+- Make the Device landing screen clearly indicate that a center press enters configuration while still showing useful read-only status where appropriate.
+- Standardize all settings/action menus so **Back** is the first entry and the initial selection when a menu opens.
+- Make an accidental menu entry easy to undo: opening a menu and pressing the center button again without rotating should safely return to the live/pass-through view without changing settings.
+- Audit existing WiFi / BT, CC1101, nRF24, Audio, Device, and future application menus for the same Back-first navigation convention.
+- Keep setting changes deliberate; entering or exiting a menu should not itself mutate configuration.
+
+## 6. Audio application expansion
 
 **Status:** Planned
 
@@ -72,7 +85,7 @@ Remaining hardware validation includes physical speaker channel, loudness, and p
 - Validate the microphone/PDM/FFT path on hardware as part of the expansion.
 - After the recorder and Morse player are stable, consider tuner and DTMF-analysis features.
 
-## 6. External time-authority integrations
+## 7. External time-authority integrations
 
 **Status:** Planned
 
@@ -85,7 +98,7 @@ Remaining hardware validation includes physical speaker channel, loudness, and p
 - Preserve and display the specific authority source through the model established in PR #20.
 - Define explicit authority-transition rules so a newly available source never silently overwrites another valid clock.
 
-## 7. Passive nRF24 Enhanced ShockBurst packet discovery and validation
+## 8. Passive nRF24 Enhanced ShockBurst packet discovery and validation
 
 **Status:** Planned
 
@@ -95,7 +108,7 @@ Remaining hardware validation includes physical speaker channel, loudness, and p
 - Feed validated observations into the existing nRF24 packet-classifier infrastructure.
 - Preserve watchdog-safe scanning and existing application lifecycle/resource ownership.
 
-## 8. nRF24 classifier refinement and time-windowed radio counts
+## 9. nRF24 classifier refinement and time-windowed radio counts
 
 **Status:** Planned
 
@@ -104,7 +117,7 @@ Remaining hardware validation includes physical speaker channel, loudness, and p
 - Replace or supplement session-only category counts with useful time-windowed activity counts.
 - Apply the same time-window model to other radio views where it improves situational awareness.
 
-## 9. CC1101 burst timing and modulation analysis
+## 10. CC1101 burst timing and modulation analysis
 
 **Status:** Planned
 
@@ -112,7 +125,7 @@ Remaining hardware validation includes physical speaker channel, loudness, and p
 - Explore conservative modulation/behavior inference from receive-only measurements.
 - Keep classifications evidence-based and avoid presenting heuristic categories as decoded product identities.
 
-## 10. Drill-down views, classifier controls, and structured captures
+## 11. Drill-down views, classifier controls, and structured captures
 
 **Status:** Planned
 
@@ -121,7 +134,7 @@ Remaining hardware validation includes physical speaker channel, loudness, and p
 - Add structured SD exports/captures for analysis outside RFScout.
 - Keep high-rate capture paths asynchronous so storage latency does not block radio acquisition.
 
-## 11. Additional optional hardware and applications
+## 12. Additional optional hardware and applications
 
 **Status:** Longer term
 
