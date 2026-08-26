@@ -14,20 +14,23 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 #define CONFIG_TEMP_PATH RFSCOUT_CONFIG_PATH ".tmp"
 #define CONFIG_BAD_PATH RFSCOUT_CONFIG_PATH ".bad"
 #define CONFIG_BRIGHTNESS_DEFAULT 70U
+#define CONFIG_MIN_VALID_EPOCH 1577836800LL
+#define CONFIG_MAX_VALID_EPOCH 4102444800LL
 
 static const char *TAG = "device_config";
 static device_config_t config;
-static bool loaded_from_sd;
 static bool saved_time_valid;
 static int64_t saved_time_epoch;
 static char saved_time_source[ 24 ];
 
+/** @brief Copy a bounded configuration string. */
 static void copy_string( char *a_destination, size_t a_capacity, const char *a_source )
 {
     if( ( NULL == a_destination ) || ( 0U == a_capacity ) )
@@ -37,6 +40,7 @@ static void copy_string( char *a_destination, size_t a_capacity, const char *a_s
     snprintf( a_destination, a_capacity, "%s", ( NULL != a_source ) ? a_source : "" );
 }
 
+/** @brief Populate one compiled timezone option. */
 static void timezone_default( size_t a_index,
                               const char *a_name,
                               const char *a_label,
@@ -48,6 +52,7 @@ static void timezone_default( size_t a_index,
     copy_string( zone->posix, sizeof( zone->posix ), a_posix );
 }
 
+/** @brief Restore all compiled configuration defaults. */
 static void set_defaults( void )
 {
     memset( &config, 0, sizeof( config ) );
@@ -59,24 +64,26 @@ static void set_defaults( void )
     {
         config.apps_enabled[ index ] = true;
     }
+    config.apps_enabled[ RFSCOUT_APP_DEVICE ] = true;
 
     config.timezone_count = 2U;
     timezone_default( 0U, "America/Chicago", "US Central", "CST6CDT,M3.2.0,M11.1.0" );
     timezone_default( 1U, "UTC", "UTC", "UTC0" );
     copy_string( config.timezone_selected, sizeof( config.timezone_selected ), "America/Chicago" );
 
-    loaded_from_sd = false;
     saved_time_valid = false;
     saved_time_epoch = 0;
     saved_time_source[ 0 ] = '\0';
 }
 
+/** @brief Read one optional JSON boolean, retaining a default on type mismatch. */
 static bool json_bool( const cJSON *a_parent, const char *a_name, bool a_default )
 {
     const cJSON *item = cJSON_GetObjectItemCaseSensitive( a_parent, a_name );
     return cJSON_IsBool( item ) ? cJSON_IsTrue( item ) : a_default;
 }
 
+/** @brief Apply validated application enablement overrides. */
 static void load_apps( const cJSON *a_root )
 {
     static const char *names[ RFSCOUT_APP_COUNT ] = {
@@ -94,6 +101,7 @@ static void load_apps( const cJSON *a_root )
     config.apps_enabled[ RFSCOUT_APP_DEVICE ] = true;
 }
 
+/** @brief Apply validated display preference overrides. */
 static void load_display( const cJSON *a_root )
 {
     const cJSON *display = cJSON_GetObjectItemCaseSensitive( a_root, "display" );
@@ -111,6 +119,7 @@ static void load_display( const cJSON *a_root )
     config.clock_24h = json_bool( display, "clock_24h", config.clock_24h );
 }
 
+/** @brief Apply validated logging preference overrides. */
 static void load_logging( const cJSON *a_root )
 {
     const cJSON *logging = cJSON_GetObjectItemCaseSensitive( a_root, "logging" );
@@ -120,6 +129,7 @@ static void load_logging( const cJSON *a_root )
     }
 }
 
+/** @brief Apply validated timezone options and selection. */
 static void load_timezones( const cJSON *a_root )
 {
     const cJSON *timezone = cJSON_GetObjectItemCaseSensitive( a_root, "timezone" );
@@ -128,53 +138,53 @@ static void load_timezones( const cJSON *a_root )
         return;
     }
 
+    const cJSON *options = cJSON_GetObjectItemCaseSensitive( timezone, "options" );
+    if( cJSON_IsArray( options ) )
+    {
+        size_t count = 0U;
+        const cJSON *entry = NULL;
+        cJSON_ArrayForEach( entry, options )
+        {
+            if( count >= RFSCOUT_TIMEZONE_MAX )
+            {
+                break;
+            }
+            const cJSON *name = cJSON_GetObjectItemCaseSensitive( entry, "name" );
+            const cJSON *label = cJSON_GetObjectItemCaseSensitive( entry, "label" );
+            const cJSON *posix = cJSON_GetObjectItemCaseSensitive( entry, "posix" );
+            if( !cJSON_IsString( name ) || !cJSON_IsString( label ) || !cJSON_IsString( posix ) ||
+                ( NULL == name->valuestring ) || ( NULL == label->valuestring ) ||
+                ( NULL == posix->valuestring ) || ( '\0' == name->valuestring[ 0 ] ) ||
+                ( '\0' == posix->valuestring[ 0 ] ) )
+            {
+                continue;
+            }
+
+            copy_string( config.timezones[ count ].name,
+                         sizeof( config.timezones[ count ].name ),
+                         name->valuestring );
+            copy_string( config.timezones[ count ].label,
+                         sizeof( config.timezones[ count ].label ),
+                         label->valuestring );
+            copy_string( config.timezones[ count ].posix,
+                         sizeof( config.timezones[ count ].posix ),
+                         posix->valuestring );
+            ++count;
+        }
+        if( count > 0U )
+        {
+            config.timezone_count = count;
+        }
+    }
+
     const cJSON *selected = cJSON_GetObjectItemCaseSensitive( timezone, "selected" );
     if( cJSON_IsString( selected ) && ( NULL != selected->valuestring ) )
     {
         copy_string( config.timezone_selected, sizeof( config.timezone_selected ), selected->valuestring );
     }
-
-    const cJSON *options = cJSON_GetObjectItemCaseSensitive( timezone, "options" );
-    if( !cJSON_IsArray( options ) )
-    {
-        return;
-    }
-
-    size_t count = 0U;
-    const cJSON *entry = NULL;
-    cJSON_ArrayForEach( entry, options )
-    {
-        if( count >= RFSCOUT_TIMEZONE_MAX )
-        {
-            break;
-        }
-        const cJSON *name = cJSON_GetObjectItemCaseSensitive( entry, "name" );
-        const cJSON *label = cJSON_GetObjectItemCaseSensitive( entry, "label" );
-        const cJSON *posix = cJSON_GetObjectItemCaseSensitive( entry, "posix" );
-        if( !cJSON_IsString( name ) || !cJSON_IsString( label ) || !cJSON_IsString( posix ) ||
-            ( NULL == name->valuestring ) || ( NULL == label->valuestring ) ||
-            ( NULL == posix->valuestring ) || ( '\0' == name->valuestring[ 0 ] ) ||
-            ( '\0' == posix->valuestring[ 0 ] ) )
-        {
-            continue;
-        }
-        copy_string( config.timezones[ count ].name,
-                     sizeof( config.timezones[ count ].name ),
-                     name->valuestring );
-        copy_string( config.timezones[ count ].label,
-                     sizeof( config.timezones[ count ].label ),
-                     label->valuestring );
-        copy_string( config.timezones[ count ].posix,
-                     sizeof( config.timezones[ count ].posix ),
-                     posix->valuestring );
-        ++count;
-    }
-    if( count > 0U )
-    {
-        config.timezone_count = count;
-    }
 }
 
+/** @brief Read an optional saved hard-power wall-clock checkpoint. */
 static void load_saved_time( const cJSON *a_root )
 {
     const cJSON *time = cJSON_GetObjectItemCaseSensitive( a_root, "time" );
@@ -182,20 +192,24 @@ static void load_saved_time( const cJSON *a_root )
     {
         return;
     }
+
     const cJSON *epoch = cJSON_GetObjectItemCaseSensitive( time, "epoch" );
-    const cJSON *source = cJSON_GetObjectItemCaseSensitive( time, "source" );
-    if( cJSON_IsNumber( epoch ) && ( epoch->valuedouble >= 1577836800.0 ) &&
-        ( epoch->valuedouble <= 4102444800.0 ) )
+    if( !cJSON_IsNumber( epoch ) || ( epoch->valuedouble < (double)CONFIG_MIN_VALID_EPOCH ) ||
+        ( epoch->valuedouble > (double)CONFIG_MAX_VALID_EPOCH ) )
     {
-        saved_time_epoch = (int64_t)epoch->valuedouble;
-        saved_time_valid = true;
-        if( cJSON_IsString( source ) && ( NULL != source->valuestring ) )
-        {
-            copy_string( saved_time_source, sizeof( saved_time_source ), source->valuestring );
-        }
+        return;
+    }
+
+    saved_time_epoch = (int64_t)epoch->valuedouble;
+    saved_time_valid = true;
+    const cJSON *source = cJSON_GetObjectItemCaseSensitive( time, "source" );
+    if( cJSON_IsString( source ) && ( NULL != source->valuestring ) )
+    {
+        copy_string( saved_time_source, sizeof( saved_time_source ), source->valuestring );
     }
 }
 
+/** @brief Ensure the selected timezone names a usable configured option. */
 static bool timezone_selected_valid( void )
 {
     for( size_t index = 0; index < config.timezone_count; ++index )
@@ -208,6 +222,7 @@ static bool timezone_selected_valid( void )
     return false;
 }
 
+/** @brief Parse and apply the configuration file from SD. */
 static esp_err_t load_file( void )
 {
     FILE *file = fopen( RFSCOUT_CONFIG_PATH, "rb" );
@@ -260,15 +275,31 @@ static esp_err_t load_file( void )
     if( !timezone_selected_valid() )
     {
         copy_string( config.timezone_selected, sizeof( config.timezone_selected ), "UTC" );
+        if( !timezone_selected_valid() )
+        {
+            copy_string( config.timezone_selected,
+                         sizeof( config.timezone_selected ),
+                         config.timezones[ 0 ].name );
+        }
     }
-    loaded_from_sd = true;
     return ESP_OK;
 }
 
-static cJSON *build_json( bool a_include_time, int64_t a_epoch, const char *a_time_source )
+/** @brief Build the canonical JSON representation for the current configuration. */
+static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_time_source )
 {
     static const char *app_names[ RFSCOUT_APP_COUNT ] = {
         "wifi_bt", "cc1101", "nrf24", "audio", "thermal", "device" };
+
+    if( a_update_time )
+    {
+        saved_time_valid = ( a_epoch >= CONFIG_MIN_VALID_EPOCH ) &&
+                           ( a_epoch <= CONFIG_MAX_VALID_EPOCH );
+        saved_time_epoch = saved_time_valid ? a_epoch : 0;
+        copy_string( saved_time_source,
+                     sizeof( saved_time_source ),
+                     saved_time_valid && ( NULL != a_time_source ) ? a_time_source : "" );
+    }
 
     cJSON *root = cJSON_CreateObject();
     if( NULL == root )
@@ -302,11 +333,13 @@ static cJSON *build_json( bool a_include_time, int64_t a_epoch, const char *a_ti
         cJSON_AddItemToArray( options, entry );
     }
 
-    if( a_include_time && ( a_epoch >= 1577836800LL ) )
+    if( saved_time_valid )
     {
         cJSON *time = cJSON_AddObjectToObject( root, "time" );
-        cJSON_AddNumberToObject( time, "epoch", (double)a_epoch );
-        cJSON_AddStringToObject( time, "source", ( NULL != a_time_source ) ? a_time_source : "config" );
+        cJSON_AddNumberToObject( time, "epoch", (double)saved_time_epoch );
+        cJSON_AddStringToObject( time,
+                                 "source",
+                                 saved_time_source[ 0 ] ? saved_time_source : "config" );
     }
     return root;
 }
@@ -318,18 +351,19 @@ esp_err_t device_config_init( void )
     {
         return ESP_OK;
     }
+
     const esp_err_t result = load_file();
-    if( ESP_ERR_NOT_FOUND == result )
+    if( ESP_OK == result )
     {
-        return device_config_save( false, 0, NULL );
+        ESP_LOGI( TAG, "loaded %s", RFSCOUT_CONFIG_PATH );
+        return ESP_OK;
     }
-    if( ESP_OK != result )
+
+    if( ESP_ERR_NOT_FOUND != result )
     {
-        ESP_LOGW( TAG, "configuration invalid; using defaults: %s", esp_err_to_name( result ) );
-        return device_config_save( false, 0, NULL );
+        ESP_LOGW( TAG, "configuration invalid; regenerating defaults: %s", esp_err_to_name( result ) );
     }
-    ESP_LOGI( TAG, "loaded %s", RFSCOUT_CONFIG_PATH );
-    return ESP_OK;
+    return device_config_save( false, 0, NULL );
 }
 
 const device_config_t *device_config_get( void )
@@ -420,13 +454,14 @@ bool device_config_saved_time( int64_t *a_epoch, const char **a_source )
     return true;
 }
 
-esp_err_t device_config_save( bool a_include_time, int64_t a_epoch, const char *a_time_source )
+esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a_time_source )
 {
     if( !storage_is_available() )
     {
         return ESP_ERR_INVALID_STATE;
     }
-    cJSON *root = build_json( a_include_time, a_epoch, a_time_source );
+
+    cJSON *root = build_json( a_update_time, a_epoch, a_time_source );
     if( NULL == root )
     {
         return ESP_ERR_NO_MEM;
@@ -445,10 +480,16 @@ esp_err_t device_config_save( bool a_include_time, int64_t a_epoch, const char *
         return ESP_FAIL;
     }
     const size_t length = strlen( text );
-    const bool ok = ( length == fwrite( text, 1U, length, file ) ) &&
-                    ( EOF != fputc( '\n', file ) ) && ( 0 == fflush( file ) ) &&
-                    ( 0 == fsync( fileno( file ) ) ) && ( 0 == fclose( file ) );
+    bool ok = ( length == fwrite( text, 1U, length, file ) );
+    ok = ok && ( EOF != fputc( '\n', file ) );
+    ok = ok && ( 0 == fflush( file ) );
+    ok = ok && ( 0 == fsync( fileno( file ) ) );
+    if( 0 != fclose( file ) )
+    {
+        ok = false;
+    }
     free( text );
+
     if( !ok )
     {
         (void)unlink( CONFIG_TEMP_PATH );
@@ -459,6 +500,5 @@ esp_err_t device_config_save( bool a_include_time, int64_t a_epoch, const char *
         (void)unlink( CONFIG_TEMP_PATH );
         return ESP_FAIL;
     }
-    loaded_from_sd = true;
     return ESP_OK;
 }
