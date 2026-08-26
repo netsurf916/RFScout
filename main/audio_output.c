@@ -99,6 +99,21 @@ write_segment( bool a_tone, uint16_t a_frequency_hz, uint32_t a_duration_ms, flo
     return true;
 }
 
+/**
+ * @brief Return enough silence to turn over the complete TX DMA ring.
+ *
+ * ESP-IDF 6.1 does not expose a separate TX-drain primitive for the channel API. Writing more
+ * than one complete DMA ring of silence forces every previously queued audible sample to be
+ * transmitted before the final silence write can complete.
+ */
+static uint32_t dma_drain_silence_ms( void )
+{
+    const uint32_t drain_frames =
+        ( AUDIO_OUTPUT_DMA_DESC_NUM + 1U ) * AUDIO_OUTPUT_DMA_FRAME_NUM;
+    return ( drain_frames * 1000U + AUDIO_OUTPUT_SAMPLE_RATE - 1U ) /
+           AUDIO_OUTPUT_SAMPLE_RATE;
+}
+
 /** @brief Play one queued tone command on the worker task. */
 static void play_tone( const audio_output_command_t *a_command )
 {
@@ -109,8 +124,12 @@ static void play_tone( const audio_output_command_t *a_command )
         return;
     }
 
+    const uint32_t drain_ms = dma_drain_silence_ms();
+    const uint32_t trailing_ms = ( drain_ms > AUDIO_OUTPUT_TRAILING_SILENCE_MS )
+                                     ? drain_ms
+                                     : AUDIO_OUTPUT_TRAILING_SILENCE_MS;
     (void)write_segment( true, a_command->frequency_hz, a_command->duration_ms, &phase );
-    (void)write_segment( false, a_command->frequency_hz, AUDIO_OUTPUT_TRAILING_SILENCE_MS, &phase );
+    (void)write_segment( false, a_command->frequency_hz, trailing_ms, &phase );
     (void)i2s_channel_disable( tx_channel );
 }
 
@@ -147,7 +166,11 @@ static void play_morse( const audio_output_command_t *a_command )
         }
     }
 
-    (void)write_segment( false, a_command->frequency_hz, 3U * a_command->duration_ms, &phase );
+    const uint32_t character_gap_ms = 3U * a_command->duration_ms;
+    const uint32_t drain_ms = dma_drain_silence_ms();
+    const uint32_t trailing_ms =
+        ( character_gap_ms > drain_ms ) ? character_gap_ms : drain_ms;
+    (void)write_segment( false, a_command->frequency_hz, trailing_ms, &phase );
     (void)i2s_channel_disable( tx_channel );
 }
 
@@ -273,4 +296,12 @@ bool audio_output_play_morse( char a_character, uint16_t a_frequency_hz, uint32_
                                              .duration_ms = a_unit_ms,
                                              .character = a_character };
     return pdTRUE == xQueueSend( command_queue, &command, 0U );
+}
+
+void audio_output_cancel_pending( void )
+{
+    if( initialized && ( NULL != command_queue ) )
+    {
+        (void)xQueueReset( command_queue );
+    }
 }

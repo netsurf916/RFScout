@@ -51,6 +51,10 @@ void alert_set_mode( rfscout_alert_mode_t a_mode )
     if( a_mode < RFSCOUT_ALERT_MODE_COUNT )
     {
         mode = a_mode;
+        if( RFSCOUT_ALERT_OFF == mode )
+        {
+            audio_output_cancel_pending();
+        }
     }
 }
 
