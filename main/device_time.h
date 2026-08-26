@@ -27,11 +27,21 @@ typedef enum
     RFSCOUT_TIME_SOURCE_NTP
 } rfscout_time_source_t;
 
-/** @brief Initialize timezone and optionally restore system wall time from configuration. */
+/**
+ * @brief Initialize timezone and optionally restore system wall time from configuration.
+ * @note A restored clock preserves the original authority token and is separately marked as saved state.
+ */
 esp_err_t device_time_init( void );
 
-/** @brief Set authoritative wall time from a supplied epoch and source. */
-esp_err_t device_time_set_epoch( time_t a_epoch, rfscout_time_source_t a_source, const char *a_detail );
+/**
+ * @brief Set authoritative wall time from a supplied epoch and source.
+ * @param a_epoch UTC epoch seconds.
+ * @param a_source Authority that supplied the time.
+ * @param a_detail Optional source detail, such as `rtc:ds3231`.
+ */
+esp_err_t device_time_set_epoch( time_t a_epoch,
+                                 rfscout_time_source_t a_source,
+                                 const char *a_detail );
 
 /** @brief Return current epoch when wall time is valid. */
 bool device_time_now( time_t *a_epoch );
@@ -39,7 +49,7 @@ bool device_time_now( time_t *a_epoch );
 /** @brief Return the source most recently used to establish wall time. */
 rfscout_time_source_t device_time_source( void );
 
-/** @brief Return source detail such as RTC model or GPS. */
+/** @brief Return source detail such as an RTC model token. */
 const char *device_time_source_detail( void );
 
 /** @brief Return a stable display label for the current time source. */
