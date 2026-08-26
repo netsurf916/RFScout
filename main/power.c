@@ -9,6 +9,7 @@
 
 #include "battery.h"
 #include "board.h"
+#include "device_time.h"
 #include "log_writer.h"
 #include "storage.h"
 
@@ -29,8 +30,8 @@ static int64_t raw_changed_us;
 static int64_t pressed_since_us;
 static power_status_t status;
 
-/** @brief Stop logging and unmount storage only after the writer is quiescent. */
-static bool prepare_storage_for_power_state( void )
+/** @brief Stop logging, optionally checkpoint wall time, and unmount storage. */
+static bool prepare_storage_for_power_state( bool a_checkpoint_time )
 {
     if( !storage_is_available() )
     {
@@ -41,6 +42,15 @@ static bool prepare_storage_for_power_state( void )
     {
         ESP_LOGW( TAG, "storage remains mounted because logger did not stop" );
         return false;
+    }
+
+    if( a_checkpoint_time )
+    {
+        const esp_err_t checkpoint = device_time_checkpoint();
+        if( ESP_OK != checkpoint )
+        {
+            ESP_LOGW( TAG, "wall-clock checkpoint failed: %s", esp_err_to_name( checkpoint ) );
+        }
     }
 
     storage_shutdown();
@@ -66,7 +76,7 @@ static void restore_storage_after_failed_power_off( void )
 static void enter_sleep( void )
 {
     ESP_LOGI( TAG, "entering deep sleep; user key wakes device" );
-    if( !prepare_storage_for_power_state() )
+    if( !prepare_storage_for_power_state( false ) )
     {
         ESP_LOGW( TAG, "sleep cancelled because SD logger is still active" );
         return;
@@ -146,7 +156,7 @@ void power_poll( void )
         status.seconds_remaining = 0U;
         ESP_LOGI( TAG, "user key held for 3 seconds; requesting power off" );
 
-        if( !prepare_storage_for_power_state() )
+        if( !prepare_storage_for_power_state( true ) )
         {
             status.state = POWER_HOLD_IDLE;
             return;
