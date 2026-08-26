@@ -47,8 +47,7 @@ typedef struct
     uint16_t count;
 } brand_count_t;
 
-static const surveillance_signature_id_t surveillance_rows[] =
-{
+static const surveillance_signature_id_t surveillance_rows[] = {
     SURVEILLANCE_SIGNATURE_FLOCK,
     SURVEILLANCE_SIGNATURE_RAVEN,
     SURVEILLANCE_SIGNATURE_AXON,
@@ -76,8 +75,7 @@ static void add_brand( const char *a_name )
     size_t slot = RFSCOUT_DEVICE_CAPACITY;
     for( size_t i = 0; i < RFSCOUT_DEVICE_CAPACITY; ++i )
     {
-        if( ( 0U != brands[ i ].count ) &&
-            ( 0 == strcmp( brands[ i ].name, a_name ) ) )
+        if( ( 0U != brands[ i ].count ) && ( 0 == strcmp( brands[ i ].name, a_name ) ) )
         {
             slot = i;
             break;
@@ -98,8 +96,7 @@ static void add_brand( const char *a_name )
     }
     ++brands[ slot ].count;
 
-    while( ( slot > 0U ) &&
-           ( brands[ slot ].count > brands[ slot - 1U ].count ) )
+    while( ( slot > 0U ) && ( brands[ slot ].count > brands[ slot - 1U ].count ) )
     {
         const brand_count_t temporary = brands[ slot - 1U ];
         brands[ slot - 1U ] = brands[ slot ];
@@ -119,15 +116,16 @@ static void draw_unknown_row( size_t a_unknown_count )
 static void draw_surveillance_rows( const uint16_t *a_signature_counts )
 {
     int y = UI_LIST_START_Y;
-    for( size_t row = 0;
-         row < sizeof( surveillance_rows ) / sizeof( surveillance_rows[ 0 ] );
+    for( size_t row = 0; row < sizeof( surveillance_rows ) / sizeof( surveillance_rows[ 0 ] );
          ++row )
     {
         const surveillance_signature_id_t signature = surveillance_rows[ row ];
         const uint16_t count = a_signature_counts[ signature ];
         const uint16_t color = ( 0U == count ) ? COLOR_GRAY : COLOR_RED;
         char line[ 32 ];
-        snprintf( line, sizeof( line ), "%-*.*s %3u",
+        snprintf( line,
+                  sizeof( line ),
+                  "%-*.*s %3u",
                   UI_SURVEILLANCE_LABEL_WIDTH,
                   UI_SURVEILLANCE_LABEL_WIDTH,
                   surveillance_signature_label( signature ),
@@ -147,21 +145,27 @@ static void render_summary( void )
     memset( brands, 0, RFSCOUT_DEVICE_CAPACITY * sizeof( *brands ) );
     uint16_t signature_counts[ SURVEILLANCE_SIGNATURE_COUNT ] = { 0 };
     const size_t device_count = observation_store_snapshot( snapshot, RFSCOUT_DEVICE_CAPACITY );
-    const size_t surveillance_count = surveillance_history_signature_counts( signature_counts, SURVEILLANCE_SIGNATURE_COUNT );
+    const size_t surveillance_count =
+        surveillance_history_signature_counts( signature_counts, SURVEILLANCE_SIGNATURE_COUNT );
     size_t wifi_count = 0;
     size_t ble_count = 0;
     size_t unknown_count = 0;
 
     for( size_t i = 0; i < device_count; ++i )
     {
-        if( 0U != ( snapshot[ i ].source_mask & RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) ) ++wifi_count;
-        if( 0U != ( snapshot[ i ].source_mask & RF_SOURCE_BIT( RF_SOURCE_BLE ) ) ) ++ble_count;
-        if( '\0' == snapshot[ i ].vendor[ 0 ] ) ++unknown_count;
-        else add_brand( snapshot[ i ].vendor );
+        if( 0U != ( snapshot[ i ].source_mask & RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) )
+            ++wifi_count;
+        if( 0U != ( snapshot[ i ].source_mask & RF_SOURCE_BIT( RF_SOURCE_BLE ) ) )
+            ++ble_count;
+        if( '\0' == snapshot[ i ].vendor[ 0 ] )
+            ++unknown_count;
+        else
+            add_brand( snapshot[ i ].vendor );
     }
 
     size_t brand_count = 0;
-    while( ( brand_count < UI_MAX_KNOWN_BRANDS ) && ( 0U != brands[ brand_count ].count ) ) ++brand_count;
+    while( ( brand_count < UI_MAX_KNOWN_BRANDS ) && ( 0U != brands[ brand_count ].count ) )
+        ++brand_count;
 
     display_clear( COLOR_BLACK );
     display_draw_text( 6, 5, "WIFI / BT", COLOR_SUBDUED_TEAL, 2 );
@@ -169,30 +173,31 @@ static void render_summary( void )
     status_bar_draw();
 
     char line[ 64 ];
-    snprintf( line, sizeof( line ), "DEV %u   WIFI %u   BLE %u",
-              (unsigned)device_count, (unsigned)wifi_count, (unsigned)ble_count );
+    snprintf( line,
+              sizeof( line ),
+              "DEV %u   WIFI %u   BLE %u",
+              (unsigned)device_count,
+              (unsigned)wifi_count,
+              (unsigned)ble_count );
     display_draw_text( 6, 25, line, COLOR_WHITE, 1 );
 
     snprintf( line, sizeof( line ), "SURVEILLANCE %u", (unsigned)surveillance_count );
-    display_draw_text( 210, 25, line,
-                       ( 0U == surveillance_count ) ? COLOR_GRAY : COLOR_RED, 1 );
+    display_draw_text( 210, 25, line, ( 0U == surveillance_count ) ? COLOR_GRAY : COLOR_RED, 1 );
 
     display_fill_rect( 5, 36, 310, 1, COLOR_GRAY );
-    display_fill_rect( UI_COLUMN_DIVIDER_X, 36, 1,
-                       RFSCOUT_DISPLAY_HEIGHT - 36, COLOR_GRAY );
+    display_fill_rect( UI_COLUMN_DIVIDER_X, 36, 1, RFSCOUT_DISPLAY_HEIGHT - 36, COLOR_GRAY );
 
     int y = UI_LIST_START_Y;
     size_t attention_rows = 0;
     for( size_t i = 0; i < brand_count; ++i )
     {
-        snprintf( line, sizeof( line ), "%-27.27s %3u",
-                  brands[ i ].name, (unsigned)brands[ i ].count );
-        const bool highlight =
-            ( brands[ i ].count > UI_BRAND_ATTENTION_THRESHOLD ) &&
-            ( attention_rows < UI_MAX_ATTENTION_ROWS );
-        if( highlight ) ++attention_rows;
-        display_draw_text( 6, y, line,
-                           highlight ? COLOR_YELLOW : COLOR_CYAN, 1 );
+        snprintf(
+            line, sizeof( line ), "%-27.27s %3u", brands[ i ].name, (unsigned)brands[ i ].count );
+        const bool highlight = ( brands[ i ].count > UI_BRAND_ATTENTION_THRESHOLD ) &&
+                               ( attention_rows < UI_MAX_ATTENTION_ROWS );
+        if( highlight )
+            ++attention_rows;
+        display_draw_text( 6, y, line, highlight ? COLOR_YELLOW : COLOR_CYAN, 1 );
         y += UI_LIST_ROW_HEIGHT;
     }
 
@@ -207,12 +212,10 @@ static void render_summary( void )
 
 esp_err_t ui_init( void )
 {
-    snapshot = heap_caps_calloc( RFSCOUT_DEVICE_CAPACITY,
-                                 sizeof( *snapshot ),
-                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
-    brands = heap_caps_calloc( RFSCOUT_DEVICE_CAPACITY,
-                               sizeof( *brands ),
-                               MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
+    snapshot = heap_caps_calloc(
+        RFSCOUT_DEVICE_CAPACITY, sizeof( *snapshot ), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
+    brands = heap_caps_calloc(
+        RFSCOUT_DEVICE_CAPACITY, sizeof( *brands ), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
     if( ( NULL == snapshot ) || ( NULL == brands ) )
     {
         heap_caps_free( snapshot );
@@ -239,7 +242,8 @@ esp_err_t ui_init( void )
 void ui_poll( void )
 {
     const int64_t now_us = esp_timer_get_time();
-    if( ( now_us - last_refresh_us ) < UI_REFRESH_INTERVAL_US ) return;
+    if( ( now_us - last_refresh_us ) < UI_REFRESH_INTERVAL_US )
+        return;
     last_refresh_us = now_us;
     render_summary();
 }
