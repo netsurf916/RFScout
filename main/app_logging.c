@@ -31,7 +31,7 @@ static bool initialized;
 static const char *app_name( rfscout_app_id_t a_app )
 {
     static const char *names[ RFSCOUT_APP_COUNT ] = {
-        "WIFI_BT", "CC1101", "NRF24", "AUDIO", "THERMAL" };
+        "WIFI_BT", "CC1101", "NRF24", "AUDIO", "THERMAL", "DEVICE" };
 
     return ( a_app < RFSCOUT_APP_COUNT ) ? names[ a_app ] : "UNKNOWN";
 }
@@ -100,6 +100,7 @@ static void write_periodic_record( rfscout_app_id_t a_app )
             snprintf( detail, sizeof( detail ), "detected=%u", mlx90640_is_detected() ? 1U : 0U );
             break;
 
+        case RFSCOUT_APP_DEVICE:
         default:
             return;
     }
