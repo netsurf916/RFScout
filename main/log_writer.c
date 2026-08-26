@@ -221,7 +221,7 @@ static void close_segment( void )
         return;
     if( 0 != fflush( active_file ) )
         mark_io_error( "log flush" );
-    if( 0 != fsync( fileno( active_file ) ) )
+    if( 0 != fsync( fileno( active_file ) )
         mark_io_error( "log sync" );
     if( 0 != fclose( active_file ) )
         mark_io_error( "log close" );
