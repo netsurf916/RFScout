@@ -8,6 +8,7 @@
 #include "display.h"
 
 #include "board.h"
+#include "power.h"
 
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
@@ -19,12 +20,16 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 #define DISPLAY_SPI_HOST SPI2_HOST
 #define DISPLAY_PIXEL_COUNT ( RFSCOUT_DISPLAY_WIDTH * RFSCOUT_DISPLAY_HEIGHT )
 #define DISPLAY_DMA_ROWS 10
 #define DISPLAY_DMA_PIXEL_COUNT ( RFSCOUT_DISPLAY_WIDTH * DISPLAY_DMA_ROWS )
+#define COLOR_BLACK 0x0000U
+#define COLOR_YELLOW 0xFFE0U
+#define COLOR_RED 0xF800U
 
 static const char *TAG = "display";
 static esp_lcd_panel_handle_t panel;
@@ -86,6 +91,37 @@ static void draw_character( int a_x, int a_y, char a_character, uint16_t a_color
                                (int)a_scale, (int)a_scale, a_color );
         }
     }
+}
+
+/** @brief Draw the global hold-to-power-off overlay above the active application framebuffer. */
+static void draw_power_overlay( void )
+{
+    power_status_t status;
+    power_get_status( &status );
+    if( POWER_HOLD_IDLE == status.state )
+    {
+        return;
+    }
+
+    display_fill_rect( 42, 50, 236, 70, COLOR_BLACK );
+    display_fill_rect( 42, 50, 236, 2, COLOR_RED );
+    display_fill_rect( 42, 118, 236, 2, COLOR_RED );
+    display_fill_rect( 42, 50, 2, 70, COLOR_RED );
+    display_fill_rect( 276, 50, 2, 70, COLOR_RED );
+
+    if( POWER_HOLD_SHUTDOWN == status.state )
+    {
+        display_draw_text( 91, 77, "POWERING OFF...", COLOR_RED, 2 );
+        return;
+    }
+
+    display_draw_text( 69, 63, "HOLD TO POWER OFF", COLOR_YELLOW, 2 );
+    char countdown[ 4 ];
+    snprintf( countdown,
+              sizeof( countdown ),
+              "%u",
+              (unsigned)status.seconds_remaining );
+    display_draw_text( 150, 88, countdown, COLOR_RED, 3 );
 }
 
 esp_err_t display_init( void )
@@ -239,6 +275,8 @@ esp_err_t display_present( void )
     {
         return ESP_ERR_INVALID_STATE;
     }
+
+    draw_power_overlay();
 
     for( int y = 0; y < RFSCOUT_DISPLAY_HEIGHT; y += DISPLAY_DMA_ROWS )
     {
