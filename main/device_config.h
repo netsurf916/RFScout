@@ -14,6 +14,7 @@
 #include "esp_err.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define RFSCOUT_CONFIG_PATH "/sdcard/rfscout.json"
@@ -68,7 +69,10 @@ esp_err_t device_config_set_timezone( const char *a_name );
 /** @brief Return the selected timezone definition or NULL when unavailable. */
 const device_timezone_t *device_config_timezone( void );
 
-/** @brief Atomically persist current preferences and supplied wall-clock bootstrap state to SD. */
+/** @brief Return saved cold-boot wall-clock state loaded from configuration. */
+bool device_config_saved_time( int64_t *a_epoch, const char **a_source );
+
+/** @brief Atomically persist current preferences and optional wall-clock bootstrap state to SD. */
 esp_err_t device_config_save( bool a_include_time, int64_t a_epoch, const char *a_time_source );
 
 #endif // _RFSCOUT_DEVICE_CONFIG_H_
