@@ -39,9 +39,8 @@ esp_err_t device_time_init( void );
  * @param a_source Authority that supplied the time.
  * @param a_detail Optional source detail, such as `rtc:ds3231`.
  */
-esp_err_t device_time_set_epoch( time_t a_epoch,
-                                 rfscout_time_source_t a_source,
-                                 const char *a_detail );
+esp_err_t
+device_time_set_epoch( time_t a_epoch, rfscout_time_source_t a_source, const char *a_detail );
 
 /** @brief Return current epoch when wall time is valid. */
 bool device_time_now( time_t *a_epoch );
