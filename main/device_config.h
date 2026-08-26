@@ -72,7 +72,12 @@ const device_timezone_t *device_config_timezone( void );
 /** @brief Return saved cold-boot wall-clock state loaded from configuration. */
 bool device_config_saved_time( int64_t *a_epoch, const char **a_source );
 
-/** @brief Atomically persist current preferences and optional wall-clock bootstrap state to SD. */
-esp_err_t device_config_save( bool a_include_time, int64_t a_epoch, const char *a_time_source );
+/**
+ * @brief Atomically persist current preferences and optional wall-clock bootstrap state to SD.
+ * @param a_update_time True to replace/clear the saved shutdown epoch; false to preserve it.
+ * @param a_epoch New saved epoch when @p a_update_time is true.
+ * @param a_time_source Stable source token for the supplied epoch.
+ */
+esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a_time_source );
 
 #endif // _RFSCOUT_DEVICE_CONFIG_H_
