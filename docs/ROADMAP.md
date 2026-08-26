@@ -38,6 +38,7 @@ Future RTC/GPS/NTP integrations are tracked separately below. In particular, det
 - Add WiFi / BT alert modes: `OFF`, `TONE`, and `MORSE`.
 - Default audible alerts to `OFF`.
 - Keep each Morse alert exactly one character long.
+- Play surveillance-alert Morse at approximately **20 WPM** so category cues are concise while remaining recognizable by ear.
 - As a follow-up refinement, map a distinct Morse character to each detected surveillance category so the user can identify the likely category by ear without looking at the display. Categories such as general camera, body-worn camera, Flock-style camera, drone, and other surveillance classes should have intentionally distinct one-character patterns.
 - Define the category-to-Morse mapping centrally alongside the surveillance classifier rather than scattering hard-coded characters through alert call sites.
 - Centralize the printable International Morse patterns used by alerts for reuse by the Audio application.
@@ -73,7 +74,20 @@ Remaining hardware validation includes physical speaker channel, loudness, and p
 - Audit existing WiFi / BT, CC1101, nRF24, Audio, Device, and future application menus for the same Back-first navigation convention.
 - Keep setting changes deliberate; entering or exiting a menu should not itself mutate configuration.
 
-## 6. Audio application expansion
+## 6. Log format and automated parsing
+
+**Status:** Planned — near term
+
+- Make RFScout log records reliably machine-parseable without depending on fixed word positions or assumptions about field length.
+- Prefer stable `key=value` fields for structured metadata, especially values such as vendor/brand information whose length and word count vary between observations.
+- Quote and escape free-form values when they may contain spaces, for example `brand="Axis Communications"`.
+- Where a record still contains an intentionally free-form tail, place it at the end of the line so a parser can safely treat the remainder as that field rather than guessing token boundaries.
+- Define a stable field order and naming convention for each log record type while preserving reasonable human readability.
+- Add automated parser/regression coverage with representative single-word, multi-word, missing, unknown, and unusually long brand/vendor values.
+- Consider a lightweight record/schema version so future format changes can be handled explicitly rather than silently breaking analysis tools.
+- Keep UTC ISO-8601 timestamps and other already-structured fields directly consumable by external scripts.
+
+## 7. Audio application expansion
 
 **Status:** Planned
 
@@ -85,7 +99,7 @@ Remaining hardware validation includes physical speaker channel, loudness, and p
 - Validate the microphone/PDM/FFT path on hardware as part of the expansion.
 - After the recorder and Morse player are stable, consider tuner and DTMF-analysis features.
 
-## 7. External time-authority integrations
+## 8. External time-authority integrations
 
 **Status:** Planned
 
@@ -98,7 +112,7 @@ Remaining hardware validation includes physical speaker channel, loudness, and p
 - Preserve and display the specific authority source through the model established in PR #20.
 - Define explicit authority-transition rules so a newly available source never silently overwrites another valid clock.
 
-## 8. Passive nRF24 Enhanced ShockBurst packet discovery and validation
+## 9. Passive nRF24 Enhanced ShockBurst packet discovery and validation
 
 **Status:** Planned
 
@@ -108,7 +122,7 @@ Remaining hardware validation includes physical speaker channel, loudness, and p
 - Feed validated observations into the existing nRF24 packet-classifier infrastructure.
 - Preserve watchdog-safe scanning and existing application lifecycle/resource ownership.
 
-## 9. nRF24 classifier refinement and time-windowed radio counts
+## 10. nRF24 classifier refinement and time-windowed radio counts
 
 **Status:** Planned
 
@@ -117,7 +131,7 @@ Remaining hardware validation includes physical speaker channel, loudness, and p
 - Replace or supplement session-only category counts with useful time-windowed activity counts.
 - Apply the same time-window model to other radio views where it improves situational awareness.
 
-## 10. CC1101 burst timing and modulation analysis
+## 11. CC1101 burst timing and modulation analysis
 
 **Status:** Planned
 
@@ -125,7 +139,7 @@ Remaining hardware validation includes physical speaker channel, loudness, and p
 - Explore conservative modulation/behavior inference from receive-only measurements.
 - Keep classifications evidence-based and avoid presenting heuristic categories as decoded product identities.
 
-## 11. Drill-down views, classifier controls, and structured captures
+## 12. Drill-down views, classifier controls, and structured captures
 
 **Status:** Planned
 
@@ -134,7 +148,7 @@ Remaining hardware validation includes physical speaker channel, loudness, and p
 - Add structured SD exports/captures for analysis outside RFScout.
 - Keep high-rate capture paths asynchronous so storage latency does not block radio acquisition.
 
-## 12. Additional optional hardware and applications
+## 13. Additional optional hardware and applications
 
 **Status:** Longer term
 
