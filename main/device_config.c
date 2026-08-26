@@ -289,8 +289,7 @@ static esp_err_t load_file( void )
     }
 
     const cJSON *version = cJSON_GetObjectItemCaseSensitive( root, "version" );
-    if( !cJSON_IsNumber( version ) ||
-        ( version->valueint != (int)RFSCOUT_CONFIG_SCHEMA_VERSION ) )
+    if( !cJSON_IsNumber( version ) || ( version->valueint != (int)RFSCOUT_CONFIG_SCHEMA_VERSION ) )
     {
         cJSON_Delete( root );
         quarantine_config();
