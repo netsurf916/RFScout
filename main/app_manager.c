@@ -7,6 +7,7 @@
 
 #include "app_manager.h"
 
+#include "alert.h"
 #include "audio_spectrum.h"
 #include "audio_view.h"
 #include "ble_monitor.h"
@@ -15,6 +16,7 @@
 #include "device_config.h"
 #include "device_view.h"
 #include "mlx90640.h"
+#include "morse.h"
 #include "nrf24.h"
 #include "nrf24_activity.h"
 #include "platform.h"
@@ -22,6 +24,7 @@
 #include "radio_monitor.h"
 #include "thermal_view.h"
 #include "ui.h"
+#include "wifi_settings_view.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -32,6 +35,10 @@
 #define AUDIO_REFRESH_INTERVAL_US 40000LL
 #define APP_FEATURE_PROBE_INTERVAL_US 10000000LL
 #define APP_RADIO_RETRY_INTERVAL_US 1000000LL
+#define WIFI_MENU_ALERT_MODE 0U
+#define WIFI_MENU_MORSE_CHARACTER 1U
+#define WIFI_MENU_BACK 2U
+#define WIFI_MENU_ITEM_COUNT 3U
 #define CC1101_MIN_STEP_KHZ 1U
 #define CC1101_MAX_STEP_KHZ 1000U
 #define CC1101_MENU_PEAK_HOLD 4U
@@ -51,6 +58,8 @@ static rfscout_app_id_t active_app;
 static int64_t last_app_refresh_us;
 static int64_t last_thermal_probe_us;
 static int64_t last_radio_retry_us;
+static bool wifi_menu;
+static bool wifi_edit;
 static bool cc_menu;
 static bool cc_edit;
 static bool cc_limit;
@@ -63,6 +72,7 @@ static bool ble_monitor_ready;
 static bool cc_peak_hold = true;
 static bool nr_peak_hold = true;
 static bool audio_peak_hold = false;
+static unsigned wifi_item;
 static unsigned cc_item;
 static unsigned nr_item;
 static unsigned audio_item;
@@ -123,6 +133,100 @@ static void start_wifi_bt_collectors( void )
             ESP_LOGW( TAG, "BLE monitor start failed: %s; retrying", esp_err_to_name( result ) );
         }
     }
+}
+
+/** @brief Return the next supported single-character Morse alert. */
+static char next_morse_character( char a_current, int a_direction )
+{
+    const char *characters = morse_supported_characters();
+    const size_t count = strlen( characters );
+    const char *current = strchr( characters, a_current );
+    size_t index = ( NULL != current ) ? (size_t)( current - characters ) : 0U;
+
+    if( a_direction > 0 )
+    {
+        index = ( index + 1U ) % count;
+    }
+    else
+    {
+        index = ( index + count - 1U ) % count;
+    }
+    return characters[ index ];
+}
+
+/** @brief Close WiFi/BT settings and resume the live summary. */
+static void close_wifi_menu( void )
+{
+    wifi_menu = false;
+    wifi_edit = false;
+}
+
+/** @brief Handle WiFi/BT audible-alert settings input. */
+static void wifi_input( bool a_pressed, int a_delta )
+{
+    if( !wifi_menu )
+    {
+        if( a_pressed )
+        {
+            wifi_menu = true;
+            wifi_edit = false;
+            wifi_settings_view_render( wifi_item, wifi_edit );
+        }
+        return;
+    }
+
+    if( a_pressed )
+    {
+        if( WIFI_MENU_BACK == wifi_item )
+        {
+            close_wifi_menu();
+            return;
+        }
+
+        wifi_edit = !wifi_edit;
+        wifi_settings_view_render( wifi_item, wifi_edit );
+        return;
+    }
+
+    if( 0 == a_delta )
+    {
+        return;
+    }
+
+    const int direction = ( a_delta > 0 ) ? 1 : -1;
+    if( !wifi_edit )
+    {
+        int item = (int)wifi_item + direction;
+        if( item < 0 )
+        {
+            item = (int)WIFI_MENU_ITEM_COUNT - 1;
+        }
+        if( item >= (int)WIFI_MENU_ITEM_COUNT )
+        {
+            item = 0;
+        }
+        wifi_item = (unsigned)item;
+    }
+    else if( WIFI_MENU_ALERT_MODE == wifi_item )
+    {
+        int mode = (int)alert_mode() + direction;
+        if( mode < 0 )
+        {
+            mode = RFSCOUT_ALERT_MODE_COUNT - 1;
+        }
+        if( mode >= RFSCOUT_ALERT_MODE_COUNT )
+        {
+            mode = 0;
+        }
+        alert_set_mode( (rfscout_alert_mode_t)mode );
+    }
+    else if( WIFI_MENU_MORSE_CHARACTER == wifi_item )
+    {
+        (void)alert_set_morse_character(
+            next_morse_character( alert_morse_character(), direction ) );
+    }
+
+    wifi_settings_view_render( wifi_item, wifi_edit );
 }
 
 /** @brief Render the current CC1101 settings state. */
@@ -237,6 +341,7 @@ static void leave_app( rfscout_app_id_t a_app )
         (void)radio_monitor_stop();
         wifi_monitor_ready = false;
         ble_monitor_ready = false;
+        wifi_item = 0U;
     }
     else if( RFSCOUT_APP_CC1101 == a_app )
     {
@@ -257,6 +362,8 @@ static void leave_app( rfscout_app_id_t a_app )
         audio_item = 0U;
     }
 
+    wifi_menu = false;
+    wifi_edit = false;
     cc_menu = false;
     cc_edit = false;
     cc_limit = false;
@@ -274,6 +381,9 @@ static void enter_app( rfscout_app_id_t a_app )
     switch( a_app )
     {
         case RFSCOUT_APP_WIFI_BT:
+            wifi_item = 0U;
+            wifi_menu = false;
+            wifi_edit = false;
             wifi_monitor_ready = false;
             ble_monitor_ready = false;
             last_radio_retry_us = esp_timer_get_time();
@@ -693,6 +803,8 @@ esp_err_t app_manager_init( void )
     last_app_refresh_us = 0;
     last_thermal_probe_us = esp_timer_get_time();
     last_radio_retry_us = 0;
+    wifi_menu = false;
+    wifi_edit = false;
     cc_menu = false;
     cc_edit = false;
     cc_limit = false;
@@ -700,6 +812,7 @@ esp_err_t app_manager_init( void )
     nr_edit = false;
     audio_menu = false;
     audio_edit = false;
+    wifi_item = 0U;
     cc_item = 0U;
     nr_item = 0U;
     audio_item = 0U;
@@ -833,13 +946,21 @@ void app_manager_poll( void )
         return;
     }
 
-    if( switch_app_for_delta( delta, now ) )
-    {
-        return;
-    }
-
     if( RFSCOUT_APP_WIFI_BT == active_app )
     {
+        if( wifi_menu )
+        {
+            wifi_input( pressed, delta );
+        }
+        else if( pressed )
+        {
+            wifi_input( true, 0 );
+        }
+        else if( switch_app_for_delta( delta, now ) )
+        {
+            return;
+        }
+
         if( ( !wifi_monitor_ready || !ble_monitor_ready ) &&
             ( now - last_radio_retry_us >= APP_RADIO_RETRY_INTERVAL_US ) )
         {
@@ -847,7 +968,15 @@ void app_manager_poll( void )
             start_wifi_bt_collectors();
         }
         radio_monitor_step();
-        ui_poll();
+        if( !wifi_menu )
+        {
+            ui_poll();
+        }
+        return;
+    }
+
+    if( switch_app_for_delta( delta, now ) )
+    {
         return;
     }
 

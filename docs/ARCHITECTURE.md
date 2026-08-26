@@ -3,10 +3,10 @@
 RFScout is organized around a small **application manager** plus capability-specific radio/sensor modules. The current top-level application order is:
 
 ```text
-WiFi / BT -> CC1101 -> nRF24 -> Audio -> Thermal (when MLX90640 is present)
+WiFi / BT -> CC1101 -> nRF24 -> Audio -> Thermal (when enabled and present) -> Device
 ```
 
-The rotary encoder changes applications unless an application menu is open. The center button enters/leaves application settings. Optional applications are capability-driven: Thermal is skipped when the MLX90640 is not detected.
+The rotary encoder changes applications unless an application menu is open. The center button enters/leaves application settings. Optional applications are capability-driven: Thermal is skipped when the MLX90640 is unavailable or disabled. Device is always reachable and provides the global configuration UI.
 
 ## Resource lifecycle
 
@@ -17,8 +17,9 @@ A core design rule is that inactive applications should not continue doing expen
 - Leaving **nRF24** stops its scanner and clears runtime histogram/peak/classification state.
 - Leaving **Audio** stops the I2S/PDM acquisition path and audio FFT worker.
 - Thermal acquisition is performed only while the Thermal application is active.
+- Device owns the encoder while its global settings view is active; an explicit Back action resumes normal app navigation.
 
-Application-specific configuration such as CC1101 frequency range/step, nRF24 channel/dwell settings, and Audio range/channel selection remains configured across view changes even when runtime observations are reset.
+Application-specific configuration such as CC1101 frequency range/step, nRF24 channel/dwell settings, Audio range/channel selection, and WiFi/BT alert mode remains runtime state independently of the acquisition workers unless explicitly stored in Device configuration.
 
 ## Wi-Fi / BLE data path
 
@@ -28,14 +29,18 @@ Wi-Fi monitor ---\
 BLE monitor -----/              |                       |
                                 v                       v
                          rolling device store      alert/history state
-                                |
-                                v
-                            WiFi / BT UI
+                                |                       |
+                                v                       +--> bounded audio command queue
+                            WiFi / BT UI                         |
+                                                               v
+                                                        I2S speaker worker
 ```
 
 The live store is fixed-memory and rolling. OUI/vendor attribution is applied only where the address can defensibly represent an IEEE identity. Random/private addresses remain unknown rather than being assigned a misleading vendor.
 
 Surveillance detections use separate retained state so short-lived observations can remain visible longer than the ordinary nearby-device window.
+
+Audible alerts are optional. WiFi/BT settings select **Off**, **Tone**, or **Morse**; the boot default is Off. Morse alerts use exactly one selected character. The RF observation callback never generates audio synchronously: it submits a bounded command to `audio_output.c/.h`, and a dedicated worker renders the tone or Morse pattern.
 
 ## CC1101 data path
 
@@ -76,26 +81,43 @@ Category names with question marks (`Logitech?`, `Input?`, `Sensor?`) communicat
 ## Audio data path
 
 ```text
-PDM microphone -> ESP32-S3 I2S/PDM RX -> DMA buffers
-                                      |
-                                      v
-                              channel selection
-                                      |
-                           filtered decimation
-                           (Voice / Mid only)
-                                      |
-                                      v
-                               512-point FFT
-                                      |
-                         dBFS normalization / auto scale
-                                      |
-                                      v
-                            latest spectrum frame -> Audio UI
+PDM microphone -> ESP32-S3 I2S0/PDM RX -> DMA buffers
+                                         |
+                                         v
+                                 channel selection
+                                         |
+                              filtered decimation
+                              (Voice / Mid only)
+                                         |
+                                         v
+                                  512-point FFT
+                                         |
+                            dBFS normalization / auto scale
+                                         |
+                                         v
+                               latest spectrum frame -> Audio UI
 ```
 
 `audio_spectrum.c/.h` owns microphone acquisition and DSP state. DMA reads and FFT work run independently of LCD rendering. The UI consumes the most recent completed frame; when a newer frame replaces an unpublished one, the overrun counter records that freshness was preferred over queueing stale visual data.
 
 The DSP currently uses focused Voice, Mid, High, Audible, and Ultrasonic ranges. The audio analyzer is still under hardware validation, so its output should not be treated as a calibrated measurement source.
+
+The planned recorder will reuse this microphone ownership rather than creating a second I2S0 reader. Recording and spectrum analysis should share captured PCM through an explicit fan-out boundary.
+
+## Speaker and Morse output
+
+The onboard speaker is isolated from microphone acquisition:
+
+```text
+alert_request()
+      |
+      v
+bounded FreeRTOS queue -> audio_output worker -> I2S1 standard TX -> onboard speaker
+```
+
+`audio_output.c/.h` owns I2S1 transmit and waveform generation. Callers enqueue short sound requests with zero wait; a full queue drops the new sound instead of stalling an acquisition callback. I2S is enabled only while a queued sound is being rendered and disabled again when idle.
+
+`morse.c/.h` owns the shared Morse character table. Printable characters represented by ITU-R M.1677-1 are centralized there so the current one-character alert system and the planned Audio Morse browser/player use the same patterns and timing semantics.
 
 ## Likely Devices UX
 
@@ -112,15 +134,21 @@ The two apps use the same vertical divider position so switching between them do
 
 ## Thermal path
 
-The MLX90640 is an optional external I2C/Qwiic device. RFScout periodically probes for it while another application is active. When detected, the Thermal application becomes available as the final application in the rotation.
+The MLX90640 is an optional external I2C/Qwiic device. RFScout periodically probes for it while another application is active. When detected and enabled, the Thermal application becomes available near the end of the rotation before Device.
 
 The sensor's native 32x24 frame is processed for display interpolation/scaling, but the renderer does not imply higher underlying sensor resolution.
+
+## Device configuration and time
+
+`device_config.c/.h` owns compiled defaults plus optional SD-backed `/sdcard/rfscout.json` preferences. Configuration loading is nonfatal: RFScout can continue with runtime defaults when storage or persistence fails.
+
+`device_time.c/.h` owns authoritative system wall-clock state and source/provenance metadata. User-visible time and timestamps use the wall clock, while debounce, dwell, retries, timeouts, and housekeeping remain on monotonic timers. Deep-sleep RTC metadata and cold-boot saved-time provenance are treated separately.
 
 ## Shared hardware boundaries
 
 ### SPI
 
-The LCD, microSD, CC1101, and nRF24 share board SPI resources. Fixed board pins and chip-select ownership are centralized in `board.h` and the associated platform/radio modules. Inactive radio applications are stopped before another view takes ownership of shared resources.
+The LCD, microSD, CC1101, and nRF24 share board SPI resources. `board_spi.c/.h` owns initialization of SPI2 and exposes an idempotent board-level initializer used by both storage and display setup. Fixed pins and chip selects remain centralized in `board.h`. This avoids relying on accidental peripheral initialization order.
 
 ### I2C
 
@@ -130,21 +158,25 @@ The LCD, microSD, CC1101, and nRF24 share board SPI resources. Fixed board pins 
 
 ### I2S / PDM
 
-`audio_spectrum.c/.h` owns the ESP32-S3 I2S0 PDM receive channel used by the internal microphone. Acquisition uses DMA and a dedicated FFT worker. The channel is released when Audio is inactive so the analyzer does not consume CPU and peripheral resources off-screen.
+`audio_spectrum.c/.h` owns ESP32-S3 I2S0 PDM receive for the internal microphone. Acquisition uses DMA and a dedicated FFT worker. The receive channel is released when Audio is inactive so the analyzer does not consume CPU and peripheral resources off-screen.
+
+`audio_output.c/.h` independently owns I2S1 standard transmit for the onboard speaker. Short alert sounds therefore do not reconfigure or borrow the microphone's I2S0 channel.
 
 ## Storage and logging boundary
 
 `storage.c/.h` owns SD mount/state. `log_writer.c/.h` owns the bounded asynchronous record queue, filesystem writes, segment rotation, and shutdown semantics. Radio, audio, and UI paths never perform direct SD writes.
 
-`app_logging.c/.h` is the application-level coordinator. It observes application transitions and submits ENTER/EXIT plus rate-limited telemetry records for every active application. Wi-Fi/BLE detailed device lifecycle records continue to use the same writer queue.
+`app_logging.c/.h` is the application-level coordinator. It observes application transitions and submits ENTER/EXIT plus rate-limited telemetry records for active applications. Wi-Fi/BLE detailed device lifecycle records continue to use the same writer queue.
 
 Filesystem errors are surfaced through the shared top status bar rather than terminating RFScout.
 
 ## UI boundary
 
-The display driver is kept below application renderers. Application views use common visual conventions:
+The display driver is kept below application renderers. `ui_present.c` applies shared status/battery chrome and the global power overlay at presentation time so individual views do not need to duplicate those concerns.
 
-- shared battery and status chrome;
+Application views use common visual conventions:
+
+- shared battery, status, and wall-clock chrome;
 - subdued app titles;
 - subdued normal/status colors;
 - red for actionable detections/errors;
@@ -159,6 +191,6 @@ Hand-maintained modules follow the conventions in [CODING_STYLE.md](CODING_STYLE
 
 ## Current versus future capabilities
 
-Implemented application-level capabilities are Wi-Fi/BLE awareness, CC1101 spectrum awareness, nRF24 activity/fingerprinting, PDM microphone spectrum analysis, optional MLX90640 thermal imaging, SD logging, battery/status telemetry, and encoder-driven navigation.
+Implemented application-level capabilities are Wi-Fi/BLE awareness, configurable asynchronous WiFi/BT surveillance sounds, CC1101 spectrum awareness, nRF24 activity/fingerprinting, PDM microphone spectrum analysis, optional MLX90640 thermal imaging, SD logging, battery/status telemetry, Device configuration/time management, and encoder-driven navigation.
 
-NFC, IR, GPS UI, and active/replay functions are not part of the current active application set and should not be presented as implemented functionality until they are actually enabled.
+Audio recording and the interactive International Morse player are planned next. NFC, IR, GPS UI, and active/replay functions are not part of the current active application set and should not be presented as implemented functionality until they are actually enabled.
