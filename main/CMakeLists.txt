@@ -23,6 +23,7 @@ idf_component_register(
         "thermal_view.c"
         "status_bar.c"
         "display.c"
+        "ui_present.c"
         "ui.c"
         "radio_monitor.c"
         "ble_monitor.c"

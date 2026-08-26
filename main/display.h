@@ -12,10 +12,11 @@
 
 #include "esp_err.h"
 
+#include <stddef.h>
 #include <stdint.h>
 
-#define RFSCOUT_DISPLAY_WIDTH   320
-#define RFSCOUT_DISPLAY_HEIGHT  170
+#define RFSCOUT_DISPLAY_WIDTH 320
+#define RFSCOUT_DISPLAY_HEIGHT 170
 
 /**
  * @brief Initialize the T-Embed ST7789 display.
@@ -50,7 +51,44 @@ void display_draw_text( int a_x, int a_y, const char *a_text, uint16_t a_color, 
 void display_fill_rect( int a_x, int a_y, int a_width, int a_height, uint16_t a_color );
 
 /**
- * @brief Transfer the complete framebuffer to the LCD.
+ * @brief Copy a framebuffer rectangle into a caller-provided RGB565 buffer.
+ * @param a_x Left coordinate.
+ * @param a_y Top coordinate.
+ * @param a_width Rectangle width.
+ * @param a_height Rectangle height.
+ * @param a_pixels Destination buffer in row-major order.
+ * @param a_pixel_capacity Number of RGB565 pixels available in @p a_pixels.
+ * @return ESP_OK on success; ESP_ERR_INVALID_ARG for an invalid rectangle or buffer.
+ */
+esp_err_t display_read_rect(
+    int a_x, int a_y, int a_width, int a_height, uint16_t *a_pixels, size_t a_pixel_capacity );
+
+/**
+ * @brief Restore a framebuffer rectangle from a caller-provided RGB565 buffer.
+ * @param a_x Left coordinate.
+ * @param a_y Top coordinate.
+ * @param a_width Rectangle width.
+ * @param a_height Rectangle height.
+ * @param a_pixels Source buffer in row-major order.
+ * @param a_pixel_count Number of RGB565 pixels available in @p a_pixels.
+ * @return ESP_OK on success; ESP_ERR_INVALID_ARG for an invalid rectangle or buffer.
+ */
+esp_err_t display_write_rect(
+    int a_x, int a_y, int a_width, int a_height, const uint16_t *a_pixels, size_t a_pixel_count );
+
+/**
+ * @brief Transfer the complete framebuffer to the LCD without adding UI overlays.
+ * @return ESP_OK on success; an ESP-IDF error code on failure.
+ */
+esp_err_t display_flush( void );
+
+/**
+ * @brief Present the framebuffer with RFScout's global UI overlays.
+ *
+ * Implemented by the shared UI presentation layer so application views can use
+ * one presentation entry point without coupling the display driver to power or
+ * other application state.
+ *
  * @return ESP_OK on success; an ESP-IDF error code on failure.
  */
 esp_err_t display_present( void );

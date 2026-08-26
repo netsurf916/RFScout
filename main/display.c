@@ -33,6 +33,7 @@ static uint16_t *framebuffer;
 static uint16_t *dma_buffer;
 
 /** @brief Compact 5x7 printable ASCII font used by the RFScout LCD UI. */
+// clang-format off
 static const uint8_t font[ 95 ][ 5 ] =
 {
     {0,0,0,0,0},{0,0,95,0,0},{0,7,0,7,0},{20,127,20,127,20},{36,42,127,42,18},{35,19,8,100,98},{54,73,85,34,80},{0,5,3,0,0},{0,28,34,65,0},{0,65,34,28,0},{20,8,62,8,20},{8,8,62,8,8},{0,80,48,0,0},{8,8,8,8,8},{0,96,96,0,0},{32,16,8,4,2},
@@ -40,6 +41,7 @@ static const uint8_t font[ 95 ][ 5 ] =
     {126,17,17,17,126},{127,73,73,73,54},{62,65,65,65,34},{127,65,65,34,28},{127,73,73,73,65},{127,9,9,9,1},{62,65,73,73,122},{127,8,8,8,127},{0,65,127,65,0},{32,64,65,63,1},{127,8,20,34,65},{127,64,64,64,64},{127,2,12,2,127},{127,4,8,16,127},{62,65,65,65,62},{127,9,9,9,6},{62,65,81,33,94},{127,9,25,41,70},{70,73,73,73,49},{1,1,127,1,1},{63,64,64,64,63},{31,32,64,32,31},{63,64,56,64,63},{99,20,8,20,99},{7,8,112,8,7},{97,81,73,69,67},{0,127,65,65,0},{2,4,8,16,32},{0,65,65,127,0},{4,2,1,2,4},{64,64,64,64,64},{0,1,2,4,0},
     {32,84,84,84,120},{127,72,68,68,56},{56,68,68,68,32},{56,68,68,72,127},{56,84,84,84,24},{8,126,9,1,2},{12,82,82,82,62},{127,8,4,4,120},{0,68,125,64,0},{32,64,68,61,0},{127,16,40,68,0},{0,65,127,64,0},{124,4,24,4,120},{124,8,4,4,120},{56,68,68,68,56},{124,20,20,20,8},{8,20,20,24,124},{124,8,4,4,8},{72,84,84,84,32},{4,63,68,64,32},{60,64,64,32,124},{28,32,64,32,28},{60,64,48,64,60},{68,40,16,40,68},{12,80,80,80,60},{68,100,84,76,68},{0,8,54,65,0},{0,0,127,0,0},{0,65,54,8,0},{8,4,8,16,8}
 };
+// clang-format on
 
 /** @brief Signal completion of a DMA-backed color transfer. */
 static bool transfer_complete( esp_lcd_panel_io_handle_t a_io,
@@ -83,24 +85,30 @@ static void draw_character( int a_x, int a_y, char a_character, uint16_t a_color
             }
             display_fill_rect( a_x + ( x * (int)a_scale ),
                                a_y + ( y * (int)a_scale ),
-                               (int)a_scale, (int)a_scale, a_color );
+                               (int)a_scale,
+                               (int)a_scale,
+                               a_color );
         }
     }
 }
 
+/** @brief Validate a framebuffer rectangle that must lie fully on-screen. */
+static bool valid_rect( int a_x, int a_y, int a_width, int a_height )
+{
+    return ( a_x >= 0 ) && ( a_y >= 0 ) && ( a_width > 0 ) && ( a_height > 0 ) &&
+           ( a_x + a_width <= RFSCOUT_DISPLAY_WIDTH ) &&
+           ( a_y + a_height <= RFSCOUT_DISPLAY_HEIGHT );
+}
+
 esp_err_t display_init( void )
 {
-    gpio_config_t backlight =
-    {
-        .pin_bit_mask = 1ULL << RFSCOUT_BOARD_DISPLAY_BACKLIGHT_PIN,
-        .mode = GPIO_MODE_OUTPUT
-    };
+    gpio_config_t backlight = { .pin_bit_mask = 1ULL << RFSCOUT_BOARD_DISPLAY_BACKLIGHT_PIN,
+                                .mode = GPIO_MODE_OUTPUT };
     ESP_ERROR_CHECK( gpio_config( &backlight ) );
     gpio_set_level( RFSCOUT_BOARD_DISPLAY_BACKLIGHT_PIN, 0 );
 
-    framebuffer = heap_caps_calloc( DISPLAY_PIXEL_COUNT,
-                                    sizeof( *framebuffer ),
-                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
+    framebuffer = heap_caps_calloc(
+        DISPLAY_PIXEL_COUNT, sizeof( *framebuffer ), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
     if( NULL == framebuffer )
     {
         return ESP_ERR_NO_MEM;
@@ -115,57 +123,48 @@ esp_err_t display_init( void )
         return ESP_ERR_NO_MEM;
     }
 
-    spi_bus_config_t bus =
-    {
-        .mosi_io_num = RFSCOUT_BOARD_SPI_MOSI_PIN,
-        .miso_io_num = RFSCOUT_BOARD_SPI_MISO_PIN,
-        .sclk_io_num = RFSCOUT_BOARD_SPI_SCLK_PIN,
-        .quadwp_io_num = -1,
-        .quadhd_io_num = -1,
-        .max_transfer_sz = DISPLAY_DMA_PIXEL_COUNT * sizeof( *dma_buffer )
-    };
+    spi_bus_config_t bus = { .mosi_io_num = RFSCOUT_BOARD_SPI_MOSI_PIN,
+                             .miso_io_num = RFSCOUT_BOARD_SPI_MISO_PIN,
+                             .sclk_io_num = RFSCOUT_BOARD_SPI_SCLK_PIN,
+                             .quadwp_io_num = -1,
+                             .quadhd_io_num = -1,
+                             .max_transfer_sz = DISPLAY_DMA_PIXEL_COUNT * sizeof( *dma_buffer ) };
     ESP_ERROR_CHECK( spi_bus_initialize( DISPLAY_SPI_HOST, &bus, SPI_DMA_CH_AUTO ) );
 
     esp_lcd_panel_io_handle_t io = NULL;
-    esp_lcd_panel_io_spi_config_t io_config =
-    {
-        .dc_gpio_num = RFSCOUT_BOARD_DISPLAY_DC_PIN,
-        .cs_gpio_num = RFSCOUT_BOARD_DISPLAY_CS_PIN,
-        .pclk_hz = 20000000,
-        .lcd_cmd_bits = 8,
-        .lcd_param_bits = 8,
-        .spi_mode = 0,
-        .trans_queue_depth = 10
-    };
-    ESP_ERROR_CHECK( esp_lcd_new_panel_io_spi( (esp_lcd_spi_bus_handle_t)DISPLAY_SPI_HOST, &io_config, &io ) );
+    esp_lcd_panel_io_spi_config_t io_config = { .dc_gpio_num = RFSCOUT_BOARD_DISPLAY_DC_PIN,
+                                                .cs_gpio_num = RFSCOUT_BOARD_DISPLAY_CS_PIN,
+                                                .pclk_hz = 20000000,
+                                                .lcd_cmd_bits = 8,
+                                                .lcd_param_bits = 8,
+                                                .spi_mode = 0,
+                                                .trans_queue_depth = 10 };
+    ESP_ERROR_CHECK(
+        esp_lcd_new_panel_io_spi( (esp_lcd_spi_bus_handle_t)DISPLAY_SPI_HOST, &io_config, &io ) );
 
-    esp_lcd_panel_io_callbacks_t callbacks =
-    {
-        .on_color_trans_done = transfer_complete
-    };
-    ESP_ERROR_CHECK( esp_lcd_panel_io_register_event_callbacks( io, &callbacks, (void *)&transfer_done ) );
+    esp_lcd_panel_io_callbacks_t callbacks = { .on_color_trans_done = transfer_complete };
+    ESP_ERROR_CHECK(
+        esp_lcd_panel_io_register_event_callbacks( io, &callbacks, (void *)&transfer_done ) );
 
-    esp_lcd_panel_dev_config_t panel_config =
-    {
-        .reset_gpio_num = RFSCOUT_BOARD_DISPLAY_RESET_PIN,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
-        .data_endian = LCD_RGB_DATA_ENDIAN_LITTLE,
-        .bits_per_pixel = 16
-    };
+    esp_lcd_panel_dev_config_t panel_config = { .reset_gpio_num = RFSCOUT_BOARD_DISPLAY_RESET_PIN,
+                                                .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
+                                                .data_endian = LCD_RGB_DATA_ENDIAN_LITTLE,
+                                                .bits_per_pixel = 16 };
     ESP_ERROR_CHECK( esp_lcd_new_panel_st7789( io, &panel_config, &panel ) );
     ESP_ERROR_CHECK( esp_lcd_panel_reset( panel ) );
     ESP_ERROR_CHECK( esp_lcd_panel_init( panel ) );
     ESP_ERROR_CHECK( esp_lcd_panel_swap_xy( panel, true ) );
     ESP_ERROR_CHECK( esp_lcd_panel_mirror( panel, false, true ) );
-    ESP_ERROR_CHECK( esp_lcd_panel_set_gap( panel, RFSCOUT_BOARD_DISPLAY_X_GAP,
-                                           RFSCOUT_BOARD_DISPLAY_Y_GAP ) );
+    ESP_ERROR_CHECK(
+        esp_lcd_panel_set_gap( panel, RFSCOUT_BOARD_DISPLAY_X_GAP, RFSCOUT_BOARD_DISPLAY_Y_GAP ) );
     ESP_ERROR_CHECK( esp_lcd_panel_invert_color( panel, true ) );
     ESP_ERROR_CHECK( esp_lcd_panel_disp_on_off( panel, true ) );
 
     display_clear( 0x0000 );
-    ESP_ERROR_CHECK( display_present() );
+    ESP_ERROR_CHECK( display_flush() );
     gpio_set_level( RFSCOUT_BOARD_DISPLAY_BACKLIGHT_PIN, 1 );
-    ESP_LOGI( TAG, "ST7789 LCD initialized at %dx%d", RFSCOUT_DISPLAY_WIDTH, RFSCOUT_DISPLAY_HEIGHT );
+    ESP_LOGI(
+        TAG, "ST7789 LCD initialized at %dx%d", RFSCOUT_DISPLAY_WIDTH, RFSCOUT_DISPLAY_HEIGHT );
     return ESP_OK;
 }
 
@@ -233,7 +232,45 @@ void display_draw_text( int a_x, int a_y, const char *a_text, uint16_t a_color, 
     }
 }
 
-esp_err_t display_present( void )
+esp_err_t display_read_rect(
+    int a_x, int a_y, int a_width, int a_height, uint16_t *a_pixels, size_t a_pixel_capacity )
+{
+    const size_t required = (size_t)a_width * (size_t)a_height;
+    if( ( NULL == framebuffer ) || ( NULL == a_pixels ) ||
+        !valid_rect( a_x, a_y, a_width, a_height ) || ( a_pixel_capacity < required ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    for( int y = 0; y < a_height; ++y )
+    {
+        memcpy( &a_pixels[ (size_t)y * (size_t)a_width ],
+                &framebuffer[ (size_t)( a_y + y ) * RFSCOUT_DISPLAY_WIDTH + (size_t)a_x ],
+                (size_t)a_width * sizeof( *a_pixels ) );
+    }
+    return ESP_OK;
+}
+
+esp_err_t display_write_rect(
+    int a_x, int a_y, int a_width, int a_height, const uint16_t *a_pixels, size_t a_pixel_count )
+{
+    const size_t required = (size_t)a_width * (size_t)a_height;
+    if( ( NULL == framebuffer ) || ( NULL == a_pixels ) ||
+        !valid_rect( a_x, a_y, a_width, a_height ) || ( a_pixel_count < required ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    for( int y = 0; y < a_height; ++y )
+    {
+        memcpy( &framebuffer[ (size_t)( a_y + y ) * RFSCOUT_DISPLAY_WIDTH + (size_t)a_x ],
+                &a_pixels[ (size_t)y * (size_t)a_width ],
+                (size_t)a_width * sizeof( *a_pixels ) );
+    }
+    return ESP_OK;
+}
+
+esp_err_t display_flush( void )
 {
     if( ( NULL == panel ) || ( NULL == framebuffer ) || ( NULL == dma_buffer ) )
     {
@@ -254,10 +291,8 @@ esp_err_t display_present( void )
                 pixel_count * sizeof( *dma_buffer ) );
 
         transfer_done = false;
-        const esp_err_t result = esp_lcd_panel_draw_bitmap( panel,
-                                                            0, y,
-                                                            RFSCOUT_DISPLAY_WIDTH, y + rows,
-                                                            dma_buffer );
+        const esp_err_t result =
+            esp_lcd_panel_draw_bitmap( panel, 0, y, RFSCOUT_DISPLAY_WIDTH, y + rows, dma_buffer );
         if( ESP_OK != result )
         {
             return result;
