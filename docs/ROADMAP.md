@@ -83,6 +83,7 @@ Remaining hardware validation includes physical speaker channel, loudness, and p
 - Quote and escape free-form values when they may contain spaces, for example `brand="Axis Communications"`.
 - Where a record still contains an intentionally free-form tail, place it at the end of the line so a parser can safely treat the remainder as that field rather than guessing token boundaries.
 - Define a stable field order and naming convention for each log record type while preserving reasonable human readability.
+- Add a maintained reference parser/tool that consumes RFScout logs and emits structured output suitable for downstream automation, such as JSON or CSV.
 - Add automated parser/regression coverage with representative single-word, multi-word, missing, unknown, and unusually long brand/vendor values.
 - Consider a lightweight record/schema version so future format changes can be handled explicitly rather than silently breaking analysis tools.
 - Keep UTC ISO-8601 timestamps and other already-structured fields directly consumable by external scripts.
