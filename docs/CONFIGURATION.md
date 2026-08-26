@@ -73,7 +73,7 @@ The Device application owns the encoder while it is active, so analyzers and rad
 
 Application enablement takes effect when navigation resumes. Disabled applications are skipped. Thermal additionally requires an MLX90640 to be detected.
 
-Without an SD card, Device remains usable and settings can affect the running session, but persistent saves are unavailable.
+Without an SD card, Device remains usable and settings can affect the running session, but persistent saves are unavailable. An orderly hard power-off also writes the current in-memory preferences when storage is available, so the explicit Save action is mainly useful when persistence is wanted before shutdown or deep sleep.
 
 ## Wall clock and monotonic time
 
