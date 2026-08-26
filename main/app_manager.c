@@ -732,8 +732,7 @@ void app_manager_poll( void )
 {
     const int64_t now = esp_timer_get_time();
 
-    if( ( RFSCOUT_APP_THERMAL != active_app ) &&
-        device_config_app_enabled( RFSCOUT_APP_THERMAL ) &&
+    if( ( RFSCOUT_APP_THERMAL != active_app ) && device_config_app_enabled( RFSCOUT_APP_THERMAL ) &&
         ( now - last_thermal_probe_us >= APP_FEATURE_PROBE_INTERVAL_US ) )
     {
         (void)probe_thermal();
