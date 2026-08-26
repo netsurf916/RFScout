@@ -10,7 +10,6 @@
 #include "battery_indicator.h"
 #include "display.h"
 #include "observation_store.h"
-#include "power.h"
 #include "status_bar.h"
 #include "surveillance.h"
 #include "surveillance_history.h"
@@ -117,33 +116,6 @@ static void draw_unknown_row( size_t a_unknown_count )
     display_draw_text( 6, UI_UNKNOWN_ROW_Y, line, COLOR_CYAN, 1 );
 }
 
-static void draw_power_overlay( void )
-{
-    power_status_t status;
-    power_get_status( &status );
-    if( POWER_HOLD_IDLE == status.state )
-    {
-        return;
-    }
-
-    display_fill_rect( 42, 50, 236, 70, COLOR_BLACK );
-    display_fill_rect( 42, 50, 236, 2, COLOR_RED );
-    display_fill_rect( 42, 118, 236, 2, COLOR_RED );
-    display_fill_rect( 42, 50, 2, 70, COLOR_RED );
-    display_fill_rect( 276, 50, 2, 70, COLOR_RED );
-
-    if( POWER_HOLD_SHUTDOWN == status.state )
-    {
-        display_draw_text( 91, 77, "POWERING OFF...", COLOR_RED, 2 );
-        return;
-    }
-
-    display_draw_text( 69, 63, "HOLD TO POWER OFF", COLOR_YELLOW, 2 );
-    char countdown[ 4 ];
-    snprintf( countdown, sizeof( countdown ), "%u", (unsigned)status.seconds_remaining );
-    display_draw_text( 150, 88, countdown, COLOR_RED, 3 );
-}
-
 static void draw_surveillance_rows( const uint16_t *a_signature_counts )
 {
     int y = UI_LIST_START_Y;
@@ -226,7 +198,6 @@ static void render_summary( void )
 
     draw_unknown_row( unknown_count );
     draw_surveillance_rows( signature_counts );
-    draw_power_overlay();
 
     if( ESP_OK != display_present() )
     {
