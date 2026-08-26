@@ -90,7 +90,7 @@ static void retain_authority( void )
 static bool restore_after_deep_sleep( void )
 {
     const uint32_t wakeup_causes = esp_sleep_get_wakeup_causes();
-    if( 0U != ( wakeup_causes & ( 1UL << ESP_SLEEP_WAKEUP_UNDEFINED ) ) )
+    if( 0U == wakeup_causes )
     {
         return false;
     }

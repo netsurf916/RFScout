@@ -108,10 +108,8 @@ write_segment( bool a_tone, uint16_t a_frequency_hz, uint32_t a_duration_ms, flo
  */
 static uint32_t dma_drain_silence_ms( void )
 {
-    const uint32_t drain_frames =
-        ( AUDIO_OUTPUT_DMA_DESC_NUM + 1U ) * AUDIO_OUTPUT_DMA_FRAME_NUM;
-    return ( drain_frames * 1000U + AUDIO_OUTPUT_SAMPLE_RATE - 1U ) /
-           AUDIO_OUTPUT_SAMPLE_RATE;
+    const uint32_t drain_frames = ( AUDIO_OUTPUT_DMA_DESC_NUM + 1U ) * AUDIO_OUTPUT_DMA_FRAME_NUM;
+    return ( drain_frames * 1000U + AUDIO_OUTPUT_SAMPLE_RATE - 1U ) / AUDIO_OUTPUT_SAMPLE_RATE;
 }
 
 /** @brief Play one queued tone command on the worker task. */
@@ -168,8 +166,7 @@ static void play_morse( const audio_output_command_t *a_command )
 
     const uint32_t character_gap_ms = 3U * a_command->duration_ms;
     const uint32_t drain_ms = dma_drain_silence_ms();
-    const uint32_t trailing_ms =
-        ( character_gap_ms > drain_ms ) ? character_gap_ms : drain_ms;
+    const uint32_t trailing_ms = ( character_gap_ms > drain_ms ) ? character_gap_ms : drain_ms;
     (void)write_segment( false, a_command->frequency_hz, trailing_ms, &phase );
     (void)i2s_channel_disable( tx_channel );
 }
