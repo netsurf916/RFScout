@@ -7,7 +7,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   formatting:
@@ -17,6 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ github.head_ref }}
           fetch-depth: 0
 
       - name: Install clang-format 18
@@ -24,8 +25,23 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends clang-format-18
 
-      - name: Check complete C formatting
-        run: python3 tools/check_format.py --all
+      - name: Canonicalize complete C formatting
+        run: |
+          python3 tools/check_format.py --all --fix
+          python3 tools/check_format.py --all
+
+      - name: Commit canonical formatting
+        shell: bash
+        run: |
+          if git diff --quiet -- main; then
+            echo "Firmware tree is already canonical."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add main
+          git commit -m "Canonicalize Device settings sources"
+          git push origin "HEAD:${{ github.head_ref }}"
 
   build:
     name: ESP-IDF Build
