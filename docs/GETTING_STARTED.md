@@ -41,17 +41,17 @@ ESP-IDF downloads and manages its own versioned ESP cross-compilers and related 
 
 ## 2. Install ESP-IDF
 
-RFScout currently builds against the ESP-IDF 5.x toolchain used by the project CI. A convenient local layout is to keep Espressif software under `~/esp`:
+RFScout targets **ESP-IDF 6.x** and project CI tracks the `release/v6.1` branch. A convenient local layout is to keep Espressif software under `~/esp`:
 
 ```sh
 mkdir -p ~/esp
 cd ~/esp
-git clone --recursive --branch release/v5.5 https://github.com/espressif/esp-idf.git
+git clone --recursive --branch release/v6.1 https://github.com/espressif/esp-idf.git
 cd esp-idf
 ./install.sh esp32s3
 ```
 
-The install script creates the ESP-IDF Python environment and downloads the tool versions required for ESP32-S3 development.
+Developers already using a compatible ESP-IDF 6.x checkout, including a 6.1 development checkout, can keep using that environment. The install script creates the ESP-IDF Python environment and downloads the tool versions required for ESP32-S3 development.
 
 ESP-IDF does not permanently add those tools to your shell environment. Before working on RFScout in a new terminal, activate ESP-IDF with:
 
@@ -115,13 +115,15 @@ idf.py set-target esp32s3
 idf.py build
 ```
 
+The first ESP-IDF 6.x configuration also resolves the managed components declared in `main/idf_component.yml`, including cJSON. The component manager downloads those dependencies into the ignored `managed_components/` directory.
+
 The first build creates `sdkconfig` and the `build/` directory. Subsequent builds normally require only:
 
 ```sh
 idf.py build
 ```
 
-If `sdkconfig.defaults`, the partition table, or major build configuration changes, start from a fresh configuration:
+If `sdkconfig.defaults`, the partition table, component manifest, or major build configuration changes, start from a fresh configuration:
 
 ```sh
 rm -rf build sdkconfig
@@ -249,7 +251,7 @@ python3 tools/check_format.py --all
 idf.py build
 ```
 
-GitHub Actions repeats the full-tree canonical formatting audit and performs a complete ESP32-S3 build.
+GitHub Actions repeats the full-tree canonical formatting audit and performs a complete ESP32-S3 build with ESP-IDF 6.1.
 
 ## 9. Troubleshooting
 
@@ -275,6 +277,16 @@ If clang-format 18 is installed at a nonstandard path:
 ```sh
 export RFSCOUT_CLANG_FORMAT=/path/to/clang-format-18
 python3 tools/check_format.py --all
+```
+
+### `Component "json" not found`
+
+ESP-IDF 6.x no longer provides the old built-in `json` component. Current RFScout uses the managed `espressif/cjson` package and the CMake component name `cjson`. If this error appears after switching from an older RFScout checkout, make sure `main/idf_component.yml` is present and regenerate the build tree:
+
+```sh
+rm -rf build managed_components
+idf.py set-target esp32s3
+idf.py build
 ```
 
 ### CMake or configuration behaves unexpectedly
