@@ -52,11 +52,13 @@ The `device` application is always enabled even if an edited configuration attem
 
 RFScout starts from compiled defaults and then applies valid fields from the SD configuration. Missing or invalid ordinary settings keep their compiled defaults. Invalid timezone entries are ignored. If the selected timezone does not name a usable configured option, RFScout falls back to UTC when available and otherwise to the first valid configured timezone.
 
+Schema version 1 is currently supported. A document with a missing or unsupported schema version is treated as incompatible rather than being partially interpreted as the current schema.
+
 A saved wall-clock epoch is accepted only when it is within RFScout's supported sanity range. Invalid time state is ignored and is omitted the next time the configuration is written.
 
-If the complete JSON document cannot be parsed, RFScout renames it to `rfscout.json.bad`, regenerates a default configuration, and continues booting.
+If the complete JSON document cannot be parsed, or its schema version is unsupported, RFScout renames it to `rfscout.json.bad`, regenerates a default configuration, and continues booting.
 
-Configuration writes are atomic at the file level: RFScout writes `rfscout.json.tmp`, flushes and synchronizes it, closes it, and then renames it over `rfscout.json`.
+Configuration replacement is crash-recoverable. RFScout writes and synchronizes `rfscout.json.tmp`, moves the previous configuration to `rfscout.json.bak`, promotes the synchronized temporary file to `rfscout.json`, and removes the backup after success. If startup finds the main configuration missing but the backup present, it restores the backup before loading settings.
 
 ## Device application
 
@@ -74,6 +76,8 @@ The Device application owns the encoder while it is active, so analyzers and rad
 Application enablement takes effect when navigation resumes. Disabled applications are skipped. Thermal additionally requires an MLX90640 to be detected.
 
 Without an SD card, Device remains usable and settings can affect the running session, but persistent saves are unavailable. An orderly hard power-off also writes the current in-memory preferences when storage is available, so the explicit Save action is mainly useful when persistence is wanted before shutdown or deep sleep.
+
+Manual calendar input is validated after local-time conversion. Invalid dates and local times that cannot be represented in the selected timezone, such as a time inside a daylight-saving transition gap, are rejected rather than silently normalized.
 
 ## Wall clock and monotonic time
 
@@ -105,11 +109,11 @@ Manual time setting is always available from Device. RFScout records the mechani
 - `ntp`;
 - `rtc` or a specific future RTC such as `rtc:ds3231`.
 
-The `time` object is not continuously rewritten while the clock advances. During a normal hard power-off, after the log writer has drained and before the SD card is unmounted, RFScout atomically updates the saved epoch and source in `rfscout.json`. On the next cold power-on, that saved epoch bootstraps the ESP32 system clock.
+The `time` object is not continuously rewritten while the clock advances. During a normal hard power-off, after the log writer has drained and before the SD card is unmounted, RFScout updates the saved epoch and source in `rfscout.json`. On the next cold power-on, that saved epoch bootstraps the ESP32 system clock.
 
 Because the ESP32-S3 clock does not run through complete board power removal, the saved epoch is the time at the previous orderly shutdown. It cannot account for elapsed time while the board was physically unpowered. RFScout therefore tracks that the current runtime clock was restored from saved state while preserving the original authority that last set it, for example `Manual (saved)`.
 
-Deep sleep is different. The ESP32-S3 RTC domain continues running through deep sleep, so RFScout does not restore or checkpoint time merely because it entered or left deep sleep.
+Deep sleep is different. The ESP32-S3 RTC domain continues running through deep sleep. RFScout therefore does not replace the running system time with the saved hard-shutdown checkpoint after a deep-sleep wake. Clock-authority metadata is retained in RTC memory so the resumed clock keeps the same source identity without rewriting the system time.
 
 ## Timezones
 
