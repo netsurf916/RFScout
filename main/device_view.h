@@ -18,7 +18,10 @@ void device_view_enter( void );
 /** @brief Render current Device application state. */
 void device_view_render( void );
 
-/** @brief Handle Device app button/encoder input. */
-void device_view_input( bool a_pressed, int a_delta );
+/**
+ * @brief Handle Device app button/encoder input.
+ * @return True when the user selected Back and app navigation should resume.
+ */
+bool device_view_input( bool a_pressed, int a_delta );
 
 #endif // _RFSCOUT_DEVICE_VIEW_H_
