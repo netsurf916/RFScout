@@ -8,6 +8,7 @@
 #include "display.h"
 
 #include "board.h"
+#include "board_spi.h"
 
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
@@ -21,7 +22,6 @@
 #include <stddef.h>
 #include <string.h>
 
-#define DISPLAY_SPI_HOST SPI2_HOST
 #define DISPLAY_PIXEL_COUNT ( RFSCOUT_DISPLAY_WIDTH * RFSCOUT_DISPLAY_HEIGHT )
 #define DISPLAY_DMA_ROWS 10
 #define DISPLAY_DMA_PIXEL_COUNT ( RFSCOUT_DISPLAY_WIDTH * DISPLAY_DMA_ROWS )
@@ -102,6 +102,12 @@ static bool valid_rect( int a_x, int a_y, int a_width, int a_height )
 
 esp_err_t display_init( void )
 {
+    const esp_err_t bus_result = board_spi_init();
+    if( ESP_OK != bus_result )
+    {
+        return bus_result;
+    }
+
     gpio_config_t backlight = { .pin_bit_mask = 1ULL << RFSCOUT_BOARD_DISPLAY_BACKLIGHT_PIN,
                                 .mode = GPIO_MODE_OUTPUT };
     ESP_ERROR_CHECK( gpio_config( &backlight ) );
@@ -123,14 +129,6 @@ esp_err_t display_init( void )
         return ESP_ERR_NO_MEM;
     }
 
-    spi_bus_config_t bus = { .mosi_io_num = RFSCOUT_BOARD_SPI_MOSI_PIN,
-                             .miso_io_num = RFSCOUT_BOARD_SPI_MISO_PIN,
-                             .sclk_io_num = RFSCOUT_BOARD_SPI_SCLK_PIN,
-                             .quadwp_io_num = -1,
-                             .quadhd_io_num = -1,
-                             .max_transfer_sz = DISPLAY_DMA_PIXEL_COUNT * sizeof( *dma_buffer ) };
-    ESP_ERROR_CHECK( spi_bus_initialize( DISPLAY_SPI_HOST, &bus, SPI_DMA_CH_AUTO ) );
-
     esp_lcd_panel_io_handle_t io = NULL;
     esp_lcd_panel_io_spi_config_t io_config = { .dc_gpio_num = RFSCOUT_BOARD_DISPLAY_DC_PIN,
                                                 .cs_gpio_num = RFSCOUT_BOARD_DISPLAY_CS_PIN,
@@ -139,8 +137,8 @@ esp_err_t display_init( void )
                                                 .lcd_param_bits = 8,
                                                 .spi_mode = 0,
                                                 .trans_queue_depth = 10 };
-    ESP_ERROR_CHECK(
-        esp_lcd_new_panel_io_spi( (esp_lcd_spi_bus_handle_t)DISPLAY_SPI_HOST, &io_config, &io ) );
+    ESP_ERROR_CHECK( esp_lcd_new_panel_io_spi(
+        (esp_lcd_spi_bus_handle_t)RFSCOUT_BOARD_SPI_HOST, &io_config, &io ) );
 
     esp_lcd_panel_io_callbacks_t callbacks = { .on_color_trans_done = transfer_complete };
     ESP_ERROR_CHECK(

@@ -29,6 +29,7 @@ static bool restored_from_config;
 static RTC_DATA_ATTR uint32_t retained_magic;
 static RTC_DATA_ATTR rfscout_time_source_t retained_source;
 static RTC_DATA_ATTR char retained_source_detail[ 24 ];
+static RTC_DATA_ATTR bool retained_restored_from_config;
 
 /** @brief Return the stable configuration token for the current clock authority. */
 static const char *source_token( rfscout_time_source_t a_source )
@@ -82,6 +83,7 @@ static void retain_authority( void )
     retained_magic = DEVICE_TIME_RTC_MAGIC;
     retained_source = source;
     snprintf( retained_source_detail, sizeof( retained_source_detail ), "%s", source_detail );
+    retained_restored_from_config = restored_from_config;
 }
 
 /** @brief Restore clock-authority metadata without changing the RTC-retained system time. */
@@ -109,7 +111,7 @@ static bool restore_after_deep_sleep( void )
     }
     snprintf( source_detail, sizeof( source_detail ), "%s", retained_source_detail );
     valid = true;
-    restored_from_config = false;
+    restored_from_config = retained_restored_from_config;
     ESP_LOGI( TAG, "wall clock resumed after deep sleep source=%s", source_token( source ) );
     return true;
 }
@@ -153,6 +155,10 @@ esp_err_t device_time_init( void )
     const esp_err_t result = device_time_set_epoch(
         (time_t)epoch, restored_source, ( NULL != saved_source ) ? saved_source : "config" );
     restored_from_config = ( ESP_OK == result );
+    if( restored_from_config )
+    {
+        retain_authority();
+    }
     return result;
 }
 

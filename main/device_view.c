@@ -344,13 +344,15 @@ static void toggle_logging( void )
     const bool old_value = device_config_get()->logging_enabled;
     if( old_value )
     {
+        (void)device_config_set_logging_enabled( false );
         log_config_change( "logging.enabled", "On", "Off" );
         if( !log_writer_shutdown( DEVICE_LOG_SHUTDOWN_TIMEOUT_MS ) )
         {
+            (void)device_config_set_logging_enabled( true );
+            log_config_change( "logging.enabled", "Off", "On" );
             save_error = true;
             return;
         }
-        (void)device_config_set_logging_enabled( false );
         save_error = false;
         return;
     }

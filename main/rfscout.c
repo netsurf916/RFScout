@@ -128,7 +128,13 @@ void app_main( void )
         ESP_LOGW( TAG, "SD storage unavailable: %s", esp_err_to_name( result ) );
     }
 
-    ESP_ERROR_CHECK( device_config_init() );
+    result = device_config_init();
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG,
+                  "configuration persistence unavailable; using runtime defaults: %s",
+                  esp_err_to_name( result ) );
+    }
     ESP_ERROR_CHECK( device_time_init() );
     ESP_ERROR_CHECK( app_manager_init() );
     display_set_brightness( device_config_get()->brightness_percent );
@@ -149,6 +155,11 @@ void app_main( void )
 
     ESP_ERROR_CHECK( radio_monitor_init( on_observation ) );
     ESP_ERROR_CHECK( ble_monitor_init( on_observation ) );
+    if( RFSCOUT_APP_WIFI_BT != app_manager_current() )
+    {
+        (void)ble_monitor_stop();
+        (void)radio_monitor_stop();
+    }
     ESP_LOGI( TAG,
               "RFScout started: app-managed radio lifecycle, Wi-Fi region=%s",
               radio_monitor_region_name( radio_monitor_get_region() ) );
