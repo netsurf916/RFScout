@@ -6,14 +6,14 @@ on:
       - chore/canonical-format
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   generate:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -27,11 +27,17 @@ jobs:
           export PATH="/usr/lib/llvm-18/bin:$PATH"
           python3 tools/check_format.py --all --fix
           python3 tools/check_format.py --all
-          git diff --binary > canonical-format.patch
 
-      - name: Upload formatting patch
-        uses: actions/upload-artifact@v4
-        with:
-          name: canonical-format-patch
-          path: canonical-format.patch
-          if-no-files-found: error
+      - name: Commit canonical formatting
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Tree is already canonical."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add main
+          git commit -m "Canonicalize firmware formatting"
+          git push
