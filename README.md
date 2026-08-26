@@ -1,6 +1,6 @@
 # RFScout
 
-RFScout is a handheld **RF situational-awareness** instrument for the LILYGO T-Embed CC1101 Plus / ESP32-S3. It combines passive Wi-Fi/BLE observation, sub-GHz spectrum awareness, 2.4 GHz nRF24 activity analysis, microphone spectrum analysis, optional thermal imaging, battery/status telemetry, and SD logging in a rotary-encoder-driven interface.
+RFScout is a handheld **RF situational-awareness** instrument for the LILYGO T-Embed CC1101 Plus / ESP32-S3. It combines passive Wi-Fi/BLE observation, sub-GHz spectrum awareness, 2.4 GHz nRF24 activity analysis, microphone spectrum analysis, optional thermal imaging, battery/status telemetry, SD logging, and device-wide configuration in a rotary-encoder-driven interface.
 
 <p align="center">
   <img src="assets/device.jpg" alt="RFScout running on a LILYGO T-Embed CC1101 Plus" width="800">
@@ -12,15 +12,16 @@ RFScout is intentionally passive wherever the underlying radio APIs allow it. It
 
 ## Current applications
 
-Rotating the encoder switches applications in this order:
+Rotating the encoder switches applications in this order, skipping applications disabled in Device and optional hardware that is unavailable:
 
 1. **WiFi / BT**
 2. **CC1101**
 3. **nRF24**
 4. **Audio**
-5. **Thermal** — shown only when an MLX90640 is detected on the shared I2C/Qwiic bus
+5. **Thermal** — shown only when enabled and an MLX90640 is detected on the shared I2C/Qwiic bus
+6. **Device** — global settings, wall-clock control, application enablement, and persistent configuration
 
-The center button opens an application's settings/action menu where one exists. Radio and sensor subsystems are stopped when their application is left where practical so inactive views do not continue consuming RF, CPU, and power resources.
+The center button opens an application's settings/action menu where one exists. Radio and sensor subsystems are stopped when their application is left where practical so inactive views do not continue consuming RF, CPU, and power resources. Device owns the encoder while global settings are being edited and provides an explicit Back action to resume application navigation.
 
 ### WiFi / BT
 
@@ -64,13 +65,21 @@ The current audio implementation remains an analyzer rather than a calibrated so
 
 ### Thermal
 
-The Thermal application becomes available dynamically when an **MLX90640** is detected on the external I2C/Qwiic connection. RFScout periodically probes for optional thermal hardware while other applications are active, and the Thermal view remains last in the application order. The renderer interpolates the sensor's native 32x24 thermal frame for a more useful full-screen image while retaining the underlying sensor data rate and resolution limits.
+The Thermal application becomes available dynamically when an **MLX90640** is detected on the external I2C/Qwiic connection and Thermal is enabled in Device. RFScout periodically probes for optional thermal hardware while other applications are active. The renderer interpolates the sensor's native 32x24 thermal frame for a more useful full-screen image while retaining the underlying sensor data rate and resolution limits.
+
+### Device
+
+The Device application manages global settings rather than analyzer-specific tuning. It currently provides LCD brightness, 12/24-hour clock presentation, timezone selection, manual date/time, application enablement, SD logging enablement, configuration save, and configuration/time-source status.
+
+RFScout always has compiled sane defaults. When an SD card is available, persistent preferences are stored in `/sdcard/rfscout.json`; without SD, Device remains usable for the current powered session but settings cannot be persisted. The Device application itself cannot be disabled.
+
+See [Device configuration and wall clock](docs/CONFIGURATION.md) for the JSON schema, validation behavior, wall-clock lifecycle, timezone definitions, and future RTC integration model.
 
 ## Shared UI and status bar
 
 Application titles use subdued styling so the content remains visually dominant. CC1101 and nRF24 use the same left/right divider and the same `LIKELY DEVICES` visual language: fixed category rows, subdued zero values, and red nonzero counts.
 
-The top status area is shared across application views and sits between the application title and the battery indicator. Status icons populate from right to left. A mounted SD card is shown with a subdued SD icon; filesystem/logging errors make that icon red and sticky for the runtime. Optional hardware such as the thermal sensor can also advertise availability through the status area.
+The top status area is shared across application views and sits between the application title and the battery indicator. It shows RFScout's current local wall clock plus right-aligned status icons. A mounted SD card is shown with a subdued SD icon; filesystem/logging errors make that icon red and sticky for the runtime. Optional hardware such as the thermal sensor can also advertise availability through the status area. When wall time has not been established, the clock is shown as `--:--` rather than inventing a date.
 
 The battery indicator shows exact state of charge plus proportional fill. Battery and charger telemetry come from the board's BQ27220/BQ25896 devices through the shared board-I2C layer. Missing telemetry is nonfatal.
 
@@ -80,7 +89,9 @@ RFScout mounts an available microSD card at `/sdcard`. SD failure is nonfatal an
 
 LILYGO documents **SanDisk cards of 32 GB or less** as the tested baseline for the T-Embed CC1101 family; other cards and larger capacities may work but are outside that stated compatibility baseline. See [docs/SD_CARD.md](docs/SD_CARD.md).
 
-Logging runs asynchronously so filesystem latency does not block RF collection. Every application can contribute compact application-owned records through the common log queue in addition to detailed Wi-Fi/BLE lifecycle records. Files use a bounded two-digit ring:
+Logging runs asynchronously so filesystem latency does not block RF collection. Every application can contribute compact application-owned records through the common log queue in addition to detailed Wi-Fi/BLE lifecycle records. With valid wall time, records use UTC ISO-8601 timestamps such as `2026-08-26T19:52:41Z`; before time is established, records use an explicit `UP+<milliseconds>` monotonic fallback.
+
+Files use a bounded two-digit ring:
 
 ```text
 rfscout-00.log
@@ -90,6 +101,14 @@ rfscout-99.log
 ```
 
 Each segment is capped at **4 MiB**, for an approximate maximum normal footprint of 400 MiB. Rotation replaces the oldest ring slot and the storage layer also attempts to preserve free filesystem space.
+
+## Wall clock
+
+The ESP32 system wall clock is authoritative for user-visible time, log timestamps, and normal FAT/filesystem calendar metadata. It is deliberately separate from monotonic timing: RFScout continues to use monotonic timers for RF dwell periods, retries, debounce, housekeeping, timeouts, and other intervals.
+
+Manual date/time is always available in Device. On a normal hard power-off, RFScout drains the log queue, updates the saved epoch and source in `rfscout.json`, synchronizes the configuration, and then unmounts storage. On the next cold boot, the saved value bootstraps the system clock. Deep sleep does not perform this restore/checkpoint cycle because the ESP32-S3 RTC domain continues running while the SoC remains powered.
+
+A saved shutdown epoch cannot account for time elapsed while the board was physically unpowered. The UI therefore tracks that a value was restored while preserving the original authority that last established it, such as Manual, GPS, NTP, or a future specific RTC source.
 
 ## Hardware/resource ownership
 
@@ -151,6 +170,7 @@ idf.py build
 ## Documentation
 
 - [Getting started on Fedora Linux](docs/GETTING_STARTED.md) — dependencies, ESP-IDF setup, formatting, build, flash, and monitor workflow
+- [Device configuration and wall clock](docs/CONFIGURATION.md) — persistent preferences, application enablement, timezone rules, wall-clock lifecycle, and future RTC behavior
 - [Capabilities](docs/CAPABILITIES.md) — user-visible features and current limitations
 - [Architecture](docs/ARCHITECTURE.md) — module ownership, application lifecycle, and shared resources
 - [SD card behavior](docs/SD_CARD.md) — storage compatibility, rotation, and record behavior
