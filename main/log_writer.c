@@ -342,12 +342,8 @@ static bool write_record( const log_record_t *a_record )
     {
         char detail[ LOG_APP_DETAIL_MAX * 2U ];
         format_text( a_record->detail, detail, sizeof( detail ) );
-        length = snprintf( line,
-                           sizeof( line ),
-                           "%s APP %s %s\n",
-                           timestamp,
-                           a_record->app,
-                           detail );
+        length =
+            snprintf( line, sizeof( line ), "%s APP %s %s\n", timestamp, a_record->app, detail );
     }
     else
     {
