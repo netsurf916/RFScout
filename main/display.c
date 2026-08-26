@@ -8,7 +8,6 @@
 #include "display.h"
 
 #include "board.h"
-#include "power.h"
 
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
@@ -20,16 +19,12 @@
 
 #include <stdbool.h>
 #include <stddef.h>
-#include <stdio.h>
 #include <string.h>
 
 #define DISPLAY_SPI_HOST SPI2_HOST
 #define DISPLAY_PIXEL_COUNT ( RFSCOUT_DISPLAY_WIDTH * RFSCOUT_DISPLAY_HEIGHT )
 #define DISPLAY_DMA_ROWS 10
 #define DISPLAY_DMA_PIXEL_COUNT ( RFSCOUT_DISPLAY_WIDTH * DISPLAY_DMA_ROWS )
-#define COLOR_BLACK 0x0000U
-#define COLOR_YELLOW 0xFFE0U
-#define COLOR_RED 0xF800U
 
 static const char *TAG = "display";
 static esp_lcd_panel_handle_t panel;
@@ -93,35 +88,12 @@ static void draw_character( int a_x, int a_y, char a_character, uint16_t a_color
     }
 }
 
-/** @brief Draw the global hold-to-power-off overlay above the active application framebuffer. */
-static void draw_power_overlay( void )
+/** @brief Validate a framebuffer rectangle that must lie fully on-screen. */
+static bool valid_rect( int a_x, int a_y, int a_width, int a_height )
 {
-    power_status_t status;
-    power_get_status( &status );
-    if( POWER_HOLD_IDLE == status.state )
-    {
-        return;
-    }
-
-    display_fill_rect( 42, 50, 236, 70, COLOR_BLACK );
-    display_fill_rect( 42, 50, 236, 2, COLOR_RED );
-    display_fill_rect( 42, 118, 236, 2, COLOR_RED );
-    display_fill_rect( 42, 50, 2, 70, COLOR_RED );
-    display_fill_rect( 276, 50, 2, 70, COLOR_RED );
-
-    if( POWER_HOLD_SHUTDOWN == status.state )
-    {
-        display_draw_text( 91, 77, "POWERING OFF...", COLOR_RED, 2 );
-        return;
-    }
-
-    display_draw_text( 69, 63, "HOLD TO POWER OFF", COLOR_YELLOW, 2 );
-    char countdown[ 4 ];
-    snprintf( countdown,
-              sizeof( countdown ),
-              "%u",
-              (unsigned)status.seconds_remaining );
-    display_draw_text( 150, 88, countdown, COLOR_RED, 3 );
+    return ( a_x >= 0 ) && ( a_y >= 0 ) && ( a_width > 0 ) && ( a_height > 0 ) &&
+           ( a_x + a_width <= RFSCOUT_DISPLAY_WIDTH ) &&
+           ( a_y + a_height <= RFSCOUT_DISPLAY_HEIGHT );
 }
 
 esp_err_t display_init( void )
@@ -199,7 +171,7 @@ esp_err_t display_init( void )
     ESP_ERROR_CHECK( esp_lcd_panel_disp_on_off( panel, true ) );
 
     display_clear( 0x0000 );
-    ESP_ERROR_CHECK( display_present() );
+    ESP_ERROR_CHECK( display_flush() );
     gpio_set_level( RFSCOUT_BOARD_DISPLAY_BACKLIGHT_PIN, 1 );
     ESP_LOGI( TAG, "ST7789 LCD initialized at %dx%d", RFSCOUT_DISPLAY_WIDTH, RFSCOUT_DISPLAY_HEIGHT );
     return ESP_OK;
@@ -269,14 +241,58 @@ void display_draw_text( int a_x, int a_y, const char *a_text, uint16_t a_color, 
     }
 }
 
-esp_err_t display_present( void )
+esp_err_t display_read_rect( int a_x,
+                             int a_y,
+                             int a_width,
+                             int a_height,
+                             uint16_t *a_pixels,
+                             size_t a_pixel_capacity )
+{
+    const size_t required = (size_t)a_width * (size_t)a_height;
+    if( ( NULL == framebuffer ) || ( NULL == a_pixels ) ||
+        !valid_rect( a_x, a_y, a_width, a_height ) || ( a_pixel_capacity < required ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    for( int y = 0; y < a_height; ++y )
+    {
+        memcpy( &a_pixels[ (size_t)y * (size_t)a_width ],
+                &framebuffer[ (size_t)( a_y + y ) * RFSCOUT_DISPLAY_WIDTH + (size_t)a_x ],
+                (size_t)a_width * sizeof( *a_pixels ) );
+    }
+    return ESP_OK;
+}
+
+esp_err_t display_write_rect( int a_x,
+                              int a_y,
+                              int a_width,
+                              int a_height,
+                              const uint16_t *a_pixels,
+                              size_t a_pixel_count )
+{
+    const size_t required = (size_t)a_width * (size_t)a_height;
+    if( ( NULL == framebuffer ) || ( NULL == a_pixels ) ||
+        !valid_rect( a_x, a_y, a_width, a_height ) || ( a_pixel_count < required ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    for( int y = 0; y < a_height; ++y )
+    {
+        memcpy( &framebuffer[ (size_t)( a_y + y ) * RFSCOUT_DISPLAY_WIDTH + (size_t)a_x ],
+                &a_pixels[ (size_t)y * (size_t)a_width ],
+                (size_t)a_width * sizeof( *a_pixels ) );
+    }
+    return ESP_OK;
+}
+
+esp_err_t display_flush( void )
 {
     if( ( NULL == panel ) || ( NULL == framebuffer ) || ( NULL == dma_buffer ) )
     {
         return ESP_ERR_INVALID_STATE;
     }
-
-    draw_power_overlay();
 
     for( int y = 0; y < RFSCOUT_DISPLAY_HEIGHT; y += DISPLAY_DMA_ROWS )
     {
