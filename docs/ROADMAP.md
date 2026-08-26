@@ -37,7 +37,9 @@ Future RTC/GPS/NTP integrations are tracked separately below. In particular, det
 - Keep RF observation callbacks nonblocking by enqueueing bounded audio commands.
 - Add WiFi / BT alert modes: `OFF`, `TONE`, and `MORSE`.
 - Default audible alerts to `OFF`.
-- Restrict Morse alerts to exactly one selectable character.
+- Keep each Morse alert exactly one character long.
+- As a follow-up refinement, map a distinct Morse character to each detected surveillance category so the user can identify the likely category by ear without looking at the display. Categories such as general camera, body-worn camera, Flock-style camera, drone, and other surveillance classes should have intentionally distinct one-character patterns.
+- Define the category-to-Morse mapping centrally alongside the surveillance classifier rather than scattering hard-coded characters through alert call sites.
 - Centralize the printable International Morse patterns used by alerts for reuse by the Audio application.
 - Keep speaker output on I2S1 and microphone/PDM acquisition on I2S0.
 - Target ESP-IDF 6.x only.
@@ -66,7 +68,7 @@ Remaining hardware validation includes physical speaker channel, loudness, and p
 - Add microphone recording using the existing I2S0/PDM capture path rather than introducing a competing microphone reader.
 - Write standard PCM WAV recordings to SD through a buffered/asynchronous path suitable for continuous audio data.
 - Add an interactive International Morse browser/player using the shared Morse definitions and speaker service established by PR #21.
-- Make the Morse tool able to browse and play the standard character patterns; keep surveillance-alert Morse limited to one character.
+- Make the Morse tool able to browse and play the standard character patterns; keep each surveillance-alert Morse notification limited to one character even when the character is selected by surveillance category.
 - Validate the microphone/PDM/FFT path on hardware as part of the expansion.
 - After the recorder and Morse player are stable, consider tuner and DTMF-analysis features.
 
