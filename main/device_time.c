@@ -9,7 +9,9 @@
 
 #include "device_config.h"
 
+#include "esp_attr.h"
 #include "esp_log.h"
+#include "esp_sleep.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,12 +19,16 @@
 #include <sys/time.h>
 
 #define DEVICE_TIME_MIN_VALID_EPOCH 1577836800LL
+#define DEVICE_TIME_RTC_MAGIC 0x52544653U
 
 static const char *TAG = "device_time";
 static rfscout_time_source_t source = RFSCOUT_TIME_SOURCE_UNSET;
 static char source_detail[ 24 ];
 static bool valid;
 static bool restored_from_config;
+static RTC_DATA_ATTR uint32_t retained_magic;
+static RTC_DATA_ATTR rfscout_time_source_t retained_source;
+static RTC_DATA_ATTR char retained_source_detail[ 24 ];
 
 /** @brief Return the stable configuration token for the current clock authority. */
 static const char *source_token( rfscout_time_source_t a_source )
@@ -70,6 +76,44 @@ static rfscout_time_source_t source_from_token( const char *a_token )
     return RFSCOUT_TIME_SOURCE_CONFIG;
 }
 
+/** @brief Retain clock-authority metadata in the RTC domain for deep-sleep wake. */
+static void retain_authority( void )
+{
+    retained_magic = DEVICE_TIME_RTC_MAGIC;
+    retained_source = source;
+    snprintf( retained_source_detail, sizeof( retained_source_detail ), "%s", source_detail );
+}
+
+/** @brief Restore clock-authority metadata without changing the RTC-retained system time. */
+static bool restore_after_deep_sleep( void )
+{
+    if( ESP_SLEEP_WAKEUP_UNDEFINED == esp_sleep_get_wakeup_cause() )
+    {
+        return false;
+    }
+    if( DEVICE_TIME_RTC_MAGIC != retained_magic )
+    {
+        return false;
+    }
+
+    const time_t now = time( NULL );
+    if( now < (time_t)DEVICE_TIME_MIN_VALID_EPOCH )
+    {
+        return false;
+    }
+
+    source = retained_source;
+    if( ( source < RFSCOUT_TIME_SOURCE_CONFIG ) || ( source > RFSCOUT_TIME_SOURCE_NTP ) )
+    {
+        source = RFSCOUT_TIME_SOURCE_CONFIG;
+    }
+    snprintf( source_detail, sizeof( source_detail ), "%s", retained_source_detail );
+    valid = true;
+    restored_from_config = false;
+    ESP_LOGI( TAG, "wall clock resumed after deep sleep source=%s", source_token( source ) );
+    return true;
+}
+
 esp_err_t device_time_apply_timezone( void )
 {
     const device_timezone_t *zone = device_config_timezone();
@@ -93,6 +137,11 @@ esp_err_t device_time_init( void )
     restored_from_config = false;
     (void)device_time_apply_timezone();
 
+    if( restore_after_deep_sleep() )
+    {
+        return ESP_OK;
+    }
+
     int64_t epoch = 0;
     const char *saved_source = NULL;
     if( !device_config_saved_time( &epoch, &saved_source ) )
@@ -101,17 +150,14 @@ esp_err_t device_time_init( void )
     }
 
     const rfscout_time_source_t restored_source = source_from_token( saved_source );
-    const esp_err_t result =
-        device_time_set_epoch( (time_t)epoch,
-                               restored_source,
-                               ( NULL != saved_source ) ? saved_source : "config" );
+    const esp_err_t result = device_time_set_epoch(
+        (time_t)epoch, restored_source, ( NULL != saved_source ) ? saved_source : "config" );
     restored_from_config = ( ESP_OK == result );
     return result;
 }
 
-esp_err_t device_time_set_epoch( time_t a_epoch,
-                                 rfscout_time_source_t a_source,
-                                 const char *a_detail )
+esp_err_t
+device_time_set_epoch( time_t a_epoch, rfscout_time_source_t a_source, const char *a_detail )
 {
     if( a_epoch < (time_t)DEVICE_TIME_MIN_VALID_EPOCH )
     {
@@ -128,12 +174,10 @@ esp_err_t device_time_set_epoch( time_t a_epoch,
     }
 
     source = a_source;
-    snprintf( source_detail,
-              sizeof( source_detail ),
-              "%s",
-              ( NULL != a_detail ) ? a_detail : "" );
+    snprintf( source_detail, sizeof( source_detail ), "%s", ( NULL != a_detail ) ? a_detail : "" );
     valid = true;
     restored_from_config = false;
+    retain_authority();
     ESP_LOGI( TAG, "wall clock set source=%s", source_token( source ) );
     return ESP_OK;
 }
