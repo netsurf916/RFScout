@@ -315,7 +315,8 @@ static void commit_manual_time( void )
     requested.tm_isdst = -1;
     struct tm conversion = requested;
     const time_t new_epoch = mktime( &conversion );
-    if( ( new_epoch < (time_t)1577836800 ) || !manual_time_round_trip_valid( &requested, new_epoch ) )
+    const bool calendar_valid = manual_time_round_trip_valid( &requested, new_epoch );
+    if( ( new_epoch < (time_t)1577836800 ) || !calendar_valid )
     {
         save_error = true;
         return;
