@@ -15,8 +15,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define RFSCOUT_DISPLAY_WIDTH   320
-#define RFSCOUT_DISPLAY_HEIGHT  170
+#define RFSCOUT_DISPLAY_WIDTH 320
+#define RFSCOUT_DISPLAY_HEIGHT 170
 
 /**
  * @brief Initialize the T-Embed ST7789 display.
@@ -60,12 +60,8 @@ void display_fill_rect( int a_x, int a_y, int a_width, int a_height, uint16_t a_
  * @param a_pixel_capacity Number of RGB565 pixels available in @p a_pixels.
  * @return ESP_OK on success; ESP_ERR_INVALID_ARG for an invalid rectangle or buffer.
  */
-esp_err_t display_read_rect( int a_x,
-                             int a_y,
-                             int a_width,
-                             int a_height,
-                             uint16_t *a_pixels,
-                             size_t a_pixel_capacity );
+esp_err_t display_read_rect(
+    int a_x, int a_y, int a_width, int a_height, uint16_t *a_pixels, size_t a_pixel_capacity );
 
 /**
  * @brief Restore a framebuffer rectangle from a caller-provided RGB565 buffer.
@@ -77,12 +73,8 @@ esp_err_t display_read_rect( int a_x,
  * @param a_pixel_count Number of RGB565 pixels available in @p a_pixels.
  * @return ESP_OK on success; ESP_ERR_INVALID_ARG for an invalid rectangle or buffer.
  */
-esp_err_t display_write_rect( int a_x,
-                              int a_y,
-                              int a_width,
-                              int a_height,
-                              const uint16_t *a_pixels,
-                              size_t a_pixel_count );
+esp_err_t display_write_rect(
+    int a_x, int a_y, int a_width, int a_height, const uint16_t *a_pixels, size_t a_pixel_count );
 
 /**
  * @brief Transfer the complete framebuffer to the LCD without adding UI overlays.
