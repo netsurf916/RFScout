@@ -9,6 +9,7 @@
 
 #include "battery.h"
 #include "board.h"
+#include "device_config.h"
 #include "device_time.h"
 #include "log_writer.h"
 #include "storage.h"
@@ -57,7 +58,7 @@ static bool prepare_storage_for_power_state( bool a_checkpoint_time )
     return true;
 }
 
-/** @brief Restore SD logging after a failed physical power-off request. */
+/** @brief Restore SD state after a failed physical power-off request. */
 static void restore_storage_after_failed_power_off( void )
 {
     if( ESP_OK != storage_init() )
@@ -66,6 +67,10 @@ static void restore_storage_after_failed_power_off( void )
         return;
     }
 
+    if( !device_config_get()->logging_enabled )
+    {
+        return;
+    }
     if( ESP_OK != log_writer_init() )
     {
         ESP_LOGE( TAG, "could not restart logging after failed power off" );
