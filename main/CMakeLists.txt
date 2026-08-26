@@ -39,6 +39,6 @@ idf_component_register(
         "storage.c"
         "log_writer.c"
     INCLUDE_DIRS "."
-    PRIV_REQUIRES bt cjson
+    PRIV_REQUIRES bt cjson esp_driver_ledc
     REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_timer driver esp_driver_i2c esp_driver_i2s esp_lcd fatfs sdmmc
 )
