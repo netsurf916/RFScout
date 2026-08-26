@@ -35,6 +35,7 @@ Future RTC/GPS/NTP integrations are tracked separately below. In particular, det
 
 - Add real onboard-speaker output through a dedicated asynchronous audio-output service.
 - Keep RF observation callbacks nonblocking by enqueueing bounded audio commands.
+- Serialize alert policy changes with request enqueueing without blocking RF callbacks; selecting `OFF` must clear pending sounds and prevent a concurrent stale request from enqueueing afterward.
 - Add WiFi / BT alert modes: `OFF`, `TONE`, and `MORSE`.
 - Default audible alerts to `OFF`.
 - Keep each Morse alert exactly one character long.
