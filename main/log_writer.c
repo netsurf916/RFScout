@@ -7,6 +7,7 @@
 
 #include "log_writer.h"
 
+#include "device_time.h"
 #include "storage.h"
 #include "surveillance.h"
 
@@ -21,13 +22,15 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #define LOG_QUEUE_DEPTH 128U
-#define LOG_LINE_MAX 256U
+#define LOG_LINE_MAX 384U
 #define LOG_IDENTITY_MAX 96U
 #define LOG_APP_NAME_MAX 16U
 #define LOG_APP_DETAIL_MAX 160U
+#define LOG_TIMESTAMP_MAX 32U
 #define LOG_TASK_STACK_SIZE 4096U
 #define LOG_TASK_PRIORITY 2U
 #define LOG_FLUSH_INTERVAL_US 1000000LL
@@ -42,7 +45,9 @@ typedef enum
 
 typedef struct
 {
-    uint32_t timestamp_ms;
+    time_t wall_time;
+    uint32_t uptime_ms;
+    bool wall_time_valid;
     log_record_type_t type;
     observation_store_event_t event;
     rf_source_t source;
@@ -73,12 +78,14 @@ static volatile bool writer_stopped;
 static volatile bool io_error;
 static uint32_t dropped_records;
 
+/** @brief Mark the logging subsystem unhealthy after a filesystem operation fails. */
 static void mark_io_error( const char *a_operation )
 {
     io_error = true;
     ESP_LOGE( TAG, "%s failed: errno=%d", a_operation, errno );
 }
 
+/** @brief Construct the path for one bounded log-ring slot. */
 static void segment_path( unsigned a_slot, char *a_path, size_t a_capacity )
 {
     snprintf( a_path,
@@ -87,6 +94,7 @@ static void segment_path( unsigned a_slot, char *a_path, size_t a_capacity )
               a_slot % RFSCOUT_LOG_SEGMENT_COUNT );
 }
 
+/** @brief Read the sequence header from one existing ring slot. */
 static bool read_sequence( unsigned a_slot, uint32_t *a_sequence )
 {
     char path[ 64 ];
@@ -106,6 +114,7 @@ static bool read_sequence( unsigned a_slot, uint32_t *a_sequence )
     return true;
 }
 
+/** @brief Find the newest ring segment and select its successor. */
 static void find_next_segment( void )
 {
     bool found = false;
@@ -127,6 +136,7 @@ static void find_next_segment( void )
     active_slot = found ? ( newest_slot + 1U ) % RFSCOUT_LOG_SEGMENT_COUNT : 0U;
 }
 
+/** @brief Delete the oldest inactive segment when free space is constrained. */
 static bool delete_oldest_segment( void )
 {
     bool found = false;
@@ -158,6 +168,7 @@ static bool delete_oldest_segment( void )
     return true;
 }
 
+/** @brief Preserve the configured filesystem reserve by deleting oldest segments. */
 static void enforce_free_space_reserve( void )
 {
     uint64_t free_bytes = 0;
@@ -172,6 +183,7 @@ static void enforce_free_space_reserve( void )
     }
 }
 
+/** @brief Open a fresh active segment for the current ring slot. */
 static bool open_segment( void )
 {
     char path[ 64 ];
@@ -202,6 +214,7 @@ static bool open_segment( void )
     return true;
 }
 
+/** @brief Flush, sync, and close the current segment. */
 static void close_segment( void )
 {
     if( NULL == active_file )
@@ -216,6 +229,7 @@ static void close_segment( void )
     active_size = 0U;
 }
 
+/** @brief Rotate to the next bounded ring segment. */
 static bool rotate_segment( void )
 {
     close_segment();
@@ -224,6 +238,7 @@ static bool rotate_segment( void )
     return open_segment();
 }
 
+/** @brief Convert evidence bits to stable pipe-separated log tokens. */
 static void format_evidence( uint8_t a_evidence, char *a_output, size_t a_capacity )
 {
     struct evidence_name
@@ -250,6 +265,7 @@ static void format_evidence( uint8_t a_evidence, char *a_output, size_t a_capaci
         strlcpy( a_output, "-", a_capacity );
 }
 
+/** @brief Escape arbitrary text for one-line log records. */
 static void format_text( const char *a_input, char *a_output, size_t a_capacity )
 {
     size_t output = 0U;
@@ -293,23 +309,41 @@ static void format_text( const char *a_input, char *a_output, size_t a_capacity 
     a_output[ output ] = '\0';
 }
 
+/** @brief Capture wall time and monotonic fallback at event creation. */
+static void stamp_record( log_record_t *a_record )
+{
+    a_record->uptime_ms = (uint32_t)( esp_timer_get_time() / 1000ULL );
+    a_record->wall_time_valid = device_time_now( &a_record->wall_time );
+}
+
+/** @brief Format a UTC wall-clock timestamp or explicit monotonic fallback. */
+static void format_timestamp( const log_record_t *a_record, char *a_output, size_t a_capacity )
+{
+    if( a_record->wall_time_valid &&
+        device_time_format_iso8601_utc( a_record->wall_time, a_output, a_capacity ) )
+    {
+        return;
+    }
+    snprintf( a_output, a_capacity, "UP+%lu", (unsigned long)a_record->uptime_ms );
+}
+
+/** @brief Serialize one queued record to the active log segment. */
 static bool write_record( const log_record_t *a_record )
 {
     if( ( NULL == active_file ) && !open_segment() )
         return false;
+
     char line[ LOG_LINE_MAX ];
+    char timestamp[ LOG_TIMESTAMP_MAX ];
+    format_timestamp( a_record, timestamp, sizeof( timestamp ) );
     int length;
 
     if( LOG_RECORD_APP == a_record->type )
     {
         char detail[ LOG_APP_DETAIL_MAX * 2U ];
         format_text( a_record->detail, detail, sizeof( detail ) );
-        length = snprintf( line,
-                           sizeof( line ),
-                           "%lu APP %s %s\n",
-                           (unsigned long)a_record->timestamp_ms,
-                           a_record->app,
-                           detail );
+        length =
+            snprintf( line, sizeof( line ), "%s APP %s %s\n", timestamp, a_record->app, detail );
     }
     else
     {
@@ -330,9 +364,9 @@ static bool write_record( const log_record_t *a_record )
                                         : "-";
             length = snprintf( line,
                                sizeof( line ),
-                               "%lu ADDED %s rssi=%d ch=%u mac=%02X:%02X:%02X:%02X:%02X:%02X "
+                               "%s ADDED %s rssi=%d ch=%u mac=%02X:%02X:%02X:%02X:%02X:%02X "
                                "identity=\"%s\" surveillance=%s score=%u evidence=%s\n",
-                               (unsigned long)a_record->timestamp_ms,
+                               timestamp,
                                source,
                                a_record->rssi,
                                (unsigned)a_record->channel,
@@ -355,8 +389,8 @@ static bool write_record( const log_record_t *a_record )
             length = snprintf(
                 line,
                 sizeof( line ),
-                "%lu DROPPED %s mac=%02X:%02X:%02X:%02X:%02X:%02X identity=\"%s\" reason=%s\n",
-                (unsigned long)a_record->timestamp_ms,
+                "%s DROPPED %s mac=%02X:%02X:%02X:%02X:%02X:%02X identity=\"%s\" reason=%s\n",
+                timestamp,
                 source,
                 a_record->address[ 0 ],
                 a_record->address[ 1 ],
@@ -385,6 +419,7 @@ static bool write_record( const log_record_t *a_record )
     return true;
 }
 
+/** @brief Enqueue one immutable log record without blocking collectors. */
 static bool queue_record( const log_record_t *a_record )
 {
     if( !accepting || ( NULL == queue ) || ( NULL == a_record ) )
@@ -395,6 +430,7 @@ static bool queue_record( const log_record_t *a_record )
     return false;
 }
 
+/** @brief Drain queued records and own all filesystem writes in one task. */
 static void writer_task_main( void *a_argument )
 {
     (void)a_argument;
@@ -460,8 +496,8 @@ bool log_writer_device_event( observation_store_event_t a_event, const rf_device
 {
     if( NULL == a_device )
         return false;
-    log_record_t record = { .timestamp_ms = (uint32_t)( esp_timer_get_time() / 1000ULL ),
-                            .type = LOG_RECORD_DEVICE,
+
+    log_record_t record = { .type = LOG_RECORD_DEVICE,
                             .event = a_event,
                             .source = a_device->last_source,
                             .rssi = a_device->rssi,
@@ -469,6 +505,7 @@ bool log_writer_device_event( observation_store_event_t a_event, const rf_device
                             .signature = a_device->surveillance_signature,
                             .score = a_device->surveillance_score,
                             .evidence = a_device->surveillance_evidence };
+    stamp_record( &record );
     memcpy( record.address, a_device->address, sizeof( record.address ) );
     strlcpy( record.vendor, a_device->vendor, sizeof( record.vendor ) );
     if( a_device->has_name )
@@ -488,8 +525,9 @@ bool log_writer_app_record( const char *a_app, const char *a_detail )
 {
     if( ( NULL == a_app ) || ( '\0' == a_app[ 0 ] ) || ( NULL == a_detail ) )
         return false;
-    log_record_t record = { .timestamp_ms = (uint32_t)( esp_timer_get_time() / 1000ULL ),
-                            .type = LOG_RECORD_APP };
+
+    log_record_t record = { .type = LOG_RECORD_APP };
+    stamp_record( &record );
     strlcpy( record.app, a_app, sizeof( record.app ) );
     strlcpy( record.detail, a_detail, sizeof( record.detail ) );
     return queue_record( &record );

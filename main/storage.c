@@ -8,6 +8,7 @@
 #include "storage.h"
 
 #include "board.h"
+#include "board_spi.h"
 
 #include "driver/sdspi_host.h"
 #include "driver/spi_master.h"
@@ -15,7 +16,6 @@
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
 
-#define STORAGE_SPI_HOST SPI2_HOST
 #define STORAGE_MAX_OPEN_FILES 5
 
 static const char *TAG = "storage";
@@ -29,11 +29,18 @@ esp_err_t storage_init( void )
         return ESP_OK;
     }
 
+    const esp_err_t bus_result = board_spi_init();
+    if( ESP_OK != bus_result )
+    {
+        ESP_LOGW( TAG, "shared SPI bus unavailable: %s", esp_err_to_name( bus_result ) );
+        return bus_result;
+    }
+
     sdmmc_host_t host = SDSPI_HOST_DEFAULT();
-    host.slot = STORAGE_SPI_HOST;
+    host.slot = RFSCOUT_BOARD_SPI_HOST;
 
     sdspi_device_config_t slot = SDSPI_DEVICE_CONFIG_DEFAULT();
-    slot.host_id = STORAGE_SPI_HOST;
+    slot.host_id = RFSCOUT_BOARD_SPI_HOST;
     slot.gpio_cs = RFSCOUT_BOARD_SD_CS_PIN;
 
     const esp_vfs_fat_sdmmc_mount_config_t mount_config = { .format_if_mount_failed = false,

@@ -6,7 +6,10 @@
 */
 
 #include "display.h"
+
+#include "battery_indicator.h"
 #include "power.h"
+#include "status_bar.h"
 
 #include "esp_heap_caps.h"
 
@@ -55,6 +58,9 @@ static void draw_power_overlay( const power_status_t *a_status )
 
 esp_err_t display_present( void )
 {
+    battery_indicator_draw();
+    status_bar_draw();
+
     power_status_t status;
     power_get_status( &status );
     if( POWER_HOLD_IDLE == status.state )

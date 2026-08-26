@@ -1,12 +1,13 @@
 /**
     status_bar.c : RFScout top status bar implementation
-    Description: Renders compact right-aligned state and error icons.
+    Description: Renders compact right-aligned time, state, and error indicators.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
 
 #include "status_bar.h"
 
+#include "device_time.h"
 #include "display.h"
 #include "log_writer.h"
 #include "mlx90640.h"
@@ -14,6 +15,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 #define STATUS_BAR_RIGHT_X 235
 #define STATUS_BAR_ICON_Y 4
@@ -77,5 +79,8 @@ void status_bar_draw( void )
         x -= STATUS_BAR_ICON_WIDTH + STATUS_BAR_ICON_GAP;
     }
 
-    (void)x;
+    char clock[ 12 ];
+    (void)device_time_format_clock( clock, sizeof( clock ) );
+    const int clock_width = (int)strlen( clock ) * 6;
+    display_draw_text( x - clock_width, STATUS_BAR_ICON_Y + 3, clock, STATUS_BAR_COLOR_NORMAL, 1U );
 }

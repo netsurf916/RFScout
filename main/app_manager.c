@@ -12,6 +12,8 @@
 #include "ble_monitor.h"
 #include "cc1101.h"
 #include "cc1101_activity.h"
+#include "device_config.h"
+#include "device_view.h"
 #include "mlx90640.h"
 #include "nrf24.h"
 #include "nrf24_activity.h"
@@ -86,6 +88,14 @@ static bool probe_thermal( void )
 /** @brief Return whether a top-level application can currently be selected. */
 static bool app_available( rfscout_app_id_t a_app )
 {
+    if( RFSCOUT_APP_DEVICE == a_app )
+    {
+        return true;
+    }
+    if( !device_config_app_enabled( a_app ) )
+    {
+        return false;
+    }
     return ( RFSCOUT_APP_THERMAL != a_app ) || mlx90640_is_detected();
 }
 
@@ -310,6 +320,10 @@ static void enter_app( rfscout_app_id_t a_app )
             thermal_view_enter();
             break;
 
+        case RFSCOUT_APP_DEVICE:
+            device_view_enter();
+            break;
+
         default:
             break;
     }
@@ -335,13 +349,17 @@ static rfscout_app_id_t next_available_app( int a_direction, int64_t a_now )
         }
 
         const rfscout_app_id_t candidate = (rfscout_app_id_t)next;
-        if( ( RFSCOUT_APP_THERMAL == candidate ) && !app_available( candidate ) )
+        if( !app_available( candidate ) )
         {
-            last_thermal_probe_us = a_now;
-            if( !probe_thermal() )
+            if( RFSCOUT_APP_THERMAL == candidate )
             {
-                continue;
+                last_thermal_probe_us = a_now;
+                if( device_config_app_enabled( candidate ) && probe_thermal() )
+                {
+                    return candidate;
+                }
             }
+            continue;
         }
         return candidate;
     }
@@ -668,6 +686,10 @@ static void audio_input( bool a_pressed, int a_delta )
 esp_err_t app_manager_init( void )
 {
     active_app = RFSCOUT_APP_WIFI_BT;
+    if( !device_config_app_enabled( active_app ) )
+    {
+        active_app = RFSCOUT_APP_DEVICE;
+    }
     last_app_refresh_us = 0;
     last_thermal_probe_us = esp_timer_get_time();
     last_radio_retry_us = 0;
@@ -694,6 +716,10 @@ esp_err_t app_manager_init( void )
     }
 
     (void)mlx90640_init();
+    if( RFSCOUT_APP_DEVICE == active_app )
+    {
+        device_view_enter();
+    }
     return ESP_OK;
 }
 
@@ -706,7 +732,7 @@ void app_manager_poll( void )
 {
     const int64_t now = esp_timer_get_time();
 
-    if( ( RFSCOUT_APP_THERMAL != active_app ) &&
+    if( ( RFSCOUT_APP_THERMAL != active_app ) && device_config_app_enabled( RFSCOUT_APP_THERMAL ) &&
         ( now - last_thermal_probe_us >= APP_FEATURE_PROBE_INTERVAL_US ) )
     {
         (void)probe_thermal();
@@ -715,6 +741,21 @@ void app_manager_poll( void )
 
     const bool pressed = platform_encoder_button_pressed();
     const int delta = platform_encoder_delta();
+
+    if( RFSCOUT_APP_DEVICE == active_app )
+    {
+        if( device_view_input( pressed, delta ) )
+        {
+            const rfscout_app_id_t candidate = next_available_app( 1, now );
+            if( candidate != active_app )
+            {
+                leave_app( active_app );
+                active_app = candidate;
+                enter_app( active_app );
+            }
+        }
+        return;
+    }
 
     if( RFSCOUT_APP_CC1101 == active_app )
     {
@@ -818,7 +859,7 @@ void app_manager_poll( void )
     if( !mlx90640_is_detected() )
     {
         leave_app( active_app );
-        active_app = RFSCOUT_APP_WIFI_BT;
+        active_app = next_available_app( 1, now );
         enter_app( active_app );
         return;
     }
@@ -833,7 +874,7 @@ void app_manager_poll( void )
     if( ( ESP_OK != result ) && ( ESP_ERR_NOT_FINISHED != result ) && !mlx90640_is_detected() )
     {
         leave_app( active_app );
-        active_app = RFSCOUT_APP_WIFI_BT;
+        active_app = next_available_app( 1, now );
         enter_app( active_app );
     }
 }

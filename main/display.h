@@ -24,6 +24,9 @@
  */
 esp_err_t display_init( void );
 
+/** @brief Set LCD backlight brightness from 10 to 100 percent. */
+void display_set_brightness( uint8_t a_percent );
+
 /**
  * @brief Fill the local framebuffer with one RGB565 color.
  * @param a_color RGB565 color value.
