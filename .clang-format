@@ -6,6 +6,8 @@ TabWidth: 4
 UseTab: Never
 ColumnLimit: 100
 BreakBeforeBraces: Allman
+BraceWrapping:
+  AfterCaseLabel: true
 AllowShortBlocksOnASingleLine: Never
 AllowShortCaseLabelsOnASingleLine: false
 AllowShortFunctionsOnASingleLine: None
@@ -14,7 +16,9 @@ AllowShortLoopsOnASingleLine: false
 BinPackArguments: false
 BinPackParameters: false
 BreakBeforeBinaryOperators: None
+IndentCaseLabels: true
 PointerAlignment: Right
+ReflowComments: false
 SpaceBeforeParens: Never
 SpacesInParentheses: true
 SpacesInSquareBrackets: true
