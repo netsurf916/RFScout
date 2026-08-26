@@ -27,8 +27,6 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak );
  * @param a_editing True while the selected setting is being adjusted.
  * @param a_peak_hold Current peak-hold enable state.
  */
-void audio_view_menu( unsigned a_selected,
-                      bool a_editing,
-                      bool a_peak_hold );
+void audio_view_menu( unsigned a_selected, bool a_editing, bool a_peak_hold );
 
 #endif // _RFSCOUT_AUDIO_VIEW_H_

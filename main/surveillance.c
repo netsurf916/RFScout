@@ -11,14 +11,14 @@
 #include <string.h>
 
 #define SCORE_OUI_GENERIC_CAMERA 60U
-#define SCORE_OUI_HIGH           75U
-#define SCORE_OUI_META           35U
-#define SCORE_NAME               45U
-#define SCORE_COMPANY            80U
-#define SCORE_RAVEN              70U
-#define SCORE_REMOTE_ID         100U
-#define SCORE_ALERT_THRESHOLD    60U
-#define FLOCK_COMPANY_ID       0x09C8U
+#define SCORE_OUI_HIGH 75U
+#define SCORE_OUI_META 35U
+#define SCORE_NAME 45U
+#define SCORE_COMPANY 80U
+#define SCORE_RAVEN 70U
+#define SCORE_REMOTE_ID 100U
+#define SCORE_ALERT_THRESHOLD 60U
+#define FLOCK_COMPANY_ID 0x09C8U
 
 typedef struct
 {
@@ -44,8 +44,7 @@ typedef struct
 
 #include "surveillance_signatures.inc"
 
-static const name_signature_t name_signatures[] =
-{
+static const name_signature_t name_signatures[] = {
     { "AXON", SURVEILLANCE_BODY_CAMERA, SURVEILLANCE_SIGNATURE_AXON, SCORE_NAME },
     { "FLOCKCAM", SURVEILLANCE_FLOCK, SURVEILLANCE_SIGNATURE_FLOCK, SCORE_NAME },
     { "FS EXT BATTERY", SURVEILLANCE_FLOCK, SURVEILLANCE_SIGNATURE_FLOCK, SCORE_NAME },
@@ -69,8 +68,7 @@ static bool contains_ci( const char *a_value, const char *a_fragment )
     for( ; '\0' != *a_value; ++a_value )
     {
         size_t i = 0;
-        while( ( i < fragment_length ) &&
-               ( '\0' != a_value[ i ] ) &&
+        while( ( i < fragment_length ) && ( '\0' != a_value[ i ] ) &&
                ( toupper( (unsigned char)a_value[ i ] ) ==
                  toupper( (unsigned char)a_fragment[ i ] ) ) )
         {
@@ -89,8 +87,7 @@ static bool contains_ci( const char *a_value, const char *a_fragment )
 /** @brief Convert the first three address octets into a comparable prefix. */
 static uint32_t address_prefix( const uint8_t *a_address )
 {
-    return ( (uint32_t)a_address[ 0 ] << 16U ) |
-           ( (uint32_t)a_address[ 1 ] << 8U ) |
+    return ( (uint32_t)a_address[ 0 ] << 16U ) | ( (uint32_t)a_address[ 1 ] << 8U ) |
            (uint32_t)a_address[ 2 ];
 }
 
@@ -143,10 +140,8 @@ static void add_evidence( candidate_t *a_candidates,
                           uint8_t a_score,
                           uint8_t a_evidence )
 {
-    if( ( NULL == a_candidates ) ||
-        ( SURVEILLANCE_SIGNATURE_NONE == a_signature ) ||
-        ( a_signature >= SURVEILLANCE_SIGNATURE_COUNT ) ||
-        ( 0U == a_score ) )
+    if( ( NULL == a_candidates ) || ( SURVEILLANCE_SIGNATURE_NONE == a_signature ) ||
+        ( a_signature >= SURVEILLANCE_SIGNATURE_COUNT ) || ( 0U == a_score ) )
     {
         return;
     }
@@ -174,8 +169,7 @@ static surveillance_match_t select_best_candidate( const candidate_t *a_candidat
          ++signature )
     {
         const candidate_t *candidate = &a_candidates[ signature ];
-        if( ( candidate->score < SCORE_ALERT_THRESHOLD ) ||
-            ( candidate->score <= best.score ) )
+        if( ( candidate->score < SCORE_ALERT_THRESHOLD ) || ( candidate->score <= best.score ) )
         {
             continue;
         }
@@ -219,9 +213,7 @@ surveillance_match_t surveillance_match( const rf_device_t *a_observation )
 
     if( a_observation->has_name )
     {
-        for( size_t i = 0;
-             i < sizeof( name_signatures ) / sizeof( name_signatures[ 0 ] );
-             ++i )
+        for( size_t i = 0; i < sizeof( name_signatures ) / sizeof( name_signatures[ 0 ] ); ++i )
         {
             if( !contains_ci( a_observation->name, name_signatures[ i ].fragment ) )
             {

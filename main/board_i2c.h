@@ -23,8 +23,7 @@ esp_err_t board_i2c_init( void );
 esp_err_t board_i2c_probe( uint16_t a_address );
 
 /** @brief Add one device to the shared board I2C bus. */
-esp_err_t board_i2c_add_device( uint16_t a_address,
-                                i2c_master_dev_handle_t *a_device );
+esp_err_t board_i2c_add_device( uint16_t a_address, i2c_master_dev_handle_t *a_device );
 
 /**
  * @brief Write bytes and immediately read a response from a shared-bus device.
@@ -42,8 +41,7 @@ esp_err_t board_i2c_transmit_receive( i2c_master_dev_handle_t a_device,
                                       size_t a_read_length );
 
 /** @brief Write bytes to a shared-bus device. */
-esp_err_t board_i2c_transmit( i2c_master_dev_handle_t a_device,
-                              const uint8_t *a_data,
-                              size_t a_length );
+esp_err_t
+board_i2c_transmit( i2c_master_dev_handle_t a_device, const uint8_t *a_data, size_t a_length );
 
 #endif // _RFSCOUT_BOARD_I2C_H_

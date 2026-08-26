@@ -21,8 +21,7 @@ typedef struct
     uint32_t last_seen_ms;
 } surveillance_history_entry_t;
 
-static surveillance_history_entry_t
-    entries[ RFSCOUT_SURVEILLANCE_HISTORY_CAPACITY ];
+static surveillance_history_entry_t entries[ RFSCOUT_SURVEILLANCE_HISTORY_CAPACITY ];
 static size_t entry_count;
 static SemaphoreHandle_t history_lock;
 
@@ -50,8 +49,7 @@ static void expire_stale_entries( uint32_t a_now_ms )
     size_t i = 0;
     while( i < entry_count )
     {
-        if( (uint32_t)( a_now_ms - entries[ i ].last_seen_ms ) <
-            RFSCOUT_SURVEILLANCE_TIMEOUT_MS )
+        if( (uint32_t)( a_now_ms - entries[ i ].last_seen_ms ) < RFSCOUT_SURVEILLANCE_TIMEOUT_MS )
         {
             ++i;
             continue;
@@ -90,8 +88,7 @@ esp_err_t surveillance_history_init( void )
 
 bool surveillance_history_observe( const rf_device_t *a_observation )
 {
-    if( ( NULL == a_observation ) ||
-        ( SURVEILLANCE_NONE == a_observation->surveillance ) ||
+    if( ( NULL == a_observation ) || ( SURVEILLANCE_NONE == a_observation->surveillance ) ||
         ( NULL == history_lock ) )
     {
         return false;
@@ -116,9 +113,7 @@ bool surveillance_history_observe( const rf_device_t *a_observation )
     }
 
     const size_t slot =
-        ( entry_count < RFSCOUT_SURVEILLANCE_HISTORY_CAPACITY )
-            ? entry_count++
-            : oldest_entry();
+        ( entry_count < RFSCOUT_SURVEILLANCE_HISTORY_CAPACITY ) ? entry_count++ : oldest_entry();
 
     memcpy( entries[ slot ].address, a_observation->address, 6 );
     entries[ slot ].address_type = a_observation->address_type;
@@ -132,8 +127,7 @@ bool surveillance_history_observe( const rf_device_t *a_observation )
 
 size_t surveillance_history_counts( uint16_t *a_counts, size_t a_capacity )
 {
-    if( ( NULL == a_counts ) ||
-        ( a_capacity < RFSCOUT_SURVEILLANCE_CLASS_COUNT ) ||
+    if( ( NULL == a_counts ) || ( a_capacity < RFSCOUT_SURVEILLANCE_CLASS_COUNT ) ||
         ( NULL == history_lock ) )
     {
         return 0;
@@ -157,11 +151,9 @@ size_t surveillance_history_counts( uint16_t *a_counts, size_t a_capacity )
     return result;
 }
 
-size_t surveillance_history_signature_counts( uint16_t *a_counts,
-                                              size_t a_capacity )
+size_t surveillance_history_signature_counts( uint16_t *a_counts, size_t a_capacity )
 {
-    if( ( NULL == a_counts ) ||
-        ( a_capacity < SURVEILLANCE_SIGNATURE_COUNT ) ||
+    if( ( NULL == a_counts ) || ( a_capacity < SURVEILLANCE_SIGNATURE_COUNT ) ||
         ( NULL == history_lock ) )
     {
         return 0;
@@ -174,8 +166,7 @@ size_t surveillance_history_signature_counts( uint16_t *a_counts,
     for( size_t i = 0; i < entry_count; ++i )
     {
         const size_t signature = (size_t)entries[ i ].signature;
-        if( ( signature > (size_t)SURVEILLANCE_SIGNATURE_NONE ) &&
-            ( signature < a_capacity ) )
+        if( ( signature > (size_t)SURVEILLANCE_SIGNATURE_NONE ) && ( signature < a_capacity ) )
         {
             ++a_counts[ signature ];
         }

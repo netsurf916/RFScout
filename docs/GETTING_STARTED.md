@@ -2,7 +2,7 @@
 
 This guide describes a straightforward RFScout development environment on a current Fedora Linux workstation. RFScout targets the **ESP32-S3** and uses **ESP-IDF** for configuration, compilation, flashing, and serial monitoring.
 
-The repository also enforces its C formatting policy with `clang-format`. Normal `idf.py build` runs the RFScout format checker for locally modified or staged C/header files, so `clang-format` is a required local development dependency unless the format check is explicitly disabled for an emergency build.
+The repository also enforces its C formatting policy with **clang-format 18**. Normal `idf.py build` runs the RFScout format checker for locally modified or staged C/header files, so the versioned formatter is a required local development dependency unless the format check is explicitly disabled for an emergency build.
 
 ## 1. Install Fedora packages
 
@@ -24,14 +24,18 @@ sudo dnf install \
     openssl-devel \
     dfu-util \
     libusb1-devel \
-    clang-tools-extra
+    clang18-tools-extra
 ```
 
-`clang-tools-extra` provides `clang-format` on Fedora. Confirm it is available with:
+`clang18-tools-extra` is Fedora's compatibility package for LLVM/Clang 18 and provides `clang-format-18`. RFScout pins the formatter major because newer clang-format releases can make different wrapping decisions even with the same configuration.
+
+Confirm the required formatter is available:
 
 ```sh
-clang-format --version
+clang-format-18 --version
 ```
+
+The output must report major version 18. `tools/check_format.py` automatically prefers `clang-format-18`; it will also accept a `clang-format` executable when that executable is version 18. To use an explicit binary path, set `RFSCOUT_CLANG_FORMAT`.
 
 ESP-IDF downloads and manages its own versioned ESP cross-compilers and related target-specific tools, so those do not need to be installed manually through `dnf`.
 
@@ -62,7 +66,7 @@ idf.py --version
 python3 --version
 cmake --version
 ninja --version
-clang-format --version
+clang-format-18 --version
 ```
 
 If desired, create a shell alias instead of typing the full export command each time:
@@ -129,7 +133,7 @@ idf.py build
 
 RFScout's formatting configuration lives in `.clang-format` and `.editorconfig`.
 
-Normal `idf.py build` invokes `tools/check_format.py` through CMake and checks locally modified, staged, or untracked `main/*.c` and `main/*.h` files. If a source file does not match the repository format, the build fails before it is considered complete.
+Normal `idf.py build` invokes `tools/check_format.py` through CMake and checks locally modified, staged, or untracked hand-maintained C/header files under `main/`. If a source file does not match canonical clang-format 18 output, the build fails before it is considered complete.
 
 Format the currently modified firmware files with:
 
@@ -149,17 +153,23 @@ Check changes relative to another branch or ref:
 python3 tools/check_format.py --base main
 ```
 
-Audit every hand-maintained C/header file in the repository:
+Verify every hand-maintained C/header file in the repository:
 
 ```sh
 python3 tools/check_format.py --all
 ```
 
-Generated `.inc` tables are intentionally excluded.
+The complete tree is expected to pass this command. GitHub Actions runs the same full-tree audit on every pull request, so there are no legacy formatting exemptions. Generated `.inc` tables are intentionally excluded.
+
+To explicitly canonicalize the entire firmware tree:
+
+```sh
+python3 tools/check_format.py --all --fix
+```
 
 ### Emergency format-check bypass
 
-A developer can explicitly disable the CMake formatting target if a build is needed before `clang-format` can be installed:
+A developer can explicitly disable the CMake formatting target if a build is needed before clang-format 18 can be installed:
 
 ```sh
 idf.py -DRFSCOUT_FORMAT_CHECK=OFF build
@@ -232,14 +242,14 @@ idf.py build
 idf.py flash monitor
 ```
 
-Before opening or updating a pull request, it is useful to run:
+Before opening or updating a pull request, run:
 
 ```sh
-python3 tools/check_format.py --base main
+python3 tools/check_format.py --all
 idf.py build
 ```
 
-GitHub Actions repeats the formatting check against the pull-request diff and performs a full ESP32-S3 build.
+GitHub Actions repeats the full-tree canonical formatting audit and performs a complete ESP32-S3 build.
 
 ## 9. Troubleshooting
 
@@ -251,13 +261,20 @@ The ESP-IDF environment is not active in the current shell:
 . ~/esp/esp-idf/export.sh
 ```
 
-### `clang-format is required`
+### `RFScout requires clang-format 18`
 
-Install the Fedora package and retry:
+Install the Fedora compatibility package and retry:
 
 ```sh
-sudo dnf install clang-tools-extra
-clang-format --version
+sudo dnf install clang18-tools-extra
+clang-format-18 --version
+```
+
+If clang-format 18 is installed at a nonstandard path:
+
+```sh
+export RFSCOUT_CLANG_FORMAT=/path/to/clang-format-18
+python3 tools/check_format.py --all
 ```
 
 ### CMake or configuration behaves unexpectedly

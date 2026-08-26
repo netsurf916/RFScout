@@ -9,9 +9,9 @@ RFScout prioritizes readability, predictable interfaces, and consistent formatti
 - Put spaces inside function-call parentheses and array subscripts: `foo( value )`, `items[ index ]`.
 - Prefix function arguments with `a_` so arguments are visually distinct from local and module state.
 - Prefer explicit comparisons for non-boolean values, including `NULL == pointer`, `ESP_OK != result`, and `0U == count`.
-- Keep one logical operation per line. Do not compress conditionals, loops, declarations, or multiple statements onto one line.
+- Keep one statement per line. Do not compress multiple statements, control bodies, or declarations onto one line.
 - Do not put an `else`, statement body, or second declaration on the same line as a preceding statement.
-- Break long calls and conditions across lines at logical argument or operator boundaries. Continuation lines should make ownership of the expression obvious.
+- Let the repository `.clang-format` policy determine wrapping for expressions and calls. Do not hand-wrap code solely to fight the canonical formatter.
 - Use descriptive names instead of abbreviations unless the abbreviation is an established protocol or hardware term.
 - Keep module-private state and helper functions `static`.
 - Use fixed-width integer types for protocol, hardware, storage, and externally meaningful data.
@@ -45,27 +45,34 @@ Every hand-maintained `.c` and `.h` file begins with a block identifying the fil
 */
 ```
 
-The `Description:` line may be omitted when the short description is already complete, but the file name, copyright, and SPDX identifier are required.
+The `Description:` line may be omitted when the short description is already complete, but the file name, copyright, and SPDX identifier are required. The formatter is configured not to reflow these comments.
 
-## Automated formatting checks
+## Canonical automated formatting
 
-The repository root contains `.clang-format` and `.editorconfig`. The clang-format policy is enforced by `tools/check_format.py`.
+The repository root contains `.clang-format` and `.editorconfig`. `tools/check_format.py` is the authoritative formatter/checker for hand-maintained C and header files under `main/`.
 
-Normal `idf.py build` runs the format checker automatically for locally modified or staged `main/*.c` and `main/*.h` files. Pull-request CI runs the same checker against C/header files changed relative to the PR base.
+RFScout standardizes on **clang-format 18** so formatting is deterministic across developer workstations and GitHub Actions. The checker looks for `clang-format-18` first and then accepts `clang-format` only when it reports major version 18. An explicit binary can be supplied with `RFSCOUT_CLANG_FORMAT`.
 
-PR #17 introduced clang-format after a large hand-formatting cleanup. To avoid immediately reflowing thousands of already-reviewed lines, the checker contains a migration baseline for the exact cleaned blobs produced by that PR. A baseline file is accepted only while its contents remain byte-for-byte identical to that recorded blob. As soon as the file changes, it must match the repository clang-format policy exactly. This provides progressive enforcement without making unrelated legacy formatting an immediate build blocker.
+The firmware tree is fully canonical: there are no legacy blob exemptions or migration baselines. Consequently:
 
-The explicit `--all` mode ignores the migration baseline and reports every hand-maintained C/header file that is not yet canonical clang-format output. It is therefore an audit/migration tool and can report files that do not block a normal build.
+```sh
+python3 tools/check_format.py --all
+```
+
+must pass for the complete hand-maintained C/header tree. Pull-request CI runs this full-tree audit on every PR rather than checking only changed files.
+
+Normal `idf.py build` remains change-scoped for convenience and automatically checks locally modified, staged, or untracked C/header files. This gives fast local feedback while CI continuously proves the repository as a whole remains canonical.
 
 Useful commands are:
 
 ```sh
 python3 tools/check_format.py --fix          # format locally modified C/header files
 python3 tools/check_format.py --base main    # check changes relative to a branch/ref
-python3 tools/check_format.py --all          # audit all files, ignoring migration baseline
+python3 tools/check_format.py --all          # verify the complete firmware tree
+python3 tools/check_format.py --all --fix    # canonicalize the complete firmware tree
 ```
 
-`clang-format` must be installed and available on `PATH`. In an emergency, the CMake format target can be disabled with `-DRFSCOUT_FORMAT_CHECK=OFF`; this should not be used for normal development or CI.
+In an emergency, the CMake format target can be disabled with `-DRFSCOUT_FORMAT_CHECK=OFF`; this should not be used for normal development or CI.
 
 ## Layout and readability review
 
@@ -76,7 +83,7 @@ Before a code change is considered complete, review each touched C or header fil
 3. Public declarations have Doxygen comments.
 4. Function arguments use the `a_` prefix in both declaration and definition.
 5. File headers are complete.
-6. Long expressions are split at readable boundaries rather than allowed to run across the screen.
+6. The file matches canonical clang-format 18 output.
 7. Comments explain intent or hardware/protocol constraints rather than restating the code.
 8. Generated code has not been hand-edited.
 9. `python3 tools/check_format.py` succeeds for the files being changed.

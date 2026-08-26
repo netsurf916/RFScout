@@ -42,8 +42,7 @@ static bool display_range_valid;
 /** @brief Convert one RGB888 triplet to the display's RGB565 representation. */
 static uint16_t rgb565( uint8_t a_red, uint8_t a_green, uint8_t a_blue )
 {
-    return (uint16_t)( ( (uint16_t)( a_red >> 3 ) << 11 ) |
-                       ( (uint16_t)( a_green >> 2 ) << 5 ) |
+    return (uint16_t)( ( (uint16_t)( a_red >> 3 ) << 11 ) | ( (uint16_t)( a_green >> 2 ) << 5 ) |
                        ( a_blue >> 3 ) );
 }
 
@@ -55,8 +54,7 @@ static uint16_t palette( int32_t a_value, int32_t a_minimum, int32_t a_maximum )
         return rgb565( 8U, 8U, 24U );
     }
 
-    int32_t level = ( ( a_value - a_minimum ) * 255 ) /
-                    ( a_maximum - a_minimum );
+    int32_t level = ( ( a_value - a_minimum ) * 255 ) / ( a_maximum - a_minimum );
     if( level < 0 )
     {
         level = 0;
@@ -133,10 +131,8 @@ static int32_t interpolate( uint32_t a_x_q8, uint32_t a_y_q8 )
 static void update_display_range( void )
 {
     const int32_t span = (int32_t)frame.maximum - (int32_t)frame.minimum;
-    const int32_t margin = ( span > 0 )
-                               ? span * THERMAL_RANGE_MARGIN_NUMERATOR /
-                                     THERMAL_RANGE_MARGIN_DENOMINATOR
-                               : 1;
+    const int32_t margin =
+        ( span > 0 ) ? span * THERMAL_RANGE_MARGIN_NUMERATOR / THERMAL_RANGE_MARGIN_DENOMINATOR : 1;
     const int32_t target_minimum = (int32_t)frame.minimum - margin;
     const int32_t target_maximum = (int32_t)frame.maximum + margin;
 
@@ -149,11 +145,9 @@ static void update_display_range( void )
     }
 
     display_minimum =
-        ( display_minimum * THERMAL_RANGE_OLD_WEIGHT + target_minimum ) /
-        THERMAL_RANGE_DIVISOR;
+        ( display_minimum * THERMAL_RANGE_OLD_WEIGHT + target_minimum ) / THERMAL_RANGE_DIVISOR;
     display_maximum =
-        ( display_maximum * THERMAL_RANGE_OLD_WEIGHT + target_maximum ) /
-        THERMAL_RANGE_DIVISOR;
+        ( display_maximum * THERMAL_RANGE_OLD_WEIGHT + target_maximum ) / THERMAL_RANGE_DIVISOR;
 }
 
 void thermal_view_enter( void )
@@ -195,30 +189,30 @@ esp_err_t thermal_view_render( void )
     for( int y = 0; y < THERMAL_IMAGE_HEIGHT; ++y )
     {
         const uint32_t source_y =
-            (uint32_t)y * ( MLX90640_HEIGHT - 1U ) * 256U /
-            ( THERMAL_IMAGE_HEIGHT - 1U );
+            (uint32_t)y * ( MLX90640_HEIGHT - 1U ) * 256U / ( THERMAL_IMAGE_HEIGHT - 1U );
         for( int x = 0; x < THERMAL_IMAGE_WIDTH; ++x )
         {
             const uint32_t source_x =
-                (uint32_t)x * ( MLX90640_WIDTH - 1U ) * 256U /
-                ( THERMAL_IMAGE_WIDTH - 1U );
+                (uint32_t)x * ( MLX90640_WIDTH - 1U ) * 256U / ( THERMAL_IMAGE_WIDTH - 1U );
             const int32_t value = interpolate( source_x, source_y );
             display_fill_rect( THERMAL_IMAGE_X + x,
                                THERMAL_IMAGE_Y + y,
                                1,
                                1,
-                               palette( value,
-                                        display_minimum,
-                                        display_maximum ) );
+                               palette( value, display_minimum, display_maximum ) );
         }
     }
 
     display_fill_rect( THERMAL_IMAGE_X + ( THERMAL_IMAGE_WIDTH / 2 ) - 5,
                        THERMAL_IMAGE_Y + ( THERMAL_IMAGE_HEIGHT / 2 ),
-                       11, 1, COLOR_WHITE );
+                       11,
+                       1,
+                       COLOR_WHITE );
     display_fill_rect( THERMAL_IMAGE_X + ( THERMAL_IMAGE_WIDTH / 2 ),
                        THERMAL_IMAGE_Y + ( THERMAL_IMAGE_HEIGHT / 2 ) - 5,
-                       1, 11, COLOR_WHITE );
+                       1,
+                       11,
+                       COLOR_WHITE );
 
     char text[ 24 ];
     display_draw_text( THERMAL_INFO_X, 30, "RELATIVE IR", COLOR_GRAY, 1 );

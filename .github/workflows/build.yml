@@ -12,26 +12,20 @@ permissions:
 jobs:
   formatting:
     name: Formatting
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: Install clang-format
+      - name: Install clang-format 18
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang-format
+          sudo apt-get install -y --no-install-recommends clang-format-18
 
-      - name: Check changed C formatting
-        shell: bash
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            python3 tools/check_format.py --base "${{ github.event.pull_request.base.sha }}"
-          else
-            python3 tools/check_format.py --base HEAD^
-          fi
+      - name: Check complete C formatting
+        run: python3 tools/check_format.py --all
 
   build:
     name: ESP-IDF Build
@@ -39,7 +33,7 @@ jobs:
     container: espressif/idf:release-v5.5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 

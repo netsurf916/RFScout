@@ -11,12 +11,10 @@
 
 #include <ctype.h>
 
-static const char *patterns[ 26 ] =
-{
-    ".-", "-...", "-.-.", "-..", ".", "..-.", "--.", "....", "..", ".---",
-    "-.-", ".-..", "--", "-.", "---", ".--.", "--.-", ".-.", "...", "-",
-    "..-", "...-", ".--", "-..-", "-.--", "--.."
-};
+static const char *patterns[ 26 ] = { ".-",   "-...", "-.-.", "-..",  ".",    "..-.", "--.",
+                                      "....", "..",   ".---", "-.-",  ".-..", "--",   "-.",
+                                      "---",  ".--.", "--.-", ".-.",  "...",  "-",    "..-",
+                                      "...-", ".--",  "-..-", "-.--", "--.." };
 
 const char *morse_pattern( char a_letter )
 {
@@ -28,8 +26,8 @@ const char *morse_pattern( char a_letter )
     return patterns[ character - 'A' ];
 }
 
-void morse_play_letter( char a_letter, uint32_t a_unit_ms, uint16_t a_tone_hz,
-                        morse_tone_fn a_tone, void *a_context )
+void morse_play_letter(
+    char a_letter, uint32_t a_unit_ms, uint16_t a_tone_hz, morse_tone_fn a_tone, void *a_context )
 {
     const char *pattern = morse_pattern( a_letter );
     if( ( NULL == pattern ) || ( NULL == a_tone ) || ( 0U == a_unit_ms ) )

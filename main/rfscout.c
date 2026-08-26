@@ -37,15 +37,12 @@ static void on_observation( rf_device_t *a_observation )
         return;
     }
 
-    if( ( RF_SOURCE_BLE != a_observation->last_source ) ||
-        ( 0U == a_observation->address_type ) )
+    if( ( RF_SOURCE_BLE != a_observation->last_source ) || ( 0U == a_observation->address_type ) )
     {
         const char *vendor = oui_database_lookup( a_observation->address );
         if( NULL != vendor )
         {
-            strlcpy( a_observation->vendor,
-                     vendor,
-                     sizeof( a_observation->vendor ) );
+            strlcpy( a_observation->vendor, vendor, sizeof( a_observation->vendor ) );
         }
     }
 
@@ -66,14 +63,11 @@ static void on_observation( rf_device_t *a_observation )
         return;
     }
 
-    const char *source_name =
-        ( RF_SOURCE_BLE == a_observation->last_source ) ? "BLE" : "WiFi";
-    const char *display_name =
-        ( '\0' != a_observation->vendor[ 0 ] ) ?
-        a_observation->vendor :
-        ( a_observation->has_name ? a_observation->name : "Unknown" );
-    const char *alert_suffix =
-        ( SURVEILLANCE_NONE != match.classification ) ? " SURVEILLANCE" : "";
+    const char *source_name = ( RF_SOURCE_BLE == a_observation->last_source ) ? "BLE" : "WiFi";
+    const char *display_name = ( '\0' != a_observation->vendor[ 0 ] )
+                                   ? a_observation->vendor
+                                   : ( a_observation->has_name ? a_observation->name : "Unknown" );
+    const char *alert_suffix = ( SURVEILLANCE_NONE != match.classification ) ? " SURVEILLANCE" : "";
 
     ESP_LOGI( TAG,
               "%s %s %02X:%02X:%02X:%02X:%02X:%02X rssi=%d ch=%u%s",
@@ -99,11 +93,7 @@ static void on_observation( rf_device_t *a_observation )
                   (unsigned)match.evidence,
                   letter );
         platform_set_alert_led( true );
-        morse_play_letter( letter,
-                           100U,
-                           900U,
-                           platform_audio_tone,
-                           NULL );
+        morse_play_letter( letter, 100U, 900U, platform_audio_tone, NULL );
         platform_set_alert_led( false );
     }
 }
@@ -111,8 +101,7 @@ static void on_observation( rf_device_t *a_observation )
 void app_main( void )
 {
     esp_err_t result = nvs_flash_init();
-    if( ( ESP_ERR_NVS_NO_FREE_PAGES == result ) ||
-        ( ESP_ERR_NVS_NEW_VERSION_FOUND == result ) )
+    if( ( ESP_ERR_NVS_NO_FREE_PAGES == result ) || ( ESP_ERR_NVS_NEW_VERSION_FOUND == result ) )
     {
         ESP_ERROR_CHECK( nvs_flash_erase() );
         result = nvs_flash_init();
@@ -127,9 +116,7 @@ void app_main( void )
     result = battery_init();
     if( ESP_OK != result )
     {
-        ESP_LOGW( TAG,
-                  "battery telemetry unavailable: %s",
-                  esp_err_to_name( result ) );
+        ESP_LOGW( TAG, "battery telemetry unavailable: %s", esp_err_to_name( result ) );
     }
 
     ESP_ERROR_CHECK( app_manager_init() );
@@ -140,9 +127,7 @@ void app_main( void )
         result = log_writer_init();
         if( ESP_OK != result )
         {
-            ESP_LOGW( TAG,
-                      "SD logging unavailable: %s",
-                      esp_err_to_name( result ) );
+            ESP_LOGW( TAG, "SD logging unavailable: %s", esp_err_to_name( result ) );
         }
         else
         {

@@ -69,9 +69,7 @@ void cc1101_activity_observe_sweep( const int8_t *a_rssi,
  * @param a_capacity Capacity of each destination array.
  * @return Number of values copied.
  */
-size_t cc1101_activity_levels( uint8_t *a_current,
-                               uint8_t *a_peak,
-                               size_t a_capacity );
+size_t cc1101_activity_levels( uint8_t *a_current, uint8_t *a_peak, size_t a_capacity );
 
 /**
  * @brief Copy the fixed likely-device rows and their cumulative counts.
@@ -79,8 +77,7 @@ size_t cc1101_activity_levels( uint8_t *a_current,
  * @param a_capacity Destination capacity.
  * @return Number of fingerprint rows copied.
  */
-size_t cc1101_activity_fingerprints( cc1101_fingerprint_t *a_output,
-                                     size_t a_capacity );
+size_t cc1101_activity_fingerprints( cc1101_fingerprint_t *a_output, size_t a_capacity );
 
 /** @brief Return a stable display name for a CC1101 fingerprint category. */
 const char *cc1101_activity_fingerprint_name( cc1101_fingerprint_type_t a_type );

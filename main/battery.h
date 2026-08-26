@@ -27,13 +27,13 @@ typedef enum
 /** @brief Cached battery and external-power telemetry consumed by the UI. */
 typedef struct
 {
-    bool available;                   /**< State-of-charge percentage is valid. */
-    bool gauge_available;             /**< BQ27220 fuel-gauge data has been read. */
-    bool charger_available;           /**< BQ25896 charger data has been read. */
-    bool external_power;              /**< A non-OTG external power input is present. */
-    uint8_t percentage;               /**< Remaining charge from 0 through 100 percent. */
-    uint16_t voltage_mv;              /**< Battery voltage in millivolts. */
-    int16_t current_ma;               /**< Signed battery current in milliamps. */
+    bool available;                      /**< State-of-charge percentage is valid. */
+    bool gauge_available;                /**< BQ27220 fuel-gauge data has been read. */
+    bool charger_available;              /**< BQ25896 charger data has been read. */
+    bool external_power;                 /**< A non-OTG external power input is present. */
+    uint8_t percentage;                  /**< Remaining charge from 0 through 100 percent. */
+    uint16_t voltage_mv;                 /**< Battery voltage in millivolts. */
+    int16_t current_ma;                  /**< Signed battery current in milliamps. */
     battery_charge_state_t charge_state; /**< Current charging/discharging state. */
 } battery_status_t;
 

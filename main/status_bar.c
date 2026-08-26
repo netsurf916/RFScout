@@ -41,11 +41,7 @@ static void draw_sd_icon( int a_x, uint16_t a_color )
 
     if( log_writer_has_error() )
     {
-        display_fill_rect( a_x + 3,
-                           y + 8,
-                           6,
-                           3,
-                           STATUS_BAR_COLOR_BACKGROUND );
+        display_fill_rect( a_x + 3, y + 8, 6, 3, STATUS_BAR_COLOR_BACKGROUND );
         display_fill_rect( a_x + 5, y + 8, 2, 2, a_color );
         display_fill_rect( a_x + 5, y + 11, 2, 1, a_color );
     }
@@ -69,9 +65,8 @@ void status_bar_draw( void )
 
     if( storage_is_available() )
     {
-        const uint16_t color = log_writer_has_error()
-                                   ? STATUS_BAR_COLOR_ERROR
-                                   : STATUS_BAR_COLOR_NORMAL;
+        const uint16_t color =
+            log_writer_has_error() ? STATUS_BAR_COLOR_ERROR : STATUS_BAR_COLOR_NORMAL;
         draw_sd_icon( x, color );
         x -= STATUS_BAR_ICON_WIDTH + STATUS_BAR_ICON_GAP;
     }
