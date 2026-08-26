@@ -26,7 +26,7 @@
 #include <unistd.h>
 
 #define LOG_QUEUE_DEPTH 128U
-#define LOG_LINE_MAX 256U
+#define LOG_LINE_MAX 384U
 #define LOG_IDENTITY_MAX 96U
 #define LOG_APP_NAME_MAX 16U
 #define LOG_APP_DETAIL_MAX 160U
