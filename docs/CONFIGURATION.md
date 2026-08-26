@@ -111,7 +111,7 @@ Manual time setting is always available from Device. RFScout records the mechani
 
 The `time` object is not continuously rewritten while the clock advances. During a normal hard power-off, after the log writer has drained and before the SD card is unmounted, RFScout updates the saved epoch and source in `rfscout.json`. On the next cold power-on, that saved epoch bootstraps the ESP32 system clock.
 
-Because the ESP32-S3 clock does not run through complete board power removal, the saved epoch is the time at the previous orderly shutdown. It cannot account for elapsed time while the board was physically unpowered. RFScout therefore tracks that the current runtime clock was restored from saved state while preserving the original authority that last set it, for example `Manual (saved)`.
+Because the ESP32-S3 clock does not run through complete board power removal, the saved epoch is the time at the previous orderly shutdown. It cannot account for elapsed time while the board was physically unpowered. RFScout therefore tracks that the current runtime clock was restored from saved state while preserving the original authority that last set it, for example `Manual (saved)`. A restored saved time is a startup continuity aid, not proof that the displayed wall clock is still synchronized to real time after an arbitrary powered-off interval.
 
 Deep sleep is different. The ESP32-S3 RTC domain continues running through deep sleep. RFScout therefore does not replace the running system time with the saved hard-shutdown checkpoint after a deep-sleep wake. Clock-authority metadata is retained in RTC memory so the resumed clock keeps the same source identity without rewriting the system time.
 
