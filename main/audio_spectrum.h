@@ -53,9 +53,7 @@ bool audio_spectrum_is_running( void );
  * @param a_count Capacity of each destination array.
  * @return True when a new frame was consumed; false when no new frame is ready.
  */
-bool audio_spectrum_take_frame( uint8_t *a_current,
-                                uint8_t *a_peak,
-                                size_t a_count );
+bool audio_spectrum_take_frame( uint8_t *a_current, uint8_t *a_peak, size_t a_count );
 
 /** @brief Select the active audio frequency range and reset accumulated display state. */
 void audio_spectrum_set_range( audio_range_t a_range );

@@ -39,29 +39,18 @@ static uint8_t merged_subpages;
 static bool filter_valid;
 
 /** @brief Read big-endian 16-bit MLX90640 registers in bounded I2C transfers. */
-static esp_err_t read_words( uint16_t a_register,
-                             uint16_t *a_words,
-                             size_t a_count )
+static esp_err_t read_words( uint16_t a_register, uint16_t *a_words, size_t a_count )
 {
     uint8_t bytes[ MLX90640_WORDS_PER_TRANSFER * 2U ];
 
     while( a_count > 0U )
     {
-        const size_t count = ( a_count > MLX90640_WORDS_PER_TRANSFER )
-                                 ? MLX90640_WORDS_PER_TRANSFER
-                                 : a_count;
-        const uint8_t address[ 2 ] =
-        {
-            (uint8_t)( a_register >> 8 ),
-            (uint8_t)a_register
-        };
+        const size_t count =
+            ( a_count > MLX90640_WORDS_PER_TRANSFER ) ? MLX90640_WORDS_PER_TRANSFER : a_count;
+        const uint8_t address[ 2 ] = { (uint8_t)( a_register >> 8 ), (uint8_t)a_register };
 
         const esp_err_t result =
-            board_i2c_transmit_receive( device,
-                                        address,
-                                        sizeof( address ),
-                                        bytes,
-                                        count * 2U );
+            board_i2c_transmit_receive( device, address, sizeof( address ), bytes, count * 2U );
         if( ESP_OK != result )
         {
             return result;
@@ -70,8 +59,7 @@ static esp_err_t read_words( uint16_t a_register,
         for( size_t index = 0U; index < count; ++index )
         {
             a_words[ index ] =
-                (uint16_t)( ( (uint16_t)bytes[ index * 2U ] << 8 ) |
-                            bytes[ ( index * 2U ) + 1U ] );
+                (uint16_t)( ( (uint16_t)bytes[ index * 2U ] << 8 ) | bytes[ ( index * 2U ) + 1U ] );
         }
 
         a_register = (uint16_t)( a_register + count );
@@ -85,13 +73,10 @@ static esp_err_t read_words( uint16_t a_register,
 /** @brief Write one big-endian 16-bit MLX90640 register. */
 static esp_err_t write_word( uint16_t a_register, uint16_t a_value )
 {
-    const uint8_t data[ 4 ] =
-    {
-        (uint8_t)( a_register >> 8 ),
-        (uint8_t)a_register,
-        (uint8_t)( a_value >> 8 ),
-        (uint8_t)a_value
-    };
+    const uint8_t data[ 4 ] = { (uint8_t)( a_register >> 8 ),
+                                (uint8_t)a_register,
+                                (uint8_t)( a_value >> 8 ),
+                                (uint8_t)a_value };
     return board_i2c_transmit( device, data, sizeof( data ) );
 }
 
@@ -100,9 +85,7 @@ static bool pixel_in_subpage( size_t a_index, uint8_t a_subpage, bool a_chess_mo
 {
     const unsigned row = (unsigned)( a_index / MLX90640_WIDTH );
     const unsigned column = (unsigned)( a_index % MLX90640_WIDTH );
-    const unsigned pattern = a_chess_mode
-                                 ? ( ( row & 1U ) ^ ( column & 1U ) )
-                                 : ( row & 1U );
+    const unsigned pattern = a_chess_mode ? ( ( row & 1U ) ^ ( column & 1U ) ) : ( row & 1U );
     return pattern == (unsigned)a_subpage;
 }
 
@@ -118,9 +101,8 @@ static void filter_frame( void )
 
     for( size_t index = 0U; index < MLX90640_PIXEL_COUNT; ++index )
     {
-        const int32_t value =
-            ( (int32_t)filtered_pixels[ index ] * MLX90640_FILTER_OLD_WEIGHT ) +
-            (int32_t)merged_pixels[ index ];
+        const int32_t value = ( (int32_t)filtered_pixels[ index ] * MLX90640_FILTER_OLD_WEIGHT ) +
+                              (int32_t)merged_pixels[ index ];
         filtered_pixels[ index ] = (int16_t)( value / MLX90640_FILTER_DIVISOR );
     }
 }
@@ -150,8 +132,8 @@ static void finalize_frame( mlx90640_frame_t *a_frame )
     a_frame->frame_valid = true;
     a_frame->minimum = minimum;
     a_frame->maximum = maximum;
-    a_frame->center = a_frame->pixels[ ( MLX90640_HEIGHT / 2 ) * MLX90640_WIDTH +
-                                        ( MLX90640_WIDTH / 2 ) ];
+    a_frame->center =
+        a_frame->pixels[ ( MLX90640_HEIGHT / 2 ) * MLX90640_WIDTH + ( MLX90640_WIDTH / 2 ) ];
 }
 
 esp_err_t mlx90640_probe( void )
@@ -176,9 +158,8 @@ esp_err_t mlx90640_probe( void )
 
     if( !detected )
     {
-        ESP_LOGI( TAG,
-                  "MLX90640 detected at I2C address 0x%02X",
-                  RFSCOUT_BOARD_MLX90640_I2C_ADDRESS );
+        ESP_LOGI(
+            TAG, "MLX90640 detected at I2C address 0x%02X", RFSCOUT_BOARD_MLX90640_I2C_ADDRESS );
     }
     detected = true;
     return ESP_OK;
@@ -241,9 +222,7 @@ esp_err_t mlx90640_read_frame( mlx90640_frame_t *a_frame )
     }
 
     uint16_t raw_pixels[ MLX90640_PIXEL_COUNT ];
-    result = read_words( MLX90640_PIXEL_START_REGISTER,
-                         raw_pixels,
-                         MLX90640_PIXEL_COUNT );
+    result = read_words( MLX90640_PIXEL_START_REGISTER, raw_pixels, MLX90640_PIXEL_COUNT );
     if( ESP_OK != result )
     {
         detected = false;
@@ -259,9 +238,7 @@ esp_err_t mlx90640_read_frame( mlx90640_frame_t *a_frame )
         }
     }
 
-    merged_subpages |= ( 0U == subpage )
-                           ? MLX90640_SUBPAGE_MASK_0
-                           : MLX90640_SUBPAGE_MASK_1;
+    merged_subpages |= ( 0U == subpage ) ? MLX90640_SUBPAGE_MASK_0 : MLX90640_SUBPAGE_MASK_1;
     if( MLX90640_SUBPAGE_MASK_BOTH != merged_subpages )
     {
         return ESP_ERR_NOT_FINISHED;

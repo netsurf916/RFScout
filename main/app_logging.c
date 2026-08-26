@@ -30,14 +30,8 @@ static bool initialized;
 /** @brief Return the stable log token for an application identifier. */
 static const char *app_name( rfscout_app_id_t a_app )
 {
-    static const char *names[ RFSCOUT_APP_COUNT ] =
-    {
-        "WIFI_BT",
-        "CC1101",
-        "NRF24",
-        "AUDIO",
-        "THERMAL"
-    };
+    static const char *names[ RFSCOUT_APP_COUNT ] = {
+        "WIFI_BT", "CC1101", "NRF24", "AUDIO", "THERMAL" };
 
     return ( a_app < RFSCOUT_APP_COUNT ) ? names[ a_app ] : "UNKNOWN";
 }
@@ -62,8 +56,7 @@ static void write_periodic_record( rfscout_app_id_t a_app )
             const cc1101_scan_config_t *config = cc1101_config();
             cc1101_fingerprint_t fingerprints[ CC1101_FINGERPRINT_MAX ];
             const size_t count =
-                cc1101_activity_fingerprints( fingerprints,
-                                              CC1101_FINGERPRINT_MAX );
+                cc1101_activity_fingerprints( fingerprints, CC1101_FINGERPRINT_MAX );
             snprintf( detail,
                       sizeof( detail ),
                       "range_khz=%lu-%lu step_khz=%lu likely=%u detected=%u",
@@ -79,9 +72,7 @@ static void write_periodic_record( rfscout_app_id_t a_app )
         {
             const nrf24_scan_config_t *config = nrf24_config();
             nrf24_fingerprint_t fingerprints[ NRF24_FINGERPRINT_MAX ];
-            const size_t count =
-                nrf24_activity_fingerprints( fingerprints,
-                                             NRF24_FINGERPRINT_MAX );
+            const size_t count = nrf24_activity_fingerprints( fingerprints, NRF24_FINGERPRINT_MAX );
             snprintf( detail,
                       sizeof( detail ),
                       "channels=%u-%u dwell_us=%lu likely=%u detected=%u",
@@ -106,10 +97,7 @@ static void write_periodic_record( rfscout_app_id_t a_app )
             break;
 
         case RFSCOUT_APP_THERMAL:
-            snprintf( detail,
-                      sizeof( detail ),
-                      "detected=%u",
-                      mlx90640_is_detected() ? 1U : 0U );
+            snprintf( detail, sizeof( detail ), "detected=%u", mlx90640_is_detected() ? 1U : 0U );
             break;
 
         default:
@@ -145,8 +133,7 @@ void app_logging_poll( void )
         last_record_us = 0;
     }
 
-    if( ( 0 == last_record_us ) ||
-        ( ( now - last_record_us ) >= APP_LOG_INTERVAL_US ) )
+    if( ( 0 == last_record_us ) || ( ( now - last_record_us ) >= APP_LOG_INTERVAL_US ) )
     {
         last_record_us = now;
         write_periodic_record( current );

@@ -100,9 +100,7 @@ static void start_wifi_bt_collectors( void )
         wifi_monitor_ready = ( ESP_OK == result );
         if( !wifi_monitor_ready )
         {
-            ESP_LOGW( TAG,
-                      "Wi-Fi monitor start failed: %s; retrying",
-                      esp_err_to_name( result ) );
+            ESP_LOGW( TAG, "Wi-Fi monitor start failed: %s; retrying", esp_err_to_name( result ) );
         }
     }
 
@@ -112,9 +110,7 @@ static void start_wifi_bt_collectors( void )
         ble_monitor_ready = ( ESP_OK == result );
         if( !ble_monitor_ready )
         {
-            ESP_LOGW( TAG,
-                      "BLE monitor start failed: %s; retrying",
-                      esp_err_to_name( result ) );
+            ESP_LOGW( TAG, "BLE monitor start failed: %s; retrying", esp_err_to_name( result ) );
         }
     }
 }
@@ -141,18 +137,13 @@ static void render_cc_spectrum( void )
     uint8_t peaks[ CC1101_SPECTRUM_BINS ];
     cc1101_fingerprint_t devices[ CC1101_FINGERPRINT_MAX ];
 
-    const size_t count =
-        cc1101_activity_levels( current,
-                                peaks,
-                                CC1101_SPECTRUM_BINS );
+    const size_t count = cc1101_activity_levels( current, peaks, CC1101_SPECTRUM_BINS );
     if( !cc_peak_hold )
     {
         memset( peaks, 0, sizeof( peaks ) );
     }
 
-    const size_t device_count =
-        cc1101_activity_fingerprints( devices,
-                                      CC1101_FINGERPRINT_MAX );
+    const size_t device_count = cc1101_activity_fingerprints( devices, CC1101_FINGERPRINT_MAX );
     const cc1101_scan_config_t *config = cc1101_config();
 
     radio_app_view_cc1101_spectrum( current,
@@ -169,14 +160,10 @@ static void render_cc_spectrum( void )
 static void observe_cc_spectrum( void )
 {
     int8_t rssi[ CC1101_SPECTRUM_BINS ];
-    const size_t count =
-        cc1101_spectrum( rssi, CC1101_SPECTRUM_BINS );
+    const size_t count = cc1101_spectrum( rssi, CC1101_SPECTRUM_BINS );
     const cc1101_scan_config_t *config = cc1101_config();
 
-    cc1101_activity_observe_sweep( rssi,
-                                   count,
-                                   config->low_khz,
-                                   config->high_khz );
+    cc1101_activity_observe_sweep( rssi, count, config->low_khz, config->high_khz );
 }
 
 /** @brief Render the current nRF24 settings state. */
@@ -198,18 +185,13 @@ static void render_nr_spectrum( void )
     uint8_t slow[ NRF24_CHANNEL_COUNT ];
     nrf24_fingerprint_t devices[ NRF24_FINGERPRINT_MAX ];
 
-    const size_t count =
-        nrf24_activity_histogram( fast,
-                                  slow,
-                                  NRF24_CHANNEL_COUNT );
+    const size_t count = nrf24_activity_histogram( fast, slow, NRF24_CHANNEL_COUNT );
     if( !nr_peak_hold )
     {
         memset( slow, 0, sizeof( slow ) );
     }
 
-    const size_t device_count =
-        nrf24_activity_fingerprints( devices,
-                                     NRF24_FINGERPRINT_MAX );
+    const size_t device_count = nrf24_activity_fingerprints( devices, NRF24_FINGERPRINT_MAX );
     const nrf24_scan_config_t *config = nrf24_config();
 
     radio_app_view_nrf24_spectrum( fast,
@@ -228,9 +210,7 @@ static void render_audio( void )
     static uint8_t current[ AUDIO_SPECTRUM_BINS ];
     static uint8_t peaks[ AUDIO_SPECTRUM_BINS ];
 
-    (void)audio_spectrum_take_frame( current,
-                                     peaks,
-                                     AUDIO_SPECTRUM_BINS );
+    (void)audio_spectrum_take_frame( current, peaks, AUDIO_SPECTRUM_BINS );
     if( !audio_peak_hold )
     {
         memset( peaks, 0, sizeof( peaks ) );
@@ -355,8 +335,7 @@ static rfscout_app_id_t next_available_app( int a_direction, int64_t a_now )
         }
 
         const rfscout_app_id_t candidate = (rfscout_app_id_t)next;
-        if( ( RFSCOUT_APP_THERMAL == candidate ) &&
-            !app_available( candidate ) )
+        if( ( RFSCOUT_APP_THERMAL == candidate ) && !app_available( candidate ) )
         {
             last_thermal_probe_us = a_now;
             if( !probe_thermal() )
@@ -379,8 +358,7 @@ static bool switch_app_for_delta( int a_delta, int64_t a_now )
     }
 
     const int direction = ( a_delta > 0 ) ? 1 : -1;
-    const rfscout_app_id_t candidate =
-        next_available_app( direction, a_now );
+    const rfscout_app_id_t candidate = next_available_app( direction, a_now );
     if( candidate == active_app )
     {
         return false;
@@ -655,8 +633,7 @@ static void audio_input( bool a_pressed, int a_delta )
     }
     else if( 0U == audio_item )
     {
-        int range = (int)audio_spectrum_range() +
-                    ( ( a_delta > 0 ) ? 1 : -1 );
+        int range = (int)audio_spectrum_range() + ( ( a_delta > 0 ) ? 1 : -1 );
         if( range < 0 )
         {
             range = AUDIO_RANGE_COUNT - 1;
@@ -669,8 +646,7 @@ static void audio_input( bool a_pressed, int a_delta )
     }
     else if( 1U == audio_item )
     {
-        int channel = (int)audio_spectrum_channel() +
-                      ( ( a_delta > 0 ) ? 1 : -1 );
+        int channel = (int)audio_spectrum_channel() + ( ( a_delta > 0 ) ? 1 : -1 );
         if( channel < 0 )
         {
             channel = AUDIO_CHANNEL_COUNT - 1;
@@ -854,9 +830,7 @@ void app_manager_poll( void )
 
     last_app_refresh_us = now;
     const esp_err_t result = thermal_view_render();
-    if( ( ESP_OK != result ) &&
-        ( ESP_ERR_NOT_FINISHED != result ) &&
-        !mlx90640_is_detected() )
+    if( ( ESP_OK != result ) && ( ESP_ERR_NOT_FINISHED != result ) && !mlx90640_is_detected() )
     {
         leave_app( active_app );
         active_app = RFSCOUT_APP_WIFI_BT;

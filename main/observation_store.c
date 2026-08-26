@@ -30,9 +30,7 @@ static bool same_identity( const rf_device_t *a_left, const rf_device_t *a_right
            ( 0 == memcmp( a_left->address, a_right->address, 6 ) );
 }
 
-static void emit_event(
-    observation_store_event_t a_event,
-    const rf_device_t *a_device )
+static void emit_event( observation_store_event_t a_event, const rf_device_t *a_device )
 {
     if( NULL != event_callback )
     {
@@ -45,8 +43,7 @@ static void expire_stale_devices( uint32_t a_now_ms )
     size_t i = 0;
     while( i < device_count )
     {
-        if( (uint32_t)( a_now_ms - devices[ i ].last_seen_ms ) <
-            RFSCOUT_DEVICE_TIMEOUT_MS )
+        if( (uint32_t)( a_now_ms - devices[ i ].last_seen_ms ) < RFSCOUT_DEVICE_TIMEOUT_MS )
         {
             ++i;
             continue;
@@ -87,9 +84,8 @@ esp_err_t observation_store_init( void )
         return ESP_ERR_NO_MEM;
     }
 
-    devices = heap_caps_calloc( RFSCOUT_DEVICE_CAPACITY,
-                                sizeof( *devices ),
-                                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
+    devices = heap_caps_calloc(
+        RFSCOUT_DEVICE_CAPACITY, sizeof( *devices ), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
     if( NULL == devices )
     {
         vSemaphoreDelete( store_lock );
@@ -100,9 +96,8 @@ esp_err_t observation_store_init( void )
     return ESP_OK;
 }
 
-void observation_store_set_event_callback(
-    observation_store_event_callback_t a_callback,
-    void *a_context )
+void observation_store_set_event_callback( observation_store_event_callback_t a_callback,
+                                           void *a_context )
 {
     if( NULL == store_lock )
     {
@@ -119,9 +114,7 @@ void observation_store_set_event_callback(
 
 bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new )
 {
-    if( ( NULL == a_observation ) ||
-        ( NULL == store_lock ) ||
-        ( NULL == devices ) )
+    if( ( NULL == a_observation ) || ( NULL == store_lock ) || ( NULL == devices ) )
     {
         return false;
     }
@@ -172,7 +165,8 @@ bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new
             devices[ i ].has_name = true;
         }
 
-        if( NULL != a_is_new ) *a_is_new = false;
+        if( NULL != a_is_new )
+            *a_is_new = false;
         xSemaphoreGive( store_lock );
         return true;
     }
@@ -191,14 +185,16 @@ bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new
 
     devices[ slot ] = *a_observation;
     emit_event( OBSERVATION_STORE_EVENT_ADDED, &devices[ slot ] );
-    if( NULL != a_is_new ) *a_is_new = true;
+    if( NULL != a_is_new )
+        *a_is_new = true;
     xSemaphoreGive( store_lock );
     return true;
 }
 
 void observation_store_housekeeping( void )
 {
-    if( ( NULL == store_lock ) || ( NULL == devices ) ) return;
+    if( ( NULL == store_lock ) || ( NULL == devices ) )
+        return;
     xSemaphoreTake( store_lock, portMAX_DELAY );
     expire_stale_devices( current_time_ms() );
     xSemaphoreGive( store_lock );
@@ -206,7 +202,8 @@ void observation_store_housekeeping( void )
 
 size_t observation_store_count( void )
 {
-    if( ( NULL == store_lock ) || ( NULL == devices ) ) return 0;
+    if( ( NULL == store_lock ) || ( NULL == devices ) )
+        return 0;
     xSemaphoreTake( store_lock, portMAX_DELAY );
     expire_stale_devices( current_time_ms() );
     const size_t result = device_count;
@@ -216,13 +213,15 @@ size_t observation_store_count( void )
 
 size_t observation_store_surveillance_count( void )
 {
-    if( ( NULL == store_lock ) || ( NULL == devices ) ) return 0;
+    if( ( NULL == store_lock ) || ( NULL == devices ) )
+        return 0;
     xSemaphoreTake( store_lock, portMAX_DELAY );
     expire_stale_devices( current_time_ms() );
     size_t result = 0;
     for( size_t i = 0; i < device_count; ++i )
     {
-        if( SURVEILLANCE_NONE != devices[ i ].surveillance ) ++result;
+        if( SURVEILLANCE_NONE != devices[ i ].surveillance )
+            ++result;
     }
     xSemaphoreGive( store_lock );
     return result;
@@ -230,8 +229,9 @@ size_t observation_store_surveillance_count( void )
 
 size_t observation_store_snapshot( rf_device_t *a_output, size_t a_capacity )
 {
-    if( ( NULL == a_output ) || ( 0U == a_capacity ) ||
-        ( NULL == store_lock ) || ( NULL == devices ) ) return 0;
+    if( ( NULL == a_output ) || ( 0U == a_capacity ) || ( NULL == store_lock ) ||
+        ( NULL == devices ) )
+        return 0;
     xSemaphoreTake( store_lock, portMAX_DELAY );
     expire_stale_devices( current_time_ms() );
     const size_t count = ( device_count < a_capacity ) ? device_count : a_capacity;

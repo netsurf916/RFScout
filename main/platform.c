@@ -33,29 +33,20 @@ static int64_t encoder_button_change_us;
 static void IRAM_ATTR encoder_isr( void *a_argument )
 {
     (void)a_argument;
-    static const int8_t transitions[ 16 ] =
-    {
-         0, -1,  1,  0,
-         1,  0,  0, -1,
-        -1,  0,  0,  1,
-         0,  1, -1,  0
-    };
+    static const int8_t transitions[ 16 ] = { 0, -1, 1, 0, 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, -1, 0 };
 
-    const uint8_t current =
-        (uint8_t)( ( gpio_get_level( RFSCOUT_BOARD_ENCODER_A_PIN ) << 1 ) |
-                   gpio_get_level( RFSCOUT_BOARD_ENCODER_B_PIN ) );
+    const uint8_t current = (uint8_t)( ( gpio_get_level( RFSCOUT_BOARD_ENCODER_A_PIN ) << 1 ) |
+                                       gpio_get_level( RFSCOUT_BOARD_ENCODER_B_PIN ) );
 
     portENTER_CRITICAL_ISR( &encoder_lock );
-    encoder_accumulator +=
-        transitions[ ( ( encoder_state << 2 ) | current ) & 0x0FU ];
+    encoder_accumulator += transitions[ ( ( encoder_state << 2 ) | current ) & 0x0FU ];
     encoder_state = current;
 
     /* LILYGO's own T-Embed encoder example uses the TWO03 latch mode: each
        physical detent completes two valid quadrature transitions and rests at
        state 0 or 3. Emit movement only at those latch states so contact bounce
        cannot create a half-detent event. */
-    if( ( ENCODER_LATCH_STATE_0 == current ) ||
-        ( ENCODER_LATCH_STATE_3 == current ) )
+    if( ( ENCODER_LATCH_STATE_0 == current ) || ( ENCODER_LATCH_STATE_3 == current ) )
     {
         if( encoder_accumulator >= ENCODER_TRANSITIONS_PER_DETENT )
         {
@@ -74,18 +65,14 @@ static void IRAM_ATTR encoder_isr( void *a_argument )
 
 esp_err_t platform_init( void )
 {
-    gpio_config_t outputs =
-    {
-        .pin_bit_mask = ( 1ULL << RFSCOUT_BOARD_POWER_ENABLE_PIN ) |
-                        ( 1ULL << RFSCOUT_BOARD_DISPLAY_CS_PIN ) |
-                        ( 1ULL << RFSCOUT_BOARD_CC1101_CS_PIN ) |
-                        ( 1ULL << RFSCOUT_BOARD_SD_CS_PIN ) |
-                        ( 1ULL << RFSCOUT_BOARD_NRF24_CS_PIN ) |
-                        ( 1ULL << RFSCOUT_BOARD_NRF24_CE_PIN ) |
-                        ( 1ULL << RFSCOUT_BOARD_CC1101_SWITCH_1_PIN ) |
-                        ( 1ULL << RFSCOUT_BOARD_CC1101_SWITCH_0_PIN ),
-        .mode = GPIO_MODE_OUTPUT
-    };
+    gpio_config_t outputs = {
+        .pin_bit_mask =
+            ( 1ULL << RFSCOUT_BOARD_POWER_ENABLE_PIN ) | ( 1ULL << RFSCOUT_BOARD_DISPLAY_CS_PIN ) |
+            ( 1ULL << RFSCOUT_BOARD_CC1101_CS_PIN ) | ( 1ULL << RFSCOUT_BOARD_SD_CS_PIN ) |
+            ( 1ULL << RFSCOUT_BOARD_NRF24_CS_PIN ) | ( 1ULL << RFSCOUT_BOARD_NRF24_CE_PIN ) |
+            ( 1ULL << RFSCOUT_BOARD_CC1101_SWITCH_1_PIN ) |
+            ( 1ULL << RFSCOUT_BOARD_CC1101_SWITCH_0_PIN ),
+        .mode = GPIO_MODE_OUTPUT };
     ESP_ERROR_CHECK( gpio_config( &outputs ) );
     gpio_set_level( RFSCOUT_BOARD_POWER_ENABLE_PIN, 1 );
     gpio_set_level( RFSCOUT_BOARD_DISPLAY_CS_PIN, 1 );
@@ -94,40 +81,29 @@ esp_err_t platform_init( void )
     gpio_set_level( RFSCOUT_BOARD_NRF24_CS_PIN, 1 );
     gpio_set_level( RFSCOUT_BOARD_NRF24_CE_PIN, 0 );
 
-    gpio_config_t inputs =
-    {
-        .pin_bit_mask = ( 1ULL << RFSCOUT_BOARD_ENCODER_A_PIN ) |
-                        ( 1ULL << RFSCOUT_BOARD_ENCODER_B_PIN ) |
-                        ( 1ULL << RFSCOUT_BOARD_ENCODER_KEY_PIN ) |
-                        ( 1ULL << RFSCOUT_BOARD_USER_KEY_PIN ),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .intr_type = GPIO_INTR_DISABLE
-    };
+    gpio_config_t inputs = { .pin_bit_mask = ( 1ULL << RFSCOUT_BOARD_ENCODER_A_PIN ) |
+                                             ( 1ULL << RFSCOUT_BOARD_ENCODER_B_PIN ) |
+                                             ( 1ULL << RFSCOUT_BOARD_ENCODER_KEY_PIN ) |
+                                             ( 1ULL << RFSCOUT_BOARD_USER_KEY_PIN ),
+                             .mode = GPIO_MODE_INPUT,
+                             .pull_up_en = GPIO_PULLUP_ENABLE,
+                             .intr_type = GPIO_INTR_DISABLE };
     ESP_ERROR_CHECK( gpio_config( &inputs ) );
 
-    encoder_state =
-        (uint8_t)( ( gpio_get_level( RFSCOUT_BOARD_ENCODER_A_PIN ) << 1 ) |
-                   gpio_get_level( RFSCOUT_BOARD_ENCODER_B_PIN ) );
+    encoder_state = (uint8_t)( ( gpio_get_level( RFSCOUT_BOARD_ENCODER_A_PIN ) << 1 ) |
+                               gpio_get_level( RFSCOUT_BOARD_ENCODER_B_PIN ) );
     encoder_accumulator = 0;
     encoder_delta = 0;
-    encoder_button_raw =
-        ( 0 == gpio_get_level( RFSCOUT_BOARD_ENCODER_KEY_PIN ) );
+    encoder_button_raw = ( 0 == gpio_get_level( RFSCOUT_BOARD_ENCODER_KEY_PIN ) );
     encoder_button_stable = encoder_button_raw;
     encoder_button_event = false;
     encoder_button_change_us = esp_timer_get_time();
 
     ESP_ERROR_CHECK( gpio_install_isr_service( 0 ) );
-    ESP_ERROR_CHECK( gpio_set_intr_type( RFSCOUT_BOARD_ENCODER_A_PIN,
-                                         GPIO_INTR_ANYEDGE ) );
-    ESP_ERROR_CHECK( gpio_set_intr_type( RFSCOUT_BOARD_ENCODER_B_PIN,
-                                         GPIO_INTR_ANYEDGE ) );
-    ESP_ERROR_CHECK( gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_A_PIN,
-                                           encoder_isr,
-                                           NULL ) );
-    ESP_ERROR_CHECK( gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_B_PIN,
-                                           encoder_isr,
-                                           NULL ) );
+    ESP_ERROR_CHECK( gpio_set_intr_type( RFSCOUT_BOARD_ENCODER_A_PIN, GPIO_INTR_ANYEDGE ) );
+    ESP_ERROR_CHECK( gpio_set_intr_type( RFSCOUT_BOARD_ENCODER_B_PIN, GPIO_INTR_ANYEDGE ) );
+    ESP_ERROR_CHECK( gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_A_PIN, encoder_isr, NULL ) );
+    ESP_ERROR_CHECK( gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_B_PIN, encoder_isr, NULL ) );
 
     ESP_LOGI( TAG, "T-Embed CC1101 Plus board GPIO initialized" );
     return ESP_OK;
@@ -135,8 +111,7 @@ esp_err_t platform_init( void )
 
 void platform_poll( void )
 {
-    const bool pressed =
-        ( 0 == gpio_get_level( RFSCOUT_BOARD_ENCODER_KEY_PIN ) );
+    const bool pressed = ( 0 == gpio_get_level( RFSCOUT_BOARD_ENCODER_KEY_PIN ) );
     const int64_t now_us = esp_timer_get_time();
 
     if( pressed != encoder_button_raw )
@@ -145,8 +120,7 @@ void platform_poll( void )
         encoder_button_change_us = now_us;
     }
     else if( ( pressed != encoder_button_stable ) &&
-             ( ( now_us - encoder_button_change_us ) >=
-               ENCODER_BUTTON_DEBOUNCE_US ) )
+             ( ( now_us - encoder_button_change_us ) >= ENCODER_BUTTON_DEBOUNCE_US ) )
     {
         encoder_button_stable = pressed;
         if( pressed )
@@ -177,9 +151,7 @@ void platform_set_alert_led( bool a_active )
     (void)a_active;
 }
 
-void platform_audio_tone( bool a_enabled,
-                          uint16_t a_frequency_hz,
-                          void *a_context )
+void platform_audio_tone( bool a_enabled, uint16_t a_frequency_hz, void *a_context )
 {
     (void)a_enabled;
     (void)a_frequency_hz;

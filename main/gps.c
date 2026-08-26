@@ -25,8 +25,7 @@
 #define GPS_DETECTION_TIMEOUT_US 5000000LL
 #define GPS_FIX_TIMEOUT_US 3000000LL
 
-static const uint32_t probe_baud_rates[] =
-{
+static const uint32_t probe_baud_rates[] = {
     9600U,
     38400U,
     115200U,
@@ -114,10 +113,8 @@ static bool valid_checksum( const char *a_sentence )
 /** @brief Return true when a sentence looks like a standard NMEA talker sentence. */
 static bool is_nmea_sentence( const char *a_sentence )
 {
-    return ( NULL != a_sentence ) &&
-           ( '$' == a_sentence[ 0 ] ) &&
-           isalpha( (unsigned char)a_sentence[ 1 ] ) &&
-           isalpha( (unsigned char)a_sentence[ 2 ] ) &&
+    return ( NULL != a_sentence ) && ( '$' == a_sentence[ 0 ] ) &&
+           isalpha( (unsigned char)a_sentence[ 1 ] ) && isalpha( (unsigned char)a_sentence[ 2 ] ) &&
            valid_checksum( a_sentence );
 }
 
@@ -146,9 +143,7 @@ static void parse_sentence( const char *a_sentence )
     if( NULL != strstr( copy, "GGA," ) )
     {
         const char *quality = field_at( copy, 6U );
-        valid_fix = ( NULL != quality ) &&
-                    ( '0' != quality[ 0 ] ) &&
-                    ( '\0' != quality[ 0 ] ) &&
+        valid_fix = ( NULL != quality ) && ( '0' != quality[ 0 ] ) && ( '\0' != quality[ 0 ] ) &&
                     ( ',' != quality[ 0 ] );
     }
     else if( NULL != strstr( copy, "RMC," ) )
@@ -204,8 +199,7 @@ static void consume_byte( uint8_t a_byte )
 /** @brief Select one candidate baud rate while probing for NMEA traffic. */
 static void set_probe_baud( size_t a_index )
 {
-    probe_baud_index = a_index %
-                       ( sizeof( probe_baud_rates ) / sizeof( probe_baud_rates[ 0 ] ) );
+    probe_baud_index = a_index % ( sizeof( probe_baud_rates ) / sizeof( probe_baud_rates[ 0 ] ) );
     const uint32_t baud = probe_baud_rates[ probe_baud_index ];
     const esp_err_t result = uart_set_baudrate( GPS_UART, baud );
     if( ESP_OK == result )
@@ -226,8 +220,7 @@ static void set_probe_baud( size_t a_index )
 
 esp_err_t gps_init( void )
 {
-    const uart_config_t config =
-    {
+    const uart_config_t config = {
         .baud_rate = (int)probe_baud_rates[ 0 ],
         .data_bits = UART_DATA_8_BITS,
         .parity = UART_PARITY_DISABLE,
@@ -236,12 +229,7 @@ esp_err_t gps_init( void )
         .source_clk = UART_SCLK_DEFAULT,
     };
 
-    esp_err_t result = uart_driver_install( GPS_UART,
-                                            GPS_RX_BUFFER_SIZE,
-                                            0,
-                                            0,
-                                            NULL,
-                                            0 );
+    esp_err_t result = uart_driver_install( GPS_UART, GPS_RX_BUFFER_SIZE, 0, 0, NULL, 0 );
     if( ESP_OK != result )
     {
         return result;

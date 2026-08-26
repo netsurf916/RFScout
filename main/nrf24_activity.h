@@ -49,13 +49,10 @@ void nrf24_activity_observe_packet( const nrf24_packet_observation_t *a_packet )
  * @param a_capacity Capacity of each destination array.
  * @return Number of channel values copied.
  */
-size_t nrf24_activity_histogram( uint8_t *a_fast,
-                                 uint8_t *a_slow,
-                                 size_t a_capacity );
+size_t nrf24_activity_histogram( uint8_t *a_fast, uint8_t *a_slow, size_t a_capacity );
 
 /** @brief Copy the fixed likely-device category rows and accumulated counts. */
-size_t nrf24_activity_fingerprints( nrf24_fingerprint_t *a_output,
-                                    size_t a_capacity );
+size_t nrf24_activity_fingerprints( nrf24_fingerprint_t *a_output, size_t a_capacity );
 
 /** @brief Return a stable display name for an nRF24 fingerprint category. */
 const char *nrf24_activity_fingerprint_name( nrf24_fingerprint_type_t a_type );

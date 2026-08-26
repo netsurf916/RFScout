@@ -42,7 +42,6 @@ bool storage_is_available( void );
  * @param a_free_bytes Receives currently free filesystem bytes when non-NULL.
  * @return ESP_OK on success or an ESP-IDF/VFS error.
  */
-esp_err_t storage_get_capacity( uint64_t *a_total_bytes,
-                                uint64_t *a_free_bytes );
+esp_err_t storage_get_capacity( uint64_t *a_total_bytes, uint64_t *a_free_bytes );
 
 #endif // _RFSCOUT_STORAGE_H_

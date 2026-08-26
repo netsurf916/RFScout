@@ -25,15 +25,12 @@
 esp_err_t log_writer_init( void );
 
 /** Queue a Wi-Fi/BLE live-list lifecycle event without filesystem I/O. */
-bool log_writer_device_event(
-    observation_store_event_t a_event,
-    const rf_device_t *a_device );
+bool log_writer_device_event( observation_store_event_t a_event, const rf_device_t *a_device );
 
 /** Observation-store callback forwarding lifecycle events to the log queue. */
-void log_writer_store_event(
-    observation_store_event_t a_event,
-    const rf_device_t *a_device,
-    void *a_context );
+void log_writer_store_event( observation_store_event_t a_event,
+                             const rf_device_t *a_device,
+                             void *a_context );
 
 /**
  * @brief Queue an application-owned SD log record without filesystem I/O.

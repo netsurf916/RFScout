@@ -16,12 +16,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define RFSCOUT_DEVICE_CAPACITY       1000
-#define RFSCOUT_DEVICE_TIMEOUT_MS     20000U
-#define RFSCOUT_VENDOR_NAME_MAX       32
-#define RFSCOUT_DEVICE_NAME_MAX       32
-#define RFSCOUT_MFG_DATA_MAX          24
-#define RFSCOUT_BLE_SERVICE_UUID_MAX  12
+#define RFSCOUT_DEVICE_CAPACITY 1000
+#define RFSCOUT_DEVICE_TIMEOUT_MS 20000U
+#define RFSCOUT_VENDOR_NAME_MAX 32
+#define RFSCOUT_DEVICE_NAME_MAX 32
+#define RFSCOUT_MFG_DATA_MAX 24
+#define RFSCOUT_BLE_SERVICE_UUID_MAX 12
 
 typedef enum
 {
@@ -107,18 +107,16 @@ typedef enum
     OBSERVATION_STORE_EVENT_DROPPED_CAPACITY
 } observation_store_event_t;
 
-typedef void ( *observation_store_event_callback_t )(
-    observation_store_event_t a_event,
-    const rf_device_t *a_device,
-    void *a_context );
+typedef void ( *observation_store_event_callback_t )( observation_store_event_t a_event,
+                                                      const rf_device_t *a_device,
+                                                      void *a_context );
 
 /** @brief Initialize the observation store in external PSRAM. */
 esp_err_t observation_store_init( void );
 
 /** @brief Register the live-list lifecycle callback. */
-void observation_store_set_event_callback(
-    observation_store_event_callback_t a_callback,
-    void *a_context );
+void observation_store_set_event_callback( observation_store_event_callback_t a_callback,
+                                           void *a_context );
 
 /** @brief Add or refresh one normalized device observation. */
 bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new );

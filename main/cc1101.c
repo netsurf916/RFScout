@@ -46,23 +46,11 @@ static volatile bool running;
 static bool frame_ready;
 static uint32_t config_generation;
 static int8_t display_spectrum[ CC1101_SPECTRUM_BINS ];
-static cc1101_scan_config_t config =
-{
-    CC1101_PROFILE_433,
-    432800U,
-    433200U,
-    5U
-};
+static cc1101_scan_config_t config = { CC1101_PROFILE_433, 432800U, 433200U, 5U };
 
-static esp_err_t transfer( uint8_t a_header,
-                           uint8_t a_data,
-                           uint8_t *a_result )
+static esp_err_t transfer( uint8_t a_header, uint8_t a_data, uint8_t *a_result )
 {
-    spi_transaction_t transaction =
-    {
-        .length = 16,
-        .rxlength = 16
-    };
+    spi_transaction_t transaction = { .length = 16, .rxlength = 16 };
     uint8_t tx[ 2 ] = { a_header, a_data };
     uint8_t rx[ 2 ] = { 0U, 0U };
 
@@ -123,14 +111,11 @@ static void disable_rf_path( void )
 
 static int8_t decode_rssi( uint8_t a_raw )
 {
-    const int16_t signed_raw =
-        ( a_raw >= 128U ) ? ( (int16_t)a_raw - 256 ) : (int16_t)a_raw;
+    const int16_t signed_raw = ( a_raw >= 128U ) ? ( (int16_t)a_raw - 256 ) : (int16_t)a_raw;
     return (int8_t)( signed_raw / 2 - 74 );
 }
 
-static size_t sweep_count_for( uint32_t a_low_khz,
-                               uint32_t a_high_khz,
-                               uint32_t a_step_khz )
+static size_t sweep_count_for( uint32_t a_low_khz, uint32_t a_high_khz, uint32_t a_step_khz )
 {
     if( ( 0U == a_step_khz ) || ( a_high_khz <= a_low_khz ) )
     {
@@ -140,13 +125,10 @@ static size_t sweep_count_for( uint32_t a_low_khz,
     return (size_t)( ( a_high_khz - a_low_khz ) / a_step_khz ) + 1U;
 }
 
-static bool valid_sweep( uint32_t a_low_khz,
-                         uint32_t a_high_khz,
-                         uint32_t a_step_khz )
+static bool valid_sweep( uint32_t a_low_khz, uint32_t a_high_khz, uint32_t a_step_khz )
 {
     return ( a_high_khz > a_low_khz ) &&
-           ( sweep_count_for( a_low_khz, a_high_khz, a_step_khz ) <=
-             CC1101_MAX_SWEEP_SAMPLES );
+           ( sweep_count_for( a_low_khz, a_high_khz, a_step_khz ) <= CC1101_MAX_SWEEP_SAMPLES );
 }
 
 static cc1101_scan_config_t config_snapshot( uint32_t *a_generation )
@@ -161,12 +143,9 @@ static cc1101_scan_config_t config_snapshot( uint32_t *a_generation )
     return snapshot;
 }
 
-static uint32_t frequency_for_sample( const cc1101_scan_config_t *a_config,
-                                      size_t a_index )
+static uint32_t frequency_for_sample( const cc1101_scan_config_t *a_config, size_t a_index )
 {
-    uint64_t frequency =
-        (uint64_t)a_config->low_khz +
-        ( (uint64_t)a_index * a_config->step_khz );
+    uint64_t frequency = (uint64_t)a_config->low_khz + ( (uint64_t)a_index * a_config->step_khz );
 
     if( frequency > a_config->high_khz )
     {
@@ -182,32 +161,26 @@ static size_t display_bin_for_sample( size_t a_index, size_t a_count )
         return 0U;
     }
 
-    return ( a_index * ( CC1101_SPECTRUM_BINS - 1U ) ) /
-           ( a_count - 1U );
+    return ( a_index * ( CC1101_SPECTRUM_BINS - 1U ) ) / ( a_count - 1U );
 }
 
 static esp_err_t tune( uint32_t a_frequency_khz )
 {
     select_rf_path( a_frequency_khz );
-    const uint64_t word =
-        ( (uint64_t)a_frequency_khz * 1000ULL << 16 ) /
-        CC1101_XOSC_HZ;
+    const uint64_t word = ( (uint64_t)a_frequency_khz * 1000ULL << 16 ) / CC1101_XOSC_HZ;
 
     esp_err_t result = strobe( CC1101_SIDLE );
     if( ESP_OK == result )
     {
-        result = write_register( CC1101_FREQ2,
-                                 (uint8_t)( ( word >> 16 ) & 0xFFU ) );
+        result = write_register( CC1101_FREQ2, (uint8_t)( ( word >> 16 ) & 0xFFU ) );
     }
     if( ESP_OK == result )
     {
-        result = write_register( CC1101_FREQ1,
-                                 (uint8_t)( ( word >> 8 ) & 0xFFU ) );
+        result = write_register( CC1101_FREQ1, (uint8_t)( ( word >> 8 ) & 0xFFU ) );
     }
     if( ESP_OK == result )
     {
-        result = write_register( CC1101_FREQ0,
-                                 (uint8_t)( word & 0xFFU ) );
+        result = write_register( CC1101_FREQ0, (uint8_t)( word & 0xFFU ) );
     }
     if( ESP_OK == result )
     {
@@ -228,21 +201,16 @@ static void scan_worker( void *a_argument )
         while( running )
         {
             uint32_t generation = 0U;
-            const cc1101_scan_config_t snapshot =
-                config_snapshot( &generation );
-            const size_t count = sweep_count_for( snapshot.low_khz,
-                                                  snapshot.high_khz,
-                                                  snapshot.step_khz );
+            const cc1101_scan_config_t snapshot = config_snapshot( &generation );
+            const size_t count =
+                sweep_count_for( snapshot.low_khz, snapshot.high_khz, snapshot.step_khz );
             memset( acquisition, -120, sizeof( acquisition ) );
             bool scan_ok = true;
             unsigned samples_since_break = 0U;
 
-            for( size_t index = 0U;
-                 running && ( index < count );
-                 ++index )
+            for( size_t index = 0U; running && ( index < count ); ++index )
             {
-                const uint32_t frequency =
-                    frequency_for_sample( &snapshot, index );
+                const uint32_t frequency = frequency_for_sample( &snapshot, index );
                 esp_err_t result = tune( frequency );
                 if( ESP_OK != result )
                 {
@@ -276,8 +244,7 @@ static void scan_worker( void *a_argument )
                 }
 
                 ++samples_since_break;
-                if( samples_since_break >=
-                    CC1101_SAMPLES_PER_SCHEDULER_BREAK )
+                if( samples_since_break >= CC1101_SAMPLES_PER_SCHEDULER_BREAK )
                 {
                     samples_since_break = 0U;
                     vTaskDelay( 1U );
@@ -298,9 +265,7 @@ static void scan_worker( void *a_argument )
             portENTER_CRITICAL( &state_lock );
             if( generation == config_generation )
             {
-                memcpy( display_spectrum,
-                        acquisition,
-                        sizeof( display_spectrum ) );
+                memcpy( display_spectrum, acquisition, sizeof( display_spectrum ) );
                 frame_ready = true;
             }
             portEXIT_CRITICAL( &state_lock );
@@ -319,17 +284,12 @@ esp_err_t cc1101_init( void )
 
     gpio_reset_pin( RFSCOUT_BOARD_CC1101_CS_PIN );
 
-    spi_device_interface_config_t device_config =
-    {
-        .clock_speed_hz = 4000000,
-        .mode = 0,
-        .spics_io_num = RFSCOUT_BOARD_CC1101_CS_PIN,
-        .queue_size = 1
-    };
+    spi_device_interface_config_t device_config = { .clock_speed_hz = 4000000,
+                                                    .mode = 0,
+                                                    .spics_io_num = RFSCOUT_BOARD_CC1101_CS_PIN,
+                                                    .queue_size = 1 };
 
-    esp_err_t result = spi_bus_add_device( CC1101_SPI_HOST,
-                                           &device_config,
-                                           &device );
+    esp_err_t result = spi_bus_add_device( CC1101_SPI_HOST, &device_config, &device );
     if( ESP_OK != result )
     {
         return result;
@@ -344,15 +304,9 @@ esp_err_t cc1101_init( void )
     (void)read_status( CC1101_PARTNUM, &part );
     (void)read_status( CC1101_VERSION, &version );
 
-    detected = ( 0x00U == part ) &&
-               ( 0x00U != version ) &&
-               ( 0xFFU != version );
+    detected = ( 0x00U == part ) && ( 0x00U != version ) && ( 0xFFU != version );
 
-    ESP_LOGI( TAG,
-              "probe part=0x%02x version=0x%02x detected=%d",
-              part,
-              version,
-              detected );
+    ESP_LOGI( TAG, "probe part=0x%02x version=0x%02x detected=%d", part, version, detected );
 
     memset( display_spectrum, -120, sizeof( display_spectrum ) );
 
@@ -427,21 +381,12 @@ const cc1101_scan_config_t *cc1101_config( void )
 size_t cc1101_sweep_count( void )
 {
     const cc1101_scan_config_t snapshot = config_snapshot( NULL );
-    return sweep_count_for( snapshot.low_khz,
-                            snapshot.high_khz,
-                            snapshot.step_khz );
+    return sweep_count_for( snapshot.low_khz, snapshot.high_khz, snapshot.step_khz );
 }
 
 const char *cc1101_profile_name( cc1101_profile_t a_profile )
 {
-    static const char *names[] =
-    {
-        "433 ISM",
-        "315 MHz",
-        "868 MHz",
-        "915 MHz",
-        "MANUAL"
-    };
+    static const char *names[] = { "433 ISM", "315 MHz", "868 MHz", "915 MHz", "MANUAL" };
 
     return a_profile < CC1101_PROFILE_COUNT ? names[ a_profile ] : "?";
 }
@@ -498,13 +443,11 @@ static uint32_t clamp_band( uint32_t a_frequency_khz )
     {
         return 928000U;
     }
-    if( ( a_frequency_khz > 348000U ) &&
-        ( a_frequency_khz < 387000U ) )
+    if( ( a_frequency_khz > 348000U ) && ( a_frequency_khz < 387000U ) )
     {
         return a_frequency_khz < 367500U ? 348000U : 387000U;
     }
-    if( ( a_frequency_khz > 464000U ) &&
-        ( a_frequency_khz < 779000U ) )
+    if( ( a_frequency_khz > 464000U ) && ( a_frequency_khz < 779000U ) )
     {
         return a_frequency_khz < 621500U ? 464000U : 779000U;
     }
@@ -515,8 +458,7 @@ bool cc1101_adjust_low( int a_delta )
 {
     portENTER_CRITICAL( &state_lock );
 
-    int64_t frequency =
-        (int64_t)config.low_khz + ( (int64_t)a_delta * config.step_khz );
+    int64_t frequency = (int64_t)config.low_khz + ( (int64_t)a_delta * config.step_khz );
     if( frequency < 300000LL )
     {
         frequency = 300000LL;
@@ -528,9 +470,7 @@ bool cc1101_adjust_low( int a_delta )
         candidate = config.high_khz - config.step_khz;
     }
 
-    const bool valid = valid_sweep( candidate,
-                                    config.high_khz,
-                                    config.step_khz );
+    const bool valid = valid_sweep( candidate, config.high_khz, config.step_khz );
     if( valid )
     {
         config.low_khz = candidate;
@@ -547,8 +487,7 @@ bool cc1101_adjust_high( int a_delta )
 {
     portENTER_CRITICAL( &state_lock );
 
-    int64_t frequency =
-        (int64_t)config.high_khz + ( (int64_t)a_delta * config.step_khz );
+    int64_t frequency = (int64_t)config.high_khz + ( (int64_t)a_delta * config.step_khz );
     if( frequency > 928000LL )
     {
         frequency = 928000LL;
@@ -560,9 +499,7 @@ bool cc1101_adjust_high( int a_delta )
         candidate = config.low_khz + config.step_khz;
     }
 
-    const bool valid = valid_sweep( config.low_khz,
-                                    candidate,
-                                    config.step_khz );
+    const bool valid = valid_sweep( config.low_khz, candidate, config.step_khz );
     if( valid )
     {
         config.high_khz = candidate;
@@ -577,10 +514,7 @@ bool cc1101_adjust_high( int a_delta )
 
 bool cc1101_adjust_step( int a_delta )
 {
-    static const uint32_t steps[] =
-    {
-        1U, 5U, 10U, 25U, 50U, 100U, 200U, 250U, 500U, 1000U
-    };
+    static const uint32_t steps[] = { 1U, 5U, 10U, 25U, 50U, 100U, 200U, 250U, 500U, 1000U };
 
     portENTER_CRITICAL( &state_lock );
 
@@ -592,9 +526,7 @@ bool cc1101_adjust_step( int a_delta )
     }
 
     size_t candidate_index = index;
-    if( ( a_delta > 0 ) &&
-        ( candidate_index + 1U <
-          ( sizeof( steps ) / sizeof( steps[ 0 ] ) ) ) )
+    if( ( a_delta > 0 ) && ( candidate_index + 1U < ( sizeof( steps ) / sizeof( steps[ 0 ] ) ) ) )
     {
         ++candidate_index;
     }
@@ -609,9 +541,7 @@ bool cc1101_adjust_step( int a_delta )
     }
 
     const uint32_t candidate = steps[ candidate_index ];
-    const bool valid = valid_sweep( config.low_khz,
-                                    config.high_khz,
-                                    candidate );
+    const bool valid = valid_sweep( config.low_khz, config.high_khz, candidate );
     if( valid )
     {
         config.step_khz = candidate;
@@ -631,8 +561,7 @@ size_t cc1101_spectrum( int8_t *a_output, size_t a_capacity )
         return 0U;
     }
 
-    const size_t count = a_capacity < CC1101_SPECTRUM_BINS ?
-                         a_capacity : CC1101_SPECTRUM_BINS;
+    const size_t count = a_capacity < CC1101_SPECTRUM_BINS ? a_capacity : CC1101_SPECTRUM_BINS;
     portENTER_CRITICAL( &state_lock );
     memcpy( a_output, display_spectrum, count );
     portEXIT_CRITICAL( &state_lock );

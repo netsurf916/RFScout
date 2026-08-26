@@ -63,11 +63,7 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
     const int graph_y = 46;
     const int graph_width = 304;
     const int graph_height = 82;
-    display_fill_rect( graph_x,
-                       graph_y + graph_height,
-                       graph_width,
-                       1,
-                       DIM );
+    display_fill_rect( graph_x, graph_y + graph_height, graph_width, 1, DIM );
 
     size_t bin_count = audio_spectrum_display_bin_count();
     if( bin_count > AUDIO_SPECTRUM_BINS )
@@ -85,32 +81,24 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
                 strongest = i;
             }
 
-            const int left = graph_x +
-                             (int)( i * (size_t)graph_width / bin_count );
-            const int right = graph_x +
-                              (int)( ( i + 1U ) * (size_t)graph_width /
-                                     bin_count );
+            const int left = graph_x + (int)( i * (size_t)graph_width / bin_count );
+            const int right = graph_x + (int)( ( i + 1U ) * (size_t)graph_width / bin_count );
             int bar_width = right - left;
             if( bar_width < 1 )
             {
                 bar_width = 1;
             }
 
-            const int bar_height =
-                (int)a_current[ i ] * ( graph_height - 3 ) / 255;
+            const int bar_height = (int)a_current[ i ] * ( graph_height - 3 ) / 255;
             if( bar_height > 0 )
             {
-                display_fill_rect( left,
-                                   graph_y + graph_height - bar_height,
-                                   bar_width,
-                                   bar_height,
-                                   GRAPH );
+                display_fill_rect(
+                    left, graph_y + graph_height - bar_height, bar_width, bar_height, GRAPH );
             }
 
             if( a_peak[ i ] > 0U )
             {
-                int peak_y = graph_y + graph_height -
-                             (int)a_peak[ i ] * ( graph_height - 3 ) / 255;
+                int peak_y = graph_y + graph_height - (int)a_peak[ i ] * ( graph_height - 3 ) / 255;
                 if( peak_y < graph_y )
                 {
                     peak_y = graph_y;
@@ -137,8 +125,7 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
     if( bin_count > 1U )
     {
         peak_hz = low_hz +
-                  (uint32_t)( ( (uint64_t)( high_hz - low_hz ) * strongest ) /
-                              ( bin_count - 1U ) );
+                  (uint32_t)( ( (uint64_t)( high_hz - low_hz ) * strongest ) / ( bin_count - 1U ) );
     }
 
     char peak_text[ 12 ];
@@ -154,17 +141,9 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
     (void)display_present();
 }
 
-void audio_view_menu( unsigned a_selected,
-                      bool a_editing,
-                      bool a_peak_hold )
+void audio_view_menu( unsigned a_selected, bool a_editing, bool a_peak_hold )
 {
-    static const char *labels[] =
-    {
-        "RANGE",
-        "CHANNEL",
-        "PEAK HOLD",
-        "BACK"
-    };
+    static const char *labels[] = { "RANGE", "CHANNEL", "PEAK HOLD", "BACK" };
 
     display_clear( BG );
     display_draw_text( 8, 7, "AUDIO SETTINGS", SUBDUED, 2U );
@@ -182,16 +161,8 @@ void audio_view_menu( unsigned a_selected,
             marker = ( editable && a_editing ) ? "*" : ">";
         }
 
-        display_draw_text( 8,
-                           y,
-                           marker,
-                           active ? YELLOW : DIM,
-                           1U );
-        display_draw_text( 22,
-                           y,
-                           labels[ i ],
-                           active ? TEXT : DIM,
-                           1U );
+        display_draw_text( 8, y, marker, active ? YELLOW : DIM, 1U );
+        display_draw_text( 22, y, labels[ i ], active ? TEXT : DIM, 1U );
 
         if( 0U == i )
         {
@@ -211,18 +182,13 @@ void audio_view_menu( unsigned a_selected,
         }
         else if( 2U == i )
         {
-            display_draw_text( 130,
-                               y,
-                               a_peak_hold ? "ON" : "OFF",
-                               active ? YELLOW : DIM,
-                               1U );
+            display_draw_text( 130, y, a_peak_hold ? "ON" : "OFF", active ? YELLOW : DIM, 1U );
         }
     }
 
     display_draw_text( 8,
                        150,
-                       a_editing ? "TURN: CHANGE  CENTER: DONE" :
-                                   "TURN: SELECT CENTER: ENTER",
+                       a_editing ? "TURN: CHANGE  CENTER: DONE" : "TURN: SELECT CENTER: ENTER",
                        a_editing ? YELLOW : SUBDUED,
                        1U );
     (void)display_present();

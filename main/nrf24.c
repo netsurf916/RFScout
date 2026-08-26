@@ -46,33 +46,18 @@ static volatile bool running;
 static volatile bool frame_ready;
 static uint8_t acquisition[ NRF24_CHANNEL_COUNT ];
 static uint8_t completed[ NRF24_CHANNEL_COUNT ];
-static nrf24_scan_config_t config =
-{
-    .low_channel = 0U,
-    .high_channel = 125U,
-    .dwell_us = 250U
-};
+static nrf24_scan_config_t config = { .low_channel = 0U, .high_channel = 125U, .dwell_us = 250U };
 
-static esp_err_t transfer( const uint8_t *a_tx,
-                           uint8_t *a_rx,
-                           size_t a_length )
+static esp_err_t transfer( const uint8_t *a_tx, uint8_t *a_rx, size_t a_length )
 {
-    spi_transaction_t transaction =
-    {
-        .length = a_length * 8U,
-        .rxlength = a_length * 8U,
-        .tx_buffer = a_tx,
-        .rx_buffer = a_rx
-    };
+    spi_transaction_t transaction = {
+        .length = a_length * 8U, .rxlength = a_length * 8U, .tx_buffer = a_tx, .rx_buffer = a_rx };
     return spi_device_transmit( device, &transaction );
 }
 
 static esp_err_t read_register( uint8_t a_register, uint8_t *a_value )
 {
-    uint8_t tx[ 2 ] =
-    {
-        NRF24_CMD_R_REGISTER | ( a_register & 0x1FU ), NRF24_CMD_NOP
-    };
+    uint8_t tx[ 2 ] = { NRF24_CMD_R_REGISTER | ( a_register & 0x1FU ), NRF24_CMD_NOP };
     uint8_t rx[ 2 ] = { 0U, 0U };
     const esp_err_t result = transfer( tx, rx, sizeof( tx ) );
     if( ( ESP_OK == result ) && ( NULL != a_value ) )
@@ -84,10 +69,7 @@ static esp_err_t read_register( uint8_t a_register, uint8_t *a_value )
 
 static esp_err_t write_register( uint8_t a_register, uint8_t a_value )
 {
-    uint8_t tx[ 2 ] =
-    {
-        NRF24_CMD_W_REGISTER | ( a_register & 0x1FU ), a_value
-    };
+    uint8_t tx[ 2 ] = { NRF24_CMD_W_REGISTER | ( a_register & 0x1FU ), a_value };
     uint8_t rx[ 2 ] = { 0U, 0U };
     return transfer( tx, rx, sizeof( tx ) );
 }
@@ -169,8 +151,10 @@ static void scan_worker( void *a_argument )
                 esp_err_t result = begin_channel( (uint8_t)channel );
                 if( ESP_OK != result )
                 {
-                    ESP_LOGW( TAG, "RF_CH write failed for channel %u: %s",
-                              (unsigned)channel, esp_err_to_name( result ) );
+                    ESP_LOGW( TAG,
+                              "RF_CH write failed for channel %u: %s",
+                              (unsigned)channel,
+                              esp_err_to_name( result ) );
                     ce( false );
                     scan_ok = false;
                     break;
@@ -188,8 +172,10 @@ static void scan_worker( void *a_argument )
                 ce( false );
                 if( ESP_OK != result )
                 {
-                    ESP_LOGW( TAG, "RPD read failed for channel %u: %s",
-                              (unsigned)channel, esp_err_to_name( result ) );
+                    ESP_LOGW( TAG,
+                              "RPD read failed for channel %u: %s",
+                              (unsigned)channel,
+                              esp_err_to_name( result ) );
                     scan_ok = false;
                     break;
                 }
@@ -237,13 +223,10 @@ esp_err_t nrf24_init( void )
     gpio_set_direction( RFSCOUT_BOARD_NRF24_CE_PIN, GPIO_MODE_OUTPUT );
     ce( false );
 
-    spi_device_interface_config_t device_config =
-    {
-        .clock_speed_hz = 4000000,
-        .mode = 0,
-        .spics_io_num = RFSCOUT_BOARD_NRF24_CS_PIN,
-        .queue_size = 1
-    };
+    spi_device_interface_config_t device_config = { .clock_speed_hz = 4000000,
+                                                    .mode = 0,
+                                                    .spics_io_num = RFSCOUT_BOARD_NRF24_CS_PIN,
+                                                    .queue_size = 1 };
 
     esp_err_t result = spi_bus_add_device( NRF24_SPI_HOST, &device_config, &device );
     if( ESP_OK != result )
@@ -259,19 +242,26 @@ esp_err_t nrf24_init( void )
     (void)read_register( NRF24_REG_RF_CH, &rf_channel );
     (void)read_register( NRF24_REG_STATUS, &status );
 
-    detected = ( setup_aw >= 1U ) && ( setup_aw <= 3U ) &&
-               ( rf_channel <= 125U ) && ( 0xFFU != status );
-    ESP_LOGI( TAG, "probe setup_aw=0x%02x rf_ch=%u status=0x%02x detected=%d",
-              setup_aw, rf_channel, status, detected );
+    detected =
+        ( setup_aw >= 1U ) && ( setup_aw <= 3U ) && ( rf_channel <= 125U ) && ( 0xFFU != status );
+    ESP_LOGI( TAG,
+              "probe setup_aw=0x%02x rf_ch=%u status=0x%02x detected=%d",
+              setup_aw,
+              rf_channel,
+              status,
+              detected );
 
     memset( acquisition, 0, sizeof( acquisition ) );
     memset( completed, 0, sizeof( completed ) );
 
     if( detected && ( NULL == scan_task ) )
     {
-        if( pdPASS != xTaskCreate( scan_worker, "nrf24_scan",
-                                   NRF24_TASK_STACK_SIZE, NULL,
-                                   NRF24_TASK_PRIORITY, &scan_task ) )
+        if( pdPASS != xTaskCreate( scan_worker,
+                                   "nrf24_scan",
+                                   NRF24_TASK_STACK_SIZE,
+                                   NULL,
+                                   NRF24_TASK_PRIORITY,
+                                   &scan_task ) )
         {
             scan_task = NULL;
             return ESP_ERR_NO_MEM;
@@ -290,12 +280,13 @@ esp_err_t nrf24_start( void )
 
     ce( false );
     result = write_register( NRF24_REG_EN_AA, 0x00U );
-    if( ESP_OK == result ) result = write_register( NRF24_REG_EN_RXADDR, 0x00U );
-    if( ESP_OK == result ) result = write_register( NRF24_REG_RF_SETUP, 0x06U );
+    if( ESP_OK == result )
+        result = write_register( NRF24_REG_EN_RXADDR, 0x00U );
+    if( ESP_OK == result )
+        result = write_register( NRF24_REG_RF_SETUP, 0x06U );
     if( ESP_OK == result )
     {
-        result = write_register( NRF24_REG_CONFIG,
-                                 NRF24_CONFIG_PWR_UP | NRF24_CONFIG_PRIM_RX );
+        result = write_register( NRF24_REG_CONFIG, NRF24_CONFIG_PWR_UP | NRF24_CONFIG_PRIM_RX );
     }
     if( ESP_OK != result )
     {
@@ -313,7 +304,8 @@ esp_err_t nrf24_start( void )
 
 void nrf24_stop( void )
 {
-    if( !initialized ) return;
+    if( !initialized )
+        return;
     running = false;
     ce( false );
     (void)write_register( NRF24_REG_CONFIG, 0x00U );
@@ -344,8 +336,10 @@ void nrf24_adjust_low( int a_delta )
 {
     portENTER_CRITICAL( &state_lock );
     int value = (int)config.low_channel + a_delta;
-    if( value < 0 ) value = 0;
-    if( value >= config.high_channel ) value = (int)config.high_channel - 1;
+    if( value < 0 )
+        value = 0;
+    if( value >= config.high_channel )
+        value = (int)config.high_channel - 1;
     config.low_channel = (uint8_t)value;
     portEXIT_CRITICAL( &state_lock );
     restart_scan();
@@ -355,8 +349,10 @@ void nrf24_adjust_high( int a_delta )
 {
     portENTER_CRITICAL( &state_lock );
     int value = (int)config.high_channel + a_delta;
-    if( value > 125 ) value = 125;
-    if( value <= config.low_channel ) value = (int)config.low_channel + 1;
+    if( value > 125 )
+        value = 125;
+    if( value <= config.low_channel )
+        value = (int)config.low_channel + 1;
     config.high_channel = (uint8_t)value;
     portEXIT_CRITICAL( &state_lock );
     restart_scan();
@@ -364,10 +360,7 @@ void nrf24_adjust_high( int a_delta )
 
 void nrf24_adjust_dwell( int a_delta )
 {
-    static const uint16_t dwell_values[] =
-    {
-        200U, 250U, 500U, 1000U, 2000U, 5000U
-    };
+    static const uint16_t dwell_values[] = { 200U, 250U, 500U, 1000U, 2000U, 5000U };
 
     portENTER_CRITICAL( &state_lock );
     size_t index = 0U;
@@ -403,9 +396,9 @@ bool nrf24_take_frame_ready( void )
 
 size_t nrf24_spectrum( uint8_t *a_output, size_t a_capacity )
 {
-    if( ( NULL == a_output ) || ( 0U == a_capacity ) ) return 0U;
-    const size_t count = ( a_capacity < NRF24_CHANNEL_COUNT ) ?
-                         a_capacity : NRF24_CHANNEL_COUNT;
+    if( ( NULL == a_output ) || ( 0U == a_capacity ) )
+        return 0U;
+    const size_t count = ( a_capacity < NRF24_CHANNEL_COUNT ) ? a_capacity : NRF24_CHANNEL_COUNT;
     portENTER_CRITICAL( &state_lock );
     memcpy( a_output, completed, count );
     portEXIT_CRITICAL( &state_lock );

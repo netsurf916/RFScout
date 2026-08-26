@@ -23,9 +23,8 @@ const char *oui_database_lookup( const uint8_t a_address[ 6 ] )
         return NULL;
     }
 
-    const uint32_t prefix = ( (uint32_t)a_address[ 0 ] << 16 ) |
-                            ( (uint32_t)a_address[ 1 ] << 8 ) |
-                            a_address[ 2 ];
+    const uint32_t prefix =
+        ( (uint32_t)a_address[ 0 ] << 16 ) | ( (uint32_t)a_address[ 1 ] << 8 ) | a_address[ 2 ];
     size_t low = 0;
     size_t high = OUI_RECORD_COUNT;
 
