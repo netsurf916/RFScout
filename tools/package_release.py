@@ -23,11 +23,37 @@ EXPECTED_PARTS = {
     0x8000: "partition_table/partition-table.bin",
     0x10000: "rfscout.bin",
 }
-VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
+RELEASE_VERSION_RE = re.compile(
+    r"^v(?:0|[1-9][0-9]*)\."
+    r"(?:0|[1-9][0-9]*)\."
+    r"(?:0|[1-9][0-9]*)"
+    r"(?:-(?P<prerelease>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
+    r"(?:\+(?P<build>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
+)
 
 
 class PackagingError(RuntimeError):
     """Raised when build output cannot form a safe release bundle."""
+
+
+def validate_release_version(a_version: str) -> None:
+    """Validate a v-prefixed Semantic Versioning release identifier."""
+    match = RELEASE_VERSION_RE.fullmatch(a_version)
+    if match is None:
+        raise PackagingError(
+            "release version must be v-prefixed Semantic Versioning, such as "
+            "v0.1.0 or v0.1.0-rc.1"
+        )
+
+    prerelease = match.group("prerelease")
+    if prerelease is None:
+        return
+    for identifier in prerelease.split("."):
+        if identifier.isdigit() and len(identifier) > 1 and identifier.startswith("0"):
+            raise PackagingError(
+                "numeric prerelease identifiers must not contain leading zeroes"
+            )
 
 
 def sha256(a_path: Path) -> str:

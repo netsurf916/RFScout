@@ -14,10 +14,42 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPOSITORY_ROOT / "tools"))
 
-from package_release import PackagingError, package_release  # noqa: E402
+from package_release import (  # noqa: E402
+    PackagingError,
+    package_release,
+    validate_release_version,
+)
 
 
 class PackageReleaseTest(unittest.TestCase):
+    def test_accepts_semantic_release_versions(self) -> None:
+        for version in (
+            "v0.0.0",
+            "v1.2.3",
+            "v1.2.3-rc.1",
+            "v1.2.3-alpha-1",
+            "v1.2.3+build.01",
+            "v1.2.3-rc.1+build.01",
+        ):
+            with self.subTest(version=version):
+                validate_release_version(version)
+
+    def test_rejects_malformed_semantic_release_versions(self) -> None:
+        for version in (
+            "1.2.3",
+            "v01.0.0",
+            "v1.02.0",
+            "v1.0.03",
+            "v1.0.0-01",
+            "v1.0.0-rc..1",
+            "v1.0.0-.rc",
+            "v1.0.0-rc.",
+            "v1.0.0+build..1",
+        ):
+            with self.subTest(version=version):
+                with self.assertRaises(PackagingError):
+                    validate_release_version(version)
+
     def make_build(self, a_root: Path, *, a_chip: str = "esp32s3") -> tuple[Path, Path]:
         build = a_root / "build"
         (build / "bootloader").mkdir(parents=True)
