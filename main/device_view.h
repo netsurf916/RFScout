@@ -12,15 +12,18 @@
 
 #include <stdbool.h>
 
-/** @brief Enter the Device application and render its initial state. */
+/** @brief Render the Device pass-through landing screen without taking encoder ownership. */
+void device_view_landing( void );
+
+/** @brief Enter Device settings with Back selected first. */
 void device_view_enter( void );
 
-/** @brief Render current Device application state. */
+/** @brief Render current Device settings state. */
 void device_view_render( void );
 
 /**
- * @brief Handle Device app button/encoder input.
- * @return True when the user selected Back and app navigation should resume.
+ * @brief Handle Device settings button/encoder input.
+ * @return True when the user selected Back and settings should close.
  */
 bool device_view_input( bool a_pressed, int a_delta );
 
