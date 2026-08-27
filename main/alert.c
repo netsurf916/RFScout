@@ -105,27 +105,25 @@ const char *alert_notification_name( rfscout_notification_type_t a_type )
         case RFSCOUT_NOTIFICATION_SURVEILLANCE_OTHER:
             return "Other surveillance";
         case RFSCOUT_NOTIFICATION_CC1101_NARROW_ISM:
-            return "CC1101 narrow ISM";
+            return "CC1101 narrowband";
         case RFSCOUT_NOTIFICATION_CC1101_REMOTE_SENSOR:
             return "CC1101 remote/sensor";
         case RFSCOUT_NOTIFICATION_CC1101_CARRIER:
             return "CC1101 carrier";
         case RFSCOUT_NOTIFICATION_CC1101_BURSTY:
-            return "CC1101 bursty";
+            return "CC1101 bursty RF";
         case RFSCOUT_NOTIFICATION_CC1101_WIDEBAND:
-            return "CC1101 wideband";
+            return "CC1101 wide RF";
         case RFSCOUT_NOTIFICATION_NRF24_ESB:
-            return "nRF24 ESB";
+            return "nRF24 ESB device";
         case RFSCOUT_NOTIFICATION_NRF24_INPUT:
             return "nRF24 input";
         case RFSCOUT_NOTIFICATION_NRF24_SENSOR:
             return "nRF24 sensor";
-        case RFSCOUT_NOTIFICATION_NRF24_WIFI_LIKE:
-            return "nRF24 WiFi-like";
-        case RFSCOUT_NOTIFICATION_NRF24_BLE_LIKE:
-            return "nRF24 BLE-like";
+        case RFSCOUT_NOTIFICATION_NRF24_OTHER_RF:
+            return "nRF24 other 2.4 RF";
         case RFSCOUT_NOTIFICATION_NRF24_LOGITECH_LIKE:
-            return "nRF24 Logitech-like";
+            return "nRF24 Logitech";
         default:
             return "Unknown";
     }
@@ -165,10 +163,8 @@ char alert_notification_default_character( rfscout_notification_type_t a_type )
             return 'I';
         case RFSCOUT_NOTIFICATION_NRF24_SENSOR:
             return 'T';
-        case RFSCOUT_NOTIFICATION_NRF24_WIFI_LIKE:
-            return 'V';
-        case RFSCOUT_NOTIFICATION_NRF24_BLE_LIKE:
-            return 'L';
+        case RFSCOUT_NOTIFICATION_NRF24_OTHER_RF:
+            return 'O';
         case RFSCOUT_NOTIFICATION_NRF24_LOGITECH_LIKE:
             return 'X';
         default:
