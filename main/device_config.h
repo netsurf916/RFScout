@@ -1,6 +1,6 @@
 /**
     device_config.h : RFScout persistent device configuration
-    Description: Defines compiled defaults, SD-backed JSON preferences, and application enablement.
+    Description: Defines compiled defaults, SD-backed JSON preferences, application enablement, and notifications.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -10,6 +10,7 @@
 #ifndef _RFSCOUT_DEVICE_CONFIG_H_
 #define _RFSCOUT_DEVICE_CONFIG_H_
 
+#include "alert.h"
 #include "app_manager.h"
 #include "esp_err.h"
 
@@ -37,6 +38,8 @@ typedef struct
     bool apps_enabled[ RFSCOUT_APP_COUNT ];
     bool logging_enabled;
     bool clock_24h;
+    rfscout_alert_mode_t alert_mode;
+    char notification_characters[ RFSCOUT_NOTIFICATION_TYPE_COUNT ];
     char timezone_selected[ RFSCOUT_TIMEZONE_NAME_MAX ];
     device_timezone_t timezones[ RFSCOUT_TIMEZONE_MAX ];
     size_t timezone_count;
@@ -62,6 +65,16 @@ esp_err_t device_config_set_brightness( uint8_t a_percent );
 
 /** @brief Change 12/24-hour clock presentation. */
 esp_err_t device_config_set_clock_24h( bool a_enabled );
+
+/** @brief Change the global audible notification mode. */
+esp_err_t device_config_set_alert_mode( rfscout_alert_mode_t a_mode );
+
+/** @brief Return the configured Morse character for one notification category. */
+char device_config_notification_character( rfscout_notification_type_t a_type );
+
+/** @brief Change the Morse character for one notification category. */
+esp_err_t device_config_set_notification_character( rfscout_notification_type_t a_type,
+                                                    char a_character );
 
 /** @brief Select a timezone definition by configured name. */
 esp_err_t device_config_set_timezone( const char *a_name );
