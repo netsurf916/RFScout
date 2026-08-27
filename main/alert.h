@@ -22,7 +22,7 @@ typedef enum
     RFSCOUT_ALERT_MODE_COUNT
 } rfscout_alert_mode_t;
 
-/** @brief Stable detection categories that can have independent Morse characters. */
+/** @brief Stable user-visible detection categories with independent Morse characters. */
 typedef enum
 {
     RFSCOUT_NOTIFICATION_FLOCK = 0,
@@ -40,8 +40,7 @@ typedef enum
     RFSCOUT_NOTIFICATION_NRF24_ESB,
     RFSCOUT_NOTIFICATION_NRF24_INPUT,
     RFSCOUT_NOTIFICATION_NRF24_SENSOR,
-    RFSCOUT_NOTIFICATION_NRF24_WIFI_LIKE,
-    RFSCOUT_NOTIFICATION_NRF24_BLE_LIKE,
+    RFSCOUT_NOTIFICATION_NRF24_OTHER_RF,
     RFSCOUT_NOTIFICATION_NRF24_LOGITECH_LIKE,
     RFSCOUT_NOTIFICATION_TYPE_COUNT
 } rfscout_notification_type_t;
@@ -64,17 +63,17 @@ rfscout_alert_mode_t alert_mode( void );
 /** @brief Change the runtime alert mode. */
 void alert_set_mode( rfscout_alert_mode_t a_mode );
 
-/** @brief Return the configured single-character Morse alert. */
+/** @brief Return the legacy generic single-character Morse alert. */
 char alert_morse_character( void );
 
-/** @brief Change the single-character Morse alert when the character is supported. */
+/** @brief Change the legacy generic Morse alert when the character is supported. */
 bool alert_set_morse_character( char a_character );
 
 /** @brief Return whether one character can be rendered as a Morse alert. */
 bool alert_morse_character_supported( char a_character );
 
 /**
- * @brief Request the configured audible alert without blocking the caller.
+ * @brief Request the generic audible alert without blocking the caller.
  * @return True for Off/no-op or when the requested sound was queued.
  */
 bool alert_request( void );
