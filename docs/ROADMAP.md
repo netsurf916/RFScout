@@ -31,7 +31,7 @@ Future RTC/GPS/NTP integrations are tracked separately below. In particular, det
 
 ## 3. Configurable asynchronous audio alerts and ESP-IDF 6.x migration
 
-**Status:** In progress — PR #21
+**Status:** Done — PR #21
 
 - Add real onboard-speaker output through a dedicated asynchronous audio-output service.
 - Keep RF observation callbacks nonblocking by enqueueing bounded audio commands.
@@ -53,9 +53,15 @@ Remaining hardware validation includes physical speaker channel, loudness, and p
 
 ## 4. Clean GitHub release packaging
 
-**Status:** Next
+**Status:** In progress — PR #22
 
 - Produce clean firmware artifacts suitable for a GitHub Release.
+- Keep pull-request and main-branch builds as short-lived candidate artifacts rather than creating releases automatically.
+- Require a deliberate manual workflow run to prepare a release from a version and source ref.
+- Reject duplicate versions, source commits outside main, and source commits with no changes after the latest published release.
+- Create draft releases only; keep publication and target-hardware approval as explicit maintainer actions.
+- Enable ESP-IDF reproducible builds and produce deterministic release metadata, checksums, and archives.
+- Include a combined ESP32-S3 image, the component images and offsets, and a staged ESP Web Tools manifest for the future browser installer.
 - Determine exactly which binaries, partition data, and configuration/manifest files are required for installation.
 - Package release artifacts sensibly rather than publishing an entire ESP-IDF build tree.
 - Include straightforward flashing and installation instructions.

@@ -185,6 +185,7 @@ idf.py build
 - [Architecture](docs/ARCHITECTURE.md) — module ownership, application lifecycle, and shared resources
 - [SD card behavior](docs/SD_CARD.md) — storage compatibility, rotation, and record behavior
 - [Coding style](docs/CODING_STYLE.md) — required C formatting, documentation, and module conventions
+- [Firmware releases](docs/RELEASING.md) — candidate artifacts, deliberate draft releases, bundle contents, and publication checks
 
 ## Coding style
 

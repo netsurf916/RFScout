@@ -25,3 +25,7 @@ CONFIG_SPIRAM_USE_MALLOC=y
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# Remove local paths and build timestamps so release images can be reproduced
+# from the same source and ESP-IDF/toolchain inputs.
+CONFIG_APP_REPRODUCIBLE_BUILD=y
