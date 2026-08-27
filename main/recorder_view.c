@@ -53,10 +53,8 @@ void recorder_view_render( size_t a_selected )
     display_draw_text( 8, 7, "RECORDER", SUBDUED, 2U );
     draw_status_chrome();
 
-    const uint16_t state_color = ( RFSCOUT_RECORDER_NO_STORAGE == state ||
-                                   RFSCOUT_RECORDER_ERROR == state )
-                                     ? RED
-                                     : YELLOW;
+    const uint16_t state_color =
+        ( RFSCOUT_RECORDER_NO_STORAGE == state || RFSCOUT_RECORDER_ERROR == state ) ? RED : YELLOW;
     display_draw_text( 8, 38, state_name( state ), state_color, 1U );
 
     char line[ 80 ];

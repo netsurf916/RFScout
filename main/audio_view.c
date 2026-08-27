@@ -95,10 +95,8 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
     display_draw_text( 8, 7, "RECORDER", SUBDUED, 2U );
     draw_status_chrome();
 
-    const uint16_t state_color = ( RFSCOUT_RECORDER_NO_STORAGE == state ||
-                                   RFSCOUT_RECORDER_ERROR == state )
-                                     ? RED
-                                     : YELLOW;
+    const uint16_t state_color =
+        ( RFSCOUT_RECORDER_NO_STORAGE == state || RFSCOUT_RECORDER_ERROR == state ) ? RED : YELLOW;
     display_draw_text( 8, 38, state_name( state ), state_color, 1U );
 
     char line[ 80 ];
@@ -116,7 +114,8 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
     }
     else if( RFSCOUT_RECORDER_PLAYING == state )
     {
-        display_draw_text( 8, 63, audio_spectrum_channel_name( audio_spectrum_channel() ), TEXT, 1U );
+        display_draw_text(
+            8, 63, audio_spectrum_channel_name( audio_spectrum_channel() ), TEXT, 1U );
     }
     else if( RFSCOUT_RECORDER_NO_STORAGE == state )
     {
@@ -129,11 +128,8 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
         display_draw_text( 8, 63, line, TEXT, 1U );
         if( recorder_file_count() > 0U )
         {
-            display_draw_text( 8,
-                               88,
-                               audio_spectrum_channel_name( audio_spectrum_channel() ),
-                               DIM,
-                               1U );
+            display_draw_text(
+                8, 88, audio_spectrum_channel_name( audio_spectrum_channel() ), DIM, 1U );
         }
     }
 
@@ -183,11 +179,8 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
         }
         else if( RECORDER_MENU_FILE == i )
         {
-            display_draw_text( 110,
-                               y,
-                               audio_spectrum_channel_name( audio_spectrum_channel() ),
-                               color,
-                               1U );
+            display_draw_text(
+                110, y, audio_spectrum_channel_name( audio_spectrum_channel() ), color, 1U );
         }
         else if( RECORDER_MENU_PLAY == i )
         {

@@ -82,7 +82,8 @@ static void build_wav_header( uint8_t a_header[ RECORDER_WAV_HEADER_SIZE ], uint
     write_u16_le( &a_header[ 22 ], RECORDER_CHANNELS );
     write_u32_le( &a_header[ 24 ], RFSCOUT_RECORDER_SAMPLE_RATE );
     write_u32_le( &a_header[ 28 ],
-                  RFSCOUT_RECORDER_SAMPLE_RATE * RECORDER_CHANNELS * RECORDER_BITS_PER_SAMPLE / 8U );
+                  RFSCOUT_RECORDER_SAMPLE_RATE * RECORDER_CHANNELS * RECORDER_BITS_PER_SAMPLE /
+                      8U );
     write_u16_le( &a_header[ 32 ], RECORDER_CHANNELS * RECORDER_BITS_PER_SAMPLE / 8U );
     write_u16_le( &a_header[ 34 ], RECORDER_BITS_PER_SAMPLE );
     memcpy( &a_header[ 36 ], "data", 4U );
@@ -115,8 +116,8 @@ static bool validate_wav( const char *a_path, rfscout_recording_t *a_recording )
     if( NULL != a_recording )
     {
         a_recording->data_bytes = bytes;
-        a_recording->duration_seconds =
-            bytes / ( RFSCOUT_RECORDER_SAMPLE_RATE * RECORDER_CHANNELS * RECORDER_BITS_PER_SAMPLE / 8U );
+        a_recording->duration_seconds = bytes / ( RFSCOUT_RECORDER_SAMPLE_RATE * RECORDER_CHANNELS *
+                                                  RECORDER_BITS_PER_SAMPLE / 8U );
     }
     return true;
 }
@@ -446,11 +447,8 @@ esp_err_t recorder_start_playback( size_t a_index, uint8_t a_volume_percent )
     }
 
     char path[ 160 ];
-    snprintf( path,
-              sizeof( path ),
-              "%s/%s",
-              RFSCOUT_RECORDER_DIRECTORY,
-              recordings[ a_index ].name );
+    snprintf(
+        path, sizeof( path ), "%s/%s", RFSCOUT_RECORDER_DIRECTORY, recordings[ a_index ].name );
     if( !audio_output_play_wav( path, a_volume_percent ) )
     {
         return ESP_FAIL;

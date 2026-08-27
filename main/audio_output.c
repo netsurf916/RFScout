@@ -188,12 +188,11 @@ static void play_morse( const audio_output_command_t *a_command )
         {
             break;
         }
-        if( '\0' != symbol[ 1 ] &&
-            !write_segment( false,
-                            a_command->frequency_hz,
-                            a_command->duration_ms,
-                            a_command->volume_percent,
-                            &phase ) )
+        if( '\0' != symbol[ 1 ] && !write_segment( false,
+                                                   a_command->frequency_hz,
+                                                   a_command->duration_ms,
+                                                   a_command->volume_percent,
+                                                   &phase ) )
         {
             break;
         }
@@ -209,8 +208,7 @@ static void play_morse( const audio_output_command_t *a_command )
 
 static bool wav_supported( const uint8_t a_header[ AUDIO_OUTPUT_WAV_HEADER_SIZE ] )
 {
-    return 0 == memcmp( &a_header[ 0 ], "RIFF", 4U ) &&
-           0 == memcmp( &a_header[ 8 ], "WAVE", 4U ) &&
+    return 0 == memcmp( &a_header[ 0 ], "RIFF", 4U ) && 0 == memcmp( &a_header[ 8 ], "WAVE", 4U ) &&
            0 == memcmp( &a_header[ 12 ], "fmt ", 4U ) &&
            0 == memcmp( &a_header[ 36 ], "data", 4U ) && 1U == read_u16_le( &a_header[ 20 ] ) &&
            1U == read_u16_le( &a_header[ 22 ] ) &&
@@ -228,7 +226,8 @@ static void play_wav( const audio_output_command_t *a_command )
     }
 
     uint8_t header[ AUDIO_OUTPUT_WAV_HEADER_SIZE ];
-    if( sizeof( header ) != fread( header, 1U, sizeof( header ), file ) || !wav_supported( header ) )
+    if( sizeof( header ) != fread( header, 1U, sizeof( header ), file ) ||
+        !wav_supported( header ) )
     {
         ESP_LOGW( TAG, "unsupported WAV %s", a_command->path );
         fclose( file );
