@@ -121,6 +121,9 @@ void observation_store_set_event_callback( observation_store_event_callback_t a_
 /** @brief Add or refresh one normalized device observation. */
 bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new );
 
+/** @brief Clear all live observations while retaining the allocated store and callback. */
+void observation_store_reset( void );
+
 /**
  * @brief Expire stale observations without requiring active radio collection or UI rendering.
  * @details This keeps timeout lifecycle events timely while another app owns the screen and radios.
