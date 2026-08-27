@@ -133,11 +133,8 @@ static void play_tone( const audio_output_command_t *a_command )
     const uint32_t trailing_ms = ( drain_ms > AUDIO_OUTPUT_TRAILING_SILENCE_MS )
                                      ? drain_ms
                                      : AUDIO_OUTPUT_TRAILING_SILENCE_MS;
-    (void)write_segment( true,
-                         a_command->frequency_hz,
-                         a_command->duration_ms,
-                         a_command->volume_percent,
-                         &phase );
+    (void)write_segment(
+        true, a_command->frequency_hz, a_command->duration_ms, a_command->volume_percent, &phase );
     (void)write_segment(
         false, a_command->frequency_hz, trailing_ms, a_command->volume_percent, &phase );
     (void)i2s_channel_disable( tx_channel );

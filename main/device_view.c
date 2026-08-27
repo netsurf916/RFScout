@@ -567,8 +567,8 @@ static void adjust_alert_mode( int a_delta )
 static void adjust_alert_volume( int a_delta )
 {
     const uint8_t old_value = device_config_get()->alert_volume_percent;
-    int value = (int)old_value + ( ( a_delta > 0 ) ? DEVICE_ALERT_VOLUME_STEP
-                                                   : -DEVICE_ALERT_VOLUME_STEP );
+    int value =
+        (int)old_value + ( ( a_delta > 0 ) ? DEVICE_ALERT_VOLUME_STEP : -DEVICE_ALERT_VOLUME_STEP );
     if( value < 0 )
     {
         value = 0;
