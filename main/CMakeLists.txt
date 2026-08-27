@@ -11,6 +11,8 @@ idf_component_register(
         "radio_app_view.c"
         "audio_spectrum.c"
         "audio_view.c"
+        "recorder.c"
+        "recorder_view.c"
         "wifi_settings_view.c"
         "cc1101.c"
         "cc1101_activity.c"
