@@ -32,6 +32,31 @@
 
 static const char *TAG = "rfscout";
 
+/** @brief Map a surveillance classification to the global notification category. */
+static rfscout_notification_type_t
+notification_for_surveillance( surveillance_class_t a_classification )
+{
+    switch( a_classification )
+    {
+        case SURVEILLANCE_FLOCK:
+            return RFSCOUT_NOTIFICATION_FLOCK;
+        case SURVEILLANCE_BODY_CAMERA:
+            return RFSCOUT_NOTIFICATION_BODY_CAMERA;
+        case SURVEILLANCE_DRONE:
+            return RFSCOUT_NOTIFICATION_DRONE;
+        case SURVEILLANCE_CAMERA:
+            return RFSCOUT_NOTIFICATION_CAMERA;
+        case SURVEILLANCE_SMART_GLASSES:
+            return RFSCOUT_NOTIFICATION_SMART_GLASSES;
+        case SURVEILLANCE_AUDIO:
+            return RFSCOUT_NOTIFICATION_ACOUSTIC_SENSOR;
+        case SURVEILLANCE_OTHER:
+        case SURVEILLANCE_NONE:
+        default:
+            return RFSCOUT_NOTIFICATION_SURVEILLANCE_OTHER;
+    }
+}
+
 /** @brief Classify, store, log, and alert on one Wi-Fi or BLE observation. */
 static void on_observation( rf_device_t *a_observation )
 {
@@ -88,6 +113,9 @@ static void on_observation( rf_device_t *a_observation )
 
     if( SURVEILLANCE_NONE != match.classification )
     {
+        const rfscout_notification_type_t notification =
+            notification_for_surveillance( match.classification );
+        const char character = device_config_notification_character( notification );
         const rfscout_alert_mode_t mode = alert_mode();
         ESP_LOGW( TAG,
                   "ALERT %s score=%u evidence=0x%02x audio=%s morse=%c",
@@ -95,9 +123,9 @@ static void on_observation( rf_device_t *a_observation )
                   (unsigned)match.score,
                   (unsigned)match.evidence,
                   alert_mode_name( mode ),
-                  alert_morse_character() );
+                  character );
         platform_set_alert_led( true );
-        if( !alert_request() )
+        if( !alert_request_character( character ) )
         {
             ESP_LOGW( TAG, "audible alert queue full or speaker unavailable" );
         }
@@ -145,6 +173,8 @@ void app_main( void )
                   "configuration persistence unavailable; using runtime defaults: %s",
                   esp_err_to_name( result ) );
     }
+    alert_set_mode( device_config_get()->alert_mode );
+
     ESP_ERROR_CHECK( device_time_init() );
     ESP_ERROR_CHECK( app_manager_init() );
     display_set_brightness( device_config_get()->brightness_percent );

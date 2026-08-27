@@ -23,8 +23,16 @@
     ( RFSCOUT_DEVICE_TIMEOUT_MS * RFSCOUT_SURVEILLANCE_TIMEOUT_MULTIPLIER )
 #define RFSCOUT_SURVEILLANCE_CLASS_COUNT ( (size_t)SURVEILLANCE_OTHER + 1U )
 
+/** @brief Initialize the retained surveillance history. */
 esp_err_t surveillance_history_init( void );
+
+/** @brief Add or refresh one retained surveillance observation. */
 bool surveillance_history_observe( const rf_device_t *a_observation );
+
+/** @brief Clear all retained surveillance detections. */
+void surveillance_history_reset( void );
+
+/** @brief Count retained unique devices by broad surveillance class. */
 size_t surveillance_history_counts( uint16_t *a_counts, size_t a_capacity );
 
 /** @brief Count retained unique devices by specific type/brand signature. */

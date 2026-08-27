@@ -12,6 +12,7 @@
 #include "cJSON.h"
 #include "esp_log.h"
 
+#include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,6 +42,33 @@ static void copy_string( char *a_destination, size_t a_capacity, const char *a_s
     snprintf( a_destination, a_capacity, "%s", ( NULL != a_source ) ? a_source : "" );
 }
 
+/** @brief Return the stable JSON key for one configurable notification category. */
+static const char *notification_key( rfscout_notification_type_t a_type )
+{
+    static const char *keys[ RFSCOUT_NOTIFICATION_TYPE_COUNT ] = {
+        "flock",
+        "body_camera",
+        "drone",
+        "camera",
+        "smart_glasses",
+        "acoustic_sensor",
+        "surveillance_other",
+        "cc1101_narrow_ism",
+        "cc1101_remote_sensor",
+        "cc1101_carrier",
+        "cc1101_bursty",
+        "cc1101_wideband",
+        "nrf24_esb",
+        "nrf24_input",
+        "nrf24_sensor",
+        "nrf24_wifi_like",
+        "nrf24_ble_like",
+        "nrf24_logitech_like",
+    };
+
+    return ( a_type < RFSCOUT_NOTIFICATION_TYPE_COUNT ) ? keys[ a_type ] : NULL;
+}
+
 /** @brief Populate one compiled timezone option. */
 static void
 timezone_default( size_t a_index, const char *a_name, const char *a_label, const char *a_posix )
@@ -58,12 +86,19 @@ static void set_defaults( void )
     config.brightness_percent = CONFIG_BRIGHTNESS_DEFAULT;
     config.logging_enabled = true;
     config.clock_24h = false;
+    config.alert_mode = RFSCOUT_ALERT_OFF;
 
     for( size_t index = 0; index < RFSCOUT_APP_COUNT; ++index )
     {
         config.apps_enabled[ index ] = true;
     }
     config.apps_enabled[ RFSCOUT_APP_DEVICE ] = true;
+
+    for( size_t index = 0; index < RFSCOUT_NOTIFICATION_TYPE_COUNT; ++index )
+    {
+        config.notification_characters[ index ] =
+            alert_notification_default_character( (rfscout_notification_type_t)index );
+    }
 
     config.timezone_count = 2U;
     timezone_default( 0U, "America/Chicago", "US Central", "CST6CDT,M3.2.0,M11.1.0" );
@@ -126,6 +161,56 @@ static void load_logging( const cJSON *a_root )
     if( cJSON_IsObject( logging ) )
     {
         config.logging_enabled = json_bool( logging, "enabled", config.logging_enabled );
+    }
+}
+
+/** @brief Apply global audible-notification mode and per-category Morse characters. */
+static void load_notifications( const cJSON *a_root )
+{
+    const cJSON *notifications = cJSON_GetObjectItemCaseSensitive( a_root, "notifications" );
+    if( !cJSON_IsObject( notifications ) )
+    {
+        return;
+    }
+
+    const cJSON *mode = cJSON_GetObjectItemCaseSensitive( notifications, "mode" );
+    if( cJSON_IsString( mode ) && ( NULL != mode->valuestring ) )
+    {
+        if( 0 == strcasecmp( mode->valuestring, "OFF" ) )
+        {
+            config.alert_mode = RFSCOUT_ALERT_OFF;
+        }
+        else if( 0 == strcasecmp( mode->valuestring, "TONE" ) )
+        {
+            config.alert_mode = RFSCOUT_ALERT_TONE;
+        }
+        else if( 0 == strcasecmp( mode->valuestring, "MORSE" ) )
+        {
+            config.alert_mode = RFSCOUT_ALERT_MORSE;
+        }
+    }
+
+    const cJSON *characters = cJSON_GetObjectItemCaseSensitive( notifications, "characters" );
+    if( !cJSON_IsObject( characters ) )
+    {
+        return;
+    }
+
+    for( size_t index = 0; index < RFSCOUT_NOTIFICATION_TYPE_COUNT; ++index )
+    {
+        const char *key = notification_key( (rfscout_notification_type_t)index );
+        const cJSON *value = cJSON_GetObjectItemCaseSensitive( characters, key );
+        if( !cJSON_IsString( value ) || ( NULL == value->valuestring ) ||
+            ( '\0' == value->valuestring[ 0 ] ) || ( '\0' != value->valuestring[ 1 ] ) )
+        {
+            continue;
+        }
+
+        const char character = (char)toupper( (unsigned char)value->valuestring[ 0 ] );
+        if( alert_morse_character_supported( character ) )
+        {
+            config.notification_characters[ index ] = character;
+        }
     }
 }
 
@@ -299,6 +384,7 @@ static esp_err_t load_file( void )
     load_display( root );
     load_apps( root );
     load_logging( root );
+    load_notifications( root );
     load_timezones( root );
     load_saved_time( root );
     cJSON_Delete( root );
@@ -351,6 +437,16 @@ static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_tim
 
     cJSON *logging = cJSON_AddObjectToObject( root, "logging" );
     cJSON_AddBoolToObject( logging, "enabled", config.logging_enabled );
+
+    cJSON *notifications = cJSON_AddObjectToObject( root, "notifications" );
+    cJSON_AddStringToObject( notifications, "mode", alert_mode_name( config.alert_mode ) );
+    cJSON *characters = cJSON_AddObjectToObject( notifications, "characters" );
+    for( size_t index = 0; index < RFSCOUT_NOTIFICATION_TYPE_COUNT; ++index )
+    {
+        char value[ 2 ] = { config.notification_characters[ index ], '\0' };
+        cJSON_AddStringToObject(
+            characters, notification_key( (rfscout_notification_type_t)index ), value );
+    }
 
     cJSON *timezone = cJSON_AddObjectToObject( root, "timezone" );
     cJSON_AddStringToObject( timezone, "selected", config.timezone_selected );
@@ -459,6 +555,44 @@ esp_err_t device_config_set_brightness( uint8_t a_percent )
 esp_err_t device_config_set_clock_24h( bool a_enabled )
 {
     config.clock_24h = a_enabled;
+    return ESP_OK;
+}
+
+esp_err_t device_config_set_alert_mode( rfscout_alert_mode_t a_mode )
+{
+    if( a_mode >= RFSCOUT_ALERT_MODE_COUNT )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    config.alert_mode = a_mode;
+    alert_set_mode( a_mode );
+    return ESP_OK;
+}
+
+char device_config_notification_character( rfscout_notification_type_t a_type )
+{
+    if( a_type >= RFSCOUT_NOTIFICATION_TYPE_COUNT )
+    {
+        return '\0';
+    }
+    return config.notification_characters[ a_type ];
+}
+
+esp_err_t device_config_set_notification_character( rfscout_notification_type_t a_type,
+                                                    char a_character )
+{
+    if( a_type >= RFSCOUT_NOTIFICATION_TYPE_COUNT )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const char character = (char)toupper( (unsigned char)a_character );
+    if( !alert_morse_character_supported( character ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    config.notification_characters[ a_type ] = character;
     return ESP_OK;
 }
 

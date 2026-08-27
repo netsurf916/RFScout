@@ -1,6 +1,6 @@
 /**
     radio_app_view.c : RFScout radio application views
-    Description: Renders CC1101 and nRF24 spectra, likely-device panes, and settings menus.
+    Description: Renders CC1101 and nRF24 spectra, detection panes, and settings menus.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -105,7 +105,7 @@ void radio_app_view_cc1101_spectrum( const uint8_t *a_current,
     }
 
     display_fill_rect( APP_COLUMN_DIVIDER_X, 36, 1, RFSCOUT_DISPLAY_HEIGHT - 36, DIM );
-    display_draw_text( APP_RIGHT_COLUMN_X, 43, "LIKELY DEVICES", SUBDUED, 1U );
+    display_draw_text( APP_RIGHT_COLUMN_X, 43, "DETECTIONS", SUBDUED, 1U );
 
     if( NULL != a_devices )
     {
@@ -140,7 +140,7 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
                                  bool a_peak_hold )
 {
     static const char *labels[] = {
-        "PROFILE", "LOW", "HIGH", "STEP", "PEAK HOLD", "RESET COUNTS", "BACK" };
+        "BACK", "PROFILE", "LOW", "HIGH", "STEP", "PEAK HOLD", "RESET COUNTS" };
 
     display_clear( BG );
     display_draw_text( 8, 7, "CC1101 SETTINGS", SUBDUED, 2U );
@@ -151,7 +151,7 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
     {
         const int y = 32 + (int)i * 18;
         const bool active = ( i == a_selected );
-        const bool action = ( i >= 5U );
+        const bool action = ( 0U == i ) || ( 6U == i );
         const uint16_t accent = ( active && a_editing && a_limit_reached ) ? LIMIT : YELLOW;
         const char *marker = " ";
 
@@ -164,11 +164,11 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
         display_draw_text( 22, y, labels[ i ], active ? TEXT : DIM, 1U );
 
         value[ 0 ] = '\0';
-        if( 0U == i )
+        if( 1U == i )
         {
             snprintf( value, sizeof( value ), "%s", ( NULL != a_profile ) ? a_profile : "?" );
         }
-        else if( 1U == i )
+        else if( 2U == i )
         {
             snprintf( value,
                       sizeof( value ),
@@ -176,7 +176,7 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
                       (unsigned long)( a_low_khz / 1000U ),
                       (unsigned long)( a_low_khz % 1000U ) );
         }
-        else if( 2U == i )
+        else if( 3U == i )
         {
             snprintf( value,
                       sizeof( value ),
@@ -184,11 +184,11 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
                       (unsigned long)( a_high_khz / 1000U ),
                       (unsigned long)( a_high_khz % 1000U ) );
         }
-        else if( 3U == i )
+        else if( 4U == i )
         {
             snprintf( value, sizeof( value ), "%lu kHz", (unsigned long)a_step_khz );
         }
-        else if( 4U == i )
+        else if( 5U == i )
         {
             snprintf( value, sizeof( value ), "%s", a_peak_hold ? "ON" : "OFF" );
         }
@@ -287,7 +287,7 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
     }
 
     display_fill_rect( APP_COLUMN_DIVIDER_X, 36, 1, RFSCOUT_DISPLAY_HEIGHT - 36, DIM );
-    display_draw_text( APP_RIGHT_COLUMN_X, 43, "LIKELY DEVICES", SUBDUED, 1U );
+    display_draw_text( APP_RIGHT_COLUMN_X, 43, "DETECTIONS", SUBDUED, 1U );
 
     if( NULL != a_devices )
     {
@@ -323,7 +323,7 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
                                 bool a_peak_hold )
 {
     static const char *labels[] = {
-        "LOW CH", "HIGH CH", "DWELL", "PEAK HOLD", "RESET COUNTS", "BACK" };
+        "BACK", "LOW CH", "HIGH CH", "DWELL", "PEAK HOLD", "RESET COUNTS" };
 
     display_clear( BG );
     display_draw_text( 8, 7, "nRF24 SETTINGS", SUBDUED, 2U );
@@ -334,7 +334,7 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
     {
         const int y = 34 + (int)i * 20;
         const bool active = ( i == a_selected );
-        const bool action = ( i >= 4U );
+        const bool action = ( 0U == i ) || ( 5U == i );
         const char *marker = " ";
 
         if( active )
@@ -346,7 +346,7 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
         display_draw_text( 22, y, labels[ i ], active ? TEXT : DIM, 1U );
 
         value[ 0 ] = '\0';
-        if( 0U == i )
+        if( 1U == i )
         {
             snprintf( value,
                       sizeof( value ),
@@ -354,7 +354,7 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
                       (unsigned)a_low_channel,
                       (unsigned)( 2400U + a_low_channel ) );
         }
-        else if( 1U == i )
+        else if( 2U == i )
         {
             snprintf( value,
                       sizeof( value ),
@@ -362,11 +362,11 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
                       (unsigned)a_high_channel,
                       (unsigned)( 2400U + a_high_channel ) );
         }
-        else if( 2U == i )
+        else if( 3U == i )
         {
             snprintf( value, sizeof( value ), "%u us", (unsigned)a_dwell_us );
         }
-        else if( 3U == i )
+        else if( 4U == i )
         {
             snprintf( value, sizeof( value ), "%s", a_peak_hold ? "ON" : "OFF" );
         }

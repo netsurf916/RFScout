@@ -17,12 +17,11 @@ Implemented capabilities include:
 - ranked vendor counts across the full active observation set;
 - surveillance-oriented classification using narrow, explainable evidence;
 - visual detection highlighting;
-- configurable surveillance audible alerts: Off, Tone, or single-character Morse;
+- global Off/Tone/Morse notifications for new surveillance detections;
+- a `RESET DETECTIONS` action that clears the live device/OUI census and retained surveillance history;
 - automatic stop of Wi-Fi/BLE collectors when another application is selected.
 
-Audible alerts default to Off on every boot. Tone and Morse playback run asynchronously on the onboard speaker so radio callbacks never wait for audio output. Morse alerts are exactly one selectable character.
-
-The WiFi / BT application is the only current view that treats IEEE MAC/OUI identity as a normal device identity source.
+The WiFi / BT application is the only current view that treats IEEE MAC/OUI identity as a normal device identity source. Notification policy is device-wide and is configured in Device rather than in the WiFi/BT action menu.
 
 ### CC1101
 
@@ -34,11 +33,12 @@ The CC1101 application currently provides:
 - 1, 5, 10, 25, 50, 100, 200, 250, 500, and 1000 kHz step options;
 - a hard 128-sample maximum per sweep;
 - a 433 MHz default of 432.800-433.200 MHz at 5 kHz spacing;
-- fixed likely-device category counts using conservative RF-shape inference;
+- fixed **DETECTIONS** category counts using conservative RF-shape inference;
+- a global audible notification when a detection category count advances;
 - `RESET COUNTS` with immediate return to the live analyzer;
 - runtime-state reset when the application is exited.
 
-The likely-device labels are behavior categories, not decoded product identities. CC1101 activity does not carry an IEEE identity equivalent to Wi-Fi/BLE OUI information.
+The detection labels are behavior categories, not decoded product identities. CC1101 activity does not carry an IEEE identity equivalent to Wi-Fi/BLE OUI information.
 
 ### nRF24
 
@@ -49,13 +49,14 @@ The nRF24 application currently provides:
 - fast-decay channel activity histogram;
 - optional slow-decay peak-hold markers;
 - passive Enhanced ShockBurst metadata classification when validated observations are available;
-- fixed likely-device count categories;
+- fixed **DETECTIONS** count categories;
 - per-address count deduplication independent of the small active classifier cache;
 - conservative labels such as `Logitech?`, `Input?`, and `Sensor?`;
+- global audible notifications when underlying detection-category counts advance;
 - `RESET COUNTS` with immediate return to the live analyzer;
 - runtime histogram/classifier/count reset when the application is exited.
 
-Spectrum-only patterns that cannot support a device-level identity are grouped under `Other 2.4 RF` rather than presented as a specific product.
+Spectrum-only patterns that cannot support a device-level identity are grouped under `Other 2.4 RF` in the display. Underlying Wi-Fi-like and BLE/hopping-RF-like classifier categories remain distinct for notification-character configuration.
 
 ### Audio
 
@@ -73,7 +74,7 @@ Implemented behavior includes:
 - optional peak hold, disabled by default for a more responsive live trace;
 - overrun accounting when a newer FFT frame replaces an unpublished frame.
 
-The Audio application is currently an exploratory spectrum analyzer, not a calibrated sound-level instrument. The next planned Audio expansion is microphone recording plus an interactive International Morse player built on the shared speaker/Morse layer.
+The Audio application is currently an exploratory spectrum analyzer, not a calibrated sound-level instrument, and it does not yet generate a discrete detection event. The shared notification API is application-independent so future Audio detectors can use the same global policy.
 
 ### Thermal
 
@@ -84,20 +85,25 @@ An external **MLX90640** connected over the board's I2C/Qwiic interface is suppo
 - the native 32x24 thermal frame is scaled/interpolated for the LCD;
 - thermal acquisition is not kept running while another app is active.
 
+Thermal currently displays sensor data rather than discrete detection events. Future Thermal detectors can use the same global notification interface.
+
 ### Device
 
 The Device application provides global runtime and SD-backed configuration:
 
+- a pass-through landing screen that does not trap encoder navigation;
 - display brightness;
 - 12/24-hour clock presentation;
 - editable timezone selection;
 - manual wall-clock setting;
 - per-application enablement;
 - SD logging enablement;
+- global notification mode: `OFF`, `TONE`, or `MORSE`;
+- one independently editable Morse character for every defined detection category;
 - explicit configuration save;
 - configuration/time-source status.
 
-Device itself is always available so configuration cannot disable its own recovery path.
+Device itself is always available so configuration cannot disable its own recovery path. Notification mode and per-category characters are stored in `/sdcard/rfscout.json` and restored on a later boot. The compiled `OFF` mode and compiled category characters are fallback defaults when no usable saved values exist.
 
 ## Application navigation and UX
 
@@ -112,18 +118,19 @@ Current app order:
 
 Encoder conventions are intentionally shared:
 
-- rotate on the main view to change applications;
+- rotate on a main/pass-through view to change applications;
 - center press opens application settings where provided;
+- every settings/action menu opens with **Back** as the first and initially selected entry;
+- opening a menu and pressing center again immediately returns without changing a setting;
 - rotate in a menu to select;
 - center press enters/exits editable values;
-- action entries such as `RESET COUNTS` execute immediately;
-- `RESET COUNTS` and `BACK` close their menus after the action;
-- Device uses an explicit Back action to resume top-level navigation;
+- action entries such as `RESET COUNTS` or `RESET DETECTIONS` execute immediately;
+- Device requires a center press to enter global settings; otherwise encoder rotation continues to the next app;
 - yellow/amber denotes active editing or a configuration limit;
 - red denotes detections/counts or error states;
 - normal application labels/status information use subdued colors.
 
-CC1101 and nRF24 use the same spectrum/right-panel divider and the same fixed-row Likely Devices presentation. Applications that expose peak hold use a common ON/OFF menu concept while retaining app-specific defaults.
+CC1101 and nRF24 use the same spectrum/right-panel divider and the same fixed-row **DETECTIONS** presentation. Applications that expose peak hold use a common ON/OFF menu concept while retaining app-specific defaults.
 
 ## Surveillance awareness
 
@@ -134,15 +141,15 @@ The WiFi / BT path supports targeted surveillance classifications. The design ru
 - preserve confidence/evidence internally where classifications are generated;
 - retain noteworthy detections longer than the ordinary nearby-device window.
 
-## Alerts and status
+## Notifications and status
 
 The UI includes a shared top status region between the application label and battery indicator. Status icons populate from right to left and use subdued normal-state colors. The shared status and battery chrome is applied by the common presentation layer so newly added views inherit it automatically.
 
 Implemented status behavior includes SD-card presence and sticky logging/filesystem errors. Battery state is shown continuously when telemetry is available.
 
-WiFi / BT surveillance detections can optionally produce an audible alert. Alert mode is **Off**, **Tone**, or **Morse**; Off is the boot default. Morse is limited to one selected character. The printable-character table follows ITU-R M.1677-1 for A-Z, figures, and the standard ASCII-representable punctuation signs.
+Audible detection notifications use a device-wide **Off**, **Tone**, or **Morse** mode. `OFF` is the compiled fallback. A valid mode loaded from the SD configuration is restored on boot instead of being forced back to Off. Morse notifications contain exactly one character selected by detection category; the default mapping includes Flock `F`, acoustic `A`, camera `C`, drone `D`, and smart glasses `G`, and every mapping can be edited in Device and persisted.
 
-The onboard-speaker service uses a bounded asynchronous queue. Audio generation therefore remains outside radio callbacks and cannot deliberately stall acquisition while a sound finishes.
+The printable-character table follows ITU-R M.1677-1 for A-Z, figures, and the standard ASCII-representable punctuation signs. The onboard-speaker service uses a bounded asynchronous queue, so audio generation remains outside radio callbacks and cannot deliberately stall acquisition while a sound finishes.
 
 ## microSD logging
 
@@ -162,22 +169,13 @@ LILYGO's documented tested baseline is a SanDisk card of 32 GB or less. See [SD_
 
 ## Battery / power telemetry
 
-Implemented baseline behavior includes:
-
-- BQ27220 state-of-charge, voltage, and signed current;
-- BQ25896 external-power/charge-state detection;
-- cached periodic telemetry;
-- exact percentage plus proportional battery fill;
-- charging indication;
-- subdued normal colors with stronger low-charge warnings;
-- nonfatal unavailable state;
-- shared `board_i2c` ownership rather than duplicated bus initialization.
+Implemented baseline behavior includes BQ27220 state-of-charge/voltage/current, BQ25896 external-power/charge-state detection, cached periodic telemetry, proportional battery presentation, charging indication, and nonfatal unavailable state through the shared board-I2C layer.
 
 ## Hardware audio resources
 
 The internal PDM microphone uses I2S0 receive. The onboard speaker uses the board's dedicated BCLK/LRCLK/data pins through I2S1 standard transmit. The speaker path is managed by `audio_output.c/.h` and is independent of the Audio analyzer's microphone worker.
 
-The shared Morse table is used by audible alerts and is intended to be reused by the planned Audio Morse browser/player rather than duplicating code tables.
+The shared Morse table is used by detection notifications and is intended to be reused by the planned Audio Morse browser/player rather than duplicating code tables.
 
 ## OUI database
 
@@ -194,14 +192,4 @@ The T-Embed hardware exposes additional capabilities, but the following should b
 
 ## Future ideas
 
-Useful next steps include:
-
-- Audio microphone recording and an interactive International Morse pattern player;
-- stronger protocol-level nRF24 fingerprints;
-- time-windowed rather than session-only radio category counts;
-- CC1101 burst timing/modulation analysis;
-- audio FFT/PDM validation followed by tuner and DTMF features;
-- per-category drill-down views;
-- configurable classifier thresholds;
-- structured SD exports/captures;
-- additional optional hardware applications that follow the same resource-lifecycle and UI conventions.
+Useful next steps include Audio microphone recording and the Morse player, stronger protocol-level nRF24 fingerprints, time-windowed radio detection counts, CC1101 burst timing/modulation analysis, audio FFT/PDM validation followed by tuner/DTMF features, per-category drill-down views, configurable classifier thresholds, structured SD exports/captures, and additional optional hardware applications that follow the same lifecycle/UI/notification conventions.

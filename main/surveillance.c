@@ -344,7 +344,7 @@ char surveillance_morse_letter( surveillance_class_t a_classification )
         case SURVEILLANCE_SMART_GLASSES:
             return 'G';
         case SURVEILLANCE_AUDIO:
-            return 'R';
+            return 'A';
         case SURVEILLANCE_OTHER:
             return 'S';
         default:
