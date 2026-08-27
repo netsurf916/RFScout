@@ -166,7 +166,9 @@ bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new
         }
 
         if( NULL != a_is_new )
+        {
             *a_is_new = false;
+        }
         xSemaphoreGive( store_lock );
         return true;
     }
@@ -186,15 +188,32 @@ bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new
     devices[ slot ] = *a_observation;
     emit_event( OBSERVATION_STORE_EVENT_ADDED, &devices[ slot ] );
     if( NULL != a_is_new )
+    {
         *a_is_new = true;
+    }
     xSemaphoreGive( store_lock );
     return true;
+}
+
+void observation_store_reset( void )
+{
+    if( ( NULL == store_lock ) || ( NULL == devices ) )
+    {
+        return;
+    }
+
+    xSemaphoreTake( store_lock, portMAX_DELAY );
+    memset( devices, 0, RFSCOUT_DEVICE_CAPACITY * sizeof( *devices ) );
+    device_count = 0U;
+    xSemaphoreGive( store_lock );
 }
 
 void observation_store_housekeeping( void )
 {
     if( ( NULL == store_lock ) || ( NULL == devices ) )
+    {
         return;
+    }
     xSemaphoreTake( store_lock, portMAX_DELAY );
     expire_stale_devices( current_time_ms() );
     xSemaphoreGive( store_lock );
@@ -203,7 +222,9 @@ void observation_store_housekeeping( void )
 size_t observation_store_count( void )
 {
     if( ( NULL == store_lock ) || ( NULL == devices ) )
+    {
         return 0;
+    }
     xSemaphoreTake( store_lock, portMAX_DELAY );
     expire_stale_devices( current_time_ms() );
     const size_t result = device_count;
@@ -214,14 +235,18 @@ size_t observation_store_count( void )
 size_t observation_store_surveillance_count( void )
 {
     if( ( NULL == store_lock ) || ( NULL == devices ) )
+    {
         return 0;
+    }
     xSemaphoreTake( store_lock, portMAX_DELAY );
     expire_stale_devices( current_time_ms() );
     size_t result = 0;
     for( size_t i = 0; i < device_count; ++i )
     {
         if( SURVEILLANCE_NONE != devices[ i ].surveillance )
+        {
             ++result;
+        }
     }
     xSemaphoreGive( store_lock );
     return result;
@@ -231,7 +256,9 @@ size_t observation_store_snapshot( rf_device_t *a_output, size_t a_capacity )
 {
     if( ( NULL == a_output ) || ( 0U == a_capacity ) || ( NULL == store_lock ) ||
         ( NULL == devices ) )
+    {
         return 0;
+    }
     xSemaphoreTake( store_lock, portMAX_DELAY );
     expire_stale_devices( current_time_ms() );
     const size_t count = ( device_count < a_capacity ) ? device_count : a_capacity;
