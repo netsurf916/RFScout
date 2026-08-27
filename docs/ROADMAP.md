@@ -113,17 +113,22 @@ Remaining hardware validation includes physical speaker channel, perceived loudn
 - Consider a lightweight record/schema version so future format changes can be handled explicitly rather than silently breaking analysis tools.
 - Keep UTC ISO-8601 timestamps and other already-structured fields directly consumable by external scripts.
 
-## 8. Audio application expansion
+## 8. Recorder application replacement
 
-**Status:** Planned
+**Status:** In progress — PR #27
 
-- Preserve the useful spectrum analyzer while expanding Audio into multiple tools.
-- Add microphone recording using the existing I2S0/PDM capture path rather than introducing a competing microphone reader.
-- Write standard PCM WAV recordings to SD through a buffered/asynchronous path suitable for continuous audio data.
-- Add an interactive International Morse browser/player using the shared Morse definitions and speaker service established by PR #21.
-- Make the Morse tool able to browse and play the standard character patterns while notification events remain one character each.
-- Validate the microphone/PDM/FFT path on hardware as part of the expansion.
-- After the recorder and Morse player are stable, consider tuner and DTMF-analysis features.
+- Replace the former Audio spectrum analyzer rather than preserving the FFT/DSP path.
+- Reuse the existing I2S0/PDM microphone hardware for recording only.
+- Record standard 16 kHz, 16-bit mono PCM WAV files under `/sdcard/audio/`.
+- Treat SD availability as a first-class application state; recording and playback are unavailable without mounted storage.
+- Create `/sdcard/audio/` automatically when storage is available.
+- Enumerate only supported, correctly formatted PCM WAV files and expose duration/size metadata.
+- Play selected recordings asynchronously over the onboard I2S1 speaker.
+- Finalize WAV headers and stop active capture/playback when leaving Recorder.
+- Keep capture and playback off the UI loop and preserve app lifecycle/resource ownership.
+- Validate microphone capture, storage-loss behavior, speaker playback, and perceived volume on target hardware.
+
+A separate **CW** application is planned after Recorder. CW will own editable/persistent Morse strings and send complete strings through the shared Morse/speaker service.
 
 ## 9. External time-authority integrations
 

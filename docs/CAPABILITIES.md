@@ -62,23 +62,24 @@ The nRF24 application currently provides:
 
 Spectrum-only patterns that cannot support a device-level identity are grouped under `Other 2.4 RF` in the display. Underlying Wi-Fi-like and BLE/hopping-RF-like classifier categories remain distinct for notification-character configuration. Its notification items are ESB device, input, sensor, WiFi-like, hopping/BLE-like, and Logitech-like.
 
-### Audio
+### Recorder
 
-The Audio application uses the T-Embed CC1101 Plus internal PDM microphone through ESP-IDF's I2S PDM receive path.
+The Recorder application uses the T-Embed CC1101 Plus internal PDM microphone through ESP-IDF's I2S0 PDM receive path and requires mounted SD storage for capture/playback.
 
 Implemented behavior includes:
 
-- DMA-fed microphone acquisition;
-- 48 kHz native PCM conversion;
-- Hann-windowed FFT processing;
-- automatically scaled spectrum display;
-- focused Voice, Mid, High, Audible, and Ultrasonic ranges;
-- filtered 2x decimation for Voice and Mid;
-- selectable LEFT/RIGHT PDM receive slot for hardware validation;
-- optional peak hold, disabled by default for a more responsive live trace;
-- overrun accounting when a newer FFT frame replaces an unpublished frame.
+- 16 kHz, 16-bit mono PCM WAV recording under `/sdcard/audio/`;
+- asynchronous microphone capture outside the UI loop;
+- WAV-header finalization on stop and application exit;
+- automatic `/sdcard/audio/` creation when storage is available;
+- explicit `NO SD CARD` behavior when storage is unavailable;
+- enumeration of only supported, correctly formatted PCM WAV recordings;
+- duration and size metadata for validated recordings;
+- asynchronous playback over the onboard I2S1 speaker;
+- use of the configured global speaker volume for WAV playback;
+- clean stop of capture/playback when leaving the application.
 
-The Audio application is currently an exploratory spectrum analyzer, not a calibrated sound-level instrument, and it does not yet generate a discrete detection event. The shared notification API is application-independent so future Audio detectors can use the same global policy.
+The former FFT/windowing/decimation/spectrum-analyzer implementation is removed. The historical internal Audio application identifier/interface remains only as a compatibility boundary until a later enum/naming cleanup.
 
 ### Thermal
 
@@ -119,7 +120,7 @@ The settings and alert inventories are explicit so additions do not silently cre
 | WiFi / BT | Back; Reset detections | Flock/ALPR; Body camera; Drone; Camera; Smart glasses; Acoustic sensor; Other surveillance |
 | CC1101 | Back; Profile; Low; High; Step; Peak hold; Reset counts | Narrowband; Remote/sensor; Carrier; Bursty RF; Wide RF |
 | nRF24 | Back; Low channel; High channel; Dwell; Peak hold; Reset counts | ESB device; Input; Sensor; WiFi-like; Hopping/BLE-like; Logitech-like |
-| Audio | Back; Range; Channel; Peak hold | None currently |
+| Recorder | Back; Record; File; Play | None currently |
 | Thermal | No settings menu currently | None currently |
 | Device | Back; Brightness; Clock format; Timezone; Manual date/time; app enablement; SD logging; notification mode; notification volume; every notification character; Save config | Configures every registered notification item but emits none itself |
 
@@ -134,7 +135,7 @@ Current app order:
 1. WiFi / BT
 2. CC1101
 3. nRF24
-4. Audio
+4. Recorder
 5. Thermal, when enabled and available
 6. Device
 
@@ -188,7 +189,7 @@ Implemented storage behavior includes:
 - nonfatal operation when media is missing or cannot be mounted;
 - asynchronous logging rather than filesystem I/O in radio or audio acquisition callbacks;
 - detailed Wi-Fi/BLE lifecycle records;
-- application-owned ENTER/EXIT and rate-limited telemetry records for WiFi/BT, CC1101, nRF24, Audio, Thermal, and Device;
+- application-owned ENTER/EXIT and rate-limited telemetry records for WiFi/BT, CC1101, nRF24, Recorder, Thermal, and Device;
 - two-digit circular filenames (`00` through `99`);
 - 4 MiB maximum per segment;
 - approximate 400 MiB bounded normal log footprint;
@@ -202,9 +203,9 @@ Implemented baseline behavior includes BQ27220 state-of-charge/voltage/current, 
 
 ## Hardware audio resources
 
-The internal PDM microphone uses I2S0 receive. The onboard speaker uses the board's dedicated BCLK/LRCLK/data pins through I2S1 standard transmit. The speaker path is managed by `audio_output.c/.h` and is independent of the Audio analyzer's microphone worker.
+The internal PDM microphone uses I2S0 receive while Recorder is actively capturing. The onboard speaker uses the board's dedicated BCLK/LRCLK/data pins through I2S1 standard transmit. Recorder playback is streamed through the same speaker service used by alerts, while capture and playback retain separate I2S peripheral ownership.
 
-The shared Morse table is used by detection notifications and is intended to be reused by the planned Audio Morse browser/player rather than duplicating code tables.
+The shared Morse table is used by detection notifications and is intended to be reused by the planned separate CW application rather than duplicating code tables.
 
 ## OUI / prefix identity database
 

@@ -14,11 +14,15 @@ In particular, cards larger than 32 GB are commonly supplied formatted as exFAT 
 
 The T-Embed CC1101 Plus does not expose a separate microSD card-detect GPIO in the board pin mapping used by RFScout. RFScout therefore considers storage present only after the card successfully initializes and mounts. An installed but incompatible or unmountable card is treated the same as unavailable storage.
 
-Failure to mount an SD card is nonfatal. RFScout continues operating without logging, and the SD status icon is shown only after storage has mounted successfully.
+Failure to mount an SD card is nonfatal. RFScout continues operating without logging; Recorder remains navigable but cannot record or play files, and the SD status icon is shown only after storage has mounted successfully.
 
 ## Configuration persistence
 
 When storage is mounted, device-wide preferences are stored in `/sdcard/rfscout.json`. This includes the global audible-notification mode and each detection category's one-character Morse mapping. A valid saved notification configuration is restored on boot; compiled defaults are used when saved values are unavailable or invalid.
+
+## Recorder storage
+
+Recorder stores supported 16 kHz, 16-bit mono PCM WAV files in `/sdcard/audio/`. The directory is created automatically when mounted storage is available. Only WAV files that validate against the supported PCM format are shown in Recorder's playback list; unrelated or malformed files are ignored.
 
 ## Unified logging
 
@@ -31,7 +35,7 @@ Application transitions are recorded as `ENTER` and `EXIT`. While an application
 - `WIFI_BT`: active observation and surveillance counts. Individual Wi-Fi/BLE device lifecycle records are also logged as they occur.
 - `CC1101`: configured frequency range/step, detection count, and radio detection state.
 - `NRF24`: configured channel range/dwell, detection count, and radio detection state.
-- `AUDIO`: selected range/channel, effective frequency/sample range, and overrun count.
+- `RECORDER`: recorder state, validated file count, and active recording byte count.
 - `THERMAL`: sensor detection state. More detailed calibrated temperature logging can be added when thermal calibration is implemented.
 
 The one-second application telemetry cadence is intentionally independent of display refresh rate so fast spectrum rendering cannot flood the SD queue or steal time from acquisition tasks.

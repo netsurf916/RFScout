@@ -8,7 +8,7 @@
 #include "app_logging.h"
 
 #include "app_manager.h"
-#include "audio_spectrum.h"
+#include "recorder.h"
 #include "cc1101.h"
 #include "cc1101_activity.h"
 #include "log_writer.h"
@@ -31,7 +31,7 @@ static bool initialized;
 static const char *app_name( rfscout_app_id_t a_app )
 {
     static const char *names[ RFSCOUT_APP_COUNT ] = {
-        "WIFI_BT", "CC1101", "NRF24", "AUDIO", "THERMAL", "DEVICE" };
+        "WIFI_BT", "CC1101", "NRF24", "RECORDER", "THERMAL", "DEVICE" };
 
     return ( a_app < RFSCOUT_APP_COUNT ) ? names[ a_app ] : "UNKNOWN";
 }
@@ -87,13 +87,10 @@ static void write_periodic_record( rfscout_app_id_t a_app )
         case RFSCOUT_APP_AUDIO:
             snprintf( detail,
                       sizeof( detail ),
-                      "range=%s channel=%s hz=%lu-%lu sample_hz=%lu overruns=%lu",
-                      audio_spectrum_range_name( audio_spectrum_range() ),
-                      audio_spectrum_channel_name( audio_spectrum_channel() ),
-                      (unsigned long)audio_spectrum_low_hz(),
-                      (unsigned long)audio_spectrum_high_hz(),
-                      (unsigned long)audio_spectrum_effective_sample_rate(),
-                      (unsigned long)audio_spectrum_overruns() );
+                      "state=%u files=%u bytes=%lu",
+                      (unsigned)recorder_state(),
+                      (unsigned)recorder_file_count(),
+                      (unsigned long)recorder_recorded_bytes() );
             break;
 
         case RFSCOUT_APP_THERMAL:
