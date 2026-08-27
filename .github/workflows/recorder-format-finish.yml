@@ -1,0 +1,39 @@
+name: Recorder full format pass
+
+on:
+  push:
+    branches:
+      - codex/recorder-app
+    paths:
+      - .github/workflows/recorder-format-finish.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: codex/recorder-app
+          fetch-depth: 0
+      - name: Install clang-format 18
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-format-18
+      - name: Canonically format complete source tree
+        run: python3 tools/check_format.py --all --fix
+      - name: Verify formatting
+        run: python3 tools/check_format.py --all
+      - name: Commit formatting
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add main
+          if git diff --cached --quiet; then
+            echo "No formatting changes to commit"
+            exit 0
+          fi
+          git commit -m "Apply canonical Recorder formatting"
+          git push origin HEAD:codex/recorder-app
