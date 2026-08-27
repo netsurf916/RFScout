@@ -125,6 +125,19 @@ bool surveillance_history_observe( const rf_device_t *a_observation )
     return true;
 }
 
+void surveillance_history_reset( void )
+{
+    if( NULL == history_lock )
+    {
+        return;
+    }
+
+    xSemaphoreTake( history_lock, portMAX_DELAY );
+    memset( entries, 0, sizeof( entries ) );
+    entry_count = 0U;
+    xSemaphoreGive( history_lock );
+}
+
 size_t surveillance_history_counts( uint16_t *a_counts, size_t a_capacity )
 {
     if( ( NULL == a_counts ) || ( a_capacity < RFSCOUT_SURVEILLANCE_CLASS_COUNT ) ||
