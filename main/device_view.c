@@ -1,18 +1,20 @@
 /**
     device_view.c : RFScout Device application implementation
-    Description: Provides a global settings editor, application controls, timezone selection, and manual time setting.
+    Description: Provides global settings, notification mappings, timezone selection, and manual time setting.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
 
 #include "device_view.h"
 
+#include "alert.h"
 #include "app_logging.h"
 #include "app_manager.h"
 #include "device_config.h"
 #include "device_time.h"
 #include "display.h"
 #include "log_writer.h"
+#include "morse.h"
 #include "observation_store.h"
 #include "storage.h"
 
@@ -20,23 +22,28 @@
 #include <string.h>
 #include <time.h>
 
-#define DEVICE_ITEM_BRIGHTNESS 0U
-#define DEVICE_ITEM_CLOCK_FORMAT 1U
-#define DEVICE_ITEM_TIMEZONE 2U
-#define DEVICE_ITEM_YEAR 3U
-#define DEVICE_ITEM_MONTH 4U
-#define DEVICE_ITEM_DAY 5U
-#define DEVICE_ITEM_HOUR 6U
-#define DEVICE_ITEM_MINUTE 7U
-#define DEVICE_ITEM_WIFI 8U
-#define DEVICE_ITEM_CC1101 9U
-#define DEVICE_ITEM_NRF24 10U
-#define DEVICE_ITEM_AUDIO 11U
-#define DEVICE_ITEM_THERMAL 12U
-#define DEVICE_ITEM_LOGGING 13U
-#define DEVICE_ITEM_SAVE 14U
-#define DEVICE_ITEM_BACK 15U
-#define DEVICE_ITEM_COUNT 16U
+#define DEVICE_ITEM_BACK 0U
+#define DEVICE_ITEM_BRIGHTNESS 1U
+#define DEVICE_ITEM_CLOCK_FORMAT 2U
+#define DEVICE_ITEM_TIMEZONE 3U
+#define DEVICE_ITEM_YEAR 4U
+#define DEVICE_ITEM_MONTH 5U
+#define DEVICE_ITEM_DAY 6U
+#define DEVICE_ITEM_HOUR 7U
+#define DEVICE_ITEM_MINUTE 8U
+#define DEVICE_ITEM_WIFI 9U
+#define DEVICE_ITEM_CC1101 10U
+#define DEVICE_ITEM_NRF24 11U
+#define DEVICE_ITEM_AUDIO 12U
+#define DEVICE_ITEM_THERMAL 13U
+#define DEVICE_ITEM_LOGGING 14U
+#define DEVICE_ITEM_ALERT_MODE 15U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 16U
+#define DEVICE_ITEM_NOTIFICATION_LAST                                                        \
+    ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
+#define DEVICE_ITEM_SAVE ( DEVICE_ITEM_NOTIFICATION_LAST + 1U )
+#define DEVICE_ITEM_COUNT ( DEVICE_ITEM_SAVE + 1U )
+#define DEVICE_ROWS_PER_PAGE 8U
 #define DEVICE_LOG_SHUTDOWN_TIMEOUT_MS 3000U
 
 #define COLOR_BACKGROUND 0x0000U
@@ -45,6 +52,7 @@
 #define COLOR_DIM 0x7BEFU
 #define COLOR_OK 0x07E0U
 #define COLOR_ERROR 0xF800U
+#define COLOR_ACCENT 0xFFE0U
 
 static unsigned selected_item;
 static bool editing;
@@ -95,94 +103,258 @@ static const char *on_off( bool a_value )
     return a_value ? "On" : "Off";
 }
 
-/** @brief Draw one selectable setting row. */
-static void draw_row( int a_y, unsigned a_item, const char *a_label, const char *a_value )
+/** @brief Return the notification category represented by one Device item. */
+static rfscout_notification_type_t notification_for_item( unsigned a_item )
 {
-    const uint16_t color = ( selected_item == a_item ) ? COLOR_SELECTED : COLOR_TEXT;
-    if( selected_item == a_item )
+    return (rfscout_notification_type_t)( a_item - DEVICE_ITEM_NOTIFICATION_FIRST );
+}
+
+/** @brief Return the next supported single-character Morse value. */
+static char next_morse_character( char a_current, int a_direction )
+{
+    const char *characters = morse_supported_characters();
+    const size_t count = strlen( characters );
+    const char *current = strchr( characters, a_current );
+    size_t index = ( NULL != current ) ? (size_t)( current - characters ) : 0U;
+
+    if( a_direction > 0 )
     {
-        display_draw_text( 6, a_y, editing ? ">*" : ">", color, 1U );
+        index = ( index + 1U ) % count;
     }
-    display_draw_text( 22, a_y, a_label, color, 1U );
-    display_draw_text( 168, a_y, a_value, color, 1U );
+    else
+    {
+        index = ( index + count - 1U ) % count;
+    }
+    return characters[ index ];
 }
 
-/** @brief Render display/time settings. */
-static void render_page_one( void )
+/** @brief Return true when one Device item can enter edit mode. */
+static bool item_editable( unsigned a_item )
+{
+    return ( DEVICE_ITEM_BACK != a_item ) && ( DEVICE_ITEM_SAVE != a_item );
+}
+
+/** @brief Return the user-facing label for one Device settings item. */
+static const char *item_label( unsigned a_item )
+{
+    switch( a_item )
+    {
+        case DEVICE_ITEM_BACK:
+            return "Back";
+        case DEVICE_ITEM_BRIGHTNESS:
+            return "Brightness";
+        case DEVICE_ITEM_CLOCK_FORMAT:
+            return "Clock format";
+        case DEVICE_ITEM_TIMEZONE:
+            return "Timezone";
+        case DEVICE_ITEM_YEAR:
+            return "Year";
+        case DEVICE_ITEM_MONTH:
+            return "Month";
+        case DEVICE_ITEM_DAY:
+            return "Day";
+        case DEVICE_ITEM_HOUR:
+            return "Hour";
+        case DEVICE_ITEM_MINUTE:
+            return "Minute";
+        case DEVICE_ITEM_WIFI:
+            return "WiFi / BT";
+        case DEVICE_ITEM_CC1101:
+            return "CC1101";
+        case DEVICE_ITEM_NRF24:
+            return "nRF24";
+        case DEVICE_ITEM_AUDIO:
+            return "Audio";
+        case DEVICE_ITEM_THERMAL:
+            return "Thermal";
+        case DEVICE_ITEM_LOGGING:
+            return "SD logging";
+        case DEVICE_ITEM_ALERT_MODE:
+            return "Notifications";
+        case DEVICE_ITEM_SAVE:
+            return "Save config";
+        default:
+            if( ( a_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
+                ( a_item <= DEVICE_ITEM_NOTIFICATION_LAST ) )
+            {
+                return alert_notification_name( notification_for_item( a_item ) );
+            }
+            return "Unknown";
+    }
+}
+
+/** @brief Format the current value of one Device settings item. */
+static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
 {
     const device_config_t *config = device_config_get();
+    a_value[ 0 ] = '\0';
+
+    switch( a_item )
+    {
+        case DEVICE_ITEM_BRIGHTNESS:
+            snprintf( a_value, a_capacity, "%u%%", (unsigned)config->brightness_percent );
+            break;
+        case DEVICE_ITEM_CLOCK_FORMAT:
+            snprintf( a_value, a_capacity, "%s", config->clock_24h ? "24h" : "12h" );
+            break;
+        case DEVICE_ITEM_TIMEZONE:
+        {
+            const device_timezone_t *zone = device_config_timezone();
+            snprintf( a_value,
+                      a_capacity,
+                      "%s",
+                      ( NULL != zone ) ? zone->label : config->timezone_selected );
+            break;
+        }
+        case DEVICE_ITEM_YEAR:
+            snprintf( a_value, a_capacity, "%04d", edited_time.tm_year + 1900 );
+            break;
+        case DEVICE_ITEM_MONTH:
+            snprintf( a_value, a_capacity, "%02d", edited_time.tm_mon + 1 );
+            break;
+        case DEVICE_ITEM_DAY:
+            snprintf( a_value, a_capacity, "%02d", edited_time.tm_mday );
+            break;
+        case DEVICE_ITEM_HOUR:
+            snprintf( a_value, a_capacity, "%02d", edited_time.tm_hour );
+            break;
+        case DEVICE_ITEM_MINUTE:
+            snprintf( a_value, a_capacity, "%02d", edited_time.tm_min );
+            break;
+        case DEVICE_ITEM_WIFI:
+            snprintf( a_value,
+                      a_capacity,
+                      "%s",
+                      on_off( config->apps_enabled[ RFSCOUT_APP_WIFI_BT ] ) );
+            break;
+        case DEVICE_ITEM_CC1101:
+            snprintf( a_value,
+                      a_capacity,
+                      "%s",
+                      on_off( config->apps_enabled[ RFSCOUT_APP_CC1101 ] ) );
+            break;
+        case DEVICE_ITEM_NRF24:
+            snprintf( a_value,
+                      a_capacity,
+                      "%s",
+                      on_off( config->apps_enabled[ RFSCOUT_APP_NRF24 ] ) );
+            break;
+        case DEVICE_ITEM_AUDIO:
+            snprintf( a_value,
+                      a_capacity,
+                      "%s",
+                      on_off( config->apps_enabled[ RFSCOUT_APP_AUDIO ] ) );
+            break;
+        case DEVICE_ITEM_THERMAL:
+            snprintf( a_value,
+                      a_capacity,
+                      "%s",
+                      on_off( config->apps_enabled[ RFSCOUT_APP_THERMAL ] ) );
+            break;
+        case DEVICE_ITEM_LOGGING:
+            snprintf( a_value, a_capacity, "%s", on_off( config->logging_enabled ) );
+            break;
+        case DEVICE_ITEM_ALERT_MODE:
+            snprintf( a_value, a_capacity, "%s", alert_mode_name( config->alert_mode ) );
+            break;
+        case DEVICE_ITEM_SAVE:
+            snprintf( a_value, a_capacity, "%s", storage_is_available() ? "SD" : "No SD" );
+            break;
+        default:
+            if( ( a_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
+                ( a_item <= DEVICE_ITEM_NOTIFICATION_LAST ) )
+            {
+                const rfscout_notification_type_t type = notification_for_item( a_item );
+                const char character = device_config_notification_character( type );
+                const char *pattern = morse_pattern( character );
+                snprintf( a_value,
+                          a_capacity,
+                          "%c %s",
+                          character,
+                          ( NULL != pattern ) ? pattern : "?" );
+            }
+            break;
+    }
+}
+
+/** @brief Draw one selectable setting row. */
+static void draw_row( int a_y, unsigned a_item )
+{
     char value[ 48 ];
+    item_value( a_item, value, sizeof( value ) );
+    const bool active = selected_item == a_item;
+    const uint16_t color = active ? COLOR_SELECTED : COLOR_TEXT;
 
-    snprintf( value, sizeof( value ), "%u%%", (unsigned)config->brightness_percent );
-    draw_row( 28, DEVICE_ITEM_BRIGHTNESS, "Brightness", value );
-    draw_row( 43, DEVICE_ITEM_CLOCK_FORMAT, "Clock format", config->clock_24h ? "24h" : "12h" );
-
-    const device_timezone_t *zone = device_config_timezone();
-    draw_row( 58,
-              DEVICE_ITEM_TIMEZONE,
-              "Timezone",
-              ( NULL != zone ) ? zone->label : config->timezone_selected );
-
-    snprintf( value, sizeof( value ), "%04d", edited_time.tm_year + 1900 );
-    draw_row( 73, DEVICE_ITEM_YEAR, "Year", value );
-    snprintf( value, sizeof( value ), "%02d", edited_time.tm_mon + 1 );
-    draw_row( 88, DEVICE_ITEM_MONTH, "Month", value );
-    snprintf( value, sizeof( value ), "%02d", edited_time.tm_mday );
-    draw_row( 103, DEVICE_ITEM_DAY, "Day", value );
-    snprintf( value, sizeof( value ), "%02d", edited_time.tm_hour );
-    draw_row( 118, DEVICE_ITEM_HOUR, "Hour", value );
-    snprintf( value, sizeof( value ), "%02d", edited_time.tm_min );
-    draw_row( 133, DEVICE_ITEM_MINUTE, "Minute", value );
+    if( active )
+    {
+        display_draw_text( 6, a_y, ( editing && item_editable( a_item ) ) ? ">*" : ">", color, 1U );
+    }
+    display_draw_text( 22, a_y, item_label( a_item ), color, 1U );
+    if( '\0' != value[ 0 ] )
+    {
+        display_draw_text( 232, a_y, value, active ? COLOR_ACCENT : COLOR_DIM, 1U );
+    }
 }
 
-/** @brief Render application/storage settings and time-source status. */
-static void render_page_two( void )
+void device_view_landing( void )
 {
     const device_config_t *config = device_config_get();
-    draw_row(
-        28, DEVICE_ITEM_WIFI, "WiFi / BT", on_off( config->apps_enabled[ RFSCOUT_APP_WIFI_BT ] ) );
-    draw_row(
-        43, DEVICE_ITEM_CC1101, "CC1101", on_off( config->apps_enabled[ RFSCOUT_APP_CC1101 ] ) );
-    draw_row( 58, DEVICE_ITEM_NRF24, "nRF24", on_off( config->apps_enabled[ RFSCOUT_APP_NRF24 ] ) );
-    draw_row( 73, DEVICE_ITEM_AUDIO, "Audio", on_off( config->apps_enabled[ RFSCOUT_APP_AUDIO ] ) );
-    draw_row(
-        88, DEVICE_ITEM_THERMAL, "Thermal", on_off( config->apps_enabled[ RFSCOUT_APP_THERMAL ] ) );
-    draw_row( 103, DEVICE_ITEM_LOGGING, "SD logging", on_off( config->logging_enabled ) );
-    draw_row( 118, DEVICE_ITEM_SAVE, "Save config", storage_is_available() ? "SD" : "No SD" );
-    draw_row( 133, DEVICE_ITEM_BACK, "Back", "" );
+    display_clear( COLOR_BACKGROUND );
+    display_draw_text( 6, 5, "DEVICE", COLOR_DIM, 2U );
+    display_draw_text( 22, 46, "Global configuration", COLOR_TEXT, 1U );
 
-    char source[ 48 ];
-    snprintf( source, sizeof( source ), "Time source: %s", device_time_source_label() );
-    display_draw_text( 22, 148, source, COLOR_DIM, 1U );
+    char line[ 64 ];
+    snprintf( line, sizeof( line ), "Notifications: %s", alert_mode_name( config->alert_mode ) );
+    display_draw_text( 22, 68, line, COLOR_TEXT, 1U );
+    snprintf( line, sizeof( line ), "SD logging: %s", on_off( config->logging_enabled ) );
+    display_draw_text( 22, 86, line, COLOR_TEXT, 1U );
+    snprintf( line, sizeof( line ), "Time: %s", device_time_source_label() );
+    display_draw_text( 22, 104, line, COLOR_DIM, 1U );
+
+    display_draw_text( 22, 136, "CENTER: SETTINGS", COLOR_ACCENT, 1U );
+    display_draw_text( 22, 152, "TURN: NEXT APP", COLOR_DIM, 1U );
+    (void)display_present();
 }
 
 void device_view_render( void )
 {
     display_clear( COLOR_BACKGROUND );
-    display_draw_text( 6, 4, "DEVICE", COLOR_DIM, 1U );
-    if( selected_item <= DEVICE_ITEM_MINUTE )
+    display_draw_text( 6, 4, "DEVICE SETTINGS", COLOR_DIM, 1U );
+
+    const unsigned page_start = ( selected_item / DEVICE_ROWS_PER_PAGE ) * DEVICE_ROWS_PER_PAGE;
+    for( unsigned row = 0U; row < DEVICE_ROWS_PER_PAGE; ++row )
     {
-        render_page_one();
+        const unsigned item = page_start + row;
+        if( item >= DEVICE_ITEM_COUNT )
+        {
+            break;
+        }
+        draw_row( 25 + (int)row * 15, item );
     }
-    else
-    {
-        render_page_two();
-    }
+
+    char footer[ 64 ];
+    snprintf( footer,
+              sizeof( footer ),
+              "%u/%u  %s",
+              (unsigned)( selected_item + 1U ),
+              (unsigned)DEVICE_ITEM_COUNT,
+              editing ? "TURN CHANGE / CENTER DONE" : "TURN SELECT / CENTER ENTER" );
+    display_draw_text( 6, 150, footer, editing ? COLOR_ACCENT : COLOR_DIM, 1U );
 
     if( save_error )
     {
-        display_draw_text( 286, 148, "ERR", COLOR_ERROR, 1U );
+        display_draw_text( 286, 4, "ERR", COLOR_ERROR, 1U );
     }
     else if( storage_is_available() )
     {
-        display_draw_text( 292, 148, "SD", COLOR_OK, 1U );
+        display_draw_text( 292, 4, "SD", COLOR_OK, 1U );
     }
     (void)display_present();
 }
 
 void device_view_enter( void )
 {
-    selected_item = 0U;
+    selected_item = DEVICE_ITEM_BACK;
     editing = false;
     save_error = false;
     refresh_edited_time();
@@ -369,6 +541,43 @@ static void toggle_logging( void )
     save_error = false;
 }
 
+/** @brief Adjust the global notification mode. */
+static void adjust_alert_mode( int a_delta )
+{
+    const rfscout_alert_mode_t old_mode = device_config_get()->alert_mode;
+    int mode = (int)old_mode + ( ( a_delta > 0 ) ? 1 : -1 );
+    if( mode < 0 )
+    {
+        mode = RFSCOUT_ALERT_MODE_COUNT - 1;
+    }
+    if( mode >= RFSCOUT_ALERT_MODE_COUNT )
+    {
+        mode = 0;
+    }
+
+    (void)device_config_set_alert_mode( (rfscout_alert_mode_t)mode );
+    log_config_change(
+        "notifications.mode", alert_mode_name( old_mode ), alert_mode_name( (rfscout_alert_mode_t)mode ) );
+}
+
+/** @brief Adjust one detection category's Morse character. */
+static void adjust_notification_character( unsigned a_item, int a_delta )
+{
+    const rfscout_notification_type_t type = notification_for_item( a_item );
+    const char old_character = device_config_notification_character( type );
+    const char new_character = next_morse_character( old_character, a_delta );
+    if( ESP_OK != device_config_set_notification_character( type, new_character ) )
+    {
+        return;
+    }
+
+    char key[ 64 ];
+    char old_text[ 2 ] = { old_character, '\0' };
+    char new_text[ 2 ] = { new_character, '\0' };
+    snprintf( key, sizeof( key ), "notifications.%s", alert_notification_name( type ) );
+    log_config_change( key, old_text, new_text );
+}
+
 /** @brief Adjust the currently edited setting. */
 static void adjust_selected( int a_delta )
 {
@@ -434,6 +643,15 @@ static void adjust_selected( int a_delta )
     {
         toggle_logging();
     }
+    else if( DEVICE_ITEM_ALERT_MODE == selected_item )
+    {
+        adjust_alert_mode( a_delta );
+    }
+    else if( ( selected_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
+             ( selected_item <= DEVICE_ITEM_NOTIFICATION_LAST ) )
+    {
+        adjust_notification_character( selected_item, a_delta );
+    }
 }
 
 bool device_view_input( bool a_pressed, int a_delta )
@@ -444,7 +662,7 @@ bool device_view_input( bool a_pressed, int a_delta )
         {
             return true;
         }
-        if( DEVICE_ITEM_SAVE == selected_item )
+        if( ( DEVICE_ITEM_SAVE == selected_item ) && !editing )
         {
             save_error = ( ESP_OK != device_config_save( false, 0, NULL ) );
             device_view_render();
@@ -456,7 +674,10 @@ bool device_view_input( bool a_pressed, int a_delta )
         {
             commit_manual_time();
         }
-        editing = !editing;
+        if( item_editable( selected_item ) )
+        {
+            editing = !editing;
+        }
         device_view_render();
         return false;
     }
