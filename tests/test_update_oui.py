@@ -22,23 +22,27 @@ class UpdateOuiTests(unittest.TestCase):
         self.assertEqual({0xABCDEF1: "Example"}, records)
 
     def test_extended_output_keeps_28_and_36_bit_tables(self):
+        ma_m = {0x1000000 + index: f"Medium {index}" for index in range(100)}
+        ma_s = {0x200000000 + index: f"Small {index}" for index in range(100)}
+        iab = {0x200000000: "Legacy"}
+        ma_m[0x1234567] = "Medium"
+        ma_s[0x123456789] = "Small"
+        ma_s[0xABCDEF012] = "Other"
+        iab[0x123456789] = "Legacy collision"
+
         with tempfile.TemporaryDirectory() as directory:
             original = UPDATE_OUI.EXTENDED_OUT
             try:
                 output = pathlib.Path(directory) / "extended.inc"
                 UPDATE_OUI.EXTENDED_OUT = output
-                UPDATE_OUI.write_extended(
-                    {0x1234567: "Medium"},
-                    {0x123456789: "Legacy"},
-                    {0x123456789: "Small", 0xABCDEF012: "Other"},
-                )
+                UPDATE_OUI.write_extended(ma_m, iab, ma_s)
                 text = output.read_text(encoding="utf-8")
             finally:
                 UPDATE_OUI.EXTENDED_OUT = original
 
         self.assertIn('0x1234567U, "Medium"', text)
         self.assertIn('0x123456789ULL, "Small"', text)
-        self.assertNotIn('0x123456789ULL, "Legacy"', text)
+        self.assertNotIn('0x123456789ULL, "Legacy collision"', text)
         self.assertIn('0xABCDEF012ULL, "Other"', text)
 
 
