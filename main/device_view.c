@@ -39,7 +39,7 @@
 #define DEVICE_ITEM_LOGGING 14U
 #define DEVICE_ITEM_ALERT_MODE 15U
 #define DEVICE_ITEM_NOTIFICATION_FIRST 16U
-#define DEVICE_ITEM_NOTIFICATION_LAST                                                        \
+#define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
 #define DEVICE_ITEM_SAVE ( DEVICE_ITEM_NOTIFICATION_LAST + 1U )
 #define DEVICE_ITEM_COUNT ( DEVICE_ITEM_SAVE + 1U )
@@ -222,34 +222,24 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             snprintf( a_value, a_capacity, "%02d", edited_time.tm_min );
             break;
         case DEVICE_ITEM_WIFI:
-            snprintf( a_value,
-                      a_capacity,
-                      "%s",
-                      on_off( config->apps_enabled[ RFSCOUT_APP_WIFI_BT ] ) );
+            snprintf(
+                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_WIFI_BT ] ) );
             break;
         case DEVICE_ITEM_CC1101:
-            snprintf( a_value,
-                      a_capacity,
-                      "%s",
-                      on_off( config->apps_enabled[ RFSCOUT_APP_CC1101 ] ) );
+            snprintf(
+                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_CC1101 ] ) );
             break;
         case DEVICE_ITEM_NRF24:
-            snprintf( a_value,
-                      a_capacity,
-                      "%s",
-                      on_off( config->apps_enabled[ RFSCOUT_APP_NRF24 ] ) );
+            snprintf(
+                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_NRF24 ] ) );
             break;
         case DEVICE_ITEM_AUDIO:
-            snprintf( a_value,
-                      a_capacity,
-                      "%s",
-                      on_off( config->apps_enabled[ RFSCOUT_APP_AUDIO ] ) );
+            snprintf(
+                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_AUDIO ] ) );
             break;
         case DEVICE_ITEM_THERMAL:
-            snprintf( a_value,
-                      a_capacity,
-                      "%s",
-                      on_off( config->apps_enabled[ RFSCOUT_APP_THERMAL ] ) );
+            snprintf(
+                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_THERMAL ] ) );
             break;
         case DEVICE_ITEM_LOGGING:
             snprintf( a_value, a_capacity, "%s", on_off( config->logging_enabled ) );
@@ -267,11 +257,8 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
                 const rfscout_notification_type_t type = notification_for_item( a_item );
                 const char character = device_config_notification_character( type );
                 const char *pattern = morse_pattern( character );
-                snprintf( a_value,
-                          a_capacity,
-                          "%c %s",
-                          character,
-                          ( NULL != pattern ) ? pattern : "?" );
+                snprintf(
+                    a_value, a_capacity, "%c %s", character, ( NULL != pattern ) ? pattern : "?" );
             }
             break;
     }
@@ -556,8 +543,9 @@ static void adjust_alert_mode( int a_delta )
     }
 
     (void)device_config_set_alert_mode( (rfscout_alert_mode_t)mode );
-    log_config_change(
-        "notifications.mode", alert_mode_name( old_mode ), alert_mode_name( (rfscout_alert_mode_t)mode ) );
+    log_config_change( "notifications.mode",
+                       alert_mode_name( old_mode ),
+                       alert_mode_name( (rfscout_alert_mode_t)mode ) );
 }
 
 /** @brief Adjust one detection category's Morse character. */
