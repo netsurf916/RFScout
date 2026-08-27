@@ -123,6 +123,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ needs.validate.outputs.commit }}
+          fetch-depth: 0
 
       - name: Build and package ESP32-S3 firmware
         shell: bash
