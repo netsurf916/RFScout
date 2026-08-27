@@ -1,6 +1,6 @@
 /**
     alert.c : RFScout audible alert policy implementation
-    Description: Converts runtime alert preferences into asynchronous speaker requests.
+    Description: Converts device-wide alert preferences into asynchronous speaker requests.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -24,6 +24,32 @@
 static rfscout_alert_mode_t mode = RFSCOUT_ALERT_OFF;
 static char morse_character = ALERT_MORSE_DEFAULT_CHARACTER;
 static SemaphoreHandle_t alert_mutex;
+
+/** @brief Queue an alert while the alert-policy mutex is already held. */
+static bool request_locked( char a_character )
+{
+    switch( mode )
+    {
+        case RFSCOUT_ALERT_OFF:
+            return true;
+
+        case RFSCOUT_ALERT_TONE:
+            return audio_output_play_tone( ALERT_TONE_FREQUENCY_HZ, ALERT_TONE_DURATION_MS );
+
+        case RFSCOUT_ALERT_MORSE:
+            if( !alert_morse_character_supported( a_character ) )
+            {
+                return false;
+            }
+            return audio_output_play_morse(
+                (char)toupper( (unsigned char)a_character ),
+                ALERT_TONE_FREQUENCY_HZ,
+                ALERT_MORSE_UNIT_MS );
+
+        default:
+            return false;
+    }
+}
 
 esp_err_t alert_init( void )
 {
@@ -57,6 +83,96 @@ const char *alert_mode_name( rfscout_alert_mode_t a_mode )
         case RFSCOUT_ALERT_OFF:
         default:
             return "OFF";
+    }
+}
+
+const char *alert_notification_name( rfscout_notification_type_t a_type )
+{
+    switch( a_type )
+    {
+        case RFSCOUT_NOTIFICATION_FLOCK:
+            return "Flock / ALPR";
+        case RFSCOUT_NOTIFICATION_BODY_CAMERA:
+            return "Body camera";
+        case RFSCOUT_NOTIFICATION_DRONE:
+            return "Drone";
+        case RFSCOUT_NOTIFICATION_CAMERA:
+            return "Camera";
+        case RFSCOUT_NOTIFICATION_SMART_GLASSES:
+            return "Smart glasses";
+        case RFSCOUT_NOTIFICATION_ACOUSTIC_SENSOR:
+            return "Acoustic sensor";
+        case RFSCOUT_NOTIFICATION_SURVEILLANCE_OTHER:
+            return "Other surveillance";
+        case RFSCOUT_NOTIFICATION_CC1101_NARROW_ISM:
+            return "CC1101 narrow ISM";
+        case RFSCOUT_NOTIFICATION_CC1101_REMOTE_SENSOR:
+            return "CC1101 remote/sensor";
+        case RFSCOUT_NOTIFICATION_CC1101_CARRIER:
+            return "CC1101 carrier";
+        case RFSCOUT_NOTIFICATION_CC1101_BURSTY:
+            return "CC1101 bursty";
+        case RFSCOUT_NOTIFICATION_CC1101_WIDEBAND:
+            return "CC1101 wideband";
+        case RFSCOUT_NOTIFICATION_NRF24_ESB:
+            return "nRF24 ESB";
+        case RFSCOUT_NOTIFICATION_NRF24_INPUT:
+            return "nRF24 input";
+        case RFSCOUT_NOTIFICATION_NRF24_SENSOR:
+            return "nRF24 sensor";
+        case RFSCOUT_NOTIFICATION_NRF24_WIFI_LIKE:
+            return "nRF24 WiFi-like";
+        case RFSCOUT_NOTIFICATION_NRF24_BLE_LIKE:
+            return "nRF24 BLE-like";
+        case RFSCOUT_NOTIFICATION_NRF24_LOGITECH_LIKE:
+            return "nRF24 Logitech-like";
+        default:
+            return "Unknown";
+    }
+}
+
+char alert_notification_default_character( rfscout_notification_type_t a_type )
+{
+    switch( a_type )
+    {
+        case RFSCOUT_NOTIFICATION_FLOCK:
+            return 'F';
+        case RFSCOUT_NOTIFICATION_BODY_CAMERA:
+            return 'B';
+        case RFSCOUT_NOTIFICATION_DRONE:
+            return 'D';
+        case RFSCOUT_NOTIFICATION_CAMERA:
+            return 'C';
+        case RFSCOUT_NOTIFICATION_SMART_GLASSES:
+            return 'G';
+        case RFSCOUT_NOTIFICATION_ACOUSTIC_SENSOR:
+            return 'A';
+        case RFSCOUT_NOTIFICATION_SURVEILLANCE_OTHER:
+            return 'S';
+        case RFSCOUT_NOTIFICATION_CC1101_NARROW_ISM:
+            return 'N';
+        case RFSCOUT_NOTIFICATION_CC1101_REMOTE_SENSOR:
+            return 'R';
+        case RFSCOUT_NOTIFICATION_CC1101_CARRIER:
+            return 'K';
+        case RFSCOUT_NOTIFICATION_CC1101_BURSTY:
+            return 'U';
+        case RFSCOUT_NOTIFICATION_CC1101_WIDEBAND:
+            return 'W';
+        case RFSCOUT_NOTIFICATION_NRF24_ESB:
+            return 'E';
+        case RFSCOUT_NOTIFICATION_NRF24_INPUT:
+            return 'I';
+        case RFSCOUT_NOTIFICATION_NRF24_SENSOR:
+            return 'T';
+        case RFSCOUT_NOTIFICATION_NRF24_WIFI_LIKE:
+            return 'V';
+        case RFSCOUT_NOTIFICATION_NRF24_BLE_LIKE:
+            return 'L';
+        case RFSCOUT_NOTIFICATION_NRF24_LOGITECH_LIKE:
+            return 'X';
+        default:
+            return ALERT_MORSE_DEFAULT_CHARACTER;
     }
 }
 
@@ -124,31 +240,17 @@ bool alert_set_morse_character( char a_character )
 
 bool alert_request( void )
 {
+    return alert_request_character( alert_morse_character() );
+}
+
+bool alert_request_character( char a_character )
+{
     if( ( NULL == alert_mutex ) || ( pdTRUE != xSemaphoreTake( alert_mutex, 0U ) ) )
     {
         return false;
     }
 
-    bool queued = false;
-    switch( mode )
-    {
-        case RFSCOUT_ALERT_OFF:
-            queued = true;
-            break;
-
-        case RFSCOUT_ALERT_TONE:
-            queued = audio_output_play_tone( ALERT_TONE_FREQUENCY_HZ, ALERT_TONE_DURATION_MS );
-            break;
-
-        case RFSCOUT_ALERT_MORSE:
-            queued = audio_output_play_morse(
-                morse_character, ALERT_TONE_FREQUENCY_HZ, ALERT_MORSE_UNIT_MS );
-            break;
-
-        default:
-            break;
-    }
-
+    const bool queued = request_locked( a_character );
     (void)xSemaphoreGive( alert_mutex );
     return queued;
 }
