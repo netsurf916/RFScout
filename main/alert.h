@@ -22,7 +22,7 @@ typedef enum
     RFSCOUT_ALERT_MODE_COUNT
 } rfscout_alert_mode_t;
 
-/** @brief Stable user-visible detection categories with independent Morse characters. */
+/** @brief Stable detection categories that can have independent Morse characters. */
 typedef enum
 {
     RFSCOUT_NOTIFICATION_FLOCK = 0,
@@ -40,7 +40,8 @@ typedef enum
     RFSCOUT_NOTIFICATION_NRF24_ESB,
     RFSCOUT_NOTIFICATION_NRF24_INPUT,
     RFSCOUT_NOTIFICATION_NRF24_SENSOR,
-    RFSCOUT_NOTIFICATION_NRF24_OTHER_RF,
+    RFSCOUT_NOTIFICATION_NRF24_WIFI_LIKE,
+    RFSCOUT_NOTIFICATION_NRF24_BLE_LIKE,
     RFSCOUT_NOTIFICATION_NRF24_LOGITECH_LIKE,
     RFSCOUT_NOTIFICATION_TYPE_COUNT
 } rfscout_notification_type_t;
