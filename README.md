@@ -27,13 +27,13 @@ Device is a pass-through landing screen: rotating onto Device does not trap the 
 
 ### WiFi / BT
 
-The WiFi / BT application is the primary nearby-device view. It passively observes Wi-Fi and BLE traffic, maintains a rolling set of recently seen devices, resolves IEEE OUI/vendor information for addresses where that attribution is defensible, and shows ranked nearby vendors.
+The WiFi / BT application is the primary nearby-device view. It passively observes Wi-Fi and BLE traffic, maintains a rolling set of recently seen devices, resolves IEEE vendor information using longest-prefix matching across MA-L (24-bit), MA-M (28-bit), MA-S/OUI-36 (36-bit), and legacy IAB assignments where that attribution is defensible, and shows ranked nearby vendors.
 
-The right-side surveillance panel uses fixed categories: zero-count rows remain subdued and detected categories turn red. Random/private MAC addresses are not assigned an OUI vendor, and unresolved devices contribute to the visible `UNKNOWN` count instead of disappearing from the census.
+The right-side surveillance panel uses fixed categories: zero-count rows remain subdued and detected categories turn red. Random/private MAC addresses are not assigned an IEEE vendor and contribute to the fixed `RANDOM` row. Globally administered/public addresses with no matching IEEE assignment contribute to `UNKNOWN` instead of disappearing from the census.
 
 Ordinary nearby-device observations expire after the live RF window; surveillance detections are retained longer so brief events remain visible. Leaving this application stops both the Wi-Fi monitor and BLE scanner. Its action menu includes **RESET DETECTIONS**, which clears the current device/OUI census and retained surveillance detections without restarting the collectors.
 
-Surveillance detections participate in RFScout's global audible-notification system. Notification mode, volume, and Morse mappings are configured in Device rather than in the WiFi/BT menu.
+Surveillance detections participate in RFScout's global audible-notification system. Curated prefix surveillance metadata is resolved by the same identity database used for IEEE vendor attribution and contributes one evidence source to the classifier; BLE names, manufacturer IDs, services, Remote ID, and other protocol evidence remain independent classifier inputs. Notification mode, volume, and Morse mappings are configured in Device rather than in the WiFi/BT menu.
 
 ### CC1101
 
@@ -127,15 +127,20 @@ The board I2C controller is shared by power telemetry and optional external I2C 
 
 The internal microphone is acquired through ESP32-S3 I2S0/PDM using DMA; FFT processing is isolated from display rendering. The onboard speaker is driven independently through I2S1 standard transmit by the asynchronous audio-output service.
 
-## OUI database
+## OUI / prefix identity database
 
-RFScout compiles an IEEE MA-L/OUI vendor table for Wi-Fi/BLE attribution. Refresh it locally with:
+RFScout compiles IEEE MAC-assignment data from MA-L/OUI (24-bit), MA-M (28-bit), MA-S/OUI-36 (36-bit), and legacy IAB registries. Runtime lookup uses longest-prefix precedence: 36-bit first, then 28-bit, then 24-bit. CID is intentionally not used for vendor attribution because CID assignments are not globally unique MAC-address allocations.
+
+The same identity layer also consumes the generated curated surveillance-prefix table. IEEE vendor identity and curated surveillance significance remain distinct metadata: a prefix may resolve a vendor without implying surveillance, while a curated prefix can contribute surveillance evidence even when it is locally administered and therefore has no IEEE vendor assignment. Higher-layer surveillance matching remains in `surveillance.c`.
+
+Refresh the generated tables locally with:
 
 ```sh
 python3 tools/update_oui.py
+python3 tools/update_surveillance.py
 ```
 
-The **Refresh IEEE OUI database** GitHub Action can also update the generated database.
+The **Refresh IEEE OUI database** GitHub Action refreshes all IEEE prefix tables, regenerates curated surveillance prefix metadata, and updates the advisory cross-reference report.
 
 ## Flash layout
 
