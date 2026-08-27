@@ -18,6 +18,8 @@
 
 #include <math.h>
 #include <stddef.h>
+#include <stdio.h>
+#include <string.h>
 
 #define AUDIO_OUTPUT_SAMPLE_RATE 16000U
 #define AUDIO_OUTPUT_MAX_AMPLITUDE 7000.0f
@@ -29,11 +31,14 @@
 #define AUDIO_OUTPUT_DMA_FRAME_NUM 240U
 #define AUDIO_OUTPUT_TRAILING_SILENCE_MS 20U
 #define AUDIO_OUTPUT_MAX_VOLUME_PERCENT 100U
+#define AUDIO_OUTPUT_WAV_PATH_MAX 160U
+#define AUDIO_OUTPUT_WAV_HEADER_SIZE 44U
 
 typedef enum
 {
     AUDIO_OUTPUT_COMMAND_TONE = 0,
     AUDIO_OUTPUT_COMMAND_MORSE,
+    AUDIO_OUTPUT_COMMAND_WAV,
 } audio_output_command_type_t;
 
 typedef struct
@@ -43,6 +48,7 @@ typedef struct
     uint32_t duration_ms;
     char character;
     uint8_t volume_percent;
+    char path[ AUDIO_OUTPUT_WAV_PATH_MAX ];
 } audio_output_command_t;
 
 static const char *TAG = "audio_output";
@@ -50,6 +56,19 @@ static i2s_chan_handle_t tx_channel;
 static QueueHandle_t command_queue;
 static TaskHandle_t output_task;
 static bool initialized;
+static volatile bool playback_active;
+static volatile uint32_t playback_generation;
+
+static uint16_t read_u16_le( const uint8_t *a_source )
+{
+    return (uint16_t)a_source[ 0 ] | ( (uint16_t)a_source[ 1 ] << 8U );
+}
+
+static uint32_t read_u32_le( const uint8_t *a_source )
+{
+    return (uint32_t)a_source[ 0 ] | ( (uint32_t)a_source[ 1 ] << 8U ) |
+           ( (uint32_t)a_source[ 2 ] << 16U ) | ( (uint32_t)a_source[ 3 ] << 24U );
+}
 
 /** @brief Write one tone or silence segment to the speaker channel. */
 static bool write_segment( bool a_tone,
@@ -106,26 +125,35 @@ static bool write_segment( bool a_tone,
     return true;
 }
 
-/**
- * @brief Return enough silence to turn over the complete TX DMA ring.
- *
- * ESP-IDF 6.1 does not expose a separate TX-drain primitive for the channel API. Writing more
- * than one complete DMA ring of silence forces every previously queued audible sample to be
- * transmitted before the final silence write can complete.
- */
 static uint32_t dma_drain_silence_ms( void )
 {
     const uint32_t drain_frames = ( AUDIO_OUTPUT_DMA_DESC_NUM + 1U ) * AUDIO_OUTPUT_DMA_FRAME_NUM;
     return ( drain_frames * 1000U + AUDIO_OUTPUT_SAMPLE_RATE - 1U ) / AUDIO_OUTPUT_SAMPLE_RATE;
 }
 
-/** @brief Play one queued tone command on the worker task. */
-static void play_tone( const audio_output_command_t *a_command )
+static bool enable_channel( void )
 {
-    float phase = 0.0f;
     if( ESP_OK != i2s_channel_enable( tx_channel ) )
     {
         ESP_LOGW( TAG, "could not enable speaker channel" );
+        return false;
+    }
+    return true;
+}
+
+static void finish_channel( void )
+{
+    float phase = 0.0f;
+    const uint32_t drain_ms = dma_drain_silence_ms();
+    (void)write_segment( false, 1000U, drain_ms, 0U, &phase );
+    (void)i2s_channel_disable( tx_channel );
+}
+
+static void play_tone( const audio_output_command_t *a_command )
+{
+    float phase = 0.0f;
+    if( !enable_channel() )
+    {
         return;
     }
 
@@ -140,22 +168,15 @@ static void play_tone( const audio_output_command_t *a_command )
     (void)i2s_channel_disable( tx_channel );
 }
 
-/** @brief Play one queued single-character Morse command on the worker task. */
 static void play_morse( const audio_output_command_t *a_command )
 {
     const char *pattern = morse_pattern( a_command->character );
-    if( NULL == pattern )
+    if( NULL == pattern || !enable_channel() )
     {
         return;
     }
 
     float phase = 0.0f;
-    if( ESP_OK != i2s_channel_enable( tx_channel ) )
-    {
-        ESP_LOGW( TAG, "could not enable speaker channel" );
-        return;
-    }
-
     for( const char *symbol = pattern; '\0' != *symbol; ++symbol )
     {
         const uint32_t tone_units = ( '-' == *symbol ) ? 3U : 1U;
@@ -167,16 +188,14 @@ static void play_morse( const audio_output_command_t *a_command )
         {
             break;
         }
-        if( '\0' != symbol[ 1 ] )
+        if( '\0' != symbol[ 1 ] &&
+            !write_segment( false,
+                            a_command->frequency_hz,
+                            a_command->duration_ms,
+                            a_command->volume_percent,
+                            &phase ) )
         {
-            if( !write_segment( false,
-                                a_command->frequency_hz,
-                                a_command->duration_ms,
-                                a_command->volume_percent,
-                                &phase ) )
-            {
-                break;
-            }
+            break;
         }
     }
 
@@ -188,7 +207,91 @@ static void play_morse( const audio_output_command_t *a_command )
     (void)i2s_channel_disable( tx_channel );
 }
 
-/** @brief Drain queued speaker commands without blocking RF or UI callers. */
+static bool wav_supported( const uint8_t a_header[ AUDIO_OUTPUT_WAV_HEADER_SIZE ] )
+{
+    return 0 == memcmp( &a_header[ 0 ], "RIFF", 4U ) &&
+           0 == memcmp( &a_header[ 8 ], "WAVE", 4U ) &&
+           0 == memcmp( &a_header[ 12 ], "fmt ", 4U ) &&
+           0 == memcmp( &a_header[ 36 ], "data", 4U ) && 1U == read_u16_le( &a_header[ 20 ] ) &&
+           1U == read_u16_le( &a_header[ 22 ] ) &&
+           AUDIO_OUTPUT_SAMPLE_RATE == read_u32_le( &a_header[ 24 ] ) &&
+           16U == read_u16_le( &a_header[ 34 ] );
+}
+
+static void play_wav( const audio_output_command_t *a_command )
+{
+    FILE *file = fopen( a_command->path, "rb" );
+    if( NULL == file )
+    {
+        ESP_LOGW( TAG, "could not open WAV %s", a_command->path );
+        return;
+    }
+
+    uint8_t header[ AUDIO_OUTPUT_WAV_HEADER_SIZE ];
+    if( sizeof( header ) != fread( header, 1U, sizeof( header ), file ) || !wav_supported( header ) )
+    {
+        ESP_LOGW( TAG, "unsupported WAV %s", a_command->path );
+        fclose( file );
+        return;
+    }
+
+    if( !enable_channel() )
+    {
+        fclose( file );
+        return;
+    }
+
+    playback_active = true;
+    const uint32_t generation = playback_generation;
+    uint32_t remaining = read_u32_le( &header[ 40 ] );
+    int16_t mono[ AUDIO_OUTPUT_CHUNK_FRAMES ];
+    int16_t stereo[ AUDIO_OUTPUT_CHUNK_FRAMES * 2U ];
+
+    while( remaining > 0U && generation == playback_generation )
+    {
+        size_t frames = remaining / sizeof( int16_t );
+        if( frames > AUDIO_OUTPUT_CHUNK_FRAMES )
+        {
+            frames = AUDIO_OUTPUT_CHUNK_FRAMES;
+        }
+
+        const size_t read = fread( mono, sizeof( int16_t ), frames, file );
+        if( 0U == read )
+        {
+            break;
+        }
+
+        for( size_t frame = 0U; frame < read; ++frame )
+        {
+            int32_t sample = (int32_t)mono[ frame ] * a_command->volume_percent /
+                             AUDIO_OUTPUT_MAX_VOLUME_PERCENT;
+            if( sample > INT16_MAX )
+            {
+                sample = INT16_MAX;
+            }
+            if( sample < INT16_MIN )
+            {
+                sample = INT16_MIN;
+            }
+            stereo[ frame * 2U ] = (int16_t)sample;
+            stereo[ frame * 2U + 1U ] = (int16_t)sample;
+        }
+
+        const size_t requested = read * 2U * sizeof( int16_t );
+        size_t written = 0U;
+        if( ESP_OK != i2s_channel_write( tx_channel, stereo, requested, &written, portMAX_DELAY ) ||
+            written != requested )
+        {
+            break;
+        }
+        remaining -= (uint32_t)( read * sizeof( int16_t ) );
+    }
+
+    fclose( file );
+    finish_channel();
+    playback_active = false;
+}
+
 static void output_worker( void *a_argument )
 {
     (void)a_argument;
@@ -204,6 +307,10 @@ static void output_worker( void *a_argument )
         if( AUDIO_OUTPUT_COMMAND_MORSE == command.type )
         {
             play_morse( &command );
+        }
+        else if( AUDIO_OUTPUT_COMMAND_WAV == command.type )
+        {
+            play_wav( &command );
         }
         else
         {
@@ -293,11 +400,11 @@ bool audio_output_play_tone( uint16_t a_frequency_hz,
         return false;
     }
 
-    const audio_output_command_t command = { .type = AUDIO_OUTPUT_COMMAND_TONE,
-                                             .frequency_hz = a_frequency_hz,
-                                             .duration_ms = a_duration_ms,
-                                             .character = '\0',
-                                             .volume_percent = a_volume_percent };
+    audio_output_command_t command = { .type = AUDIO_OUTPUT_COMMAND_TONE,
+                                       .frequency_hz = a_frequency_hz,
+                                       .duration_ms = a_duration_ms,
+                                       .character = '\0',
+                                       .volume_percent = a_volume_percent };
     return pdTRUE == xQueueSend( command_queue, &command, 0U );
 }
 
@@ -313,12 +420,44 @@ bool audio_output_play_morse( char a_character,
         return false;
     }
 
-    const audio_output_command_t command = { .type = AUDIO_OUTPUT_COMMAND_MORSE,
-                                             .frequency_hz = a_frequency_hz,
-                                             .duration_ms = a_unit_ms,
-                                             .character = a_character,
-                                             .volume_percent = a_volume_percent };
+    audio_output_command_t command = { .type = AUDIO_OUTPUT_COMMAND_MORSE,
+                                       .frequency_hz = a_frequency_hz,
+                                       .duration_ms = a_unit_ms,
+                                       .character = a_character,
+                                       .volume_percent = a_volume_percent };
     return pdTRUE == xQueueSend( command_queue, &command, 0U );
+}
+
+bool audio_output_play_wav( const char *a_path, uint8_t a_volume_percent )
+{
+    if( !initialized || NULL == a_path || '\0' == a_path[ 0 ] ||
+        strlen( a_path ) >= AUDIO_OUTPUT_WAV_PATH_MAX ||
+        a_volume_percent > AUDIO_OUTPUT_MAX_VOLUME_PERCENT )
+    {
+        return false;
+    }
+
+    audio_output_command_t command = { .type = AUDIO_OUTPUT_COMMAND_WAV,
+                                       .volume_percent = a_volume_percent };
+    snprintf( command.path, sizeof( command.path ), "%s", a_path );
+    playback_active = true;
+    if( pdTRUE != xQueueSend( command_queue, &command, 0U ) )
+    {
+        playback_active = false;
+        return false;
+    }
+    return true;
+}
+
+bool audio_output_playback_active( void )
+{
+    return playback_active;
+}
+
+void audio_output_stop_playback( void )
+{
+    ++playback_generation;
+    playback_active = false;
 }
 
 void audio_output_cancel_pending( void )
