@@ -31,7 +31,7 @@ Future RTC/GPS/NTP integrations are tracked separately below. In particular, det
 
 ## 3. Configurable asynchronous audio alerts and ESP-IDF 6.x migration
 
-**Status:** Done — PR #21, notification refinement PR #23; volume/registry follow-up in progress
+**Status:** Done — PR #21, notification refinement PR #23, volume/registry PR #24
 
 - Add real onboard-speaker output through a dedicated asynchronous audio-output service.
 - Keep RF observation callbacks nonblocking by enqueueing bounded audio commands.
@@ -83,7 +83,23 @@ Remaining hardware validation includes physical speaker channel, perceived loudn
 - Rename the CC1101 and nRF24 right-side category panel to **DETECTIONS**.
 - Preserve app-specific lifecycle behavior so inactive hardware is stopped and re-entered cleanly.
 
-## 6. Log format and automated parsing
+## 6. MAC provenance, expanded IEEE identity, and surveillance prefix metadata
+
+**Status:** In progress
+
+- Separate locally administered/private addresses from genuinely unresolved globally administered addresses in the WiFi/BT vendor summary.
+- Keep `RANDOM` and `UNKNOWN` as fixed rows below the ranked vendor list.
+- Expand IEEE vendor attribution beyond MA-L/OUI to MA-M, MA-S/OUI-36, and legacy IAB assignments.
+- Use longest-prefix matching: 36-bit, then 28-bit, then 24-bit.
+- Keep CID out of ordinary vendor attribution because CID is not a globally unique MAC-address allocation.
+- Keep IEEE ownership data authoritative and generated directly from the IEEE Registration Authority feeds.
+- Retain human-curated surveillance prefixes as separate source data, but expose them through the common prefix-identity lookup API instead of a classifier-owned duplicate OUI table.
+- Preserve multi-signal surveillance classification: prefix metadata remains one evidence source alongside BLE names, company IDs, services, Remote ID, and future protocol/payload evidence.
+- Permit curated field-verified locally administered prefixes to contribute surveillance evidence without treating them as IEEE vendor assignments.
+- Add deterministic generator tests and keep the scheduled registry-refresh workflow synchronized with all generated outputs.
+- Document registry sources, precedence, classifier boundaries, and maintenance touch points.
+
+## 7. Log format and automated parsing
 
 **Status:** Planned — near term
 
@@ -97,7 +113,7 @@ Remaining hardware validation includes physical speaker channel, perceived loudn
 - Consider a lightweight record/schema version so future format changes can be handled explicitly rather than silently breaking analysis tools.
 - Keep UTC ISO-8601 timestamps and other already-structured fields directly consumable by external scripts.
 
-## 7. Audio application expansion
+## 8. Audio application expansion
 
 **Status:** Planned
 
@@ -109,7 +125,7 @@ Remaining hardware validation includes physical speaker channel, perceived loudn
 - Validate the microphone/PDM/FFT path on hardware as part of the expansion.
 - After the recorder and Morse player are stable, consider tuner and DTMF-analysis features.
 
-## 8. External time-authority integrations
+## 9. External time-authority integrations
 
 **Status:** Planned
 
@@ -122,7 +138,7 @@ Remaining hardware validation includes physical speaker channel, perceived loudn
 - Preserve and display the specific authority source through the model established in PR #20.
 - Define explicit authority-transition rules so a newly available source never silently overwrites another valid clock.
 
-## 9. Passive nRF24 Enhanced ShockBurst packet discovery and validation
+## 10. Passive nRF24 Enhanced ShockBurst packet discovery and validation
 
 **Status:** Planned
 
@@ -132,7 +148,7 @@ Remaining hardware validation includes physical speaker channel, perceived loudn
 - Feed validated observations into the existing nRF24 packet-classifier infrastructure.
 - Preserve watchdog-safe scanning and existing application lifecycle/resource ownership.
 
-## 10. nRF24 classifier refinement and time-windowed radio counts
+## 11. nRF24 classifier refinement and time-windowed radio counts
 
 **Status:** Planned
 
@@ -141,7 +157,7 @@ Remaining hardware validation includes physical speaker channel, perceived loudn
 - Replace or supplement session-only category counts with useful time-windowed activity counts.
 - Apply the same time-window model to other radio views where it improves situational awareness.
 
-## 11. CC1101 burst timing and modulation analysis
+## 12. CC1101 burst timing and modulation analysis
 
 **Status:** Planned
 
@@ -149,7 +165,7 @@ Remaining hardware validation includes physical speaker channel, perceived loudn
 - Explore conservative modulation/behavior inference from receive-only measurements.
 - Keep classifications evidence-based and avoid presenting heuristic categories as decoded product identities.
 
-## 12. Drill-down views, classifier controls, and structured captures
+## 13. Drill-down views, classifier controls, and structured captures
 
 **Status:** Planned
 
@@ -158,7 +174,7 @@ Remaining hardware validation includes physical speaker channel, perceived loudn
 - Add structured SD exports/captures for analysis outside RFScout.
 - Keep high-rate capture paths asynchronous so storage latency does not block radio acquisition.
 
-## 13. Additional optional hardware and applications
+## 14. Additional optional hardware and applications
 
 **Status:** Longer term
 

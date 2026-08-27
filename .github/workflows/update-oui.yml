@@ -2,6 +2,14 @@ name: Refresh IEEE OUI database
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/update-oui.yml'
+      - 'tools/update_oui.py'
+      - 'tools/update_surveillance.py'
+      - 'data/surveillance_signatures.csv'
   schedule:
     - cron: '17 6 * * 1'
 
@@ -13,18 +21,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Generate current IEEE MA-L table
+      - name: Generate current IEEE prefix tables
         run: python3 tools/update_oui.py
       - name: Validate and generate curated surveillance signatures
         run: python3 tools/update_surveillance.py
       - name: Commit registry and signature changes
         run: |
-          if git diff --quiet -- main/oui_database.inc main/surveillance_signatures.inc data/surveillance_oui_validation.csv; then
+          if git diff --quiet -- main/oui_database.inc main/oui_database_extended.inc main/surveillance_signatures.inc data/surveillance_oui_validation.csv; then
             echo "OUI and surveillance databases already current"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add main/oui_database.inc main/surveillance_signatures.inc data/surveillance_oui_validation.csv
+          git add main/oui_database.inc main/oui_database_extended.inc main/surveillance_signatures.inc data/surveillance_oui_validation.csv
           git commit -m "Refresh IEEE OUI and surveillance validation"
           git push

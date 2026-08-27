@@ -12,16 +12,18 @@ Implemented capabilities include:
 
 - passive Wi-Fi and BLE observation;
 - rolling recent-device state;
-- IEEE OUI/vendor attribution for globally administered addresses;
-- explicit `UNKNOWN` handling for private/randomized or unresolved identities;
+- IEEE vendor attribution using longest-prefix matching across MA-L (24-bit), MA-M (28-bit), MA-S/OUI-36 (36-bit), and legacy IAB assignments;
+- explicit `RANDOM` handling for Wi-Fi locally administered and BLE random/private address types;
+- explicit `UNKNOWN` handling for globally administered/public addresses with no matching IEEE assignment;
 - ranked vendor counts across the full active observation set;
 - surveillance-oriented classification using narrow, explainable evidence;
+- curated surveillance-prefix metadata resolved through the same identity lookup layer as IEEE vendor data;
 - visual detection highlighting;
 - global Off/Tone/Morse notifications for new surveillance detections;
 - a `RESET DETECTIONS` action that clears the live device/OUI census and retained surveillance history;
 - automatic stop of Wi-Fi/BLE collectors when another application is selected.
 
-The WiFi / BT application is the only current view that treats IEEE MAC/OUI identity as a normal device identity source. Notification policy is device-wide and is configured in Device rather than in the WiFi/BT action menu.
+The WiFi / BT application is the only current view that treats IEEE MAC identity as a normal device identity source. IEEE attribution is separate from curated surveillance significance: the common prefix lookup can return a vendor, optional surveillance metadata, or both. Higher-layer BLE/protocol evidence remains part of the surveillance classifier. Notification policy is device-wide and is configured in Device rather than in the WiFi/BT action menu.
 
 Its notification items are Flock/ALPR, body camera, drone, camera, smart glasses, acoustic sensor, and other surveillance. Each item has exactly one stable notification descriptor and one configurable Morse character.
 
@@ -157,9 +159,12 @@ CC1101 and nRF24 use the same spectrum/right-panel divider and the same fixed-ro
 The WiFi / BT path supports targeted surveillance classifications. The design rule remains conservative:
 
 - do not label a generic device as surveillance merely because its manufacturer also sells surveillance equipment;
-- combine available OUI, advertised-name, manufacturer, service, and protocol evidence where possible;
+- treat curated prefix metadata as one evidence source rather than as the whole classifier;
+- combine available prefix, advertised-name, manufacturer, service, and protocol evidence where possible;
 - preserve confidence/evidence internally where classifications are generated;
 - retain noteworthy detections longer than the ordinary nearby-device window.
+
+Curated surveillance prefixes remain in `data/surveillance_signatures.csv`, but their generated table is consumed by the common prefix identity layer. This allows vendor attribution and surveillance significance to share one lookup operation while keeping the curated interpretation separate from authoritative IEEE ownership data. A field-verified locally administered prefix can therefore contribute surveillance evidence without being misrepresented as an IEEE OUI assignment.
 
 ## Notifications and status
 
@@ -201,9 +206,11 @@ The internal PDM microphone uses I2S0 receive. The onboard speaker uses the boar
 
 The shared Morse table is used by detection notifications and is intended to be reused by the planned Audio Morse browser/player rather than duplicating code tables.
 
-## OUI database
+## OUI / prefix identity database
 
-RFScout maintains a compiled IEEE MA-L/OUI table for Wi-Fi/BLE attribution. Generated data can be refreshed with `tools/update_oui.py` or the repository workflow.
+RFScout maintains compiled IEEE MA-L, MA-M, MA-S/OUI-36, and legacy IAB assignment tables for Wi-Fi/BLE vendor attribution. Longest-prefix matching prefers 36-bit assignments, then 28-bit, then 24-bit. CID is not used for vendor attribution because it is not a globally unique MAC-address allocation.
+
+`tools/update_oui.py` generates the IEEE tables, while `tools/update_surveillance.py` generates curated surveillance-prefix metadata consumed by the same runtime lookup layer. See [PREFIX_IDENTITY.md](PREFIX_IDENTITY.md) for registry sources, matching precedence, maintenance rules, and classifier boundaries.
 
 ## Not currently active applications
 
