@@ -1,0 +1,154 @@
+name: Recorder draft cleanup
+
+on:
+  push:
+    branches:
+      - codex/recorder-app
+    paths:
+      - .github/workflows/recorder-draft-finish.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: codex/recorder-app
+          fetch-depth: 0
+
+      - name: Install clang-format 18
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-format-18
+
+      - name: Canonicalize source formatting
+        run: python3 tools/check_format.py --fix
+
+      - name: Synchronize Recorder docs and telemetry
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"expected text not found in {path}: {old[:80]!r}")
+              p.write_text(text.replace(old, new))
+
+          replace(
+              "main/app_logging.c",
+              '#include "audio_spectrum.h"\n',
+              '#include "recorder.h"\n',
+          )
+          replace(
+              "main/app_logging.c",
+              '        "WIFI_BT", "CC1101", "NRF24", "AUDIO", "THERMAL", "DEVICE" };',
+              '        "WIFI_BT", "CC1101", "NRF24", "RECORDER", "THERMAL", "DEVICE" };',
+          )
+          replace(
+              "main/app_logging.c",
+              '''        case RFSCOUT_APP_AUDIO:\n            snprintf( detail,\n                      sizeof( detail ),\n                      "range=%s channel=%s hz=%lu-%lu sample_hz=%lu overruns=%lu",\n                      audio_spectrum_range_name( audio_spectrum_range() ),\n                      audio_spectrum_channel_name( audio_spectrum_channel() ),\n                      (unsigned long)audio_spectrum_low_hz(),\n                      (unsigned long)audio_spectrum_high_hz(),\n                      (unsigned long)audio_spectrum_effective_sample_rate(),\n                      (unsigned long)audio_spectrum_overruns() );\n            break;''',
+              '''        case RFSCOUT_APP_AUDIO:\n            snprintf( detail,\n                      sizeof( detail ),\n                      "state=%u files=%u bytes=%lu",\n                      (unsigned)recorder_state(),\n                      (unsigned)recorder_file_count(),\n                      (unsigned long)recorder_recorded_bytes() );\n            break;''',
+          )
+
+          roadmap_old = '''## 8. Audio application expansion\n\n**Status:** Planned\n\n- Preserve the useful spectrum analyzer while expanding Audio into multiple tools.\n- Add microphone recording using the existing I2S0/PDM capture path rather than introducing a competing microphone reader.\n- Write standard PCM WAV recordings to SD through a buffered/asynchronous path suitable for continuous audio data.\n- Add an interactive International Morse browser/player using the shared Morse definitions and speaker service established by PR #21.\n- Make the Morse tool able to browse and play the standard character patterns while notification events remain one character each.\n- Validate the microphone/PDM/FFT path on hardware as part of the expansion.\n- After the recorder and Morse player are stable, consider tuner and DTMF-analysis features.\n'''
+          roadmap_new = '''## 8. Recorder application replacement\n\n**Status:** In progress — PR #27\n\n- Replace the former Audio spectrum analyzer rather than preserving the FFT/DSP path.\n- Reuse the existing I2S0/PDM microphone hardware for recording only.\n- Record standard 16 kHz, 16-bit mono PCM WAV files under `/sdcard/audio/`.\n- Treat SD availability as a first-class application state; recording and playback are unavailable without mounted storage.\n- Create `/sdcard/audio/` automatically when storage is available.\n- Enumerate only supported, correctly formatted PCM WAV files and expose duration/size metadata.\n- Play selected recordings asynchronously over the onboard I2S1 speaker.\n- Finalize WAV headers and stop active capture/playback when leaving Recorder.\n- Keep capture and playback off the UI loop and preserve app lifecycle/resource ownership.\n- Validate microphone capture, storage-loss behavior, speaker playback, and perceived volume on target hardware.\n\nA separate **CW** application is planned after Recorder. CW will own editable/persistent Morse strings and send complete strings through the shared Morse/speaker service.\n'''
+          replace("docs/ROADMAP.md", roadmap_old, roadmap_new)
+
+          replace(
+              "docs/ARCHITECTURE.md",
+              "WiFi / BT -> CC1101 -> nRF24 -> Audio -> Thermal (when enabled and present) -> Device",
+              "WiFi / BT -> CC1101 -> nRF24 -> Recorder -> Thermal (when enabled and present) -> Device",
+          )
+          replace(
+              "docs/ARCHITECTURE.md",
+              "- Leaving **Audio** stops the I2S/PDM acquisition path and audio FFT worker.",
+              "- Leaving **Recorder** stops active microphone capture or WAV playback and releases Recorder-owned resources.",
+          )
+          replace(
+              "docs/ARCHITECTURE.md",
+              "Application-specific analyzer configuration such as CC1101 frequency range/step, nRF24 channel/dwell settings, and Audio range/channel selection remains runtime state independently of the acquisition workers unless explicitly stored in Device configuration.",
+              "Application-specific analyzer configuration such as CC1101 frequency range/step and nRF24 channel/dwell settings remains runtime state independently of the acquisition workers unless explicitly stored in Device configuration.",
+          )
+
+          audio_path_start = "## Audio data path\n"
+          speaker_start = "## Speaker and Morse output\n"
+          p = Path("docs/ARCHITECTURE.md")
+          text = p.read_text()
+          start = text.index(audio_path_start)
+          end = text.index(speaker_start)
+          recorder_section = '''## Recorder data path\n\n```text\nPDM microphone -> ESP32-S3 I2S0/PDM RX -> DMA buffers -> Recorder worker\n                                                        |\n                                                        v\n                                               PCM WAV on /sdcard/audio/\n                                                        |\n                                                        v\n                                             validated recording list\n                                                        |\n                                                        v\n                                             I2S1 speaker playback\n```\n\n`recorder.c/.h` owns microphone capture, WAV creation/finalization, supported-file validation, and the in-memory recording list. Recorder uses 16 kHz, 16-bit mono PCM so captured files can be streamed directly through the existing I2S1 speaker service without a second resampling path.\n\nStorage is a required runtime dependency for Recorder rather than for RFScout as a whole. If the SD card is unavailable, Recorder remains navigable but exposes a `NO SD CARD` state and disables record/play actions. Leaving Recorder stops active capture or playback and finalizes an open WAV header before releasing resources.\n\nThe historical `audio_spectrum.c/.h` interface is temporarily retained as a compatibility adapter for the existing application-manager enum and navigation contract; it no longer performs FFT, windowing, decimation, or spectrum analysis.\n\n'''
+          p.write_text(text[:start] + recorder_section + text[end:])
+
+          replace(
+              "docs/ARCHITECTURE.md",
+              "`audio_spectrum.c/.h` owns ESP32-S3 I2S0 PDM receive for the internal microphone. Acquisition uses DMA and a dedicated FFT worker. The receive channel is released when Audio is inactive so the analyzer does not consume CPU and peripheral resources off-screen.",
+              "`recorder.c/.h` owns ESP32-S3 I2S0 PDM receive for the internal microphone while recording. Capture uses DMA and a dedicated Recorder worker, and the receive channel is released whenever Recorder is not actively recording.",
+          )
+          replace(
+              "docs/ARCHITECTURE.md",
+              "Implemented application-level capabilities are Wi-Fi/BLE awareness, device-wide configurable asynchronous detection notifications with persistent volume and per-category Morse mappings, CC1101 spectrum/detection awareness, nRF24 activity/fingerprinting, PDM microphone spectrum analysis, optional MLX90640 thermal imaging, SD logging, battery/status telemetry, Device configuration/time management, and encoder-driven navigation.\n\nAudio recording and the interactive International Morse player are planned next.",
+              "Implemented application-level capabilities are Wi-Fi/BLE awareness, device-wide configurable asynchronous detection notifications with persistent volume and per-category Morse mappings, CC1101 spectrum/detection awareness, nRF24 activity/fingerprinting, SD-backed PCM WAV recording/playback, optional MLX90640 thermal imaging, SD logging, battery/status telemetry, Device configuration/time management, and encoder-driven navigation.\n\nThe separate interactive CW/Morse sender is planned next.",
+          )
+
+          caps = Path("docs/CAPABILITIES.md")
+          text = caps.read_text()
+          start = text.index("### Audio\n")
+          end = text.index("### Thermal\n")
+          recorder_caps = '''### Recorder\n\nThe Recorder application uses the T-Embed CC1101 Plus internal PDM microphone through ESP-IDF's I2S0 PDM receive path and requires mounted SD storage for capture/playback.\n\nImplemented behavior includes:\n\n- 16 kHz, 16-bit mono PCM WAV recording under `/sdcard/audio/`;\n- asynchronous microphone capture outside the UI loop;\n- WAV-header finalization on stop and application exit;\n- automatic `/sdcard/audio/` creation when storage is available;\n- explicit `NO SD CARD` behavior when storage is unavailable;\n- enumeration of only supported, correctly formatted PCM WAV recordings;\n- duration and size metadata for validated recordings;\n- asynchronous playback over the onboard I2S1 speaker;\n- use of the configured global speaker volume for WAV playback;\n- clean stop of capture/playback when leaving the application.\n\nThe former FFT/windowing/decimation/spectrum-analyzer implementation is removed. The historical internal Audio application identifier/interface remains only as a compatibility boundary until a later enum/naming cleanup.\n\n'''
+          caps.write_text(text[:start] + recorder_caps + text[end:])
+          replace(
+              "docs/CAPABILITIES.md",
+              "| Audio | Back; Range; Channel; Peak hold | None currently |",
+              "| Recorder | Back; Record; File; Play | None currently |",
+          )
+          replace(
+              "docs/CAPABILITIES.md",
+              "4. Audio",
+              "4. Recorder",
+          )
+          replace(
+              "docs/CAPABILITIES.md",
+              "application-owned ENTER/EXIT and rate-limited telemetry records for WiFi/BT, CC1101, nRF24, Audio, Thermal, and Device;",
+              "application-owned ENTER/EXIT and rate-limited telemetry records for WiFi/BT, CC1101, nRF24, Recorder, Thermal, and Device;",
+          )
+          replace(
+              "docs/CAPABILITIES.md",
+              "The internal PDM microphone uses I2S0 receive. The onboard speaker uses the board's dedicated BCLK/LRCLK/data pins through I2S1 standard transmit. The speaker path is managed by `audio_output.c/.h` and is independent of the Audio analyzer's microphone worker.\n\nThe shared Morse table is used by detection notifications and is intended to be reused by the planned Audio Morse browser/player rather than duplicating code tables.",
+              "The internal PDM microphone uses I2S0 receive while Recorder is actively capturing. The onboard speaker uses the board's dedicated BCLK/LRCLK/data pins through I2S1 standard transmit. Recorder playback is streamed through the same speaker service used by alerts, while capture and playback retain separate I2S peripheral ownership.\n\nThe shared Morse table is used by detection notifications and is intended to be reused by the planned separate CW application rather than duplicating code tables.",
+          )
+
+          replace(
+              "docs/SD_CARD.md",
+              "Failure to mount an SD card is nonfatal. RFScout continues operating without logging, and the SD status icon is shown only after storage has mounted successfully.",
+              "Failure to mount an SD card is nonfatal. RFScout continues operating without logging; Recorder remains navigable but cannot record or play files, and the SD status icon is shown only after storage has mounted successfully.",
+          )
+          replace(
+              "docs/SD_CARD.md",
+              "- `AUDIO`: selected range/channel, effective frequency/sample range, and overrun count.",
+              "- `RECORDER`: recorder state, validated file count, and active recording byte count.",
+          )
+          p = Path("docs/SD_CARD.md")
+          text = p.read_text()
+          marker = "## Unified logging\n"
+          insert = '''## Recorder storage\n\nRecorder stores supported 16 kHz, 16-bit mono PCM WAV files in `/sdcard/audio/`. The directory is created automatically when mounted storage is available. Only WAV files that validate against the supported PCM format are shown in Recorder's playback list; unrelated or malformed files are ignored.\n\n'''
+          p.write_text(text.replace(marker, insert + marker))
+
+      - name: Re-run canonical formatting after telemetry edit
+        run: python3 tools/check_format.py --fix
+
+      - name: Commit cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add main docs
+          if git diff --cached --quiet; then
+            echo "No cleanup changes to commit"
+            exit 0
+          fi
+          git commit -m "Finish Recorder draft formatting and docs"
+          git push origin HEAD:codex/recorder-app
