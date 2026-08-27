@@ -24,6 +24,29 @@ The configuration file is versioned JSON. A typical file is:
   "logging": {
     "enabled": true
   },
+  "notifications": {
+    "mode": "MORSE",
+    "characters": {
+      "flock": "F",
+      "body_camera": "B",
+      "drone": "D",
+      "camera": "C",
+      "smart_glasses": "G",
+      "acoustic_sensor": "A",
+      "surveillance_other": "S",
+      "cc1101_narrow_ism": "N",
+      "cc1101_remote_sensor": "R",
+      "cc1101_carrier": "K",
+      "cc1101_bursty": "U",
+      "cc1101_wideband": "W",
+      "nrf24_esb": "E",
+      "nrf24_input": "I",
+      "nrf24_sensor": "T",
+      "nrf24_wifi_like": "V",
+      "nrf24_ble_like": "L",
+      "nrf24_logitech_like": "X"
+    }
+  },
   "timezone": {
     "selected": "America/Chicago",
     "options": [
@@ -50,7 +73,11 @@ The `device` application is always enabled even if an edited configuration attem
 
 ## Defaults and validation
 
-RFScout starts from compiled defaults and then applies valid fields from the SD configuration. Missing or invalid ordinary settings keep their compiled defaults. Invalid timezone entries are ignored. If the selected timezone does not name a usable configured option, RFScout falls back to UTC when available and otherwise to the first valid configured timezone.
+RFScout starts from compiled defaults and then applies valid fields from the SD configuration. Missing or invalid ordinary settings retain their compiled defaults. Invalid timezone entries are ignored. If the selected timezone does not name a usable configured option, RFScout falls back to UTC when available and otherwise to the first valid configured timezone.
+
+The compiled audible-notification mode is `OFF`. That fallback is used when no usable saved notification mode is available. A valid saved `OFF`, `TONE`, or `MORSE` value is restored on boot and overrides the compiled fallback.
+
+Each notification category also has a compiled one-character Morse default. Valid one-character values in `notifications.characters` replace those defaults individually. Unsupported or multi-character values are ignored without invalidating unrelated configuration. The category keys are stable configuration identifiers; the user-facing labels in Device may be more descriptive.
 
 Schema version 1 is currently supported. A document with a missing or unsupported schema version is treated as incompatible rather than being partially interpreted as the current schema.
 
@@ -62,7 +89,9 @@ Configuration replacement is crash-recoverable. RFScout writes and synchronizes 
 
 ## Device application
 
-The Device application owns the encoder while it is active, so analyzers and radios remain stopped while global configuration is edited. Its current settings include:
+Device has a pass-through landing screen. Merely rotating onto Device does not give settings ownership of the encoder: another encoder tick continues normal application navigation. Press the center button to enter Device settings.
+
+The settings menu always opens with **Back** selected first. Pressing center again immediately returns to the Device landing screen without changing configuration. Current settings include:
 
 - LCD brightness;
 - 12-hour or 24-hour clock presentation;
@@ -70,14 +99,31 @@ The Device application owns the encoder while it is active, so analyzers and rad
 - manual date and time;
 - enable/disable state for WiFi/BT, CC1101, nRF24, Audio, and Thermal;
 - SD logging enablement;
-- explicit configuration save;
-- a Back action that resumes normal application navigation.
+- global audible-notification mode (`OFF`, `TONE`, or `MORSE`);
+- an individually editable Morse character for every currently defined detection category;
+- explicit configuration save.
+
+Notification categories cover WiFi/BLE surveillance classifications plus CC1101 and nRF24 detection classifications. The character setting affects Morse mode only; Tone mode uses the same short tone for every category.
 
 Application enablement takes effect when navigation resumes. Disabled applications are skipped. Thermal additionally requires an MLX90640 to be detected.
 
-Without an SD card, Device remains usable and settings can affect the running session, but persistent saves are unavailable. An orderly hard power-off also writes the current in-memory preferences when storage is available, so the explicit Save action is mainly useful when persistence is wanted before shutdown or deep sleep.
+Without an SD card, Device remains usable and settings can affect the running session, but persistent saves are unavailable. With storage available, **Save config** writes the active notification mode, every category mapping, and the other Device preferences to `/sdcard/rfscout.json`. An orderly hard power-off also writes the current in-memory preferences, so the explicit Save action is useful when persistence is wanted before shutdown or deep sleep.
 
 Manual calendar input is validated after local-time conversion. Invalid dates and local times that cannot be represented in the selected timezone, such as a time inside a daylight-saving transition gap, are rejected rather than silently normalized.
+
+## Notification behavior
+
+The notification policy is global rather than owned by the WiFi/BT application. Detection-producing applications request a notification category and the shared alert service applies the configured mode and Morse mapping.
+
+Current categories include:
+
+- surveillance: Flock/ALPR, body camera, drone, camera, smart glasses, acoustic sensor, and other surveillance;
+- CC1101: narrowband, remote/sensor, carrier, bursty RF, and wide RF;
+- nRF24: ESB device, input, sensor, Wi-Fi-like activity, BLE/hopping-RF-like activity, and Logitech-like activity.
+
+CC1101 and nRF24 notifications are generated when their accumulated detection-category count advances. Resetting those counts resets the notification baseline as well. WiFi/BLE surveillance notifications are generated for new observations classified as surveillance.
+
+Audio and Thermal currently expose analyzer/sensor views rather than discrete detection classifiers, so they have no category event to notify yet. The global notification interface is application-independent and can be used by future Audio or Thermal detectors without moving policy back into an individual app.
 
 ## Wall clock and monotonic time
 
