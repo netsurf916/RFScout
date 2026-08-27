@@ -41,10 +41,9 @@ static bool request_locked( char a_character )
             {
                 return false;
             }
-            return audio_output_play_morse(
-                (char)toupper( (unsigned char)a_character ),
-                ALERT_TONE_FREQUENCY_HZ,
-                ALERT_MORSE_UNIT_MS );
+            return audio_output_play_morse( (char)toupper( (unsigned char)a_character ),
+                                            ALERT_TONE_FREQUENCY_HZ,
+                                            ALERT_MORSE_UNIT_MS );
 
         default:
             return false;
