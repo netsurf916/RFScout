@@ -1,0 +1,190 @@
+name: Prepare firmware release
+
+run-name: Prepare ${{ inputs.version }} from ${{ inputs.source_ref }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semantic version beginning with v, for example v0.1.0
+        required: true
+        type: string
+      source_ref:
+        description: Commit, tag, or branch to release; it must belong to main
+        required: true
+        default: main
+        type: string
+      prerelease:
+        description: Mark the draft as a prerelease
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rfscout-release
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release request
+    runs-on: ubuntu-24.04
+    outputs:
+      commit: ${{ steps.source.outputs.commit }}
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          python3 - "$VERSION" <<'PY'
+          import sys
+
+          from tools.package_release import PackagingError, validate_release_version
+
+          try:
+              validate_release_version(sys.argv[1])
+          except PackagingError as error:
+              print(error, file=sys.stderr)
+              raise SystemExit(1) from error
+          PY
+          if git show-ref --verify --quiet "refs/tags/$VERSION"; then
+            echo "Tag $VERSION already exists" >&2
+            exit 1
+          fi
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "Release $VERSION already exists" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve and validate source
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          encoded_ref=$(jq -rn --arg value "$SOURCE_REF" '$value | @uri')
+          commit=$(gh api "repos/$GITHUB_REPOSITORY/commits/$encoded_ref" --jq .sha)
+          git fetch origin main --tags --force
+          git cat-file -e "$commit^{commit}" 2>/dev/null || git fetch origin "$commit"
+          if ! git merge-base --is-ancestor "$commit" origin/main; then
+            echo "$SOURCE_REF resolves to $commit, which is not part of main" >&2
+            exit 1
+          fi
+
+          latest_tag=$(gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName // empty')
+          if [[ -n "$latest_tag" ]]; then
+            git fetch origin "refs/tags/$latest_tag:refs/tags/$latest_tag" --force
+            if [[ "$(git rev-list --count "$latest_tag..$commit")" -eq 0 ]]; then
+              echo "$commit contains no commits after the latest published release $latest_tag" >&2
+              exit 1
+            fi
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+  formatting:
+    name: Formatting and packaging tests
+    needs: validate
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+
+      - name: Install clang-format 18
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-format-18
+
+      - name: Check complete C formatting
+        run: python3 tools/check_format.py --all
+
+      - name: Test release packager
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
+
+  build:
+    name: Build release bundle
+    needs: validate
+    runs-on: ubuntu-latest
+    container: espressif/idf:release-v6.1
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+          fetch-depth: 0
+
+      - name: Build and package ESP32-S3 firmware
+        shell: bash
+        env:
+          COMMIT: ${{ needs.validate.outputs.commit }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          . "$IDF_PATH/export.sh"
+          idf_version=$(idf.py --version)
+          idf.py -DRFSCOUT_FORMAT_CHECK=OFF set-target esp32s3
+          idf.py -DRFSCOUT_FORMAT_CHECK=OFF build
+          idf.py -DRFSCOUT_FORMAT_CHECK=OFF merge-bin -o rfscout-full.bin -f raw
+          python3 tools/package_release.py \
+            --build-dir build \
+            --merged-image build/rfscout-full.bin \
+            --output-dir dist \
+            --version "$VERSION" \
+            --commit "$COMMIT" \
+            --idf-version "$idf_version"
+
+      - name: Upload verified release bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: rfscout-${{ needs.validate.outputs.version }}
+          path: dist
+          if-no-files-found: error
+          retention-days: 30
+
+  draft:
+    name: Create draft GitHub Release
+    needs:
+      - validate
+      - formatting
+      - build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download verified release bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: rfscout-${{ needs.validate.outputs.version }}
+          path: dist
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ needs.validate.outputs.commit }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          prerelease=()
+          if [[ "$PRERELEASE" == "true" ]]; then
+            prerelease+=(--prerelease)
+          fi
+          gh release create "$VERSION" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$COMMIT" \
+            --title "RFScout $VERSION" \
+            --draft \
+            --fail-on-no-commits \
+            --generate-notes \
+            "${prerelease[@]}"

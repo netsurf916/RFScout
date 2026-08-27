@@ -643,7 +643,7 @@ CONFIG_APP_BUILD_USE_FLASH_SECTIONS=y
 # end of Minimize binary changes between builds
 
 # default:
-# CONFIG_APP_REPRODUCIBLE_BUILD is not set
+CONFIG_APP_REPRODUCIBLE_BUILD=y
 # default:
 # CONFIG_APP_NO_BLOBS is not set
 # end of Build type
@@ -661,7 +661,7 @@ CONFIG_APP_BUILD_USE_FLASH_SECTIONS=y
 # Bootloader manager
 #
 # default:
-CONFIG_BOOTLOADER_COMPILE_TIME_DATE=y
+# CONFIG_BOOTLOADER_COMPILE_TIME_DATE is not set
 # default:
 CONFIG_BOOTLOADER_PROJECT_VER=1
 # end of Bootloader manager
@@ -791,7 +791,7 @@ CONFIG_SECURE_ROM_DL_MODE_ENABLED=y
 # Application manager
 #
 # default:
-CONFIG_APP_COMPILE_TIME_DATE=y
+# CONFIG_APP_COMPILE_TIME_DATE is not set
 # default:
 # CONFIG_APP_EXCLUDE_PROJECT_VER_VAR is not set
 # default:
