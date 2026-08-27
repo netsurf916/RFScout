@@ -69,7 +69,7 @@ static void on_observation( rf_device_t *a_observation )
         return;
     }
 
-    if( ( RF_SOURCE_BLE != a_observation->last_source ) || ( 0U == a_observation->address_type ) )
+    if( !rf_device_address_is_randomized( a_observation ) )
     {
         const char *vendor = oui_database_lookup( a_observation->address );
         if( NULL != vendor )

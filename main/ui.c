@@ -21,14 +21,15 @@
 #include <stdio.h>
 #include <string.h>
 
-#define UI_MAX_KNOWN_BRANDS 9
+#define UI_MAX_KNOWN_BRANDS 8
 #define UI_BRAND_ATTENTION_THRESHOLD 5U
 #define UI_MAX_ATTENTION_ROWS 3U
 #define UI_REFRESH_INTERVAL_US 100000LL
 #define UI_LIST_START_Y 43
 #define UI_LIST_ROW_HEIGHT 12
-#define UI_UNKNOWN_DIVIDER_Y 151
-#define UI_UNKNOWN_ROW_Y 158
+#define UI_STATIC_DIVIDER_Y 139
+#define UI_UNKNOWN_ROW_Y 146
+#define UI_RANDOM_ROW_Y 158
 #define UI_COLUMN_DIVIDER_X 198
 #define UI_SURVEILLANCE_X 205
 #define UI_SURVEILLANCE_LABEL_WIDTH 14
@@ -105,12 +106,16 @@ static void add_brand( const char *a_name )
     }
 }
 
-static void draw_unknown_row( size_t a_unknown_count )
+static void draw_static_rows( size_t a_unknown_count, size_t a_random_count )
 {
-    display_fill_rect( 5, UI_UNKNOWN_DIVIDER_Y, UI_COLUMN_DIVIDER_X - 10, 1, COLOR_GRAY );
+    display_fill_rect( 5, UI_STATIC_DIVIDER_Y, UI_COLUMN_DIVIDER_X - 10, 1, COLOR_GRAY );
+
     char line[ 64 ];
     snprintf( line, sizeof( line ), "%-27.27s %3u", "UNKNOWN", (unsigned)a_unknown_count );
     display_draw_text( 6, UI_UNKNOWN_ROW_Y, line, COLOR_CYAN, 1 );
+
+    snprintf( line, sizeof( line ), "%-27.27s %3u", "RANDOM", (unsigned)a_random_count );
+    display_draw_text( 6, UI_RANDOM_ROW_Y, line, COLOR_CYAN, 1 );
 }
 
 static void draw_surveillance_rows( const uint16_t *a_signature_counts )
@@ -150,6 +155,7 @@ static void render_summary( void )
     size_t wifi_count = 0;
     size_t ble_count = 0;
     size_t unknown_count = 0;
+    size_t random_count = 0;
 
     for( size_t i = 0; i < device_count; ++i )
     {
@@ -157,7 +163,10 @@ static void render_summary( void )
             ++wifi_count;
         if( 0U != ( snapshot[ i ].source_mask & RF_SOURCE_BIT( RF_SOURCE_BLE ) ) )
             ++ble_count;
-        if( '\0' == snapshot[ i ].vendor[ 0 ] )
+
+        if( rf_device_address_is_randomized( &snapshot[ i ] ) )
+            ++random_count;
+        else if( '\0' == snapshot[ i ].vendor[ 0 ] )
             ++unknown_count;
         else
             add_brand( snapshot[ i ].vendor );
@@ -201,7 +210,7 @@ static void render_summary( void )
         y += UI_LIST_ROW_HEIGHT;
     }
 
-    draw_unknown_row( unknown_count );
+    draw_static_rows( unknown_count, random_count );
     draw_surveillance_rows( signature_counts );
 
     if( ESP_OK != display_present() )

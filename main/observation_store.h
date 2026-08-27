@@ -100,6 +100,27 @@ typedef struct
     bool has_remote_id;
 } rf_device_t;
 
+/**
+ * @brief Return whether an observation uses a randomized/private link-layer address.
+ * @details Wi-Fi uses the IEEE locally-administered bit. NimBLE address types use bit 0 to
+ *          distinguish random/random-identity addresses from public/public-identity addresses.
+ */
+static inline bool rf_device_address_is_randomized( const rf_device_t *a_device )
+{
+    if( NULL == a_device )
+    {
+        return false;
+    }
+
+    const bool wifi_randomized =
+        ( 0U != ( a_device->source_mask & RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) ) &&
+        ( 0U != ( a_device->address[ 0 ] & 0x02U ) );
+    const bool ble_randomized =
+        ( 0U != ( a_device->source_mask & RF_SOURCE_BIT( RF_SOURCE_BLE ) ) ) &&
+        ( 0U != ( a_device->address_type & 0x01U ) );
+    return wifi_randomized || ble_randomized;
+}
+
 typedef enum
 {
     OBSERVATION_STORE_EVENT_ADDED = 0,
