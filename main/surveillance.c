@@ -1,31 +1,23 @@
 /**
     surveillance.c : RFScout surveillance classification
-    Description: Correlates curated OUIs, BLE names, manufacturer IDs, services, and Remote ID.
+    Description: Correlates curated prefix metadata, BLE names, manufacturer IDs, services, and Remote ID.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
 
 #include "surveillance.h"
 
+#include "oui_database.h"
+
 #include <ctype.h>
 #include <string.h>
 
-#define SCORE_OUI_GENERIC_CAMERA 60U
-#define SCORE_OUI_HIGH 75U
-#define SCORE_OUI_META 35U
 #define SCORE_NAME 45U
 #define SCORE_COMPANY 80U
 #define SCORE_RAVEN 70U
 #define SCORE_REMOTE_ID 100U
 #define SCORE_ALERT_THRESHOLD 60U
 #define FLOCK_COMPANY_ID 0x09C8U
-
-typedef struct
-{
-    uint32_t prefix;
-    surveillance_class_t classification;
-    surveillance_signature_id_t signature;
-} surveillance_oui_signature_t;
 
 typedef struct
 {
@@ -41,8 +33,6 @@ typedef struct
     uint8_t score;
     uint8_t evidence;
 } candidate_t;
-
-#include "surveillance_signatures.inc"
 
 static const name_signature_t name_signatures[] = {
     { "AXON", SURVEILLANCE_BODY_CAMERA, SURVEILLANCE_SIGNATURE_AXON, SCORE_NAME },
@@ -84,13 +74,6 @@ static bool contains_ci( const char *a_value, const char *a_fragment )
     return false;
 }
 
-/** @brief Convert the first three address octets into a comparable prefix. */
-static uint32_t address_prefix( const uint8_t *a_address )
-{
-    return ( (uint32_t)a_address[ 0 ] << 16U ) | ( (uint32_t)a_address[ 1 ] << 8U ) |
-           (uint32_t)a_address[ 2 ];
-}
-
 /** @brief Return true when a normalized BLE observation advertises a service. */
 static bool has_service( const rf_device_t *a_observation, uint16_t a_uuid )
 {
@@ -103,30 +86,6 @@ static bool has_service( const rf_device_t *a_observation, uint16_t a_uuid )
     }
 
     return false;
-}
-
-/** @brief Return the standalone confidence assigned to a curated OUI. */
-static uint8_t oui_score( surveillance_signature_id_t a_signature )
-{
-    switch( a_signature )
-    {
-        case SURVEILLANCE_SIGNATURE_FLOCK:
-        case SURVEILLANCE_SIGNATURE_AXON:
-        case SURVEILLANCE_SIGNATURE_RING:
-        case SURVEILLANCE_SIGNATURE_VERKADA:
-            return SCORE_OUI_HIGH;
-
-        case SURVEILLANCE_SIGNATURE_AXIS:
-        case SURVEILLANCE_SIGNATURE_HIKVISION:
-        case SURVEILLANCE_SIGNATURE_DAHUA:
-            return SCORE_OUI_GENERIC_CAMERA;
-
-        case SURVEILLANCE_SIGNATURE_META:
-            return SCORE_OUI_META;
-
-        default:
-            return 0U;
-    }
 }
 
 /**
@@ -193,21 +152,17 @@ surveillance_match_t surveillance_match( const rf_device_t *a_observation )
         return empty;
     }
 
-    /* Curated prefixes intentionally include one field-verified locally
-       administered Flock prefix (82:6B:F2), so do not reject LAA addresses
-       here. Randomized addresses simply fail to match the curated table. */
-    const uint32_t prefix = address_prefix( a_observation->address );
-    for( size_t i = 0; i < SURVEILLANCE_OUI_SIGNATURE_COUNT; ++i )
+    /* Prefix-derived surveillance metadata is owned by oui_database. That lookup intentionally
+       evaluates curated prefixes even for locally administered addresses because the curated
+       dataset contains field-verified LAA evidence that is not an IEEE vendor assignment. */
+    oui_database_match_t identity;
+    if( oui_database_lookup_info( a_observation->address, &identity ) &&
+        ( SURVEILLANCE_SIGNATURE_NONE != identity.surveillance_signature ) )
     {
-        if( prefix != surveillance_oui_signatures[ i ].prefix )
-        {
-            continue;
-        }
-
         add_evidence( candidates,
-                      surveillance_oui_signatures[ i ].classification,
-                      surveillance_oui_signatures[ i ].signature,
-                      oui_score( surveillance_oui_signatures[ i ].signature ),
+                      identity.surveillance_classification,
+                      identity.surveillance_signature,
+                      identity.surveillance_score,
                       SURVEILLANCE_EVIDENCE_OUI );
     }
 
