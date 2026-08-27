@@ -33,8 +33,8 @@
 static const char *TAG = "rfscout";
 
 /** @brief Map a surveillance classification to the global notification category. */
-static rfscout_notification_type_t notification_for_surveillance(
-    surveillance_class_t a_classification )
+static rfscout_notification_type_t
+notification_for_surveillance( surveillance_class_t a_classification )
 {
     switch( a_classification )
     {
