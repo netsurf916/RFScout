@@ -16,14 +16,17 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 
 #define RECORDER_DMA_BUFFER_COUNT 8U
 #define RECORDER_DMA_BUFFER_LENGTH 256U
@@ -33,10 +36,13 @@
 #define RECORDER_WAV_HEADER_SIZE 44U
 #define RECORDER_CHANNELS 1U
 #define RECORDER_BITS_PER_SAMPLE 16U
+#define RECORDER_STOP_TIMEOUT_MS 3000U
+#define RECORDER_UNIQUE_SUFFIX_LIMIT 100U
 
 static const char *TAG = "recorder";
 static i2s_chan_handle_t rx_channel;
 static TaskHandle_t record_task;
+static SemaphoreHandle_t record_done;
 static volatile bool record_running;
 static FILE *record_file;
 static rfscout_recorder_state_t state = RFSCOUT_RECORDER_NO_STORAGE;
@@ -213,6 +219,57 @@ static void make_recording_name( char *a_name, size_t a_capacity )
     snprintf( a_name, a_capacity, "rec-%010llu.wav", (unsigned long long)seconds );
 }
 
+static FILE *open_unique_recording( char *a_path, size_t a_path_capacity )
+{
+    char base_name[ RFSCOUT_RECORDER_NAME_MAX ];
+    make_recording_name( base_name, sizeof( base_name ) );
+
+    const size_t base_length = strlen( base_name );
+    const size_t stem_length = ( base_length > 4U ) ? base_length - 4U : base_length;
+    for( unsigned suffix = 0U; suffix < RECORDER_UNIQUE_SUFFIX_LIMIT; ++suffix )
+    {
+        if( 0U == suffix )
+        {
+            snprintf( active_name, sizeof( active_name ), "%s", base_name );
+        }
+        else
+        {
+            snprintf( active_name,
+                      sizeof( active_name ),
+                      "%.*s-%02u.wav",
+                      (int)stem_length,
+                      base_name,
+                      suffix );
+        }
+
+        const int path_length =
+            snprintf( a_path, a_path_capacity, "%s/%s", RFSCOUT_RECORDER_DIRECTORY, active_name );
+        if( ( path_length < 0 ) || ( (size_t)path_length >= a_path_capacity ) )
+        {
+            return NULL;
+        }
+
+        const int descriptor = open( a_path, O_CREAT | O_EXCL | O_RDWR, 0664 );
+        if( descriptor >= 0 )
+        {
+            FILE *file = fdopen( descriptor, "wb+" );
+            if( NULL == file )
+            {
+                close( descriptor );
+                (void)remove( a_path );
+            }
+            return file;
+        }
+        if( EEXIST != errno )
+        {
+            return NULL;
+        }
+    }
+
+    errno = EEXIST;
+    return NULL;
+}
+
 static void finalize_recording( void )
 {
     if( NULL == record_file )
@@ -237,6 +294,7 @@ static void record_worker( void *a_argument )
     (void)a_argument;
     int16_t dma_samples[ RECORDER_DMA_READ_SAMPLES ];
     int16_t mono[ RECORDER_DMA_READ_SAMPLES / 2U ];
+    bool failed = false;
 
     while( record_running )
     {
@@ -252,7 +310,7 @@ static void record_worker( void *a_argument )
             if( record_running )
             {
                 ESP_LOGW( TAG, "microphone read failed: %s", esp_err_to_name( result ) );
-                state = RFSCOUT_RECORDER_ERROR;
+                failed = true;
             }
             break;
         }
@@ -268,19 +326,55 @@ static void record_worker( void *a_argument )
             ( mono_count != fwrite( mono, sizeof( int16_t ), mono_count, record_file ) ) )
         {
             ESP_LOGW( TAG, "recording write failed" );
-            state = RFSCOUT_RECORDER_ERROR;
+            failed = true;
             break;
         }
         data_bytes += (uint32_t)( mono_count * sizeof( int16_t ) );
     }
 
     record_running = false;
+    release_channel();
+    finalize_recording();
+    if( failed )
+    {
+        state = RFSCOUT_RECORDER_ERROR;
+    }
     record_task = NULL;
+    if( NULL != record_done )
+    {
+        (void)xSemaphoreGive( record_done );
+    }
     vTaskDelete( NULL );
+}
+
+static bool wait_for_record_worker( uint32_t a_timeout_ms )
+{
+    record_running = false;
+    if( NULL == record_task )
+    {
+        return true;
+    }
+    if( NULL == record_done ||
+        pdTRUE != xSemaphoreTake( record_done, pdMS_TO_TICKS( a_timeout_ms ) ) )
+    {
+        ESP_LOGE( TAG, "recording worker did not stop within %u ms", (unsigned)a_timeout_ms );
+        state = RFSCOUT_RECORDER_ERROR;
+        return false;
+    }
+    return true;
 }
 
 esp_err_t recorder_init( void )
 {
+    if( NULL == record_done )
+    {
+        record_done = xSemaphoreCreateBinary();
+        if( NULL == record_done )
+        {
+            state = RFSCOUT_RECORDER_ERROR;
+            return ESP_ERR_NO_MEM;
+        }
+    }
     return recorder_refresh();
 }
 
@@ -313,8 +407,7 @@ esp_err_t recorder_refresh( void )
     }
 
     struct dirent *entry;
-    while( ( NULL != ( entry = readdir( directory ) ) ) &&
-           ( recording_count < RFSCOUT_RECORDER_MAX_FILES ) )
+    while( NULL != ( entry = readdir( directory ) ) )
     {
         const size_t length = strlen( entry->d_name );
         rfscout_recording_t candidate = { 0 };
@@ -335,7 +428,24 @@ esp_err_t recorder_refresh( void )
             continue;
         }
 
-        recordings[ recording_count++ ] = candidate;
+        if( recording_count < RFSCOUT_RECORDER_MAX_FILES )
+        {
+            recordings[ recording_count++ ] = candidate;
+            continue;
+        }
+
+        size_t oldest = 0U;
+        for( size_t index = 1U; index < recording_count; ++index )
+        {
+            if( strcmp( recordings[ index ].name, recordings[ oldest ].name ) < 0 )
+            {
+                oldest = index;
+            }
+        }
+        if( strcmp( candidate.name, recordings[ oldest ].name ) > 0 )
+        {
+            recordings[ oldest ] = candidate;
+        }
     }
     closedir( directory );
 
@@ -363,10 +473,15 @@ esp_err_t recorder_start_recording( void )
         return result;
     }
 
-    make_recording_name( active_name, sizeof( active_name ) );
+    if( NULL == record_done )
+    {
+        state = RFSCOUT_RECORDER_ERROR;
+        return ESP_ERR_INVALID_STATE;
+    }
+    (void)xSemaphoreTake( record_done, 0U );
+
     char path[ 160 ];
-    snprintf( path, sizeof( path ), "%s/%s", RFSCOUT_RECORDER_DIRECTORY, active_name );
-    record_file = fopen( path, "wb+" );
+    record_file = open_unique_recording( path, sizeof( path ) );
     if( NULL == record_file )
     {
         state = RFSCOUT_RECORDER_ERROR;
@@ -418,24 +533,58 @@ esp_err_t recorder_start_recording( void )
 
 void recorder_stop_recording( void )
 {
-    if( RFSCOUT_RECORDER_RECORDING != state && !record_running )
+    if( RFSCOUT_RECORDER_RECORDING != state && !record_running && NULL == record_task )
     {
         return;
     }
 
-    record_running = false;
-    for( unsigned attempt = 0U; ( NULL != record_task ) && ( attempt < 50U ); ++attempt )
+    if( !wait_for_record_worker( RECORDER_STOP_TIMEOUT_MS ) )
     {
-        vTaskDelay( pdMS_TO_TICKS( 10 ) );
+        return;
     }
-    release_channel();
-    finalize_recording();
+
     active_name[ 0 ] = '\0';
+    if( RFSCOUT_RECORDER_ERROR == state )
+    {
+        return;
+    }
+
     state = storage_is_available() ? RFSCOUT_RECORDER_IDLE : RFSCOUT_RECORDER_NO_STORAGE;
     if( storage_is_available() )
     {
         (void)recorder_refresh();
     }
+}
+
+bool recorder_prepare_storage_shutdown( uint32_t a_timeout_ms )
+{
+    if( RFSCOUT_RECORDER_RECORDING == state || record_running || NULL != record_task )
+    {
+        if( !wait_for_record_worker( a_timeout_ms ) )
+        {
+            return false;
+        }
+        active_name[ 0 ] = '\0';
+    }
+
+    if( RFSCOUT_RECORDER_PLAYING == state || audio_output_playback_active() )
+    {
+        audio_output_stop_playback();
+        const TickType_t start = xTaskGetTickCount();
+        const TickType_t timeout = pdMS_TO_TICKS( a_timeout_ms );
+        while( audio_output_playback_active() )
+        {
+            if( ( xTaskGetTickCount() - start ) >= timeout )
+            {
+                ESP_LOGE( TAG, "playback did not stop within %u ms", (unsigned)a_timeout_ms );
+                state = RFSCOUT_RECORDER_ERROR;
+                return false;
+            }
+            vTaskDelay( pdMS_TO_TICKS( 10 ) );
+        }
+    }
+
+    return true;
 }
 
 esp_err_t recorder_start_playback( size_t a_index, uint8_t a_volume_percent )

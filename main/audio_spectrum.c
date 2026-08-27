@@ -67,7 +67,14 @@ void audio_spectrum_set_channel( audio_channel_t a_channel )
         return;
     }
 
-    selected_recording = a_channel % count;
+    if( 0U == selected_recording && ( AUDIO_CHANNEL_COUNT - 1U ) == a_channel )
+    {
+        selected_recording = count - 1U;
+    }
+    else
+    {
+        selected_recording = a_channel % count;
+    }
 }
 
 audio_channel_t audio_spectrum_channel( void )

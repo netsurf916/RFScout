@@ -48,6 +48,7 @@ typedef struct
     uint32_t duration_ms;
     char character;
     uint8_t volume_percent;
+    uint32_t generation;
     char path[ AUDIO_OUTPUT_WAV_PATH_MAX ];
 } audio_output_command_t;
 
@@ -57,6 +58,7 @@ static QueueHandle_t command_queue;
 static TaskHandle_t output_task;
 static bool initialized;
 static volatile bool playback_active;
+static volatile bool playback_worker_active;
 static volatile uint32_t playback_generation;
 
 static uint16_t read_u16_le( const uint8_t *a_source )
@@ -216,12 +218,28 @@ static bool wav_supported( const uint8_t a_header[ AUDIO_OUTPUT_WAV_HEADER_SIZE 
            16U == read_u16_le( &a_header[ 34 ] );
 }
 
+static void finish_wav_command( uint32_t a_generation )
+{
+    playback_worker_active = false;
+    if( a_generation == playback_generation )
+    {
+        playback_active = false;
+    }
+}
+
 static void play_wav( const audio_output_command_t *a_command )
 {
+    if( a_command->generation != playback_generation )
+    {
+        return;
+    }
+
+    playback_worker_active = true;
     FILE *file = fopen( a_command->path, "rb" );
     if( NULL == file )
     {
         ESP_LOGW( TAG, "could not open WAV %s", a_command->path );
+        finish_wav_command( a_command->generation );
         return;
     }
 
@@ -231,22 +249,22 @@ static void play_wav( const audio_output_command_t *a_command )
     {
         ESP_LOGW( TAG, "unsupported WAV %s", a_command->path );
         fclose( file );
+        finish_wav_command( a_command->generation );
         return;
     }
 
     if( !enable_channel() )
     {
         fclose( file );
+        finish_wav_command( a_command->generation );
         return;
     }
 
-    playback_active = true;
-    const uint32_t generation = playback_generation;
     uint32_t remaining = read_u32_le( &header[ 40 ] );
     int16_t mono[ AUDIO_OUTPUT_CHUNK_FRAMES ];
     int16_t stereo[ AUDIO_OUTPUT_CHUNK_FRAMES * 2U ];
 
-    while( remaining > 0U && generation == playback_generation )
+    while( remaining > 0U && a_command->generation == playback_generation )
     {
         size_t frames = remaining / sizeof( int16_t );
         if( frames > AUDIO_OUTPUT_CHUNK_FRAMES )
@@ -288,7 +306,7 @@ static void play_wav( const audio_output_command_t *a_command )
 
     fclose( file );
     finish_channel();
-    playback_active = false;
+    finish_wav_command( a_command->generation );
 }
 
 static void output_worker( void *a_argument )
@@ -436,13 +454,18 @@ bool audio_output_play_wav( const char *a_path, uint8_t a_volume_percent )
         return false;
     }
 
+    const uint32_t generation = ++playback_generation;
     audio_output_command_t command = { .type = AUDIO_OUTPUT_COMMAND_WAV,
-                                       .volume_percent = a_volume_percent };
+                                       .volume_percent = a_volume_percent,
+                                       .generation = generation };
     snprintf( command.path, sizeof( command.path ), "%s", a_path );
     playback_active = true;
     if( pdTRUE != xQueueSend( command_queue, &command, 0U ) )
     {
-        playback_active = false;
+        if( generation == playback_generation )
+        {
+            playback_active = false;
+        }
         return false;
     }
     return true;
@@ -450,7 +473,7 @@ bool audio_output_play_wav( const char *a_path, uint8_t a_volume_percent )
 
 bool audio_output_playback_active( void )
 {
-    return playback_active;
+    return playback_active || playback_worker_active;
 }
 
 void audio_output_stop_playback( void )
