@@ -89,7 +89,8 @@ static void retain_authority( void )
 /** @brief Restore clock-authority metadata without changing the RTC-retained system time. */
 static bool restore_after_deep_sleep( void )
 {
-    if( ESP_SLEEP_WAKEUP_UNDEFINED == esp_sleep_get_wakeup_cause() )
+    const uint32_t wakeup_causes = esp_sleep_get_wakeup_causes();
+    if( 0U == wakeup_causes )
     {
         return false;
     }

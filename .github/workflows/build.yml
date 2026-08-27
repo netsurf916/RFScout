@@ -30,7 +30,7 @@ jobs:
   build:
     name: ESP-IDF Build
     runs-on: ubuntu-latest
-    container: espressif/idf:release-v5.5
+    container: espressif/idf:release-v6.1
 
     steps:
       - uses: actions/checkout@v6
@@ -41,5 +41,6 @@ jobs:
         shell: bash
         run: |
           . "$IDF_PATH/export.sh"
+          idf.py --version
           idf.py -DRFSCOUT_FORMAT_CHECK=OFF set-target esp32s3
           idf.py -DRFSCOUT_FORMAT_CHECK=OFF build

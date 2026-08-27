@@ -1,5 +1,6 @@
 /**
-    morse.c : RFScout Morse-code alert implementation
+    morse.c : RFScout Morse-code implementation
+    Description: Provides ITU-R M.1677-1 printable-character patterns and timing playback helpers.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -10,20 +11,45 @@
 #include "freertos/task.h"
 
 #include <ctype.h>
+#include <stddef.h>
 
-static const char *patterns[ 26 ] = { ".-",   "-...", "-.-.", "-..",  ".",    "..-.", "--.",
-                                      "....", "..",   ".---", "-.-",  ".-..", "--",   "-.",
-                                      "---",  ".--.", "--.-", ".-.",  "...",  "-",    "..-",
-                                      "...-", ".--",  "-..-", "-.--", "--.." };
-
-const char *morse_pattern( char a_letter )
+typedef struct
 {
-    const int character = toupper( (unsigned char)a_letter );
-    if( ( character < 'A' ) || ( character > 'Z' ) )
+    char character;
+    const char *pattern;
+} morse_entry_t;
+
+static const morse_entry_t entries[] = {
+    { 'A', ".-" },      { 'B', "-..." },   { 'C', "-.-." },   { 'D', "-.." },    { 'E', "." },
+    { 'F', "..-." },    { 'G', "--." },    { 'H', "...." },   { 'I', ".." },     { 'J', ".---" },
+    { 'K', "-.-" },     { 'L', ".-.." },   { 'M', "--" },     { 'N', "-." },     { 'O', "---" },
+    { 'P', ".--." },    { 'Q', "--.-" },   { 'R', ".-." },    { 'S', "..." },    { 'T', "-" },
+    { 'U', "..-" },     { 'V', "...-" },   { 'W', ".--" },    { 'X', "-..-" },   { 'Y', "-.--" },
+    { 'Z', "--.." },    { '0', "-----" },  { '1', ".----" },  { '2', "..---" },  { '3', "...--" },
+    { '4', "....-" },   { '5', "....." },  { '6', "-...." },  { '7', "--..." },  { '8', "---.." },
+    { '9', "----." },   { '.', ".-.-.-" }, { ',', "--..--" }, { ':', "---..." }, { '?', "..--.." },
+    { '\'', ".----." }, { '-', "-....-" }, { '/', "-..-." },  { '(', "-.--." },  { ')', "-.--.-" },
+    { '"', ".-..-." },  { '=', "-...-" },  { '+', ".-.-." },  { '@', ".--.-." },
+};
+
+static const char supported_characters[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,:?'-/()\"=+@";
+
+const char *morse_pattern( char a_character )
+{
+    const int upper = toupper( (unsigned char)a_character );
+    for( size_t index = 0U; index < sizeof( entries ) / sizeof( entries[ 0 ] ); ++index )
     {
-        return NULL;
+        if( upper == (unsigned char)entries[ index ].character )
+        {
+            return entries[ index ].pattern;
+        }
     }
-    return patterns[ character - 'A' ];
+    return NULL;
+}
+
+const char *morse_supported_characters( void )
+{
+    return supported_characters;
 }
 
 void morse_play_letter(

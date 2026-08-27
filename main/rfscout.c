@@ -5,6 +5,7 @@
     SPDX-License-Identifier: MIT
 */
 
+#include "alert.h"
 #include "app_logging.h"
 #include "app_manager.h"
 #include "battery.h"
@@ -13,7 +14,6 @@
 #include "device_time.h"
 #include "display.h"
 #include "log_writer.h"
-#include "morse.h"
 #include "observation_store.h"
 #include "oui_database.h"
 #include "platform.h"
@@ -88,15 +88,19 @@ static void on_observation( rf_device_t *a_observation )
 
     if( SURVEILLANCE_NONE != match.classification )
     {
-        const char letter = surveillance_morse_letter( match.classification );
+        const rfscout_alert_mode_t mode = alert_mode();
         ESP_LOGW( TAG,
-                  "ALERT %s score=%u evidence=0x%02x [%c]",
+                  "ALERT %s score=%u evidence=0x%02x audio=%s morse=%c",
                   surveillance_signature_label( match.signature ),
                   (unsigned)match.score,
                   (unsigned)match.evidence,
-                  letter );
+                  alert_mode_name( mode ),
+                  alert_morse_character() );
         platform_set_alert_led( true );
-        morse_play_letter( letter, 100U, 900U, platform_audio_tone, NULL );
+        if( !alert_request() )
+        {
+            ESP_LOGW( TAG, "audible alert queue full or speaker unavailable" );
+        }
         platform_set_alert_led( false );
     }
 }
@@ -115,6 +119,12 @@ void app_main( void )
     ESP_ERROR_CHECK( surveillance_history_init() );
     ESP_ERROR_CHECK( platform_init() );
     ESP_ERROR_CHECK( power_init() );
+
+    result = alert_init();
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG, "audible alerts unavailable: %s", esp_err_to_name( result ) );
+    }
 
     result = battery_init();
     if( ESP_OK != result )

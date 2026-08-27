@@ -31,6 +31,8 @@ The right-side surveillance panel uses fixed categories: zero-count rows remain 
 
 Ordinary nearby-device observations expire after the live RF window; surveillance detections are retained longer so brief events remain visible. Leaving this application stops both the Wi-Fi monitor and BLE scanner.
 
+Center press opens WiFi / BT settings for the surveillance audible alert. Alert mode is selectable as **OFF**, **TONE**, or **MORSE** and defaults to **OFF** on every boot. Morse alerts contain exactly one selectable character. The shared Morse table covers the printable ASCII characters explicitly represented by ITU-R M.1677-1: A-Z, 0-9, period, comma, colon, question mark, apostrophe, hyphen, slash, parentheses, quotation mark, equals, plus, and commercial-at. Alert playback is queued to a dedicated speaker task so RF observation callbacks never wait for a tone or Morse pattern to finish.
+
 ### CC1101
 
 The CC1101 application is a direct-RSSI sub-GHz spectrum view. The display is split at the same point as the nRF24 view:
@@ -61,7 +63,7 @@ The Audio application uses the T-Embed CC1101 Plus internal PDM microphone throu
 
 Available focused ranges are **Voice**, **Mid**, **High**, **Audible**, and **Ultrasonic**. Voice and Mid use filtered decimation to improve useful frequency resolution while the higher ranges retain the native 48 kHz PCM rate. The settings menu also exposes the PDM receive slot as `LEFT` or `RIGHT` for hardware/debug validation and allows peak hold to be enabled or disabled. Peak hold defaults off for Audio so the live trace remains visually responsive.
 
-The current audio implementation remains an analyzer rather than a calibrated sound-level instrument. Follow-up work is still expected around microphone/PDM interpretation and FFT validation before tuner or DTMF features are treated as reliable.
+The current audio implementation remains an analyzer rather than a calibrated sound-level instrument. Follow-up work is planned to add microphone recording and an interactive International Morse player using the same speaker/Morse infrastructure introduced for alerts.
 
 ### Thermal
 
@@ -82,6 +84,14 @@ Application titles use subdued styling so the content remains visually dominant.
 The top status area is shared across application views and sits between the application title and the battery indicator. It shows RFScout's current local wall clock plus right-aligned status icons. A mounted SD card is shown with a subdued SD icon; filesystem/logging errors make that icon red and sticky for the runtime. Optional hardware such as the thermal sensor can also advertise availability through the status area. When wall time has not been established, the clock is shown as `--:--` rather than inventing a date.
 
 The battery indicator shows exact state of charge plus proportional fill. Battery and charger telemetry come from the board's BQ27220/BQ25896 devices through the shared board-I2C layer. Missing telemetry is nonfatal.
+
+## Audible alerts
+
+Surveillance detections in WiFi / BT can optionally produce an audible alert through the onboard speaker. The default is **OFF**. **TONE** emits a short alert tone, while **MORSE** emits exactly one user-selected Morse character.
+
+Speaker playback is asynchronous. The detection callback only attempts to enqueue a bounded command; a dedicated low-priority I2S output task generates the waveform. If the queue is full or speaker initialization failed, RF collection continues and the audible alert is dropped rather than blocking acquisition.
+
+The microphone analyzer owns I2S0 PDM receive while the speaker service uses I2S1 standard transmit, keeping input analysis and short output alerts isolated at the peripheral level.
 
 ## SD logging
 
@@ -112,11 +122,11 @@ A saved shutdown epoch cannot account for time elapsed while the board was physi
 
 ## Hardware/resource ownership
 
-The LCD, microSD, CC1101, and nRF24 share board SPI resources. Pin definitions and bus ownership are centralized so application switching can stop inactive radio work cleanly rather than leaving competing peripherals active.
+The LCD, microSD, CC1101, and nRF24 share board SPI resources. `board_spi.c/.h` owns initialization of that shared SPI2 bus so SD/display/radio behavior does not depend on accidental peripheral initialization order. Pin definitions and chip selects remain centralized in `board.h`.
 
 The board I2C controller is shared by power telemetry and optional external I2C devices such as the MLX90640. Feature modules use the shared bus layer rather than independently reinitializing the controller.
 
-The internal microphone is acquired through the ESP32-S3 I2S/PDM peripheral using DMA; FFT processing is isolated from display rendering so LCD updates do not directly gate sample acquisition.
+The internal microphone is acquired through ESP32-S3 I2S0/PDM using DMA; FFT processing is isolated from display rendering so LCD updates do not directly gate sample acquisition. The onboard speaker is driven independently through I2S1 standard transmit by the asynchronous audio-output service.
 
 ## OUI database
 

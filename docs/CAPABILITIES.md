@@ -17,7 +17,10 @@ Implemented capabilities include:
 - ranked vendor counts across the full active observation set;
 - surveillance-oriented classification using narrow, explainable evidence;
 - visual detection highlighting;
+- configurable surveillance audible alerts: Off, Tone, or single-character Morse;
 - automatic stop of Wi-Fi/BLE collectors when another application is selected.
+
+Audible alerts default to Off on every boot. Tone and Morse playback run asynchronously on the onboard speaker so radio callbacks never wait for audio output. Morse alerts are exactly one selectable character.
 
 The WiFi / BT application is the only current view that treats IEEE MAC/OUI identity as a normal device identity source.
 
@@ -70,16 +73,31 @@ Implemented behavior includes:
 - optional peak hold, disabled by default for a more responsive live trace;
 - overrun accounting when a newer FFT frame replaces an unpublished frame.
 
-The Audio application is currently an exploratory spectrum analyzer, not a calibrated sound-level instrument. Microphone/PDM interpretation and FFT behavior still require additional hardware validation before tuner, DTMF, or measurement-oriented features should be considered reliable.
+The Audio application is currently an exploratory spectrum analyzer, not a calibrated sound-level instrument. The next planned Audio expansion is microphone recording plus an interactive International Morse player built on the shared speaker/Morse layer.
 
 ### Thermal
 
 An external **MLX90640** connected over the board's I2C/Qwiic interface is supported as an optional application.
 
 - RFScout periodically probes for the sensor;
-- Thermal appears last in the application order only when the sensor is detected;
+- Thermal appears near the end of the application order only when the sensor is detected and enabled;
 - the native 32x24 thermal frame is scaled/interpolated for the LCD;
 - thermal acquisition is not kept running while another app is active.
+
+### Device
+
+The Device application provides global runtime and SD-backed configuration:
+
+- display brightness;
+- 12/24-hour clock presentation;
+- editable timezone selection;
+- manual wall-clock setting;
+- per-application enablement;
+- SD logging enablement;
+- explicit configuration save;
+- configuration/time-source status.
+
+Device itself is always available so configuration cannot disable its own recovery path.
 
 ## Application navigation and UX
 
@@ -89,7 +107,8 @@ Current app order:
 2. CC1101
 3. nRF24
 4. Audio
-5. Thermal, when available
+5. Thermal, when enabled and available
+6. Device
 
 Encoder conventions are intentionally shared:
 
@@ -98,7 +117,8 @@ Encoder conventions are intentionally shared:
 - rotate in a menu to select;
 - center press enters/exits editable values;
 - action entries such as `RESET COUNTS` execute immediately;
-- `RESET COUNTS` and `BACK` both close the menu after the action;
+- `RESET COUNTS` and `BACK` close their menus after the action;
+- Device uses an explicit Back action to resume top-level navigation;
 - yellow/amber denotes active editing or a configuration limit;
 - red denotes detections/counts or error states;
 - normal application labels/status information use subdued colors.
@@ -116,11 +136,13 @@ The WiFi / BT path supports targeted surveillance classifications. The design ru
 
 ## Alerts and status
 
-The UI includes a shared top status region between the application label and battery indicator. Status icons populate from right to left and use subdued normal-state colors. The shared status and battery chrome is used across the application views rather than only on WiFi / BT.
+The UI includes a shared top status region between the application label and battery indicator. Status icons populate from right to left and use subdued normal-state colors. The shared status and battery chrome is applied by the common presentation layer so newly added views inherit it automatically.
 
 Implemented status behavior includes SD-card presence and sticky logging/filesystem errors. Battery state is shown continuously when telemetry is available.
 
-The project also contains alert-oriented support for noteworthy surveillance detections. Alert behavior should remain asynchronous so radio processing is never blocked by UI/audio work.
+WiFi / BT surveillance detections can optionally produce an audible alert. Alert mode is **Off**, **Tone**, or **Morse**; Off is the boot default. Morse is limited to one selected character. The printable-character table follows ITU-R M.1677-1 for A-Z, figures, and the standard ASCII-representable punctuation signs.
+
+The onboard-speaker service uses a bounded asynchronous queue. Audio generation therefore remains outside radio callbacks and cannot deliberately stall acquisition while a sound finishes.
 
 ## microSD logging
 
@@ -130,7 +152,7 @@ Implemented storage behavior includes:
 - nonfatal operation when media is missing or cannot be mounted;
 - asynchronous logging rather than filesystem I/O in radio or audio acquisition callbacks;
 - detailed Wi-Fi/BLE lifecycle records;
-- application-owned ENTER/EXIT and rate-limited telemetry records for WiFi/BT, CC1101, nRF24, Audio, and Thermal;
+- application-owned ENTER/EXIT and rate-limited telemetry records for WiFi/BT, CC1101, nRF24, Audio, Thermal, and Device;
 - two-digit circular filenames (`00` through `99`);
 - 4 MiB maximum per segment;
 - approximate 400 MiB bounded normal log footprint;
@@ -151,6 +173,12 @@ Implemented baseline behavior includes:
 - nonfatal unavailable state;
 - shared `board_i2c` ownership rather than duplicated bus initialization.
 
+## Hardware audio resources
+
+The internal PDM microphone uses I2S0 receive. The onboard speaker uses the board's dedicated BCLK/LRCLK/data pins through I2S1 standard transmit. The speaker path is managed by `audio_output.c/.h` and is independent of the Audio analyzer's microphone worker.
+
+The shared Morse table is used by audible alerts and is intended to be reused by the planned Audio Morse browser/player rather than duplicating code tables.
+
 ## OUI database
 
 RFScout maintains a compiled IEEE MA-L/OUI table for Wi-Fi/BLE attribution. Generated data can be refreshed with `tools/update_oui.py` or the repository workflow.
@@ -168,6 +196,7 @@ The T-Embed hardware exposes additional capabilities, but the following should b
 
 Useful next steps include:
 
+- Audio microphone recording and an interactive International Morse pattern player;
 - stronger protocol-level nRF24 fingerprints;
 - time-windowed rather than session-only radio category counts;
 - CC1101 burst timing/modulation analysis;
