@@ -317,20 +317,24 @@ esp_err_t recorder_refresh( void )
            ( recording_count < RFSCOUT_RECORDER_MAX_FILES ) )
     {
         const size_t length = strlen( entry->d_name );
-        if( ( length < 5U ) || ( 0 != strcasecmp( &entry->d_name[ length - 4U ], ".wav" ) ) )
+        rfscout_recording_t candidate = { 0 };
+        if( ( length < 5U ) || ( length >= sizeof( candidate.name ) ) ||
+            ( 0 != strcasecmp( &entry->d_name[ length - 4U ], ".wav" ) ) )
         {
             continue;
         }
+
+        memcpy( candidate.name, entry->d_name, length + 1U );
 
         char path[ 160 ];
-        snprintf( path, sizeof( path ), "%s/%s", RFSCOUT_RECORDER_DIRECTORY, entry->d_name );
-        rfscout_recording_t candidate = { 0 };
-        if( !validate_wav( path, &candidate ) )
+        const int path_length =
+            snprintf( path, sizeof( path ), "%s/%s", RFSCOUT_RECORDER_DIRECTORY, candidate.name );
+        if( ( path_length < 0 ) || ( (size_t)path_length >= sizeof( path ) ) ||
+            !validate_wav( path, &candidate ) )
         {
             continue;
         }
 
-        snprintf( candidate.name, sizeof( candidate.name ), "%s", entry->d_name );
         recordings[ recording_count++ ] = candidate;
     }
     closedir( directory );
