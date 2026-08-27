@@ -31,29 +31,27 @@ Future RTC/GPS/NTP integrations are tracked separately below. In particular, det
 
 ## 3. Configurable asynchronous audio alerts and ESP-IDF 6.x migration
 
-**Status:** Done — PR #21
+**Status:** Done — PR #21, notification refinement PR #23
 
 - Add real onboard-speaker output through a dedicated asynchronous audio-output service.
 - Keep RF observation callbacks nonblocking by enqueueing bounded audio commands.
-- Serialize alert policy changes with request enqueueing without blocking RF callbacks; selecting `OFF` must clear pending sounds and prevent a concurrent stale request from enqueueing afterward.
-- Add WiFi / BT alert modes: `OFF`, `TONE`, and `MORSE`.
-- Default audible alerts to `OFF`.
-- Keep each Morse alert exactly one character long.
-- Play surveillance-alert Morse at approximately **20 WPM** so category cues are concise while remaining recognizable by ear.
-- As a follow-up refinement, map a distinct Morse character to each detected surveillance category so the user can identify the likely category by ear without looking at the display. Categories such as general camera, body-worn camera, Flock-style camera, drone, and other surveillance classes should have intentionally distinct one-character patterns.
-- Define the category-to-Morse mapping centrally alongside the surveillance classifier rather than scattering hard-coded characters through alert call sites.
-- Centralize the printable International Morse patterns used by alerts for reuse by the Audio application.
+- Serialize alert policy changes with request enqueueing without blocking RF callbacks; selecting `OFF` clears pending sounds.
+- Support device-wide `OFF`, `TONE`, and `MORSE` notification modes.
+- Keep each Morse notification exactly one character long and approximately **20 WPM**.
+- Map distinct Morse characters to detection categories, including surveillance, CC1101, and nRF24 categories.
+- Keep the category enumeration and compiled default characters centralized in the alert layer.
+- Persist notification mode and every per-category character in `/sdcard/rfscout.json`; a valid saved configuration overrides compiled defaults on boot.
+- Enumerate notification categories in Device so each Morse character can be changed manually.
+- Centralize the printable International Morse patterns used by notifications for reuse by the Audio application.
 - Keep speaker output on I2S1 and microphone/PDM acquisition on I2S0.
-- Target ESP-IDF 6.x only.
-- Run CI against the ESP-IDF 6.1 development line.
+- Target ESP-IDF 6.x only and run CI against ESP-IDF 6.1.
 - Replace the removed built-in `json` component with managed `espressif/cjson`.
-- Complete required ESP-IDF 6 driver/API migration work discovered by CI.
 
 Remaining hardware validation includes physical speaker channel, loudness, and playback behavior on the target device.
 
 ## 4. Clean GitHub release packaging
 
-**Status:** In progress — PR #22
+**Status:** Done — PR #22
 
 - Produce clean firmware artifacts suitable for a GitHub Release.
 - Keep pull-request and main-branch builds as short-lived candidate artifacts rather than creating releases automatically.
@@ -62,24 +60,23 @@ Remaining hardware validation includes physical speaker channel, loudness, and p
 - Create draft releases only; keep publication and target-hardware approval as explicit maintainer actions.
 - Enable ESP-IDF reproducible builds and produce deterministic release metadata, checksums, and archives.
 - Include a combined ESP32-S3 image, the component images and offsets, and a staged ESP Web Tools manifest for the future browser installer.
-- Determine exactly which binaries, partition data, and configuration/manifest files are required for installation.
 - Package release artifacts sensibly rather than publishing an entire ESP-IDF build tree.
 - Include straightforward flashing and installation instructions.
 - Automate release artifact generation so releases are reproducible.
-- Prefer a release workflow that can validate the same ESP-IDF 6.x build before publishing artifacts.
 
-## 5. Navigation and menu consistency
+## 5. Navigation, menu consistency, and detection UX
 
-**Status:** Planned — near term
+**Status:** Done — PR #23
 
-- Change the Device/global-settings application to behave as a pass-through landing screen by default rather than immediately taking ownership of the encoder.
+- Change Device/global settings to a pass-through landing screen by default rather than immediately taking ownership of the encoder.
 - Require a deliberate center-button press to enter Device settings/edit mode.
-- While the Device landing screen is not entered, encoder rotation should continue normal application navigation so simply arriving at Device does not trap the user in settings.
-- Make the Device landing screen clearly indicate that a center press enters configuration while still showing useful read-only status where appropriate.
-- Standardize all settings/action menus so **Back** is the first entry and the initial selection when a menu opens.
-- Make an accidental menu entry easy to undo: opening a menu and pressing the center button again without rotating should safely return to the live/pass-through view without changing settings.
-- Audit existing WiFi / BT, CC1101, nRF24, Audio, Device, and future application menus for the same Back-first navigation convention.
-- Keep setting changes deliberate; entering or exiting a menu should not itself mutate configuration.
+- While Device is not entered, keep encoder rotation as normal application navigation.
+- Make the Device landing screen clearly indicate that center enters configuration while showing useful read-only status.
+- Standardize WiFi/BT, CC1101, nRF24, Audio, and Device menus so **Back** is the first and initially selected entry.
+- Make accidental menu entry easy to undo by opening a menu and pressing center again without rotating.
+- Add a WiFi/BT `RESET DETECTIONS` action that clears the rolling device/OUI census and retained surveillance detections without restarting the collectors.
+- Rename the CC1101 and nRF24 right-side category panel to **DETECTIONS**.
+- Preserve app-specific lifecycle behavior so inactive hardware is stopped and re-entered cleanly.
 
 ## 6. Log format and automated parsing
 
@@ -103,7 +100,7 @@ Remaining hardware validation includes physical speaker channel, loudness, and p
 - Add microphone recording using the existing I2S0/PDM capture path rather than introducing a competing microphone reader.
 - Write standard PCM WAV recordings to SD through a buffered/asynchronous path suitable for continuous audio data.
 - Add an interactive International Morse browser/player using the shared Morse definitions and speaker service established by PR #21.
-- Make the Morse tool able to browse and play the standard character patterns; keep each surveillance-alert Morse notification limited to one character even when the character is selected by surveillance category.
+- Make the Morse tool able to browse and play the standard character patterns while notification events remain one character each.
 - Validate the microphone/PDM/FFT path on hardware as part of the expansion.
 - After the recorder and Morse player are stable, consider tuner and DTMF-analysis features.
 
@@ -163,4 +160,4 @@ Remaining hardware validation includes physical speaker channel, loudness, and p
 - NFC/PN532 tools.
 - IR analyzer/transmit tools, with transmit behavior kept explicit and separate from passive monitoring.
 - GPS user interface and location features, distinct from GPS time-authority support.
-- Additional optional hardware applications that follow the existing lifecycle, shared-resource, settings, and status-UI conventions.
+- Additional optional hardware applications that follow the existing lifecycle, shared-resource, settings, status-UI, and notification conventions.
