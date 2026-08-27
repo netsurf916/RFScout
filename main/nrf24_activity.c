@@ -82,7 +82,7 @@ static bool is_logitech_pairing_address( const uint8_t *a_address, uint8_t a_len
     return ( 5U == a_length ) && ( 0 == memcmp( a_address, pairing, sizeof( pairing ) ) );
 }
 
-/** @brief Increment a bounded likely-device category counter. */
+/** @brief Increment a bounded detection category counter. */
 static void bump_category( nrf24_fingerprint_type_t a_type )
 {
     if( ( a_type > NRF24_FP_UNKNOWN ) && ( a_type <= NRF24_FP_LOGITECH_LIKE ) &&
@@ -479,6 +479,15 @@ size_t nrf24_activity_fingerprints( nrf24_fingerprint_t *a_output, size_t a_capa
     }
 
     return count;
+}
+
+uint32_t nrf24_activity_category_count( nrf24_fingerprint_type_t a_type )
+{
+    if( ( a_type <= NRF24_FP_UNKNOWN ) || ( a_type > NRF24_FP_LOGITECH_LIKE ) )
+    {
+        return 0U;
+    }
+    return category_counts[ a_type ];
 }
 
 const char *nrf24_activity_fingerprint_name( nrf24_fingerprint_type_t a_type )
