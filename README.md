@@ -33,7 +33,7 @@ The right-side surveillance panel uses fixed categories: zero-count rows remain 
 
 Ordinary nearby-device observations expire after the live RF window; surveillance detections are retained longer so brief events remain visible. Leaving this application stops both the Wi-Fi monitor and BLE scanner. Its action menu includes **RESET DETECTIONS**, which clears the current device/OUI census and retained surveillance detections without restarting the collectors.
 
-Surveillance detections participate in RFScout's global audible-notification system. Notification mode and Morse mappings are configured in Device rather than in the WiFi/BT menu.
+Surveillance detections participate in RFScout's global audible-notification system. Notification mode, volume, and Morse mappings are configured in Device rather than in the WiFi/BT menu.
 
 ### CC1101
 
@@ -75,11 +75,11 @@ Thermal currently presents sensor data rather than discrete detection events. Fu
 
 ### Device
 
-The Device application has a pass-through landing screen and a center-entered global settings editor. Settings currently include LCD brightness, 12/24-hour clock presentation, timezone selection, manual date/time, application enablement, SD logging enablement, global notification mode, one Morse character for every defined notification category, and explicit configuration save.
+The Device application has a pass-through landing screen and a center-entered global settings editor. Settings currently include LCD brightness, 12/24-hour clock presentation, timezone selection, manual date/time, application enablement, SD logging enablement, global notification mode, global notification volume, one Morse character for every defined notification category, and explicit configuration save.
 
-RFScout always has compiled sane defaults. Notification mode defaults to **OFF** only when no usable saved value is available. When an SD card is mounted, `rfscout.json` can restore `OFF`, `TONE`, or `MORSE` plus every per-category character on the next boot. Default category mappings include Flock `F`, acoustic sensor `A`, camera `C`, drone `D`, and smart glasses `G`, with distinct defaults for the other surveillance, CC1101, and nRF24 categories.
+RFScout always has compiled sane defaults. Notification mode defaults to **OFF** only when no usable saved value is available. Notification volume defaults to **50%** only when no usable saved value exists; valid saved values from `0` through `100` are restored on boot. When an SD card is mounted, `rfscout.json` can restore mode, volume, and every per-category character on the next boot. Default category mappings include Flock `F`, acoustic sensor `A`, camera `C`, drone `D`, and smart glasses `G`, with distinct defaults for the other surveillance, CC1101, and nRF24 categories.
 
-The Device application itself cannot be disabled. See [Device configuration and wall clock](docs/CONFIGURATION.md) for the JSON schema, validation behavior, notification keys, wall-clock lifecycle, timezone definitions, and future RTC integration model.
+The Device application itself cannot be disabled. See [Device configuration and wall clock](docs/CONFIGURATION.md) for the JSON schema, validation behavior, complete per-app settings inventory, alert-item/config-key correspondence, wall-clock lifecycle, timezone definitions, and future RTC integration model.
 
 ## Shared UI and status bar
 
@@ -93,7 +93,11 @@ The battery indicator shows exact state of charge plus proportional fill. Batter
 
 RFScout uses a device-wide audible-notification policy rather than app-local alert settings. **OFF** suppresses sounds, **TONE** emits the common short tone, and **MORSE** emits exactly one character chosen by detection category.
 
+A global `0-100%` notification volume applies to both Tone and Morse. The compiled fallback is **50%**; a valid value in `/sdcard/rfscout.json` is restored on boot. Device adjusts volume in 10% steps. Each queued sound captures the current volume so changing the setting affects later alerts without changing commands already waiting in the speaker queue.
+
 Current notification categories cover WiFi/BLE surveillance classifications plus CC1101 and nRF24 detection classifications. Each category has an independently editable character in Device and the mapping is persisted in `/sdcard/rfscout.json`. The shared Morse table covers the printable ASCII characters explicitly represented by ITU-R M.1677-1.
+
+The alert enum and descriptor registry are deliberately 1:1. The descriptor owns each alert item's application, stable JSON key, label, and default character. When classifier categories change, the producer mappings in `rfscout.c` for WiFi/BT and `app_manager.c` for CC1101/nRF24 must be reviewed alongside the enum/descriptor table; Device and JSON character iteration are descriptor-driven.
 
 Speaker playback is asynchronous. Detection paths only attempt to enqueue a bounded command; a dedicated low-priority I2S output task generates the waveform. If the queue is full or speaker initialization failed, RF collection continues and the audible notification is dropped rather than blocking acquisition.
 
@@ -107,7 +111,7 @@ LILYGO documents **SanDisk cards of 32 GB or less** as the tested baseline for t
 
 Logging runs asynchronously so filesystem latency does not block RF collection. Every application can contribute compact application-owned records through the common log queue in addition to detailed Wi-Fi/BLE lifecycle records. With valid wall time, records use UTC ISO-8601 timestamps; before time is established, records use an explicit `UP+<milliseconds>` monotonic fallback.
 
-Configuration preferences, including notification mode and category characters, are stored in `/sdcard/rfscout.json`. Files use a bounded two-digit logging ring (`rfscout-00.log` through `rfscout-99.log`) with 4 MiB per segment and an approximate maximum normal log footprint of 400 MiB.
+Configuration preferences, including notification mode, volume, and category characters, are stored in `/sdcard/rfscout.json`. Files use a bounded two-digit logging ring (`rfscout-00.log` through `rfscout-99.log`) with 4 MiB per segment and an approximate maximum normal log footprint of 400 MiB.
 
 ## Wall clock
 

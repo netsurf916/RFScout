@@ -26,6 +26,7 @@ The configuration file is versioned JSON. A typical file is:
   },
   "notifications": {
     "mode": "MORSE",
+    "volume": 50,
     "characters": {
       "flock": "F",
       "body_camera": "B",
@@ -77,9 +78,11 @@ RFScout starts from compiled defaults and then applies valid fields from the SD 
 
 The compiled audible-notification mode is `OFF`. That fallback is used when no usable saved notification mode is available. A valid saved `OFF`, `TONE`, or `MORSE` value is restored on boot and overrides the compiled fallback.
 
+The compiled notification volume is **50%**. A valid saved `notifications.volume` value from `0` through `100` overrides that default on boot. The percentage scales PCM amplitude linearly relative to the previous fixed speaker amplitude, so `100` preserves the former full notification level and `0` produces silent output while leaving the selected notification mode unchanged.
+
 Each notification category also has a compiled one-character Morse default. Valid one-character values in `notifications.characters` replace those defaults individually. Unsupported or multi-character values are ignored without invalidating unrelated configuration. The category keys are stable configuration identifiers; the user-facing labels in Device may be more descriptive.
 
-Schema version 1 is currently supported. A document with a missing or unsupported schema version is treated as incompatible rather than being partially interpreted as the current schema.
+Schema version 1 is currently supported. Adding `notifications.volume` is backward-compatible within schema version 1 because older files simply omit the field and receive the 50% compiled default.
 
 A saved wall-clock epoch is accepted only when it is within RFScout's supported sanity range. Invalid time state is ignored and is omitted the next time the configuration is written.
 
@@ -100,30 +103,63 @@ The settings menu always opens with **Back** selected first. Pressing center aga
 - enable/disable state for WiFi/BT, CC1101, nRF24, Audio, and Thermal;
 - SD logging enablement;
 - global audible-notification mode (`OFF`, `TONE`, or `MORSE`);
-- an individually editable Morse character for every currently defined detection category;
+- global notification volume (`0` through `100%`, adjusted in 10% steps in Device);
+- an individually editable Morse character for every currently defined alert item;
 - explicit configuration save.
-
-Notification categories cover WiFi/BLE surveillance classifications plus CC1101 and nRF24 detection classifications. The character setting affects Morse mode only; Tone mode uses the same short tone for every category.
 
 Application enablement takes effect when navigation resumes. Disabled applications are skipped. Thermal additionally requires an MLX90640 to be detected.
 
-Without an SD card, Device remains usable and settings can affect the running session, but persistent saves are unavailable. With storage available, **Save config** writes the active notification mode, every category mapping, and the other Device preferences to `/sdcard/rfscout.json`. An orderly hard power-off also writes the current in-memory preferences, so the explicit Save action is useful when persistence is wanted before shutdown or deep sleep.
+Without an SD card, Device remains usable and settings can affect the running session, but persistent saves are unavailable. With storage available, **Save config** writes the active notification mode, volume, every category mapping, and the other Device preferences to `/sdcard/rfscout.json`. An orderly hard power-off also writes the current in-memory preferences, so the explicit Save action is useful when persistence is wanted before shutdown or deep sleep.
 
 Manual calendar input is validated after local-time conversion. Invalid dates and local times that cannot be represented in the selected timezone, such as a time inside a daylight-saving transition gap, are rejected rather than silently normalized.
 
+## Per-application settings and alert items
+
+The application settings inventory and the notification registry intentionally describe the same implemented behavior. Every notification enum value has exactly one descriptor in `alert.c`, including its owning application, stable JSON key, user-facing label, and compiled default character. Device and configuration persistence iterate that registry rather than maintaining independent alert lists.
+
+| Application | Application settings/actions | Alert items |
+| --- | --- | --- |
+| WiFi / BT | Back; Reset live device/OUI/surveillance state | Flock / ALPR; Body camera; Drone; Camera; Smart glasses; Acoustic sensor; Other surveillance |
+| CC1101 | Back; Profile; Low; High; Step; Peak hold; Reset counts | Narrowband; Remote/sensor; Carrier; Bursty RF; Wide RF |
+| nRF24 | Back; Low channel; High channel; Dwell; Peak hold; Reset counts | ESB device; Input; Sensor; WiFi-like; Hopping/BLE-like; Logitech-like |
+| Audio | Back; Range; Channel; Peak hold | None yet — no discrete detection classifier currently emits Audio alerts |
+| Thermal | No application settings menu currently | None yet — no discrete Thermal detection classifier currently emits alerts |
+| Device | Back; brightness; clock format; timezone; manual date/time; app enablement; SD logging; notification mode; notification volume; every alert-item character; Save config | Device configures the alert items owned by the detection-producing applications; it does not emit a detection alert itself |
+
+The complete alert-item/config-key correspondence is:
+
+| Application | Alert item | JSON key | Default Morse |
+| --- | --- | --- | --- |
+| WiFi / BT | Flock / ALPR | `flock` | `F` |
+| WiFi / BT | Body camera | `body_camera` | `B` |
+| WiFi / BT | Drone | `drone` | `D` |
+| WiFi / BT | Camera | `camera` | `C` |
+| WiFi / BT | Smart glasses | `smart_glasses` | `G` |
+| WiFi / BT | Acoustic sensor | `acoustic_sensor` | `A` |
+| WiFi / BT | Other surveillance | `surveillance_other` | `S` |
+| CC1101 | Narrowband | `cc1101_narrow_ism` | `N` |
+| CC1101 | Remote/sensor | `cc1101_remote_sensor` | `R` |
+| CC1101 | Carrier | `cc1101_carrier` | `K` |
+| CC1101 | Bursty RF | `cc1101_bursty` | `U` |
+| CC1101 | Wide RF | `cc1101_wideband` | `W` |
+| nRF24 | ESB device | `nrf24_esb` | `E` |
+| nRF24 | Input | `nrf24_input` | `I` |
+| nRF24 | Sensor | `nrf24_sensor` | `T` |
+| nRF24 | WiFi-like | `nrf24_wifi_like` | `V` |
+| nRF24 | Hopping/BLE-like | `nrf24_ble_like` | `L` |
+| nRF24 | Logitech-like | `nrf24_logitech_like` | `X` |
+
+When a classifier gains or loses a category, update the notification enum and descriptor table together. The WiFi/BT classifier-to-notification mapping is in `rfscout.c`; the CC1101 and nRF24 mappings are in `app_manager.c`. The Device rows and JSON character list are descriptor-driven and should not receive separate hand-maintained category lists.
+
 ## Notification behavior
 
-The notification policy is global rather than owned by the WiFi/BT application. Detection-producing applications request a notification category and the shared alert service applies the configured mode and Morse mapping.
-
-Current categories include:
-
-- surveillance: Flock/ALPR, body camera, drone, camera, smart glasses, acoustic sensor, and other surveillance;
-- CC1101: narrowband, remote/sensor, carrier, bursty RF, and wide RF;
-- nRF24: ESB device, input, sensor, Wi-Fi-like activity, BLE/hopping-RF-like activity, and Logitech-like activity.
+The notification policy is global rather than owned by the WiFi/BT application. Detection-producing applications request a notification category and the shared alert service applies the configured mode, volume, and Morse mapping.
 
 CC1101 and nRF24 notifications are generated when their accumulated detection-category count advances. Resetting those counts resets the notification baseline as well. WiFi/BLE surveillance notifications are generated for new observations classified as surveillance.
 
 Audio and Thermal currently expose analyzer/sensor views rather than discrete detection classifiers, so they have no category event to notify yet. The global notification interface is application-independent and can be used by future Audio or Thermal detectors without moving policy back into an individual app.
+
+Notification volume is captured when a tone or Morse command is queued. If the user changes volume while other commands are already waiting, queued commands retain the volume that was active when they were requested.
 
 ## Wall clock and monotonic time
 

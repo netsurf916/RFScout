@@ -19,7 +19,7 @@ A core design rule is that inactive applications should not continue doing expen
 - Thermal acquisition is performed only while the Thermal application is active.
 - Device owns the encoder only after its settings view is deliberately entered; Back returns to the pass-through Device landing screen.
 
-Application-specific analyzer configuration such as CC1101 frequency range/step, nRF24 channel/dwell settings, and Audio range/channel selection remains runtime state independently of the acquisition workers unless explicitly stored in Device configuration. Audible-notification mode and per-detection Morse characters are device-wide configuration and are persisted in `/sdcard/rfscout.json` when configuration is saved.
+Application-specific analyzer configuration such as CC1101 frequency range/step, nRF24 channel/dwell settings, and Audio range/channel selection remains runtime state independently of the acquisition workers unless explicitly stored in Device configuration. Audible-notification mode, volume, and per-detection Morse characters are device-wide configuration and are persisted in `/sdcard/rfscout.json` when configuration is saved.
 
 ## Wi-Fi / BLE data path
 
@@ -121,15 +121,21 @@ The planned recorder will reuse this microphone ownership rather than creating a
 The onboard speaker is isolated from microphone acquisition:
 
 ```text
-detection category -> configured character -> alert_request_character()
-                                           |
-                                           v
-                         bounded FreeRTOS queue -> audio_output worker
+detection category -> configured character + mode + volume -> alert_request_character()
+                                                           |
+                                                           v
+                                         bounded FreeRTOS queue -> audio_output worker
 ```
 
 `audio_output.c/.h` owns I2S1 transmit and waveform generation. Callers enqueue short sound requests with zero wait; a full queue drops the new sound instead of stalling an acquisition callback. I2S is enabled only while a queued sound is being rendered and disabled again when idle.
 
-`alert.c/.h` owns device-wide Off/Tone/Morse policy and the stable notification-category enumeration. `device_config.c/.h` owns the persisted mode and one-character mapping for each category. Compiled defaults include mode `OFF` and distinct characters such as Flock `F`, acoustic sensor `A`, camera `C`, drone `D`, and smart glasses `G`; a valid SD configuration overrides those defaults on boot.
+Notification volume is captured in the queued command. The output worker scales the previous fixed PCM amplitude linearly by the queued `0-100%` value. That means a later Device volume change affects future notifications without changing commands already waiting in the queue.
+
+`alert.c/.h` owns device-wide Off/Tone/Morse policy, volume state, and the stable notification-category enumeration. A single descriptor table has a 1:1 correspondence with the notification enum and owns each item's application, stable JSON key, label, and default character. `device_config.c/.h` iterates those descriptors when loading and saving mappings rather than maintaining a second key list.
+
+When alert categories change, the enum and descriptor table must change together. The WiFi/BT classifier mapping in `rfscout.c` and the CC1101/nRF24 mappings in `app_manager.c` are the producer-side locations that must also be reviewed. Device rows and JSON character iteration are descriptor-driven.
+
+Compiled notification defaults include mode `OFF`, volume **50%**, and distinct characters such as Flock `F`, acoustic sensor `A`, camera `C`, drone `D`, and smart glasses `G`; a valid SD configuration overrides those defaults on boot.
 
 `morse.c/.h` owns the shared Morse character table. Printable characters represented by ITU-R M.1677-1 are centralized there so notification mappings and the planned Audio Morse browser/player use the same patterns and timing semantics.
 
@@ -154,7 +160,7 @@ The sensor's native 32x24 frame is processed for display interpolation/scaling, 
 
 ## Device configuration and time
 
-`device_config.c/.h` owns compiled defaults plus optional SD-backed `/sdcard/rfscout.json` preferences. Configuration loading is nonfatal: RFScout can continue with runtime defaults when storage or persistence fails. Global notification mode and every notification-category Morse character are part of this configuration.
+`device_config.c/.h` owns compiled defaults plus optional SD-backed `/sdcard/rfscout.json` preferences. Configuration loading is nonfatal: RFScout can continue with runtime defaults when storage or persistence fails. Global notification mode, volume, and every notification-category Morse character are part of this configuration.
 
 Device has two navigation states: a pass-through landing screen and the entered settings editor. Rotation on the landing screen remains top-level app navigation; center enters settings; settings opens on Back; Back returns to the landing screen.
 
@@ -208,6 +214,6 @@ Hand-maintained modules follow the conventions in [CODING_STYLE.md](CODING_STYLE
 
 ## Current versus future capabilities
 
-Implemented application-level capabilities are Wi-Fi/BLE awareness, device-wide configurable asynchronous detection notifications, CC1101 spectrum/detection awareness, nRF24 activity/fingerprinting, PDM microphone spectrum analysis, optional MLX90640 thermal imaging, SD logging, battery/status telemetry, Device configuration/time management, and encoder-driven navigation.
+Implemented application-level capabilities are Wi-Fi/BLE awareness, device-wide configurable asynchronous detection notifications with persistent volume and per-category Morse mappings, CC1101 spectrum/detection awareness, nRF24 activity/fingerprinting, PDM microphone spectrum analysis, optional MLX90640 thermal imaging, SD logging, battery/status telemetry, Device configuration/time management, and encoder-driven navigation.
 
 Audio recording and the interactive International Morse player are planned next. NFC, IR, GPS UI, and active/replay functions are not part of the current active application set and should not be presented as implemented functionality until they are actually enabled.

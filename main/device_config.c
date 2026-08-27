@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 
 #define CONFIG_TEMP_PATH RFSCOUT_CONFIG_PATH ".tmp"
@@ -42,33 +43,6 @@ static void copy_string( char *a_destination, size_t a_capacity, const char *a_s
     snprintf( a_destination, a_capacity, "%s", ( NULL != a_source ) ? a_source : "" );
 }
 
-/** @brief Return the stable JSON key for one configurable notification category. */
-static const char *notification_key( rfscout_notification_type_t a_type )
-{
-    static const char *keys[ RFSCOUT_NOTIFICATION_TYPE_COUNT ] = {
-        "flock",
-        "body_camera",
-        "drone",
-        "camera",
-        "smart_glasses",
-        "acoustic_sensor",
-        "surveillance_other",
-        "cc1101_narrow_ism",
-        "cc1101_remote_sensor",
-        "cc1101_carrier",
-        "cc1101_bursty",
-        "cc1101_wideband",
-        "nrf24_esb",
-        "nrf24_input",
-        "nrf24_sensor",
-        "nrf24_wifi_like",
-        "nrf24_ble_like",
-        "nrf24_logitech_like",
-    };
-
-    return ( a_type < RFSCOUT_NOTIFICATION_TYPE_COUNT ) ? keys[ a_type ] : NULL;
-}
-
 /** @brief Populate one compiled timezone option. */
 static void
 timezone_default( size_t a_index, const char *a_name, const char *a_label, const char *a_posix )
@@ -87,6 +61,7 @@ static void set_defaults( void )
     config.logging_enabled = true;
     config.clock_24h = false;
     config.alert_mode = RFSCOUT_ALERT_OFF;
+    config.alert_volume_percent = RFSCOUT_ALERT_VOLUME_DEFAULT_PERCENT;
 
     for( size_t index = 0; index < RFSCOUT_APP_COUNT; ++index )
     {
@@ -164,7 +139,13 @@ static void load_logging( const cJSON *a_root )
     }
 }
 
-/** @brief Apply global audible-notification mode and per-category Morse characters. */
+/**
+ * @brief Apply global notification mode/volume and one Morse character per canonical alert item.
+ *
+ * Alert keys come from alert.c's descriptor table. Adding a notification category therefore does
+ * not require another key list here; update the enum/descriptor table and the producer mapping
+ * documented in alert.h instead.
+ */
 static void load_notifications( const cJSON *a_root )
 {
     const cJSON *notifications = cJSON_GetObjectItemCaseSensitive( a_root, "notifications" );
@@ -190,6 +171,13 @@ static void load_notifications( const cJSON *a_root )
         }
     }
 
+    const cJSON *volume = cJSON_GetObjectItemCaseSensitive( notifications, "volume" );
+    if( cJSON_IsNumber( volume ) && ( volume->valueint >= 0 ) &&
+        ( volume->valueint <= RFSCOUT_ALERT_VOLUME_MAX_PERCENT ) )
+    {
+        config.alert_volume_percent = (uint8_t)volume->valueint;
+    }
+
     const cJSON *characters = cJSON_GetObjectItemCaseSensitive( notifications, "characters" );
     if( !cJSON_IsObject( characters ) )
     {
@@ -198,7 +186,12 @@ static void load_notifications( const cJSON *a_root )
 
     for( size_t index = 0; index < RFSCOUT_NOTIFICATION_TYPE_COUNT; ++index )
     {
-        const char *key = notification_key( (rfscout_notification_type_t)index );
+        const rfscout_notification_type_t type = (rfscout_notification_type_t)index;
+        const char *key = alert_notification_config_key( type );
+        if( NULL == key )
+        {
+            continue;
+        }
         const cJSON *value = cJSON_GetObjectItemCaseSensitive( characters, key );
         if( !cJSON_IsString( value ) || ( NULL == value->valuestring ) ||
             ( '\0' == value->valuestring[ 0 ] ) || ( '\0' != value->valuestring[ 1 ] ) )
@@ -440,12 +433,18 @@ static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_tim
 
     cJSON *notifications = cJSON_AddObjectToObject( root, "notifications" );
     cJSON_AddStringToObject( notifications, "mode", alert_mode_name( config.alert_mode ) );
+    cJSON_AddNumberToObject( notifications, "volume", config.alert_volume_percent );
     cJSON *characters = cJSON_AddObjectToObject( notifications, "characters" );
     for( size_t index = 0; index < RFSCOUT_NOTIFICATION_TYPE_COUNT; ++index )
     {
+        const rfscout_notification_type_t type = (rfscout_notification_type_t)index;
+        const char *key = alert_notification_config_key( type );
+        if( NULL == key )
+        {
+            continue;
+        }
         char value[ 2 ] = { config.notification_characters[ index ], '\0' };
-        cJSON_AddStringToObject(
-            characters, notification_key( (rfscout_notification_type_t)index ), value );
+        cJSON_AddStringToObject( characters, key, value );
     }
 
     cJSON *timezone = cJSON_AddObjectToObject( root, "timezone" );
@@ -566,6 +565,20 @@ esp_err_t device_config_set_alert_mode( rfscout_alert_mode_t a_mode )
     }
     config.alert_mode = a_mode;
     alert_set_mode( a_mode );
+    return ESP_OK;
+}
+
+esp_err_t device_config_set_alert_volume( uint8_t a_percent )
+{
+    if( a_percent > RFSCOUT_ALERT_VOLUME_MAX_PERCENT )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( !alert_set_volume_percent( a_percent ) )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    config.alert_volume_percent = a_percent;
     return ESP_OK;
 }
 

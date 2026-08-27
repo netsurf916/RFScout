@@ -32,7 +32,11 @@
 
 static const char *TAG = "rfscout";
 
-/** @brief Map a surveillance classification to the global notification category. */
+/**
+ * @brief Map a surveillance classification to the global notification category.
+ * @note When WiFi/BT surveillance categories change, keep this mapping synchronized with the
+ *       canonical notification enum/descriptor table in alert.h and alert.c.
+ */
 static rfscout_notification_type_t
 notification_for_surveillance( surveillance_class_t a_classification )
 {
@@ -174,6 +178,7 @@ void app_main( void )
                   esp_err_to_name( result ) );
     }
     alert_set_mode( device_config_get()->alert_mode );
+    (void)alert_set_volume_percent( device_config_get()->alert_volume_percent );
 
     ESP_ERROR_CHECK( device_time_init() );
     ESP_ERROR_CHECK( app_manager_init() );

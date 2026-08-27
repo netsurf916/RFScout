@@ -23,6 +23,8 @@ Implemented capabilities include:
 
 The WiFi / BT application is the only current view that treats IEEE MAC/OUI identity as a normal device identity source. Notification policy is device-wide and is configured in Device rather than in the WiFi/BT action menu.
 
+Its notification items are Flock/ALPR, body camera, drone, camera, smart glasses, acoustic sensor, and other surveillance. Each item has exactly one stable notification descriptor and one configurable Morse character.
+
 ### CC1101
 
 The CC1101 application currently provides:
@@ -38,7 +40,7 @@ The CC1101 application currently provides:
 - `RESET COUNTS` with immediate return to the live analyzer;
 - runtime-state reset when the application is exited.
 
-The detection labels are behavior categories, not decoded product identities. CC1101 activity does not carry an IEEE identity equivalent to Wi-Fi/BLE OUI information.
+The detection labels are behavior categories, not decoded product identities. CC1101 activity does not carry an IEEE identity equivalent to Wi-Fi/BLE OUI information. Its notification items are narrowband, remote/sensor, carrier, bursty RF, and wide RF.
 
 ### nRF24
 
@@ -56,7 +58,7 @@ The nRF24 application currently provides:
 - `RESET COUNTS` with immediate return to the live analyzer;
 - runtime histogram/classifier/count reset when the application is exited.
 
-Spectrum-only patterns that cannot support a device-level identity are grouped under `Other 2.4 RF` in the display. Underlying Wi-Fi-like and BLE/hopping-RF-like classifier categories remain distinct for notification-character configuration.
+Spectrum-only patterns that cannot support a device-level identity are grouped under `Other 2.4 RF` in the display. Underlying Wi-Fi-like and BLE/hopping-RF-like classifier categories remain distinct for notification-character configuration. Its notification items are ESB device, input, sensor, WiFi-like, hopping/BLE-like, and Logitech-like.
 
 ### Audio
 
@@ -99,11 +101,29 @@ The Device application provides global runtime and SD-backed configuration:
 - per-application enablement;
 - SD logging enablement;
 - global notification mode: `OFF`, `TONE`, or `MORSE`;
+- global notification volume from `0` through `100%`, adjusted in 10% steps;
 - one independently editable Morse character for every defined detection category;
 - explicit configuration save;
 - configuration/time-source status.
 
-Device itself is always available so configuration cannot disable its own recovery path. Notification mode and per-category characters are stored in `/sdcard/rfscout.json` and restored on a later boot. The compiled `OFF` mode and compiled category characters are fallback defaults when no usable saved values exist.
+Device itself is always available so configuration cannot disable its own recovery path. Notification mode, volume, and per-category characters are stored in `/sdcard/rfscout.json` and restored on a later boot. The compiled fallbacks are `OFF`, **50% volume**, and the compiled category characters when no usable saved values exist.
+
+## Application settings inventory
+
+The settings and alert inventories are explicit so additions do not silently create mismatched UI/configuration lists.
+
+| Application | Settings/actions | Notification items |
+| --- | --- | --- |
+| WiFi / BT | Back; Reset detections | Flock/ALPR; Body camera; Drone; Camera; Smart glasses; Acoustic sensor; Other surveillance |
+| CC1101 | Back; Profile; Low; High; Step; Peak hold; Reset counts | Narrowband; Remote/sensor; Carrier; Bursty RF; Wide RF |
+| nRF24 | Back; Low channel; High channel; Dwell; Peak hold; Reset counts | ESB device; Input; Sensor; WiFi-like; Hopping/BLE-like; Logitech-like |
+| Audio | Back; Range; Channel; Peak hold | None currently |
+| Thermal | No settings menu currently | None currently |
+| Device | Back; Brightness; Clock format; Timezone; Manual date/time; app enablement; SD logging; notification mode; notification volume; every notification character; Save config | Configures every registered notification item but emits none itself |
+
+The alert enum and the canonical descriptor table in `alert.c` are intentionally 1:1. Each descriptor records its owning application, stable JSON key, user-facing label, and default character. Device and SD persistence iterate that registry rather than maintaining duplicate alert-item lists.
+
+When classifier categories change, the remaining producer mappings must change with them: WiFi/BT surveillance mapping is in `rfscout.c`; CC1101 and nRF24 mappings are in `app_manager.c`.
 
 ## Application navigation and UX
 
@@ -147,7 +167,11 @@ The UI includes a shared top status region between the application label and bat
 
 Implemented status behavior includes SD-card presence and sticky logging/filesystem errors. Battery state is shown continuously when telemetry is available.
 
-Audible detection notifications use a device-wide **Off**, **Tone**, or **Morse** mode. `OFF` is the compiled fallback. A valid mode loaded from the SD configuration is restored on boot instead of being forced back to Off. Morse notifications contain exactly one character selected by detection category; the default mapping includes Flock `F`, acoustic `A`, camera `C`, drone `D`, and smart glasses `G`, and every mapping can be edited in Device and persisted.
+Audible detection notifications use a device-wide **Off**, **Tone**, or **Morse** mode. `OFF` is the compiled fallback. A valid mode loaded from the SD configuration is restored on boot instead of being forced back to Off. The compiled notification-volume fallback is **50%**; a valid saved `0-100` value overrides it. Volume is applied to both Tone and Morse output.
+
+Each queued speaker command captures the current notification volume when it is requested. Changing volume therefore affects later commands without changing the level of commands already waiting in the asynchronous queue.
+
+Morse notifications contain exactly one character selected by detection category; the default mapping includes Flock `F`, acoustic `A`, camera `C`, drone `D`, and smart glasses `G`, and every mapping can be edited in Device and persisted.
 
 The printable-character table follows ITU-R M.1677-1 for A-Z, figures, and the standard ASCII-representable punctuation signs. The onboard-speaker service uses a bounded asynchronous queue, so audio generation remains outside radio callbacks and cannot deliberately stall acquisition while a sound finishes.
 

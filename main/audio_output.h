@@ -22,18 +22,25 @@ esp_err_t audio_output_init( void );
  * @brief Queue one tone without blocking the caller.
  * @param a_frequency_hz Tone frequency in hertz.
  * @param a_duration_ms Tone duration in milliseconds.
+ * @param a_volume_percent Linear PCM amplitude percentage from 0 through 100.
  * @return True when the request was queued.
  */
-bool audio_output_play_tone( uint16_t a_frequency_hz, uint32_t a_duration_ms );
+bool audio_output_play_tone( uint16_t a_frequency_hz,
+                             uint32_t a_duration_ms,
+                             uint8_t a_volume_percent );
 
 /**
  * @brief Queue one Morse-code character without blocking the caller.
  * @param a_character Single supported Morse character.
  * @param a_frequency_hz Tone frequency in hertz.
  * @param a_unit_ms Dot duration in milliseconds.
+ * @param a_volume_percent Linear PCM amplitude percentage from 0 through 100.
  * @return True when the request was queued.
  */
-bool audio_output_play_morse( char a_character, uint16_t a_frequency_hz, uint32_t a_unit_ms );
+bool audio_output_play_morse( char a_character,
+                              uint16_t a_frequency_hz,
+                              uint32_t a_unit_ms,
+                              uint8_t a_volume_percent );
 
 /**
  * @brief Drop speaker commands that are queued but have not started playing yet.
