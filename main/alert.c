@@ -120,8 +120,10 @@ const char *alert_notification_name( rfscout_notification_type_t a_type )
             return "nRF24 input";
         case RFSCOUT_NOTIFICATION_NRF24_SENSOR:
             return "nRF24 sensor";
-        case RFSCOUT_NOTIFICATION_NRF24_OTHER_RF:
-            return "nRF24 other 2.4 RF";
+        case RFSCOUT_NOTIFICATION_NRF24_WIFI_LIKE:
+            return "nRF24 WiFi-like";
+        case RFSCOUT_NOTIFICATION_NRF24_BLE_LIKE:
+            return "nRF24 hopping RF";
         case RFSCOUT_NOTIFICATION_NRF24_LOGITECH_LIKE:
             return "nRF24 Logitech";
         default:
@@ -163,8 +165,10 @@ char alert_notification_default_character( rfscout_notification_type_t a_type )
             return 'I';
         case RFSCOUT_NOTIFICATION_NRF24_SENSOR:
             return 'T';
-        case RFSCOUT_NOTIFICATION_NRF24_OTHER_RF:
-            return 'O';
+        case RFSCOUT_NOTIFICATION_NRF24_WIFI_LIKE:
+            return 'V';
+        case RFSCOUT_NOTIFICATION_NRF24_BLE_LIKE:
+            return 'L';
         case RFSCOUT_NOTIFICATION_NRF24_LOGITECH_LIKE:
             return 'X';
         default:
