@@ -19,7 +19,7 @@ A core design rule is that inactive applications should not continue doing expen
 - Thermal acquisition is performed only while the Thermal application is active.
 - Device owns the encoder only after its settings view is deliberately entered; Back returns to the pass-through Device landing screen.
 
-Application-specific analyzer configuration such as CC1101 frequency range/step and nRF24 channel/dwell settings remains runtime state independently of the acquisition workers unless explicitly stored in Device configuration. Audible-notification mode, volume, and per-detection Morse characters are device-wide configuration and are persisted in `/sdcard/rfscout.json` when configuration is saved.
+Application-specific analyzer configuration such as CC1101 frequency range/step and nRF24 channel/dwell settings remains runtime state independently of the acquisition workers unless explicitly stored in Device configuration. Audible-notification mode, volume, and per-detection Morse characters are device-wide configuration. Recorder playback volume is a separate application preference. Both are persisted in `/sdcard/rfscout.json`.
 
 ## Wi-Fi / BLE data path
 

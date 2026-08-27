@@ -57,10 +57,11 @@
 #define NRF24_MENU_RESET_COUNTS 5U
 #define NRF24_MENU_ITEM_COUNT 6U
 #define AUDIO_MENU_BACK 0U
-#define AUDIO_MENU_RANGE 1U
-#define AUDIO_MENU_CHANNEL 2U
-#define AUDIO_MENU_PEAK_HOLD 3U
-#define AUDIO_MENU_ITEM_COUNT 4U
+#define AUDIO_MENU_RECORD 1U
+#define AUDIO_MENU_FILE 2U
+#define AUDIO_MENU_PLAY 3U
+#define AUDIO_MENU_VOLUME 4U
+#define AUDIO_MENU_ITEM_COUNT 5U
 
 static const char *TAG = "app_manager";
 static rfscout_app_id_t active_app;
@@ -828,7 +829,16 @@ static void audio_input( bool a_pressed, int a_delta )
             return;
         }
 
+        const bool leaving_volume_edit = audio_edit && ( AUDIO_MENU_VOLUME == audio_item );
         audio_edit = !audio_edit;
+        if( leaving_volume_edit )
+        {
+            const esp_err_t result = device_config_save( false, 0, NULL );
+            if( ESP_OK != result )
+            {
+                ESP_LOGW( TAG, "could not save Recorder volume: %s", esp_err_to_name( result ) );
+            }
+        }
         show_audio_menu();
         return;
     }
@@ -851,20 +861,7 @@ static void audio_input( bool a_pressed, int a_delta )
         }
         audio_item = (unsigned)item;
     }
-    else if( AUDIO_MENU_RANGE == audio_item )
-    {
-        int range = (int)audio_spectrum_range() + ( ( a_delta > 0 ) ? 1 : -1 );
-        if( range < 0 )
-        {
-            range = AUDIO_RANGE_COUNT - 1;
-        }
-        if( range >= AUDIO_RANGE_COUNT )
-        {
-            range = 0;
-        }
-        audio_spectrum_set_range( (audio_range_t)range );
-    }
-    else if( AUDIO_MENU_CHANNEL == audio_item )
+    else if( AUDIO_MENU_FILE == audio_item )
     {
         int channel = (int)audio_spectrum_channel() + ( ( a_delta > 0 ) ? 1 : -1 );
         if( channel < 0 )
@@ -877,9 +874,20 @@ static void audio_input( bool a_pressed, int a_delta )
         }
         audio_spectrum_set_channel( (audio_channel_t)channel );
     }
-    else if( AUDIO_MENU_PEAK_HOLD == audio_item )
+    else if( AUDIO_MENU_VOLUME == audio_item )
     {
-        audio_peak_hold = !audio_peak_hold;
+        const device_config_t *config = device_config_get();
+        int volume = ( NULL != config ) ? (int)config->recorder_volume_percent : 50;
+        volume += ( a_delta > 0 ) ? 5 : -5;
+        if( volume < 0 )
+        {
+            volume = 0;
+        }
+        else if( volume > 100 )
+        {
+            volume = 100;
+        }
+        (void)device_config_set_recorder_volume( (uint8_t)volume );
     }
 
     show_audio_menu();

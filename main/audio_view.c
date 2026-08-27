@@ -26,7 +26,8 @@
 #define RECORDER_MENU_RECORD 1U
 #define RECORDER_MENU_FILE 2U
 #define RECORDER_MENU_PLAY 3U
-#define RECORDER_MENU_ITEM_COUNT 4U
+#define RECORDER_MENU_VOLUME 4U
+#define RECORDER_MENU_ITEM_COUNT 5U
 
 static unsigned last_selected = RECORDER_MENU_BACK;
 static bool last_editing;
@@ -79,7 +80,7 @@ static void trigger_action( unsigned a_selected )
         else if( RFSCOUT_RECORDER_IDLE == state && recorder_file_count() > 0U )
         {
             const device_config_t *config = device_config_get();
-            const uint8_t volume = ( NULL != config ) ? config->alert_volume_percent : 50U;
+            const uint8_t volume = ( NULL != config ) ? config->recorder_volume_percent : 50U;
             (void)recorder_start_playback( audio_spectrum_channel(), volume );
         }
     }
@@ -141,7 +142,8 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
 void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
 {
     (void)a_unused;
-    static const char *labels[ RECORDER_MENU_ITEM_COUNT ] = { "BACK", "RECORD", "FILE", "PLAY" };
+    static const char *labels[ RECORDER_MENU_ITEM_COUNT ] = {
+        "BACK", "RECORD", "FILE", "PLAY", "VOLUME" };
 
     if( a_selected >= RECORDER_MENU_ITEM_COUNT )
     {
@@ -163,9 +165,9 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
     const rfscout_recorder_state_t state = recorder_state();
     for( unsigned i = 0U; i < RECORDER_MENU_ITEM_COUNT; ++i )
     {
-        const int y = 38 + (int)i * 25;
+        const int y = 38 + (int)i * 20;
         const bool active = ( i == a_selected );
-        const bool editable = ( RECORDER_MENU_FILE == i );
+        const bool editable = ( RECORDER_MENU_FILE == i ) || ( RECORDER_MENU_VOLUME == i );
         const char *marker = active ? ( editable && a_editing ? "*" : ">" ) : " ";
         const uint16_t color = active ? YELLOW : DIM;
 
@@ -187,6 +189,14 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
             const char *value = ( RFSCOUT_RECORDER_PLAYING == state ) ? "STOP" : "START";
             display_draw_text( 110, y, value, color, 1U );
         }
+        else if( RECORDER_MENU_VOLUME == i )
+        {
+            const device_config_t *config = device_config_get();
+            const unsigned volume = ( NULL != config ) ? config->recorder_volume_percent : 50U;
+            char value[ 12 ];
+            snprintf( value, sizeof( value ), "%u%%", volume );
+            display_draw_text( 110, y, value, color, 1U );
+        }
     }
 
     if( RFSCOUT_RECORDER_NO_STORAGE == state )
@@ -196,6 +206,10 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
     else if( a_editing && RECORDER_MENU_FILE == a_selected )
     {
         display_draw_text( 8, 142, "TURN: FILE  CENTER: DONE", SUBDUED, 1U );
+    }
+    else if( a_editing && RECORDER_MENU_VOLUME == a_selected )
+    {
+        display_draw_text( 8, 142, "TURN: VOLUME  CENTER: SAVE", SUBDUED, 1U );
     }
     else if( a_editing )
     {

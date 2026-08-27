@@ -24,6 +24,7 @@
 #define CONFIG_BACKUP_PATH RFSCOUT_CONFIG_PATH ".bak"
 #define CONFIG_BAD_PATH RFSCOUT_CONFIG_PATH ".bad"
 #define CONFIG_BRIGHTNESS_DEFAULT 70U
+#define CONFIG_RECORDER_VOLUME_DEFAULT 50U
 #define CONFIG_MIN_VALID_EPOCH 1577836800LL
 #define CONFIG_MAX_VALID_EPOCH 4102444800LL
 
@@ -62,6 +63,7 @@ static void set_defaults( void )
     config.clock_24h = false;
     config.alert_mode = RFSCOUT_ALERT_OFF;
     config.alert_volume_percent = RFSCOUT_ALERT_VOLUME_DEFAULT_PERCENT;
+    config.recorder_volume_percent = CONFIG_RECORDER_VOLUME_DEFAULT;
 
     for( size_t index = 0; index < RFSCOUT_APP_COUNT; ++index )
     {
@@ -204,6 +206,22 @@ static void load_notifications( const cJSON *a_root )
         {
             config.notification_characters[ index ] = character;
         }
+    }
+}
+
+/** @brief Apply Recorder-specific persistent preferences. */
+static void load_recorder( const cJSON *a_root )
+{
+    const cJSON *recorder = cJSON_GetObjectItemCaseSensitive( a_root, "recorder" );
+    if( !cJSON_IsObject( recorder ) )
+    {
+        return;
+    }
+
+    const cJSON *volume = cJSON_GetObjectItemCaseSensitive( recorder, "volume" );
+    if( cJSON_IsNumber( volume ) && ( volume->valueint >= 0 ) && ( volume->valueint <= 100 ) )
+    {
+        config.recorder_volume_percent = (uint8_t)volume->valueint;
     }
 }
 
@@ -378,6 +396,7 @@ static esp_err_t load_file( void )
     load_apps( root );
     load_logging( root );
     load_notifications( root );
+    load_recorder( root );
     load_timezones( root );
     load_saved_time( root );
     cJSON_Delete( root );
@@ -430,6 +449,9 @@ static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_tim
 
     cJSON *logging = cJSON_AddObjectToObject( root, "logging" );
     cJSON_AddBoolToObject( logging, "enabled", config.logging_enabled );
+
+    cJSON *recorder = cJSON_AddObjectToObject( root, "recorder" );
+    cJSON_AddNumberToObject( recorder, "volume", config.recorder_volume_percent );
 
     cJSON *notifications = cJSON_AddObjectToObject( root, "notifications" );
     cJSON_AddStringToObject( notifications, "mode", alert_mode_name( config.alert_mode ) );
@@ -579,6 +601,16 @@ esp_err_t device_config_set_alert_volume( uint8_t a_percent )
         return ESP_ERR_INVALID_STATE;
     }
     config.alert_volume_percent = a_percent;
+    return ESP_OK;
+}
+
+esp_err_t device_config_set_recorder_volume( uint8_t a_percent )
+{
+    if( a_percent > 100U )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    config.recorder_volume_percent = a_percent;
     return ESP_OK;
 }
 
