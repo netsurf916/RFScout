@@ -143,7 +143,7 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
 
 void audio_view_menu( unsigned a_selected, bool a_editing, bool a_peak_hold )
 {
-    static const char *labels[] = { "RANGE", "CHANNEL", "PEAK HOLD", "BACK" };
+    static const char *labels[] = { "BACK", "RANGE", "CHANNEL", "PEAK HOLD" };
 
     display_clear( BG );
     display_draw_text( 8, 7, "AUDIO SETTINGS", SUBDUED, 2U );
@@ -153,7 +153,7 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_peak_hold )
     {
         const int y = 38 + (int)i * 25;
         const bool active = ( i == a_selected );
-        const bool editable = ( i < 3U );
+        const bool editable = ( i > 0U );
         const char *marker = " ";
 
         if( active )
@@ -164,7 +164,7 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_peak_hold )
         display_draw_text( 8, y, marker, active ? YELLOW : DIM, 1U );
         display_draw_text( 22, y, labels[ i ], active ? TEXT : DIM, 1U );
 
-        if( 0U == i )
+        if( 1U == i )
         {
             display_draw_text( 130,
                                y,
@@ -172,7 +172,7 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_peak_hold )
                                active ? YELLOW : DIM,
                                1U );
         }
-        else if( 1U == i )
+        else if( 2U == i )
         {
             display_draw_text( 130,
                                y,
@@ -180,7 +180,7 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_peak_hold )
                                active ? YELLOW : DIM,
                                1U );
         }
-        else if( 2U == i )
+        else if( 3U == i )
         {
             display_draw_text( 130, y, a_peak_hold ? "ON" : "OFF", active ? YELLOW : DIM, 1U );
         }
