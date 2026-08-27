@@ -166,13 +166,13 @@ bool oui_database_lookup_info( const uint8_t a_address[ 6 ], oui_database_match_
 
     const uint32_t prefix24 = ( (uint32_t)a_address[ 0 ] << 16U ) |
                               ( (uint32_t)a_address[ 1 ] << 8U ) | (uint32_t)a_address[ 2 ];
-    const uint32_t prefix28 = ( (uint32_t)a_address[ 0 ] << 20U ) |
-                              ( (uint32_t)a_address[ 1 ] << 12U ) |
-                              ( (uint32_t)a_address[ 2 ] << 4U ) | ( (uint32_t)a_address[ 3 ] >> 4U );
-    const uint64_t prefix36 = ( (uint64_t)a_address[ 0 ] << 28U ) |
-                              ( (uint64_t)a_address[ 1 ] << 20U ) |
-                              ( (uint64_t)a_address[ 2 ] << 12U ) |
-                              ( (uint64_t)a_address[ 3 ] << 4U ) | ( (uint64_t)a_address[ 4 ] >> 4U );
+    const uint32_t prefix28 =
+        ( (uint32_t)a_address[ 0 ] << 20U ) | ( (uint32_t)a_address[ 1 ] << 12U ) |
+        ( (uint32_t)a_address[ 2 ] << 4U ) | ( (uint32_t)a_address[ 3 ] >> 4U );
+    const uint64_t prefix36 =
+        ( (uint64_t)a_address[ 0 ] << 28U ) | ( (uint64_t)a_address[ 1 ] << 20U ) |
+        ( (uint64_t)a_address[ 2 ] << 12U ) | ( (uint64_t)a_address[ 3 ] << 4U ) |
+        ( (uint64_t)a_address[ 4 ] >> 4U );
 
     if( 0U == ( a_address[ 0 ] & 0x03U ) )
     {
