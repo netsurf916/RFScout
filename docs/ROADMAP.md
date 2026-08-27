@@ -31,7 +31,7 @@ Future RTC/GPS/NTP integrations are tracked separately below. In particular, det
 
 ## 3. Configurable asynchronous audio alerts and ESP-IDF 6.x migration
 
-**Status:** Done — PR #21, notification refinement PR #23
+**Status:** Done — PR #21, notification refinement PR #23; volume/registry follow-up in progress
 
 - Add real onboard-speaker output through a dedicated asynchronous audio-output service.
 - Keep RF observation callbacks nonblocking by enqueueing bounded audio commands.
@@ -41,13 +41,18 @@ Future RTC/GPS/NTP integrations are tracked separately below. In particular, det
 - Map distinct Morse characters to detection categories, including surveillance, CC1101, and nRF24 categories.
 - Keep the category enumeration and compiled default characters centralized in the alert layer.
 - Persist notification mode and every per-category character in `/sdcard/rfscout.json`; a valid saved configuration overrides compiled defaults on boot.
+- Add persistent global notification volume from `0-100%`, with a compiled fallback of **50%** and restoration from saved configuration when present.
+- Capture volume in each queued speaker command so already-queued sounds retain the level that was active when requested.
+- Maintain a canonical 1:1 notification descriptor registry containing application ownership, stable JSON key, display label, and default character for every alert item.
+- Make Device and SD persistence iterate the canonical registry rather than maintaining duplicate category/key lists.
+- Document producer-side maintenance points: WiFi/BT classification mapping in `rfscout.c`, and CC1101/nRF24 category mappings in `app_manager.c`.
 - Enumerate notification categories in Device so each Morse character can be changed manually.
 - Centralize the printable International Morse patterns used by notifications for reuse by the Audio application.
 - Keep speaker output on I2S1 and microphone/PDM acquisition on I2S0.
 - Target ESP-IDF 6.x only and run CI against ESP-IDF 6.1.
 - Replace the removed built-in `json` component with managed `espressif/cjson`.
 
-Remaining hardware validation includes physical speaker channel, loudness, and playback behavior on the target device.
+Remaining hardware validation includes physical speaker channel, perceived loudness across the new volume range, and playback behavior on the target device.
 
 ## 4. Clean GitHub release packaging
 

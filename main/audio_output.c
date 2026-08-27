@@ -20,7 +20,7 @@
 #include <stddef.h>
 
 #define AUDIO_OUTPUT_SAMPLE_RATE 16000U
-#define AUDIO_OUTPUT_AMPLITUDE 7000.0f
+#define AUDIO_OUTPUT_MAX_AMPLITUDE 7000.0f
 #define AUDIO_OUTPUT_CHUNK_FRAMES 160U
 #define AUDIO_OUTPUT_QUEUE_LENGTH 6U
 #define AUDIO_OUTPUT_TASK_STACK 4096U
@@ -28,6 +28,7 @@
 #define AUDIO_OUTPUT_DMA_DESC_NUM 6U
 #define AUDIO_OUTPUT_DMA_FRAME_NUM 240U
 #define AUDIO_OUTPUT_TRAILING_SILENCE_MS 20U
+#define AUDIO_OUTPUT_MAX_VOLUME_PERCENT 100U
 
 typedef enum
 {
@@ -41,6 +42,7 @@ typedef struct
     uint16_t frequency_hz;
     uint32_t duration_ms;
     char character;
+    uint8_t volume_percent;
 } audio_output_command_t;
 
 static const char *TAG = "audio_output";
@@ -50,14 +52,19 @@ static TaskHandle_t output_task;
 static bool initialized;
 
 /** @brief Write one tone or silence segment to the speaker channel. */
-static bool
-write_segment( bool a_tone, uint16_t a_frequency_hz, uint32_t a_duration_ms, float *a_phase )
+static bool write_segment( bool a_tone,
+                           uint16_t a_frequency_hz,
+                           uint32_t a_duration_ms,
+                           uint8_t a_volume_percent,
+                           float *a_phase )
 {
     int16_t samples[ AUDIO_OUTPUT_CHUNK_FRAMES * 2U ];
     uint32_t remaining_frames =
         (uint32_t)( ( (uint64_t)AUDIO_OUTPUT_SAMPLE_RATE * a_duration_ms + 999U ) / 1000U );
     const float phase_step =
         2.0f * (float)M_PI * (float)a_frequency_hz / (float)AUDIO_OUTPUT_SAMPLE_RATE;
+    const float amplitude =
+        AUDIO_OUTPUT_MAX_AMPLITUDE * (float)a_volume_percent / AUDIO_OUTPUT_MAX_VOLUME_PERCENT;
 
     while( remaining_frames > 0U )
     {
@@ -67,9 +74,9 @@ write_segment( bool a_tone, uint16_t a_frequency_hz, uint32_t a_duration_ms, flo
         for( uint32_t frame = 0U; frame < frames; ++frame )
         {
             int16_t sample = 0;
-            if( a_tone )
+            if( a_tone && ( a_volume_percent > 0U ) )
             {
-                sample = (int16_t)lroundf( sinf( *a_phase ) * AUDIO_OUTPUT_AMPLITUDE );
+                sample = (int16_t)lroundf( sinf( *a_phase ) * amplitude );
                 *a_phase += phase_step;
                 if( *a_phase >= ( 2.0f * (float)M_PI ) )
                 {
@@ -126,8 +133,13 @@ static void play_tone( const audio_output_command_t *a_command )
     const uint32_t trailing_ms = ( drain_ms > AUDIO_OUTPUT_TRAILING_SILENCE_MS )
                                      ? drain_ms
                                      : AUDIO_OUTPUT_TRAILING_SILENCE_MS;
-    (void)write_segment( true, a_command->frequency_hz, a_command->duration_ms, &phase );
-    (void)write_segment( false, a_command->frequency_hz, trailing_ms, &phase );
+    (void)write_segment( true,
+                         a_command->frequency_hz,
+                         a_command->duration_ms,
+                         a_command->volume_percent,
+                         &phase );
+    (void)write_segment(
+        false, a_command->frequency_hz, trailing_ms, a_command->volume_percent, &phase );
     (void)i2s_channel_disable( tx_channel );
 }
 
@@ -150,14 +162,21 @@ static void play_morse( const audio_output_command_t *a_command )
     for( const char *symbol = pattern; '\0' != *symbol; ++symbol )
     {
         const uint32_t tone_units = ( '-' == *symbol ) ? 3U : 1U;
-        if( !write_segment(
-                true, a_command->frequency_hz, tone_units * a_command->duration_ms, &phase ) )
+        if( !write_segment( true,
+                            a_command->frequency_hz,
+                            tone_units * a_command->duration_ms,
+                            a_command->volume_percent,
+                            &phase ) )
         {
             break;
         }
         if( '\0' != symbol[ 1 ] )
         {
-            if( !write_segment( false, a_command->frequency_hz, a_command->duration_ms, &phase ) )
+            if( !write_segment( false,
+                                a_command->frequency_hz,
+                                a_command->duration_ms,
+                                a_command->volume_percent,
+                                &phase ) )
             {
                 break;
             }
@@ -167,7 +186,8 @@ static void play_morse( const audio_output_command_t *a_command )
     const uint32_t character_gap_ms = 3U * a_command->duration_ms;
     const uint32_t drain_ms = dma_drain_silence_ms();
     const uint32_t trailing_ms = ( character_gap_ms > drain_ms ) ? character_gap_ms : drain_ms;
-    (void)write_segment( false, a_command->frequency_hz, trailing_ms, &phase );
+    (void)write_segment(
+        false, a_command->frequency_hz, trailing_ms, a_command->volume_percent, &phase );
     (void)i2s_channel_disable( tx_channel );
 }
 
@@ -265,10 +285,13 @@ esp_err_t audio_output_init( void )
     return ESP_OK;
 }
 
-bool audio_output_play_tone( uint16_t a_frequency_hz, uint32_t a_duration_ms )
+bool audio_output_play_tone( uint16_t a_frequency_hz,
+                             uint32_t a_duration_ms,
+                             uint8_t a_volume_percent )
 {
     if( !initialized || ( 0U == a_frequency_hz ) ||
-        ( a_frequency_hz >= ( AUDIO_OUTPUT_SAMPLE_RATE / 2U ) ) || ( 0U == a_duration_ms ) )
+        ( a_frequency_hz >= ( AUDIO_OUTPUT_SAMPLE_RATE / 2U ) ) || ( 0U == a_duration_ms ) ||
+        ( a_volume_percent > AUDIO_OUTPUT_MAX_VOLUME_PERCENT ) )
     {
         return false;
     }
@@ -276,14 +299,19 @@ bool audio_output_play_tone( uint16_t a_frequency_hz, uint32_t a_duration_ms )
     const audio_output_command_t command = { .type = AUDIO_OUTPUT_COMMAND_TONE,
                                              .frequency_hz = a_frequency_hz,
                                              .duration_ms = a_duration_ms,
-                                             .character = '\0' };
+                                             .character = '\0',
+                                             .volume_percent = a_volume_percent };
     return pdTRUE == xQueueSend( command_queue, &command, 0U );
 }
 
-bool audio_output_play_morse( char a_character, uint16_t a_frequency_hz, uint32_t a_unit_ms )
+bool audio_output_play_morse( char a_character,
+                              uint16_t a_frequency_hz,
+                              uint32_t a_unit_ms,
+                              uint8_t a_volume_percent )
 {
     if( !initialized || ( NULL == morse_pattern( a_character ) ) || ( 0U == a_frequency_hz ) ||
-        ( a_frequency_hz >= ( AUDIO_OUTPUT_SAMPLE_RATE / 2U ) ) || ( 0U == a_unit_ms ) )
+        ( a_frequency_hz >= ( AUDIO_OUTPUT_SAMPLE_RATE / 2U ) ) || ( 0U == a_unit_ms ) ||
+        ( a_volume_percent > AUDIO_OUTPUT_MAX_VOLUME_PERCENT ) )
     {
         return false;
     }
@@ -291,7 +319,8 @@ bool audio_output_play_morse( char a_character, uint16_t a_frequency_hz, uint32_
     const audio_output_command_t command = { .type = AUDIO_OUTPUT_COMMAND_MORSE,
                                              .frequency_hz = a_frequency_hz,
                                              .duration_ms = a_unit_ms,
-                                             .character = a_character };
+                                             .character = a_character,
+                                             .volume_percent = a_volume_percent };
     return pdTRUE == xQueueSend( command_queue, &command, 0U );
 }
 

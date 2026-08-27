@@ -39,6 +39,7 @@ typedef struct
     bool logging_enabled;
     bool clock_24h;
     rfscout_alert_mode_t alert_mode;
+    uint8_t alert_volume_percent;
     char notification_characters[ RFSCOUT_NOTIFICATION_TYPE_COUNT ];
     char timezone_selected[ RFSCOUT_TIMEZONE_NAME_MAX ];
     device_timezone_t timezones[ RFSCOUT_TIMEZONE_MAX ];
@@ -68,6 +69,9 @@ esp_err_t device_config_set_clock_24h( bool a_enabled );
 
 /** @brief Change the global audible notification mode. */
 esp_err_t device_config_set_alert_mode( rfscout_alert_mode_t a_mode );
+
+/** @brief Change the global notification volume percentage from 0 through 100. */
+esp_err_t device_config_set_alert_volume( uint8_t a_percent );
 
 /** @brief Return the configured Morse character for one notification category. */
 char device_config_notification_character( rfscout_notification_type_t a_type );

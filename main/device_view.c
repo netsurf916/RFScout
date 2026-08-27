@@ -38,13 +38,15 @@
 #define DEVICE_ITEM_THERMAL 13U
 #define DEVICE_ITEM_LOGGING 14U
 #define DEVICE_ITEM_ALERT_MODE 15U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 16U
+#define DEVICE_ITEM_ALERT_VOLUME 16U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 17U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
 #define DEVICE_ITEM_SAVE ( DEVICE_ITEM_NOTIFICATION_LAST + 1U )
 #define DEVICE_ITEM_COUNT ( DEVICE_ITEM_SAVE + 1U )
 #define DEVICE_ROWS_PER_PAGE 8U
 #define DEVICE_LOG_SHUTDOWN_TIMEOUT_MS 3000U
+#define DEVICE_ALERT_VOLUME_STEP 10
 
 #define COLOR_BACKGROUND 0x0000U
 #define COLOR_TEXT 0xBDF7U
@@ -103,7 +105,11 @@ static const char *on_off( bool a_value )
     return a_value ? "On" : "Off";
 }
 
-/** @brief Return the notification category represented by one Device item. */
+/**
+ * @brief Return the notification category represented by one Device item.
+ * @note Device notification rows intentionally correspond 1:1 with the enum/descriptor table in
+ *       alert.h and alert.c. Do not add a second alert-item list here.
+ */
 static rfscout_notification_type_t notification_for_item( unsigned a_item )
 {
     return (rfscout_notification_type_t)( a_item - DEVICE_ITEM_NOTIFICATION_FIRST );
@@ -171,6 +177,8 @@ static const char *item_label( unsigned a_item )
             return "SD logging";
         case DEVICE_ITEM_ALERT_MODE:
             return "Notifications";
+        case DEVICE_ITEM_ALERT_VOLUME:
+            return "Alert volume";
         case DEVICE_ITEM_SAVE:
             return "Save config";
         default:
@@ -247,6 +255,9 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
         case DEVICE_ITEM_ALERT_MODE:
             snprintf( a_value, a_capacity, "%s", alert_mode_name( config->alert_mode ) );
             break;
+        case DEVICE_ITEM_ALERT_VOLUME:
+            snprintf( a_value, a_capacity, "%u%%", (unsigned)config->alert_volume_percent );
+            break;
         case DEVICE_ITEM_SAVE:
             snprintf( a_value, a_capacity, "%s", storage_is_available() ? "SD" : "No SD" );
             break;
@@ -291,7 +302,11 @@ void device_view_landing( void )
     display_draw_text( 22, 46, "Global configuration", COLOR_TEXT, 1U );
 
     char line[ 64 ];
-    snprintf( line, sizeof( line ), "Notifications: %s", alert_mode_name( config->alert_mode ) );
+    snprintf( line,
+              sizeof( line ),
+              "Notifications: %s %u%%",
+              alert_mode_name( config->alert_mode ),
+              (unsigned)config->alert_volume_percent );
     display_draw_text( 22, 68, line, COLOR_TEXT, 1U );
     snprintf( line, sizeof( line ), "SD logging: %s", on_off( config->logging_enabled ) );
     display_draw_text( 22, 86, line, COLOR_TEXT, 1U );
@@ -548,6 +563,35 @@ static void adjust_alert_mode( int a_delta )
                        alert_mode_name( (rfscout_alert_mode_t)mode ) );
 }
 
+/** @brief Adjust the global notification volume in 10-percent steps. */
+static void adjust_alert_volume( int a_delta )
+{
+    const uint8_t old_value = device_config_get()->alert_volume_percent;
+    int value = (int)old_value + ( ( a_delta > 0 ) ? DEVICE_ALERT_VOLUME_STEP
+                                                   : -DEVICE_ALERT_VOLUME_STEP );
+    if( value < 0 )
+    {
+        value = 0;
+    }
+    if( value > RFSCOUT_ALERT_VOLUME_MAX_PERCENT )
+    {
+        value = RFSCOUT_ALERT_VOLUME_MAX_PERCENT;
+    }
+    if( value == old_value )
+    {
+        return;
+    }
+
+    if( ESP_OK == device_config_set_alert_volume( (uint8_t)value ) )
+    {
+        char old_text[ 8 ];
+        char new_text[ 8 ];
+        snprintf( old_text, sizeof( old_text ), "%u", (unsigned)old_value );
+        snprintf( new_text, sizeof( new_text ), "%u", (unsigned)value );
+        log_config_change( "notifications.volume", old_text, new_text );
+    }
+}
+
 /** @brief Adjust one detection category's Morse character. */
 static void adjust_notification_character( unsigned a_item, int a_delta )
 {
@@ -562,7 +606,11 @@ static void adjust_notification_character( unsigned a_item, int a_delta )
     char key[ 64 ];
     char old_text[ 2 ] = { old_character, '\0' };
     char new_text[ 2 ] = { new_character, '\0' };
-    snprintf( key, sizeof( key ), "notifications.%s", alert_notification_name( type ) );
+    const char *config_key = alert_notification_config_key( type );
+    snprintf( key,
+              sizeof( key ),
+              "notifications.characters.%s",
+              ( NULL != config_key ) ? config_key : "unknown" );
     log_config_change( key, old_text, new_text );
 }
 
@@ -634,6 +682,10 @@ static void adjust_selected( int a_delta )
     else if( DEVICE_ITEM_ALERT_MODE == selected_item )
     {
         adjust_alert_mode( a_delta );
+    }
+    else if( DEVICE_ITEM_ALERT_VOLUME == selected_item )
+    {
+        adjust_alert_volume( a_delta );
     }
     else if( ( selected_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
              ( selected_item <= DEVICE_ITEM_NOTIFICATION_LAST ) )
