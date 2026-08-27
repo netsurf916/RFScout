@@ -2,6 +2,14 @@ name: Refresh IEEE OUI database
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/update-oui.yml'
+      - 'tools/update_oui.py'
+      - 'tools/update_surveillance.py'
+      - 'data/surveillance_signatures.csv'
   schedule:
     - cron: '17 6 * * 1'
 
