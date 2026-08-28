@@ -38,6 +38,10 @@
 #define RECORDER_BITS_PER_SAMPLE 16U
 #define RECORDER_STOP_TIMEOUT_MS 3000U
 #define RECORDER_UNIQUE_SUFFIX_LIMIT 100U
+#define RECORDER_MIC_WAKEUP_MS 20U
+#define RECORDER_DIAGNOSTIC_INTERVAL_US 1000000LL
+#define RECORDER_EXPECTED_BYTES_PER_SECOND                                                         \
+    ( RFSCOUT_RECORDER_SAMPLE_RATE * RECORDER_CHANNELS * ( RECORDER_BITS_PER_SAMPLE / 8U ) )
 
 static const char *TAG = "recorder";
 static i2s_chan_handle_t rx_channel;
@@ -52,9 +56,15 @@ static rfscout_recording_t recordings[ RFSCOUT_RECORDER_MAX_FILES ];
 static size_t recording_count;
 static volatile uint8_t live_level_percent;
 static volatile uint8_t live_peak_percent;
-static volatile int active_pdm_slot = -1;
-static uint64_t pdm_slot_energy[ 2 ];
-static uint32_t pdm_probe_frames;
+static volatile int active_pdm_slot = 1;
+static int64_t recording_started_us;
+static int64_t diagnostic_started_us;
+static uint32_t diagnostic_input_bytes;
+static uint32_t diagnostic_output_bytes;
+static uint32_t diagnostic_zero_samples;
+static uint32_t diagnostic_sample_count;
+static int16_t diagnostic_min_sample;
+static int16_t diagnostic_max_sample;
 static int64_t playback_started_us;
 
 static void write_u16_le( uint8_t *a_target, uint16_t a_value )
@@ -190,8 +200,9 @@ static esp_err_t open_microphone( void )
                       .invert_flags = { .clk_inv = false } } };
 
 #if CONFIG_IDF_TARGET_ESP32S3
-    pdm_config.slot_cfg.slot_mode = I2S_SLOT_MODE_STEREO;
-    pdm_config.slot_cfg.slot_mask = I2S_PDM_LINE_SLOT_ALL;
+    /* The board microphone SELECT input is pulled low, so capture its LEFT PDM slot directly. */
+    pdm_config.slot_cfg.slot_mode = I2S_SLOT_MODE_MONO;
+    pdm_config.slot_cfg.slot_mask = I2S_PDM_SLOT_LEFT;
 #endif
 
 #if SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER
@@ -206,6 +217,18 @@ static esp_err_t open_microphone( void )
     if( ESP_OK != result )
     {
         release_channel();
+    }
+    else
+    {
+        ESP_LOGI( TAG,
+                  "PDM configured: I2S0 clk=GPIO%d data=GPIO%d rate=%u bits=%u channels=%u "
+                  "slot=LEFT HPF=on expected_pcm=%u B/s",
+                  RFSCOUT_BOARD_MIC_CLOCK_PIN,
+                  RFSCOUT_BOARD_MIC_DATA_PIN,
+                  RFSCOUT_RECORDER_SAMPLE_RATE,
+                  RECORDER_BITS_PER_SAMPLE,
+                  RECORDER_CHANNELS,
+                  (unsigned)RECORDER_EXPECTED_BYTES_PER_SECOND );
     }
     return result;
 }
@@ -299,16 +322,47 @@ static void record_worker( void *a_argument )
 {
     (void)a_argument;
     int16_t dma_samples[ RECORDER_DMA_READ_SAMPLES ];
-    int16_t mono[ RECORDER_DMA_READ_SAMPLES / 2U ];
     bool failed = false;
+    unsigned timeout_streak = 0U;
 
-    while( record_running )
+    ESP_LOGI( TAG,
+              "microphone wake-up: discarding first %u ms after PDM clock start",
+              RECORDER_MIC_WAKEUP_MS );
+    const int64_t wakeup_until_us = esp_timer_get_time() + (int64_t)RECORDER_MIC_WAKEUP_MS * 1000LL;
+    while( record_running && esp_timer_get_time() < wakeup_until_us )
+    {
+        size_t discarded = 0U;
+        const esp_err_t result = i2s_channel_read(
+            rx_channel, dma_samples, sizeof( dma_samples ), &discarded, pdMS_TO_TICKS( 20 ) );
+        if( ESP_OK != result && ESP_ERR_TIMEOUT != result )
+        {
+            ESP_LOGW( TAG, "microphone wake-up read failed: %s", esp_err_to_name( result ) );
+            failed = true;
+            break;
+        }
+    }
+
+    recording_started_us = esp_timer_get_time();
+    diagnostic_started_us = recording_started_us;
+    diagnostic_input_bytes = 0U;
+    diagnostic_output_bytes = 0U;
+    diagnostic_zero_samples = 0U;
+    diagnostic_sample_count = 0U;
+    diagnostic_min_sample = INT16_MAX;
+    diagnostic_max_sample = INT16_MIN;
+
+    while( record_running && !failed )
     {
         size_t bytes = 0U;
         const esp_err_t result = i2s_channel_read(
             rx_channel, dma_samples, sizeof( dma_samples ), &bytes, pdMS_TO_TICKS( 100 ) );
         if( ESP_ERR_TIMEOUT == result )
         {
+            ++timeout_streak;
+            if( 10U == timeout_streak )
+            {
+                ESP_LOGW( TAG, "PDM input timed out 10 consecutive reads" );
+            }
             continue;
         }
         if( ESP_OK != result )
@@ -320,49 +374,39 @@ static void record_worker( void *a_argument )
             }
             break;
         }
+        timeout_streak = 0U;
+        diagnostic_input_bytes += (uint32_t)bytes;
 
         const size_t samples = bytes / sizeof( int16_t );
-        if( active_pdm_slot < 0 )
-        {
-            for( size_t index = 0U; ( index + 1U ) < samples; index += 2U )
-            {
-                const int32_t right = dma_samples[ index ];
-                const int32_t left = dma_samples[ index + 1U ];
-                pdm_slot_energy[ 0 ] += (uint32_t)( right < 0 ? -right : right );
-                pdm_slot_energy[ 1 ] += (uint32_t)( left < 0 ? -left : left );
-                ++pdm_probe_frames;
-            }
-
-            if( pdm_probe_frames >= ( RFSCOUT_RECORDER_SAMPLE_RATE / 10U ) )
-            {
-                active_pdm_slot = ( pdm_slot_energy[ 1 ] >= pdm_slot_energy[ 0 ] ) ? 1 : 0;
-                ESP_LOGI( TAG,
-                          "PDM slot selected=%s right_energy=%llu left_energy=%llu",
-                          active_pdm_slot ? "LEFT" : "RIGHT",
-                          (unsigned long long)pdm_slot_energy[ 0 ],
-                          (unsigned long long)pdm_slot_energy[ 1 ] );
-            }
-            continue;
-        }
-
-        size_t mono_count = 0U;
-        uint32_t absolute_sum = 0U;
+        uint64_t absolute_sum = 0U;
         uint32_t absolute_peak = 0U;
-        for( size_t index = (size_t)active_pdm_slot; index < samples; index += 2U )
+        for( size_t index = 0U; index < samples; ++index )
         {
             const int16_t sample = dma_samples[ index ];
             const uint32_t absolute = (uint32_t)( sample < 0 ? -(int32_t)sample : sample );
-            mono[ mono_count++ ] = sample;
             absolute_sum += absolute;
             if( absolute > absolute_peak )
             {
                 absolute_peak = absolute;
             }
+            if( 0 == sample )
+            {
+                ++diagnostic_zero_samples;
+            }
+            if( sample < diagnostic_min_sample )
+            {
+                diagnostic_min_sample = sample;
+            }
+            if( sample > diagnostic_max_sample )
+            {
+                diagnostic_max_sample = sample;
+            }
         }
+        diagnostic_sample_count += (uint32_t)samples;
 
-        if( mono_count > 0U )
+        if( samples > 0U )
         {
-            const uint32_t average = absolute_sum / mono_count;
+            const uint32_t average = (uint32_t)( absolute_sum / samples );
             const uint8_t level = (uint8_t)( ( average * 100U ) / 32767U );
             const uint8_t peak = (uint8_t)( ( absolute_peak * 100U ) / 32767U );
             live_level_percent = (uint8_t)( ( live_level_percent * 3U + level ) / 4U );
@@ -376,14 +420,54 @@ static void record_worker( void *a_argument )
             }
         }
 
-        if( ( mono_count > 0U ) &&
-            ( mono_count != fwrite( mono, sizeof( int16_t ), mono_count, record_file ) ) )
+        if( ( samples > 0U ) &&
+            ( samples != fwrite( dma_samples, sizeof( int16_t ), samples, record_file ) ) )
         {
             ESP_LOGW( TAG, "recording write failed" );
             failed = true;
             break;
         }
-        data_bytes += (uint32_t)( mono_count * sizeof( int16_t ) );
+        const uint32_t written_bytes = (uint32_t)( samples * sizeof( int16_t ) );
+        data_bytes += written_bytes;
+        diagnostic_output_bytes += written_bytes;
+
+        const int64_t now_us = esp_timer_get_time();
+        if( ( now_us - diagnostic_started_us ) >= RECORDER_DIAGNOSTIC_INTERVAL_US )
+        {
+            const uint32_t elapsed_ms = (uint32_t)( ( now_us - diagnostic_started_us ) / 1000LL );
+            const uint32_t input_rate =
+                elapsed_ms > 0U
+                    ? (uint32_t)( (uint64_t)diagnostic_input_bytes * 1000ULL / elapsed_ms )
+                    : 0U;
+            const uint32_t output_rate =
+                elapsed_ms > 0U
+                    ? (uint32_t)( (uint64_t)diagnostic_output_bytes * 1000ULL / elapsed_ms )
+                    : 0U;
+            const unsigned zero_percent = diagnostic_sample_count > 0U
+                                              ? (unsigned)( (uint64_t)diagnostic_zero_samples *
+                                                            100ULL / diagnostic_sample_count )
+                                              : 0U;
+            ESP_LOGI( TAG,
+                      "PDM diag: elapsed=%ums reads=%uB/s pcm=%uB/s expected=%uB/s samples=%u "
+                      "zero=%u%% min=%d max=%d level=%u%% peak=%u%%",
+                      (unsigned)elapsed_ms,
+                      (unsigned)input_rate,
+                      (unsigned)output_rate,
+                      (unsigned)RECORDER_EXPECTED_BYTES_PER_SECOND,
+                      (unsigned)diagnostic_sample_count,
+                      zero_percent,
+                      (int)diagnostic_min_sample,
+                      (int)diagnostic_max_sample,
+                      (unsigned)live_level_percent,
+                      (unsigned)live_peak_percent );
+            diagnostic_started_us = now_us;
+            diagnostic_input_bytes = 0U;
+            diagnostic_output_bytes = 0U;
+            diagnostic_zero_samples = 0U;
+            diagnostic_sample_count = 0U;
+            diagnostic_min_sample = INT16_MAX;
+            diagnostic_max_sample = INT16_MIN;
+        }
     }
 
     record_running = false;
@@ -565,10 +649,8 @@ esp_err_t recorder_start_recording( void )
     data_bytes = 0U;
     live_level_percent = 0U;
     live_peak_percent = 0U;
-    active_pdm_slot = -1;
-    pdm_slot_energy[ 0 ] = 0U;
-    pdm_slot_energy[ 1 ] = 0U;
-    pdm_probe_frames = 0U;
+    active_pdm_slot = 1;
+    recording_started_us = 0;
     record_running = true;
     if( pdPASS != xTaskCreate( record_worker,
                                "recorder",
