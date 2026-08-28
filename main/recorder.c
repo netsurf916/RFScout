@@ -953,7 +953,7 @@ esp_err_t recorder_delete_file( size_t a_index )
         return ESP_ERR_INVALID_STATE;
     }
 
-    char path[ RFSCOUT_RECORDER_PATH_MAX ];
+    char path[ sizeof( RFSCOUT_RECORDER_DIRECTORY ) + RFSCOUT_RECORDER_NAME_MAX + 1U ];
     const int length = snprintf(
         path, sizeof( path ), "%s/%s", RFSCOUT_RECORDER_DIRECTORY, recordings[ a_index ].name );
     if( length < 0 || (size_t)length >= sizeof( path ) )
