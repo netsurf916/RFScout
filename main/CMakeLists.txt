@@ -1,3 +1,15 @@
+set(HOME_LOGO_HEADER "${CMAKE_CURRENT_BINARY_DIR}/home_logo_bitmap.h")
+execute_process(
+    COMMAND python3
+        "${CMAKE_CURRENT_LIST_DIR}/../tools/generate_home_logo.py"
+        "${CMAKE_CURRENT_LIST_DIR}/../assets/logo.png"
+        "${HOME_LOGO_HEADER}"
+    RESULT_VARIABLE HOME_LOGO_RESULT
+)
+if(NOT HOME_LOGO_RESULT EQUAL 0)
+    message(FATAL_ERROR "Failed to generate RFScout Home logo bitmap")
+endif()
+
 idf_component_register(
     SRCS
         "rfscout.c"
@@ -41,7 +53,7 @@ idf_component_register(
         "oui_database.c"
         "storage.c"
         "log_writer.c"
-    INCLUDE_DIRS "."
+    INCLUDE_DIRS "." "${CMAKE_CURRENT_BINARY_DIR}"
     PRIV_REQUIRES bt cjson esp_driver_ledc
     REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_timer driver esp_driver_i2c esp_driver_i2s esp_driver_pcnt esp_lcd fatfs sdmmc
 )
