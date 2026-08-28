@@ -1,10 +1,12 @@
 # Device configuration and wall clock
 
-RFScout has a dedicated **Device** application for settings that affect the whole instrument. Runtime behavior always has compiled defaults; an SD card is optional. When an SD card is mounted, persistent preferences live in `/sdcard/rfscout.json`.
+This document describes configuration implemented on current `main`. Planned configuration concepts belong in [ROADMAP.md](ROADMAP.md).
+
+RFScout always starts from compiled defaults. When an SD card is mounted, persistent preferences are loaded from `/sdcard/rfscout.json`.
 
 ## Configuration model
 
-The configuration file is versioned JSON. A typical file is:
+Schema version 1 is currently supported. A representative configuration is:
 
 ```json
 {
@@ -48,6 +50,10 @@ The configuration file is versioned JSON. A typical file is:
       "nrf24_logitech_like": "X"
     }
   },
+  "recorder": {
+    "volume": 50,
+    "input_gain_db": 12
+  },
   "timezone": {
     "selected": "America/Chicago",
     "options": [
@@ -70,63 +76,57 @@ The configuration file is versioned JSON. A typical file is:
 }
 ```
 
-The `device` application is always enabled even if an edited configuration attempts to disable it. This prevents configuration from making its own recovery UI inaccessible.
+The historical configuration key remains `apps.audio` because the application enum/ABI still uses `RFSCOUT_APP_AUDIO`; the user-facing application is Recorder.
 
 ## Defaults and validation
 
-RFScout starts from compiled defaults and then applies valid fields from the SD configuration. Missing or invalid ordinary settings retain their compiled defaults. Invalid timezone entries are ignored. If the selected timezone does not name a usable configured option, RFScout falls back to UTC when available and otherwise to the first valid configured timezone.
+Missing or invalid ordinary fields retain compiled defaults. The Device application is always enabled even if configuration attempts to disable it.
 
-The compiled audible-notification mode is `OFF`. That fallback is used when no usable saved notification mode is available. A valid saved `OFF`, `TONE`, or `MORSE` value is restored on boot and overrides the compiled fallback.
+The compiled notification mode is `OFF`; valid saved `OFF`, `TONE`, or `MORSE` values override it. Notification volume accepts `0` through `100` and defaults to 50 when no usable saved value exists. Speaker output applies a nonlinear perceptual curve rather than linear PCM scaling.
 
-The compiled notification volume is **50%**. A valid saved `notifications.volume` value from `0` through `100` overrides that default on boot. The percentage scales PCM amplitude linearly relative to the previous fixed speaker amplitude, so `100` preserves the former full notification level and `0` produces silent output while leaving the selected notification mode unchanged.
+Recorder playback volume is a separate `0` through `100` preference and does not alter notification loudness. Recorder microphone input gain is stored as a fixed digital gain from 0 through +24 dB in 3 dB steps.
 
-Each notification category also has a compiled one-character Morse default. Valid one-character values in `notifications.characters` replace those defaults individually. Unsupported or multi-character values are ignored without invalidating unrelated configuration. The category keys are stable configuration identifiers; the user-facing labels in Device may be more descriptive.
+Each notification category has one compiled Morse-character default. Valid one-character saved values override defaults individually.
 
-Schema version 1 is currently supported. Adding `notifications.volume` is backward-compatible within schema version 1 because older files simply omit the field and receive the 50% compiled default.
-
-A saved wall-clock epoch is accepted only when it is within RFScout's supported sanity range. Invalid time state is ignored and is omitted the next time the configuration is written.
-
-If the complete JSON document cannot be parsed, or its schema version is unsupported, RFScout renames it to `rfscout.json.bad`, regenerates a default configuration, and continues booting.
-
-Configuration replacement is crash-recoverable. RFScout writes and synchronizes `rfscout.json.tmp`, moves the previous configuration to `rfscout.json.bak`, promotes the synchronized temporary file to `rfscout.json`, and removes the backup after success. If startup finds the main configuration missing but the backup present, it restores the backup before loading settings.
+If the complete JSON document cannot be parsed or the schema version is unsupported, RFScout retains the bad file as `rfscout.json.bad`, regenerates defaults, and continues booting. Configuration replacement uses `.tmp` and `.bak` files so an interrupted save can recover.
 
 ## Device application
 
-Device has a pass-through landing screen. Merely rotating onto Device does not give settings ownership of the encoder: another encoder tick continues normal application navigation. Press the center button to enter Device settings.
+Device has a pass-through landing screen. Merely rotating onto Device does not take ownership of the encoder. Center enters the settings editor; Back returns to the landing screen.
 
-The settings menu always opens with **Back** selected first. Pressing center again immediately returns to the Device landing screen without changing configuration. Current settings include:
+Current Device settings include:
 
 - LCD brightness;
-- 12-hour or 24-hour clock presentation;
+- 12/24-hour clock format;
 - timezone selection;
 - manual date and time;
-- enable/disable state for WiFi/BT, CC1101, nRF24, Audio, and Thermal;
+- enable/disable state for WiFi/BT, CC1101, nRF24, Recorder (`apps.audio`), and Thermal;
 - SD logging enablement;
-- global audible-notification mode (`OFF`, `TONE`, or `MORSE`);
-- global notification volume (`0` through `100%`, adjusted in 10% steps in Device);
-- an individually editable Morse character for every currently defined alert item;
+- global notification mode;
+- global notification volume;
+- one editable Morse character for every notification category;
 - explicit configuration save.
 
-Application enablement takes effect when navigation resumes. Disabled applications are skipped. Thermal additionally requires an MLX90640 to be detected.
+Recorder playback volume and microphone input gain are persisted in the same configuration but are adjusted from Recorder itself.
 
-Without an SD card, Device remains usable and settings can affect the running session, but persistent saves are unavailable. With storage available, **Save config** writes the active notification mode, volume, every category mapping, and the other Device preferences to `/sdcard/rfscout.json`. An orderly hard power-off also writes the current in-memory preferences, so the explicit Save action is useful when persistence is wanted before shutdown or deep sleep.
+Without an SD card, settings can affect the running session but cannot be persisted.
 
-Manual calendar input is validated after local-time conversion. Invalid dates and local times that cannot be represented in the selected timezone, such as a time inside a daylight-saving transition gap, are rejected rather than silently normalized.
+## Application settings inventory
 
-## Per-application settings and alert items
-
-The application settings inventory and the notification registry intentionally describe the same implemented behavior. Every notification enum value has exactly one descriptor in `alert.c`, including its owning application, stable JSON key, user-facing label, and compiled default character. Device and configuration persistence iterate that registry rather than maintaining independent alert lists.
-
-| Application | Application settings/actions | Alert items |
+| Application | Current settings/actions | Notification items |
 | --- | --- | --- |
-| WiFi / BT | Back; Reset live device/OUI/surveillance state | Flock / ALPR; Body camera; Drone; Camera; Smart glasses; Acoustic sensor; Other surveillance |
+| WiFi / BT | Back; Reset detections | Flock/ALPR; Body camera; Drone; Camera; Smart glasses; Acoustic sensor; Other surveillance |
 | CC1101 | Back; Profile; Low; High; Step; Peak hold; Reset counts | Narrowband; Remote/sensor; Carrier; Bursty RF; Wide RF |
 | nRF24 | Back; Low channel; High channel; Dwell; Peak hold; Reset counts | ESB device; Input; Sensor; WiFi-like; Hopping/BLE-like; Logitech-like |
-| Audio | Back; Range; Channel; Peak hold | None yet — no discrete detection classifier currently emits Audio alerts |
-| Thermal | No application settings menu currently | None yet — no discrete Thermal detection classifier currently emits alerts |
-| Device | Back; brightness; clock format; timezone; manual date/time; app enablement; SD logging; notification mode; notification volume; every alert-item character; Save config | Device configures the alert items owned by the detection-producing applications; it does not emit a detection alert itself |
+| Recorder | Back; New recording; Monitor; recording browser; playback volume; delete recording; monitor input gain | None currently |
+| Thermal | No application settings menu | None currently |
+| Device | Back; brightness; clock format; timezone; manual date/time; app enablement; SD logging; notification mode/volume; notification characters; Save config | Configures all registered notification items |
 
-The complete alert-item/config-key correspondence is:
+## Notification registry
+
+The notification enum and descriptor table in `alert.c` are intentionally 1:1. Each descriptor owns the application, stable JSON key, user-facing label, and compiled default character. Device and configuration persistence iterate that registry.
+
+Current stable keys are:
 
 | Application | Alert item | JSON key | Default Morse |
 | --- | --- | --- | --- |
@@ -149,85 +149,12 @@ The complete alert-item/config-key correspondence is:
 | nRF24 | Hopping/BLE-like | `nrf24_ble_like` | `L` |
 | nRF24 | Logitech-like | `nrf24_logitech_like` | `X` |
 
-When a classifier gains or loses a category, update the notification enum and descriptor table together. The WiFi/BT classifier-to-notification mapping is in `rfscout.c`; the CC1101 and nRF24 mappings are in `app_manager.c`. The Device rows and JSON character list are descriptor-driven and should not receive separate hand-maintained category lists.
+## Wall clock and timezones
 
-## Notification behavior
+The ESP32 system wall clock is authoritative for the shared clock display, SD log timestamps, and normal filesystem calendar metadata. Monotonic time remains authoritative for polling, RF dwell, debounce, retries, timeouts, and housekeeping.
 
-The notification policy is global rather than owned by the WiFi/BT application. Detection-producing applications request a notification category and the shared alert service applies the configured mode, volume, and Morse mapping.
+Timezone choices are stored as data: stable `name`, user-facing `label`, and POSIX `TZ` rule. Manual calendar input is validated after local-time conversion so invalid/nonexistent local times are rejected.
 
-CC1101 and nRF24 notifications are generated when their accumulated detection-category count advances. Resetting those counts resets the notification baseline as well. WiFi/BLE surveillance notifications are generated for new observations classified as surveillance.
+On orderly hard power-off, RFScout can save the current epoch and authority source as a cold-boot continuity aid. Because complete board power removal stops the ESP32 clock, restored saved time is not treated as proof of ongoing synchronization. Deep sleep is handled separately because the RTC domain continues running.
 
-Audio and Thermal currently expose analyzer/sensor views rather than discrete detection classifiers, so they have no category event to notify yet. The global notification interface is application-independent and can be used by future Audio or Thermal detectors without moving policy back into an individual app.
-
-Notification volume is captured when a tone or Morse command is queued. If the user changes volume while other commands are already waiting, queued commands retain the volume that was active when they were requested.
-
-## Wall clock and monotonic time
-
-RFScout deliberately separates two kinds of time.
-
-The ESP32 system wall clock is authoritative for:
-
-- the clock displayed in the shared status area;
-- SD log timestamps;
-- filesystem/calendar timestamps provided through the normal ESP-IDF/FAT path.
-
-Monotonic timing remains authoritative for:
-
-- polling intervals;
-- RF scan dwell times;
-- debounce and button-hold timing;
-- retry intervals;
-- log flush intervals;
-- timeouts and housekeeping.
-
-Changing the wall clock must never affect those monotonic operations.
-
-## Setting and restoring time
-
-Manual time setting is always available from Device. RFScout records the mechanism that established the wall clock. Current source tokens are designed to include:
-
-- `manual`;
-- `gps`;
-- `ntp`;
-- `rtc` or a specific future RTC such as `rtc:ds3231`.
-
-The `time` object is not continuously rewritten while the clock advances. During a normal hard power-off, after the log writer has drained and before the SD card is unmounted, RFScout updates the saved epoch and source in `rfscout.json`. On the next cold power-on, that saved epoch bootstraps the ESP32 system clock.
-
-Because the ESP32-S3 clock does not run through complete board power removal, the saved epoch is the time at the previous orderly shutdown. It cannot account for elapsed time while the board was physically unpowered. RFScout therefore tracks that the current runtime clock was restored from saved state while preserving the original authority that last set it, for example `Manual (saved)`. A restored saved time is a startup continuity aid, not proof that the displayed wall clock is still synchronized to real time after an arbitrary powered-off interval.
-
-Deep sleep is different. The ESP32-S3 RTC domain continues running through deep sleep. RFScout therefore does not replace the running system time with the saved hard-shutdown checkpoint after a deep-sleep wake. Clock-authority metadata is retained in RTC memory so the resumed clock keeps the same source identity without rewriting the system time.
-
-## Timezones
-
-Timezone choices are data rather than a fixed firmware enumeration. Each option contains:
-
-- `name`: a stable identifier used by the configuration;
-- `label`: user-facing text in Device;
-- `posix`: the POSIX `TZ` rule actually supplied to newlib/ESP-IDF.
-
-This allows timezone choices and DST rules to be changed by editing the SD configuration without rebuilding firmware.
-
-The system wall clock remains UTC epoch time. Timezone selection only changes local presentation and conversion of manually entered local calendar time.
-
-## Logging
-
-When wall time is valid, every SD record begins with a UTC ISO-8601 timestamp, for example:
-
-```text
-2026-08-26T19:52:41Z APP CONFIG display.brightness old=70 new=80
-```
-
-If no valid wall time has been established, the logger explicitly falls back to a monotonic marker such as `UP+123456` rather than inventing a calendar date.
-
-Settings changes are logged through the same asynchronous writer. Manual wall-clock changes include the old UTC time, new UTC time, and source so discontinuities in subsequent records remain explainable.
-
-## Future external RTC behavior
-
-External RTC support is intentionally outside the first Device/settings implementation. The time-service interface already preserves a specific source identifier so different authorities are not collapsed into a generic `external` state.
-
-When a supported external RTC is later detected on QWIIC/I2C, RFScout should prompt the user rather than silently choosing an authority. The prompt should offer at least:
-
-1. **Read RTC** — set RFScout's authoritative system wall clock from the RTC.
-2. **Set RTC** — write RFScout's current authoritative wall clock to the external RTC.
-
-A GPS-derived time source can use the same authority model without pretending it has the same synchronization semantics as an RTC.
+Current implemented authority is manual/saved runtime state. Additional time-authority integrations are roadmap items rather than current configuration behavior.
