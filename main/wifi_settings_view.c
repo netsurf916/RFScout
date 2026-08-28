@@ -8,6 +8,7 @@
 #include "wifi_settings_view.h"
 
 #include "display.h"
+#include "ui_chrome.h"
 #include "ui_layout.h"
 
 #define BG 0x0000U
@@ -23,7 +24,7 @@ void wifi_settings_view_render( unsigned a_selected, bool a_editing )
 
     (void)a_editing;
     display_clear( BG );
-    display_draw_text( UI_LAYOUT_TITLE_X, UI_LAYOUT_TITLE_Y, "WIFI / BT SETTINGS", SUBDUED, 2U );
+    ui_chrome_draw( "WIFI / BT SETTINGS", SUBDUED );
 
     for( unsigned item = 0U; item < WIFI_SETTINGS_ITEM_COUNT; ++item )
     {
