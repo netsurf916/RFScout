@@ -1,45 +1,59 @@
-# microSD card compatibility
+# microSD card behavior
 
-RFScout uses the microSD/TF-card interface provided by the LILYGO T-Embed CC1101 Plus.
+This document describes current storage behavior. Future storage/capture ideas are tracked in [ROADMAP.md](ROADMAP.md).
 
-## LILYGO compatibility guidance
+## Compatibility baseline
 
-LILYGO's documentation for the T-Embed CC1101 family notes that its tested microSD configuration is **SanDisk cards with a capacity of 32 GB or less**. LILYGO also notes that some other cards may not work reliably and that the reason for those compatibility differences is not known.
+RFScout uses the microSD/TF interface on the LILYGO T-Embed CC1101 Plus. LILYGO documents SanDisk cards of 32 GB or less as its tested baseline. A 32 GB-or-smaller FAT32-formatted SanDisk card is therefore the conservative known-good choice; other cards and larger capacities may work but are outside that stated baseline.
 
-For RFScout, a **32 GB or smaller FAT32-formatted SanDisk microSD card** should therefore be treated as the known-good baseline. Larger cards or cards from other manufacturers may work, but they are outside LILYGO's stated tested configuration and should not be assumed compatible.
+RFScout uses ESP-IDF's FAT SD-SPI mounting path. Cards commonly shipped as exFAT may require reformatting to a supported FAT filesystem.
 
-In particular, cards larger than 32 GB are commonly supplied formatted as exFAT rather than FAT32. RFScout currently uses ESP-IDF's FAT filesystem SD-SPI mounting path, so filesystem format is another possible source of incompatibility independent of the physical card capacity.
+## Detection and failure behavior
 
-## Detection behavior
+The board mapping used by RFScout does not expose a separate SD card-detect GPIO. Storage is considered available only after successful initialization and mount.
 
-The T-Embed CC1101 Plus does not expose a separate microSD card-detect GPIO in the board pin mapping used by RFScout. RFScout therefore considers storage present only after the card successfully initializes and mounts. An installed but incompatible or unmountable card is treated the same as unavailable storage.
-
-Failure to mount an SD card is nonfatal. RFScout continues operating without logging; Recorder remains navigable but cannot record or play files, and the SD status icon is shown only after storage has mounted successfully.
+Mount failure is nonfatal. Radio/sensor applications continue operating. Recorder remains navigable but recording and playback are unavailable without mounted storage. The global SD status icon appears only after successful mount; filesystem/logging failures are reflected as a sticky error state.
 
 ## Configuration persistence
 
-When storage is mounted, device-wide preferences are stored in `/sdcard/rfscout.json`. This includes the global audible-notification mode and each detection category's one-character Morse mapping. A valid saved notification configuration is restored on boot; compiled defaults are used when saved values are unavailable or invalid.
+When mounted, `/sdcard/rfscout.json` stores persistent device preferences, including:
+
+- display/clock/application settings;
+- SD logging preference;
+- global notification mode, volume, and Morse characters;
+- Recorder playback volume;
+- Recorder microphone input gain;
+- timezone definitions/selection;
+- saved time metadata when applicable.
+
+Configuration writes use temporary/backup replacement so an interrupted save can recover.
 
 ## Recorder storage
 
-Recorder stores supported 32 kHz, 16-bit mono PCM WAV files in `/sdcard/audio/`. The directory is created automatically when mounted storage is available. Only WAV files that validate against the supported PCM format are shown in Recorder's playback list; unrelated or malformed files are ignored.
+Recorder uses `/sdcard/audio/`, creating the directory when needed.
+
+RFScout records **16-bit mono PCM WAV**. The PDM configuration currently begins with a 48 kHz request, but Recorder measures the delivered PCM rate at runtime and writes that effective rate into the WAV header rather than assuming the request is exact. Supported file validation/playback accepts 16-bit mono PCM WAV rates from 8 through 48 kHz.
+
+Recorder's save path asynchronously applies the retained-window processing currently used by the application: 300 ms head trim, 600 ms tail trim, DC removal, and bounded normalization. The recording browser is refreshed after save completion. Malformed/unsupported WAV files are ignored; validated recordings can be played or deleted from the UI.
 
 ## Unified logging
 
-All applications feed the same asynchronous SD writer and therefore share the same rotation, queueing, error handling, and free-space policy. Wi-Fi/BLE device lifecycle records retain their detailed `ADDED`/`DROPPED` format. Application-owned records use the form:
+Applications feed the same asynchronous log writer. Wi-Fi/BLE can emit detailed lifecycle records; application-level logging adds ENTER/EXIT and rate-limited telemetry records.
 
-`<milliseconds> APP <application> <key=value details>`
+With valid wall time, records begin with UTC ISO-8601 timestamps, for example:
 
-Application transitions are recorded as `ENTER` and `EXIT`. While an application is active, a compact telemetry record is queued at most once per second:
+```text
+2026-08-28T18:04:21Z APP RECORDER state=IDLE files=3 bytes=0
+```
 
-- `WIFI_BT`: active observation and surveillance counts. Individual Wi-Fi/BLE device lifecycle records are also logged as they occur.
-- `CC1101`: configured frequency range/step, detection count, and radio detection state.
-- `NRF24`: configured channel range/dwell, detection count, and radio detection state.
-- `RECORDER`: recorder state, validated file count, and active recording byte count.
-- `THERMAL`: sensor detection state. More detailed calibrated temperature logging can be added when thermal calibration is implemented.
+Before wall time has been established, records use an explicit monotonic marker such as:
 
-The one-second application telemetry cadence is intentionally independent of display refresh rate so fast spectrum rendering cannot flood the SD queue or steal time from acquisition tasks.
+```text
+UP+123456 APP RECORDER state=IDLE files=3 bytes=0
+```
 
-## RFScout logging footprint
+The exact structured log format remains subject to the current log-format roadmap item; consumers should not assume undocumented token positions.
 
-The logger uses up to 100 rotating files of 4 MiB each (`rfscout-00.log` through `rfscout-99.log`), for an approximate maximum normal footprint of 400 MiB. RFScout also attempts to preserve at least 64 MiB of free filesystem space.
+## Logging footprint
+
+The logger uses up to 100 rotating files of 4 MiB each (`rfscout-00.log` through `rfscout-99.log`), for an approximate normal maximum of 400 MiB. RFScout also attempts to preserve at least 64 MiB of free filesystem space.
