@@ -29,8 +29,7 @@ void wifi_settings_view_render( unsigned a_selected, bool a_editing )
     {
         const int y = UI_LAYOUT_MENU_START_Y + (int)item * UI_LAYOUT_MENU_ROW_HEIGHT;
         const bool active = ( item == a_selected );
-        display_draw_text(
-            UI_LAYOUT_LEFT_X, y, active ? ">" : " ", active ? YELLOW : DIM, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, y, active ? ">" : " ", active ? YELLOW : DIM, 1U );
         display_draw_text( UI_LAYOUT_LABEL_X, y, labels[ item ], active ? TEXT : DIM, 1U );
     }
 
