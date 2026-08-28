@@ -116,7 +116,7 @@ idf.py build
 idf.py flash monitor
 ```
 
-Ready-for-review pull requests and `main` builds produce short-lived candidate bundles. Published releases are created deliberately through the **Prepare firmware release** workflow. The **Publish browser flasher** workflow deploys published releases and the most recent eligible PR candidate to GitHub Pages for Web Serial flashing from Chromium-based desktop browsers.
+Ready-for-review pull requests and `main` builds produce short-lived candidate bundles. Published releases are created deliberately through the **Prepare firmware release** workflow. The **Publish browser flasher** workflow deploys published releases plus the candidate bundle from the most recent triggering eligible build to GitHub Pages for Web Serial flashing from Chromium-based desktop browsers.
 
 See [Getting started](docs/GETTING_STARTED.md) and [Firmware releases](docs/RELEASING.md).
 
