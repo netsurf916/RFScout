@@ -1,8 +1,22 @@
+set(HOME_LOGO_SOURCE "${CMAKE_CURRENT_LIST_DIR}/../assets/logo.png")
+set(HOME_LOGO_GENERATOR "${CMAKE_CURRENT_LIST_DIR}/../tools/generate_home_logo.py")
 set(HOME_LOGO_HEADER "${CMAKE_CURRENT_BINARY_DIR}/home_logo_bitmap.h")
+
+# Re-run CMake when either bitmap input changes so an incremental idf.py build
+# cannot reuse a stale generated header. Keep this out of ESP-IDF's script-mode
+# component-requirements pass, where directory property changes are unnecessary.
+if(NOT CMAKE_SCRIPT_MODE_FILE)
+    set_property(
+        DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${HOME_LOGO_SOURCE}"
+        "${HOME_LOGO_GENERATOR}"
+    )
+endif()
+
 execute_process(
     COMMAND python3
-        "${CMAKE_CURRENT_LIST_DIR}/../tools/generate_home_logo.py"
-        "${CMAKE_CURRENT_LIST_DIR}/../assets/logo.png"
+        "${HOME_LOGO_GENERATOR}"
+        "${HOME_LOGO_SOURCE}"
         "${HOME_LOGO_HEADER}"
     RESULT_VARIABLE HOME_LOGO_RESULT
 )
