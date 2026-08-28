@@ -13,6 +13,7 @@
 #include "storage.h"
 
 #include "driver/i2s_pdm.h"
+#include "driver/pulse_cnt.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -40,6 +41,8 @@
 #define RECORDER_UNIQUE_SUFFIX_LIMIT 100U
 #define RECORDER_MIC_WAKEUP_MS 20U
 #define RECORDER_DIAGNOSTIC_INTERVAL_US 1000000LL
+#define RECORDER_CLOCK_MEASURE_MS 10U
+#define RECORDER_SIGNAL_SNAPSHOT_THRESHOLD 4000U
 #define RECORDER_EXPECTED_BYTES_PER_SECOND                                                         \
     ( RFSCOUT_RECORDER_SAMPLE_RATE * RECORDER_CHANNELS * ( RECORDER_BITS_PER_SAMPLE / 8U ) )
 
@@ -66,6 +69,8 @@ static uint32_t diagnostic_sample_count;
 static int16_t diagnostic_min_sample;
 static int16_t diagnostic_max_sample;
 static int64_t playback_started_us;
+static bool diagnostic_initial_snapshot_logged;
+static bool diagnostic_signal_snapshot_logged;
 
 static void write_u16_le( uint8_t *a_target, uint16_t a_value )
 {
@@ -179,6 +184,101 @@ static void release_channel( void )
     rx_channel = NULL;
 }
 
+static void log_pdm_clock_measurement( void )
+{
+    pcnt_unit_handle_t unit = NULL;
+    pcnt_channel_handle_t channel = NULL;
+    const pcnt_unit_config_t unit_config = { .low_limit = -1, .high_limit = 30000 };
+    esp_err_t result = pcnt_new_unit( &unit_config, &unit );
+    if( ESP_OK != result )
+    {
+        ESP_LOGW(
+            TAG, "PDM clock measurement unavailable: pcnt unit: %s", esp_err_to_name( result ) );
+        return;
+    }
+
+    const pcnt_chan_config_t channel_config = {
+        .edge_gpio_num = RFSCOUT_BOARD_MIC_CLOCK_PIN,
+        .level_gpio_num = -1,
+        .flags = { .virt_level_io_level = 1 },
+    };
+    result = pcnt_new_channel( unit, &channel_config, &channel );
+    if( ESP_OK == result )
+    {
+        result = pcnt_channel_set_edge_action(
+            channel, PCNT_CHANNEL_EDGE_ACTION_INCREASE, PCNT_CHANNEL_EDGE_ACTION_HOLD );
+    }
+    if( ESP_OK == result )
+    {
+        result = pcnt_unit_enable( unit );
+    }
+    if( ESP_OK == result )
+    {
+        (void)pcnt_unit_clear_count( unit );
+        result = pcnt_unit_start( unit );
+    }
+
+    int count = 0;
+    if( ESP_OK == result )
+    {
+        vTaskDelay( pdMS_TO_TICKS( RECORDER_CLOCK_MEASURE_MS ) );
+        (void)pcnt_unit_stop( unit );
+        result = pcnt_unit_get_count( unit, &count );
+    }
+
+    if( ESP_OK == result )
+    {
+        const uint32_t measured_hz =
+            (uint32_t)( (uint64_t)( count > 0 ? count : 0 ) * 1000ULL / RECORDER_CLOCK_MEASURE_MS );
+        ESP_LOGI( TAG,
+                  "PDM clock measured: gpio=%d edges=%d window=%ums frequency=%u Hz",
+                  RFSCOUT_BOARD_MIC_CLOCK_PIN,
+                  count,
+                  RECORDER_CLOCK_MEASURE_MS,
+                  (unsigned)measured_hz );
+    }
+    else
+    {
+        ESP_LOGW( TAG, "PDM clock measurement failed: %s", esp_err_to_name( result ) );
+    }
+
+    if( NULL != unit )
+    {
+        (void)pcnt_unit_disable( unit );
+    }
+    if( NULL != channel )
+    {
+        (void)pcnt_del_channel( channel );
+    }
+    if( NULL != unit )
+    {
+        (void)pcnt_del_unit( unit );
+    }
+}
+
+static void log_pcm_snapshot( const char *a_label, const int16_t *a_samples, size_t a_count )
+{
+    if( NULL == a_samples || 0U == a_count )
+    {
+        return;
+    }
+
+    char line[ 256 ];
+    size_t used = (size_t)snprintf( line, sizeof( line ), "%s:", a_label );
+    const size_t limit = a_count < 24U ? a_count : 24U;
+    for( size_t index = 0U; index < limit && used < sizeof( line ); ++index )
+    {
+        const int written =
+            snprintf( &line[ used ], sizeof( line ) - used, " %d", (int)a_samples[ index ] );
+        if( written < 0 || (size_t)written >= ( sizeof( line ) - used ) )
+        {
+            break;
+        }
+        used += (size_t)written;
+    }
+    ESP_LOGI( TAG, "%s", line );
+}
+
 static esp_err_t open_microphone( void )
 {
     i2s_chan_config_t channel_config = I2S_CHANNEL_DEFAULT_CONFIG( I2S_NUM_0, I2S_ROLE_MASTER );
@@ -210,6 +310,18 @@ static esp_err_t open_microphone( void )
     pdm_config.slot_cfg.hp_en = true;
 #endif
 
+    ESP_LOGI( TAG,
+              "PDM request: pcm=%u Hz clk_src=%d mclk_multiple=%d dn_sample=%d bclk_div=%u "
+              "target_pdm=%u Hz dma_desc=%u dma_frames=%u",
+              (unsigned)pdm_config.clk_cfg.sample_rate_hz,
+              (int)pdm_config.clk_cfg.clk_src,
+              (int)pdm_config.clk_cfg.mclk_multiple,
+              (int)pdm_config.clk_cfg.dn_sample_mode,
+              (unsigned)pdm_config.clk_cfg.bclk_div,
+              (unsigned)( pdm_config.clk_cfg.sample_rate_hz * 64U ),
+              (unsigned)channel_config.dma_desc_num,
+              (unsigned)channel_config.dma_frame_num );
+
     result = i2s_channel_init_pdm_rx_mode( rx_channel, &pdm_config );
     if( ESP_OK == result )
     {
@@ -230,6 +342,7 @@ static esp_err_t open_microphone( void )
                   RECORDER_BITS_PER_SAMPLE,
                   RECORDER_CHANNELS,
                   (unsigned)RECORDER_EXPECTED_BYTES_PER_SECOND );
+        log_pdm_clock_measurement();
     }
     return result;
 }
@@ -379,13 +492,20 @@ static void record_worker( void *a_argument )
         diagnostic_input_bytes += (uint32_t)bytes;
 
         const size_t samples = bytes / sizeof( int16_t );
+        if( !diagnostic_initial_snapshot_logged && samples > 0U )
+        {
+            log_pcm_snapshot( "PCM first", dma_samples, samples );
+            diagnostic_initial_snapshot_logged = true;
+        }
         uint64_t absolute_sum = 0U;
+        int64_t signed_sum = 0;
         uint32_t absolute_peak = 0U;
         for( size_t index = 0U; index < samples; ++index )
         {
             const int16_t sample = dma_samples[ index ];
             const uint32_t absolute = (uint32_t)( sample < 0 ? -(int32_t)sample : sample );
             absolute_sum += absolute;
+            signed_sum += sample;
             if( absolute > absolute_peak )
             {
                 absolute_peak = absolute;
@@ -404,6 +524,19 @@ static void record_worker( void *a_argument )
             }
         }
         diagnostic_sample_count += (uint32_t)samples;
+        if( !diagnostic_signal_snapshot_logged &&
+            absolute_peak >= RECORDER_SIGNAL_SNAPSHOT_THRESHOLD )
+        {
+            const int32_t chunk_mean =
+                samples > 0U ? (int32_t)( signed_sum / (int64_t)samples ) : 0;
+            ESP_LOGI( TAG,
+                      "PCM signal chunk: samples=%u mean=%ld peak=%u",
+                      (unsigned)samples,
+                      (long)chunk_mean,
+                      (unsigned)absolute_peak );
+            log_pcm_snapshot( "PCM signal", dma_samples, samples );
+            diagnostic_signal_snapshot_logged = true;
+        }
 
         if( samples > 0U )
         {
@@ -468,6 +601,22 @@ static void record_worker( void *a_argument )
             diagnostic_sample_count = 0U;
             diagnostic_min_sample = INT16_MAX;
             diagnostic_max_sample = INT16_MIN;
+        }
+    }
+
+    if( recording_started_us > 0 )
+    {
+        const int64_t total_us = esp_timer_get_time() - recording_started_us;
+        if( total_us > 0 )
+        {
+            const uint32_t effective_rate = (uint32_t)( (uint64_t)data_bytes * 1000000ULL /
+                                                        (uint64_t)total_us / sizeof( int16_t ) );
+            ESP_LOGI( TAG,
+                      "PDM final: wall=%lldms pcm_bytes=%u effective_pcm=%u samples/s wav_rate=%u",
+                      (long long)( total_us / 1000LL ),
+                      (unsigned)data_bytes,
+                      (unsigned)effective_rate,
+                      (unsigned)RFSCOUT_RECORDER_WAV_SAMPLE_RATE );
         }
     }
 
@@ -652,6 +801,8 @@ esp_err_t recorder_start_recording( void )
     live_peak_percent = 0U;
     active_pdm_slot = 1;
     recording_started_us = 0;
+    diagnostic_initial_snapshot_logged = false;
+    diagnostic_signal_snapshot_logged = false;
     record_running = true;
     if( pdPASS != xTaskCreate( record_worker,
                                "recorder",
