@@ -10,6 +10,13 @@ if(NOT HOME_LOGO_RESULT EQUAL 0)
     message(FATAL_ERROR "Failed to generate RFScout Home logo bitmap")
 endif()
 
+# Keep Device Settings in device_view.c while replacing its original procedural
+# landing implementation with the canonical bitmap-backed Home implementation.
+set_source_files_properties(
+    "device_view.c"
+    PROPERTIES COMPILE_DEFINITIONS "device_view_landing=device_view_landing_procedural"
+)
+
 idf_component_register(
     SRCS
         "rfscout.c"
@@ -20,6 +27,7 @@ idf_component_register(
         "device_config.c"
         "device_time.c"
         "device_view.c"
+        "home_landing.c"
         "radio_app_view.c"
         "audio_spectrum.c"
         "audio_view.c"
