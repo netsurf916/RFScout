@@ -42,6 +42,7 @@ Future RTC/GPS/NTP integrations are tracked separately below. In particular, det
 - Keep the category enumeration and compiled default characters centralized in the alert layer.
 - Persist notification mode and every per-category character in `/sdcard/rfscout.json`; a valid saved configuration overrides compiled defaults on boot.
 - Add persistent global notification volume from `0-100%`, with a compiled fallback of **50%** and restoration from saved configuration when present.
+- Apply a shared perceptual volume curve to tones, Morse, Recorder playback, and future speaker uses so low percentages provide genuinely quiet output while `0%` remains mute and `100%` remains full scale.
 - Capture volume in each queued speaker command so already-queued sounds retain the level that was active when requested.
 - Maintain a canonical 1:1 notification descriptor registry containing application ownership, stable JSON key, display label, and default character for every alert item.
 - Make Device and SD persistence iterate the canonical registry rather than maintaining duplicate category/key lists.
@@ -125,7 +126,7 @@ Remaining hardware validation includes physical speaker channel, perceived loudn
 - Create `/sdcard/audio/` automatically when storage is available.
 - Enumerate only supported, correctly formatted PCM WAV files and expose duration/size metadata.
 - Play selected recordings asynchronously over the onboard I2S1 speaker.
-- Finalize WAV headers and stop active capture/playback when leaving Recorder.
+- Trim button/mechanical transients from the beginning and end before save-time DC removal and bounded normalization, then finalize WAV headers and stop active capture/playback when leaving Recorder.
 - Keep capture and playback off the UI loop and preserve app lifecycle/resource ownership.
 - Validate microphone capture, storage-loss behavior, speaker playback, and perceived volume on target hardware.
 

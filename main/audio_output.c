@@ -65,6 +65,19 @@ static volatile uint32_t playback_generation;
 static volatile uint8_t playback_volume_percent = 50U;
 static uint32_t current_sample_rate = AUDIO_OUTPUT_DEFAULT_SAMPLE_RATE;
 
+/** @brief Map UI volume percent to perceptual fixed-point amplitude gain. */
+static uint32_t volume_gain_q15( uint8_t a_volume_percent )
+{
+    if( 0U == a_volume_percent )
+    {
+        return 0U;
+    }
+    const uint32_t percent = a_volume_percent > AUDIO_OUTPUT_MAX_VOLUME_PERCENT
+                                 ? AUDIO_OUTPUT_MAX_VOLUME_PERCENT
+                                 : a_volume_percent;
+    return (uint32_t)( (uint64_t)percent * percent * 32767ULL / 10000ULL );
+}
+
 static uint16_t read_u16_le( const uint8_t *a_source )
 {
     return (uint16_t)a_source[ 0 ] | ( (uint16_t)a_source[ 1 ] << 8U );
@@ -88,8 +101,8 @@ static bool write_segment( bool a_tone,
         (uint32_t)( ( (uint64_t)current_sample_rate * a_duration_ms + 999U ) / 1000U );
     const float phase_step =
         2.0f * (float)M_PI * (float)a_frequency_hz / (float)current_sample_rate;
-    const float amplitude =
-        AUDIO_OUTPUT_MAX_AMPLITUDE * (float)a_volume_percent / AUDIO_OUTPUT_MAX_VOLUME_PERCENT;
+    const uint32_t gain_q15 = volume_gain_q15( a_volume_percent );
+    const float amplitude = AUDIO_OUTPUT_MAX_AMPLITUDE * (float)gain_q15 / 32767.0f;
 
     while( remaining_frames > 0U )
     {
@@ -315,8 +328,8 @@ static void play_wav( const audio_output_command_t *a_command )
 
         for( size_t frame = 0U; frame < read; ++frame )
         {
-            int32_t sample =
-                (int32_t)mono[ frame ] * playback_volume_percent / AUDIO_OUTPUT_MAX_VOLUME_PERCENT;
+            const uint32_t gain_q15 = volume_gain_q15( playback_volume_percent );
+            int32_t sample = (int32_t)( (int64_t)mono[ frame ] * gain_q15 / 32767LL );
             if( sample > INT16_MAX )
             {
                 sample = INT16_MAX;

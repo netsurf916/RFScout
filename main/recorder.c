@@ -49,6 +49,8 @@
 #define RECORDER_NORMALIZE_TARGET_AVERAGE 5000U
 #define RECORDER_NORMALIZE_MAX_GAIN_Q10 ( 16U * 1024U )
 #define RECORDER_NORMALIZE_MIN_SIGNAL 32U
+#define RECORDER_TRIM_START_MS 300U
+#define RECORDER_TRIM_END_MS 200U
 #define RECORDER_EXPECTED_BYTES_PER_SECOND                                                         \
     ( RFSCOUT_RECORDER_SAMPLE_RATE * RECORDER_CHANNELS * ( RECORDER_BITS_PER_SAMPLE / 8U ) )
 
@@ -459,6 +461,77 @@ static FILE *open_unique_recording( char *a_path, size_t a_path_capacity )
     return NULL;
 }
 
+static bool trim_recording( void )
+{
+    if( NULL == record_file || 0U == data_bytes || 0U == recording_wav_sample_rate )
+    {
+        return true;
+    }
+
+    const uint32_t bytes_per_sample = sizeof( int16_t );
+    const uint32_t start_samples =
+        (uint32_t)( (uint64_t)recording_wav_sample_rate * RECORDER_TRIM_START_MS / 1000ULL );
+    const uint32_t end_samples =
+        (uint32_t)( (uint64_t)recording_wav_sample_rate * RECORDER_TRIM_END_MS / 1000ULL );
+    const uint32_t start_bytes = start_samples * bytes_per_sample;
+    const uint32_t end_bytes = end_samples * bytes_per_sample;
+
+    if( start_bytes + end_bytes >= data_bytes )
+    {
+        ESP_LOGW( TAG,
+                  "trim: recording too short bytes=%u start=%u end=%u; leaving untrimmed",
+                  (unsigned)data_bytes,
+                  (unsigned)start_bytes,
+                  (unsigned)end_bytes );
+        return true;
+    }
+
+    if( 0 != fflush( record_file ) )
+    {
+        ESP_LOGW( TAG, "trim: flush failed" );
+        return false;
+    }
+
+    uint8_t buffer[ RECORDER_DMA_READ_SAMPLES * sizeof( int16_t ) ];
+    uint32_t source_offset = RECORDER_WAV_HEADER_SIZE + start_bytes;
+    uint32_t destination_offset = RECORDER_WAV_HEADER_SIZE;
+    uint32_t remaining = data_bytes - start_bytes - end_bytes;
+    const uint32_t retained_bytes = remaining;
+
+    while( remaining > 0U )
+    {
+        const size_t chunk = remaining < sizeof( buffer ) ? remaining : sizeof( buffer );
+        if( 0 != fseek( record_file, (long)source_offset, SEEK_SET ) ||
+            chunk != fread( buffer, 1U, chunk, record_file ) ||
+            0 != fseek( record_file, (long)destination_offset, SEEK_SET ) ||
+            chunk != fwrite( buffer, 1U, chunk, record_file ) )
+        {
+            ESP_LOGW( TAG, "trim: move failed" );
+            return false;
+        }
+        source_offset += (uint32_t)chunk;
+        destination_offset += (uint32_t)chunk;
+        remaining -= (uint32_t)chunk;
+    }
+
+    if( 0 != fflush( record_file ) ||
+        0 != ftruncate( fileno( record_file ),
+                        (off_t)( RECORDER_WAV_HEADER_SIZE + retained_bytes ) ) )
+    {
+        ESP_LOGW( TAG, "trim: truncate failed errno=%d", errno );
+        return false;
+    }
+
+    ESP_LOGI( TAG,
+              "trim: start=%ums end=%ums bytes=%u->%u",
+              RECORDER_TRIM_START_MS,
+              RECORDER_TRIM_END_MS,
+              (unsigned)data_bytes,
+              (unsigned)retained_bytes );
+    data_bytes = retained_bytes;
+    return true;
+}
+
 static bool normalize_recording( void )
 {
     if( NULL == record_file || 0U == data_bytes )
@@ -622,6 +695,7 @@ static void finalize_recording( void )
         return;
     }
 
+    (void)trim_recording();
     (void)normalize_recording();
 
     uint8_t header[ RECORDER_WAV_HEADER_SIZE ];
