@@ -23,6 +23,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -50,7 +51,10 @@
 #define RECORDER_NORMALIZE_MAX_GAIN_Q10 ( 16U * 1024U )
 #define RECORDER_NORMALIZE_MIN_SIGNAL 32U
 #define RECORDER_TRIM_START_MS 300U
-#define RECORDER_TRIM_END_MS 200U
+#define RECORDER_TRIM_END_MS 600U
+#define RECORDER_MONITOR_FFT_SIZE 256U
+#define RECORDER_MONITOR_TASK_STACK 6144U
+#define RECORDER_MONITOR_TASK_PRIORITY 3U
 #define RECORDER_EXPECTED_BYTES_PER_SECOND                                                         \
     ( RFSCOUT_RECORDER_SAMPLE_RATE * RECORDER_CHANNELS * ( RECORDER_BITS_PER_SAMPLE / 8U ) )
 
@@ -81,6 +85,10 @@ static bool diagnostic_initial_snapshot_logged;
 static bool diagnostic_signal_snapshot_logged;
 static uint32_t measured_pdm_clock_hz;
 static uint32_t recording_wav_sample_rate = 12800U;
+static TaskHandle_t monitor_task;
+static volatile bool monitor_running;
+static volatile uint8_t input_gain_db = 12U;
+static uint8_t monitor_spectrum[ RFSCOUT_RECORDER_MONITOR_BINS ];
 
 static void write_u16_le( uint8_t *a_target, uint16_t a_value )
 {
@@ -461,200 +469,123 @@ static FILE *open_unique_recording( char *a_path, size_t a_path_capacity )
     return NULL;
 }
 
-static bool trim_recording( void )
+static uint32_t input_gain_q12( uint8_t a_gain_db )
+{
+    static const uint16_t gains[] = {
+        4096U, 5793U, 8189U, 11571U, 16306U, 23099U, 32664U, 46170U, 65268U };
+    const unsigned index = ( a_gain_db > 24U ? 24U : a_gain_db ) / 3U;
+    return gains[ index ];
+}
+
+static int16_t apply_input_gain( int16_t a_sample )
+{
+    int32_t scaled = (int32_t)( (int64_t)a_sample * input_gain_q12( input_gain_db ) / 4096LL );
+    if( scaled > INT16_MAX )
+        scaled = INT16_MAX;
+    if( scaled < INT16_MIN )
+        scaled = INT16_MIN;
+    return (int16_t)scaled;
+}
+
+static bool trim_and_normalize_recording( void )
 {
     if( NULL == record_file || 0U == data_bytes || 0U == recording_wav_sample_rate )
     {
         return true;
     }
 
-    const uint32_t bytes_per_sample = sizeof( int16_t );
     const uint32_t start_samples =
         (uint32_t)( (uint64_t)recording_wav_sample_rate * RECORDER_TRIM_START_MS / 1000ULL );
     const uint32_t end_samples =
         (uint32_t)( (uint64_t)recording_wav_sample_rate * RECORDER_TRIM_END_MS / 1000ULL );
-    const uint32_t start_bytes = start_samples * bytes_per_sample;
-    const uint32_t end_bytes = end_samples * bytes_per_sample;
-
+    const uint32_t start_bytes = start_samples * sizeof( int16_t );
+    const uint32_t end_bytes = end_samples * sizeof( int16_t );
     if( start_bytes + end_bytes >= data_bytes )
     {
         ESP_LOGW( TAG,
-                  "trim: recording too short bytes=%u start=%u end=%u; leaving untrimmed",
+                  "trim/normalize: too short bytes=%u start=%u end=%u; leaving untrimmed",
                   (unsigned)data_bytes,
                   (unsigned)start_bytes,
                   (unsigned)end_bytes );
         return true;
     }
-
     if( 0 != fflush( record_file ) )
-    {
-        ESP_LOGW( TAG, "trim: flush failed" );
         return false;
-    }
 
-    uint8_t buffer[ RECORDER_DMA_READ_SAMPLES * sizeof( int16_t ) ];
-    uint32_t source_offset = RECORDER_WAV_HEADER_SIZE + start_bytes;
-    uint32_t destination_offset = RECORDER_WAV_HEADER_SIZE;
-    uint32_t remaining = data_bytes - start_bytes - end_bytes;
-    const uint32_t retained_bytes = remaining;
-
-    while( remaining > 0U )
-    {
-        const size_t chunk = remaining < sizeof( buffer ) ? remaining : sizeof( buffer );
-        if( 0 != fseek( record_file, (long)source_offset, SEEK_SET ) ||
-            chunk != fread( buffer, 1U, chunk, record_file ) ||
-            0 != fseek( record_file, (long)destination_offset, SEEK_SET ) ||
-            chunk != fwrite( buffer, 1U, chunk, record_file ) )
-        {
-            ESP_LOGW( TAG, "trim: move failed" );
-            return false;
-        }
-        source_offset += (uint32_t)chunk;
-        destination_offset += (uint32_t)chunk;
-        remaining -= (uint32_t)chunk;
-    }
-
-    if( 0 != fflush( record_file ) ||
-        0 != ftruncate( fileno( record_file ),
-                        (off_t)( RECORDER_WAV_HEADER_SIZE + retained_bytes ) ) )
-    {
-        ESP_LOGW( TAG, "trim: truncate failed errno=%d", errno );
-        return false;
-    }
-
-    ESP_LOGI( TAG,
-              "trim: start=%ums end=%ums bytes=%u->%u",
-              RECORDER_TRIM_START_MS,
-              RECORDER_TRIM_END_MS,
-              (unsigned)data_bytes,
-              (unsigned)retained_bytes );
-    data_bytes = retained_bytes;
-    return true;
-}
-
-static bool normalize_recording( void )
-{
-    if( NULL == record_file || 0U == data_bytes )
-    {
-        return true;
-    }
-
-    if( 0 != fflush( record_file ) ||
-        0 != fseek( record_file, RECORDER_WAV_HEADER_SIZE, SEEK_SET ) )
-    {
-        ESP_LOGW( TAG, "normalize: could not seek recording" );
-        return false;
-    }
-
+    const uint32_t retained_bytes = data_bytes - start_bytes - end_bytes;
     int16_t samples[ RECORDER_DMA_READ_SAMPLES ];
-    uint64_t sample_count = 0U;
+    uint64_t count_total = 0U;
     int64_t signed_sum = 0;
-    uint32_t remaining = data_bytes;
+    uint32_t remaining = retained_bytes;
+    if( 0 != fseek( record_file, RECORDER_WAV_HEADER_SIZE + (long)start_bytes, SEEK_SET ) )
+        return false;
     while( remaining > 0U )
     {
         size_t count = remaining / sizeof( int16_t );
         if( count > RECORDER_DMA_READ_SAMPLES )
-        {
             count = RECORDER_DMA_READ_SAMPLES;
-        }
         const size_t read = fread( samples, sizeof( int16_t ), count, record_file );
         if( 0U == read )
-        {
-            ESP_LOGW( TAG, "normalize: first pass read failed" );
             return false;
-        }
-        for( size_t index = 0U; index < read; ++index )
-        {
-            signed_sum += samples[ index ];
-        }
-        sample_count += read;
+        for( size_t i = 0; i < read; ++i )
+            signed_sum += samples[ i ];
+        count_total += read;
         remaining -= (uint32_t)( read * sizeof( int16_t ) );
     }
-
-    if( 0U == sample_count )
-    {
+    if( 0U == count_total )
         return true;
-    }
-    const int32_t dc_mean = (int32_t)( signed_sum / (int64_t)sample_count );
-
-    if( 0 != fseek( record_file, RECORDER_WAV_HEADER_SIZE, SEEK_SET ) )
-    {
-        ESP_LOGW( TAG, "normalize: could not rewind for level pass" );
-        return false;
-    }
+    const int32_t dc_mean = (int32_t)( signed_sum / (int64_t)count_total );
 
     uint64_t absolute_sum = 0U;
     uint32_t centered_peak = 0U;
-    remaining = data_bytes;
+    remaining = retained_bytes;
+    if( 0 != fseek( record_file, RECORDER_WAV_HEADER_SIZE + (long)start_bytes, SEEK_SET ) )
+        return false;
     while( remaining > 0U )
     {
         size_t count = remaining / sizeof( int16_t );
         if( count > RECORDER_DMA_READ_SAMPLES )
-        {
             count = RECORDER_DMA_READ_SAMPLES;
-        }
         const size_t read = fread( samples, sizeof( int16_t ), count, record_file );
         if( 0U == read )
-        {
-            ESP_LOGW( TAG, "normalize: level pass read failed" );
             return false;
-        }
-        for( size_t index = 0U; index < read; ++index )
+        for( size_t i = 0; i < read; ++i )
         {
-            const int32_t centered = (int32_t)samples[ index ] - dc_mean;
+            const int32_t centered = (int32_t)samples[ i ] - dc_mean;
             const uint32_t absolute = (uint32_t)( centered < 0 ? -centered : centered );
             absolute_sum += absolute;
             if( absolute > centered_peak )
-            {
                 centered_peak = absolute;
-            }
         }
         remaining -= (uint32_t)( read * sizeof( int16_t ) );
     }
-
-    const uint32_t average = (uint32_t)( absolute_sum / sample_count );
+    const uint32_t average = (uint32_t)( absolute_sum / count_total );
     uint32_t gain_q10 = 1024U;
     if( average >= RECORDER_NORMALIZE_MIN_SIGNAL && average < RECORDER_NORMALIZE_TARGET_AVERAGE )
     {
         gain_q10 = (uint32_t)( (uint64_t)RECORDER_NORMALIZE_TARGET_AVERAGE * 1024ULL / average );
         if( gain_q10 > RECORDER_NORMALIZE_MAX_GAIN_Q10 )
-        {
             gain_q10 = RECORDER_NORMALIZE_MAX_GAIN_Q10;
-        }
-    }
-
-    if( 0 != fseek( record_file, RECORDER_WAV_HEADER_SIZE, SEEK_SET ) )
-    {
-        ESP_LOGW( TAG, "normalize: could not rewind for rewrite" );
-        return false;
     }
 
     uint64_t clipped = 0U;
-    remaining = data_bytes;
+    uint32_t source_offset = RECORDER_WAV_HEADER_SIZE + start_bytes;
+    uint32_t destination_offset = RECORDER_WAV_HEADER_SIZE;
+    remaining = retained_bytes;
     while( remaining > 0U )
     {
-        const long block_offset = ftell( record_file );
-        if( block_offset < 0 )
-        {
-            ESP_LOGW( TAG, "normalize: ftell failed" );
-            return false;
-        }
         size_t count = remaining / sizeof( int16_t );
         if( count > RECORDER_DMA_READ_SAMPLES )
-        {
             count = RECORDER_DMA_READ_SAMPLES;
-        }
+        if( 0 != fseek( record_file, (long)source_offset, SEEK_SET ) )
+            return false;
         const size_t read = fread( samples, sizeof( int16_t ), count, record_file );
         if( 0U == read )
-        {
-            ESP_LOGW( TAG, "normalize: rewrite read failed" );
             return false;
-        }
-        for( size_t index = 0U; index < read; ++index )
+        for( size_t i = 0; i < read; ++i )
         {
             int32_t scaled =
-                (int32_t)( ( (int64_t)( (int32_t)samples[ index ] - dc_mean ) * gain_q10 ) /
-                           1024LL );
+                (int32_t)( ( (int64_t)( (int32_t)samples[ i ] - dc_mean ) * gain_q10 ) / 1024LL );
             if( scaled > INT16_MAX )
             {
                 scaled = INT16_MAX;
@@ -665,26 +596,35 @@ static bool normalize_recording( void )
                 scaled = INT16_MIN;
                 ++clipped;
             }
-            samples[ index ] = (int16_t)scaled;
+            samples[ i ] = (int16_t)scaled;
         }
-        if( 0 != fseek( record_file, block_offset, SEEK_SET ) ||
+        if( 0 != fseek( record_file, (long)destination_offset, SEEK_SET ) ||
             read != fwrite( samples, sizeof( int16_t ), read, record_file ) )
-        {
-            ESP_LOGW( TAG, "normalize: rewrite failed" );
             return false;
-        }
-        remaining -= (uint32_t)( read * sizeof( int16_t ) );
+        const uint32_t bytes = (uint32_t)( read * sizeof( int16_t ) );
+        source_offset += bytes;
+        destination_offset += bytes;
+        remaining -= bytes;
     }
-
+    if( 0 != fflush( record_file ) ||
+        0 != ftruncate( fileno( record_file ),
+                        (off_t)( RECORDER_WAV_HEADER_SIZE + retained_bytes ) ) )
+        return false;
     ESP_LOGI( TAG,
-              "normalize: dc=%ld avg=%u peak=%u gain=%u.%02ux clipped=%llu/%llu",
+              "trim/normalize: start=%ums end=%ums bytes=%u->%u dc=%ld avg=%u peak=%u "
+              "gain=%u.%02ux clipped=%llu/%llu",
+              RECORDER_TRIM_START_MS,
+              RECORDER_TRIM_END_MS,
+              (unsigned)data_bytes,
+              (unsigned)retained_bytes,
               (long)dc_mean,
               (unsigned)average,
               (unsigned)centered_peak,
               (unsigned)( gain_q10 / 1024U ),
               (unsigned)( ( gain_q10 % 1024U ) * 100U / 1024U ),
               (unsigned long long)clipped,
-              (unsigned long long)sample_count );
+              (unsigned long long)count_total );
+    data_bytes = retained_bytes;
     return true;
 }
 
@@ -695,8 +635,7 @@ static void finalize_recording( void )
         return;
     }
 
-    (void)trim_recording();
-    (void)normalize_recording();
+    (void)trim_and_normalize_recording();
 
     uint8_t header[ RECORDER_WAV_HEADER_SIZE ];
     build_wav_header( header, data_bytes, recording_wav_sample_rate );
@@ -770,6 +709,10 @@ static void record_worker( void *a_argument )
         diagnostic_input_bytes += (uint32_t)bytes;
 
         const size_t samples = bytes / sizeof( int16_t );
+        for( size_t sample = 0U; sample < samples; ++sample )
+        {
+            dma_samples[ sample ] = apply_input_gain( dma_samples[ sample ] );
+        }
         if( !diagnostic_initial_snapshot_logged && samples > 0U )
         {
             log_pcm_snapshot( "PCM first", dma_samples, samples );
@@ -958,6 +901,164 @@ static bool wait_for_record_worker( uint32_t a_timeout_ms )
         return false;
     }
     return true;
+}
+
+static void compute_monitor_fft( const int16_t *a_samples, size_t a_count )
+{
+    float re[ RECORDER_MONITOR_FFT_SIZE ];
+    float im[ RECORDER_MONITOR_FFT_SIZE ];
+    for( size_t i = 0; i < RECORDER_MONITOR_FFT_SIZE; ++i )
+    {
+        const float sample = i < a_count ? (float)a_samples[ i ] : 0.0f;
+        const float window = 0.5f - 0.5f * cosf( 2.0f * (float)M_PI * (float)i /
+                                                 (float)( RECORDER_MONITOR_FFT_SIZE - 1U ) );
+        re[ i ] = sample * window;
+        im[ i ] = 0.0f;
+    }
+    for( size_t i = 1U, j = 0U; i < RECORDER_MONITOR_FFT_SIZE; ++i )
+    {
+        size_t bit = RECORDER_MONITOR_FFT_SIZE >> 1U;
+        for( ; j & bit; bit >>= 1U )
+            j ^= bit;
+        j ^= bit;
+        if( i < j )
+        {
+            float tr = re[ i ];
+            re[ i ] = re[ j ];
+            re[ j ] = tr;
+            tr = im[ i ];
+            im[ i ] = im[ j ];
+            im[ j ] = tr;
+        }
+    }
+    for( size_t len = 2U; len <= RECORDER_MONITOR_FFT_SIZE; len <<= 1U )
+    {
+        const float angle = -2.0f * (float)M_PI / (float)len;
+        const float wlen_re = cosf( angle ), wlen_im = sinf( angle );
+        for( size_t base = 0U; base < RECORDER_MONITOR_FFT_SIZE; base += len )
+        {
+            float wr = 1.0f, wi = 0.0f;
+            for( size_t j = 0U; j < len / 2U; ++j )
+            {
+                const size_t even = base + j, odd = even + len / 2U;
+                const float vr = re[ odd ] * wr - im[ odd ] * wi;
+                const float vi = re[ odd ] * wi + im[ odd ] * wr;
+                const float ur = re[ even ], ui = im[ even ];
+                re[ even ] = ur + vr;
+                im[ even ] = ui + vi;
+                re[ odd ] = ur - vr;
+                im[ odd ] = ui - vi;
+                const float next_wr = wr * wlen_re - wi * wlen_im;
+                wi = wr * wlen_im + wi * wlen_re;
+                wr = next_wr;
+            }
+        }
+    }
+    for( size_t bin = 0U; bin < RFSCOUT_RECORDER_MONITOR_BINS; ++bin )
+    {
+        const size_t fft_bin = bin + 1U;
+        const float mag = sqrtf( re[ fft_bin ] * re[ fft_bin ] + im[ fft_bin ] * im[ fft_bin ] ) /
+                          (float)RECORDER_MONITOR_FFT_SIZE;
+        const float db = 20.0f * log10f( mag + 1.0f );
+        int level = (int)( ( db - 20.0f ) * 100.0f / 70.0f );
+        if( level < 0 )
+            level = 0;
+        if( level > 100 )
+            level = 100;
+        monitor_spectrum[ bin ] = (uint8_t)level;
+    }
+}
+
+static void monitor_worker( void *a_argument )
+{
+    (void)a_argument;
+    int16_t samples[ RECORDER_DMA_READ_SAMPLES ];
+    const int64_t wakeup_until = esp_timer_get_time() + (int64_t)RECORDER_MIC_WAKEUP_MS * 1000LL;
+    while( monitor_running && esp_timer_get_time() < wakeup_until )
+    {
+        size_t discarded = 0U;
+        (void)i2s_channel_read(
+            rx_channel, samples, sizeof( samples ), &discarded, pdMS_TO_TICKS( 20 ) );
+    }
+    while( monitor_running )
+    {
+        size_t bytes = 0U;
+        const esp_err_t result = i2s_channel_read(
+            rx_channel, samples, sizeof( samples ), &bytes, pdMS_TO_TICKS( 100 ) );
+        if( ESP_ERR_TIMEOUT == result )
+            continue;
+        if( ESP_OK != result )
+            break;
+        const size_t count = bytes / sizeof( samples[ 0 ] );
+        for( size_t i = 0U; i < count; ++i )
+            samples[ i ] = apply_input_gain( samples[ i ] );
+        if( count >= RECORDER_MONITOR_FFT_SIZE )
+            compute_monitor_fft( samples, RECORDER_MONITOR_FFT_SIZE );
+    }
+    release_channel();
+    monitor_running = false;
+    monitor_task = NULL;
+    if( RFSCOUT_RECORDER_MONITORING == state )
+        state = storage_is_available() ? RFSCOUT_RECORDER_IDLE : RFSCOUT_RECORDER_NO_STORAGE;
+    vTaskDelete( NULL );
+}
+
+esp_err_t recorder_start_monitor( uint8_t a_gain_db )
+{
+    if( RFSCOUT_RECORDER_IDLE != recorder_state() )
+        return ESP_ERR_INVALID_STATE;
+    recorder_set_input_gain_db( a_gain_db );
+    memset( monitor_spectrum, 0, sizeof( monitor_spectrum ) );
+    esp_err_t result = open_microphone();
+    if( ESP_OK != result )
+        return result;
+    monitor_running = true;
+    state = RFSCOUT_RECORDER_MONITORING;
+    if( pdPASS != xTaskCreate( monitor_worker,
+                               "mic_monitor",
+                               RECORDER_MONITOR_TASK_STACK,
+                               NULL,
+                               RECORDER_MONITOR_TASK_PRIORITY,
+                               &monitor_task ) )
+    {
+        monitor_running = false;
+        release_channel();
+        state = RFSCOUT_RECORDER_ERROR;
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
+}
+
+void recorder_stop_monitor( void )
+{
+    if( RFSCOUT_RECORDER_MONITORING != state && NULL == monitor_task )
+        return;
+    monitor_running = false;
+    for( unsigned i = 0U; i < 20U && NULL != monitor_task; ++i )
+        vTaskDelay( pdMS_TO_TICKS( 10 ) );
+    state = storage_is_available() ? RFSCOUT_RECORDER_IDLE : RFSCOUT_RECORDER_NO_STORAGE;
+}
+
+size_t recorder_monitor_bins( uint8_t *a_bins, size_t a_capacity )
+{
+    if( NULL == a_bins || 0U == a_capacity )
+        return 0U;
+    const size_t count =
+        a_capacity < RFSCOUT_RECORDER_MONITOR_BINS ? a_capacity : RFSCOUT_RECORDER_MONITOR_BINS;
+    memcpy( a_bins, monitor_spectrum, count );
+    return count;
+}
+
+void recorder_set_input_gain_db( uint8_t a_gain_db )
+{
+    if( a_gain_db > 24U )
+        a_gain_db = 24U;
+    input_gain_db = (uint8_t)( ( a_gain_db / 3U ) * 3U );
+}
+
+uint8_t recorder_input_gain_db( void )
+{
+    return input_gain_db;
 }
 
 esp_err_t recorder_init( void )
@@ -1252,6 +1353,11 @@ void recorder_stop( void )
         return;
     }
 
+    if( RFSCOUT_RECORDER_MONITORING == state )
+    {
+        recorder_stop_monitor();
+        return;
+    }
     if( RFSCOUT_RECORDER_PLAYING == state )
     {
         audio_output_stop_playback();
@@ -1262,7 +1368,7 @@ void recorder_stop( void )
 rfscout_recorder_state_t recorder_state( void )
 {
     if( !storage_is_available() && ( RFSCOUT_RECORDER_RECORDING != state ) &&
-        ( RFSCOUT_RECORDER_SAVING != state ) )
+        ( RFSCOUT_RECORDER_SAVING != state ) && ( RFSCOUT_RECORDER_MONITORING != state ) )
     {
         return RFSCOUT_RECORDER_NO_STORAGE;
     }

@@ -59,7 +59,8 @@
 #define AUDIO_MENU_BACK 0U
 #define AUDIO_BROWSER_BACK 0U
 #define AUDIO_BROWSER_NEW 1U
-#define AUDIO_BROWSER_FILE_BASE 2U
+#define AUDIO_BROWSER_MONITOR 2U
+#define AUDIO_BROWSER_FILE_BASE 3U
 
 static const char *TAG = "app_manager";
 static rfscout_app_id_t active_app;
@@ -877,6 +878,34 @@ static void audio_input( bool a_pressed, bool a_long_pressed, int a_delta )
         return;
     }
 
+    if( RFSCOUT_RECORDER_MONITORING == state )
+    {
+        if( a_pressed || a_long_pressed )
+        {
+            recorder_stop_monitor();
+            save_recorder_volume();
+            show_audio_menu();
+            return;
+        }
+        if( 0 != a_delta )
+        {
+            const device_config_t *config = device_config_get();
+            int gain = ( NULL != config ) ? (int)config->recorder_input_gain_db : 12;
+            gain += ( a_delta > 0 ) ? 3 : -3;
+            if( gain < 0 )
+                gain = 0;
+            if( gain > 24 )
+                gain = 24;
+            if( ESP_OK == device_config_set_recorder_input_gain( (uint8_t)gain ) )
+            {
+                recorder_set_input_gain_db( (uint8_t)gain );
+                (void)device_config_save( false, 0, NULL );
+            }
+        }
+        show_audio_menu();
+        return;
+    }
+
     if( RFSCOUT_RECORDER_PLAYING == state )
     {
         if( a_pressed )
@@ -923,7 +952,16 @@ static void audio_input( bool a_pressed, bool a_long_pressed, int a_delta )
         }
         if( AUDIO_BROWSER_NEW == audio_item )
         {
+            const device_config_t *config = device_config_get();
+            recorder_set_input_gain_db( NULL != config ? config->recorder_input_gain_db : 12U );
             (void)recorder_start_recording();
+            show_audio_menu();
+            return;
+        }
+        if( AUDIO_BROWSER_MONITOR == audio_item )
+        {
+            const device_config_t *config = device_config_get();
+            (void)recorder_start_monitor( NULL != config ? config->recorder_input_gain_db : 12U );
             show_audio_menu();
             return;
         }
@@ -1118,6 +1156,7 @@ void app_manager_poll( void )
                 last_app_refresh_us = now;
                 if( RFSCOUT_RECORDER_RECORDING == recorder_now ||
                     RFSCOUT_RECORDER_SAVING == recorder_now ||
+                    RFSCOUT_RECORDER_MONITORING == recorder_now ||
                     RFSCOUT_RECORDER_PLAYING == recorder_now )
                 {
                     show_audio_menu();

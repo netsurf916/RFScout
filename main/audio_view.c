@@ -26,7 +26,8 @@
 #define GREEN 0x07E0U
 #define RECORDER_BROWSER_BACK 0U
 #define RECORDER_BROWSER_NEW 1U
-#define RECORDER_BROWSER_FILE_BASE 2U
+#define RECORDER_BROWSER_MONITOR 2U
+#define RECORDER_BROWSER_FILE_BASE 3U
 
 static void draw_status_chrome( void )
 {
@@ -154,6 +155,32 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
         return;
     }
 
+    if( RFSCOUT_RECORDER_MONITORING == state )
+    {
+        uint8_t bins[ RFSCOUT_RECORDER_MONITOR_BINS ];
+        const size_t count = recorder_monitor_bins( bins, sizeof( bins ) );
+        const device_config_t *config = device_config_get();
+        char line[ 32 ];
+        snprintf( line,
+                  sizeof( line ),
+                  "MIC MONITOR   GAIN +%u dB",
+                  (unsigned)( NULL != config ? config->recorder_input_gain_db
+                                             : recorder_input_gain_db() ) );
+        display_draw_text( 8, 34, line, TEXT, 1U );
+        const int graph_x = 8, graph_y = 58, graph_w = 224, graph_h = 66;
+        for( size_t i = 0U; i < count; ++i )
+        {
+            const int x = graph_x + (int)( i * graph_w / count );
+            const int h = (int)bins[ i ] * graph_h / 100;
+            if( h > 0 )
+                display_fill_rect( x, graph_y + graph_h - h, 2, h, GREEN );
+        }
+        display_draw_text( 8, 130, "TURN: INPUT GAIN", SUBDUED, 1U );
+        display_draw_text( 8, 144, "CENTER: EXIT", SUBDUED, 1U );
+        (void)display_present();
+        return;
+    }
+
     if( RFSCOUT_RECORDER_PLAYING == state )
     {
         const size_t index = ( a_selected >= RECORDER_BROWSER_FILE_BASE )
@@ -210,6 +237,10 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
         else if( RECORDER_BROWSER_NEW == item )
         {
             snprintf( line, sizeof( line ), "%c NEW RECORDING", item == a_selected ? '>' : ' ' );
+        }
+        else if( RECORDER_BROWSER_MONITOR == item )
+        {
+            snprintf( line, sizeof( line ), "%c MONITOR", item == a_selected ? '>' : ' ' );
         }
         else
         {

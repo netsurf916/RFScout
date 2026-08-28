@@ -126,7 +126,8 @@ Remaining hardware validation includes physical speaker channel, perceived loudn
 - Create `/sdcard/audio/` automatically when storage is available.
 - Enumerate only supported, correctly formatted PCM WAV files and expose duration/size metadata.
 - Play selected recordings asynchronously over the onboard I2S1 speaker.
-- Trim button/mechanical transients from the beginning and end before save-time DC removal and bounded normalization; expose post-processing as an explicit nonblocking `SAVING` state that locks Recorder input until the file is finalized and the browser refreshes.
+- Analyze only the retained recording window, then combine 300 ms head / 600 ms tail trimming, DC removal, and bounded normalization into one rewrite pass; expose post-processing as an explicit nonblocking `SAVING` state that locks Recorder input until the file is finalized and the browser refreshes.
+- Add a `MONITOR` browser action with a live microphone FFT spectrum; center exits and encoder rotation adjusts persistent fixed digital input gain in 3 dB steps from 0 through +24 dB.
 - Keep capture, save-time post-processing, and playback off the UI loop; rate-limit Recorder rendering and avoid low-value live waveform/level graphics that consume display/UI cycles.
 - Validate microphone capture, storage-loss behavior, speaker playback, and perceived volume on target hardware.
 

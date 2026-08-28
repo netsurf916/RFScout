@@ -25,6 +25,7 @@
 #define CONFIG_BAD_PATH RFSCOUT_CONFIG_PATH ".bad"
 #define CONFIG_BRIGHTNESS_DEFAULT 70U
 #define CONFIG_RECORDER_VOLUME_DEFAULT 50U
+#define CONFIG_RECORDER_INPUT_GAIN_DEFAULT_DB 12U
 #define CONFIG_MIN_VALID_EPOCH 1577836800LL
 #define CONFIG_MAX_VALID_EPOCH 4102444800LL
 
@@ -64,6 +65,7 @@ static void set_defaults( void )
     config.alert_mode = RFSCOUT_ALERT_OFF;
     config.alert_volume_percent = RFSCOUT_ALERT_VOLUME_DEFAULT_PERCENT;
     config.recorder_volume_percent = CONFIG_RECORDER_VOLUME_DEFAULT;
+    config.recorder_input_gain_db = CONFIG_RECORDER_INPUT_GAIN_DEFAULT_DB;
 
     for( size_t index = 0; index < RFSCOUT_APP_COUNT; ++index )
     {
@@ -222,6 +224,12 @@ static void load_recorder( const cJSON *a_root )
     if( cJSON_IsNumber( volume ) && ( volume->valueint >= 0 ) && ( volume->valueint <= 100 ) )
     {
         config.recorder_volume_percent = (uint8_t)volume->valueint;
+    }
+    const cJSON *input_gain = cJSON_GetObjectItemCaseSensitive( recorder, "input_gain_db" );
+    if( cJSON_IsNumber( input_gain ) && ( input_gain->valueint >= 0 ) &&
+        ( input_gain->valueint <= 24 ) && ( 0 == ( input_gain->valueint % 3 ) ) )
+    {
+        config.recorder_input_gain_db = (uint8_t)input_gain->valueint;
     }
 }
 
@@ -452,6 +460,7 @@ static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_tim
 
     cJSON *recorder = cJSON_AddObjectToObject( root, "recorder" );
     cJSON_AddNumberToObject( recorder, "volume", config.recorder_volume_percent );
+    cJSON_AddNumberToObject( recorder, "input_gain_db", config.recorder_input_gain_db );
 
     cJSON *notifications = cJSON_AddObjectToObject( root, "notifications" );
     cJSON_AddStringToObject( notifications, "mode", alert_mode_name( config.alert_mode ) );
@@ -611,6 +620,16 @@ esp_err_t device_config_set_recorder_volume( uint8_t a_percent )
         return ESP_ERR_INVALID_ARG;
     }
     config.recorder_volume_percent = a_percent;
+    return ESP_OK;
+}
+
+esp_err_t device_config_set_recorder_input_gain( uint8_t a_gain_db )
+{
+    if( a_gain_db > 24U || 0U != ( a_gain_db % 3U ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    config.recorder_input_gain_db = a_gain_db;
     return ESP_OK;
 }
 

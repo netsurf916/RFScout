@@ -23,12 +23,14 @@
 #define RFSCOUT_RECORDER_WAV_RATE_MAX 48000U
 #define RFSCOUT_RECORDER_MAX_FILES 48U
 #define RFSCOUT_RECORDER_NAME_MAX 64U
+#define RFSCOUT_RECORDER_MONITOR_BINS 64U
 
 typedef enum
 {
     RFSCOUT_RECORDER_IDLE = 0,
     RFSCOUT_RECORDER_RECORDING,
     RFSCOUT_RECORDER_SAVING,
+    RFSCOUT_RECORDER_MONITORING,
     RFSCOUT_RECORDER_PLAYING,
     RFSCOUT_RECORDER_NO_STORAGE,
     RFSCOUT_RECORDER_ERROR
@@ -61,6 +63,21 @@ bool recorder_prepare_storage_shutdown( uint32_t a_timeout_ms );
 
 /** @brief Delete one enumerated recording and refresh the list. */
 esp_err_t recorder_delete_file( size_t a_index );
+
+/** @brief Start live microphone spectrum monitoring. */
+esp_err_t recorder_start_monitor( uint8_t a_gain_db );
+
+/** @brief Stop live microphone spectrum monitoring. */
+void recorder_stop_monitor( void );
+
+/** @brief Copy the latest live spectrum bins and return the copied count. */
+size_t recorder_monitor_bins( uint8_t *a_bins, size_t a_capacity );
+
+/** @brief Set fixed digital microphone input gain in dB (0..24 in 3 dB steps). */
+void recorder_set_input_gain_db( uint8_t a_gain_db );
+
+/** @brief Return active fixed digital microphone input gain in dB. */
+uint8_t recorder_input_gain_db( void );
 
 /** @brief Start asynchronous playback of one enumerated recording. */
 esp_err_t recorder_start_playback( size_t a_index, uint8_t a_volume_percent );
