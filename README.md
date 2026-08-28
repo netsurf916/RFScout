@@ -65,7 +65,7 @@ Thermal becomes available when an **MLX90640** is detected on the external I2C/Q
 
 ### Home / Device Settings
 
-Home is the non-disableable Device application's branded pass-through landing screen. The RFScout mark is drawn procedurally on the LCD rather than stored as a second large bitmap. Center enters Device Settings; rotating without entering settings continues normal application navigation.
+Home is the non-disableable Device application's branded pass-through landing screen. The LCD mark is generated at build time from the canonical `assets/logo.png` artwork as a compact black/orange/white bitmap, keeping the device and browser-flasher branding aligned without embedding a PNG decoder. Center enters Device Settings; rotating without entering settings continues normal application navigation.
 
 Current Device Settings include display brightness, 12/24-hour clock presentation, timezone selection, preferred startup application, manual date/time, application enablement, SD logging, global notification mode and volume, one Morse character for each notification category, Recorder playback volume/input gain through Recorder persistence, and explicit configuration save.
 
