@@ -43,6 +43,9 @@
 #define RECORDER_DIAGNOSTIC_INTERVAL_US 1000000LL
 #define RECORDER_CLOCK_MEASURE_MS 10U
 #define RECORDER_SIGNAL_SNAPSHOT_THRESHOLD 4000U
+#define RECORDER_MIC_PDM_CLOCK_MIN_HZ 1000000U
+#define RECORDER_MIC_PDM_CLOCK_MAX_HZ 3250000U
+#define RECORDER_CLOCK_DERIVATION_MAX_REQUEST_HZ 96000U
 #define RECORDER_EXPECTED_BYTES_PER_SECOND                                                         \
     ( RFSCOUT_RECORDER_SAMPLE_RATE * RECORDER_CHANNELS * ( RECORDER_BITS_PER_SAMPLE / 8U ) )
 
@@ -71,6 +74,8 @@ static int16_t diagnostic_max_sample;
 static int64_t playback_started_us;
 static bool diagnostic_initial_snapshot_logged;
 static bool diagnostic_signal_snapshot_logged;
+static uint32_t measured_pdm_clock_hz;
+static uint32_t recording_wav_sample_rate = 12800U;
 
 static void write_u16_le( uint8_t *a_target, uint16_t a_value )
 {
@@ -97,7 +102,9 @@ static uint32_t read_u32_le( const uint8_t *a_source )
            ( (uint32_t)a_source[ 2 ] << 16U ) | ( (uint32_t)a_source[ 3 ] << 24U );
 }
 
-static void build_wav_header( uint8_t a_header[ RECORDER_WAV_HEADER_SIZE ], uint32_t a_data_bytes )
+static void build_wav_header( uint8_t a_header[ RECORDER_WAV_HEADER_SIZE ],
+                              uint32_t a_data_bytes,
+                              uint32_t a_sample_rate_hz )
 {
     memset( a_header, 0, RECORDER_WAV_HEADER_SIZE );
     memcpy( &a_header[ 0 ], "RIFF", 4U );
@@ -107,10 +114,9 @@ static void build_wav_header( uint8_t a_header[ RECORDER_WAV_HEADER_SIZE ], uint
     write_u32_le( &a_header[ 16 ], 16U );
     write_u16_le( &a_header[ 20 ], 1U );
     write_u16_le( &a_header[ 22 ], RECORDER_CHANNELS );
-    write_u32_le( &a_header[ 24 ], RFSCOUT_RECORDER_WAV_SAMPLE_RATE );
+    write_u32_le( &a_header[ 24 ], a_sample_rate_hz );
     write_u32_le( &a_header[ 28 ],
-                  RFSCOUT_RECORDER_WAV_SAMPLE_RATE * RECORDER_CHANNELS * RECORDER_BITS_PER_SAMPLE /
-                      8U );
+                  a_sample_rate_hz * RECORDER_CHANNELS * RECORDER_BITS_PER_SAMPLE / 8U );
     write_u16_le( &a_header[ 32 ], RECORDER_CHANNELS * RECORDER_BITS_PER_SAMPLE / 8U );
     write_u16_le( &a_header[ 34 ], RECORDER_BITS_PER_SAMPLE );
     memcpy( &a_header[ 36 ], "data", 4U );
@@ -133,7 +139,8 @@ static bool validate_wav( const char *a_path, rfscout_recording_t *a_recording )
         0 != memcmp( &header[ 8 ], "WAVE", 4U ) || 0 != memcmp( &header[ 12 ], "fmt ", 4U ) ||
         0 != memcmp( &header[ 36 ], "data", 4U ) || 1U != read_u16_le( &header[ 20 ] ) ||
         RECORDER_CHANNELS != read_u16_le( &header[ 22 ] ) ||
-        RFSCOUT_RECORDER_WAV_SAMPLE_RATE != read_u32_le( &header[ 24 ] ) ||
+        read_u32_le( &header[ 24 ] ) < RFSCOUT_RECORDER_WAV_RATE_MIN ||
+        read_u32_le( &header[ 24 ] ) > RFSCOUT_RECORDER_WAV_RATE_MAX ||
         RECORDER_BITS_PER_SAMPLE != read_u16_le( &header[ 34 ] ) )
     {
         return false;
@@ -142,10 +149,10 @@ static bool validate_wav( const char *a_path, rfscout_recording_t *a_recording )
     const uint32_t bytes = read_u32_le( &header[ 40 ] );
     if( NULL != a_recording )
     {
+        const uint32_t sample_rate_hz = read_u32_le( &header[ 24 ] );
         a_recording->data_bytes = bytes;
         a_recording->duration_seconds =
-            bytes / ( RFSCOUT_RECORDER_WAV_SAMPLE_RATE * RECORDER_CHANNELS *
-                      RECORDER_BITS_PER_SAMPLE / 8U );
+            bytes / ( sample_rate_hz * RECORDER_CHANNELS * RECORDER_BITS_PER_SAMPLE / 8U );
     }
     return true;
 }
@@ -184,7 +191,7 @@ static void release_channel( void )
     rx_channel = NULL;
 }
 
-static void log_pdm_clock_measurement( void )
+static uint32_t measure_pdm_clock_hz( void )
 {
     pcnt_unit_handle_t unit = NULL;
     pcnt_channel_handle_t channel = NULL;
@@ -194,7 +201,7 @@ static void log_pdm_clock_measurement( void )
     {
         ESP_LOGW(
             TAG, "PDM clock measurement unavailable: pcnt unit: %s", esp_err_to_name( result ) );
-        return;
+        return 0U;
     }
 
     const pcnt_chan_config_t channel_config = {
@@ -236,6 +243,7 @@ static void log_pdm_clock_measurement( void )
                   count,
                   RECORDER_CLOCK_MEASURE_MS,
                   (unsigned)measured_hz );
+        measured_pdm_clock_hz = measured_hz;
     }
     else
     {
@@ -254,6 +262,7 @@ static void log_pdm_clock_measurement( void )
     {
         (void)pcnt_del_unit( unit );
     }
+    return ESP_OK == result ? measured_pdm_clock_hz : 0U;
 }
 
 static void log_pcm_snapshot( const char *a_label, const int16_t *a_samples, size_t a_count )
@@ -342,7 +351,41 @@ static esp_err_t open_microphone( void )
                   RECORDER_BITS_PER_SAMPLE,
                   RECORDER_CHANNELS,
                   (unsigned)RECORDER_EXPECTED_BYTES_PER_SECOND );
-        log_pdm_clock_measurement();
+        measured_pdm_clock_hz = measure_pdm_clock_hz();
+        if( measured_pdm_clock_hz > 0U )
+        {
+            const uint32_t expected_pdm_hz = pdm_config.clk_cfg.sample_rate_hz * 64U;
+            const uint32_t clock_ratio_permille =
+                expected_pdm_hz > 0U
+                    ? (uint32_t)( (uint64_t)measured_pdm_clock_hz * 1000ULL / expected_pdm_hz )
+                    : 0U;
+            uint32_t derived_request_hz =
+                (uint32_t)( (uint64_t)pdm_config.clk_cfg.sample_rate_hz *
+                            RFSCOUT_RECORDER_TARGET_PDM_CLOCK_HZ / measured_pdm_clock_hz );
+            if( derived_request_hz > RECORDER_CLOCK_DERIVATION_MAX_REQUEST_HZ )
+            {
+                derived_request_hz = RECORDER_CLOCK_DERIVATION_MAX_REQUEST_HZ;
+            }
+            ESP_LOGI( TAG,
+                      "PDM calibration: requested_pcm=%u expected_clk=%u measured_clk=%u "
+                      "clock_ratio=%u.%u%% target_clk=%u derived_request=%u",
+                      (unsigned)pdm_config.clk_cfg.sample_rate_hz,
+                      (unsigned)expected_pdm_hz,
+                      (unsigned)measured_pdm_clock_hz,
+                      (unsigned)( clock_ratio_permille / 10U ),
+                      (unsigned)( clock_ratio_permille % 10U ),
+                      (unsigned)RFSCOUT_RECORDER_TARGET_PDM_CLOCK_HZ,
+                      (unsigned)derived_request_hz );
+            if( measured_pdm_clock_hz < RECORDER_MIC_PDM_CLOCK_MIN_HZ ||
+                measured_pdm_clock_hz > RECORDER_MIC_PDM_CLOCK_MAX_HZ )
+            {
+                ESP_LOGW( TAG,
+                          "PDM clock outside microphone range: measured=%u valid=%u..%u Hz",
+                          (unsigned)measured_pdm_clock_hz,
+                          (unsigned)RECORDER_MIC_PDM_CLOCK_MIN_HZ,
+                          (unsigned)RECORDER_MIC_PDM_CLOCK_MAX_HZ );
+            }
+        }
     }
     return result;
 }
@@ -421,7 +464,7 @@ static void finalize_recording( void )
     }
 
     uint8_t header[ RECORDER_WAV_HEADER_SIZE ];
-    build_wav_header( header, data_bytes );
+    build_wav_header( header, data_bytes, recording_wav_sample_rate );
     (void)fflush( record_file );
     if( 0 == fseek( record_file, 0L, SEEK_SET ) )
     {
@@ -611,12 +654,32 @@ static void record_worker( void *a_argument )
         {
             const uint32_t effective_rate = (uint32_t)( (uint64_t)data_bytes * 1000000ULL /
                                                         (uint64_t)total_us / sizeof( int16_t ) );
+            if( effective_rate >= RFSCOUT_RECORDER_WAV_RATE_MIN &&
+                effective_rate <= RFSCOUT_RECORDER_WAV_RATE_MAX )
+            {
+                recording_wav_sample_rate = effective_rate;
+            }
+            const uint32_t pcm_ratio_permille =
+                (uint32_t)( (uint64_t)effective_rate * 1000ULL / RFSCOUT_RECORDER_SAMPLE_RATE );
+            const uint32_t derived_request_for_16k =
+                effective_rate > 0U ? (uint32_t)( (uint64_t)RFSCOUT_RECORDER_SAMPLE_RATE *
+                                                  16000ULL / effective_rate )
+                                    : 0U;
             ESP_LOGI( TAG,
                       "PDM final: wall=%lldms pcm_bytes=%u effective_pcm=%u samples/s wav_rate=%u",
                       (long long)( total_us / 1000LL ),
                       (unsigned)data_bytes,
                       (unsigned)effective_rate,
-                      (unsigned)RFSCOUT_RECORDER_WAV_SAMPLE_RATE );
+                      (unsigned)recording_wav_sample_rate );
+            ESP_LOGI( TAG,
+                      "PDM calibration result: request=%u measured_clk=%u effective_pcm=%u "
+                      "pcm_ratio=%u.%u%% derived_request_for_16k=%u",
+                      (unsigned)RFSCOUT_RECORDER_SAMPLE_RATE,
+                      (unsigned)measured_pdm_clock_hz,
+                      (unsigned)effective_rate,
+                      (unsigned)( pcm_ratio_permille / 10U ),
+                      (unsigned)( pcm_ratio_permille % 10U ),
+                      (unsigned)derived_request_for_16k );
         }
     }
 
@@ -777,7 +840,7 @@ esp_err_t recorder_start_recording( void )
     }
 
     uint8_t header[ RECORDER_WAV_HEADER_SIZE ];
-    build_wav_header( header, 0U );
+    build_wav_header( header, 0U, RFSCOUT_RECORDER_SAMPLE_RATE );
     if( sizeof( header ) != fwrite( header, 1U, sizeof( header ), record_file ) )
     {
         fclose( record_file );
@@ -803,6 +866,8 @@ esp_err_t recorder_start_recording( void )
     recording_started_us = 0;
     diagnostic_initial_snapshot_logged = false;
     diagnostic_signal_snapshot_logged = false;
+    measured_pdm_clock_hz = 0U;
+    recording_wav_sample_rate = RFSCOUT_RECORDER_SAMPLE_RATE;
     record_running = true;
     if( pdPASS != xTaskCreate( record_worker,
                                "recorder",

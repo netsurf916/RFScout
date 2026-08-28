@@ -17,8 +17,10 @@
 #include <stdint.h>
 
 #define RFSCOUT_RECORDER_DIRECTORY "/sdcard/audio"
-#define RFSCOUT_RECORDER_SAMPLE_RATE 32000U
-#define RFSCOUT_RECORDER_WAV_SAMPLE_RATE 12800U
+#define RFSCOUT_RECORDER_SAMPLE_RATE 48000U
+#define RFSCOUT_RECORDER_TARGET_PDM_CLOCK_HZ 2048000U
+#define RFSCOUT_RECORDER_WAV_RATE_MIN 8000U
+#define RFSCOUT_RECORDER_WAV_RATE_MAX 48000U
 #define RFSCOUT_RECORDER_MAX_FILES 48U
 #define RFSCOUT_RECORDER_NAME_MAX 64U
 
@@ -44,7 +46,7 @@ esp_err_t recorder_init( void );
 /** @brief Refresh storage state and the playable recording list. */
 esp_err_t recorder_refresh( void );
 
-/** @brief Start a diagnostic 16-bit mono PCM WAV recording from the 32 kHz PDM request. */
+/** @brief Start a calibrated diagnostic 16-bit mono PCM WAV recording from the PDM input. */
 esp_err_t recorder_start_recording( void );
 
 /** @brief Stop capture, finalize the WAV header, and refresh the recording list. */

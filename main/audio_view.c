@@ -92,7 +92,7 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
         display_draw_text( 8, 42, "READY", YELLOW, 2U );
         snprintf( line, sizeof( line ), "%u RECORDINGS", (unsigned)recorder_file_count() );
         display_draw_text( 8, 78, line, TEXT, 1U );
-        display_draw_text( 8, 105, "12.8 kHz diagnostic WAV", DIM, 1U );
+        display_draw_text( 8, 105, "calibrated diagnostic WAV", DIM, 1U );
         display_draw_text( 8, 144, "CENTER: OPEN", SUBDUED, 1U );
     }
     (void)display_present();

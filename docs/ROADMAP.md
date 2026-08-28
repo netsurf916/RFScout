@@ -119,6 +119,7 @@ Remaining hardware validation includes physical speaker channel, perceived loudn
 
 - Replace the former Audio spectrum analyzer rather than preserving the FFT/DSP path.
 - Reuse the existing I2S0/PDM microphone hardware for recording only.
+- Calibrate the PDM receive path against measured GPIO clock and delivered PCM rate rather than trusting nominal divider assumptions; derive runtime-safe settings that produce a consistent recording format across supported hardware/IDF behavior.
 - Record standard 32 kHz, 16-bit mono PCM WAV files under `/sdcard/audio/`.
 - Treat SD availability as a first-class application state; recording and playback are unavailable without mounted storage.
 - Create `/sdcard/audio/` automatically when storage is available.

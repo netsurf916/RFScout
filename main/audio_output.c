@@ -21,7 +21,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#define AUDIO_OUTPUT_SAMPLE_RATE 12800U
+#define AUDIO_OUTPUT_DEFAULT_SAMPLE_RATE 32000U
+#define AUDIO_OUTPUT_WAV_RATE_MIN 8000U
+#define AUDIO_OUTPUT_WAV_RATE_MAX 48000U
 #define AUDIO_OUTPUT_MAX_AMPLITUDE 7000.0f
 #define AUDIO_OUTPUT_CHUNK_FRAMES 160U
 #define AUDIO_OUTPUT_QUEUE_LENGTH 6U
@@ -61,6 +63,7 @@ static volatile bool playback_active;
 static volatile bool playback_worker_active;
 static volatile uint32_t playback_generation;
 static volatile uint8_t playback_volume_percent = 50U;
+static uint32_t current_sample_rate = AUDIO_OUTPUT_DEFAULT_SAMPLE_RATE;
 
 static uint16_t read_u16_le( const uint8_t *a_source )
 {
@@ -82,9 +85,9 @@ static bool write_segment( bool a_tone,
 {
     int16_t samples[ AUDIO_OUTPUT_CHUNK_FRAMES * 2U ];
     uint32_t remaining_frames =
-        (uint32_t)( ( (uint64_t)AUDIO_OUTPUT_SAMPLE_RATE * a_duration_ms + 999U ) / 1000U );
+        (uint32_t)( ( (uint64_t)current_sample_rate * a_duration_ms + 999U ) / 1000U );
     const float phase_step =
-        2.0f * (float)M_PI * (float)a_frequency_hz / (float)AUDIO_OUTPUT_SAMPLE_RATE;
+        2.0f * (float)M_PI * (float)a_frequency_hz / (float)current_sample_rate;
     const float amplitude =
         AUDIO_OUTPUT_MAX_AMPLITUDE * (float)a_volume_percent / AUDIO_OUTPUT_MAX_VOLUME_PERCENT;
 
@@ -131,7 +134,34 @@ static bool write_segment( bool a_tone,
 static uint32_t dma_drain_silence_ms( void )
 {
     const uint32_t drain_frames = ( AUDIO_OUTPUT_DMA_DESC_NUM + 1U ) * AUDIO_OUTPUT_DMA_FRAME_NUM;
-    return ( drain_frames * 1000U + AUDIO_OUTPUT_SAMPLE_RATE - 1U ) / AUDIO_OUTPUT_SAMPLE_RATE;
+    return ( drain_frames * 1000U + current_sample_rate - 1U ) / current_sample_rate;
+}
+
+static bool configure_sample_rate( uint32_t a_sample_rate_hz )
+{
+    if( a_sample_rate_hz < AUDIO_OUTPUT_WAV_RATE_MIN ||
+        a_sample_rate_hz > AUDIO_OUTPUT_WAV_RATE_MAX )
+    {
+        return false;
+    }
+    if( current_sample_rate == a_sample_rate_hz )
+    {
+        return true;
+    }
+
+    i2s_std_clk_config_t clock_config = I2S_STD_CLK_DEFAULT_CONFIG( a_sample_rate_hz );
+    const esp_err_t result = i2s_channel_reconfig_std_clock( tx_channel, &clock_config );
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG,
+                  "speaker rate reconfigure failed: %u Hz: %s",
+                  (unsigned)a_sample_rate_hz,
+                  esp_err_to_name( result ) );
+        return false;
+    }
+    current_sample_rate = a_sample_rate_hz;
+    ESP_LOGI( TAG, "speaker sample rate=%u Hz", (unsigned)current_sample_rate );
+    return true;
 }
 
 static bool enable_channel( void )
@@ -155,7 +185,7 @@ static void finish_channel( void )
 static void play_tone( const audio_output_command_t *a_command )
 {
     float phase = 0.0f;
-    if( !enable_channel() )
+    if( !configure_sample_rate( AUDIO_OUTPUT_DEFAULT_SAMPLE_RATE ) || !enable_channel() )
     {
         return;
     }
@@ -174,7 +204,8 @@ static void play_tone( const audio_output_command_t *a_command )
 static void play_morse( const audio_output_command_t *a_command )
 {
     const char *pattern = morse_pattern( a_command->character );
-    if( NULL == pattern || !enable_channel() )
+    if( NULL == pattern || !configure_sample_rate( AUDIO_OUTPUT_DEFAULT_SAMPLE_RATE ) ||
+        !enable_channel() )
     {
         return;
     }
@@ -215,7 +246,8 @@ static bool wav_supported( const uint8_t a_header[ AUDIO_OUTPUT_WAV_HEADER_SIZE 
            0 == memcmp( &a_header[ 12 ], "fmt ", 4U ) &&
            0 == memcmp( &a_header[ 36 ], "data", 4U ) && 1U == read_u16_le( &a_header[ 20 ] ) &&
            1U == read_u16_le( &a_header[ 22 ] ) &&
-           AUDIO_OUTPUT_SAMPLE_RATE == read_u32_le( &a_header[ 24 ] ) &&
+           read_u32_le( &a_header[ 24 ] ) >= AUDIO_OUTPUT_WAV_RATE_MIN &&
+           read_u32_le( &a_header[ 24 ] ) <= AUDIO_OUTPUT_WAV_RATE_MAX &&
            16U == read_u16_le( &a_header[ 34 ] );
 }
 
@@ -255,7 +287,8 @@ static void play_wav( const audio_output_command_t *a_command )
         return;
     }
 
-    if( !enable_channel() )
+    const uint32_t wav_sample_rate = read_u32_le( &header[ 24 ] );
+    if( !configure_sample_rate( wav_sample_rate ) || !enable_channel() )
     {
         fclose( file );
         finish_wav_command( a_command->generation );
@@ -365,7 +398,7 @@ esp_err_t audio_output_init( void )
     }
 
     i2s_std_config_t standard_config = {
-        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG( AUDIO_OUTPUT_SAMPLE_RATE ),
+        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG( AUDIO_OUTPUT_DEFAULT_SAMPLE_RATE ),
         .slot_cfg =
             I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG( I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO ),
         .gpio_cfg = { .mclk = I2S_GPIO_UNUSED,
@@ -413,8 +446,8 @@ bool audio_output_play_tone( uint16_t a_frequency_hz,
                              uint8_t a_volume_percent )
 {
     if( !initialized || ( 0U == a_frequency_hz ) ||
-        ( a_frequency_hz >= ( AUDIO_OUTPUT_SAMPLE_RATE / 2U ) ) || ( 0U == a_duration_ms ) ||
-        ( a_volume_percent > AUDIO_OUTPUT_MAX_VOLUME_PERCENT ) )
+        ( a_frequency_hz >= ( AUDIO_OUTPUT_DEFAULT_SAMPLE_RATE / 2U ) ) ||
+        ( 0U == a_duration_ms ) || ( a_volume_percent > AUDIO_OUTPUT_MAX_VOLUME_PERCENT ) )
     {
         return false;
     }
@@ -433,7 +466,7 @@ bool audio_output_play_morse( char a_character,
                               uint8_t a_volume_percent )
 {
     if( !initialized || ( NULL == morse_pattern( a_character ) ) || ( 0U == a_frequency_hz ) ||
-        ( a_frequency_hz >= ( AUDIO_OUTPUT_SAMPLE_RATE / 2U ) ) || ( 0U == a_unit_ms ) ||
+        ( a_frequency_hz >= ( AUDIO_OUTPUT_DEFAULT_SAMPLE_RATE / 2U ) ) || ( 0U == a_unit_ms ) ||
         ( a_volume_percent > AUDIO_OUTPUT_MAX_VOLUME_PERCENT ) )
     {
         return false;
