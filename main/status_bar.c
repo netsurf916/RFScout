@@ -87,7 +87,8 @@ void status_bar_draw_state( const rfscout_status_bar_state_t *a_state )
 
     if( a_state->sd_available )
     {
-        const uint16_t color = a_state->storage_error ? STATUS_BAR_COLOR_ERROR : STATUS_BAR_COLOR_NORMAL;
+        const uint16_t color =
+            a_state->storage_error ? STATUS_BAR_COLOR_ERROR : STATUS_BAR_COLOR_NORMAL;
         draw_sd_icon( x, color, a_state->storage_error );
         x -= STATUS_BAR_ICON_WIDTH + STATUS_BAR_ICON_GAP;
     }
