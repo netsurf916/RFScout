@@ -1140,6 +1140,11 @@ void app_manager_poll( void )
             const rfscout_recorder_state_t recorder_now = recorder_state();
             if( recorder_now != audio_last_state )
             {
+                if( RFSCOUT_RECORDER_PLAYING == audio_last_state &&
+                    RFSCOUT_RECORDER_IDLE == recorder_now )
+                {
+                    save_recorder_volume();
+                }
                 if( RFSCOUT_RECORDER_SAVING == audio_last_state &&
                     RFSCOUT_RECORDER_IDLE == recorder_now )
                 {

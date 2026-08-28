@@ -281,7 +281,6 @@ static void play_wav( const audio_output_command_t *a_command )
     }
 
     playback_worker_active = true;
-    playback_volume_percent = a_command->volume_percent;
     FILE *file = fopen( a_command->path, "rb" );
     if( NULL == file )
     {
@@ -507,6 +506,7 @@ bool audio_output_play_wav( const char *a_path, uint8_t a_volume_percent )
                                        .volume_percent = a_volume_percent,
                                        .generation = generation };
     snprintf( command.path, sizeof( command.path ), "%s", a_path );
+    playback_volume_percent = a_volume_percent;
     playback_active = true;
     if( pdTRUE != xQueueSend( command_queue, &command, 0U ) )
     {

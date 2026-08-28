@@ -41,6 +41,7 @@ typedef struct
     char name[ RFSCOUT_RECORDER_NAME_MAX ];
     uint32_t duration_seconds;
     uint32_t data_bytes;
+    int64_t modified_time;
 } rfscout_recording_t;
 
 /** @brief Initialize recorder state and enumerate valid WAV files when storage is mounted. */

@@ -146,6 +146,8 @@ static bool validate_wav( const char *a_path, rfscout_recording_t *a_recording )
 
     uint8_t header[ RECORDER_WAV_HEADER_SIZE ];
     const size_t read = fread( header, 1U, sizeof( header ), file );
+    struct stat file_status;
+    const bool stat_ok = ( 0 == fstat( fileno( file ), &file_status ) );
     fclose( file );
 
     if( read != sizeof( header ) || 0 != memcmp( &header[ 0 ], "RIFF", 4U ) ||
@@ -160,6 +162,10 @@ static bool validate_wav( const char *a_path, rfscout_recording_t *a_recording )
     }
 
     const uint32_t bytes = read_u32_le( &header[ 40 ] );
+    if( !stat_ok || file_status.st_size < (off_t)( RECORDER_WAV_HEADER_SIZE + (uint64_t)bytes ) )
+    {
+        return false;
+    }
     if( NULL != a_recording )
     {
         const uint32_t sample_rate_hz = read_u32_le( &header[ 24 ] );
@@ -174,6 +180,14 @@ static int recording_name_compare( const void *a_left, const void *a_right )
 {
     const rfscout_recording_t *left = (const rfscout_recording_t *)a_left;
     const rfscout_recording_t *right = (const rfscout_recording_t *)a_right;
+    if( right->modified_time > left->modified_time )
+    {
+        return 1;
+    }
+    if( right->modified_time < left->modified_time )
+    {
+        return -1;
+    }
     return strcmp( right->name, left->name );
 }
 
@@ -628,25 +642,33 @@ static bool trim_and_normalize_recording( void )
     return true;
 }
 
-static void finalize_recording( void )
+static bool finalize_recording( void )
 {
     if( NULL == record_file )
     {
-        return;
+        return true;
     }
 
-    (void)trim_and_normalize_recording();
-
+    bool ok = trim_and_normalize_recording();
     uint8_t header[ RECORDER_WAV_HEADER_SIZE ];
     build_wav_header( header, data_bytes, recording_wav_sample_rate );
-    (void)fflush( record_file );
-    if( 0 == fseek( record_file, 0L, SEEK_SET ) )
+    ok = ok && ( 0 == fflush( record_file ) );
+    ok = ok && ( 0 == fseek( record_file, 0L, SEEK_SET ) );
+    if( ok )
     {
-        (void)fwrite( header, 1U, sizeof( header ), record_file );
-        (void)fflush( record_file );
+        ok = ( sizeof( header ) == fwrite( header, 1U, sizeof( header ), record_file ) );
     }
-    fclose( record_file );
+    ok = ok && ( 0 == fflush( record_file ) );
+    if( 0 != fclose( record_file ) )
+    {
+        ok = false;
+    }
     record_file = NULL;
+    if( !ok )
+    {
+        ESP_LOGE( TAG, "recording finalization failed" );
+    }
+    return ok;
 }
 
 static void record_worker( void *a_argument )
@@ -863,9 +885,9 @@ static void record_worker( void *a_argument )
 
     record_running = false;
     release_channel();
-    finalize_recording();
+    const bool finalized = finalize_recording();
     record_task = NULL;
-    if( failed )
+    if( failed || !finalized )
     {
         state = RFSCOUT_RECORDER_ERROR;
     }
@@ -896,8 +918,8 @@ static bool wait_for_record_worker( uint32_t a_timeout_ms )
     if( NULL == record_done ||
         pdTRUE != xSemaphoreTake( record_done, pdMS_TO_TICKS( a_timeout_ms ) ) )
     {
-        ESP_LOGE( TAG, "recording worker did not stop within %u ms", (unsigned)a_timeout_ms );
-        state = RFSCOUT_RECORDER_ERROR;
+        ESP_LOGE( TAG, "recording worker still busy after %u ms", (unsigned)a_timeout_ms );
+        state = RFSCOUT_RECORDER_SAVING;
         return false;
     }
     return true;
@@ -1120,11 +1142,13 @@ esp_err_t recorder_refresh( void )
         char path[ 160 ];
         const int path_length =
             snprintf( path, sizeof( path ), "%s/%s", RFSCOUT_RECORDER_DIRECTORY, candidate.name );
+        struct stat file_status;
         if( ( path_length < 0 ) || ( (size_t)path_length >= sizeof( path ) ) ||
-            !validate_wav( path, &candidate ) )
+            !validate_wav( path, &candidate ) || ( 0 != stat( path, &file_status ) ) )
         {
             continue;
         }
+        candidate.modified_time = (int64_t)file_status.st_mtime;
 
         if( recording_count < RFSCOUT_RECORDER_MAX_FILES )
         {
@@ -1135,12 +1159,12 @@ esp_err_t recorder_refresh( void )
         size_t oldest = 0U;
         for( size_t index = 1U; index < recording_count; ++index )
         {
-            if( strcmp( recordings[ index ].name, recordings[ oldest ].name ) < 0 )
+            if( recordings[ index ].modified_time < recordings[ oldest ].modified_time )
             {
                 oldest = index;
             }
         }
-        if( strcmp( candidate.name, recordings[ oldest ].name ) > 0 )
+        if( candidate.modified_time > recordings[ oldest ].modified_time )
         {
             recordings[ oldest ] = candidate;
         }
@@ -1216,6 +1240,7 @@ esp_err_t recorder_start_recording( void )
     measured_pdm_clock_hz = 0U;
     recording_wav_sample_rate = RFSCOUT_RECORDER_SAMPLE_RATE;
     record_running = true;
+    state = RFSCOUT_RECORDER_RECORDING;
     if( pdPASS != xTaskCreate( record_worker,
                                "recorder",
                                RECORDER_TASK_STACK,
@@ -1232,7 +1257,6 @@ esp_err_t recorder_start_recording( void )
         return ESP_ERR_NO_MEM;
     }
 
-    state = RFSCOUT_RECORDER_RECORDING;
     ESP_LOGI( TAG, "recording %s", path );
     return ESP_OK;
 }
