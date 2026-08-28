@@ -36,6 +36,7 @@ typedef struct
 {
     uint8_t brightness_percent;
     bool apps_enabled[ RFSCOUT_APP_COUNT ];
+    rfscout_app_id_t startup_app;
     bool logging_enabled;
     bool clock_24h;
     rfscout_alert_mode_t alert_mode;
@@ -57,8 +58,14 @@ const device_config_t *device_config_get( void );
 /** @brief Return whether one application is enabled by device configuration. */
 bool device_config_app_enabled( rfscout_app_id_t a_app );
 
-/** @brief Change whether an application is enabled; Device itself always remains enabled. */
+/** @brief Change whether one application is enabled; Device/Home itself always remains enabled. */
 esp_err_t device_config_set_app_enabled( rfscout_app_id_t a_app, bool a_enabled );
+
+/** @brief Change the preferred startup application. */
+esp_err_t device_config_set_startup_app( rfscout_app_id_t a_app );
+
+/** @brief Return the configured startup application. */
+rfscout_app_id_t device_config_startup_app( void );
 
 /** @brief Change logging preference. */
 esp_err_t device_config_set_logging_enabled( bool a_enabled );

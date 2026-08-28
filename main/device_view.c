@@ -1,6 +1,6 @@
 /**
-    device_view.c : RFScout Device application implementation
-    Description: Provides global settings, notification mappings, timezone selection, and manual time setting.
+    device_view.c : RFScout Home and Device settings implementation
+    Description: Provides the branded Home landing screen, global settings, notification mappings, timezone selection, and manual time setting.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -28,20 +28,21 @@
 #define DEVICE_ITEM_BRIGHTNESS 1U
 #define DEVICE_ITEM_CLOCK_FORMAT 2U
 #define DEVICE_ITEM_TIMEZONE 3U
-#define DEVICE_ITEM_YEAR 4U
-#define DEVICE_ITEM_MONTH 5U
-#define DEVICE_ITEM_DAY 6U
-#define DEVICE_ITEM_HOUR 7U
-#define DEVICE_ITEM_MINUTE 8U
-#define DEVICE_ITEM_WIFI 9U
-#define DEVICE_ITEM_CC1101 10U
-#define DEVICE_ITEM_NRF24 11U
-#define DEVICE_ITEM_AUDIO 12U
-#define DEVICE_ITEM_THERMAL 13U
-#define DEVICE_ITEM_LOGGING 14U
-#define DEVICE_ITEM_ALERT_MODE 15U
-#define DEVICE_ITEM_ALERT_VOLUME 16U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 17U
+#define DEVICE_ITEM_STARTUP 4U
+#define DEVICE_ITEM_YEAR 5U
+#define DEVICE_ITEM_MONTH 6U
+#define DEVICE_ITEM_DAY 7U
+#define DEVICE_ITEM_HOUR 8U
+#define DEVICE_ITEM_MINUTE 9U
+#define DEVICE_ITEM_WIFI 10U
+#define DEVICE_ITEM_CC1101 11U
+#define DEVICE_ITEM_NRF24 12U
+#define DEVICE_ITEM_AUDIO 13U
+#define DEVICE_ITEM_THERMAL 14U
+#define DEVICE_ITEM_LOGGING 15U
+#define DEVICE_ITEM_ALERT_MODE 16U
+#define DEVICE_ITEM_ALERT_VOLUME 17U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 18U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
 #define DEVICE_ITEM_SAVE ( DEVICE_ITEM_NOTIFICATION_LAST + 1U )
@@ -106,6 +107,29 @@ static const char *on_off( bool a_value )
     return a_value ? "On" : "Off";
 }
 
+/** @brief Return the user-facing name for a startup target. */
+static const char *startup_app_name( rfscout_app_id_t a_app )
+{
+    switch( a_app )
+    {
+        case RFSCOUT_APP_WIFI_BT:
+            return "WiFi / BT";
+        case RFSCOUT_APP_CC1101:
+            return "CC1101";
+        case RFSCOUT_APP_NRF24:
+            return "nRF24";
+        case RFSCOUT_APP_AUDIO:
+            return "Recorder";
+        case RFSCOUT_APP_THERMAL:
+            return "Thermal";
+        case RFSCOUT_APP_DEVICE:
+            return "Home";
+        case RFSCOUT_APP_COUNT:
+        default:
+            return "Home";
+    }
+}
+
 /**
  * @brief Return the notification category represented by one Device item.
  * @note Device notification rows intentionally correspond 1:1 with the enum/descriptor table in
@@ -154,6 +178,8 @@ static const char *item_label( unsigned a_item )
             return "Clock format";
         case DEVICE_ITEM_TIMEZONE:
             return "Timezone";
+        case DEVICE_ITEM_STARTUP:
+            return "Startup app";
         case DEVICE_ITEM_YEAR:
             return "Year";
         case DEVICE_ITEM_MONTH:
@@ -215,6 +241,9 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
                       ( NULL != zone ) ? zone->label : config->timezone_selected );
             break;
         }
+        case DEVICE_ITEM_STARTUP:
+            snprintf( a_value, a_capacity, "%s", startup_app_name( config->startup_app ) );
+            break;
         case DEVICE_ITEM_YEAR:
             snprintf( a_value, a_capacity, "%04d", edited_time.tm_year + 1900 );
             break;
@@ -296,27 +325,24 @@ static void draw_row( int a_y, unsigned a_item )
     }
 }
 
+/** @brief Draw the RFScout Home mark procedurally without embedding a second bitmap asset. */
+static void draw_home_logo( void )
+{
+    display_fill_rect( 50, 54, 8, 48, COLOR_ACCENT );
+    display_fill_rect( 58, 54, 22, 8, COLOR_ACCENT );
+    display_fill_rect( 58, 74, 18, 8, COLOR_ACCENT );
+    display_draw_text( 92, 58, "RF", COLOR_ACCENT, 3U );
+    display_draw_text( 130, 58, "SCOUT", COLOR_SELECTED, 3U );
+    display_draw_text( 92, 88, "RF SITUATIONAL AWARENESS", COLOR_DIM, 1U );
+}
+
 void device_view_landing( void )
 {
-    const device_config_t *config = device_config_get();
     display_clear( COLOR_BACKGROUND );
-    ui_chrome_draw( "DEVICE", COLOR_DIM );
-    display_draw_text( UI_LAYOUT_LABEL_X, 46, "Global configuration", COLOR_TEXT, 1U );
-
-    char line[ 64 ];
-    snprintf( line,
-              sizeof( line ),
-              "Notifications: %s %u%%",
-              alert_mode_name( config->alert_mode ),
-              (unsigned)config->alert_volume_percent );
-    display_draw_text( UI_LAYOUT_LABEL_X, 68, line, COLOR_TEXT, 1U );
-    snprintf( line, sizeof( line ), "SD logging: %s", on_off( config->logging_enabled ) );
-    display_draw_text( UI_LAYOUT_LABEL_X, 86, line, COLOR_TEXT, 1U );
-    snprintf( line, sizeof( line ), "Time: %s", device_time_source_label() );
-    display_draw_text( UI_LAYOUT_LABEL_X, 104, line, COLOR_DIM, 1U );
-
-    display_draw_text( UI_LAYOUT_LABEL_X, 136, "CENTER: SETTINGS", COLOR_ACCENT, 1U );
-    display_draw_text( UI_LAYOUT_LABEL_X, UI_LAYOUT_FOOTER_Y, "TURN: NEXT APP", COLOR_DIM, 1U );
+    ui_chrome_draw( "HOME", COLOR_DIM );
+    draw_home_logo();
+    display_draw_text( 92, 118, "CENTER: SETTINGS", COLOR_ACCENT, 1U );
+    display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN: APPS", COLOR_DIM, 1U );
     (void)display_present();
 }
 
@@ -383,6 +409,28 @@ static void toggle_app( rfscout_app_id_t a_app, const char *a_key )
     const bool old_value = device_config_app_enabled( a_app );
     (void)device_config_set_app_enabled( a_app, !old_value );
     log_config_change( a_key, on_off( old_value ), on_off( !old_value ) );
+}
+
+/** @brief Rotate among startup applications and audit the preference change. */
+static void adjust_startup_app( int a_delta )
+{
+    const rfscout_app_id_t old_app = device_config_startup_app();
+    int app = (int)old_app + ( ( a_delta > 0 ) ? 1 : -1 );
+    if( app < 0 )
+    {
+        app = RFSCOUT_APP_COUNT - 1;
+    }
+    if( app >= RFSCOUT_APP_COUNT )
+    {
+        app = 0;
+    }
+
+    const rfscout_app_id_t new_app = (rfscout_app_id_t)app;
+    if( ESP_OK == device_config_set_startup_app( new_app ) )
+    {
+        log_config_change(
+            "apps.startup", startup_app_name( old_app ), startup_app_name( new_app ) );
+    }
 }
 
 /** @brief Rotate among configured timezone definitions and immediately apply the selected rule. */
@@ -649,6 +697,10 @@ static void adjust_selected( int a_delta )
     else if( DEVICE_ITEM_TIMEZONE == selected_item )
     {
         adjust_timezone( a_delta );
+    }
+    else if( DEVICE_ITEM_STARTUP == selected_item )
+    {
+        adjust_startup_app( a_delta );
     }
     else if( ( selected_item >= DEVICE_ITEM_YEAR ) && ( selected_item <= DEVICE_ITEM_MINUTE ) )
     {

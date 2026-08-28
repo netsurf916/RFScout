@@ -995,11 +995,7 @@ static void audio_input( bool a_pressed, bool a_long_pressed, int a_delta )
 
 esp_err_t app_manager_init( void )
 {
-    active_app = RFSCOUT_APP_WIFI_BT;
-    if( !device_config_app_enabled( active_app ) )
-    {
-        active_app = RFSCOUT_APP_DEVICE;
-    }
+    active_app = device_config_startup_app();
     last_app_refresh_us = 0;
     last_thermal_probe_us = esp_timer_get_time();
     last_radio_retry_us = 0;
@@ -1032,9 +1028,19 @@ esp_err_t app_manager_init( void )
     }
 
     (void)mlx90640_init();
+    if( !app_available( active_app ) )
+    {
+        ESP_LOGW( TAG, "configured startup app unavailable; using Home" );
+        active_app = RFSCOUT_APP_DEVICE;
+    }
+
     if( RFSCOUT_APP_DEVICE == active_app )
     {
         device_view_landing();
+    }
+    else if( RFSCOUT_APP_WIFI_BT != active_app )
+    {
+        enter_app( active_app );
     }
     return ESP_OK;
 }
