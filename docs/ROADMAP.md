@@ -1,6 +1,6 @@
 # RFScout Roadmap
 
-This is the canonical planning document for RFScout. Production documentation describes current `main`; future design, priorities, follow-up work, and brainstorming belong here so intent is not scattered across operational docs.
+This is the canonical planning document for RFScout. Production documentation describes implemented behavior; future design, priorities, follow-up work, and brainstorming belong here so intent is not scattered across operational docs.
 
 Statuses describe implementation state, not release state.
 
@@ -95,9 +95,23 @@ PR #28 intentionally recorded the architecture goal but did **not** implement a 
 
 - GitHub Pages + ESP Web Tools browser flasher.
 - Published release assets mirrored into the Pages deployment.
-- Most recent eligible PR candidate exposed ahead of releases.
+- Candidate from the most recent triggering eligible build exposed ahead of releases when present.
 - Same-origin firmware/manifests avoid browser authentication/CORS problems.
 - Hardware flashing validated with a Chromium-based browser/Web Serial.
+
+### Home and configurable startup
+
+**Status:** Implemented — PR #32
+
+- Turn the Device pass-through landing state into branded RFScout **Home** while preserving center-entered Device Settings.
+- Keep Home/Device non-disableable and in normal top-level navigation.
+- Default startup to Home instead of WiFi/BT.
+- Persist a preferred startup target as backward-compatible schema-v1 `apps.startup` configuration.
+- Allow Home, WiFi/BT, CC1101, nRF24, Recorder, or Thermal as the preferred startup target.
+- Fall back to Home for the current boot when the configured target is disabled or unavailable without erasing the saved preference.
+- Draw LCD Home branding procedurally rather than embedding a second large bitmap.
+- Reuse `assets/logo.png` and the RFScout orange/white identity in the GitHub Pages browser flasher.
+- Preserve established per-application lifecycle and initialization behavior while adding startup selection.
 
 ## Near-term work
 
@@ -124,21 +138,18 @@ Goals:
 
 Validation should include quiet room, speech, whistle, transient/clap, monitor-to-record transitions, repeated app entry/exit, and consistency across cold boots/ESP-IDF updates.
 
-### 2. Device home/splash experience and global themes
+### 2. Global display themes
 
 **Priority:** High
 
-Current behavior still starts on WiFi/BT. Rework startup/home behavior so RFScout lands on Device/home and uses it as a functional splash/status surface without immediately trapping encoder navigation.
+The Home/splash behavior is implemented in PR #32. Continue the presentation work with centralized semantic themes rather than per-view literal colors.
 
 Goals:
 
-- Start on the Device/home view.
-- Add an RFScout logo and useful read-only system status.
-- Keep center as the deliberate entry into settings.
-- Preserve normal encoder app navigation from the landing view.
 - Add centralized semantic themes for environments such as Day, Night, Indoor, and Outdoor.
-- Define semantic roles such as title, text, subdued, warning, critical, graph, selection, and background rather than per-view literal colors.
+- Define semantic roles such as title, text, subdued, warning, critical, graph, selection, and background.
 - Ensure contrast/readability across all supported themes.
+- Keep themes system-wide and persistent.
 
 ### 3. CW/Morse sender application
 
