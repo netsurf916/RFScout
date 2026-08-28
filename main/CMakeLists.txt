@@ -12,10 +12,15 @@ endif()
 
 # Keep Device Settings in device_view.c while replacing its original procedural
 # landing implementation with the canonical bitmap-backed Home implementation.
-set_source_files_properties(
-    "device_view.c"
-    PROPERTIES COMPILE_DEFINITIONS "device_view_landing=device_view_landing_procedural"
-)
+# ESP-IDF evaluates component CMake files once in script mode while discovering
+# requirements; source-property commands are not scriptable and must only run
+# during the normal configure pass.
+if(NOT CMAKE_SCRIPT_MODE_FILE)
+    set_source_files_properties(
+        "device_view.c"
+        PROPERTIES COMPILE_DEFINITIONS "device_view_landing=device_view_landing_procedural"
+    )
+endif()
 
 idf_component_register(
     SRCS
