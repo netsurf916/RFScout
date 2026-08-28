@@ -1,16 +1,18 @@
 # Architecture
 
-This document describes the architecture implemented on current `main`. Forward-looking architecture and feature planning belong in [ROADMAP.md](ROADMAP.md).
+This document describes the architecture implemented on this PR branch. Forward-looking architecture and feature planning belong in [ROADMAP.md](ROADMAP.md).
 
 ## Application manager and lifecycle
 
 Top-level application order is:
 
 ```text
-WiFi / BT -> CC1101 -> nRF24 -> Recorder -> Thermal (when enabled and present) -> Device
+WiFi / BT -> CC1101 -> nRF24 -> Recorder -> Thermal (when enabled and present) -> Home / Device Settings
 ```
 
-RFScout currently starts in WiFi / BT unless that application is disabled, in which case Device is selected. Encoder rotation changes applications when the active view is not consuming it for a menu or edit operation.
+RFScout defaults to Home at startup. `device_config` persists a preferred startup application through `apps.startup`; `app_manager` validates that preference against application enablement and runtime hardware availability. A disabled or unavailable target falls back to Home for the current boot without rewriting the saved preference.
+
+Encoder rotation changes applications when the active view is not consuming it for a menu or edit operation. Home is the pass-through state of the non-disableable Device application; center deliberately enters Device Settings.
 
 Lifecycle rules are intentionally explicit:
 
@@ -19,7 +21,10 @@ Lifecycle rules are intentionally explicit:
 - leaving nRF24 stops scanning and clears runtime activity/classification state;
 - leaving Recorder stops capture, monitor, or playback activity;
 - Thermal acquisition runs only while Thermal is active;
-- Device owns the encoder only after the settings editor is deliberately entered.
+- Home owns no radio/sensor worker merely by being active;
+- Device Settings owns the encoder only after it is deliberately entered.
+
+Startup selection preserves the established initialization ordering. WiFi/BT keeps its top-level boot initialization path; other selected startup applications enter through their normal application lifecycle after shared UI and optional-hardware initialization.
 
 ## Wi-Fi / BLE path
 
@@ -96,11 +101,13 @@ recording selection ---------------------------------------------> WAV playback
 
 MLX90640 is an optional external I2C/Qwiic device. RFScout probes for availability and exposes Thermal only when enabled and detected. The native 32x24 frame is interpolated for display.
 
-## Device configuration and time
+## Home, Device configuration, and time
 
 `device_config.c/.h` owns compiled defaults plus optional `/sdcard/rfscout.json` persistence. Configuration is nonfatal: RFScout remains usable without storage.
 
-Persisted state includes app enablement, brightness, clock format, timezone configuration, global alert mode/volume/characters, Recorder playback volume, Recorder input gain, and selected time metadata.
+Persisted state includes app enablement, preferred startup application, brightness, clock format, timezone configuration, global alert mode/volume/characters, Recorder playback volume, Recorder input gain, and selected time metadata.
+
+Home is rendered by the Device view using normal framebuffer primitives rather than an embedded LCD bitmap. Shared top chrome remains active; center enters the existing Device Settings editor and Back returns to Home.
 
 `device_time.c/.h` owns authoritative wall-clock state and provenance. Wall-clock time is used for display and calendar timestamps; monotonic timers remain responsible for intervals, dwell, debounce, retries, and timeouts.
 
@@ -136,4 +143,4 @@ The bottom of the display is not globally reserved. Views may use a common foote
 
 ## Release/build boundary
 
-Pull-request and `main` CI perform formatting/tests and, for eligible builds, ESP-IDF firmware packaging. Candidate artifacts are short-lived. The browser-flasher Pages workflow mirrors the latest eligible PR candidate and published release assets into a same-origin ESP Web Tools site. Durable releases are prepared only through the manual release workflow.
+Pull-request and `main` CI perform formatting/tests and, for eligible builds, ESP-IDF firmware packaging. Candidate artifacts are short-lived. The browser-flasher Pages workflow mirrors the candidate from the most recent triggering eligible build and published release assets into a same-origin ESP Web Tools site. Durable releases are prepared only through the manual release workflow.
