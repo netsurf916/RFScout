@@ -1,0 +1,132 @@
+name: Publish browser flasher
+
+on:
+  workflow_run:
+    workflows:
+      - Build and formatting
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: rfscout-web-flasher
+  cancel-in-progress: true
+
+jobs:
+  build-site:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Stage flasher application
+        run: |
+          mkdir -p site
+          cp -R web/flasher/. site/
+
+      - name: Mirror published firmware releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p site/firmware/releases
+          gh release list \
+            --exclude-drafts \
+            --limit 20 \
+            --json tagName,name,isPrerelease,publishedAt \
+            > releases.json
+
+          jq -r '.[].tagName' releases.json | while IFS= read -r tag; do
+            assets=$(gh release view "$tag" --json assets --jq '.assets[].name')
+            manifest_present=false
+            full_image_present=false
+            while IFS= read -r asset; do
+              if [[ "$asset" == "manifest.web.json" ]]; then
+                manifest_present=true
+              fi
+              if [[ "$asset" == rfscout-*-full.bin ]]; then
+                full_image_present=true
+              fi
+            done <<< "$assets"
+
+            if [[ "$manifest_present" != "true" || "$full_image_present" != "true" ]]; then
+              echo "Skipping $tag because it does not contain web-flasher assets"
+              continue
+            fi
+
+            destination="site/firmware/releases/$tag"
+            mkdir -p "$destination"
+            gh release download "$tag" \
+              --pattern 'manifest.web.json' \
+              --pattern 'rfscout-*-full.bin' \
+              --dir "$destination"
+          done
+
+      - name: Download candidate firmware from triggering build
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          mkdir -p candidate
+          artifact_count=$(gh api \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" \
+            --jq '[.artifacts[] | select(.name | startswith("rfscout-candidate-"))] | length')
+
+          if [[ "$artifact_count" -eq 0 ]]; then
+            echo "No candidate firmware artifact is available for this run."
+            exit 0
+          fi
+
+          if [[ "$artifact_count" -ne 1 ]]; then
+            echo "Expected one candidate firmware artifact, found $artifact_count" >&2
+            exit 1
+          fi
+
+          gh run download "$RUN_ID" \
+            --pattern 'rfscout-candidate-*' \
+            --dir candidate
+
+      - name: Build firmware catalog
+        env:
+          CANDIDATE_SHA: ${{ github.event.workflow_run.head_sha }}
+          CANDIDATE_EVENT: ${{ github.event.workflow_run.event }}
+          CANDIDATE_PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+          CANDIDATE_RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          python3 tools/build_web_flasher.py \
+            --site-dir site \
+            --releases-json releases.json \
+            --candidate-dir candidate \
+            --candidate-sha "$CANDIDATE_SHA" \
+            --candidate-event "$CANDIDATE_EVENT" \
+            --candidate-pr "$CANDIDATE_PR" \
+            --candidate-run-url "$CANDIDATE_RUN_URL"
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+  deploy:
+    needs: build-site
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy browser flasher
+        id: deployment
+        uses: actions/deploy-pages@v4

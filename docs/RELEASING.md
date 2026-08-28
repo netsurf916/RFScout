@@ -14,7 +14,7 @@ The release packager validates the ESP-IDF build metadata before producing files
 
 The bundle contains a combined image for ordinary installation, the three component images for development/recovery, SHA-256 checksums, installation instructions, structured build metadata, and an ESP Web Tools manifest. It does not contain the ESP-IDF build tree.
 
-`manifest.web.json` is staged for a future browser installer. Publishing the manifest and its referenced combined image from an HTTPS origin is deliberately outside the initial release-packaging work.
+`manifest.web.json` is consumed directly by the browser flasher. The web deployment mirrors the manifest and its referenced combined image onto the same HTTPS origin so flashing does not depend on cross-origin access to GitHub release or Actions URLs.
 
 ## Candidate artifacts
 
@@ -27,6 +27,21 @@ The normal **Build and formatting** workflow:
 5. retains the candidate bundle as a GitHub Actions artifact for 14 days.
 
 Candidate artifacts are identified by commit SHA. They are diagnostic build products, not releases, and are never marked stable automatically.
+
+Draft pull requests currently skip the ESP-IDF build. Mark a pull request ready for review before expecting a flashable PR candidate.
+
+## Browser flasher
+
+The **Publish browser flasher** workflow runs after a successful **Build and formatting** workflow and can also be started manually. It assembles a static GitHub Pages site from:
+
+- up to 20 published GitHub Releases that contain `manifest.web.json` and a combined RFScout image; and
+- the candidate artifact from the triggering build, when one exists.
+
+For pull-request builds, the candidate is placed first in the firmware selector and labeled with the PR number. Published releases remain available below it. Each deployment is self-contained: firmware files and manifests are copied into the Pages artifact rather than fetched by the browser from authenticated Actions endpoints.
+
+GitHub Pages must be configured to use **GitHub Actions** as its publishing source. The flasher requires HTTPS and a browser with Web Serial support; current Chromium-based desktop browsers are the expected path.
+
+A Pages deployment represents the most recently completed eligible build. It is intended to make hardware testing of the active PR fast, not to provide permanent hosting for every historical PR candidate.
 
 ## Preparing a draft release
 
@@ -55,7 +70,7 @@ Before publishing a draft:
 4. record hardware validation in the release notes; and
 5. publish the release deliberately through GitHub.
 
-Publishing a release is the future trigger point for updating the browser installer's stable manifest. That deployment should consume the already released files rather than rebuilding different firmware.
+The next successful browser-flasher deployment automatically discovers the newly published release and includes its existing release assets. It does not rebuild firmware during publication or deployment.
 
 ## Installation behavior
 
