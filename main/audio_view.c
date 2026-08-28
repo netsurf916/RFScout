@@ -7,11 +7,10 @@
 
 #include "audio_view.h"
 
-#include "battery_indicator.h"
 #include "device_config.h"
 #include "display.h"
 #include "recorder.h"
-#include "status_bar.h"
+#include "ui_chrome.h"
 #include "ui_layout.h"
 
 #include "esp_timer.h"
@@ -30,12 +29,6 @@
 #define RECORDER_BROWSER_MONITOR 2U
 #define RECORDER_BROWSER_FILE_BASE 3U
 
-static void draw_status_chrome( void )
-{
-    status_bar_draw();
-    battery_indicator_draw();
-}
-
 static char saving_spinner( void )
 {
     static const char frames[] = "|/-\\";
@@ -48,8 +41,7 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
     (void)a_current;
     (void)a_peak;
     display_clear( BG );
-    display_draw_text( UI_LAYOUT_TITLE_X, UI_LAYOUT_TITLE_Y, "RECORDER", SUBDUED, 2U );
-    draw_status_chrome();
+    ui_chrome_draw( "RECORDER", SUBDUED );
 
     const rfscout_recorder_state_t state = recorder_state();
     char line[ 80 ];
@@ -105,8 +97,7 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
 {
     const rfscout_recorder_state_t state = recorder_state();
     display_clear( BG );
-    display_draw_text( UI_LAYOUT_TITLE_X, UI_LAYOUT_TITLE_Y, "RECORDER", SUBDUED, 2U );
-    draw_status_chrome();
+    ui_chrome_draw( "RECORDER", SUBDUED );
 
     if( a_editing )
     {
