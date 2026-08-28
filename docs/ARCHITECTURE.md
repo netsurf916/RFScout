@@ -107,7 +107,7 @@ MLX90640 is an optional external I2C/Qwiic device. RFScout probes for availabili
 
 Persisted state includes app enablement, preferred startup application, brightness, clock format, timezone configuration, global alert mode/volume/characters, Recorder playback volume, Recorder input gain, and selected time metadata.
 
-Home is rendered by the Device view using normal framebuffer primitives rather than an embedded LCD bitmap. Shared top chrome remains active; center enters the existing Device Settings editor and Back returns to Home.
+Home uses the canonical `assets/logo.png` artwork. At configure time `tools/generate_home_logo.py` converts that source image into a compact 2-bit black/orange/white LCD bitmap using only the Python standard library; the generated header is compiled into the firmware and rendered by `home_landing.c`. This keeps the LCD branding visually aligned with the browser flasher without carrying the full PNG decoder or source image in firmware. Shared top chrome remains active; center enters the existing Device Settings editor and Back returns to Home.
 
 `device_time.c/.h` owns authoritative wall-clock state and provenance. Wall-clock time is used for display and calendar timestamps; monotonic timers remain responsible for intervals, dwell, debounce, retries, and timeouts.
 
