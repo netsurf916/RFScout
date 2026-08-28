@@ -28,6 +28,7 @@ typedef enum
 {
     RFSCOUT_RECORDER_IDLE = 0,
     RFSCOUT_RECORDER_RECORDING,
+    RFSCOUT_RECORDER_SAVING,
     RFSCOUT_RECORDER_PLAYING,
     RFSCOUT_RECORDER_NO_STORAGE,
     RFSCOUT_RECORDER_ERROR
@@ -49,7 +50,10 @@ esp_err_t recorder_refresh( void );
 /** @brief Start a calibrated diagnostic 16-bit mono PCM WAV recording from the PDM input. */
 esp_err_t recorder_start_recording( void );
 
-/** @brief Stop capture, finalize the WAV header, and refresh the recording list. */
+/** @brief Request capture stop and enter asynchronous save/post-processing state. */
+void recorder_request_stop_recording( void );
+
+/** @brief Stop capture, wait for save/post-processing, and refresh the recording list. */
 void recorder_stop_recording( void );
 
 /** @brief Stop SD-backed recorder activity before storage is unmounted. */

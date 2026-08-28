@@ -33,7 +33,7 @@
 #include <string.h>
 
 #define APP_REFRESH_INTERVAL_US 125000LL
-#define AUDIO_REFRESH_INTERVAL_US 40000LL
+#define AUDIO_REFRESH_INTERVAL_US 100000LL
 #define APP_FEATURE_PROBE_INTERVAL_US 10000000LL
 #define APP_RADIO_RETRY_INTERVAL_US 1000000LL
 #define WIFI_MENU_BACK 0U
@@ -85,6 +85,7 @@ static unsigned wifi_item;
 static unsigned cc_item;
 static unsigned nr_item;
 static unsigned audio_item;
+static rfscout_recorder_state_t audio_last_state = RFSCOUT_RECORDER_IDLE;
 static uint16_t cc_notification_counts[ CC1101_FP_TYPE_COUNT ];
 static uint32_t nr_notification_counts[ NRF24_FP_LOGITECH_LIKE + 1U ];
 
@@ -495,6 +496,7 @@ static void enter_app( rfscout_app_id_t a_app )
             audio_item = AUDIO_BROWSER_BACK;
             audio_menu = false;
             audio_edit = false;
+            audio_last_state = RFSCOUT_RECORDER_IDLE;
             if( ESP_OK != audio_spectrum_start() )
             {
                 ESP_LOGW( TAG, "Audio microphone unavailable" );
@@ -860,12 +862,18 @@ static void audio_input( bool a_pressed, bool a_long_pressed, int a_delta )
     }
     if( RFSCOUT_RECORDER_RECORDING == state )
     {
-        if( a_pressed )
+        if( a_pressed || a_long_pressed )
         {
-            recorder_stop_recording();
-            audio_item = recorder_file_count() > 0U ? AUDIO_BROWSER_FILE_BASE : AUDIO_BROWSER_NEW;
+            recorder_request_stop_recording();
+            audio_last_state = RFSCOUT_RECORDER_SAVING;
+            show_audio_menu();
         }
-        show_audio_menu();
+        return;
+    }
+
+    if( RFSCOUT_RECORDER_SAVING == state )
+    {
+        /* Saving owns the Recorder until trim/normalization and list refresh finish. */
         return;
     }
 
@@ -1091,6 +1099,24 @@ void app_manager_poll( void )
         if( audio_menu )
         {
             audio_input( pressed, long_pressed, delta );
+            const rfscout_recorder_state_t recorder_now = recorder_state();
+            if( RFSCOUT_RECORDER_SAVING == audio_last_state &&
+                RFSCOUT_RECORDER_IDLE == recorder_now )
+            {
+                audio_item =
+                    recorder_file_count() > 0U ? AUDIO_BROWSER_FILE_BASE : AUDIO_BROWSER_NEW;
+            }
+            audio_last_state = recorder_now;
+            if( now - last_app_refresh_us >= AUDIO_REFRESH_INTERVAL_US )
+            {
+                last_app_refresh_us = now;
+                if( RFSCOUT_RECORDER_RECORDING == recorder_now ||
+                    RFSCOUT_RECORDER_SAVING == recorder_now ||
+                    RFSCOUT_RECORDER_PLAYING == recorder_now )
+                {
+                    show_audio_menu();
+                }
+            }
             return;
         }
         if( pressed )

@@ -32,24 +32,6 @@ static void draw_status_chrome( void )
     battery_indicator_draw();
 }
 
-static void draw_meter( uint8_t a_level, uint8_t a_peak )
-{
-    char meter[ 23 ];
-    const unsigned width = 20U;
-    const unsigned filled = (unsigned)a_level * width / 100U;
-    const unsigned peak = (unsigned)a_peak * width / 100U;
-    for( unsigned i = 0U; i < width; ++i )
-    {
-        meter[ i ] = ( i < filled ) ? '=' : '-';
-    }
-    if( peak < width )
-    {
-        meter[ peak ] = '|';
-    }
-    meter[ width ] = '\0';
-    display_draw_text( 8, 111, meter, GREEN, 1U );
-}
-
 void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
 {
     (void)a_current;
@@ -72,8 +54,15 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
                   recorder_input_slot_name() );
         display_draw_text( 8, 69, line, TEXT, 1U );
         display_draw_text( 8, 88, recorder_active_name(), DIM, 1U );
-        draw_meter( recorder_level_percent(), recorder_peak_percent() );
+        display_draw_text( 8, 114, "Recording audio...", DIM, 1U );
         display_draw_text( 8, 144, "CENTER: STOP", SUBDUED, 1U );
+    }
+    else if( RFSCOUT_RECORDER_SAVING == state )
+    {
+        display_draw_text( 8, 42, "SAVING...", YELLOW, 2U );
+        display_draw_text( 8, 77, recorder_active_name(), TEXT, 1U );
+        display_draw_text( 8, 104, "TRIM + NORMALIZE", DIM, 1U );
+        display_draw_text( 8, 144, "PLEASE WAIT", SUBDUED, 1U );
     }
     else if( RFSCOUT_RECORDER_NO_STORAGE == state )
     {
@@ -136,8 +125,18 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
                   recorder_input_slot_name() );
         display_draw_text( 8, 69, line, TEXT, 1U );
         display_draw_text( 8, 88, recorder_active_name(), DIM, 1U );
-        draw_meter( recorder_level_percent(), recorder_peak_percent() );
+        display_draw_text( 8, 114, "Recording audio...", DIM, 1U );
         display_draw_text( 8, 144, "CENTER: STOP", SUBDUED, 1U );
+        (void)display_present();
+        return;
+    }
+
+    if( RFSCOUT_RECORDER_SAVING == state )
+    {
+        display_draw_text( 8, 42, "SAVING...", YELLOW, 2U );
+        display_draw_text( 8, 77, recorder_active_name(), TEXT, 1U );
+        display_draw_text( 8, 104, "TRIM + NORMALIZE", DIM, 1U );
+        display_draw_text( 8, 130, "INPUT LOCKED", SUBDUED, 1U );
         (void)display_present();
         return;
     }

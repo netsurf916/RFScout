@@ -126,8 +126,8 @@ Remaining hardware validation includes physical speaker channel, perceived loudn
 - Create `/sdcard/audio/` automatically when storage is available.
 - Enumerate only supported, correctly formatted PCM WAV files and expose duration/size metadata.
 - Play selected recordings asynchronously over the onboard I2S1 speaker.
-- Trim button/mechanical transients from the beginning and end before save-time DC removal and bounded normalization, then finalize WAV headers and stop active capture/playback when leaving Recorder.
-- Keep capture and playback off the UI loop and preserve app lifecycle/resource ownership.
+- Trim button/mechanical transients from the beginning and end before save-time DC removal and bounded normalization; expose post-processing as an explicit nonblocking `SAVING` state that locks Recorder input until the file is finalized and the browser refreshes.
+- Keep capture, save-time post-processing, and playback off the UI loop; rate-limit Recorder rendering and avoid low-value live waveform/level graphics that consume display/UI cycles.
 - Validate microphone capture, storage-loss behavior, speaker playback, and perceived volume on target hardware.
 
 A separate **CW** application is planned after Recorder. CW will own editable/persistent Morse strings and send complete strings through the shared Morse/speaker service.

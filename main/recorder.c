@@ -921,11 +921,21 @@ static void record_worker( void *a_argument )
     record_running = false;
     release_channel();
     finalize_recording();
+    record_task = NULL;
     if( failed )
     {
         state = RFSCOUT_RECORDER_ERROR;
     }
-    record_task = NULL;
+    else if( storage_is_available() )
+    {
+        state = RFSCOUT_RECORDER_IDLE;
+        (void)recorder_refresh();
+        active_name[ 0 ] = '\0';
+    }
+    else
+    {
+        state = RFSCOUT_RECORDER_NO_STORAGE;
+    }
     if( NULL != record_done )
     {
         (void)xSemaphoreGive( record_done );
@@ -966,7 +976,8 @@ esp_err_t recorder_init( void )
 
 esp_err_t recorder_refresh( void )
 {
-    if( ( RFSCOUT_RECORDER_RECORDING == state ) || ( RFSCOUT_RECORDER_PLAYING == state ) )
+    if( ( RFSCOUT_RECORDER_RECORDING == state ) || ( RFSCOUT_RECORDER_SAVING == state ) ||
+        ( RFSCOUT_RECORDER_PLAYING == state ) )
     {
         return ESP_ERR_INVALID_STATE;
     }
@@ -1125,29 +1136,30 @@ esp_err_t recorder_start_recording( void )
     return ESP_OK;
 }
 
+void recorder_request_stop_recording( void )
+{
+    if( RFSCOUT_RECORDER_RECORDING != state )
+    {
+        return;
+    }
+
+    record_running = false;
+    state = RFSCOUT_RECORDER_SAVING;
+    ESP_LOGI( TAG, "recording stop requested; saving %s", active_name );
+}
+
 void recorder_stop_recording( void )
 {
-    if( RFSCOUT_RECORDER_RECORDING != state && !record_running && NULL == record_task )
+    if( RFSCOUT_RECORDER_RECORDING == state )
+    {
+        recorder_request_stop_recording();
+    }
+    if( RFSCOUT_RECORDER_SAVING != state && !record_running && NULL == record_task )
     {
         return;
     }
 
-    if( !wait_for_record_worker( RECORDER_STOP_TIMEOUT_MS ) )
-    {
-        return;
-    }
-
-    active_name[ 0 ] = '\0';
-    if( RFSCOUT_RECORDER_ERROR == state )
-    {
-        return;
-    }
-
-    state = storage_is_available() ? RFSCOUT_RECORDER_IDLE : RFSCOUT_RECORDER_NO_STORAGE;
-    if( storage_is_available() )
-    {
-        (void)recorder_refresh();
-    }
+    (void)wait_for_record_worker( RECORDER_STOP_TIMEOUT_MS );
 }
 
 bool recorder_prepare_storage_shutdown( uint32_t a_timeout_ms )
@@ -1233,7 +1245,8 @@ esp_err_t recorder_start_playback( size_t a_index, uint8_t a_volume_percent )
 
 void recorder_stop( void )
 {
-    if( RFSCOUT_RECORDER_RECORDING == state || record_running )
+    if( RFSCOUT_RECORDER_RECORDING == state || RFSCOUT_RECORDER_SAVING == state || record_running ||
+        NULL != record_task )
     {
         recorder_stop_recording();
         return;
@@ -1248,7 +1261,8 @@ void recorder_stop( void )
 
 rfscout_recorder_state_t recorder_state( void )
 {
-    if( !storage_is_available() && ( RFSCOUT_RECORDER_RECORDING != state ) )
+    if( !storage_is_available() && ( RFSCOUT_RECORDER_RECORDING != state ) &&
+        ( RFSCOUT_RECORDER_SAVING != state ) )
     {
         return RFSCOUT_RECORDER_NO_STORAGE;
     }
