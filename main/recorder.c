@@ -46,6 +46,9 @@
 #define RECORDER_MIC_PDM_CLOCK_MIN_HZ 1000000U
 #define RECORDER_MIC_PDM_CLOCK_MAX_HZ 3250000U
 #define RECORDER_CLOCK_DERIVATION_MAX_REQUEST_HZ 96000U
+#define RECORDER_NORMALIZE_TARGET_AVERAGE 5000U
+#define RECORDER_NORMALIZE_MAX_GAIN_Q10 ( 16U * 1024U )
+#define RECORDER_NORMALIZE_MIN_SIGNAL 32U
 #define RECORDER_EXPECTED_BYTES_PER_SECOND                                                         \
     ( RFSCOUT_RECORDER_SAMPLE_RATE * RECORDER_CHANNELS * ( RECORDER_BITS_PER_SAMPLE / 8U ) )
 
@@ -456,12 +459,170 @@ static FILE *open_unique_recording( char *a_path, size_t a_path_capacity )
     return NULL;
 }
 
+static bool normalize_recording( void )
+{
+    if( NULL == record_file || 0U == data_bytes )
+    {
+        return true;
+    }
+
+    if( 0 != fflush( record_file ) ||
+        0 != fseek( record_file, RECORDER_WAV_HEADER_SIZE, SEEK_SET ) )
+    {
+        ESP_LOGW( TAG, "normalize: could not seek recording" );
+        return false;
+    }
+
+    int16_t samples[ RECORDER_DMA_READ_SAMPLES ];
+    uint64_t sample_count = 0U;
+    int64_t signed_sum = 0;
+    uint32_t remaining = data_bytes;
+    while( remaining > 0U )
+    {
+        size_t count = remaining / sizeof( int16_t );
+        if( count > RECORDER_DMA_READ_SAMPLES )
+        {
+            count = RECORDER_DMA_READ_SAMPLES;
+        }
+        const size_t read = fread( samples, sizeof( int16_t ), count, record_file );
+        if( 0U == read )
+        {
+            ESP_LOGW( TAG, "normalize: first pass read failed" );
+            return false;
+        }
+        for( size_t index = 0U; index < read; ++index )
+        {
+            signed_sum += samples[ index ];
+        }
+        sample_count += read;
+        remaining -= (uint32_t)( read * sizeof( int16_t ) );
+    }
+
+    if( 0U == sample_count )
+    {
+        return true;
+    }
+    const int32_t dc_mean = (int32_t)( signed_sum / (int64_t)sample_count );
+
+    if( 0 != fseek( record_file, RECORDER_WAV_HEADER_SIZE, SEEK_SET ) )
+    {
+        ESP_LOGW( TAG, "normalize: could not rewind for level pass" );
+        return false;
+    }
+
+    uint64_t absolute_sum = 0U;
+    uint32_t centered_peak = 0U;
+    remaining = data_bytes;
+    while( remaining > 0U )
+    {
+        size_t count = remaining / sizeof( int16_t );
+        if( count > RECORDER_DMA_READ_SAMPLES )
+        {
+            count = RECORDER_DMA_READ_SAMPLES;
+        }
+        const size_t read = fread( samples, sizeof( int16_t ), count, record_file );
+        if( 0U == read )
+        {
+            ESP_LOGW( TAG, "normalize: level pass read failed" );
+            return false;
+        }
+        for( size_t index = 0U; index < read; ++index )
+        {
+            const int32_t centered = (int32_t)samples[ index ] - dc_mean;
+            const uint32_t absolute = (uint32_t)( centered < 0 ? -centered : centered );
+            absolute_sum += absolute;
+            if( absolute > centered_peak )
+            {
+                centered_peak = absolute;
+            }
+        }
+        remaining -= (uint32_t)( read * sizeof( int16_t ) );
+    }
+
+    const uint32_t average = (uint32_t)( absolute_sum / sample_count );
+    uint32_t gain_q10 = 1024U;
+    if( average >= RECORDER_NORMALIZE_MIN_SIGNAL && average < RECORDER_NORMALIZE_TARGET_AVERAGE )
+    {
+        gain_q10 = (uint32_t)( (uint64_t)RECORDER_NORMALIZE_TARGET_AVERAGE * 1024ULL / average );
+        if( gain_q10 > RECORDER_NORMALIZE_MAX_GAIN_Q10 )
+        {
+            gain_q10 = RECORDER_NORMALIZE_MAX_GAIN_Q10;
+        }
+    }
+
+    if( 0 != fseek( record_file, RECORDER_WAV_HEADER_SIZE, SEEK_SET ) )
+    {
+        ESP_LOGW( TAG, "normalize: could not rewind for rewrite" );
+        return false;
+    }
+
+    uint64_t clipped = 0U;
+    remaining = data_bytes;
+    while( remaining > 0U )
+    {
+        const long block_offset = ftell( record_file );
+        if( block_offset < 0 )
+        {
+            ESP_LOGW( TAG, "normalize: ftell failed" );
+            return false;
+        }
+        size_t count = remaining / sizeof( int16_t );
+        if( count > RECORDER_DMA_READ_SAMPLES )
+        {
+            count = RECORDER_DMA_READ_SAMPLES;
+        }
+        const size_t read = fread( samples, sizeof( int16_t ), count, record_file );
+        if( 0U == read )
+        {
+            ESP_LOGW( TAG, "normalize: rewrite read failed" );
+            return false;
+        }
+        for( size_t index = 0U; index < read; ++index )
+        {
+            int32_t scaled =
+                (int32_t)( ( (int64_t)( (int32_t)samples[ index ] - dc_mean ) * gain_q10 ) /
+                           1024LL );
+            if( scaled > INT16_MAX )
+            {
+                scaled = INT16_MAX;
+                ++clipped;
+            }
+            else if( scaled < INT16_MIN )
+            {
+                scaled = INT16_MIN;
+                ++clipped;
+            }
+            samples[ index ] = (int16_t)scaled;
+        }
+        if( 0 != fseek( record_file, block_offset, SEEK_SET ) ||
+            read != fwrite( samples, sizeof( int16_t ), read, record_file ) )
+        {
+            ESP_LOGW( TAG, "normalize: rewrite failed" );
+            return false;
+        }
+        remaining -= (uint32_t)( read * sizeof( int16_t ) );
+    }
+
+    ESP_LOGI( TAG,
+              "normalize: dc=%ld avg=%u peak=%u gain=%u.%02ux clipped=%llu/%llu",
+              (long)dc_mean,
+              (unsigned)average,
+              (unsigned)centered_peak,
+              (unsigned)( gain_q10 / 1024U ),
+              (unsigned)( ( gain_q10 % 1024U ) * 100U / 1024U ),
+              (unsigned long long)clipped,
+              (unsigned long long)sample_count );
+    return true;
+}
+
 static void finalize_recording( void )
 {
     if( NULL == record_file )
     {
         return;
     }
+
+    (void)normalize_recording();
 
     uint8_t header[ RECORDER_WAV_HEADER_SIZE ];
     build_wav_header( header, data_bytes, recording_wav_sample_rate );
