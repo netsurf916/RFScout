@@ -286,11 +286,8 @@ static void draw_row( int a_y, unsigned a_item )
 
     if( active )
     {
-        display_draw_text( UI_LAYOUT_LEFT_X,
-                           a_y,
-                           ( editing && item_editable( a_item ) ) ? ">*" : ">",
-                           color,
-                           1U );
+        display_draw_text(
+            UI_LAYOUT_LEFT_X, a_y, ( editing && item_editable( a_item ) ) ? ">*" : ">", color, 1U );
     }
     display_draw_text( UI_LAYOUT_LABEL_X, a_y, item_label( a_item ), color, 1U );
     if( '\0' != value[ 0 ] )
