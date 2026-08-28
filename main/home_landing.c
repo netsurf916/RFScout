@@ -41,7 +41,8 @@ static void draw_home_bitmap( void )
             const uint8_t value = ( packed[ x / 4 ] >> ( ( x % 4 ) * 2 ) ) & 0x03U;
             row[ x ] = palette[ value ];
         }
-        (void)display_write_rect( HOME_LOGO_X, HOME_LOGO_Y + y, HOME_LOGO_WIDTH, 1, row, HOME_LOGO_WIDTH );
+        (void)display_write_rect(
+            HOME_LOGO_X, HOME_LOGO_Y + y, HOME_LOGO_WIDTH, 1, row, HOME_LOGO_WIDTH );
     }
 }
 
@@ -50,6 +51,7 @@ void device_view_landing( void )
     display_clear( HOME_COLOR_BACKGROUND );
     ui_chrome_draw( "HOME", HOME_COLOR_DIM );
     draw_home_bitmap();
-    display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN: APPS  CENTER: SETTINGS", HOME_COLOR_DIM, 1U );
+    display_draw_text(
+        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN: APPS  CENTER: SETTINGS", HOME_COLOR_DIM, 1U );
     (void)display_present();
 }
