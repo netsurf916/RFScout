@@ -188,3 +188,62 @@ A separate **CW** application is planned after Recorder. CW will own editable/pe
 - IR analyzer/transmit tools, with transmit behavior kept explicit and separate from passive monitoring.
 - GPS user interface and location features, distinct from GPS time-authority support.
 - Additional optional hardware applications that follow the existing lifecycle, shared-resource, settings, status-UI, and notification conventions.
+
+## Brainstorming
+
+**Status:** Ideas to preserve for later evaluation — not committed scope or priority
+
+### ESP32-S3 and platform capabilities
+
+- **USB OTG / USB Serial-JTAG:** explore capture/log export, a maintenance CLI, firmware/update workflows, and possibly explicit USB storage or HID modes where useful.
+- **Low-power operation / ULP strategy:** investigate light/deep sleep, timer/GPIO wake sources, and background-monitoring architectures that improve field battery life without making radio/application lifecycle behavior unpredictable.
+- **Hardware RNG:** use ESP32 entropy sources for session identifiers, randomized/private-address generation, cryptographic nonces, and other places where pseudorandom application state is inappropriate.
+- **Persistent configuration/NVS:** consider which calibration, identity, recovery, or boot-critical values should live in NVS rather than depending entirely on SD-backed configuration.
+- **Watchdog and crash diagnostics:** expose reset reason and useful persistent crash/recovery breadcrumbs so field failures can be distinguished from ordinary power cycles.
+- **Internal temperature sensor:** expose SoC temperature as a diagnostic measurement while clearly distinguishing it from ambient temperature.
+- **ADC:** inventory available analog inputs and possible battery/power or optional sensor measurements.
+- **RMT:** investigate hardware-timed pulse measurement/generation for IR and pulse-based RF/OOK/ASK analysis, waveform characterization, pulse-width histograms, and protocol discovery without depending on FreeRTOS timing.
+- **PCNT:** generalize pulse/frequency measurement beyond the Recorder PDM-clock diagnostic where hardware validation benefits from directly measuring the signal being configured.
+- **GPTimer:** provide accurate interval/timestamp facilities for RF burst timing and protocol analysis independent of task scheduling jitter.
+- **LEDC:** consider PWM/tone/backlight uses where it provides a cleaner hardware implementation than software timing.
+- **Hardware crypto acceleration:** evaluate ESP32 AES/SHA and related facilities for authenticated/encrypted logs, exports, device identity, and future secure communications.
+- **Secure Boot and flash encryption:** evaluate as RFScout matures into a field instrument, including implications for development, recovery, and user-owned firmware.
+- **JTAG/debug facilities:** preserve a documented development/debug path for low-level hardware and timing validation.
+
+### Hardware diagnostics and self-measurement
+
+- Add a dedicated **Diagnostics** page/application that reports the actual state of major subsystems rather than only whether initialization returned success.
+- Potential diagnostics include ESP32/board identity, flash/PSRAM capacity, heap, SD capacity/state, battery state, reset reason, uptime, WiFi/BLE state, CC1101 state, GPS state/fix quality, microphone PDM clock, delivered PCM rate, speaker state, and other measurable peripherals.
+- Preserve useful runtime calibration results as diagnostics instead of discarding them after initialization. Recorder PDM clock/rate measurement is the first concrete example.
+- Consider a shared hardware measurement/service layer around PCNT, GPTimer, RMT, ADC, and related peripherals so applications can request trustworthy measurements without duplicating low-level ownership/timing logic.
+- Favor **desired physical outcome -> configure -> measure -> correct/validate** where ESP-IDF configuration values or clock trees may not directly correspond to the resulting hardware signal.
+- Consider explicit self-test workflows for storage, audio, radios, GPS, buttons/encoder, display, and other peripherals where a safe test can provide useful field confidence.
+
+### Complete board-peripheral inventory
+
+- Audit the target-board schematic and board support code systematically so every onboard peripheral, controllable power rail, GPIO, bus device, interrupt, and exposed expansion interface is either used, intentionally reserved, or documented as unavailable/conflicting.
+- Record GPIO/peripheral ownership and multiplexing constraints centrally to prevent future applications from accidentally competing for the same ESP32 resource.
+- Repeat the inventory for materially different RFScout-supported board variants rather than assuming all T-Embed-family hardware is equivalent.
+
+### Location and time service
+
+- Evolve GPS support into a shared **Location & Time** service rather than treating GPS only as a standalone UI application.
+- Use GNSS UTC as an explicit external time authority under the existing authority model.
+- Attach location and fix-quality metadata to RF observations and structured captures where enabled.
+- Expose satellites/fix/accuracy information and consider track logging during surveys.
+- Explore timestamp discipline/correction so logs, recordings, and RF captures can share a defensible timebase.
+- Keep privacy/user-control implications explicit for persistent location logging.
+
+### Deeper ESP32 WiFi/BLE surveying
+
+- Explore WiFi channel utilization/activity, management-frame statistics, RSSI history, channel hopping, information-element/vendor analysis, and PHY metadata exposed by the ESP32-S3 without pretending the device is a general-purpose SDR.
+- Explore BLE advertisement types, manufacturer/service-data decoding, address-rotation behavior, PHY information, and extended advertisements where exposed by the ESP-IDF stack.
+- Investigate correlation of changing BLE private addresses using non-identity observations, with conservative confidence reporting and clear separation between observed facts and heuristic linkage.
+- Feed useful deeper-radio observations into the same structured logging/capture architecture rather than creating app-specific opaque formats.
+
+### Future interaction and presentation ideas
+
+- Make the Device/Settings landing screen useful as a functional RFScout home/splash view while retaining encoder pass-through until the user explicitly enters configuration.
+- Add an RFScout logo and useful read-only status to that landing screen without turning it into another menu layer.
+- Consider global semantic display themes such as **Day**, **Night**, **Indoor**, and **Outdoor**, with centralized colors for background, primary/secondary text, selection, warning, critical, success, and graph/data elements.
+- Keep themes system-wide and persistent; prioritize contrast/readability and allow a specialized dim red-heavy night mode without per-application color hacks.
