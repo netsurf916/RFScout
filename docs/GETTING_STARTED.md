@@ -1,47 +1,27 @@
 # Getting started on Fedora Linux
 
-This guide describes a straightforward RFScout development environment on a current Fedora Linux workstation. RFScout targets the **ESP32-S3** and uses **ESP-IDF** for configuration, compilation, flashing, and serial monitoring.
+This guide describes the current RFScout development workflow for ESP32-S3 with ESP-IDF 6.x.
 
-The repository also enforces its C formatting policy with **clang-format 18**. Normal `idf.py build` runs the RFScout format checker for locally modified or staged C/header files, so the versioned formatter is a required local development dependency unless the format check is explicitly disabled for an emergency build.
+## Host packages
 
-## 1. Install Fedora packages
-
-Install the host-side tools needed by ESP-IDF and RFScout:
+Install the host-side tools:
 
 ```sh
 sudo dnf install \
-    git \
-    wget \
-    flex \
-    bison \
-    gperf \
-    python3 \
-    python3-pip \
-    cmake \
-    ninja-build \
-    ccache \
-    libffi-devel \
-    openssl-devel \
-    dfu-util \
-    libusb1-devel \
-    clang18-tools-extra
+    git wget flex bison gperf python3 python3-pip \
+    cmake ninja-build ccache libffi-devel openssl-devel \
+    dfu-util libusb1-devel clang18-tools-extra
 ```
 
-`clang18-tools-extra` is Fedora's compatibility package for LLVM/Clang 18 and provides `clang-format-18`. RFScout pins the formatter major because newer clang-format releases can make different wrapping decisions even with the same configuration.
-
-Confirm the required formatter is available:
+RFScout pins **clang-format 18** for deterministic formatting:
 
 ```sh
 clang-format-18 --version
 ```
 
-The output must report major version 18. `tools/check_format.py` automatically prefers `clang-format-18`; it will also accept a `clang-format` executable when that executable is version 18. To use an explicit binary path, set `RFSCOUT_CLANG_FORMAT`.
+## ESP-IDF
 
-ESP-IDF downloads and manages its own versioned ESP cross-compilers and related target-specific tools, so those do not need to be installed manually through `dnf`.
-
-## 2. Install ESP-IDF
-
-RFScout targets **ESP-IDF 6.x** and project CI tracks the `release/v6.1` branch. A convenient local layout is to keep Espressif software under `~/esp`:
+CI tracks ESP-IDF 6.1. A typical local installation is:
 
 ```sh
 mkdir -p ~/esp
@@ -51,79 +31,24 @@ cd esp-idf
 ./install.sh esp32s3
 ```
 
-Developers already using a compatible ESP-IDF 6.x checkout, including a 6.1 development checkout, can keep using that environment. The install script creates the ESP-IDF Python environment and downloads the tool versions required for ESP32-S3 development.
-
-ESP-IDF does not permanently add those tools to your shell environment. Before working on RFScout in a new terminal, activate ESP-IDF with:
+Activate it in each development shell:
 
 ```sh
 . ~/esp/esp-idf/export.sh
 ```
 
-Verify the environment:
-
-```sh
-idf.py --version
-python3 --version
-cmake --version
-ninja --version
-clang-format-18 --version
-```
-
-If desired, create a shell alias instead of typing the full export command each time:
-
-```sh
-alias get_idf='. ~/esp/esp-idf/export.sh'
-```
-
-Add that alias to `~/.bashrc`, start a new shell, and run `get_idf` before building RFScout.
-
-## 3. Clone RFScout
+## Clone and build RFScout
 
 ```sh
 git clone https://github.com/netsurf916/RFScout.git
 cd RFScout
-```
-
-When developing a pull request or feature branch, switch to that branch before configuring the build:
-
-```sh
-git switch <branch-name>
-```
-
-## 4. Prepare generated data
-
-RFScout includes a generated IEEE OUI/vendor table. Refresh it before the first build and whenever intentionally updating the registry data:
-
-```sh
-python3 tools/update_oui.py
-```
-
-The generated `.inc` files are exempt from hand formatting. Update them through their generator scripts rather than editing them directly.
-
-## 5. Configure and build
-
-Activate ESP-IDF first if the current shell has not already been configured:
-
-```sh
-. ~/esp/esp-idf/export.sh
-```
-
-Then configure RFScout for ESP32-S3 and build it:
-
-```sh
 idf.py set-target esp32s3
 idf.py build
 ```
 
-The first ESP-IDF 6.x configuration also resolves the managed components declared in `main/idf_component.yml`, including cJSON. The component manager downloads those dependencies into the ignored `managed_components/` directory.
+The first build resolves managed components declared in `main/idf_component.yml`. The generated `managed_components/` directory is ignored. The repository intentionally tracks `dependencies.lock`; do not add it to `.gitignore`. It pins resolved component versions so local, CI, and historical release builds are less likely to drift.
 
-The first build creates `sdkconfig` and the `build/` directory. Subsequent builds normally require only:
-
-```sh
-idf.py build
-```
-
-If `sdkconfig.defaults`, the partition table, component manifest, or major build configuration changes, start from a fresh configuration:
+If major build configuration changes, regenerate the local build tree:
 
 ```sh
 rm -rf build sdkconfig
@@ -131,133 +56,97 @@ idf.py set-target esp32s3
 idf.py build
 ```
 
-## 6. Formatting checks
+## Generated identity data
 
-RFScout's formatting configuration lives in `.clang-format` and `.editorconfig`.
-
-Normal `idf.py build` invokes `tools/check_format.py` through CMake and checks locally modified, staged, or untracked hand-maintained C/header files under `main/`. If a source file does not match canonical clang-format 18 output, the build fails before it is considered complete.
-
-Format the currently modified firmware files with:
+Generated IEEE/curated prefix tables are already committed. Refresh them only when intentionally updating registry data:
 
 ```sh
-python3 tools/check_format.py --fix
+python3 tools/update_oui.py
+python3 tools/update_surveillance.py
 ```
 
-Check the current local changes without modifying them:
+Generated `.inc` tables should be changed through their generators rather than hand edited.
+
+## Formatting
+
+Normal local builds check modified/staged/untracked hand-maintained C/header files. Useful commands are:
 
 ```sh
 python3 tools/check_format.py
-```
-
-Check changes relative to another branch or ref:
-
-```sh
+python3 tools/check_format.py --fix
 python3 tools/check_format.py --base main
-```
-
-Verify every hand-maintained C/header file in the repository:
-
-```sh
 python3 tools/check_format.py --all
-```
-
-The complete tree is expected to pass this command. GitHub Actions runs the same full-tree audit on every pull request, so there are no legacy formatting exemptions. Generated `.inc` tables are intentionally excluded.
-
-To explicitly canonicalize the entire firmware tree:
-
-```sh
 python3 tools/check_format.py --all --fix
 ```
 
-### Emergency format-check bypass
-
-A developer can explicitly disable the CMake formatting target if a build is needed before clang-format 18 can be installed:
+Pull-request CI runs the complete clang-format 18 audit. An emergency local build can disable the CMake check with:
 
 ```sh
 idf.py -DRFSCOUT_FORMAT_CHECK=OFF build
 ```
 
-This is an escape hatch rather than a normal development mode. Pull-request CI still enforces the repository formatting policy.
+That bypass does not change CI policy.
 
-## 7. Connect and flash the device
+## Flash and monitor locally
 
-Connect the LILYGO T-Embed CC1101 Plus over USB and identify its serial device. On Fedora, useful commands include:
-
-```sh
-ls -l /dev/ttyACM* /dev/ttyUSB* 2>/dev/null
-```
-
-and, immediately after connecting the board:
-
-```sh
-sudo dmesg | tail -n 30
-```
-
-ESP-IDF can usually discover the port automatically. Flash the current build with:
+Connect the T-Embed CC1101 Plus over USB. ESP-IDF can usually discover the serial port automatically:
 
 ```sh
 idf.py flash
-```
-
-To specify the serial port explicitly:
-
-```sh
-idf.py -p /dev/ttyACM0 flash
-```
-
-Open the serial monitor with:
-
-```sh
 idf.py monitor
 ```
 
-or combine build, flash, and monitoring:
+or:
 
 ```sh
 idf.py build flash monitor
 ```
 
-Exit the ESP-IDF monitor with **Ctrl+]**.
-
-### Serial-port permissions
-
-If flashing fails with a permission error, inspect the device ownership:
+Specify a port when needed:
 
 ```sh
-ls -l /dev/ttyACM0
+idf.py -p /dev/ttyACM0 flash monitor
 ```
 
-Fedora normally manages local device access through udev/logind. If your local configuration instead assigns serial devices to a dedicated group, add your user to the group shown by `ls -l`, then log out and back in. Avoid running the complete ESP-IDF build/flash process as root.
+Exit the monitor with **Ctrl+]**.
 
-## 8. Typical development loop
+## Browser flashing PR candidates and releases
 
-A normal RFScout edit/build cycle is:
+RFScout also publishes a GitHub Pages browser flasher through the **Publish browser flasher** workflow.
+
+Ready-for-review pull requests that pass the full ESP-IDF build produce a short-lived candidate bundle. A successful eligible build triggers the Pages deployment, which presents that PR candidate ahead of published releases. Draft PRs intentionally skip the expensive ESP-IDF build and therefore do not produce a browser-flashable candidate.
+
+Use a desktop Chromium-based browser such as Edge or Chrome with Web Serial support. Connect the device over USB, open the RFScout GitHub Pages flasher, choose the desired PR candidate or published release, and use the ESP Web Tools install control.
+
+The browser flasher is intended for quick target-hardware validation. Local `idf.py flash monitor` remains the better path when serial logs or debugger-oriented development are needed.
+
+## Normal development loop
 
 ```sh
 cd ~/path/to/RFScout
 . ~/esp/esp-idf/export.sh
 
 git pull
-# edit source
+# edit
 python3 tools/check_format.py --fix
 idf.py build
 idf.py flash monitor
 ```
 
-Before opening or updating a pull request, run:
+Before publishing a PR for full validation:
 
 ```sh
 python3 tools/check_format.py --all
 idf.py build
 ```
 
-GitHub Actions repeats the full-tree canonical formatting audit and performs a complete ESP32-S3 build with ESP-IDF 6.1.
+The repository CI policy is designed so formatting/tests can run while a PR is draft, while the full firmware candidate build waits until the PR is Ready for Review.
 
-## 9. Troubleshooting
+## Troubleshooting
 
 ### `idf.py: command not found`
 
-The ESP-IDF environment is not active in the current shell:
+Activate ESP-IDF:
 
 ```sh
 . ~/esp/esp-idf/export.sh
@@ -265,47 +154,42 @@ The ESP-IDF environment is not active in the current shell:
 
 ### `RFScout requires clang-format 18`
 
-Install the Fedora compatibility package and retry:
-
 ```sh
 sudo dnf install clang18-tools-extra
 clang-format-18 --version
 ```
 
-If clang-format 18 is installed at a nonstandard path:
+An explicit formatter path can be supplied through `RFSCOUT_CLANG_FORMAT`.
+
+### Managed component problems
+
+Current RFScout uses managed `espressif/cjson`. If a checkout inherited stale component/build state:
 
 ```sh
-export RFSCOUT_CLANG_FORMAT=/path/to/clang-format-18
-python3 tools/check_format.py --all
-```
-
-### `Component "json" not found`
-
-ESP-IDF 6.x no longer provides the old built-in `json` component. Current RFScout uses the managed `espressif/cjson` package and the CMake component name `cjson`. If this error appears after switching from an older RFScout checkout, make sure `main/idf_component.yml` is present and regenerate the build tree:
-
-```sh
-rm -rf build managed_components
+rm -rf build managed_components sdkconfig
 idf.py set-target esp32s3
 idf.py build
 ```
 
-### CMake or configuration behaves unexpectedly
+Keep the tracked `dependencies.lock` file; the component manager will use it to reproduce the resolved dependency set.
 
-Regenerate the build directory and configuration:
+### Serial access problems
+
+Inspect the device and permissions:
 
 ```sh
-rm -rf build sdkconfig
-idf.py set-target esp32s3
-idf.py build
+ls -l /dev/ttyACM* /dev/ttyUSB* 2>/dev/null
+sudo dmesg | tail -n 30
 ```
 
-### Flashing cannot open the serial device
-
-Confirm the correct device path and permissions, disconnect/reconnect the board, and verify that another terminal is not already holding the port open.
+Avoid running the complete ESP-IDF build/flash process as root.
 
 ## Related documentation
 
-- [Coding style](CODING_STYLE.md) — source formatting and documentation requirements
-- [Architecture](ARCHITECTURE.md) — application lifecycle and module ownership
-- [Capabilities](CAPABILITIES.md) — user-visible RFScout features and limitations
-- [SD card behavior](SD_CARD.md) — storage compatibility and logging behavior
+- [Architecture](ARCHITECTURE.md)
+- [Capabilities](CAPABILITIES.md)
+- [Configuration](CONFIGURATION.md)
+- [SD card behavior](SD_CARD.md)
+- [Firmware releases](RELEASING.md)
+- [Coding style](CODING_STYLE.md)
+- [Roadmap](ROADMAP.md)
