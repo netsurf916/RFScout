@@ -100,12 +100,28 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
 
 void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
 {
-    (void)a_editing;
-    (void)a_unused;
     const rfscout_recorder_state_t state = recorder_state();
     display_clear( BG );
     display_draw_text( 8, 7, "RECORDER", SUBDUED, 2U );
     draw_status_chrome();
+
+    if( a_editing )
+    {
+        const size_t index = ( a_selected >= RECORDER_BROWSER_FILE_BASE )
+                                 ? a_selected - RECORDER_BROWSER_FILE_BASE
+                                 : 0U;
+        const rfscout_recording_t *recording = recorder_file( index );
+        display_draw_text( 8, 42, "DELETE RECORDING?", RED, 2U );
+        display_draw_text( 8, 76, recording ? recording->name : "recording", TEXT, 1U );
+        display_draw_text( 8,
+                           108,
+                           a_unused ? "  CANCEL   > DELETE" : "> CANCEL     DELETE",
+                           a_unused ? RED : YELLOW,
+                           1U );
+        display_draw_text( 8, 144, "TURN: CHOOSE  CENTER: CONFIRM", SUBDUED, 1U );
+        (void)display_present();
+        return;
+    }
 
     if( RFSCOUT_RECORDER_RECORDING == state )
     {
@@ -197,6 +213,6 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
         }
         display_draw_text( 8, 38 + (int)row * 20, line, item == a_selected ? YELLOW : TEXT, 1U );
     }
-    display_draw_text( 8, 144, "TURN: SELECT  CENTER: OPEN", SUBDUED, 1U );
+    display_draw_text( 8, 144, "CENTER: PLAY  HOLD: DELETE", SUBDUED, 1U );
     (void)display_present();
 }

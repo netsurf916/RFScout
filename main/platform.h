@@ -33,6 +33,12 @@ int platform_encoder_delta( void );
  */
 bool platform_encoder_button_pressed( void );
 
+/**
+ * @brief Consume one debounced encoder-center-button long press.
+ * @return true once when the button has been held for the platform long-press interval.
+ */
+bool platform_encoder_button_long_pressed( void );
+
 /** @brief Set the visual surveillance-alert state. */
 void platform_set_alert_led( bool a_active );
 

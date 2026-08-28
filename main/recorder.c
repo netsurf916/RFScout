@@ -946,6 +946,31 @@ bool recorder_prepare_storage_shutdown( uint32_t a_timeout_ms )
     return true;
 }
 
+esp_err_t recorder_delete_file( size_t a_index )
+{
+    if( RFSCOUT_RECORDER_IDLE != state || a_index >= recording_count )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    char path[ RFSCOUT_RECORDER_PATH_MAX ];
+    const int length = snprintf(
+        path, sizeof( path ), "%s/%s", RFSCOUT_RECORDER_DIRECTORY, recordings[ a_index ].name );
+    if( length < 0 || (size_t)length >= sizeof( path ) )
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    if( 0 != remove( path ) )
+    {
+        ESP_LOGW( TAG, "delete failed %s errno=%d", path, errno );
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI( TAG, "deleted recording %s", path );
+    return recorder_refresh();
+}
+
 esp_err_t recorder_start_playback( size_t a_index, uint8_t a_volume_percent )
 {
     if( !storage_is_available() )

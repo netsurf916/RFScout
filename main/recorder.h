@@ -55,6 +55,9 @@ void recorder_stop_recording( void );
 /** @brief Stop SD-backed recorder activity before storage is unmounted. */
 bool recorder_prepare_storage_shutdown( uint32_t a_timeout_ms );
 
+/** @brief Delete one enumerated recording and refresh the list. */
+esp_err_t recorder_delete_file( size_t a_index );
+
 /** @brief Start asynchronous playback of one enumerated recording. */
 esp_err_t recorder_start_playback( size_t a_index, uint8_t a_volume_percent );
 

@@ -75,6 +75,7 @@ static bool nr_menu;
 static bool nr_edit;
 static bool audio_menu;
 static bool audio_edit;
+static bool audio_delete_confirm;
 static bool device_menu;
 static bool wifi_monitor_ready;
 static bool ble_monitor_ready;
@@ -442,6 +443,7 @@ static void leave_app( rfscout_app_id_t a_app )
     nr_edit = false;
     audio_menu = false;
     audio_edit = false;
+    audio_delete_confirm = false;
     device_menu = false;
 }
 
@@ -786,6 +788,7 @@ static void close_audio_menu( void )
 {
     audio_menu = false;
     audio_edit = false;
+    audio_delete_confirm = false;
     audio_item = AUDIO_BROWSER_BACK;
     render_audio();
 }
@@ -793,7 +796,7 @@ static void close_audio_menu( void )
 /** @brief Render Recorder browser, capture, or playback state. */
 static void show_audio_menu( void )
 {
-    audio_view_menu( audio_item, false, false );
+    audio_view_menu( audio_item, audio_edit, audio_delete_confirm );
 }
 
 /** @brief Persist Recorder playback volume after an interactive adjustment. */
@@ -807,7 +810,7 @@ static void save_recorder_volume( void )
 }
 
 /** @brief Handle Recorder input using state screens rather than action-menu editing. */
-static void audio_input( bool a_pressed, int a_delta )
+static void audio_input( bool a_pressed, bool a_long_pressed, int a_delta )
 {
     if( !audio_menu )
     {
@@ -822,6 +825,39 @@ static void audio_input( bool a_pressed, int a_delta )
     }
 
     const rfscout_recorder_state_t state = recorder_state();
+    if( audio_edit )
+    {
+        if( 0 != a_delta )
+        {
+            audio_delete_confirm = !audio_delete_confirm;
+            show_audio_menu();
+            return;
+        }
+        if( a_pressed )
+        {
+            if( audio_delete_confirm && audio_item >= AUDIO_BROWSER_FILE_BASE )
+            {
+                const size_t index = audio_item - AUDIO_BROWSER_FILE_BASE;
+                const esp_err_t result = recorder_delete_file( index );
+                if( ESP_OK != result )
+                {
+                    ESP_LOGW( TAG, "could not delete recording: %s", esp_err_to_name( result ) );
+                }
+                const unsigned item_count =
+                    AUDIO_BROWSER_FILE_BASE + (unsigned)recorder_file_count();
+                if( audio_item >= item_count )
+                {
+                    audio_item =
+                        item_count > AUDIO_BROWSER_FILE_BASE ? item_count - 1U : AUDIO_BROWSER_NEW;
+                }
+            }
+            audio_edit = false;
+            audio_delete_confirm = false;
+            show_audio_menu();
+            return;
+        }
+        return;
+    }
     if( RFSCOUT_RECORDER_RECORDING == state )
     {
         if( a_pressed )
@@ -858,6 +894,14 @@ static void audio_input( bool a_pressed, int a_delta )
                 recorder_set_playback_volume( (uint8_t)volume );
             }
         }
+        show_audio_menu();
+        return;
+    }
+
+    if( a_long_pressed && audio_item >= AUDIO_BROWSER_FILE_BASE )
+    {
+        audio_edit = true;
+        audio_delete_confirm = false;
         show_audio_menu();
         return;
     }
@@ -922,6 +966,7 @@ esp_err_t app_manager_init( void )
     nr_edit = false;
     audio_menu = false;
     audio_edit = false;
+    audio_delete_confirm = false;
     device_menu = false;
     wifi_item = WIFI_MENU_BACK;
     cc_item = CC1101_MENU_BACK;
@@ -965,6 +1010,7 @@ void app_manager_poll( void )
     }
 
     const bool pressed = platform_encoder_button_pressed();
+    const bool long_pressed = platform_encoder_button_long_pressed();
     const int delta = platform_encoder_delta();
 
     if( RFSCOUT_APP_DEVICE == active_app )
@@ -1044,12 +1090,12 @@ void app_manager_poll( void )
     {
         if( audio_menu )
         {
-            audio_input( pressed, delta );
+            audio_input( pressed, long_pressed, delta );
             return;
         }
         if( pressed )
         {
-            audio_input( true, 0 );
+            audio_input( true, false, 0 );
             return;
         }
         if( switch_app_for_delta( delta, now ) )

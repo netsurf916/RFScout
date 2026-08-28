@@ -15,6 +15,7 @@
 #include "freertos/portmacro.h"
 
 #define ENCODER_BUTTON_DEBOUNCE_US 30000LL
+#define ENCODER_BUTTON_LONG_PRESS_US 800000LL
 #define ENCODER_LATCH_STATE_0 0U
 #define ENCODER_LATCH_STATE_3 3U
 #define ENCODER_TRANSITIONS_PER_DETENT 2
@@ -27,6 +28,9 @@ static portMUX_TYPE encoder_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool encoder_button_raw;
 static bool encoder_button_stable;
 static bool encoder_button_event;
+static bool encoder_button_long_event;
+static bool encoder_button_long_fired;
+static int64_t encoder_button_pressed_us;
 static int64_t encoder_button_change_us;
 
 /** @brief Decode one quadrature transition from either encoder GPIO edge. */
@@ -97,6 +101,9 @@ esp_err_t platform_init( void )
     encoder_button_raw = ( 0 == gpio_get_level( RFSCOUT_BOARD_ENCODER_KEY_PIN ) );
     encoder_button_stable = encoder_button_raw;
     encoder_button_event = false;
+    encoder_button_long_event = false;
+    encoder_button_long_fired = false;
+    encoder_button_pressed_us = 0;
     encoder_button_change_us = esp_timer_get_time();
 
     ESP_ERROR_CHECK( gpio_install_isr_service( 0 ) );
@@ -125,8 +132,21 @@ void platform_poll( void )
         encoder_button_stable = pressed;
         if( pressed )
         {
+            encoder_button_pressed_us = now_us;
+            encoder_button_long_fired = false;
+        }
+        else if( !encoder_button_long_fired )
+        {
             encoder_button_event = true;
         }
+    }
+
+    if( encoder_button_stable && !encoder_button_long_fired && encoder_button_pressed_us > 0 &&
+        ( now_us - encoder_button_pressed_us ) >= ENCODER_BUTTON_LONG_PRESS_US )
+    {
+        encoder_button_long_fired = true;
+        encoder_button_long_event = true;
+        encoder_button_event = false;
     }
 }
 
@@ -143,6 +163,13 @@ bool platform_encoder_button_pressed( void )
 {
     const bool event = encoder_button_event;
     encoder_button_event = false;
+    return event;
+}
+
+bool platform_encoder_button_long_pressed( void )
+{
+    const bool event = encoder_button_long_event;
+    encoder_button_long_event = false;
     return event;
 }
 
