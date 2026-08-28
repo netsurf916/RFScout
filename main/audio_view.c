@@ -122,11 +122,8 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
                            a_unused ? "  CANCEL   > DELETE" : "> CANCEL     DELETE",
                            a_unused ? RED : YELLOW,
                            1U );
-        display_draw_text( UI_LAYOUT_LEFT_X,
-                           UI_LAYOUT_FOOTER_Y,
-                           "TURN: CHOOSE  CENTER: CONFIRM",
-                           SUBDUED,
-                           1U );
+        display_draw_text(
+            UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN: CHOOSE  CENTER: CONFIRM", SUBDUED, 1U );
         (void)display_present();
         return;
     }
@@ -268,10 +265,7 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
                            item == a_selected ? YELLOW : TEXT,
                            1U );
     }
-    display_draw_text( UI_LAYOUT_LEFT_X,
-                       UI_LAYOUT_FOOTER_Y,
-                       "CENTER: PLAY  HOLD: DELETE",
-                       SUBDUED,
-                       1U );
+    display_draw_text(
+        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: PLAY  HOLD: DELETE", SUBDUED, 1U );
     (void)display_present();
 }
