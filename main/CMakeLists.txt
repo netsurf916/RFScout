@@ -31,6 +31,7 @@ idf_component_register(
         "mlx90640.c"
         "thermal_view.c"
         "status_bar.c"
+        "ui_chrome.c"
         "display.c"
         "display_brightness.c"
         "ui_present.c"

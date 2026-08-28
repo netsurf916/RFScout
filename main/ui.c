@@ -7,12 +7,12 @@
 
 #include "ui.h"
 
-#include "battery_indicator.h"
 #include "display.h"
 #include "observation_store.h"
-#include "status_bar.h"
 #include "surveillance.h"
 #include "surveillance_history.h"
+#include "ui_chrome.h"
+#include "ui_layout.h"
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -112,10 +112,10 @@ static void draw_static_rows( size_t a_unknown_count, size_t a_random_count )
 
     char line[ 64 ];
     snprintf( line, sizeof( line ), "%-27.27s %3u", "UNKNOWN", (unsigned)a_unknown_count );
-    display_draw_text( 6, UI_UNKNOWN_ROW_Y, line, COLOR_CYAN, 1 );
+    display_draw_text( UI_LAYOUT_LEFT_X, UI_UNKNOWN_ROW_Y, line, COLOR_CYAN, 1 );
 
     snprintf( line, sizeof( line ), "%-27.27s %3u", "RANDOM", (unsigned)a_random_count );
-    display_draw_text( 6, UI_RANDOM_ROW_Y, line, COLOR_CYAN, 1 );
+    display_draw_text( UI_LAYOUT_LEFT_X, UI_RANDOM_ROW_Y, line, COLOR_CYAN, 1 );
 }
 
 static void draw_surveillance_rows( const uint16_t *a_signature_counts )
@@ -177,9 +177,7 @@ static void render_summary( void )
         ++brand_count;
 
     display_clear( COLOR_BLACK );
-    display_draw_text( 6, 5, "WIFI / BT", COLOR_SUBDUED_TEAL, 2 );
-    battery_indicator_draw();
-    status_bar_draw();
+    ui_chrome_draw( "WIFI / BT", COLOR_SUBDUED_TEAL );
 
     char line[ 64 ];
     snprintf( line,
@@ -188,7 +186,7 @@ static void render_summary( void )
               (unsigned)device_count,
               (unsigned)wifi_count,
               (unsigned)ble_count );
-    display_draw_text( 6, 25, line, COLOR_WHITE, 1 );
+    display_draw_text( UI_LAYOUT_LEFT_X, 25, line, COLOR_WHITE, 1 );
 
     snprintf( line, sizeof( line ), "SURVEILLANCE %u", (unsigned)surveillance_count );
     display_draw_text( 210, 25, line, ( 0U == surveillance_count ) ? COLOR_GRAY : COLOR_RED, 1 );
@@ -206,7 +204,7 @@ static void render_summary( void )
                                ( attention_rows < UI_MAX_ATTENTION_ROWS );
         if( highlight )
             ++attention_rows;
-        display_draw_text( 6, y, line, highlight ? COLOR_YELLOW : COLOR_CYAN, 1 );
+        display_draw_text( UI_LAYOUT_LEFT_X, y, line, highlight ? COLOR_YELLOW : COLOR_CYAN, 1 );
         y += UI_LIST_ROW_HEIGHT;
     }
 

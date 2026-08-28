@@ -1,6 +1,6 @@
 /**
     status_bar.c : RFScout top status bar implementation
-    Description: Renders compact right-aligned time, state, and error indicators.
+    Description: Snapshots and renders compact right-aligned global system status.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -28,7 +28,7 @@
 #define STATUS_BAR_COLOR_BACKGROUND 0x0000U
 
 /** @brief Draw a compact SD-card glyph using the supplied subdued/error color. */
-static void draw_sd_icon( int a_x, uint16_t a_color )
+static void draw_sd_icon( int a_x, uint16_t a_color, bool a_error )
 {
     const int y = STATUS_BAR_ICON_Y;
 
@@ -41,7 +41,7 @@ static void draw_sd_icon( int a_x, uint16_t a_color )
     display_fill_rect( a_x + 5, y + 4, 2, 3, a_color );
     display_fill_rect( a_x + 8, y + 4, 2, 3, a_color );
 
-    if( log_writer_has_error() )
+    if( a_error )
     {
         display_fill_rect( a_x + 3, y + 8, 6, 3, STATUS_BAR_COLOR_BACKGROUND );
         display_fill_rect( a_x + 5, y + 8, 2, 2, a_color );
@@ -61,26 +61,54 @@ static void draw_thermal_icon( int a_x )
     display_fill_rect( a_x + 5, y + 5, 3, 4, color );
 }
 
-void status_bar_draw( void )
+bool status_bar_snapshot( rfscout_status_bar_state_t *a_state )
 {
+    if( NULL == a_state )
+    {
+        return false;
+    }
+
+    memset( a_state, 0, sizeof( *a_state ) );
+    a_state->sd_available = storage_is_available();
+    a_state->storage_error = log_writer_has_error();
+    a_state->thermal_available = mlx90640_is_detected();
+    (void)device_time_format_clock( a_state->clock, sizeof( a_state->clock ) );
+    return true;
+}
+
+void status_bar_draw_state( const rfscout_status_bar_state_t *a_state )
+{
+    if( NULL == a_state )
+    {
+        return;
+    }
+
     int x = STATUS_BAR_RIGHT_X - STATUS_BAR_ICON_WIDTH;
 
-    if( storage_is_available() )
+    if( a_state->sd_available )
     {
         const uint16_t color =
-            log_writer_has_error() ? STATUS_BAR_COLOR_ERROR : STATUS_BAR_COLOR_NORMAL;
-        draw_sd_icon( x, color );
+            a_state->storage_error ? STATUS_BAR_COLOR_ERROR : STATUS_BAR_COLOR_NORMAL;
+        draw_sd_icon( x, color, a_state->storage_error );
         x -= STATUS_BAR_ICON_WIDTH + STATUS_BAR_ICON_GAP;
     }
 
-    if( mlx90640_is_detected() )
+    if( a_state->thermal_available )
     {
         draw_thermal_icon( x );
         x -= STATUS_BAR_ICON_WIDTH + STATUS_BAR_ICON_GAP;
     }
 
-    char clock[ 12 ];
-    (void)device_time_format_clock( clock, sizeof( clock ) );
-    const int clock_width = (int)strlen( clock ) * 6;
-    display_draw_text( x - clock_width, STATUS_BAR_ICON_Y + 3, clock, STATUS_BAR_COLOR_NORMAL, 1U );
+    const int clock_width = (int)strlen( a_state->clock ) * 6;
+    display_draw_text(
+        x - clock_width, STATUS_BAR_ICON_Y + 3, a_state->clock, STATUS_BAR_COLOR_NORMAL, 1U );
+}
+
+void status_bar_draw( void )
+{
+    rfscout_status_bar_state_t state;
+    if( status_bar_snapshot( &state ) )
+    {
+        status_bar_draw_state( &state );
+    }
 }

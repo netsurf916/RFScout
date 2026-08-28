@@ -7,11 +7,11 @@
 
 #include "audio_view.h"
 
-#include "battery_indicator.h"
 #include "device_config.h"
 #include "display.h"
 #include "recorder.h"
-#include "status_bar.h"
+#include "ui_chrome.h"
+#include "ui_layout.h"
 
 #include "esp_timer.h"
 
@@ -29,12 +29,6 @@
 #define RECORDER_BROWSER_MONITOR 2U
 #define RECORDER_BROWSER_FILE_BASE 3U
 
-static void draw_status_chrome( void )
-{
-    status_bar_draw();
-    battery_indicator_draw();
-}
-
 static char saving_spinner( void )
 {
     static const char frames[] = "|/-\\";
@@ -47,14 +41,13 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
     (void)a_current;
     (void)a_peak;
     display_clear( BG );
-    display_draw_text( 8, 7, "RECORDER", SUBDUED, 2U );
-    draw_status_chrome();
+    ui_chrome_draw( "RECORDER", SUBDUED );
 
     const rfscout_recorder_state_t state = recorder_state();
     char line[ 80 ];
     if( RFSCOUT_RECORDER_RECORDING == state )
     {
-        display_draw_text( 8, 38, "● REC", RED, 2U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 38, "● REC", RED, 2U );
         const uint32_t seconds = recorder_recording_elapsed_seconds();
         snprintf( line,
                   sizeof( line ),
@@ -62,39 +55,40 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
                   (unsigned long)( seconds / 60U ),
                   (unsigned long)( seconds % 60U ),
                   recorder_input_slot_name() );
-        display_draw_text( 8, 69, line, TEXT, 1U );
-        display_draw_text( 8, 88, recorder_active_name(), DIM, 1U );
-        display_draw_text( 8, 114, "Recording audio...", DIM, 1U );
-        display_draw_text( 8, 144, "CENTER: STOP", SUBDUED, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 69, line, TEXT, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 88, recorder_active_name(), DIM, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 114, "Recording audio...", DIM, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: STOP", SUBDUED, 1U );
     }
     else if( RFSCOUT_RECORDER_SAVING == state )
     {
         char saving_line[ 24 ];
         snprintf( saving_line, sizeof( saving_line ), "SAVING... %c", saving_spinner() );
-        display_draw_text( 8, 42, saving_line, YELLOW, 2U );
-        display_draw_text( 8, 77, recorder_active_name(), TEXT, 1U );
-        display_draw_text( 8, 104, "TRIM + NORMALIZE", DIM, 1U );
-        display_draw_text( 8, 144, "PLEASE WAIT", SUBDUED, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 42, saving_line, YELLOW, 2U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 77, recorder_active_name(), TEXT, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 104, "TRIM + NORMALIZE", DIM, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "PLEASE WAIT", SUBDUED, 1U );
     }
     else if( RFSCOUT_RECORDER_NO_STORAGE == state )
     {
-        display_draw_text( 8, 42, "NO SD CARD", RED, 2U );
-        display_draw_text( 8, 75, "Recorder needs /sdcard/audio", DIM, 1U );
-        display_draw_text( 8, 144, "CENTER: OPEN / BACK", SUBDUED, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 42, "NO SD CARD", RED, 2U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 75, "Recorder needs /sdcard/audio", DIM, 1U );
+        display_draw_text(
+            UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: OPEN / BACK", SUBDUED, 1U );
     }
     else if( RFSCOUT_RECORDER_ERROR == state )
     {
-        display_draw_text( 8, 42, "RECORDER ERROR", RED, 2U );
-        display_draw_text( 8, 75, "Check SD card and microphone", DIM, 1U );
-        display_draw_text( 8, 144, "CENTER: OPEN", SUBDUED, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 42, "RECORDER ERROR", RED, 2U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 75, "Check SD card and microphone", DIM, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: OPEN", SUBDUED, 1U );
     }
     else
     {
-        display_draw_text( 8, 42, "READY", YELLOW, 2U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 42, "READY", YELLOW, 2U );
         snprintf( line, sizeof( line ), "%u RECORDINGS", (unsigned)recorder_file_count() );
-        display_draw_text( 8, 78, line, TEXT, 1U );
-        display_draw_text( 8, 105, "calibrated diagnostic WAV", DIM, 1U );
-        display_draw_text( 8, 144, "CENTER: OPEN", SUBDUED, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 78, line, TEXT, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 105, "calibrated diagnostic WAV", DIM, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: OPEN", SUBDUED, 1U );
     }
     (void)display_present();
 }
@@ -103,8 +97,7 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
 {
     const rfscout_recorder_state_t state = recorder_state();
     display_clear( BG );
-    display_draw_text( 8, 7, "RECORDER", SUBDUED, 2U );
-    draw_status_chrome();
+    ui_chrome_draw( "RECORDER", SUBDUED );
 
     if( a_editing )
     {
@@ -112,14 +105,16 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
                                  ? a_selected - RECORDER_BROWSER_FILE_BASE
                                  : 0U;
         const rfscout_recording_t *recording = recorder_file( index );
-        display_draw_text( 8, 42, "DELETE RECORDING?", RED, 2U );
-        display_draw_text( 8, 76, recording ? recording->name : "recording", TEXT, 1U );
-        display_draw_text( 8,
+        display_draw_text( UI_LAYOUT_LEFT_X, 42, "DELETE RECORDING?", RED, 2U );
+        display_draw_text(
+            UI_LAYOUT_LEFT_X, 76, recording ? recording->name : "recording", TEXT, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X,
                            108,
                            a_unused ? "  CANCEL   > DELETE" : "> CANCEL     DELETE",
                            a_unused ? RED : YELLOW,
                            1U );
-        display_draw_text( 8, 144, "TURN: CHOOSE  CENTER: CONFIRM", SUBDUED, 1U );
+        display_draw_text(
+            UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN: CHOOSE  CENTER: CONFIRM", SUBDUED, 1U );
         (void)display_present();
         return;
     }
@@ -127,7 +122,7 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
     if( RFSCOUT_RECORDER_RECORDING == state )
     {
         char line[ 80 ];
-        display_draw_text( 8, 38, "● REC", RED, 2U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 38, "● REC", RED, 2U );
         const uint32_t seconds = recorder_recording_elapsed_seconds();
         snprintf( line,
                   sizeof( line ),
@@ -135,10 +130,10 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
                   (unsigned long)( seconds / 60U ),
                   (unsigned long)( seconds % 60U ),
                   recorder_input_slot_name() );
-        display_draw_text( 8, 69, line, TEXT, 1U );
-        display_draw_text( 8, 88, recorder_active_name(), DIM, 1U );
-        display_draw_text( 8, 114, "Recording audio...", DIM, 1U );
-        display_draw_text( 8, 144, "CENTER: STOP", SUBDUED, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 69, line, TEXT, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 88, recorder_active_name(), DIM, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 114, "Recording audio...", DIM, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: STOP", SUBDUED, 1U );
         (void)display_present();
         return;
     }
@@ -147,10 +142,10 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
     {
         char saving_line[ 24 ];
         snprintf( saving_line, sizeof( saving_line ), "SAVING... %c", saving_spinner() );
-        display_draw_text( 8, 42, saving_line, YELLOW, 2U );
-        display_draw_text( 8, 77, recorder_active_name(), TEXT, 1U );
-        display_draw_text( 8, 104, "TRIM + NORMALIZE", DIM, 1U );
-        display_draw_text( 8, 130, "INPUT LOCKED", SUBDUED, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 42, saving_line, YELLOW, 2U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 77, recorder_active_name(), TEXT, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 104, "TRIM + NORMALIZE", DIM, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 130, "INPUT LOCKED", SUBDUED, 1U );
         (void)display_present();
         return;
     }
@@ -166,8 +161,8 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
                   "MIC MONITOR   GAIN +%u dB",
                   (unsigned)( NULL != config ? config->recorder_input_gain_db
                                              : recorder_input_gain_db() ) );
-        display_draw_text( 8, 34, line, TEXT, 1U );
-        const int graph_x = 8, graph_y = 58, graph_w = 224, graph_h = 66;
+        display_draw_text( UI_LAYOUT_LEFT_X, 34, line, TEXT, 1U );
+        const int graph_x = UI_LAYOUT_LEFT_X, graph_y = 58, graph_w = 224, graph_h = 66;
         for( size_t i = 0U; i < count; ++i )
         {
             const int x = graph_x + (int)( i * graph_w / count );
@@ -175,8 +170,8 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
             if( h > 0 )
                 display_fill_rect( x, graph_y + graph_h - h, 2, h, GREEN );
         }
-        display_draw_text( 8, 130, "TURN: INPUT GAIN", SUBDUED, 1U );
-        display_draw_text( 8, 144, "CENTER: EXIT", SUBDUED, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 130, "TURN: INPUT GAIN", SUBDUED, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: EXIT", SUBDUED, 1U );
         (void)display_present();
         return;
     }
@@ -190,8 +185,9 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
         const device_config_t *config = device_config_get();
         const unsigned volume = ( NULL != config ) ? config->recorder_volume_percent : 50U;
         char line[ 80 ];
-        display_draw_text( 8, 38, "PLAYING", GREEN, 2U );
-        display_draw_text( 8, 67, recording ? recording->name : "recording", TEXT, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 38, "PLAYING", GREEN, 2U );
+        display_draw_text(
+            UI_LAYOUT_LEFT_X, 67, recording ? recording->name : "recording", TEXT, 1U );
         const uint32_t elapsed = recorder_playback_elapsed_seconds();
         const uint32_t total = recording ? recording->duration_seconds : 0U;
         snprintf( line,
@@ -202,19 +198,19 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
                   (unsigned long)( total / 60U ),
                   (unsigned long)( total % 60U ),
                   volume );
-        display_draw_text( 8, 96, line, DIM, 1U );
-        display_draw_text( 8, 122, "TURN: VOLUME", SUBDUED, 1U );
-        display_draw_text( 8, 144, "CENTER: STOP", SUBDUED, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 96, line, DIM, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 122, "TURN: VOLUME", SUBDUED, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: STOP", SUBDUED, 1U );
         (void)display_present();
         return;
     }
 
     if( RFSCOUT_RECORDER_NO_STORAGE == state )
     {
-        display_draw_text( 8, 44, "> BACK", YELLOW, 1U );
-        display_draw_text( 8, 74, "NO SD CARD", RED, 2U );
-        display_draw_text( 8, 110, "/sdcard/audio unavailable", DIM, 1U );
-        display_draw_text( 8, 144, "CENTER: BACK", SUBDUED, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 44, "> BACK", YELLOW, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 74, "NO SD CARD", RED, 2U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 110, "/sdcard/audio unavailable", DIM, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: BACK", SUBDUED, 1U );
         (void)display_present();
         return;
     }
@@ -254,8 +250,13 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
                       (unsigned long)( recording ? recording->duration_seconds / 60U : 0U ),
                       (unsigned long)( recording ? recording->duration_seconds % 60U : 0U ) );
         }
-        display_draw_text( 8, 38 + (int)row * 20, line, item == a_selected ? YELLOW : TEXT, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X,
+                           UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT,
+                           line,
+                           item == a_selected ? YELLOW : TEXT,
+                           1U );
     }
-    display_draw_text( 8, 144, "CENTER: PLAY  HOLD: DELETE", SUBDUED, 1U );
+    display_draw_text(
+        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: PLAY  HOLD: DELETE", SUBDUED, 1U );
     (void)display_present();
 }

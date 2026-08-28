@@ -7,10 +7,9 @@
 
 #include "thermal_view.h"
 
-#include "battery_indicator.h"
 #include "display.h"
 #include "mlx90640.h"
-#include "status_bar.h"
+#include "ui_chrome.h"
 
 #include "esp_log.h"
 
@@ -164,9 +163,7 @@ esp_err_t thermal_view_render( void )
     }
 
     display_clear( COLOR_BLACK );
-    display_draw_text( 6, 5, "THERMAL", COLOR_SUBDUED_TEAL, 2 );
-    status_bar_draw();
-    battery_indicator_draw();
+    ui_chrome_draw( "THERMAL", COLOR_SUBDUED_TEAL );
 
     if( !mlx90640_is_detected() )
     {

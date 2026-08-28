@@ -17,6 +17,8 @@
 #include "morse.h"
 #include "observation_store.h"
 #include "storage.h"
+#include "ui_chrome.h"
+#include "ui_layout.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -44,7 +46,7 @@
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
 #define DEVICE_ITEM_SAVE ( DEVICE_ITEM_NOTIFICATION_LAST + 1U )
 #define DEVICE_ITEM_COUNT ( DEVICE_ITEM_SAVE + 1U )
-#define DEVICE_ROWS_PER_PAGE 8U
+#define DEVICE_ROWS_PER_PAGE 6U
 #define DEVICE_LOG_SHUTDOWN_TIMEOUT_MS 3000U
 #define DEVICE_ALERT_VOLUME_STEP 10
 
@@ -52,7 +54,6 @@
 #define COLOR_TEXT 0xBDF7U
 #define COLOR_SELECTED 0xFFFFU
 #define COLOR_DIM 0x7BEFU
-#define COLOR_OK 0x07E0U
 #define COLOR_ERROR 0xF800U
 #define COLOR_ACCENT 0xFFE0U
 
@@ -285,9 +286,10 @@ static void draw_row( int a_y, unsigned a_item )
 
     if( active )
     {
-        display_draw_text( 6, a_y, ( editing && item_editable( a_item ) ) ? ">*" : ">", color, 1U );
+        display_draw_text(
+            UI_LAYOUT_LEFT_X, a_y, ( editing && item_editable( a_item ) ) ? ">*" : ">", color, 1U );
     }
-    display_draw_text( 22, a_y, item_label( a_item ), color, 1U );
+    display_draw_text( UI_LAYOUT_LABEL_X, a_y, item_label( a_item ), color, 1U );
     if( '\0' != value[ 0 ] )
     {
         display_draw_text( 232, a_y, value, active ? COLOR_ACCENT : COLOR_DIM, 1U );
@@ -298,8 +300,8 @@ void device_view_landing( void )
 {
     const device_config_t *config = device_config_get();
     display_clear( COLOR_BACKGROUND );
-    display_draw_text( 6, 5, "DEVICE", COLOR_DIM, 2U );
-    display_draw_text( 22, 46, "Global configuration", COLOR_TEXT, 1U );
+    ui_chrome_draw( "DEVICE", COLOR_DIM );
+    display_draw_text( UI_LAYOUT_LABEL_X, 46, "Global configuration", COLOR_TEXT, 1U );
 
     char line[ 64 ];
     snprintf( line,
@@ -307,21 +309,21 @@ void device_view_landing( void )
               "Notifications: %s %u%%",
               alert_mode_name( config->alert_mode ),
               (unsigned)config->alert_volume_percent );
-    display_draw_text( 22, 68, line, COLOR_TEXT, 1U );
+    display_draw_text( UI_LAYOUT_LABEL_X, 68, line, COLOR_TEXT, 1U );
     snprintf( line, sizeof( line ), "SD logging: %s", on_off( config->logging_enabled ) );
-    display_draw_text( 22, 86, line, COLOR_TEXT, 1U );
+    display_draw_text( UI_LAYOUT_LABEL_X, 86, line, COLOR_TEXT, 1U );
     snprintf( line, sizeof( line ), "Time: %s", device_time_source_label() );
-    display_draw_text( 22, 104, line, COLOR_DIM, 1U );
+    display_draw_text( UI_LAYOUT_LABEL_X, 104, line, COLOR_DIM, 1U );
 
-    display_draw_text( 22, 136, "CENTER: SETTINGS", COLOR_ACCENT, 1U );
-    display_draw_text( 22, 152, "TURN: NEXT APP", COLOR_DIM, 1U );
+    display_draw_text( UI_LAYOUT_LABEL_X, 136, "CENTER: SETTINGS", COLOR_ACCENT, 1U );
+    display_draw_text( UI_LAYOUT_LABEL_X, UI_LAYOUT_FOOTER_Y, "TURN: NEXT APP", COLOR_DIM, 1U );
     (void)display_present();
 }
 
 void device_view_render( void )
 {
     display_clear( COLOR_BACKGROUND );
-    display_draw_text( 6, 4, "DEVICE SETTINGS", COLOR_DIM, 1U );
+    ui_chrome_draw( "DEVICE SETTINGS", COLOR_DIM );
 
     const unsigned page_start = ( selected_item / DEVICE_ROWS_PER_PAGE ) * DEVICE_ROWS_PER_PAGE;
     for( unsigned row = 0U; row < DEVICE_ROWS_PER_PAGE; ++row )
@@ -331,7 +333,7 @@ void device_view_render( void )
         {
             break;
         }
-        draw_row( 25 + (int)row * 15, item );
+        draw_row( UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT, item );
     }
 
     char footer[ 64 ];
@@ -341,15 +343,12 @@ void device_view_render( void )
               (unsigned)( selected_item + 1U ),
               (unsigned)DEVICE_ITEM_COUNT,
               editing ? "TURN CHANGE / CENTER DONE" : "TURN SELECT / CENTER ENTER" );
-    display_draw_text( 6, 150, footer, editing ? COLOR_ACCENT : COLOR_DIM, 1U );
+    display_draw_text(
+        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, footer, editing ? COLOR_ACCENT : COLOR_DIM, 1U );
 
     if( save_error )
     {
-        display_draw_text( 286, 4, "ERR", COLOR_ERROR, 1U );
-    }
-    else if( storage_is_available() )
-    {
-        display_draw_text( 292, 4, "SD", COLOR_OK, 1U );
+        display_draw_text( 246, UI_LAYOUT_FOOTER_Y, "SAVE ERROR", COLOR_ERROR, 1U );
     }
     (void)display_present();
 }
