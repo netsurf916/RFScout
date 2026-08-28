@@ -21,7 +21,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define AUDIO_OUTPUT_SAMPLE_RATE 16000U
+#define AUDIO_OUTPUT_SAMPLE_RATE 32000U
 #define AUDIO_OUTPUT_MAX_AMPLITUDE 7000.0f
 #define AUDIO_OUTPUT_CHUNK_FRAMES 160U
 #define AUDIO_OUTPUT_QUEUE_LENGTH 6U
@@ -60,6 +60,7 @@ static bool initialized;
 static volatile bool playback_active;
 static volatile bool playback_worker_active;
 static volatile uint32_t playback_generation;
+static volatile uint8_t playback_volume_percent = 50U;
 
 static uint16_t read_u16_le( const uint8_t *a_source )
 {
@@ -235,6 +236,7 @@ static void play_wav( const audio_output_command_t *a_command )
     }
 
     playback_worker_active = true;
+    playback_volume_percent = a_command->volume_percent;
     FILE *file = fopen( a_command->path, "rb" );
     if( NULL == file )
     {
@@ -280,8 +282,8 @@ static void play_wav( const audio_output_command_t *a_command )
 
         for( size_t frame = 0U; frame < read; ++frame )
         {
-            int32_t sample = (int32_t)mono[ frame ] * a_command->volume_percent /
-                             AUDIO_OUTPUT_MAX_VOLUME_PERCENT;
+            int32_t sample =
+                (int32_t)mono[ frame ] * playback_volume_percent / AUDIO_OUTPUT_MAX_VOLUME_PERCENT;
             if( sample > INT16_MAX )
             {
                 sample = INT16_MAX;
@@ -469,6 +471,15 @@ bool audio_output_play_wav( const char *a_path, uint8_t a_volume_percent )
         return false;
     }
     return true;
+}
+
+void audio_output_set_playback_volume( uint8_t a_volume_percent )
+{
+    if( a_volume_percent > AUDIO_OUTPUT_MAX_VOLUME_PERCENT )
+    {
+        a_volume_percent = AUDIO_OUTPUT_MAX_VOLUME_PERCENT;
+    }
+    playback_volume_percent = a_volume_percent;
 }
 
 bool audio_output_playback_active( void )

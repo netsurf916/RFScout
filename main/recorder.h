@@ -17,7 +17,7 @@
 #include <stdint.h>
 
 #define RFSCOUT_RECORDER_DIRECTORY "/sdcard/audio"
-#define RFSCOUT_RECORDER_SAMPLE_RATE 16000U
+#define RFSCOUT_RECORDER_SAMPLE_RATE 32000U
 #define RFSCOUT_RECORDER_MAX_FILES 48U
 #define RFSCOUT_RECORDER_NAME_MAX 64U
 
@@ -43,7 +43,7 @@ esp_err_t recorder_init( void );
 /** @brief Refresh storage state and the playable recording list. */
 esp_err_t recorder_refresh( void );
 
-/** @brief Start a new 16 kHz, 16-bit mono PCM WAV recording. */
+/** @brief Start a new 32 kHz, 16-bit mono PCM WAV recording. */
 esp_err_t recorder_start_recording( void );
 
 /** @brief Stop capture, finalize the WAV header, and refresh the recording list. */
@@ -66,6 +66,21 @@ const char *recorder_active_name( void );
 
 /** @brief Return bytes of PCM data written by the active recording. */
 uint32_t recorder_recorded_bytes( void );
+
+/** @brief Return smoothed live microphone level from 0 through 100 while recording. */
+uint8_t recorder_level_percent( void );
+
+/** @brief Return recent microphone peak level from 0 through 100 while recording. */
+uint8_t recorder_peak_percent( void );
+
+/** @brief Return the automatically selected ESP32-S3 PDM slot name. */
+const char *recorder_input_slot_name( void );
+
+/** @brief Change volume of active WAV playback without restarting it. */
+void recorder_set_playback_volume( uint8_t a_volume_percent );
+
+/** @brief Return elapsed seconds for the current WAV playback. */
+uint32_t recorder_playback_elapsed_seconds( void );
 
 /** @brief Return the number of validated playable recordings. */
 size_t recorder_file_count( void );

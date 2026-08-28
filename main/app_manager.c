@@ -57,11 +57,9 @@
 #define NRF24_MENU_RESET_COUNTS 5U
 #define NRF24_MENU_ITEM_COUNT 6U
 #define AUDIO_MENU_BACK 0U
-#define AUDIO_MENU_RECORD 1U
-#define AUDIO_MENU_FILE 2U
-#define AUDIO_MENU_PLAY 3U
-#define AUDIO_MENU_VOLUME 4U
-#define AUDIO_MENU_ITEM_COUNT 5U
+#define AUDIO_BROWSER_BACK 0U
+#define AUDIO_BROWSER_NEW 1U
+#define AUDIO_BROWSER_FILE_BASE 2U
 
 static const char *TAG = "app_manager";
 static rfscout_app_id_t active_app;
@@ -82,7 +80,6 @@ static bool wifi_monitor_ready;
 static bool ble_monitor_ready;
 static bool cc_peak_hold = true;
 static bool nr_peak_hold = true;
-static bool audio_peak_hold = false;
 static unsigned wifi_item;
 static unsigned cc_item;
 static unsigned nr_item;
@@ -398,18 +395,10 @@ static void render_nr_spectrum( void )
                                    device_count );
 }
 
-/** @brief Render the most recent Audio spectrum frame. */
+/** @brief Render the current Recorder state through the legacy Audio view ABI. */
 static void render_audio( void )
 {
-    static uint8_t current[ AUDIO_SPECTRUM_BINS ];
-    static uint8_t peaks[ AUDIO_SPECTRUM_BINS ];
-
-    (void)audio_spectrum_take_frame( current, peaks, AUDIO_SPECTRUM_BINS );
-    if( !audio_peak_hold )
-    {
-        memset( peaks, 0, sizeof( peaks ) );
-    }
-    audio_view_render( current, peaks );
+    audio_view_render( NULL, NULL );
 }
 
 /** @brief Stop resources and clear runtime state owned by an application. */
@@ -441,7 +430,7 @@ static void leave_app( rfscout_app_id_t a_app )
     else if( RFSCOUT_APP_AUDIO == a_app )
     {
         audio_spectrum_stop();
-        audio_item = AUDIO_MENU_BACK;
+        audio_item = AUDIO_BROWSER_BACK;
     }
 
     wifi_menu = false;
@@ -501,7 +490,7 @@ static void enter_app( rfscout_app_id_t a_app )
             break;
 
         case RFSCOUT_APP_AUDIO:
-            audio_item = AUDIO_MENU_BACK;
+            audio_item = AUDIO_BROWSER_BACK;
             audio_menu = false;
             audio_edit = false;
             if( ESP_OK != audio_spectrum_start() )
@@ -792,21 +781,32 @@ static void nr_input( bool a_pressed, int a_delta )
     render_nr_menu();
 }
 
-/** @brief Close the Audio menu and return to the live spectrum. */
+/** @brief Close Recorder interaction mode and return to its landing screen. */
 static void close_audio_menu( void )
 {
     audio_menu = false;
     audio_edit = false;
+    audio_item = AUDIO_BROWSER_BACK;
     render_audio();
 }
 
-/** @brief Render the current Audio settings state. */
+/** @brief Render Recorder browser, capture, or playback state. */
 static void show_audio_menu( void )
 {
-    audio_view_menu( audio_item, audio_edit, audio_peak_hold );
+    audio_view_menu( audio_item, false, false );
 }
 
-/** @brief Handle Audio center-button and encoder input while its app is active. */
+/** @brief Persist Recorder playback volume after an interactive adjustment. */
+static void save_recorder_volume( void )
+{
+    const esp_err_t result = device_config_save( false, 0, NULL );
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG, "could not save Recorder volume: %s", esp_err_to_name( result ) );
+    }
+}
+
+/** @brief Handle Recorder input using state screens rather than action-menu editing. */
 static void audio_input( bool a_pressed, int a_delta )
 {
     if( !audio_menu )
@@ -814,31 +814,72 @@ static void audio_input( bool a_pressed, int a_delta )
         if( a_pressed )
         {
             audio_menu = true;
-            audio_edit = false;
-            audio_item = AUDIO_MENU_BACK;
+            audio_item = AUDIO_BROWSER_BACK;
+            (void)recorder_refresh();
             show_audio_menu();
         }
         return;
     }
 
+    const rfscout_recorder_state_t state = recorder_state();
+    if( RFSCOUT_RECORDER_RECORDING == state )
+    {
+        if( a_pressed )
+        {
+            recorder_stop_recording();
+            audio_item = recorder_file_count() > 0U ? AUDIO_BROWSER_FILE_BASE : AUDIO_BROWSER_NEW;
+        }
+        show_audio_menu();
+        return;
+    }
+
+    if( RFSCOUT_RECORDER_PLAYING == state )
+    {
+        if( a_pressed )
+        {
+            recorder_stop();
+            save_recorder_volume();
+        }
+        else if( 0 != a_delta )
+        {
+            const device_config_t *config = device_config_get();
+            int volume = ( NULL != config ) ? (int)config->recorder_volume_percent : 50;
+            volume += ( a_delta > 0 ) ? 5 : -5;
+            if( volume < 0 )
+            {
+                volume = 0;
+            }
+            else if( volume > 100 )
+            {
+                volume = 100;
+            }
+            if( ESP_OK == device_config_set_recorder_volume( (uint8_t)volume ) )
+            {
+                recorder_set_playback_volume( (uint8_t)volume );
+            }
+        }
+        show_audio_menu();
+        return;
+    }
+
     if( a_pressed )
     {
-        if( AUDIO_MENU_BACK == audio_item )
+        if( AUDIO_BROWSER_BACK == audio_item )
         {
             close_audio_menu();
             return;
         }
-
-        const bool leaving_volume_edit = audio_edit && ( AUDIO_MENU_VOLUME == audio_item );
-        audio_edit = !audio_edit;
-        if( leaving_volume_edit )
+        if( AUDIO_BROWSER_NEW == audio_item )
         {
-            const esp_err_t result = device_config_save( false, 0, NULL );
-            if( ESP_OK != result )
-            {
-                ESP_LOGW( TAG, "could not save Recorder volume: %s", esp_err_to_name( result ) );
-            }
+            (void)recorder_start_recording();
+            show_audio_menu();
+            return;
         }
+
+        const size_t index = audio_item - AUDIO_BROWSER_FILE_BASE;
+        const device_config_t *config = device_config_get();
+        const uint8_t volume = ( NULL != config ) ? config->recorder_volume_percent : 50U;
+        (void)recorder_start_playback( index, volume );
         show_audio_menu();
         return;
     }
@@ -848,48 +889,17 @@ static void audio_input( bool a_pressed, int a_delta )
         return;
     }
 
-    if( !audio_edit )
+    const unsigned item_count = AUDIO_BROWSER_FILE_BASE + (unsigned)recorder_file_count();
+    int item = (int)audio_item + ( ( a_delta > 0 ) ? 1 : -1 );
+    if( item < 0 )
     {
-        int item = (int)audio_item + ( ( a_delta > 0 ) ? 1 : -1 );
-        if( item < 0 )
-        {
-            item = (int)AUDIO_MENU_ITEM_COUNT - 1;
-        }
-        if( item >= (int)AUDIO_MENU_ITEM_COUNT )
-        {
-            item = 0;
-        }
-        audio_item = (unsigned)item;
+        item = (int)item_count - 1;
     }
-    else if( AUDIO_MENU_FILE == audio_item )
+    if( item >= (int)item_count )
     {
-        int channel = (int)audio_spectrum_channel() + ( ( a_delta > 0 ) ? 1 : -1 );
-        if( channel < 0 )
-        {
-            channel = AUDIO_CHANNEL_COUNT - 1;
-        }
-        if( channel >= AUDIO_CHANNEL_COUNT )
-        {
-            channel = 0;
-        }
-        audio_spectrum_set_channel( (audio_channel_t)channel );
+        item = 0;
     }
-    else if( AUDIO_MENU_VOLUME == audio_item )
-    {
-        const device_config_t *config = device_config_get();
-        int volume = ( NULL != config ) ? (int)config->recorder_volume_percent : 50;
-        volume += ( a_delta > 0 ) ? 5 : -5;
-        if( volume < 0 )
-        {
-            volume = 0;
-        }
-        else if( volume > 100 )
-        {
-            volume = 100;
-        }
-        (void)device_config_set_recorder_volume( (uint8_t)volume );
-    }
-
+    audio_item = (unsigned)item;
     show_audio_menu();
 }
 
@@ -916,12 +926,11 @@ esp_err_t app_manager_init( void )
     wifi_item = WIFI_MENU_BACK;
     cc_item = CC1101_MENU_BACK;
     nr_item = NRF24_MENU_BACK;
-    audio_item = AUDIO_MENU_BACK;
+    audio_item = AUDIO_BROWSER_BACK;
     wifi_monitor_ready = true;
     ble_monitor_ready = true;
     cc_peak_hold = true;
     nr_peak_hold = true;
-    audio_peak_hold = false;
     memset( cc_notification_counts, 0, sizeof( cc_notification_counts ) );
     memset( nr_notification_counts, 0, sizeof( nr_notification_counts ) );
 

@@ -22,7 +22,7 @@ When storage is mounted, device-wide preferences are stored in `/sdcard/rfscout.
 
 ## Recorder storage
 
-Recorder stores supported 16 kHz, 16-bit mono PCM WAV files in `/sdcard/audio/`. The directory is created automatically when mounted storage is available. Only WAV files that validate against the supported PCM format are shown in Recorder's playback list; unrelated or malformed files are ignored.
+Recorder stores supported 32 kHz, 16-bit mono PCM WAV files in `/sdcard/audio/`. The directory is created automatically when mounted storage is available. Only WAV files that validate against the supported PCM format are shown in Recorder's playback list; unrelated or malformed files are ignored.
 
 ## Unified logging
 

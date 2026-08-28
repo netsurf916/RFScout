@@ -1,13 +1,12 @@
 /**
     audio_view.c : RFScout Recorder compatibility UI
-    Description: Renders and controls the replacement Recorder app in the former Audio slot.
+    Description: State-driven Recorder UI in the former Audio application slot.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
 
 #include "audio_view.h"
 
-#include "audio_spectrum.h"
 #include "battery_indicator.h"
 #include "device_config.h"
 #include "display.h"
@@ -22,15 +21,10 @@
 #define DIM 0x7BEFU
 #define YELLOW 0xFFE0U
 #define RED 0xF800U
-#define RECORDER_MENU_BACK 0U
-#define RECORDER_MENU_RECORD 1U
-#define RECORDER_MENU_FILE 2U
-#define RECORDER_MENU_PLAY 3U
-#define RECORDER_MENU_VOLUME 4U
-#define RECORDER_MENU_ITEM_COUNT 5U
-
-static unsigned last_selected = RECORDER_MENU_BACK;
-static bool last_editing;
+#define GREEN 0x07E0U
+#define RECORDER_BROWSER_BACK 0U
+#define RECORDER_BROWSER_NEW 1U
+#define RECORDER_BROWSER_FILE_BASE 2U
 
 static void draw_status_chrome( void )
 {
@@ -38,187 +32,171 @@ static void draw_status_chrome( void )
     battery_indicator_draw();
 }
 
-static const char *state_name( rfscout_recorder_state_t a_state )
+static void draw_meter( uint8_t a_level, uint8_t a_peak )
 {
-    switch( a_state )
+    char meter[ 23 ];
+    const unsigned width = 20U;
+    const unsigned filled = (unsigned)a_level * width / 100U;
+    const unsigned peak = (unsigned)a_peak * width / 100U;
+    for( unsigned i = 0U; i < width; ++i )
     {
-        case RFSCOUT_RECORDER_RECORDING:
-            return "RECORDING";
-        case RFSCOUT_RECORDER_PLAYING:
-            return "PLAYING";
-        case RFSCOUT_RECORDER_NO_STORAGE:
-            return "NO SD CARD";
-        case RFSCOUT_RECORDER_ERROR:
-            return "ERROR";
-        case RFSCOUT_RECORDER_IDLE:
-        default:
-            return "READY";
+        meter[ i ] = ( i < filled ) ? '=' : '-';
     }
-}
-
-static void trigger_action( unsigned a_selected )
-{
-    const rfscout_recorder_state_t state = recorder_state();
-
-    if( RECORDER_MENU_RECORD == a_selected )
+    if( peak < width )
     {
-        if( RFSCOUT_RECORDER_RECORDING == state )
-        {
-            recorder_stop_recording();
-        }
-        else if( RFSCOUT_RECORDER_IDLE == state )
-        {
-            (void)recorder_start_recording();
-        }
+        meter[ peak ] = '|';
     }
-    else if( RECORDER_MENU_PLAY == a_selected )
-    {
-        if( RFSCOUT_RECORDER_PLAYING == state )
-        {
-            recorder_stop();
-        }
-        else if( RFSCOUT_RECORDER_IDLE == state && recorder_file_count() > 0U )
-        {
-            const device_config_t *config = device_config_get();
-            const uint8_t volume = ( NULL != config ) ? config->recorder_volume_percent : 50U;
-            (void)recorder_start_playback( audio_spectrum_channel(), volume );
-        }
-    }
+    meter[ width ] = '\0';
+    display_draw_text( 8, 111, meter, GREEN, 1U );
 }
 
 void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
 {
     (void)a_current;
     (void)a_peak;
-
-    const rfscout_recorder_state_t state = recorder_state();
     display_clear( BG );
     display_draw_text( 8, 7, "RECORDER", SUBDUED, 2U );
     draw_status_chrome();
 
-    const uint16_t state_color =
-        ( RFSCOUT_RECORDER_NO_STORAGE == state || RFSCOUT_RECORDER_ERROR == state ) ? RED : YELLOW;
-    display_draw_text( 8, 38, state_name( state ), state_color, 1U );
-
+    const rfscout_recorder_state_t state = recorder_state();
     char line[ 80 ];
     if( RFSCOUT_RECORDER_RECORDING == state )
     {
-        display_draw_text( 8, 63, recorder_active_name(), TEXT, 1U );
+        display_draw_text( 8, 38, "● REC", RED, 2U );
         const uint32_t seconds = recorder_recorded_bytes() / ( RFSCOUT_RECORDER_SAMPLE_RATE * 2U );
         snprintf( line,
                   sizeof( line ),
-                  "%02lu:%02lu  %lu KB",
+                  "%02lu:%02lu  %s",
                   (unsigned long)( seconds / 60U ),
                   (unsigned long)( seconds % 60U ),
-                  (unsigned long)( recorder_recorded_bytes() / 1024U ) );
-        display_draw_text( 8, 88, line, DIM, 1U );
-    }
-    else if( RFSCOUT_RECORDER_PLAYING == state )
-    {
-        display_draw_text(
-            8, 63, audio_spectrum_channel_name( audio_spectrum_channel() ), TEXT, 1U );
+                  recorder_input_slot_name() );
+        display_draw_text( 8, 69, line, TEXT, 1U );
+        display_draw_text( 8, 88, recorder_active_name(), DIM, 1U );
+        draw_meter( recorder_level_percent(), recorder_peak_percent() );
+        display_draw_text( 8, 144, "CENTER: STOP", SUBDUED, 1U );
     }
     else if( RFSCOUT_RECORDER_NO_STORAGE == state )
     {
-        display_draw_text( 8, 63, "Insert or mount SD card", DIM, 1U );
-        display_draw_text( 8, 88, "/sdcard/audio required", DIM, 1U );
+        display_draw_text( 8, 42, "NO SD CARD", RED, 2U );
+        display_draw_text( 8, 75, "Recorder needs /sdcard/audio", DIM, 1U );
+        display_draw_text( 8, 144, "CENTER: OPEN / BACK", SUBDUED, 1U );
+    }
+    else if( RFSCOUT_RECORDER_ERROR == state )
+    {
+        display_draw_text( 8, 42, "RECORDER ERROR", RED, 2U );
+        display_draw_text( 8, 75, "Check SD card and microphone", DIM, 1U );
+        display_draw_text( 8, 144, "CENTER: OPEN", SUBDUED, 1U );
     }
     else
     {
+        display_draw_text( 8, 42, "READY", YELLOW, 2U );
         snprintf( line, sizeof( line ), "%u RECORDINGS", (unsigned)recorder_file_count() );
-        display_draw_text( 8, 63, line, TEXT, 1U );
-        if( recorder_file_count() > 0U )
-        {
-            display_draw_text(
-                8, 88, audio_spectrum_channel_name( audio_spectrum_channel() ), DIM, 1U );
-        }
+        display_draw_text( 8, 78, line, TEXT, 1U );
+        display_draw_text( 8, 105, "32 kHz / 16-bit mono WAV", DIM, 1U );
+        display_draw_text( 8, 144, "CENTER: OPEN", SUBDUED, 1U );
     }
-
-    display_draw_text( 8, 121, "16 kHz / 16-bit mono WAV", DIM, 1U );
-    display_draw_text( 8, 144, "CENTER: MENU", SUBDUED, 1U );
     (void)display_present();
 }
 
 void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
 {
+    (void)a_editing;
     (void)a_unused;
-    static const char *labels[ RECORDER_MENU_ITEM_COUNT ] = {
-        "BACK", "RECORD", "FILE", "PLAY", "VOLUME" };
-
-    if( a_selected >= RECORDER_MENU_ITEM_COUNT )
-    {
-        a_selected = RECORDER_MENU_BACK;
-    }
-
-    if( a_editing && ( !last_editing || a_selected != last_selected ) &&
-        ( RECORDER_MENU_RECORD == a_selected || RECORDER_MENU_PLAY == a_selected ) )
-    {
-        trigger_action( a_selected );
-    }
-    last_selected = a_selected;
-    last_editing = a_editing;
-
+    const rfscout_recorder_state_t state = recorder_state();
     display_clear( BG );
     display_draw_text( 8, 7, "RECORDER", SUBDUED, 2U );
     draw_status_chrome();
 
-    const rfscout_recorder_state_t state = recorder_state();
-    for( unsigned i = 0U; i < RECORDER_MENU_ITEM_COUNT; ++i )
+    if( RFSCOUT_RECORDER_RECORDING == state )
     {
-        const int y = 38 + (int)i * 20;
-        const bool active = ( i == a_selected );
-        const bool editable = ( RECORDER_MENU_FILE == i ) || ( RECORDER_MENU_VOLUME == i );
-        const char *marker = active ? ( editable && a_editing ? "*" : ">" ) : " ";
-        const uint16_t color = active ? YELLOW : DIM;
+        char line[ 80 ];
+        display_draw_text( 8, 38, "● REC", RED, 2U );
+        const uint32_t seconds = recorder_recorded_bytes() / ( RFSCOUT_RECORDER_SAMPLE_RATE * 2U );
+        snprintf( line,
+                  sizeof( line ),
+                  "%02lu:%02lu  INPUT %s",
+                  (unsigned long)( seconds / 60U ),
+                  (unsigned long)( seconds % 60U ),
+                  recorder_input_slot_name() );
+        display_draw_text( 8, 69, line, TEXT, 1U );
+        display_draw_text( 8, 88, recorder_active_name(), DIM, 1U );
+        draw_meter( recorder_level_percent(), recorder_peak_percent() );
+        display_draw_text( 8, 144, "CENTER: STOP", SUBDUED, 1U );
+        (void)display_present();
+        return;
+    }
 
-        display_draw_text( 8, y, marker, color, 1U );
-        display_draw_text( 22, y, labels[ i ], active ? TEXT : DIM, 1U );
-
-        if( RECORDER_MENU_RECORD == i )
-        {
-            const char *value = ( RFSCOUT_RECORDER_RECORDING == state ) ? "STOP" : "START";
-            display_draw_text( 110, y, value, color, 1U );
-        }
-        else if( RECORDER_MENU_FILE == i )
-        {
-            display_draw_text(
-                110, y, audio_spectrum_channel_name( audio_spectrum_channel() ), color, 1U );
-        }
-        else if( RECORDER_MENU_PLAY == i )
-        {
-            const char *value = ( RFSCOUT_RECORDER_PLAYING == state ) ? "STOP" : "START";
-            display_draw_text( 110, y, value, color, 1U );
-        }
-        else if( RECORDER_MENU_VOLUME == i )
-        {
-            const device_config_t *config = device_config_get();
-            const unsigned volume = ( NULL != config ) ? config->recorder_volume_percent : 50U;
-            char value[ 12 ];
-            snprintf( value, sizeof( value ), "%u%%", volume );
-            display_draw_text( 110, y, value, color, 1U );
-        }
+    if( RFSCOUT_RECORDER_PLAYING == state )
+    {
+        const size_t index = ( a_selected >= RECORDER_BROWSER_FILE_BASE )
+                                 ? a_selected - RECORDER_BROWSER_FILE_BASE
+                                 : 0U;
+        const rfscout_recording_t *recording = recorder_file( index );
+        const device_config_t *config = device_config_get();
+        const unsigned volume = ( NULL != config ) ? config->recorder_volume_percent : 50U;
+        char line[ 80 ];
+        display_draw_text( 8, 38, "PLAYING", GREEN, 2U );
+        display_draw_text( 8, 67, recording ? recording->name : "recording", TEXT, 1U );
+        const uint32_t elapsed = recorder_playback_elapsed_seconds();
+        const uint32_t total = recording ? recording->duration_seconds : 0U;
+        snprintf( line,
+                  sizeof( line ),
+                  "%02lu:%02lu / %02lu:%02lu   VOL %u%%",
+                  (unsigned long)( elapsed / 60U ),
+                  (unsigned long)( elapsed % 60U ),
+                  (unsigned long)( total / 60U ),
+                  (unsigned long)( total % 60U ),
+                  volume );
+        display_draw_text( 8, 96, line, DIM, 1U );
+        display_draw_text( 8, 122, "TURN: VOLUME", SUBDUED, 1U );
+        display_draw_text( 8, 144, "CENTER: STOP", SUBDUED, 1U );
+        (void)display_present();
+        return;
     }
 
     if( RFSCOUT_RECORDER_NO_STORAGE == state )
     {
-        display_draw_text( 8, 142, "NO SD CARD - RECORD/PLAY DISABLED", RED, 1U );
-    }
-    else if( a_editing && RECORDER_MENU_FILE == a_selected )
-    {
-        display_draw_text( 8, 142, "TURN: FILE  CENTER: DONE", SUBDUED, 1U );
-    }
-    else if( a_editing && RECORDER_MENU_VOLUME == a_selected )
-    {
-        display_draw_text( 8, 142, "TURN: VOLUME  CENTER: SAVE", SUBDUED, 1U );
-    }
-    else if( a_editing )
-    {
-        display_draw_text( 8, 142, "ACTION COMPLETE - CENTER: DONE", SUBDUED, 1U );
-    }
-    else
-    {
-        display_draw_text( 8, 142, "TURN: SELECT  CENTER: ENTER", SUBDUED, 1U );
+        display_draw_text( 8, 44, "> BACK", YELLOW, 1U );
+        display_draw_text( 8, 74, "NO SD CARD", RED, 2U );
+        display_draw_text( 8, 110, "/sdcard/audio unavailable", DIM, 1U );
+        display_draw_text( 8, 144, "CENTER: BACK", SUBDUED, 1U );
+        (void)display_present();
+        return;
     }
 
+    const size_t count = recorder_file_count();
+    const size_t item_count = RECORDER_BROWSER_FILE_BASE + count;
+    if( a_selected >= item_count )
+    {
+        a_selected = 0U;
+    }
+    const unsigned first = ( a_selected > 2U ) ? a_selected - 2U : 0U;
+    for( unsigned row = 0U; row < 5U && ( first + row ) < item_count; ++row )
+    {
+        const unsigned item = first + row;
+        char line[ 96 ];
+        if( RECORDER_BROWSER_BACK == item )
+        {
+            snprintf( line, sizeof( line ), "%c BACK", item == a_selected ? '>' : ' ' );
+        }
+        else if( RECORDER_BROWSER_NEW == item )
+        {
+            snprintf( line, sizeof( line ), "%c NEW RECORDING", item == a_selected ? '>' : ' ' );
+        }
+        else
+        {
+            const rfscout_recording_t *recording =
+                recorder_file( item - RECORDER_BROWSER_FILE_BASE );
+            snprintf( line,
+                      sizeof( line ),
+                      "%c %-19.19s %02lu:%02lu",
+                      item == a_selected ? '>' : ' ',
+                      recording ? recording->name : "?",
+                      (unsigned long)( recording ? recording->duration_seconds / 60U : 0U ),
+                      (unsigned long)( recording ? recording->duration_seconds % 60U : 0U ) );
+        }
+        display_draw_text( 8, 38 + (int)row * 20, line, item == a_selected ? YELLOW : TEXT, 1U );
+    }
+    display_draw_text( 8, 144, "TURN: SELECT  CENTER: OPEN", SUBDUED, 1U );
     (void)display_present();
 }

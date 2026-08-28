@@ -50,6 +50,12 @@ static char active_name[ RFSCOUT_RECORDER_NAME_MAX ];
 static uint32_t data_bytes;
 static rfscout_recording_t recordings[ RFSCOUT_RECORDER_MAX_FILES ];
 static size_t recording_count;
+static volatile uint8_t live_level_percent;
+static volatile uint8_t live_peak_percent;
+static volatile int active_pdm_slot = -1;
+static uint64_t pdm_slot_energy[ 2 ];
+static uint32_t pdm_probe_frames;
+static int64_t playback_started_us;
 
 static void write_u16_le( uint8_t *a_target, uint16_t a_value )
 {
@@ -189,7 +195,7 @@ static esp_err_t open_microphone( void )
 #endif
 
 #if SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER
-    pdm_config.slot_cfg.hp_en = false;
+    pdm_config.slot_cfg.hp_en = true;
 #endif
 
     result = i2s_channel_init_pdm_rx_mode( rx_channel, &pdm_config );
@@ -316,10 +322,58 @@ static void record_worker( void *a_argument )
         }
 
         const size_t samples = bytes / sizeof( int16_t );
-        size_t mono_count = 0U;
-        for( size_t index = 0U; ( index + 1U ) < samples; index += 2U )
+        if( active_pdm_slot < 0 )
         {
-            mono[ mono_count++ ] = dma_samples[ index ];
+            for( size_t index = 0U; ( index + 1U ) < samples; index += 2U )
+            {
+                const int32_t right = dma_samples[ index ];
+                const int32_t left = dma_samples[ index + 1U ];
+                pdm_slot_energy[ 0 ] += (uint32_t)( right < 0 ? -right : right );
+                pdm_slot_energy[ 1 ] += (uint32_t)( left < 0 ? -left : left );
+                ++pdm_probe_frames;
+            }
+
+            if( pdm_probe_frames >= ( RFSCOUT_RECORDER_SAMPLE_RATE / 10U ) )
+            {
+                active_pdm_slot = ( pdm_slot_energy[ 1 ] >= pdm_slot_energy[ 0 ] ) ? 1 : 0;
+                ESP_LOGI( TAG,
+                          "PDM slot selected=%s right_energy=%llu left_energy=%llu",
+                          active_pdm_slot ? "LEFT" : "RIGHT",
+                          (unsigned long long)pdm_slot_energy[ 0 ],
+                          (unsigned long long)pdm_slot_energy[ 1 ] );
+            }
+            continue;
+        }
+
+        size_t mono_count = 0U;
+        uint32_t absolute_sum = 0U;
+        uint32_t absolute_peak = 0U;
+        for( size_t index = (size_t)active_pdm_slot; index < samples; index += 2U )
+        {
+            const int16_t sample = dma_samples[ index ];
+            const uint32_t absolute = (uint32_t)( sample < 0 ? -(int32_t)sample : sample );
+            mono[ mono_count++ ] = sample;
+            absolute_sum += absolute;
+            if( absolute > absolute_peak )
+            {
+                absolute_peak = absolute;
+            }
+        }
+
+        if( mono_count > 0U )
+        {
+            const uint32_t average = absolute_sum / mono_count;
+            const uint8_t level = (uint8_t)( ( average * 100U ) / 32767U );
+            const uint8_t peak = (uint8_t)( ( absolute_peak * 100U ) / 32767U );
+            live_level_percent = (uint8_t)( ( live_level_percent * 3U + level ) / 4U );
+            if( peak >= live_peak_percent )
+            {
+                live_peak_percent = peak;
+            }
+            else if( live_peak_percent > 0U )
+            {
+                --live_peak_percent;
+            }
         }
 
         if( ( mono_count > 0U ) &&
@@ -509,6 +563,12 @@ esp_err_t recorder_start_recording( void )
     }
 
     data_bytes = 0U;
+    live_level_percent = 0U;
+    live_peak_percent = 0U;
+    active_pdm_slot = -1;
+    pdm_slot_energy[ 0 ] = 0U;
+    pdm_slot_energy[ 1 ] = 0U;
+    pdm_probe_frames = 0U;
     record_running = true;
     if( pdPASS != xTaskCreate( record_worker,
                                "recorder",
@@ -607,6 +667,7 @@ esp_err_t recorder_start_playback( size_t a_index, uint8_t a_volume_percent )
         return ESP_FAIL;
     }
 
+    playback_started_us = esp_timer_get_time();
     state = RFSCOUT_RECORDER_PLAYING;
     return ESP_OK;
 }
@@ -652,6 +713,39 @@ uint32_t recorder_recorded_bytes( void )
 size_t recorder_file_count( void )
 {
     return recording_count;
+}
+
+uint8_t recorder_level_percent( void )
+{
+    return live_level_percent;
+}
+
+uint8_t recorder_peak_percent( void )
+{
+    return live_peak_percent;
+}
+
+const char *recorder_input_slot_name( void )
+{
+    if( active_pdm_slot < 0 )
+    {
+        return "AUTO";
+    }
+    return ( 0 == active_pdm_slot ) ? "RIGHT" : "LEFT";
+}
+
+void recorder_set_playback_volume( uint8_t a_volume_percent )
+{
+    audio_output_set_playback_volume( a_volume_percent );
+}
+
+uint32_t recorder_playback_elapsed_seconds( void )
+{
+    if( playback_started_us <= 0 || !audio_output_playback_active() )
+    {
+        return 0U;
+    }
+    return (uint32_t)( ( esp_timer_get_time() - playback_started_us ) / 1000000LL );
 }
 
 const rfscout_recording_t *recorder_file( size_t a_index )

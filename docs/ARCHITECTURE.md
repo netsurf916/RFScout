@@ -105,7 +105,7 @@ PDM microphone -> ESP32-S3 I2S0/PDM RX -> DMA buffers -> Recorder worker
                                              I2S1 speaker playback
 ```
 
-`recorder.c/.h` owns microphone capture, WAV creation/finalization, supported-file validation, and the in-memory recording list. Recorder uses 16 kHz, 16-bit mono PCM so captured files can be streamed directly through the existing I2S1 speaker service without a second resampling path.
+`recorder.c/.h` owns microphone capture, WAV creation/finalization, supported-file validation, and the in-memory recording list. Recorder uses 32 kHz, 16-bit mono PCM so captured files can be streamed directly through the existing I2S1 speaker service without a second resampling path.
 
 Storage is a required runtime dependency for Recorder rather than for RFScout as a whole. If the SD card is unavailable, Recorder remains navigable but exposes a `NO SD CARD` state and disables record/play actions. Leaving Recorder stops active capture or playback and finalizes an open WAV header before releasing resources.
 

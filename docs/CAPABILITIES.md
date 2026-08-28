@@ -68,7 +68,7 @@ The Recorder application uses the T-Embed CC1101 Plus internal PDM microphone th
 
 Implemented behavior includes:
 
-- 16 kHz, 16-bit mono PCM WAV recording under `/sdcard/audio/`;
+- 32 kHz, 16-bit mono PCM WAV recording under `/sdcard/audio/`;
 - asynchronous microphone capture outside the UI loop;
 - WAV-header finalization on stop and application exit;
 - automatic `/sdcard/audio/` creation when storage is available;
@@ -120,7 +120,7 @@ The settings and alert inventories are explicit so additions do not silently cre
 | WiFi / BT | Back; Reset detections | Flock/ALPR; Body camera; Drone; Camera; Smart glasses; Acoustic sensor; Other surveillance |
 | CC1101 | Back; Profile; Low; High; Step; Peak hold; Reset counts | Narrowband; Remote/sensor; Carrier; Bursty RF; Wide RF |
 | nRF24 | Back; Low channel; High channel; Dwell; Peak hold; Reset counts | ESB device; Input; Sensor; WiFi-like; Hopping/BLE-like; Logitech-like |
-| Recorder | Back; Record; File; Play; Volume | None currently |
+| Recorder | Back; New recording; recording browser; playback (rotary volume) | None currently |
 | Thermal | No settings menu currently | None currently |
 | Device | Back; Brightness; Clock format; Timezone; Manual date/time; app enablement; SD logging; notification mode; notification volume; every notification character; Save config | Configures every registered notification item but emits none itself |
 
