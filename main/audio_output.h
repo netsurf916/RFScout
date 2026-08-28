@@ -44,7 +44,7 @@ bool audio_output_play_morse( char a_character,
 
 /**
  * @brief Queue playback of one RFScout-format PCM WAV file.
- * @param a_path Absolute filesystem path to a 32 kHz, 16-bit mono PCM WAV file.
+ * @param a_path Absolute filesystem path to a 12.8 kHz diagnostic 16-bit mono PCM WAV file.
  * @param a_volume_percent Linear PCM amplitude percentage from 0 through 100.
  * @return True when the playback request was queued.
  * @note The worker opens and streams the file asynchronously; callers may return immediately.

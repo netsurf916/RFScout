@@ -18,6 +18,7 @@
 
 #define RFSCOUT_RECORDER_DIRECTORY "/sdcard/audio"
 #define RFSCOUT_RECORDER_SAMPLE_RATE 32000U
+#define RFSCOUT_RECORDER_WAV_SAMPLE_RATE 12800U
 #define RFSCOUT_RECORDER_MAX_FILES 48U
 #define RFSCOUT_RECORDER_NAME_MAX 64U
 
@@ -43,7 +44,7 @@ esp_err_t recorder_init( void );
 /** @brief Refresh storage state and the playable recording list. */
 esp_err_t recorder_refresh( void );
 
-/** @brief Start a new 32 kHz, 16-bit mono PCM WAV recording. */
+/** @brief Start a diagnostic 16-bit mono PCM WAV recording from the 32 kHz PDM request. */
 esp_err_t recorder_start_recording( void );
 
 /** @brief Stop capture, finalize the WAV header, and refresh the recording list. */
@@ -66,6 +67,9 @@ const char *recorder_active_name( void );
 
 /** @brief Return bytes of PCM data written by the active recording. */
 uint32_t recorder_recorded_bytes( void );
+
+/** @brief Return wall-clock elapsed seconds for the active recording. */
+uint32_t recorder_recording_elapsed_seconds( void );
 
 /** @brief Return smoothed live microphone level from 0 through 100 while recording. */
 uint8_t recorder_level_percent( void );

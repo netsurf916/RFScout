@@ -102,9 +102,9 @@ static void build_wav_header( uint8_t a_header[ RECORDER_WAV_HEADER_SIZE ], uint
     write_u32_le( &a_header[ 16 ], 16U );
     write_u16_le( &a_header[ 20 ], 1U );
     write_u16_le( &a_header[ 22 ], RECORDER_CHANNELS );
-    write_u32_le( &a_header[ 24 ], RFSCOUT_RECORDER_SAMPLE_RATE );
+    write_u32_le( &a_header[ 24 ], RFSCOUT_RECORDER_WAV_SAMPLE_RATE );
     write_u32_le( &a_header[ 28 ],
-                  RFSCOUT_RECORDER_SAMPLE_RATE * RECORDER_CHANNELS * RECORDER_BITS_PER_SAMPLE /
+                  RFSCOUT_RECORDER_WAV_SAMPLE_RATE * RECORDER_CHANNELS * RECORDER_BITS_PER_SAMPLE /
                       8U );
     write_u16_le( &a_header[ 32 ], RECORDER_CHANNELS * RECORDER_BITS_PER_SAMPLE / 8U );
     write_u16_le( &a_header[ 34 ], RECORDER_BITS_PER_SAMPLE );
@@ -128,7 +128,7 @@ static bool validate_wav( const char *a_path, rfscout_recording_t *a_recording )
         0 != memcmp( &header[ 8 ], "WAVE", 4U ) || 0 != memcmp( &header[ 12 ], "fmt ", 4U ) ||
         0 != memcmp( &header[ 36 ], "data", 4U ) || 1U != read_u16_le( &header[ 20 ] ) ||
         RECORDER_CHANNELS != read_u16_le( &header[ 22 ] ) ||
-        RFSCOUT_RECORDER_SAMPLE_RATE != read_u32_le( &header[ 24 ] ) ||
+        RFSCOUT_RECORDER_WAV_SAMPLE_RATE != read_u32_le( &header[ 24 ] ) ||
         RECORDER_BITS_PER_SAMPLE != read_u16_le( &header[ 34 ] ) )
     {
         return false;
@@ -138,8 +138,9 @@ static bool validate_wav( const char *a_path, rfscout_recording_t *a_recording )
     if( NULL != a_recording )
     {
         a_recording->data_bytes = bytes;
-        a_recording->duration_seconds = bytes / ( RFSCOUT_RECORDER_SAMPLE_RATE * RECORDER_CHANNELS *
-                                                  RECORDER_BITS_PER_SAMPLE / 8U );
+        a_recording->duration_seconds =
+            bytes / ( RFSCOUT_RECORDER_WAV_SAMPLE_RATE * RECORDER_CHANNELS *
+                      RECORDER_BITS_PER_SAMPLE / 8U );
     }
     return true;
 }
@@ -790,6 +791,17 @@ const char *recorder_active_name( void )
 uint32_t recorder_recorded_bytes( void )
 {
     return data_bytes;
+}
+
+uint32_t recorder_recording_elapsed_seconds( void )
+{
+    if( RFSCOUT_RECORDER_RECORDING != state || recording_started_us <= 0 )
+    {
+        return 0U;
+    }
+
+    const int64_t elapsed_us = esp_timer_get_time() - recording_started_us;
+    return elapsed_us > 0 ? (uint32_t)( elapsed_us / 1000000LL ) : 0U;
 }
 
 size_t recorder_file_count( void )

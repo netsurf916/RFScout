@@ -63,7 +63,7 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
     if( RFSCOUT_RECORDER_RECORDING == state )
     {
         display_draw_text( 8, 38, "● REC", RED, 2U );
-        const uint32_t seconds = recorder_recorded_bytes() / ( RFSCOUT_RECORDER_SAMPLE_RATE * 2U );
+        const uint32_t seconds = recorder_recording_elapsed_seconds();
         snprintf( line,
                   sizeof( line ),
                   "%02lu:%02lu  %s",
@@ -92,7 +92,7 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
         display_draw_text( 8, 42, "READY", YELLOW, 2U );
         snprintf( line, sizeof( line ), "%u RECORDINGS", (unsigned)recorder_file_count() );
         display_draw_text( 8, 78, line, TEXT, 1U );
-        display_draw_text( 8, 105, "32 kHz / 16-bit mono WAV", DIM, 1U );
+        display_draw_text( 8, 105, "12.8 kHz diagnostic WAV", DIM, 1U );
         display_draw_text( 8, 144, "CENTER: OPEN", SUBDUED, 1U );
     }
     (void)display_present();
@@ -111,7 +111,7 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
     {
         char line[ 80 ];
         display_draw_text( 8, 38, "● REC", RED, 2U );
-        const uint32_t seconds = recorder_recorded_bytes() / ( RFSCOUT_RECORDER_SAMPLE_RATE * 2U );
+        const uint32_t seconds = recorder_recording_elapsed_seconds();
         snprintf( line,
                   sizeof( line ),
                   "%02lu:%02lu  INPUT %s",
