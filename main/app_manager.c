@@ -1100,13 +1100,19 @@ void app_manager_poll( void )
         {
             audio_input( pressed, long_pressed, delta );
             const rfscout_recorder_state_t recorder_now = recorder_state();
-            if( RFSCOUT_RECORDER_SAVING == audio_last_state &&
-                RFSCOUT_RECORDER_IDLE == recorder_now )
+            if( recorder_now != audio_last_state )
             {
-                audio_item =
-                    recorder_file_count() > 0U ? AUDIO_BROWSER_FILE_BASE : AUDIO_BROWSER_NEW;
+                if( RFSCOUT_RECORDER_SAVING == audio_last_state &&
+                    RFSCOUT_RECORDER_IDLE == recorder_now )
+                {
+                    audio_item =
+                        recorder_file_count() > 0U ? AUDIO_BROWSER_FILE_BASE : AUDIO_BROWSER_NEW;
+                }
+                audio_last_state = recorder_now;
+                last_app_refresh_us = now;
+                show_audio_menu();
+                return;
             }
-            audio_last_state = recorder_now;
             if( now - last_app_refresh_us >= AUDIO_REFRESH_INTERVAL_US )
             {
                 last_app_refresh_us = now;

@@ -13,6 +13,8 @@
 #include "recorder.h"
 #include "status_bar.h"
 
+#include "esp_timer.h"
+
 #include <stdio.h>
 
 #define BG 0x0000U
@@ -30,6 +32,13 @@ static void draw_status_chrome( void )
 {
     status_bar_draw();
     battery_indicator_draw();
+}
+
+static char saving_spinner( void )
+{
+    static const char frames[] = "|/-\\";
+    const uint64_t step = (uint64_t)( esp_timer_get_time() / 150000LL );
+    return frames[ step % ( sizeof( frames ) - 1U ) ];
 }
 
 void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
@@ -59,7 +68,9 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
     }
     else if( RFSCOUT_RECORDER_SAVING == state )
     {
-        display_draw_text( 8, 42, "SAVING...", YELLOW, 2U );
+        char saving_line[ 24 ];
+        snprintf( saving_line, sizeof( saving_line ), "SAVING... %c", saving_spinner() );
+        display_draw_text( 8, 42, saving_line, YELLOW, 2U );
         display_draw_text( 8, 77, recorder_active_name(), TEXT, 1U );
         display_draw_text( 8, 104, "TRIM + NORMALIZE", DIM, 1U );
         display_draw_text( 8, 144, "PLEASE WAIT", SUBDUED, 1U );
@@ -133,7 +144,9 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
 
     if( RFSCOUT_RECORDER_SAVING == state )
     {
-        display_draw_text( 8, 42, "SAVING...", YELLOW, 2U );
+        char saving_line[ 24 ];
+        snprintf( saving_line, sizeof( saving_line ), "SAVING... %c", saving_spinner() );
+        display_draw_text( 8, 42, saving_line, YELLOW, 2U );
         display_draw_text( 8, 77, recorder_active_name(), TEXT, 1U );
         display_draw_text( 8, 104, "TRIM + NORMALIZE", DIM, 1U );
         display_draw_text( 8, 130, "INPUT LOCKED", SUBDUED, 1U );
