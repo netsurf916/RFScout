@@ -40,6 +40,8 @@ typedef struct
     bool clock_24h;
     rfscout_alert_mode_t alert_mode;
     uint8_t alert_volume_percent;
+    uint8_t recorder_volume_percent;
+    uint8_t recorder_input_gain_db;
     char notification_characters[ RFSCOUT_NOTIFICATION_TYPE_COUNT ];
     char timezone_selected[ RFSCOUT_TIMEZONE_NAME_MAX ];
     device_timezone_t timezones[ RFSCOUT_TIMEZONE_MAX ];
@@ -72,6 +74,12 @@ esp_err_t device_config_set_alert_mode( rfscout_alert_mode_t a_mode );
 
 /** @brief Change the global notification volume percentage from 0 through 100. */
 esp_err_t device_config_set_alert_volume( uint8_t a_percent );
+
+/** @brief Change Recorder playback volume percentage from 0 through 100. */
+esp_err_t device_config_set_recorder_volume( uint8_t a_percent );
+
+/** @brief Change Recorder fixed digital input gain (0..24 dB, 3 dB steps). */
+esp_err_t device_config_set_recorder_input_gain( uint8_t a_gain_db );
 
 /** @brief Return the configured Morse character for one notification category. */
 char device_config_notification_character( rfscout_notification_type_t a_type );

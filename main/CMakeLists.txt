@@ -11,6 +11,8 @@ idf_component_register(
         "radio_app_view.c"
         "audio_spectrum.c"
         "audio_view.c"
+        "recorder.c"
+        "recorder_view.c"
         "wifi_settings_view.c"
         "cc1101.c"
         "cc1101_activity.c"
@@ -40,5 +42,5 @@ idf_component_register(
         "log_writer.c"
     INCLUDE_DIRS "."
     PRIV_REQUIRES bt cjson esp_driver_ledc
-    REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_timer driver esp_driver_i2c esp_driver_i2s esp_lcd fatfs sdmmc
+    REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_timer driver esp_driver_i2c esp_driver_i2s esp_driver_pcnt esp_lcd fatfs sdmmc
 )

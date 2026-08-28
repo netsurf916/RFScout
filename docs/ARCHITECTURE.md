@@ -3,7 +3,7 @@
 RFScout is organized around a small **application manager** plus capability-specific radio/sensor modules. The current top-level application order is:
 
 ```text
-WiFi / BT -> CC1101 -> nRF24 -> Audio -> Thermal (when enabled and present) -> Device
+WiFi / BT -> CC1101 -> nRF24 -> Recorder -> Thermal (when enabled and present) -> Device
 ```
 
 The rotary encoder changes applications unless an application menu is open. The center button enters/leaves application settings. All settings/action menus open with **Back** selected first. Device is a pass-through landing screen: merely arriving at Device does not take encoder ownership, and a center press is required to enter global settings. Optional applications are capability-driven: Thermal is skipped when the MLX90640 is unavailable or disabled.
@@ -15,11 +15,11 @@ A core design rule is that inactive applications should not continue doing expen
 - Leaving **WiFi / BT** stops the Wi-Fi monitor and BLE scanner.
 - Leaving **CC1101** stops its scanner and clears runtime RSSI/peak/classification state.
 - Leaving **nRF24** stops its scanner and clears runtime histogram/peak/classification state.
-- Leaving **Audio** stops the I2S/PDM acquisition path and audio FFT worker.
+- Leaving **Recorder** stops active microphone capture or WAV playback and releases Recorder-owned resources.
 - Thermal acquisition is performed only while the Thermal application is active.
 - Device owns the encoder only after its settings view is deliberately entered; Back returns to the pass-through Device landing screen.
 
-Application-specific analyzer configuration such as CC1101 frequency range/step, nRF24 channel/dwell settings, and Audio range/channel selection remains runtime state independently of the acquisition workers unless explicitly stored in Device configuration. Audible-notification mode, volume, and per-detection Morse characters are device-wide configuration and are persisted in `/sdcard/rfscout.json` when configuration is saved.
+Application-specific analyzer configuration such as CC1101 frequency range/step and nRF24 channel/dwell settings remains runtime state independently of the acquisition workers unless explicitly stored in Device configuration. Audible-notification mode, volume, and per-detection Morse characters are device-wide configuration. Recorder playback volume is a separate application preference. Both are persisted in `/sdcard/rfscout.json`.
 
 ## Wi-Fi / BLE data path
 
@@ -90,31 +90,26 @@ Validated Enhanced ShockBurst metadata is classified conservatively using addres
 
 Category names with question marks (`Logitech?`, `Input?`, `Sensor?`) communicate that these are inferred identities/types unless the evidence is sufficiently specific. The UI may combine broad Wi-Fi-like and BLE/hopping-RF-like spectrum detections into `Other 2.4 RF`, while notification state retains the underlying category so each can have an independent Morse mapping.
 
-## Audio data path
+## Recorder data path
 
 ```text
-PDM microphone -> ESP32-S3 I2S0/PDM RX -> DMA buffers
-                                         |
-                                         v
-                                 channel selection
-                                         |
-                              filtered decimation
-                              (Voice / Mid only)
-                                         |
-                                         v
-                                  512-point FFT
-                                         |
-                            dBFS normalization / auto scale
-                                         |
-                                         v
-                               latest spectrum frame -> Audio UI
+PDM microphone -> ESP32-S3 I2S0/PDM RX -> DMA buffers -> Recorder worker
+                                                        |
+                                                        v
+                                               PCM WAV on /sdcard/audio/
+                                                        |
+                                                        v
+                                             validated recording list
+                                                        |
+                                                        v
+                                             I2S1 speaker playback
 ```
 
-`audio_spectrum.c/.h` owns microphone acquisition and DSP state. DMA reads and FFT work run independently of LCD rendering. The UI consumes the most recent completed frame; when a newer frame replaces an unpublished one, the overrun counter records that freshness was preferred over queueing stale visual data.
+`recorder.c/.h` owns microphone capture, WAV creation/finalization, supported-file validation, and the in-memory recording list. Recorder uses 32 kHz, 16-bit mono PCM so captured files can be streamed directly through the existing I2S1 speaker service without a second resampling path.
 
-The DSP currently uses focused Voice, Mid, High, Audible, and Ultrasonic ranges. The audio analyzer is still under hardware validation and does not yet expose a discrete detection classifier. The global notification interface is application-independent so future Audio detections can use it without creating an Audio-specific alert policy.
+Storage is a required runtime dependency for Recorder rather than for RFScout as a whole. If the SD card is unavailable, Recorder remains navigable but exposes a `NO SD CARD` state and disables record/play actions. Leaving Recorder stops active capture or playback and finalizes an open WAV header before releasing resources.
 
-The planned recorder will reuse this microphone ownership rather than creating a second I2S0 reader. Recording and spectrum analysis should share captured PCM through an explicit fan-out boundary.
+The historical `audio_spectrum.c/.h` interface is temporarily retained as a compatibility adapter for the existing application-manager enum and navigation contract; it no longer performs FFT, windowing, decimation, or spectrum analysis.
 
 ## Speaker and Morse output
 
@@ -180,7 +175,7 @@ The LCD, microSD, CC1101, and nRF24 share board SPI resources. `board_spi.c/.h` 
 
 ### I2S / PDM
 
-`audio_spectrum.c/.h` owns ESP32-S3 I2S0 PDM receive for the internal microphone. Acquisition uses DMA and a dedicated FFT worker. The receive channel is released when Audio is inactive so the analyzer does not consume CPU and peripheral resources off-screen.
+`recorder.c/.h` owns ESP32-S3 I2S0 PDM receive for the internal microphone while recording. Capture uses DMA and a dedicated Recorder worker, and the receive channel is released whenever Recorder is not actively recording.
 
 `audio_output.c/.h` independently owns I2S1 standard transmit for the onboard speaker. Short alert sounds therefore do not reconfigure or borrow the microphone's I2S0 channel.
 
@@ -214,6 +209,6 @@ Hand-maintained modules follow the conventions in [CODING_STYLE.md](CODING_STYLE
 
 ## Current versus future capabilities
 
-Implemented application-level capabilities are Wi-Fi/BLE awareness, device-wide configurable asynchronous detection notifications with persistent volume and per-category Morse mappings, CC1101 spectrum/detection awareness, nRF24 activity/fingerprinting, PDM microphone spectrum analysis, optional MLX90640 thermal imaging, SD logging, battery/status telemetry, Device configuration/time management, and encoder-driven navigation.
+Implemented application-level capabilities are Wi-Fi/BLE awareness, device-wide configurable asynchronous detection notifications with persistent volume and per-category Morse mappings, CC1101 spectrum/detection awareness, nRF24 activity/fingerprinting, SD-backed PCM WAV recording/playback, optional MLX90640 thermal imaging, SD logging, battery/status telemetry, Device configuration/time management, and encoder-driven navigation.
 
-Audio recording and the interactive International Morse player are planned next. NFC, IR, GPS UI, and active/replay functions are not part of the current active application set and should not be presented as implemented functionality until they are actually enabled.
+The separate interactive CW/Morse sender is planned next. NFC, IR, GPS UI, and active/replay functions are not part of the current active application set and should not be presented as implemented functionality until they are actually enabled.

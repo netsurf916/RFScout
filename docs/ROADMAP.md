@@ -42,6 +42,7 @@ Future RTC/GPS/NTP integrations are tracked separately below. In particular, det
 - Keep the category enumeration and compiled default characters centralized in the alert layer.
 - Persist notification mode and every per-category character in `/sdcard/rfscout.json`; a valid saved configuration overrides compiled defaults on boot.
 - Add persistent global notification volume from `0-100%`, with a compiled fallback of **50%** and restoration from saved configuration when present.
+- Apply a shared perceptual volume curve to tones, Morse, Recorder playback, and future speaker uses so low percentages provide genuinely quiet output while `0%` remains mute and `100%` remains full scale.
 - Capture volume in each queued speaker command so already-queued sounds retain the level that was active when requested.
 - Maintain a canonical 1:1 notification descriptor registry containing application ownership, stable JSON key, display label, and default character for every alert item.
 - Make Device and SD persistence iterate the canonical registry rather than maintaining duplicate category/key lists.
@@ -113,17 +114,24 @@ Remaining hardware validation includes physical speaker channel, perceived loudn
 - Consider a lightweight record/schema version so future format changes can be handled explicitly rather than silently breaking analysis tools.
 - Keep UTC ISO-8601 timestamps and other already-structured fields directly consumable by external scripts.
 
-## 8. Audio application expansion
+## 8. Recorder application replacement
 
-**Status:** Planned
+**Status:** In progress — PR #27
 
-- Preserve the useful spectrum analyzer while expanding Audio into multiple tools.
-- Add microphone recording using the existing I2S0/PDM capture path rather than introducing a competing microphone reader.
-- Write standard PCM WAV recordings to SD through a buffered/asynchronous path suitable for continuous audio data.
-- Add an interactive International Morse browser/player using the shared Morse definitions and speaker service established by PR #21.
-- Make the Morse tool able to browse and play the standard character patterns while notification events remain one character each.
-- Validate the microphone/PDM/FFT path on hardware as part of the expansion.
-- After the recorder and Morse player are stable, consider tuner and DTMF-analysis features.
+- Replace the former Audio spectrum analyzer rather than preserving the FFT/DSP path.
+- Reuse the existing I2S0/PDM microphone hardware for recording only.
+- Calibrate the PDM receive path against measured GPIO clock and delivered PCM rate rather than trusting nominal divider assumptions; derive runtime-safe settings that produce a consistent recording format across supported hardware/IDF behavior.
+- Record standard 32 kHz, 16-bit mono PCM WAV files under `/sdcard/audio/`.
+- Treat SD availability as a first-class application state; recording and playback are unavailable without mounted storage.
+- Create `/sdcard/audio/` automatically when storage is available.
+- Enumerate only supported, correctly formatted PCM WAV files and expose duration/size metadata.
+- Play selected recordings asynchronously over the onboard I2S1 speaker.
+- Analyze only the retained recording window, then combine 300 ms head / 600 ms tail trimming, DC removal, and bounded normalization into one rewrite pass; expose post-processing as an explicit nonblocking `SAVING` state that locks Recorder input until the file is finalized and the browser refreshes.
+- Add a `MONITOR` browser action with a live microphone FFT spectrum; center exits and encoder rotation adjusts persistent fixed digital input gain in 3 dB steps from 0 through +24 dB.
+- Keep capture, save-time post-processing, and playback off the UI loop; rate-limit Recorder rendering and avoid low-value live waveform/level graphics that consume display/UI cycles.
+- Validate microphone capture, storage-loss behavior, speaker playback, and perceived volume on target hardware.
+
+A separate **CW** application is planned after Recorder. CW will own editable/persistent Morse strings and send complete strings through the shared Morse/speaker service.
 
 ## 9. External time-authority integrations
 
@@ -182,3 +190,62 @@ Remaining hardware validation includes physical speaker channel, perceived loudn
 - IR analyzer/transmit tools, with transmit behavior kept explicit and separate from passive monitoring.
 - GPS user interface and location features, distinct from GPS time-authority support.
 - Additional optional hardware applications that follow the existing lifecycle, shared-resource, settings, status-UI, and notification conventions.
+
+## Brainstorming
+
+**Status:** Ideas to preserve for later evaluation — not committed scope or priority
+
+### ESP32-S3 and platform capabilities
+
+- **USB OTG / USB Serial-JTAG:** explore capture/log export, a maintenance CLI, firmware/update workflows, and possibly explicit USB storage or HID modes where useful.
+- **Low-power operation / ULP strategy:** investigate light/deep sleep, timer/GPIO wake sources, and background-monitoring architectures that improve field battery life without making radio/application lifecycle behavior unpredictable.
+- **Hardware RNG:** use ESP32 entropy sources for session identifiers, randomized/private-address generation, cryptographic nonces, and other places where pseudorandom application state is inappropriate.
+- **Persistent configuration/NVS:** consider which calibration, identity, recovery, or boot-critical values should live in NVS rather than depending entirely on SD-backed configuration.
+- **Watchdog and crash diagnostics:** expose reset reason and useful persistent crash/recovery breadcrumbs so field failures can be distinguished from ordinary power cycles.
+- **Internal temperature sensor:** expose SoC temperature as a diagnostic measurement while clearly distinguishing it from ambient temperature.
+- **ADC:** inventory available analog inputs and possible battery/power or optional sensor measurements.
+- **RMT:** investigate hardware-timed pulse measurement/generation for IR and pulse-based RF/OOK/ASK analysis, waveform characterization, pulse-width histograms, and protocol discovery without depending on FreeRTOS timing.
+- **PCNT:** generalize pulse/frequency measurement beyond the Recorder PDM-clock diagnostic where hardware validation benefits from directly measuring the signal being configured.
+- **GPTimer:** provide accurate interval/timestamp facilities for RF burst timing and protocol analysis independent of task scheduling jitter.
+- **LEDC:** consider PWM/tone/backlight uses where it provides a cleaner hardware implementation than software timing.
+- **Hardware crypto acceleration:** evaluate ESP32 AES/SHA and related facilities for authenticated/encrypted logs, exports, device identity, and future secure communications.
+- **Secure Boot and flash encryption:** evaluate as RFScout matures into a field instrument, including implications for development, recovery, and user-owned firmware.
+- **JTAG/debug facilities:** preserve a documented development/debug path for low-level hardware and timing validation.
+
+### Hardware diagnostics and self-measurement
+
+- Add a dedicated **Diagnostics** page/application that reports the actual state of major subsystems rather than only whether initialization returned success.
+- Potential diagnostics include ESP32/board identity, flash/PSRAM capacity, heap, SD capacity/state, battery state, reset reason, uptime, WiFi/BLE state, CC1101 state, GPS state/fix quality, microphone PDM clock, delivered PCM rate, speaker state, and other measurable peripherals.
+- Preserve useful runtime calibration results as diagnostics instead of discarding them after initialization. Recorder PDM clock/rate measurement is the first concrete example.
+- Consider a shared hardware measurement/service layer around PCNT, GPTimer, RMT, ADC, and related peripherals so applications can request trustworthy measurements without duplicating low-level ownership/timing logic.
+- Favor **desired physical outcome -> configure -> measure -> correct/validate** where ESP-IDF configuration values or clock trees may not directly correspond to the resulting hardware signal.
+- Consider explicit self-test workflows for storage, audio, radios, GPS, buttons/encoder, display, and other peripherals where a safe test can provide useful field confidence.
+
+### Complete board-peripheral inventory
+
+- Audit the target-board schematic and board support code systematically so every onboard peripheral, controllable power rail, GPIO, bus device, interrupt, and exposed expansion interface is either used, intentionally reserved, or documented as unavailable/conflicting.
+- Record GPIO/peripheral ownership and multiplexing constraints centrally to prevent future applications from accidentally competing for the same ESP32 resource.
+- Repeat the inventory for materially different RFScout-supported board variants rather than assuming all T-Embed-family hardware is equivalent.
+
+### Location and time service
+
+- Evolve GPS support into a shared **Location & Time** service rather than treating GPS only as a standalone UI application.
+- Use GNSS UTC as an explicit external time authority under the existing authority model.
+- Attach location and fix-quality metadata to RF observations and structured captures where enabled.
+- Expose satellites/fix/accuracy information and consider track logging during surveys.
+- Explore timestamp discipline/correction so logs, recordings, and RF captures can share a defensible timebase.
+- Keep privacy/user-control implications explicit for persistent location logging.
+
+### Deeper ESP32 WiFi/BLE surveying
+
+- Explore WiFi channel utilization/activity, management-frame statistics, RSSI history, channel hopping, information-element/vendor analysis, and PHY metadata exposed by the ESP32-S3 without pretending the device is a general-purpose SDR.
+- Explore BLE advertisement types, manufacturer/service-data decoding, address-rotation behavior, PHY information, and extended advertisements where exposed by the ESP-IDF stack.
+- Investigate correlation of changing BLE private addresses using non-identity observations, with conservative confidence reporting and clear separation between observed facts and heuristic linkage.
+- Feed useful deeper-radio observations into the same structured logging/capture architecture rather than creating app-specific opaque formats.
+
+### Future interaction and presentation ideas
+
+- Make the Device/Settings landing screen useful as a functional RFScout home/splash view while retaining encoder pass-through until the user explicitly enters configuration.
+- Add an RFScout logo and useful read-only status to that landing screen without turning it into another menu layer.
+- Consider global semantic display themes such as **Day**, **Night**, **Indoor**, and **Outdoor**, with centralized colors for background, primary/secondary text, selection, warning, critical, success, and graph/data elements.
+- Keep themes system-wide and persistent; prioritize contrast/readability and allow a specialized dim red-heavy night mode without per-application color hacks.

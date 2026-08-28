@@ -12,6 +12,7 @@
 #include "device_config.h"
 #include "device_time.h"
 #include "log_writer.h"
+#include "recorder.h"
 #include "storage.h"
 
 #include "driver/gpio.h"
@@ -23,6 +24,7 @@
 #define POWER_COUNTDOWN_START_US 500000LL
 #define POWER_SHUTDOWN_HOLD_US 3000000LL
 #define POWER_LOG_FLUSH_TIMEOUT_MS 3000U
+#define POWER_RECORDER_STOP_TIMEOUT_MS 5000U
 
 static const char *TAG = "power";
 static bool raw_pressed;
@@ -37,6 +39,12 @@ static bool prepare_storage_for_power_state( bool a_checkpoint_time )
     if( !storage_is_available() )
     {
         return true;
+    }
+
+    if( !recorder_prepare_storage_shutdown( POWER_RECORDER_STOP_TIMEOUT_MS ) )
+    {
+        ESP_LOGW( TAG, "storage remains mounted because Recorder did not stop" );
+        return false;
     }
 
     if( !log_writer_shutdown( POWER_LOG_FLUSH_TIMEOUT_MS ) )
