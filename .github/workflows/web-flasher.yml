@@ -45,15 +45,29 @@ jobs:
             > releases.json
 
           jq -r '.[].tagName' releases.json | while IFS= read -r tag; do
+            assets=$(gh release view "$tag" --json assets --jq '.assets[].name')
+            manifest_present=false
+            full_image_present=false
+            while IFS= read -r asset; do
+              if [[ "$asset" == "manifest.web.json" ]]; then
+                manifest_present=true
+              fi
+              if [[ "$asset" == rfscout-*-full.bin ]]; then
+                full_image_present=true
+              fi
+            done <<< "$assets"
+
+            if [[ "$manifest_present" != "true" || "$full_image_present" != "true" ]]; then
+              echo "Skipping $tag because it does not contain web-flasher assets"
+              continue
+            fi
+
             destination="site/firmware/releases/$tag"
             mkdir -p "$destination"
-            if ! gh release download "$tag" \
+            gh release download "$tag" \
               --pattern 'manifest.web.json' \
               --pattern 'rfscout-*-full.bin' \
-              --dir "$destination"; then
-              echo "Skipping $tag because it does not contain web-flasher assets" >&2
-              rm -rf "$destination"
-            fi
+              --dir "$destination"
           done
 
       - name: Download candidate firmware from triggering build
@@ -63,11 +77,23 @@ jobs:
           RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           mkdir -p candidate
-          if ! gh run download "$RUN_ID" \
-            --pattern 'rfscout-candidate-*' \
-            --dir candidate; then
+          artifact_count=$(gh api \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" \
+            --jq '[.artifacts[] | select(.name | startswith("rfscout-candidate-"))] | length')
+
+          if [[ "$artifact_count" -eq 0 ]]; then
             echo "No candidate firmware artifact is available for this run."
+            exit 0
           fi
+
+          if [[ "$artifact_count" -ne 1 ]]; then
+            echo "Expected one candidate firmware artifact, found $artifact_count" >&2
+            exit 1
+          fi
+
+          gh run download "$RUN_ID" \
+            --pattern 'rfscout-candidate-*' \
+            --dir candidate
 
       - name: Build firmware catalog
         env:
