@@ -12,16 +12,16 @@ RFScout is intentionally passive wherever the underlying radio APIs allow it. It
 
 ## Current applications
 
-RFScout currently starts in **WiFi / BT** unless that application is disabled. Rotating the encoder switches applications in this order, skipping applications disabled in Device and optional hardware that is unavailable:
+RFScout starts on **Home** by default. Device Settings can select another preferred startup application; if that target is disabled or unavailable at boot, RFScout falls back to Home for that boot. Rotating the encoder switches applications in this order, skipping applications disabled in Device and optional hardware that is unavailable:
 
 1. **WiFi / BT**
 2. **CC1101**
 3. **nRF24**
 4. **Recorder**
 5. **Thermal** — shown only when enabled and an MLX90640 is detected
-6. **Device** — global settings, wall-clock control, application enablement, notifications, and persistent configuration
+6. **Home / Device Settings** — branded pass-through landing screen plus global settings and persistent configuration
 
-The center button opens an application's settings/action surface where one exists. Settings menus use **Back** as the first entry. Device is a pass-through landing screen: rotating onto Device does not trap the encoder in settings; center must be pressed deliberately to enter configuration.
+The center button opens an application's settings/action surface where one exists. Settings menus use **Back** as the first entry. Home is a pass-through landing screen: rotating onto Home does not trap the encoder in settings; center must be pressed deliberately to enter Device Settings.
 
 ### WiFi / BT
 
@@ -63,11 +63,15 @@ The current I2S request is 48 kHz, but the effective PCM rate is measured at run
 
 Thermal becomes available when an **MLX90640** is detected on the external I2C/Qwiic connection and the application is enabled. The renderer interpolates the sensor's native 32x24 frame for the LCD. Thermal currently presents sensor data rather than a discrete detection classifier.
 
-### Device
+### Home / Device Settings
 
-Device has a pass-through landing screen and a center-entered settings editor. Current settings include display brightness, 12/24-hour clock presentation, timezone selection, manual date/time, application enablement, SD logging, global notification mode and volume, one Morse character for each notification category, Recorder playback volume/input gain through Recorder persistence, and explicit configuration save.
+Home is the non-disableable Device application's branded pass-through landing screen. The RFScout mark is drawn procedurally on the LCD rather than stored as a second large bitmap. Center enters Device Settings; rotating without entering settings continues normal application navigation.
 
-RFScout always has compiled defaults and remains usable without an SD card. When storage is mounted, persistent preferences live in `/sdcard/rfscout.json`. Device itself cannot be disabled.
+Current Device Settings include display brightness, 12/24-hour clock presentation, timezone selection, preferred startup application, manual date/time, application enablement, SD logging, global notification mode and volume, one Morse character for each notification category, Recorder playback volume/input gain through Recorder persistence, and explicit configuration save.
+
+The startup preference can select Home, WiFi/BT, CC1101, nRF24, Recorder, or Thermal. Home is the compiled default. A disabled or unavailable configured startup target falls back to Home for the current boot without erasing the saved preference; Thermal additionally requires a detected MLX90640.
+
+RFScout always has compiled defaults and remains usable without an SD card. When storage is mounted, persistent preferences including `apps.startup` live in `/sdcard/rfscout.json`. Home/Device itself cannot be disabled.
 
 ## Shared UI and status
 
@@ -126,7 +130,7 @@ Production documentation describes behavior that exists on current `main`. Forwa
 
 - [Capabilities](docs/CAPABILITIES.md) — implemented user-visible capabilities and limitations
 - [Architecture](docs/ARCHITECTURE.md) — current module ownership and resource boundaries
-- [Device configuration and wall clock](docs/CONFIGURATION.md) — current persistent configuration and time behavior
+- [Device configuration and wall clock](docs/CONFIGURATION.md) — current persistent configuration, startup behavior, and time behavior
 - [SD card behavior](docs/SD_CARD.md) — storage, Recorder, and logging behavior
 - [Getting started](docs/GETTING_STARTED.md) — local development/build/flash workflow
 - [Firmware releases](docs/RELEASING.md) — candidate, release, and browser-flasher workflow
