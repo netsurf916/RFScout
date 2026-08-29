@@ -226,7 +226,7 @@ void app_main( void )
         battery_poll();
         observation_store_housekeeping();
         app_manager_poll();
-        (void)display_present_poll();
+        (void)display_present();
         app_logging_poll();
         vTaskDelay( pdMS_TO_TICKS( 10 ) );
     }
