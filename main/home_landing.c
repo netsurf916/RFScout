@@ -18,7 +18,7 @@
 #define HOME_COLOR_ORANGE 0xFC00U
 #define HOME_COLOR_WHITE 0xFFFFU
 #define HOME_COLOR_DIM 0x7BEFU
-#define HOME_LOGO_X ( RFSCOUT_DISPLAY_WIDTH - HOME_LOGO_WIDTH - 4 )
+#define HOME_LOGO_X ( ( RFSCOUT_DISPLAY_WIDTH - HOME_LOGO_WIDTH ) / 2 )
 #define HOME_LOGO_Y 27
 #define HOME_CONTROL_ICON_X 12
 #define HOME_CONTROL_TEXT_X 48
@@ -53,12 +53,11 @@ static void draw_center_button_icon( int a_x, int a_y )
     display_fill_rect( a_x + 11, a_y + 9, 8, 8, HOME_COLOR_WHITE );
 }
 
-/** @brief Draw the two Home-screen control affordances in the left rail. */
+/** @brief Draw the two Home-screen control affordances over the left side of the main area. */
 static void draw_home_controls( void )
 {
     draw_rotate_icon( HOME_CONTROL_ICON_X, HOME_CONTROL_APPS_Y - 7 );
-    display_draw_text(
-        HOME_CONTROL_TEXT_X, HOME_CONTROL_APPS_Y, "APPS", HOME_COLOR_WHITE, 1U );
+    display_draw_text( HOME_CONTROL_TEXT_X, HOME_CONTROL_APPS_Y, "APPS", HOME_COLOR_WHITE, 1U );
 
     draw_center_button_icon( HOME_CONTROL_ICON_X, HOME_CONTROL_SETTINGS_Y - 7 );
     display_draw_text(
@@ -93,7 +92,7 @@ void device_view_landing( void )
 {
     display_clear( HOME_COLOR_BACKGROUND );
     ui_chrome_draw( "HOME", HOME_COLOR_DIM );
-    draw_home_controls();
     draw_home_bitmap();
+    draw_home_controls();
     (void)display_present();
 }
