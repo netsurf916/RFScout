@@ -10,14 +10,11 @@
 #include "display.h"
 #include "home_logo_bitmap.h"
 #include "ui_chrome.h"
+#include "ui_theme.h"
 
 #include <stddef.h>
 #include <stdint.h>
 
-#define HOME_COLOR_BACKGROUND 0x0000U
-#define HOME_COLOR_ORANGE 0xFC00U
-#define HOME_COLOR_WHITE 0xFFFFU
-#define HOME_COLOR_DIM 0x7BEFU
 #define HOME_LOGO_X ( ( RFSCOUT_DISPLAY_WIDTH - HOME_LOGO_WIDTH ) / 2 )
 #define HOME_LOGO_Y 27
 #define HOME_CONTROL_ICON_X 12
@@ -37,41 +34,46 @@ static void draw_outline_rect( int a_x, int a_y, int a_width, int a_height, uint
 /** @brief Draw a compact rotary-encoder glyph for application navigation. */
 static void draw_rotate_icon( int a_x, int a_y )
 {
-    draw_outline_rect( a_x + 8, a_y + 6, 14, 14, HOME_COLOR_ORANGE );
-    display_fill_rect( a_x + 14, a_y + 8, 2, 5, HOME_COLOR_WHITE );
+    const ui_theme_palette_t *theme = ui_theme_get();
+    draw_outline_rect( a_x + 8, a_y + 6, 14, 14, theme->logo_primary );
+    display_fill_rect( a_x + 14, a_y + 8, 2, 5, theme->logo_secondary );
 
-    display_fill_rect( a_x, a_y + 12, 6, 2, HOME_COLOR_ORANGE );
-    display_fill_rect( a_x, a_y + 10, 2, 6, HOME_COLOR_ORANGE );
-    display_fill_rect( a_x + 24, a_y + 12, 6, 2, HOME_COLOR_ORANGE );
-    display_fill_rect( a_x + 28, a_y + 10, 2, 6, HOME_COLOR_ORANGE );
+    display_fill_rect( a_x, a_y + 12, 6, 2, theme->logo_primary );
+    display_fill_rect( a_x, a_y + 10, 2, 6, theme->logo_primary );
+    display_fill_rect( a_x + 24, a_y + 12, 6, 2, theme->logo_primary );
+    display_fill_rect( a_x + 28, a_y + 10, 2, 6, theme->logo_primary );
 }
 
 /** @brief Draw a compact center-button glyph for entering Device Settings. */
 static void draw_center_button_icon( int a_x, int a_y )
 {
-    draw_outline_rect( a_x + 6, a_y + 4, 18, 18, HOME_COLOR_ORANGE );
-    display_fill_rect( a_x + 11, a_y + 9, 8, 8, HOME_COLOR_WHITE );
+    const ui_theme_palette_t *theme = ui_theme_get();
+    draw_outline_rect( a_x + 6, a_y + 4, 18, 18, theme->logo_primary );
+    display_fill_rect( a_x + 11, a_y + 9, 8, 8, theme->logo_secondary );
 }
 
 /** @brief Draw the two Home-screen control affordances over the left side of the main area. */
 static void draw_home_controls( void )
 {
+    const ui_theme_palette_t *theme = ui_theme_get();
     draw_rotate_icon( HOME_CONTROL_ICON_X, HOME_CONTROL_APPS_Y - 7 );
-    display_draw_text( HOME_CONTROL_TEXT_X, HOME_CONTROL_APPS_Y, "APPS", HOME_COLOR_WHITE, 1U );
+    display_draw_text(
+        HOME_CONTROL_TEXT_X, HOME_CONTROL_APPS_Y, "APPS", theme->logo_secondary, 1U );
 
     draw_center_button_icon( HOME_CONTROL_ICON_X, HOME_CONTROL_SETTINGS_Y - 7 );
     display_draw_text(
-        HOME_CONTROL_TEXT_X, HOME_CONTROL_SETTINGS_Y, "SETTINGS", HOME_COLOR_WHITE, 1U );
+        HOME_CONTROL_TEXT_X, HOME_CONTROL_SETTINGS_Y, "SETTINGS", theme->logo_secondary, 1U );
 }
 
 /** @brief Expand and draw the packed 2-bit brand bitmap one scanline at a time. */
 static void draw_home_bitmap( void )
 {
-    static const uint16_t palette[] = {
-        HOME_COLOR_BACKGROUND,
-        HOME_COLOR_ORANGE,
-        HOME_COLOR_WHITE,
-        HOME_COLOR_BACKGROUND,
+    const ui_theme_palette_t *theme = ui_theme_get();
+    const uint16_t palette[] = {
+        theme->background,
+        theme->logo_primary,
+        theme->logo_secondary,
+        theme->background,
     };
     uint16_t row[ HOME_LOGO_WIDTH ];
 
@@ -90,8 +92,9 @@ static void draw_home_bitmap( void )
 
 void device_view_landing( void )
 {
-    display_clear( HOME_COLOR_BACKGROUND );
-    ui_chrome_draw( "HOME", HOME_COLOR_DIM );
+    const ui_theme_palette_t *theme = ui_theme_get();
+    display_clear( theme->background );
+    ui_chrome_draw( "HOME", theme->secondary );
     draw_home_bitmap();
     draw_home_controls();
     (void)display_present();
