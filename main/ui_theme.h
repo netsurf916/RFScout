@@ -10,6 +10,8 @@
 #ifndef _RFSCOUT_UI_THEME_H_
 #define _RFSCOUT_UI_THEME_H_
 
+#include "esp_err.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -39,19 +41,28 @@ typedef struct
     uint16_t logo_secondary;
 } ui_theme_palette_t;
 
+/** @brief Load the persisted theme preference, defaulting to Indoor. */
+esp_err_t ui_theme_init( void );
+
+/** @brief Persist and activate one display theme immediately. */
+esp_err_t ui_theme_set( rfscout_theme_id_t a_theme );
+
+/** @brief Return the active theme identifier. */
+rfscout_theme_id_t ui_theme_current( void );
+
 /** @brief Return the palette for one theme, falling back to Indoor for invalid IDs. */
 const ui_theme_palette_t *ui_theme_palette( rfscout_theme_id_t a_theme );
 
-/** @brief Return the palette selected by Device configuration. */
+/** @brief Return the active semantic palette. */
 const ui_theme_palette_t *ui_theme_get( void );
 
-/** @brief Return the stable configuration token for one theme. */
+/** @brief Return the stable persisted token for one theme. */
 const char *ui_theme_config_name( rfscout_theme_id_t a_theme );
 
 /** @brief Return the compact user-facing name for one theme. */
 const char *ui_theme_display_name( rfscout_theme_id_t a_theme );
 
-/** @brief Parse a stable configuration token, case-insensitively. */
+/** @brief Parse a stable theme token, case-insensitively. */
 bool ui_theme_from_config_name( const char *a_name, rfscout_theme_id_t *a_theme );
 
 #endif // _RFSCOUT_UI_THEME_H_
