@@ -1,27 +1,71 @@
 # Device configuration and wall clock
 
-This document describes configuration implemented on the PR branch. Planned configuration concepts belong in [ROADMAP.md](ROADMAP.md).
+This document describes configuration implemented on current `main`. Planned configuration concepts belong in [ROADMAP.md](ROADMAP.md).
 
-RFScout always starts from compiled defaults. When an SD card is mounted, ordinary persistent preferences are loaded from `/sdcard/rfscout.json`. The selected display theme is intentionally persisted in ESP32 NVS instead so the viewing mode survives boots even when no SD card is installed.
+RFScout always starts from compiled defaults. When an SD card is mounted, persistent user preferences are loaded from `/sdcard/rfscout.json`. The current canonical schema version is **2**.
 
 ## Configuration model
 
-Schema version 1 is currently supported. A representative SD-backed configuration is:
+A representative schema-v2 configuration is:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "display": {
     "brightness": 70,
-    "clock_24h": false
+    "clock_24h": false,
+    "theme": "indoor"
   },
   "apps": {
-    "wifi_bt": true,
-    "cc1101": true,
-    "nrf24": true,
-    "audio": true,
-    "thermal": true,
-    "device": true,
+    "wifi_bt": {
+      "enabled": true,
+      "notifications": {
+        "enabled": true,
+        "events": {
+          "wifi_device": true,
+          "ble_device": true
+        },
+        "characters": {
+          "flock": "F",
+          "body_camera": "B",
+          "drone": "D",
+          "camera": "C",
+          "smart_glasses": "G",
+          "acoustic_sensor": "A",
+          "surveillance_other": "S"
+        }
+      }
+    },
+    "cc1101": {
+      "enabled": true,
+      "notifications": {
+        "enabled": true,
+        "characters": {
+          "cc1101_narrow_ism": "N",
+          "cc1101_remote_sensor": "R",
+          "cc1101_carrier": "K",
+          "cc1101_bursty": "U",
+          "cc1101_wideband": "W"
+        }
+      }
+    },
+    "nrf24": {
+      "enabled": true,
+      "notifications": {
+        "enabled": true,
+        "characters": {
+          "nrf24_esb": "E",
+          "nrf24_input": "I",
+          "nrf24_sensor": "T",
+          "nrf24_wifi_like": "V",
+          "nrf24_ble_like": "L",
+          "nrf24_logitech_like": "X"
+        }
+      }
+    },
+    "audio": { "enabled": true },
+    "thermal": { "enabled": true },
+    "device": { "enabled": true },
     "startup": "home"
   },
   "logging": {
@@ -29,27 +73,7 @@ Schema version 1 is currently supported. A representative SD-backed configuratio
   },
   "notifications": {
     "mode": "MORSE",
-    "volume": 50,
-    "characters": {
-      "flock": "F",
-      "body_camera": "B",
-      "drone": "D",
-      "camera": "C",
-      "smart_glasses": "G",
-      "acoustic_sensor": "A",
-      "surveillance_other": "S",
-      "cc1101_narrow_ism": "N",
-      "cc1101_remote_sensor": "R",
-      "cc1101_carrier": "K",
-      "cc1101_bursty": "U",
-      "cc1101_wideband": "W",
-      "nrf24_esb": "E",
-      "nrf24_input": "I",
-      "nrf24_sensor": "T",
-      "nrf24_wifi_like": "V",
-      "nrf24_ble_like": "L",
-      "nrf24_logitech_like": "X"
-    }
+    "volume": 50
   },
   "recorder": {
     "volume": 50,
@@ -69,52 +93,76 @@ Schema version 1 is currently supported. A representative SD-backed configuratio
         "posix": "UTC0"
       }
     ]
-  },
-  "time": {
-    "epoch": 1787756400,
-    "source": "manual"
   }
 }
 ```
 
-The historical configuration key remains `apps.audio` because the application enum/ABI still uses `RFSCOUT_APP_AUDIO`; the user-facing application is Recorder. `apps.startup` writes user-facing aliases where useful: `home` for Device and `recorder` for Audio. The loader also accepts the historical internal names `device` and `audio`.
+The historical configuration key remains `apps.audio` because the application enum still uses `RFSCOUT_APP_AUDIO`; the user-facing application is Recorder. `apps.startup` writes user-facing aliases where useful: `home` for Device and `recorder` for Audio. The loader also accepts the historical internal names `device` and `audio`.
 
-### Display theme persistence
+The exact `time` object is emitted only when RFScout has valid saved wall-clock state to preserve.
 
-The display theme is stored in NVS namespace `rfscout_ui` under key `theme`, independently of `/sdcard/rfscout.json`. Device Settings applies a theme immediately and commits it at selection time, so an SD-card failure does not silently revert an outdoor/night viewing choice on the next boot.
+## Canonical loading and migration
+
+Configuration loading deliberately follows a defaults-plus-overlay model:
+
+1. populate all current compiled defaults;
+2. parse the existing JSON file;
+3. accept supported schema versions from 1 through the current version;
+4. overlay only recognized, type-correct, valid fields;
+5. translate recognized legacy schema-v1 fields into current runtime state;
+6. ignore unknown or obsolete fields;
+7. when saving, build a new canonical schema-v2 document from runtime state rather than copying the source JSON tree.
+
+The result is intentionally migration-friendly. Fields introduced by newer firmware automatically retain current defaults when absent from an older file and appear on the next save. Unknown or retired fields are ignored during load and disappear when the canonical file is rewritten.
+
+A configuration claiming a schema version newer than the running firmware is rejected rather than being destructively downgraded. Invalid complete documents are retained as `rfscout.json.bad`, defaults are restored, and boot continues. Atomic replacement uses `.tmp` and `.bak` files for recovery.
+
+Schema v1 is still accepted. Its boolean application entries and global `notifications.characters` mappings are translated into the current app-owned representation when loaded. The next save writes only schema v2.
+
+## Display themes
+
+Theme selection is part of canonical `/sdcard/rfscout.json` state under `display.theme`.
 
 Current themes are:
 
 - **Indoor** — normal high-contrast RFScout orange/white presentation;
-- **Outdoor** — maximum daylight contrast, with secondary/chrome information intentionally kept bright rather than subdued;
-- **Night** — red/orange-oriented UI colors that reduce bright blue/green output while retaining warning/error distinction.
+- **Outdoor** — maximum daylight contrast;
+- **Night** — red/orange-oriented UI colors that reduce bright blue/green output;
+- **Discipline** — the same visual palette as Night plus suppression of incidental interaction and notification audio.
 
-The theme setting changes semantic UI roles globally, including Home branding. It does not recolor literal sensor imagery such as Thermal heat-map pixels.
+Discipline does not disable explicitly requested application content audio such as Recorder playback. Theme sound policy is environmental policy layered on top of app-native behavior and user notification preferences; it does not overwrite those preferences.
+
+## Notification configuration
+
+RFScout separates global presentation from app-owned notification choices.
+
+Global `notifications` contains:
+
+- `mode`: `OFF`, `TONE`, or `MORSE`;
+- `volume`: `0` through `100`.
+
+Application notification settings live under the owning app. Detecting apps have an `enabled` master gate plus their own Morse-character mappings. WiFi / BT additionally contains `notifications.events.wifi_device` and `notifications.events.ble_device`, which independently control the lightweight beep for ordinary newly observed Wi-Fi and BLE devices.
+
+Those two discovery-event switches default to `true` when absent, preserving historical behavior for older configuration files. Turning the WiFi / BT notification master gate off suppresses both general discovery feedback and app-specific surveillance notifications without destroying the individual settings.
+
+Recorder content audio is separate from notification policy. Recorder playback volume is a distinct `0` through `100` preference and microphone input gain is a fixed digital gain from 0 through +24 dB in 3 dB steps.
 
 ## Defaults and validation
 
-Missing or invalid ordinary fields retain compiled defaults. Home/Device is always enabled even if configuration attempts to disable it. The compiled display theme is Indoor; invalid or absent NVS theme state also falls back to Indoor.
+Missing or invalid recognized fields retain compiled defaults. Home/Device is always enabled even if configuration attempts to disable it. The compiled theme is Indoor and the compiled startup target is Home.
 
-The compiled startup target is Home. Valid startup values are Home, WiFi/BT, CC1101, nRF24, Recorder, and Thermal. At boot, a disabled or unavailable configured target falls back to Home for that boot without rewriting the saved preference. Thermal additionally requires a detected MLX90640.
+A disabled or unavailable configured startup target falls back to Home for the current boot without rewriting the saved preference. Thermal additionally requires a detected MLX90640.
 
-The compiled notification mode is `OFF`; valid saved `OFF`, `TONE`, or `MORSE` values override it. Notification volume accepts `0` through `100` and defaults to 50 when no usable saved value exists. Speaker output applies a nonlinear perceptual curve rather than linear PCM scaling.
-
-Recorder playback volume is a separate `0` through `100` preference and does not alter notification loudness. Recorder microphone input gain is stored as a fixed digital gain from 0 through +24 dB in 3 dB steps.
-
-Each notification category has one compiled Morse-character default. Valid one-character saved values override defaults individually.
-
-`apps.startup` is a backward-compatible addition within schema version 1. Existing files that omit it receive the compiled Home default without requiring a schema migration.
-
-If the complete JSON document cannot be parsed or the schema version is unsupported, RFScout retains the bad file as `rfscout.json.bad`, regenerates defaults, and continues booting. Configuration replacement uses `.tmp` and `.bak` files so an interrupted save can recover.
+The compiled global notification mode is `OFF`. Notification volume defaults to 50. Each application notification category has a compiled Morse-character default; valid one-character saved values override defaults individually.
 
 ## Home and Device Settings
 
-Home is the pass-through landing state of the non-disableable Device application. RFScout starts there by default. Merely rotating onto Home does not take ownership of the encoder. Center enters Device Settings; Back returns to Home.
+Home is the pass-through landing state of the non-disableable Device application. Center enters Device Settings; Back returns to Home.
 
 Current Device Settings include:
 
 - LCD brightness;
-- display theme (Indoor, Outdoor, Night);
+- display theme (Indoor, Outdoor, Night, Discipline);
 - 12/24-hour clock format;
 - timezone selection;
 - preferred startup application;
@@ -123,50 +171,41 @@ Current Device Settings include:
 - SD logging enablement;
 - global notification mode;
 - global notification volume;
-- one editable Morse character for every notification category;
 - explicit SD-backed configuration save.
 
-Recorder playback volume and microphone input gain are persisted in the SD-backed configuration but are adjusted from Recorder itself. The display theme is persisted immediately in NVS and does not depend on the explicit Save config action.
+Per-app notification enablement and Morse mappings are edited from the corresponding application settings rather than from the global Device menu. WiFi / BT also exposes ordinary Wi-Fi-device and BLE-device discovery feedback switches there.
 
-Without an SD card, SD-backed settings can affect the running session but cannot be persisted. The display theme remains persistent because it uses NVS.
+Setters mark canonical configuration dirty. RFScout flushes dirty configuration before deep sleep so a setting changed immediately before sleep is not silently lost.
+
+Without an SD card, settings can affect the running session but canonical persistence is unavailable.
 
 ## Application settings inventory
 
-| Application | Current settings/actions | Notification items |
+| Application | Current settings/actions | Notification controls |
 | --- | --- | --- |
-| WiFi / BT | Back; Reset detections | Flock/ALPR; Body camera; Drone; Camera; Smart glasses; Acoustic sensor; Other surveillance |
-| CC1101 | Back; Profile; Low; High; Step; Peak hold; Reset counts | Narrowband; Remote/sensor; Carrier; Bursty RF; Wide RF |
-| nRF24 | Back; Low channel; High channel; Dwell; Peak hold; Reset counts | ESB device; Input; Sensor; WiFi-like; Hopping/BLE-like; Logitech-like |
-| Recorder | Back; New recording; Monitor; recording browser; playback volume; delete recording; monitor input gain | None currently |
-| Thermal | No application settings menu | None currently |
-| Home / Device Settings | Home pass-through; Back; brightness; theme; clock format; timezone; startup app; manual date/time; app enablement; SD logging; notification mode/volume; notification characters; Save config | Configures all registered notification items |
+| WiFi / BT | Back; Notifications; Reset detections | master gate; WiFi device beep; BLE device beep; Flock/ALPR; Body camera; Drone; Camera; Smart glasses; Acoustic sensor; Other surveillance |
+| CC1101 | Back; Profile; Low; High; Step; Peak hold; Notifications; Reset counts | master gate plus Narrowband; Remote/sensor; Carrier; Bursty RF; Wide RF Morse mappings |
+| nRF24 | Back; Low channel; High channel; Dwell; Peak hold; Notifications; Reset counts | master gate plus ESB device; Input; Sensor; WiFi-like; Hopping/BLE-like; Logitech-like Morse mappings |
+| Recorder | Back; New recording; Monitor; recording browser; playback volume; delete recording; monitor input gain | none currently; native app policy suppresses incidental feedback while preserving content audio |
+| Thermal | No application settings menu | none currently |
+| Home / Device Settings | global device settings and Save config | global mode and volume only |
 
-## Notification registry
+## Semantic event and sound-policy relationship
 
-The notification enum and descriptor table in `alert.c` are intentionally 1:1. Each descriptor owns the application, stable JSON key, user-facing label, and compiled default character. Device and configuration persistence iterate that registry.
+Application/input code emits semantic events only after RFScout has accepted an action or state change. `feedback` resolves those events through the source application's native audio profile and active theme sound policy before asking `audio_output` to play disposable UI feedback.
 
-Current stable keys are:
+App-specific detection notifications use the notification subsystem rather than hard-coding tones in detection code. Global mode/volume is applied after the app's notification gate and category mapping. This keeps event meaning, user policy, theme policy, and audio execution separate.
 
-| Application | Alert item | JSON key | Default Morse |
-| --- | --- | --- | --- |
-| WiFi / BT | Flock / ALPR | `flock` | `F` |
-| WiFi / BT | Body camera | `body_camera` | `B` |
-| WiFi / BT | Drone | `drone` | `D` |
-| WiFi / BT | Camera | `camera` | `C` |
-| WiFi / BT | Smart glasses | `smart_glasses` | `G` |
-| WiFi / BT | Acoustic sensor | `acoustic_sensor` | `A` |
-| WiFi / BT | Other surveillance | `surveillance_other` | `S` |
-| CC1101 | Narrowband | `cc1101_narrow_ism` | `N` |
-| CC1101 | Remote/sensor | `cc1101_remote_sensor` | `R` |
-| CC1101 | Carrier | `cc1101_carrier` | `K` |
-| CC1101 | Bursty RF | `cc1101_bursty` | `U` |
-| CC1101 | Wide RF | `cc1101_wideband` | `W` |
-| nRF24 | ESB device | `nrf24_esb` | `E` |
-| nRF24 | Input | `nrf24_input` | `I` |
-| nRF24 | Sensor | `nrf24_sensor` | `T` |
-| nRF24 | WiFi-like | `nrf24_wifi_like` | `V` |
-| nRF24 | Hopping/BLE-like | `nrf24_ble_like` | `L` |
-| nRF24 | Logitech-like | `nrf24_logitech_like` | `X` |
+## Deep-sleep session persistence
+
+Deep sleep loses normal RAM, so RFScout keeps a deliberately small RTC-retained session record separate from canonical user configuration. It currently retains:
+
+- active application;
+- user-input lock state.
+
+The retained record is guarded by magic/version/checksum validation and is used only on a valid sleep wake. If the retained application is disabled or unavailable, normal fallback behavior applies.
+
+Transient UI transactions are intentionally not restored: open menus, selected rows, edit mode, queued sounds, and active Recorder capture/playback are discarded. Broader application-session persistence is a future framework concern rather than part of schema-v2 user configuration.
 
 ## Wall clock and timezones
 
@@ -175,5 +214,3 @@ The ESP32 system wall clock is authoritative for the shared clock display, SD lo
 Timezone choices are stored as data: stable `name`, user-facing `label`, and POSIX `TZ` rule. Manual calendar input is validated after local-time conversion so invalid/nonexistent local times are rejected.
 
 On orderly hard power-off, RFScout can save the current epoch and authority source as a cold-boot continuity aid. Because complete board power removal stops the ESP32 clock, restored saved time is not treated as proof of ongoing synchronization. Deep sleep is handled separately because the RTC domain continues running.
-
-Current implemented authority is manual/saved runtime state. Additional time-authority integrations are roadmap items rather than current configuration behavior.
