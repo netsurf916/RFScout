@@ -58,13 +58,17 @@ The source tree temporarily retains the historical `audio_spectrum` application 
 
 ## Thermal
 
-Thermal is available when an MLX90640 is detected on the external I2C/Qwiic interface and the application is enabled. The sensor's native 32x24 frame is interpolated for the LCD. Thermal currently has no discrete detection classifier.
+Thermal is available when an MLX90640 is detected on the external I2C/Qwiic interface and the application is enabled. The sensor's native 32x24 frame is interpolated for the LCD. Thermal currently has no discrete detection classifier. Its labels and chrome follow the active display theme while the thermal image itself retains its literal sensor palette.
 
 ## Home / Device Settings
 
-Home is a branded pass-through landing screen backed by the non-disableable Device application. The RFScout mark is drawn procedurally on the LCD rather than embedded as a second large bitmap. Rotation continues top-level navigation; center enters Device Settings.
+Home is a branded pass-through landing screen backed by the non-disableable Device application. The RFScout mark is generated from the canonical `assets/logo.png` artwork as a compact indexed LCD bitmap. Runtime theme colors supply its brand and secondary colors, so the Home mark participates in the same palette as application UI while preserving the canonical logo geometry. Rotation continues top-level navigation; center enters Device Settings.
 
-Implemented Device Settings include display brightness, 12/24-hour clock presentation, timezone selection, preferred startup application, manual date/time, per-application enablement, SD logging, global notification mode, global notification volume, one Morse character per notification category, and explicit configuration save.
+Implemented Device Settings include display brightness, selectable display theme, 12/24-hour clock presentation, timezone selection, preferred startup application, manual date/time, per-application enablement, SD logging, global notification mode, global notification volume, one Morse character per notification category, and explicit configuration save.
+
+The display theme choices are **Indoor**, **Outdoor**, and **Night**. Indoor uses the high-contrast orange/white RFScout identity. Outdoor deliberately avoids subdued secondary colors and prioritizes daylight visibility. Night shifts most UI emphasis into red/orange hues. Theme changes are immediate and affect Home branding, common chrome/status elements, menus, labels, alerts, and application visuals that use shared UI colors.
+
+Theme selection is persisted in ESP32 NVS independently of the SD card, so a selected Outdoor or Night mode survives reboot without storage. Literal data imagery such as the Thermal heat map is excluded from theme translation.
 
 The startup preference is persisted as `apps.startup` in `/sdcard/rfscout.json`. RFScout writes `home`, `wifi_bt`, `cc1101`, `nrf24`, `recorder`, or `thermal`; historical internal aliases `device` and `audio` remain accepted when loading. Home is the compiled default.
 
@@ -72,7 +76,11 @@ Runtime defaults remain usable without an SD card. Recorder playback volume and 
 
 ## Shared UI/status behavior
 
-Application views use shared top chrome for title placement, local time/status icons, and battery indication. The shared chrome constrains long titles so they do not collide with the right-side status region. App content below the header remains application-owned; no footer area is globally reserved.
+Application views use shared top chrome for title placement, local time/status icons, battery indication, and semantic color orchestration. The theme framework defines roles for background, text, secondary information, dividers, accent/selection, informational/success/warning/error state, graph colors, and Home-logo colors.
+
+Existing views that still use RFScout's historical RGB565 UI constants are translated centrally through the active semantic palette. This makes all current applications participate in theme changes while allowing individual views to migrate to explicit semantic roles over time. Raw framebuffer paths remain available for true image/sensor data.
+
+The shared chrome constrains long titles so they do not collide with the right-side status region. App content below the header remains application-owned; no footer area is globally reserved.
 
 Implemented status information includes local wall time, mounted SD state, sticky filesystem/logging error state, battery state of charge, and charging/power telemetry when available.
 
@@ -84,7 +92,7 @@ Speaker output runs asynchronously on I2S1. The volume curve is perceptual/nonli
 
 ## Storage and logging
 
-RFScout can operate without an SD card. When mounted, storage provides configuration persistence, Recorder files, and asynchronous logs. Logging uses `rfscout-00.log` through `rfscout-99.log`, up to 4 MiB per segment, with an approximate normal maximum of 400 MiB and a free-space reserve policy.
+RFScout can operate without an SD card. When mounted, storage provides ordinary configuration persistence, Recorder files, and asynchronous logs. Logging uses `rfscout-00.log` through `rfscout-99.log`, up to 4 MiB per segment, with an approximate normal maximum of 400 MiB and a free-space reserve policy. Display-theme persistence uses NVS and does not require SD storage.
 
 With valid wall time, records use UTC ISO-8601 timestamps. Before time is established, records use an explicit `UP+<milliseconds>` monotonic marker.
 
@@ -110,4 +118,4 @@ See [RELEASING.md](RELEASING.md).
 
 ## Not currently implemented
 
-NFC/PN532 tools, IR tools, GPS UI/location, a standalone CW sender, shared Audio Input service, external RTC integration, active RF transmission/replay, and other future concepts are not current applications. Their status and planning live in [ROADMAP.md](ROADMAP.md).
+Automatic ambient-light theme selection is not implemented; Indoor/Outdoor/Night are selected manually in Device Settings. NFC/PN532 tools, IR tools, GPS UI/location, a standalone CW sender, shared Audio Input service, external RTC integration, active RF transmission/replay, and other future concepts are also not current applications. Their status and planning live in [ROADMAP.md](ROADMAP.md).
