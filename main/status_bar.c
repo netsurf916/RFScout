@@ -13,6 +13,7 @@
 #include "mlx90640.h"
 #include "platform.h"
 #include "storage.h"
+#include "ui_theme.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -27,11 +28,6 @@
 #define STATUS_BAR_ICON_GAP 2
 #define STATUS_BAR_CLOCK_GAP 2
 
-#define STATUS_BAR_COLOR_NORMAL 0x03F0U
-#define STATUS_BAR_COLOR_ATTENTION 0xFFE1U
-#define STATUS_BAR_COLOR_ERROR 0xF800U
-#define STATUS_BAR_COLOR_BACKGROUND 0x0000U
-
 static bool have_last_state;
 static rfscout_status_bar_state_t last_state;
 
@@ -39,22 +35,23 @@ static rfscout_status_bar_state_t last_state;
 static void draw_lock_icon( int a_x )
 {
     const int y = STATUS_BAR_ICON_Y;
-    const uint16_t color = STATUS_BAR_COLOR_ATTENTION;
+    const ui_theme_palette_t *theme = ui_theme_get();
 
     /* Rounded shackle. */
-    display_fill_rect( a_x + 3, y + 1, 6, 1, color );
-    display_fill_rect( a_x + 2, y + 2, 1, 4, color );
-    display_fill_rect( a_x + 9, y + 2, 1, 4, color );
+    display_fill_rect( a_x + 3, y + 1, 6, 1, theme->alert );
+    display_fill_rect( a_x + 2, y + 2, 1, 4, theme->alert );
+    display_fill_rect( a_x + 9, y + 2, 1, 4, theme->alert );
 
     /* Solid lock body with a tiny keyway cutout. */
-    display_fill_rect( a_x + 1, y + 6, 10, 7, color );
-    display_fill_rect( a_x + 5, y + 8, 2, 3, STATUS_BAR_COLOR_BACKGROUND );
+    display_fill_rect( a_x + 1, y + 6, 10, 7, theme->alert );
+    display_fill_rect( a_x + 5, y + 8, 2, 3, theme->background );
 }
 
 /** @brief Draw a compact SD-card glyph using the supplied subdued/error color. */
 static void draw_sd_icon( int a_x, uint16_t a_color, bool a_error )
 {
     const int y = STATUS_BAR_ICON_Y;
+    const ui_theme_palette_t *theme = ui_theme_get();
 
     display_fill_rect( a_x, y + 2, 1, 11, a_color );
     display_fill_rect( a_x + 1, y + 1, 8, 1, a_color );
@@ -67,7 +64,7 @@ static void draw_sd_icon( int a_x, uint16_t a_color, bool a_error )
 
     if( a_error )
     {
-        display_fill_rect( a_x + 3, y + 8, 6, 3, STATUS_BAR_COLOR_BACKGROUND );
+        display_fill_rect( a_x + 3, y + 8, 6, 3, theme->background );
         display_fill_rect( a_x + 5, y + 8, 2, 2, a_color );
         display_fill_rect( a_x + 5, y + 11, 2, 1, a_color );
     }
@@ -77,12 +74,12 @@ static void draw_sd_icon( int a_x, uint16_t a_color, bool a_error )
 static void draw_thermal_icon( int a_x )
 {
     const int y = STATUS_BAR_ICON_Y;
-    const uint16_t color = STATUS_BAR_COLOR_NORMAL;
+    const ui_theme_palette_t *theme = ui_theme_get();
 
-    display_fill_rect( a_x + 1, y + 3, 11, 8, color );
-    display_fill_rect( a_x + 3, y + 1, 5, 2, color );
-    display_fill_rect( a_x + 3, y + 5, 7, 4, STATUS_BAR_COLOR_BACKGROUND );
-    display_fill_rect( a_x + 5, y + 5, 3, 4, color );
+    display_fill_rect( a_x + 1, y + 3, 11, 8, theme->info );
+    display_fill_rect( a_x + 3, y + 1, 5, 2, theme->info );
+    display_fill_rect( a_x + 3, y + 5, 7, 4, theme->background );
+    display_fill_rect( a_x + 5, y + 5, 3, 4, theme->info );
 }
 
 /** @brief Return whether two status snapshots would render identically. */
@@ -119,11 +116,12 @@ void status_bar_draw_state( const rfscout_status_bar_state_t *a_state )
         return;
     }
 
+    const ui_theme_palette_t *theme = ui_theme_get();
     display_fill_rect( STATUS_BAR_LEFT_X,
                        0,
                        STATUS_BAR_RIGHT_X - STATUS_BAR_LEFT_X,
                        STATUS_BAR_HEIGHT,
-                       STATUS_BAR_COLOR_BACKGROUND );
+                       theme->background );
 
     int x = STATUS_BAR_RIGHT_X;
 
@@ -137,8 +135,7 @@ void status_bar_draw_state( const rfscout_status_bar_state_t *a_state )
     if( a_state->sd_available )
     {
         x -= STATUS_BAR_ICON_WIDTH;
-        const uint16_t color =
-            a_state->storage_error ? STATUS_BAR_COLOR_ERROR : STATUS_BAR_COLOR_NORMAL;
+        const uint16_t color = a_state->storage_error ? theme->error : theme->info;
         draw_sd_icon( x, color, a_state->storage_error );
         x -= STATUS_BAR_ICON_GAP;
     }
@@ -154,7 +151,7 @@ void status_bar_draw_state( const rfscout_status_bar_state_t *a_state )
     if( clock_width > 0 )
     {
         x -= STATUS_BAR_CLOCK_GAP + clock_width;
-        display_draw_text( x, STATUS_BAR_ICON_Y + 3, a_state->clock, STATUS_BAR_COLOR_NORMAL, 1U );
+        display_draw_text( x, STATUS_BAR_ICON_Y + 3, a_state->clock, theme->info, 1U );
     }
 
     last_state = *a_state;
