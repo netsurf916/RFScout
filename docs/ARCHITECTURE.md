@@ -1,6 +1,14 @@
 # Architecture
 
-This document describes the architecture implemented on this PR branch. Forward-looking architecture and feature planning belong in [ROADMAP.md](ROADMAP.md).
+This document describes architecture implemented on current `main`. Forward-looking architecture and feature planning belong in [ROADMAP.md](ROADMAP.md).
+
+## Board and platform boundary
+
+RFScout is structured as one source tree producing board-specific firmware images. The current supported target is **LILYGO T-Embed CC1101 Plus**. `RFSCOUT_BOARD` selects the board target, whose physical definitions live under `main/boards/<target>/`.
+
+Application code should depend on services, semantic input, and capabilities rather than board model names. `platform_input_get()` is the board-neutral input contract; the current T-Embed implementation maps its rotary encoder and buttons into navigation/select/back/long-select events.
+
+See [BOARD_PORTING.md](BOARD_PORTING.md) for the board contract and future porting model.
 
 ## Application manager and lifecycle
 
@@ -12,19 +20,55 @@ WiFi / BT -> CC1101 -> nRF24 -> Recorder -> Thermal (when enabled and present) -
 
 RFScout defaults to Home at startup. `device_config` persists a preferred startup application through `apps.startup`; `app_manager` validates that preference against application enablement and runtime hardware availability. A disabled or unavailable target falls back to Home for the current boot without rewriting the saved preference.
 
-Encoder rotation changes applications when the active view is not consuming it for a menu or edit operation. Home is the pass-through state of the non-disableable Device application; center deliberately enters Device Settings.
-
-Lifecycle rules are intentionally explicit:
+Lifecycle rules are explicit:
 
 - leaving WiFi / BT stops Wi-Fi and BLE collectors;
 - leaving CC1101 stops scanning and clears runtime spectrum/classification state;
 - leaving nRF24 stops scanning and clears runtime activity/classification state;
 - leaving Recorder stops capture, monitor, or playback activity;
 - Thermal acquisition runs only while Thermal is active;
-- Home owns no radio/sensor worker merely by being active;
-- Device Settings owns the encoder only after it is deliberately entered.
+- Home owns no radio/sensor worker merely by being active.
 
-Startup selection preserves the established initialization ordering. WiFi/BT keeps its top-level boot initialization path; other selected startup applications enter through their normal application lifecycle after shared UI and optional-hardware initialization.
+## Semantic event boundary
+
+RFScout distinguishes physical input from accepted application meaning.
+
+```text
+board input
+    -> platform_input_get()
+    -> application/menu interpretation
+    -> accepted state/action
+    -> rfscout_event_emit()
+    -> feedback / other observers
+```
+
+`event.c/.h` implements a small synchronous fixed-observer dispatcher. Events include navigation, activation, enter/back, enable/disable, input lock/unlock, theme change, detection, notification, warning, and error. Event handlers must remain short and nonblocking.
+
+The important semantic rule is that success-style feedback is emitted after an action has actually been accepted. Raw encoder movement or button contact does not itself imply a sound. The two-second input-lock gesture follows the same rule: lock/unlock feedback occurs only when the platform commits the new state.
+
+## Feedback, notification, and content-audio separation
+
+RFScout treats three sound classes differently:
+
+1. **interaction/general feedback** from semantic events;
+2. **application-owned detection notifications**;
+3. **intentional application content audio**, currently Recorder playback/monitor behavior.
+
+`feedback.c/.h` subscribes to semantic events. It combines the source application's native `app_audio_policy` with the active theme sound policy and submits disposable feedback to `audio_output` when appropriate.
+
+`app_audio_policy.c/.h` describes native application traits: whether interaction/general-event feedback makes sense, whether notifications are supported and enabled by default, and whether the app owns content audio. Recorder is intentionally quiet for incidental feedback while retaining content audio.
+
+Detection categories are owned by `notification.c/.h`. Detecting apps have their own notification enable gate and Morse mappings in canonical configuration. Global notification presentation remains Off/Tone/Morse plus volume. WiFi / BT additionally controls ordinary Wi-Fi and BLE discovery cues independently.
+
+`audio_output.c/.h` owns asynchronous speaker execution and class arbitration. UI feedback is disposable rather than backlog-producing. Notification cancellation and UI feedback do not treat intentional Recorder playback as an ordinary alert.
+
+## Theme policy
+
+`ui_theme.c/.h` owns semantic visual palettes and environmental sound policy. Current themes are Indoor, Outdoor, Night, and Discipline.
+
+Discipline deliberately reuses the Night visual palette and disables incidental interaction and notification audio, making it both a light- and noise-discipline mode. Explicit application content audio remains available.
+
+Themes are persisted in canonical `/sdcard/rfscout.json` configuration under `display.theme`; they are no longer a separate NVS preference.
 
 ## Wi-Fi / BLE path
 
@@ -36,10 +80,9 @@ BLE monitor -----/              |                        |
                          rolling device store       retained detections
                                 |                        |
                                 +-----------> WiFi / BT UI
-                                                         |
-                                                         v
-                                                global notification
 ```
+
+Ordinary newly observed Wi-Fi/BLE devices can emit a lightweight `DETECTED` semantic event when the WiFi / BT master notification gate and source-specific event switch allow it. Surveillance classifications instead use their application-specific notification category and do not also emit the ordinary discovery cue.
 
 Prefix identity keeps authoritative IEEE vendor attribution separate from curated surveillance significance. Private/random addresses are not assigned misleading IEEE vendors. The surveillance classifier can combine prefix metadata with BLE/protocol evidence.
 
@@ -50,7 +93,7 @@ CC1101 worker -> completed RSSI sweep -> live spectrum
                                       -> optional peak hold
                                       -> conservative classifier
                                       -> detection counts
-                                      -> global notification on count advance
+                                      -> app-owned notification on count advance
 ```
 
 Sweep configuration is bounded to 128 samples. Detection categories describe RF behavior rather than decoded product identity.
@@ -62,7 +105,7 @@ nRF24 RPD sweeps -> activity history -> optional peak hold
 validated ESB observations -> classifier/address ledger -> detection counts
                                                    |
                                                    v
-                                           global notification
+                                         app-owned notification
 ```
 
 The address ledger is separate from the small active classifier cache so classifier eviction does not cause repeated identity counts.
@@ -80,79 +123,57 @@ internal PDM mic -> ESP32-S3 I2S0/PDM -> Recorder worker
                                               +-> I2S1 speaker playback
 ```
 
-`recorder.c/.h` currently owns microphone configuration and capture directly. The nominal I2S/PDM request is 48 kHz; Recorder measures the physical PDM clock and delivered PCM rate at runtime and uses the effective rate for WAV metadata. The saved format is 16-bit mono PCM, with supported validation/playback rates from 8 through 48 kHz.
+`recorder.c/.h` currently owns microphone configuration and capture directly. Recorder also owns live monitor mode, microphone FFT presentation feed, fixed digital input gain, recording enumeration/deletion, and save-time post-processing. Recorder playback volume is independent from notification volume.
 
-Recorder also owns live monitor mode, a 256-point microphone FFT presentation feed, fixed digital input gain, recording enumeration/deletion, and save-time post-processing. Recorder playback volume is independent from the device-wide notification volume.
-
-The historical `audio_spectrum.c/.h` files remain as a compatibility adapter for the existing `RFSCOUT_APP_AUDIO` application/navigation ABI. They no longer implement the removed standalone analyzer.
-
-## Speaker and notification path
-
-```text
-detection -> alert category -> global mode/character/volume -> bounded queue -> I2S1 worker
-recording selection ---------------------------------------------> WAV playback
-```
-
-`audio_output.c/.h` owns I2S1 transmit. Alert commands are nonblocking from detection paths; queue saturation drops a sound rather than blocking acquisition. Notification volume uses a nonlinear perceptual mapping. WAV playback has an independently adjustable Recorder volume.
-
-`alert.c/.h` owns global Off/Tone/Morse policy and the notification descriptor registry. `morse.c/.h` owns the shared Morse patterns.
+The historical `audio_spectrum.c/.h` interface remains as a compatibility adapter for the existing `RFSCOUT_APP_AUDIO` application/navigation ABI.
 
 ## Thermal path
 
-MLX90640 is an optional external I2C/Qwiic device. RFScout probes for availability and exposes Thermal only when enabled and detected. The native 32x24 frame is interpolated for display. Thermal image pixels are literal data imagery and use the raw framebuffer path so display themes cannot accidentally remap sensor colors; Thermal chrome, labels, errors, and crosshair remain theme-aware.
+MLX90640 is an optional external I2C/Qwiic device. RFScout probes for availability and exposes Thermal only when enabled and detected. The native 32x24 frame is interpolated for display. Thermal image pixels are literal data imagery and use a raw framebuffer path; Thermal chrome and labels remain theme-aware.
+
+## Configuration and persistence boundary
+
+`device_config.c/.h` owns compiled defaults plus optional `/sdcard/rfscout.json` persistence. Current schema version is 2.
+
+Loading begins from current defaults and overlays recognized valid values. Schema v1 is accepted and translated. Unknown/obsolete fields are ignored. Saving generates a new canonical v2 document, which prunes unknown fields and populates newly introduced fields from current defaults. Future schema versions are rejected rather than rewritten by older firmware.
+
+Canonical user preferences include app enablement/startup selection, display settings/theme, logging, global notification presentation, app-owned notification gates/mappings, Recorder preferences, timezone data, and saved time metadata.
+
+Setters mark configuration dirty. Dirty configuration is flushed before deep sleep and SD unmount.
+
+## Deep-sleep session state
+
+Deep sleep loses normal RAM, so `session_state.c/.h` retains a deliberately small RTC-backed session record containing the active app and user-input lock state. A magic/version/checksum guard protects the retained data, and it is used only for a valid sleep wake.
+
+Transient menus, edit cursors, queued sounds, and active Recorder operations are intentionally not resumed. Broader per-app session persistence is not part of the current framework.
 
 ## Home, Device configuration, and time
 
-`device_config.c/.h` owns compiled defaults plus optional `/sdcard/rfscout.json` persistence. Configuration is nonfatal: RFScout remains usable without storage.
+Home uses the canonical `assets/logo.png` artwork, converted at configure time into a compact indexed LCD bitmap. The bitmap stores semantic color indices so Home branding follows the active theme.
 
-Persisted SD-backed state includes app enablement, preferred startup application, brightness, clock format, timezone configuration, global alert mode/volume/characters, Recorder playback volume, Recorder input gain, and selected time metadata.
-
-The active display theme is owned by `ui_theme.c/.h` and persisted separately in ESP32 NVS. This deliberate separation keeps Indoor/Outdoor/Night viewing mode persistent even when the SD card is absent or unavailable.
-
-Home uses the canonical `assets/logo.png` artwork. At configure time `tools/generate_home_logo.py` converts that source image into a compact indexed LCD bitmap using only the Python standard library; the generated header is compiled into the firmware and rendered by `home_landing.c`. The bitmap stores semantic background/brand/secondary indices rather than fixed final presentation colors, so Home branding follows the active theme at runtime while remaining visually derived from the same artwork as the browser flasher. Shared top chrome remains active; center enters the existing Device Settings editor and Back returns to Home.
-
-`device_time.c/.h` owns authoritative wall-clock state and provenance. Wall-clock time is used for display and calendar timestamps; monotonic timers remain responsible for intervals, dwell, debounce, retries, and timeouts.
-
-## Display theme and rendering boundary
-
-`ui_theme.c/.h` owns the semantic UI palette. Current themes are Indoor, Outdoor, and Night. Palettes define roles instead of application-specific RGB565 constants: background, text, secondary text/chrome, divider, accent, selected, information, success, warning, error, graph primary/peak, and Home logo primary/secondary.
-
-The normal framebuffer primitives in `display.c` resolve RFScout's historical UI color constants through the active semantic palette. This compatibility layer brings existing applications under theme orchestration without requiring a simultaneous rewrite of every view. New UI code should prefer semantic theme roles directly rather than introducing additional hard-coded presentation colors.
-
-`display_fill_rect_raw()` and `display_write_rect()` are deliberate raw-pixel escape hatches for imagery whose RGB565 values are data rather than UI semantics. Thermal heat-map pixels use the raw path. The generated Home bitmap also reaches the framebuffer through literal indexed output after `home_landing.c` substitutes the active theme's logo colors.
-
-Outdoor intentionally does **not** preserve the old subdued-color approach: secondary information is kept bright for daylight readability. Night concentrates UI energy in red/orange tones. Theme changes are immediate and do not alter application state or radio/sensor lifecycle.
+`device_time.c/.h` owns wall-clock state and provenance. Wall-clock time is used for display and calendar timestamps; monotonic timers remain responsible for intervals, dwell, debounce, retries, and timeouts.
 
 ## Shared hardware boundaries
 
-### SPI
+The exact physical buses and pin assignments are board-owned facts. On the current T-Embed target:
 
-LCD, microSD, CC1101, and nRF24 share SPI2. `board_spi.c/.h` owns board-level bus initialization; fixed pins and chip selects are centralized in `board.h`.
+- LCD, microSD, CC1101, and nRF24 share SPI resources;
+- battery/power devices and optional external sensors share board I2C;
+- I2S0 is used for Recorder PDM microphone capture/monitoring;
+- I2S1 is owned by the asynchronous speaker service.
 
-### I2C
-
-`board_i2c.c/.h` owns the shared board I2C controller. Battery/power devices and optional external sensors use the common bus layer.
-
-### I2S
-
-I2S0 is used by Recorder for PDM microphone capture/monitoring. I2S1 is independently owned by the speaker service.
-
-A future shared Audio Input service is intentionally **not** described here as current architecture; its design and migration goals are tracked in [ROADMAP.md](ROADMAP.md).
+Application policy must not infer those resources from board names; it should depend on platform/service interfaces and capabilities.
 
 ## Storage and logging
 
-`storage.c/.h` owns SD mount/state. `log_writer.c/.h` owns asynchronous queued writes, segment rotation, free-space policy, and shutdown. `app_logging.c/.h` coordinates application ENTER/EXIT and rate-limited telemetry.
-
-Filesystem errors are nonfatal and surfaced through shared status UI.
+`storage.c/.h` owns SD mount/state. `log_writer.c/.h` owns asynchronous queued writes, segment rotation, free-space policy, and shutdown. `app_logging.c/.h` coordinates application ENTER/EXIT and rate-limited telemetry. Filesystem errors are nonfatal and surfaced through shared status UI.
 
 ## UI boundary
 
-Application views render their own content into the framebuffer. Shared top chrome is drawn through `ui_chrome_draw()`, which owns title placement plus shared status/battery presentation. Long titles are constrained so they do not collide with the right-side status region. Theme resolution happens below or alongside those views rather than being duplicated in each application.
-
-The bottom of the display is not globally reserved. Views may use a common footer baseline when useful, but data-heavy applications can use the full remaining content height.
+Application views render their own content into the framebuffer. Shared top chrome is drawn through `ui_chrome_draw()`, which owns title placement plus shared status/battery presentation. Semantic theme roles are preferred for new UI code; raw framebuffer paths remain available for literal sensor/image data.
 
 `ui_present.c` remains the common presentation layer and applies the global power-off overlay before flushing the framebuffer. It does not own application chrome.
 
 ## Release/build boundary
 
-Pull-request and `main` CI perform formatting/tests and, for eligible builds, ESP-IDF firmware packaging. Candidate artifacts are short-lived. The browser-flasher Pages workflow mirrors the candidate from the most recent triggering eligible build and published release assets into a same-origin ESP Web Tools site. Durable releases are prepared only through the manual release workflow.
+Pull-request and `main` CI perform formatting/tests and eligible ESP-IDF firmware packaging. Candidate artifacts are short-lived. Durable releases are prepared only through the manual release workflow.
