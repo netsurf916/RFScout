@@ -73,6 +73,7 @@ idf_component_register(
         "ui_chrome.c"
         "ui_theme.c"
         "display.c"
+        "display_mask.c"
         "display_brightness.c"
         "ui_present.c"
         "ui.c"
