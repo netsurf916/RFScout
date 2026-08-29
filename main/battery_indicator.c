@@ -21,7 +21,6 @@
 #define BATTERY_INDICATOR_TERMINAL_HEIGHT 6
 #define BATTERY_INDICATOR_TEXT_GAP 5
 
-#define BATTERY_INDICATOR_COLOR_BACKGROUND 0x0000U
 #define BATTERY_INDICATOR_COLOR_NORMAL 0x03F0U
 #define BATTERY_INDICATOR_COLOR_COMPLETE 0x03E0U
 #define BATTERY_INDICATOR_COLOR_LOW 0xFC00U
@@ -51,17 +50,28 @@ static uint16_t indicator_color( const battery_status_t *a_status )
     return BATTERY_INDICATOR_COLOR_NORMAL;
 }
 
-/** @brief Draw a compact bright-yellow lightning bolt. */
+/** @brief Draw a compact transparent lightning bolt over the existing battery fill. */
 static void draw_charging_bolt( int a_x, int a_y )
 {
-    /* A dark backing patch keeps the bolt visible over any battery-fill color. */
-    display_fill_rect( a_x - 1, a_y, 7, 10, BATTERY_INDICATOR_COLOR_BACKGROUND );
+    /*
+     * Eight-pixel-wide bolt derived from the simple diagonal reference silhouette. The mask is
+     * transparent: zero bits preserve the battery outline/fill already present in the framebuffer.
+     */
+    static const uint8_t mask[] = {
+        0x1CU,
+        0x38U,
+        0x38U,
+        0x70U,
+        0xFEU,
+        0x1CU,
+        0x38U,
+        0x38U,
+        0x70U,
+        0xE0U,
+    };
 
-    display_fill_rect( a_x + 3, a_y, 2, 3, BATTERY_INDICATOR_COLOR_CHARGING );
-    display_fill_rect( a_x + 1, a_y + 2, 4, 2, BATTERY_INDICATOR_COLOR_CHARGING );
-    display_fill_rect( a_x + 2, a_y + 4, 2, 2, BATTERY_INDICATOR_COLOR_CHARGING );
-    display_fill_rect( a_x, a_y + 5, 3, 2, BATTERY_INDICATOR_COLOR_CHARGING );
-    display_fill_rect( a_x + 1, a_y + 7, 2, 2, BATTERY_INDICATOR_COLOR_CHARGING );
+    (void)display_draw_mask(
+        a_x, a_y, 8, 10, mask, sizeof( mask ), BATTERY_INDICATOR_COLOR_CHARGING );
 }
 
 /** @brief Draw the outline and terminal of the battery body. */
