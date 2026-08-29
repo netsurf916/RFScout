@@ -1,0 +1,444 @@
+name: PR39 persistence helper
+
+on:
+  push:
+    branches:
+      - feature/semantic-events-audio-policy
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/semantic-events-audio-policy
+          fetch-depth: 0
+      - name: Apply persistence rework
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def write(path, text):
+              Path(path).write_text(text)
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'expected text not found in {path}: {old[:80]!r}')
+              p.write_text(text.replace(old, new, 1))
+
+          def sub(path, pattern, repl):
+              p = Path(path)
+              text = p.read_text()
+              text2, count = re.subn(pattern, repl, text, count=1, flags=re.S)
+              if count != 1:
+                  raise SystemExit(f'pattern matched {count} times in {path}: {pattern[:80]}')
+              p.write_text(text2)
+
+          write('main/session_state.h', r'''/**
+              session_state.h : RFScout deep-sleep session persistence
+              Description: Retains short-lived UI session identity in RTC memory across deep sleep only.
+              Copyright 2026 Daniel Wilson
+              SPDX-License-Identifier: MIT
+          */
+
+          #pragma once
+
+          #ifndef _RFSCOUT_SESSION_STATE_H_
+          #define _RFSCOUT_SESSION_STATE_H_
+
+          #include "app_manager.h"
+
+          #include <stdbool.h>
+
+          typedef struct
+          {
+              rfscout_app_id_t active_app;
+              bool input_locked;
+          } rfscout_session_state_t;
+
+          /** @brief Store state immediately before entering deep sleep. */
+          void session_state_store( rfscout_app_id_t a_active_app, bool a_input_locked );
+
+          /**
+           * @brief Restore state only when this boot is a valid deep-sleep wake.
+           * @return true when retained state passed version and integrity validation.
+           */
+          bool session_state_restore( rfscout_session_state_t *a_state );
+
+          #endif // _RFSCOUT_SESSION_STATE_H_
+          ''')
+
+          write('main/session_state.c', r'''/**
+              session_state.c : RFScout deep-sleep session persistence
+              Description: Keeps active application and input-lock state in RTC-retained memory.
+              Copyright 2026 Daniel Wilson
+              SPDX-License-Identifier: MIT
+          */
+
+          #include "session_state.h"
+
+          #include "esp_attr.h"
+          #include "esp_sleep.h"
+
+          #include <stdint.h>
+
+          #define SESSION_STATE_MAGIC 0x52534653U
+          #define SESSION_STATE_VERSION 1U
+
+          typedef struct
+          {
+              uint32_t magic;
+              uint16_t version;
+              uint8_t active_app;
+              uint8_t input_locked;
+              uint32_t checksum;
+          } retained_session_state_t;
+
+          static RTC_DATA_ATTR retained_session_state_t retained_state;
+
+          static uint32_t session_checksum( const retained_session_state_t *a_state )
+          {
+              return a_state->magic ^ ( (uint32_t)a_state->version << 16U ) ^
+                     ( (uint32_t)a_state->active_app << 8U ) ^ (uint32_t)a_state->input_locked ^
+                     0xA5C35A3CU;
+          }
+
+          void session_state_store( rfscout_app_id_t a_active_app, bool a_input_locked )
+          {
+              retained_state.magic = SESSION_STATE_MAGIC;
+              retained_state.version = SESSION_STATE_VERSION;
+              retained_state.active_app =
+                  (uint8_t)( ( a_active_app < RFSCOUT_APP_COUNT ) ? a_active_app : RFSCOUT_APP_DEVICE );
+              retained_state.input_locked = a_input_locked ? 1U : 0U;
+              retained_state.checksum = session_checksum( &retained_state );
+          }
+
+          bool session_state_restore( rfscout_session_state_t *a_state )
+          {
+              if( NULL == a_state || ESP_SLEEP_WAKEUP_UNDEFINED == esp_sleep_get_wakeup_cause() )
+              {
+                  return false;
+              }
+              if( SESSION_STATE_MAGIC != retained_state.magic ||
+                  SESSION_STATE_VERSION != retained_state.version ||
+                  retained_state.active_app >= RFSCOUT_APP_COUNT || retained_state.input_locked > 1U ||
+                  retained_state.checksum != session_checksum( &retained_state ) )
+              {
+                  return false;
+              }
+              a_state->active_app = (rfscout_app_id_t)retained_state.active_app;
+              a_state->input_locked = ( 0U != retained_state.input_locked );
+              return true;
+          }
+          ''')
+
+          replace('main/CMakeLists.txt', '        "power.c"\n', '        "power.c"\n        "session_state.c"\n')
+
+          replace('main/power.c', '#include "battery.h"\n', '#include "app_manager.h"\n#include "battery.h"\n')
+          replace('main/power.c', '#include "recorder.h"\n', '#include "platform.h"\n#include "recorder.h"\n#include "session_state.h"\n')
+          replace('main/power.c', '    ESP_ERROR_CHECK( esp_sleep_enable_ext1_wakeup_io( 1ULL << RFSCOUT_BOARD_USER_KEY_PIN,\n',
+                  '    session_state_store( app_manager_current(), platform_input_locked() );\n\n    ESP_ERROR_CHECK( esp_sleep_enable_ext1_wakeup_io( 1ULL << RFSCOUT_BOARD_USER_KEY_PIN,\n')
+
+          replace('main/platform.c', '#include "event.h"\n', '#include "event.h"\n#include "session_state.h"\n')
+          replace('main/platform.c', '    input_locked = false;\n',
+                  '    rfscout_session_state_t restored_session;\n    input_locked = session_state_restore( &restored_session ) && restored_session.input_locked;\n')
+
+          replace('main/app_manager.c', '#include "recorder.h"\n', '#include "recorder.h"\n#include "session_state.h"\n')
+          replace('main/app_manager.c', '    active_app = device_config_startup_app();\n',
+                  '    active_app = device_config_startup_app();\n    rfscout_session_state_t restored_session;\n    if( session_state_restore( &restored_session ) && app_available( restored_session.active_app ) )\n    {\n        active_app = restored_session.active_app;\n    }\n')
+          replace('main/app_manager.c', 'static void close_notification_menu( void )\n{\n    notification_menu = false;\n    notification_edit = false;\n    notification_item = NOTIFICATION_MENU_BACK;\n    render_parent_menu();\n}\n',
+                  'static void close_notification_menu( void )\n{\n    notification_menu = false;\n    notification_edit = false;\n    notification_item = NOTIFICATION_MENU_BACK;\n    const esp_err_t save_result = device_config_save( false, 0, NULL );\n    if( ESP_OK != save_result && ESP_ERR_INVALID_STATE != save_result )\n    {\n        ESP_LOGW( TAG, "notification settings save failed: %s", esp_err_to_name( save_result ) );\n    }\n    render_parent_menu();\n}\n')
+
+          # Canonical config schema v2: current defaults first, tolerant legacy overlay, canonical rewrite.
+          p = Path('main/device_config.h')
+          text = p.read_text()
+          text = text.replace('#include "esp_err.h"\n', '#include "esp_err.h"\n#include "ui_theme.h"\n')
+          text = text.replace('#define RFSCOUT_CONFIG_SCHEMA_VERSION 1U', '#define RFSCOUT_CONFIG_SCHEMA_VERSION 2U')
+          text = text.replace('    bool clock_24h;\n', '    bool clock_24h;\n    rfscout_theme_id_t theme;\n')
+          text = text.replace('    uint8_t recorder_input_gain_db;\n', '    uint8_t recorder_input_gain_db;\n    bool notification_app_enabled[ RFSCOUT_APP_COUNT ];\n')
+          text = text.replace('esp_err_t device_config_set_clock_24h( bool a_enabled );\n',
+                              'esp_err_t device_config_set_clock_24h( bool a_enabled );\nrfscout_theme_id_t device_config_theme( void );\nesp_err_t device_config_set_theme( rfscout_theme_id_t a_theme );\n')
+          text = text.replace('esp_err_t device_config_set_recorder_input_gain( uint8_t a_gain_db );\n',
+                              'esp_err_t device_config_set_recorder_input_gain( uint8_t a_gain_db );\nbool device_config_notification_app_enabled( rfscout_app_id_t a_app );\nesp_err_t device_config_set_notification_app_enabled( rfscout_app_id_t a_app, bool a_enabled );\n')
+          p.write_text(text)
+
+          replace('main/device_config.c', '#include "storage.h"\n',
+                  '#include "app_audio_policy.h"\n#include "notification.h"\n#include "storage.h"\n#include "ui_theme.h"\n')
+          replace('main/device_config.c', '    config.clock_24h = false;\n',
+                  '    config.clock_24h = false;\n    config.theme = RFSCOUT_THEME_INDOOR;\n')
+          replace('main/device_config.c', '        config.apps_enabled[ index ] = true;\n',
+                  '        config.apps_enabled[ index ] = true;\n        const rfscout_app_audio_policy_t *policy = app_audio_policy_get( (rfscout_app_id_t)index );\n        config.notification_app_enabled[ index ] =\n            policy->notifications_supported && policy->notifications_enabled_default;\n')
+
+          new_load_apps = r'''/** @brief Apply validated application enablement and app-owned notification overrides. */
+          static void load_apps( const cJSON *a_root )
+          {
+              const cJSON *apps = cJSON_GetObjectItemCaseSensitive( a_root, "apps" );
+              if( !cJSON_IsObject( apps ) )
+              {
+                  return;
+              }
+
+              for( size_t index = 0; index < RFSCOUT_APP_COUNT; ++index )
+              {
+                  const rfscout_app_id_t app = (rfscout_app_id_t)index;
+                  const cJSON *app_item = cJSON_GetObjectItemCaseSensitive( apps, app_config_name( app ) );
+                  if( cJSON_IsBool( app_item ) )
+                  {
+                      /* v1 compatibility: app entries were booleans. */
+                      config.apps_enabled[ index ] = cJSON_IsTrue( app_item );
+                      continue;
+                  }
+                  if( !cJSON_IsObject( app_item ) )
+                  {
+                      continue;
+                  }
+
+                  config.apps_enabled[ index ] =
+                      json_bool( app_item, "enabled", config.apps_enabled[ index ] );
+                  const rfscout_app_audio_policy_t *policy = app_audio_policy_get( app );
+                  const cJSON *notifications =
+                      cJSON_GetObjectItemCaseSensitive( app_item, "notifications" );
+                  if( !policy->notifications_supported || !cJSON_IsObject( notifications ) )
+                  {
+                      continue;
+                  }
+                  config.notification_app_enabled[ index ] = json_bool(
+                      notifications, "enabled", config.notification_app_enabled[ index ] );
+                  const cJSON *characters =
+                      cJSON_GetObjectItemCaseSensitive( notifications, "characters" );
+                  if( !cJSON_IsObject( characters ) )
+                  {
+                      continue;
+                  }
+                  const size_t count = notification_count_for_app( app );
+                  for( size_t item = 0U; item < count; ++item )
+                  {
+                      const rfscout_notification_descriptor_t *descriptor =
+                          notification_descriptor_for_app( app, item );
+                      if( NULL == descriptor || NULL == descriptor->config_key )
+                      {
+                          continue;
+                      }
+                      const cJSON *value =
+                          cJSON_GetObjectItemCaseSensitive( characters, descriptor->config_key );
+                      if( !cJSON_IsString( value ) || NULL == value->valuestring ||
+                          '\0' == value->valuestring[ 0 ] || '\0' != value->valuestring[ 1 ] )
+                      {
+                          continue;
+                      }
+                      const char character = (char)toupper( (unsigned char)value->valuestring[ 0 ] );
+                      if( alert_morse_character_supported( character ) )
+                      {
+                          config.notification_characters[ descriptor->type ] = character;
+                      }
+                  }
+              }
+              config.apps_enabled[ RFSCOUT_APP_DEVICE ] = true;
+
+              const cJSON *startup = cJSON_GetObjectItemCaseSensitive( apps, "startup" );
+              if( cJSON_IsString( startup ) && NULL != startup->valuestring )
+              {
+                  rfscout_app_id_t parsed;
+                  if( app_from_config_name( startup->valuestring, &parsed ) )
+                  {
+                      config.startup_app = parsed;
+                  }
+              }
+          }
+
+          /** @brief Apply validated display preference overrides. */'''
+          sub('main/device_config.c', r'/\*\* @brief Apply validated application enablement overrides\. \*/.*?/\*\* @brief Apply validated display preference overrides\. \*/', new_load_apps)
+
+          replace('main/device_config.c', '    config.clock_24h = json_bool( display, "clock_24h", config.clock_24h );\n',
+                  '    config.clock_24h = json_bool( display, "clock_24h", config.clock_24h );\n    const cJSON *theme = cJSON_GetObjectItemCaseSensitive( display, "theme" );\n    if( cJSON_IsString( theme ) && NULL != theme->valuestring )\n    {\n        rfscout_theme_id_t parsed_theme;\n        if( ui_theme_from_config_name( theme->valuestring, &parsed_theme ) )\n        {\n            config.theme = parsed_theme;\n        }\n    }\n')
+
+          replace('main/device_config.c', '    if( !cJSON_IsNumber( version ) || ( version->valueint != (int)RFSCOUT_CONFIG_SCHEMA_VERSION ) )\n',
+                  '    if( !cJSON_IsNumber( version ) || version->valueint < 1 ||\n        version->valueint > (int)RFSCOUT_CONFIG_SCHEMA_VERSION )\n')
+
+          replace('main/device_config.c', '    cJSON_AddBoolToObject( display, "clock_24h", config.clock_24h );\n',
+                  '    cJSON_AddBoolToObject( display, "clock_24h", config.clock_24h );\n    cJSON_AddStringToObject( display, "theme", ui_theme_config_name( config.theme ) );\n')
+
+          new_apps_json = r'''    cJSON *apps = cJSON_AddObjectToObject( root, "apps" );
+              for( size_t index = 0; index < RFSCOUT_APP_COUNT; ++index )
+              {
+                  const rfscout_app_id_t app = (rfscout_app_id_t)index;
+                  cJSON *app_item = cJSON_AddObjectToObject( apps, app_config_name( app ) );
+                  cJSON_AddBoolToObject( app_item, "enabled", config.apps_enabled[ index ] );
+                  const rfscout_app_audio_policy_t *policy = app_audio_policy_get( app );
+                  if( policy->notifications_supported )
+                  {
+                      cJSON *notifications = cJSON_AddObjectToObject( app_item, "notifications" );
+                      cJSON_AddBoolToObject(
+                          notifications, "enabled", config.notification_app_enabled[ index ] );
+                      cJSON *characters = cJSON_AddObjectToObject( notifications, "characters" );
+                      const size_t count = notification_count_for_app( app );
+                      for( size_t item = 0U; item < count; ++item )
+                      {
+                          const rfscout_notification_descriptor_t *descriptor =
+                              notification_descriptor_for_app( app, item );
+                          if( NULL == descriptor || NULL == descriptor->config_key )
+                          {
+                              continue;
+                          }
+                          char value[ 2 ] = { config.notification_characters[ descriptor->type ], '\0' };
+                          cJSON_AddStringToObject( characters, descriptor->config_key, value );
+                      }
+                  }
+              }
+              cJSON_AddStringToObject( apps,
+                                       "startup",
+                                       RFSCOUT_APP_DEVICE == config.startup_app
+                                           ? "home"
+                                           : ( RFSCOUT_APP_AUDIO == config.startup_app
+                                                   ? "recorder"
+                                                   : app_config_name( config.startup_app ) ) );
+
+              cJSON *logging = cJSON_AddObjectToObject( root, "logging" );'''
+          sub('main/device_config.c', r'    cJSON \*apps = cJSON_AddObjectToObject\( root, "apps" \);.*?    cJSON \*logging = cJSON_AddObjectToObject\( root, "logging" \);', new_apps_json)
+
+          new_notifications_json = r'''    cJSON *notifications = cJSON_AddObjectToObject( root, "notifications" );
+              cJSON_AddStringToObject( notifications, "mode", alert_mode_name( config.alert_mode ) );
+              cJSON_AddNumberToObject( notifications, "volume", config.alert_volume_percent );
+
+              cJSON *timezone = cJSON_AddObjectToObject( root, "timezone" );'''
+          sub('main/device_config.c', r'    cJSON \*notifications = cJSON_AddObjectToObject\( root, "notifications" \);.*?    cJSON \*timezone = cJSON_AddObjectToObject\( root, "timezone" \);', new_notifications_json)
+
+          insert_accessors = r'''
+          rfscout_theme_id_t device_config_theme( void )
+          {
+              return config.theme;
+          }
+
+          esp_err_t device_config_set_theme( rfscout_theme_id_t a_theme )
+          {
+              if( a_theme >= RFSCOUT_THEME_COUNT )
+              {
+                  return ESP_ERR_INVALID_ARG;
+              }
+              config.theme = a_theme;
+              return ESP_OK;
+          }
+
+          bool device_config_notification_app_enabled( rfscout_app_id_t a_app )
+          {
+              if( a_app >= RFSCOUT_APP_COUNT )
+              {
+                  return false;
+              }
+              const rfscout_app_audio_policy_t *policy = app_audio_policy_get( a_app );
+              return policy->notifications_supported && config.notification_app_enabled[ a_app ];
+          }
+
+          esp_err_t device_config_set_notification_app_enabled( rfscout_app_id_t a_app, bool a_enabled )
+          {
+              if( a_app >= RFSCOUT_APP_COUNT )
+              {
+                  return ESP_ERR_INVALID_ARG;
+              }
+              const rfscout_app_audio_policy_t *policy = app_audio_policy_get( a_app );
+              if( !policy->notifications_supported )
+              {
+                  return ESP_ERR_NOT_SUPPORTED;
+              }
+              config.notification_app_enabled[ a_app ] = a_enabled;
+              return ESP_OK;
+          }
+          '''
+          replace('main/device_config.c', 'esp_err_t device_config_set_logging_enabled( bool a_enabled )\n', insert_accessors + '\nesp_err_t device_config_set_logging_enabled( bool a_enabled )\n')
+
+          write('main/notification_preferences.c', r'''/**
+              notification_preferences.c : RFScout per-application notification preferences
+              Description: Exposes app notification gates stored in the canonical device configuration.
+              Copyright 2026 Daniel Wilson
+              SPDX-License-Identifier: MIT
+          */
+
+          #include "notification_preferences.h"
+
+          #include "device_config.h"
+
+          esp_err_t notification_preferences_init( void )
+          {
+              return ESP_OK;
+          }
+
+          bool notification_preferences_app_enabled( rfscout_app_id_t a_app )
+          {
+              return device_config_notification_app_enabled( a_app );
+          }
+
+          esp_err_t notification_preferences_set_app_enabled( rfscout_app_id_t a_app, bool a_enabled )
+          {
+              return device_config_set_notification_app_enabled( a_app, a_enabled );
+          }
+          ''')
+          p = Path('main/notification_preferences.h')
+          text = p.read_text().replace('Description: Persists independent app notification gates without affecting application content audio.',
+                                       'Description: Exposes app notification gates from the canonical device configuration.')
+          text = text.replace('Load per-app notification gates from NVS over native application defaults.',
+                              'Initialize the notification preference facade after device configuration setup.')
+          text = text.replace('Persist one application\'s notification gate.', 'Change one application\'s notification gate in runtime configuration.')
+          p.write_text(text)
+
+          # Theme is now a canonical config preference rather than independent NVS state.
+          p = Path('main/ui_theme.c')
+          text = p.read_text()
+          text = text.replace('#include "event.h"\n', '#include "device_config.h"\n#include "event.h"\n')
+          text = text.replace('#include "nvs.h"\n', '')
+          text = re.sub(r'\n#define THEME_NVS_NAMESPACE.*?\n#define THEME_NVS_VALUE_CAPACITY 16U\n', '\n', text, flags=re.S)
+          text = re.sub(r'esp_err_t ui_theme_init\( void \)\n\{.*?\n\}\n\nesp_err_t ui_theme_set\( rfscout_theme_id_t a_theme \)\n\{.*?\n\}\n\nrfscout_theme_id_t ui_theme_current', r'''esp_err_t ui_theme_init( void )
+          {
+              active_theme = device_config_theme();
+              return ESP_OK;
+          }
+
+          esp_err_t ui_theme_set( rfscout_theme_id_t a_theme )
+          {
+              if( a_theme >= RFSCOUT_THEME_COUNT )
+              {
+                  return ESP_ERR_INVALID_ARG;
+              }
+              const esp_err_t result = device_config_set_theme( a_theme );
+              if( ESP_OK != result )
+              {
+                  return result;
+              }
+              active_theme = a_theme;
+              ESP_LOGI( TAG, "theme=%s", ui_theme_config_name( a_theme ) );
+              rfscout_event_emit(
+                  RFSCOUT_EVENT_THEME_CHANGED, RFSCOUT_EVENT_SOURCE_SYSTEM, (int32_t)a_theme );
+              const esp_err_t save_result = device_config_save( false, 0, NULL );
+              if( ESP_OK != save_result && ESP_ERR_INVALID_STATE != save_result )
+              {
+                  ESP_LOGW( TAG, "theme save failed: %s", esp_err_to_name( save_result ) );
+              }
+              return ESP_OK;
+          }
+
+          rfscout_theme_id_t ui_theme_current''', text, count=1, flags=re.S)
+          p.write_text(text)
+
+          # The facade no longer needs initialization before device_config_init; leave call harmless.
+
+          # Self-remove helper so the resulting PR contains only product changes.
+          Path('.github/workflows/pr39-persistence-helper.yml').unlink()
+          PY
+      - name: Install clang-format 18
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-format-18
+      - name: Apply repository formatting
+        run: python3 tools/check_format.py --all --fix
+      - name: Commit persistence rework
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Rework configuration and sleep persistence"
+          git push origin HEAD:feature/semantic-events-audio-policy
