@@ -2,11 +2,11 @@
 
 This document describes configuration implemented on the PR branch. Planned configuration concepts belong in [ROADMAP.md](ROADMAP.md).
 
-RFScout always starts from compiled defaults. When an SD card is mounted, persistent preferences are loaded from `/sdcard/rfscout.json`.
+RFScout always starts from compiled defaults. When an SD card is mounted, ordinary persistent preferences are loaded from `/sdcard/rfscout.json`. The selected display theme is intentionally persisted in ESP32 NVS instead so the viewing mode survives boots even when no SD card is installed.
 
 ## Configuration model
 
-Schema version 1 is currently supported. A representative configuration is:
+Schema version 1 is currently supported. A representative SD-backed configuration is:
 
 ```json
 {
@@ -79,9 +79,21 @@ Schema version 1 is currently supported. A representative configuration is:
 
 The historical configuration key remains `apps.audio` because the application enum/ABI still uses `RFSCOUT_APP_AUDIO`; the user-facing application is Recorder. `apps.startup` writes user-facing aliases where useful: `home` for Device and `recorder` for Audio. The loader also accepts the historical internal names `device` and `audio`.
 
+### Display theme persistence
+
+The display theme is stored in NVS namespace `rfscout_ui` under key `theme`, independently of `/sdcard/rfscout.json`. Device Settings applies a theme immediately and commits it at selection time, so an SD-card failure does not silently revert an outdoor/night viewing choice on the next boot.
+
+Current themes are:
+
+- **Indoor** — normal high-contrast RFScout orange/white presentation;
+- **Outdoor** — maximum daylight contrast, with secondary/chrome information intentionally kept bright rather than subdued;
+- **Night** — red/orange-oriented UI colors that reduce bright blue/green output while retaining warning/error distinction.
+
+The theme setting changes semantic UI roles globally, including Home branding. It does not recolor literal sensor imagery such as Thermal heat-map pixels.
+
 ## Defaults and validation
 
-Missing or invalid ordinary fields retain compiled defaults. Home/Device is always enabled even if configuration attempts to disable it.
+Missing or invalid ordinary fields retain compiled defaults. Home/Device is always enabled even if configuration attempts to disable it. The compiled display theme is Indoor; invalid or absent NVS theme state also falls back to Indoor.
 
 The compiled startup target is Home. Valid startup values are Home, WiFi/BT, CC1101, nRF24, Recorder, and Thermal. At boot, a disabled or unavailable configured target falls back to Home for that boot without rewriting the saved preference. Thermal additionally requires a detected MLX90640.
 
@@ -102,6 +114,7 @@ Home is the pass-through landing state of the non-disableable Device application
 Current Device Settings include:
 
 - LCD brightness;
+- display theme (Indoor, Outdoor, Night);
 - 12/24-hour clock format;
 - timezone selection;
 - preferred startup application;
@@ -111,11 +124,11 @@ Current Device Settings include:
 - global notification mode;
 - global notification volume;
 - one editable Morse character for every notification category;
-- explicit configuration save.
+- explicit SD-backed configuration save.
 
-Recorder playback volume and microphone input gain are persisted in the same configuration but are adjusted from Recorder itself.
+Recorder playback volume and microphone input gain are persisted in the SD-backed configuration but are adjusted from Recorder itself. The display theme is persisted immediately in NVS and does not depend on the explicit Save config action.
 
-Without an SD card, settings can affect the running session but cannot be persisted.
+Without an SD card, SD-backed settings can affect the running session but cannot be persisted. The display theme remains persistent because it uses NVS.
 
 ## Application settings inventory
 
@@ -126,7 +139,7 @@ Without an SD card, settings can affect the running session but cannot be persis
 | nRF24 | Back; Low channel; High channel; Dwell; Peak hold; Reset counts | ESB device; Input; Sensor; WiFi-like; Hopping/BLE-like; Logitech-like |
 | Recorder | Back; New recording; Monitor; recording browser; playback volume; delete recording; monitor input gain | None currently |
 | Thermal | No application settings menu | None currently |
-| Home / Device Settings | Home pass-through; Back; brightness; clock format; timezone; startup app; manual date/time; app enablement; SD logging; notification mode/volume; notification characters; Save config | Configures all registered notification items |
+| Home / Device Settings | Home pass-through; Back; brightness; theme; clock format; timezone; startup app; manual date/time; app enablement; SD logging; notification mode/volume; notification characters; Save config | Configures all registered notification items |
 
 ## Notification registry
 
