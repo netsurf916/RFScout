@@ -49,6 +49,7 @@ static uint8_t slow_peak[ NRF24_CHANNEL_COUNT ];
 static packet_record_t packet_records[ PACKET_RECORD_MAX ];
 static nrf24_recent_packet_t recent_packets[ NRF24_RECENT_PACKET_MAX ];
 static size_t recent_packet_count;
+static size_t recent_packet_next;
 static portMUX_TYPE recent_packet_lock = portMUX_INITIALIZER_UNLOCKED;
 static address_ledger_t address_ledger[ ADDRESS_LEDGER_MAX ];
 static uint32_t category_counts[ NRF24_FP_LOGITECH_LIKE + 1U ];
@@ -279,6 +280,7 @@ void nrf24_activity_reset( void )
     portENTER_CRITICAL( &recent_packet_lock );
     memset( recent_packets, 0, sizeof( recent_packets ) );
     recent_packet_count = 0U;
+    recent_packet_next = 0U;
     portEXIT_CRITICAL( &recent_packet_lock );
 }
 
@@ -405,16 +407,7 @@ void nrf24_activity_observe_packet( const nrf24_packet_observation_t *a_packet )
     }
 
     portENTER_CRITICAL( &recent_packet_lock );
-    const size_t move_count = ( recent_packet_count < NRF24_RECENT_PACKET_MAX )
-                                  ? recent_packet_count
-                                  : NRF24_RECENT_PACKET_MAX - 1U;
-    if( move_count > 0U )
-    {
-        memmove( &recent_packets[ 1 ],
-                 &recent_packets[ 0 ],
-                 move_count * sizeof( recent_packets[ 0 ] ) );
-    }
-    nrf24_recent_packet_t *recent = &recent_packets[ 0 ];
+    nrf24_recent_packet_t *recent = &recent_packets[ recent_packet_next ];
     memset( recent, 0, sizeof( *recent ) );
     recent->channel = a_packet->channel;
     memcpy( recent->address, a_packet->address, a_packet->address_len );
@@ -422,6 +415,7 @@ void nrf24_activity_observe_packet( const nrf24_packet_observation_t *a_packet )
     memcpy( recent->payload, a_packet->payload, a_packet->payload_len );
     recent->payload_len = a_packet->payload_len;
     recent->timestamp_ms = a_packet->timestamp_ms;
+    recent_packet_next = ( recent_packet_next + 1U ) % NRF24_RECENT_PACKET_MAX;
     if( recent_packet_count < NRF24_RECENT_PACKET_MAX )
     {
         ++recent_packet_count;
@@ -475,7 +469,12 @@ size_t nrf24_activity_recent_packets( nrf24_recent_packet_t *a_output, size_t a_
 
     portENTER_CRITICAL( &recent_packet_lock );
     const size_t count = ( a_capacity < recent_packet_count ) ? a_capacity : recent_packet_count;
-    memcpy( a_output, recent_packets, count * sizeof( recent_packets[ 0 ] ) );
+    for( size_t i = 0U; i < count; ++i )
+    {
+        const size_t source =
+            ( recent_packet_next + NRF24_RECENT_PACKET_MAX - 1U - i ) % NRF24_RECENT_PACKET_MAX;
+        a_output[ i ] = recent_packets[ source ];
+    }
     portEXIT_CRITICAL( &recent_packet_lock );
     return count;
 }
