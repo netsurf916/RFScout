@@ -32,17 +32,11 @@ void wifi_settings_view_render( unsigned a_selected, bool a_editing )
                            active ? ">" : " ",
                            active ? theme->selected : theme->divider,
                            1U );
-        display_draw_text( UI_LAYOUT_LABEL_X,
-                           y,
-                           labels[ item ],
-                           active ? theme->text : theme->divider,
-                           1U );
+        display_draw_text(
+            UI_LAYOUT_LABEL_X, y, labels[ item ], active ? theme->text : theme->divider, 1U );
     }
 
-    display_draw_text( UI_LAYOUT_LEFT_X,
-                       UI_LAYOUT_FOOTER_Y,
-                       "TURN: SELECT  CENTER: ACT",
-                       theme->secondary,
-                       1U );
+    display_draw_text(
+        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN: SELECT  CENTER: ACT", theme->secondary, 1U );
     (void)display_present();
 }
