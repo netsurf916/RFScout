@@ -129,11 +129,8 @@ void recorder_view_files( size_t a_selected )
                   recording->name,
                   (unsigned long)( recording->duration_seconds / 60U ),
                   (unsigned long)( recording->duration_seconds % 60U ) );
-        display_draw_text( 8,
-                           40 + (int)row * 20,
-                           line,
-                           index == a_selected ? theme->selected : theme->text,
-                           1U );
+        display_draw_text(
+            8, 40 + (int)row * 20, line, index == a_selected ? theme->selected : theme->text, 1U );
     }
 
     display_draw_text( 8, 144, "TURN: SELECT CENTER: PLAY", theme->secondary, 1U );
