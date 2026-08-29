@@ -71,6 +71,7 @@ idf_component_register(
         "thermal_view.c"
         "status_bar.c"
         "ui_chrome.c"
+        "ui_theme.c"
         "display.c"
         "display_brightness.c"
         "ui_present.c"
