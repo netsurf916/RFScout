@@ -180,11 +180,10 @@ static bool config_needs_legacy_theme( void )
 
     const cJSON *version = cJSON_GetObjectItemCaseSensitive( root, "version" );
     const cJSON *display = cJSON_GetObjectItemCaseSensitive( root, "display" );
-    const cJSON *theme = cJSON_IsObject( display )
-                             ? cJSON_GetObjectItemCaseSensitive( display, "theme" )
-                             : NULL;
-    const bool needs_legacy = cJSON_IsNumber( version ) && ( 1 == version->valueint ) &&
-                              !cJSON_IsString( theme );
+    const cJSON *theme =
+        cJSON_IsObject( display ) ? cJSON_GetObjectItemCaseSensitive( display, "theme" ) : NULL;
+    const bool needs_legacy =
+        cJSON_IsNumber( version ) && ( 1 == version->valueint ) && !cJSON_IsString( theme );
     cJSON_Delete( root );
     return needs_legacy;
 }
@@ -206,7 +205,8 @@ esp_err_t ui_theme_init( void )
             const esp_err_t save_result = device_config_save( false, 0, NULL );
             if( ESP_OK != save_result )
             {
-                ESP_LOGW( TAG, "legacy theme migration save failed: %s", esp_err_to_name( save_result ) );
+                ESP_LOGW(
+                    TAG, "legacy theme migration save failed: %s", esp_err_to_name( save_result ) );
             }
         }
     }
