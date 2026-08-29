@@ -1,6 +1,6 @@
 /**
     audio_output.h : RFScout asynchronous speaker output interface
-    Description: Queues tones, Morse patterns, and PCM WAV playback for the onboard I2S speaker.
+    Description: Arbitrates disposable feedback, notifications, and intentional application audio.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -15,54 +15,68 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/** @brief Initialize the asynchronous onboard-speaker output service. */
+/** @brief Initialize the asynchronous speaker output service when the board provides one. */
 esp_err_t audio_output_init( void );
 
-/**
- * @brief Queue one tone without blocking the caller.
- * @param a_frequency_hz Tone frequency in hertz.
- * @param a_duration_ms Tone duration in milliseconds.
- * @param a_volume_percent Linear PCM amplitude percentage from 0 through 100.
- * @return True when the request was queued.
- */
+/** @brief Return whether the selected board has an initialized speaker output path. */
+bool audio_output_available( void );
+
+/** @brief Queue one ordinary generated tone without blocking the caller. */
 bool audio_output_play_tone( uint16_t a_frequency_hz,
                              uint32_t a_duration_ms,
                              uint8_t a_volume_percent );
 
-/**
- * @brief Queue one Morse-code character without blocking the caller.
- * @param a_character Single supported Morse character.
- * @param a_frequency_hz Tone frequency in hertz.
- * @param a_unit_ms Dot duration in milliseconds.
- * @param a_volume_percent Linear PCM amplitude percentage from 0 through 100.
- * @return True when the request was queued.
- */
+/** @brief Queue one ordinary Morse character without blocking the caller. */
 bool audio_output_play_morse( char a_character,
                               uint16_t a_frequency_hz,
                               uint32_t a_unit_ms,
                               uint8_t a_volume_percent );
 
 /**
- * @brief Queue playback of one RFScout-format PCM WAV file.
- * @param a_path Absolute filesystem path to a supported runtime-calibrated 16-bit mono PCM WAV file.
- * @param a_volume_percent Linear PCM amplitude percentage from 0 through 100.
- * @return True when the playback request was queued.
- * @note The worker opens and streams the file asynchronously; callers may return immediately.
+ * @brief Queue disposable interaction feedback.
+ * @details At most one feedback command is pending/active so fast navigation can never build a
+ *          stale audible backlog.
+ */
+bool audio_output_play_feedback_tone( uint16_t a_frequency_hz,
+                                      uint32_t a_duration_ms,
+                                      uint8_t a_volume_percent );
+
+/** @brief Queue a notification tone ahead of ordinary/feedback commands. */
+bool audio_output_play_notification_tone( uint16_t a_frequency_hz,
+                                          uint32_t a_duration_ms,
+                                          uint8_t a_volume_percent );
+
+/** @brief Queue a notification Morse character ahead of ordinary/feedback commands. */
+bool audio_output_play_notification_morse( char a_character,
+                                           uint16_t a_frequency_hz,
+                                           uint32_t a_unit_ms,
+                                           uint8_t a_volume_percent );
+
+/**
+ * @brief Queue intentional application PCM WAV playback.
+ * @note Content audio is independent from theme/notification policy and remains explicitly usable
+ *       in Discipline mode.
  */
 bool audio_output_play_wav( const char *a_path, uint8_t a_volume_percent );
 
-/** @brief Change gain for current/queued WAV playback without affecting alerts. */
+/** @brief Change gain for current/queued WAV playback without affecting feedback or notifications. */
 void audio_output_set_playback_volume( uint8_t a_volume_percent );
 
 /** @brief Return true while a queued or active WAV playback command exists. */
 bool audio_output_playback_active( void );
 
-/** @brief Stop active WAV playback and remove queued WAV playback commands. */
+/** @brief Stop active WAV playback and invalidate queued WAV playback commands. */
 void audio_output_stop_playback( void );
 
+/** @brief Remove queued disposable interaction feedback without touching application audio. */
+void audio_output_cancel_feedback_pending( void );
+
+/** @brief Remove queued notification audio without touching feedback or application audio. */
+void audio_output_cancel_notifications_pending( void );
+
 /**
- * @brief Drop speaker commands that are queued but have not started playing yet.
- * @note A tone or Morse command already executing on the output worker is allowed to finish.
+ * @brief Legacy broad cancellation helper.
+ * @deprecated Policy code should cancel its own class rather than clearing unrelated audio.
  */
 void audio_output_cancel_pending( void );
 
