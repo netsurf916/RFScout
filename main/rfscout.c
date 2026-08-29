@@ -182,7 +182,9 @@ void app_main( void )
     result = ui_theme_init();
     if( ESP_OK != result )
     {
-        ESP_LOGW( TAG, "display theme persistence unavailable; using Indoor: %s", esp_err_to_name( result ) );
+        ESP_LOGW( TAG,
+                  "display theme persistence unavailable; using Indoor: %s",
+                  esp_err_to_name( result ) );
     }
 
     alert_set_mode( device_config_get()->alert_mode );
