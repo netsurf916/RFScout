@@ -1,6 +1,6 @@
 /**
     feedback.c : RFScout semantic feedback policy
-    Description: Maps accepted UI/state events to disposable procedural sounds without coupling producers to audio.
+    Description: Maps accepted UI/state and general events to disposable procedural sounds.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -20,11 +20,17 @@
 #define FEEDBACK_BACK_HZ 850U
 #define FEEDBACK_STATE_HZ 1300U
 #define FEEDBACK_LOCK_HZ 700U
+#define FEEDBACK_DETECTED_HZ 1000U
+#define FEEDBACK_WARNING_HZ 650U
+#define FEEDBACK_ERROR_HZ 425U
 #define FEEDBACK_NAV_MS 18U
 #define FEEDBACK_ACTION_MS 35U
 #define FEEDBACK_STATE_MS 55U
+#define FEEDBACK_DETECTED_MS 45U
+#define FEEDBACK_WARNING_MS 65U
+#define FEEDBACK_ERROR_MS 90U
 
-static bool app_allows_interaction_feedback( uint8_t a_source )
+static bool app_allows_feedback( uint8_t a_source, bool a_general_event )
 {
     if( RFSCOUT_EVENT_SOURCE_SYSTEM == a_source )
     {
@@ -34,7 +40,15 @@ static bool app_allows_interaction_feedback( uint8_t a_source )
     {
         return false;
     }
-    return app_audio_policy_get( (rfscout_app_id_t)a_source )->interaction_feedback;
+
+    const rfscout_app_audio_policy_t *app = app_audio_policy_get( (rfscout_app_id_t)a_source );
+    return a_general_event ? app->general_event_feedback : app->interaction_feedback;
+}
+
+static bool is_general_event( rfscout_event_type_t a_type )
+{
+    return ( RFSCOUT_EVENT_DETECTED == a_type ) || ( RFSCOUT_EVENT_WARNING == a_type ) ||
+           ( RFSCOUT_EVENT_ERROR == a_type );
 }
 
 static void on_event( const rfscout_event_t *a_event, void *a_context )
@@ -58,13 +72,13 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
     const ui_theme_sound_policy_t *policy = ui_theme_sound_get();
     if( ( NULL == policy ) || !policy->interaction_audio ||
         ( 0U == policy->interaction_volume_percent ) ||
-        !app_allows_interaction_feedback( a_event->source ) )
+        !app_allows_feedback( a_event->source, is_general_event( a_event->type ) ) )
     {
         return;
     }
 
-    /* Intentional application audio owns the speaker. Routine UI feedback is
-       disposable and must never queue behind playback for later surprise output. */
+    /* Intentional application audio owns the speaker. Feedback is disposable
+       and must never queue behind playback for later surprise output. */
     if( audio_output_playback_active() )
     {
         return;
@@ -97,13 +111,23 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
             frequency = FEEDBACK_LOCK_HZ + 500U;
             duration = FEEDBACK_STATE_MS;
             break;
+        case RFSCOUT_EVENT_DETECTED:
+            frequency = FEEDBACK_DETECTED_HZ;
+            duration = FEEDBACK_DETECTED_MS;
+            break;
+        case RFSCOUT_EVENT_WARNING:
+            frequency = FEEDBACK_WARNING_HZ;
+            duration = FEEDBACK_WARNING_MS;
+            break;
+        case RFSCOUT_EVENT_ERROR:
+            frequency = FEEDBACK_ERROR_HZ;
+            duration = FEEDBACK_ERROR_MS;
+            break;
         case RFSCOUT_EVENT_ACTIVATE:
         case RFSCOUT_EVENT_ENTER:
             break;
         case RFSCOUT_EVENT_THEME_CHANGED:
         case RFSCOUT_EVENT_NOTIFICATION:
-        case RFSCOUT_EVENT_WARNING:
-        case RFSCOUT_EVENT_ERROR:
         case RFSCOUT_EVENT_TYPE_COUNT:
         default:
             return;
