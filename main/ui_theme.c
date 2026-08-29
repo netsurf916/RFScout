@@ -28,13 +28,13 @@ static const ui_theme_palette_t palettes[ RFSCOUT_THEME_COUNT ] = {
             .secondary = 0xC618U,
             .divider = 0x8410U,
             .accent = 0xFC00U,
-            .selected = 0xFFE0U,
-            .info = 0x07FFU,
-            .success = 0x07E0U,
-            .warning = 0xFFE0U,
+            .selected = 0xFC00U,
+            .info = 0xFFFFU,
+            .success = 0xC618U,
+            .warning = 0xFC00U,
             .error = 0xF800U,
-            .graph_primary = 0x07E0U,
-            .graph_peak = 0x07FFU,
+            .graph_primary = 0xFC00U,
+            .graph_peak = 0xFFFFU,
             .logo_primary = 0xFC00U,
             .logo_secondary = 0xFFFFU,
         },
@@ -44,15 +44,15 @@ static const ui_theme_palette_t palettes[ RFSCOUT_THEME_COUNT ] = {
             .text = 0xFFFFU,
             .secondary = 0xFFFFU,
             .divider = 0xC618U,
-            .accent = 0xFFE0U,
-            .selected = 0xFC20U,
-            .info = 0x07FFU,
-            .success = 0x07E0U,
-            .warning = 0xFFE0U,
-            .error = 0xF81FU,
-            .graph_primary = 0xFFE0U,
-            .graph_peak = 0x07FFU,
-            .logo_primary = 0xFFE0U,
+            .accent = 0xFC00U,
+            .selected = 0xFC00U,
+            .info = 0xFFFFU,
+            .success = 0xFFFFU,
+            .warning = 0xFC00U,
+            .error = 0xF800U,
+            .graph_primary = 0xFC00U,
+            .graph_peak = 0xFFFFU,
+            .logo_primary = 0xFC00U,
             .logo_secondary = 0xFFFFU,
         },
     [RFSCOUT_THEME_NIGHT] =
@@ -214,7 +214,7 @@ bool ui_theme_from_config_name( const char *a_name, rfscout_theme_id_t *a_theme 
 
     for( unsigned index = 0U; index < RFSCOUT_THEME_COUNT; ++index )
     {
-        if( 0 == strcasecmp( a_name, ui_theme_config_name( (rfscout_theme_id_t)index ) ) )
+        if( 0 == strcasecmp( a_name, ui_theme_config_name( (rfscout_theme_id_t)index ) )
         {
             *a_theme = (rfscout_theme_id_t)index;
             return true;
