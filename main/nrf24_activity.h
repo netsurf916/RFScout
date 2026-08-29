@@ -29,7 +29,7 @@ typedef struct
     uint32_t timestamp_ms;
 } nrf24_packet_observation_t;
 
-/** @brief Display-safe copy of one recently validated Enhanced ShockBurst packet. */
+/** @brief Bounded copy of one recently validated Enhanced ShockBurst packet. */
 typedef struct
 {
     uint8_t channel;
@@ -53,7 +53,7 @@ void nrf24_activity_reset_counts( void );
  */
 void nrf24_activity_observe_sweep( const uint8_t *a_hits, size_t a_count );
 
-/** @brief Add validated packet metadata to passive fingerprint classification. */
+/** @brief Add validated packet metadata to passive fingerprint classification and the recent ring. */
 void nrf24_activity_observe_packet( const nrf24_packet_observation_t *a_packet );
 
 /** @brief Copy recently validated packets in newest-first order. */
