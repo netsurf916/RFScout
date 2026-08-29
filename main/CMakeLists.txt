@@ -2,6 +2,15 @@ set(HOME_LOGO_SOURCE "${CMAKE_CURRENT_LIST_DIR}/../assets/logo.png")
 set(HOME_LOGO_GENERATOR "${CMAKE_CURRENT_LIST_DIR}/../tools/generate_home_logo.py")
 set(HOME_LOGO_HEADER "${CMAKE_CURRENT_BINARY_DIR}/home_logo_bitmap.h")
 
+# Board targets are selected at configure time. Only the selected board include
+# path and, as additional boards arrive, its board-specific sources are compiled
+# into a firmware image.
+if(CONFIG_RFSCOUT_BOARD_TEMBED_CC1101_PLUS)
+    set(RFSCOUT_BOARD_DIR "${CMAKE_CURRENT_LIST_DIR}/boards/tembed_cc1101_plus")
+else()
+    message(FATAL_ERROR "No supported RFScout board target selected")
+endif()
+
 # Re-run CMake when either bitmap input changes so an incremental idf.py build
 # cannot reuse a stale generated header. Keep this out of ESP-IDF's script-mode
 # component-requirements pass, where directory property changes are unnecessary.
@@ -82,7 +91,7 @@ idf_component_register(
         "oui_database.c"
         "storage.c"
         "log_writer.c"
-    INCLUDE_DIRS "." "${CMAKE_CURRENT_BINARY_DIR}"
+    INCLUDE_DIRS "." "${RFSCOUT_BOARD_DIR}" "${CMAKE_CURRENT_BINARY_DIR}"
     PRIV_REQUIRES bt cjson esp_driver_ledc
     REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_timer driver esp_driver_i2c esp_driver_i2s esp_driver_pcnt esp_lcd fatfs sdmmc
 )
