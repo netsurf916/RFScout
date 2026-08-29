@@ -15,7 +15,7 @@ Enhanced ShockBurst packet evidence is richer: channel, air rate, address width,
 packet-control fields, payload length, CRC result, and arrival timing can support
 conservative device-behavior groupings. Dynamic payload length is bounded to 32
 bytes. A packet must pass framing bounds and CRC before RFScout adds it to the
-recent-packet view or classifier.
+recent-packet ring or classifier.
 
 The current radio worker performs RPD sweeps only. The validated-observation API,
 classifier path, and bounded recent-packet storage are ready for a decoder producer,
