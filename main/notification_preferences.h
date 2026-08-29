@@ -1,6 +1,6 @@
 /**
     notification_preferences.h : RFScout per-application notification preferences
-    Description: Exposes app notification gates from the canonical device configuration.
+    Description: Exposes app notification gates and discovery-event preferences from canonical configuration.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
