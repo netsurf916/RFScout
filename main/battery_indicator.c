@@ -10,6 +10,7 @@
 #include "battery.h"
 #include "display.h"
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -20,13 +21,20 @@
 #define BATTERY_INDICATOR_TERMINAL_WIDTH 3
 #define BATTERY_INDICATOR_TERMINAL_HEIGHT 6
 #define BATTERY_INDICATOR_TEXT_GAP 5
+#define BATTERY_INDICATOR_REGION_X 253
+#define BATTERY_INDICATOR_REGION_WIDTH 60
+#define BATTERY_INDICATOR_REGION_HEIGHT 20
 
 #define BATTERY_INDICATOR_COLOR_NORMAL 0x03F0U
 #define BATTERY_INDICATOR_COLOR_COMPLETE 0x03E0U
 #define BATTERY_INDICATOR_COLOR_LOW 0xFC00U
 #define BATTERY_INDICATOR_COLOR_CRITICAL 0xF800U
 #define BATTERY_INDICATOR_COLOR_UNAVAILABLE 0x8410U
-#define BATTERY_INDICATOR_COLOR_CHARGING 0xFFE0U
+#define BATTERY_INDICATOR_COLOR_CHARGING 0xFFE1U
+#define BATTERY_INDICATOR_COLOR_BACKGROUND 0x0000U
+
+static bool have_last_status;
+static battery_status_t last_status;
 
 /** @brief Return the subdued battery color associated with its urgency. */
 static uint16_t indicator_color( const battery_status_t *a_status )
@@ -50,12 +58,12 @@ static uint16_t indicator_color( const battery_status_t *a_status )
     return BATTERY_INDICATOR_COLOR_NORMAL;
 }
 
-/** @brief Draw a compact transparent lightning bolt over the existing battery fill. */
+/** @brief Draw a compact transparent lightning bolt inside the empty battery body. */
 static void draw_charging_bolt( int a_x, int a_y )
 {
     /*
      * Eight-pixel-wide bolt derived from the simple diagonal reference silhouette. The mask is
-     * transparent: zero bits preserve the battery outline/fill already present in the framebuffer.
+     * transparent: zero bits preserve the black battery interior already in the framebuffer.
      */
     static const uint8_t mask[] = {
         0x1CU,
@@ -108,10 +116,11 @@ static void draw_battery_outline( uint16_t a_color )
                        a_color );
 }
 
-/** @brief Draw the proportional battery fill. */
+/** @brief Draw the proportional battery fill when the battery is not actively charging. */
 static void draw_battery_fill( const battery_status_t *a_status, uint16_t a_color )
 {
-    if( ( NULL == a_status ) || !a_status->available )
+    if( ( NULL == a_status ) || !a_status->available ||
+        ( BATTERY_CHARGE_CHARGING == a_status->charge_state ) )
     {
         return;
     }
@@ -132,16 +141,30 @@ static void draw_battery_fill( const battery_status_t *a_status, uint16_t a_colo
     }
 }
 
-void battery_indicator_draw( void )
+/** @brief Return whether two cached battery states render identically. */
+static bool battery_status_equal( const battery_status_t *a_left, const battery_status_t *a_right )
 {
-    battery_status_t status = { 0 };
-    (void)battery_get_status( &status );
+    return ( a_left->available == a_right->available ) &&
+           ( a_left->percentage == a_right->percentage ) &&
+           ( a_left->charge_state == a_right->charge_state ) &&
+           ( a_left->external_power == a_right->external_power );
+}
 
-    const uint16_t color = indicator_color( &status );
+/** @brief Render one battery-status snapshot into the framebuffer. */
+static void draw_status( const battery_status_t *a_status )
+{
+    const uint16_t color = indicator_color( a_status );
     char percentage[ 6 ];
-    if( status.available )
+
+    display_fill_rect( BATTERY_INDICATOR_REGION_X,
+                       0,
+                       BATTERY_INDICATOR_REGION_WIDTH,
+                       BATTERY_INDICATOR_REGION_HEIGHT,
+                       BATTERY_INDICATOR_COLOR_BACKGROUND );
+
+    if( a_status->available )
     {
-        snprintf( percentage, sizeof( percentage ), "%u%%", (unsigned)status.percentage );
+        snprintf( percentage, sizeof( percentage ), "%u%%", (unsigned)a_status->percentage );
     }
     else
     {
@@ -153,10 +176,33 @@ void battery_indicator_draw( void )
     display_draw_text( text_x, 7, percentage, color, 1 );
 
     draw_battery_outline( color );
-    draw_battery_fill( &status, color );
+    draw_battery_fill( a_status, color );
 
-    if( BATTERY_CHARGE_CHARGING == status.charge_state )
+    if( BATTERY_CHARGE_CHARGING == a_status->charge_state )
     {
         draw_charging_bolt( BATTERY_INDICATOR_BODY_X + 10, BATTERY_INDICATOR_BODY_Y + 2 );
     }
+
+    last_status = *a_status;
+    have_last_status = true;
+}
+
+void battery_indicator_draw( void )
+{
+    battery_status_t status = { 0 };
+    (void)battery_get_status( &status );
+    draw_status( &status );
+}
+
+void battery_indicator_poll( void )
+{
+    battery_status_t status = { 0 };
+    (void)battery_get_status( &status );
+
+    if( have_last_status && battery_status_equal( &status, &last_status ) )
+    {
+        return;
+    }
+
+    draw_status( &status );
 }

@@ -23,8 +23,6 @@
 #include <string.h>
 
 #define UI_MAX_KNOWN_BRANDS 8
-#define UI_BRAND_ATTENTION_THRESHOLD 5U
-#define UI_MAX_ATTENTION_ROWS 3U
 #define UI_REFRESH_INTERVAL_US 100000LL
 #define UI_LIST_START_Y 43
 #define UI_LIST_ROW_HEIGHT 12
@@ -36,12 +34,12 @@
 #define UI_SURVEILLANCE_LABEL_WIDTH 14
 #define COLOR_BLACK ( ui_theme_get()->background )
 #define COLOR_WHITE ( ui_theme_get()->text )
-#define COLOR_GREEN ( ui_theme_get()->success )
-#define COLOR_YELLOW ( ui_theme_get()->warning )
-#define COLOR_RED ( ui_theme_get()->error )
-#define COLOR_CYAN ( ui_theme_get()->info )
+#define COLOR_ORANGE ( ui_theme_get()->accent )
 #define COLOR_GRAY ( ui_theme_get()->divider )
 #define COLOR_SUBDUED_TEAL ( ui_theme_get()->secondary )
+/* 0xFFE0 is a legacy warning token translated through the theme resolver. Use the adjacent
+ * literal RGB565 value so WiFi/BT alerts remain unmistakably yellow against RFScout orange. */
+#define COLOR_ALERT_YELLOW 0xFFE1U
 
 typedef struct
 {
@@ -113,10 +111,10 @@ static void draw_static_rows( size_t a_unknown_count, size_t a_random_count )
 
     char line[ 64 ];
     snprintf( line, sizeof( line ), "%-27.27s %3u", "UNKNOWN", (unsigned)a_unknown_count );
-    display_draw_text( UI_LAYOUT_LEFT_X, UI_UNKNOWN_ROW_Y, line, COLOR_CYAN, 1 );
+    display_draw_text( UI_LAYOUT_LEFT_X, UI_UNKNOWN_ROW_Y, line, COLOR_ORANGE, 1 );
 
     snprintf( line, sizeof( line ), "%-27.27s %3u", "RANDOM", (unsigned)a_random_count );
-    display_draw_text( UI_LAYOUT_LEFT_X, UI_RANDOM_ROW_Y, line, COLOR_CYAN, 1 );
+    display_draw_text( UI_LAYOUT_LEFT_X, UI_RANDOM_ROW_Y, line, COLOR_ORANGE, 1 );
 }
 
 static void draw_surveillance_rows( const uint16_t *a_signature_counts )
@@ -127,7 +125,7 @@ static void draw_surveillance_rows( const uint16_t *a_signature_counts )
     {
         const surveillance_signature_id_t signature = surveillance_rows[ row ];
         const uint16_t count = a_signature_counts[ signature ];
-        const uint16_t color = ( 0U == count ) ? COLOR_GRAY : COLOR_RED;
+        const uint16_t color = ( 0U == count ) ? COLOR_GRAY : COLOR_ALERT_YELLOW;
         char line[ 32 ];
         snprintf( line,
                   sizeof( line ),
@@ -190,22 +188,18 @@ static void render_summary( void )
     display_draw_text( UI_LAYOUT_LEFT_X, 25, line, COLOR_WHITE, 1 );
 
     snprintf( line, sizeof( line ), "SURVEILLANCE %u", (unsigned)surveillance_count );
-    display_draw_text( 210, 25, line, ( 0U == surveillance_count ) ? COLOR_GRAY : COLOR_RED, 1 );
+    display_draw_text(
+        210, 25, line, ( 0U == surveillance_count ) ? COLOR_GRAY : COLOR_ALERT_YELLOW, 1 );
 
     display_fill_rect( 5, 36, 310, 1, COLOR_GRAY );
     display_fill_rect( UI_COLUMN_DIVIDER_X, 36, 1, RFSCOUT_DISPLAY_HEIGHT - 36, COLOR_GRAY );
 
     int y = UI_LIST_START_Y;
-    size_t attention_rows = 0;
     for( size_t i = 0; i < brand_count; ++i )
     {
         snprintf(
             line, sizeof( line ), "%-27.27s %3u", brands[ i ].name, (unsigned)brands[ i ].count );
-        const bool highlight = ( brands[ i ].count > UI_BRAND_ATTENTION_THRESHOLD ) &&
-                               ( attention_rows < UI_MAX_ATTENTION_ROWS );
-        if( highlight )
-            ++attention_rows;
-        display_draw_text( UI_LAYOUT_LEFT_X, y, line, highlight ? COLOR_YELLOW : COLOR_CYAN, 1 );
+        display_draw_text( UI_LAYOUT_LEFT_X, y, line, COLOR_ORANGE, 1 );
         y += UI_LIST_ROW_HEIGHT;
     }
 
