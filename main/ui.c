@@ -13,6 +13,7 @@
 #include "surveillance_history.h"
 #include "ui_chrome.h"
 #include "ui_layout.h"
+#include "ui_theme.h"
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -33,14 +34,14 @@
 #define UI_COLUMN_DIVIDER_X 198
 #define UI_SURVEILLANCE_X 205
 #define UI_SURVEILLANCE_LABEL_WIDTH 14
-#define COLOR_BLACK 0x0000U
-#define COLOR_WHITE 0xFFFFU
-#define COLOR_GREEN 0x07E0U
-#define COLOR_YELLOW 0xFFE0U
-#define COLOR_RED 0xF800U
-#define COLOR_CYAN 0x07FFU
-#define COLOR_GRAY 0x8410U
-#define COLOR_SUBDUED_TEAL 0x03F0U
+#define COLOR_BLACK ( ui_theme_get()->background )
+#define COLOR_WHITE ( ui_theme_get()->text )
+#define COLOR_GREEN ( ui_theme_get()->success )
+#define COLOR_YELLOW ( ui_theme_get()->warning )
+#define COLOR_RED ( ui_theme_get()->error )
+#define COLOR_CYAN ( ui_theme_get()->info )
+#define COLOR_GRAY ( ui_theme_get()->divider )
+#define COLOR_SUBDUED_TEAL ( ui_theme_get()->secondary )
 
 typedef struct
 {
