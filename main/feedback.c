@@ -1,18 +1,17 @@
 /**
     feedback.c : RFScout semantic feedback policy
-    Description: Maps accepted UI/state events to short procedural sounds without coupling producers to audio.
+    Description: Maps accepted UI/state events to disposable procedural sounds without coupling producers to audio.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
 
 #include "feedback.h"
 
-#include "app_manager.h"
+#include "app_audio_policy.h"
 #include "audio_output.h"
 #include "event.h"
 #include "ui_theme.h"
 
-#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -25,29 +24,51 @@
 #define FEEDBACK_ACTION_MS 35U
 #define FEEDBACK_STATE_MS 55U
 
-/** @brief Return whether an app normally wants incidental interaction sounds. */
-static bool app_interaction_audio( uint8_t a_source )
+static bool app_allows_interaction_feedback( uint8_t a_source )
 {
-    /* Recorder is intentionally natively quiet so controls do not contaminate monitoring/playback.
-       Future audio-centric apps can adopt the same policy without changing global feedback. */
-    return a_source != (uint8_t)RFSCOUT_APP_AUDIO;
+    if( RFSCOUT_EVENT_SOURCE_SYSTEM == a_source )
+    {
+        return true;
+    }
+    if( a_source >= (uint8_t)RFSCOUT_APP_COUNT )
+    {
+        return false;
+    }
+    return app_audio_policy_get( (rfscout_app_id_t)a_source )->interaction_feedback;
 }
 
 static void on_event( const rfscout_event_t *a_event, void *a_context )
 {
     (void)a_context;
     if( NULL == a_event )
+    {
         return;
+    }
+
+    if( RFSCOUT_EVENT_THEME_CHANGED == a_event->type )
+    {
+        const ui_theme_sound_policy_t *policy = ui_theme_sound_get();
+        if( ( NULL == policy ) || !policy->interaction_audio )
+        {
+            audio_output_cancel_feedback_pending();
+        }
+        return;
+    }
 
     const ui_theme_sound_policy_t *policy = ui_theme_sound_get();
-    if( NULL == policy || !policy->interaction_audio || 0U == policy->interaction_volume_percent )
+    if( ( NULL == policy ) || !policy->interaction_audio ||
+        ( 0U == policy->interaction_volume_percent ) ||
+        !app_allows_interaction_feedback( a_event->source ) )
+    {
         return;
-    if( a_event->source != RFSCOUT_EVENT_SOURCE_SYSTEM && !app_interaction_audio( a_event->source ) )
-        return;
+    }
 
-    /* Application playback owns the speaker; routine UI feedback is disposable. */
+    /* Intentional application audio owns the speaker. Routine UI feedback is
+       disposable and must never queue behind playback for later surprise output. */
     if( audio_output_playback_active() )
+    {
         return;
+    }
 
     uint16_t frequency = FEEDBACK_ACTIVATE_HZ;
     uint32_t duration = FEEDBACK_ACTION_MS;
@@ -79,6 +100,7 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
         case RFSCOUT_EVENT_ACTIVATE:
         case RFSCOUT_EVENT_ENTER:
             break;
+        case RFSCOUT_EVENT_THEME_CHANGED:
         case RFSCOUT_EVENT_NOTIFICATION:
         case RFSCOUT_EVENT_WARNING:
         case RFSCOUT_EVENT_ERROR:
@@ -87,7 +109,7 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
             return;
     }
 
-    (void)audio_output_play_tone(
+    (void)audio_output_play_feedback_tone(
         frequency, duration, policy->interaction_volume_percent );
 }
 
