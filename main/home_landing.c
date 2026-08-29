@@ -22,58 +22,48 @@
 #define HOME_CONTROL_APPS_Y 43
 #define HOME_CONTROL_SETTINGS_Y 70
 
-/** @brief Draw a compact circular arrow pair for rotary application navigation. */
-static void draw_rotate_icon( int a_x, int a_y )
+/** @brief Draw solid opposing triangles representing rotary application navigation. */
+static void draw_apps_icon( int a_x, int a_y )
 {
     const uint16_t color = ui_theme_get()->logo_primary;
 
-    /* Upper/right sweep and arrowhead. */
-    display_fill_rect( a_x + 7, a_y + 2, 13, 2, color );
-    display_fill_rect( a_x + 18, a_y + 4, 5, 2, color );
-    display_fill_rect( a_x + 21, a_y + 6, 4, 2, color );
-    display_fill_rect( a_x + 23, a_y + 8, 2, 5, color );
-    display_fill_rect( a_x + 20, a_y + 8, 5, 2, color );
-    display_fill_rect( a_x + 23, a_y + 8, 2, 5, color );
+    /* Left-pointing triangle. */
+    for( int row = 0; row < 9; ++row )
+    {
+        const int half_width = ( row <= 4 ) ? row : 8 - row;
+        display_fill_rect( a_x + 6 - half_width, a_y + row * 2, half_width + 1, 2, color );
+    }
 
-    /* Lower/left sweep and opposing arrowhead. */
-    display_fill_rect( a_x + 5, a_y + 15, 2, 5, color );
-    display_fill_rect( a_x + 7, a_y + 19, 5, 2, color );
-    display_fill_rect( a_x + 10, a_y + 21, 13, 2, color );
-    display_fill_rect( a_x + 3, a_y + 12, 2, 6, color );
-    display_fill_rect( a_x + 3, a_y + 16, 5, 2, color );
+    /* Right-pointing triangle. */
+    for( int row = 0; row < 9; ++row )
+    {
+        const int half_width = ( row <= 4 ) ? row : 8 - row;
+        display_fill_rect( a_x + 20, a_y + row * 2, half_width + 1, 2, color );
+    }
 }
 
-/** @brief Draw concentric rings representing the encoder's center push button. */
+/** @brief Draw a filled circle representing the encoder center push button. */
 static void draw_center_button_icon( int a_x, int a_y )
 {
-    const uint16_t outer = ui_theme_get()->logo_primary;
-    const uint16_t inner = ui_theme_get()->logo_secondary;
+    const uint16_t color = ui_theme_get()->logo_primary;
+    static const uint8_t widths[] = { 8U, 14U, 18U, 20U, 20U, 18U, 14U, 8U };
 
-    /* Pixel-friendly circular outlines rather than rectangular encoder artwork. */
-    display_fill_rect( a_x + 8, a_y + 2, 12, 2, outer );
-    display_fill_rect( a_x + 4, a_y + 4, 4, 2, outer );
-    display_fill_rect( a_x + 20, a_y + 4, 4, 2, outer );
-    display_fill_rect( a_x + 2, a_y + 6, 2, 16, outer );
-    display_fill_rect( a_x + 24, a_y + 6, 2, 16, outer );
-    display_fill_rect( a_x + 4, a_y + 22, 4, 2, outer );
-    display_fill_rect( a_x + 20, a_y + 22, 4, 2, outer );
-    display_fill_rect( a_x + 8, a_y + 24, 12, 2, outer );
-
-    display_fill_rect( a_x + 10, a_y + 8, 8, 2, inner );
-    display_fill_rect( a_x + 8, a_y + 10, 2, 8, inner );
-    display_fill_rect( a_x + 18, a_y + 10, 2, 8, inner );
-    display_fill_rect( a_x + 10, a_y + 18, 8, 2, inner );
+    for( size_t row = 0U; row < sizeof( widths ); ++row )
+    {
+        const int width = widths[ row ];
+        display_fill_rect( a_x + ( 20 - width ) / 2, a_y + (int)row * 2, width, 2, color );
+    }
 }
 
 /** @brief Draw the two compact Home-screen control affordances above the logo detail. */
 static void draw_home_controls( void )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
-    draw_rotate_icon( HOME_CONTROL_ICON_X, HOME_CONTROL_APPS_Y - 7 );
+    draw_apps_icon( HOME_CONTROL_ICON_X, HOME_CONTROL_APPS_Y - 6 );
     display_draw_text(
         HOME_CONTROL_TEXT_X, HOME_CONTROL_APPS_Y, "APPS", theme->logo_secondary, 1U );
 
-    draw_center_button_icon( HOME_CONTROL_ICON_X, HOME_CONTROL_SETTINGS_Y - 8 );
+    draw_center_button_icon( HOME_CONTROL_ICON_X + 4, HOME_CONTROL_SETTINGS_Y - 4 );
     display_draw_text(
         HOME_CONTROL_TEXT_X, HOME_CONTROL_SETTINGS_Y, "SETTINGS", theme->logo_secondary, 1U );
 }
