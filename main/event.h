@@ -25,6 +25,7 @@ typedef enum
     RFSCOUT_EVENT_DISABLE,
     RFSCOUT_EVENT_INPUT_LOCKED,
     RFSCOUT_EVENT_INPUT_UNLOCKED,
+    RFSCOUT_EVENT_THEME_CHANGED,
     RFSCOUT_EVENT_NOTIFICATION,
     RFSCOUT_EVENT_WARNING,
     RFSCOUT_EVENT_ERROR,
@@ -48,7 +49,7 @@ void rfscout_event_unsubscribe( rfscout_event_handler_t a_handler, void *a_conte
 
 /**
  * @brief Publish an accepted semantic event to all observers.
- * @note Delivery is synchronous and handlers must remain short/nonblocking.
+ * @note Delivery is synchronous and handlers must remain short and nonblocking.
  */
 void rfscout_event_emit( rfscout_event_type_t a_type, uint8_t a_source, int32_t a_value );
 
