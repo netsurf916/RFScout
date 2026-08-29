@@ -16,6 +16,7 @@
 
 #define ENCODER_BUTTON_DEBOUNCE_US 30000LL
 #define ENCODER_BUTTON_LONG_PRESS_US 800000LL
+#define ENCODER_BUTTON_LOCK_HOLD_US 2000000LL
 #define ENCODER_LATCH_STATE_0 0U
 #define ENCODER_LATCH_STATE_3 3U
 #define ENCODER_TRANSITIONS_PER_DETENT 2
@@ -29,7 +30,8 @@ static bool encoder_button_raw;
 static bool encoder_button_stable;
 static bool encoder_button_event;
 static bool encoder_button_long_event;
-static bool encoder_button_long_fired;
+static bool encoder_button_lock_fired;
+static bool input_locked;
 static int64_t encoder_button_pressed_us;
 static int64_t encoder_button_change_us;
 
@@ -67,6 +69,15 @@ static void IRAM_ATTR encoder_isr( void *a_argument )
     portEXIT_CRITICAL_ISR( &encoder_lock );
 }
 
+/** @brief Discard accumulated rotary movement so locked movement cannot leak through later. */
+static void clear_encoder_delta( void )
+{
+    portENTER_CRITICAL( &encoder_lock );
+    encoder_delta = 0;
+    encoder_accumulator = 0;
+    portEXIT_CRITICAL( &encoder_lock );
+}
+
 esp_err_t platform_init( void )
 {
     gpio_config_t outputs = {
@@ -102,7 +113,8 @@ esp_err_t platform_init( void )
     encoder_button_stable = encoder_button_raw;
     encoder_button_event = false;
     encoder_button_long_event = false;
-    encoder_button_long_fired = false;
+    encoder_button_lock_fired = false;
+    input_locked = false;
     encoder_button_pressed_us = 0;
     encoder_button_change_us = esp_timer_get_time();
 
@@ -133,27 +145,42 @@ void platform_poll( void )
         if( pressed )
         {
             encoder_button_pressed_us = now_us;
-            encoder_button_long_fired = false;
+            encoder_button_lock_fired = false;
         }
-        else if( !encoder_button_long_fired )
+        else
         {
-            encoder_button_event = true;
+            const int64_t held_us = now_us - encoder_button_pressed_us;
+            if( !encoder_button_lock_fired && !input_locked )
+            {
+                if( held_us >= ENCODER_BUTTON_LONG_PRESS_US )
+                {
+                    encoder_button_long_event = true;
+                }
+                else
+                {
+                    encoder_button_event = true;
+                }
+            }
+            encoder_button_pressed_us = 0;
         }
     }
 
-    if( encoder_button_stable && !encoder_button_long_fired && encoder_button_pressed_us > 0 &&
-        ( now_us - encoder_button_pressed_us ) >= ENCODER_BUTTON_LONG_PRESS_US )
+    if( encoder_button_stable && !encoder_button_lock_fired && encoder_button_pressed_us > 0 &&
+        ( now_us - encoder_button_pressed_us ) >= ENCODER_BUTTON_LOCK_HOLD_US )
     {
-        encoder_button_long_fired = true;
-        encoder_button_long_event = true;
+        input_locked = !input_locked;
+        encoder_button_lock_fired = true;
         encoder_button_event = false;
+        encoder_button_long_event = false;
+        clear_encoder_delta();
+        ESP_LOGI( TAG, "user input %s", input_locked ? "locked" : "unlocked" );
     }
 }
 
 int platform_encoder_delta( void )
 {
     portENTER_CRITICAL( &encoder_lock );
-    const int delta = encoder_delta;
+    const int delta = input_locked ? 0 : encoder_delta;
     encoder_delta = 0;
     portEXIT_CRITICAL( &encoder_lock );
     return delta;
@@ -161,16 +188,21 @@ int platform_encoder_delta( void )
 
 bool platform_encoder_button_pressed( void )
 {
-    const bool event = encoder_button_event;
+    const bool event = !input_locked && encoder_button_event;
     encoder_button_event = false;
     return event;
 }
 
 bool platform_encoder_button_long_pressed( void )
 {
-    const bool event = encoder_button_long_event;
+    const bool event = !input_locked && encoder_button_long_event;
     encoder_button_long_event = false;
     return event;
+}
+
+bool platform_input_locked( void )
+{
+    return input_locked;
 }
 
 void platform_set_alert_led( bool a_active )

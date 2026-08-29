@@ -17,6 +17,7 @@
 /** @brief Snapshot of global status consumed by the shared top chrome. */
 typedef struct
 {
+    bool input_locked;
     bool sd_available;
     bool storage_error;
     bool thermal_available;
@@ -43,5 +44,13 @@ void status_bar_draw_state( const rfscout_status_bar_state_t *a_state );
  *          use ui_chrome_draw() rather than calling this directly.
  */
 void status_bar_draw( void );
+
+/**
+ * @brief Refresh the status-bar framebuffer region only when global status has changed.
+ *
+ * Intended for the main periodic UI loop so asynchronous state such as the input lock and clock can
+ * update even while the active application itself is static.
+ */
+void status_bar_poll( void );
 
 #endif // _RFSCOUT_STATUS_BAR_H_

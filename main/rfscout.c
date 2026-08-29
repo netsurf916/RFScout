@@ -19,6 +19,7 @@
 #include "platform.h"
 #include "power.h"
 #include "radio_monitor.h"
+#include "status_bar.h"
 #include "storage.h"
 #include "surveillance.h"
 #include "surveillance_history.h"
@@ -226,6 +227,7 @@ void app_main( void )
         battery_poll();
         observation_store_housekeeping();
         app_manager_poll();
+        status_bar_poll();
 
         /* Presentation remains periodic for every app, including static Home. The display layer
          * skips the LCD transfer when neither framebuffer nor overlay state was invalidated. */
