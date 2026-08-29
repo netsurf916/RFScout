@@ -35,6 +35,7 @@ typedef struct
     uint16_t success;
     uint16_t warning;
     uint16_t error;
+    uint16_t alert;
     uint16_t graph_primary;
     uint16_t graph_peak;
     uint16_t logo_primary;
