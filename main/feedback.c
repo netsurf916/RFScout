@@ -8,6 +8,7 @@
 #include "feedback.h"
 
 #include "app_audio_policy.h"
+#include "app_manager.h"
 #include "audio_output.h"
 #include "event.h"
 #include "ui_theme.h"
@@ -51,6 +52,20 @@ static bool is_general_event( rfscout_event_type_t a_type )
            ( RFSCOUT_EVENT_ERROR == a_type );
 }
 
+static uint8_t policy_source_for_event( const rfscout_event_t *a_event )
+{
+    if( ( RFSCOUT_EVENT_SOURCE_SYSTEM == a_event->source ) &&
+        ( ( RFSCOUT_EVENT_INPUT_LOCKED == a_event->type ) ||
+          ( RFSCOUT_EVENT_INPUT_UNLOCKED == a_event->type ) ) )
+    {
+        /* Lock state is system-owned, but its feedback happens in the context of
+           the visible app. Respect quiet app policy so Recorder never captures
+           a lock/unlock chirp while recording or monitoring. */
+        return (uint8_t)app_manager_current();
+    }
+    return a_event->source;
+}
+
 static void on_event( const rfscout_event_t *a_event, void *a_context )
 {
     (void)a_context;
@@ -72,7 +87,7 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
     const ui_theme_sound_policy_t *policy = ui_theme_sound_get();
     if( ( NULL == policy ) || !policy->interaction_audio ||
         ( 0U == policy->interaction_volume_percent ) ||
-        !app_allows_feedback( a_event->source, is_general_event( a_event->type ) ) )
+        !app_allows_feedback( policy_source_for_event( a_event ), is_general_event( a_event->type ) ) )
     {
         return;
     }
