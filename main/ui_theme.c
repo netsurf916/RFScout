@@ -149,6 +149,38 @@ const ui_theme_palette_t *ui_theme_get( void )
     return ui_theme_palette( active_theme );
 }
 
+uint16_t ui_theme_resolve_legacy_color( uint16_t a_color )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    switch( a_color )
+    {
+        case 0x0000U:
+            return theme->background;
+        case 0xFFFFU:
+        case 0xBDF7U:
+            return theme->text;
+        case 0x7BEFU:
+        case 0x8410U:
+        case 0x03F0U:
+            return ( 0x8410U == a_color ) ? theme->divider : theme->secondary;
+        case 0xFC00U:
+            return theme->accent;
+        case 0xFFE0U:
+        case 0xFD20U:
+            return theme->warning;
+        case 0xF800U:
+        case 0xF81FU:
+            return theme->error;
+        case 0x03E0U:
+        case 0x07E0U:
+            return theme->success;
+        case 0x07FFU:
+            return theme->info;
+        default:
+            return a_color;
+    }
+}
+
 const char *ui_theme_config_name( rfscout_theme_id_t a_theme )
 {
     static const char *names[ RFSCOUT_THEME_COUNT ] = { "indoor", "outdoor", "night" };
