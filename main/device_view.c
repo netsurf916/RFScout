@@ -1,6 +1,6 @@
 /**
     device_view.c : RFScout Home and Device settings implementation
-    Description: Provides the branded Home landing screen, global settings, notification mappings, timezone selection, and manual time setting.
+    Description: Provides global settings, notification mappings, timezone selection, and semantic feedback.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -13,6 +13,7 @@
 #include "device_config.h"
 #include "device_time.h"
 #include "display.h"
+#include "event.h"
 #include "log_writer.h"
 #include "morse.h"
 #include "observation_store.h"
@@ -65,7 +66,11 @@ static bool editing;
 static struct tm edited_time;
 static bool save_error;
 
-/** @brief Emit a standard configuration-change record when logging is active. */
+static void emit_device_event( rfscout_event_type_t a_type, int32_t a_value )
+{
+    rfscout_event_emit( a_type, (uint8_t)RFSCOUT_APP_DEVICE, a_value );
+}
+
 static void log_config_change( const char *a_key, const char *a_old, const char *a_new )
 {
     char detail[ 160 ];
@@ -78,7 +83,6 @@ static void log_config_change( const char *a_key, const char *a_old, const char 
     (void)log_writer_app_record( "CONFIG", detail );
 }
 
-/** @brief Format an epoch for a time-change audit record. */
 static void format_epoch( bool a_valid, time_t a_epoch, char *a_output, size_t a_capacity )
 {
     if( !a_valid || !device_time_format_iso8601_utc( a_epoch, a_output, a_capacity ) )
@@ -87,7 +91,6 @@ static void format_epoch( bool a_valid, time_t a_epoch, char *a_output, size_t a
     }
 }
 
-/** @brief Refresh the editable local calendar fields from the authoritative clock. */
 static void refresh_edited_time( void )
 {
     time_t now;
@@ -95,7 +98,6 @@ static void refresh_edited_time( void )
     {
         return;
     }
-
     memset( &edited_time, 0, sizeof( edited_time ) );
     edited_time.tm_year = 126;
     edited_time.tm_mon = 0;
@@ -103,13 +105,11 @@ static void refresh_edited_time( void )
     edited_time.tm_isdst = -1;
 }
 
-/** @brief Return a compact boolean value for the settings UI and logs. */
 static const char *on_off( bool a_value )
 {
     return a_value ? "On" : "Off";
 }
 
-/** @brief Return the user-facing name for a startup target. */
 static const char *startup_app_name( rfscout_app_id_t a_app )
 {
     switch( a_app )
@@ -125,49 +125,33 @@ static const char *startup_app_name( rfscout_app_id_t a_app )
         case RFSCOUT_APP_THERMAL:
             return "Thermal";
         case RFSCOUT_APP_DEVICE:
-            return "Home";
         case RFSCOUT_APP_COUNT:
         default:
             return "Home";
     }
 }
 
-/**
- * @brief Return the notification category represented by one Device item.
- * @note Device notification rows intentionally correspond 1:1 with the enum/descriptor table in
- *       alert.h and alert.c. Do not add a second alert-item list here.
- */
 static rfscout_notification_type_t notification_for_item( unsigned a_item )
 {
     return (rfscout_notification_type_t)( a_item - DEVICE_ITEM_NOTIFICATION_FIRST );
 }
 
-/** @brief Return the next supported single-character Morse value. */
 static char next_morse_character( char a_current, int a_direction )
 {
     const char *characters = morse_supported_characters();
     const size_t count = strlen( characters );
     const char *current = strchr( characters, a_current );
     size_t index = ( NULL != current ) ? (size_t)( current - characters ) : 0U;
-
-    if( a_direction > 0 )
-    {
-        index = ( index + 1U ) % count;
-    }
-    else
-    {
-        index = ( index + count - 1U ) % count;
-    }
+    index = ( a_direction > 0 ) ? ( index + 1U ) % count
+                                : ( index + count - 1U ) % count;
     return characters[ index ];
 }
 
-/** @brief Return true when one Device item can enter edit mode. */
 static bool item_editable( unsigned a_item )
 {
     return ( DEVICE_ITEM_BACK != a_item ) && ( DEVICE_ITEM_SAVE != a_item );
 }
 
-/** @brief Return the user-facing label for one Device settings item. */
 static const char *item_label( unsigned a_item )
 {
     switch( a_item )
@@ -222,12 +206,10 @@ static const char *item_label( unsigned a_item )
     }
 }
 
-/** @brief Format the current value of one Device settings item. */
 static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
 {
     const device_config_t *config = device_config_get();
     a_value[ 0 ] = '\0';
-
     switch( a_item )
     {
         case DEVICE_ITEM_BRIGHTNESS:
@@ -267,24 +249,34 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             snprintf( a_value, a_capacity, "%02d", edited_time.tm_min );
             break;
         case DEVICE_ITEM_WIFI:
-            snprintf(
-                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_WIFI_BT ] ) );
+            snprintf( a_value,
+                      a_capacity,
+                      "%s",
+                      on_off( config->apps_enabled[ RFSCOUT_APP_WIFI_BT ] ) );
             break;
         case DEVICE_ITEM_CC1101:
-            snprintf(
-                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_CC1101 ] ) );
+            snprintf( a_value,
+                      a_capacity,
+                      "%s",
+                      on_off( config->apps_enabled[ RFSCOUT_APP_CC1101 ] ) );
             break;
         case DEVICE_ITEM_NRF24:
-            snprintf(
-                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_NRF24 ] ) );
+            snprintf( a_value,
+                      a_capacity,
+                      "%s",
+                      on_off( config->apps_enabled[ RFSCOUT_APP_NRF24 ] ) );
             break;
         case DEVICE_ITEM_AUDIO:
-            snprintf(
-                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_AUDIO ] ) );
+            snprintf( a_value,
+                      a_capacity,
+                      "%s",
+                      on_off( config->apps_enabled[ RFSCOUT_APP_AUDIO ] ) );
             break;
         case DEVICE_ITEM_THERMAL:
-            snprintf(
-                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_THERMAL ] ) );
+            snprintf( a_value,
+                      a_capacity,
+                      "%s",
+                      on_off( config->apps_enabled[ RFSCOUT_APP_THERMAL ] ) );
             break;
         case DEVICE_ITEM_LOGGING:
             snprintf( a_value, a_capacity, "%s", on_off( config->logging_enabled ) );
@@ -305,21 +297,22 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
                 const rfscout_notification_type_t type = notification_for_item( a_item );
                 const char character = device_config_notification_character( type );
                 const char *pattern = morse_pattern( character );
-                snprintf(
-                    a_value, a_capacity, "%c %s", character, ( NULL != pattern ) ? pattern : "?" );
+                snprintf( a_value,
+                          a_capacity,
+                          "%c %s",
+                          character,
+                          ( NULL != pattern ) ? pattern : "?" );
             }
             break;
     }
 }
 
-/** @brief Draw one selectable setting row. */
 static void draw_row( int a_y, unsigned a_item )
 {
     char value[ 48 ];
     item_value( a_item, value, sizeof( value ) );
     const bool active = selected_item == a_item;
     const uint16_t color = active ? COLOR_SELECTED : COLOR_TEXT;
-
     if( active )
     {
         display_draw_text(
@@ -332,7 +325,6 @@ static void draw_row( int a_y, unsigned a_item )
     }
 }
 
-/** @brief Draw the RFScout Home mark procedurally without embedding a second bitmap asset. */
 static void draw_home_logo( void )
 {
     display_fill_rect( 50, 54, 8, 48, COLOR_ACCENT );
@@ -357,7 +349,6 @@ void device_view_render( void )
 {
     display_clear( COLOR_BACKGROUND );
     ui_chrome_draw( "DEVICE SETTINGS", COLOR_DIM );
-
     const unsigned page_start = ( selected_item / DEVICE_ROWS_PER_PAGE ) * DEVICE_ROWS_PER_PAGE;
     for( unsigned row = 0U; row < DEVICE_ROWS_PER_PAGE; ++row )
     {
@@ -378,7 +369,6 @@ void device_view_render( void )
               editing ? "TURN CHANGE / CENTER DONE" : "TURN SELECT / CENTER ENTER" );
     display_draw_text(
         UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, footer, editing ? COLOR_ACCENT : COLOR_DIM, 1U );
-
     if( save_error )
     {
         display_draw_text( 246, UI_LAYOUT_FOOTER_Y, "SAVE ERROR", COLOR_ERROR, 1U );
@@ -395,7 +385,6 @@ void device_view_enter( void )
     device_view_render();
 }
 
-/** @brief Move to the next/previous Device setting. */
 static void move_selection( int a_delta )
 {
     int item = (int)selected_item + ( ( a_delta > 0 ) ? 1 : -1 );
@@ -407,18 +396,24 @@ static void move_selection( int a_delta )
     {
         item = 0;
     }
-    selected_item = (unsigned)item;
+    if( (unsigned)item != selected_item )
+    {
+        selected_item = (unsigned)item;
+        emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
+    }
 }
 
-/** @brief Toggle one top-level application and audit the setting change. */
 static void toggle_app( rfscout_app_id_t a_app, const char *a_key )
 {
     const bool old_value = device_config_app_enabled( a_app );
-    (void)device_config_set_app_enabled( a_app, !old_value );
-    log_config_change( a_key, on_off( old_value ), on_off( !old_value ) );
+    if( ESP_OK == device_config_set_app_enabled( a_app, !old_value ) )
+    {
+        log_config_change( a_key, on_off( old_value ), on_off( !old_value ) );
+        emit_device_event( !old_value ? RFSCOUT_EVENT_ENABLE : RFSCOUT_EVENT_DISABLE,
+                           !old_value ? 1 : 0 );
+    }
 }
 
-/** @brief Rotate among display themes and persist the selection immediately. */
 static void adjust_theme( int a_delta )
 {
     const rfscout_theme_id_t old_theme = ui_theme_current();
@@ -431,22 +426,23 @@ static void adjust_theme( int a_delta )
     {
         theme = 0;
     }
-
     const rfscout_theme_id_t new_theme = (rfscout_theme_id_t)theme;
-    if( ESP_OK == ui_theme_set( new_theme ) )
+    if( ( new_theme != old_theme ) && ( ESP_OK == ui_theme_set( new_theme ) ) )
     {
         log_config_change( "display.theme",
                            ui_theme_display_name( old_theme ),
                            ui_theme_display_name( new_theme ) );
         save_error = false;
+        /* The new theme is already active here. Entering Discipline therefore remains silent,
+           while leaving it immediately restores accepted-action feedback. */
+        emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
     }
-    else
+    else if( new_theme != old_theme )
     {
         save_error = true;
     }
 }
 
-/** @brief Rotate among startup applications and audit the preference change. */
 static void adjust_startup_app( int a_delta )
 {
     const rfscout_app_id_t old_app = device_config_startup_app();
@@ -459,16 +455,14 @@ static void adjust_startup_app( int a_delta )
     {
         app = 0;
     }
-
     const rfscout_app_id_t new_app = (rfscout_app_id_t)app;
-    if( ESP_OK == device_config_set_startup_app( new_app ) )
+    if( ( new_app != old_app ) && ( ESP_OK == device_config_set_startup_app( new_app ) ) )
     {
-        log_config_change(
-            "apps.startup", startup_app_name( old_app ), startup_app_name( new_app ) );
+        log_config_change( "apps.startup", startup_app_name( old_app ), startup_app_name( new_app ) );
+        emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
     }
 }
 
-/** @brief Rotate among configured timezone definitions and immediately apply the selected rule. */
 static void adjust_timezone( int a_delta )
 {
     const device_config_t *config = device_config_get();
@@ -478,7 +472,7 @@ static void adjust_timezone( int a_delta )
     }
 
     size_t current = 0U;
-    for( size_t index = 0; index < config->timezone_count; ++index )
+    for( size_t index = 0U; index < config->timezone_count; ++index )
     {
         if( 0 == strcmp( config->timezones[ index ].name, config->timezone_selected ) )
         {
@@ -489,19 +483,26 @@ static void adjust_timezone( int a_delta )
     const size_t next = ( a_delta > 0 )
                             ? ( current + 1U ) % config->timezone_count
                             : ( current + config->timezone_count - 1U ) % config->timezone_count;
+    if( next == current )
+    {
+        return;
+    }
 
     char old_name[ RFSCOUT_TIMEZONE_NAME_MAX ];
     snprintf( old_name, sizeof( old_name ), "%s", config->timezone_selected );
-    (void)device_config_set_timezone( config->timezones[ next ].name );
-    (void)device_time_apply_timezone();
-    log_config_change( "timezone.selected", old_name, config->timezones[ next ].name );
-    refresh_edited_time();
+    if( ESP_OK == device_config_set_timezone( config->timezones[ next ].name ) )
+    {
+        (void)device_time_apply_timezone();
+        log_config_change( "timezone.selected", old_name, config->timezones[ next ].name );
+        refresh_edited_time();
+        emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
+    }
 }
 
-/** @brief Adjust one manual calendar field without changing wall time yet. */
 static void adjust_time_field( unsigned a_item, int a_delta )
 {
     const int direction = ( a_delta > 0 ) ? 1 : -1;
+    const struct tm before = edited_time;
     switch( a_item )
     {
         case DEVICE_ITEM_YEAR:
@@ -515,11 +516,9 @@ static void adjust_time_field( unsigned a_item, int a_delta )
                 edited_time.tm_year = 200;
             }
             break;
-
         case DEVICE_ITEM_MONTH:
             edited_time.tm_mon = ( edited_time.tm_mon + direction + 12 ) % 12;
             break;
-
         case DEVICE_ITEM_DAY:
             edited_time.tm_mday += direction;
             if( edited_time.tm_mday < 1 )
@@ -531,21 +530,21 @@ static void adjust_time_field( unsigned a_item, int a_delta )
                 edited_time.tm_mday = 1;
             }
             break;
-
         case DEVICE_ITEM_HOUR:
             edited_time.tm_hour = ( edited_time.tm_hour + direction + 24 ) % 24;
             break;
-
         case DEVICE_ITEM_MINUTE:
             edited_time.tm_min = ( edited_time.tm_min + direction + 60 ) % 60;
             break;
-
         default:
-            break;
+            return;
+    }
+    if( 0 != memcmp( &before, &edited_time, sizeof( edited_time ) ) )
+    {
+        emit_device_event( RFSCOUT_EVENT_NAVIGATE, direction );
     }
 }
 
-/** @brief Return whether mktime preserved every user-edited local calendar field. */
 static bool manual_time_round_trip_valid( const struct tm *a_requested, time_t a_epoch )
 {
     struct tm normalized;
@@ -560,27 +559,21 @@ static bool manual_time_round_trip_valid( const struct tm *a_requested, time_t a
            ( normalized.tm_min == a_requested->tm_min );
 }
 
-/** @brief Commit manually edited local date/time to the authoritative system wall clock. */
-static void commit_manual_time( void )
+static bool commit_manual_time( void )
 {
     time_t old_epoch = 0;
     const bool had_old = device_time_now( &old_epoch );
-
     struct tm requested = edited_time;
     requested.tm_sec = 0;
     requested.tm_isdst = -1;
     struct tm conversion = requested;
     const time_t new_epoch = mktime( &conversion );
-    const bool calendar_valid = manual_time_round_trip_valid( &requested, new_epoch );
-    if( ( new_epoch < (time_t)1577836800 ) || !calendar_valid )
+    if( ( new_epoch < (time_t)1577836800 ) ||
+        !manual_time_round_trip_valid( &requested, new_epoch ) ||
+        ( ESP_OK != device_time_set_epoch( new_epoch, RFSCOUT_TIME_SOURCE_MANUAL, "manual" ) ) )
     {
         save_error = true;
-        return;
-    }
-    if( ESP_OK != device_time_set_epoch( new_epoch, RFSCOUT_TIME_SOURCE_MANUAL, "manual" ) )
-    {
-        save_error = true;
-        return;
+        return false;
     }
 
     edited_time = conversion;
@@ -592,9 +585,9 @@ static void commit_manual_time( void )
     snprintf( detail, sizeof( detail ), "old=%s new=%s source=manual", old_text, new_text );
     (void)log_writer_app_record( "TIME", detail );
     save_error = false;
+    return true;
 }
 
-/** @brief Apply the logging preference immediately when possible. */
 static void toggle_logging( void )
 {
     const bool old_value = device_config_get()->logging_enabled;
@@ -610,6 +603,7 @@ static void toggle_logging( void )
             return;
         }
         save_error = false;
+        emit_device_event( RFSCOUT_EVENT_DISABLE, 0 );
         return;
     }
 
@@ -623,9 +617,9 @@ static void toggle_logging( void )
     app_logging_init();
     log_config_change( "logging.enabled", "Off", "On" );
     save_error = false;
+    emit_device_event( RFSCOUT_EVENT_ENABLE, 1 );
 }
 
-/** @brief Adjust the global notification mode. */
 static void adjust_alert_mode( int a_delta )
 {
     const rfscout_alert_mode_t old_mode = device_config_get()->alert_mode;
@@ -638,14 +632,16 @@ static void adjust_alert_mode( int a_delta )
     {
         mode = 0;
     }
-
-    (void)device_config_set_alert_mode( (rfscout_alert_mode_t)mode );
-    log_config_change( "notifications.mode",
-                       alert_mode_name( old_mode ),
-                       alert_mode_name( (rfscout_alert_mode_t)mode ) );
+    if( (rfscout_alert_mode_t)mode != old_mode &&
+        ( ESP_OK == device_config_set_alert_mode( (rfscout_alert_mode_t)mode ) ) )
+    {
+        log_config_change( "notifications.mode",
+                           alert_mode_name( old_mode ),
+                           alert_mode_name( (rfscout_alert_mode_t)mode ) );
+        emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
+    }
 }
 
-/** @brief Adjust the global notification volume in 10-percent steps. */
 static void adjust_alert_volume( int a_delta )
 {
     const uint8_t old_value = device_config_get()->alert_volume_percent;
@@ -663,7 +659,6 @@ static void adjust_alert_volume( int a_delta )
     {
         return;
     }
-
     if( ESP_OK == device_config_set_alert_volume( (uint8_t)value ) )
     {
         char old_text[ 8 ];
@@ -671,16 +666,17 @@ static void adjust_alert_volume( int a_delta )
         snprintf( old_text, sizeof( old_text ), "%u", (unsigned)old_value );
         snprintf( new_text, sizeof( new_text ), "%u", (unsigned)value );
         log_config_change( "notifications.volume", old_text, new_text );
+        emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
     }
 }
 
-/** @brief Adjust one detection category's Morse character. */
 static void adjust_notification_character( unsigned a_item, int a_delta )
 {
     const rfscout_notification_type_t type = notification_for_item( a_item );
     const char old_character = device_config_notification_character( type );
     const char new_character = next_morse_character( old_character, a_delta );
-    if( ESP_OK != device_config_set_notification_character( type, new_character ) )
+    if( ( new_character == old_character ) ||
+        ( ESP_OK != device_config_set_notification_character( type, new_character ) ) )
     {
         return;
     }
@@ -694,9 +690,9 @@ static void adjust_notification_character( unsigned a_item, int a_delta )
               "notifications.characters.%s",
               ( NULL != config_key ) ? config_key : "unknown" );
     log_config_change( key, old_text, new_text );
+    emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
 }
 
-/** @brief Adjust the currently edited setting. */
 static void adjust_selected( int a_delta )
 {
     const device_config_t *config = device_config_get();
@@ -721,6 +717,7 @@ static void adjust_selected( int a_delta )
             snprintf( old_text, sizeof( old_text ), "%u", (unsigned)old_value );
             snprintf( new_text, sizeof( new_text ), "%u", (unsigned)value );
             log_config_change( "display.brightness", old_text, new_text );
+            emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
         }
     }
     else if( DEVICE_ITEM_THEME == selected_item )
@@ -730,8 +727,12 @@ static void adjust_selected( int a_delta )
     else if( DEVICE_ITEM_CLOCK_FORMAT == selected_item )
     {
         const bool old_value = config->clock_24h;
-        (void)device_config_set_clock_24h( !old_value );
-        log_config_change( "display.clock_24h", on_off( old_value ), on_off( !old_value ) );
+        if( ESP_OK == device_config_set_clock_24h( !old_value ) )
+        {
+            log_config_change( "display.clock_24h", on_off( old_value ), on_off( !old_value ) );
+            emit_device_event( !old_value ? RFSCOUT_EVENT_ENABLE : RFSCOUT_EVENT_DISABLE,
+                               !old_value ? 1 : 0 );
+        }
     }
     else if( DEVICE_ITEM_TIMEZONE == selected_item )
     {
@@ -790,23 +791,32 @@ bool device_view_input( bool a_pressed, int a_delta )
     {
         if( ( DEVICE_ITEM_BACK == selected_item ) && !editing )
         {
+            emit_device_event( RFSCOUT_EVENT_BACK, 0 );
             return true;
         }
         if( ( DEVICE_ITEM_SAVE == selected_item ) && !editing )
         {
             save_error = ( ESP_OK != device_config_save( false, 0, NULL ) );
+            emit_device_event( save_error ? RFSCOUT_EVENT_ERROR : RFSCOUT_EVENT_ACTIVATE,
+                               save_error ? -1 : 0 );
             device_view_render();
             return false;
         }
 
+        bool accepted = true;
         if( editing && ( selected_item >= DEVICE_ITEM_YEAR ) &&
             ( selected_item <= DEVICE_ITEM_MINUTE ) )
         {
-            commit_manual_time();
+            accepted = commit_manual_time();
         }
         if( item_editable( selected_item ) )
         {
             editing = !editing;
+            if( accepted )
+            {
+                emit_device_event( editing ? RFSCOUT_EVENT_ENTER : RFSCOUT_EVENT_ACTIVATE,
+                                   editing ? 1 : 0 );
+            }
         }
         device_view_render();
         return false;
