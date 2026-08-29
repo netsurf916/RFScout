@@ -32,14 +32,6 @@
 #define UI_COLUMN_DIVIDER_X 198
 #define UI_SURVEILLANCE_X 205
 #define UI_SURVEILLANCE_LABEL_WIDTH 14
-#define COLOR_BLACK ( ui_theme_get()->background )
-#define COLOR_WHITE ( ui_theme_get()->text )
-#define COLOR_ORANGE ( ui_theme_get()->accent )
-#define COLOR_GRAY ( ui_theme_get()->divider )
-#define COLOR_SUBDUED_TEAL ( ui_theme_get()->secondary )
-/* 0xFFE0 is a legacy warning token translated through the theme resolver. Use the adjacent
- * literal RGB565 value so WiFi/BT alerts remain unmistakably yellow against RFScout orange. */
-#define COLOR_ALERT_YELLOW 0xFFE1U
 
 typedef struct
 {
@@ -107,25 +99,27 @@ static void add_brand( const char *a_name )
 
 static void draw_static_rows( size_t a_unknown_count, size_t a_random_count )
 {
-    display_fill_rect( 5, UI_STATIC_DIVIDER_Y, UI_COLUMN_DIVIDER_X - 10, 1, COLOR_GRAY );
+    const ui_theme_palette_t *theme = ui_theme_get();
+    display_fill_rect( 5, UI_STATIC_DIVIDER_Y, UI_COLUMN_DIVIDER_X - 10, 1, theme->divider );
 
     char line[ 64 ];
     snprintf( line, sizeof( line ), "%-27.27s %3u", "UNKNOWN", (unsigned)a_unknown_count );
-    display_draw_text( UI_LAYOUT_LEFT_X, UI_UNKNOWN_ROW_Y, line, COLOR_ORANGE, 1 );
+    display_draw_text( UI_LAYOUT_LEFT_X, UI_UNKNOWN_ROW_Y, line, theme->info, 1 );
 
     snprintf( line, sizeof( line ), "%-27.27s %3u", "RANDOM", (unsigned)a_random_count );
-    display_draw_text( UI_LAYOUT_LEFT_X, UI_RANDOM_ROW_Y, line, COLOR_ORANGE, 1 );
+    display_draw_text( UI_LAYOUT_LEFT_X, UI_RANDOM_ROW_Y, line, theme->info, 1 );
 }
 
 static void draw_surveillance_rows( const uint16_t *a_signature_counts )
 {
+    const ui_theme_palette_t *theme = ui_theme_get();
     int y = UI_LIST_START_Y;
     for( size_t row = 0; row < sizeof( surveillance_rows ) / sizeof( surveillance_rows[ 0 ] );
          ++row )
     {
         const surveillance_signature_id_t signature = surveillance_rows[ row ];
         const uint16_t count = a_signature_counts[ signature ];
-        const uint16_t color = ( 0U == count ) ? COLOR_GRAY : COLOR_ALERT_YELLOW;
+        const uint16_t color = ( 0U == count ) ? theme->info : theme->warning;
         char line[ 32 ];
         snprintf( line,
                   sizeof( line ),
@@ -146,6 +140,7 @@ static void render_summary( void )
         return;
     }
 
+    const ui_theme_palette_t *theme = ui_theme_get();
     memset( brands, 0, RFSCOUT_DEVICE_CAPACITY * sizeof( *brands ) );
     uint16_t signature_counts[ SURVEILLANCE_SIGNATURE_COUNT ] = { 0 };
     const size_t device_count = observation_store_snapshot( snapshot, RFSCOUT_DEVICE_CAPACITY );
@@ -175,8 +170,8 @@ static void render_summary( void )
     while( ( brand_count < UI_MAX_KNOWN_BRANDS ) && ( 0U != brands[ brand_count ].count ) )
         ++brand_count;
 
-    display_clear( COLOR_BLACK );
-    ui_chrome_draw( "WIFI / BT", COLOR_SUBDUED_TEAL );
+    display_clear( theme->background );
+    ui_chrome_draw( "WIFI / BT", theme->secondary );
 
     char line[ 64 ];
     snprintf( line,
@@ -185,21 +180,21 @@ static void render_summary( void )
               (unsigned)device_count,
               (unsigned)wifi_count,
               (unsigned)ble_count );
-    display_draw_text( UI_LAYOUT_LEFT_X, 25, line, COLOR_WHITE, 1 );
+    display_draw_text( UI_LAYOUT_LEFT_X, 25, line, theme->normal, 1 );
 
     snprintf( line, sizeof( line ), "SURVEILLANCE %u", (unsigned)surveillance_count );
     display_draw_text(
-        210, 25, line, ( 0U == surveillance_count ) ? COLOR_GRAY : COLOR_ALERT_YELLOW, 1 );
+        210, 25, line, ( 0U == surveillance_count ) ? theme->info : theme->warning, 1 );
 
-    display_fill_rect( 5, 36, 310, 1, COLOR_GRAY );
-    display_fill_rect( UI_COLUMN_DIVIDER_X, 36, 1, RFSCOUT_DISPLAY_HEIGHT - 36, COLOR_GRAY );
+    display_fill_rect( 5, 36, 310, 1, theme->divider );
+    display_fill_rect( UI_COLUMN_DIVIDER_X, 36, 1, RFSCOUT_DISPLAY_HEIGHT - 36, theme->divider );
 
     int y = UI_LIST_START_Y;
     for( size_t i = 0; i < brand_count; ++i )
     {
         snprintf(
             line, sizeof( line ), "%-27.27s %3u", brands[ i ].name, (unsigned)brands[ i ].count );
-        display_draw_text( UI_LAYOUT_LEFT_X, y, line, COLOR_ORANGE, 1 );
+        display_draw_text( UI_LAYOUT_LEFT_X, y, line, theme->warning, 1 );
         y += UI_LIST_ROW_HEIGHT;
     }
 

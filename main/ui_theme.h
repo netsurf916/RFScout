@@ -32,6 +32,7 @@ typedef struct
     uint16_t accent;
     uint16_t selected;
     uint16_t info;
+    uint16_t normal;
     uint16_t success;
     uint16_t warning;
     uint16_t error;

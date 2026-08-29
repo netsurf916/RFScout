@@ -8,6 +8,7 @@
 #include "display.h"
 
 #include "power.h"
+#include "ui_theme.h"
 
 #include "esp_heap_caps.h"
 
@@ -18,40 +19,41 @@
 #define POWER_OVERLAY_WIDTH 236
 #define POWER_OVERLAY_HEIGHT 70
 #define POWER_OVERLAY_PIXEL_COUNT ( POWER_OVERLAY_WIDTH * POWER_OVERLAY_HEIGHT )
-#define COLOR_BLACK 0x0000U
-#define COLOR_YELLOW 0xFFE0U
-#define COLOR_RED 0xF800U
 
 static uint16_t *overlay_backup;
 
 /** @brief Draw the hold-to-power-off overlay into the active framebuffer. */
 static void draw_power_overlay( const power_status_t *a_status )
 {
-    display_fill_rect(
-        POWER_OVERLAY_X, POWER_OVERLAY_Y, POWER_OVERLAY_WIDTH, POWER_OVERLAY_HEIGHT, COLOR_BLACK );
-    display_fill_rect( POWER_OVERLAY_X, POWER_OVERLAY_Y, POWER_OVERLAY_WIDTH, 2, COLOR_RED );
+    const ui_theme_palette_t *theme = ui_theme_get();
+    display_fill_rect( POWER_OVERLAY_X,
+                       POWER_OVERLAY_Y,
+                       POWER_OVERLAY_WIDTH,
+                       POWER_OVERLAY_HEIGHT,
+                       theme->background );
+    display_fill_rect( POWER_OVERLAY_X, POWER_OVERLAY_Y, POWER_OVERLAY_WIDTH, 2, theme->error );
     display_fill_rect( POWER_OVERLAY_X,
                        POWER_OVERLAY_Y + POWER_OVERLAY_HEIGHT - 2,
                        POWER_OVERLAY_WIDTH,
                        2,
-                       COLOR_RED );
-    display_fill_rect( POWER_OVERLAY_X, POWER_OVERLAY_Y, 2, POWER_OVERLAY_HEIGHT, COLOR_RED );
+                       theme->error );
+    display_fill_rect( POWER_OVERLAY_X, POWER_OVERLAY_Y, 2, POWER_OVERLAY_HEIGHT, theme->error );
     display_fill_rect( POWER_OVERLAY_X + POWER_OVERLAY_WIDTH - 2,
                        POWER_OVERLAY_Y,
                        2,
                        POWER_OVERLAY_HEIGHT,
-                       COLOR_RED );
+                       theme->error );
 
     if( POWER_HOLD_SHUTDOWN == a_status->state )
     {
-        display_draw_text( 91, 77, "POWERING OFF...", COLOR_RED, 2 );
+        display_draw_text( 91, 77, "POWERING OFF...", theme->error, 2 );
         return;
     }
 
-    display_draw_text( 69, 63, "HOLD TO POWER OFF", COLOR_YELLOW, 2 );
+    display_draw_text( 69, 63, "HOLD TO POWER OFF", theme->warning, 2 );
     char countdown[ 4 ];
     snprintf( countdown, sizeof( countdown ), "%u", (unsigned)a_status->seconds_remaining );
-    display_draw_text( 150, 88, countdown, COLOR_RED, 3 );
+    display_draw_text( 150, 88, countdown, theme->error, 3 );
 }
 
 esp_err_t display_present( void )
