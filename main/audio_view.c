@@ -71,11 +71,8 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
         display_draw_text( UI_LAYOUT_LEFT_X, 42, "NO SD CARD", theme->error, 2U );
         display_draw_text(
             UI_LAYOUT_LEFT_X, 75, "Recorder needs /sdcard/audio", theme->divider, 1U );
-        display_draw_text( UI_LAYOUT_LEFT_X,
-                           UI_LAYOUT_FOOTER_Y,
-                           "CENTER: OPEN / BACK",
-                           theme->secondary,
-                           1U );
+        display_draw_text(
+            UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: OPEN / BACK", theme->secondary, 1U );
     }
     else if( RFSCOUT_RECORDER_ERROR == state )
     {
@@ -90,8 +87,7 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
         display_draw_text( UI_LAYOUT_LEFT_X, 42, "READY", theme->warning, 2U );
         snprintf( line, sizeof( line ), "%u RECORDINGS", (unsigned)recorder_file_count() );
         display_draw_text( UI_LAYOUT_LEFT_X, 78, line, theme->text, 1U );
-        display_draw_text(
-            UI_LAYOUT_LEFT_X, 105, "calibrated diagnostic WAV", theme->divider, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 105, "calibrated diagnostic WAV", theme->divider, 1U );
         display_draw_text(
             UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: OPEN", theme->secondary, 1U );
     }
@@ -221,8 +217,7 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
     {
         display_draw_text( UI_LAYOUT_LEFT_X, 44, "> BACK", theme->selected, 1U );
         display_draw_text( UI_LAYOUT_LEFT_X, 74, "NO SD CARD", theme->error, 2U );
-        display_draw_text(
-            UI_LAYOUT_LEFT_X, 110, "/sdcard/audio unavailable", theme->divider, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 110, "/sdcard/audio unavailable", theme->divider, 1U );
         display_draw_text(
             UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: BACK", theme->secondary, 1U );
         (void)display_present();
@@ -270,10 +265,7 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
                            item == a_selected ? theme->selected : theme->text,
                            1U );
     }
-    display_draw_text( UI_LAYOUT_LEFT_X,
-                       UI_LAYOUT_FOOTER_Y,
-                       "CENTER: PLAY  HOLD: DELETE",
-                       theme->secondary,
-                       1U );
+    display_draw_text(
+        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: PLAY  HOLD: DELETE", theme->secondary, 1U );
     (void)display_present();
 }
