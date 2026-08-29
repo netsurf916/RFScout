@@ -1,6 +1,6 @@
 /**
     board.h : LILYGO T-Embed CC1101 Plus hardware definition
-    Description: Central pin and geometry definitions for the RFScout target.
+    Description: Central pin, geometry, and capability definitions for this RFScout target.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -9,6 +9,22 @@
 
 #ifndef _RFSCOUT_BOARD_H_
 #define _RFSCOUT_BOARD_H_
+
+#define RFSCOUT_BOARD_NAME "LILYGO T-Embed CC1101 Plus"
+
+/* Compile-time capabilities describe hardware provided by this board target.
+   They are intentionally constants so future board builds can omit unsupported
+   drivers and applications instead of carrying a runtime universal HAL. */
+#define RFSCOUT_BOARD_HAS_CC1101 1
+#define RFSCOUT_BOARD_HAS_NRF24 1
+#define RFSCOUT_BOARD_HAS_SX1262 0
+#define RFSCOUT_BOARD_HAS_GPS 0
+#define RFSCOUT_BOARD_HAS_KEYBOARD 0
+#define RFSCOUT_BOARD_HAS_TOUCH 0
+#define RFSCOUT_BOARD_HAS_ROTARY_ENCODER 1
+#define RFSCOUT_BOARD_HAS_PDM_MIC 1
+#define RFSCOUT_BOARD_HAS_SPEAKER 1
+#define RFSCOUT_BOARD_HAS_SD 1
 
 #define RFSCOUT_BOARD_POWER_ENABLE_PIN 15
 #define RFSCOUT_BOARD_USER_KEY_PIN 6

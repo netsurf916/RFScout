@@ -1,6 +1,6 @@
 /**
     platform.c : RFScout board-level services
-    Description: Initializes the LILYGO T-Embed CC1101 Plus shared hardware.
+    Description: Implements shared services for the selected RFScout board target.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -124,7 +124,7 @@ esp_err_t platform_init( void )
     ESP_ERROR_CHECK( gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_A_PIN, encoder_isr, NULL ) );
     ESP_ERROR_CHECK( gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_B_PIN, encoder_isr, NULL ) );
 
-    ESP_LOGI( TAG, "T-Embed CC1101 Plus board GPIO initialized" );
+    ESP_LOGI( TAG, "%s board GPIO initialized", RFSCOUT_BOARD_NAME );
     return ESP_OK;
 }
 
@@ -175,6 +175,38 @@ void platform_poll( void )
         clear_encoder_delta();
         ESP_LOGI( TAG, "user input %s", input_locked ? "locked" : "unlocked" );
     }
+}
+
+bool platform_input_get( rfscout_input_event_t *a_event )
+{
+    if( NULL == a_event )
+    {
+        return false;
+    }
+
+    a_event->type = RFSCOUT_INPUT_NONE;
+    a_event->value = 0;
+
+    if( platform_encoder_button_long_pressed() )
+    {
+        a_event->type = RFSCOUT_INPUT_LONG_SELECT;
+        return true;
+    }
+    if( platform_encoder_button_pressed() )
+    {
+        a_event->type = RFSCOUT_INPUT_SELECT;
+        return true;
+    }
+
+    const int delta = platform_encoder_delta();
+    if( 0 != delta )
+    {
+        a_event->type = RFSCOUT_INPUT_NAVIGATION;
+        a_event->value = delta;
+        return true;
+    }
+
+    return false;
 }
 
 int platform_encoder_delta( void )
