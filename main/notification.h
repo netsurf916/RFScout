@@ -13,6 +13,7 @@
 #include "app_manager.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 
 typedef enum
 {
@@ -52,6 +53,13 @@ const char *notification_name( rfscout_notification_type_t a_type );
 const char *notification_config_key( rfscout_notification_type_t a_type );
 rfscout_app_id_t notification_app( rfscout_notification_type_t a_type );
 char notification_default_character( rfscout_notification_type_t a_type );
+
+/** @brief Return the number of semantic notification categories owned by one application. */
+size_t notification_count_for_app( rfscout_app_id_t a_app );
+
+/** @brief Return one application-owned notification descriptor by app-local index. */
+const rfscout_notification_descriptor_t *
+notification_descriptor_for_app( rfscout_app_id_t a_app, size_t a_index );
 
 /**
  * @brief Emit one semantic notification event.
