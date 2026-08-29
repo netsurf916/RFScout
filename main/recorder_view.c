@@ -11,6 +11,7 @@
 #include "display.h"
 #include "recorder.h"
 #include "status_bar.h"
+#include "ui_theme.h"
 
 #include <stdio.h>
 
@@ -95,6 +96,7 @@ void recorder_view_render( size_t a_selected )
 
 void recorder_view_files( size_t a_selected )
 {
+    const ui_theme_palette_t *theme = ui_theme_get();
     display_clear( BG );
     display_draw_text( 8, 7, "RECORDINGS", SUBDUED, 2U );
     draw_status_chrome();
@@ -131,7 +133,8 @@ void recorder_view_files( size_t a_selected )
                   recording->name,
                   (unsigned long)( recording->duration_seconds / 60U ),
                   (unsigned long)( recording->duration_seconds % 60U ) );
-        display_draw_text( 8, 40 + (int)row * 20, line, index == a_selected ? YELLOW : TEXT, 1U );
+        display_draw_text(
+            8, 40 + (int)row * 20, line, index == a_selected ? theme->selected : TEXT, 1U );
     }
 
     display_draw_text( 8, 144, "TURN: SELECT CENTER: PLAY", SUBDUED, 1U );
