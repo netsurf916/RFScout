@@ -7,13 +7,16 @@
 
 #include "power.h"
 
+#include "app_manager.h"
 #include "battery.h"
 #include "board.h"
 #include "device_config.h"
 #include "device_time.h"
 #include "display.h"
 #include "log_writer.h"
+#include "platform.h"
 #include "recorder.h"
+#include "session_state.h"
 #include "storage.h"
 
 #include "driver/gpio.h"
@@ -108,6 +111,8 @@ static void enter_sleep( void )
         ESP_LOGW( TAG, "sleep cancelled because SD logger is still active" );
         return;
     }
+
+    session_state_store( app_manager_current(), platform_input_locked() );
 
     ESP_ERROR_CHECK( esp_sleep_enable_ext1_wakeup_io( 1ULL << RFSCOUT_BOARD_USER_KEY_PIN,
                                                       ESP_EXT1_WAKEUP_ANY_LOW ) );

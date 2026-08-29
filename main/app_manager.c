@@ -27,6 +27,7 @@
 #include "radio_app_view.h"
 #include "radio_monitor.h"
 #include "recorder.h"
+#include "session_state.h"
 #include "surveillance_history.h"
 #include "thermal_view.h"
 #include "ui.h"
@@ -285,6 +286,11 @@ static void close_notification_menu( void )
     notification_menu = false;
     notification_edit = false;
     notification_item = NOTIFICATION_MENU_BACK;
+    const esp_err_t save_result = device_config_save( false, 0, NULL );
+    if( ESP_OK != save_result && ESP_ERR_INVALID_STATE != save_result )
+    {
+        ESP_LOGW( TAG, "notification settings save failed: %s", esp_err_to_name( save_result ) );
+    }
     render_parent_menu();
 }
 
@@ -1222,6 +1228,11 @@ static void close_active_menu_for_back( void )
 esp_err_t app_manager_init( void )
 {
     active_app = device_config_startup_app();
+    rfscout_session_state_t restored_session;
+    if( session_state_restore( &restored_session ) && app_available( restored_session.active_app ) )
+    {
+        active_app = restored_session.active_app;
+    }
     last_app_refresh_us = 0;
     last_thermal_probe_us = esp_timer_get_time();
     last_radio_retry_us = 0;

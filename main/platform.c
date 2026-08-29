@@ -8,6 +8,7 @@
 #include "platform.h"
 #include "board.h"
 #include "event.h"
+#include "session_state.h"
 #include "driver/gpio.h"
 #include "esp_attr.h"
 #include "esp_log.h"
@@ -115,7 +116,8 @@ esp_err_t platform_init( void )
     encoder_button_event = false;
     encoder_button_long_event = false;
     encoder_button_lock_fired = false;
-    input_locked = false;
+    rfscout_session_state_t restored_session;
+    input_locked = session_state_restore( &restored_session ) && restored_session.input_locked;
     encoder_button_pressed_us = 0;
     encoder_button_change_us = esp_timer_get_time();
 

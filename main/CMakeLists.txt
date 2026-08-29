@@ -80,6 +80,7 @@ idf_component_register(
         "surveillance_history.c"
         "platform.c"
         "power.c"
+        "session_state.c"
         "board_spi.c"
         "board_i2c.c"
         "battery.c"

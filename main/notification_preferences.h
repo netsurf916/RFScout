@@ -1,6 +1,6 @@
 /**
     notification_preferences.h : RFScout per-application notification preferences
-    Description: Persists independent app notification gates without affecting application content audio.
+    Description: Exposes app notification gates from the canonical device configuration.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -15,14 +15,14 @@
 
 #include <stdbool.h>
 
-/** @brief Load per-app notification gates from NVS over native application defaults. */
+/** @brief Initialize the notification preference facade after device configuration setup. */
 esp_err_t notification_preferences_init( void );
 
 /** @brief Return whether an application is currently allowed to emit notifications. */
 bool notification_preferences_app_enabled( rfscout_app_id_t a_app );
 
 /**
- * @brief Persist one application's notification gate.
+ * @brief Change one application's notification gate in runtime configuration.
  * @note Applications that do not support notifications always remain disabled.
  */
 esp_err_t notification_preferences_set_app_enabled( rfscout_app_id_t a_app, bool a_enabled );

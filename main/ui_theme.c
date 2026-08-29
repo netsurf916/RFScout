@@ -7,17 +7,13 @@
 
 #include "ui_theme.h"
 
+#include "device_config.h"
 #include "event.h"
 
 #include "esp_log.h"
-#include "nvs.h"
 
 #include <stddef.h>
 #include <strings.h>
-
-#define THEME_NVS_NAMESPACE "rfscout_ui"
-#define THEME_NVS_KEY "theme"
-#define THEME_NVS_VALUE_CAPACITY 16U
 
 static const char *TAG = "ui_theme";
 static rfscout_theme_id_t active_theme = RFSCOUT_THEME_INDOOR;
@@ -98,41 +94,7 @@ static const ui_theme_sound_policy_t sound_policies[ RFSCOUT_THEME_COUNT ] = {
 
 esp_err_t ui_theme_init( void )
 {
-    nvs_handle_t handle;
-    esp_err_t result = nvs_open( THEME_NVS_NAMESPACE, NVS_READONLY, &handle );
-    if( ESP_ERR_NVS_NOT_FOUND == result )
-    {
-        active_theme = RFSCOUT_THEME_INDOOR;
-        return ESP_OK;
-    }
-    if( ESP_OK != result )
-    {
-        return result;
-    }
-
-    char stored[ THEME_NVS_VALUE_CAPACITY ];
-    size_t stored_length = sizeof( stored );
-    result = nvs_get_str( handle, THEME_NVS_KEY, stored, &stored_length );
-    nvs_close( handle );
-    if( ESP_ERR_NVS_NOT_FOUND == result )
-    {
-        active_theme = RFSCOUT_THEME_INDOOR;
-        return ESP_OK;
-    }
-    if( ESP_OK != result )
-    {
-        return result;
-    }
-
-    rfscout_theme_id_t parsed = RFSCOUT_THEME_INDOOR;
-    if( !ui_theme_from_config_name( stored, &parsed ) )
-    {
-        ESP_LOGW( TAG, "invalid stored theme '%s'; using indoor", stored );
-        active_theme = RFSCOUT_THEME_INDOOR;
-        return ESP_OK;
-    }
-
-    active_theme = parsed;
+    active_theme = device_config_theme();
     return ESP_OK;
 }
 
@@ -142,29 +104,21 @@ esp_err_t ui_theme_set( rfscout_theme_id_t a_theme )
     {
         return ESP_ERR_INVALID_ARG;
     }
-
-    nvs_handle_t handle;
-    esp_err_t result = nvs_open( THEME_NVS_NAMESPACE, NVS_READWRITE, &handle );
+    const esp_err_t result = device_config_set_theme( a_theme );
     if( ESP_OK != result )
     {
         return result;
     }
-
-    result = nvs_set_str( handle, THEME_NVS_KEY, ui_theme_config_name( a_theme ) );
-    if( ESP_OK == result )
+    active_theme = a_theme;
+    ESP_LOGI( TAG, "theme=%s", ui_theme_config_name( a_theme ) );
+    rfscout_event_emit(
+        RFSCOUT_EVENT_THEME_CHANGED, RFSCOUT_EVENT_SOURCE_SYSTEM, (int32_t)a_theme );
+    const esp_err_t save_result = device_config_save( false, 0, NULL );
+    if( ESP_OK != save_result && ESP_ERR_INVALID_STATE != save_result )
     {
-        result = nvs_commit( handle );
+        ESP_LOGW( TAG, "theme save failed: %s", esp_err_to_name( save_result ) );
     }
-    nvs_close( handle );
-
-    if( ESP_OK == result )
-    {
-        active_theme = a_theme;
-        ESP_LOGI( TAG, "theme=%s", ui_theme_config_name( a_theme ) );
-        rfscout_event_emit(
-            RFSCOUT_EVENT_THEME_CHANGED, RFSCOUT_EVENT_SOURCE_SYSTEM, (int32_t)a_theme );
-    }
-    return result;
+    return ESP_OK;
 }
 
 rfscout_theme_id_t ui_theme_current( void )
