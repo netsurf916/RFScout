@@ -15,6 +15,7 @@
 
 #define THEME_NVS_NAMESPACE "rfscout_ui"
 #define THEME_NVS_KEY "theme"
+#define THEME_NVS_VALUE_CAPACITY 16U
 
 static const char *TAG = "ui_theme";
 static rfscout_theme_id_t active_theme = RFSCOUT_THEME_INDOOR;
@@ -87,8 +88,9 @@ esp_err_t ui_theme_init( void )
         return result;
     }
 
-    uint8_t stored = (uint8_t)RFSCOUT_THEME_INDOOR;
-    result = nvs_get_u8( handle, THEME_NVS_KEY, &stored );
+    char stored[ THEME_NVS_VALUE_CAPACITY ];
+    size_t stored_length = sizeof( stored );
+    result = nvs_get_str( handle, THEME_NVS_KEY, stored, &stored_length );
     nvs_close( handle );
     if( ESP_ERR_NVS_NOT_FOUND == result )
     {
@@ -100,8 +102,15 @@ esp_err_t ui_theme_init( void )
         return result;
     }
 
-    active_theme =
-        ( stored < RFSCOUT_THEME_COUNT ) ? (rfscout_theme_id_t)stored : RFSCOUT_THEME_INDOOR;
+    rfscout_theme_id_t parsed = RFSCOUT_THEME_INDOOR;
+    if( !ui_theme_from_config_name( stored, &parsed ) )
+    {
+        ESP_LOGW( TAG, "invalid stored display theme '%s'; using indoor", stored );
+        active_theme = RFSCOUT_THEME_INDOOR;
+        return ESP_OK;
+    }
+
+    active_theme = parsed;
     return ESP_OK;
 }
 
@@ -119,7 +128,7 @@ esp_err_t ui_theme_set( rfscout_theme_id_t a_theme )
         return result;
     }
 
-    result = nvs_set_u8( handle, THEME_NVS_KEY, (uint8_t)a_theme );
+    result = nvs_set_str( handle, THEME_NVS_KEY, ui_theme_config_name( a_theme ) );
     if( ESP_OK == result )
     {
         result = nvs_commit( handle );
