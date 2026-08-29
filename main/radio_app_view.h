@@ -27,7 +27,7 @@ void radio_app_view_cc1101_spectrum( const uint8_t *a_current,
                                      const cc1101_fingerprint_t *a_devices,
                                      size_t a_device_count );
 
-/** @brief Render the encoder-driven CC1101 settings menu. */
+/** @brief Render the CC1101 settings menu including its app-scoped notification gate. */
 void radio_app_view_cc1101_menu( unsigned a_selected,
                                  bool a_editing,
                                  const char *a_profile,
@@ -36,7 +36,8 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
                                  uint32_t a_step_khz,
                                  size_t a_samples,
                                  bool a_limit_reached,
-                                 bool a_peak_hold );
+                                 bool a_peak_hold,
+                                 bool a_notifications_enabled );
 
 /** @brief Render the nRF24 activity spectrum and likely-device pane. */
 void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
@@ -48,12 +49,13 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
                                     const nrf24_fingerprint_t *a_devices,
                                     size_t a_device_count );
 
-/** @brief Render the encoder-driven nRF24 settings menu. */
+/** @brief Render the nRF24 settings menu including its app-scoped notification gate. */
 void radio_app_view_nrf24_menu( unsigned a_selected,
                                 bool a_editing,
                                 uint8_t a_low_channel,
                                 uint8_t a_high_channel,
                                 uint16_t a_dwell_us,
-                                bool a_peak_hold );
+                                bool a_peak_hold,
+                                bool a_notifications_enabled );
 
 #endif // _RFSCOUT_RADIO_APP_VIEW_H_
