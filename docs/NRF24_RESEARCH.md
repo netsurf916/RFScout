@@ -18,10 +18,10 @@ bytes. A packet must pass framing bounds and CRC before RFScout adds it to the
 recent-packet view or classifier.
 
 The current radio worker performs RPD sweeps only. The validated-observation API,
-classifier path, and recent-packet presentation are ready for a decoder producer,
-but they intentionally remain empty until receive-only candidate discovery and
-CRC validation are implemented. This avoids turning threshold energy hits into
-plausible-looking packet data.
+classifier path, and bounded recent-packet storage are ready for a decoder producer,
+but the production UI intentionally does not expose a packet preview until receive-only
+candidate discovery and CRC validation are implemented. This avoids turning threshold
+energy hits into plausible-looking packet data.
 
 Primary references:
 
@@ -40,9 +40,10 @@ Primary references:
 2. **Implement receive-only ESB candidate discovery.** Search address widths and
    supported air rates, validate packet-control bounds and CRC, and do not enable
    auto-ack. Feed only validated observations into the existing packet API.
-3. **Add a bounded capture ring.** The live UI intentionally shows only a short,
-   newest-first, width-truncated hex preview. A later SD capture format should
-   retain full payload, address, channel, air rate, CRC status, and monotonic time.
+3. **Expose the bounded capture ring once decoding is real.** The activity layer already
+   keeps a short newest-first validated-packet ring. A future UI preview must fit the
+   fixed display layout, while later SD capture should retain full payload, address,
+   channel, air rate, CRC status, and monotonic time.
 4. **Expose scan modes.** A fast occupancy sweep, focused packet watch, and
    hopping follow mode have different tradeoffs; labeling these modes is clearer
    than making one dwell control imply all three.

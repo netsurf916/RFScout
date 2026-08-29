@@ -11,7 +11,7 @@
 #define _RFSCOUT_RADIO_APP_VIEW_H_
 
 #include "cc1101_activity.h"
-#include "nrf24_activity.h"
+#include "nrf24.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -47,9 +47,7 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
                                     uint8_t a_high_channel,
                                     bool a_detected,
                                     const nrf24_fingerprint_t *a_devices,
-                                    size_t a_device_count,
-                                    const nrf24_recent_packet_t *a_packets,
-                                    size_t a_packet_count );
+                                    size_t a_device_count );
 
 /** @brief Render the nRF24 settings menu including its app-scoped notification gate. */
 void radio_app_view_nrf24_menu( unsigned a_selected,
