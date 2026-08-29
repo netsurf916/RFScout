@@ -87,7 +87,8 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
     const ui_theme_sound_policy_t *policy = ui_theme_sound_get();
     if( ( NULL == policy ) || !policy->interaction_audio ||
         ( 0U == policy->interaction_volume_percent ) ||
-        !app_allows_feedback( policy_source_for_event( a_event ), is_general_event( a_event->type ) ) )
+        !app_allows_feedback( policy_source_for_event( a_event ),
+                              is_general_event( a_event->type ) ) )
     {
         return;
     }
