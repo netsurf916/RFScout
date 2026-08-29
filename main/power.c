@@ -58,6 +58,20 @@ static bool prepare_storage_for_power_state( bool a_checkpoint_time )
         return true;
     }
 
+    /* Deep sleep is allowed directly from an open settings page. Flush any
+       canonical user-configuration changes before stopping storage users so a
+       save failure leaves the running session intact. */
+    if( !a_checkpoint_time )
+    {
+        const esp_err_t save_result = device_config_save_if_dirty();
+        if( ESP_OK != save_result )
+        {
+            ESP_LOGW(
+                TAG, "configuration save before sleep failed: %s", esp_err_to_name( save_result ) );
+            return false;
+        }
+    }
+
     if( !recorder_prepare_storage_shutdown( POWER_RECORDER_STOP_TIMEOUT_MS ) )
     {
         ESP_LOGW( TAG, "storage remains mounted because Recorder did not stop" );
@@ -68,17 +82,6 @@ static bool prepare_storage_for_power_state( bool a_checkpoint_time )
     {
         ESP_LOGW( TAG, "storage remains mounted because logger did not stop" );
         return false;
-    }
-
-    if( !a_checkpoint_time )
-    {
-        const esp_err_t save_result = device_config_save_if_dirty();
-        if( ESP_OK != save_result )
-        {
-            ESP_LOGW(
-                TAG, "configuration save before sleep failed: %s", esp_err_to_name( save_result ) );
-            return false;
-        }
     }
 
     if( a_checkpoint_time )
@@ -119,7 +122,7 @@ static void enter_sleep( void )
     ESP_LOGI( TAG, "entering deep sleep; user key wakes device" );
     if( !prepare_storage_for_power_state( false ) )
     {
-        ESP_LOGW( TAG, "sleep cancelled because SD logger is still active" );
+        ESP_LOGW( TAG, "sleep cancelled because persistent state could not be prepared" );
         return;
     }
 
