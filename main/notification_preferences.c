@@ -11,6 +11,7 @@
 
 #include "nvs.h"
 
+#include <stddef.h>
 #include <stdint.h>
 
 #define NOTIFICATION_PREFS_NAMESPACE "rfscout_sound"
