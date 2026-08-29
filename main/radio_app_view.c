@@ -332,7 +332,7 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
     display_draw_text( UI_LAYOUT_LEFT_X, 148, "RECENT VALID PACKETS", SUBDUED, 1U );
     if( ( NULL == a_packets ) || ( 0U == a_packet_count ) )
     {
-        display_draw_text( UI_LAYOUT_LEFT_X, 162, "WAITING FOR DECODE", DIM, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 162, "DECODER NOT ACTIVE", DIM, 1U );
     }
     else
     {

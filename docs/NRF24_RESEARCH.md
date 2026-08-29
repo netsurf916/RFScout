@@ -17,6 +17,12 @@ conservative device-behavior groupings. Dynamic payload length is bounded to 32
 bytes. A packet must pass framing bounds and CRC before RFScout adds it to the
 recent-packet view or classifier.
 
+The current radio worker performs RPD sweeps only. The validated-observation API,
+classifier path, and recent-packet presentation are ready for a decoder producer,
+but they intentionally remain empty until receive-only candidate discovery and
+CRC validation are implemented. This avoids turning threshold energy hits into
+plausible-looking packet data.
+
 Primary references:
 
 - Nordic Semiconductor, *nRF24L01+ Product Specification*, sections 6-7:

@@ -43,7 +43,7 @@ typedef struct
 /** @brief Clear histogram, classifier, peak, and accumulated count state. */
 void nrf24_activity_reset( void );
 
-/** @brief Clear detection counts without changing scanner configuration. */
+/** @brief Clear detection counts without changing scanner configuration or recent packets. */
 void nrf24_activity_reset_counts( void );
 
 /**

@@ -8,6 +8,8 @@
 
 #include "nrf24_activity.h"
 
+#include "freertos/FreeRTOS.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -47,6 +49,7 @@ static uint8_t slow_peak[ NRF24_CHANNEL_COUNT ];
 static packet_record_t packet_records[ PACKET_RECORD_MAX ];
 static nrf24_recent_packet_t recent_packets[ NRF24_RECENT_PACKET_MAX ];
 static size_t recent_packet_count;
+static portMUX_TYPE recent_packet_lock = portMUX_INITIALIZER_UNLOCKED;
 static address_ledger_t address_ledger[ ADDRESS_LEDGER_MAX ];
 static uint32_t category_counts[ NRF24_FP_LOGITECH_LIKE + 1U ];
 static nrf24_fingerprint_type_t spectrum_candidate;
@@ -262,8 +265,6 @@ void nrf24_activity_reset_counts( void )
     memset( category_counts, 0, sizeof( category_counts ) );
     memset( packet_records, 0, sizeof( packet_records ) );
     memset( address_ledger, 0, sizeof( address_ledger ) );
-    memset( recent_packets, 0, sizeof( recent_packets ) );
-    recent_packet_count = 0U;
     spectrum_candidate = NRF24_FP_UNKNOWN;
     spectrum_candidate_sweeps = 0U;
     spectrum_latched = false;
@@ -274,6 +275,11 @@ void nrf24_activity_reset( void )
     memset( fast_activity, 0, sizeof( fast_activity ) );
     memset( slow_peak, 0, sizeof( slow_peak ) );
     nrf24_activity_reset_counts();
+
+    portENTER_CRITICAL( &recent_packet_lock );
+    memset( recent_packets, 0, sizeof( recent_packets ) );
+    recent_packet_count = 0U;
+    portEXIT_CRITICAL( &recent_packet_lock );
 }
 
 /** @brief Infer broad Wi-Fi/BLE-like spectrum shapes from the fast histogram. */
@@ -398,6 +404,7 @@ void nrf24_activity_observe_packet( const nrf24_packet_observation_t *a_packet )
         return;
     }
 
+    portENTER_CRITICAL( &recent_packet_lock );
     const size_t move_count = ( recent_packet_count < NRF24_RECENT_PACKET_MAX )
                                   ? recent_packet_count
                                   : NRF24_RECENT_PACKET_MAX - 1U;
@@ -419,6 +426,7 @@ void nrf24_activity_observe_packet( const nrf24_packet_observation_t *a_packet )
     {
         ++recent_packet_count;
     }
+    portEXIT_CRITICAL( &recent_packet_lock );
 
     nrf24_fingerprint_t *fingerprint = &record->public;
     if( 0U == fingerprint->packets )
@@ -465,8 +473,10 @@ size_t nrf24_activity_recent_packets( nrf24_recent_packet_t *a_output, size_t a_
         return 0U;
     }
 
+    portENTER_CRITICAL( &recent_packet_lock );
     const size_t count = ( a_capacity < recent_packet_count ) ? a_capacity : recent_packet_count;
     memcpy( a_output, recent_packets, count * sizeof( recent_packets[ 0 ] ) );
+    portEXIT_CRITICAL( &recent_packet_lock );
     return count;
 }
 
