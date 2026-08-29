@@ -125,7 +125,7 @@ static void draw_surveillance_rows( const uint16_t *a_signature_counts )
     {
         const surveillance_signature_id_t signature = surveillance_rows[ row ];
         const uint16_t count = a_signature_counts[ signature ];
-        const uint16_t color = ( 0U == count ) ? COLOR_ORANGE : COLOR_ALERT_YELLOW;
+        const uint16_t color = ( 0U == count ) ? COLOR_GRAY : COLOR_ALERT_YELLOW;
         char line[ 32 ];
         snprintf( line,
                   sizeof( line ),
