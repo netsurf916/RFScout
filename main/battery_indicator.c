@@ -49,7 +49,7 @@ static uint16_t indicator_color( const battery_status_t *a_status )
     {
         return theme->warning;
     }
-    return theme->info;
+    return theme->normal;
 }
 
 /** @brief Draw a compact transparent lightning bolt inside the empty battery body. */
@@ -69,7 +69,7 @@ static void draw_charging_bolt( int a_x, int a_y )
     };
 
     const ui_theme_palette_t *theme = ui_theme_get();
-    (void)display_draw_mask( a_x, a_y, 8, 10, mask, sizeof( mask ), theme->alert );
+    (void)display_draw_mask( a_x, a_y, 8, 10, mask, sizeof( mask ), theme->warning );
 }
 
 /** @brief Draw the outline and terminal of the battery body. */
