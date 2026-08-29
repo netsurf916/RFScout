@@ -187,8 +187,7 @@ static void render_summary( void )
         210, 25, line, ( 0U == surveillance_count ) ? theme->info : theme->warning, 1 );
 
     display_fill_rect( 5, 36, 310, 1, theme->divider );
-    display_fill_rect(
-        UI_COLUMN_DIVIDER_X, 36, 1, RFSCOUT_DISPLAY_HEIGHT - 36, theme->divider );
+    display_fill_rect( UI_COLUMN_DIVIDER_X, 36, 1, RFSCOUT_DISPLAY_HEIGHT - 36, theme->divider );
 
     int y = UI_LIST_START_Y;
     for( size_t i = 0; i < brand_count; ++i )
