@@ -187,6 +187,10 @@ void battery_indicator_draw( void )
 
 void battery_indicator_poll( void )
 {
+    /* Keep the widget self-contained: battery_poll() is internally rate-limited to 1 Hz, so this
+     * remains cheap when called from the 10 ms UI loop and cannot depend on caller ordering. */
+    battery_poll();
+
     battery_status_t status = { 0 };
     (void)battery_get_status( &status );
 
@@ -195,5 +199,7 @@ void battery_indicator_poll( void )
         return;
     }
 
+    /* draw_status() clears and redraws the whole indicator region through display primitives;
+     * those writes invalidate the framebuffer so static Home is flushed on the next present. */
     draw_status( &status );
 }
