@@ -106,6 +106,8 @@ static void set_defaults( void )
     config.alert_volume_percent = RFSCOUT_ALERT_VOLUME_DEFAULT_PERCENT;
     config.recorder_volume_percent = CONFIG_RECORDER_VOLUME_DEFAULT;
     config.recorder_input_gain_db = CONFIG_RECORDER_INPUT_GAIN_DEFAULT_DB;
+    config.wifi_device_feedback_enabled = true;
+    config.ble_device_feedback_enabled = true;
 
     for( size_t index = 0; index < RFSCOUT_APP_COUNT; ++index )
     {
@@ -174,6 +176,17 @@ static void load_apps( const cJSON *a_root )
         }
         config.notification_app_enabled[ index ] =
             json_bool( notifications, "enabled", config.notification_app_enabled[ index ] );
+        if( RFSCOUT_APP_WIFI_BT == app )
+        {
+            const cJSON *events = cJSON_GetObjectItemCaseSensitive( notifications, "events" );
+            if( cJSON_IsObject( events ) )
+            {
+                config.wifi_device_feedback_enabled =
+                    json_bool( events, "wifi_device", config.wifi_device_feedback_enabled );
+                config.ble_device_feedback_enabled =
+                    json_bool( events, "ble_device", config.ble_device_feedback_enabled );
+            }
+        }
         const cJSON *characters = cJSON_GetObjectItemCaseSensitive( notifications, "characters" );
         if( !cJSON_IsObject( characters ) )
         {
@@ -563,6 +576,12 @@ static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_tim
             cJSON *notifications = cJSON_AddObjectToObject( app_item, "notifications" );
             cJSON_AddBoolToObject(
                 notifications, "enabled", config.notification_app_enabled[ index ] );
+            if( RFSCOUT_APP_WIFI_BT == app )
+            {
+                cJSON *events = cJSON_AddObjectToObject( notifications, "events" );
+                cJSON_AddBoolToObject( events, "wifi_device", config.wifi_device_feedback_enabled );
+                cJSON_AddBoolToObject( events, "ble_device", config.ble_device_feedback_enabled );
+            }
             cJSON *characters = cJSON_AddObjectToObject( notifications, "characters" );
             const size_t count = notification_count_for_app( app );
             for( size_t item = 0U; item < count; ++item )
@@ -752,6 +771,36 @@ esp_err_t device_config_set_notification_app_enabled( rfscout_app_id_t a_app, bo
     if( config.notification_app_enabled[ a_app ] != a_enabled )
     {
         config.notification_app_enabled[ a_app ] = a_enabled;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+bool device_config_wifi_device_feedback_enabled( void )
+{
+    return config.wifi_device_feedback_enabled;
+}
+
+esp_err_t device_config_set_wifi_device_feedback_enabled( bool a_enabled )
+{
+    if( config.wifi_device_feedback_enabled != a_enabled )
+    {
+        config.wifi_device_feedback_enabled = a_enabled;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+bool device_config_ble_device_feedback_enabled( void )
+{
+    return config.ble_device_feedback_enabled;
+}
+
+esp_err_t device_config_set_ble_device_feedback_enabled( bool a_enabled )
+{
+    if( config.ble_device_feedback_enabled != a_enabled )
+    {
+        config.ble_device_feedback_enabled = a_enabled;
         config_dirty = true;
     }
     return ESP_OK;

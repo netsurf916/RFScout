@@ -72,6 +72,7 @@
 #define NOTIFICATION_MENU_BACK 0U
 #define NOTIFICATION_MENU_ENABLED 1U
 #define NOTIFICATION_MENU_FIRST_MAPPING 2U
+#define NOTIFICATION_MENU_WIFI_EVENT_COUNT 2U
 
 #define AUDIO_BROWSER_BACK 0U
 #define AUDIO_BROWSER_NEW 1U
@@ -272,6 +273,12 @@ static void render_parent_menu( void )
     }
 }
 
+static unsigned notification_mapping_base( void )
+{
+    return NOTIFICATION_MENU_FIRST_MAPPING +
+           ( ( RFSCOUT_APP_WIFI_BT == active_app ) ? NOTIFICATION_MENU_WIFI_EVENT_COUNT : 0U );
+}
+
 static void open_notification_menu( void )
 {
     notification_menu = true;
@@ -302,8 +309,9 @@ static bool close_notification_menu( void )
 static void notification_input( bool a_pressed, int a_delta )
 {
     const size_t notification_count = notification_count_for_app( active_app );
-    const unsigned item_count = NOTIFICATION_MENU_FIRST_MAPPING + (unsigned)notification_count;
-    if( item_count <= NOTIFICATION_MENU_FIRST_MAPPING )
+    const unsigned first_mapping = notification_mapping_base();
+    const unsigned item_count = first_mapping + (unsigned)notification_count;
+    if( item_count <= first_mapping )
     {
         (void)close_notification_menu();
         return;
@@ -337,6 +345,22 @@ static void notification_input( bool a_pressed, int a_delta )
             }
             return;
         }
+        if( ( RFSCOUT_APP_WIFI_BT == active_app ) &&
+            ( notification_item >= NOTIFICATION_MENU_FIRST_MAPPING ) &&
+            ( notification_item < first_mapping ) )
+        {
+            const rfscout_wifi_detection_event_t event =
+                (rfscout_wifi_detection_event_t)( notification_item -
+                                                  NOTIFICATION_MENU_FIRST_MAPPING );
+            const bool old_value = notification_preferences_wifi_detection_enabled( event );
+            if( ESP_OK == notification_preferences_set_wifi_detection_enabled( event, !old_value ) )
+            {
+                notification_settings_view_render( active_app, notification_item, false );
+                emit_event( !old_value ? RFSCOUT_EVENT_ENABLE : RFSCOUT_EVENT_DISABLE,
+                            !old_value ? 1 : 0 );
+            }
+            return;
+        }
         notification_edit = true;
         notification_settings_view_render( active_app, notification_item, true );
         emit_event( RFSCOUT_EVENT_ENTER, 0 );
@@ -350,12 +374,12 @@ static void notification_input( bool a_pressed, int a_delta )
     const int direction = ( a_delta > 0 ) ? 1 : -1;
     if( notification_edit )
     {
-        if( notification_item < NOTIFICATION_MENU_FIRST_MAPPING )
+        if( notification_item < first_mapping )
         {
             return;
         }
-        const rfscout_notification_descriptor_t *descriptor = notification_descriptor_for_app(
-            active_app, notification_item - NOTIFICATION_MENU_FIRST_MAPPING );
+        const rfscout_notification_descriptor_t *descriptor =
+            notification_descriptor_for_app( active_app, notification_item - first_mapping );
         if( NULL == descriptor )
         {
             return;

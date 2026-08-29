@@ -46,6 +46,8 @@ typedef struct
     uint8_t recorder_volume_percent;
     uint8_t recorder_input_gain_db;
     bool notification_app_enabled[ RFSCOUT_APP_COUNT ];
+    bool wifi_device_feedback_enabled;
+    bool ble_device_feedback_enabled;
     char notification_characters[ RFSCOUT_NOTIFICATION_TYPE_COUNT ];
     char timezone_selected[ RFSCOUT_TIMEZONE_NAME_MAX ];
     device_timezone_t timezones[ RFSCOUT_TIMEZONE_MAX ];
@@ -94,6 +96,15 @@ esp_err_t device_config_set_recorder_volume( uint8_t a_percent );
 esp_err_t device_config_set_recorder_input_gain( uint8_t a_gain_db );
 bool device_config_notification_app_enabled( rfscout_app_id_t a_app );
 esp_err_t device_config_set_notification_app_enabled( rfscout_app_id_t a_app, bool a_enabled );
+
+/** @brief Return whether ordinary Wi-Fi discoveries may emit the general detection event. */
+bool device_config_wifi_device_feedback_enabled( void );
+/** @brief Change whether ordinary Wi-Fi discoveries may emit the general detection event. */
+esp_err_t device_config_set_wifi_device_feedback_enabled( bool a_enabled );
+/** @brief Return whether ordinary BLE discoveries may emit the general detection event. */
+bool device_config_ble_device_feedback_enabled( void );
+/** @brief Change whether ordinary BLE discoveries may emit the general detection event. */
+esp_err_t device_config_set_ble_device_feedback_enabled( bool a_enabled );
 
 /** @brief Return the configured Morse character for one notification category. */
 char device_config_notification_character( rfscout_notification_type_t a_type );

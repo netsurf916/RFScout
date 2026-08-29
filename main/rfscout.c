@@ -138,8 +138,16 @@ static void on_observation( rf_device_t *a_observation )
        detection cue. Classified surveillance instead uses its app-specific
        notification (for example Camera -> Morse C) so one observation does not
        produce both sounds. */
-    rfscout_event_emit(
-        RFSCOUT_EVENT_DETECTED, (uint8_t)RFSCOUT_APP_WIFI_BT, (int32_t)a_observation->last_source );
+    const rfscout_wifi_detection_event_t detection_event =
+        ( RF_SOURCE_BLE == a_observation->last_source ) ? RFSCOUT_WIFI_DETECTION_BLE_DEVICE
+                                                        : RFSCOUT_WIFI_DETECTION_WIFI_DEVICE;
+    if( notification_preferences_app_enabled( RFSCOUT_APP_WIFI_BT ) &&
+        notification_preferences_wifi_detection_enabled( detection_event ) )
+    {
+        rfscout_event_emit( RFSCOUT_EVENT_DETECTED,
+                            (uint8_t)RFSCOUT_APP_WIFI_BT,
+                            (int32_t)a_observation->last_source );
+    }
 }
 
 void app_main( void )

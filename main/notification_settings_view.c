@@ -22,6 +22,13 @@
 #define NOTIFICATION_SETTINGS_FIXED_ITEMS 2U
 #define NOTIFICATION_SETTINGS_BACK 0U
 #define NOTIFICATION_SETTINGS_ENABLED 1U
+#define NOTIFICATION_SETTINGS_WIFI_EVENT_COUNT 2U
+
+static unsigned mapping_base( rfscout_app_id_t a_app )
+{
+    return NOTIFICATION_SETTINGS_FIXED_ITEMS +
+           ( ( RFSCOUT_APP_WIFI_BT == a_app ) ? NOTIFICATION_SETTINGS_WIFI_EVENT_COUNT : 0U );
+}
 
 static const char *app_title( rfscout_app_id_t a_app )
 {
@@ -44,7 +51,8 @@ void notification_settings_view_render( rfscout_app_id_t a_app,
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     const size_t notification_count = notification_count_for_app( a_app );
-    const unsigned item_count = NOTIFICATION_SETTINGS_FIXED_ITEMS + (unsigned)notification_count;
+    const unsigned first_mapping = mapping_base( a_app );
+    const unsigned item_count = first_mapping + (unsigned)notification_count;
     const unsigned page_start =
         ( a_selected / NOTIFICATION_SETTINGS_ROWS_PER_PAGE ) * NOTIFICATION_SETTINGS_ROWS_PER_PAGE;
 
@@ -84,8 +92,25 @@ void notification_settings_view_render( rfscout_app_id_t a_app,
             continue;
         }
 
+        if( ( RFSCOUT_APP_WIFI_BT == a_app ) && ( item >= NOTIFICATION_SETTINGS_FIXED_ITEMS ) &&
+            ( item < first_mapping ) )
+        {
+            const rfscout_wifi_detection_event_t event =
+                (rfscout_wifi_detection_event_t)( item - NOTIFICATION_SETTINGS_FIXED_ITEMS );
+            const char *label =
+                ( RFSCOUT_WIFI_DETECTION_WIFI_DEVICE == event ) ? "WIFI DEVICES" : "BLE DEVICES";
+            display_draw_text( UI_LAYOUT_LABEL_X, y, label, foreground, 1U );
+            display_draw_text( 232,
+                               y,
+                               notification_preferences_wifi_detection_enabled( event ) ? "ON"
+                                                                                        : "OFF",
+                               active ? theme->selected : theme->secondary,
+                               1U );
+            continue;
+        }
+
         const rfscout_notification_descriptor_t *descriptor =
-            notification_descriptor_for_app( a_app, item - NOTIFICATION_SETTINGS_FIXED_ITEMS );
+            notification_descriptor_for_app( a_app, item - first_mapping );
         if( NULL == descriptor )
         {
             continue;
