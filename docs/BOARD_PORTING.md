@@ -4,9 +4,9 @@ RFScout is moving toward one source tree that produces board-specific firmware i
 
 ## Current status
 
-The only supported target remains **LILYGO T-Embed CC1101 Plus**. This framework change does not add or claim support for another board.
+The only supported target remains **LILYGO T-Embed CC1101 Plus**. The architecture does not yet claim support for another board.
 
-The target is selected through the `RFSCOUT_BOARD` Kconfig choice. Board definitions live under `main/boards/<target>/`; CMake adds only the selected board directory to the component include path. Existing source continues to include `board.h`, but that name now resolves to the selected target rather than a repository-global pin map.
+The target is selected through the `RFSCOUT_BOARD` Kconfig choice. Board definitions live under `main/boards/<target>/`; CMake adds only the selected board directory to the component include path. Existing source continues to include `board.h`, but that name resolves to the selected target rather than a repository-global pin map.
 
 ## Board contract
 
@@ -23,16 +23,24 @@ Application code should not test board model names. It should depend on a servic
 
 ## Input boundary
 
-`platform_input_get()` is the board-neutral input contract. It exposes semantic events rather than physical controls:
+`platform_input_get()` is the board-neutral input contract. It exposes semantic input rather than physical controls:
 
 - navigation with a signed step value;
 - select and long-select;
 - back;
 - character input.
 
-The T-Embed implementation currently adapts its rotary encoder and center button into this interface. The historical encoder-specific accessors remain temporarily available so application migration can be incremental and behavior can be validated before they are removed.
+The T-Embed implementation adapts its rotary encoder and center button into this interface. The application manager now consumes this board-neutral path directly. Historical encoder-specific helpers may remain in platform code while lower-level cleanup continues, but new application code should not depend on them.
 
-A future board may map a trackball, directional keys, keyboard, touch gestures, or another control scheme into the same event vocabulary without teaching application code about that hardware.
+Application acceptance is a separate layer from board input. After a menu/application has interpreted input and committed an action or state change, it can emit an RFScout semantic event through `event.c/.h`; audible feedback is resolved from those accepted events rather than from raw controls.
+
+A future board may map a trackball, directional keys, keyboard, touch gestures, or another control scheme into the same input vocabulary without teaching application code about that hardware.
+
+## Audio boundary
+
+Board support should expose speaker/audio capability through the platform/service layer rather than board checks in application code. `audio_output` owns asynchronous speaker execution; semantic feedback and notifications sit above it. A board without a speaker should be able to keep application/event behavior intact while making audible output unavailable.
+
+Likewise, application content audio is a capability/service concern rather than evidence that every board must implement the current T-Embed I2S topology.
 
 ## Adding a board
 
