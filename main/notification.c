@@ -13,10 +13,7 @@
 
 #define NOTIFICATION_DEFAULT_CHARACTER 'S'
 
-/* Keep the vocabulary grouped by owning application. Adding a new application
- * notification extends this semantic catalog; audio policy remains untouched. */
 static const rfscout_notification_descriptor_t descriptors[] = {
-    /* WiFi / BT */
     { RFSCOUT_NOTIFICATION_FLOCK, RFSCOUT_APP_WIFI_BT, "flock", "Flock / ALPR", 'F' },
     { RFSCOUT_NOTIFICATION_BODY_CAMERA, RFSCOUT_APP_WIFI_BT, "body_camera", "Body camera", 'B' },
     { RFSCOUT_NOTIFICATION_DRONE, RFSCOUT_APP_WIFI_BT, "drone", "Drone", 'D' },
@@ -37,7 +34,6 @@ static const rfscout_notification_descriptor_t descriptors[] = {
       "Other surveillance",
       'S' },
 
-    /* CC1101 */
     { RFSCOUT_NOTIFICATION_CC1101_NARROW_ISM,
       RFSCOUT_APP_CC1101,
       "cc1101_narrow_ism",
@@ -64,7 +60,6 @@ static const rfscout_notification_descriptor_t descriptors[] = {
       "CC1101 wide RF",
       'W' },
 
-    /* nRF24 */
     { RFSCOUT_NOTIFICATION_NRF24_ESB, RFSCOUT_APP_NRF24, "nrf24_esb", "nRF24 ESB device", 'E' },
     { RFSCOUT_NOTIFICATION_NRF24_INPUT, RFSCOUT_APP_NRF24, "nrf24_input", "nRF24 input", 'I' },
     { RFSCOUT_NOTIFICATION_NRF24_SENSOR, RFSCOUT_APP_NRF24, "nrf24_sensor", "nRF24 sensor", 'T' },
@@ -121,6 +116,38 @@ char notification_default_character( rfscout_notification_type_t a_type )
 {
     const rfscout_notification_descriptor_t *descriptor = notification_descriptor( a_type );
     return ( NULL != descriptor ) ? descriptor->default_character : NOTIFICATION_DEFAULT_CHARACTER;
+}
+
+size_t notification_count_for_app( rfscout_app_id_t a_app )
+{
+    size_t count = 0U;
+    for( size_t index = 0U; index < RFSCOUT_NOTIFICATION_TYPE_COUNT; ++index )
+    {
+        if( descriptors[ index ].app == a_app )
+        {
+            ++count;
+        }
+    }
+    return count;
+}
+
+const rfscout_notification_descriptor_t *
+notification_descriptor_for_app( rfscout_app_id_t a_app, size_t a_index )
+{
+    size_t match = 0U;
+    for( size_t index = 0U; index < RFSCOUT_NOTIFICATION_TYPE_COUNT; ++index )
+    {
+        if( descriptors[ index ].app != a_app )
+        {
+            continue;
+        }
+        if( match == a_index )
+        {
+            return &descriptors[ index ];
+        }
+        ++match;
+    }
+    return NULL;
 }
 
 bool notification_emit( rfscout_notification_type_t a_type )
