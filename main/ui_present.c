@@ -13,7 +13,6 @@
 
 #include "esp_heap_caps.h"
 
-#include <stdbool.h>
 #include <stdio.h>
 
 #define POWER_OVERLAY_X 42
@@ -26,22 +25,6 @@
 #define COLOR_RED 0xF800U
 
 static uint16_t *overlay_backup;
-static bool have_presented_power_status;
-static power_status_t presented_power_status;
-
-/** @brief Return whether two power-overlay states would render identically. */
-static bool power_status_equal( const power_status_t *a_left, const power_status_t *a_right )
-{
-    return ( a_left->state == a_right->state ) &&
-           ( a_left->seconds_remaining == a_right->seconds_remaining );
-}
-
-/** @brief Remember the power state represented by the most recent successful LCD flush. */
-static void remember_power_status( const power_status_t *a_status )
-{
-    presented_power_status = *a_status;
-    have_presented_power_status = true;
-}
 
 /** @brief Draw the hold-to-power-off overlay into the active framebuffer. */
 static void draw_power_overlay( const power_status_t *a_status )
@@ -75,19 +58,21 @@ static void draw_power_overlay( const power_status_t *a_status )
 
 esp_err_t display_present( void )
 {
+    /* Shared chrome is refreshed on every presentation pass. Pixel-aware drawing only dirties the
+     * framebuffer when the visible battery/status content actually changed. */
     battery_indicator_draw();
     status_bar_draw();
+
+    if( !display_is_dirty() )
+    {
+        return ESP_OK;
+    }
 
     power_status_t status;
     power_get_status( &status );
     if( POWER_HOLD_IDLE == status.state )
     {
-        const esp_err_t result = display_flush();
-        if( ESP_OK == result )
-        {
-            remember_power_status( &status );
-        }
-        return result;
+        return display_flush();
     }
 
     if( NULL == overlay_backup )
@@ -123,20 +108,13 @@ esp_err_t display_present( void )
     {
         return presented;
     }
-
-    remember_power_status( &status );
-    return restored;
-}
-
-esp_err_t display_present_poll( void )
-{
-    power_status_t status;
-    power_get_status( &status );
-
-    if( have_presented_power_status && power_status_equal( &status, &presented_power_status ) )
+    if( ESP_OK != restored )
     {
-        return ESP_OK;
+        return restored;
     }
 
-    return display_present();
+    /* The LCD contains the intended composed frame while the framebuffer is restored to its
+     * overlay-free application state. That restoration is not a reason to send another frame. */
+    display_mark_clean();
+    return ESP_OK;
 }
