@@ -38,12 +38,12 @@ static void draw_lock_icon( int a_x )
     const ui_theme_palette_t *theme = ui_theme_get();
 
     /* Rounded shackle. */
-    display_fill_rect( a_x + 3, y + 1, 6, 1, theme->alert );
-    display_fill_rect( a_x + 2, y + 2, 1, 4, theme->alert );
-    display_fill_rect( a_x + 9, y + 2, 1, 4, theme->alert );
+    display_fill_rect( a_x + 3, y + 1, 6, 1, theme->warning );
+    display_fill_rect( a_x + 2, y + 2, 1, 4, theme->warning );
+    display_fill_rect( a_x + 9, y + 2, 1, 4, theme->warning );
 
     /* Solid lock body with a tiny keyway cutout. */
-    display_fill_rect( a_x + 1, y + 6, 10, 7, theme->alert );
+    display_fill_rect( a_x + 1, y + 6, 10, 7, theme->warning );
     display_fill_rect( a_x + 5, y + 8, 2, 3, theme->background );
 }
 
