@@ -56,6 +56,14 @@ const ui_theme_palette_t *ui_theme_palette( rfscout_theme_id_t a_theme );
 /** @brief Return the active semantic palette. */
 const ui_theme_palette_t *ui_theme_get( void );
 
+/**
+ * @brief Translate RFScout's historical UI color constants into the active semantic palette.
+ *
+ * This compatibility bridge lets existing application views participate in theming while they are
+ * progressively converted to semantic roles. Data imagery can bypass it through raw display writes.
+ */
+uint16_t ui_theme_resolve_legacy_color( uint16_t a_color );
+
 /** @brief Return the stable persisted token for one theme. */
 const char *ui_theme_config_name( rfscout_theme_id_t a_theme );
 
