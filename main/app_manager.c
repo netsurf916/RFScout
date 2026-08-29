@@ -281,17 +281,22 @@ static void open_notification_menu( void )
     emit_event( RFSCOUT_EVENT_ENTER, 0 );
 }
 
-static void close_notification_menu( void )
+static bool close_notification_menu( void )
 {
-    notification_menu = false;
-    notification_edit = false;
-    notification_item = NOTIFICATION_MENU_BACK;
     const esp_err_t save_result = device_config_save( false, 0, NULL );
     if( ESP_OK != save_result && ESP_ERR_INVALID_STATE != save_result )
     {
         ESP_LOGW( TAG, "notification settings save failed: %s", esp_err_to_name( save_result ) );
+        notification_settings_view_render( active_app, notification_item, notification_edit );
+        emit_event( RFSCOUT_EVENT_ERROR, (int32_t)save_result );
+        return false;
     }
+
+    notification_menu = false;
+    notification_edit = false;
+    notification_item = NOTIFICATION_MENU_BACK;
     render_parent_menu();
+    return true;
 }
 
 static void notification_input( bool a_pressed, int a_delta )
@@ -300,7 +305,7 @@ static void notification_input( bool a_pressed, int a_delta )
     const unsigned item_count = NOTIFICATION_MENU_FIRST_MAPPING + (unsigned)notification_count;
     if( item_count <= NOTIFICATION_MENU_FIRST_MAPPING )
     {
-        close_notification_menu();
+        (void)close_notification_menu();
         return;
     }
 
@@ -315,8 +320,10 @@ static void notification_input( bool a_pressed, int a_delta )
         }
         if( NOTIFICATION_MENU_BACK == notification_item )
         {
-            close_notification_menu();
-            emit_event( RFSCOUT_EVENT_BACK, 0 );
+            if( close_notification_menu() )
+            {
+                emit_event( RFSCOUT_EVENT_BACK, 0 );
+            }
             return;
         }
         if( NOTIFICATION_MENU_ENABLED == notification_item )
@@ -1183,9 +1190,8 @@ static void close_active_menu_for_back( void )
             notification_settings_view_render( active_app, notification_item, false );
             emit_event( RFSCOUT_EVENT_BACK, 0 );
         }
-        else
+        else if( close_notification_menu() )
         {
-            close_notification_menu();
             emit_event( RFSCOUT_EVENT_BACK, 0 );
         }
         return;
