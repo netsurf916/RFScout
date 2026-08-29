@@ -58,8 +58,8 @@ char notification_default_character( rfscout_notification_type_t a_type );
 size_t notification_count_for_app( rfscout_app_id_t a_app );
 
 /** @brief Return one application-owned notification descriptor by app-local index. */
-const rfscout_notification_descriptor_t *
-notification_descriptor_for_app( rfscout_app_id_t a_app, size_t a_index );
+const rfscout_notification_descriptor_t *notification_descriptor_for_app( rfscout_app_id_t a_app,
+                                                                          size_t a_index );
 
 /**
  * @brief Emit one semantic notification event.

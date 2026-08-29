@@ -80,7 +80,8 @@ static const rfscout_notification_descriptor_t descriptors[] = {
       'X' },
 };
 
-_Static_assert( sizeof( descriptors ) / sizeof( descriptors[ 0 ] ) == RFSCOUT_NOTIFICATION_TYPE_COUNT,
+_Static_assert( sizeof( descriptors ) / sizeof( descriptors[ 0 ] ) ==
+                    RFSCOUT_NOTIFICATION_TYPE_COUNT,
                 "notification descriptor table must match rfscout_notification_type_t" );
 
 const rfscout_notification_descriptor_t *
@@ -131,8 +132,8 @@ size_t notification_count_for_app( rfscout_app_id_t a_app )
     return count;
 }
 
-const rfscout_notification_descriptor_t *
-notification_descriptor_for_app( rfscout_app_id_t a_app, size_t a_index )
+const rfscout_notification_descriptor_t *notification_descriptor_for_app( rfscout_app_id_t a_app,
+                                                                          size_t a_index )
 {
     size_t match = 0U;
     for( size_t index = 0U; index < RFSCOUT_NOTIFICATION_TYPE_COUNT; ++index )
@@ -158,7 +159,6 @@ bool notification_emit( rfscout_notification_type_t a_type )
         return false;
     }
 
-    rfscout_event_emit(
-        RFSCOUT_EVENT_NOTIFICATION, (uint8_t)descriptor->app, (int32_t)a_type );
+    rfscout_event_emit( RFSCOUT_EVENT_NOTIFICATION, (uint8_t)descriptor->app, (int32_t)a_type );
     return true;
 }

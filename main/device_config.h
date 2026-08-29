@@ -63,7 +63,8 @@ esp_err_t device_config_set_alert_volume( uint8_t a_percent );
 esp_err_t device_config_set_recorder_volume( uint8_t a_percent );
 esp_err_t device_config_set_recorder_input_gain( uint8_t a_gain_db );
 char device_config_notification_character( rfscout_notification_type_t a_type );
-esp_err_t device_config_set_notification_character( rfscout_notification_type_t a_type, char a_character );
+esp_err_t device_config_set_notification_character( rfscout_notification_type_t a_type,
+                                                    char a_character );
 esp_err_t device_config_set_timezone( const char *a_name );
 const device_timezone_t *device_config_timezone( void );
 bool device_config_saved_time( int64_t *a_epoch, const char **a_source );

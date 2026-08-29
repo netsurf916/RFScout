@@ -95,13 +95,11 @@ static void on_observation( rf_device_t *a_observation )
         return;
     }
 
-    const char *source_name =
-        ( RF_SOURCE_BLE == a_observation->last_source ) ? "BLE" : "WiFi";
+    const char *source_name = ( RF_SOURCE_BLE == a_observation->last_source ) ? "BLE" : "WiFi";
     const char *display_name = ( '\0' != a_observation->vendor[ 0 ] )
                                    ? a_observation->vendor
                                    : ( a_observation->has_name ? a_observation->name : "Unknown" );
-    const char *alert_suffix =
-        ( SURVEILLANCE_NONE != match.classification ) ? " SURVEILLANCE" : "";
+    const char *alert_suffix = ( SURVEILLANCE_NONE != match.classification ) ? " SURVEILLANCE" : "";
 
     ESP_LOGI( TAG,
               "%s %s %02X:%02X:%02X:%02X:%02X:%02X rssi=%d ch=%u%s",
@@ -138,8 +136,7 @@ static void on_observation( rf_device_t *a_observation )
 void app_main( void )
 {
     esp_err_t result = nvs_flash_init();
-    if( ( ESP_ERR_NVS_NO_FREE_PAGES == result ) ||
-        ( ESP_ERR_NVS_NEW_VERSION_FOUND == result ) )
+    if( ( ESP_ERR_NVS_NO_FREE_PAGES == result ) || ( ESP_ERR_NVS_NEW_VERSION_FOUND == result ) )
     {
         ESP_ERROR_CHECK( nvs_flash_erase() );
         result = nvs_flash_init();
@@ -188,9 +185,8 @@ void app_main( void )
     result = ui_theme_init();
     if( ESP_OK != result )
     {
-        ESP_LOGW( TAG,
-                  "theme persistence unavailable; using Indoor: %s",
-                  esp_err_to_name( result ) );
+        ESP_LOGW(
+            TAG, "theme persistence unavailable; using Indoor: %s", esp_err_to_name( result ) );
     }
 
     alert_set_mode( device_config_get()->alert_mode );

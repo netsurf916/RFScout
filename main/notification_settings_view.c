@@ -94,14 +94,9 @@ void notification_settings_view_render( rfscout_app_id_t a_app,
         const char character = device_config_notification_character( descriptor->type );
         const char *pattern = morse_pattern( character );
         char value[ 24 ];
-        snprintf( value,
-                  sizeof( value ),
-                  "%c %s",
-                  character,
-                  ( NULL != pattern ) ? pattern : "?" );
+        snprintf( value, sizeof( value ), "%c %s", character, ( NULL != pattern ) ? pattern : "?" );
         display_draw_text( UI_LAYOUT_LABEL_X, y, descriptor->label, foreground, 1U );
-        display_draw_text(
-            232, y, value, active ? theme->selected : theme->secondary, 1U );
+        display_draw_text( 232, y, value, active ? theme->selected : theme->secondary, 1U );
     }
 
     char footer[ 64 ];

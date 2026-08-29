@@ -48,9 +48,15 @@ static void IRAM_ATTR encoder_isr( void *a_argument )
     if( ENCODER_LATCH_STATE_0 == current || ENCODER_LATCH_STATE_3 == current )
     {
         if( encoder_accumulator >= ENCODER_TRANSITIONS_PER_DETENT )
-        { ++encoder_delta; encoder_accumulator = 0; }
+        {
+            ++encoder_delta;
+            encoder_accumulator = 0;
+        }
         else if( encoder_accumulator <= -ENCODER_TRANSITIONS_PER_DETENT )
-        { --encoder_delta; encoder_accumulator = 0; }
+        {
+            --encoder_delta;
+            encoder_accumulator = 0;
+        }
     }
     portEXIT_CRITICAL_ISR( &encoder_lock );
 }
@@ -66,14 +72,12 @@ static void clear_encoder_delta( void )
 esp_err_t platform_init( void )
 {
     gpio_config_t outputs = {
-        .pin_bit_mask = ( 1ULL << RFSCOUT_BOARD_POWER_ENABLE_PIN ) |
-                        ( 1ULL << RFSCOUT_BOARD_DISPLAY_CS_PIN ) |
-                        ( 1ULL << RFSCOUT_BOARD_CC1101_CS_PIN ) |
-                        ( 1ULL << RFSCOUT_BOARD_SD_CS_PIN ) |
-                        ( 1ULL << RFSCOUT_BOARD_NRF24_CS_PIN ) |
-                        ( 1ULL << RFSCOUT_BOARD_NRF24_CE_PIN ) |
-                        ( 1ULL << RFSCOUT_BOARD_CC1101_SWITCH_1_PIN ) |
-                        ( 1ULL << RFSCOUT_BOARD_CC1101_SWITCH_0_PIN ),
+        .pin_bit_mask =
+            ( 1ULL << RFSCOUT_BOARD_POWER_ENABLE_PIN ) | ( 1ULL << RFSCOUT_BOARD_DISPLAY_CS_PIN ) |
+            ( 1ULL << RFSCOUT_BOARD_CC1101_CS_PIN ) | ( 1ULL << RFSCOUT_BOARD_SD_CS_PIN ) |
+            ( 1ULL << RFSCOUT_BOARD_NRF24_CS_PIN ) | ( 1ULL << RFSCOUT_BOARD_NRF24_CE_PIN ) |
+            ( 1ULL << RFSCOUT_BOARD_CC1101_SWITCH_1_PIN ) |
+            ( 1ULL << RFSCOUT_BOARD_CC1101_SWITCH_0_PIN ),
         .mode = GPIO_MODE_OUTPUT };
     ESP_ERROR_CHECK( gpio_config( &outputs ) );
     gpio_set_level( RFSCOUT_BOARD_POWER_ENABLE_PIN, 1 );
@@ -118,19 +122,28 @@ void platform_poll( void )
     const bool pressed = 0 == gpio_get_level( RFSCOUT_BOARD_ENCODER_KEY_PIN );
     const int64_t now_us = esp_timer_get_time();
     if( pressed != encoder_button_raw )
-    { encoder_button_raw = pressed; encoder_button_change_us = now_us; }
-    else if( pressed != encoder_button_stable && now_us - encoder_button_change_us >= ENCODER_BUTTON_DEBOUNCE_US )
+    {
+        encoder_button_raw = pressed;
+        encoder_button_change_us = now_us;
+    }
+    else if( pressed != encoder_button_stable &&
+             now_us - encoder_button_change_us >= ENCODER_BUTTON_DEBOUNCE_US )
     {
         encoder_button_stable = pressed;
         if( pressed )
-        { encoder_button_pressed_us = now_us; encoder_button_lock_fired = false; }
+        {
+            encoder_button_pressed_us = now_us;
+            encoder_button_lock_fired = false;
+        }
         else
         {
             const int64_t held_us = now_us - encoder_button_pressed_us;
             if( !encoder_button_lock_fired && !input_locked )
             {
-                if( held_us >= ENCODER_BUTTON_LONG_PRESS_US ) encoder_button_long_event = true;
-                else encoder_button_event = true;
+                if( held_us >= ENCODER_BUTTON_LONG_PRESS_US )
+                    encoder_button_long_event = true;
+                else
+                    encoder_button_event = true;
             }
             encoder_button_pressed_us = 0;
         }
@@ -146,23 +159,36 @@ void platform_poll( void )
         clear_encoder_delta();
         ESP_LOGI( TAG, "user input %s", input_locked ? "locked" : "unlocked" );
         /* Emit only after the semantic transition is committed; the hold itself remains silent. */
-        rfscout_event_emit( input_locked ? RFSCOUT_EVENT_INPUT_LOCKED : RFSCOUT_EVENT_INPUT_UNLOCKED,
-                            RFSCOUT_EVENT_SOURCE_SYSTEM, input_locked ? 1 : 0 );
+        rfscout_event_emit( input_locked ? RFSCOUT_EVENT_INPUT_LOCKED
+                                         : RFSCOUT_EVENT_INPUT_UNLOCKED,
+                            RFSCOUT_EVENT_SOURCE_SYSTEM,
+                            input_locked ? 1 : 0 );
     }
 }
 
 bool platform_input_get( rfscout_input_event_t *a_event )
 {
-    if( NULL == a_event ) return false;
+    if( NULL == a_event )
+        return false;
     a_event->type = RFSCOUT_INPUT_NONE;
     a_event->value = 0;
     if( platform_encoder_button_long_pressed() )
-    { a_event->type = RFSCOUT_INPUT_LONG_SELECT; return true; }
+    {
+        a_event->type = RFSCOUT_INPUT_LONG_SELECT;
+        return true;
+    }
     if( platform_encoder_button_pressed() )
-    { a_event->type = RFSCOUT_INPUT_SELECT; return true; }
+    {
+        a_event->type = RFSCOUT_INPUT_SELECT;
+        return true;
+    }
     const int delta = platform_encoder_delta();
     if( 0 != delta )
-    { a_event->type = RFSCOUT_INPUT_NAVIGATION; a_event->value = delta; return true; }
+    {
+        a_event->type = RFSCOUT_INPUT_NAVIGATION;
+        a_event->value = delta;
+        return true;
+    }
     return false;
 }
 
@@ -176,10 +202,28 @@ int platform_encoder_delta( void )
 }
 
 bool platform_encoder_button_pressed( void )
-{ const bool event = !input_locked && encoder_button_event; encoder_button_event = false; return event; }
+{
+    const bool event = !input_locked && encoder_button_event;
+    encoder_button_event = false;
+    return event;
+}
 bool platform_encoder_button_long_pressed( void )
-{ const bool event = !input_locked && encoder_button_long_event; encoder_button_long_event = false; return event; }
-bool platform_input_locked( void ) { return input_locked; }
-void platform_set_alert_led( bool a_active ) { (void)a_active; }
+{
+    const bool event = !input_locked && encoder_button_long_event;
+    encoder_button_long_event = false;
+    return event;
+}
+bool platform_input_locked( void )
+{
+    return input_locked;
+}
+void platform_set_alert_led( bool a_active )
+{
+    (void)a_active;
+}
 void platform_audio_tone( bool a_enabled, uint16_t a_frequency_hz, void *a_context )
-{ (void)a_enabled; (void)a_frequency_hz; (void)a_context; }
+{
+    (void)a_enabled;
+    (void)a_frequency_hz;
+    (void)a_context;
+}

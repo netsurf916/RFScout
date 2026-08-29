@@ -118,8 +118,7 @@ static char next_morse_character( char a_current, int a_direction )
     const size_t count = strlen( characters );
     const char *current = strchr( characters, a_current );
     size_t index = ( NULL != current ) ? (size_t)( current - characters ) : 0U;
-    index = ( a_direction > 0 ) ? ( index + 1U ) % count
-                                : ( index + count - 1U ) % count;
+    index = ( a_direction > 0 ) ? ( index + 1U ) % count : ( index + count - 1U ) % count;
     return characters[ index ];
 }
 
@@ -225,37 +224,35 @@ static rfscout_notification_type_t nr_notification_type( nrf24_fingerprint_type_
 
 static void render_wifi_menu( void )
 {
-    wifi_settings_view_render(
-        wifi_item, notification_preferences_app_enabled( RFSCOUT_APP_WIFI_BT ) );
+    wifi_settings_view_render( wifi_item,
+                               notification_preferences_app_enabled( RFSCOUT_APP_WIFI_BT ) );
 }
 
 static void render_cc_menu( void )
 {
     const cc1101_scan_config_t *config = cc1101_config();
-    radio_app_view_cc1101_menu(
-        cc_item,
-        cc_edit,
-        cc1101_profile_name( config->profile ),
-        config->low_khz,
-        config->high_khz,
-        config->step_khz,
-        cc1101_sweep_count(),
-        cc_limit,
-        cc_peak_hold,
-        notification_preferences_app_enabled( RFSCOUT_APP_CC1101 ) );
+    radio_app_view_cc1101_menu( cc_item,
+                                cc_edit,
+                                cc1101_profile_name( config->profile ),
+                                config->low_khz,
+                                config->high_khz,
+                                config->step_khz,
+                                cc1101_sweep_count(),
+                                cc_limit,
+                                cc_peak_hold,
+                                notification_preferences_app_enabled( RFSCOUT_APP_CC1101 ) );
 }
 
 static void render_nr_menu( void )
 {
     const nrf24_scan_config_t *config = nrf24_config();
-    radio_app_view_nrf24_menu(
-        nr_item,
-        nr_edit,
-        config->low_channel,
-        config->high_channel,
-        config->dwell_us,
-        nr_peak_hold,
-        notification_preferences_app_enabled( RFSCOUT_APP_NRF24 ) );
+    radio_app_view_nrf24_menu( nr_item,
+                               nr_edit,
+                               config->low_channel,
+                               config->high_channel,
+                               config->dwell_us,
+                               nr_peak_hold,
+                               notification_preferences_app_enabled( RFSCOUT_APP_NRF24 ) );
 }
 
 static void render_parent_menu( void )
@@ -353,7 +350,8 @@ static void notification_input( bool a_pressed, int a_delta )
         const char old_character = device_config_notification_character( descriptor->type );
         const char new_character = next_morse_character( old_character, direction );
         if( ( new_character != old_character ) &&
-            ( ESP_OK == device_config_set_notification_character( descriptor->type, new_character ) ) )
+            ( ESP_OK ==
+              device_config_set_notification_character( descriptor->type, new_character ) ) )
         {
             notification_settings_view_render( active_app, notification_item, true );
             emit_event( RFSCOUT_EVENT_NAVIGATE, direction );
@@ -939,8 +937,7 @@ static void nr_input( bool a_pressed, int a_delta )
     const nrf24_scan_config_t after = *nrf24_config();
     render_nr_menu();
     if( ( before.low_channel != after.low_channel ) ||
-        ( before.high_channel != after.high_channel ) ||
-        ( before.dwell_us != after.dwell_us ) )
+        ( before.high_channel != after.high_channel ) || ( before.dwell_us != after.dwell_us ) )
     {
         emit_event( RFSCOUT_EVENT_NAVIGATE, direction );
     }
@@ -1005,12 +1002,12 @@ static void audio_input( bool a_pressed, bool a_long_pressed, int a_delta )
                 {
                     ESP_LOGW( TAG, "could not delete recording: %s", esp_err_to_name( result ) );
                 }
-                const unsigned item_count = AUDIO_BROWSER_FILE_BASE + (unsigned)recorder_file_count();
+                const unsigned item_count =
+                    AUDIO_BROWSER_FILE_BASE + (unsigned)recorder_file_count();
                 if( audio_item >= item_count )
                 {
-                    audio_item = item_count > AUDIO_BROWSER_FILE_BASE
-                                     ? item_count - 1U
-                                     : AUDIO_BROWSER_NEW;
+                    audio_item =
+                        item_count > AUDIO_BROWSER_FILE_BASE ? item_count - 1U : AUDIO_BROWSER_NEW;
                 }
             }
             audio_edit = false;
@@ -1130,8 +1127,8 @@ static void audio_input( bool a_pressed, bool a_long_pressed, int a_delta )
         if( AUDIO_BROWSER_MONITOR == audio_item )
         {
             const device_config_t *config = device_config_get();
-            if( ESP_OK == recorder_start_monitor(
-                              NULL != config ? config->recorder_input_gain_db : 12U ) )
+            if( ESP_OK ==
+                recorder_start_monitor( NULL != config ? config->recorder_input_gain_db : 12U ) )
             {
                 emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
             }
@@ -1282,8 +1279,7 @@ rfscout_app_id_t app_manager_current( void )
 void app_manager_poll( void )
 {
     const int64_t now = esp_timer_get_time();
-    if( ( RFSCOUT_APP_THERMAL != active_app ) &&
-        device_config_app_enabled( RFSCOUT_APP_THERMAL ) &&
+    if( ( RFSCOUT_APP_THERMAL != active_app ) && device_config_app_enabled( RFSCOUT_APP_THERMAL ) &&
         ( now - last_thermal_probe_us >= APP_FEATURE_PROBE_INTERVAL_US ) )
     {
         (void)probe_thermal();
@@ -1416,9 +1412,8 @@ void app_manager_poll( void )
                 if( ( RFSCOUT_RECORDER_SAVING == audio_last_state ) &&
                     ( RFSCOUT_RECORDER_IDLE == recorder_now ) )
                 {
-                    audio_item = recorder_file_count() > 0U
-                                     ? AUDIO_BROWSER_FILE_BASE
-                                     : AUDIO_BROWSER_NEW;
+                    audio_item =
+                        recorder_file_count() > 0U ? AUDIO_BROWSER_FILE_BASE : AUDIO_BROWSER_NEW;
                 }
                 audio_last_state = recorder_now;
                 last_app_refresh_us = now;

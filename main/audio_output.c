@@ -245,12 +245,11 @@ static void play_morse( const audio_output_command_t *a_command )
         {
             break;
         }
-        if( ( '\0' != symbol[ 1 ] ) &&
-            !write_segment( false,
-                            a_command->frequency_hz,
-                            a_command->duration_ms,
-                            a_command->volume_percent,
-                            &phase ) )
+        if( ( '\0' != symbol[ 1 ] ) && !write_segment( false,
+                                                       a_command->frequency_hz,
+                                                       a_command->duration_ms,
+                                                       a_command->volume_percent,
+                                                       &phase ) )
         {
             break;
         }
@@ -270,8 +269,7 @@ static bool wav_supported( const uint8_t a_header[ AUDIO_OUTPUT_WAV_HEADER_SIZE 
            ( 0 == memcmp( &a_header[ 8 ], "WAVE", 4U ) ) &&
            ( 0 == memcmp( &a_header[ 12 ], "fmt ", 4U ) ) &&
            ( 0 == memcmp( &a_header[ 36 ], "data", 4U ) ) &&
-           ( 1U == read_u16_le( &a_header[ 20 ] ) ) &&
-           ( 1U == read_u16_le( &a_header[ 22 ] ) ) &&
+           ( 1U == read_u16_le( &a_header[ 20 ] ) ) && ( 1U == read_u16_le( &a_header[ 22 ] ) ) &&
            ( read_u32_le( &a_header[ 24 ] ) >= AUDIO_OUTPUT_WAV_RATE_MIN ) &&
            ( read_u32_le( &a_header[ 24 ] ) <= AUDIO_OUTPUT_WAV_RATE_MAX ) &&
            ( 16U == read_u16_le( &a_header[ 34 ] ) );
@@ -370,9 +368,8 @@ static void play_wav( const audio_output_command_t *a_command )
     finish_wav_command( a_command->generation );
 }
 
-static bool valid_generated_request( uint16_t a_frequency_hz,
-                                     uint32_t a_duration_ms,
-                                     uint8_t a_volume_percent )
+static bool
+valid_generated_request( uint16_t a_frequency_hz, uint32_t a_duration_ms, uint8_t a_volume_percent )
 {
     return initialized && ( a_frequency_hz > 0U ) &&
            ( a_frequency_hz < ( AUDIO_OUTPUT_DEFAULT_SAMPLE_RATE / 2U ) ) &&
@@ -559,14 +556,15 @@ esp_err_t audio_output_init( void )
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG( AUDIO_OUTPUT_DEFAULT_SAMPLE_RATE ),
         .slot_cfg =
             I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG( I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO ),
-        .gpio_cfg = {
-            .mclk = I2S_GPIO_UNUSED,
-            .bclk = (gpio_num_t)RFSCOUT_BOARD_SPEAKER_BCLK_PIN,
-            .ws = (gpio_num_t)RFSCOUT_BOARD_SPEAKER_LRCLK_PIN,
-            .dout = (gpio_num_t)RFSCOUT_BOARD_SPEAKER_DATA_PIN,
-            .din = I2S_GPIO_UNUSED,
-            .invert_flags = { .mclk_inv = false, .bclk_inv = false, .ws_inv = false },
-        },
+        .gpio_cfg =
+            {
+                .mclk = I2S_GPIO_UNUSED,
+                .bclk = (gpio_num_t)RFSCOUT_BOARD_SPEAKER_BCLK_PIN,
+                .ws = (gpio_num_t)RFSCOUT_BOARD_SPEAKER_LRCLK_PIN,
+                .dout = (gpio_num_t)RFSCOUT_BOARD_SPEAKER_DATA_PIN,
+                .din = I2S_GPIO_UNUSED,
+                .invert_flags = { .mclk_inv = false, .bclk_inv = false, .ws_inv = false },
+            },
     };
 
     result = i2s_channel_init_std_mode( tx_channel, &standard_config );

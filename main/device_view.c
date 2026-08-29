@@ -142,8 +142,7 @@ static char next_morse_character( char a_current, int a_direction )
     const size_t count = strlen( characters );
     const char *current = strchr( characters, a_current );
     size_t index = ( NULL != current ) ? (size_t)( current - characters ) : 0U;
-    index = ( a_direction > 0 ) ? ( index + 1U ) % count
-                                : ( index + count - 1U ) % count;
+    index = ( a_direction > 0 ) ? ( index + 1U ) % count : ( index + count - 1U ) % count;
     return characters[ index ];
 }
 
@@ -249,34 +248,24 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             snprintf( a_value, a_capacity, "%02d", edited_time.tm_min );
             break;
         case DEVICE_ITEM_WIFI:
-            snprintf( a_value,
-                      a_capacity,
-                      "%s",
-                      on_off( config->apps_enabled[ RFSCOUT_APP_WIFI_BT ] ) );
+            snprintf(
+                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_WIFI_BT ] ) );
             break;
         case DEVICE_ITEM_CC1101:
-            snprintf( a_value,
-                      a_capacity,
-                      "%s",
-                      on_off( config->apps_enabled[ RFSCOUT_APP_CC1101 ] ) );
+            snprintf(
+                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_CC1101 ] ) );
             break;
         case DEVICE_ITEM_NRF24:
-            snprintf( a_value,
-                      a_capacity,
-                      "%s",
-                      on_off( config->apps_enabled[ RFSCOUT_APP_NRF24 ] ) );
+            snprintf(
+                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_NRF24 ] ) );
             break;
         case DEVICE_ITEM_AUDIO:
-            snprintf( a_value,
-                      a_capacity,
-                      "%s",
-                      on_off( config->apps_enabled[ RFSCOUT_APP_AUDIO ] ) );
+            snprintf(
+                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_AUDIO ] ) );
             break;
         case DEVICE_ITEM_THERMAL:
-            snprintf( a_value,
-                      a_capacity,
-                      "%s",
-                      on_off( config->apps_enabled[ RFSCOUT_APP_THERMAL ] ) );
+            snprintf(
+                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_THERMAL ] ) );
             break;
         case DEVICE_ITEM_LOGGING:
             snprintf( a_value, a_capacity, "%s", on_off( config->logging_enabled ) );
@@ -297,11 +286,8 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
                 const rfscout_notification_type_t type = notification_for_item( a_item );
                 const char character = device_config_notification_character( type );
                 const char *pattern = morse_pattern( character );
-                snprintf( a_value,
-                          a_capacity,
-                          "%c %s",
-                          character,
-                          ( NULL != pattern ) ? pattern : "?" );
+                snprintf(
+                    a_value, a_capacity, "%c %s", character, ( NULL != pattern ) ? pattern : "?" );
             }
             break;
     }
@@ -458,7 +444,8 @@ static void adjust_startup_app( int a_delta )
     const rfscout_app_id_t new_app = (rfscout_app_id_t)app;
     if( ( new_app != old_app ) && ( ESP_OK == device_config_set_startup_app( new_app ) ) )
     {
-        log_config_change( "apps.startup", startup_app_name( old_app ), startup_app_name( new_app ) );
+        log_config_change(
+            "apps.startup", startup_app_name( old_app ), startup_app_name( new_app ) );
         emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
     }
 }

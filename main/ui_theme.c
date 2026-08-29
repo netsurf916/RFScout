@@ -22,20 +22,20 @@
 static const char *TAG = "ui_theme";
 static rfscout_theme_id_t active_theme = RFSCOUT_THEME_INDOOR;
 
-#define PALETTE_INDOOR                                                                               \
-    {                                                                                                 \
-        .background = 0x0000U, .text = 0xFFFFU, .secondary = 0xC618U, .divider = 0x8410U,           \
-        .accent = 0xFC00U, .selected = 0xFC00U, .info = 0xA514U, .normal = 0xFFFFU,                 \
-        .success = 0xC618U, .warning = 0xFFE1U, .error = 0xF800U, .graph_primary = 0xFC00U,         \
-        .graph_peak = 0xFFFFU, .logo_primary = 0xFC00U, .logo_secondary = 0xFFFFU                    \
+#define PALETTE_INDOOR                                                                             \
+    {                                                                                              \
+        .background = 0x0000U, .text = 0xFFFFU, .secondary = 0xC618U, .divider = 0x8410U,          \
+        .accent = 0xFC00U, .selected = 0xFC00U, .info = 0xA514U, .normal = 0xFFFFU,                \
+        .success = 0xC618U, .warning = 0xFFE1U, .error = 0xF800U, .graph_primary = 0xFC00U,        \
+        .graph_peak = 0xFFFFU, .logo_primary = 0xFC00U, .logo_secondary = 0xFFFFU                  \
     }
 
-#define PALETTE_NIGHT                                                                                \
-    {                                                                                                 \
-        .background = 0x0000U, .text = 0xFBE0U, .secondary = 0xFA20U, .divider = 0x7800U,           \
-        .accent = 0xF840U, .selected = 0xFC40U, .info = 0xFA20U, .normal = 0xFBE0U,                 \
-        .success = 0xFA40U, .warning = 0xFFE1U, .error = 0xF800U, .graph_primary = 0xF840U,         \
-        .graph_peak = 0xFC40U, .logo_primary = 0xF840U, .logo_secondary = 0xFC40U                    \
+#define PALETTE_NIGHT                                                                              \
+    {                                                                                              \
+        .background = 0x0000U, .text = 0xFBE0U, .secondary = 0xFA20U, .divider = 0x7800U,          \
+        .accent = 0xF840U, .selected = 0xFC40U, .info = 0xFA20U, .normal = 0xFBE0U,                \
+        .success = 0xFA40U, .warning = 0xFFE1U, .error = 0xF800U, .graph_primary = 0xF840U,        \
+        .graph_peak = 0xFC40U, .logo_primary = 0xF840U, .logo_secondary = 0xFC40U                  \
     }
 
 static const ui_theme_palette_t palettes[ RFSCOUT_THEME_COUNT ] = {
@@ -66,30 +66,34 @@ static const ui_theme_palette_t palettes[ RFSCOUT_THEME_COUNT ] = {
 };
 
 static const ui_theme_sound_policy_t sound_policies[ RFSCOUT_THEME_COUNT ] = {
-    [RFSCOUT_THEME_INDOOR] = {
-        .interaction_audio = true,
-        .notification_audio = true,
-        .interaction_volume_percent = 35U,
-        .notification_volume_percent = 100U,
-    },
-    [RFSCOUT_THEME_OUTDOOR] = {
-        .interaction_audio = true,
-        .notification_audio = true,
-        .interaction_volume_percent = 55U,
-        .notification_volume_percent = 100U,
-    },
-    [RFSCOUT_THEME_NIGHT] = {
-        .interaction_audio = true,
-        .notification_audio = true,
-        .interaction_volume_percent = 20U,
-        .notification_volume_percent = 60U,
-    },
-    [RFSCOUT_THEME_DISCIPLINE] = {
-        .interaction_audio = false,
-        .notification_audio = false,
-        .interaction_volume_percent = 0U,
-        .notification_volume_percent = 0U,
-    },
+    [RFSCOUT_THEME_INDOOR] =
+        {
+            .interaction_audio = true,
+            .notification_audio = true,
+            .interaction_volume_percent = 35U,
+            .notification_volume_percent = 100U,
+        },
+    [RFSCOUT_THEME_OUTDOOR] =
+        {
+            .interaction_audio = true,
+            .notification_audio = true,
+            .interaction_volume_percent = 55U,
+            .notification_volume_percent = 100U,
+        },
+    [RFSCOUT_THEME_NIGHT] =
+        {
+            .interaction_audio = true,
+            .notification_audio = true,
+            .interaction_volume_percent = 20U,
+            .notification_volume_percent = 60U,
+        },
+    [RFSCOUT_THEME_DISCIPLINE] =
+        {
+            .interaction_audio = false,
+            .notification_audio = false,
+            .interaction_volume_percent = 0U,
+            .notification_volume_percent = 0U,
+        },
 };
 
 esp_err_t ui_theme_init( void )

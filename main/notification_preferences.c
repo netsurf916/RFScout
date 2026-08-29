@@ -35,9 +35,9 @@ esp_err_t notification_preferences_init( void )
 {
     for( size_t index = 0U; index < RFSCOUT_APP_COUNT; ++index )
     {
-        const rfscout_app_audio_policy_t *policy =
-            app_audio_policy_get( (rfscout_app_id_t)index );
-        app_enabled[ index ] = policy->notifications_supported && policy->notifications_enabled_default;
+        const rfscout_app_audio_policy_t *policy = app_audio_policy_get( (rfscout_app_id_t)index );
+        app_enabled[ index ] =
+            policy->notifications_supported && policy->notifications_enabled_default;
     }
 
     nvs_handle_t handle;
@@ -53,8 +53,7 @@ esp_err_t notification_preferences_init( void )
 
     for( size_t index = 0U; index < RFSCOUT_APP_COUNT; ++index )
     {
-        const rfscout_app_audio_policy_t *policy =
-            app_audio_policy_get( (rfscout_app_id_t)index );
+        const rfscout_app_audio_policy_t *policy = app_audio_policy_get( (rfscout_app_id_t)index );
         if( !policy->notifications_supported )
         {
             app_enabled[ index ] = false;

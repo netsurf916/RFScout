@@ -81,11 +81,10 @@ static bool request_notification_locked( char a_character )
     }
     if( RFSCOUT_ALERT_MORSE == mode && alert_morse_character_supported( a_character ) )
     {
-        return audio_output_play_notification_morse(
-            (char)toupper( (unsigned char)a_character ),
-            ALERT_TONE_FREQUENCY_HZ,
-            ALERT_MORSE_UNIT_MS,
-            effective_volume );
+        return audio_output_play_notification_morse( (char)toupper( (unsigned char)a_character ),
+                                                     ALERT_TONE_FREQUENCY_HZ,
+                                                     ALERT_MORSE_UNIT_MS,
+                                                     effective_volume );
     }
     return false;
 }
