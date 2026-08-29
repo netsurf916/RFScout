@@ -180,6 +180,9 @@ static void draw_status( const battery_status_t *a_status )
 
 void battery_indicator_draw( void )
 {
+    /* Full-screen renders should not depend on some earlier caller having refreshed telemetry. */
+    battery_poll();
+
     battery_status_t status = { 0 };
     (void)battery_get_status( &status );
     draw_status( &status );
