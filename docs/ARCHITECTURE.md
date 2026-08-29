@@ -99,17 +99,29 @@ recording selection ---------------------------------------------> WAV playback
 
 ## Thermal path
 
-MLX90640 is an optional external I2C/Qwiic device. RFScout probes for availability and exposes Thermal only when enabled and detected. The native 32x24 frame is interpolated for display.
+MLX90640 is an optional external I2C/Qwiic device. RFScout probes for availability and exposes Thermal only when enabled and detected. The native 32x24 frame is interpolated for display. Thermal image pixels are literal data imagery and use the raw framebuffer path so display themes cannot accidentally remap sensor colors; Thermal chrome, labels, errors, and crosshair remain theme-aware.
 
 ## Home, Device configuration, and time
 
 `device_config.c/.h` owns compiled defaults plus optional `/sdcard/rfscout.json` persistence. Configuration is nonfatal: RFScout remains usable without storage.
 
-Persisted state includes app enablement, preferred startup application, brightness, clock format, timezone configuration, global alert mode/volume/characters, Recorder playback volume, Recorder input gain, and selected time metadata.
+Persisted SD-backed state includes app enablement, preferred startup application, brightness, clock format, timezone configuration, global alert mode/volume/characters, Recorder playback volume, Recorder input gain, and selected time metadata.
 
-Home uses the canonical `assets/logo.png` artwork. At configure time `tools/generate_home_logo.py` converts that source image into a compact 2-bit black/orange/white LCD bitmap using only the Python standard library; the generated header is compiled into the firmware and rendered by `home_landing.c`. This keeps the LCD branding visually aligned with the browser flasher without carrying the full PNG decoder or source image in firmware. Shared top chrome remains active; center enters the existing Device Settings editor and Back returns to Home.
+The active display theme is owned by `ui_theme.c/.h` and persisted separately in ESP32 NVS. This deliberate separation keeps Indoor/Outdoor/Night viewing mode persistent even when the SD card is absent or unavailable.
+
+Home uses the canonical `assets/logo.png` artwork. At configure time `tools/generate_home_logo.py` converts that source image into a compact indexed LCD bitmap using only the Python standard library; the generated header is compiled into the firmware and rendered by `home_landing.c`. The bitmap stores semantic background/brand/secondary indices rather than fixed final presentation colors, so Home branding follows the active theme at runtime while remaining visually derived from the same artwork as the browser flasher. Shared top chrome remains active; center enters the existing Device Settings editor and Back returns to Home.
 
 `device_time.c/.h` owns authoritative wall-clock state and provenance. Wall-clock time is used for display and calendar timestamps; monotonic timers remain responsible for intervals, dwell, debounce, retries, and timeouts.
+
+## Display theme and rendering boundary
+
+`ui_theme.c/.h` owns the semantic UI palette. Current themes are Indoor, Outdoor, and Night. Palettes define roles instead of application-specific RGB565 constants: background, text, secondary text/chrome, divider, accent, selected, information, success, warning, error, graph primary/peak, and Home logo primary/secondary.
+
+The normal framebuffer primitives in `display.c` resolve RFScout's historical UI color constants through the active semantic palette. This compatibility layer brings existing applications under theme orchestration without requiring a simultaneous rewrite of every view. New UI code should prefer semantic theme roles directly rather than introducing additional hard-coded presentation colors.
+
+`display_fill_rect_raw()` and `display_write_rect()` are deliberate raw-pixel escape hatches for imagery whose RGB565 values are data rather than UI semantics. Thermal heat-map pixels use the raw path. The generated Home bitmap also reaches the framebuffer through literal indexed output after `home_landing.c` substitutes the active theme's logo colors.
+
+Outdoor intentionally does **not** preserve the old subdued-color approach: secondary information is kept bright for daylight readability. Night concentrates UI energy in red/orange tones. Theme changes are immediate and do not alter application state or radio/sensor lifecycle.
 
 ## Shared hardware boundaries
 
@@ -135,7 +147,7 @@ Filesystem errors are nonfatal and surfaced through shared status UI.
 
 ## UI boundary
 
-Application views render their own content into the framebuffer. Shared top chrome is drawn through `ui_chrome_draw()`, which owns title placement plus shared status/battery presentation. Long titles are constrained so they do not collide with the right-side status region.
+Application views render their own content into the framebuffer. Shared top chrome is drawn through `ui_chrome_draw()`, which owns title placement plus shared status/battery presentation. Long titles are constrained so they do not collide with the right-side status region. Theme resolution happens below or alongside those views rather than being duplicated in each application.
 
 The bottom of the display is not globally reserved. Views may use a common footer baseline when useful, but data-heavy applications can use the full remaining content height.
 
