@@ -7,9 +7,7 @@
 
 #include "display.h"
 
-#include "battery_indicator.h"
 #include "power.h"
-#include "status_bar.h"
 
 #include "esp_heap_caps.h"
 
@@ -58,11 +56,6 @@ static void draw_power_overlay( const power_status_t *a_status )
 
 esp_err_t display_present( void )
 {
-    /* Shared chrome is refreshed on every presentation pass. Pixel-aware drawing only dirties the
-     * framebuffer when the visible battery/status content actually changed. */
-    battery_indicator_draw();
-    status_bar_draw();
-
     if( !display_is_dirty() )
     {
         return ESP_OK;
