@@ -104,10 +104,10 @@ static void draw_static_rows( size_t a_unknown_count, size_t a_random_count )
 
     char line[ 64 ];
     snprintf( line, sizeof( line ), "%-27.27s %3u", "UNKNOWN", (unsigned)a_unknown_count );
-    display_draw_text( UI_LAYOUT_LEFT_X, UI_UNKNOWN_ROW_Y, line, theme->warning, 1 );
+    display_draw_text( UI_LAYOUT_LEFT_X, UI_UNKNOWN_ROW_Y, line, theme->info, 1 );
 
     snprintf( line, sizeof( line ), "%-27.27s %3u", "RANDOM", (unsigned)a_random_count );
-    display_draw_text( UI_LAYOUT_LEFT_X, UI_RANDOM_ROW_Y, line, theme->warning, 1 );
+    display_draw_text( UI_LAYOUT_LEFT_X, UI_RANDOM_ROW_Y, line, theme->info, 1 );
 }
 
 static void draw_surveillance_rows( const uint16_t *a_signature_counts )
@@ -119,7 +119,7 @@ static void draw_surveillance_rows( const uint16_t *a_signature_counts )
     {
         const surveillance_signature_id_t signature = surveillance_rows[ row ];
         const uint16_t count = a_signature_counts[ signature ];
-        const uint16_t color = ( 0U == count ) ? theme->info : theme->alert;
+        const uint16_t color = ( 0U == count ) ? theme->info : theme->warning;
         char line[ 32 ];
         snprintf( line,
                   sizeof( line ),
@@ -180,11 +180,11 @@ static void render_summary( void )
               (unsigned)device_count,
               (unsigned)wifi_count,
               (unsigned)ble_count );
-    display_draw_text( UI_LAYOUT_LEFT_X, 25, line, theme->text, 1 );
+    display_draw_text( UI_LAYOUT_LEFT_X, 25, line, theme->normal, 1 );
 
     snprintf( line, sizeof( line ), "SURVEILLANCE %u", (unsigned)surveillance_count );
     display_draw_text(
-        210, 25, line, ( 0U == surveillance_count ) ? theme->info : theme->alert, 1 );
+        210, 25, line, ( 0U == surveillance_count ) ? theme->info : theme->warning, 1 );
 
     display_fill_rect( 5, 36, 310, 1, theme->divider );
     display_fill_rect(
