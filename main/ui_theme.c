@@ -20,54 +20,57 @@ static const char *TAG = "ui_theme";
 static rfscout_theme_id_t active_theme = RFSCOUT_THEME_INDOOR;
 
 static const ui_theme_palette_t palettes[ RFSCOUT_THEME_COUNT ] = {
-    [ RFSCOUT_THEME_INDOOR ] = {
-        .background = 0x0000U,
-        .text = 0xFFFFU,
-        .secondary = 0xC618U,
-        .divider = 0x8410U,
-        .accent = 0xFC00U,
-        .selected = 0xFFE0U,
-        .info = 0x07FFU,
-        .success = 0x07E0U,
-        .warning = 0xFFE0U,
-        .error = 0xF800U,
-        .graph_primary = 0x07E0U,
-        .graph_peak = 0x07FFU,
-        .logo_primary = 0xFC00U,
-        .logo_secondary = 0xFFFFU,
-    },
-    [ RFSCOUT_THEME_OUTDOOR ] = {
-        .background = 0x0000U,
-        .text = 0xFFFFU,
-        .secondary = 0xFFFFU,
-        .divider = 0xC618U,
-        .accent = 0xFFE0U,
-        .selected = 0xFC20U,
-        .info = 0x07FFU,
-        .success = 0x07E0U,
-        .warning = 0xFFE0U,
-        .error = 0xF81FU,
-        .graph_primary = 0xFFE0U,
-        .graph_peak = 0x07FFU,
-        .logo_primary = 0xFFE0U,
-        .logo_secondary = 0xFFFFU,
-    },
-    [ RFSCOUT_THEME_NIGHT ] = {
-        .background = 0x0000U,
-        .text = 0xFBE0U,
-        .secondary = 0xFA20U,
-        .divider = 0x7800U,
-        .accent = 0xF840U,
-        .selected = 0xFC40U,
-        .info = 0xFA20U,
-        .success = 0xFA40U,
-        .warning = 0xFC60U,
-        .error = 0xFFE1U,
-        .graph_primary = 0xF840U,
-        .graph_peak = 0xFC40U,
-        .logo_primary = 0xF840U,
-        .logo_secondary = 0xFC40U,
-    },
+    [RFSCOUT_THEME_INDOOR] =
+        {
+            .background = 0x0000U,
+            .text = 0xFFFFU,
+            .secondary = 0xC618U,
+            .divider = 0x8410U,
+            .accent = 0xFC00U,
+            .selected = 0xFFE0U,
+            .info = 0x07FFU,
+            .success = 0x07E0U,
+            .warning = 0xFFE0U,
+            .error = 0xF800U,
+            .graph_primary = 0x07E0U,
+            .graph_peak = 0x07FFU,
+            .logo_primary = 0xFC00U,
+            .logo_secondary = 0xFFFFU,
+        },
+    [RFSCOUT_THEME_OUTDOOR] =
+        {
+            .background = 0x0000U,
+            .text = 0xFFFFU,
+            .secondary = 0xFFFFU,
+            .divider = 0xC618U,
+            .accent = 0xFFE0U,
+            .selected = 0xFC20U,
+            .info = 0x07FFU,
+            .success = 0x07E0U,
+            .warning = 0xFFE0U,
+            .error = 0xF81FU,
+            .graph_primary = 0xFFE0U,
+            .graph_peak = 0x07FFU,
+            .logo_primary = 0xFFE0U,
+            .logo_secondary = 0xFFFFU,
+        },
+    [RFSCOUT_THEME_NIGHT] =
+        {
+            .background = 0x0000U,
+            .text = 0xFBE0U,
+            .secondary = 0xFA20U,
+            .divider = 0x7800U,
+            .accent = 0xF840U,
+            .selected = 0xFC40U,
+            .info = 0xFA20U,
+            .success = 0xFA40U,
+            .warning = 0xFC60U,
+            .error = 0xFFE1U,
+            .graph_primary = 0xF840U,
+            .graph_peak = 0xFC40U,
+            .logo_primary = 0xF840U,
+            .logo_secondary = 0xFC40U,
+        },
 };
 
 esp_err_t ui_theme_init( void )
@@ -97,8 +100,8 @@ esp_err_t ui_theme_init( void )
         return result;
     }
 
-    active_theme = ( stored < RFSCOUT_THEME_COUNT ) ? (rfscout_theme_id_t)stored
-                                                     : RFSCOUT_THEME_INDOOR;
+    active_theme =
+        ( stored < RFSCOUT_THEME_COUNT ) ? (rfscout_theme_id_t)stored : RFSCOUT_THEME_INDOOR;
     return ESP_OK;
 }
 
