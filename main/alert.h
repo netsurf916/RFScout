@@ -1,6 +1,6 @@
 /**
-    alert.h : RFScout audible notification policy interface
-    Description: Defines global notification presentation while allowing per-app notification gates.
+    alert.h : RFScout audible notification presentation policy
+    Description: Applies global mode/volume and environmental policy to semantic notification events.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -10,7 +10,8 @@
 #ifndef _RFSCOUT_ALERT_H_
 #define _RFSCOUT_ALERT_H_
 
-#include "app_manager.h"
+#include "notification.h"
+
 #include "esp_err.h"
 
 #include <stdbool.h>
@@ -27,58 +28,40 @@ typedef enum
     RFSCOUT_ALERT_MODE_COUNT
 } rfscout_alert_mode_t;
 
-typedef enum
-{
-    RFSCOUT_NOTIFICATION_FLOCK = 0,
-    RFSCOUT_NOTIFICATION_BODY_CAMERA,
-    RFSCOUT_NOTIFICATION_DRONE,
-    RFSCOUT_NOTIFICATION_CAMERA,
-    RFSCOUT_NOTIFICATION_SMART_GLASSES,
-    RFSCOUT_NOTIFICATION_ACOUSTIC_SENSOR,
-    RFSCOUT_NOTIFICATION_SURVEILLANCE_OTHER,
-    RFSCOUT_NOTIFICATION_CC1101_NARROW_ISM,
-    RFSCOUT_NOTIFICATION_CC1101_REMOTE_SENSOR,
-    RFSCOUT_NOTIFICATION_CC1101_CARRIER,
-    RFSCOUT_NOTIFICATION_CC1101_BURSTY,
-    RFSCOUT_NOTIFICATION_CC1101_WIDEBAND,
-    RFSCOUT_NOTIFICATION_NRF24_ESB,
-    RFSCOUT_NOTIFICATION_NRF24_INPUT,
-    RFSCOUT_NOTIFICATION_NRF24_SENSOR,
-    RFSCOUT_NOTIFICATION_NRF24_WIFI_LIKE,
-    RFSCOUT_NOTIFICATION_NRF24_BLE_LIKE,
-    RFSCOUT_NOTIFICATION_NRF24_LOGITECH_LIKE,
-    RFSCOUT_NOTIFICATION_TYPE_COUNT
-} rfscout_notification_type_t;
-
-typedef struct
-{
-    rfscout_notification_type_t type;
-    rfscout_app_id_t app;
-    const char *config_key;
-    const char *label;
-    char default_character;
-} rfscout_notification_descriptor_t;
-
+/** @brief Initialize notification presentation and subscribe it to semantic events. */
 esp_err_t alert_init( void );
+
+/** @brief Return a stable user-facing name for an alert presentation mode. */
 const char *alert_mode_name( rfscout_alert_mode_t a_mode );
-const rfscout_notification_descriptor_t *alert_notification_descriptor( rfscout_notification_type_t a_type );
+
+/* Compatibility aliases for existing configuration/UI code. Notification vocabulary now lives in
+ * notification.[ch], not in the audio presentation layer. */
+const rfscout_notification_descriptor_t *
+alert_notification_descriptor( rfscout_notification_type_t a_type );
 const char *alert_notification_name( rfscout_notification_type_t a_type );
 const char *alert_notification_config_key( rfscout_notification_type_t a_type );
 rfscout_app_id_t alert_notification_app( rfscout_notification_type_t a_type );
 char alert_notification_default_character( rfscout_notification_type_t a_type );
+
 rfscout_alert_mode_t alert_mode( void );
 void alert_set_mode( rfscout_alert_mode_t a_mode );
 uint8_t alert_volume_percent( void );
 bool alert_set_volume_percent( uint8_t a_percent );
+
+/** @brief Return/change the legacy generic Morse character used by alert_request(). */
 char alert_morse_character( void );
 bool alert_set_morse_character( char a_character );
 bool alert_morse_character_supported( char a_character );
+
+/** @brief Request a legacy generic alert through the current global presentation policy. */
 bool alert_request( void );
 bool alert_request_character( char a_character );
 
 /**
- * @brief Request one application-owned notification using global presentation policy.
- * @details Applies the owning app's notification gate and active theme before touching audio.
+ * @brief Compatibility wrapper that emits one semantic application notification.
+ * @details The event subscriber performs app/theme/global policy resolution asynchronously from
+ *          the producer's point of view. A true return value means the category was valid/emitted,
+ *          not that speaker output was guaranteed.
  */
 bool alert_request_notification( rfscout_notification_type_t a_type );
 
