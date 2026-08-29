@@ -1,6 +1,6 @@
 /**
     app_audio_policy.h : RFScout application audio behavior policy
-    Description: Declares native per-application interaction, notification, and content-audio traits.
+    Description: Declares native per-application feedback, notification, and content-audio traits.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -17,6 +17,7 @@
 typedef struct
 {
     bool interaction_feedback;
+    bool general_event_feedback;
     bool notifications_supported;
     bool notifications_enabled_default;
     bool content_audio;
@@ -27,8 +28,8 @@ typedef struct
  *
  * Native policy is intentionally separate from user preferences and the active
  * global theme. It describes what experience makes sense for the application
- * itself; for example, Recorder suppresses incidental interaction sounds while
- * still owning intentional content audio.
+ * itself; for example, Recorder suppresses incidental interaction and general
+ * event sounds while still owning intentional content audio.
  */
 const rfscout_app_audio_policy_t *app_audio_policy_get( rfscout_app_id_t a_app );
 
