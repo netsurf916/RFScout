@@ -54,9 +54,9 @@
 #define DEVICE_ALERT_VOLUME_STEP 10
 
 #define COLOR_BACKGROUND ( ui_theme_get()->background )
-#define COLOR_TEXT ( ui_theme_get()->text )
+#define COLOR_TEXT ( ui_theme_get()->normal )
 #define COLOR_SELECTED ( ui_theme_get()->selected )
-#define COLOR_DIM ( ui_theme_get()->secondary )
+#define COLOR_DIM ( ui_theme_get()->info )
 #define COLOR_ERROR ( ui_theme_get()->error )
 #define COLOR_ACCENT ( ui_theme_get()->accent )
 
@@ -218,15 +218,30 @@ static const char *item_label( unsigned a_item )
             {
                 return alert_notification_name( notification_for_item( a_item ) );
             }
-            return "Unknown";
+            return "?";
     }
 }
 
-/** @brief Format the current value of one Device settings item. */
+/** @brief Return the user-facing value for one Device settings item. */
 static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
 {
     const device_config_t *config = device_config_get();
-    a_value[ 0 ] = '\0';
+    if( NULL == config )
+    {
+        snprintf( a_value, a_capacity, "?" );
+        return;
+    }
+
+    if( ( a_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
+        ( a_item <= DEVICE_ITEM_NOTIFICATION_LAST ) )
+    {
+        const rfscout_notification_type_t notification = notification_for_item( a_item );
+        snprintf( a_value,
+                  a_capacity,
+                  "%c",
+                  device_config_notification_character( notification ) );
+        return;
+    }
 
     switch( a_item )
     {
@@ -237,54 +252,46 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             snprintf( a_value, a_capacity, "%s", ui_theme_display_name( ui_theme_current() ) );
             break;
         case DEVICE_ITEM_CLOCK_FORMAT:
-            snprintf( a_value, a_capacity, "%s", config->clock_24h ? "24h" : "12h" );
-            break;
-        case DEVICE_ITEM_TIMEZONE:
-        {
-            const device_timezone_t *zone = device_config_timezone();
             snprintf( a_value,
                       a_capacity,
                       "%s",
-                      ( NULL != zone ) ? zone->label : config->timezone_selected );
+                      RFSCOUT_CLOCK_FORMAT_12H == config->clock_format ? "12 hour" : "24 hour" );
             break;
-        }
+        case DEVICE_ITEM_TIMEZONE:
+            snprintf( a_value, a_capacity, "%s", config->timezone );
+            break;
         case DEVICE_ITEM_STARTUP:
             snprintf( a_value, a_capacity, "%s", startup_app_name( config->startup_app ) );
             break;
         case DEVICE_ITEM_YEAR:
-            snprintf( a_value, a_capacity, "%04d", edited_time.tm_year + 1900 );
+            snprintf( a_value, a_capacity, "%u", (unsigned)( edited_time.tm_year + 1900 ) );
             break;
         case DEVICE_ITEM_MONTH:
-            snprintf( a_value, a_capacity, "%02d", edited_time.tm_mon + 1 );
+            snprintf( a_value, a_capacity, "%u", (unsigned)( edited_time.tm_mon + 1 ) );
             break;
         case DEVICE_ITEM_DAY:
-            snprintf( a_value, a_capacity, "%02d", edited_time.tm_mday );
+            snprintf( a_value, a_capacity, "%u", (unsigned)edited_time.tm_mday );
             break;
         case DEVICE_ITEM_HOUR:
-            snprintf( a_value, a_capacity, "%02d", edited_time.tm_hour );
+            snprintf( a_value, a_capacity, "%02u", (unsigned)edited_time.tm_hour );
             break;
         case DEVICE_ITEM_MINUTE:
-            snprintf( a_value, a_capacity, "%02d", edited_time.tm_min );
+            snprintf( a_value, a_capacity, "%02u", (unsigned)edited_time.tm_min );
             break;
         case DEVICE_ITEM_WIFI:
-            snprintf(
-                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_WIFI_BT ] ) );
+            snprintf( a_value, a_capacity, "%s", on_off( config->wifi_enabled ) );
             break;
         case DEVICE_ITEM_CC1101:
-            snprintf(
-                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_CC1101 ] ) );
+            snprintf( a_value, a_capacity, "%s", on_off( config->cc1101_enabled ) );
             break;
         case DEVICE_ITEM_NRF24:
-            snprintf(
-                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_NRF24 ] ) );
+            snprintf( a_value, a_capacity, "%s", on_off( config->nrf24_enabled ) );
             break;
         case DEVICE_ITEM_AUDIO:
-            snprintf(
-                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_AUDIO ] ) );
+            snprintf( a_value, a_capacity, "%s", on_off( config->audio_enabled ) );
             break;
         case DEVICE_ITEM_THERMAL:
-            snprintf(
-                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_THERMAL ] ) );
+            snprintf( a_value, a_capacity, "%s", on_off( config->thermal_enabled ) );
             break;
         case DEVICE_ITEM_LOGGING:
             snprintf( a_value, a_capacity, "%s", on_off( config->logging_enabled ) );
@@ -295,535 +302,208 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
         case DEVICE_ITEM_ALERT_VOLUME:
             snprintf( a_value, a_capacity, "%u%%", (unsigned)config->alert_volume_percent );
             break;
-        case DEVICE_ITEM_SAVE:
-            snprintf( a_value, a_capacity, "%s", storage_is_available() ? "SD" : "No SD" );
-            break;
         default:
-            if( ( a_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
-                ( a_item <= DEVICE_ITEM_NOTIFICATION_LAST ) )
-            {
-                const rfscout_notification_type_t type = notification_for_item( a_item );
-                const char character = device_config_notification_character( type );
-                const char *pattern = morse_pattern( character );
-                snprintf(
-                    a_value, a_capacity, "%c %s", character, ( NULL != pattern ) ? pattern : "?" );
-            }
+            a_value[ 0 ] = '\0';
             break;
     }
 }
 
-/** @brief Draw one selectable setting row. */
-static void draw_row( int a_y, unsigned a_item )
+/** @brief Return true when one item is a calendar field that writes the RTC. */
+static bool is_time_item( unsigned a_item )
 {
-    char value[ 48 ];
-    item_value( a_item, value, sizeof( value ) );
-    const bool active = selected_item == a_item;
-    const uint16_t color = active ? COLOR_SELECTED : COLOR_TEXT;
-
-    if( active )
-    {
-        display_draw_text(
-            UI_LAYOUT_LEFT_X, a_y, ( editing && item_editable( a_item ) ) ? ">*" : ">", color, 1U );
-    }
-    display_draw_text( UI_LAYOUT_LABEL_X, a_y, item_label( a_item ), color, 1U );
-    if( '\0' != value[ 0 ] )
-    {
-        display_draw_text( 232, a_y, value, active ? COLOR_ACCENT : COLOR_DIM, 1U );
-    }
+    return ( a_item >= DEVICE_ITEM_YEAR ) && ( a_item <= DEVICE_ITEM_MINUTE );
 }
 
-/** @brief Draw the RFScout Home mark procedurally without embedding a second bitmap asset. */
-static void draw_home_logo( void )
+/** @brief Return the total number of rows in the Device settings list. */
+static unsigned device_item_count( void )
 {
-    display_fill_rect( 50, 54, 8, 48, COLOR_ACCENT );
-    display_fill_rect( 58, 54, 22, 8, COLOR_ACCENT );
-    display_fill_rect( 58, 74, 18, 8, COLOR_ACCENT );
-    display_draw_text( 92, 58, "RF", COLOR_ACCENT, 3U );
-    display_draw_text( 130, 58, "SCOUT", COLOR_SELECTED, 3U );
-    display_draw_text( 92, 88, "RF SITUATIONAL AWARENESS", COLOR_DIM, 1U );
+    return DEVICE_ITEM_COUNT;
 }
 
-void device_view_landing( void )
+/** @brief Save edited values and return to the Home landing screen. */
+static void save_device_settings( void )
 {
-    display_clear( COLOR_BACKGROUND );
-    ui_chrome_draw( "HOME", COLOR_DIM );
-    draw_home_logo();
-    display_draw_text( 92, 118, "CENTER: SETTINGS", COLOR_ACCENT, 1U );
-    display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN: APPS", COLOR_DIM, 1U );
-    (void)display_present();
-}
+    const device_config_t *config = device_config_get();
+    const uint8_t old_brightness = config->brightness_percent;
+    const rfscout_theme_id_t old_theme = ui_theme_current();
+    const rfscout_clock_format_t old_clock_format = config->clock_format;
+    const rfscout_app_id_t old_startup_app = config->startup_app;
+    char old_timezone[ sizeof( config->timezone ) ];
+    strlcpy( old_timezone, config->timezone, sizeof( old_timezone ) );
+    char old_notification_morse[ RFSCOUT_NOTIFICATION_TYPE_COUNT ];
+    memcpy( old_notification_morse, config->notification_morse, sizeof( old_notification_morse ) );
 
-void device_view_render( void )
-{
-    display_clear( COLOR_BACKGROUND );
-    ui_chrome_draw( "DEVICE SETTINGS", COLOR_DIM );
-
-    const unsigned page_start = ( selected_item / DEVICE_ROWS_PER_PAGE ) * DEVICE_ROWS_PER_PAGE;
-    for( unsigned row = 0U; row < DEVICE_ROWS_PER_PAGE; ++row )
+    if( is_time_item( selected_item ) )
     {
-        const unsigned item = page_start + row;
-        if( item >= DEVICE_ITEM_COUNT )
+        edited_time.tm_sec = 0;
+        edited_time.tm_isdst = -1;
+        time_t before;
+        const bool had_before = device_time_now( &before );
+        const esp_err_t time_result = device_time_set_local( &edited_time );
+        if( ESP_OK != time_result )
         {
-            break;
+            save_error = true;
+            return;
         }
-        draw_row( UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT, item );
+        time_t after;
+        const bool had_after = device_time_now( &after );
+        char old_time[ 32 ];
+        char new_time[ 32 ];
+        format_epoch( had_before, before, old_time, sizeof( old_time ) );
+        format_epoch( had_after, after, new_time, sizeof( new_time ) );
+        log_config_change( "time", old_time, new_time );
     }
 
-    char footer[ 64 ];
-    snprintf( footer,
-              sizeof( footer ),
-              "%u/%u  %s",
-              (unsigned)( selected_item + 1U ),
-              (unsigned)DEVICE_ITEM_COUNT,
-              editing ? "TURN CHANGE / CENTER DONE" : "TURN SELECT / CENTER ENTER" );
-    display_draw_text(
-        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, footer, editing ? COLOR_ACCENT : COLOR_DIM, 1U );
-
-    if( save_error )
+    const esp_err_t save_result = device_config_save( false, 0, NULL );
+    if( ESP_OK != save_result )
     {
-        display_draw_text( 246, UI_LAYOUT_FOOTER_Y, "SAVE ERROR", COLOR_ERROR, 1U );
+        save_error = true;
+        return;
     }
-    (void)display_present();
+
+    if( old_brightness != config->brightness_percent )
+    {
+        char old_value[ 16 ];
+        char new_value[ 16 ];
+        snprintf( old_value, sizeof( old_value ), "%u", (unsigned)old_brightness );
+        snprintf( new_value, sizeof( new_value ), "%u", (unsigned)config->brightness_percent );
+        log_config_change( "brightness_percent", old_value, new_value );
+    }
+    if( old_theme != ui_theme_current() )
+    {
+        log_config_change(
+            "theme", ui_theme_config_name( old_theme ), ui_theme_config_name( ui_theme_current() ) );
+    }
+    if( old_clock_format != config->clock_format )
+    {
+        log_config_change( "clock_format",
+                           RFSCOUT_CLOCK_FORMAT_12H == old_clock_format ? "12h" : "24h",
+                           RFSCOUT_CLOCK_FORMAT_12H == config->clock_format ? "12h" : "24h" );
+    }
+    if( 0 != strcmp( old_timezone, config->timezone ) )
+    {
+        log_config_change( "timezone", old_timezone, config->timezone );
+    }
+    if( old_startup_app != config->startup_app )
+    {
+        log_config_change(
+            "startup_app", startup_app_name( old_startup_app ), startup_app_name( config->startup_app ) );
+    }
+    for( unsigned index = 0U; index < RFSCOUT_NOTIFICATION_TYPE_COUNT; ++index )
+    {
+        if( old_notification_morse[ index ] == config->notification_morse[ index ] )
+        {
+            continue;
+        }
+        char old_value[ 2 ] = { old_notification_morse[ index ], '\0' };
+        char new_value[ 2 ] = { config->notification_morse[ index ], '\0' };
+        log_config_change( alert_notification_name( (rfscout_notification_type_t)index ),
+                           old_value,
+                           new_value );
+    }
+
+    display_set_brightness( config->brightness_percent );
+    save_error = false;
 }
 
+/** @brief Begin editing the Device settings screen. */
 void device_view_enter( void )
 {
     selected_item = DEVICE_ITEM_BACK;
     editing = false;
     save_error = false;
     refresh_edited_time();
-    device_view_render();
 }
 
-/** @brief Move to the next/previous Device setting. */
-static void move_selection( int a_delta )
-{
-    int item = (int)selected_item + ( ( a_delta > 0 ) ? 1 : -1 );
-    if( item < 0 )
-    {
-        item = (int)DEVICE_ITEM_COUNT - 1;
-    }
-    if( item >= (int)DEVICE_ITEM_COUNT )
-    {
-        item = 0;
-    }
-    selected_item = (unsigned)item;
-}
-
-/** @brief Toggle one top-level application and audit the setting change. */
-static void toggle_app( rfscout_app_id_t a_app, const char *a_key )
-{
-    const bool old_value = device_config_app_enabled( a_app );
-    (void)device_config_set_app_enabled( a_app, !old_value );
-    log_config_change( a_key, on_off( old_value ), on_off( !old_value ) );
-}
-
-/** @brief Rotate among display themes and persist the selection immediately. */
-static void adjust_theme( int a_delta )
-{
-    const rfscout_theme_id_t old_theme = ui_theme_current();
-    int theme = (int)old_theme + ( ( a_delta > 0 ) ? 1 : -1 );
-    if( theme < 0 )
-    {
-        theme = RFSCOUT_THEME_COUNT - 1;
-    }
-    if( theme >= RFSCOUT_THEME_COUNT )
-    {
-        theme = 0;
-    }
-
-    const rfscout_theme_id_t new_theme = (rfscout_theme_id_t)theme;
-    if( ESP_OK == ui_theme_set( new_theme ) )
-    {
-        log_config_change( "display.theme",
-                           ui_theme_display_name( old_theme ),
-                           ui_theme_display_name( new_theme ) );
-        save_error = false;
-    }
-    else
-    {
-        save_error = true;
-    }
-}
-
-/** @brief Rotate among startup applications and audit the preference change. */
-static void adjust_startup_app( int a_delta )
-{
-    const rfscout_app_id_t old_app = device_config_startup_app();
-    int app = (int)old_app + ( ( a_delta > 0 ) ? 1 : -1 );
-    if( app < 0 )
-    {
-        app = RFSCOUT_APP_COUNT - 1;
-    }
-    if( app >= RFSCOUT_APP_COUNT )
-    {
-        app = 0;
-    }
-
-    const rfscout_app_id_t new_app = (rfscout_app_id_t)app;
-    if( ESP_OK == device_config_set_startup_app( new_app ) )
-    {
-        log_config_change(
-            "apps.startup", startup_app_name( old_app ), startup_app_name( new_app ) );
-    }
-}
-
-/** @brief Rotate among configured timezone definitions and immediately apply the selected rule. */
-static void adjust_timezone( int a_delta )
-{
-    const device_config_t *config = device_config_get();
-    if( 0U == config->timezone_count )
-    {
-        return;
-    }
-
-    size_t current = 0U;
-    for( size_t index = 0; index < config->timezone_count; ++index )
-    {
-        if( 0 == strcmp( config->timezones[ index ].name, config->timezone_selected ) )
-        {
-            current = index;
-            break;
-        }
-    }
-    const size_t next = ( a_delta > 0 )
-                            ? ( current + 1U ) % config->timezone_count
-                            : ( current + config->timezone_count - 1U ) % config->timezone_count;
-
-    char old_name[ RFSCOUT_TIMEZONE_NAME_MAX ];
-    snprintf( old_name, sizeof( old_name ), "%s", config->timezone_selected );
-    (void)device_config_set_timezone( config->timezones[ next ].name );
-    (void)device_time_apply_timezone();
-    log_config_change( "timezone.selected", old_name, config->timezones[ next ].name );
-    refresh_edited_time();
-}
-
-/** @brief Adjust one manual calendar field without changing wall time yet. */
-static void adjust_time_field( unsigned a_item, int a_delta )
-{
-    const int direction = ( a_delta > 0 ) ? 1 : -1;
-    switch( a_item )
-    {
-        case DEVICE_ITEM_YEAR:
-            edited_time.tm_year += direction;
-            if( edited_time.tm_year < 120 )
-            {
-                edited_time.tm_year = 120;
-            }
-            if( edited_time.tm_year > 200 )
-            {
-                edited_time.tm_year = 200;
-            }
-            break;
-
-        case DEVICE_ITEM_MONTH:
-            edited_time.tm_mon = ( edited_time.tm_mon + direction + 12 ) % 12;
-            break;
-
-        case DEVICE_ITEM_DAY:
-            edited_time.tm_mday += direction;
-            if( edited_time.tm_mday < 1 )
-            {
-                edited_time.tm_mday = 31;
-            }
-            if( edited_time.tm_mday > 31 )
-            {
-                edited_time.tm_mday = 1;
-            }
-            break;
-
-        case DEVICE_ITEM_HOUR:
-            edited_time.tm_hour = ( edited_time.tm_hour + direction + 24 ) % 24;
-            break;
-
-        case DEVICE_ITEM_MINUTE:
-            edited_time.tm_min = ( edited_time.tm_min + direction + 60 ) % 60;
-            break;
-
-        default:
-            break;
-    }
-}
-
-/** @brief Return whether mktime preserved every user-edited local calendar field. */
-static bool manual_time_round_trip_valid( const struct tm *a_requested, time_t a_epoch )
-{
-    struct tm normalized;
-    if( NULL == localtime_r( &a_epoch, &normalized ) )
-    {
-        return false;
-    }
-    return ( normalized.tm_year == a_requested->tm_year ) &&
-           ( normalized.tm_mon == a_requested->tm_mon ) &&
-           ( normalized.tm_mday == a_requested->tm_mday ) &&
-           ( normalized.tm_hour == a_requested->tm_hour ) &&
-           ( normalized.tm_min == a_requested->tm_min );
-}
-
-/** @brief Commit manually edited local date/time to the authoritative system wall clock. */
-static void commit_manual_time( void )
-{
-    time_t old_epoch = 0;
-    const bool had_old = device_time_now( &old_epoch );
-
-    struct tm requested = edited_time;
-    requested.tm_sec = 0;
-    requested.tm_isdst = -1;
-    struct tm conversion = requested;
-    const time_t new_epoch = mktime( &conversion );
-    const bool calendar_valid = manual_time_round_trip_valid( &requested, new_epoch );
-    if( ( new_epoch < (time_t)1577836800 ) || !calendar_valid )
-    {
-        save_error = true;
-        return;
-    }
-    if( ESP_OK != device_time_set_epoch( new_epoch, RFSCOUT_TIME_SOURCE_MANUAL, "manual" ) )
-    {
-        save_error = true;
-        return;
-    }
-
-    edited_time = conversion;
-    char old_text[ 32 ];
-    char new_text[ 32 ];
-    format_epoch( had_old, old_epoch, old_text, sizeof( old_text ) );
-    format_epoch( true, new_epoch, new_text, sizeof( new_text ) );
-    char detail[ 128 ];
-    snprintf( detail, sizeof( detail ), "old=%s new=%s source=manual", old_text, new_text );
-    (void)log_writer_app_record( "TIME", detail );
-    save_error = false;
-}
-
-/** @brief Apply the logging preference immediately when possible. */
-static void toggle_logging( void )
-{
-    const bool old_value = device_config_get()->logging_enabled;
-    if( old_value )
-    {
-        (void)device_config_set_logging_enabled( false );
-        log_config_change( "logging.enabled", "On", "Off" );
-        if( !log_writer_shutdown( DEVICE_LOG_SHUTDOWN_TIMEOUT_MS ) )
-        {
-            (void)device_config_set_logging_enabled( true );
-            log_config_change( "logging.enabled", "Off", "On" );
-            save_error = true;
-            return;
-        }
-        save_error = false;
-        return;
-    }
-
-    if( !storage_is_available() || ( ESP_OK != log_writer_init() ) )
-    {
-        save_error = true;
-        return;
-    }
-    (void)device_config_set_logging_enabled( true );
-    observation_store_set_event_callback( log_writer_store_event, NULL );
-    app_logging_init();
-    log_config_change( "logging.enabled", "Off", "On" );
-    save_error = false;
-}
-
-/** @brief Adjust the global notification mode. */
-static void adjust_alert_mode( int a_delta )
-{
-    const rfscout_alert_mode_t old_mode = device_config_get()->alert_mode;
-    int mode = (int)old_mode + ( ( a_delta > 0 ) ? 1 : -1 );
-    if( mode < 0 )
-    {
-        mode = RFSCOUT_ALERT_MODE_COUNT - 1;
-    }
-    if( mode >= RFSCOUT_ALERT_MODE_COUNT )
-    {
-        mode = 0;
-    }
-
-    (void)device_config_set_alert_mode( (rfscout_alert_mode_t)mode );
-    log_config_change( "notifications.mode",
-                       alert_mode_name( old_mode ),
-                       alert_mode_name( (rfscout_alert_mode_t)mode ) );
-}
-
-/** @brief Adjust the global notification volume in 10-percent steps. */
-static void adjust_alert_volume( int a_delta )
-{
-    const uint8_t old_value = device_config_get()->alert_volume_percent;
-    int value =
-        (int)old_value + ( ( a_delta > 0 ) ? DEVICE_ALERT_VOLUME_STEP : -DEVICE_ALERT_VOLUME_STEP );
-    if( value < 0 )
-    {
-        value = 0;
-    }
-    if( value > RFSCOUT_ALERT_VOLUME_MAX_PERCENT )
-    {
-        value = RFSCOUT_ALERT_VOLUME_MAX_PERCENT;
-    }
-    if( value == old_value )
-    {
-        return;
-    }
-
-    if( ESP_OK == device_config_set_alert_volume( (uint8_t)value ) )
-    {
-        char old_text[ 8 ];
-        char new_text[ 8 ];
-        snprintf( old_text, sizeof( old_text ), "%u", (unsigned)old_value );
-        snprintf( new_text, sizeof( new_text ), "%u", (unsigned)value );
-        log_config_change( "notifications.volume", old_text, new_text );
-    }
-}
-
-/** @brief Adjust one detection category's Morse character. */
-static void adjust_notification_character( unsigned a_item, int a_delta )
-{
-    const rfscout_notification_type_t type = notification_for_item( a_item );
-    const char old_character = device_config_notification_character( type );
-    const char new_character = next_morse_character( old_character, a_delta );
-    if( ESP_OK != device_config_set_notification_character( type, new_character ) )
-    {
-        return;
-    }
-
-    char key[ 64 ];
-    char old_text[ 2 ] = { old_character, '\0' };
-    char new_text[ 2 ] = { new_character, '\0' };
-    const char *config_key = alert_notification_config_key( type );
-    snprintf( key,
-              sizeof( key ),
-              "notifications.characters.%s",
-              ( NULL != config_key ) ? config_key : "unknown" );
-    log_config_change( key, old_text, new_text );
-}
-
-/** @brief Adjust the currently edited setting. */
-static void adjust_selected( int a_delta )
-{
-    const device_config_t *config = device_config_get();
-    if( DEVICE_ITEM_BRIGHTNESS == selected_item )
-    {
-        const uint8_t old_value = config->brightness_percent;
-        int value = (int)old_value + ( ( a_delta > 0 ) ? 10 : -10 );
-        if( value < 10 )
-        {
-            value = 10;
-        }
-        if( value > 100 )
-        {
-            value = 100;
-        }
-        if( value != old_value )
-        {
-            (void)device_config_set_brightness( (uint8_t)value );
-            display_set_brightness( (uint8_t)value );
-            char old_text[ 8 ];
-            char new_text[ 8 ];
-            snprintf( old_text, sizeof( old_text ), "%u", (unsigned)old_value );
-            snprintf( new_text, sizeof( new_text ), "%u", (unsigned)value );
-            log_config_change( "display.brightness", old_text, new_text );
-        }
-    }
-    else if( DEVICE_ITEM_THEME == selected_item )
-    {
-        adjust_theme( a_delta );
-    }
-    else if( DEVICE_ITEM_CLOCK_FORMAT == selected_item )
-    {
-        const bool old_value = config->clock_24h;
-        (void)device_config_set_clock_24h( !old_value );
-        log_config_change( "display.clock_24h", on_off( old_value ), on_off( !old_value ) );
-    }
-    else if( DEVICE_ITEM_TIMEZONE == selected_item )
-    {
-        adjust_timezone( a_delta );
-    }
-    else if( DEVICE_ITEM_STARTUP == selected_item )
-    {
-        adjust_startup_app( a_delta );
-    }
-    else if( ( selected_item >= DEVICE_ITEM_YEAR ) && ( selected_item <= DEVICE_ITEM_MINUTE ) )
-    {
-        adjust_time_field( selected_item, a_delta );
-    }
-    else if( DEVICE_ITEM_WIFI == selected_item )
-    {
-        toggle_app( RFSCOUT_APP_WIFI_BT, "apps.wifi_bt" );
-    }
-    else if( DEVICE_ITEM_CC1101 == selected_item )
-    {
-        toggle_app( RFSCOUT_APP_CC1101, "apps.cc1101" );
-    }
-    else if( DEVICE_ITEM_NRF24 == selected_item )
-    {
-        toggle_app( RFSCOUT_APP_NRF24, "apps.nrf24" );
-    }
-    else if( DEVICE_ITEM_AUDIO == selected_item )
-    {
-        toggle_app( RFSCOUT_APP_AUDIO, "apps.audio" );
-    }
-    else if( DEVICE_ITEM_THERMAL == selected_item )
-    {
-        toggle_app( RFSCOUT_APP_THERMAL, "apps.thermal" );
-    }
-    else if( DEVICE_ITEM_LOGGING == selected_item )
-    {
-        toggle_logging();
-    }
-    else if( DEVICE_ITEM_ALERT_MODE == selected_item )
-    {
-        adjust_alert_mode( a_delta );
-    }
-    else if( DEVICE_ITEM_ALERT_VOLUME == selected_item )
-    {
-        adjust_alert_volume( a_delta );
-    }
-    else if( ( selected_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
-             ( selected_item <= DEVICE_ITEM_NOTIFICATION_LAST ) )
-    {
-        adjust_notification_character( selected_item, a_delta );
-    }
-}
-
+/** @brief Apply encoder/button input and redraw the Device settings screen. */
 bool device_view_input( bool a_pressed, int a_delta )
 {
     if( a_pressed )
     {
-        if( ( DEVICE_ITEM_BACK == selected_item ) && !editing )
+        if( DEVICE_ITEM_BACK == selected_item )
         {
             return true;
         }
-        if( ( DEVICE_ITEM_SAVE == selected_item ) && !editing )
+        if( DEVICE_ITEM_SAVE == selected_item )
         {
-            save_error = ( ESP_OK != device_config_save( false, 0, NULL ) );
-            device_view_render();
-            return false;
-        }
-
-        if( editing && ( selected_item >= DEVICE_ITEM_YEAR ) &&
-            ( selected_item <= DEVICE_ITEM_MINUTE ) )
-        {
-            commit_manual_time();
+            save_device_settings();
+            return true;
         }
         if( item_editable( selected_item ) )
         {
             editing = !editing;
         }
-        device_view_render();
-        return false;
+    }
+    else if( 0 != a_delta )
+    {
+        if( editing )
+        {
+            const int direction = ( a_delta > 0 ) ? 1 : -1;
+            device_config_adjust( selected_item, direction, &edited_time );
+        }
+        else
+        {
+            int next = (int)selected_item + ( ( a_delta > 0 ) ? 1 : -1 );
+            if( next < 0 )
+            {
+                next = (int)device_item_count() - 1;
+            }
+            if( next >= (int)device_item_count() )
+            {
+                next = 0;
+            }
+            selected_item = (unsigned)next;
+        }
     }
 
-    if( 0 == a_delta )
+    const unsigned first = ( selected_item / DEVICE_ROWS_PER_PAGE ) * DEVICE_ROWS_PER_PAGE;
+    const unsigned last = first + DEVICE_ROWS_PER_PAGE;
+    display_clear( COLOR_BACKGROUND );
+    ui_chrome_draw( "SETTINGS", COLOR_DIM );
+
+    for( unsigned item = first; item < last && item < device_item_count(); ++item )
     {
-        return false;
+        const int row = (int)( item - first );
+        const int y = UI_LAYOUT_MENU_START_Y + row * UI_LAYOUT_MENU_ROW_HEIGHT;
+        const bool active = ( item == selected_item );
+        const bool action = ( DEVICE_ITEM_BACK == item ) || ( DEVICE_ITEM_SAVE == item );
+        const char *marker = " ";
+        if( active )
+        {
+            marker = action ? ">" : ( editing ? "*" : ">" );
+        }
+
+        display_draw_text( UI_LAYOUT_LEFT_X, y, marker, active ? COLOR_SELECTED : COLOR_DIM, 1U );
+        display_draw_text( UI_LAYOUT_LABEL_X, y, item_label( item ), active ? COLOR_TEXT : COLOR_DIM, 1U );
+
+        char value[ 48 ];
+        item_value( item, value, sizeof( value ) );
+        if( '\0' != value[ 0 ] )
+        {
+            if( active && editing )
+            {
+                display_fill_rect( 164, y - 4, 136, 18, COLOR_ACCENT );
+                display_draw_text( 168, y, value, COLOR_BACKGROUND, 1U );
+            }
+            else
+            {
+                display_draw_text( 168, y, value, active ? COLOR_SELECTED : COLOR_DIM, 1U );
+            }
+        }
     }
-    if( editing )
+
+    if( save_error )
     {
-        adjust_selected( a_delta );
+        display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "SAVE FAILED", COLOR_ERROR, 1U );
     }
     else
     {
-        move_selection( a_delta );
+        display_draw_text( UI_LAYOUT_LEFT_X,
+                           UI_LAYOUT_FOOTER_Y,
+                           editing ? "TURN: CHANGE  CENTER: DONE" : "TURN: SELECT  CENTER: EDIT",
+                           COLOR_DIM,
+                           1U );
     }
-    device_view_render();
+    (void)display_present();
     return false;
 }
