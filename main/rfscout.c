@@ -14,6 +14,7 @@
 #include "device_config.h"
 #include "device_time.h"
 #include "display.h"
+#include "event.h"
 #include "feedback.h"
 #include "log_writer.h"
 #include "notification.h"
@@ -130,7 +131,16 @@ static void on_observation( rf_device_t *a_observation )
         platform_set_alert_led( true );
         (void)notification_emit( notification );
         platform_set_alert_led( false );
+        return;
     }
+
+    /* An ordinary newly observed WiFi/BLE device gets the lightweight general
+       detection cue. Classified surveillance instead uses its app-specific
+       notification (for example Camera -> Morse C) so one observation does not
+       produce both sounds. */
+    rfscout_event_emit( RFSCOUT_EVENT_DETECTED,
+                        (uint8_t)RFSCOUT_APP_WIFI_BT,
+                        (int32_t)a_observation->last_source );
 }
 
 void app_main( void )
@@ -185,8 +195,9 @@ void app_main( void )
     result = ui_theme_init();
     if( ESP_OK != result )
     {
-        ESP_LOGW(
-            TAG, "theme persistence unavailable; using Indoor: %s", esp_err_to_name( result ) );
+        ESP_LOGW( TAG,
+                  "theme persistence unavailable; using Indoor: %s",
+                  esp_err_to_name( result ) );
     }
 
     alert_set_mode( device_config_get()->alert_mode );
