@@ -30,10 +30,10 @@ static const ui_theme_palette_t palettes[ RFSCOUT_THEME_COUNT ] = {
             .accent = 0xFC00U,
             .selected = 0xFC00U,
             .info = 0xA514U,
+            .normal = 0xFFFFU,
             .success = 0xC618U,
-            .warning = 0xFFFFU,
+            .warning = 0xFFE1U,
             .error = 0xF800U,
-            .alert = 0xFFE1U,
             .graph_primary = 0xFC00U,
             .graph_peak = 0xFFFFU,
             .logo_primary = 0xFC00U,
@@ -48,10 +48,10 @@ static const ui_theme_palette_t palettes[ RFSCOUT_THEME_COUNT ] = {
             .accent = 0xFC00U,
             .selected = 0xFC00U,
             .info = 0xC618U,
+            .normal = 0xFFFFU,
             .success = 0xFFFFU,
-            .warning = 0xFFFFU,
+            .warning = 0xFFE1U,
             .error = 0xF800U,
-            .alert = 0xFFE1U,
             .graph_primary = 0xFC00U,
             .graph_peak = 0xFFFFU,
             .logo_primary = 0xFC00U,
@@ -66,10 +66,10 @@ static const ui_theme_palette_t palettes[ RFSCOUT_THEME_COUNT ] = {
             .accent = 0xF840U,
             .selected = 0xFC40U,
             .info = 0xFA20U,
+            .normal = 0xFBE0U,
             .success = 0xFA40U,
-            .warning = 0xFC40U,
+            .warning = 0xFFE1U,
             .error = 0xF800U,
-            .alert = 0xFFE1U,
             .graph_primary = 0xF840U,
             .graph_peak = 0xFC40U,
             .logo_primary = 0xF840U,
@@ -173,7 +173,7 @@ uint16_t ui_theme_resolve_legacy_color( uint16_t a_color )
             return theme->background;
         case 0xFFFFU:
         case 0xBDF7U:
-            return theme->text;
+            return theme->normal;
         case 0x7BEFU:
         case 0x8410U:
         case 0x03F0U:
@@ -181,10 +181,9 @@ uint16_t ui_theme_resolve_legacy_color( uint16_t a_color )
         case 0xFC00U:
             return theme->accent;
         case 0xFFE0U:
+        case 0xFFE1U:
         case 0xFD20U:
             return theme->warning;
-        case 0xFFE1U:
-            return theme->alert;
         case 0xF800U:
         case 0xF81FU:
             return theme->error;
