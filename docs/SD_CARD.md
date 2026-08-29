@@ -10,23 +10,29 @@ RFScout uses ESP-IDF's FAT SD-SPI mounting path. Cards commonly shipped as exFAT
 
 ## Detection and failure behavior
 
-The board mapping used by RFScout does not expose a separate SD card-detect GPIO. Storage is considered available only after successful initialization and mount.
+The current board mapping does not expose a separate SD card-detect GPIO. Storage is considered available only after successful initialization and mount.
 
 Mount failure is nonfatal. Radio/sensor applications continue operating. Recorder remains navigable but recording and playback are unavailable without mounted storage. The global SD status icon appears only after successful mount; filesystem/logging failures are reflected as a sticky error state.
 
 ## Configuration persistence
 
-When mounted, `/sdcard/rfscout.json` stores persistent device preferences, including:
+When mounted, `/sdcard/rfscout.json` is the canonical store for persistent user preferences. Current schema-v2 state includes:
 
-- display/clock/application settings;
+- display brightness, clock format, and theme;
+- application enablement and preferred startup application;
 - SD logging preference;
-- global notification mode, volume, and Morse characters;
-- Recorder playback volume;
-- Recorder microphone input gain;
+- global notification mode and volume;
+- per-application notification enablement and Morse mappings;
+- WiFi / BT ordinary Wi-Fi/BLE discovery-feedback switches;
+- Recorder playback volume and microphone input gain;
 - timezone definitions/selection;
 - saved time metadata when applicable.
 
-Configuration writes use temporary/backup replacement so an interrupted save can recover.
+Configuration loading starts from current compiled defaults and overlays recognized valid fields. Schema v1 files are accepted and translated where supported. Unknown/obsolete keys are ignored and are pruned on the next canonical save; fields absent from older files receive current defaults. Future schema versions are rejected instead of being rewritten by older firmware.
+
+Configuration writes use temporary/backup replacement so an interrupted save can recover. Dirty configuration is flushed before deep sleep and SD unmount.
+
+The small RTC-backed deep-sleep session record (currently active app and input-lock state) is not stored on the SD card.
 
 ## Recorder storage
 
