@@ -32,6 +32,7 @@
 #define APP_DETECTIONS_Y 43
 #define APP_DETECTION_ROW_Y 64
 #define APP_DETECTION_ROW_HEIGHT 18
+#define NRF24_PACKET_TEXT_MAX 30U
 #define CC_MENU_ITEM_COUNT 8U
 #define NRF24_MENU_ITEM_COUNT 7U
 #define RADIO_MENU_COMPACT_ROW_HEIGHT 15
@@ -239,7 +240,9 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
                                     uint8_t a_high_channel,
                                     bool a_detected,
                                     const nrf24_fingerprint_t *a_devices,
-                                    size_t a_device_count )
+                                    size_t a_device_count,
+                                    const nrf24_recent_packet_t *a_packets,
+                                    size_t a_packet_count )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     display_clear( BG );
@@ -323,6 +326,47 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
                       (unsigned long)a_devices[ i ].packets );
             display_draw_text(
                 APP_RIGHT_COLUMN_X, y, line, ( 0U == a_devices[ i ].packets ) ? DIM : RED, 1U );
+        }
+    }
+
+    display_draw_text( UI_LAYOUT_LEFT_X, 148, "RECENT VALID PACKETS", SUBDUED, 1U );
+    if( ( NULL == a_packets ) || ( 0U == a_packet_count ) )
+    {
+        display_draw_text( UI_LAYOUT_LEFT_X, 162, "WAITING FOR DECODE", DIM, 1U );
+    }
+    else
+    {
+        const size_t rows = ( a_packet_count < 4U ) ? a_packet_count : 4U;
+        for( size_t i = 0U; i < rows; ++i )
+        {
+            const nrf24_recent_packet_t *packet = &a_packets[ i ];
+            int written = snprintf( line,
+                                    sizeof( line ),
+                                    "CH%03u %02uB ",
+                                    (unsigned)packet->channel,
+                                    (unsigned)packet->payload_len );
+            size_t position = ( written > 0 ) ? (size_t)written : 0U;
+            size_t rendered_bytes = 0U;
+            while( ( rendered_bytes < packet->payload_len ) &&
+                   ( position + 2U <= NRF24_PACKET_TEXT_MAX ) )
+            {
+                written = snprintf( &line[ position ],
+                                    sizeof( line ) - position,
+                                    "%02X",
+                                    (unsigned)packet->payload[ rendered_bytes ] );
+                if( written > 0 )
+                {
+                    position += (size_t)written;
+                }
+                ++rendered_bytes;
+            }
+            if( rendered_bytes < packet->payload_len )
+            {
+                line[ NRF24_PACKET_TEXT_MAX - 2U ] = '.';
+                line[ NRF24_PACKET_TEXT_MAX - 1U ] = '.';
+                line[ NRF24_PACKET_TEXT_MAX ] = '\0';
+            }
+            display_draw_text( UI_LAYOUT_LEFT_X, 162 + (int)i * 14, line, TEXT, 1U );
         }
     }
 

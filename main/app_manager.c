@@ -555,12 +555,14 @@ static void render_nr_spectrum( void )
     uint8_t fast[ NRF24_CHANNEL_COUNT ];
     uint8_t slow[ NRF24_CHANNEL_COUNT ];
     nrf24_fingerprint_t devices[ NRF24_FINGERPRINT_MAX ];
+    nrf24_recent_packet_t packets[ NRF24_RECENT_PACKET_MAX ];
     const size_t count = nrf24_activity_histogram( fast, slow, NRF24_CHANNEL_COUNT );
     if( !nr_peak_hold )
     {
         memset( slow, 0, sizeof( slow ) );
     }
     const size_t device_count = nrf24_activity_fingerprints( devices, NRF24_FINGERPRINT_MAX );
+    const size_t packet_count = nrf24_activity_recent_packets( packets, NRF24_RECENT_PACKET_MAX );
     notify_nr_detections();
     const nrf24_scan_config_t *config = nrf24_config();
     radio_app_view_nrf24_spectrum( fast,
@@ -570,7 +572,9 @@ static void render_nr_spectrum( void )
                                    config->high_channel,
                                    nrf24_is_detected(),
                                    devices,
-                                   device_count );
+                                   device_count,
+                                   packets,
+                                   packet_count );
 }
 
 static void render_audio( void )

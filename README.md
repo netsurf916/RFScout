@@ -43,7 +43,7 @@ Detection labels are conservative RF-behavior classifications rather than decode
 
 ### nRF24
 
-nRF24 scans the 2.4 GHz channel range using RPD activity, a fast-decay histogram, optional slow peak hold, and conservative passive Enhanced ShockBurst classification when validated observations are available. The fixed **DETECTIONS** panel includes categories such as `ESB device`, `Input?`, `Sensor?`, `Logitech?`, and broader 2.4 GHz activity.
+nRF24 scans the 2.4 GHz channel range using RPD activity, a fast-decay histogram, optional slow peak hold, and conservative passive Enhanced ShockBurst classification when validated observations are available. The fixed **DETECTIONS** panel includes categories such as `ESB device`, `Input?`, `Sensor?`, `Logitech?`, and broader 2.4 GHz activity. A newest-first list below the spectrum previews validated packet payloads in width-bounded hexadecimal; energy hits are never presented as decoded packets.
 
 The settings menu exposes low/high channel, dwell time, peak hold, application notification settings, and count reset. Runtime activity/classifier state is cleared when the application is left.
 

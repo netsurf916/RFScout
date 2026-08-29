@@ -45,6 +45,8 @@ typedef struct
 static uint8_t fast_activity[ NRF24_CHANNEL_COUNT ];
 static uint8_t slow_peak[ NRF24_CHANNEL_COUNT ];
 static packet_record_t packet_records[ PACKET_RECORD_MAX ];
+static nrf24_recent_packet_t recent_packets[ NRF24_RECENT_PACKET_MAX ];
+static size_t recent_packet_count;
 static address_ledger_t address_ledger[ ADDRESS_LEDGER_MAX ];
 static uint32_t category_counts[ NRF24_FP_LOGITECH_LIKE + 1U ];
 static nrf24_fingerprint_type_t spectrum_candidate;
@@ -260,6 +262,8 @@ void nrf24_activity_reset_counts( void )
     memset( category_counts, 0, sizeof( category_counts ) );
     memset( packet_records, 0, sizeof( packet_records ) );
     memset( address_ledger, 0, sizeof( address_ledger ) );
+    memset( recent_packets, 0, sizeof( recent_packets ) );
+    recent_packet_count = 0U;
     spectrum_candidate = NRF24_FP_UNKNOWN;
     spectrum_candidate_sweeps = 0U;
     spectrum_latched = false;
@@ -394,6 +398,28 @@ void nrf24_activity_observe_packet( const nrf24_packet_observation_t *a_packet )
         return;
     }
 
+    const size_t move_count = ( recent_packet_count < NRF24_RECENT_PACKET_MAX )
+                                  ? recent_packet_count
+                                  : NRF24_RECENT_PACKET_MAX - 1U;
+    if( move_count > 0U )
+    {
+        memmove( &recent_packets[ 1 ],
+                 &recent_packets[ 0 ],
+                 move_count * sizeof( recent_packets[ 0 ] ) );
+    }
+    nrf24_recent_packet_t *recent = &recent_packets[ 0 ];
+    memset( recent, 0, sizeof( *recent ) );
+    recent->channel = a_packet->channel;
+    memcpy( recent->address, a_packet->address, a_packet->address_len );
+    recent->address_len = a_packet->address_len;
+    memcpy( recent->payload, a_packet->payload, a_packet->payload_len );
+    recent->payload_len = a_packet->payload_len;
+    recent->timestamp_ms = a_packet->timestamp_ms;
+    if( recent_packet_count < NRF24_RECENT_PACKET_MAX )
+    {
+        ++recent_packet_count;
+    }
+
     nrf24_fingerprint_t *fingerprint = &record->public;
     if( 0U == fingerprint->packets )
     {
@@ -430,6 +456,18 @@ void nrf24_activity_observe_packet( const nrf24_packet_observation_t *a_packet )
     }
 
     classify_packet_record( record );
+}
+
+size_t nrf24_activity_recent_packets( nrf24_recent_packet_t *a_output, size_t a_capacity )
+{
+    if( ( NULL == a_output ) || ( 0U == a_capacity ) )
+    {
+        return 0U;
+    }
+
+    const size_t count = ( a_capacity < recent_packet_count ) ? a_capacity : recent_packet_count;
+    memcpy( a_output, recent_packets, count * sizeof( recent_packets[ 0 ] ) );
+    return count;
 }
 
 size_t nrf24_activity_histogram( uint8_t *a_fast, uint8_t *a_slow, size_t a_capacity )

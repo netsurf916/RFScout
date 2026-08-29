@@ -12,6 +12,8 @@
 
 #include "nrf24.h"
 
+#define NRF24_RECENT_PACKET_MAX 5U
+
 /** @brief Metadata extracted from a candidate Enhanced ShockBurst packet. */
 typedef struct
 {
@@ -20,11 +22,23 @@ typedef struct
     uint8_t address[ 5 ];
     uint8_t address_len;
     uint8_t payload_len;
+    uint8_t payload[ 32 ];
     uint8_t pid;
     bool no_ack;
     bool crc_valid;
     uint32_t timestamp_ms;
 } nrf24_packet_observation_t;
+
+/** @brief Display-safe copy of one recently validated Enhanced ShockBurst packet. */
+typedef struct
+{
+    uint8_t channel;
+    uint8_t address[ 5 ];
+    uint8_t address_len;
+    uint8_t payload[ 32 ];
+    uint8_t payload_len;
+    uint32_t timestamp_ms;
+} nrf24_recent_packet_t;
 
 /** @brief Clear histogram, classifier, peak, and accumulated count state. */
 void nrf24_activity_reset( void );
@@ -41,6 +55,9 @@ void nrf24_activity_observe_sweep( const uint8_t *a_hits, size_t a_count );
 
 /** @brief Add validated packet metadata to passive fingerprint classification. */
 void nrf24_activity_observe_packet( const nrf24_packet_observation_t *a_packet );
+
+/** @brief Copy recently validated packets in newest-first order. */
+size_t nrf24_activity_recent_packets( nrf24_recent_packet_t *a_output, size_t a_capacity );
 
 /**
  * @brief Copy fast activity and slow peak-hold histograms.

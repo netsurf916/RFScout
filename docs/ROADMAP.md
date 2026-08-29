@@ -205,6 +205,8 @@ Goals:
 - Improve classifier confidence from real hardware captures.
 - Preserve receive-only behavior: no ACK generation, injection, replay, or active discovery.
 - Add structured captures/drill-down and time-windowed activity where useful.
+- Follow the evidence levels, scan modes, and passive guardrails documented in
+  [nRF24 research and direction](NRF24_RESEARCH.md).
 
 ## Medium-term platform work
 
