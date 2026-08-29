@@ -188,11 +188,8 @@ static void render_summary( void )
     display_draw_text( UI_LAYOUT_LEFT_X, 25, line, COLOR_WHITE, 1 );
 
     snprintf( line, sizeof( line ), "SURVEILLANCE %u", (unsigned)surveillance_count );
-    display_draw_text( 210,
-                       25,
-                       line,
-                       ( 0U == surveillance_count ) ? COLOR_GRAY : COLOR_ALERT_YELLOW,
-                       1 );
+    display_draw_text(
+        210, 25, line, ( 0U == surveillance_count ) ? COLOR_GRAY : COLOR_ALERT_YELLOW, 1 );
 
     display_fill_rect( 5, 36, 310, 1, COLOR_GRAY );
     display_fill_rect( UI_COLUMN_DIVIDER_X, 36, 1, RFSCOUT_DISPLAY_HEIGHT - 36, COLOR_GRAY );
