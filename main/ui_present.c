@@ -7,9 +7,7 @@
 
 #include "display.h"
 
-#include "battery_indicator.h"
 #include "power.h"
-#include "status_bar.h"
 
 #include "esp_heap_caps.h"
 
@@ -58,8 +56,10 @@ static void draw_power_overlay( const power_status_t *a_status )
 
 esp_err_t display_present( void )
 {
-    battery_indicator_draw();
-    status_bar_draw();
+    if( !display_is_dirty() )
+    {
+        return ESP_OK;
+    }
 
     power_status_t status;
     power_get_status( &status );
@@ -75,7 +75,12 @@ esp_err_t display_present( void )
     }
     if( NULL == overlay_backup )
     {
-        return display_flush();
+        const esp_err_t result = display_flush();
+        if( ESP_OK == result )
+        {
+            display_invalidate();
+        }
+        return result;
     }
 
     const esp_err_t saved = display_read_rect( POWER_OVERLAY_X,
@@ -101,5 +106,13 @@ esp_err_t display_present( void )
     {
         return presented;
     }
-    return restored;
+    if( ESP_OK != restored )
+    {
+        return restored;
+    }
+
+    /* The LCD contains the intended composed frame while the framebuffer is restored to its
+     * overlay-free application state. That restoration is not a reason to send another frame. */
+    display_mark_clean();
+    return ESP_OK;
 }

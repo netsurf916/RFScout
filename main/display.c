@@ -32,6 +32,7 @@ static esp_lcd_panel_handle_t panel;
 static volatile bool transfer_done;
 static uint16_t *framebuffer;
 static uint16_t *dma_buffer;
+static bool display_dirty = true;
 
 /** @brief Compact 5x7 printable ASCII font used by the RFScout LCD UI. */
 // clang-format off
@@ -71,6 +72,21 @@ static bool valid_rect( int a_x, int a_y, int a_width, int a_height )
            ( a_y + a_height <= RFSCOUT_DISPLAY_HEIGHT );
 }
 
+void display_invalidate( void )
+{
+    display_dirty = true;
+}
+
+bool display_is_dirty( void )
+{
+    return display_dirty;
+}
+
+void display_mark_clean( void )
+{
+    display_dirty = false;
+}
+
 void display_fill_rect_raw( int a_x, int a_y, int a_width, int a_height, uint16_t a_color )
 {
     if( ( NULL == framebuffer ) || ( a_width <= 0 ) || ( a_height <= 0 ) )
@@ -90,6 +106,10 @@ void display_fill_rect_raw( int a_x, int a_y, int a_width, int a_height, uint16_
     {
         y1 = RFSCOUT_DISPLAY_HEIGHT;
     }
+    if( ( x0 >= x1 ) || ( y0 >= y1 ) )
+    {
+        return;
+    }
 
     for( int y = y0; y < y1; ++y )
     {
@@ -98,6 +118,7 @@ void display_fill_rect_raw( int a_x, int a_y, int a_width, int a_height, uint16_
             framebuffer[ ( y * RFSCOUT_DISPLAY_WIDTH ) + x ] = a_color;
         }
     }
+    display_invalidate();
 }
 
 /** @brief Write one scaled glyph to the local framebuffer using an already-resolved color. */
@@ -132,6 +153,8 @@ static void draw_character( int a_x, int a_y, char a_character, uint16_t a_color
 
 esp_err_t display_init( void )
 {
+    display_dirty = true;
+
     const esp_err_t bus_result = board_spi_init();
     if( ESP_OK != bus_result )
     {
@@ -202,11 +225,13 @@ void display_clear( uint16_t a_color )
     {
         return;
     }
+
     const uint16_t color = ui_theme_resolve_legacy_color( a_color );
     for( size_t i = 0; i < DISPLAY_PIXEL_COUNT; ++i )
     {
         framebuffer[ i ] = color;
     }
+    display_invalidate();
 }
 
 void display_fill_rect( int a_x, int a_y, int a_width, int a_height, uint16_t a_color )
@@ -273,11 +298,16 @@ esp_err_t display_write_rect(
                 &a_pixels[ (size_t)y * (size_t)a_width ],
                 (size_t)a_width * sizeof( *a_pixels ) );
     }
+    display_invalidate();
     return ESP_OK;
 }
 
 esp_err_t display_flush( void )
 {
+    if( !display_dirty )
+    {
+        return ESP_OK;
+    }
     if( ( NULL == panel ) || ( NULL == framebuffer ) || ( NULL == dma_buffer ) )
     {
         return ESP_ERR_INVALID_STATE;
@@ -305,5 +335,7 @@ esp_err_t display_flush( void )
         }
         wait_for_transfer();
     }
+
+    display_mark_clean();
     return ESP_OK;
 }
