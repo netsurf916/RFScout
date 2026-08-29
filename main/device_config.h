@@ -49,25 +49,67 @@ typedef struct
     size_t timezone_count;
 } device_config_t;
 
+/** @brief Initialize compiled defaults and optionally load SD-backed configuration. */
 esp_err_t device_config_init( void );
+
+/** @brief Return the active device configuration. */
 const device_config_t *device_config_get( void );
+
+/** @brief Return whether one application is enabled by device configuration. */
 bool device_config_app_enabled( rfscout_app_id_t a_app );
+
+/** @brief Change whether one application is enabled; Device/Home itself always remains enabled. */
 esp_err_t device_config_set_app_enabled( rfscout_app_id_t a_app, bool a_enabled );
+
+/** @brief Change the preferred startup application. */
 esp_err_t device_config_set_startup_app( rfscout_app_id_t a_app );
+
+/** @brief Return the configured startup application. */
 rfscout_app_id_t device_config_startup_app( void );
+
+/** @brief Change logging preference. */
 esp_err_t device_config_set_logging_enabled( bool a_enabled );
+
+/** @brief Change display brightness percentage. */
 esp_err_t device_config_set_brightness( uint8_t a_percent );
+
+/** @brief Change 12/24-hour clock presentation. */
 esp_err_t device_config_set_clock_24h( bool a_enabled );
+
+/** @brief Change the global audible notification mode. */
 esp_err_t device_config_set_alert_mode( rfscout_alert_mode_t a_mode );
+
+/** @brief Change the global notification volume percentage from 0 through 100. */
 esp_err_t device_config_set_alert_volume( uint8_t a_percent );
+
+/** @brief Change Recorder playback volume percentage from 0 through 100. */
 esp_err_t device_config_set_recorder_volume( uint8_t a_percent );
+
+/** @brief Change Recorder fixed digital input gain (0..24 dB, 3 dB steps). */
 esp_err_t device_config_set_recorder_input_gain( uint8_t a_gain_db );
+
+/** @brief Return the configured Morse character for one notification category. */
 char device_config_notification_character( rfscout_notification_type_t a_type );
+
+/** @brief Change the Morse character for one notification category. */
 esp_err_t device_config_set_notification_character( rfscout_notification_type_t a_type,
                                                     char a_character );
+
+/** @brief Select a timezone definition by configured name. */
 esp_err_t device_config_set_timezone( const char *a_name );
+
+/** @brief Return the selected timezone definition or NULL when unavailable. */
 const device_timezone_t *device_config_timezone( void );
+
+/** @brief Return saved cold-boot wall-clock state loaded from configuration. */
 bool device_config_saved_time( int64_t *a_epoch, const char **a_source );
+
+/**
+ * @brief Atomically persist current preferences and optional wall-clock bootstrap state to SD.
+ * @param a_update_time True to replace/clear the saved shutdown epoch; false to preserve it.
+ * @param a_epoch New saved epoch when @p a_update_time is true.
+ * @param a_time_source Stable source token for the supplied epoch.
+ */
 esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a_time_source );
 
 #endif // _RFSCOUT_DEVICE_CONFIG_H_
