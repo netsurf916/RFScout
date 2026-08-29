@@ -23,6 +23,8 @@ RFScout starts on **Home** by default. Device Settings can select another prefer
 
 The center button opens an application's settings/action surface where one exists. Settings menus use **Back** as the first entry. Home is a pass-through landing screen: rotating onto Home does not trap the encoder in settings; center must be pressed deliberately to enter Device Settings.
 
+Holding the encoder center button continuously for about **2 seconds** toggles the device-wide input lock. While locked, encoder rotation and ordinary center-button actions are ignored and a padlock appears in the status bar. Hold the center button for the same 2 seconds again to unlock the controls. The separate physical power button remains available while input is locked.
+
 ### WiFi / BT
 
 WiFi / BT passively observes Wi-Fi and BLE traffic, maintains a rolling set of recently seen devices, and resolves IEEE vendor information using longest-prefix matching across MA-L (24-bit), MA-M (28-bit), MA-S/OUI-36 (36-bit), and legacy IAB assignments. Random/private addresses contribute to the fixed `RANDOM` row rather than receiving misleading vendor attribution; globally administered addresses without a matching assignment contribute to `UNKNOWN`.
