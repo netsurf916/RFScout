@@ -57,6 +57,7 @@ idf_component_register(
         "feedback.c"
         "notification.c"
         "notification_preferences.c"
+        "notification_settings_view.c"
         "alert.c"
         "audio_output.c"
         "device_config.c"
