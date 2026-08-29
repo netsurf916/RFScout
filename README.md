@@ -65,17 +65,21 @@ Thermal becomes available when an **MLX90640** is detected on the external I2C/Q
 
 ### Home / Device Settings
 
-Home is the non-disableable Device application's branded pass-through landing screen. The LCD mark is generated at build time from the canonical `assets/logo.png` artwork as a compact black/orange/white bitmap, keeping the device and browser-flasher branding aligned without embedding a PNG decoder. Center enters Device Settings; rotating without entering settings continues normal application navigation.
+Home is the non-disableable Device application's branded pass-through landing screen. The LCD mark is generated at build time from the canonical `assets/logo.png` artwork as a compact indexed bitmap, keeping the device and browser-flasher branding aligned without embedding a PNG decoder. The active display theme supplies the logo's brand and secondary colors at runtime. Center enters Device Settings; rotating without entering settings continues normal application navigation.
 
-Current Device Settings include display brightness, 12/24-hour clock presentation, timezone selection, preferred startup application, manual date/time, application enablement, SD logging, global notification mode and volume, one Morse character for each notification category, Recorder playback volume/input gain through Recorder persistence, and explicit configuration save.
+Current Device Settings include display brightness, display theme, 12/24-hour clock presentation, timezone selection, preferred startup application, manual date/time, application enablement, SD logging, global notification mode and volume, one Morse character for each notification category, Recorder playback volume/input gain through Recorder persistence, and explicit configuration save.
+
+Three display themes are currently available: **Indoor**, the normal high-contrast orange/white RFScout presentation; **Outdoor**, which prioritizes maximum daylight contrast rather than subdued secondary colors; and **Night**, which shifts UI emphasis toward red/orange tones to reduce bright blue/green light. Theme changes apply immediately across application chrome, text, status UI, graphs that use shared UI colors, and Home branding.
 
 The startup preference can select Home, WiFi/BT, CC1101, nRF24, Recorder, or Thermal. Home is the compiled default. A disabled or unavailable configured startup target falls back to Home for the current boot without erasing the saved preference; Thermal additionally requires a detected MLX90640.
 
-RFScout always has compiled defaults and remains usable without an SD card. When storage is mounted, persistent preferences including `apps.startup` live in `/sdcard/rfscout.json`. Home/Device itself cannot be disabled.
+RFScout always has compiled defaults and remains usable without an SD card. When storage is mounted, ordinary persistent preferences including `apps.startup` live in `/sdcard/rfscout.json`. The display theme is persisted separately in ESP32 NVS so the selected viewing mode remains available even when no SD card is present. Home/Device itself cannot be disabled.
 
 ## Shared UI and status
 
-Application views use shared top chrome for title placement, wall-clock/status presentation, and battery indication. Long titles are constrained by the shared chrome so they do not overlap the right-side status region. Application content remains app-specific, and there is no globally reserved footer area; data-heavy views can use the bottom of the display.
+Application views use shared top chrome for title placement, wall-clock/status presentation, battery indication, and semantic display colors. The common theme layer defines roles such as background, primary/secondary text, accent, selection, information, success, warning, error, graph, and logo colors. Existing application UI colors are routed through that layer so themes remain consistent across apps; literal data imagery such as the Thermal heat map bypasses theme translation.
+
+Long titles are constrained by the shared chrome so they do not overlap the right-side status region. Application content remains app-specific, and there is no globally reserved footer area; data-heavy views can use the bottom of the display.
 
 The status area shows local wall time plus global state such as mounted SD storage and sticky filesystem/logging errors. When wall time is unavailable, the clock displays `--:--`. Battery state-of-charge and charging telemetry come from the board power-management devices through the shared I2C layer; missing telemetry is nonfatal.
 
