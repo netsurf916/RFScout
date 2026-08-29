@@ -11,6 +11,7 @@
 #include "board.h"
 #include "device_config.h"
 #include "device_time.h"
+#include "display.h"
 #include "log_writer.h"
 #include "recorder.h"
 #include "storage.h"
@@ -32,6 +33,19 @@ static bool stable_pressed;
 static int64_t raw_changed_us;
 static int64_t pressed_since_us;
 static power_status_t status;
+
+/** @brief Update UI-visible power state and invalidate the composed display when it changes. */
+static void set_power_status( power_hold_state_t a_state, uint8_t a_seconds_remaining )
+{
+    if( ( status.state == a_state ) && ( status.seconds_remaining == a_seconds_remaining ) )
+    {
+        return;
+    }
+
+    status.state = a_state;
+    status.seconds_remaining = a_seconds_remaining;
+    display_invalidate();
+}
 
 /** @brief Stop logging, optionally checkpoint wall time, and unmount storage. */
 static bool prepare_storage_for_power_state( bool a_checkpoint_time )
@@ -105,18 +119,22 @@ static void update_countdown( int64_t a_held_us )
 {
     if( a_held_us < POWER_COUNTDOWN_START_US )
     {
-        status.state = POWER_HOLD_IDLE;
-        status.seconds_remaining = 0U;
+        set_power_status( POWER_HOLD_IDLE, 0U );
         return;
     }
 
-    status.state = POWER_HOLD_COUNTDOWN;
     if( a_held_us < 1000000LL )
-        status.seconds_remaining = 3U;
+    {
+        set_power_status( POWER_HOLD_COUNTDOWN, 3U );
+    }
     else if( a_held_us < 2000000LL )
-        status.seconds_remaining = 2U;
+    {
+        set_power_status( POWER_HOLD_COUNTDOWN, 2U );
+    }
     else
-        status.seconds_remaining = 1U;
+    {
+        set_power_status( POWER_HOLD_COUNTDOWN, 1U );
+    }
 }
 
 esp_err_t power_init( void )
@@ -151,27 +169,29 @@ void power_poll( void )
         else
         {
             const int64_t held_us = now_us - pressed_since_us;
-            status.state = POWER_HOLD_IDLE;
-            status.seconds_remaining = 0U;
+            set_power_status( POWER_HOLD_IDLE, 0U );
             pressed_since_us = 0;
             if( held_us < POWER_COUNTDOWN_START_US )
+            {
                 enter_sleep();
+            }
         }
     }
 
     if( !stable_pressed || ( 0 == pressed_since_us ) )
+    {
         return;
+    }
 
     const int64_t held_us = now_us - pressed_since_us;
     if( held_us >= POWER_SHUTDOWN_HOLD_US )
     {
-        status.state = POWER_HOLD_SHUTDOWN;
-        status.seconds_remaining = 0U;
+        set_power_status( POWER_HOLD_SHUTDOWN, 0U );
         ESP_LOGI( TAG, "user key held for 3 seconds; requesting power off" );
 
         if( !prepare_storage_for_power_state( true ) )
         {
-            status.state = POWER_HOLD_IDLE;
+            set_power_status( POWER_HOLD_IDLE, 0U );
             return;
         }
 
@@ -180,7 +200,7 @@ void power_poll( void )
         {
             ESP_LOGE( TAG, "power off failed: %s", esp_err_to_name( result ) );
             restore_storage_after_failed_power_off();
-            status.state = POWER_HOLD_IDLE;
+            set_power_status( POWER_HOLD_IDLE, 0U );
         }
         return;
     }
