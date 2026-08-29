@@ -42,16 +42,16 @@ static void draw_apps_icon( int a_x, int a_y )
     }
 }
 
-/** @brief Draw a filled circle representing the encoder center push button. */
+/** @brief Draw a small round filled circle representing the encoder center push button. */
 static void draw_center_button_icon( int a_x, int a_y )
 {
     const uint16_t color = ui_theme_get()->logo_primary;
-    static const uint8_t widths[] = { 8U, 14U, 18U, 20U, 20U, 18U, 14U, 8U };
+    static const uint8_t widths[] = { 4U, 8U, 10U, 12U, 12U, 12U, 12U, 12U, 12U, 10U, 8U, 4U };
 
     for( size_t row = 0U; row < sizeof( widths ); ++row )
     {
         const int width = widths[ row ];
-        display_fill_rect( a_x + ( 20 - width ) / 2, a_y + (int)row * 2, width, 2, color );
+        display_fill_rect( a_x + ( 12 - width ) / 2, a_y + (int)row, width, 1, color );
     }
 }
 
@@ -63,7 +63,8 @@ static void draw_home_controls( void )
     display_draw_text(
         HOME_CONTROL_TEXT_X, HOME_CONTROL_APPS_Y, "APPS", theme->logo_secondary, 1U );
 
-    draw_center_button_icon( HOME_CONTROL_ICON_X + 4, HOME_CONTROL_SETTINGS_Y - 4 );
+    /* Keep the smaller Settings circle centered on the same icon column and its text row. */
+    draw_center_button_icon( HOME_CONTROL_ICON_X + 7, HOME_CONTROL_SETTINGS_Y - 2 );
     display_draw_text(
         HOME_CONTROL_TEXT_X, HOME_CONTROL_SETTINGS_Y, "SETTINGS", theme->logo_secondary, 1U );
 }

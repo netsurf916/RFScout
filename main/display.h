@@ -59,6 +59,30 @@ void display_fill_rect( int a_x, int a_y, int a_width, int a_height, uint16_t a_
 void display_fill_rect_raw( int a_x, int a_y, int a_width, int a_height, uint16_t a_color );
 
 /**
+ * @brief Draw a theme-aware one-bit glyph without touching framebuffer pixels under zero bits.
+ *
+ * Mask rows are packed MSB-first with a stride of `(a_width + 7) / 8` bytes. Set bits write the
+ * resolved foreground color; clear bits are transparent and leave the existing framebuffer intact.
+ * This is intended for small overlay glyphs rather than full-screen imagery.
+ *
+ * @param a_x Left coordinate in pixels.
+ * @param a_y Top coordinate in pixels.
+ * @param a_width Mask width in pixels.
+ * @param a_height Mask height in pixels.
+ * @param a_mask Packed one-bit row-major mask.
+ * @param a_mask_size Number of bytes available in @p a_mask.
+ * @param a_color RGB565 foreground color or historical RFScout UI color token.
+ * @return ESP_OK on success; ESP_ERR_INVALID_ARG for invalid dimensions or mask storage.
+ */
+esp_err_t display_draw_mask( int a_x,
+                             int a_y,
+                             int a_width,
+                             int a_height,
+                             const uint8_t *a_mask,
+                             size_t a_mask_size,
+                             uint16_t a_color );
+
+/**
  * @brief Copy a framebuffer rectangle into a caller-provided RGB565 buffer.
  * @param a_x Left coordinate.
  * @param a_y Top coordinate.
