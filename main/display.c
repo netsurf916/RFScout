@@ -211,8 +211,7 @@ void display_clear( uint16_t a_color )
 
 void display_fill_rect( int a_x, int a_y, int a_width, int a_height, uint16_t a_color )
 {
-    display_fill_rect_raw(
-        a_x, a_y, a_width, a_height, ui_theme_resolve_legacy_color( a_color ) );
+    display_fill_rect_raw( a_x, a_y, a_width, a_height, ui_theme_resolve_legacy_color( a_color ) );
 }
 
 void display_draw_text( int a_x, int a_y, const char *a_text, uint16_t a_color, unsigned a_scale )
