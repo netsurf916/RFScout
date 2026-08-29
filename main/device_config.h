@@ -13,13 +13,14 @@
 #include "alert.h"
 #include "app_manager.h"
 #include "esp_err.h"
+#include "ui_theme.h"
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #define RFSCOUT_CONFIG_PATH "/sdcard/rfscout.json"
-#define RFSCOUT_CONFIG_SCHEMA_VERSION 1U
+#define RFSCOUT_CONFIG_SCHEMA_VERSION 2U
 #define RFSCOUT_TIMEZONE_MAX 8U
 #define RFSCOUT_TIMEZONE_NAME_MAX 32U
 #define RFSCOUT_TIMEZONE_LABEL_MAX 24U
@@ -39,10 +40,14 @@ typedef struct
     rfscout_app_id_t startup_app;
     bool logging_enabled;
     bool clock_24h;
+    rfscout_theme_id_t theme;
     rfscout_alert_mode_t alert_mode;
     uint8_t alert_volume_percent;
     uint8_t recorder_volume_percent;
     uint8_t recorder_input_gain_db;
+    bool notification_app_enabled[ RFSCOUT_APP_COUNT ];
+    bool wifi_device_feedback_enabled;
+    bool ble_device_feedback_enabled;
     char notification_characters[ RFSCOUT_NOTIFICATION_TYPE_COUNT ];
     char timezone_selected[ RFSCOUT_TIMEZONE_NAME_MAX ];
     device_timezone_t timezones[ RFSCOUT_TIMEZONE_MAX ];
@@ -75,6 +80,8 @@ esp_err_t device_config_set_brightness( uint8_t a_percent );
 
 /** @brief Change 12/24-hour clock presentation. */
 esp_err_t device_config_set_clock_24h( bool a_enabled );
+rfscout_theme_id_t device_config_theme( void );
+esp_err_t device_config_set_theme( rfscout_theme_id_t a_theme );
 
 /** @brief Change the global audible notification mode. */
 esp_err_t device_config_set_alert_mode( rfscout_alert_mode_t a_mode );
@@ -87,6 +94,17 @@ esp_err_t device_config_set_recorder_volume( uint8_t a_percent );
 
 /** @brief Change Recorder fixed digital input gain (0..24 dB, 3 dB steps). */
 esp_err_t device_config_set_recorder_input_gain( uint8_t a_gain_db );
+bool device_config_notification_app_enabled( rfscout_app_id_t a_app );
+esp_err_t device_config_set_notification_app_enabled( rfscout_app_id_t a_app, bool a_enabled );
+
+/** @brief Return whether ordinary Wi-Fi discoveries may emit the general detection event. */
+bool device_config_wifi_device_feedback_enabled( void );
+/** @brief Change whether ordinary Wi-Fi discoveries may emit the general detection event. */
+esp_err_t device_config_set_wifi_device_feedback_enabled( bool a_enabled );
+/** @brief Return whether ordinary BLE discoveries may emit the general detection event. */
+bool device_config_ble_device_feedback_enabled( void );
+/** @brief Change whether ordinary BLE discoveries may emit the general detection event. */
+esp_err_t device_config_set_ble_device_feedback_enabled( bool a_enabled );
 
 /** @brief Return the configured Morse character for one notification category. */
 char device_config_notification_character( rfscout_notification_type_t a_type );
@@ -111,5 +129,7 @@ bool device_config_saved_time( int64_t *a_epoch, const char **a_source );
  * @param a_time_source Stable source token for the supplied epoch.
  */
 esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a_time_source );
+/** @brief Persist runtime preferences only when a setter has changed canonical configuration. */
+esp_err_t device_config_save_if_dirty( void );
 
 #endif // _RFSCOUT_DEVICE_CONFIG_H_

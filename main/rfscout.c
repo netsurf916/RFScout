@@ -1,6 +1,6 @@
 /**
     rfscout.c : RFScout application entry point
-    Description: Initializes passive RF collectors, configuration, wall time, logging, alerts, and UI.
+    Description: Initializes platform services, configuration, semantic feedback, notifications, and UI.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -14,7 +14,11 @@
 #include "device_config.h"
 #include "device_time.h"
 #include "display.h"
+#include "event.h"
+#include "feedback.h"
 #include "log_writer.h"
+#include "notification.h"
+#include "notification_preferences.h"
 #include "observation_store.h"
 #include "oui_database.h"
 #include "platform.h"
@@ -35,11 +39,6 @@
 
 static const char *TAG = "rfscout";
 
-/**
- * @brief Map a surveillance classification to the global notification category.
- * @note When WiFi/BT surveillance categories change, keep this mapping synchronized with the
- *       canonical notification enum/descriptor table in alert.h and alert.c.
- */
 static rfscout_notification_type_t
 notification_for_surveillance( surveillance_class_t a_classification )
 {
@@ -64,7 +63,6 @@ notification_for_surveillance( surveillance_class_t a_classification )
     }
 }
 
-/** @brief Classify, store, log, and alert on one Wi-Fi or BLE observation. */
 static void on_observation( rf_device_t *a_observation )
 {
     if( NULL == a_observation )
@@ -122,21 +120,33 @@ static void on_observation( rf_device_t *a_observation )
     {
         const rfscout_notification_type_t notification =
             notification_for_surveillance( match.classification );
-        const char character = device_config_notification_character( notification );
-        const rfscout_alert_mode_t mode = alert_mode();
         ESP_LOGW( TAG,
-                  "ALERT %s score=%u evidence=0x%02x audio=%s morse=%c",
+                  "ALERT %s score=%u evidence=0x%02x mode=%s morse=%c",
                   surveillance_signature_label( match.signature ),
                   (unsigned)match.score,
                   (unsigned)match.evidence,
-                  alert_mode_name( mode ),
-                  character );
+                  alert_mode_name( alert_mode() ),
+                  device_config_notification_character( notification ) );
+
         platform_set_alert_led( true );
-        if( !alert_request_character( character ) )
-        {
-            ESP_LOGW( TAG, "audible alert queue full or speaker unavailable" );
-        }
+        (void)notification_emit( notification );
         platform_set_alert_led( false );
+        return;
+    }
+
+    /* An ordinary newly observed WiFi/BLE device gets the lightweight general
+       detection cue. Classified surveillance instead uses its app-specific
+       notification (for example Camera -> Morse C) so one observation does not
+       produce both sounds. */
+    const rfscout_wifi_detection_event_t detection_event =
+        ( RF_SOURCE_BLE == a_observation->last_source ) ? RFSCOUT_WIFI_DETECTION_BLE_DEVICE
+                                                        : RFSCOUT_WIFI_DETECTION_WIFI_DEVICE;
+    if( notification_preferences_app_enabled( RFSCOUT_APP_WIFI_BT ) &&
+        notification_preferences_wifi_detection_enabled( detection_event ) )
+    {
+        rfscout_event_emit( RFSCOUT_EVENT_DETECTED,
+                            (uint8_t)RFSCOUT_APP_WIFI_BT,
+                            (int32_t)a_observation->last_source );
     }
 }
 
@@ -148,17 +158,25 @@ void app_main( void )
         ESP_ERROR_CHECK( nvs_flash_erase() );
         result = nvs_flash_init();
     }
-
     ESP_ERROR_CHECK( result );
+
     ESP_ERROR_CHECK( observation_store_init() );
     ESP_ERROR_CHECK( surveillance_history_init() );
     ESP_ERROR_CHECK( platform_init() );
     ESP_ERROR_CHECK( power_init() );
 
+    result = notification_preferences_init();
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG,
+                  "per-app notification preferences unavailable; using native defaults: %s",
+                  esp_err_to_name( result ) );
+    }
+
     result = alert_init();
     if( ESP_OK != result )
     {
-        ESP_LOGW( TAG, "audible alerts unavailable: %s", esp_err_to_name( result ) );
+        ESP_LOGW( TAG, "audible notifications unavailable: %s", esp_err_to_name( result ) );
     }
 
     result = battery_init();
@@ -184,13 +202,18 @@ void app_main( void )
     result = ui_theme_init();
     if( ESP_OK != result )
     {
-        ESP_LOGW( TAG,
-                  "display theme persistence unavailable; using Indoor: %s",
-                  esp_err_to_name( result ) );
+        ESP_LOGW(
+            TAG, "theme persistence unavailable; using Indoor: %s", esp_err_to_name( result ) );
     }
 
     alert_set_mode( device_config_get()->alert_mode );
     (void)alert_set_volume_percent( device_config_get()->alert_volume_percent );
+
+    result = feedback_init();
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG, "interaction feedback unavailable: %s", esp_err_to_name( result ) );
+    }
 
     ESP_ERROR_CHECK( device_time_init() );
     ESP_ERROR_CHECK( app_manager_init() );
@@ -217,6 +240,7 @@ void app_main( void )
         (void)ble_monitor_stop();
         (void)radio_monitor_stop();
     }
+
     ESP_LOGI( TAG,
               "RFScout started: app-managed radio lifecycle, Wi-Fi region=%s",
               radio_monitor_region_name( radio_monitor_get_region() ) );

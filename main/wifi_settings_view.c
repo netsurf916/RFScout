@@ -1,6 +1,6 @@
 /**
     wifi_settings_view.c : RFScout WiFi/BT application settings view
-    Description: Renders Back and live-observation reset actions for WiFi/BT.
+    Description: Renders app-scoped notification and live-observation actions for WiFi/BT.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -12,14 +12,14 @@
 #include "ui_layout.h"
 #include "ui_theme.h"
 
-#define WIFI_SETTINGS_ITEM_COUNT 2U
+#define WIFI_SETTINGS_ITEM_COUNT 3U
 
-void wifi_settings_view_render( unsigned a_selected, bool a_editing )
+void wifi_settings_view_render( unsigned a_selected, bool a_notifications_enabled )
 {
-    static const char *labels[ WIFI_SETTINGS_ITEM_COUNT ] = { "BACK", "RESET DETECTIONS" };
+    static const char *labels[ WIFI_SETTINGS_ITEM_COUNT ] = {
+        "BACK", "NOTIFICATIONS", "RESET DETECTIONS" };
     const ui_theme_palette_t *theme = ui_theme_get();
 
-    (void)a_editing;
     display_clear( theme->background );
     ui_chrome_draw( "WIFI / BT SETTINGS", theme->secondary );
 
@@ -34,6 +34,15 @@ void wifi_settings_view_render( unsigned a_selected, bool a_editing )
                            1U );
         display_draw_text(
             UI_LAYOUT_LABEL_X, y, labels[ item ], active ? theme->text : theme->divider, 1U );
+
+        if( 1U == item )
+        {
+            display_draw_text( 232,
+                               y,
+                               a_notifications_enabled ? "ON" : "OFF",
+                               active ? theme->selected : theme->secondary,
+                               1U );
+        }
     }
 
     display_draw_text(

@@ -7,13 +7,16 @@
 
 #include "power.h"
 
+#include "app_manager.h"
 #include "battery.h"
 #include "board.h"
 #include "device_config.h"
 #include "device_time.h"
 #include "display.h"
 #include "log_writer.h"
+#include "platform.h"
 #include "recorder.h"
+#include "session_state.h"
 #include "storage.h"
 
 #include "driver/gpio.h"
@@ -53,6 +56,20 @@ static bool prepare_storage_for_power_state( bool a_checkpoint_time )
     if( !storage_is_available() )
     {
         return true;
+    }
+
+    /* Deep sleep is allowed directly from an open settings page. Flush any
+       canonical user-configuration changes before stopping storage users so a
+       save failure leaves the running session intact. */
+    if( !a_checkpoint_time )
+    {
+        const esp_err_t save_result = device_config_save_if_dirty();
+        if( ESP_OK != save_result )
+        {
+            ESP_LOGW(
+                TAG, "configuration save before sleep failed: %s", esp_err_to_name( save_result ) );
+            return false;
+        }
     }
 
     if( !recorder_prepare_storage_shutdown( POWER_RECORDER_STOP_TIMEOUT_MS ) )
@@ -105,9 +122,11 @@ static void enter_sleep( void )
     ESP_LOGI( TAG, "entering deep sleep; user key wakes device" );
     if( !prepare_storage_for_power_state( false ) )
     {
-        ESP_LOGW( TAG, "sleep cancelled because SD logger is still active" );
+        ESP_LOGW( TAG, "sleep cancelled because persistent state could not be prepared" );
         return;
     }
+
+    session_state_store( app_manager_current(), platform_input_locked() );
 
     ESP_ERROR_CHECK( esp_sleep_enable_ext1_wakeup_io( 1ULL << RFSCOUT_BOARD_USER_KEY_PIN,
                                                       ESP_EXT1_WAKEUP_ANY_LOW ) );

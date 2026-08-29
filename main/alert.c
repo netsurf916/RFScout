@@ -1,6 +1,6 @@
 /**
-    alert.c : RFScout audible alert policy implementation
-    Description: Converts device-wide alert preferences into asynchronous speaker requests.
+    alert.c : RFScout audible notification presentation policy
+    Description: Resolves semantic notification events through app, global, and theme policy into audio requests.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -8,12 +8,18 @@
 #include "alert.h"
 
 #include "audio_output.h"
+#include "device_config.h"
+#include "event.h"
 #include "morse.h"
+#include "notification_preferences.h"
+#include "ui_theme.h"
 
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
 #include <ctype.h>
+#include <stddef.h>
 
 #define ALERT_TONE_FREQUENCY_HZ 900U
 #define ALERT_TONE_DURATION_MS 250U
@@ -21,112 +27,125 @@
 #define ALERT_MORSE_UNIT_MS ( 1200U / ALERT_MORSE_WPM )
 #define ALERT_MORSE_DEFAULT_CHARACTER 'S'
 
-/**
- * Canonical alert-item registry.
- *
- * Keep this table in exactly the same order as rfscout_notification_type_t in alert.h. The Device
- * UI and rfscout.json persistence iterate this table, so labels/config keys/default characters do
- * not need parallel updates elsewhere. When classifier categories change, also update the producer
- * mappings in rfscout.c (WiFi/BT surveillance) and app_manager.c (CC1101/nRF24).
- */
-static const rfscout_notification_descriptor_t notification_descriptors[] = {
-    { RFSCOUT_NOTIFICATION_FLOCK, RFSCOUT_APP_WIFI_BT, "flock", "Flock / ALPR", 'F' },
-    { RFSCOUT_NOTIFICATION_BODY_CAMERA, RFSCOUT_APP_WIFI_BT, "body_camera", "Body camera", 'B' },
-    { RFSCOUT_NOTIFICATION_DRONE, RFSCOUT_APP_WIFI_BT, "drone", "Drone", 'D' },
-    { RFSCOUT_NOTIFICATION_CAMERA, RFSCOUT_APP_WIFI_BT, "camera", "Camera", 'C' },
-    { RFSCOUT_NOTIFICATION_SMART_GLASSES,
-      RFSCOUT_APP_WIFI_BT,
-      "smart_glasses",
-      "Smart glasses",
-      'G' },
-    { RFSCOUT_NOTIFICATION_ACOUSTIC_SENSOR,
-      RFSCOUT_APP_WIFI_BT,
-      "acoustic_sensor",
-      "Acoustic sensor",
-      'A' },
-    { RFSCOUT_NOTIFICATION_SURVEILLANCE_OTHER,
-      RFSCOUT_APP_WIFI_BT,
-      "surveillance_other",
-      "Other surveillance",
-      'S' },
-    { RFSCOUT_NOTIFICATION_CC1101_NARROW_ISM,
-      RFSCOUT_APP_CC1101,
-      "cc1101_narrow_ism",
-      "CC1101 narrowband",
-      'N' },
-    { RFSCOUT_NOTIFICATION_CC1101_REMOTE_SENSOR,
-      RFSCOUT_APP_CC1101,
-      "cc1101_remote_sensor",
-      "CC1101 remote/sensor",
-      'R' },
-    { RFSCOUT_NOTIFICATION_CC1101_CARRIER,
-      RFSCOUT_APP_CC1101,
-      "cc1101_carrier",
-      "CC1101 carrier",
-      'K' },
-    { RFSCOUT_NOTIFICATION_CC1101_BURSTY,
-      RFSCOUT_APP_CC1101,
-      "cc1101_bursty",
-      "CC1101 bursty RF",
-      'U' },
-    { RFSCOUT_NOTIFICATION_CC1101_WIDEBAND,
-      RFSCOUT_APP_CC1101,
-      "cc1101_wideband",
-      "CC1101 wide RF",
-      'W' },
-    { RFSCOUT_NOTIFICATION_NRF24_ESB, RFSCOUT_APP_NRF24, "nrf24_esb", "nRF24 ESB device", 'E' },
-    { RFSCOUT_NOTIFICATION_NRF24_INPUT, RFSCOUT_APP_NRF24, "nrf24_input", "nRF24 input", 'I' },
-    { RFSCOUT_NOTIFICATION_NRF24_SENSOR, RFSCOUT_APP_NRF24, "nrf24_sensor", "nRF24 sensor", 'T' },
-    { RFSCOUT_NOTIFICATION_NRF24_WIFI_LIKE,
-      RFSCOUT_APP_NRF24,
-      "nrf24_wifi_like",
-      "nRF24 WiFi-like",
-      'V' },
-    { RFSCOUT_NOTIFICATION_NRF24_BLE_LIKE,
-      RFSCOUT_APP_NRF24,
-      "nrf24_ble_like",
-      "nRF24 hopping RF",
-      'L' },
-    { RFSCOUT_NOTIFICATION_NRF24_LOGITECH_LIKE,
-      RFSCOUT_APP_NRF24,
-      "nrf24_logitech_like",
-      "nRF24 Logitech",
-      'X' },
-};
-
-_Static_assert( sizeof( notification_descriptors ) / sizeof( notification_descriptors[ 0 ] ) ==
-                    RFSCOUT_NOTIFICATION_TYPE_COUNT,
-                "notification descriptor table must match rfscout_notification_type_t" );
-
+static const char *TAG = "alert";
 static rfscout_alert_mode_t mode = RFSCOUT_ALERT_OFF;
 static uint8_t volume_percent = RFSCOUT_ALERT_VOLUME_DEFAULT_PERCENT;
 static char morse_character = ALERT_MORSE_DEFAULT_CHARACTER;
 static SemaphoreHandle_t alert_mutex;
 
-/** @brief Queue an alert while the alert-policy mutex is already held. */
-static bool request_locked( char a_character )
+static uint8_t effective_notification_volume_locked( void )
 {
-    switch( mode )
+    const ui_theme_sound_policy_t *policy = ui_theme_sound_get();
+    if( ( NULL == policy ) || !policy->notification_audio )
     {
-        case RFSCOUT_ALERT_OFF:
-            return true;
+        return 0U;
+    }
+    return (uint8_t)( ( (uint16_t)volume_percent * policy->notification_volume_percent ) / 100U );
+}
 
-        case RFSCOUT_ALERT_TONE:
-            return audio_output_play_tone(
-                ALERT_TONE_FREQUENCY_HZ, ALERT_TONE_DURATION_MS, volume_percent );
+static bool request_generic_locked( char a_character )
+{
+    const uint8_t effective_volume = effective_notification_volume_locked();
+    if( ( RFSCOUT_ALERT_OFF == mode ) || ( 0U == effective_volume ) )
+    {
+        return true;
+    }
 
-        case RFSCOUT_ALERT_MORSE:
-            if( !alert_morse_character_supported( a_character ) )
-            {
-                return false;
-            }
-            return audio_output_play_morse( (char)toupper( (unsigned char)a_character ),
-                                            ALERT_TONE_FREQUENCY_HZ,
-                                            ALERT_MORSE_UNIT_MS,
-                                            volume_percent );
+    if( RFSCOUT_ALERT_TONE == mode )
+    {
+        return audio_output_play_tone(
+            ALERT_TONE_FREQUENCY_HZ, ALERT_TONE_DURATION_MS, effective_volume );
+    }
+    if( RFSCOUT_ALERT_MORSE == mode && alert_morse_character_supported( a_character ) )
+    {
+        return audio_output_play_morse( (char)toupper( (unsigned char)a_character ),
+                                        ALERT_TONE_FREQUENCY_HZ,
+                                        ALERT_MORSE_UNIT_MS,
+                                        effective_volume );
+    }
+    return false;
+}
 
-        default:
-            return false;
+static bool request_notification_locked( char a_character )
+{
+    const uint8_t effective_volume = effective_notification_volume_locked();
+    if( ( RFSCOUT_ALERT_OFF == mode ) || ( 0U == effective_volume ) )
+    {
+        return true;
+    }
+
+    if( RFSCOUT_ALERT_TONE == mode )
+    {
+        return audio_output_play_notification_tone(
+            ALERT_TONE_FREQUENCY_HZ, ALERT_TONE_DURATION_MS, effective_volume );
+    }
+    if( RFSCOUT_ALERT_MORSE == mode && alert_morse_character_supported( a_character ) )
+    {
+        return audio_output_play_notification_morse( (char)toupper( (unsigned char)a_character ),
+                                                     ALERT_TONE_FREQUENCY_HZ,
+                                                     ALERT_MORSE_UNIT_MS,
+                                                     effective_volume );
+    }
+    return false;
+}
+
+static void on_event( const rfscout_event_t *a_event, void *a_context )
+{
+    (void)a_context;
+    if( NULL == a_event )
+    {
+        return;
+    }
+
+    if( RFSCOUT_EVENT_THEME_CHANGED == a_event->type )
+    {
+        const ui_theme_sound_policy_t *policy = ui_theme_sound_get();
+        if( ( NULL == policy ) || !policy->notification_audio )
+        {
+            audio_output_cancel_notifications_pending();
+        }
+        return;
+    }
+
+    if( RFSCOUT_EVENT_NOTIFICATION != a_event->type )
+    {
+        return;
+    }
+    if( ( a_event->value < 0 ) || ( a_event->value >= RFSCOUT_NOTIFICATION_TYPE_COUNT ) )
+    {
+        return;
+    }
+
+    const rfscout_notification_type_t type = (rfscout_notification_type_t)a_event->value;
+    const rfscout_notification_descriptor_t *descriptor = notification_descriptor( type );
+    if( ( NULL == descriptor ) || ( (uint8_t)descriptor->app != a_event->source ) )
+    {
+        return;
+    }
+    if( !notification_preferences_app_enabled( descriptor->app ) )
+    {
+        return;
+    }
+
+    /* Intentional application playback owns the speaker. Notification priorities can be expanded
+       later, but routine detection alerts must not contaminate or queue behind content audio. */
+    if( audio_output_playback_active() )
+    {
+        return;
+    }
+
+    if( ( NULL == alert_mutex ) || ( pdTRUE != xSemaphoreTake( alert_mutex, 0U ) ) )
+    {
+        ESP_LOGW( TAG, "notification dropped while alert policy busy: %s", descriptor->label );
+        return;
+    }
+
+    const char character = device_config_notification_character( type );
+    const bool queued = request_notification_locked( character );
+    (void)xSemaphoreGive( alert_mutex );
+    if( !queued )
+    {
+        ESP_LOGW( TAG, "notification audio dropped: %s", descriptor->label );
     }
 }
 
@@ -149,7 +168,14 @@ esp_err_t alert_init( void )
     volume_percent = RFSCOUT_ALERT_VOLUME_DEFAULT_PERCENT;
     morse_character = ALERT_MORSE_DEFAULT_CHARACTER;
     (void)xSemaphoreGive( alert_mutex );
-    return audio_output_init();
+
+    const esp_err_t audio_result = audio_output_init();
+    if( ( ESP_OK != audio_result ) && ( ESP_ERR_NOT_SUPPORTED != audio_result ) )
+    {
+        return audio_result;
+    }
+
+    return rfscout_event_subscribe( on_event, NULL ) ? ESP_OK : ESP_ERR_NO_MEM;
 }
 
 const char *alert_mode_name( rfscout_alert_mode_t a_mode )
@@ -169,36 +195,27 @@ const char *alert_mode_name( rfscout_alert_mode_t a_mode )
 const rfscout_notification_descriptor_t *
 alert_notification_descriptor( rfscout_notification_type_t a_type )
 {
-    if( a_type >= RFSCOUT_NOTIFICATION_TYPE_COUNT )
-    {
-        return NULL;
-    }
-    const rfscout_notification_descriptor_t *descriptor = &notification_descriptors[ a_type ];
-    return ( descriptor->type == a_type ) ? descriptor : NULL;
+    return notification_descriptor( a_type );
 }
 
 const char *alert_notification_name( rfscout_notification_type_t a_type )
 {
-    const rfscout_notification_descriptor_t *descriptor = alert_notification_descriptor( a_type );
-    return ( NULL != descriptor ) ? descriptor->label : "Unknown";
+    return notification_name( a_type );
 }
 
 const char *alert_notification_config_key( rfscout_notification_type_t a_type )
 {
-    const rfscout_notification_descriptor_t *descriptor = alert_notification_descriptor( a_type );
-    return ( NULL != descriptor ) ? descriptor->config_key : NULL;
+    return notification_config_key( a_type );
 }
 
 rfscout_app_id_t alert_notification_app( rfscout_notification_type_t a_type )
 {
-    const rfscout_notification_descriptor_t *descriptor = alert_notification_descriptor( a_type );
-    return ( NULL != descriptor ) ? descriptor->app : RFSCOUT_APP_DEVICE;
+    return notification_app( a_type );
 }
 
 char alert_notification_default_character( rfscout_notification_type_t a_type )
 {
-    const rfscout_notification_descriptor_t *descriptor = alert_notification_descriptor( a_type );
-    return ( NULL != descriptor ) ? descriptor->default_character : ALERT_MORSE_DEFAULT_CHARACTER;
+    return notification_default_character( a_type );
 }
 
 rfscout_alert_mode_t alert_mode( void )
@@ -224,11 +241,11 @@ void alert_set_mode( rfscout_alert_mode_t a_mode )
     }
 
     mode = a_mode;
-    if( RFSCOUT_ALERT_OFF == mode )
-    {
-        audio_output_cancel_pending();
-    }
     (void)xSemaphoreGive( alert_mutex );
+    if( RFSCOUT_ALERT_OFF == a_mode )
+    {
+        audio_output_cancel_notifications_pending();
+    }
 }
 
 uint8_t alert_volume_percent( void )
@@ -283,7 +300,6 @@ bool alert_set_morse_character( char a_character )
     {
         return false;
     }
-
     morse_character = (char)toupper( (unsigned char)a_character );
     (void)xSemaphoreGive( alert_mutex );
     return true;
@@ -300,8 +316,12 @@ bool alert_request_character( char a_character )
     {
         return false;
     }
-
-    const bool queued = request_locked( a_character );
+    const bool queued = request_generic_locked( a_character );
     (void)xSemaphoreGive( alert_mutex );
     return queued;
+}
+
+bool alert_request_notification( rfscout_notification_type_t a_type )
+{
+    return notification_emit( a_type );
 }
