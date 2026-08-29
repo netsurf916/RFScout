@@ -19,6 +19,7 @@
 #include "storage.h"
 #include "ui_chrome.h"
 #include "ui_layout.h"
+#include "ui_theme.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -26,23 +27,24 @@
 
 #define DEVICE_ITEM_BACK 0U
 #define DEVICE_ITEM_BRIGHTNESS 1U
-#define DEVICE_ITEM_CLOCK_FORMAT 2U
-#define DEVICE_ITEM_TIMEZONE 3U
-#define DEVICE_ITEM_STARTUP 4U
-#define DEVICE_ITEM_YEAR 5U
-#define DEVICE_ITEM_MONTH 6U
-#define DEVICE_ITEM_DAY 7U
-#define DEVICE_ITEM_HOUR 8U
-#define DEVICE_ITEM_MINUTE 9U
-#define DEVICE_ITEM_WIFI 10U
-#define DEVICE_ITEM_CC1101 11U
-#define DEVICE_ITEM_NRF24 12U
-#define DEVICE_ITEM_AUDIO 13U
-#define DEVICE_ITEM_THERMAL 14U
-#define DEVICE_ITEM_LOGGING 15U
-#define DEVICE_ITEM_ALERT_MODE 16U
-#define DEVICE_ITEM_ALERT_VOLUME 17U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 18U
+#define DEVICE_ITEM_THEME 2U
+#define DEVICE_ITEM_CLOCK_FORMAT 3U
+#define DEVICE_ITEM_TIMEZONE 4U
+#define DEVICE_ITEM_STARTUP 5U
+#define DEVICE_ITEM_YEAR 6U
+#define DEVICE_ITEM_MONTH 7U
+#define DEVICE_ITEM_DAY 8U
+#define DEVICE_ITEM_HOUR 9U
+#define DEVICE_ITEM_MINUTE 10U
+#define DEVICE_ITEM_WIFI 11U
+#define DEVICE_ITEM_CC1101 12U
+#define DEVICE_ITEM_NRF24 13U
+#define DEVICE_ITEM_AUDIO 14U
+#define DEVICE_ITEM_THERMAL 15U
+#define DEVICE_ITEM_LOGGING 16U
+#define DEVICE_ITEM_ALERT_MODE 17U
+#define DEVICE_ITEM_ALERT_VOLUME 18U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 19U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
 #define DEVICE_ITEM_SAVE ( DEVICE_ITEM_NOTIFICATION_LAST + 1U )
@@ -51,12 +53,12 @@
 #define DEVICE_LOG_SHUTDOWN_TIMEOUT_MS 3000U
 #define DEVICE_ALERT_VOLUME_STEP 10
 
-#define COLOR_BACKGROUND 0x0000U
-#define COLOR_TEXT 0xBDF7U
-#define COLOR_SELECTED 0xFFFFU
-#define COLOR_DIM 0x7BEFU
-#define COLOR_ERROR 0xF800U
-#define COLOR_ACCENT 0xFFE0U
+#define COLOR_BACKGROUND ( ui_theme_get()->background )
+#define COLOR_TEXT ( ui_theme_get()->text )
+#define COLOR_SELECTED ( ui_theme_get()->selected )
+#define COLOR_DIM ( ui_theme_get()->secondary )
+#define COLOR_ERROR ( ui_theme_get()->error )
+#define COLOR_ACCENT ( ui_theme_get()->accent )
 
 static unsigned selected_item;
 static bool editing;
@@ -174,6 +176,8 @@ static const char *item_label( unsigned a_item )
             return "Back";
         case DEVICE_ITEM_BRIGHTNESS:
             return "Brightness";
+        case DEVICE_ITEM_THEME:
+            return "Theme";
         case DEVICE_ITEM_CLOCK_FORMAT:
             return "Clock format";
         case DEVICE_ITEM_TIMEZONE:
@@ -228,6 +232,9 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
     {
         case DEVICE_ITEM_BRIGHTNESS:
             snprintf( a_value, a_capacity, "%u%%", (unsigned)config->brightness_percent );
+            break;
+        case DEVICE_ITEM_THEME:
+            snprintf( a_value, a_capacity, "%s", ui_theme_display_name( ui_theme_current() ) );
             break;
         case DEVICE_ITEM_CLOCK_FORMAT:
             snprintf( a_value, a_capacity, "%s", config->clock_24h ? "24h" : "12h" );
@@ -409,6 +416,34 @@ static void toggle_app( rfscout_app_id_t a_app, const char *a_key )
     const bool old_value = device_config_app_enabled( a_app );
     (void)device_config_set_app_enabled( a_app, !old_value );
     log_config_change( a_key, on_off( old_value ), on_off( !old_value ) );
+}
+
+/** @brief Rotate among display themes and persist the selection immediately. */
+static void adjust_theme( int a_delta )
+{
+    const rfscout_theme_id_t old_theme = ui_theme_current();
+    int theme = (int)old_theme + ( ( a_delta > 0 ) ? 1 : -1 );
+    if( theme < 0 )
+    {
+        theme = RFSCOUT_THEME_COUNT - 1;
+    }
+    if( theme >= RFSCOUT_THEME_COUNT )
+    {
+        theme = 0;
+    }
+
+    const rfscout_theme_id_t new_theme = (rfscout_theme_id_t)theme;
+    if( ESP_OK == ui_theme_set( new_theme ) )
+    {
+        log_config_change( "display.theme",
+                           ui_theme_display_name( old_theme ),
+                           ui_theme_display_name( new_theme ) );
+        save_error = false;
+    }
+    else
+    {
+        save_error = true;
+    }
 }
 
 /** @brief Rotate among startup applications and audit the preference change. */
@@ -687,6 +722,10 @@ static void adjust_selected( int a_delta )
             snprintf( new_text, sizeof( new_text ), "%u", (unsigned)value );
             log_config_change( "display.brightness", old_text, new_text );
         }
+    }
+    else if( DEVICE_ITEM_THEME == selected_item )
+    {
+        adjust_theme( a_delta );
     }
     else if( DEVICE_ITEM_CLOCK_FORMAT == selected_item )
     {

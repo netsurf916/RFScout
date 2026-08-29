@@ -12,6 +12,7 @@
 #include "recorder.h"
 #include "ui_chrome.h"
 #include "ui_layout.h"
+#include "ui_theme.h"
 
 #include "esp_timer.h"
 
@@ -95,6 +96,7 @@ void audio_view_render( const uint8_t *a_current, const uint8_t *a_peak )
 
 void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
 {
+    const ui_theme_palette_t *theme = ui_theme_get();
     const rfscout_recorder_state_t state = recorder_state();
     display_clear( BG );
     ui_chrome_draw( "RECORDER", SUBDUED );
@@ -111,7 +113,7 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
         display_draw_text( UI_LAYOUT_LEFT_X,
                            108,
                            a_unused ? "  CANCEL   > DELETE" : "> CANCEL     DELETE",
-                           a_unused ? RED : YELLOW,
+                           a_unused ? RED : theme->selected,
                            1U );
         display_draw_text(
             UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN: CHOOSE  CENTER: CONFIRM", SUBDUED, 1U );
@@ -168,7 +170,7 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
             const int x = graph_x + (int)( i * graph_w / count );
             const int h = (int)bins[ i ] * graph_h / 100;
             if( h > 0 )
-                display_fill_rect( x, graph_y + graph_h - h, 2, h, GREEN );
+                display_fill_rect( x, graph_y + graph_h - h, 2, h, theme->graph_primary );
         }
         display_draw_text( UI_LAYOUT_LEFT_X, 130, "TURN: INPUT GAIN", SUBDUED, 1U );
         display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: EXIT", SUBDUED, 1U );
@@ -207,7 +209,7 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
 
     if( RFSCOUT_RECORDER_NO_STORAGE == state )
     {
-        display_draw_text( UI_LAYOUT_LEFT_X, 44, "> BACK", YELLOW, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 44, "> BACK", theme->selected, 1U );
         display_draw_text( UI_LAYOUT_LEFT_X, 74, "NO SD CARD", RED, 2U );
         display_draw_text( UI_LAYOUT_LEFT_X, 110, "/sdcard/audio unavailable", DIM, 1U );
         display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: BACK", SUBDUED, 1U );
@@ -253,7 +255,7 @@ void audio_view_menu( unsigned a_selected, bool a_editing, bool a_unused )
         display_draw_text( UI_LAYOUT_LEFT_X,
                            UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT,
                            line,
-                           item == a_selected ? YELLOW : TEXT,
+                           item == a_selected ? theme->selected : TEXT,
                            1U );
     }
     display_draw_text(

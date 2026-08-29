@@ -22,6 +22,7 @@
 #include "storage.h"
 #include "surveillance.h"
 #include "surveillance_history.h"
+#include "ui_theme.h"
 
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -177,6 +178,15 @@ void app_main( void )
                   "configuration persistence unavailable; using runtime defaults: %s",
                   esp_err_to_name( result ) );
     }
+
+    result = ui_theme_init();
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG,
+                  "display theme persistence unavailable; using Indoor: %s",
+                  esp_err_to_name( result ) );
+    }
+
     alert_set_mode( device_config_get()->alert_mode );
     (void)alert_set_volume_percent( device_config_get()->alert_volume_percent );
 

@@ -12,6 +12,7 @@
 #include "nrf24_activity.h"
 #include "ui_chrome.h"
 #include "ui_layout.h"
+#include "ui_theme.h"
 
 #include <stdio.h>
 
@@ -22,8 +23,6 @@
 #define YELLOW 0xFFE0U
 #define RED 0xF800U
 #define LIMIT 0xFD20U
-#define GRAPH 0x03E0U
-#define PEAK 0x07FFU
 #define APP_COLUMN_DIVIDER_X 198
 #define APP_RIGHT_COLUMN_X 205
 #define APP_SUMMARY_Y 30
@@ -53,6 +52,7 @@ void radio_app_view_cc1101_spectrum( const uint8_t *a_current,
                                      const cc1101_fingerprint_t *a_devices,
                                      size_t a_device_count )
 {
+    const ui_theme_palette_t *theme = ui_theme_get();
     display_clear( BG );
     ui_chrome_draw( "CC1101", SUBDUED );
 
@@ -86,7 +86,8 @@ void radio_app_view_cc1101_spectrum( const uint8_t *a_current,
 
             if( height > 0 )
             {
-                display_fill_rect( x, APP_GRAPH_Y + APP_GRAPH_HEIGHT - height, 2, height, GRAPH );
+                display_fill_rect(
+                    x, APP_GRAPH_Y + APP_GRAPH_HEIGHT - height, 2, height, theme->graph_primary );
             }
 
             if( a_peak[ i ] > 0U )
@@ -97,7 +98,7 @@ void radio_app_view_cc1101_spectrum( const uint8_t *a_current,
                 {
                     peak_y = APP_GRAPH_Y;
                 }
-                display_fill_rect( x, peak_y, 2, 2, PEAK );
+                display_fill_rect( x, peak_y, 2, 2, theme->graph_peak );
             }
         }
     }
@@ -140,6 +141,7 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
 {
     static const char *labels[] = {
         "BACK", "PROFILE", "LOW", "HIGH", "STEP", "PEAK HOLD", "RESET COUNTS" };
+    const ui_theme_palette_t *theme = ui_theme_get();
 
     display_clear( BG );
     ui_chrome_draw( "CC1101 SETTINGS", SUBDUED );
@@ -150,7 +152,8 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
         const int y = UI_LAYOUT_MENU_START_Y + (int)i * 18;
         const bool active = ( i == a_selected );
         const bool action = ( 0U == i ) || ( 6U == i );
-        const uint16_t accent = ( active && a_editing && a_limit_reached ) ? LIMIT : YELLOW;
+        const uint16_t accent =
+            ( active && a_editing && a_limit_reached ) ? theme->warning : theme->selected;
         const char *marker = " ";
 
         if( active )
@@ -200,7 +203,7 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
             }
             else
             {
-                display_draw_text( 130, y, value, active ? YELLOW : DIM, 1U );
+                display_draw_text( 130, y, value, active ? theme->selected : DIM, 1U );
             }
         }
     }
@@ -223,6 +226,7 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
                                     const nrf24_fingerprint_t *a_devices,
                                     size_t a_device_count )
 {
+    const ui_theme_palette_t *theme = ui_theme_get();
     display_clear( BG );
     ui_chrome_draw( "nRF24", SUBDUED );
 
@@ -265,7 +269,8 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
 
             if( height > 0 )
             {
-                display_fill_rect( x, APP_GRAPH_Y + APP_GRAPH_HEIGHT - height, 2, height, GRAPH );
+                display_fill_rect(
+                    x, APP_GRAPH_Y + APP_GRAPH_HEIGHT - height, 2, height, theme->graph_primary );
             }
 
             if( a_slow[ channel ] > 0U )
@@ -276,7 +281,7 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
                 {
                     peak_y = APP_GRAPH_Y;
                 }
-                display_fill_rect( x, peak_y, 2, 2, PEAK );
+                display_fill_rect( x, peak_y, 2, 2, theme->graph_peak );
             }
         }
     }
@@ -320,6 +325,7 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
 {
     static const char *labels[] = {
         "BACK", "LOW CH", "HIGH CH", "DWELL", "PEAK HOLD", "RESET COUNTS" };
+    const ui_theme_palette_t *theme = ui_theme_get();
 
     display_clear( BG );
     ui_chrome_draw( "nRF24 SETTINGS", SUBDUED );
@@ -337,7 +343,7 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
             marker = action ? ">" : ( a_editing ? "*" : ">" );
         }
 
-        display_draw_text( UI_LAYOUT_LEFT_X, y, marker, active ? YELLOW : DIM, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, y, marker, active ? theme->selected : DIM, 1U );
         display_draw_text( UI_LAYOUT_LABEL_X, y, labels[ i ], active ? TEXT : DIM, 1U );
 
         value[ 0 ] = '\0';
@@ -370,12 +376,12 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
         {
             if( active && a_editing )
             {
-                display_fill_rect( 126, y - 4, 174, 18, YELLOW );
+                display_fill_rect( 126, y - 4, 174, 18, theme->selected );
                 display_draw_text( 130, y, value, BG, 1U );
             }
             else
             {
-                display_draw_text( 130, y, value, active ? YELLOW : DIM, 1U );
+                display_draw_text( 130, y, value, active ? theme->selected : DIM, 1U );
             }
         }
     }
@@ -383,7 +389,7 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
     display_draw_text( UI_LAYOUT_LEFT_X,
                        UI_LAYOUT_FOOTER_Y,
                        a_editing ? "TURN: CHANGE  CENTER: DONE" : "TURN: SELECT CENTER: ENTER",
-                       a_editing ? YELLOW : SUBDUED,
+                       a_editing ? theme->selected : SUBDUED,
                        1U );
     (void)display_present();
 }
