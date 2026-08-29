@@ -9,6 +9,7 @@
 #include "app_logging.h"
 #include "app_manager.h"
 #include "battery.h"
+#include "battery_indicator.h"
 #include "ble_monitor.h"
 #include "device_config.h"
 #include "device_time.h"
@@ -228,6 +229,7 @@ void app_main( void )
         observation_store_housekeeping();
         app_manager_poll();
         status_bar_poll();
+        battery_indicator_poll();
 
         /* Presentation remains periodic for every app, including static Home. The display layer
          * skips the LCD transfer when neither framebuffer nor overlay state was invalidated. */
