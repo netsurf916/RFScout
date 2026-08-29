@@ -182,7 +182,9 @@ esp_err_t thermal_view_render( void )
     update_display_range();
 
     /* Render one horizontal line at a time. This is bilinear interpolation of
-       the native 32x24 measurements, not additional sensor resolution. */
+       the native 32x24 measurements, not additional sensor resolution. The
+       heat-map pixels are literal sensor imagery and intentionally bypass UI
+       theme translation. */
     for( int y = 0; y < THERMAL_IMAGE_HEIGHT; ++y )
     {
         const uint32_t source_y =
@@ -192,11 +194,11 @@ esp_err_t thermal_view_render( void )
             const uint32_t source_x =
                 (uint32_t)x * ( MLX90640_WIDTH - 1U ) * 256U / ( THERMAL_IMAGE_WIDTH - 1U );
             const int32_t value = interpolate( source_x, source_y );
-            display_fill_rect( THERMAL_IMAGE_X + x,
-                               THERMAL_IMAGE_Y + y,
-                               1,
-                               1,
-                               palette( value, display_minimum, display_maximum ) );
+            display_fill_rect_raw( THERMAL_IMAGE_X + x,
+                                   THERMAL_IMAGE_Y + y,
+                                   1,
+                                   1,
+                                   palette( value, display_minimum, display_maximum ) );
         }
     }
 
