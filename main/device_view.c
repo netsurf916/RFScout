@@ -45,10 +45,13 @@
 #define DEVICE_ITEM_LOGGING 16U
 #define DEVICE_ITEM_ALERT_MODE 17U
 #define DEVICE_ITEM_ALERT_VOLUME 18U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 19U
+#define DEVICE_ITEM_SAVE 19U
+/* Per-detection Morse mappings are app-owned and intentionally live beyond the
+   globally reachable Device-settings item range. Keep these constants only for
+   compatibility with shared formatting/configuration helpers below. */
+#define DEVICE_ITEM_NOTIFICATION_FIRST 20U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
-#define DEVICE_ITEM_SAVE ( DEVICE_ITEM_NOTIFICATION_LAST + 1U )
 #define DEVICE_ITEM_COUNT ( DEVICE_ITEM_SAVE + 1U )
 #define DEVICE_ROWS_PER_PAGE 6U
 #define DEVICE_LOG_SHUTDOWN_TIMEOUT_MS 3000U
