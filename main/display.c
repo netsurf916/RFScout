@@ -9,6 +9,7 @@
 
 #include "board.h"
 #include "board_spi.h"
+#include "ui_theme.h"
 
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
@@ -62,7 +63,44 @@ static void wait_for_transfer( void )
     }
 }
 
-/** @brief Write one scaled glyph to the local framebuffer. */
+/** @brief Validate a framebuffer rectangle that must lie fully on-screen. */
+static bool valid_rect( int a_x, int a_y, int a_width, int a_height )
+{
+    return ( a_x >= 0 ) && ( a_y >= 0 ) && ( a_width > 0 ) && ( a_height > 0 ) &&
+           ( a_x + a_width <= RFSCOUT_DISPLAY_WIDTH ) &&
+           ( a_y + a_height <= RFSCOUT_DISPLAY_HEIGHT );
+}
+
+void display_fill_rect_raw( int a_x, int a_y, int a_width, int a_height, uint16_t a_color )
+{
+    if( ( NULL == framebuffer ) || ( a_width <= 0 ) || ( a_height <= 0 ) )
+    {
+        return;
+    }
+
+    int x0 = ( a_x < 0 ) ? 0 : a_x;
+    int y0 = ( a_y < 0 ) ? 0 : a_y;
+    int x1 = a_x + a_width;
+    int y1 = a_y + a_height;
+    if( x1 > RFSCOUT_DISPLAY_WIDTH )
+    {
+        x1 = RFSCOUT_DISPLAY_WIDTH;
+    }
+    if( y1 > RFSCOUT_DISPLAY_HEIGHT )
+    {
+        y1 = RFSCOUT_DISPLAY_HEIGHT;
+    }
+
+    for( int y = y0; y < y1; ++y )
+    {
+        for( int x = x0; x < x1; ++x )
+        {
+            framebuffer[ ( y * RFSCOUT_DISPLAY_WIDTH ) + x ] = a_color;
+        }
+    }
+}
+
+/** @brief Write one scaled glyph to the local framebuffer using an already-resolved color. */
 static void draw_character( int a_x, int a_y, char a_character, uint16_t a_color, unsigned a_scale )
 {
     if( ( a_character < 32 ) || ( a_character > 126 ) )
@@ -83,21 +121,13 @@ static void draw_character( int a_x, int a_y, char a_character, uint16_t a_color
             {
                 continue;
             }
-            display_fill_rect( a_x + ( x * (int)a_scale ),
-                               a_y + ( y * (int)a_scale ),
-                               (int)a_scale,
-                               (int)a_scale,
-                               a_color );
+            display_fill_rect_raw( a_x + ( x * (int)a_scale ),
+                                   a_y + ( y * (int)a_scale ),
+                                   (int)a_scale,
+                                   (int)a_scale,
+                                   a_color );
         }
     }
-}
-
-/** @brief Validate a framebuffer rectangle that must lie fully on-screen. */
-static bool valid_rect( int a_x, int a_y, int a_width, int a_height )
-{
-    return ( a_x >= 0 ) && ( a_y >= 0 ) && ( a_width > 0 ) && ( a_height > 0 ) &&
-           ( a_x + a_width <= RFSCOUT_DISPLAY_WIDTH ) &&
-           ( a_y + a_height <= RFSCOUT_DISPLAY_HEIGHT );
 }
 
 esp_err_t display_init( void )
@@ -158,7 +188,7 @@ esp_err_t display_init( void )
     ESP_ERROR_CHECK( esp_lcd_panel_invert_color( panel, true ) );
     ESP_ERROR_CHECK( esp_lcd_panel_disp_on_off( panel, true ) );
 
-    display_clear( 0x0000 );
+    display_clear( 0x0000U );
     ESP_ERROR_CHECK( display_flush() );
     gpio_set_level( RFSCOUT_BOARD_DISPLAY_BACKLIGHT_PIN, 1 );
     ESP_LOGI(
@@ -172,39 +202,17 @@ void display_clear( uint16_t a_color )
     {
         return;
     }
+    const uint16_t color = ui_theme_resolve_legacy_color( a_color );
     for( size_t i = 0; i < DISPLAY_PIXEL_COUNT; ++i )
     {
-        framebuffer[ i ] = a_color;
+        framebuffer[ i ] = color;
     }
 }
 
 void display_fill_rect( int a_x, int a_y, int a_width, int a_height, uint16_t a_color )
 {
-    if( ( NULL == framebuffer ) || ( a_width <= 0 ) || ( a_height <= 0 ) )
-    {
-        return;
-    }
-
-    int x0 = ( a_x < 0 ) ? 0 : a_x;
-    int y0 = ( a_y < 0 ) ? 0 : a_y;
-    int x1 = a_x + a_width;
-    int y1 = a_y + a_height;
-    if( x1 > RFSCOUT_DISPLAY_WIDTH )
-    {
-        x1 = RFSCOUT_DISPLAY_WIDTH;
-    }
-    if( y1 > RFSCOUT_DISPLAY_HEIGHT )
-    {
-        y1 = RFSCOUT_DISPLAY_HEIGHT;
-    }
-
-    for( int y = y0; y < y1; ++y )
-    {
-        for( int x = x0; x < x1; ++x )
-        {
-            framebuffer[ ( y * RFSCOUT_DISPLAY_WIDTH ) + x ] = a_color;
-        }
-    }
+    display_fill_rect_raw(
+        a_x, a_y, a_width, a_height, ui_theme_resolve_legacy_color( a_color ) );
 }
 
 void display_draw_text( int a_x, int a_y, const char *a_text, uint16_t a_color, unsigned a_scale )
@@ -218,10 +226,11 @@ void display_draw_text( int a_x, int a_y, const char *a_text, uint16_t a_color, 
         a_scale = 1U;
     }
 
+    const uint16_t color = ui_theme_resolve_legacy_color( a_color );
     const int advance = 6 * (int)a_scale;
     while( '\0' != *a_text )
     {
-        draw_character( a_x, a_y, *a_text++, a_color, a_scale );
+        draw_character( a_x, a_y, *a_text++, color, a_scale );
         a_x += advance;
         if( a_x >= RFSCOUT_DISPLAY_WIDTH )
         {
