@@ -70,6 +70,17 @@ static bool prepare_storage_for_power_state( bool a_checkpoint_time )
         return false;
     }
 
+    if( !a_checkpoint_time )
+    {
+        const esp_err_t save_result = device_config_save_if_dirty();
+        if( ESP_OK != save_result )
+        {
+            ESP_LOGW(
+                TAG, "configuration save before sleep failed: %s", esp_err_to_name( save_result ) );
+            return false;
+        }
+    }
+
     if( a_checkpoint_time )
     {
         const esp_err_t checkpoint = device_time_checkpoint();

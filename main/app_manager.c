@@ -1229,10 +1229,7 @@ esp_err_t app_manager_init( void )
 {
     active_app = device_config_startup_app();
     rfscout_session_state_t restored_session;
-    if( session_state_restore( &restored_session ) && app_available( restored_session.active_app ) )
-    {
-        active_app = restored_session.active_app;
-    }
+    const bool have_restored_session = session_state_restore( &restored_session );
     last_app_refresh_us = 0;
     last_thermal_probe_us = esp_timer_get_time();
     last_radio_retry_us = 0;
@@ -1266,9 +1263,13 @@ esp_err_t app_manager_init( void )
         return result;
     }
     (void)mlx90640_init();
+    if( have_restored_session && app_available( restored_session.active_app ) )
+    {
+        active_app = restored_session.active_app;
+    }
     if( !app_available( active_app ) )
     {
-        ESP_LOGW( TAG, "configured startup app unavailable; using Home" );
+        ESP_LOGW( TAG, "configured or retained app unavailable; using Home" );
         active_app = RFSCOUT_APP_DEVICE;
     }
     if( RFSCOUT_APP_DEVICE == active_app )

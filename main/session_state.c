@@ -10,6 +10,7 @@
 #include "esp_attr.h"
 #include "esp_sleep.h"
 
+#include <stddef.h>
 #include <stdint.h>
 
 #define SESSION_STATE_MAGIC 0x52534653U
@@ -29,8 +30,7 @@ static RTC_DATA_ATTR retained_session_state_t retained_state;
 static uint32_t session_checksum( const retained_session_state_t *a_state )
 {
     return a_state->magic ^ ( (uint32_t)a_state->version << 16U ) ^
-           ( (uint32_t)a_state->active_app << 8U ) ^ (uint32_t)a_state->input_locked ^
-           0xA5C35A3CU;
+           ( (uint32_t)a_state->active_app << 8U ) ^ (uint32_t)a_state->input_locked ^ 0xA5C35A3CU;
 }
 
 void session_state_store( rfscout_app_id_t a_active_app, bool a_input_locked )

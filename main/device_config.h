@@ -118,5 +118,7 @@ bool device_config_saved_time( int64_t *a_epoch, const char **a_source );
  * @param a_time_source Stable source token for the supplied epoch.
  */
 esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a_time_source );
+/** @brief Persist runtime preferences only when a setter has changed canonical configuration. */
+esp_err_t device_config_save_if_dirty( void );
 
 #endif // _RFSCOUT_DEVICE_CONFIG_H_
