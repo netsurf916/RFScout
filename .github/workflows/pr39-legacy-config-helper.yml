@@ -1,0 +1,131 @@
+name: PR39 legacy config helper
+
+on:
+  push:
+    branches:
+      - feature/semantic-events-audio-policy
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/semantic-events-audio-policy
+          fetch-depth: 0
+      - name: Finish legacy migration behavior
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'expected text not found in {path}: {old[:100]!r}')
+              p.write_text(text.replace(old, new, 1))
+
+          replace('main/device_config.c', '#include "esp_log.h"\n', '#include "esp_log.h"\n#include "nvs.h"\n')
+
+          marker = '''/** @brief Apply validated display preference overrides. */
+          static void load_display'''
+          legacy = '''/** @brief Import the pre-v2 display theme that was stored independently in NVS. */
+          static void load_legacy_theme( void )
+          {
+              nvs_handle_t handle;
+              if( ESP_OK != nvs_open( "rfscout_ui", NVS_READONLY, &handle ) )
+              {
+                  return;
+              }
+
+              char stored[ 16 ];
+              size_t stored_length = sizeof( stored );
+              const esp_err_t result = nvs_get_str( handle, "theme", stored, &stored_length );
+              nvs_close( handle );
+              if( ESP_OK != result )
+              {
+                  return;
+              }
+
+              rfscout_theme_id_t parsed;
+              if( ui_theme_from_config_name( stored, &parsed ) )
+              {
+                  config.theme = parsed;
+              }
+          }
+
+          /** @brief Apply validated display preference overrides. */
+          static void load_display'''
+          replace('main/device_config.c', marker, legacy)
+
+          replace('main/device_config.c', '    load_display( root );\n',
+                  '    if( 1 == version->valueint )\n    {\n        /* v1 kept display theme in NVS; seed that legacy value before JSON overrides. */\n        load_legacy_theme();\n    }\n    load_display( root );\n')
+
+          # Save dirty user preferences before stopping storage users. A failed save then leaves
+          # the running session intact rather than cancelling sleep after logging was already stopped.
+          old = '''    if( !recorder_prepare_storage_shutdown( POWER_RECORDER_STOP_TIMEOUT_MS ) )
+              {
+                  ESP_LOGW( TAG, "storage remains mounted because Recorder did not stop" );
+                  return false;
+              }
+
+              if( !log_writer_shutdown( POWER_LOG_FLUSH_TIMEOUT_MS ) )
+              {
+                  ESP_LOGW( TAG, "storage remains mounted because logger did not stop" );
+                  return false;
+              }
+
+              if( !a_checkpoint_time )
+              {
+                  const esp_err_t save_result = device_config_save_if_dirty();
+                  if( ESP_OK != save_result )
+                  {
+                      ESP_LOGW(
+                          TAG, "configuration save before sleep failed: %s", esp_err_to_name( save_result ) );
+                      return false;
+                  }
+              }
+'''
+          new = '''    if( !a_checkpoint_time )
+              {
+                  const esp_err_t save_result = device_config_save_if_dirty();
+                  if( ESP_OK != save_result )
+                  {
+                      ESP_LOGW(
+                          TAG, "configuration save before sleep failed: %s", esp_err_to_name( save_result ) );
+                      return false;
+                  }
+              }
+
+              if( !recorder_prepare_storage_shutdown( POWER_RECORDER_STOP_TIMEOUT_MS ) )
+              {
+                  ESP_LOGW( TAG, "storage remains mounted because Recorder did not stop" );
+                  return false;
+              }
+
+              if( !log_writer_shutdown( POWER_LOG_FLUSH_TIMEOUT_MS ) )
+              {
+                  ESP_LOGW( TAG, "storage remains mounted because logger did not stop" );
+                  return false;
+              }
+'''
+          replace('main/power.c', old, new)
+
+          Path('.github/workflows/pr39-legacy-config-helper.yml').unlink()
+          PY
+      - name: Install clang-format 18
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-format-18
+      - name: Format
+        run: python3 tools/check_format.py --all --fix
+      - name: Commit migration fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Preserve legacy theme and flush config safely"
+          git push origin HEAD:feature/semantic-events-audio-policy
