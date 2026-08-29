@@ -2,10 +2,12 @@ set(HOME_LOGO_SOURCE "${CMAKE_CURRENT_LIST_DIR}/../assets/logo.png")
 set(HOME_LOGO_GENERATOR "${CMAKE_CURRENT_LIST_DIR}/../tools/generate_home_logo.py")
 set(HOME_LOGO_HEADER "${CMAKE_CURRENT_BINARY_DIR}/home_logo_bitmap.h")
 
-# Board targets are selected at configure time. Only the selected board include
-# path and, as additional boards arrive, its board-specific sources are compiled
-# into a firmware image.
-if(CONFIG_RFSCOUT_BOARD_TEMBED_CC1101_PLUS)
+# Board targets are selected during the normal configure pass. ESP-IDF also
+# evaluates component CMake files in script mode while discovering component
+# requirements; project Kconfig values are not available during that pass, so
+# use the sole current board as a discovery placeholder and validate the actual
+# selection once normal configuration is active.
+if(CONFIG_RFSCOUT_BOARD_TEMBED_CC1101_PLUS OR CMAKE_SCRIPT_MODE_FILE)
     set(RFSCOUT_BOARD_DIR "${CMAKE_CURRENT_LIST_DIR}/boards/tembed_cc1101_plus")
 else()
     message(FATAL_ERROR "No supported RFScout board target selected")
