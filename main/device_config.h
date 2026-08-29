@@ -1,6 +1,6 @@
 /**
     device_config.h : RFScout persistent device configuration
-    Description: Defines compiled defaults, SD-backed preferences, application and notification policy.
+    Description: Defines compiled defaults, SD-backed JSON preferences, application enablement, and notifications.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -36,7 +36,6 @@ typedef struct
 {
     uint8_t brightness_percent;
     bool apps_enabled[ RFSCOUT_APP_COUNT ];
-    bool app_notifications_enabled[ RFSCOUT_APP_COUNT ];
     rfscout_app_id_t startup_app;
     bool logging_enabled;
     bool clock_24h;
@@ -61,12 +60,6 @@ esp_err_t device_config_set_brightness( uint8_t a_percent );
 esp_err_t device_config_set_clock_24h( bool a_enabled );
 esp_err_t device_config_set_alert_mode( rfscout_alert_mode_t a_mode );
 esp_err_t device_config_set_alert_volume( uint8_t a_percent );
-
-/** @brief Return whether notifications from one application are allowed. */
-bool device_config_app_notifications_enabled( rfscout_app_id_t a_app );
-/** @brief Change the per-application notification gate without affecting application audio. */
-esp_err_t device_config_set_app_notifications_enabled( rfscout_app_id_t a_app, bool a_enabled );
-
 esp_err_t device_config_set_recorder_volume( uint8_t a_percent );
 esp_err_t device_config_set_recorder_input_gain( uint8_t a_gain_db );
 char device_config_notification_character( rfscout_notification_type_t a_type );
