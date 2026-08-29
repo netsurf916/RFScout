@@ -75,7 +75,12 @@ esp_err_t display_present( void )
     }
     if( NULL == overlay_backup )
     {
-        return display_flush();
+        const esp_err_t result = display_flush();
+        if( ESP_OK == result )
+        {
+            display_invalidate();
+        }
+        return result;
     }
 
     const esp_err_t saved = display_read_rect( POWER_OVERLAY_X,
