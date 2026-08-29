@@ -7,10 +7,17 @@
 
 #include "ui_theme.h"
 
-#include "device_config.h"
+#include "esp_log.h"
+#include "nvs.h"
 
 #include <stddef.h>
 #include <strings.h>
+
+#define THEME_NVS_NAMESPACE "rfscout_ui"
+#define THEME_NVS_KEY "theme"
+
+static const char *TAG = "ui_theme";
+static rfscout_theme_id_t active_theme = RFSCOUT_THEME_INDOOR;
 
 static const ui_theme_palette_t palettes[ RFSCOUT_THEME_COUNT ] = {
     [ RFSCOUT_THEME_INDOOR ] = {
@@ -63,6 +70,71 @@ static const ui_theme_palette_t palettes[ RFSCOUT_THEME_COUNT ] = {
     },
 };
 
+esp_err_t ui_theme_init( void )
+{
+    nvs_handle_t handle;
+    esp_err_t result = nvs_open( THEME_NVS_NAMESPACE, NVS_READONLY, &handle );
+    if( ESP_ERR_NVS_NOT_FOUND == result )
+    {
+        active_theme = RFSCOUT_THEME_INDOOR;
+        return ESP_OK;
+    }
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
+    uint8_t stored = (uint8_t)RFSCOUT_THEME_INDOOR;
+    result = nvs_get_u8( handle, THEME_NVS_KEY, &stored );
+    nvs_close( handle );
+    if( ESP_ERR_NVS_NOT_FOUND == result )
+    {
+        active_theme = RFSCOUT_THEME_INDOOR;
+        return ESP_OK;
+    }
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
+    active_theme = ( stored < RFSCOUT_THEME_COUNT ) ? (rfscout_theme_id_t)stored
+                                                     : RFSCOUT_THEME_INDOOR;
+    return ESP_OK;
+}
+
+esp_err_t ui_theme_set( rfscout_theme_id_t a_theme )
+{
+    if( a_theme >= RFSCOUT_THEME_COUNT )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    nvs_handle_t handle;
+    esp_err_t result = nvs_open( THEME_NVS_NAMESPACE, NVS_READWRITE, &handle );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
+    result = nvs_set_u8( handle, THEME_NVS_KEY, (uint8_t)a_theme );
+    if( ESP_OK == result )
+    {
+        result = nvs_commit( handle );
+    }
+    nvs_close( handle );
+    if( ESP_OK == result )
+    {
+        active_theme = a_theme;
+        ESP_LOGI( TAG, "display theme=%s", ui_theme_config_name( a_theme ) );
+    }
+    return result;
+}
+
+rfscout_theme_id_t ui_theme_current( void )
+{
+    return active_theme;
+}
+
 const ui_theme_palette_t *ui_theme_palette( rfscout_theme_id_t a_theme )
 {
     if( a_theme >= RFSCOUT_THEME_COUNT )
@@ -74,8 +146,7 @@ const ui_theme_palette_t *ui_theme_palette( rfscout_theme_id_t a_theme )
 
 const ui_theme_palette_t *ui_theme_get( void )
 {
-    const device_config_t *config = device_config_get();
-    return ui_theme_palette( ( NULL != config ) ? config->display_theme : RFSCOUT_THEME_INDOOR );
+    return ui_theme_palette( active_theme );
 }
 
 const char *ui_theme_config_name( rfscout_theme_id_t a_theme )
