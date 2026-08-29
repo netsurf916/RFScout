@@ -10,6 +10,7 @@
 #ifndef _RFSCOUT_UI_THEME_H_
 #define _RFSCOUT_UI_THEME_H_
 
+#include <stdbool.h>
 #include <stdint.h>
 
 typedef enum
