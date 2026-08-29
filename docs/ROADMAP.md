@@ -109,9 +109,25 @@ PR #28 intentionally recorded the architecture goal but did **not** implement a 
 - Persist a preferred startup target as backward-compatible schema-v1 `apps.startup` configuration.
 - Allow Home, WiFi/BT, CC1101, nRF24, Recorder, or Thermal as the preferred startup target.
 - Fall back to Home for the current boot when the configured target is disabled or unavailable without erasing the saved preference.
-- Draw LCD Home branding procedurally rather than embedding a second large bitmap.
+- Generate compact indexed LCD Home branding from canonical `assets/logo.png` artwork at build time.
 - Reuse `assets/logo.png` and the RFScout orange/white identity in the GitHub Pages browser flasher.
 - Preserve established per-application lifecycle and initialization behavior while adding startup selection.
+
+### Global display themes
+
+**Status:** Implemented — PR #33
+
+- Centralize semantic UI color roles rather than allowing each application to independently define presentation colors.
+- Add persistent Indoor, Outdoor, and Night themes.
+- Keep Indoor aligned with the orange/white RFScout identity.
+- Prioritize high daylight contrast in Outdoor instead of carrying forward the earlier subdued-secondary-color direction.
+- Shift Night toward red/orange presentation while preserving state distinctions.
+- Add Theme beside Brightness in Device Settings with immediate application and NVS-backed persistence independent of SD availability.
+- Route historical application UI colors through the common semantic palette as a compatibility bridge.
+- Keep literal sensor/image data outside theme translation through raw framebuffer paths.
+- Apply theme logo roles to the Home bitmap and control affordances.
+
+Automatic theme selection from ambient light or time-of-day remains a possible future presentation enhancement rather than current behavior.
 
 ## Near-term work
 
@@ -138,20 +154,7 @@ Goals:
 
 Validation should include quiet room, speech, whistle, transient/clap, monitor-to-record transitions, repeated app entry/exit, and consistency across cold boots/ESP-IDF updates.
 
-### 2. Global display themes
-
-**Priority:** High
-
-The Home/splash behavior is implemented in PR #32. Continue the presentation work with centralized semantic themes rather than per-view literal colors.
-
-Goals:
-
-- Add centralized semantic themes for environments such as Day, Night, Indoor, and Outdoor.
-- Define semantic roles such as title, text, subdued, warning, critical, graph, selection, and background.
-- Ensure contrast/readability across all supported themes.
-- Keep themes system-wide and persistent.
-
-### 3. CW/Morse sender application
+### 2. CW/Morse sender application
 
 **Priority:** Near term
 
@@ -166,7 +169,7 @@ Goals:
 - Send complete messages through the shared Morse/speaker service.
 - Keep detection-notification one-character Morse mappings separate from CW messages.
 
-### 4. Log format and maintained parser
+### 3. Log format and maintained parser
 
 **Priority:** Near term
 
@@ -182,7 +185,7 @@ Goals:
 - Regression tests for missing, unknown, long, and multi-word values.
 - Preserve UTC ISO-8601 timestamps and explicit uptime fallback.
 
-### 5. CC1101 enrichment
+### 4. CC1101 enrichment
 
 **Priority:** Near/medium term
 
@@ -193,7 +196,7 @@ Goals:
 - Time-windowed activity/count models where more useful than session-only counts.
 - Avoid presenting heuristic classifications as decoded product identities.
 
-### 6. nRF24 enrichment
+### 5. nRF24 enrichment
 
 **Priority:** Near/medium term
 
@@ -276,6 +279,7 @@ These are ideas worth preserving, not committed scope or priority.
 
 ### Presentation ideas
 
+- Automatic Indoor/Outdoor/Night selection from an ambient-light signal or explicit schedule, with manual override and hysteresis.
 - Additional compact data visualizations that preserve readability on the 320x170 display.
 - Theme-specific status/icon variants where useful outdoors/night.
 - Optional onboarding/help hints that do not permanently consume data-display area.
