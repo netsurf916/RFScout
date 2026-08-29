@@ -1,6 +1,8 @@
 # RFScout
 
-RFScout is a handheld **RF situational-awareness** instrument for the LILYGO T-Embed CC1101 Plus / ESP32-S3. It combines passive Wi-Fi/BLE observation, sub-GHz spectrum awareness, 2.4 GHz nRF24 activity analysis, SD-backed audio recording and monitoring, optional thermal imaging, battery/status telemetry, SD logging, and device-wide configuration in a rotary-encoder-driven interface.
+RFScout is a handheld **RF situational-awareness** instrument. The currently supported board is the LILYGO T-Embed CC1101 Plus / ESP32-S3, while the firmware now uses a board-target and capability boundary intended to support additional hardware without compiling every board implementation into one universal image.
+
+RFScout combines passive Wi-Fi/BLE observation, sub-GHz spectrum awareness, 2.4 GHz nRF24 activity analysis, SD-backed audio recording and monitoring, optional thermal imaging, battery/status telemetry, SD logging, device-wide configuration, semantic event feedback, and application-scoped notifications in a compact user interface.
 
 <p align="center">
   <img src="assets/device.jpg" alt="RFScout running on a LILYGO T-Embed CC1101 Plus" width="800">
@@ -12,7 +14,7 @@ RFScout is intentionally passive wherever the underlying radio APIs allow it. It
 
 ## Current applications
 
-RFScout starts on **Home** by default. Device Settings can select another preferred startup application; if that target is disabled or unavailable at boot, RFScout falls back to Home for that boot. Rotating the encoder switches applications in this order, skipping applications disabled in Device and optional hardware that is unavailable:
+RFScout starts on **Home** by default. Device Settings can select another preferred startup application; if that target is disabled or unavailable at boot, RFScout falls back to Home for that boot. Rotating the primary navigation control switches applications in this order, skipping disabled applications and optional hardware that is unavailable:
 
 1. **WiFi / BT**
 2. **CC1101**
@@ -21,27 +23,29 @@ RFScout starts on **Home** by default. Device Settings can select another prefer
 5. **Thermal** — shown only when enabled and an MLX90640 is detected
 6. **Home / Device Settings** — branded pass-through landing screen plus global settings and persistent configuration
 
-The center button opens an application's settings/action surface where one exists. Settings menus use **Back** as the first entry. Home is a pass-through landing screen: rotating onto Home does not trap the encoder in settings; center must be pressed deliberately to enter Device Settings.
+The board-neutral application layer consumes `platform_input_get()` semantic input events rather than depending on a rotary encoder directly. On the current T-Embed target, the rotary encoder and center button are adapted into navigation/select/back semantics.
 
-Holding the encoder center button continuously for about **2 seconds** toggles the device-wide input lock. While locked, encoder rotation and ordinary center-button actions are ignored and a padlock appears in the status bar. Hold the center button for the same 2 seconds again to unlock the controls. The separate physical power button remains available while input is locked.
+Holding the encoder center button continuously for about **2 seconds** toggles the device-wide input lock. Feedback is emitted only after the lock transition has actually been accepted. While locked, ordinary navigation/select input is ignored and a padlock appears in the status bar. The separate physical power button remains available.
 
 ### WiFi / BT
 
 WiFi / BT passively observes Wi-Fi and BLE traffic, maintains a rolling set of recently seen devices, and resolves IEEE vendor information using longest-prefix matching across MA-L (24-bit), MA-M (28-bit), MA-S/OUI-36 (36-bit), and legacy IAB assignments. Random/private addresses contribute to the fixed `RANDOM` row rather than receiving misleading vendor attribution; globally administered addresses without a matching assignment contribute to `UNKNOWN`.
 
-Surveillance classification combines curated prefix metadata with higher-layer evidence such as BLE names, manufacturer IDs, services, and Remote ID. The action menu provides **RESET DETECTIONS**. Leaving the application stops both Wi-Fi and BLE collection.
+Surveillance classification combines curated prefix metadata with higher-layer evidence such as BLE names, manufacturer IDs, services, and Remote ID. Ordinary newly observed Wi-Fi and BLE devices can emit lightweight general detection feedback. Those two discovery cues can be enabled or disabled independently in the WiFi / BT notification settings. Surveillance classifications use their own application-specific notification categories and do not also emit the ordinary discovery cue.
+
+The action menu provides **NOTIFICATIONS** and **RESET DETECTIONS**. Leaving the application stops both Wi-Fi and BLE collection.
 
 ### CC1101
 
-CC1101 provides direct-RSSI sub-GHz spectrum sweeps with optional slow-decay peak hold and a fixed **DETECTIONS** category panel. The settings menu exposes profile, low/high frequency, step size, peak hold, and count reset. Sweeps are bounded to 128 samples; invalid range/step combinations are rejected instead of silently changing another setting.
+CC1101 provides direct-RSSI sub-GHz spectrum sweeps with optional slow-decay peak hold and a fixed **DETECTIONS** category panel. The settings menu exposes profile, low/high frequency, step size, peak hold, application notification settings, and count reset. Sweeps are bounded to 128 samples; invalid range/step combinations are rejected instead of silently changing another setting.
 
-Detection labels are conservative RF-behavior classifications rather than decoded product identities. Detection-count advances can trigger the configured global notification.
+Detection labels are conservative RF-behavior classifications rather than decoded product identities. Detection-count advances can produce application-owned notifications subject to the app notification gate, current global notification mode/volume, active theme sound policy, and speaker availability.
 
 ### nRF24
 
 nRF24 scans the 2.4 GHz channel range using RPD activity, a fast-decay histogram, optional slow peak hold, and conservative passive Enhanced ShockBurst classification when validated observations are available. The fixed **DETECTIONS** panel includes categories such as `ESB device`, `Input?`, `Sensor?`, `Logitech?`, and broader 2.4 GHz activity.
 
-The settings menu exposes low/high channel, dwell time, peak hold, and count reset. Runtime activity/classifier state is cleared when the application is left.
+The settings menu exposes low/high channel, dwell time, peak hold, application notification settings, and count reset. Runtime activity/classifier state is cleared when the application is left.
 
 ### Recorder
 
@@ -59,7 +63,7 @@ Recorder currently provides:
 - a **MONITOR** mode with a live microphone FFT spectrum;
 - persistent fixed microphone input gain from 0 through +24 dB in 3 dB steps, adjusted with the rotary encoder while monitoring.
 
-The current I2S request is 48 kHz, but the effective PCM rate is measured at runtime and may differ. Recorder accepts supported 16-bit mono WAV files with sample rates from 8 through 48 kHz. It is not a calibrated sound-level meter.
+Recorder is intentionally treated as an audio-centric application: incidental interaction/general-event sounds are suppressed by its native app audio policy while explicit content audio remains available. The current I2S request is 48 kHz, but the effective PCM rate is measured at runtime and may differ. Recorder accepts supported 16-bit mono WAV files with sample rates from 8 through 48 kHz. It is not a calibrated sound-level meter.
 
 ### Thermal
 
@@ -67,41 +71,60 @@ Thermal becomes available when an **MLX90640** is detected on the external I2C/Q
 
 ### Home / Device Settings
 
-Home is the non-disableable Device application's branded pass-through landing screen. The LCD mark is generated at build time from the canonical `assets/logo.png` artwork as a compact indexed bitmap, keeping the device and browser-flasher branding aligned without embedding a PNG decoder. The active display theme supplies the logo's brand and secondary colors at runtime. Center enters Device Settings; rotating without entering settings continues normal application navigation.
+Home is the non-disableable Device application's branded pass-through landing screen. Center enters Device Settings; ordinary navigation continues top-level application selection.
 
-Current Device Settings include display brightness, display theme, 12/24-hour clock presentation, timezone selection, preferred startup application, manual date/time, application enablement, SD logging, global notification mode and volume, one Morse character for each notification category, Recorder playback volume/input gain through Recorder persistence, and explicit configuration save.
+Current Device Settings include display brightness, display theme, 12/24-hour clock presentation, timezone selection, preferred startup application, manual date/time, application enablement, SD logging, global notification mode and volume, and explicit configuration save. App-specific notification enablement and Morse mappings live in the detecting applications rather than in the global settings screen.
 
-Three display themes are currently available: **Indoor**, the normal high-contrast orange/white RFScout presentation; **Outdoor**, which prioritizes maximum daylight contrast rather than subdued secondary colors; and **Night**, which shifts UI emphasis toward red/orange tones to reduce bright blue/green light. Theme changes apply immediately across application chrome, text, status UI, graphs that use shared UI colors, and Home branding.
+Four display themes are currently available:
 
-The startup preference can select Home, WiFi/BT, CC1101, nRF24, Recorder, or Thermal. Home is the compiled default. A disabled or unavailable configured startup target falls back to Home for the current boot without erasing the saved preference; Thermal additionally requires a detected MLX90640.
+- **Indoor** — normal high-contrast orange/white RFScout presentation;
+- **Outdoor** — prioritizes daylight contrast;
+- **Night** — shifts UI emphasis toward red/orange tones;
+- **Discipline** — uses the same visual palette as Night and suppresses incidental interaction and notification audio, providing both light and noise discipline while leaving explicitly requested application content audio available.
 
-RFScout always has compiled defaults and remains usable without an SD card. When storage is mounted, ordinary persistent preferences including `apps.startup` live in `/sdcard/rfscout.json`. The display theme is persisted separately in ESP32 NVS so the selected viewing mode remains available even when no SD card is present. Home/Device itself cannot be disabled.
+Theme changes apply immediately across application chrome, text, status UI, graphs that use shared UI colors, and Home branding.
+
+## Semantic events, feedback, and notifications
+
+RFScout distinguishes physical input, accepted semantic events, user/app policy, and speaker execution.
+
+Accepted actions such as navigation, activation, enter/back, enable/disable, input lock/unlock, detections, warnings, and errors are emitted through the lightweight `event.c/.h` dispatcher. Delivery is synchronous and handlers are expected to remain short and nonblocking.
+
+`feedback.c/.h` subscribes to semantic events and resolves incidental feedback through both the native application audio profile and active theme sound policy. UI feedback is disposable; it is not allowed to build a long backlog behind more important audio.
+
+Detection notifications are application-owned. Global notification presentation remains **OFF**, **TONE**, or **MORSE**, with a global notification volume. Each detecting app has its own notification gate and Morse mappings. WiFi / BT additionally has independent toggles for ordinary Wi-Fi-device and BLE-device discovery beeps. The master app notification gate suppresses those general discovery cues as well as app-specific surveillance notifications without discarding the individual settings.
+
+Application content audio, such as Recorder playback, is distinct from incidental feedback and detection notifications.
+
+## Configuration and deep-sleep state
+
+RFScout always starts from compiled defaults. When an SD card is mounted, persistent user preferences live in `/sdcard/rfscout.json` using **schema version 2**. The active theme is part of that canonical file rather than a separate NVS preference.
+
+The loader starts from current defaults and overlays only recognized, valid fields. Schema v1 files are accepted and translated where needed. Unknown or obsolete keys are ignored; because saves build a new canonical document rather than rewriting the input tree, those keys disappear on the next save. Fields introduced by newer firmware retain their current compiled defaults when absent and are emitted on the next save. Configuration files claiming a schema newer than the running firmware are rejected instead of being destructively rewritten.
+
+Deep sleep is a reboot-like transition, so RFScout separately retains a small RTC-backed session envelope. The currently active app and input-lock state survive a valid deep-sleep wake. Transient menu/edit state and active Recorder operations are intentionally not resumed. Dirty canonical configuration is flushed before SD unmount/deep sleep.
+
+See [Device configuration and wall clock](docs/CONFIGURATION.md) for the schema and migration rules.
 
 ## Shared UI and status
 
-Application views use shared top chrome for title placement, wall-clock/status presentation, battery indication, and semantic display colors. The common theme layer defines roles such as background, primary/secondary text, accent, selection, information, success, warning, error, graph, and logo colors. Existing application UI colors are routed through that layer so themes remain consistent across apps; literal data imagery such as the Thermal heat map bypasses theme translation.
+Application views use shared top chrome for title placement, wall-clock/status presentation, battery indication, and semantic display colors. The common theme layer defines roles such as background, primary/secondary text, accent, selection, information, success, warning, error, graph, and logo colors. Literal data imagery such as the Thermal heat map bypasses theme translation.
 
-Long titles are constrained by the shared chrome so they do not overlap the right-side status region. Application content remains app-specific, and there is no globally reserved footer area; data-heavy views can use the bottom of the display.
+The status area shows local wall time plus global state such as mounted SD storage and sticky filesystem/logging errors. When wall time is unavailable, the clock displays `--:--`. Battery state-of-charge and charging telemetry come from board power-management devices through the shared board services; missing telemetry is nonfatal.
 
-The status area shows local wall time plus global state such as mounted SD storage and sticky filesystem/logging errors. When wall time is unavailable, the clock displays `--:--`. Battery state-of-charge and charging telemetry come from the board power-management devices through the shared I2C layer; missing telemetry is nonfatal.
-
-## Audible detection notifications
-
-RFScout uses a device-wide notification policy: **OFF**, **TONE**, or **MORSE**. Morse notifications emit one configured character for the detection category. Notification volume is independent of Recorder playback volume and is persisted in `/sdcard/rfscout.json`.
-
-Speaker output is asynchronous through I2S1. Volume uses a perceptual nonlinear mapping so low percentages are materially quieter while `0%` remains mute. Each queued alert captures the volume active when it was requested.
-
-## SD logging and configuration
+## SD logging and storage
 
 RFScout mounts an available microSD card at `/sdcard`; mount failure is nonfatal. Logging is asynchronous and uses a bounded ring of `rfscout-00.log` through `rfscout-99.log`, with 4 MiB per segment and an approximate normal maximum of 400 MiB. With valid wall time records use UTC ISO-8601 timestamps; before time is established they use an explicit `UP+<milliseconds>` monotonic fallback.
 
 LILYGO documents SanDisk cards of 32 GB or less as the tested baseline for the T-Embed CC1101 family. See [SD card behavior](docs/SD_CARD.md).
 
-## Hardware/resource ownership
+## Hardware and board abstraction
 
-The LCD, microSD, CC1101, and nRF24 share board SPI resources managed by `board_spi.c/.h`. Battery/power telemetry and optional external I2C devices share the board I2C layer. The internal PDM microphone uses I2S0 while Recorder is recording or monitoring; the onboard speaker uses I2S1 through the asynchronous audio-output service.
+RFScout currently supports the **LILYGO T-Embed CC1101 Plus**, selected through the `RFSCOUT_BOARD` Kconfig choice. Board definitions live under `main/boards/<target>/`. Application code should depend on semantic platform/service interfaces and capabilities rather than board model names.
 
-The current Recorder still owns microphone configuration directly. A future shared calibrated Audio Input service is tracked in the [roadmap](docs/ROADMAP.md); it is not yet a production module.
+The current board's LCD, microSD, CC1101, and nRF24 share SPI resources; battery/power telemetry and optional external I2C devices share board I2C; the internal PDM microphone uses I2S0 while Recorder is recording or monitoring; and the onboard speaker uses I2S1 through the asynchronous audio-output service.
+
+See [Board targets and porting](docs/BOARD_PORTING.md).
 
 ## OUI / prefix identity database
 
@@ -114,8 +137,6 @@ python3 tools/update_oui.py
 python3 tools/update_surveillance.py
 ```
 
-The **Refresh IEEE OUI database** GitHub Action keeps the generated identity data synchronized.
-
 ## Build, releases, and browser flashing
 
 RFScout targets ESP32-S3 with ESP-IDF 6.x; CI currently builds with ESP-IDF 6.1 and enforces clang-format 18. Managed-component versions are pinned by the tracked `dependencies.lock` file.
@@ -126,17 +147,16 @@ idf.py build
 idf.py flash monitor
 ```
 
-Ready-for-review pull requests and `main` builds produce short-lived candidate bundles. Published releases are created deliberately through the **Prepare firmware release** workflow. The **Publish browser flasher** workflow deploys published releases plus the candidate bundle from the most recent triggering eligible build to GitHub Pages for Web Serial flashing from Chromium-based desktop browsers.
-
-See [Getting started](docs/GETTING_STARTED.md) and [Firmware releases](docs/RELEASING.md).
+Ready-for-review pull requests and `main` builds produce short-lived candidate bundles. Published releases are created deliberately through the **Prepare firmware release** workflow. See [Getting started](docs/GETTING_STARTED.md) and [Firmware releases](docs/RELEASING.md).
 
 ## Documentation
 
-Production documentation describes behavior that exists on current `main`. Forward-looking design, priorities, and brainstorming are kept in the roadmap rather than duplicated across operational documents.
+Production documentation describes behavior that exists on current `main`. Forward-looking design, priorities, and brainstorming are kept in the roadmap.
 
 - [Capabilities](docs/CAPABILITIES.md) — implemented user-visible capabilities and limitations
 - [Architecture](docs/ARCHITECTURE.md) — current module ownership and resource boundaries
-- [Device configuration and wall clock](docs/CONFIGURATION.md) — current persistent configuration, startup behavior, and time behavior
+- [Board targets and porting](docs/BOARD_PORTING.md) — board-selection and capability boundary
+- [Device configuration and wall clock](docs/CONFIGURATION.md) — persistent configuration, migration, sleep state, and time behavior
 - [SD card behavior](docs/SD_CARD.md) — storage, Recorder, and logging behavior
 - [Getting started](docs/GETTING_STARTED.md) — local development/build/flash workflow
 - [Firmware releases](docs/RELEASING.md) — candidate, release, and browser-flasher workflow
