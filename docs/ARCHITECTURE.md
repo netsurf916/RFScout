@@ -82,6 +82,10 @@ BLE monitor -----/              |                        |
                                 +-----------> WiFi / BT UI
 ```
 
+The normalized observation store retains per-source last-seen timestamps for Wi-Fi and Bluetooth. Their source memberships expire independently using app-owned configuration, so an observation associated with both sources remains live while either source is still within its configured window. The retained surveillance history has a third independent timeout. All three controls default to 60 seconds and accept 10–300 seconds in 10-second increments.
+
+Housekeeping remains monotonic-time based and independent of which application owns the display. Retention policy belongs to WiFi / BT configuration; the UI does not maintain a second cache merely to keep rows visible.
+
 Ordinary newly observed Wi-Fi/BLE devices can emit a lightweight `DETECTED` semantic event when the WiFi / BT master notification gate and source-specific event switch allow it. Surveillance classifications instead use their application-specific notification category and do not also emit the ordinary discovery cue.
 
 Prefix identity keeps authoritative IEEE vendor attribution separate from curated surveillance significance. Private/random addresses are not assigned misleading IEEE vendors. The surveillance classifier can combine prefix metadata with BLE/protocol evidence.
@@ -96,7 +100,7 @@ CC1101 worker -> completed RSSI sweep -> live spectrum
                                       -> app-owned notification on count advance
 ```
 
-Sweep configuration is bounded to 128 samples. Detection categories describe RF behavior rather than decoded product identity.
+Sweep configuration is bounded to 128 samples. Detection categories describe RF behavior rather than decoded product identity. Normal spectrum presentation uses the footer for RF-state information only; Center enters settings without a persistent lower-corner label.
 
 ## nRF24 path
 
@@ -108,7 +112,7 @@ validated ESB observations -> classifier/address ledger -> detection counts
                                          app-owned notification
 ```
 
-The address ledger is separate from the small active classifier cache so classifier eviction does not cause repeated identity counts.
+The address ledger is separate from the small active classifier cache so classifier eviction does not cause repeated identity counts. Wi-Fi-like wide spectrum activity and hopping/BLE-like activity remain distinct classifier categories and display rows; presentation does not combine them into an `Other` count. Normal spectrum presentation also omits the redundant lower-corner `SETTINGS` label.
 
 ## Recorder path
 
@@ -137,7 +141,7 @@ MLX90640 is an optional external I2C/Qwiic device. RFScout probes for availabili
 
 Loading begins from current defaults and overlays recognized valid values. Schema v1 is accepted and translated. Unknown/obsolete fields are ignored. Saving generates a new canonical v2 document, which prunes unknown fields and populates newly introduced fields from current defaults. Future schema versions are rejected rather than rewritten by older firmware.
 
-Canonical user preferences include app enablement/startup selection, display settings/theme, logging, global notification presentation, app-owned notification gates/mappings, Recorder preferences, timezone data, and saved time metadata.
+Canonical user preferences include app enablement/startup selection, display settings/theme, logging, global notification presentation, app-owned notification gates/mappings, WiFi / BT retention values, Recorder preferences, timezone data, and saved time metadata.
 
 Setters mark configuration dirty. Dirty configuration is flushed before deep sleep and SD unmount.
 

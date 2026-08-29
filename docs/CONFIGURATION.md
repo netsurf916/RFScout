@@ -19,6 +19,11 @@ A representative schema-v2 configuration is:
   "apps": {
     "wifi_bt": {
       "enabled": true,
+      "retention": {
+        "wifi_seconds": 60,
+        "bluetooth_seconds": 60,
+        "surveillance_seconds": 60
+      },
       "notifications": {
         "enabled": true,
         "events": {
@@ -132,6 +137,18 @@ Current themes are:
 
 Discipline does not disable explicitly requested application content audio such as Recorder playback. Theme sound policy is environmental policy layered on top of app-native behavior and user notification preferences; it does not overwrite those preferences.
 
+## WiFi / BT retention configuration
+
+WiFi / BT owns three independent retention settings under `apps.wifi_bt.retention`:
+
+- `wifi_seconds`: lifetime of Wi-Fi source membership in the live device list;
+- `bluetooth_seconds`: lifetime of Bluetooth source membership in the live device list;
+- `surveillance_seconds`: lifetime of retained classified detections in the surveillance list.
+
+All three default to 60 seconds, accept values from 10 through 300 seconds, and use 10-second increments in the application settings menu. Missing, out-of-range, or non-step-aligned values retain the compiled 60-second default.
+
+Wi-Fi and Bluetooth age independently. If a normalized observation has been seen from both sources, one source can expire while the other remains live. The retained surveillance history has its own timeout so classified detections can be kept for a different period without changing ordinary device-list aging.
+
 ## Notification configuration
 
 RFScout separates global presentation from app-owned notification choices.
@@ -153,7 +170,7 @@ Missing or invalid recognized fields retain compiled defaults. Home/Device is al
 
 A disabled or unavailable configured startup target falls back to Home for the current boot without rewriting the saved preference. Thermal additionally requires a detected MLX90640.
 
-The compiled global notification mode is `OFF`. Notification volume defaults to 50. Each application notification category has a compiled Morse-character default; valid one-character saved values override defaults individually.
+The compiled global notification mode is `OFF`. Notification volume defaults to 50. Each application notification category has a compiled Morse-character default; valid one-character saved values override defaults individually. Wi-Fi, Bluetooth, and surveillance retention each default to 60 seconds.
 
 ## Home and Device Settings
 
@@ -173,7 +190,7 @@ Current Device Settings include:
 - global notification volume;
 - explicit SD-backed configuration save.
 
-Per-app notification enablement and Morse mappings are edited from the corresponding application settings rather than from the global Device menu. WiFi / BT also exposes ordinary Wi-Fi-device and BLE-device discovery feedback switches there.
+Per-app notification enablement and Morse mappings are edited from the corresponding application settings rather than from the global Device menu. WiFi / BT also exposes ordinary Wi-Fi-device and BLE-device discovery feedback switches plus its three retention controls there.
 
 Setters mark canonical configuration dirty. RFScout flushes dirty configuration before deep sleep so a setting changed immediately before sleep is not silently lost.
 
@@ -183,7 +200,7 @@ Without an SD card, settings can affect the running session but canonical persis
 
 | Application | Current settings/actions | Notification controls |
 | --- | --- | --- |
-| WiFi / BT | Back; Notifications; Reset detections | master gate; WiFi device beep; BLE device beep; Flock/ALPR; Body camera; Drone; Camera; Smart glasses; Acoustic sensor; Other surveillance |
+| WiFi / BT | Back; Notifications; WiFi timeout; BT timeout; Surveillance timeout; Reset detections | master gate; WiFi device beep; BLE device beep; Flock/ALPR; Body camera; Drone; Camera; Smart glasses; Acoustic sensor; Other surveillance |
 | CC1101 | Back; Profile; Low; High; Step; Peak hold; Notifications; Reset counts | master gate plus Narrowband; Remote/sensor; Carrier; Bursty RF; Wide RF Morse mappings |
 | nRF24 | Back; Low channel; High channel; Dwell; Peak hold; Notifications; Reset counts | master gate plus ESB device; Input; Sensor; WiFi-like; Hopping/BLE-like; Logitech-like Morse mappings |
 | Recorder | Back; New recording; Monitor; recording browser; playback volume; delete recording; monitor input gain | none currently; native app policy suppresses incidental feedback while preserving content audio |

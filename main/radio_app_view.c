@@ -127,7 +127,6 @@ void radio_app_view_cc1101_spectrum( const uint8_t *a_current,
     }
 
     display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "RSSI / PEAK HOLD", DIM, 1U );
-    display_draw_text( 250, UI_LAYOUT_FOOTER_Y, "SETTINGS", SUBDUED, 1U );
     (void)display_present();
 }
 
@@ -327,7 +326,6 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
     }
 
     display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "FAST ACTIVITY / PEAK HOLD", DIM, 1U );
-    display_draw_text( 250, UI_LAYOUT_FOOTER_Y, "SETTINGS", SUBDUED, 1U );
     (void)display_present();
 }
 

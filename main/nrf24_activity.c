@@ -495,7 +495,13 @@ size_t nrf24_activity_histogram( uint8_t *a_fast, uint8_t *a_slow, size_t a_capa
 size_t nrf24_activity_fingerprints( nrf24_fingerprint_t *a_output, size_t a_capacity )
 {
     static const nrf24_fingerprint_type_t rows[ NRF24_FINGERPRINT_MAX ] = {
-        NRF24_FP_LOGITECH_LIKE, NRF24_FP_INPUT, NRF24_FP_SENSOR, NRF24_FP_ESB, NRF24_FP_WIFI_LIKE };
+        NRF24_FP_LOGITECH_LIKE,
+        NRF24_FP_INPUT,
+        NRF24_FP_SENSOR,
+        NRF24_FP_ESB,
+        NRF24_FP_WIFI_LIKE,
+        NRF24_FP_BLE_LIKE,
+    };
 
     if( ( NULL == a_output ) || ( 0U == a_capacity ) )
     {
@@ -510,19 +516,10 @@ size_t nrf24_activity_fingerprints( nrf24_fingerprint_t *a_output, size_t a_capa
         memset( &a_output[ i ], 0, sizeof( a_output[ i ] ) );
         a_output[ i ].type = rows[ i ];
         a_output[ i ].packets = category_counts[ rows[ i ] ];
-
-        if( NRF24_FP_WIFI_LIKE == rows[ i ] )
-        {
-            a_output[ i ].packets += category_counts[ NRF24_FP_BLE_LIKE ];
-            snprintf( a_output[ i ].label, sizeof( a_output[ i ].label ), "Other 2.4 RF" );
-        }
-        else
-        {
-            snprintf( a_output[ i ].label,
-                      sizeof( a_output[ i ].label ),
-                      "%s",
-                      nrf24_activity_fingerprint_name( rows[ i ] ) );
-        }
+        snprintf( a_output[ i ].label,
+                  sizeof( a_output[ i ].label ),
+                  "%s",
+                  nrf24_activity_fingerprint_name( rows[ i ] ) );
     }
 
     return count;

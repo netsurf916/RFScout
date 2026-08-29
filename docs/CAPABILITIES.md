@@ -23,6 +23,8 @@ The application layer consumes board-neutral semantic input through `platform_in
 
 Implemented behavior includes passive Wi-Fi and BLE observation, rolling recent-device state, IEEE vendor attribution using MA-L/MA-M/MA-S/IAB longest-prefix matching, explicit `RANDOM` handling for private/local addresses, explicit `UNKNOWN` handling for unresolved public addresses, surveillance-oriented multi-signal classification, retained surveillance history, and `RESET DETECTIONS`.
 
+Wi-Fi, Bluetooth, and retained surveillance entries have independent app-owned retention controls. Each defaults to 60 seconds and is adjustable from 10 through 300 seconds in 10-second steps. Wi-Fi and Bluetooth source membership age independently for a merged observation, while the separate surveillance timeout controls how long classified detections remain in the retained surveillance list.
+
 Ordinary newly observed Wi-Fi and BLE devices can produce lightweight general detection feedback. Wi-Fi and BLE discovery cues are independently configurable. Classified surveillance observations use application-specific notification categories instead and do not also generate the ordinary client-discovery cue.
 
 WiFi / BT owns its notification settings: a master notification gate, the two ordinary discovery switches, and Morse mappings for its surveillance categories. Leaving WiFi / BT stops the Wi-Fi and BLE collectors.
@@ -31,13 +33,13 @@ WiFi / BT owns its notification settings: a master notification gate, the two or
 
 Implemented behavior includes direct-RSSI sub-GHz sweeps, configurable profiles/range/step, optional slow peak hold, a 128-sample sweep limit, conservative RF-shape detection categories, app-owned audible notifications when counts advance, and `RESET COUNTS`.
 
-The CC1101 settings menu includes its notification page. The categories describe observed RF behavior and are not protocol/product decodes.
+The CC1101 settings menu includes its notification page. The categories describe observed RF behavior and are not protocol/product decodes. The normal spectrum view uses its footer for RF-state information only; the established Center action opens settings without a persistent `SETTINGS` label.
 
 ## nRF24
 
 Implemented behavior includes configurable channel bounds and dwell time, fast activity history, optional slow peak hold, an ingestion API plus bounded newest-first storage for CRC-validated Enhanced ShockBurst observations, address-based count deduplication, conservative detection categories, app-owned notifications, and `RESET COUNTS`. The current scanner produces RPD energy observations only, so no packet preview is exposed until receive-only ESB candidate discovery and validation are implemented.
 
-The nRF24 settings menu includes its notification page. Spectrum-only activity that does not support a specific device identity remains broadly categorized.
+The nRF24 settings menu includes its notification page. Wi-Fi-like wide activity and hopping/BLE-like activity remain separate detection categories and counters (`Wi-Fi?` and `Hopping RF?`) rather than being merged into a generic `Other` row. Spectrum-only activity that does not support a specific device identity remains broadly categorized. The normal spectrum footer no longer spends space on a persistent `SETTINGS` label.
 
 ## Recorder
 
@@ -70,7 +72,7 @@ Home is a branded pass-through landing screen backed by the non-disableable Devi
 
 Implemented Device Settings include display brightness, selectable display theme, 12/24-hour clock presentation, timezone selection, preferred startup application, manual date/time, per-application enablement, SD logging, global notification mode, global notification volume, and explicit configuration save.
 
-App-specific notification enablement and category mappings are configured from the detecting applications rather than centrally in Device Settings.
+App-specific notification enablement, category mappings, and WiFi / BT retention controls are configured from the owning applications rather than centrally in Device Settings.
 
 Current themes are **Indoor**, **Outdoor**, **Night**, and **Discipline**. Discipline uses the Night visual palette and additionally suppresses incidental interaction and notification audio. Explicit Recorder/content audio remains available.
 
@@ -96,7 +98,7 @@ Persistent preferences use `/sdcard/rfscout.json` schema **version 2**. Loading 
 
 Unknown/obsolete fields are ignored. Saving constructs a new canonical document, so unknown keys are pruned and new fields missing from older files appear with current defaults. Configurations claiming a future schema version are rejected instead of being destructively rewritten by older firmware.
 
-WiFi / BT ordinary Wi-Fi/BLE discovery switches default ON when absent, preserving behavior for older configs.
+WiFi / BT ordinary Wi-Fi/BLE discovery switches default ON when absent. Its three retention values default to 60 seconds when absent or invalid, preserving migration behavior for existing schema-v2 files.
 
 ## Deep-sleep behavior
 

@@ -25,6 +25,10 @@
 #define RFSCOUT_TIMEZONE_NAME_MAX 32U
 #define RFSCOUT_TIMEZONE_LABEL_MAX 24U
 #define RFSCOUT_TIMEZONE_POSIX_MAX 48U
+#define RFSCOUT_OBSERVATION_TIMEOUT_MIN_SECONDS 10U
+#define RFSCOUT_OBSERVATION_TIMEOUT_MAX_SECONDS 300U
+#define RFSCOUT_OBSERVATION_TIMEOUT_STEP_SECONDS 10U
+#define RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS 60U
 
 typedef struct
 {
@@ -48,6 +52,9 @@ typedef struct
     bool notification_app_enabled[ RFSCOUT_APP_COUNT ];
     bool wifi_device_feedback_enabled;
     bool ble_device_feedback_enabled;
+    uint16_t wifi_timeout_seconds;
+    uint16_t ble_timeout_seconds;
+    uint16_t surveillance_timeout_seconds;
     char notification_characters[ RFSCOUT_NOTIFICATION_TYPE_COUNT ];
     char timezone_selected[ RFSCOUT_TIMEZONE_NAME_MAX ];
     device_timezone_t timezones[ RFSCOUT_TIMEZONE_MAX ];
@@ -105,6 +112,19 @@ esp_err_t device_config_set_wifi_device_feedback_enabled( bool a_enabled );
 bool device_config_ble_device_feedback_enabled( void );
 /** @brief Change whether ordinary BLE discoveries may emit the general detection event. */
 esp_err_t device_config_set_ble_device_feedback_enabled( bool a_enabled );
+
+/** @brief Return the Wi-Fi live-list timeout in seconds. */
+uint16_t device_config_wifi_timeout_seconds( void );
+/** @brief Change the Wi-Fi live-list timeout in 10-second steps from 10 through 300 seconds. */
+esp_err_t device_config_set_wifi_timeout_seconds( uint16_t a_seconds );
+/** @brief Return the Bluetooth live-list timeout in seconds. */
+uint16_t device_config_ble_timeout_seconds( void );
+/** @brief Change the Bluetooth live-list timeout in 10-second steps from 10 through 300 seconds. */
+esp_err_t device_config_set_ble_timeout_seconds( uint16_t a_seconds );
+/** @brief Return the retained surveillance-list timeout in seconds. */
+uint16_t device_config_surveillance_timeout_seconds( void );
+/** @brief Change the surveillance-list timeout in 10-second steps from 10 through 300 seconds. */
+esp_err_t device_config_set_surveillance_timeout_seconds( uint16_t a_seconds );
 
 /** @brief Return the configured Morse character for one notification category. */
 char device_config_notification_character( rfscout_notification_type_t a_type );
