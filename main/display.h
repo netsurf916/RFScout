@@ -125,4 +125,14 @@ esp_err_t display_flush( void );
  */
 esp_err_t display_present( void );
 
+/**
+ * @brief Re-present only when global overlay state changed since the last successful presentation.
+ *
+ * This keeps global transient UI such as the power-off countdown responsive even while a static
+ * application view is active, without continuously flushing an otherwise unchanged framebuffer.
+ *
+ * @return ESP_OK when no refresh is needed or presentation succeeds; an ESP-IDF error otherwise.
+ */
+esp_err_t display_present_poll( void );
+
 #endif // _RFSCOUT_DISPLAY_H_
