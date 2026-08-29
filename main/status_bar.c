@@ -13,7 +13,6 @@
 #include "mlx90640.h"
 #include "platform.h"
 #include "storage.h"
-#include "ui_theme.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -29,6 +28,7 @@
 #define STATUS_BAR_CLOCK_GAP 2
 
 #define STATUS_BAR_COLOR_NORMAL 0x03F0U
+#define STATUS_BAR_COLOR_ATTENTION 0xFFE1U
 #define STATUS_BAR_COLOR_ERROR 0xF800U
 #define STATUS_BAR_COLOR_BACKGROUND 0x0000U
 
@@ -39,7 +39,7 @@ static rfscout_status_bar_state_t last_state;
 static void draw_lock_icon( int a_x )
 {
     const int y = STATUS_BAR_ICON_Y;
-    const uint16_t color = ui_theme_get()->accent;
+    const uint16_t color = STATUS_BAR_COLOR_ATTENTION;
 
     /* Rounded shackle. */
     display_fill_rect( a_x + 3, y + 1, 6, 1, color );
