@@ -1,6 +1,6 @@
 /**
-    ui_theme.h : RFScout semantic display theme interface
-    Description: Defines persisted display themes and semantic RGB565 color roles shared by all views.
+    ui_theme.h : RFScout semantic theme interface
+    Description: Defines persisted visual themes and environmental interaction/notification sound policy.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -20,6 +20,7 @@ typedef enum
     RFSCOUT_THEME_INDOOR = 0,
     RFSCOUT_THEME_OUTDOOR,
     RFSCOUT_THEME_NIGHT,
+    RFSCOUT_THEME_DISCIPLINE,
     RFSCOUT_THEME_COUNT
 } rfscout_theme_id_t;
 
@@ -42,36 +43,31 @@ typedef struct
     uint16_t logo_secondary;
 } ui_theme_palette_t;
 
+typedef struct
+{
+    bool interaction_audio;
+    bool notification_audio;
+    uint8_t interaction_volume_percent;
+    uint8_t notification_volume_percent;
+} ui_theme_sound_policy_t;
+
 /** @brief Load the persisted theme preference, defaulting to Indoor. */
 esp_err_t ui_theme_init( void );
-
-/** @brief Persist and activate one display theme immediately. */
+/** @brief Persist and activate one theme immediately. */
 esp_err_t ui_theme_set( rfscout_theme_id_t a_theme );
-
 /** @brief Return the active theme identifier. */
 rfscout_theme_id_t ui_theme_current( void );
-
 /** @brief Return the palette for one theme, falling back to Indoor for invalid IDs. */
 const ui_theme_palette_t *ui_theme_palette( rfscout_theme_id_t a_theme );
-
 /** @brief Return the active semantic palette. */
 const ui_theme_palette_t *ui_theme_get( void );
-
-/**
- * @brief Translate RFScout's historical UI color constants into the active semantic palette.
- *
- * This compatibility bridge lets existing application views participate in theming while they are
- * progressively converted to semantic roles. Data imagery can bypass it through raw display writes.
- */
+/** @brief Return environmental sound policy for one theme. */
+const ui_theme_sound_policy_t *ui_theme_sound_policy( rfscout_theme_id_t a_theme );
+/** @brief Return environmental sound policy for the active theme. */
+const ui_theme_sound_policy_t *ui_theme_sound_get( void );
 uint16_t ui_theme_resolve_legacy_color( uint16_t a_color );
-
-/** @brief Return the stable persisted token for one theme. */
 const char *ui_theme_config_name( rfscout_theme_id_t a_theme );
-
-/** @brief Return the compact user-facing name for one theme. */
 const char *ui_theme_display_name( rfscout_theme_id_t a_theme );
-
-/** @brief Parse a stable theme token, case-insensitively. */
 bool ui_theme_from_config_name( const char *a_name, rfscout_theme_id_t *a_theme );
 
 #endif // _RFSCOUT_UI_THEME_H_
