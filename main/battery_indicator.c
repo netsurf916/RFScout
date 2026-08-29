@@ -9,6 +9,7 @@
 
 #include "battery.h"
 #include "display.h"
+#include "ui_theme.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -25,46 +26,35 @@
 #define BATTERY_INDICATOR_REGION_WIDTH 60
 #define BATTERY_INDICATOR_REGION_HEIGHT 20
 
-#define BATTERY_INDICATOR_COLOR_NORMAL 0x03F0U
-#define BATTERY_INDICATOR_COLOR_COMPLETE 0x03E0U
-#define BATTERY_INDICATOR_COLOR_LOW 0xFC00U
-#define BATTERY_INDICATOR_COLOR_CRITICAL 0xF800U
-#define BATTERY_INDICATOR_COLOR_UNAVAILABLE 0x8410U
-#define BATTERY_INDICATOR_COLOR_CHARGING 0xFFE1U
-#define BATTERY_INDICATOR_COLOR_BACKGROUND 0x0000U
-
 static bool have_last_status;
 static battery_status_t last_status;
 
-/** @brief Return the subdued battery color associated with its urgency. */
+/** @brief Return the semantic battery color associated with its urgency. */
 static uint16_t indicator_color( const battery_status_t *a_status )
 {
+    const ui_theme_palette_t *theme = ui_theme_get();
     if( ( NULL == a_status ) || !a_status->available )
     {
-        return BATTERY_INDICATOR_COLOR_UNAVAILABLE;
+        return theme->secondary;
     }
     if( ( BATTERY_CHARGE_COMPLETE == a_status->charge_state ) && a_status->external_power )
     {
-        return BATTERY_INDICATOR_COLOR_COMPLETE;
+        return theme->success;
     }
     if( a_status->percentage <= 10U )
     {
-        return BATTERY_INDICATOR_COLOR_CRITICAL;
+        return theme->error;
     }
     if( a_status->percentage <= 20U )
     {
-        return BATTERY_INDICATOR_COLOR_LOW;
+        return theme->warning;
     }
-    return BATTERY_INDICATOR_COLOR_NORMAL;
+    return theme->info;
 }
 
 /** @brief Draw a compact transparent lightning bolt inside the empty battery body. */
 static void draw_charging_bolt( int a_x, int a_y )
 {
-    /*
-     * Eight-pixel-wide bolt derived from the simple diagonal reference silhouette. The mask is
-     * transparent: zero bits preserve the black battery interior already in the framebuffer.
-     */
     static const uint8_t mask[] = {
         0x1CU,
         0x38U,
@@ -78,8 +68,8 @@ static void draw_charging_bolt( int a_x, int a_y )
         0xE0U,
     };
 
-    (void)display_draw_mask(
-        a_x, a_y, 8, 10, mask, sizeof( mask ), BATTERY_INDICATOR_COLOR_CHARGING );
+    const ui_theme_palette_t *theme = ui_theme_get();
+    (void)display_draw_mask( a_x, a_y, 8, 10, mask, sizeof( mask ), theme->alert );
 }
 
 /** @brief Draw the outline and terminal of the battery body. */
@@ -153,6 +143,7 @@ static bool battery_status_equal( const battery_status_t *a_left, const battery_
 /** @brief Render one battery-status snapshot into the framebuffer. */
 static void draw_status( const battery_status_t *a_status )
 {
+    const ui_theme_palette_t *theme = ui_theme_get();
     const uint16_t color = indicator_color( a_status );
     char percentage[ 6 ];
 
@@ -160,7 +151,7 @@ static void draw_status( const battery_status_t *a_status )
                        0,
                        BATTERY_INDICATOR_REGION_WIDTH,
                        BATTERY_INDICATOR_REGION_HEIGHT,
-                       BATTERY_INDICATOR_COLOR_BACKGROUND );
+                       theme->background );
 
     if( a_status->available )
     {
