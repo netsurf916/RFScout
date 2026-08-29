@@ -1,6 +1,6 @@
 /**
     app_audio_policy.c : RFScout application audio behavior policy
-    Description: Supplies native per-application interaction, notification, and content-audio traits.
+    Description: Supplies native per-application feedback, notification, and content-audio traits.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -11,6 +11,7 @@ static const rfscout_app_audio_policy_t policies[ RFSCOUT_APP_COUNT ] = {
     [RFSCOUT_APP_WIFI_BT] =
         {
             .interaction_feedback = true,
+            .general_event_feedback = true,
             .notifications_supported = true,
             .notifications_enabled_default = true,
             .content_audio = false,
@@ -18,6 +19,7 @@ static const rfscout_app_audio_policy_t policies[ RFSCOUT_APP_COUNT ] = {
     [RFSCOUT_APP_CC1101] =
         {
             .interaction_feedback = true,
+            .general_event_feedback = true,
             .notifications_supported = true,
             .notifications_enabled_default = true,
             .content_audio = false,
@@ -25,6 +27,7 @@ static const rfscout_app_audio_policy_t policies[ RFSCOUT_APP_COUNT ] = {
     [RFSCOUT_APP_NRF24] =
         {
             .interaction_feedback = true,
+            .general_event_feedback = true,
             .notifications_supported = true,
             .notifications_enabled_default = true,
             .content_audio = false,
@@ -32,6 +35,7 @@ static const rfscout_app_audio_policy_t policies[ RFSCOUT_APP_COUNT ] = {
     [RFSCOUT_APP_AUDIO] =
         {
             .interaction_feedback = false,
+            .general_event_feedback = false,
             .notifications_supported = false,
             .notifications_enabled_default = false,
             .content_audio = true,
@@ -39,6 +43,7 @@ static const rfscout_app_audio_policy_t policies[ RFSCOUT_APP_COUNT ] = {
     [RFSCOUT_APP_THERMAL] =
         {
             .interaction_feedback = true,
+            .general_event_feedback = true,
             .notifications_supported = false,
             .notifications_enabled_default = false,
             .content_audio = false,
@@ -46,6 +51,7 @@ static const rfscout_app_audio_policy_t policies[ RFSCOUT_APP_COUNT ] = {
     [RFSCOUT_APP_DEVICE] =
         {
             .interaction_feedback = true,
+            .general_event_feedback = true,
             .notifications_supported = false,
             .notifications_enabled_default = false,
             .content_audio = false,
