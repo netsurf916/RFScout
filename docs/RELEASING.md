@@ -34,6 +34,8 @@ Candidate artifacts are diagnostic build products, not releases, and are never m
 
 The **Publish browser flasher** workflow runs after a successful eligible **Build and formatting** workflow and can also be started manually. It assembles a GitHub Pages site from published releases plus the candidate artifact from the triggering build when available.
 
+The static flasher shell uses the repository's `assets/logo.png` branding and RFScout orange/white visual theme. The workflow copies the logo into the Pages artifact so the deployed site remains self-contained alongside the mirrored firmware files and manifests.
+
 For pull-request builds, the candidate is placed first in the firmware selector and labeled with the PR number. Published releases remain selectable below it. Each deployment is self-contained: firmware files and manifests are copied into the Pages artifact rather than fetched by the browser from authenticated Actions endpoints.
 
 GitHub Pages uses **GitHub Actions** as its publishing source. The flasher requires HTTPS and Web Serial; Chromium-based desktop browsers such as Edge and Chrome are the supported path. The workflow has been validated end-to-end on target hardware.

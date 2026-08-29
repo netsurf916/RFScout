@@ -1,19 +1,19 @@
 # RFScout capabilities
 
-This document describes capabilities implemented on current `main`. Planned features and design ideas belong in [ROADMAP.md](ROADMAP.md).
+This document describes capabilities implemented on this PR branch. Planned features and design ideas belong in [ROADMAP.md](ROADMAP.md).
 
 ## Application order
 
-RFScout currently starts in **WiFi / BT** unless that application is disabled. Top-level navigation order is:
+RFScout starts on **Home** by default. Top-level navigation order is:
 
 1. WiFi / BT
 2. CC1101
 3. nRF24
 4. Recorder
 5. Thermal, when enabled and detected
-6. Device
+6. Home / Device Settings
 
-Disabled applications are skipped. Device is always available.
+Disabled applications are skipped. Home/Device is always available. Device Settings can select any listed application as the preferred startup target; a disabled or unavailable target falls back to Home for the current boot without erasing the saved preference.
 
 ## WiFi / BT
 
@@ -60,13 +60,15 @@ The source tree temporarily retains the historical `audio_spectrum` application 
 
 Thermal is available when an MLX90640 is detected on the external I2C/Qwiic interface and the application is enabled. The sensor's native 32x24 frame is interpolated for the LCD. Thermal currently has no discrete detection classifier.
 
-## Device
+## Home / Device Settings
 
-Device provides a pass-through landing screen plus a center-entered global settings editor. Implemented settings include display brightness, 12/24-hour clock presentation, timezone selection, manual date/time, per-application enablement, SD logging, global notification mode, global notification volume, one Morse character per notification category, and explicit configuration save.
+Home is a branded pass-through landing screen backed by the non-disableable Device application. The RFScout mark is drawn procedurally on the LCD rather than embedded as a second large bitmap. Rotation continues top-level navigation; center enters Device Settings.
 
-Device itself cannot be disabled. Runtime defaults remain usable without an SD card; persistent configuration is stored in `/sdcard/rfscout.json` when storage is available.
+Implemented Device Settings include display brightness, 12/24-hour clock presentation, timezone selection, preferred startup application, manual date/time, per-application enablement, SD logging, global notification mode, global notification volume, one Morse character per notification category, and explicit configuration save.
 
-Recorder playback volume and microphone input gain are also persisted in the device configuration, but are adjusted through Recorder rather than the Device menu.
+The startup preference is persisted as `apps.startup` in `/sdcard/rfscout.json`. RFScout writes `home`, `wifi_bt`, `cc1101`, `nrf24`, `recorder`, or `thermal`; historical internal aliases `device` and `audio` remain accepted when loading. Home is the compiled default.
+
+Runtime defaults remain usable without an SD card. Recorder playback volume and microphone input gain are also persisted in device configuration, but are adjusted through Recorder rather than Device Settings.
 
 ## Shared UI/status behavior
 
@@ -90,7 +92,7 @@ With valid wall time, records use UTC ISO-8601 timestamps. Before time is establ
 
 The ESP32 system wall clock is authoritative for display, log timestamps, and normal filesystem calendar metadata. Monotonic timers remain authoritative for debounce, RF dwell, retries, timeouts, and housekeeping.
 
-Manual time setting and timezone selection are implemented in Device. Orderly hard power-off can persist a shutdown epoch/source to SD as a cold-boot continuity aid. Deep sleep preserves RTC-running time separately.
+Manual time setting and timezone selection are implemented in Device Settings. Orderly hard power-off can persist a shutdown epoch/source to SD as a cold-boot continuity aid. Deep sleep preserves RTC-running time separately.
 
 ## Hardware/resource boundaries
 
@@ -102,7 +104,7 @@ Manual time setting and timezone selection are implemented in Device. Orderly ha
 
 ## Browser flashing and releases
 
-Ready-for-review PRs and `main` builds can produce short-lived candidate bundles. The browser-flasher GitHub Pages deployment exposes the most recent eligible PR candidate plus published releases through ESP Web Tools/Web Serial. Durable GitHub Releases are prepared deliberately through the manual release workflow and remain draft until explicitly published.
+Ready-for-review PRs and `main` builds can produce short-lived candidate bundles. The browser-flasher GitHub Pages deployment exposes the candidate from the most recent triggering eligible build plus published releases through ESP Web Tools/Web Serial. The flasher uses the RFScout logo and orange/white branding. Durable GitHub Releases are prepared deliberately through the manual release workflow and remain draft until explicitly published.
 
 See [RELEASING.md](RELEASING.md).
 

@@ -1,6 +1,6 @@
 /**
-    device_view.h : RFScout Device application interface
-    Description: Renders and edits global configuration and authoritative wall-clock settings.
+    device_view.h : RFScout Home and Device settings interface
+    Description: Renders the branded Home landing screen and edits global configuration and authoritative wall-clock settings.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -12,7 +12,7 @@
 
 #include <stdbool.h>
 
-/** @brief Render the Device pass-through landing screen without taking encoder ownership. */
+/** @brief Render the Home pass-through landing screen without taking encoder ownership. */
 void device_view_landing( void );
 
 /** @brief Enter Device settings with Back selected first. */

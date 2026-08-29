@@ -35,6 +35,40 @@ static bool saved_time_valid;
 static int64_t saved_time_epoch;
 static char saved_time_source[ 24 ];
 
+static const char *app_config_name( rfscout_app_id_t a_app )
+{
+    static const char *names[ RFSCOUT_APP_COUNT ] = {
+        "wifi_bt", "cc1101", "nrf24", "audio", "thermal", "device" };
+    return ( a_app < RFSCOUT_APP_COUNT ) ? names[ a_app ] : "device";
+}
+
+static bool app_from_config_name( const char *a_name, rfscout_app_id_t *a_app )
+{
+    if( NULL == a_name || NULL == a_app )
+    {
+        return false;
+    }
+    for( size_t index = 0; index < RFSCOUT_APP_COUNT; ++index )
+    {
+        if( 0 == strcasecmp( a_name, app_config_name( (rfscout_app_id_t)index ) ) )
+        {
+            *a_app = (rfscout_app_id_t)index;
+            return true;
+        }
+    }
+    if( 0 == strcasecmp( a_name, "home" ) )
+    {
+        *a_app = RFSCOUT_APP_DEVICE;
+        return true;
+    }
+    if( 0 == strcasecmp( a_name, "recorder" ) )
+    {
+        *a_app = RFSCOUT_APP_AUDIO;
+        return true;
+    }
+    return false;
+}
+
 /** @brief Copy a bounded configuration string. */
 static void copy_string( char *a_destination, size_t a_capacity, const char *a_source )
 {
@@ -60,6 +94,7 @@ static void set_defaults( void )
 {
     memset( &config, 0, sizeof( config ) );
     config.brightness_percent = CONFIG_BRIGHTNESS_DEFAULT;
+    config.startup_app = RFSCOUT_APP_DEVICE;
     config.logging_enabled = true;
     config.clock_24h = false;
     config.alert_mode = RFSCOUT_ALERT_OFF;
@@ -99,8 +134,6 @@ static bool json_bool( const cJSON *a_parent, const char *a_name, bool a_default
 /** @brief Apply validated application enablement overrides. */
 static void load_apps( const cJSON *a_root )
 {
-    static const char *names[ RFSCOUT_APP_COUNT ] = {
-        "wifi_bt", "cc1101", "nrf24", "audio", "thermal", "device" };
     const cJSON *apps = cJSON_GetObjectItemCaseSensitive( a_root, "apps" );
     if( !cJSON_IsObject( apps ) )
     {
@@ -109,10 +142,20 @@ static void load_apps( const cJSON *a_root )
 
     for( size_t index = 0; index < RFSCOUT_APP_COUNT; ++index )
     {
-        config.apps_enabled[ index ] =
-            json_bool( apps, names[ index ], config.apps_enabled[ index ] );
+        config.apps_enabled[ index ] = json_bool(
+            apps, app_config_name( (rfscout_app_id_t)index ), config.apps_enabled[ index ] );
     }
     config.apps_enabled[ RFSCOUT_APP_DEVICE ] = true;
+
+    const cJSON *startup = cJSON_GetObjectItemCaseSensitive( apps, "startup" );
+    if( cJSON_IsString( startup ) && NULL != startup->valuestring )
+    {
+        rfscout_app_id_t parsed;
+        if( app_from_config_name( startup->valuestring, &parsed ) )
+        {
+            config.startup_app = parsed;
+        }
+    }
 }
 
 /** @brief Apply validated display preference overrides. */
@@ -143,13 +186,7 @@ static void load_logging( const cJSON *a_root )
     }
 }
 
-/**
- * @brief Apply global notification mode/volume and one Morse character per canonical alert item.
- *
- * Alert keys come from alert.c's descriptor table. Adding a notification category therefore does
- * not require another key list here; update the enum/descriptor table and the producer mapping
- * documented in alert.h instead.
- */
+/** @brief Apply global notification mode/volume and one Morse character per canonical alert item. */
 static void load_notifications( const cJSON *a_root )
 {
     const cJSON *notifications = cJSON_GetObjectItemCaseSensitive( a_root, "notifications" );
@@ -425,9 +462,6 @@ static esp_err_t load_file( void )
 /** @brief Build the canonical JSON representation for the current configuration. */
 static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_time_source )
 {
-    static const char *app_names[ RFSCOUT_APP_COUNT ] = {
-        "wifi_bt", "cc1101", "nrf24", "audio", "thermal", "device" };
-
     if( a_update_time )
     {
         saved_time_valid =
@@ -452,8 +486,16 @@ static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_tim
     cJSON *apps = cJSON_AddObjectToObject( root, "apps" );
     for( size_t index = 0; index < RFSCOUT_APP_COUNT; ++index )
     {
-        cJSON_AddBoolToObject( apps, app_names[ index ], config.apps_enabled[ index ] );
+        cJSON_AddBoolToObject(
+            apps, app_config_name( (rfscout_app_id_t)index ), config.apps_enabled[ index ] );
     }
+    cJSON_AddStringToObject( apps,
+                             "startup",
+                             RFSCOUT_APP_DEVICE == config.startup_app
+                                 ? "home"
+                                 : ( RFSCOUT_APP_AUDIO == config.startup_app
+                                         ? "recorder"
+                                         : app_config_name( config.startup_app ) ) );
 
     cJSON *logging = cJSON_AddObjectToObject( root, "logging" );
     cJSON_AddBoolToObject( logging, "enabled", config.logging_enabled );
@@ -564,6 +606,21 @@ esp_err_t device_config_set_app_enabled( rfscout_app_id_t a_app, bool a_enabled 
     }
     config.apps_enabled[ a_app ] = a_enabled;
     return ESP_OK;
+}
+
+esp_err_t device_config_set_startup_app( rfscout_app_id_t a_app )
+{
+    if( a_app >= RFSCOUT_APP_COUNT )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    config.startup_app = a_app;
+    return ESP_OK;
+}
+
+rfscout_app_id_t device_config_startup_app( void )
+{
+    return config.startup_app;
 }
 
 esp_err_t device_config_set_logging_enabled( bool a_enabled )

@@ -1,6 +1,6 @@
 # Device configuration and wall clock
 
-This document describes configuration implemented on current `main`. Planned configuration concepts belong in [ROADMAP.md](ROADMAP.md).
+This document describes configuration implemented on the PR branch. Planned configuration concepts belong in [ROADMAP.md](ROADMAP.md).
 
 RFScout always starts from compiled defaults. When an SD card is mounted, persistent preferences are loaded from `/sdcard/rfscout.json`.
 
@@ -21,7 +21,8 @@ Schema version 1 is currently supported. A representative configuration is:
     "nrf24": true,
     "audio": true,
     "thermal": true,
-    "device": true
+    "device": true,
+    "startup": "home"
   },
   "logging": {
     "enabled": true
@@ -76,11 +77,13 @@ Schema version 1 is currently supported. A representative configuration is:
 }
 ```
 
-The historical configuration key remains `apps.audio` because the application enum/ABI still uses `RFSCOUT_APP_AUDIO`; the user-facing application is Recorder.
+The historical configuration key remains `apps.audio` because the application enum/ABI still uses `RFSCOUT_APP_AUDIO`; the user-facing application is Recorder. `apps.startup` writes user-facing aliases where useful: `home` for Device and `recorder` for Audio. The loader also accepts the historical internal names `device` and `audio`.
 
 ## Defaults and validation
 
-Missing or invalid ordinary fields retain compiled defaults. The Device application is always enabled even if configuration attempts to disable it.
+Missing or invalid ordinary fields retain compiled defaults. Home/Device is always enabled even if configuration attempts to disable it.
+
+The compiled startup target is Home. Valid startup values are Home, WiFi/BT, CC1101, nRF24, Recorder, and Thermal. At boot, a disabled or unavailable configured target falls back to Home for that boot without rewriting the saved preference. Thermal additionally requires a detected MLX90640.
 
 The compiled notification mode is `OFF`; valid saved `OFF`, `TONE`, or `MORSE` values override it. Notification volume accepts `0` through `100` and defaults to 50 when no usable saved value exists. Speaker output applies a nonlinear perceptual curve rather than linear PCM scaling.
 
@@ -88,17 +91,20 @@ Recorder playback volume is a separate `0` through `100` preference and does not
 
 Each notification category has one compiled Morse-character default. Valid one-character saved values override defaults individually.
 
+`apps.startup` is a backward-compatible addition within schema version 1. Existing files that omit it receive the compiled Home default without requiring a schema migration.
+
 If the complete JSON document cannot be parsed or the schema version is unsupported, RFScout retains the bad file as `rfscout.json.bad`, regenerates defaults, and continues booting. Configuration replacement uses `.tmp` and `.bak` files so an interrupted save can recover.
 
-## Device application
+## Home and Device Settings
 
-Device has a pass-through landing screen. Merely rotating onto Device does not take ownership of the encoder. Center enters the settings editor; Back returns to the landing screen.
+Home is the pass-through landing state of the non-disableable Device application. RFScout starts there by default. Merely rotating onto Home does not take ownership of the encoder. Center enters Device Settings; Back returns to Home.
 
-Current Device settings include:
+Current Device Settings include:
 
 - LCD brightness;
 - 12/24-hour clock format;
 - timezone selection;
+- preferred startup application;
 - manual date and time;
 - enable/disable state for WiFi/BT, CC1101, nRF24, Recorder (`apps.audio`), and Thermal;
 - SD logging enablement;
@@ -120,7 +126,7 @@ Without an SD card, settings can affect the running session but cannot be persis
 | nRF24 | Back; Low channel; High channel; Dwell; Peak hold; Reset counts | ESB device; Input; Sensor; WiFi-like; Hopping/BLE-like; Logitech-like |
 | Recorder | Back; New recording; Monitor; recording browser; playback volume; delete recording; monitor input gain | None currently |
 | Thermal | No application settings menu | None currently |
-| Device | Back; brightness; clock format; timezone; manual date/time; app enablement; SD logging; notification mode/volume; notification characters; Save config | Configures all registered notification items |
+| Home / Device Settings | Home pass-through; Back; brightness; clock format; timezone; startup app; manual date/time; app enablement; SD logging; notification mode/volume; notification characters; Save config | Configures all registered notification items |
 
 ## Notification registry
 
