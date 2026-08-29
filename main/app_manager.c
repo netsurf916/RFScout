@@ -16,8 +16,10 @@
 #include "device_view.h"
 #include "event.h"
 #include "mlx90640.h"
+#include "morse.h"
 #include "notification.h"
 #include "notification_preferences.h"
+#include "notification_settings_view.h"
 #include "nrf24.h"
 #include "nrf24_activity.h"
 #include "observation_store.h"
@@ -66,6 +68,10 @@
 #define NRF24_MENU_RESET_COUNTS 6U
 #define NRF24_MENU_ITEM_COUNT 7U
 
+#define NOTIFICATION_MENU_BACK 0U
+#define NOTIFICATION_MENU_ENABLED 1U
+#define NOTIFICATION_MENU_FIRST_MAPPING 2U
+
 #define AUDIO_BROWSER_BACK 0U
 #define AUDIO_BROWSER_NEW 1U
 #define AUDIO_BROWSER_MONITOR 2U
@@ -86,6 +92,8 @@ static bool audio_menu;
 static bool audio_edit;
 static bool audio_delete_confirm;
 static bool device_menu;
+static bool notification_menu;
+static bool notification_edit;
 static bool wifi_monitor_ready;
 static bool ble_monitor_ready;
 static bool cc_peak_hold = true;
@@ -94,6 +102,7 @@ static unsigned wifi_item;
 static unsigned cc_item;
 static unsigned nr_item;
 static unsigned audio_item;
+static unsigned notification_item;
 static rfscout_recorder_state_t audio_last_state = RFSCOUT_RECORDER_IDLE;
 static uint16_t cc_notification_counts[ CC1101_FP_TYPE_COUNT ];
 static uint32_t nr_notification_counts[ NRF24_FP_LOGITECH_LIKE + 1U ];
@@ -101,6 +110,17 @@ static uint32_t nr_notification_counts[ NRF24_FP_LOGITECH_LIKE + 1U ];
 static void emit_event( rfscout_event_type_t a_type, int32_t a_value )
 {
     rfscout_event_emit( a_type, (uint8_t)active_app, a_value );
+}
+
+static char next_morse_character( char a_current, int a_direction )
+{
+    const char *characters = morse_supported_characters();
+    const size_t count = strlen( characters );
+    const char *current = strchr( characters, a_current );
+    size_t index = ( NULL != current ) ? (size_t)( current - characters ) : 0U;
+    index = ( a_direction > 0 ) ? ( index + 1U ) % count
+                                : ( index + count - 1U ) % count;
+    return characters[ index ];
 }
 
 static bool probe_thermal( void )
@@ -209,6 +229,155 @@ static void render_wifi_menu( void )
         wifi_item, notification_preferences_app_enabled( RFSCOUT_APP_WIFI_BT ) );
 }
 
+static void render_cc_menu( void )
+{
+    const cc1101_scan_config_t *config = cc1101_config();
+    radio_app_view_cc1101_menu(
+        cc_item,
+        cc_edit,
+        cc1101_profile_name( config->profile ),
+        config->low_khz,
+        config->high_khz,
+        config->step_khz,
+        cc1101_sweep_count(),
+        cc_limit,
+        cc_peak_hold,
+        notification_preferences_app_enabled( RFSCOUT_APP_CC1101 ) );
+}
+
+static void render_nr_menu( void )
+{
+    const nrf24_scan_config_t *config = nrf24_config();
+    radio_app_view_nrf24_menu(
+        nr_item,
+        nr_edit,
+        config->low_channel,
+        config->high_channel,
+        config->dwell_us,
+        nr_peak_hold,
+        notification_preferences_app_enabled( RFSCOUT_APP_NRF24 ) );
+}
+
+static void render_parent_menu( void )
+{
+    if( RFSCOUT_APP_WIFI_BT == active_app )
+    {
+        render_wifi_menu();
+    }
+    else if( RFSCOUT_APP_CC1101 == active_app )
+    {
+        render_cc_menu();
+    }
+    else if( RFSCOUT_APP_NRF24 == active_app )
+    {
+        render_nr_menu();
+    }
+}
+
+static void open_notification_menu( void )
+{
+    notification_menu = true;
+    notification_edit = false;
+    notification_item = NOTIFICATION_MENU_BACK;
+    notification_settings_view_render( active_app, notification_item, notification_edit );
+    emit_event( RFSCOUT_EVENT_ENTER, 0 );
+}
+
+static void close_notification_menu( void )
+{
+    notification_menu = false;
+    notification_edit = false;
+    notification_item = NOTIFICATION_MENU_BACK;
+    render_parent_menu();
+}
+
+static void notification_input( bool a_pressed, int a_delta )
+{
+    const size_t notification_count = notification_count_for_app( active_app );
+    const unsigned item_count = NOTIFICATION_MENU_FIRST_MAPPING + (unsigned)notification_count;
+    if( item_count <= NOTIFICATION_MENU_FIRST_MAPPING )
+    {
+        close_notification_menu();
+        return;
+    }
+
+    if( a_pressed )
+    {
+        if( notification_edit )
+        {
+            notification_edit = false;
+            notification_settings_view_render( active_app, notification_item, false );
+            emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
+            return;
+        }
+        if( NOTIFICATION_MENU_BACK == notification_item )
+        {
+            close_notification_menu();
+            emit_event( RFSCOUT_EVENT_BACK, 0 );
+            return;
+        }
+        if( NOTIFICATION_MENU_ENABLED == notification_item )
+        {
+            const bool old_value = notification_preferences_app_enabled( active_app );
+            if( ESP_OK == notification_preferences_set_app_enabled( active_app, !old_value ) )
+            {
+                notification_settings_view_render( active_app, notification_item, false );
+                emit_event( !old_value ? RFSCOUT_EVENT_ENABLE : RFSCOUT_EVENT_DISABLE,
+                            !old_value ? 1 : 0 );
+            }
+            return;
+        }
+        notification_edit = true;
+        notification_settings_view_render( active_app, notification_item, true );
+        emit_event( RFSCOUT_EVENT_ENTER, 0 );
+        return;
+    }
+
+    if( 0 == a_delta )
+    {
+        return;
+    }
+    const int direction = ( a_delta > 0 ) ? 1 : -1;
+    if( notification_edit )
+    {
+        if( notification_item < NOTIFICATION_MENU_FIRST_MAPPING )
+        {
+            return;
+        }
+        const rfscout_notification_descriptor_t *descriptor = notification_descriptor_for_app(
+            active_app, notification_item - NOTIFICATION_MENU_FIRST_MAPPING );
+        if( NULL == descriptor )
+        {
+            return;
+        }
+        const char old_character = device_config_notification_character( descriptor->type );
+        const char new_character = next_morse_character( old_character, direction );
+        if( ( new_character != old_character ) &&
+            ( ESP_OK == device_config_set_notification_character( descriptor->type, new_character ) ) )
+        {
+            notification_settings_view_render( active_app, notification_item, true );
+            emit_event( RFSCOUT_EVENT_NAVIGATE, direction );
+        }
+        return;
+    }
+
+    int item = (int)notification_item + direction;
+    if( item < 0 )
+    {
+        item = (int)item_count - 1;
+    }
+    if( item >= (int)item_count )
+    {
+        item = 0;
+    }
+    if( (unsigned)item != notification_item )
+    {
+        notification_item = (unsigned)item;
+        notification_settings_view_render( active_app, notification_item, false );
+        emit_event( RFSCOUT_EVENT_NAVIGATE, direction );
+    }
+}
+
 static void close_wifi_menu( void )
 {
     wifi_menu = false;
@@ -228,7 +397,6 @@ static void wifi_input( bool a_pressed, int a_delta )
         }
         return;
     }
-
     if( a_pressed )
     {
         if( WIFI_MENU_BACK == wifi_item )
@@ -239,15 +407,7 @@ static void wifi_input( bool a_pressed, int a_delta )
         }
         if( WIFI_MENU_NOTIFICATIONS == wifi_item )
         {
-            const bool old_value =
-                notification_preferences_app_enabled( RFSCOUT_APP_WIFI_BT );
-            if( ESP_OK == notification_preferences_set_app_enabled(
-                              RFSCOUT_APP_WIFI_BT, !old_value ) )
-            {
-                render_wifi_menu();
-                emit_event( !old_value ? RFSCOUT_EVENT_ENABLE : RFSCOUT_EVENT_DISABLE,
-                            !old_value ? 1 : 0 );
-            }
+            open_notification_menu();
             return;
         }
         if( WIFI_MENU_RESET == wifi_item )
@@ -259,12 +419,10 @@ static void wifi_input( bool a_pressed, int a_delta )
             return;
         }
     }
-
     if( 0 == a_delta )
     {
         return;
     }
-
     int item = (int)wifi_item + ( ( a_delta > 0 ) ? 1 : -1 );
     if( item < 0 )
     {
@@ -280,22 +438,6 @@ static void wifi_input( bool a_pressed, int a_delta )
         render_wifi_menu();
         emit_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
     }
-}
-
-static void render_cc_menu( void )
-{
-    const cc1101_scan_config_t *config = cc1101_config();
-    radio_app_view_cc1101_menu(
-        cc_item,
-        cc_edit,
-        cc1101_profile_name( config->profile ),
-        config->low_khz,
-        config->high_khz,
-        config->step_khz,
-        cc1101_sweep_count(),
-        cc_limit,
-        cc_peak_hold,
-        notification_preferences_app_enabled( RFSCOUT_APP_CC1101 ) );
 }
 
 static void notify_cc_detections( const cc1101_fingerprint_t *a_devices, size_t a_device_count )
@@ -349,19 +491,6 @@ static void observe_cc_spectrum( void )
     const size_t count = cc1101_spectrum( rssi, CC1101_SPECTRUM_BINS );
     const cc1101_scan_config_t *config = cc1101_config();
     cc1101_activity_observe_sweep( rssi, count, config->low_khz, config->high_khz );
-}
-
-static void render_nr_menu( void )
-{
-    const nrf24_scan_config_t *config = nrf24_config();
-    radio_app_view_nrf24_menu(
-        nr_item,
-        nr_edit,
-        config->low_channel,
-        config->high_channel,
-        config->dwell_us,
-        nr_peak_hold,
-        notification_preferences_app_enabled( RFSCOUT_APP_NRF24 ) );
 }
 
 static void notify_nr_detections( void )
@@ -444,7 +573,6 @@ static void leave_app( rfscout_app_id_t a_app )
         audio_spectrum_stop();
         audio_item = AUDIO_BROWSER_BACK;
     }
-
     wifi_menu = false;
     cc_menu = false;
     cc_edit = false;
@@ -455,6 +583,8 @@ static void leave_app( rfscout_app_id_t a_app )
     audio_edit = false;
     audio_delete_confirm = false;
     device_menu = false;
+    notification_menu = false;
+    notification_edit = false;
 }
 
 static void enter_app( rfscout_app_id_t a_app )
@@ -470,7 +600,6 @@ static void enter_app( rfscout_app_id_t a_app )
             last_radio_retry_us = esp_timer_get_time();
             start_wifi_bt_collectors();
             break;
-
         case RFSCOUT_APP_CC1101:
             cc_item = CC1101_MENU_BACK;
             cc_menu = false;
@@ -484,7 +613,6 @@ static void enter_app( rfscout_app_id_t a_app )
             }
             render_cc_spectrum();
             break;
-
         case RFSCOUT_APP_NRF24:
             nr_item = NRF24_MENU_BACK;
             nr_menu = false;
@@ -497,7 +625,6 @@ static void enter_app( rfscout_app_id_t a_app )
             }
             render_nr_spectrum();
             break;
-
         case RFSCOUT_APP_AUDIO:
             audio_item = AUDIO_BROWSER_BACK;
             audio_menu = false;
@@ -509,16 +636,13 @@ static void enter_app( rfscout_app_id_t a_app )
             }
             render_audio();
             break;
-
         case RFSCOUT_APP_THERMAL:
             thermal_view_enter();
             break;
-
         case RFSCOUT_APP_DEVICE:
             device_menu = false;
             device_view_landing();
             break;
-
         case RFSCOUT_APP_COUNT:
         default:
             break;
@@ -540,7 +664,6 @@ static rfscout_app_id_t next_available_app( int a_direction, int64_t a_now )
         {
             next = 0;
         }
-
         const rfscout_app_id_t candidate = (rfscout_app_id_t)next;
         if( !app_available( candidate ) )
         {
@@ -566,18 +689,15 @@ static bool switch_app_for_delta( int a_delta, int64_t a_now )
         return false;
     }
     const int direction = ( a_delta > 0 ) ? 1 : -1;
-    const rfscout_app_id_t previous = active_app;
     const rfscout_app_id_t candidate = next_available_app( direction, a_now );
     if( candidate == active_app )
     {
         return false;
     }
-
     leave_app( active_app );
     active_app = candidate;
     enter_app( active_app );
     rfscout_event_emit( RFSCOUT_EVENT_NAVIGATE, (uint8_t)active_app, direction );
-    ESP_LOGD( TAG, "app navigation %d -> %d", (int)previous, (int)active_app );
     return true;
 }
 
@@ -610,7 +730,6 @@ static void cc_input( bool a_pressed, int a_delta )
         }
         return;
     }
-
     if( a_pressed )
     {
         if( CC1101_MENU_BACK == cc_item )
@@ -621,13 +740,7 @@ static void cc_input( bool a_pressed, int a_delta )
         }
         if( CC1101_MENU_NOTIFICATIONS == cc_item )
         {
-            const bool old_value = notification_preferences_app_enabled( RFSCOUT_APP_CC1101 );
-            if( ESP_OK == notification_preferences_set_app_enabled( RFSCOUT_APP_CC1101, !old_value ) )
-            {
-                render_cc_menu();
-                emit_event( !old_value ? RFSCOUT_EVENT_ENABLE : RFSCOUT_EVENT_DISABLE,
-                            !old_value ? 1 : 0 );
-            }
+            open_notification_menu();
             return;
         }
         if( CC1101_MENU_RESET_COUNTS == cc_item )
@@ -638,19 +751,16 @@ static void cc_input( bool a_pressed, int a_delta )
             emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
             return;
         }
-
         cc_edit = !cc_edit;
         cc_limit = false;
         render_cc_menu();
         emit_event( RFSCOUT_EVENT_ACTIVATE, cc_edit ? 1 : 0 );
         return;
     }
-
     if( 0 == a_delta )
     {
         return;
     }
-
     const int direction = ( a_delta > 0 ) ? 1 : -1;
     if( !cc_edit )
     {
@@ -672,7 +782,6 @@ static void cc_input( bool a_pressed, int a_delta )
         }
         return;
     }
-
     if( CC1101_MENU_PEAK_HOLD == cc_item )
     {
         cc_peak_hold = !cc_peak_hold;
@@ -717,7 +826,6 @@ static void cc_input( bool a_pressed, int a_delta )
     {
         changed = false;
     }
-
     if( changed && ( cc_item >= CC1101_MENU_LOW ) && ( cc_item <= CC1101_MENU_STEP ) )
     {
         cc1101_activity_reset();
@@ -752,7 +860,6 @@ static void nr_input( bool a_pressed, int a_delta )
         }
         return;
     }
-
     if( a_pressed )
     {
         if( NRF24_MENU_BACK == nr_item )
@@ -763,13 +870,7 @@ static void nr_input( bool a_pressed, int a_delta )
         }
         if( NRF24_MENU_NOTIFICATIONS == nr_item )
         {
-            const bool old_value = notification_preferences_app_enabled( RFSCOUT_APP_NRF24 );
-            if( ESP_OK == notification_preferences_set_app_enabled( RFSCOUT_APP_NRF24, !old_value ) )
-            {
-                render_nr_menu();
-                emit_event( !old_value ? RFSCOUT_EVENT_ENABLE : RFSCOUT_EVENT_DISABLE,
-                            !old_value ? 1 : 0 );
-            }
+            open_notification_menu();
             return;
         }
         if( NRF24_MENU_RESET_COUNTS == nr_item )
@@ -780,18 +881,15 @@ static void nr_input( bool a_pressed, int a_delta )
             emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
             return;
         }
-
         nr_edit = !nr_edit;
         render_nr_menu();
         emit_event( RFSCOUT_EVENT_ACTIVATE, nr_edit ? 1 : 0 );
         return;
     }
-
     if( 0 == a_delta )
     {
         return;
     }
-
     const int direction = ( a_delta > 0 ) ? 1 : -1;
     if( !nr_edit )
     {
@@ -812,7 +910,6 @@ static void nr_input( bool a_pressed, int a_delta )
         }
         return;
     }
-
     if( NRF24_MENU_PEAK_HOLD == nr_item )
     {
         nr_peak_hold = !nr_peak_hold;
@@ -839,7 +936,6 @@ static void nr_input( bool a_pressed, int a_delta )
     {
         return;
     }
-
     const nrf24_scan_config_t after = *nrf24_config();
     render_nr_menu();
     if( ( before.low_channel != after.low_channel ) ||
@@ -887,7 +983,6 @@ static void audio_input( bool a_pressed, bool a_long_pressed, int a_delta )
         }
         return;
     }
-
     const rfscout_recorder_state_t state = recorder_state();
     if( audio_edit )
     {
@@ -922,11 +1017,9 @@ static void audio_input( bool a_pressed, bool a_long_pressed, int a_delta )
             audio_delete_confirm = false;
             show_audio_menu();
             emit_event( activated ? RFSCOUT_EVENT_ACTIVATE : RFSCOUT_EVENT_BACK, 0 );
-            return;
         }
         return;
     }
-
     if( RFSCOUT_RECORDER_RECORDING == state )
     {
         if( a_pressed || a_long_pressed )
@@ -938,12 +1031,10 @@ static void audio_input( bool a_pressed, bool a_long_pressed, int a_delta )
         }
         return;
     }
-
     if( RFSCOUT_RECORDER_SAVING == state )
     {
         return;
     }
-
     if( RFSCOUT_RECORDER_MONITORING == state )
     {
         if( a_pressed || a_long_pressed )
@@ -978,7 +1069,6 @@ static void audio_input( bool a_pressed, bool a_long_pressed, int a_delta )
         show_audio_menu();
         return;
     }
-
     if( RFSCOUT_RECORDER_PLAYING == state )
     {
         if( a_pressed )
@@ -1010,7 +1100,6 @@ static void audio_input( bool a_pressed, bool a_long_pressed, int a_delta )
         show_audio_menu();
         return;
     }
-
     if( a_long_pressed && ( audio_item >= AUDIO_BROWSER_FILE_BASE ) )
     {
         audio_edit = true;
@@ -1019,7 +1108,6 @@ static void audio_input( bool a_pressed, bool a_long_pressed, int a_delta )
         emit_event( RFSCOUT_EVENT_ENTER, 0 );
         return;
     }
-
     if( a_pressed )
     {
         if( AUDIO_BROWSER_BACK == audio_item )
@@ -1050,7 +1138,6 @@ static void audio_input( bool a_pressed, bool a_long_pressed, int a_delta )
             show_audio_menu();
             return;
         }
-
         const size_t index = audio_item - AUDIO_BROWSER_FILE_BASE;
         const device_config_t *config = device_config_get();
         const uint8_t volume = ( NULL != config ) ? config->recorder_volume_percent : 50U;
@@ -1061,12 +1148,10 @@ static void audio_input( bool a_pressed, bool a_long_pressed, int a_delta )
         show_audio_menu();
         return;
     }
-
     if( 0 == a_delta )
     {
         return;
     }
-
     const unsigned item_count = AUDIO_BROWSER_FILE_BASE + (unsigned)recorder_file_count();
     int item = (int)audio_item + ( ( a_delta > 0 ) ? 1 : -1 );
     if( item < 0 )
@@ -1087,6 +1172,21 @@ static void audio_input( bool a_pressed, bool a_long_pressed, int a_delta )
 
 static void close_active_menu_for_back( void )
 {
+    if( notification_menu )
+    {
+        if( notification_edit )
+        {
+            notification_edit = false;
+            notification_settings_view_render( active_app, notification_item, false );
+            emit_event( RFSCOUT_EVENT_BACK, 0 );
+        }
+        else
+        {
+            close_notification_menu();
+            emit_event( RFSCOUT_EVENT_BACK, 0 );
+        }
+        return;
+    }
     if( RFSCOUT_APP_DEVICE == active_app && device_menu )
     {
         device_menu = false;
@@ -1138,10 +1238,13 @@ esp_err_t app_manager_init( void )
     audio_edit = false;
     audio_delete_confirm = false;
     device_menu = false;
+    notification_menu = false;
+    notification_edit = false;
     wifi_item = WIFI_MENU_BACK;
     cc_item = CC1101_MENU_BACK;
     nr_item = NRF24_MENU_BACK;
     audio_item = AUDIO_BROWSER_BACK;
+    notification_item = NOTIFICATION_MENU_BACK;
     wifi_monitor_ready = true;
     ble_monitor_ready = true;
     cc_peak_hold = true;
@@ -1154,14 +1257,12 @@ esp_err_t app_manager_init( void )
     {
         return result;
     }
-
     (void)mlx90640_init();
     if( !app_available( active_app ) )
     {
         ESP_LOGW( TAG, "configured startup app unavailable; using Home" );
         active_app = RFSCOUT_APP_DEVICE;
     }
-
     if( RFSCOUT_APP_DEVICE == active_app )
     {
         device_view_landing();
@@ -1181,7 +1282,6 @@ rfscout_app_id_t app_manager_current( void )
 void app_manager_poll( void )
 {
     const int64_t now = esp_timer_get_time();
-
     if( ( RFSCOUT_APP_THERMAL != active_app ) &&
         device_config_app_enabled( RFSCOUT_APP_THERMAL ) &&
         ( now - last_thermal_probe_us >= APP_FEATURE_PROBE_INTERVAL_US ) )
@@ -1221,6 +1321,11 @@ void app_manager_poll( void )
     if( back )
     {
         close_active_menu_for_back();
+        return;
+    }
+    if( notification_menu )
+    {
+        notification_input( pressed, delta );
         return;
     }
 
@@ -1364,7 +1469,6 @@ void app_manager_poll( void )
         {
             return;
         }
-
         if( ( !wifi_monitor_ready || !ble_monitor_ready ) &&
             ( now - last_radio_retry_us >= APP_RADIO_RETRY_INTERVAL_US ) )
         {
@@ -1387,7 +1491,6 @@ void app_manager_poll( void )
     {
         return;
     }
-
     if( !mlx90640_is_detected() )
     {
         leave_app( active_app );
@@ -1399,7 +1502,6 @@ void app_manager_poll( void )
     {
         return;
     }
-
     last_app_refresh_us = now;
     const esp_err_t result = thermal_view_render();
     if( ( ESP_OK != result ) && ( ESP_ERR_NOT_FINISHED != result ) && !mlx90640_is_detected() )
