@@ -37,8 +37,8 @@
 #define NRF24_PACKET_ROW_HEIGHT 11
 #define NRF24_PACKET_PREVIEW_ROWS 7U
 #define NRF24_PACKET_PREVIEW_BYTES 8U
-#define CC_MENU_ITEM_COUNT 8U
-#define NRF24_MENU_ITEM_COUNT 8U
+#define CC_MENU_ITEM_COUNT 7U
+#define NRF24_MENU_ITEM_COUNT 7U
 
 static void format_mhz( char *a_buffer, size_t a_capacity, uint32_t a_frequency_khz )
 {
@@ -92,7 +92,6 @@ format_packet_preview( const nrf24_recent_packet_t *a_packet, char *a_buffer, si
 }
 
 void radio_app_view_cc1101_spectrum( const uint8_t *a_current,
-                                     const uint8_t *a_peak,
                                      size_t a_count,
                                      uint32_t a_low_khz,
                                      uint32_t a_high_khz,
@@ -124,7 +123,7 @@ void radio_app_view_cc1101_spectrum( const uint8_t *a_current,
     const int graph_width = APP_COLUMN_DIVIDER_X - UI_LAYOUT_LEFT_X - 6;
     display_fill_rect( graph_x, APP_GRAPH_Y + CC_GRAPH_HEIGHT, graph_width, 1, DIM );
 
-    if( ( NULL != a_current ) && ( NULL != a_peak ) )
+    if( NULL != a_current )
     {
         for( size_t i = 0U; i < a_count; ++i )
         {
@@ -136,17 +135,6 @@ void radio_app_view_cc1101_spectrum( const uint8_t *a_current,
             {
                 display_fill_rect(
                     x, APP_GRAPH_Y + CC_GRAPH_HEIGHT - height, 2, height, theme->graph_primary );
-            }
-
-            if( a_peak[ i ] > 0U )
-            {
-                int peak_y = APP_GRAPH_Y + CC_GRAPH_HEIGHT -
-                             (int)a_peak[ i ] * ( CC_GRAPH_HEIGHT - 3 ) / 255;
-                if( peak_y < APP_GRAPH_Y )
-                {
-                    peak_y = APP_GRAPH_Y;
-                }
-                display_fill_rect( x, peak_y, 2, 2, theme->graph_peak );
             }
         }
     }
@@ -175,7 +163,6 @@ void radio_app_view_cc1101_spectrum( const uint8_t *a_current,
         }
     }
 
-    display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "RSSI / PEAK HOLD", DIM, 1U );
     (void)display_present();
 }
 
@@ -187,7 +174,6 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
                                  uint32_t a_step_khz,
                                  size_t a_samples,
                                  bool a_limit_reached,
-                                 bool a_peak_hold,
                                  bool a_notifications_enabled )
 {
     static const char *labels[ CC_MENU_ITEM_COUNT ] = {
@@ -196,7 +182,6 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
         "LOW",
         "HIGH",
         "STEP",
-        "PEAK HOLD",
         "NOTIFICATIONS",
         "RESET COUNTS",
     };
@@ -217,7 +202,7 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
 
         const int y = UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT;
         const bool active = ( i == a_selected );
-        const bool action = ( 0U == i ) || ( 6U == i ) || ( 7U == i );
+        const bool action = ( 0U == i ) || ( 5U == i ) || ( 6U == i );
         const uint16_t accent =
             ( active && a_editing && a_limit_reached ) ? theme->warning : theme->selected;
         const char *marker = " ";
@@ -258,10 +243,6 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
         }
         else if( 5U == i )
         {
-            snprintf( value, sizeof( value ), "%s", a_peak_hold ? "ON" : "OFF" );
-        }
-        else if( 6U == i )
-        {
             snprintf( value, sizeof( value ), "%s", a_notifications_enabled ? "ON" : "OFF" );
         }
 
@@ -293,7 +274,6 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
 }
 
 void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
-                                    const uint8_t *a_slow,
                                     size_t a_count,
                                     uint8_t a_low_channel,
                                     uint8_t a_high_channel,
@@ -328,7 +308,7 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
     const size_t span = (size_t)( a_high_channel - a_low_channel ) + 1U;
     display_fill_rect( graph_x, APP_GRAPH_Y + NRF24_GRAPH_HEIGHT, graph_width, 1, theme->divider );
 
-    if( ( NULL != a_fast ) && ( NULL != a_slow ) )
+    if( NULL != a_fast )
     {
         for( size_t i = 0U; i < span; ++i )
         {
@@ -346,17 +326,6 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
             {
                 display_fill_rect(
                     x, APP_GRAPH_Y + NRF24_GRAPH_HEIGHT - height, 2, height, theme->graph_primary );
-            }
-
-            if( a_slow[ channel ] > 0U )
-            {
-                int peak_y = APP_GRAPH_Y + NRF24_GRAPH_HEIGHT -
-                             (int)a_slow[ channel ] * ( NRF24_GRAPH_HEIGHT - 3 ) / 255;
-                if( peak_y < APP_GRAPH_Y )
-                {
-                    peak_y = APP_GRAPH_Y;
-                }
-                display_fill_rect( x, peak_y, 2, 2, theme->graph_peak );
             }
         }
     }
@@ -413,17 +382,11 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
                                 uint8_t a_low_channel,
                                 uint8_t a_high_channel,
                                 uint16_t a_dwell_us,
-                                bool a_peak_hold,
                                 bool a_notifications_enabled )
 {
-    static const char *labels[ NRF24_MENU_ITEM_COUNT ] = { "BACK",
-                                                           "LOW CH",
-                                                           "HIGH CH",
-                                                           "DWELL",
-                                                           "PEAK HOLD",
-                                                           "PACKETS",
-                                                           "NOTIFICATIONS",
-                                                           "RESET COUNTS" };
+    static const char *labels[ NRF24_MENU_ITEM_COUNT ] = {
+        "BACK", "LOW CH", "HIGH CH", "DWELL", "PACKETS", "NOTIFICATIONS", "RESET COUNTS"
+    };
     const ui_theme_palette_t *theme = ui_theme_get();
     const unsigned first = ui_layout_menu_window_start( a_selected, NRF24_MENU_ITEM_COUNT );
 
@@ -441,7 +404,7 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
 
         const int y = UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT;
         const bool active = ( i == a_selected );
-        const bool action = ( 0U == i ) || ( 5U == i ) || ( 6U == i ) || ( 7U == i );
+        const bool action = ( 0U == i ) || ( 4U == i ) || ( 5U == i ) || ( 6U == i );
         const char *marker = " ";
 
         if( active )
@@ -475,11 +438,7 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
         {
             snprintf( value, sizeof( value ), "%u us", (unsigned)a_dwell_us );
         }
-        else if( 4U == i )
-        {
-            snprintf( value, sizeof( value ), "%s", a_peak_hold ? "ON" : "OFF" );
-        }
-        else if( 6U == i )
+        else if( 5U == i )
         {
             snprintf( value, sizeof( value ), "%s", a_notifications_enabled ? "ON" : "OFF" );
         }
