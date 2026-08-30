@@ -1,0 +1,45 @@
+name: PR48 fix CC1101 wake handshake
+
+on: [push]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: detect-radio-hardware-apps
+      - name: Add explicit CC1101 wake handshake
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('main/cc1101.c')
+          s = p.read_text()
+          s = s.replace('#define CC1101_STOP_TIMEOUT_MS 250U\n', '#define CC1101_STOP_TIMEOUT_MS 250U\n#define CC1101_WAKE_TIMEOUT_US 1000U\n', 1)
+          old = '''static esp_err_t strobe( uint8_t a_command )\n{\n    return transfer( a_command, 0U, NULL );\n}\n'''
+          new = '''static esp_err_t strobe( uint8_t a_command )\n{\n    return transfer( a_command, 0U, NULL );\n}\n\nstatic esp_err_t attach_spi_device( void )\n{\n    spi_device_interface_config_t device_config = { .clock_speed_hz = 4000000,\n                                                    .mode = 0,\n                                                    .spics_io_num = RFSCOUT_BOARD_CC1101_CS_PIN,\n                                                    .queue_size = 1 };\n    return spi_bus_add_device( CC1101_SPI_HOST, &device_config, &device );\n}\n\nstatic esp_err_t wake_from_power_down( void )\n{\n    if( NULL != device )\n    {\n        const esp_err_t remove_result = spi_bus_remove_device( device );\n        if( ESP_OK != remove_result )\n        {\n            return remove_result;\n        }\n        device = NULL;\n    }\n\n    gpio_reset_pin( RFSCOUT_BOARD_CC1101_CS_PIN );\n    gpio_set_direction( RFSCOUT_BOARD_CC1101_CS_PIN, GPIO_MODE_OUTPUT );\n    gpio_set_level( RFSCOUT_BOARD_CC1101_CS_PIN, 1 );\n    esp_rom_delay_us( 1U );\n    gpio_set_level( RFSCOUT_BOARD_CC1101_CS_PIN, 0 );\n\n    unsigned waited_us = 0U;\n    while( ( 0 != gpio_get_level( RFSCOUT_BOARD_SPI_MISO_PIN ) ) &&\n           ( waited_us < CC1101_WAKE_TIMEOUT_US ) )\n    {\n        esp_rom_delay_us( 1U );\n        ++waited_us;\n    }\n\n    gpio_set_level( RFSCOUT_BOARD_CC1101_CS_PIN, 1 );\n    if( waited_us >= CC1101_WAKE_TIMEOUT_US )\n    {\n        ESP_LOGE( TAG, "CC1101 wake timed out waiting for SO" );\n        return ESP_ERR_TIMEOUT;\n    }\n\n    return attach_spi_device();\n}\n'''
+          assert old in s
+          s = s.replace(old, new, 1)
+          old2 = '''    spi_device_interface_config_t device_config = { .clock_speed_hz = 4000000,\n                                                    .mode = 0,\n                                                    .spics_io_num = RFSCOUT_BOARD_CC1101_CS_PIN,\n                                                    .queue_size = 1 };\n\n    esp_err_t result = spi_bus_add_device( CC1101_SPI_HOST, &device_config, &device );\n'''
+          new2 = '''    esp_err_t result = attach_spi_device();\n'''
+          assert old2 in s
+          s = s.replace(old2, new2, 1)
+          old3 = '''    result = write_register( CC1101_MCSM0, 0x18U );\n'''
+          new3 = '''    result = wake_from_power_down();\n    if( ESP_OK != result )\n    {\n        return result;\n    }\n\n    result = write_register( CC1101_MCSM0, 0x18U );\n'''
+          assert old3 in s
+          s = s.replace(old3, new3, 1)
+          p.write_text(s)
+          PY
+      - name: Format and commit
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format-18
+          clang-format-18 -i main/cc1101.c
+          git config user.name "Daniel Wilson"
+          git config user.email "netsurf916@users.noreply.github.com"
+          git add main/cc1101.c
+          git commit -m "Wake CC1101 before configuration"
+          git push origin HEAD:detect-radio-hardware-apps
