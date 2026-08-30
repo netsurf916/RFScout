@@ -332,6 +332,12 @@ esp_err_t cc1101_init( void )
         }
     }
 
+    if( detected )
+    {
+        (void)strobe( CC1101_SIDLE );
+        (void)strobe( CC1101_SPWD );
+        disable_rf_path();
+    }
     return detected ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 

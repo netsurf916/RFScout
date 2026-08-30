@@ -330,7 +330,8 @@ static uint32_t measure_pdm_data_edges( void )
     int count = 0;
     if( ESP_OK == result )
     {
-        vTaskDelay( pdMS_TO_TICKS( RECORDER_MIC_PROBE_MS ) );
+        const TickType_t requested_ticks = pdMS_TO_TICKS( RECORDER_MIC_PROBE_MS );
+        vTaskDelay( requested_ticks > 0U ? requested_ticks : 1U );
         (void)pcnt_unit_stop( unit );
         result = pcnt_unit_get_count( unit, &count );
     }
