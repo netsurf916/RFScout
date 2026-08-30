@@ -37,7 +37,7 @@ Wi-Fi and BLE likewise remain initialized as platform services while their activ
 
 ## Recorder
 
-Entering Recorder should not open the microphone. Recorder initialization may enumerate recordings and prepare reusable synchronization state, but I2S microphone ownership begins only for recording or monitor actions. Leaving Recorder must synchronously stop recording/monitor/playback activity according to the existing bounded shutdown rules.
+Entering Recorder should not open the microphone. `recorder_init()` is intentionally allowed at entry because it only prepares reusable synchronization state and refreshes the recording catalog; I2S microphone ownership begins only for recording or monitor actions. Leaving Recorder must synchronously stop recording/monitor/playback activity according to the existing bounded shutdown rules.
 
 ## UI interaction policy
 
