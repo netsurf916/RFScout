@@ -46,7 +46,7 @@ esp_err_t cc1101_init( void );
 esp_err_t cc1101_start( void );
 
 /** @brief Stop acquisition, power down the CC1101, and disable its RF path. */
-void cc1101_stop( void );
+bool cc1101_stop( void );
 
 /** @brief Reserved non-blocking service hook for CC1101 application polling. */
 void cc1101_poll( void );

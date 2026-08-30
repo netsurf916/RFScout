@@ -31,7 +31,7 @@ static const char *TAG = "ble_monitor";
 static uint8_t own_addr_type;
 static ble_observation_fn sink;
 static bool host_synced;
-static bool scan_requested = true;
+static bool scan_requested;
 static bool scanning;
 
 /** @brief Add one unique 16-bit BLE service UUID to an observation. */
@@ -242,6 +242,7 @@ esp_err_t ble_monitor_stop( void )
 esp_err_t ble_monitor_init( ble_observation_fn a_callback )
 {
     sink = a_callback;
+    scan_requested = false;
 
     const int result = nimble_port_init();
     if( 0 != result )

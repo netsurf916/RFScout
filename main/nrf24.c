@@ -36,6 +36,7 @@
 #define NRF24_DELAY_SLICE_US 1000U
 #define NRF24_CHANNELS_PER_SCHEDULER_BREAK 16U
 #define NRF24_FRAME_NOTIFY_INTERVAL_MS 125U
+#define NRF24_STOP_TIMEOUT_MS 250U
 
 static const char *TAG = "nrf24";
 static spi_device_handle_t device;
@@ -44,6 +45,7 @@ static portMUX_TYPE state_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool initialized;
 static bool detected;
 static volatile bool running;
+static volatile bool worker_active;
 static volatile bool frame_ready;
 static TickType_t last_frame_take_tick;
 static uint8_t acquisition[ NRF24_CHANNEL_COUNT ];
@@ -132,6 +134,7 @@ static void scan_worker( void *a_argument )
     while( true )
     {
         ulTaskNotifyTake( pdTRUE, portMAX_DELAY );
+        worker_active = true;
 
         while( running )
         {
@@ -213,6 +216,8 @@ static void scan_worker( void *a_argument )
             portEXIT_CRITICAL( &state_lock );
             vTaskDelay( 1U );
         }
+        ce( false );
+        worker_active = false;
     }
 }
 
@@ -307,13 +312,34 @@ esp_err_t nrf24_start( void )
     return ESP_OK;
 }
 
-void nrf24_stop( void )
+bool nrf24_stop( void )
 {
     if( !initialized )
-        return;
+        return true;
     running = false;
+
+    const TickType_t started = xTaskGetTickCount();
+    const TickType_t timeout = pdMS_TO_TICKS( NRF24_STOP_TIMEOUT_MS );
+    while( worker_active && ( xTaskGetTickCount() - started < timeout ) )
+    {
+        vTaskDelay( pdMS_TO_TICKS( 1U ) );
+    }
+    if( worker_active )
+    {
+        running = true;
+        if( NULL != scan_task )
+        {
+            xTaskNotifyGive( scan_task );
+        }
+        ESP_LOGE( TAG,
+                  "scan worker did not quiesce within %u ms; resuming scan",
+                  (unsigned)NRF24_STOP_TIMEOUT_MS );
+        return false;
+    }
+
     ce( false );
     (void)write_register( NRF24_REG_CONFIG, 0x00U );
+    return true;
 }
 
 void nrf24_poll( void )

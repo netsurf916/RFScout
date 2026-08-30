@@ -216,6 +216,12 @@ void app_main( void )
     }
 
     ESP_ERROR_CHECK( device_time_init() );
+
+    /* Initialize reusable radio services before app selection. Neither monitor
+       starts acquisition until the app manager activates WiFi/BT. */
+    ESP_ERROR_CHECK( radio_monitor_init( on_observation ) );
+    ESP_ERROR_CHECK( ble_monitor_init( on_observation ) );
+
     ESP_ERROR_CHECK( app_manager_init() );
     display_set_brightness( device_config_get()->brightness_percent );
 
@@ -231,14 +237,6 @@ void app_main( void )
             observation_store_set_event_callback( log_writer_store_event, NULL );
             app_logging_init();
         }
-    }
-
-    ESP_ERROR_CHECK( radio_monitor_init( on_observation ) );
-    ESP_ERROR_CHECK( ble_monitor_init( on_observation ) );
-    if( RFSCOUT_APP_WIFI_BT != app_manager_current() )
-    {
-        (void)ble_monitor_stop();
-        (void)radio_monitor_stop();
     }
 
     ESP_LOGI( TAG,
