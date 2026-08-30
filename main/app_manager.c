@@ -867,7 +867,7 @@ static rfscout_app_id_t next_available_app( int a_direction )
     return active_app;
 }
 
-static bool switch_app_for_delta( int a_delta, int64_t a_now )
+static bool switch_app_for_delta( int a_delta )
 {
     if( 0 == a_delta )
     {
@@ -1634,7 +1634,7 @@ void app_manager_poll( void )
             emit_event( RFSCOUT_EVENT_ENTER, 0 );
             return;
         }
-        (void)switch_app_for_delta( delta, now );
+        (void)switch_app_for_delta( delta );
         return;
     }
 
@@ -1652,7 +1652,7 @@ void app_manager_poll( void )
             cc_input( true, 0 );
             return;
         }
-        if( switch_app_for_delta( delta, now ) )
+        if( switch_app_for_delta( delta ) )
         {
             return;
         }
@@ -1684,7 +1684,7 @@ void app_manager_poll( void )
             nr_input( true, 0 );
             return;
         }
-        if( switch_app_for_delta( delta, now ) )
+        if( switch_app_for_delta( delta ) )
         {
             return;
         }
@@ -1743,7 +1743,7 @@ void app_manager_poll( void )
             audio_input( true, false, 0 );
             return;
         }
-        if( switch_app_for_delta( delta, now ) )
+        if( switch_app_for_delta( delta ) )
         {
             return;
         }
@@ -1767,7 +1767,7 @@ void app_manager_poll( void )
             activate_app_if_ready( now );
             wifi_input( true, 0 );
         }
-        else if( switch_app_for_delta( delta, now ) )
+        else if( switch_app_for_delta( delta ) )
         {
             return;
         }
@@ -1797,7 +1797,7 @@ void app_manager_poll( void )
         return;
     }
 
-    if( switch_app_for_delta( delta, now ) )
+    if( switch_app_for_delta( delta ) )
     {
         return;
     }
