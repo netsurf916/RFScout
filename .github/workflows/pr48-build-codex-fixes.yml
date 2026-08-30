@@ -17,8 +17,8 @@ jobs:
         with:
           ref: detect-radio-hardware-apps
       - name: Apply fixes
-        shell: python
         run: |
+          python3 - <<'PY'
           from pathlib import Path
 
           p = Path('main/app_manager.c')
@@ -88,6 +88,7 @@ jobs:
           if old not in s:
               raise SystemExit('cc1101 target not found')
           p.write_text(s.replace(old, new, 1))
+          PY
       - name: Install clang-format 18
         run: sudo apt-get update && sudo apt-get install -y clang-format-18
       - name: Format and commit
