@@ -842,6 +842,10 @@ static void enter_app( rfscout_app_id_t a_app )
             audio_menu = false;
             audio_edit = false;
             audio_last_state = RFSCOUT_RECORDER_IDLE;
+            if( ESP_OK != recorder_init() )
+            {
+                ESP_LOGW( TAG, "Recorder initialization unavailable" );
+            }
             render_audio();
             break;
         case RFSCOUT_APP_THERMAL:
