@@ -230,4 +230,6 @@ The ESP32 system wall clock is authoritative for the shared clock display, SD lo
 
 Timezone choices are stored as data: stable `name`, user-facing `label`, and POSIX `TZ` rule. Manual calendar input is validated after local-time conversion so invalid/nonexistent local times are rejected.
 
-On orderly hard power-off, RFScout can save the current epoch and authority source as a cold-boot continuity aid. Because complete board power removal stops the ESP32 clock, restored saved time is not treated as proof of ongoing synchronization. Deep sleep is handled separately because the RTC domain continues running.
+At startup, RFScout first inspects the already-running RTC-backed system clock. A wall clock from 2020 through the end of 2100 is treated as plausibly valid and is preserved across software resets, firmware flashing, and sleep while the RTC domain remains powered. If retained authority metadata is unavailable, the clock is labeled `RTC retained` rather than inventing GPS, NTP, or manual provenance.
+
+Only when the running wall clock is implausible does RFScout fall back to the saved configuration timestamp. On orderly hard power-off, RFScout can save the current epoch and authority source as a cold-boot continuity aid. Because complete board power removal stops the ESP32 clock, restored saved time is not treated as proof of ongoing synchronization. Saved checkpoints and manual time entry use the same supported 2020-through-2100 range.

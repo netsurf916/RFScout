@@ -11,7 +11,6 @@
 
 #include "esp_attr.h"
 #include "esp_log.h"
-#include "esp_sleep.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,7 +18,9 @@
 #include <sys/time.h>
 
 #define DEVICE_TIME_MIN_VALID_EPOCH 1577836800LL
+#define DEVICE_TIME_MAX_VALID_EPOCH 4133980800LL
 #define DEVICE_TIME_RTC_MAGIC 0x52544653U
+#define DEVICE_TIME_RETAINED_DETAIL "rtc:retained"
 
 static const char *TAG = "device_time";
 static rfscout_time_source_t source = RFSCOUT_TIME_SOURCE_UNSET;
@@ -77,7 +78,7 @@ static rfscout_time_source_t source_from_token( const char *a_token )
     return RFSCOUT_TIME_SOURCE_CONFIG;
 }
 
-/** @brief Retain clock-authority metadata in the RTC domain for deep-sleep wake. */
+/** @brief Retain clock-authority metadata in the RTC domain across resets and sleep. */
 static void retain_authority( void )
 {
     retained_magic = DEVICE_TIME_RTC_MAGIC;
@@ -86,34 +87,47 @@ static void retain_authority( void )
     retained_restored_from_config = restored_from_config;
 }
 
-/** @brief Restore clock-authority metadata without changing the RTC-retained system time. */
-static bool restore_after_deep_sleep( void )
+/** @brief Decide whether the running RTC-backed system wall clock is credible enough to preserve. */
+static bool wall_clock_plausible( time_t a_epoch )
 {
-    const uint32_t wakeup_causes = esp_sleep_get_wakeup_causes();
-    if( 0U == wakeup_causes )
-    {
-        return false;
-    }
-    if( DEVICE_TIME_RTC_MAGIC != retained_magic )
-    {
-        return false;
-    }
+    return ( a_epoch >= (time_t)DEVICE_TIME_MIN_VALID_EPOCH ) &&
+           ( a_epoch < (time_t)DEVICE_TIME_MAX_VALID_EPOCH );
+}
 
+/** @brief Preserve a plausible RTC-backed wall clock without replacing it from saved configuration. */
+static bool restore_running_clock( void )
+{
     const time_t now = time( NULL );
-    if( now < (time_t)DEVICE_TIME_MIN_VALID_EPOCH )
+    if( !wall_clock_plausible( now ) )
     {
         return false;
     }
 
-    source = retained_source;
-    if( ( source < RFSCOUT_TIME_SOURCE_CONFIG ) || ( source > RFSCOUT_TIME_SOURCE_NTP ) )
+    if( DEVICE_TIME_RTC_MAGIC == retained_magic )
     {
-        source = RFSCOUT_TIME_SOURCE_CONFIG;
+        source = retained_source;
+        if( ( source < RFSCOUT_TIME_SOURCE_CONFIG ) || ( source > RFSCOUT_TIME_SOURCE_NTP ) )
+        {
+            source = RFSCOUT_TIME_SOURCE_RTC;
+            snprintf( source_detail, sizeof( source_detail ), "%s", DEVICE_TIME_RETAINED_DETAIL );
+            restored_from_config = false;
+        }
+        else
+        {
+            snprintf( source_detail, sizeof( source_detail ), "%s", retained_source_detail );
+            restored_from_config = retained_restored_from_config;
+        }
     }
-    snprintf( source_detail, sizeof( source_detail ), "%s", retained_source_detail );
+    else
+    {
+        source = RFSCOUT_TIME_SOURCE_RTC;
+        snprintf( source_detail, sizeof( source_detail ), "%s", DEVICE_TIME_RETAINED_DETAIL );
+        restored_from_config = false;
+    }
+
     valid = true;
-    restored_from_config = retained_restored_from_config;
-    ESP_LOGI( TAG, "wall clock resumed after deep sleep source=%s", source_token( source ) );
+    retain_authority();
+    ESP_LOGI( TAG, "preserving plausible RTC wall clock source=%s", source_token( source ) );
     return true;
 }
 
@@ -140,7 +154,7 @@ esp_err_t device_time_init( void )
     restored_from_config = false;
     (void)device_time_apply_timezone();
 
-    if( restore_after_deep_sleep() )
+    if( restore_running_clock() )
     {
         return ESP_OK;
     }
@@ -166,7 +180,7 @@ esp_err_t device_time_init( void )
 esp_err_t
 device_time_set_epoch( time_t a_epoch, rfscout_time_source_t a_source, const char *a_detail )
 {
-    if( a_epoch < (time_t)DEVICE_TIME_MIN_VALID_EPOCH )
+    if( !wall_clock_plausible( a_epoch ) )
     {
         return ESP_ERR_INVALID_ARG;
     }
@@ -230,7 +244,14 @@ const char *device_time_source_label( void )
             base = "GPS";
             break;
         case RFSCOUT_TIME_SOURCE_RTC:
-            base = source_detail[ 0 ] ? source_detail : "RTC";
+            if( 0 == strcmp( source_detail, DEVICE_TIME_RETAINED_DETAIL ) )
+            {
+                base = "RTC retained";
+            }
+            else
+            {
+                base = source_detail[ 0 ] ? source_detail : "RTC";
+            }
             break;
         case RFSCOUT_TIME_SOURCE_NTP:
             base = "NTP";
