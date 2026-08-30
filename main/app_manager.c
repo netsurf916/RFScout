@@ -843,7 +843,7 @@ static void enter_app( rfscout_app_id_t a_app )
     ESP_LOGI( TAG, "switched app=%d", (int)a_app );
 }
 
-static rfscout_app_id_t next_available_app( int a_direction, int64_t a_now )
+static rfscout_app_id_t next_available_app( int a_direction )
 {
     int next = (int)active_app;
     for( int attempts = 0; attempts < RFSCOUT_APP_COUNT; ++attempts )
@@ -860,15 +860,6 @@ static rfscout_app_id_t next_available_app( int a_direction, int64_t a_now )
         const rfscout_app_id_t candidate = (rfscout_app_id_t)next;
         if( !app_available( candidate ) )
         {
-            if( RFSCOUT_APP_PROBE_HOTPLUG == app_framework_probe_policy( candidate ) )
-            {
-                app_framework_refresh_hotplug( candidate );
-                last_hotplug_probe_us = a_now;
-                if( app_available( candidate ) )
-                {
-                    return candidate;
-                }
-            }
             continue;
         }
         return candidate;
@@ -883,7 +874,7 @@ static bool switch_app_for_delta( int a_delta, int64_t a_now )
         return false;
     }
     const int direction = ( a_delta > 0 ) ? 1 : -1;
-    const rfscout_app_id_t candidate = next_available_app( direction, a_now );
+    const rfscout_app_id_t candidate = next_available_app( direction );
     if( candidate == active_app )
     {
         return false;
