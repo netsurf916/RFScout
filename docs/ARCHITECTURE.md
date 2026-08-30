@@ -20,7 +20,7 @@ WiFi / BT -> CC1101 (when enabled and detected) -> nRF24 (when enabled and detec
 
 RFScout defaults to Home at startup. `device_config` persists a preferred startup application through `apps.startup`; `app_manager` validates that preference against application enablement and runtime hardware availability. A disabled or unavailable target falls back to Home for the current boot without rewriting the saved preference.
 
-CC1101, nRF24, and the board PDM microphone are treated as board-population capabilities rather than hot-plug peripherals. `app_manager` probes each once during startup and includes its application in navigation only when the corresponding hardware is present. The microphone probe briefly starts the PDM clock and checks for data transitions, then immediately releases I2S0. RFScout does not add status-bar indicators for this fixed hardware. Thermal remains different: it is an explicitly attachable external sensor, so its runtime probe and availability feedback remain dynamic.
+Application hardware availability is described through `app_framework` descriptors. The descriptor selects `none`, startup-cached, or hot-pluggable probing and points at the app/service-owned detection callback; App Manager only asks the framework whether a candidate is available. CC1101, nRF24, and the board PDM microphone are fixed board-population capabilities and therefore probe once at startup. Thermal is hot-pluggable I2C hardware and is re-probed dynamically. The same policy is intended for future UART/I2C Quick-port applications. Availability probing never implies app activation or continuous peripheral ownership.
 
 Lifecycle rules are explicit:
 
