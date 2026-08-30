@@ -35,7 +35,7 @@ The CC1101 settings menu includes its notification page. The categories describe
 
 ## nRF24
 
-Implemented behavior includes configurable channel bounds and dwell time, fast activity history, optional slow peak hold, passive Enhanced ShockBurst classification when validated observations exist, address-based count deduplication, conservative detection categories, app-owned notifications, and `RESET COUNTS`.
+Implemented behavior includes configurable channel bounds and dwell time, fast activity history, optional slow peak hold, an ingestion API plus bounded newest-first storage for CRC-validated Enhanced ShockBurst observations, address-based count deduplication, conservative detection categories, app-owned notifications, and `RESET COUNTS`. The current scanner produces RPD energy observations only, so no packet preview is exposed until receive-only ESB candidate discovery and validation are implemented.
 
 The nRF24 settings menu includes its notification page. Spectrum-only activity that does not support a specific device identity remains broadly categorized.
 

@@ -8,6 +8,8 @@
 
 #include "nrf24_activity.h"
 
+#include "freertos/FreeRTOS.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -45,6 +47,10 @@ typedef struct
 static uint8_t fast_activity[ NRF24_CHANNEL_COUNT ];
 static uint8_t slow_peak[ NRF24_CHANNEL_COUNT ];
 static packet_record_t packet_records[ PACKET_RECORD_MAX ];
+static nrf24_recent_packet_t recent_packets[ NRF24_RECENT_PACKET_MAX ];
+static size_t recent_packet_count;
+static size_t recent_packet_next;
+static portMUX_TYPE recent_packet_lock = portMUX_INITIALIZER_UNLOCKED;
 static address_ledger_t address_ledger[ ADDRESS_LEDGER_MAX ];
 static uint32_t category_counts[ NRF24_FP_LOGITECH_LIKE + 1U ];
 static nrf24_fingerprint_type_t spectrum_candidate;
@@ -270,6 +276,12 @@ void nrf24_activity_reset( void )
     memset( fast_activity, 0, sizeof( fast_activity ) );
     memset( slow_peak, 0, sizeof( slow_peak ) );
     nrf24_activity_reset_counts();
+
+    portENTER_CRITICAL( &recent_packet_lock );
+    memset( recent_packets, 0, sizeof( recent_packets ) );
+    recent_packet_count = 0U;
+    recent_packet_next = 0U;
+    portEXIT_CRITICAL( &recent_packet_lock );
 }
 
 /** @brief Infer broad Wi-Fi/BLE-like spectrum shapes from the fast histogram. */
@@ -394,6 +406,22 @@ void nrf24_activity_observe_packet( const nrf24_packet_observation_t *a_packet )
         return;
     }
 
+    portENTER_CRITICAL( &recent_packet_lock );
+    nrf24_recent_packet_t *recent = &recent_packets[ recent_packet_next ];
+    memset( recent, 0, sizeof( *recent ) );
+    recent->channel = a_packet->channel;
+    memcpy( recent->address, a_packet->address, a_packet->address_len );
+    recent->address_len = a_packet->address_len;
+    memcpy( recent->payload, a_packet->payload, a_packet->payload_len );
+    recent->payload_len = a_packet->payload_len;
+    recent->timestamp_ms = a_packet->timestamp_ms;
+    recent_packet_next = ( recent_packet_next + 1U ) % NRF24_RECENT_PACKET_MAX;
+    if( recent_packet_count < NRF24_RECENT_PACKET_MAX )
+    {
+        ++recent_packet_count;
+    }
+    portEXIT_CRITICAL( &recent_packet_lock );
+
     nrf24_fingerprint_t *fingerprint = &record->public;
     if( 0U == fingerprint->packets )
     {
@@ -430,6 +458,25 @@ void nrf24_activity_observe_packet( const nrf24_packet_observation_t *a_packet )
     }
 
     classify_packet_record( record );
+}
+
+size_t nrf24_activity_recent_packets( nrf24_recent_packet_t *a_output, size_t a_capacity )
+{
+    if( ( NULL == a_output ) || ( 0U == a_capacity ) )
+    {
+        return 0U;
+    }
+
+    portENTER_CRITICAL( &recent_packet_lock );
+    const size_t count = ( a_capacity < recent_packet_count ) ? a_capacity : recent_packet_count;
+    for( size_t i = 0U; i < count; ++i )
+    {
+        const size_t source =
+            ( recent_packet_next + NRF24_RECENT_PACKET_MAX - 1U - i ) % NRF24_RECENT_PACKET_MAX;
+        a_output[ i ] = recent_packets[ source ];
+    }
+    portEXIT_CRITICAL( &recent_packet_lock );
+    return count;
 }
 
 size_t nrf24_activity_histogram( uint8_t *a_fast, uint8_t *a_slow, size_t a_capacity )
