@@ -1,5 +1,5 @@
 /**
-    cc1101_activity.h : CC1101 direct RSSI levels, peak hold, and passive fingerprints
+    cc1101_activity.h : CC1101 direct RSSI levels and passive fingerprints
     Description: Declares spectrum history and conservative sub-GHz likely-device classification.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
@@ -44,7 +44,7 @@ typedef struct
     char label[ CC1101_FINGERPRINT_LABEL_MAX ];
 } cc1101_fingerprint_t;
 
-/** @brief Clear spectrum history, peak state, classifier state, and counts. */
+/** @brief Clear spectrum history, classifier state, and counts. */
 void cc1101_activity_reset( void );
 
 /** @brief Clear accumulated likely-device counts without clearing spectrum history. */
@@ -63,13 +63,12 @@ void cc1101_activity_observe_sweep( const int8_t *a_rssi,
                                     uint32_t a_high_khz );
 
 /**
- * @brief Copy current direct RSSI levels plus slow-decay peak-hold levels.
+ * @brief Copy current direct RSSI levels.
  * @param a_current Destination for current normalized signal values.
- * @param a_peak Destination for slow-decay peak-hold values.
- * @param a_capacity Capacity of each destination array.
+ * @param a_capacity Destination array capacity.
  * @return Number of values copied.
  */
-size_t cc1101_activity_levels( uint8_t *a_current, uint8_t *a_peak, size_t a_capacity );
+size_t cc1101_activity_levels( uint8_t *a_current, size_t a_capacity );
 
 /**
  * @brief Copy the fixed likely-device rows and their cumulative counts.
