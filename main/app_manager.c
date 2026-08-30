@@ -59,20 +59,18 @@
 #define CC1101_MENU_LOW 2U
 #define CC1101_MENU_HIGH 3U
 #define CC1101_MENU_STEP 4U
-#define CC1101_MENU_PEAK_HOLD 5U
-#define CC1101_MENU_NOTIFICATIONS 6U
-#define CC1101_MENU_RESET_COUNTS 7U
-#define CC1101_MENU_ITEM_COUNT 8U
+#define CC1101_MENU_NOTIFICATIONS 5U
+#define CC1101_MENU_RESET_COUNTS 6U
+#define CC1101_MENU_ITEM_COUNT 7U
 
 #define NRF24_MENU_BACK 0U
 #define NRF24_MENU_LOW 1U
 #define NRF24_MENU_HIGH 2U
 #define NRF24_MENU_DWELL 3U
-#define NRF24_MENU_PEAK_HOLD 4U
-#define NRF24_MENU_PACKETS 5U
-#define NRF24_MENU_NOTIFICATIONS 6U
-#define NRF24_MENU_RESET_COUNTS 7U
-#define NRF24_MENU_ITEM_COUNT 8U
+#define NRF24_MENU_PACKETS 4U
+#define NRF24_MENU_NOTIFICATIONS 5U
+#define NRF24_MENU_RESET_COUNTS 6U
+#define NRF24_MENU_ITEM_COUNT 7U
 
 #define NOTIFICATION_MENU_BACK 0U
 #define NOTIFICATION_MENU_ENABLED 1U
@@ -106,8 +104,6 @@ static bool notification_menu;
 static bool notification_edit;
 static bool wifi_monitor_ready;
 static bool ble_monitor_ready;
-static bool cc_peak_hold = true;
-static bool nr_peak_hold = true;
 static unsigned wifi_item;
 static unsigned cc_item;
 static unsigned nr_item;
@@ -254,7 +250,6 @@ static void render_cc_menu( void )
                                 config->step_khz,
                                 cc1101_sweep_count(),
                                 cc_limit,
-                                cc_peak_hold,
                                 notification_preferences_app_enabled( RFSCOUT_APP_CC1101 ) );
 }
 
@@ -266,7 +261,6 @@ static void render_nr_menu( void )
                                config->low_channel,
                                config->high_channel,
                                config->dwell_us,
-                               nr_peak_hold,
                                notification_preferences_app_enabled( RFSCOUT_APP_NRF24 ) );
 }
 
@@ -599,18 +593,12 @@ static void notify_cc_detections( const cc1101_fingerprint_t *a_devices, size_t 
 static void render_cc_spectrum( void )
 {
     uint8_t current[ CC1101_SPECTRUM_BINS ];
-    uint8_t peaks[ CC1101_SPECTRUM_BINS ];
     cc1101_fingerprint_t devices[ CC1101_FINGERPRINT_MAX ];
-    const size_t count = cc1101_activity_levels( current, peaks, CC1101_SPECTRUM_BINS );
-    if( !cc_peak_hold )
-    {
-        memset( peaks, 0, sizeof( peaks ) );
-    }
+    const size_t count = cc1101_activity_levels( current, CC1101_SPECTRUM_BINS );
     const size_t device_count = cc1101_activity_fingerprints( devices, CC1101_FINGERPRINT_MAX );
     notify_cc_detections( devices, device_count );
     const cc1101_scan_config_t *config = cc1101_config();
     radio_app_view_cc1101_spectrum( current,
-                                    peaks,
                                     count,
                                     config->low_khz,
                                     config->high_khz,
@@ -652,18 +640,12 @@ static void notify_nr_detections( void )
 static void render_nr_spectrum( void )
 {
     uint8_t fast[ NRF24_CHANNEL_COUNT ];
-    uint8_t slow[ NRF24_CHANNEL_COUNT ];
     nrf24_fingerprint_t devices[ NRF24_FINGERPRINT_MAX ];
-    const size_t count = nrf24_activity_histogram( fast, slow, NRF24_CHANNEL_COUNT );
-    if( !nr_peak_hold )
-    {
-        memset( slow, 0, sizeof( slow ) );
-    }
+    const size_t count = nrf24_activity_histogram( fast, NRF24_CHANNEL_COUNT );
     const size_t device_count = nrf24_activity_fingerprints( devices, NRF24_FINGERPRINT_MAX );
     notify_nr_detections();
     const nrf24_scan_config_t *config = nrf24_config();
     radio_app_view_nrf24_spectrum( fast,
-                                   slow,
                                    count,
                                    config->low_channel,
                                    config->high_channel,
@@ -930,14 +912,6 @@ static void cc_input( bool a_pressed, int a_delta )
         }
         return;
     }
-    if( CC1101_MENU_PEAK_HOLD == cc_item )
-    {
-        cc_peak_hold = !cc_peak_hold;
-        render_cc_menu();
-        emit_event( cc_peak_hold ? RFSCOUT_EVENT_ENABLE : RFSCOUT_EVENT_DISABLE,
-                    cc_peak_hold ? 1 : 0 );
-        return;
-    }
 
     const cc1101_scan_config_t before = *cc1101_config();
     bool changed = true;
@@ -1126,14 +1100,6 @@ static void nr_input( bool a_pressed, int a_delta )
             render_nr_menu();
             emit_event( RFSCOUT_EVENT_NAVIGATE, direction );
         }
-        return;
-    }
-    if( NRF24_MENU_PEAK_HOLD == nr_item )
-    {
-        nr_peak_hold = !nr_peak_hold;
-        render_nr_menu();
-        emit_event( nr_peak_hold ? RFSCOUT_EVENT_ENABLE : RFSCOUT_EVENT_DISABLE,
-                    nr_peak_hold ? 1 : 0 );
         return;
     }
 
@@ -1490,8 +1456,6 @@ esp_err_t app_manager_init( void )
     notification_item = NOTIFICATION_MENU_BACK;
     wifi_monitor_ready = true;
     ble_monitor_ready = true;
-    cc_peak_hold = true;
-    nr_peak_hold = true;
     memset( cc_notification_counts, 0, sizeof( cc_notification_counts ) );
     memset( nr_notification_counts, 0, sizeof( nr_notification_counts ) );
 

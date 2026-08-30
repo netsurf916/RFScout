@@ -201,8 +201,8 @@ Without an SD card, settings can affect the running session but canonical persis
 | Application | Current settings/actions | Notification controls |
 | --- | --- | --- |
 | WiFi / BT | Back; Notifications; WiFi timeout; BT timeout; Surveillance timeout; Reset detections | master gate; WiFi device beep; BLE device beep; Flock/ALPR; Body camera; Drone; Camera; Smart glasses; Acoustic sensor; Other surveillance |
-| CC1101 | Back; Profile; Low; High; Step; Peak hold; Notifications; Reset counts | master gate plus Narrowband; Remote/sensor; Carrier; Bursty RF; Wide RF Morse mappings |
-| nRF24 | Back; Low channel; High channel; Dwell; Peak hold; Notifications; Reset counts | master gate plus ESB device; Input; Sensor; WiFi-like; Hopping/BLE-like; Logitech-like Morse mappings |
+| CC1101 | Back; Profile; Low; High; Step; Notifications; Reset counts | master gate plus Narrowband; Remote/sensor; Carrier; Bursty RF; Wide RF Morse mappings |
+| nRF24 | Back; Low channel; High channel; Dwell; Packets; Notifications; Reset counts | master gate plus ESB device; Input; Sensor; WiFi-like; Hopping/BLE-like; Logitech-like Morse mappings |
 | Recorder | Back; New recording; Monitor; recording browser; playback volume; delete recording; monitor input gain | none currently; native app policy suppresses incidental feedback while preserving content audio |
 | Thermal | No application settings menu | none currently |
 | Home / Device Settings | global device settings and Save config | global mode and volume only |

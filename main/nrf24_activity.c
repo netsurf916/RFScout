@@ -1,6 +1,6 @@
 /**
     nrf24_activity.c : Adaptive nRF24 activity histogram and fingerprint store
-    Description: Maintains fast/slow spectrum history and conservative passive
+    Description: Maintains the activity histogram and conservative passive
                  classifications from validated ESB packet metadata.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
@@ -45,7 +45,6 @@ typedef struct
 } address_ledger_t;
 
 static uint8_t fast_activity[ NRF24_CHANNEL_COUNT ];
-static uint8_t slow_peak[ NRF24_CHANNEL_COUNT ];
 static packet_record_t packet_records[ PACKET_RECORD_MAX ];
 static nrf24_recent_packet_t recent_packets[ NRF24_RECENT_PACKET_MAX ];
 static size_t recent_packet_count;
@@ -274,7 +273,6 @@ void nrf24_activity_reset_counts( void )
 void nrf24_activity_reset( void )
 {
     memset( fast_activity, 0, sizeof( fast_activity ) );
-    memset( slow_peak, 0, sizeof( slow_peak ) );
     nrf24_activity_reset_counts();
 
     portENTER_CRITICAL( &recent_packet_lock );
@@ -373,20 +371,6 @@ void nrf24_activity_observe_sweep( const uint8_t *a_hits, size_t a_count )
     for( size_t i = 0U; i < count; ++i )
     {
         fast_activity[ i ] = fast_update( fast_activity[ i ], 0U != a_hits[ i ] );
-
-        if( fast_activity[ i ] >= slow_peak[ i ] )
-        {
-            slow_peak[ i ] = fast_activity[ i ];
-        }
-        else if( slow_peak[ i ] > 0U )
-        {
-            uint8_t decay = (uint8_t)( slow_peak[ i ] / 32U );
-            if( 0U == decay )
-            {
-                decay = 1U;
-            }
-            slow_peak[ i ] = ( slow_peak[ i ] > decay ) ? (uint8_t)( slow_peak[ i ] - decay ) : 0U;
-        }
     }
 
     observe_spectrum_signature();
@@ -483,16 +467,15 @@ size_t nrf24_activity_recent_packets( nrf24_recent_packet_t *a_output, size_t a_
     return count;
 }
 
-size_t nrf24_activity_histogram( uint8_t *a_fast, uint8_t *a_slow, size_t a_capacity )
+size_t nrf24_activity_histogram( uint8_t *a_fast, size_t a_capacity )
 {
-    if( ( NULL == a_fast ) || ( NULL == a_slow ) || ( 0U == a_capacity ) )
+    if( ( NULL == a_fast ) || ( 0U == a_capacity ) )
     {
         return 0U;
     }
 
     const size_t count = ( a_capacity < NRF24_CHANNEL_COUNT ) ? a_capacity : NRF24_CHANNEL_COUNT;
     memcpy( a_fast, fast_activity, count );
-    memcpy( a_slow, slow_peak, count );
     return count;
 }
 

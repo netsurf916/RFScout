@@ -31,15 +31,15 @@ WiFi / BT owns its notification settings: a master notification gate, the two or
 
 ## CC1101
 
-Implemented behavior includes direct-RSSI sub-GHz sweeps, configurable profiles/range/step, optional slow peak hold, a 128-sample sweep limit, conservative RF-shape detection categories, app-owned audible notifications when counts advance, and `RESET COUNTS`.
+Implemented behavior includes direct-RSSI sub-GHz sweeps, configurable profiles/range/step, a live current-sweep activity histogram, a 128-sample sweep limit, conservative RF-shape detection categories, app-owned audible notifications when counts advance, and `RESET COUNTS`.
 
-The CC1101 settings menu includes its notification page. The categories describe observed RF behavior and are not protocol/product decodes. The normal spectrum view uses its footer for RF-state information only; the established Center action opens settings without a persistent `SETTINGS` label.
+The CC1101 settings menu includes its notification page. The categories describe observed RF behavior and are not protocol/product decodes. Classification retains only the immediately previous sweep where temporal comparison is useful; there is no user-visible slow-decay peak-hold state or associated display processing.
 
 ## nRF24
 
-Implemented behavior includes configurable channel bounds and dwell time, fast activity history, optional slow peak hold, an ingestion API plus bounded newest-first storage for CRC-validated Enhanced ShockBurst observations, address-based count deduplication, conservative detection categories, app-owned notifications, and `RESET COUNTS`. The current scanner produces RPD energy observations only, so no packet preview is exposed until receive-only ESB candidate discovery and validation are implemented.
+Implemented behavior includes configurable channel bounds and dwell time, a fast-decay activity histogram, an ingestion API plus bounded newest-first storage for CRC-validated Enhanced ShockBurst observations, address-based count deduplication, conservative detection categories, app-owned notifications, and `RESET COUNTS`. The main view reserves seven rows for newest validated packets in `channel | raw hex` form and the packet browser exposes deeper metadata. The current scanner produces RPD energy observations only, so those packet surfaces remain empty until receive-only ESB candidate discovery and validation feed the ingestion API.
 
-The nRF24 settings menu includes its notification page. Wi-Fi-like wide activity and hopping/BLE-like activity remain separate detection categories and counters (`Wi-Fi?` and `Hopping RF?`) rather than being merged into a generic `Other` row. Spectrum-only activity that does not support a specific device identity remains broadly categorized. The normal spectrum footer no longer spends space on a persistent `SETTINGS` label.
+The nRF24 settings menu includes the packet browser and notification page. Wi-Fi-like wide activity and hopping/BLE-like activity remain separate detection categories and counters (`Wi-Fi?` and `Hopping RF?`) rather than being merged into a generic `Other` row. Spectrum-only activity that does not support a specific device identity remains broadly categorized.
 
 ## Recorder
 

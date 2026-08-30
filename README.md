@@ -37,15 +37,15 @@ The action menu provides **NOTIFICATIONS** and **RESET DETECTIONS**. Leaving the
 
 ### CC1101
 
-CC1101 provides direct-RSSI sub-GHz spectrum sweeps with optional slow-decay peak hold and a fixed **DETECTIONS** category panel. The settings menu exposes profile, low/high frequency, step size, peak hold, application notification settings, and count reset. Sweeps are bounded to 128 samples; invalid range/step combinations are rejected instead of silently changing another setting.
+CC1101 provides direct-RSSI sub-GHz spectrum sweeps with a live activity histogram and a fixed **DETECTIONS** category panel. The settings menu exposes profile, low/high frequency, step size, application notification settings, and count reset. Sweeps are bounded to 128 samples; invalid range/step combinations are rejected instead of silently changing another setting.
 
 Detection labels are conservative RF-behavior classifications rather than decoded product identities. Detection-count advances can produce application-owned notifications subject to the app notification gate, current global notification mode/volume, active theme sound policy, and speaker availability.
 
 ### nRF24
 
-nRF24 scans the 2.4 GHz channel range using RPD activity, a fast-decay histogram, optional slow peak hold, and conservative passive Enhanced ShockBurst classification when a decoder supplies validated observations. The fixed **DETECTIONS** panel includes categories such as `ESB device`, `Input?`, `Sensor?`, `Logitech?`, and broader 2.4 GHz activity. The activity layer now has bounded storage for validated packet observations, but the current RPD-only scanner has no packet decoder and therefore does not expose a packet preview in the production UI.
+nRF24 scans the 2.4 GHz channel range using RPD activity, a fast-decay histogram, and conservative passive Enhanced ShockBurst classification when a decoder supplies validated observations. The fixed **DETECTIONS** panel includes categories such as `ESB device`, `Input?`, `Sensor?`, `Logitech?`, and broader 2.4 GHz activity. The main view reserves space for the newest validated packet observations as channel plus raw hexadecimal payload bytes, and the packet browser provides deeper metadata. The current RPD-only scanner has no packet decoder, so those packet surfaces remain empty until receive-only ESB decoding feeds validated observations.
 
-The settings menu exposes low/high channel, dwell time, peak hold, application notification settings, and count reset. Runtime activity/classifier state is cleared when the application is left.
+The settings menu exposes low/high channel, dwell time, the packet browser, application notification settings, and count reset. Runtime activity/classifier state is cleared when the application is left.
 
 ### Recorder
 

@@ -1,5 +1,5 @@
 /**
-    cc1101_activity.c : direct CC1101 RSSI levels, peak hold, and passive fingerprints
+    cc1101_activity.c : direct CC1101 RSSI levels and passive fingerprints
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -13,7 +13,6 @@
 #define CC1101_ACTIVITY_CEILING_DBM ( -35 )
 #define CC1101_ACTIVE_THRESHOLD 54U
 #define CC1101_STRONG_THRESHOLD 110U
-#define CC1101_PEAK_DECAY_DIVISOR 32U
 #define CC1101_BURST_MARGIN 28U
 #define CC1101_MAX_SEGMENTS 8U
 #define CC1101_FP_CONFIRM_SWEEPS 2U
@@ -26,7 +25,7 @@ typedef struct
     size_t start;
     size_t end;
     uint8_t max_current;
-    uint8_t max_peak;
+    uint8_t max_history;
     int8_t peak_rssi;
 } activity_segment_t;
 
@@ -40,7 +39,10 @@ typedef struct
 } tracked_fingerprint_t;
 
 static uint8_t current_level[ CC1101_SPECTRUM_BINS ];
-static uint8_t slow_peak[ CC1101_SPECTRUM_BINS ];
+/* Classifier-only history spans the two-sweep confirmation window. It is not
+   rendered and has no slow-decay/peak-hold behavior. */
+static uint8_t history_recent[ CC1101_SPECTRUM_BINS ];
+static uint8_t history_older[ CC1101_SPECTRUM_BINS ];
 static int8_t last_rssi[ CC1101_SPECTRUM_BINS ];
 static uint32_t last_low_khz;
 static uint32_t last_high_khz;
@@ -85,9 +87,6 @@ static bool in_common_ism_region( uint32_t a_frequency_khz )
 
 static bool bin_is_currently_active( size_t a_index )
 {
-    /* Peak hold is display history, not evidence that RF is still present.
-       Classification must be based on the current completed sweep so a
-       startup transient or an old peak cannot satisfy a later confirmation. */
     return current_level[ a_index ] >= CC1101_ACTIVE_THRESHOLD;
 }
 
@@ -115,10 +114,15 @@ static size_t collect_segments( activity_segment_t *a_segments, size_t a_capacit
             {
                 segment->max_current = current_level[ index ];
             }
-            if( slow_peak[ index ] > segment->max_peak )
+
+            const uint8_t history = history_recent[ index ] > history_older[ index ]
+                                        ? history_recent[ index ]
+                                        : history_older[ index ];
+            if( history > segment->max_history )
             {
-                segment->max_peak = slow_peak[ index ];
+                segment->max_history = history;
             }
+
             if( last_rssi[ index ] > segment->peak_rssi )
             {
                 segment->peak_rssi = last_rssi[ index ];
@@ -143,8 +147,8 @@ static void classify_segment( const activity_segment_t *a_segment, cc1101_finger
     const uint32_t bandwidth_khz = end_khz - start_khz;
     const bool narrow = ( a_segment->end - a_segment->start ) <= 4U;
     const bool recently_stronger =
-        ( a_segment->max_peak > a_segment->max_current ) &&
-        ( (uint8_t)( a_segment->max_peak - a_segment->max_current ) >= CC1101_BURST_MARGIN );
+        ( a_segment->max_history > a_segment->max_current ) &&
+        ( (uint8_t)( a_segment->max_history - a_segment->max_current ) >= CC1101_BURST_MARGIN );
 
     a_output->center_khz = center_khz;
     a_output->bandwidth_khz = bandwidth_khz;
@@ -156,7 +160,7 @@ static void classify_segment( const activity_segment_t *a_segment, cc1101_finger
         a_output->confidence = 62U;
     }
     else if( narrow && ( a_segment->max_current >= CC1101_STRONG_THRESHOLD ) &&
-             ( a_segment->max_peak <= a_segment->max_current + 12U ) )
+             ( a_segment->max_history <= a_segment->max_current + 12U ) )
     {
         a_output->type = CC1101_FP_CONTINUOUS_CARRIER;
         a_output->confidence = 58U;
@@ -306,7 +310,8 @@ static void update_tracked_fingerprints( void )
 void cc1101_activity_reset( void )
 {
     memset( current_level, 0, sizeof( current_level ) );
-    memset( slow_peak, 0, sizeof( slow_peak ) );
+    memset( history_recent, 0, sizeof( history_recent ) );
+    memset( history_older, 0, sizeof( history_older ) );
     memset( last_rssi, -120, sizeof( last_rssi ) );
     memset( tracked, 0, sizeof( tracked ) );
     last_low_khz = 0U;
@@ -340,35 +345,20 @@ void cc1101_activity_observe_sweep( const int8_t *a_rssi,
     {
         const int8_t rssi = ( i < count ) ? a_rssi[ i ] : -120;
         const uint8_t strength = strength_from_rssi( rssi );
+        history_older[ i ] = history_recent[ i ];
+        history_recent[ i ] = current_level[ i ];
         last_rssi[ i ] = rssi;
         current_level[ i ] = strength;
-
-        if( strength >= slow_peak[ i ] )
-        {
-            slow_peak[ i ] = strength;
-        }
-        else if( slow_peak[ i ] > 0U )
-        {
-            uint8_t decay = (uint8_t)( slow_peak[ i ] / CC1101_PEAK_DECAY_DIVISOR );
-            if( 0U == decay )
-            {
-                decay = 1U;
-            }
-            slow_peak[ i ] = slow_peak[ i ] > decay ? (uint8_t)( slow_peak[ i ] - decay ) : 0U;
-        }
     }
 
     if( classifier_warmup_sweeps > 0U )
     {
         --classifier_warmup_sweeps;
         memset( tracked, 0, sizeof( tracked ) );
-
-        /* Drop peak history collected during receiver startup once the
-           quarantine period ends. The current trace remains live, but later
-           burst inference starts from a clean baseline. */
         if( 0U == classifier_warmup_sweeps )
         {
-            memset( slow_peak, 0, sizeof( slow_peak ) );
+            memset( history_recent, 0, sizeof( history_recent ) );
+            memset( history_older, 0, sizeof( history_older ) );
         }
         return;
     }
@@ -376,16 +366,15 @@ void cc1101_activity_observe_sweep( const int8_t *a_rssi,
     update_tracked_fingerprints();
 }
 
-size_t cc1101_activity_levels( uint8_t *a_current, uint8_t *a_peak, size_t a_capacity )
+size_t cc1101_activity_levels( uint8_t *a_current, size_t a_capacity )
 {
-    if( ( NULL == a_current ) || ( NULL == a_peak ) || ( 0U == a_capacity ) )
+    if( ( NULL == a_current ) || ( 0U == a_capacity ) )
     {
         return 0U;
     }
 
     const size_t count = a_capacity < CC1101_SPECTRUM_BINS ? a_capacity : CC1101_SPECTRUM_BINS;
     memcpy( a_current, current_level, count );
-    memcpy( a_peak, slow_peak, count );
     return count;
 }
 
