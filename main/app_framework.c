@@ -55,7 +55,7 @@ static app_descriptor_t descriptors[ RFSCOUT_APP_COUNT ] = {
 
 static app_descriptor_t *descriptor_for( rfscout_app_id_t a_app )
 {
-    if( ( a_app < 0 ) || ( a_app >= RFSCOUT_APP_COUNT ) )
+    if( (unsigned)a_app >= (unsigned)RFSCOUT_APP_COUNT )
     {
         return NULL;
     }
