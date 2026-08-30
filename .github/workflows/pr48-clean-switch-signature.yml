@@ -1,0 +1,27 @@
+name: PR48 clean switch signature
+
+on: [push]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: detect-radio-hardware-apps
+      - name: Remove unused transition timestamp argument
+        run: >-
+          python3 -c 'from pathlib import Path; p=Path("main/app_manager.c"); s=p.read_text(); old="static bool switch_app_for_delta( int a_delta, int64_t a_now )"; assert old in s; s=s.replace(old,"static bool switch_app_for_delta( int a_delta )",1); s=s.replace("switch_app_for_delta( delta, now )","switch_app_for_delta( delta )"); p.write_text(s)'
+      - name: Format and commit
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format-18
+          clang-format-18 -i main/app_manager.c
+          git config user.name "Daniel Wilson"
+          git config user.email "netsurf916@users.noreply.github.com"
+          git add main/app_manager.c
+          git commit -m "Remove stale app-switch timestamp parameter"
+          git push origin HEAD:detect-radio-hardware-apps
