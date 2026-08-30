@@ -312,10 +312,10 @@ esp_err_t nrf24_start( void )
     return ESP_OK;
 }
 
-void nrf24_stop( void )
+bool nrf24_stop( void )
 {
     if( !initialized )
-        return;
+        return true;
     running = false;
 
     const TickType_t started = xTaskGetTickCount();
@@ -326,14 +326,14 @@ void nrf24_stop( void )
     }
     if( worker_active )
     {
-        ESP_LOGE( TAG,
-                  "scan worker did not quiesce within %u ms",
-                  (unsigned)NRF24_STOP_TIMEOUT_MS );
-        return;
+        ESP_LOGE(
+            TAG, "scan worker did not quiesce within %u ms", (unsigned)NRF24_STOP_TIMEOUT_MS );
+        return false;
     }
 
     ce( false );
     (void)write_register( NRF24_REG_CONFIG, 0x00U );
+    return true;
 }
 
 void nrf24_poll( void )

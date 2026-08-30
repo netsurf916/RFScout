@@ -358,11 +358,11 @@ esp_err_t cc1101_start( void )
     return ESP_OK;
 }
 
-void cc1101_stop( void )
+bool cc1101_stop( void )
 {
     if( !initialized )
     {
-        return;
+        return true;
     }
 
     running = false;
@@ -374,15 +374,15 @@ void cc1101_stop( void )
     }
     if( worker_active )
     {
-        ESP_LOGE( TAG,
-                  "scan worker did not quiesce within %u ms",
-                  (unsigned)CC1101_STOP_TIMEOUT_MS );
-        return;
+        ESP_LOGE(
+            TAG, "scan worker did not quiesce within %u ms", (unsigned)CC1101_STOP_TIMEOUT_MS );
+        return false;
     }
 
     (void)strobe( CC1101_SIDLE );
     (void)strobe( CC1101_SPWD );
     disable_rf_path();
+    return true;
 }
 
 void cc1101_poll( void )

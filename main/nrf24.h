@@ -61,7 +61,7 @@ esp_err_t nrf24_init( void );
 esp_err_t nrf24_start( void );
 
 /** @brief Stop acquisition and place the nRF24 in its inactive state. */
-void nrf24_stop( void );
+bool nrf24_stop( void );
 
 /** @brief Reserved non-blocking service hook for nRF24 application polling. */
 void nrf24_poll( void );

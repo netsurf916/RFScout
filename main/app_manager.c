@@ -736,14 +736,21 @@ static void render_audio( void )
     audio_view_render( NULL, NULL );
 }
 
-static void leave_app( rfscout_app_id_t a_app )
+static bool leave_app( rfscout_app_id_t a_app )
 {
+    bool quiesced = true;
     if( RFSCOUT_APP_WIFI_BT == a_app )
     {
         if( app_activated )
         {
-            (void)ble_monitor_stop();
-            (void)radio_monitor_stop();
+            if( ESP_OK != ble_monitor_stop() )
+            {
+                quiesced = false;
+            }
+            if( ESP_OK != radio_monitor_stop() )
+            {
+                quiesced = false;
+            }
         }
         wifi_monitor_ready = false;
         ble_monitor_ready = false;
@@ -751,9 +758,9 @@ static void leave_app( rfscout_app_id_t a_app )
     }
     else if( RFSCOUT_APP_CC1101 == a_app )
     {
-        if( app_activated )
+        if( app_activated && !cc1101_stop() )
         {
-            cc1101_stop();
+            quiesced = false;
         }
         cc1101_activity_reset();
         cc1101_activity_reset_counts();
@@ -762,9 +769,9 @@ static void leave_app( rfscout_app_id_t a_app )
     }
     else if( RFSCOUT_APP_NRF24 == a_app )
     {
-        if( app_activated )
+        if( app_activated && !nrf24_stop() )
         {
-            nrf24_stop();
+            quiesced = false;
         }
         nrf24_activity_reset();
         memset( nr_notification_counts, 0, sizeof( nr_notification_counts ) );
@@ -792,6 +799,7 @@ static void leave_app( rfscout_app_id_t a_app )
     device_menu = false;
     notification_menu = false;
     notification_edit = false;
+    return quiesced;
 }
 
 static void enter_app( rfscout_app_id_t a_app )
@@ -896,7 +904,12 @@ static bool switch_app_for_delta( int a_delta, int64_t a_now )
     }
     const rfscout_app_id_t previous = active_app;
     const int64_t transition_started = esp_timer_get_time();
-    leave_app( previous );
+    if( !leave_app( previous ) )
+    {
+        log_lifecycle(
+            "quiesce-timeout", previous, candidate, esp_timer_get_time() - transition_started );
+        return false;
+    }
     active_app = candidate;
     enter_app( active_app );
     log_lifecycle( "transition", previous, active_app, esp_timer_get_time() - transition_started );
@@ -1491,7 +1504,11 @@ static void close_active_menu_for_back( void )
     }
     else if( RFSCOUT_APP_DEVICE != active_app )
     {
-        leave_app( active_app );
+        if( !leave_app( active_app ) )
+        {
+            emit_event( RFSCOUT_EVENT_ERROR, ESP_ERR_TIMEOUT );
+            return;
+        }
         active_app = RFSCOUT_APP_DEVICE;
         enter_app( active_app );
         rfscout_event_emit( RFSCOUT_EVENT_BACK, (uint8_t)RFSCOUT_APP_DEVICE, 0 );
