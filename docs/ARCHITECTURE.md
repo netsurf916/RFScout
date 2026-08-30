@@ -15,10 +15,12 @@ See [BOARD_PORTING.md](BOARD_PORTING.md) for the board contract and future porti
 Top-level application order is:
 
 ```text
-WiFi / BT -> CC1101 -> nRF24 -> Recorder -> Thermal (when enabled and present) -> Home / Device Settings
+WiFi / BT -> CC1101 (when enabled and detected) -> nRF24 (when enabled and detected) -> Recorder (when enabled and microphone detected) -> Thermal (when enabled and present) -> Home / Device Settings
 ```
 
 RFScout defaults to Home at startup. `device_config` persists a preferred startup application through `apps.startup`; `app_manager` validates that preference against application enablement and runtime hardware availability. A disabled or unavailable target falls back to Home for the current boot without rewriting the saved preference.
+
+Application hardware availability is described through `app_framework` descriptors. The descriptor selects `none`, startup-cached, or hot-pluggable probing and points at the app/service-owned detection callback; App Manager only asks the framework whether a candidate is available. CC1101, nRF24, and the board PDM microphone are fixed board-population capabilities and therefore probe once at startup. Thermal is hot-pluggable I2C hardware and is re-probed dynamically. The same policy is intended for future UART/I2C Quick-port applications. Availability probing never implies app activation or continuous peripheral ownership.
 
 Lifecycle rules are explicit:
 

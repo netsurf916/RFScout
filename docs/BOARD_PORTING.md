@@ -17,7 +17,7 @@ A board target owns physical facts such as:
 - a human-readable `RFSCOUT_BOARD_NAME`;
 - compile-time `RFSCOUT_BOARD_HAS_*` capability constants.
 
-Capabilities are compile-time constants by design. As drivers are separated into target-specific source sets, CMake should use the selected board and its capabilities to avoid compiling unsupported hardware into that firmware image.
+Capabilities are compile-time constants by design. As drivers are separated into target-specific source sets, CMake should use the selected board and its capabilities to avoid compiling unsupported hardware into that firmware image. Compile-time capability means that a board target can support a device; it does not require every product variant using that target to populate the device. Fixed optional devices such as CC1101, nRF24, and the board PDM microphone may therefore be probed once at startup and exposed only when detected.
 
 Application code should not test board model names. It should depend on a service or capability. Board-specific conditionals belong in board/platform/driver integration code.
 

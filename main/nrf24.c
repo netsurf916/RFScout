@@ -253,6 +253,13 @@ esp_err_t nrf24_init( void )
 
     detected =
         ( setup_aw >= 1U ) && ( setup_aw <= 3U ) && ( rf_channel <= 125U ) && ( 0xFFU != status );
+
+    /* A warm reset can leave an externally powered nRF24 in standby.
+       Availability probing must always return the transceiver to an
+       inactive state and must not imply acquisition. */
+    ce( false );
+    (void)write_register( NRF24_REG_CONFIG, 0x00U );
+
     ESP_LOGI( TAG,
               "probe setup_aw=0x%02x rf_ch=%u status=0x%02x detected=%d",
               setup_aw,

@@ -36,6 +36,7 @@
 #define CC1101_TASK_PRIORITY 4U
 #define CC1101_SAMPLES_PER_SCHEDULER_BREAK 16U
 #define CC1101_STOP_TIMEOUT_MS 250U
+#define CC1101_WAKE_TIMEOUT_US 1000U
 
 static const char *TAG = "cc1101";
 static spi_device_handle_t device;
@@ -70,6 +71,51 @@ static esp_err_t transfer( uint8_t a_header, uint8_t a_data, uint8_t *a_result )
 static esp_err_t strobe( uint8_t a_command )
 {
     return transfer( a_command, 0U, NULL );
+}
+
+static esp_err_t attach_spi_device( void )
+{
+    spi_device_interface_config_t device_config = { .clock_speed_hz = 4000000,
+                                                    .mode = 0,
+                                                    .spics_io_num = RFSCOUT_BOARD_CC1101_CS_PIN,
+                                                    .queue_size = 1 };
+    return spi_bus_add_device( CC1101_SPI_HOST, &device_config, &device );
+}
+
+static esp_err_t wake_from_power_down( void )
+{
+    if( NULL != device )
+    {
+        const esp_err_t remove_result = spi_bus_remove_device( device );
+        if( ESP_OK != remove_result )
+        {
+            return remove_result;
+        }
+        device = NULL;
+    }
+
+    gpio_reset_pin( RFSCOUT_BOARD_CC1101_CS_PIN );
+    gpio_set_direction( RFSCOUT_BOARD_CC1101_CS_PIN, GPIO_MODE_OUTPUT );
+    gpio_set_level( RFSCOUT_BOARD_CC1101_CS_PIN, 1 );
+    esp_rom_delay_us( 1U );
+    gpio_set_level( RFSCOUT_BOARD_CC1101_CS_PIN, 0 );
+
+    unsigned waited_us = 0U;
+    while( ( 0 != gpio_get_level( RFSCOUT_BOARD_SPI_MISO_PIN ) ) &&
+           ( waited_us < CC1101_WAKE_TIMEOUT_US ) )
+    {
+        esp_rom_delay_us( 1U );
+        ++waited_us;
+    }
+
+    gpio_set_level( RFSCOUT_BOARD_CC1101_CS_PIN, 1 );
+    if( waited_us >= CC1101_WAKE_TIMEOUT_US )
+    {
+        ESP_LOGE( TAG, "CC1101 wake timed out waiting for SO" );
+        return ESP_ERR_TIMEOUT;
+    }
+
+    return attach_spi_device();
 }
 
 static esp_err_t write_register( uint8_t a_address, uint8_t a_value )
@@ -292,12 +338,7 @@ esp_err_t cc1101_init( void )
 
     gpio_reset_pin( RFSCOUT_BOARD_CC1101_CS_PIN );
 
-    spi_device_interface_config_t device_config = { .clock_speed_hz = 4000000,
-                                                    .mode = 0,
-                                                    .spics_io_num = RFSCOUT_BOARD_CC1101_CS_PIN,
-                                                    .queue_size = 1 };
-
-    esp_err_t result = spi_bus_add_device( CC1101_SPI_HOST, &device_config, &device );
+    esp_err_t result = attach_spi_device();
     if( ESP_OK != result )
     {
         return result;
@@ -328,16 +369,28 @@ esp_err_t cc1101_init( void )
                                    &scan_task ) )
         {
             scan_task = NULL;
+            (void)strobe( CC1101_SIDLE );
+            (void)strobe( CC1101_SPWD );
+            disable_rf_path();
             return ESP_ERR_NO_MEM;
         }
     }
 
+    (void)strobe( CC1101_SIDLE );
+    (void)strobe( CC1101_SPWD );
+    disable_rf_path();
     return detected ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
 esp_err_t cc1101_start( void )
 {
     esp_err_t result = cc1101_init();
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
+    result = wake_from_power_down();
     if( ESP_OK != result )
     {
         return result;

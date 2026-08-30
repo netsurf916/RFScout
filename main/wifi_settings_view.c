@@ -24,7 +24,7 @@ void wifi_settings_view_render( unsigned a_selected,
                                 uint16_t a_surveillance_timeout_seconds )
 {
     static const char *labels[ WIFI_SETTINGS_ITEM_COUNT ] = {
-        "BACK", "NOTIFICATIONS", "WIFI TIMEOUT", "BT TIMEOUT", "SURV TIMEOUT", "RESET DETECTIONS" };
+        "BACK", "RESET DETECTIONS", "NOTIFICATIONS", "WIFI TIMEOUT", "BT TIMEOUT", "SURV TIMEOUT" };
     const ui_theme_palette_t *theme = ui_theme_get();
 
     display_clear( theme->background );
@@ -34,7 +34,7 @@ void wifi_settings_view_render( unsigned a_selected,
     {
         const int y = UI_LAYOUT_MENU_START_Y + (int)item * UI_LAYOUT_MENU_ROW_HEIGHT;
         const bool active = ( item == a_selected );
-        const bool editable = ( item >= 2U ) && ( item <= 4U );
+        const bool editable = ( item >= 3U ) && ( item <= 5U );
         display_draw_text( UI_LAYOUT_LEFT_X,
                            y,
                            active ? ( a_editing && editable ? "*" : ">" ) : " ",
@@ -45,19 +45,19 @@ void wifi_settings_view_render( unsigned a_selected,
 
         char value[ 16 ];
         value[ 0 ] = '\0';
-        if( 1U == item )
+        if( 2U == item )
         {
             snprintf( value, sizeof( value ), "%s", a_notifications_enabled ? "ON" : "OFF" );
         }
-        else if( 2U == item )
+        else if( 3U == item )
         {
             snprintf( value, sizeof( value ), "%u s", (unsigned)a_wifi_timeout_seconds );
         }
-        else if( 3U == item )
+        else if( 4U == item )
         {
             snprintf( value, sizeof( value ), "%u s", (unsigned)a_ble_timeout_seconds );
         }
-        else if( 4U == item )
+        else if( 5U == item )
         {
             snprintf( value, sizeof( value ), "%u s", (unsigned)a_surveillance_timeout_seconds );
         }

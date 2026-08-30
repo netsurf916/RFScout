@@ -44,6 +44,9 @@ typedef struct
     int64_t modified_time;
 } rfscout_recording_t;
 
+/** @brief Briefly clock the board PDM input and detect microphone data activity. */
+esp_err_t recorder_probe_microphone( void );
+
 /** @brief Initialize recorder state and enumerate valid WAV files when storage is mounted. */
 esp_err_t recorder_init( void );
 

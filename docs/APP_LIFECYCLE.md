@@ -15,6 +15,8 @@ The settle interval is not a blocking delay. It is evaluated from the normal app
 
 A meaningful action inside an application may activate it immediately when the action requires that application's hardware. Merely rotating through applications does not.
 
+Application availability is owned by the application framework rather than hard-coded in navigation. Each application descriptor declares one of three probe policies: `none` for applications with no runtime hardware gate, `startup` for fixed/on-board hardware whose result is cached for the boot, or `hotplug` for attachable resources that may be re-probed before entry and periodically while inactive. Detection mechanics stay with the relevant service/driver; the framework only invokes the callback and retains its semantic availability state. CC1101, nRF24, and the board PDM microphone use startup-cached probing. Thermal uses hot-plug probing because it is an explicitly attachable I2C peripheral. Future UART/I2C Quick-port applications should normally use the same hot-plug policy. Probing is distinct from activation: a successful probe may prepare reusable driver state, but it must not start scanning, continuous acquisition, recording, or another app-owned workload.
+
 ## Peripheral ownership contract
 
 When application exit/quiesce returns, the application must satisfy all of the following:

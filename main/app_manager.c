@@ -7,6 +7,8 @@
 
 #include "app_manager.h"
 
+#include "app_framework.h"
+
 #include "audio_spectrum.h"
 #include "audio_view.h"
 #include "ble_monitor.h"
@@ -47,31 +49,31 @@
 #define APP_ACTIVATION_DELAY_US 500000LL
 
 #define WIFI_MENU_BACK 0U
-#define WIFI_MENU_NOTIFICATIONS 1U
-#define WIFI_MENU_WIFI_TIMEOUT 2U
-#define WIFI_MENU_BLE_TIMEOUT 3U
-#define WIFI_MENU_SURVEILLANCE_TIMEOUT 4U
-#define WIFI_MENU_RESET 5U
+#define WIFI_MENU_RESET 1U
+#define WIFI_MENU_NOTIFICATIONS 2U
+#define WIFI_MENU_WIFI_TIMEOUT 3U
+#define WIFI_MENU_BLE_TIMEOUT 4U
+#define WIFI_MENU_SURVEILLANCE_TIMEOUT 5U
 #define WIFI_MENU_ITEM_COUNT 6U
 
 #define CC1101_MIN_STEP_KHZ 1U
 #define CC1101_MAX_STEP_KHZ 1000U
 #define CC1101_MENU_BACK 0U
-#define CC1101_MENU_PROFILE 1U
-#define CC1101_MENU_LOW 2U
-#define CC1101_MENU_HIGH 3U
-#define CC1101_MENU_STEP 4U
-#define CC1101_MENU_NOTIFICATIONS 5U
-#define CC1101_MENU_RESET_COUNTS 6U
+#define CC1101_MENU_RESET_COUNTS 1U
+#define CC1101_MENU_PROFILE 2U
+#define CC1101_MENU_LOW 3U
+#define CC1101_MENU_HIGH 4U
+#define CC1101_MENU_STEP 5U
+#define CC1101_MENU_NOTIFICATIONS 6U
 #define CC1101_MENU_ITEM_COUNT 7U
 
 #define NRF24_MENU_BACK 0U
-#define NRF24_MENU_LOW 1U
-#define NRF24_MENU_HIGH 2U
-#define NRF24_MENU_DWELL 3U
-#define NRF24_MENU_PACKETS 4U
-#define NRF24_MENU_NOTIFICATIONS 5U
-#define NRF24_MENU_RESET_COUNTS 6U
+#define NRF24_MENU_RESET_COUNTS 1U
+#define NRF24_MENU_LOW 2U
+#define NRF24_MENU_HIGH 3U
+#define NRF24_MENU_DWELL 4U
+#define NRF24_MENU_PACKETS 5U
+#define NRF24_MENU_NOTIFICATIONS 6U
 #define NRF24_MENU_ITEM_COUNT 7U
 
 #define NOTIFICATION_MENU_BACK 0U
@@ -87,7 +89,7 @@
 static const char *TAG = "app_manager";
 static rfscout_app_id_t active_app;
 static int64_t last_app_refresh_us;
-static int64_t last_thermal_probe_us;
+static int64_t last_hotplug_probe_us;
 static int64_t last_radio_retry_us;
 static int64_t app_entered_us;
 static bool app_activated;
@@ -133,21 +135,6 @@ static char next_morse_character( char a_current, int a_direction )
     return characters[ index ];
 }
 
-static bool probe_thermal( void )
-{
-    const bool was_detected = mlx90640_is_detected();
-    const bool now_detected = ( ESP_OK == mlx90640_probe() );
-    if( now_detected && !was_detected )
-    {
-        ESP_LOGI( TAG, "Thermal app available" );
-    }
-    else if( !now_detected && was_detected )
-    {
-        ESP_LOGW( TAG, "Thermal app unavailable" );
-    }
-    return now_detected;
-}
-
 static bool app_available( rfscout_app_id_t a_app )
 {
     if( RFSCOUT_APP_DEVICE == a_app )
@@ -158,7 +145,7 @@ static bool app_available( rfscout_app_id_t a_app )
     {
         return false;
     }
-    return ( RFSCOUT_APP_THERMAL != a_app ) || mlx90640_is_detected();
+    return app_framework_check_available( a_app );
 }
 
 static void start_wifi_bt_collectors( void )
@@ -182,12 +169,6 @@ static void start_wifi_bt_collectors( void )
             ESP_LOGW( TAG, "BLE monitor start failed: %s; retrying", esp_err_to_name( result ) );
         }
     }
-}
-
-static bool app_requires_activation( rfscout_app_id_t a_app )
-{
-    return ( RFSCOUT_APP_WIFI_BT == a_app ) || ( RFSCOUT_APP_CC1101 == a_app ) ||
-           ( RFSCOUT_APP_NRF24 == a_app ) || ( RFSCOUT_APP_THERMAL == a_app );
 }
 
 static void log_lifecycle( const char *a_phase,
@@ -806,7 +787,7 @@ static void enter_app( rfscout_app_id_t a_app )
 {
     last_app_refresh_us = 0;
     app_entered_us = esp_timer_get_time();
-    app_activated = !app_requires_activation( a_app );
+    app_activated = !app_framework_requires_activation( a_app );
     switch( a_app )
     {
         case RFSCOUT_APP_WIFI_BT:
@@ -862,7 +843,7 @@ static void enter_app( rfscout_app_id_t a_app )
     ESP_LOGI( TAG, "switched app=%d", (int)a_app );
 }
 
-static rfscout_app_id_t next_available_app( int a_direction, int64_t a_now )
+static rfscout_app_id_t next_available_app( int a_direction )
 {
     int next = (int)active_app;
     for( int attempts = 0; attempts < RFSCOUT_APP_COUNT; ++attempts )
@@ -879,14 +860,6 @@ static rfscout_app_id_t next_available_app( int a_direction, int64_t a_now )
         const rfscout_app_id_t candidate = (rfscout_app_id_t)next;
         if( !app_available( candidate ) )
         {
-            if( RFSCOUT_APP_THERMAL == candidate )
-            {
-                last_thermal_probe_us = a_now;
-                if( device_config_app_enabled( candidate ) && probe_thermal() )
-                {
-                    return candidate;
-                }
-            }
             continue;
         }
         return candidate;
@@ -894,14 +867,14 @@ static rfscout_app_id_t next_available_app( int a_direction, int64_t a_now )
     return active_app;
 }
 
-static bool switch_app_for_delta( int a_delta, int64_t a_now )
+static bool switch_app_for_delta( int a_delta )
 {
     if( 0 == a_delta )
     {
         return false;
     }
     const int direction = ( a_delta > 0 ) ? 1 : -1;
-    const rfscout_app_id_t candidate = next_available_app( direction, a_now );
+    const rfscout_app_id_t candidate = next_available_app( direction );
     if( candidate == active_app )
     {
         return false;
@@ -1525,7 +1498,7 @@ esp_err_t app_manager_init( void )
     rfscout_session_state_t restored_session;
     const bool have_restored_session = session_state_restore( &restored_session );
     last_app_refresh_us = 0;
-    last_thermal_probe_us = esp_timer_get_time();
+    last_hotplug_probe_us = esp_timer_get_time();
     last_radio_retry_us = 0;
     app_entered_us = 0;
     app_activated = false;
@@ -1561,6 +1534,8 @@ esp_err_t app_manager_init( void )
         return result;
     }
     (void)mlx90640_init();
+    (void)app_framework_init();
+
     if( have_restored_session && app_available( restored_session.active_app ) )
     {
         active_app = restored_session.active_app;
@@ -1589,11 +1564,17 @@ rfscout_app_id_t app_manager_current( void )
 void app_manager_poll( void )
 {
     const int64_t now = esp_timer_get_time();
-    if( ( RFSCOUT_APP_THERMAL != active_app ) && device_config_app_enabled( RFSCOUT_APP_THERMAL ) &&
-        ( now - last_thermal_probe_us >= APP_FEATURE_PROBE_INTERVAL_US ) )
+    if( now - last_hotplug_probe_us >= APP_FEATURE_PROBE_INTERVAL_US )
     {
-        (void)probe_thermal();
-        last_thermal_probe_us = now;
+        for( int app = 0; app < RFSCOUT_APP_COUNT; ++app )
+        {
+            const rfscout_app_id_t candidate = (rfscout_app_id_t)app;
+            if( ( candidate != active_app ) && device_config_app_enabled( candidate ) )
+            {
+                app_framework_refresh_hotplug( candidate );
+            }
+        }
+        last_hotplug_probe_us = now;
     }
 
     bool pressed = false;
@@ -1653,7 +1634,7 @@ void app_manager_poll( void )
             emit_event( RFSCOUT_EVENT_ENTER, 0 );
             return;
         }
-        (void)switch_app_for_delta( delta, now );
+        (void)switch_app_for_delta( delta );
         return;
     }
 
@@ -1671,7 +1652,7 @@ void app_manager_poll( void )
             cc_input( true, 0 );
             return;
         }
-        if( switch_app_for_delta( delta, now ) )
+        if( switch_app_for_delta( delta ) )
         {
             return;
         }
@@ -1703,7 +1684,7 @@ void app_manager_poll( void )
             nr_input( true, 0 );
             return;
         }
-        if( switch_app_for_delta( delta, now ) )
+        if( switch_app_for_delta( delta ) )
         {
             return;
         }
@@ -1762,7 +1743,7 @@ void app_manager_poll( void )
             audio_input( true, false, 0 );
             return;
         }
-        if( switch_app_for_delta( delta, now ) )
+        if( switch_app_for_delta( delta ) )
         {
             return;
         }
@@ -1786,7 +1767,7 @@ void app_manager_poll( void )
             activate_app_if_ready( now );
             wifi_input( true, 0 );
         }
-        else if( switch_app_for_delta( delta, now ) )
+        else if( switch_app_for_delta( delta ) )
         {
             return;
         }
@@ -1816,7 +1797,7 @@ void app_manager_poll( void )
         return;
     }
 
-    if( switch_app_for_delta( delta, now ) )
+    if( switch_app_for_delta( delta ) )
     {
         return;
     }
@@ -1832,7 +1813,7 @@ void app_manager_poll( void )
     if( !mlx90640_is_detected() )
     {
         leave_app( active_app );
-        active_app = next_available_app( 1, now );
+        active_app = next_available_app( 1 );
         enter_app( active_app );
         return;
     }
@@ -1845,7 +1826,7 @@ void app_manager_poll( void )
     if( ( ESP_OK != result ) && ( ESP_ERR_NOT_FINISHED != result ) && !mlx90640_is_detected() )
     {
         leave_app( active_app );
-        active_app = next_available_app( 1, now );
+        active_app = next_available_app( 1 );
         enter_app( active_app );
     }
 }

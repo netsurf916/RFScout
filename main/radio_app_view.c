@@ -178,12 +178,12 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
 {
     static const char *labels[ CC_MENU_ITEM_COUNT ] = {
         "BACK",
+        "RESET COUNTS",
         "PROFILE",
         "LOW",
         "HIGH",
         "STEP",
         "NOTIFICATIONS",
-        "RESET COUNTS",
     };
     const ui_theme_palette_t *theme = ui_theme_get();
     const unsigned first = ui_layout_menu_window_start( a_selected, CC_MENU_ITEM_COUNT );
@@ -202,7 +202,7 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
 
         const int y = UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT;
         const bool active = ( i == a_selected );
-        const bool action = ( 0U == i ) || ( 5U == i ) || ( 6U == i );
+        const bool action = ( 0U == i ) || ( 1U == i ) || ( 6U == i );
         const uint16_t accent =
             ( active && a_editing && a_limit_reached ) ? theme->warning : theme->selected;
         const char *marker = " ";
@@ -217,11 +217,11 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
             UI_LAYOUT_LABEL_X, y, labels[ i ], active ? theme->text : theme->divider, 1U );
 
         value[ 0 ] = '\0';
-        if( 1U == i )
+        if( 2U == i )
         {
             snprintf( value, sizeof( value ), "%s", ( NULL != a_profile ) ? a_profile : "?" );
         }
-        else if( 2U == i )
+        else if( 3U == i )
         {
             snprintf( value,
                       sizeof( value ),
@@ -229,7 +229,7 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
                       (unsigned long)( a_low_khz / 1000U ),
                       (unsigned long)( a_low_khz % 1000U ) );
         }
-        else if( 3U == i )
+        else if( 4U == i )
         {
             snprintf( value,
                       sizeof( value ),
@@ -237,11 +237,11 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
                       (unsigned long)( a_high_khz / 1000U ),
                       (unsigned long)( a_high_khz % 1000U ) );
         }
-        else if( 4U == i )
+        else if( 5U == i )
         {
             snprintf( value, sizeof( value ), "%lu kHz", (unsigned long)a_step_khz );
         }
-        else if( 5U == i )
+        else if( 6U == i )
         {
             snprintf( value, sizeof( value ), "%s", a_notifications_enabled ? "ON" : "OFF" );
         }
@@ -385,7 +385,7 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
                                 bool a_notifications_enabled )
 {
     static const char *labels[ NRF24_MENU_ITEM_COUNT ] = {
-        "BACK", "LOW CH", "HIGH CH", "DWELL", "PACKETS", "NOTIFICATIONS", "RESET COUNTS" };
+        "BACK", "RESET COUNTS", "LOW CH", "HIGH CH", "DWELL", "PACKET DETAILS", "NOTIFICATIONS" };
     const ui_theme_palette_t *theme = ui_theme_get();
     const unsigned first = ui_layout_menu_window_start( a_selected, NRF24_MENU_ITEM_COUNT );
 
@@ -403,7 +403,7 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
 
         const int y = UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT;
         const bool active = ( i == a_selected );
-        const bool action = ( 0U == i ) || ( 4U == i ) || ( 5U == i ) || ( 6U == i );
+        const bool action = ( 0U == i ) || ( 1U == i ) || ( 5U == i ) || ( 6U == i );
         const char *marker = " ";
 
         if( active )
@@ -417,7 +417,7 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
             UI_LAYOUT_LABEL_X, y, labels[ i ], active ? theme->text : theme->divider, 1U );
 
         value[ 0 ] = '\0';
-        if( 1U == i )
+        if( 2U == i )
         {
             snprintf( value,
                       sizeof( value ),
@@ -425,7 +425,7 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
                       (unsigned)a_low_channel,
                       (unsigned)( 2400U + a_low_channel ) );
         }
-        else if( 2U == i )
+        else if( 3U == i )
         {
             snprintf( value,
                       sizeof( value ),
@@ -433,11 +433,11 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
                       (unsigned)a_high_channel,
                       (unsigned)( 2400U + a_high_channel ) );
         }
-        else if( 3U == i )
+        else if( 4U == i )
         {
             snprintf( value, sizeof( value ), "%u us", (unsigned)a_dwell_us );
         }
-        else if( 5U == i )
+        else if( 6U == i )
         {
             snprintf( value, sizeof( value ), "%s", a_notifications_enabled ? "ON" : "OFF" );
         }
