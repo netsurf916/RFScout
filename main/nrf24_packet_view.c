@@ -118,7 +118,7 @@ size_t nrf24_packet_view_list( unsigned a_selected )
         display_draw_text(
             UI_LAYOUT_LEFT_X, 90, "WAITING FOR DECODER INPUT", theme->secondary, 1U );
         display_draw_text(
-            UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER/HOLD: BACK", theme->secondary, 1U );
+            UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "HOLD: BACK", theme->secondary, 1U );
         (void)display_present();
         return 0U;
     }
@@ -179,7 +179,7 @@ void nrf24_packet_view_detail( unsigned a_selected )
     {
         display_draw_text( UI_LAYOUT_LEFT_X, 70, "PACKET NO LONGER AVAILABLE", theme->text, 1U );
         display_draw_text(
-            UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER/HOLD: BACK", theme->secondary, 1U );
+            UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "HOLD: BACK", theme->secondary, 1U );
         (void)display_present();
         return;
     }
@@ -227,6 +227,6 @@ void nrf24_packet_view_detail( unsigned a_selected )
     }
 
     display_draw_text(
-        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER/HOLD: BACK", theme->secondary, 1U );
+        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "HOLD: BACK", theme->secondary, 1U );
     (void)display_present();
 }
