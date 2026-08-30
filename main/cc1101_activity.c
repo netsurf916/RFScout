@@ -39,6 +39,8 @@ typedef struct
 } tracked_fingerprint_t;
 
 static uint8_t current_level[ CC1101_SPECTRUM_BINS ];
+/* Classifier-only history spans the two-sweep confirmation window. It is not
+   rendered and has no slow-decay/peak-hold behavior. */
 static uint8_t history_recent[ CC1101_SPECTRUM_BINS ];
 static uint8_t history_older[ CC1101_SPECTRUM_BINS ];
 static int8_t last_rssi[ CC1101_SPECTRUM_BINS ];
