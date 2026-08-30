@@ -16,9 +16,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#define PACKET_ROWS_PER_PAGE 6U
-#define PACKET_ROW_HEIGHT 20
-#define PACKET_ROW_START_Y 42
 #define PACKET_DETAIL_ROW_HEIGHT 18
 
 static nrf24_recent_packet_t displayed_packets[ NRF24_RECENT_PACKET_MAX ];
@@ -106,66 +103,71 @@ size_t nrf24_packet_view_list( unsigned a_selected )
 {
     displayed_packet_count =
         nrf24_activity_recent_packets( displayed_packets, NRF24_RECENT_PACKET_MAX );
-    const size_t count = displayed_packet_count;
+    const size_t item_count = displayed_packet_count + 1U;
     const ui_theme_palette_t *theme = ui_theme_get();
 
     display_clear( theme->background );
     ui_chrome_draw( "nRF24 PACKETS", theme->secondary );
 
-    if( 0U == count )
-    {
-        display_draw_text( UI_LAYOUT_LEFT_X, 70, "NO VALIDATED PACKETS", theme->text, 1U );
-        display_draw_text(
-            UI_LAYOUT_LEFT_X, 90, "WAITING FOR DECODER INPUT", theme->secondary, 1U );
-        display_draw_text(
-            UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "HOLD: BACK", theme->secondary, 1U );
-        (void)display_present();
-        return 0U;
-    }
-
     unsigned selected = a_selected;
-    if( selected >= count )
+    if( selected >= item_count )
     {
-        selected = (unsigned)count - 1U;
+        selected = (unsigned)item_count - 1U;
     }
-    const unsigned page_start = ( selected / PACKET_ROWS_PER_PAGE ) * PACKET_ROWS_PER_PAGE;
+    const unsigned first = ui_layout_menu_window_start( selected, (unsigned)item_count );
 
-    for( unsigned row = 0U; row < PACKET_ROWS_PER_PAGE; ++row )
+    for( unsigned row = 0U; row < UI_LAYOUT_MENU_VISIBLE_ROWS; ++row )
     {
-        const unsigned index = page_start + row;
-        if( index >= count )
+        const unsigned item = first + row;
+        if( item >= item_count )
         {
             break;
         }
 
-        const nrf24_recent_packet_t *packet = &displayed_packets[ index ];
+        const int y = UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT;
+        const bool active = ( item == selected );
+        if( 0U == item )
+        {
+            display_draw_text( UI_LAYOUT_LEFT_X,
+                               y,
+                               active ? ">" : " ",
+                               active ? theme->selected : theme->divider,
+                               1U );
+            display_draw_text(
+                UI_LAYOUT_LABEL_X, y, "BACK", active ? theme->text : theme->divider, 1U );
+            continue;
+        }
+
+        const nrf24_recent_packet_t *packet = &displayed_packets[ item - 1U ];
         char line[ 52 ];
         char address[ 18 ];
         format_address( packet, address, sizeof( address ) );
         snprintf( line,
                   sizeof( line ),
-                  "%c CH%3u %-4s %-14.14s %2uB",
-                  ( index == selected ) ? '>' : ' ',
+                  "CH%3u %-4s %-14.14s %2uB",
                   (unsigned)packet->channel,
                   bitrate_name( packet->bitrate ),
                   address,
                   (unsigned)packet->payload_len );
         display_draw_text( UI_LAYOUT_LEFT_X,
-                           PACKET_ROW_START_Y + (int)row * PACKET_ROW_HEIGHT,
-                           line,
-                           ( index == selected ) ? theme->selected : theme->text,
+                           y,
+                           active ? ">" : " ",
+                           active ? theme->selected : theme->divider,
                            1U );
+        display_draw_text( UI_LAYOUT_LABEL_X, y, line, active ? theme->text : theme->divider, 1U );
     }
 
-    char footer[ 64 ];
-    snprintf( footer,
-              sizeof( footer ),
-              "%u/%u  CENTER: DETAIL  HOLD: BACK",
-              selected + 1U,
-              (unsigned)count );
-    display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, footer, theme->secondary, 1U );
+    if( 0U == displayed_packet_count )
+    {
+        display_draw_text( UI_LAYOUT_LABEL_X, 78, "NO VALIDATED PACKETS", theme->secondary, 1U );
+        display_draw_text(
+            UI_LAYOUT_LABEL_X, 98, "WAITING FOR DECODER INPUT", theme->secondary, 1U );
+    }
+
+    display_draw_text(
+        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN: SELECT  CENTER: ENTER", theme->secondary, 1U );
     (void)display_present();
-    return count;
+    return item_count;
 }
 
 void nrf24_packet_view_detail( unsigned a_selected )
@@ -179,7 +181,7 @@ void nrf24_packet_view_detail( unsigned a_selected )
     {
         display_draw_text( UI_LAYOUT_LEFT_X, 70, "PACKET NO LONGER AVAILABLE", theme->text, 1U );
         display_draw_text(
-            UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "HOLD: BACK", theme->secondary, 1U );
+            UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: BACK", theme->secondary, 1U );
         (void)display_present();
         return;
     }
@@ -226,6 +228,6 @@ void nrf24_packet_view_detail( unsigned a_selected )
             UI_LAYOUT_LEFT_X, 34 + ( 6 * PACKET_DETAIL_ROW_HEIGHT ), payload, theme->text, 1U );
     }
 
-    display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "HOLD: BACK", theme->secondary, 1U );
+    display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: BACK", theme->secondary, 1U );
     (void)display_present();
 }
