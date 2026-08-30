@@ -47,31 +47,31 @@
 #define APP_ACTIVATION_DELAY_US 500000LL
 
 #define WIFI_MENU_BACK 0U
-#define WIFI_MENU_NOTIFICATIONS 1U
-#define WIFI_MENU_WIFI_TIMEOUT 2U
-#define WIFI_MENU_BLE_TIMEOUT 3U
-#define WIFI_MENU_SURVEILLANCE_TIMEOUT 4U
-#define WIFI_MENU_RESET 5U
+#define WIFI_MENU_RESET 1U
+#define WIFI_MENU_NOTIFICATIONS 2U
+#define WIFI_MENU_WIFI_TIMEOUT 3U
+#define WIFI_MENU_BLE_TIMEOUT 4U
+#define WIFI_MENU_SURVEILLANCE_TIMEOUT 5U
 #define WIFI_MENU_ITEM_COUNT 6U
 
 #define CC1101_MIN_STEP_KHZ 1U
 #define CC1101_MAX_STEP_KHZ 1000U
 #define CC1101_MENU_BACK 0U
-#define CC1101_MENU_PROFILE 1U
-#define CC1101_MENU_LOW 2U
-#define CC1101_MENU_HIGH 3U
-#define CC1101_MENU_STEP 4U
-#define CC1101_MENU_NOTIFICATIONS 5U
-#define CC1101_MENU_RESET_COUNTS 6U
+#define CC1101_MENU_RESET_COUNTS 1U
+#define CC1101_MENU_PROFILE 2U
+#define CC1101_MENU_LOW 3U
+#define CC1101_MENU_HIGH 4U
+#define CC1101_MENU_STEP 5U
+#define CC1101_MENU_NOTIFICATIONS 6U
 #define CC1101_MENU_ITEM_COUNT 7U
 
 #define NRF24_MENU_BACK 0U
-#define NRF24_MENU_LOW 1U
-#define NRF24_MENU_HIGH 2U
-#define NRF24_MENU_DWELL 3U
-#define NRF24_MENU_PACKETS 4U
-#define NRF24_MENU_NOTIFICATIONS 5U
-#define NRF24_MENU_RESET_COUNTS 6U
+#define NRF24_MENU_RESET_COUNTS 1U
+#define NRF24_MENU_LOW 2U
+#define NRF24_MENU_HIGH 3U
+#define NRF24_MENU_DWELL 4U
+#define NRF24_MENU_PACKETS 5U
+#define NRF24_MENU_NOTIFICATIONS 6U
 #define NRF24_MENU_ITEM_COUNT 7U
 
 #define NOTIFICATION_MENU_BACK 0U
@@ -110,6 +110,7 @@ static bool wifi_monitor_ready;
 static bool ble_monitor_ready;
 static bool cc1101_available;
 static bool nrf24_available;
+static bool microphone_available;
 static unsigned wifi_item;
 static unsigned cc_item;
 static unsigned nr_item;
@@ -167,6 +168,10 @@ static bool app_available( rfscout_app_id_t a_app )
     if( RFSCOUT_APP_NRF24 == a_app )
     {
         return nrf24_available;
+    }
+    if( RFSCOUT_APP_AUDIO == a_app )
+    {
+        return microphone_available;
     }
     return ( RFSCOUT_APP_THERMAL != a_app ) || mlx90640_is_detected();
 }
@@ -1564,6 +1569,7 @@ esp_err_t app_manager_init( void )
     ble_monitor_ready = false;
     cc1101_available = false;
     nrf24_available = false;
+    microphone_available = false;
     memset( cc_notification_counts, 0, sizeof( cc_notification_counts ) );
     memset( nr_notification_counts, 0, sizeof( nr_notification_counts ) );
 
@@ -1585,6 +1591,13 @@ esp_err_t app_manager_init( void )
     ESP_LOGI( TAG,
               "nRF24 hardware %s",
               nrf24_available ? "detected; app available" : "not detected; app hidden" );
+
+    const esp_err_t microphone_result = recorder_probe_microphone();
+    microphone_available = ( ESP_OK == microphone_result );
+    ESP_LOGI( TAG,
+              "PDM microphone %s",
+              microphone_available ? "detected; Recorder available"
+                                   : "not detected; Recorder hidden" );
 
     if( have_restored_session && app_available( restored_session.active_app ) )
     {

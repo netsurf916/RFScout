@@ -104,7 +104,7 @@ A representative schema-v2 configuration is:
 
 The historical configuration key remains `apps.audio` because the application enum still uses `RFSCOUT_APP_AUDIO`; the user-facing application is Recorder. `apps.startup` writes user-facing aliases where useful: `home` for Device and `recorder` for Audio. The loader also accepts the historical internal names `device` and `audio`.
 
-An application `enabled` value is a user preference, not a promise that the hardware exists. CC1101 and nRF24 are additionally gated by a one-time startup hardware probe; if the corresponding radio is absent, that application is omitted from navigation for the current boot even when configured enabled. The saved preference is preserved so the same configuration can be used across differently populated T-Embed variants. Thermal remains dynamically probed because it is an external attachable peripheral.
+An application `enabled` value is a user preference, not a promise that the hardware exists. CC1101, nRF24, and Recorder are additionally gated by one-time startup hardware probes; if a fixed radio or the board PDM microphone is absent, that application is omitted from navigation for the current boot even when configured enabled. The saved preference is preserved so the same configuration can be used across differently populated T-Embed variants. Thermal remains dynamically probed because it is an external attachable peripheral.
 
 The exact `time` object is emitted only when RFScout has valid saved wall-clock state to preserve.
 

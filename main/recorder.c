@@ -12,6 +12,7 @@
 #include "device_time.h"
 #include "storage.h"
 
+#include "driver/gpio.h"
 #include "driver/i2s_pdm.h"
 #include "driver/pulse_cnt.h"
 #include "esp_log.h"
@@ -43,6 +44,8 @@
 #define RECORDER_MIC_WAKEUP_MS 20U
 #define RECORDER_DIAGNOSTIC_INTERVAL_US 1000000LL
 #define RECORDER_CLOCK_MEASURE_MS 10U
+#define RECORDER_MIC_PROBE_MS 5U
+#define RECORDER_MIC_PROBE_MIN_EDGES 32U
 #define RECORDER_SIGNAL_SNAPSHOT_THRESHOLD 4000U
 #define RECORDER_MIC_PDM_CLOCK_MIN_HZ 1000000U
 #define RECORDER_MIC_PDM_CLOCK_MAX_HZ 3250000U
@@ -292,6 +295,61 @@ static uint32_t measure_pdm_clock_hz( void )
     return ESP_OK == result ? measured_pdm_clock_hz : 0U;
 }
 
+static uint32_t measure_pdm_data_edges( void )
+{
+    pcnt_unit_handle_t unit = NULL;
+    pcnt_channel_handle_t channel = NULL;
+    const pcnt_unit_config_t unit_config = { .low_limit = -1, .high_limit = 30000 };
+    esp_err_t result = pcnt_new_unit( &unit_config, &unit );
+    if( ESP_OK != result )
+    {
+        return 0U;
+    }
+
+    const pcnt_chan_config_t channel_config = {
+        .edge_gpio_num = RFSCOUT_BOARD_MIC_DATA_PIN,
+        .level_gpio_num = -1,
+        .flags = { .virt_level_io_level = 1 },
+    };
+    result = pcnt_new_channel( unit, &channel_config, &channel );
+    if( ESP_OK == result )
+    {
+        result = pcnt_channel_set_edge_action(
+            channel, PCNT_CHANNEL_EDGE_ACTION_INCREASE, PCNT_CHANNEL_EDGE_ACTION_HOLD );
+    }
+    if( ESP_OK == result )
+    {
+        result = pcnt_unit_enable( unit );
+    }
+    if( ESP_OK == result )
+    {
+        (void)pcnt_unit_clear_count( unit );
+        result = pcnt_unit_start( unit );
+    }
+
+    int count = 0;
+    if( ESP_OK == result )
+    {
+        vTaskDelay( pdMS_TO_TICKS( RECORDER_MIC_PROBE_MS ) );
+        (void)pcnt_unit_stop( unit );
+        result = pcnt_unit_get_count( unit, &count );
+    }
+
+    if( NULL != unit )
+    {
+        (void)pcnt_unit_disable( unit );
+    }
+    if( NULL != channel )
+    {
+        (void)pcnt_del_channel( channel );
+    }
+    if( NULL != unit )
+    {
+        (void)pcnt_del_unit( unit );
+    }
+    return ESP_OK == result && count > 0 ? (uint32_t)count : 0U;
+}
+
 static void log_pcm_snapshot( const char *a_label, const int16_t *a_samples, size_t a_count )
 {
     if( NULL == a_samples || 0U == a_count )
@@ -415,6 +473,45 @@ static esp_err_t open_microphone( void )
         }
     }
     return result;
+}
+
+esp_err_t recorder_probe_microphone( void )
+{
+    if( NULL != rx_channel || NULL != record_task || NULL != monitor_task )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t result = open_microphone();
+    uint32_t edges = 0U;
+    if( ESP_OK == result )
+    {
+        (void)gpio_set_pull_mode( RFSCOUT_BOARD_MIC_DATA_PIN, GPIO_PULLDOWN_ONLY );
+        vTaskDelay( pdMS_TO_TICKS( RECORDER_MIC_WAKEUP_MS ) );
+        edges = measure_pdm_data_edges();
+        release_channel();
+    }
+    (void)gpio_set_pull_mode( RFSCOUT_BOARD_MIC_DATA_PIN, GPIO_FLOATING );
+
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG, "microphone probe setup failed: %s", esp_err_to_name( result ) );
+        return result;
+    }
+    if( edges < RECORDER_MIC_PROBE_MIN_EDGES )
+    {
+        ESP_LOGI( TAG,
+                  "microphone probe: data_edges=%u/%ums; not detected",
+                  (unsigned)edges,
+                  (unsigned)RECORDER_MIC_PROBE_MS );
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    ESP_LOGI( TAG,
+              "microphone probe: data_edges=%u/%ums; detected",
+              (unsigned)edges,
+              (unsigned)RECORDER_MIC_PROBE_MS );
+    return ESP_OK;
 }
 
 static void make_recording_name( char *a_name, size_t a_capacity )
