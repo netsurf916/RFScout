@@ -33,7 +33,13 @@ typedef enum
     RFSCOUT_APP_AVAILABILITY_ERROR
 } rfscout_app_availability_t;
 
-/** @brief Initialize app descriptors and run startup/hot-plug discovery once. */
+/**
+ * @brief Initialize app descriptors and run startup/hot-plug discovery once.
+ *
+ * Probe callbacks own their device-specific detection mechanics and must return
+ * hardware to an inactive state before they return. Successful probing does not
+ * imply application activation or ongoing peripheral ownership.
+ */
 esp_err_t app_framework_init( void );
 
 /**
