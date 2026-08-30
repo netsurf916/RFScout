@@ -34,6 +34,7 @@
 #include "ui.h"
 #include "wifi_settings_view.h"
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 
@@ -43,6 +44,7 @@
 #define AUDIO_REFRESH_INTERVAL_US 100000LL
 #define APP_FEATURE_PROBE_INTERVAL_US 10000000LL
 #define APP_RADIO_RETRY_INTERVAL_US 1000000LL
+#define APP_ACTIVATION_DELAY_US 500000LL
 
 #define WIFI_MENU_BACK 0U
 #define WIFI_MENU_NOTIFICATIONS 1U
@@ -87,6 +89,8 @@ static rfscout_app_id_t active_app;
 static int64_t last_app_refresh_us;
 static int64_t last_thermal_probe_us;
 static int64_t last_radio_retry_us;
+static int64_t app_entered_us;
+static bool app_activated;
 static bool wifi_menu;
 static bool wifi_edit;
 static bool cc_menu;
@@ -177,6 +181,73 @@ static void start_wifi_bt_collectors( void )
         {
             ESP_LOGW( TAG, "BLE monitor start failed: %s; retrying", esp_err_to_name( result ) );
         }
+    }
+}
+
+static bool app_requires_activation( rfscout_app_id_t a_app )
+{
+    return ( RFSCOUT_APP_WIFI_BT == a_app ) || ( RFSCOUT_APP_CC1101 == a_app ) ||
+           ( RFSCOUT_APP_NRF24 == a_app ) || ( RFSCOUT_APP_THERMAL == a_app );
+}
+
+static void log_lifecycle( const char *a_phase,
+                           rfscout_app_id_t a_from,
+                           rfscout_app_id_t a_to,
+                           int64_t a_elapsed_us )
+{
+    ESP_LOGI( TAG,
+              "%s from=%d to=%d elapsed=%lldus heap=%u min=%u largest=%u",
+              a_phase,
+              (int)a_from,
+              (int)a_to,
+              (long long)a_elapsed_us,
+              (unsigned)heap_caps_get_free_size( MALLOC_CAP_8BIT ),
+              (unsigned)heap_caps_get_minimum_free_size( MALLOC_CAP_8BIT ),
+              (unsigned)heap_caps_get_largest_free_block( MALLOC_CAP_8BIT ) );
+}
+
+static void activate_app( void )
+{
+    if( app_activated )
+    {
+        return;
+    }
+
+    const int64_t started = esp_timer_get_time();
+    app_activated = true;
+    switch( active_app )
+    {
+        case RFSCOUT_APP_WIFI_BT:
+            last_radio_retry_us = started;
+            start_wifi_bt_collectors();
+            break;
+        case RFSCOUT_APP_CC1101:
+            if( ESP_OK != cc1101_start() )
+            {
+                ESP_LOGW( TAG, "CC1101 unavailable" );
+            }
+            break;
+        case RFSCOUT_APP_NRF24:
+            if( ESP_OK != nrf24_start() )
+            {
+                ESP_LOGW( TAG, "nRF24 unavailable" );
+            }
+            break;
+        case RFSCOUT_APP_THERMAL:
+        case RFSCOUT_APP_AUDIO:
+        case RFSCOUT_APP_DEVICE:
+        case RFSCOUT_APP_COUNT:
+        default:
+            break;
+    }
+    log_lifecycle( "activate", active_app, active_app, esp_timer_get_time() - started );
+}
+
+static void activate_app_if_ready( int64_t a_now )
+{
+    if( !app_activated && ( a_now - app_entered_us >= APP_ACTIVATION_DELAY_US ) )
+    {
+        activate_app();
     }
 }
 
@@ -669,15 +740,21 @@ static void leave_app( rfscout_app_id_t a_app )
 {
     if( RFSCOUT_APP_WIFI_BT == a_app )
     {
-        (void)ble_monitor_stop();
-        (void)radio_monitor_stop();
+        if( app_activated )
+        {
+            (void)ble_monitor_stop();
+            (void)radio_monitor_stop();
+        }
         wifi_monitor_ready = false;
         ble_monitor_ready = false;
         wifi_item = WIFI_MENU_BACK;
     }
     else if( RFSCOUT_APP_CC1101 == a_app )
     {
-        cc1101_stop();
+        if( app_activated )
+        {
+            cc1101_stop();
+        }
         cc1101_activity_reset();
         cc1101_activity_reset_counts();
         memset( cc_notification_counts, 0, sizeof( cc_notification_counts ) );
@@ -685,7 +762,10 @@ static void leave_app( rfscout_app_id_t a_app )
     }
     else if( RFSCOUT_APP_NRF24 == a_app )
     {
-        nrf24_stop();
+        if( app_activated )
+        {
+            nrf24_stop();
+        }
         nrf24_activity_reset();
         memset( nr_notification_counts, 0, sizeof( nr_notification_counts ) );
         nr_item = NRF24_MENU_BACK;
@@ -693,6 +773,7 @@ static void leave_app( rfscout_app_id_t a_app )
     }
     else if( RFSCOUT_APP_AUDIO == a_app )
     {
+        recorder_stop();
         audio_spectrum_stop();
         audio_item = AUDIO_BROWSER_BACK;
     }
@@ -716,6 +797,8 @@ static void leave_app( rfscout_app_id_t a_app )
 static void enter_app( rfscout_app_id_t a_app )
 {
     last_app_refresh_us = 0;
+    app_entered_us = esp_timer_get_time();
+    app_activated = !app_requires_activation( a_app );
     switch( a_app )
     {
         case RFSCOUT_APP_WIFI_BT:
@@ -724,8 +807,7 @@ static void enter_app( rfscout_app_id_t a_app )
             wifi_edit = false;
             wifi_monitor_ready = false;
             ble_monitor_ready = false;
-            last_radio_retry_us = esp_timer_get_time();
-            start_wifi_bt_collectors();
+            last_radio_retry_us = 0;
             break;
         case RFSCOUT_APP_CC1101:
             cc_item = CC1101_MENU_BACK;
@@ -734,10 +816,6 @@ static void enter_app( rfscout_app_id_t a_app )
             cc_limit = false;
             memset( cc_notification_counts, 0, sizeof( cc_notification_counts ) );
             cc1101_activity_reset();
-            if( ESP_OK != cc1101_start() )
-            {
-                ESP_LOGW( TAG, "CC1101 unavailable" );
-            }
             render_cc_spectrum();
             break;
         case RFSCOUT_APP_NRF24:
@@ -749,10 +827,6 @@ static void enter_app( rfscout_app_id_t a_app )
             nr_packet_item = 0U;
             memset( nr_notification_counts, 0, sizeof( nr_notification_counts ) );
             nrf24_activity_reset();
-            if( ESP_OK != nrf24_start() )
-            {
-                ESP_LOGW( TAG, "nRF24 unavailable" );
-            }
             render_nr_spectrum();
             break;
         case RFSCOUT_APP_AUDIO:
@@ -760,10 +834,6 @@ static void enter_app( rfscout_app_id_t a_app )
             audio_menu = false;
             audio_edit = false;
             audio_last_state = RFSCOUT_RECORDER_IDLE;
-            if( ESP_OK != audio_spectrum_start() )
-            {
-                ESP_LOGW( TAG, "Audio microphone unavailable" );
-            }
             render_audio();
             break;
         case RFSCOUT_APP_THERMAL:
@@ -824,9 +894,12 @@ static bool switch_app_for_delta( int a_delta, int64_t a_now )
     {
         return false;
     }
-    leave_app( active_app );
+    const rfscout_app_id_t previous = active_app;
+    const int64_t transition_started = esp_timer_get_time();
+    leave_app( previous );
     active_app = candidate;
     enter_app( active_app );
+    log_lifecycle( "transition", previous, active_app, esp_timer_get_time() - transition_started );
     rfscout_event_emit( RFSCOUT_EVENT_NAVIGATE, (uint8_t)active_app, direction );
     return true;
 }
@@ -1433,6 +1506,8 @@ esp_err_t app_manager_init( void )
     last_app_refresh_us = 0;
     last_thermal_probe_us = esp_timer_get_time();
     last_radio_retry_us = 0;
+    app_entered_us = 0;
+    app_activated = false;
     wifi_menu = false;
     wifi_edit = false;
     cc_menu = false;
@@ -1454,8 +1529,8 @@ esp_err_t app_manager_init( void )
     nr_packet_item = 0U;
     audio_item = AUDIO_BROWSER_BACK;
     notification_item = NOTIFICATION_MENU_BACK;
-    wifi_monitor_ready = true;
-    ble_monitor_ready = true;
+    wifi_monitor_ready = false;
+    ble_monitor_ready = false;
     memset( cc_notification_counts, 0, sizeof( cc_notification_counts ) );
     memset( nr_notification_counts, 0, sizeof( nr_notification_counts ) );
 
@@ -1478,7 +1553,7 @@ esp_err_t app_manager_init( void )
     {
         device_view_landing();
     }
-    else if( RFSCOUT_APP_WIFI_BT != active_app )
+    else
     {
         enter_app( active_app );
     }
@@ -1565,15 +1640,22 @@ void app_manager_poll( void )
     {
         if( cc_menu )
         {
+            activate_app_if_ready( now );
             cc_input( pressed, delta );
             return;
         }
         if( pressed )
         {
+            activate_app_if_ready( now );
             cc_input( true, 0 );
             return;
         }
         if( switch_app_for_delta( delta, now ) )
+        {
+            return;
+        }
+        activate_app_if_ready( now );
+        if( !app_activated )
         {
             return;
         }
@@ -1590,15 +1672,22 @@ void app_manager_poll( void )
     {
         if( nr_menu )
         {
+            activate_app_if_ready( now );
             nr_input( pressed, delta );
             return;
         }
         if( pressed )
         {
+            activate_app_if_ready( now );
             nr_input( true, 0 );
             return;
         }
         if( switch_app_for_delta( delta, now ) )
+        {
+            return;
+        }
+        activate_app_if_ready( now );
+        if( !app_activated )
         {
             return;
         }
@@ -1668,14 +1757,28 @@ void app_manager_poll( void )
     {
         if( wifi_menu )
         {
+            activate_app_if_ready( now );
             wifi_input( pressed, delta );
         }
         else if( pressed )
         {
+            activate_app_if_ready( now );
             wifi_input( true, 0 );
         }
         else if( switch_app_for_delta( delta, now ) )
         {
+            return;
+        }
+        else
+        {
+            activate_app_if_ready( now );
+        }
+        if( !app_activated )
+        {
+            if( !wifi_menu )
+            {
+                ui_poll();
+            }
             return;
         }
         if( ( !wifi_monitor_ready || !ble_monitor_ready ) &&
@@ -1697,6 +1800,11 @@ void app_manager_poll( void )
         return;
     }
     if( RFSCOUT_APP_THERMAL != active_app )
+    {
+        return;
+    }
+    activate_app_if_ready( now );
+    if( !app_activated )
     {
         return;
     }

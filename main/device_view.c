@@ -149,6 +149,14 @@ static char next_morse_character( char a_current, int a_direction )
     return characters[ index ];
 }
 
+static bool item_direct_toggle( unsigned a_item )
+{
+    return ( DEVICE_ITEM_CLOCK_FORMAT == a_item ) || ( DEVICE_ITEM_WIFI == a_item ) ||
+           ( DEVICE_ITEM_CC1101 == a_item ) || ( DEVICE_ITEM_NRF24 == a_item ) ||
+           ( DEVICE_ITEM_AUDIO == a_item ) || ( DEVICE_ITEM_THERMAL == a_item ) ||
+           ( DEVICE_ITEM_LOGGING == a_item );
+}
+
 static bool item_editable( unsigned a_item )
 {
     return ( DEVICE_ITEM_BACK != a_item ) && ( DEVICE_ITEM_SAVE != a_item );
@@ -355,7 +363,9 @@ void device_view_render( void )
               "%u/%u  %s",
               (unsigned)( selected_item + 1U ),
               (unsigned)DEVICE_ITEM_COUNT,
-              editing ? "TURN CHANGE / CENTER DONE" : "TURN SELECT / CENTER ENTER" );
+              editing ? "TURN CHANGE / CENTER DONE"
+                      : ( item_direct_toggle( selected_item ) ? "CENTER TOGGLE"
+                                                              : "TURN SELECT / CENTER ENTER" ) );
     display_draw_text(
         UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, footer, editing ? COLOR_ACCENT : COLOR_DIM, 1U );
     if( save_error )
@@ -789,6 +799,12 @@ bool device_view_input( bool a_pressed, int a_delta )
             save_error = ( ESP_OK != device_config_save( false, 0, NULL ) );
             emit_device_event( save_error ? RFSCOUT_EVENT_ERROR : RFSCOUT_EVENT_ACTIVATE,
                                save_error ? -1 : 0 );
+            device_view_render();
+            return false;
+        }
+        if( !editing && item_direct_toggle( selected_item ) )
+        {
+            adjust_selected( 1 );
             device_view_render();
             return false;
         }

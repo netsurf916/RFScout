@@ -10,6 +10,7 @@
 #include "display.h"
 #include "mlx90640.h"
 #include "ui_chrome.h"
+#include "ui_theme.h"
 
 #include "esp_log.h"
 
@@ -162,19 +163,20 @@ esp_err_t thermal_view_render( void )
         return ESP_OK;
     }
 
-    display_clear( COLOR_BLACK );
-    ui_chrome_draw( "THERMAL", COLOR_SUBDUED_TEAL );
+    const ui_theme_palette_t *theme = ui_theme_get();
+    display_clear( theme->background );
+    ui_chrome_draw( "THERMAL", theme->secondary );
 
     if( !mlx90640_is_detected() )
     {
-        display_draw_text( 56, 70, "MLX90640 NOT DETECTED", COLOR_RED, 2 );
-        display_draw_text( 73, 98, "I2C ADDRESS 0x33", COLOR_GRAY, 1 );
+        display_draw_text( 56, 70, "MLX90640 NOT DETECTED", theme->error, 2 );
+        display_draw_text( 73, 98, "I2C ADDRESS 0x33", theme->info, 1 );
         return display_present();
     }
 
     if( ESP_OK != result )
     {
-        display_draw_text( 72, 76, "THERMAL READ ERROR", COLOR_RED, 2 );
+        display_draw_text( 72, 76, "THERMAL READ ERROR", theme->error, 2 );
         display_present();
         return result;
     }
@@ -206,23 +208,23 @@ esp_err_t thermal_view_render( void )
                        THERMAL_IMAGE_Y + ( THERMAL_IMAGE_HEIGHT / 2 ),
                        11,
                        1,
-                       COLOR_WHITE );
+                       theme->text );
     display_fill_rect( THERMAL_IMAGE_X + ( THERMAL_IMAGE_WIDTH / 2 ),
                        THERMAL_IMAGE_Y + ( THERMAL_IMAGE_HEIGHT / 2 ) - 5,
                        1,
                        11,
-                       COLOR_WHITE );
+                       theme->text );
 
     char text[ 24 ];
-    display_draw_text( THERMAL_INFO_X, 30, "RELATIVE IR", COLOR_GRAY, 1 );
+    display_draw_text( THERMAL_INFO_X, 30, "RELATIVE IR", theme->info, 1 );
     snprintf( text, sizeof( text ), "MAX %6d", (int)frame.maximum );
-    display_draw_text( THERMAL_INFO_X, 52, text, COLOR_WHITE, 1 );
+    display_draw_text( THERMAL_INFO_X, 52, text, theme->text, 1 );
     snprintf( text, sizeof( text ), "MIN %6d", (int)frame.minimum );
-    display_draw_text( THERMAL_INFO_X, 68, text, COLOR_WHITE, 1 );
+    display_draw_text( THERMAL_INFO_X, 68, text, theme->text, 1 );
     snprintf( text, sizeof( text ), "CTR %6d", (int)frame.center );
-    display_draw_text( THERMAL_INFO_X, 84, text, COLOR_WHITE, 1 );
-    display_draw_text( THERMAL_INFO_X, 116, "32x24 SENSOR", COLOR_GRAY, 1 );
-    display_draw_text( THERMAL_INFO_X, 130, "CAL PENDING", COLOR_GRAY, 1 );
+    display_draw_text( THERMAL_INFO_X, 84, text, theme->text, 1 );
+    display_draw_text( THERMAL_INFO_X, 116, "32x24 SENSOR", theme->info, 1 );
+    display_draw_text( THERMAL_INFO_X, 130, "CAL PENDING", theme->info, 1 );
 
     const esp_err_t present = display_present();
     if( ESP_OK != present )
