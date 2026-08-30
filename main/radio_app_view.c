@@ -385,8 +385,7 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
                                 bool a_notifications_enabled )
 {
     static const char *labels[ NRF24_MENU_ITEM_COUNT ] = {
-        "BACK", "LOW CH", "HIGH CH", "DWELL", "PACKETS", "NOTIFICATIONS", "RESET COUNTS"
-    };
+        "BACK", "LOW CH", "HIGH CH", "DWELL", "PACKETS", "NOTIFICATIONS", "RESET COUNTS" };
     const ui_theme_palette_t *theme = ui_theme_get();
     const unsigned first = ui_layout_menu_window_start( a_selected, NRF24_MENU_ITEM_COUNT );
 
