@@ -15,7 +15,7 @@ The settle interval is not a blocking delay. It is evaluated from the normal app
 
 A meaningful action inside an application may activate it immediately when the action requires that application's hardware. Merely rotating through applications does not.
 
-Application availability is resolved before this lifecycle begins. Fixed optional hardware such as CC1101, nRF24, and the board PDM microphone is probed once during startup; absent hardware removes its application from navigation for that boot. Radio probes may initialize reusable driver state without starting scans. The microphone probe briefly clocks the PDM interface, verifies data-line activity, and releases I2S0 immediately; it does not start recording or monitoring. Thermal remains dynamically probed because it is an explicitly attachable external peripheral.
+Application availability is resolved before this lifecycle begins. Fixed optional hardware such as CC1101, nRF24, and the board PDM microphone is probed once during startup; absent hardware removes its application from navigation for that boot. Radio probes may initialize reusable driver state without starting scans. The microphone probe briefly clocks the PDM interface, verifies data-line activity, and releases I2S0 immediately; it does not start recording or monitoring. Because PDM has no device-identity transaction, microphone presence is an electrical activity test rather than an identity check and should be validated for each board implementation. Thermal remains dynamically probed because it is an explicitly attachable external peripheral.
 
 ## Peripheral ownership contract
 
