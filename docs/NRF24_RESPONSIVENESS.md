@@ -20,7 +20,8 @@ RF acquisition and human-facing presentation now have deliberately different cad
 - Completed display snapshots are coalesced, and the application consumes at most one nRF24 presentation frame per 125 ms.
 - The scan worker runs cooperatively at `tskIDLE_PRIORITY + 1` instead of priority 4 so it does not unnecessarily dominate application work.
 - Entering nRF24 settings or packet subviews suppresses background spectrum rendering immediately.
-- Encoder rotation remains interrupt-driven, and the Center button now also records press/release edges in an ISR. `platform_poll()` converts those captured durations into normal click, long-click, and two-second input-lock semantics. A complete click therefore survives a temporary synchronous LCD/main-loop stall.
+- Encoder rotation remains interrupt-driven, and the Center button now also records press/release edges in an ISR. `platform_poll()` converts those captured durations into semantic input after the physical gesture completes. A complete click therefore survives a temporary synchronous LCD/main-loop stall.
+- Center-button holds from 0.8 to under 1.5 seconds remain `LONG_SELECT`, holds from 1.5 to under 2 seconds produce the generic `BACK` input event, and the existing two-second hold toggles the input lock. This gives one-button targets an explicit Back gesture without taking long-select away from applications such as Recorder.
 
 The presentation throttle does not reduce the number of RF sweeps used by the activity model; it only reduces redundant LCD work.
 
@@ -34,7 +35,9 @@ The nRF24 settings menu now contains a **Packets** subview. It provides:
 - up to 16 bounded recent packet records;
 - per-row channel, data rate, address, and payload length;
 - a detail screen with channel, data rate, address, PID, ACK/NO_ACK state, CRC state, timestamp, and the complete payload;
-- Back navigation from detail to list, then from list to nRF24 settings.
+- generic Back navigation from detail to list, then from list to nRF24 settings.
+
+The packet list keeps the exact bounded snapshot that was rendered. Opening a detail reads the selected record from that displayed snapshot rather than taking a second live snapshot, so a packet arriving between highlighting a row and pressing Center cannot silently change the identity of the packet shown.
 
 The recent-packet model preserves all currently decoded metadata: channel, bitrate, address, PID, NO_ACK, CRC state, payload length, full payload, and timestamp. Rendering reads bounded copies only; it does not perform RF decoding or classification.
 
