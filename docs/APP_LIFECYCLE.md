@@ -15,6 +15,8 @@ The settle interval is not a blocking delay. It is evaluated from the normal app
 
 A meaningful action inside an application may activate it immediately when the action requires that application's hardware. Merely rotating through applications does not.
 
+Application availability is resolved before this lifecycle begins. Fixed optional radios such as CC1101 and nRF24 are probed once during startup; an absent radio removes its application from navigation for that boot. The probe may initialize reusable driver state, but it does not start scanning. Thermal remains dynamically probed because it is an explicitly attachable external peripheral.
+
 ## Peripheral ownership contract
 
 When application exit/quiesce returns, the application must satisfy all of the following:
