@@ -374,8 +374,10 @@ bool cc1101_stop( void )
     }
     if( worker_active )
     {
-        ESP_LOGE(
-            TAG, "scan worker did not quiesce within %u ms", (unsigned)CC1101_STOP_TIMEOUT_MS );
+        running = true;
+        ESP_LOGE( TAG,
+                  "scan worker did not quiesce within %u ms; resuming scan",
+                  (unsigned)CC1101_STOP_TIMEOUT_MS );
         return false;
     }
 

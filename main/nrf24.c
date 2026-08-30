@@ -326,8 +326,10 @@ bool nrf24_stop( void )
     }
     if( worker_active )
     {
-        ESP_LOGE(
-            TAG, "scan worker did not quiesce within %u ms", (unsigned)NRF24_STOP_TIMEOUT_MS );
+        running = true;
+        ESP_LOGE( TAG,
+                  "scan worker did not quiesce within %u ms; resuming scan",
+                  (unsigned)NRF24_STOP_TIMEOUT_MS );
         return false;
     }
 
