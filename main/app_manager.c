@@ -108,6 +108,8 @@ static bool notification_menu;
 static bool notification_edit;
 static bool wifi_monitor_ready;
 static bool ble_monitor_ready;
+static bool cc1101_available;
+static bool nrf24_available;
 static unsigned wifi_item;
 static unsigned cc_item;
 static unsigned nr_item;
@@ -157,6 +159,14 @@ static bool app_available( rfscout_app_id_t a_app )
     if( !device_config_app_enabled( a_app ) )
     {
         return false;
+    }
+    if( RFSCOUT_APP_CC1101 == a_app )
+    {
+        return cc1101_available;
+    }
+    if( RFSCOUT_APP_NRF24 == a_app )
+    {
+        return nrf24_available;
     }
     return ( RFSCOUT_APP_THERMAL != a_app ) || mlx90640_is_detected();
 }
@@ -1552,6 +1562,8 @@ esp_err_t app_manager_init( void )
     notification_item = NOTIFICATION_MENU_BACK;
     wifi_monitor_ready = false;
     ble_monitor_ready = false;
+    cc1101_available = false;
+    nrf24_available = false;
     memset( cc_notification_counts, 0, sizeof( cc_notification_counts ) );
     memset( nr_notification_counts, 0, sizeof( nr_notification_counts ) );
 
@@ -1561,6 +1573,19 @@ esp_err_t app_manager_init( void )
         return result;
     }
     (void)mlx90640_init();
+
+    const esp_err_t cc1101_result = cc1101_init();
+    cc1101_available = ( ESP_OK == cc1101_result );
+    ESP_LOGI( TAG,
+              "CC1101 hardware %s",
+              cc1101_available ? "detected; app available" : "not detected; app hidden" );
+
+    const esp_err_t nrf24_result = nrf24_init();
+    nrf24_available = ( ESP_OK == nrf24_result );
+    ESP_LOGI( TAG,
+              "nRF24 hardware %s",
+              nrf24_available ? "detected; app available" : "not detected; app hidden" );
+
     if( have_restored_session && app_available( restored_session.active_app ) )
     {
         active_app = restored_session.active_app;
