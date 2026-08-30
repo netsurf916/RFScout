@@ -94,25 +94,26 @@ Prefix identity keeps authoritative IEEE vendor attribution separate from curate
 
 ```text
 CC1101 worker -> completed RSSI sweep -> live spectrum
-                                      -> optional peak hold
+                                      -> one previous-sweep snapshot for temporal classification
                                       -> conservative classifier
                                       -> detection counts
                                       -> app-owned notification on count advance
 ```
 
-Sweep configuration is bounded to 128 samples. Detection categories describe RF behavior rather than decoded product identity. Normal spectrum presentation uses the footer for RF-state information only; Center enters settings without a persistent lower-corner label.
+The display consumes only the current sweep. The classifier retains one previous normalized sweep where a short temporal comparison helps distinguish burst-like behavior; there is no slow-decay peak history or user-visible peak-hold state. Sweep configuration is bounded to 128 samples. Detection categories describe RF behavior rather than decoded product identity.
 
 ## nRF24 path
 
 ```text
-nRF24 RPD sweeps -> activity history -> optional peak hold
-validated ESB observations -> classifier/address ledger -> detection counts
+nRF24 RPD sweeps -> fast EWMA activity histogram -> broad spectrum classifier
+validated ESB observations -> recent packet ring -> packet preview/browser
+                           -> classifier/address ledger -> detection counts
                                                    |
                                                    v
                                          app-owned notification
 ```
 
-The address ledger is separate from the small active classifier cache so classifier eviction does not cause repeated identity counts. Wi-Fi-like wide spectrum activity and hopping/BLE-like activity remain distinct classifier categories and display rows; presentation does not combine them into an `Other` count. Normal spectrum presentation also omits the redundant lower-corner `SETTINGS` label.
+The nRF24 activity path maintains only the fast EWMA histogram required for display and broad spectrum-shape classification. It does not maintain a second slow peak-hold histogram. The address ledger is separate from the small active classifier cache so classifier eviction does not cause repeated identity counts. Wi-Fi-like wide spectrum activity and hopping/BLE-like activity remain distinct classifier categories and display rows; presentation does not combine them into an `Other` count.
 
 ## Recorder path
 
