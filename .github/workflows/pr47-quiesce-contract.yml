@@ -1,0 +1,77 @@
+name: PR47 quiesce contract
+
+on:
+  push:
+    branches:
+      - stabilize-app-lifecycle-ui
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: stabilize-app-lifecycle-ui
+          fetch-depth: 0
+      - name: Install clang-format 18
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y clang-format-18
+      - name: Enforce quiesce success before transition
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def one(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"expected text not found in {path}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          one("main/cc1101.h",
+              "/** @brief Stop acquisition, power down the CC1101, and disable its RF path. */\nvoid cc1101_stop( void );",
+              "/** @brief Stop acquisition, power down the CC1101, and disable its RF path. */\nbool cc1101_stop( void );")
+          one("main/nrf24.h",
+              "/** @brief Stop acquisition and place the nRF24 in its inactive state. */\nvoid nrf24_stop( void );",
+              "/** @brief Stop acquisition and place the nRF24 in its inactive state. */\nbool nrf24_stop( void );")
+
+          p = Path("main/cc1101.c")
+          text = p.read_text()
+          text = text.replace("void cc1101_stop( void )\n{", "bool cc1101_stop( void )\n{", 1)
+          text = text.replace("""    if( !initialized )\n    {\n        return;\n    }\n\n    running = false;\n""", """    if( !initialized )\n    {\n        return true;\n    }\n\n    running = false;\n""", 1)
+          text = text.replace("""        ESP_LOGE( TAG,\n                  \"scan worker did not quiesce within %u ms\",\n                  (unsigned)CC1101_STOP_TIMEOUT_MS );\n        return;\n    }\n\n    (void)strobe( CC1101_SIDLE );\n    (void)strobe( CC1101_SPWD );\n    disable_rf_path();\n}\n""", """        ESP_LOGE( TAG,\n                  \"scan worker did not quiesce within %u ms\",\n                  (unsigned)CC1101_STOP_TIMEOUT_MS );\n        return false;\n    }\n\n    (void)strobe( CC1101_SIDLE );\n    (void)strobe( CC1101_SPWD );\n    disable_rf_path();\n    return true;\n}\n""", 1)
+          p.write_text(text)
+
+          p = Path("main/nrf24.c")
+          text = p.read_text()
+          text = text.replace("void nrf24_stop( void )\n{", "bool nrf24_stop( void )\n{", 1)
+          text = text.replace("""    if( !initialized )\n        return;\n    running = false;\n""", """    if( !initialized )\n        return true;\n    running = false;\n""", 1)
+          text = text.replace("""        ESP_LOGE( TAG,\n                  \"scan worker did not quiesce within %u ms\",\n                  (unsigned)NRF24_STOP_TIMEOUT_MS );\n        return;\n    }\n\n    ce( false );\n    (void)write_register( NRF24_REG_CONFIG, 0x00U );\n}\n""", """        ESP_LOGE( TAG,\n                  \"scan worker did not quiesce within %u ms\",\n                  (unsigned)NRF24_STOP_TIMEOUT_MS );\n        return false;\n    }\n\n    ce( false );\n    (void)write_register( NRF24_REG_CONFIG, 0x00U );\n    return true;\n}\n""", 1)
+          p.write_text(text)
+
+          p = Path("main/app_manager.c")
+          text = p.read_text()
+          text = text.replace("static void leave_app( rfscout_app_id_t a_app )\n{", "static bool leave_app( rfscout_app_id_t a_app )\n{\n    bool quiesced = true;", 1)
+          text = text.replace("""        if( app_activated )\n        {\n            (void)ble_monitor_stop();\n            (void)radio_monitor_stop();\n        }\n""", """        if( app_activated )\n        {\n            if( ESP_OK != ble_monitor_stop() )\n            {\n                quiesced = false;\n            }\n            if( ESP_OK != radio_monitor_stop() )\n            {\n                quiesced = false;\n            }\n        }\n""", 1)
+          text = text.replace("""        if( app_activated )\n        {\n            cc1101_stop();\n        }\n""", """        if( app_activated && !cc1101_stop() )\n        {\n            quiesced = false;\n        }\n""", 1)
+          text = text.replace("""        if( app_activated )\n        {\n            nrf24_stop();\n        }\n""", """        if( app_activated && !nrf24_stop() )\n        {\n            quiesced = false;\n        }\n""", 1)
+          text = text.replace("""    notification_menu = false;\n    notification_edit = false;\n}\n\nstatic void enter_app""", """    notification_menu = false;\n    notification_edit = false;\n    return quiesced;\n}\n\nstatic void enter_app""", 1)
+          text = text.replace("""    leave_app( previous );\n    active_app = candidate;\n""", """    if( !leave_app( previous ) )\n    {\n        log_lifecycle( \"quiesce-timeout\",\n                       previous,\n                       candidate,\n                       esp_timer_get_time() - transition_started );\n        return false;\n    }\n    active_app = candidate;\n""", 1)
+          text = text.replace("""    else if( RFSCOUT_APP_DEVICE != active_app )\n    {\n        leave_app( active_app );\n        active_app = RFSCOUT_APP_DEVICE;\n""", """    else if( RFSCOUT_APP_DEVICE != active_app )\n    {\n        if( !leave_app( active_app ) )\n        {\n            emit_event( RFSCOUT_EVENT_ERROR, ESP_ERR_TIMEOUT );\n            return;\n        }\n        active_app = RFSCOUT_APP_DEVICE;\n""", 1)
+          p.write_text(text)
+          PY
+          clang-format-18 -i main/app_manager.c main/cc1101.c main/cc1101.h main/nrf24.c main/nrf24.h
+      - name: Commit and remove helper workflow
+        run: |
+          rm .github/workflows/pr47-quiesce-contract.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add main/app_manager.c main/cc1101.c main/cc1101.h main/nrf24.c main/nrf24.h .github/workflows/pr47-quiesce-contract.yml
+          git diff --cached --check
+          git commit -m "Abort app transitions when quiesce fails"
+          git push origin HEAD:stabilize-app-lifecycle-ui
