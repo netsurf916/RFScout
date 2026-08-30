@@ -18,6 +18,7 @@
 
 #define ENCODER_BUTTON_DEBOUNCE_US 30000LL
 #define ENCODER_BUTTON_LONG_PRESS_US 800000LL
+#define ENCODER_BUTTON_BACK_HOLD_US 1500000LL
 #define ENCODER_BUTTON_LOCK_HOLD_US 2000000LL
 #define ENCODER_LATCH_STATE_0 0U
 #define ENCODER_LATCH_STATE_3 3U
@@ -38,6 +39,7 @@ static uint32_t encoder_button_seen_sequence;
 static uint32_t encoder_button_lock_sequence;
 static bool encoder_button_event;
 static bool encoder_button_long_event;
+static bool encoder_button_back_event;
 static bool encoder_button_lock_fired;
 static bool input_locked;
 
@@ -126,6 +128,7 @@ static void toggle_input_lock( uint32_t a_press_sequence )
     encoder_button_lock_sequence = a_press_sequence;
     encoder_button_event = false;
     encoder_button_long_event = false;
+    encoder_button_back_event = false;
     clear_encoder_delta();
     ESP_LOGI( TAG, "user input %s", input_locked ? "locked" : "unlocked" );
 
@@ -175,6 +178,7 @@ esp_err_t platform_init( void )
     encoder_button_lock_sequence = 0U;
     encoder_button_event = false;
     encoder_button_long_event = false;
+    encoder_button_back_event = false;
     encoder_button_lock_fired = false;
     rfscout_session_state_t restored_session;
     input_locked = session_state_restore( &restored_session ) && restored_session.input_locked;
@@ -243,7 +247,11 @@ void platform_poll( void )
         return;
     }
 
-    if( completed_duration_us >= ENCODER_BUTTON_LONG_PRESS_US )
+    if( completed_duration_us >= ENCODER_BUTTON_BACK_HOLD_US )
+    {
+        encoder_button_back_event = true;
+    }
+    else if( completed_duration_us >= ENCODER_BUTTON_LONG_PRESS_US )
     {
         encoder_button_long_event = true;
     }
@@ -263,6 +271,12 @@ bool platform_input_get( rfscout_input_event_t *a_event )
     a_event->type = RFSCOUT_INPUT_NONE;
     a_event->value = 0;
 
+    if( encoder_button_back_event )
+    {
+        encoder_button_back_event = false;
+        a_event->type = RFSCOUT_INPUT_BACK;
+        return true;
+    }
     if( platform_encoder_button_long_pressed() )
     {
         a_event->type = RFSCOUT_INPUT_LONG_SELECT;
