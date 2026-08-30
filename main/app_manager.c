@@ -1813,7 +1813,7 @@ void app_manager_poll( void )
     if( !mlx90640_is_detected() )
     {
         leave_app( active_app );
-        active_app = next_available_app( 1, now );
+        active_app = next_available_app( 1 );
         enter_app( active_app );
         return;
     }
@@ -1826,7 +1826,7 @@ void app_manager_poll( void )
     if( ( ESP_OK != result ) && ( ESP_ERR_NOT_FINISHED != result ) && !mlx90640_is_detected() )
     {
         leave_app( active_app );
-        active_app = next_available_app( 1, now );
+        active_app = next_available_app( 1 );
         enter_app( active_app );
     }
 }
