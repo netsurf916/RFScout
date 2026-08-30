@@ -22,6 +22,7 @@
 #include "notification_settings_view.h"
 #include "nrf24.h"
 #include "nrf24_activity.h"
+#include "nrf24_packet_view.h"
 #include "observation_store.h"
 #include "platform.h"
 #include "radio_app_view.h"
@@ -68,9 +69,10 @@
 #define NRF24_MENU_HIGH 2U
 #define NRF24_MENU_DWELL 3U
 #define NRF24_MENU_PEAK_HOLD 4U
-#define NRF24_MENU_NOTIFICATIONS 5U
-#define NRF24_MENU_RESET_COUNTS 6U
-#define NRF24_MENU_ITEM_COUNT 7U
+#define NRF24_MENU_PACKETS 5U
+#define NRF24_MENU_NOTIFICATIONS 6U
+#define NRF24_MENU_RESET_COUNTS 7U
+#define NRF24_MENU_ITEM_COUNT 8U
 
 #define NOTIFICATION_MENU_BACK 0U
 #define NOTIFICATION_MENU_ENABLED 1U
@@ -94,6 +96,8 @@ static bool cc_edit;
 static bool cc_limit;
 static bool nr_menu;
 static bool nr_edit;
+static bool nr_packet_browser;
+static bool nr_packet_detail;
 static bool audio_menu;
 static bool audio_edit;
 static bool audio_delete_confirm;
@@ -107,6 +111,7 @@ static bool nr_peak_hold = true;
 static unsigned wifi_item;
 static unsigned cc_item;
 static unsigned nr_item;
+static unsigned nr_packet_item;
 static unsigned audio_item;
 static unsigned notification_item;
 static rfscout_recorder_state_t audio_last_state = RFSCOUT_RECORDER_IDLE;
@@ -667,6 +672,12 @@ static void render_nr_spectrum( void )
                                    device_count );
 }
 
+static size_t nr_packet_count( void )
+{
+    nrf24_recent_packet_t packets[ NRF24_RECENT_PACKET_MAX ];
+    return nrf24_activity_recent_packets( packets, NRF24_RECENT_PACKET_MAX );
+}
+
 static void render_audio( void )
 {
     audio_view_render( NULL, NULL );
@@ -696,6 +707,7 @@ static void leave_app( rfscout_app_id_t a_app )
         nrf24_activity_reset();
         memset( nr_notification_counts, 0, sizeof( nr_notification_counts ) );
         nr_item = NRF24_MENU_BACK;
+        nr_packet_item = 0U;
     }
     else if( RFSCOUT_APP_AUDIO == a_app )
     {
@@ -709,6 +721,8 @@ static void leave_app( rfscout_app_id_t a_app )
     cc_limit = false;
     nr_menu = false;
     nr_edit = false;
+    nr_packet_browser = false;
+    nr_packet_detail = false;
     audio_menu = false;
     audio_edit = false;
     audio_delete_confirm = false;
@@ -748,6 +762,9 @@ static void enter_app( rfscout_app_id_t a_app )
             nr_item = NRF24_MENU_BACK;
             nr_menu = false;
             nr_edit = false;
+            nr_packet_browser = false;
+            nr_packet_detail = false;
+            nr_packet_item = 0U;
             memset( nr_notification_counts, 0, sizeof( nr_notification_counts ) );
             nrf24_activity_reset();
             if( ESP_OK != nrf24_start() )
@@ -974,11 +991,58 @@ static void close_nr_menu( void )
 {
     nr_menu = false;
     nr_edit = false;
+    nr_packet_browser = false;
+    nr_packet_detail = false;
+    nr_packet_item = 0U;
     render_nr_spectrum();
 }
 
 static void nr_input( bool a_pressed, int a_delta )
 {
+    if( nr_packet_browser )
+    {
+        const size_t packet_count = nr_packet_count();
+        if( nr_packet_detail )
+        {
+            return;
+        }
+        if( a_pressed )
+        {
+            if( packet_count > 0U )
+            {
+                if( nr_packet_item >= packet_count )
+                {
+                    nr_packet_item = (unsigned)packet_count - 1U;
+                }
+                nr_packet_detail = true;
+                nrf24_packet_view_detail( nr_packet_item );
+                emit_event( RFSCOUT_EVENT_ENTER, (int32_t)nr_packet_item );
+            }
+            return;
+        }
+        if( 0 == a_delta || 0U == packet_count )
+        {
+            return;
+        }
+        const int direction = ( a_delta > 0 ) ? 1 : -1;
+        int item = (int)nr_packet_item + direction;
+        if( item < 0 )
+        {
+            item = (int)packet_count - 1;
+        }
+        if( item >= (int)packet_count )
+        {
+            item = 0;
+        }
+        if( (unsigned)item != nr_packet_item )
+        {
+            nr_packet_item = (unsigned)item;
+            (void)nrf24_packet_view_list( nr_packet_item );
+            emit_event( RFSCOUT_EVENT_NAVIGATE, direction );
+        }
+        return;
+    }
+
     if( !nr_menu )
     {
         if( a_pressed )
@@ -997,6 +1061,15 @@ static void nr_input( bool a_pressed, int a_delta )
         {
             close_nr_menu();
             emit_event( RFSCOUT_EVENT_BACK, 0 );
+            return;
+        }
+        if( NRF24_MENU_PACKETS == nr_item )
+        {
+            nr_packet_browser = true;
+            nr_packet_detail = false;
+            nr_packet_item = 0U;
+            (void)nrf24_packet_view_list( nr_packet_item );
+            emit_event( RFSCOUT_EVENT_ENTER, 0 );
             return;
         }
         if( NRF24_MENU_NOTIFICATIONS == nr_item )
@@ -1340,6 +1413,19 @@ static void close_active_menu_for_back( void )
         close_cc_menu();
         emit_event( RFSCOUT_EVENT_BACK, 0 );
     }
+    else if( RFSCOUT_APP_NRF24 == active_app && nr_packet_detail )
+    {
+        nr_packet_detail = false;
+        (void)nrf24_packet_view_list( nr_packet_item );
+        emit_event( RFSCOUT_EVENT_BACK, 0 );
+    }
+    else if( RFSCOUT_APP_NRF24 == active_app && nr_packet_browser )
+    {
+        nr_packet_browser = false;
+        nr_packet_item = 0U;
+        render_nr_menu();
+        emit_event( RFSCOUT_EVENT_BACK, 0 );
+    }
     else if( RFSCOUT_APP_NRF24 == active_app && nr_menu )
     {
         close_nr_menu();
@@ -1374,6 +1460,8 @@ esp_err_t app_manager_init( void )
     cc_limit = false;
     nr_menu = false;
     nr_edit = false;
+    nr_packet_browser = false;
+    nr_packet_detail = false;
     audio_menu = false;
     audio_edit = false;
     audio_delete_confirm = false;
@@ -1383,6 +1471,7 @@ esp_err_t app_manager_init( void )
     wifi_item = WIFI_MENU_BACK;
     cc_item = CC1101_MENU_BACK;
     nr_item = NRF24_MENU_BACK;
+    nr_packet_item = 0U;
     audio_item = AUDIO_BROWSER_BACK;
     notification_item = NOTIFICATION_MENU_BACK;
     wifi_monitor_ready = true;

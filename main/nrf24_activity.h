@@ -12,7 +12,7 @@
 
 #include "nrf24.h"
 
-#define NRF24_RECENT_PACKET_MAX 5U
+#define NRF24_RECENT_PACKET_MAX 16U
 
 /** @brief Metadata extracted from a candidate Enhanced ShockBurst packet. */
 typedef struct
@@ -33,10 +33,14 @@ typedef struct
 typedef struct
 {
     uint8_t channel;
+    uint8_t bitrate;
     uint8_t address[ 5 ];
     uint8_t address_len;
-    uint8_t payload[ 32 ];
     uint8_t payload_len;
+    uint8_t payload[ 32 ];
+    uint8_t pid;
+    bool no_ack;
+    bool crc_valid;
     uint32_t timestamp_ms;
 } nrf24_recent_packet_t;
 

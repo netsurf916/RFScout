@@ -32,9 +32,10 @@
 #define NRF24_CONFIG_PWR_UP 0x02U
 #define NRF24_MIN_RX_SETTLE_US 170U
 #define NRF24_TASK_STACK_SIZE 3072U
-#define NRF24_TASK_PRIORITY 4U
+#define NRF24_TASK_PRIORITY ( tskIDLE_PRIORITY + 1U )
 #define NRF24_DELAY_SLICE_US 1000U
 #define NRF24_CHANNELS_PER_SCHEDULER_BREAK 16U
+#define NRF24_FRAME_NOTIFY_INTERVAL_MS 125U
 
 static const char *TAG = "nrf24";
 static spi_device_handle_t device;
@@ -44,6 +45,7 @@ static bool initialized;
 static bool detected;
 static volatile bool running;
 static volatile bool frame_ready;
+static TickType_t last_frame_take_tick;
 static uint8_t acquisition[ NRF24_CHANNEL_COUNT ];
 static uint8_t completed[ NRF24_CHANNEL_COUNT ];
 static nrf24_scan_config_t config = { .low_channel = 0U, .high_channel = 125U, .dwell_us = 250U };
@@ -205,6 +207,8 @@ static void scan_worker( void *a_argument )
 
             portENTER_CRITICAL( &state_lock );
             memcpy( completed, acquisition, sizeof( completed ) );
+            /* Multiple sweeps may complete before the UI consumes this flag.
+               A bool intentionally coalesces them into one pending snapshot. */
             frame_ready = true;
             portEXIT_CRITICAL( &state_lock );
             vTaskDelay( 1U );
@@ -296,6 +300,7 @@ esp_err_t nrf24_start( void )
     portENTER_CRITICAL( &state_lock );
     memset( acquisition, 0, sizeof( acquisition ) );
     frame_ready = false;
+    last_frame_take_tick = 0U;
     running = true;
     portEXIT_CRITICAL( &state_lock );
     xTaskNotifyGive( scan_task );
@@ -387,9 +392,21 @@ void nrf24_adjust_dwell( int a_delta )
 
 bool nrf24_take_frame_ready( void )
 {
+    const TickType_t now = xTaskGetTickCount();
+    const TickType_t minimum_interval = pdMS_TO_TICKS( NRF24_FRAME_NOTIFY_INTERVAL_MS );
+
     portENTER_CRITICAL( &state_lock );
-    const bool ready = frame_ready;
-    frame_ready = false;
+    const bool interval_elapsed = ( 0U == last_frame_take_tick ) || ( 0U == minimum_interval ) ||
+                                  ( ( now - last_frame_take_tick ) >= minimum_interval );
+    const bool ready = frame_ready && interval_elapsed;
+    if( ready )
+    {
+        /* Leave frame_ready asserted while throttled so completed sweeps are
+           coalesced rather than discarded. The UI always receives the newest
+           completed snapshot once the human-facing refresh interval elapses. */
+        frame_ready = false;
+        last_frame_take_tick = now;
+    }
     portEXIT_CRITICAL( &state_lock );
     return ready;
 }

@@ -243,6 +243,28 @@ Favor **desired physical outcome -> configure -> measure -> correct/validate** f
 
 Systematically inventory the target-board schematic and code so every onboard peripheral, power rail, GPIO, bus device, interrupt, and expansion interface is used, intentionally reserved, or documented as conflicting/unavailable. Repeat the inventory for materially different supported board variants.
 
+### Multi-target build, release, and browser flasher
+
+**Priority:** Medium/platform prerequisite
+
+Extend the release pipeline and browser flasher so one RFScout version or PR candidate can carry multiple hardware-target builds without the deployment layer maintaining a separate hard-coded target list.
+
+Goals:
+
+- Give every supported board a stable hardware target ID and user-facing display name independent of MCU family.
+- Make board metadata the canonical source for build/package identity rather than duplicating board-name maps across CMake, CI, packaging, and the web UI.
+- Build/package each supported hardware target into its own deterministic directory and self-describing RFScout manifest.
+- Include hardware target ID/name, IDF target/chip family, flash assumptions, version, commit, and image metadata in the packaged manifest.
+- Let candidate/release artifacts contain any number of successfully produced target directories.
+- Have the web-flasher catalog discover the target manifests actually present in an artifact instead of assuming a fixed set of boards.
+- Model the catalog as build/version -> hardware targets -> ESP Web Tools manifest.
+- Present Hardware and Firmware as separate user choices, filtering firmware choices to versions that actually provide the selected board target.
+- Keep chip-family compatibility distinct from board identity so boards sharing an ESP32 family cannot be mistaken for interchangeable firmware targets.
+- Preserve an explicit manual hardware choice for clean-install/bootloader flashing; treat any future USB/runtime board auto-identification only as a convenience layer.
+- Cover candidates, published releases, missing-target cases, and deterministic catalog generation with packaging tests.
+
+This work should also revisit browser-flasher publication concurrency so PR candidates and `main` builds do not unnecessarily replace or cancel one another while publishing the shared Pages environment.
+
 ## Longer-term applications and capabilities
 
 - NFC/PN532 tools.

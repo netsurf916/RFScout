@@ -33,7 +33,7 @@
 #define APP_DETECTION_ROW_Y 64
 #define APP_DETECTION_ROW_HEIGHT 18
 #define CC_MENU_ITEM_COUNT 8U
-#define NRF24_MENU_ITEM_COUNT 7U
+#define NRF24_MENU_ITEM_COUNT 8U
 #define RADIO_MENU_COMPACT_ROW_HEIGHT 15
 
 static void format_mhz( char *a_buffer, size_t a_capacity, uint32_t a_frequency_khz )
@@ -337,8 +337,14 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
                                 bool a_peak_hold,
                                 bool a_notifications_enabled )
 {
-    static const char *labels[ NRF24_MENU_ITEM_COUNT ] = {
-        "BACK", "LOW CH", "HIGH CH", "DWELL", "PEAK HOLD", "NOTIFICATIONS", "RESET COUNTS" };
+    static const char *labels[ NRF24_MENU_ITEM_COUNT ] = { "BACK",
+                                                           "LOW CH",
+                                                           "HIGH CH",
+                                                           "DWELL",
+                                                           "PEAK HOLD",
+                                                           "PACKETS",
+                                                           "NOTIFICATIONS",
+                                                           "RESET COUNTS" };
     const ui_theme_palette_t *theme = ui_theme_get();
 
     display_clear( BG );
@@ -349,7 +355,7 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
     {
         const int y = UI_LAYOUT_MENU_START_Y + (int)i * RADIO_MENU_COMPACT_ROW_HEIGHT;
         const bool active = ( i == a_selected );
-        const bool action = ( 0U == i ) || ( 5U == i ) || ( 6U == i );
+        const bool action = ( 0U == i ) || ( 5U == i ) || ( 6U == i ) || ( 7U == i );
         const char *marker = " ";
 
         if( active )
@@ -385,7 +391,7 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
         {
             snprintf( value, sizeof( value ), "%s", a_peak_hold ? "ON" : "OFF" );
         }
-        else if( 5U == i )
+        else if( 6U == i )
         {
             snprintf( value, sizeof( value ), "%s", a_notifications_enabled ? "ON" : "OFF" );
         }
