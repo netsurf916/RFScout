@@ -1,0 +1,39 @@
+name: PR47 draft build validation
+
+on:
+  push:
+    branches:
+      - stabilize-app-lifecycle-ui
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: espressif/idf:release-v6.1
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Build ESP32-S3 firmware
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          idf.py --version
+          idf.py -DRFSCOUT_FORMAT_CHECK=OFF set-target esp32s3
+          idf.py -DRFSCOUT_FORMAT_CHECK=OFF build
+      - name: Package candidate firmware
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          idf_version=$(idf.py --version)
+          version="candidate-${GITHUB_SHA:0:12}"
+          idf.py -DRFSCOUT_FORMAT_CHECK=OFF merge-bin -o rfscout-full.bin -f raw
+          python3 tools/package_release.py \
+            --build-dir build \
+            --merged-image build/rfscout-full.bin \
+            --output-dir dist \
+            --version "$version" \
+            --commit "$GITHUB_SHA" \
+            --idf-version "$idf_version"
