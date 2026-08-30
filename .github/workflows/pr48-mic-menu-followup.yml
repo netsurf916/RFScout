@@ -1,0 +1,153 @@
+name: PR48 mic and menu follow-up
+
+on:
+  push:
+    branches:
+      - detect-radio-hardware-apps
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: detect-radio-hardware-apps
+          fetch-depth: 0
+
+      - name: Apply microphone probe and menu ordering
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"pattern not found in {path}: {old[:80]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          # Recorder: expose a startup-only PDM presence probe.
+          replace("main/recorder.c",
+                  '#include "driver/i2s_pdm.h"\n#include "driver/pulse_cnt.h"',
+                  '#include "driver/gpio.h"\n#include "driver/i2s_pdm.h"\n#include "driver/pulse_cnt.h"')
+          replace("main/recorder.c",
+                  '#define RECORDER_CLOCK_MEASURE_MS 10U\n#define RECORDER_SIGNAL_SNAPSHOT_THRESHOLD 4000U',
+                  '#define RECORDER_CLOCK_MEASURE_MS 10U\n#define RECORDER_MIC_PROBE_MS 5U\n#define RECORDER_MIC_PROBE_MIN_EDGES 32U\n#define RECORDER_SIGNAL_SNAPSHOT_THRESHOLD 4000U')
+
+          marker = '''static void log_pcm_snapshot( const char *a_label, const int16_t *a_samples, size_t a_count )\n'''
+          probe_helper = '''static uint32_t measure_pdm_data_edges( void )\n{\n    pcnt_unit_handle_t unit = NULL;\n    pcnt_channel_handle_t channel = NULL;\n    const pcnt_unit_config_t unit_config = { .low_limit = -1, .high_limit = 30000 };\n    esp_err_t result = pcnt_new_unit( &unit_config, &unit );\n    if( ESP_OK != result )\n    {\n        return 0U;\n    }\n\n    const pcnt_chan_config_t channel_config = {\n        .edge_gpio_num = RFSCOUT_BOARD_MIC_DATA_PIN,\n        .level_gpio_num = -1,\n        .flags = { .virt_level_io_level = 1 },\n    };\n    result = pcnt_new_channel( unit, &channel_config, &channel );\n    if( ESP_OK == result )\n    {\n        result = pcnt_channel_set_edge_action(\n            channel, PCNT_CHANNEL_EDGE_ACTION_INCREASE, PCNT_CHANNEL_EDGE_ACTION_HOLD );\n    }\n    if( ESP_OK == result )\n    {\n        result = pcnt_unit_enable( unit );\n    }\n    if( ESP_OK == result )\n    {\n        (void)pcnt_unit_clear_count( unit );\n        result = pcnt_unit_start( unit );\n    }\n\n    int count = 0;\n    if( ESP_OK == result )\n    {\n        vTaskDelay( pdMS_TO_TICKS( RECORDER_MIC_PROBE_MS ) );\n        (void)pcnt_unit_stop( unit );\n        result = pcnt_unit_get_count( unit, &count );\n    }\n\n    if( NULL != unit )\n    {\n        (void)pcnt_unit_disable( unit );\n    }\n    if( NULL != channel )\n    {\n        (void)pcnt_del_channel( channel );\n    }\n    if( NULL != unit )\n    {\n        (void)pcnt_del_unit( unit );\n    }\n    return ESP_OK == result && count > 0 ? (uint32_t)count : 0U;\n}\n\n'''
+          replace("main/recorder.c", marker, probe_helper + marker)
+
+          marker = '''static void make_recording_name( char *a_name, size_t a_capacity )\n'''
+          probe_fn = '''esp_err_t recorder_probe_microphone( void )\n{\n    if( NULL != rx_channel || NULL != record_task || NULL != monitor_task )\n    {\n        return ESP_ERR_INVALID_STATE;\n    }\n\n    (void)gpio_set_pull_mode( RFSCOUT_BOARD_MIC_DATA_PIN, GPIO_PULLDOWN_ONLY );\n    esp_err_t result = open_microphone();\n    uint32_t edges = 0U;\n    if( ESP_OK == result )\n    {\n        vTaskDelay( pdMS_TO_TICKS( RECORDER_MIC_WAKEUP_MS ) );\n        edges = measure_pdm_data_edges();\n        release_channel();\n    }\n    (void)gpio_set_pull_mode( RFSCOUT_BOARD_MIC_DATA_PIN, GPIO_FLOATING );\n\n    if( ESP_OK != result )\n    {\n        ESP_LOGW( TAG, "microphone probe setup failed: %s", esp_err_to_name( result ) );\n        return result;\n    }\n    if( edges < RECORDER_MIC_PROBE_MIN_EDGES )\n    {\n        ESP_LOGI( TAG,\n                  "microphone probe: data_edges=%u/%ums; not detected",\n                  (unsigned)edges,\n                  (unsigned)RECORDER_MIC_PROBE_MS );\n        return ESP_ERR_NOT_FOUND;\n    }\n\n    ESP_LOGI( TAG,\n              "microphone probe: data_edges=%u/%ums; detected",\n              (unsigned)edges,\n              (unsigned)RECORDER_MIC_PROBE_MS );\n    return ESP_OK;\n}\n\n'''
+          replace("main/recorder.c", marker, probe_fn + marker)
+
+          replace("main/recorder.h",
+                  '/** @brief Initialize recorder state and enumerate valid WAV files when storage is mounted. */\nesp_err_t recorder_init( void );',
+                  '/** @brief Briefly clock and sample the board PDM input to detect a populated microphone. */\nesp_err_t recorder_probe_microphone( void );\n\n/** @brief Initialize recorder state and enumerate valid WAV files when storage is mounted. */\nesp_err_t recorder_init( void );')
+
+          # App availability: fixed microphone presence joins the fixed radios.
+          replace("main/app_manager.c",
+                  'static bool cc1101_available;\nstatic bool nrf24_available;',
+                  'static bool cc1101_available;\nstatic bool nrf24_available;\nstatic bool microphone_available;')
+          replace("main/app_manager.c",
+                  '''    if( RFSCOUT_APP_NRF24 == a_app )\n    {\n        return nrf24_available;\n    }\n    return ( RFSCOUT_APP_THERMAL != a_app ) || mlx90640_is_detected();''',
+                  '''    if( RFSCOUT_APP_NRF24 == a_app )\n    {\n        return nrf24_available;\n    }\n    if( RFSCOUT_APP_AUDIO == a_app )\n    {\n        return microphone_available;\n    }\n    return ( RFSCOUT_APP_THERMAL != a_app ) || mlx90640_is_detected();''')
+          replace("main/app_manager.c",
+                  '    cc1101_available = false;\n    nrf24_available = false;',
+                  '    cc1101_available = false;\n    nrf24_available = false;\n    microphone_available = false;')
+          replace("main/app_manager.c",
+                  '''    ESP_LOGI( TAG,\n              "nRF24 hardware %s",\n              nrf24_available ? "detected; app available" : "not detected; app hidden" );\n\n    if( have_restored_session''',
+                  '''    ESP_LOGI( TAG,\n              "nRF24 hardware %s",\n              nrf24_available ? "detected; app available" : "not detected; app hidden" );\n\n    const esp_err_t microphone_result = recorder_probe_microphone();\n    microphone_available = ( ESP_OK == microphone_result );\n    ESP_LOGI( TAG,\n              "PDM microphone %s",\n              microphone_available ? "detected; Recorder available"\n                                   : "not detected; Recorder hidden" );\n\n    if( have_restored_session''')
+
+          # Put common reset actions immediately after BACK.
+          replace("main/app_manager.c",
+                  '''#define WIFI_MENU_BACK 0U\n#define WIFI_MENU_NOTIFICATIONS 1U\n#define WIFI_MENU_WIFI_TIMEOUT 2U\n#define WIFI_MENU_BLE_TIMEOUT 3U\n#define WIFI_MENU_SURVEILLANCE_TIMEOUT 4U\n#define WIFI_MENU_RESET 5U''',
+                  '''#define WIFI_MENU_BACK 0U\n#define WIFI_MENU_RESET 1U\n#define WIFI_MENU_NOTIFICATIONS 2U\n#define WIFI_MENU_WIFI_TIMEOUT 3U\n#define WIFI_MENU_BLE_TIMEOUT 4U\n#define WIFI_MENU_SURVEILLANCE_TIMEOUT 5U''')
+          replace("main/app_manager.c",
+                  '''#define CC1101_MENU_BACK 0U\n#define CC1101_MENU_PROFILE 1U\n#define CC1101_MENU_LOW 2U\n#define CC1101_MENU_HIGH 3U\n#define CC1101_MENU_STEP 4U\n#define CC1101_MENU_NOTIFICATIONS 5U\n#define CC1101_MENU_RESET_COUNTS 6U''',
+                  '''#define CC1101_MENU_BACK 0U\n#define CC1101_MENU_RESET_COUNTS 1U\n#define CC1101_MENU_PROFILE 2U\n#define CC1101_MENU_LOW 3U\n#define CC1101_MENU_HIGH 4U\n#define CC1101_MENU_STEP 5U\n#define CC1101_MENU_NOTIFICATIONS 6U''')
+          replace("main/app_manager.c",
+                  '''#define NRF24_MENU_BACK 0U\n#define NRF24_MENU_LOW 1U\n#define NRF24_MENU_HIGH 2U\n#define NRF24_MENU_DWELL 3U\n#define NRF24_MENU_PACKETS 4U\n#define NRF24_MENU_NOTIFICATIONS 5U\n#define NRF24_MENU_RESET_COUNTS 6U''',
+                  '''#define NRF24_MENU_BACK 0U\n#define NRF24_MENU_RESET_COUNTS 1U\n#define NRF24_MENU_LOW 2U\n#define NRF24_MENU_HIGH 3U\n#define NRF24_MENU_DWELL 4U\n#define NRF24_MENU_PACKETS 5U\n#define NRF24_MENU_NOTIFICATIONS 6U''')
+
+          # View labels/value slots must follow the new semantic order.
+          replace("main/wifi_settings_view.c",
+                  '''    static const char *labels[ WIFI_SETTINGS_ITEM_COUNT ] = {\n        "BACK", "NOTIFICATIONS", "WIFI TIMEOUT", "BT TIMEOUT", "SURV TIMEOUT", "RESET DETECTIONS" };''',
+                  '''    static const char *labels[ WIFI_SETTINGS_ITEM_COUNT ] = {\n        "BACK", "RESET DETECTIONS", "NOTIFICATIONS", "WIFI TIMEOUT", "BT TIMEOUT", "SURV TIMEOUT" };''')
+          replace("main/wifi_settings_view.c",
+                  '        const bool editable = ( item >= 2U ) && ( item <= 4U );',
+                  '        const bool editable = ( item >= 3U ) && ( item <= 5U );')
+          replace("main/wifi_settings_view.c",
+                  '''        if( 1U == item )\n        {\n            snprintf( value, sizeof( value ), "%s", a_notifications_enabled ? "ON" : "OFF" );\n        }\n        else if( 2U == item )\n        {\n            snprintf( value, sizeof( value ), "%u s", (unsigned)a_wifi_timeout_seconds );\n        }\n        else if( 3U == item )\n        {\n            snprintf( value, sizeof( value ), "%u s", (unsigned)a_ble_timeout_seconds );\n        }\n        else if( 4U == item )\n        {\n            snprintf( value, sizeof( value ), "%u s", (unsigned)a_surveillance_timeout_seconds );\n        }''',
+                  '''        if( 2U == item )\n        {\n            snprintf( value, sizeof( value ), "%s", a_notifications_enabled ? "ON" : "OFF" );\n        }\n        else if( 3U == item )\n        {\n            snprintf( value, sizeof( value ), "%u s", (unsigned)a_wifi_timeout_seconds );\n        }\n        else if( 4U == item )\n        {\n            snprintf( value, sizeof( value ), "%u s", (unsigned)a_ble_timeout_seconds );\n        }\n        else if( 5U == item )\n        {\n            snprintf( value, sizeof( value ), "%u s", (unsigned)a_surveillance_timeout_seconds );\n        }''')
+
+          replace("main/radio_app_view.c",
+                  '''    static const char *labels[ CC_MENU_ITEM_COUNT ] = {\n        "BACK",\n        "PROFILE",\n        "LOW",\n        "HIGH",\n        "STEP",\n        "NOTIFICATIONS",\n        "RESET COUNTS",\n    };''',
+                  '''    static const char *labels[ CC_MENU_ITEM_COUNT ] = {\n        "BACK",\n        "RESET COUNTS",\n        "PROFILE",\n        "LOW",\n        "HIGH",\n        "STEP",\n        "NOTIFICATIONS",\n    };''')
+          replace("main/radio_app_view.c",
+                  '        const bool action = ( 0U == i ) || ( 5U == i ) || ( 6U == i );',
+                  '        const bool action = ( 0U == i ) || ( 1U == i ) || ( 6U == i );')
+          replace("main/radio_app_view.c",
+                  '''        if( 1U == i )\n        {\n            snprintf( value, sizeof( value ), "%s", ( NULL != a_profile ) ? a_profile : "?" );\n        }\n        else if( 2U == i )\n        {''',
+                  '''        if( 2U == i )\n        {\n            snprintf( value, sizeof( value ), "%s", ( NULL != a_profile ) ? a_profile : "?" );\n        }\n        else if( 3U == i )\n        {''')
+          replace("main/radio_app_view.c", '        else if( 3U == i )\n        {\n            snprintf( value,\n                      sizeof( value ),\n                      "%lu.%03lu MHz",\n                      (unsigned long)( a_high_khz / 1000U ),', '        else if( 4U == i )\n        {\n            snprintf( value,\n                      sizeof( value ),\n                      "%lu.%03lu MHz",\n                      (unsigned long)( a_high_khz / 1000U ),')
+          replace("main/radio_app_view.c", '        else if( 4U == i )\n        {\n            snprintf( value, sizeof( value ), "%lu kHz", (unsigned long)a_step_khz );\n        }\n        else if( 5U == i )', '        else if( 5U == i )\n        {\n            snprintf( value, sizeof( value ), "%lu kHz", (unsigned long)a_step_khz );\n        }\n        else if( 6U == i )')
+
+          replace("main/radio_app_view.c",
+                  '''    static const char *labels[ NRF24_MENU_ITEM_COUNT ] = {\n        "BACK", "LOW CH", "HIGH CH", "DWELL", "PACKETS", "NOTIFICATIONS", "RESET COUNTS" };''',
+                  '''    static const char *labels[ NRF24_MENU_ITEM_COUNT ] = {\n        "BACK", "RESET COUNTS", "LOW CH", "HIGH CH", "DWELL", "PACKET DETAILS", "NOTIFICATIONS" };''')
+
+          # Update the hard-coded nRF24 view slot semantics in one contained function.
+          text = Path("main/radio_app_view.c").read_text()
+          start = text.index("void radio_app_view_nrf24_menu(")
+          end = text.index("\n}", start) + 2
+          fn = text[start:end]
+          fn = fn.replace('( 0U == i ) || ( 4U == i ) || ( 5U == i ) || ( 6U == i )',
+                          '( 0U == i ) || ( 1U == i ) || ( 5U == i ) || ( 6U == i )')
+          fn = fn.replace('if( 1U == i )', 'if( 2U == i )')
+          fn = fn.replace('else if( 2U == i )', 'else if( 3U == i )')
+          fn = fn.replace('else if( 3U == i )', 'else if( 4U == i )')
+          fn = fn.replace('else if( 5U == i )', 'else if( 6U == i )')
+          Path("main/radio_app_view.c").write_text(text[:start] + fn + text[end:])
+
+          # Documentation.
+          replace("docs/ARCHITECTURE.md",
+                  'WiFi / BT -> CC1101 -> nRF24 -> Recorder -> Thermal (when enabled and present) -> Home / Device Settings',
+                  'WiFi / BT -> CC1101 (when populated) -> nRF24 (when populated) -> Recorder (when microphone is populated) -> Thermal (when enabled and present) -> Home / Device Settings')
+          replace("docs/ARCHITECTURE.md",
+                  'CC1101 and nRF24 are treated as fixed optional hardware within a product variant: they are probed once at startup, and their applications are omitted from navigation for that boot when the corresponding radio is not detected. This runtime population check is separate from both compile-time board support and the user\'s application enable preference. Thermal remains dynamically probed because it is an explicitly attachable external peripheral.',
+                  'CC1101, nRF24, and the board PDM microphone are treated as fixed optional hardware within a product variant: they are probed once at startup, and their applications are omitted from navigation for that boot when the corresponding hardware is not detected. This runtime population check is separate from both compile-time board support and the user\'s application enable preference. Thermal remains dynamically probed because it is an explicitly attachable external peripheral.')
+          replace("docs/ARCHITECTURE.md",
+                  '`recorder.c/.h` currently owns microphone configuration and capture directly.',
+                  '`recorder.c/.h` currently owns microphone configuration and capture directly. Startup availability uses a brief PDM clock/data activity probe; it releases I2S0 immediately and does not begin Recorder capture or monitoring.')
+
+          replace("docs/CONFIGURATION.md",
+                  'For CC1101 and nRF24, `enabled` expresses user intent but does not override physical availability. RFScout probes those fixed radios once at startup and hides an enabled radio application for that boot when its hardware is not populated. The saved enable/startup preference is retained unchanged so one configuration can be used across differently populated T-Embed variants.',
+                  'For CC1101, nRF24, and Recorder, `enabled` expresses user intent but does not override physical availability. RFScout probes the two fixed radios and the board PDM microphone once at startup and hides an enabled application for that boot when its hardware is not populated. The saved enable/startup preference is retained unchanged so one configuration can be used across differently populated T-Embed variants.')
+
+          replace("docs/BOARD_PORTING.md",
+                  'A board capability says the firmware can support a peripheral; it does not necessarily guarantee that every product variant populated from that board family contains the device. Fixed optional devices such as CC1101 and nRF24 may therefore be probed once at startup and exposed only when detected. Dynamically attachable peripherals such as the external Thermal sensor use a different runtime-presence policy.',
+                  'A board capability says the firmware can support a peripheral; it does not necessarily guarantee that every product variant populated from that board family contains the device. Fixed optional devices such as CC1101, nRF24, and the board PDM microphone may therefore be probed once at startup and exposed only when detected. Dynamically attachable peripherals such as the external Thermal sensor use a different runtime-presence policy.')
+
+          replace("docs/APP_LIFECYCLE.md",
+                  'Fixed optional radios (currently CC1101 and nRF24) are probed once during startup. Successful driver initialization establishes application availability for that boot but does not start scanning; acquisition still belongs to **Activate**. An absent fixed radio suppresses its application from navigation without rewriting the user\'s saved enable/startup preferences. Thermal intentionally remains different because it is a dynamically attachable external peripheral and continues to use periodic runtime probing.',
+                  'Fixed optional hardware (currently CC1101, nRF24, and the board PDM microphone) is probed once during startup. Successful detection establishes application availability for that boot but does not start normal acquisition; radio scanning still belongs to **Activate**, and the microphone probe releases I2S immediately after a short clock/data-presence test. Absent fixed hardware suppresses its application from navigation without rewriting the user\'s saved enable/startup preferences. Thermal intentionally remains different because it is a dynamically attachable external peripheral and continues to use periodic runtime probing.')
+
+      - name: Install clang-format 18
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-format-18
+
+      - name: Format, commit, and remove helper workflow
+        run: |
+          clang-format-18 -i main/app_manager.c main/recorder.c main/recorder.h main/radio_app_view.c main/wifi_settings_view.c
+          rm .github/workflows/pr48-mic-menu-followup.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add main/app_manager.c main/recorder.c main/recorder.h main/radio_app_view.c main/wifi_settings_view.c docs/ARCHITECTURE.md docs/CONFIGURATION.md docs/BOARD_PORTING.md docs/APP_LIFECYCLE.md .github/workflows/pr48-mic-menu-followup.yml
+          git commit -m "Probe microphone and prioritize reset actions"
+          git push origin HEAD:detect-radio-hardware-apps
