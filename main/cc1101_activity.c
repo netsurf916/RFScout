@@ -25,7 +25,7 @@ typedef struct
     size_t start;
     size_t end;
     uint8_t max_current;
-    uint8_t max_previous;
+    uint8_t max_history;
     int8_t peak_rssi;
 } activity_segment_t;
 
@@ -39,7 +39,8 @@ typedef struct
 } tracked_fingerprint_t;
 
 static uint8_t current_level[ CC1101_SPECTRUM_BINS ];
-static uint8_t previous_level[ CC1101_SPECTRUM_BINS ];
+static uint8_t history_recent[ CC1101_SPECTRUM_BINS ];
+static uint8_t history_older[ CC1101_SPECTRUM_BINS ];
 static int8_t last_rssi[ CC1101_SPECTRUM_BINS ];
 static uint32_t last_low_khz;
 static uint32_t last_high_khz;
@@ -111,10 +112,15 @@ static size_t collect_segments( activity_segment_t *a_segments, size_t a_capacit
             {
                 segment->max_current = current_level[ index ];
             }
-            if( previous_level[ index ] > segment->max_previous )
+
+            const uint8_t history = history_recent[ index ] > history_older[ index ]
+                                        ? history_recent[ index ]
+                                        : history_older[ index ];
+            if( history > segment->max_history )
             {
-                segment->max_previous = previous_level[ index ];
+                segment->max_history = history;
             }
+
             if( last_rssi[ index ] > segment->peak_rssi )
             {
                 segment->peak_rssi = last_rssi[ index ];
@@ -139,8 +145,8 @@ static void classify_segment( const activity_segment_t *a_segment, cc1101_finger
     const uint32_t bandwidth_khz = end_khz - start_khz;
     const bool narrow = ( a_segment->end - a_segment->start ) <= 4U;
     const bool recently_stronger =
-        ( a_segment->max_previous > a_segment->max_current ) &&
-        ( (uint8_t)( a_segment->max_previous - a_segment->max_current ) >= CC1101_BURST_MARGIN );
+        ( a_segment->max_history > a_segment->max_current ) &&
+        ( (uint8_t)( a_segment->max_history - a_segment->max_current ) >= CC1101_BURST_MARGIN );
 
     a_output->center_khz = center_khz;
     a_output->bandwidth_khz = bandwidth_khz;
@@ -152,7 +158,7 @@ static void classify_segment( const activity_segment_t *a_segment, cc1101_finger
         a_output->confidence = 62U;
     }
     else if( narrow && ( a_segment->max_current >= CC1101_STRONG_THRESHOLD ) &&
-             ( a_segment->max_previous <= a_segment->max_current + 12U ) )
+             ( a_segment->max_history <= a_segment->max_current + 12U ) )
     {
         a_output->type = CC1101_FP_CONTINUOUS_CARRIER;
         a_output->confidence = 58U;
@@ -302,7 +308,8 @@ static void update_tracked_fingerprints( void )
 void cc1101_activity_reset( void )
 {
     memset( current_level, 0, sizeof( current_level ) );
-    memset( previous_level, 0, sizeof( previous_level ) );
+    memset( history_recent, 0, sizeof( history_recent ) );
+    memset( history_older, 0, sizeof( history_older ) );
     memset( last_rssi, -120, sizeof( last_rssi ) );
     memset( tracked, 0, sizeof( tracked ) );
     last_low_khz = 0U;
@@ -336,7 +343,8 @@ void cc1101_activity_observe_sweep( const int8_t *a_rssi,
     {
         const int8_t rssi = ( i < count ) ? a_rssi[ i ] : -120;
         const uint8_t strength = strength_from_rssi( rssi );
-        previous_level[ i ] = current_level[ i ];
+        history_older[ i ] = history_recent[ i ];
+        history_recent[ i ] = current_level[ i ];
         last_rssi[ i ] = rssi;
         current_level[ i ] = strength;
     }
@@ -347,7 +355,8 @@ void cc1101_activity_observe_sweep( const int8_t *a_rssi,
         memset( tracked, 0, sizeof( tracked ) );
         if( 0U == classifier_warmup_sweeps )
         {
-            memset( previous_level, 0, sizeof( previous_level ) );
+            memset( history_recent, 0, sizeof( history_recent ) );
+            memset( history_older, 0, sizeof( history_older ) );
         }
         return;
     }
