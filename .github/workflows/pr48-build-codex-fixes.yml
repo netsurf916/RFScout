@@ -1,0 +1,100 @@
+name: PR48 build and Codex fixes
+
+on:
+  push:
+    branches:
+      - detect-radio-hardware-apps
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: detect-radio-hardware-apps
+      - name: Apply fixes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path('main/app_manager.c')
+          s = p.read_text()
+          old = '''            if( RFSCOUT_APP_THERMAL == candidate )
+            {
+                last_thermal_probe_us = a_now;
+                if( device_config_app_enabled( candidate ) && probe_thermal() )
+                {
+                    return candidate;
+                }
+                continue;
+            }
+'''
+          new = '''            if( RFSCOUT_APP_PROBE_HOTPLUG == app_framework_probe_policy( candidate ) )
+            {
+                app_framework_refresh_hotplug( candidate );
+                last_hotplug_probe_us = a_now;
+            }
+'''
+          if old not in s:
+              raise SystemExit('app_manager target not found')
+          p.write_text(s.replace(old, new, 1))
+
+          p = Path('main/cc1101.c')
+          s = p.read_text()
+          old = '''        if( pdPASS != xTaskCreate( scan_worker,
+                                   "cc1101_scan",
+                                   CC1101_TASK_STACK_SIZE,
+                                   NULL,
+                                   CC1101_TASK_PRIORITY,
+                                   &scan_task ) )
+        {
+            scan_task = NULL;
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
+    if( detected )
+    {
+        (void)strobe( CC1101_SIDLE );
+        (void)strobe( CC1101_SPWD );
+        disable_rf_path();
+    }
+    return detected ? ESP_OK : ESP_ERR_NOT_FOUND;
+'''
+          new = '''        if( pdPASS != xTaskCreate( scan_worker,
+                                   "cc1101_scan",
+                                   CC1101_TASK_STACK_SIZE,
+                                   NULL,
+                                   CC1101_TASK_PRIORITY,
+                                   &scan_task ) )
+        {
+            scan_task = NULL;
+            (void)strobe( CC1101_SIDLE );
+            (void)strobe( CC1101_SPWD );
+            disable_rf_path();
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
+    (void)strobe( CC1101_SIDLE );
+    (void)strobe( CC1101_SPWD );
+    disable_rf_path();
+    return detected ? ESP_OK : ESP_ERR_NOT_FOUND;
+'''
+          if old not in s:
+              raise SystemExit('cc1101 target not found')
+          p.write_text(s.replace(old, new, 1))
+      - name: Install clang-format 18
+        run: sudo apt-get update && sudo apt-get install -y clang-format-18
+      - name: Format and commit
+        run: |
+          clang-format-18 -i main/app_manager.c main/cc1101.c
+          git config user.name 'Daniel Wilson'
+          git config user.email 'netsurf916@users.noreply.github.com'
+          git add main/app_manager.c main/cc1101.c
+          git commit -m 'Fix availability navigation and CC1101 probe cleanup'
+          git push origin HEAD:detect-radio-hardware-apps
