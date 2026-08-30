@@ -156,7 +156,11 @@ esp_err_t radio_monitor_init( radio_observation_fn callback )
         initialized = true;
         ESP_ERROR_CHECK( radio_monitor_set_region( RF_WIFI_REGION_EXTENDED_RX ) );
     }
-    return radio_monitor_start();
+
+    /* Driver/service initialization is deliberately separate from collection.
+       The app manager starts scanning only after its entry settle interval, so
+       rapidly browsing past WiFi/BT never churns the Wi-Fi peripheral. */
+    return ESP_OK;
 }
 
 void radio_monitor_step( void )
