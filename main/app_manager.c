@@ -860,10 +860,11 @@ static rfscout_app_id_t next_available_app( int a_direction, int64_t a_now )
         const rfscout_app_id_t candidate = (rfscout_app_id_t)next;
         if( !app_available( candidate ) )
         {
-            if( RFSCOUT_APP_THERMAL == candidate )
+            if( RFSCOUT_APP_PROBE_HOTPLUG == app_framework_probe_policy( candidate ) )
             {
-                last_thermal_probe_us = a_now;
-                if( device_config_app_enabled( candidate ) && probe_thermal() )
+                app_framework_refresh_hotplug( candidate );
+                last_hotplug_probe_us = a_now;
+                if( app_available( candidate ) )
                 {
                     return candidate;
                 }

@@ -328,16 +328,16 @@ esp_err_t cc1101_init( void )
                                    &scan_task ) )
         {
             scan_task = NULL;
+            (void)strobe( CC1101_SIDLE );
+            (void)strobe( CC1101_SPWD );
+            disable_rf_path();
             return ESP_ERR_NO_MEM;
         }
     }
 
-    if( detected )
-    {
-        (void)strobe( CC1101_SIDLE );
-        (void)strobe( CC1101_SPWD );
-        disable_rf_path();
-    }
+    (void)strobe( CC1101_SIDLE );
+    (void)strobe( CC1101_SPWD );
+    disable_rf_path();
     return detected ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
