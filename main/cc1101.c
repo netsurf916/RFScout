@@ -35,6 +35,7 @@
 #define CC1101_TASK_STACK_SIZE 3072U
 #define CC1101_TASK_PRIORITY 4U
 #define CC1101_SAMPLES_PER_SCHEDULER_BREAK 16U
+#define CC1101_STOP_TIMEOUT_MS 250U
 
 static const char *TAG = "cc1101";
 static spi_device_handle_t device;
@@ -43,6 +44,7 @@ static portMUX_TYPE state_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool initialized;
 static bool detected;
 static volatile bool running;
+static volatile bool worker_active;
 static bool frame_ready;
 static uint32_t config_generation;
 static int8_t display_spectrum[ CC1101_SPECTRUM_BINS ];
@@ -197,6 +199,7 @@ static void scan_worker( void *a_argument )
     while( true )
     {
         ulTaskNotifyTake( pdTRUE, portMAX_DELAY );
+        worker_active = true;
 
         while( running )
         {
@@ -223,6 +226,10 @@ static void scan_worker( void *a_argument )
                 }
 
                 esp_rom_delay_us( CC1101_SETTLE_US );
+                if( !running )
+                {
+                    break;
+                }
 
                 uint8_t raw_rssi = 0U;
                 result = read_status( CC1101_RSSI, &raw_rssi );
@@ -272,6 +279,7 @@ static void scan_worker( void *a_argument )
 
             vTaskDelay( 1U );
         }
+        worker_active = false;
     }
 }
 
@@ -358,7 +366,20 @@ void cc1101_stop( void )
     }
 
     running = false;
-    vTaskDelay( 1U );
+    const TickType_t started = xTaskGetTickCount();
+    const TickType_t timeout = pdMS_TO_TICKS( CC1101_STOP_TIMEOUT_MS );
+    while( worker_active && ( xTaskGetTickCount() - started < timeout ) )
+    {
+        vTaskDelay( pdMS_TO_TICKS( 1U ) );
+    }
+    if( worker_active )
+    {
+        ESP_LOGE( TAG,
+                  "scan worker did not quiesce within %u ms",
+                  (unsigned)CC1101_STOP_TIMEOUT_MS );
+        return;
+    }
+
     (void)strobe( CC1101_SIDLE );
     (void)strobe( CC1101_SPWD );
     disable_rf_path();
