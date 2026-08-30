@@ -36,9 +36,8 @@ static const char *bitrate_name( uint8_t a_bitrate )
     }
 }
 
-static void format_address( const nrf24_recent_packet_t *a_packet,
-                            char *a_buffer,
-                            size_t a_capacity )
+static void
+format_address( const nrf24_recent_packet_t *a_packet, char *a_buffer, size_t a_capacity )
 {
     if( ( NULL == a_packet ) || ( NULL == a_buffer ) || ( 0U == a_capacity ) )
     {
@@ -114,7 +113,8 @@ size_t nrf24_packet_view_list( unsigned a_selected )
         display_draw_text( UI_LAYOUT_LEFT_X, 70, "NO VALIDATED PACKETS", theme->text, 1U );
         display_draw_text(
             UI_LAYOUT_LEFT_X, 90, "WAITING FOR DECODER INPUT", theme->secondary, 1U );
-        display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "BACK: SETTINGS", theme->secondary, 1U );
+        display_draw_text(
+            UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "BACK: SETTINGS", theme->secondary, 1U );
         (void)display_present();
         return 0U;
     }
@@ -154,11 +154,7 @@ size_t nrf24_packet_view_list( unsigned a_selected )
     }
 
     char footer[ 48 ];
-    snprintf( footer,
-              sizeof( footer ),
-              "%u/%u  CENTER: DETAIL",
-              selected + 1U,
-              (unsigned)count );
+    snprintf( footer, sizeof( footer ), "%u/%u  CENTER: DETAIL", selected + 1U, (unsigned)count );
     display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, footer, theme->secondary, 1U );
     (void)display_present();
     return count;
@@ -176,7 +172,8 @@ void nrf24_packet_view_detail( unsigned a_selected )
     if( 0U == count )
     {
         display_draw_text( UI_LAYOUT_LEFT_X, 70, "PACKET NO LONGER AVAILABLE", theme->text, 1U );
-        display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "BACK: PACKETS", theme->secondary, 1U );
+        display_draw_text(
+            UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "BACK: PACKETS", theme->secondary, 1U );
         (void)display_present();
         return;
     }
@@ -205,7 +202,8 @@ void nrf24_packet_view_detail( unsigned a_selected )
               (unsigned)packet->pid,
               packet->no_ack ? "NO_ACK" : "ACK",
               packet->crc_valid ? "OK" : "BAD" );
-    display_draw_text( UI_LAYOUT_LEFT_X, 34 + ( 2 * PACKET_DETAIL_ROW_HEIGHT ), line, theme->text, 1U );
+    display_draw_text(
+        UI_LAYOUT_LEFT_X, 34 + ( 2 * PACKET_DETAIL_ROW_HEIGHT ), line, theme->text, 1U );
 
     snprintf( line, sizeof( line ), "T+ %lu ms", (unsigned long)packet->timestamp_ms );
     display_draw_text(
@@ -223,6 +221,7 @@ void nrf24_packet_view_detail( unsigned a_selected )
             UI_LAYOUT_LEFT_X, 34 + ( 6 * PACKET_DETAIL_ROW_HEIGHT ), payload, theme->text, 1U );
     }
 
-    display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "BACK: PACKETS", theme->secondary, 1U );
+    display_draw_text(
+        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "BACK: PACKETS", theme->secondary, 1U );
     (void)display_present();
 }
