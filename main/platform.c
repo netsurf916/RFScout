@@ -28,14 +28,18 @@ static volatile uint8_t encoder_state;
 static volatile int encoder_accumulator;
 static volatile int encoder_delta;
 static portMUX_TYPE encoder_lock = portMUX_INITIALIZER_UNLOCKED;
-static bool encoder_button_raw;
-static bool encoder_button_stable;
+static portMUX_TYPE encoder_button_lock = portMUX_INITIALIZER_UNLOCKED;
+static volatile bool encoder_button_down;
+static volatile int64_t encoder_button_pressed_us;
+static volatile int64_t encoder_button_pending_duration_us;
+static volatile uint32_t encoder_button_press_sequence;
+static volatile uint32_t encoder_button_pending_sequence;
+static uint32_t encoder_button_seen_sequence;
+static uint32_t encoder_button_lock_sequence;
 static bool encoder_button_event;
 static bool encoder_button_long_event;
 static bool encoder_button_lock_fired;
 static bool input_locked;
-static int64_t encoder_button_pressed_us;
-static int64_t encoder_button_change_us;
 
 /** @brief Decode one quadrature transition from either encoder GPIO edge. */
 static void IRAM_ATTR encoder_isr( void *a_argument )
@@ -71,6 +75,41 @@ static void IRAM_ATTR encoder_isr( void *a_argument )
     portEXIT_CRITICAL_ISR( &encoder_lock );
 }
 
+/** @brief Capture encoder-button edges even while presentation blocks the application loop. */
+static void IRAM_ATTR encoder_button_isr( void *a_argument )
+{
+    (void)a_argument;
+    const bool pressed = ( 0 == gpio_get_level( RFSCOUT_BOARD_ENCODER_KEY_PIN ) );
+    const int64_t now_us = esp_timer_get_time();
+
+    portENTER_CRITICAL_ISR( &encoder_button_lock );
+    if( pressed )
+    {
+        if( !encoder_button_down )
+        {
+            encoder_button_down = true;
+            encoder_button_pressed_us = now_us;
+            ++encoder_button_press_sequence;
+        }
+    }
+    else if( encoder_button_down )
+    {
+        const int64_t duration_us = now_us - encoder_button_pressed_us;
+        encoder_button_down = false;
+        encoder_button_pressed_us = 0;
+
+        /* Release bounce can produce a later, very short press/release pair.
+           Keep the longest completed hold until platform_poll consumes it so
+           a real click cannot be overwritten while the main loop is busy. */
+        if( duration_us > encoder_button_pending_duration_us )
+        {
+            encoder_button_pending_duration_us = duration_us;
+            encoder_button_pending_sequence = encoder_button_press_sequence;
+        }
+    }
+    portEXIT_CRITICAL_ISR( &encoder_button_lock );
+}
+
 /** @brief Discard accumulated rotary movement so locked movement cannot leak through later. */
 static void clear_encoder_delta( void )
 {
@@ -78,6 +117,22 @@ static void clear_encoder_delta( void )
     encoder_delta = 0;
     encoder_accumulator = 0;
     portEXIT_CRITICAL( &encoder_lock );
+}
+
+static void toggle_input_lock( uint32_t a_press_sequence )
+{
+    input_locked = !input_locked;
+    encoder_button_lock_fired = true;
+    encoder_button_lock_sequence = a_press_sequence;
+    encoder_button_event = false;
+    encoder_button_long_event = false;
+    clear_encoder_delta();
+    ESP_LOGI( TAG, "user input %s", input_locked ? "locked" : "unlocked" );
+
+    /* The hold gesture itself remains silent. Emit only after the semantic lock state commits. */
+    rfscout_event_emit( input_locked ? RFSCOUT_EVENT_INPUT_LOCKED : RFSCOUT_EVENT_INPUT_UNLOCKED,
+                        RFSCOUT_EVENT_SOURCE_SYSTEM,
+                        input_locked ? 1 : 0 );
 }
 
 esp_err_t platform_init( void )
@@ -111,21 +166,27 @@ esp_err_t platform_init( void )
                                gpio_get_level( RFSCOUT_BOARD_ENCODER_B_PIN ) );
     encoder_accumulator = 0;
     encoder_delta = 0;
-    encoder_button_raw = ( 0 == gpio_get_level( RFSCOUT_BOARD_ENCODER_KEY_PIN ) );
-    encoder_button_stable = encoder_button_raw;
+    encoder_button_down = ( 0 == gpio_get_level( RFSCOUT_BOARD_ENCODER_KEY_PIN ) );
+    encoder_button_pressed_us = encoder_button_down ? esp_timer_get_time() : 0;
+    encoder_button_pending_duration_us = 0;
+    encoder_button_press_sequence = encoder_button_down ? 1U : 0U;
+    encoder_button_pending_sequence = 0U;
+    encoder_button_seen_sequence = encoder_button_press_sequence;
+    encoder_button_lock_sequence = 0U;
     encoder_button_event = false;
     encoder_button_long_event = false;
     encoder_button_lock_fired = false;
     rfscout_session_state_t restored_session;
     input_locked = session_state_restore( &restored_session ) && restored_session.input_locked;
-    encoder_button_pressed_us = 0;
-    encoder_button_change_us = esp_timer_get_time();
 
     ESP_ERROR_CHECK( gpio_install_isr_service( 0 ) );
     ESP_ERROR_CHECK( gpio_set_intr_type( RFSCOUT_BOARD_ENCODER_A_PIN, GPIO_INTR_ANYEDGE ) );
     ESP_ERROR_CHECK( gpio_set_intr_type( RFSCOUT_BOARD_ENCODER_B_PIN, GPIO_INTR_ANYEDGE ) );
+    ESP_ERROR_CHECK( gpio_set_intr_type( RFSCOUT_BOARD_ENCODER_KEY_PIN, GPIO_INTR_ANYEDGE ) );
     ESP_ERROR_CHECK( gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_A_PIN, encoder_isr, NULL ) );
     ESP_ERROR_CHECK( gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_B_PIN, encoder_isr, NULL ) );
+    ESP_ERROR_CHECK(
+        gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_KEY_PIN, encoder_button_isr, NULL ) );
 
     ESP_LOGI( TAG, "%s board GPIO initialized", RFSCOUT_BOARD_NAME );
     return ESP_OK;
@@ -133,56 +194,62 @@ esp_err_t platform_init( void )
 
 void platform_poll( void )
 {
-    const bool pressed = ( 0 == gpio_get_level( RFSCOUT_BOARD_ENCODER_KEY_PIN ) );
     const int64_t now_us = esp_timer_get_time();
+    bool button_down;
+    int64_t pressed_us;
+    int64_t completed_duration_us;
+    uint32_t press_sequence;
+    uint32_t completed_sequence;
 
-    if( pressed != encoder_button_raw )
+    portENTER_CRITICAL( &encoder_button_lock );
+    button_down = encoder_button_down;
+    pressed_us = encoder_button_pressed_us;
+    completed_duration_us = encoder_button_pending_duration_us;
+    completed_sequence = encoder_button_pending_sequence;
+    encoder_button_pending_duration_us = 0;
+    encoder_button_pending_sequence = 0U;
+    press_sequence = encoder_button_press_sequence;
+    portEXIT_CRITICAL( &encoder_button_lock );
+
+    if( press_sequence != encoder_button_seen_sequence )
     {
-        encoder_button_raw = pressed;
-        encoder_button_change_us = now_us;
-    }
-    else if( ( pressed != encoder_button_stable ) &&
-             ( ( now_us - encoder_button_change_us ) >= ENCODER_BUTTON_DEBOUNCE_US ) )
-    {
-        encoder_button_stable = pressed;
-        if( pressed )
-        {
-            encoder_button_pressed_us = now_us;
-            encoder_button_lock_fired = false;
-        }
-        else
-        {
-            const int64_t held_us = now_us - encoder_button_pressed_us;
-            if( !encoder_button_lock_fired && !input_locked )
-            {
-                if( held_us >= ENCODER_BUTTON_LONG_PRESS_US )
-                {
-                    encoder_button_long_event = true;
-                }
-                else
-                {
-                    encoder_button_event = true;
-                }
-            }
-            encoder_button_pressed_us = 0;
-        }
+        encoder_button_seen_sequence = press_sequence;
+        encoder_button_lock_fired = ( press_sequence == encoder_button_lock_sequence );
     }
 
-    if( encoder_button_stable && !encoder_button_lock_fired && encoder_button_pressed_us > 0 &&
-        ( now_us - encoder_button_pressed_us ) >= ENCODER_BUTTON_LOCK_HOLD_US )
+    if( button_down && !encoder_button_lock_fired && ( pressed_us > 0 ) &&
+        ( now_us - pressed_us ) >= ENCODER_BUTTON_LOCK_HOLD_US )
     {
-        input_locked = !input_locked;
-        encoder_button_lock_fired = true;
-        encoder_button_event = false;
-        encoder_button_long_event = false;
-        clear_encoder_delta();
-        ESP_LOGI( TAG, "user input %s", input_locked ? "locked" : "unlocked" );
+        toggle_input_lock( press_sequence );
+    }
 
-        /* The hold gesture itself remains silent. Emit only after the semantic lock state commits. */
-        rfscout_event_emit( input_locked ? RFSCOUT_EVENT_INPUT_LOCKED
-                                         : RFSCOUT_EVENT_INPUT_UNLOCKED,
-                            RFSCOUT_EVENT_SOURCE_SYSTEM,
-                            input_locked ? 1 : 0 );
+    if( completed_duration_us < ENCODER_BUTTON_DEBOUNCE_US ||
+        completed_sequence == encoder_button_lock_sequence )
+    {
+        return;
+    }
+
+    /* A complete two-second hold may occur while the application task is
+       blocked in a synchronous LCD transfer. Preserve the lock gesture even
+       when platform_poll did not run while the button was physically down. */
+    if( completed_duration_us >= ENCODER_BUTTON_LOCK_HOLD_US )
+    {
+        toggle_input_lock( completed_sequence );
+        return;
+    }
+
+    if( input_locked )
+    {
+        return;
+    }
+
+    if( completed_duration_us >= ENCODER_BUTTON_LONG_PRESS_US )
+    {
+        encoder_button_long_event = true;
+    }
+    else
+    {
+        encoder_button_event = true;
     }
 }
 

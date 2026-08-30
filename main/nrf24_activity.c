@@ -410,10 +410,14 @@ void nrf24_activity_observe_packet( const nrf24_packet_observation_t *a_packet )
     nrf24_recent_packet_t *recent = &recent_packets[ recent_packet_next ];
     memset( recent, 0, sizeof( *recent ) );
     recent->channel = a_packet->channel;
+    recent->bitrate = a_packet->bitrate;
     memcpy( recent->address, a_packet->address, a_packet->address_len );
     recent->address_len = a_packet->address_len;
-    memcpy( recent->payload, a_packet->payload, a_packet->payload_len );
     recent->payload_len = a_packet->payload_len;
+    memcpy( recent->payload, a_packet->payload, a_packet->payload_len );
+    recent->pid = a_packet->pid;
+    recent->no_ack = a_packet->no_ack;
+    recent->crc_valid = a_packet->crc_valid;
     recent->timestamp_ms = a_packet->timestamp_ms;
     recent_packet_next = ( recent_packet_next + 1U ) % NRF24_RECENT_PACKET_MAX;
     if( recent_packet_count < NRF24_RECENT_PACKET_MAX )

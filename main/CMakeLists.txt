@@ -74,6 +74,7 @@ idf_component_register(
         "cc1101_activity.c"
         "nrf24.c"
         "nrf24_activity.c"
+        "nrf24_packet_view.c"
         "observation_store.c"
         "morse.c"
         "surveillance.c"
