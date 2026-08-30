@@ -157,7 +157,7 @@ size_t nrf24_packet_view_list( unsigned a_selected )
                            1U );
     }
 
-    char footer[ 48 ];
+    char footer[ 64 ];
     snprintf( footer,
               sizeof( footer ),
               "%u/%u  CENTER: DETAIL  HOLD: BACK",
@@ -226,7 +226,6 @@ void nrf24_packet_view_detail( unsigned a_selected )
             UI_LAYOUT_LEFT_X, 34 + ( 6 * PACKET_DETAIL_ROW_HEIGHT ), payload, theme->text, 1U );
     }
 
-    display_draw_text(
-        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "HOLD: BACK", theme->secondary, 1U );
+    display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "HOLD: BACK", theme->secondary, 1U );
     (void)display_present();
 }
