@@ -221,7 +221,7 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
         {
             snprintf( value, sizeof( value ), "%s", ( NULL != a_profile ) ? a_profile : "?" );
         }
-        else if( 6U == i )
+        else if( 3U == i )
         {
             snprintf( value,
                       sizeof( value ),
@@ -229,7 +229,7 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
                       (unsigned long)( a_low_khz / 1000U ),
                       (unsigned long)( a_low_khz % 1000U ) );
         }
-        else if( 3U == i )
+        else if( 4U == i )
         {
             snprintf( value,
                       sizeof( value ),
@@ -237,11 +237,11 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
                       (unsigned long)( a_high_khz / 1000U ),
                       (unsigned long)( a_high_khz % 1000U ) );
         }
-        else if( 4U == i )
+        else if( 5U == i )
         {
             snprintf( value, sizeof( value ), "%lu kHz", (unsigned long)a_step_khz );
         }
-        else if( 5U == i )
+        else if( 6U == i )
         {
             snprintf( value, sizeof( value ), "%s", a_notifications_enabled ? "ON" : "OFF" );
         }
