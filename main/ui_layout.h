@@ -13,4 +13,23 @@
 #define UI_LAYOUT_TITLE_Y 5
 #define UI_LAYOUT_MENU_START_Y 38
 #define UI_LAYOUT_MENU_ROW_HEIGHT 20
+#define UI_LAYOUT_MENU_VISIBLE_ROWS 6U
 #define UI_LAYOUT_FOOTER_Y 150
+
+/** @brief Return the first item for a standard scrolling menu viewport. */
+static inline unsigned ui_layout_menu_window_start( unsigned a_selected, unsigned a_item_count )
+{
+    if( ( a_item_count <= UI_LAYOUT_MENU_VISIBLE_ROWS ) ||
+        ( a_selected < UI_LAYOUT_MENU_VISIBLE_ROWS ) )
+    {
+        return 0U;
+    }
+
+    unsigned start = a_selected - UI_LAYOUT_MENU_VISIBLE_ROWS + 1U;
+    const unsigned max_start = a_item_count - UI_LAYOUT_MENU_VISIBLE_ROWS;
+    if( start > max_start )
+    {
+        start = max_start;
+    }
+    return start;
+}
