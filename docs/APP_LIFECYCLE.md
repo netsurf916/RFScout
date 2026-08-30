@@ -27,6 +27,8 @@ When application exit/quiesce returns, the application must satisfy all of the f
 
 Long-lived platform services may remain initialized. Initialization and activation are deliberately different concepts: creating a reusable driver/service once is preferable to repeated allocation, while active acquisition belongs to the application lifecycle.
 
+If bounded quiesce fails, the application transition is aborted. RFScout must retain ownership with the current application rather than allow the next application to begin using a resource that may still be active.
+
 ## Shared SPI radios
 
 CC1101 and nRF24 use persistent worker tasks. Their stop paths must therefore wait for the worker to observe the stop request and leave its active sweep before the application manager starts another shared-SPI peripheral. A stop flag alone is not a quiesce guarantee.
