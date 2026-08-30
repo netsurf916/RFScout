@@ -1,0 +1,319 @@
+name: Application availability framework refactor
+
+on:
+  push:
+    branches: [detect-radio-hardware-apps]
+    paths: [.github/workflows/app-framework-refactor.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: detect-radio-hardware-apps
+          fetch-depth: 0
+      - name: Refactor application availability
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          framework_h = r'''/**
+              app_framework.h : RFScout application capability framework
+              Description: Declares app-owned availability probing policies and cached capability state.
+              Copyright 2026 Daniel Wilson
+              SPDX-License-Identifier: MIT
+          */
+
+          #pragma once
+
+          #ifndef _RFSCOUT_APP_FRAMEWORK_H_
+          #define _RFSCOUT_APP_FRAMEWORK_H_
+
+          #include "app_manager.h"
+
+          #include "esp_err.h"
+
+          #include <stdbool.h>
+
+          /** @brief When an application's hardware availability should be probed. */
+          typedef enum
+          {
+              RFSCOUT_APP_PROBE_NONE = 0,
+              RFSCOUT_APP_PROBE_STARTUP,
+              RFSCOUT_APP_PROBE_HOTPLUG
+          } rfscout_app_probe_policy_t;
+
+          /** @brief Semantic result retained by the framework after an app probe. */
+          typedef enum
+          {
+              RFSCOUT_APP_AVAILABILITY_UNKNOWN = 0,
+              RFSCOUT_APP_AVAILABILITY_AVAILABLE,
+              RFSCOUT_APP_AVAILABILITY_UNAVAILABLE,
+              RFSCOUT_APP_AVAILABILITY_ERROR
+          } rfscout_app_availability_t;
+
+          /** @brief Initialize app descriptors and run startup/hot-plug discovery once. */
+          esp_err_t app_framework_init( void );
+
+          /**
+           * @brief Check whether an app's required runtime capability is available.
+           *
+           * Startup-cached capabilities return their boot-time result. Hot-pluggable
+           * capabilities execute their app-owned probe before returning.
+           */
+          bool app_framework_check_available( rfscout_app_id_t a_app );
+
+          /** @brief Refresh one app only when its descriptor is hot-pluggable. */
+          void app_framework_refresh_hotplug( rfscout_app_id_t a_app );
+
+          /** @brief Return whether the app uses delayed hardware activation after entry. */
+          bool app_framework_requires_activation( rfscout_app_id_t a_app );
+
+          /** @brief Return the descriptor's probe policy. */
+          rfscout_app_probe_policy_t app_framework_probe_policy( rfscout_app_id_t a_app );
+
+          /** @brief Return the most recently retained availability state. */
+          rfscout_app_availability_t app_framework_availability( rfscout_app_id_t a_app );
+
+          #endif // _RFSCOUT_APP_FRAMEWORK_H_
+          '''
+
+          framework_c = r'''/**
+              app_framework.c : RFScout application capability framework implementation
+              Description: Keeps probing policy in app descriptors while device-specific detection remains in each service/driver.
+              Copyright 2026 Daniel Wilson
+              SPDX-License-Identifier: MIT
+          */
+
+          #include "app_framework.h"
+
+          #include "cc1101.h"
+          #include "mlx90640.h"
+          #include "nrf24.h"
+          #include "recorder.h"
+
+          #include "esp_log.h"
+
+          #include <stddef.h>
+
+          typedef esp_err_t ( *app_probe_fn_t )( void );
+
+          typedef struct
+          {
+              const char *name;
+              rfscout_app_probe_policy_t probe_policy;
+              app_probe_fn_t probe;
+              bool requires_activation;
+              rfscout_app_availability_t availability;
+          } app_descriptor_t;
+
+          static const char *TAG = "app_framework";
+
+          static app_descriptor_t descriptors[ RFSCOUT_APP_COUNT ] = {
+              [ RFSCOUT_APP_WIFI_BT ] = { "WiFi / BT", RFSCOUT_APP_PROBE_NONE, NULL, true,
+                                          RFSCOUT_APP_AVAILABILITY_AVAILABLE },
+              [ RFSCOUT_APP_CC1101 ] = { "CC1101", RFSCOUT_APP_PROBE_STARTUP, cc1101_init, true,
+                                         RFSCOUT_APP_AVAILABILITY_UNKNOWN },
+              [ RFSCOUT_APP_NRF24 ] = { "nRF24", RFSCOUT_APP_PROBE_STARTUP, nrf24_init, true,
+                                        RFSCOUT_APP_AVAILABILITY_UNKNOWN },
+              [ RFSCOUT_APP_AUDIO ] = { "Recorder", RFSCOUT_APP_PROBE_STARTUP,
+                                        recorder_probe_microphone, false,
+                                        RFSCOUT_APP_AVAILABILITY_UNKNOWN },
+              [ RFSCOUT_APP_THERMAL ] = { "Thermal", RFSCOUT_APP_PROBE_HOTPLUG, mlx90640_probe, true,
+                                          RFSCOUT_APP_AVAILABILITY_UNKNOWN },
+              [ RFSCOUT_APP_DEVICE ] = { "Home", RFSCOUT_APP_PROBE_NONE, NULL, false,
+                                         RFSCOUT_APP_AVAILABILITY_AVAILABLE },
+          };
+
+          static app_descriptor_t *descriptor_for( rfscout_app_id_t a_app )
+          {
+              if( ( a_app < 0 ) || ( a_app >= RFSCOUT_APP_COUNT ) )
+              {
+                  return NULL;
+              }
+              return &descriptors[ a_app ];
+          }
+
+          static rfscout_app_availability_t probe_descriptor( app_descriptor_t *a_descriptor )
+          {
+              if( NULL == a_descriptor )
+              {
+                  return RFSCOUT_APP_AVAILABILITY_ERROR;
+              }
+              if( NULL == a_descriptor->probe )
+              {
+                  a_descriptor->availability = RFSCOUT_APP_AVAILABILITY_AVAILABLE;
+                  return a_descriptor->availability;
+              }
+
+              const rfscout_app_availability_t previous = a_descriptor->availability;
+              const esp_err_t result = a_descriptor->probe();
+              if( ESP_OK == result )
+              {
+                  a_descriptor->availability = RFSCOUT_APP_AVAILABILITY_AVAILABLE;
+              }
+              else if( ( ESP_ERR_NOT_FOUND == result ) || ( ESP_ERR_INVALID_RESPONSE == result ) ||
+                       ( ESP_ERR_TIMEOUT == result ) )
+              {
+                  a_descriptor->availability = RFSCOUT_APP_AVAILABILITY_UNAVAILABLE;
+              }
+              else
+              {
+                  a_descriptor->availability = RFSCOUT_APP_AVAILABILITY_ERROR;
+              }
+
+              if( previous != a_descriptor->availability )
+              {
+                  if( RFSCOUT_APP_AVAILABILITY_AVAILABLE == a_descriptor->availability )
+                  {
+                      ESP_LOGI( TAG, "%s available", a_descriptor->name );
+                  }
+                  else if( RFSCOUT_APP_AVAILABILITY_UNAVAILABLE == a_descriptor->availability )
+                  {
+                      ESP_LOGI( TAG, "%s unavailable", a_descriptor->name );
+                  }
+                  else
+                  {
+                      ESP_LOGW( TAG,
+                                "%s availability probe failed: %s",
+                                a_descriptor->name,
+                                esp_err_to_name( result ) );
+                  }
+              }
+              return a_descriptor->availability;
+          }
+
+          esp_err_t app_framework_init( void )
+          {
+              for( int app = 0; app < RFSCOUT_APP_COUNT; ++app )
+              {
+                  app_descriptor_t *descriptor = &descriptors[ app ];
+                  if( RFSCOUT_APP_PROBE_NONE == descriptor->probe_policy )
+                  {
+                      descriptor->availability = RFSCOUT_APP_AVAILABILITY_AVAILABLE;
+                      continue;
+                  }
+                  (void)probe_descriptor( descriptor );
+              }
+              return ESP_OK;
+          }
+
+          bool app_framework_check_available( rfscout_app_id_t a_app )
+          {
+              app_descriptor_t *descriptor = descriptor_for( a_app );
+              if( NULL == descriptor )
+              {
+                  return false;
+              }
+              if( RFSCOUT_APP_PROBE_HOTPLUG == descriptor->probe_policy )
+              {
+                  (void)probe_descriptor( descriptor );
+              }
+              return RFSCOUT_APP_AVAILABILITY_AVAILABLE == descriptor->availability;
+          }
+
+          void app_framework_refresh_hotplug( rfscout_app_id_t a_app )
+          {
+              app_descriptor_t *descriptor = descriptor_for( a_app );
+              if( ( NULL != descriptor ) && ( RFSCOUT_APP_PROBE_HOTPLUG == descriptor->probe_policy ) )
+              {
+                  (void)probe_descriptor( descriptor );
+              }
+          }
+
+          bool app_framework_requires_activation( rfscout_app_id_t a_app )
+          {
+              const app_descriptor_t *descriptor = descriptor_for( a_app );
+              return ( NULL != descriptor ) && descriptor->requires_activation;
+          }
+
+          rfscout_app_probe_policy_t app_framework_probe_policy( rfscout_app_id_t a_app )
+          {
+              const app_descriptor_t *descriptor = descriptor_for( a_app );
+              return ( NULL != descriptor ) ? descriptor->probe_policy : RFSCOUT_APP_PROBE_NONE;
+          }
+
+          rfscout_app_availability_t app_framework_availability( rfscout_app_id_t a_app )
+          {
+              const app_descriptor_t *descriptor = descriptor_for( a_app );
+              return ( NULL != descriptor ) ? descriptor->availability : RFSCOUT_APP_AVAILABILITY_ERROR;
+          }
+          '''
+
+          Path('main/app_framework.h').write_text(framework_h)
+          Path('main/app_framework.c').write_text(framework_c)
+
+          p = Path('main/app_manager.c')
+          s = p.read_text()
+          s = s.replace('#include "app_manager.h"\n', '#include "app_manager.h"\n\n#include "app_framework.h"\n', 1)
+          s = s.replace('static int64_t last_thermal_probe_us;\n', 'static int64_t last_hotplug_probe_us;\n')
+          s = s.replace('static bool cc1101_available;\nstatic bool nrf24_available;\nstatic bool microphone_available;\n', '')
+
+          start = s.index('static bool probe_thermal( void )')
+          end = s.index('static void start_wifi_bt_collectors( void )', start)
+          replacement = '''static bool app_available( rfscout_app_id_t a_app )\n{\n    if( RFSCOUT_APP_DEVICE == a_app )\n    {\n        return true;\n    }\n    if( !device_config_app_enabled( a_app ) )\n    {\n        return false;\n    }\n    return app_framework_check_available( a_app );\n}\n\n'''
+          s = s[:start] + replacement + s[end:]
+
+          old = '''static bool app_requires_activation( rfscout_app_id_t a_app )\n{\n    return ( RFSCOUT_APP_WIFI_BT == a_app ) || ( RFSCOUT_APP_CC1101 == a_app ) ||\n           ( RFSCOUT_APP_NRF24 == a_app ) || ( RFSCOUT_APP_THERMAL == a_app );\n}\n\n'''
+          if old not in s:
+              raise SystemExit('app_requires_activation block not found')
+          s = s.replace(old, '')
+          s = s.replace('app_activated = !app_requires_activation( a_app );',
+                        'app_activated = !app_framework_requires_activation( a_app );')
+          s = s.replace('last_thermal_probe_us = esp_timer_get_time();',
+                        'last_hotplug_probe_us = esp_timer_get_time();')
+          s = s.replace('    cc1101_available = false;\n    nrf24_available = false;\n    microphone_available = false;\n', '')
+
+          old_init = '''    (void)mlx90640_init();\n\n    const esp_err_t cc1101_result = cc1101_init();\n    cc1101_available = ( ESP_OK == cc1101_result );\n    ESP_LOGI( TAG,\n              "CC1101 hardware %s",\n              cc1101_available ? "detected; app available" : "not detected; app hidden" );\n\n    const esp_err_t nrf24_result = nrf24_init();\n    nrf24_available = ( ESP_OK == nrf24_result );\n    ESP_LOGI( TAG,\n              "nRF24 hardware %s",\n              nrf24_available ? "detected; app available" : "not detected; app hidden" );\n\n    const esp_err_t microphone_result = recorder_probe_microphone();\n    microphone_available = ( ESP_OK == microphone_result );\n    ESP_LOGI( TAG,\n              "PDM microphone %s",\n              microphone_available ? "detected; Recorder available"\n                                   : "not detected; Recorder hidden" );\n\n'''
+          if old_init not in s:
+              raise SystemExit('hardware init block not found')
+          s = s.replace(old_init, '    (void)mlx90640_init();\n    (void)app_framework_init();\n\n')
+
+          old_poll = '''    if( ( RFSCOUT_APP_THERMAL != active_app ) && device_config_app_enabled( RFSCOUT_APP_THERMAL ) &&\n        ( now - last_thermal_probe_us >= APP_FEATURE_PROBE_INTERVAL_US ) )\n    {\n        (void)probe_thermal();\n        last_thermal_probe_us = now;\n    }\n'''
+          new_poll = '''    if( now - last_hotplug_probe_us >= APP_FEATURE_PROBE_INTERVAL_US )\n    {\n        for( int app = 0; app < RFSCOUT_APP_COUNT; ++app )\n        {\n            const rfscout_app_id_t candidate = (rfscout_app_id_t)app;\n            if( ( candidate != active_app ) && device_config_app_enabled( candidate ) )\n            {\n                app_framework_refresh_hotplug( candidate );\n            }\n        }\n        last_hotplug_probe_us = now;\n    }\n'''
+          if old_poll not in s:
+              raise SystemExit('thermal poll block not found')
+          s = s.replace(old_poll, new_poll)
+          p.write_text(s)
+
+          p = Path('main/CMakeLists.txt')
+          s = p.read_text()
+          s = s.replace('        "app_manager.c"\n', '        "app_manager.c"\n        "app_framework.c"\n', 1)
+          p.write_text(s)
+
+          p = Path('docs/APP_LIFECYCLE.md')
+          s = p.read_text()
+          old = 'Application availability is resolved before this lifecycle begins. Fixed optional hardware such as CC1101, nRF24, and the board PDM microphone is probed once during startup; absent hardware removes its application from navigation for that boot. The resulting fixed-hardware availability is cached for the lifetime of the boot and is not re-probed during ordinary app navigation. Radio probes may initialize reusable driver state without starting scans. The microphone probe briefly clocks the PDM interface, verifies data-line activity, and releases I2S0 immediately; it does not start recording or monitoring. Because PDM has no device-identity transaction, microphone presence is an electrical activity test rather than an identity check and should be validated for each board implementation. Thermal remains dynamically probed because it is an explicitly attachable external peripheral.'
+          new = 'Application availability is owned by the application framework rather than hard-coded in navigation. Each application descriptor declares one of three probe policies: `none` for applications with no runtime hardware gate, `startup` for fixed/on-board hardware whose result is cached for the boot, or `hotplug` for attachable resources that may be re-probed before entry and periodically while inactive. Detection mechanics stay with the relevant service/driver; the framework only invokes the callback and retains its semantic availability state. CC1101, nRF24, and the board PDM microphone use startup-cached probing. Thermal uses hot-plug probing because it is an explicitly attachable I2C peripheral. Future UART/I2C Quick-port applications should normally use the same hot-plug policy. Probing is distinct from activation: a successful probe may prepare reusable driver state, but it must not start scanning, continuous acquisition, recording, or another app-owned workload.'
+          if old not in s:
+              raise SystemExit('lifecycle paragraph not found')
+          p.write_text(s.replace(old, new))
+
+          p = Path('docs/ARCHITECTURE.md')
+          s = p.read_text()
+          old = 'CC1101, nRF24, and the board PDM microphone are treated as board-population capabilities rather than hot-plug peripherals. `app_manager` probes each once during startup and includes its application in navigation only when the corresponding hardware is present. The microphone probe briefly starts the PDM clock and checks for data transitions, then immediately releases I2S0. RFScout does not add status-bar indicators for this fixed hardware. Thermal remains different: it is an explicitly attachable external sensor, so its runtime probe and availability feedback remain dynamic.'
+          new = 'Application hardware availability is described through `app_framework` descriptors. The descriptor selects `none`, startup-cached, or hot-pluggable probing and points at the app/service-owned detection callback; App Manager only asks the framework whether a candidate is available. CC1101, nRF24, and the board PDM microphone are fixed board-population capabilities and therefore probe once at startup. Thermal is hot-pluggable I2C hardware and is re-probed dynamically. The same policy is intended for future UART/I2C Quick-port applications. Availability probing never implies app activation or continuous peripheral ownership.'
+          if old not in s:
+              raise SystemExit('architecture paragraph not found')
+          p.write_text(s.replace(old, new))
+          PY
+
+      - name: Install clang-format 18
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang-format-18
+      - name: Format and commit
+        shell: bash
+        run: |
+          clang-format-18 -i main/app_framework.c main/app_framework.h main/app_manager.c
+          rm .github/workflows/app-framework-refactor.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add main/app_framework.c main/app_framework.h main/app_manager.c main/CMakeLists.txt docs/APP_LIFECYCLE.md docs/ARCHITECTURE.md .github/workflows/app-framework-refactor.yml
+          git commit -m "Introduce application availability framework"
+          git push origin HEAD:detect-radio-hardware-apps
