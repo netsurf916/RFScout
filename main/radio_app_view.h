@@ -19,7 +19,6 @@
 
 /** @brief Render the CC1101 spectrum and likely-device pane. */
 void radio_app_view_cc1101_spectrum( const uint8_t *a_current,
-                                     const uint8_t *a_peak,
                                      size_t a_count,
                                      uint32_t a_low_khz,
                                      uint32_t a_high_khz,
@@ -36,12 +35,10 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
                                  uint32_t a_step_khz,
                                  size_t a_samples,
                                  bool a_limit_reached,
-                                 bool a_peak_hold,
                                  bool a_notifications_enabled );
 
 /** @brief Render the nRF24 activity spectrum and likely-device pane. */
 void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
-                                    const uint8_t *a_slow,
                                     size_t a_count,
                                     uint8_t a_low_channel,
                                     uint8_t a_high_channel,
@@ -55,7 +52,6 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
                                 uint8_t a_low_channel,
                                 uint8_t a_high_channel,
                                 uint16_t a_dwell_us,
-                                bool a_peak_hold,
                                 bool a_notifications_enabled );
 
 #endif // _RFSCOUT_RADIO_APP_VIEW_H_
