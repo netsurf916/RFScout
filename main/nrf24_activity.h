@@ -44,7 +44,7 @@ typedef struct
     uint32_t timestamp_ms;
 } nrf24_recent_packet_t;
 
-/** @brief Clear histogram, classifier, peak, and accumulated count state. */
+/** @brief Clear histogram, classifier, and accumulated count state. */
 void nrf24_activity_reset( void );
 
 /** @brief Clear detection counts without changing scanner configuration or recent packets. */
@@ -64,13 +64,12 @@ void nrf24_activity_observe_packet( const nrf24_packet_observation_t *a_packet )
 size_t nrf24_activity_recent_packets( nrf24_recent_packet_t *a_output, size_t a_capacity );
 
 /**
- * @brief Copy fast activity and slow peak-hold histograms.
+ * @brief Copy the fast activity histogram.
  * @param a_fast Destination for fast-decay activity.
- * @param a_slow Destination for slow-decay peak history.
- * @param a_capacity Capacity of each destination array.
+ * @param a_capacity Destination array capacity.
  * @return Number of channel values copied.
  */
-size_t nrf24_activity_histogram( uint8_t *a_fast, uint8_t *a_slow, size_t a_capacity );
+size_t nrf24_activity_histogram( uint8_t *a_fast, size_t a_capacity );
 
 /** @brief Copy the fixed detection-category rows and accumulated counts. */
 size_t nrf24_activity_fingerprints( nrf24_fingerprint_t *a_output, size_t a_capacity );
