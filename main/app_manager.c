@@ -675,7 +675,7 @@ static void render_nr_spectrum( void )
 static size_t nr_packet_count( void )
 {
     nrf24_recent_packet_t packets[ NRF24_RECENT_PACKET_MAX ];
-    return nrf24_activity_recent_packets( packets, NRF24_RECENT_PACKET_MAX );
+    return nrf24_activity_recent_packets( packets, NRF24_RECENT_PACKET_MAX ) + 1U;
 }
 
 static void render_audio( void )
@@ -1001,26 +1001,40 @@ static void nr_input( bool a_pressed, int a_delta )
 {
     if( nr_packet_browser )
     {
-        const size_t packet_count = nr_packet_count();
+        const size_t item_count = nr_packet_count();
         if( nr_packet_detail )
         {
+            if( a_pressed )
+            {
+                nr_packet_detail = false;
+                (void)nrf24_packet_view_list( nr_packet_item );
+                emit_event( RFSCOUT_EVENT_BACK, 0 );
+            }
             return;
         }
         if( a_pressed )
         {
-            if( packet_count > 0U )
+            if( 0U == nr_packet_item )
             {
-                if( nr_packet_item >= packet_count )
+                nr_packet_browser = false;
+                nr_packet_item = 0U;
+                render_nr_menu();
+                emit_event( RFSCOUT_EVENT_BACK, 0 );
+                return;
+            }
+            if( item_count > 1U )
+            {
+                if( nr_packet_item >= item_count )
                 {
-                    nr_packet_item = (unsigned)packet_count - 1U;
+                    nr_packet_item = (unsigned)item_count - 1U;
                 }
                 nr_packet_detail = true;
-                nrf24_packet_view_detail( nr_packet_item );
-                emit_event( RFSCOUT_EVENT_ENTER, (int32_t)nr_packet_item );
+                nrf24_packet_view_detail( nr_packet_item - 1U );
+                emit_event( RFSCOUT_EVENT_ENTER, (int32_t)( nr_packet_item - 1U ) );
             }
             return;
         }
-        if( 0 == a_delta || 0U == packet_count )
+        if( 0 == a_delta )
         {
             return;
         }
@@ -1028,9 +1042,9 @@ static void nr_input( bool a_pressed, int a_delta )
         int item = (int)nr_packet_item + direction;
         if( item < 0 )
         {
-            item = (int)packet_count - 1;
+            item = (int)item_count - 1;
         }
-        if( item >= (int)packet_count )
+        if( item >= (int)item_count )
         {
             item = 0;
         }
@@ -1262,7 +1276,7 @@ static void audio_input( bool a_pressed, bool a_long_pressed, int a_delta )
                 gain = 24;
             }
             if( ( gain != old_gain ) &&
-                ( ESP_OK == device_config_set_recorder_input_gain( (uint8_t)gain ) ) )
+                ( ESP_OK == device_config_set_recorder_input_gain( (uint8_t)gain ) )
             {
                 recorder_set_input_gain_db( (uint8_t)gain );
                 (void)device_config_save( false, 0, NULL );
