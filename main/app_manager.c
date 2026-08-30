@@ -1276,7 +1276,7 @@ static void audio_input( bool a_pressed, bool a_long_pressed, int a_delta )
                 gain = 24;
             }
             if( ( gain != old_gain ) &&
-                ( ESP_OK == device_config_set_recorder_input_gain( (uint8_t)gain ) )
+                ( ESP_OK == device_config_set_recorder_input_gain( (uint8_t)gain ) ) )
             {
                 recorder_set_input_gain_db( (uint8_t)gain );
                 (void)device_config_save( false, 0, NULL );
