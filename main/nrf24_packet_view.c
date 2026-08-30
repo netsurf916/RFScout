@@ -133,11 +133,8 @@ size_t nrf24_packet_view_list( unsigned a_selected )
                                active ? ">" : " ",
                                active ? theme->selected : theme->divider,
                                1U );
-            display_draw_text( UI_LAYOUT_LABEL_X,
-                               y,
-                               "BACK",
-                               active ? theme->text : theme->divider,
-                               1U );
+            display_draw_text(
+                UI_LAYOUT_LABEL_X, y, "BACK", active ? theme->text : theme->divider, 1U );
             continue;
         }
 
@@ -157,26 +154,18 @@ size_t nrf24_packet_view_list( unsigned a_selected )
                            active ? ">" : " ",
                            active ? theme->selected : theme->divider,
                            1U );
-        display_draw_text( UI_LAYOUT_LABEL_X,
-                           y,
-                           line,
-                           active ? theme->text : theme->divider,
-                           1U );
+        display_draw_text( UI_LAYOUT_LABEL_X, y, line, active ? theme->text : theme->divider, 1U );
     }
 
     if( 0U == displayed_packet_count )
     {
-        display_draw_text(
-            UI_LAYOUT_LABEL_X, 78, "NO VALIDATED PACKETS", theme->secondary, 1U );
+        display_draw_text( UI_LAYOUT_LABEL_X, 78, "NO VALIDATED PACKETS", theme->secondary, 1U );
         display_draw_text(
             UI_LAYOUT_LABEL_X, 98, "WAITING FOR DECODER INPUT", theme->secondary, 1U );
     }
 
-    display_draw_text( UI_LAYOUT_LEFT_X,
-                       UI_LAYOUT_FOOTER_Y,
-                       "TURN: SELECT  CENTER: ENTER",
-                       theme->secondary,
-                       1U );
+    display_draw_text(
+        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN: SELECT  CENTER: ENTER", theme->secondary, 1U );
     (void)display_present();
     return item_count;
 }
