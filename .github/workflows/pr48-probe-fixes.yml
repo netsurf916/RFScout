@@ -1,0 +1,53 @@
+name: PR48 startup probe fixes
+
+on:
+  push:
+    branches: [detect-radio-hardware-apps]
+    paths: [.github/workflows/pr48-probe-fixes.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: detect-radio-hardware-apps
+      - name: Apply probe fixes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('main/cc1101.c')
+          s = p.read_text()
+          old = '''    if( detected && ( NULL == scan_task ) )\n    {\n        if( pdPASS != xTaskCreate( scan_worker,\n                                   "cc1101_scan",\n                                   CC1101_TASK_STACK_SIZE,\n                                   NULL,\n                                   CC1101_TASK_PRIORITY,\n                                   &scan_task ) )\n        {\n            scan_task = NULL;\n            return ESP_ERR_NO_MEM;\n        }\n    }\n\n    return detected ? ESP_OK : ESP_ERR_NOT_FOUND;\n'''
+          new = '''    if( detected && ( NULL == scan_task ) )\n    {\n        if( pdPASS != xTaskCreate( scan_worker,\n                                   "cc1101_scan",\n                                   CC1101_TASK_STACK_SIZE,\n                                   NULL,\n                                   CC1101_TASK_PRIORITY,\n                                   &scan_task ) )\n        {\n            scan_task = NULL;\n            return ESP_ERR_NO_MEM;\n        }\n    }\n\n    if( detected )\n    {\n        (void)strobe( CC1101_SIDLE );\n        (void)strobe( CC1101_SPWD );\n        disable_rf_path();\n    }\n    return detected ? ESP_OK : ESP_ERR_NOT_FOUND;\n'''
+          if old not in s:
+              raise SystemExit('CC1101 init block not found')
+          p.write_text(s.replace(old, new))
+
+          p = Path('main/recorder.c')
+          s = p.read_text()
+          old = '''    if( ESP_OK == result )\n    {\n        vTaskDelay( pdMS_TO_TICKS( RECORDER_MIC_PROBE_MS ) );\n        (void)pcnt_unit_stop( unit );\n        result = pcnt_unit_get_count( unit, &count );\n    }\n'''
+          new = '''    if( ESP_OK == result )\n    {\n        const TickType_t requested_ticks = pdMS_TO_TICKS( RECORDER_MIC_PROBE_MS );\n        vTaskDelay( requested_ticks > 0U ? requested_ticks : 1U );\n        (void)pcnt_unit_stop( unit );\n        result = pcnt_unit_get_count( unit, &count );\n    }\n'''
+          if old not in s:
+              raise SystemExit('microphone probe delay block not found')
+          p.write_text(s.replace(old, new))
+          PY
+      - name: Install clang-format 18
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang-format-18
+      - name: Format and commit
+        shell: bash
+        run: |
+          clang-format-18 -i main/cc1101.c main/recorder.c
+          rm .github/workflows/pr48-probe-fixes.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add main/cc1101.c main/recorder.c .github/workflows/pr48-probe-fixes.yml
+          git commit -m "Leave startup probes in safe idle state"
+          git push origin HEAD:detect-radio-hardware-apps
