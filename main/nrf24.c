@@ -396,9 +396,8 @@ bool nrf24_take_frame_ready( void )
     const TickType_t minimum_interval = pdMS_TO_TICKS( NRF24_FRAME_NOTIFY_INTERVAL_MS );
 
     portENTER_CRITICAL( &state_lock );
-    const bool interval_elapsed =
-        ( 0U == last_frame_take_tick ) || ( 0U == minimum_interval ) ||
-        ( ( now - last_frame_take_tick ) >= minimum_interval );
+    const bool interval_elapsed = ( 0U == last_frame_take_tick ) || ( 0U == minimum_interval ) ||
+                                  ( ( now - last_frame_take_tick ) >= minimum_interval );
     const bool ready = frame_ready && interval_elapsed;
     if( ready )
     {
