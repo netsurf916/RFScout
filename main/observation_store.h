@@ -17,7 +17,6 @@
 #include <stdint.h>
 
 #define RFSCOUT_DEVICE_CAPACITY 1000
-#define RFSCOUT_DEVICE_TIMEOUT_MS 20000U
 #define RFSCOUT_VENDOR_NAME_MAX 32
 #define RFSCOUT_DEVICE_NAME_MAX 32
 #define RFSCOUT_MFG_DATA_MAX 24
@@ -84,6 +83,8 @@ typedef struct
     uint16_t channel;
     uint32_t first_seen_ms;
     uint32_t last_seen_ms;
+    uint32_t wifi_last_seen_ms;
+    uint32_t ble_last_seen_ms;
     surveillance_class_t surveillance;
     surveillance_signature_id_t surveillance_signature;
     uint8_t surveillance_score;
@@ -146,8 +147,9 @@ bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new
 void observation_store_reset( void );
 
 /**
- * @brief Expire stale observations without requiring active radio collection or UI rendering.
- * @details This keeps timeout lifecycle events timely while another app owns the screen and radios.
+ * @brief Expire stale source memberships without requiring active radio collection or UI rendering.
+ * @details Wi-Fi and Bluetooth source membership age independently according to app configuration;
+ *          a merged observation remains live while at least one source is still within its window.
  */
 void observation_store_housekeeping( void );
 

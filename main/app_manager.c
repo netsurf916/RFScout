@@ -45,8 +45,11 @@
 
 #define WIFI_MENU_BACK 0U
 #define WIFI_MENU_NOTIFICATIONS 1U
-#define WIFI_MENU_RESET 2U
-#define WIFI_MENU_ITEM_COUNT 3U
+#define WIFI_MENU_WIFI_TIMEOUT 2U
+#define WIFI_MENU_BLE_TIMEOUT 3U
+#define WIFI_MENU_SURVEILLANCE_TIMEOUT 4U
+#define WIFI_MENU_RESET 5U
+#define WIFI_MENU_ITEM_COUNT 6U
 
 #define CC1101_MIN_STEP_KHZ 1U
 #define CC1101_MAX_STEP_KHZ 1000U
@@ -85,6 +88,7 @@ static int64_t last_app_refresh_us;
 static int64_t last_thermal_probe_us;
 static int64_t last_radio_retry_us;
 static bool wifi_menu;
+static bool wifi_edit;
 static bool cc_menu;
 static bool cc_edit;
 static bool cc_limit;
@@ -227,7 +231,11 @@ static rfscout_notification_type_t nr_notification_type( nrf24_fingerprint_type_
 static void render_wifi_menu( void )
 {
     wifi_settings_view_render( wifi_item,
-                               notification_preferences_app_enabled( RFSCOUT_APP_WIFI_BT ) );
+                               wifi_edit,
+                               notification_preferences_app_enabled( RFSCOUT_APP_WIFI_BT ),
+                               device_config_wifi_timeout_seconds(),
+                               device_config_ble_timeout_seconds(),
+                               device_config_surveillance_timeout_seconds() );
 }
 
 static void render_cc_menu( void )
@@ -415,8 +423,30 @@ static void notification_input( bool a_pressed, int a_delta )
 
 static void close_wifi_menu( void )
 {
+    const esp_err_t save_result = device_config_save_if_dirty();
+    if( ( ESP_OK != save_result ) && ( ESP_ERR_INVALID_STATE != save_result ) )
+    {
+        ESP_LOGW( TAG, "WiFi/BT settings save failed: %s", esp_err_to_name( save_result ) );
+    }
     wifi_menu = false;
+    wifi_edit = false;
     wifi_item = WIFI_MENU_BACK;
+}
+
+static uint16_t adjust_timeout_seconds( uint16_t a_current, int a_direction )
+{
+    int value =
+        (int)a_current + ( ( a_direction > 0 ) ? (int)RFSCOUT_OBSERVATION_TIMEOUT_STEP_SECONDS
+                                               : -(int)RFSCOUT_OBSERVATION_TIMEOUT_STEP_SECONDS );
+    if( value < (int)RFSCOUT_OBSERVATION_TIMEOUT_MIN_SECONDS )
+    {
+        value = RFSCOUT_OBSERVATION_TIMEOUT_MIN_SECONDS;
+    }
+    if( value > (int)RFSCOUT_OBSERVATION_TIMEOUT_MAX_SECONDS )
+    {
+        value = RFSCOUT_OBSERVATION_TIMEOUT_MAX_SECONDS;
+    }
+    return (uint16_t)value;
 }
 
 static void wifi_input( bool a_pressed, int a_delta )
@@ -426,6 +456,7 @@ static void wifi_input( bool a_pressed, int a_delta )
         if( a_pressed )
         {
             wifi_menu = true;
+            wifi_edit = false;
             wifi_item = WIFI_MENU_BACK;
             render_wifi_menu();
             emit_event( RFSCOUT_EVENT_ENTER, 0 );
@@ -434,6 +465,13 @@ static void wifi_input( bool a_pressed, int a_delta )
     }
     if( a_pressed )
     {
+        if( wifi_edit )
+        {
+            wifi_edit = false;
+            render_wifi_menu();
+            emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
+            return;
+        }
         if( WIFI_MENU_BACK == wifi_item )
         {
             close_wifi_menu();
@@ -443,6 +481,14 @@ static void wifi_input( bool a_pressed, int a_delta )
         if( WIFI_MENU_NOTIFICATIONS == wifi_item )
         {
             open_notification_menu();
+            return;
+        }
+        if( ( WIFI_MENU_WIFI_TIMEOUT == wifi_item ) || ( WIFI_MENU_BLE_TIMEOUT == wifi_item ) ||
+            ( WIFI_MENU_SURVEILLANCE_TIMEOUT == wifi_item ) )
+        {
+            wifi_edit = true;
+            render_wifi_menu();
+            emit_event( RFSCOUT_EVENT_ENTER, 0 );
             return;
         }
         if( WIFI_MENU_RESET == wifi_item )
@@ -458,7 +504,55 @@ static void wifi_input( bool a_pressed, int a_delta )
     {
         return;
     }
-    int item = (int)wifi_item + ( ( a_delta > 0 ) ? 1 : -1 );
+
+    const int direction = ( a_delta > 0 ) ? 1 : -1;
+    if( wifi_edit )
+    {
+        uint16_t old_value = 0U;
+        esp_err_t result = ESP_ERR_INVALID_STATE;
+        if( WIFI_MENU_WIFI_TIMEOUT == wifi_item )
+        {
+            old_value = device_config_wifi_timeout_seconds();
+            result = device_config_set_wifi_timeout_seconds(
+                adjust_timeout_seconds( old_value, direction ) );
+        }
+        else if( WIFI_MENU_BLE_TIMEOUT == wifi_item )
+        {
+            old_value = device_config_ble_timeout_seconds();
+            result = device_config_set_ble_timeout_seconds(
+                adjust_timeout_seconds( old_value, direction ) );
+        }
+        else if( WIFI_MENU_SURVEILLANCE_TIMEOUT == wifi_item )
+        {
+            old_value = device_config_surveillance_timeout_seconds();
+            result = device_config_set_surveillance_timeout_seconds(
+                adjust_timeout_seconds( old_value, direction ) );
+        }
+        if( ESP_OK == result )
+        {
+            uint16_t new_value = old_value;
+            if( WIFI_MENU_WIFI_TIMEOUT == wifi_item )
+            {
+                new_value = device_config_wifi_timeout_seconds();
+            }
+            else if( WIFI_MENU_BLE_TIMEOUT == wifi_item )
+            {
+                new_value = device_config_ble_timeout_seconds();
+            }
+            else if( WIFI_MENU_SURVEILLANCE_TIMEOUT == wifi_item )
+            {
+                new_value = device_config_surveillance_timeout_seconds();
+            }
+            if( new_value != old_value )
+            {
+                render_wifi_menu();
+                emit_event( RFSCOUT_EVENT_NAVIGATE, direction );
+            }
+        }
+        return;
+    }
+
+    int item = (int)wifi_item + direction;
     if( item < 0 )
     {
         item = (int)WIFI_MENU_ITEM_COUNT - 1;
@@ -471,7 +565,7 @@ static void wifi_input( bool a_pressed, int a_delta )
     {
         wifi_item = (unsigned)item;
         render_wifi_menu();
-        emit_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
+        emit_event( RFSCOUT_EVENT_NAVIGATE, direction );
     }
 }
 
@@ -609,6 +703,7 @@ static void leave_app( rfscout_app_id_t a_app )
         audio_item = AUDIO_BROWSER_BACK;
     }
     wifi_menu = false;
+    wifi_edit = false;
     cc_menu = false;
     cc_edit = false;
     cc_limit = false;
@@ -630,6 +725,7 @@ static void enter_app( rfscout_app_id_t a_app )
         case RFSCOUT_APP_WIFI_BT:
             wifi_item = WIFI_MENU_BACK;
             wifi_menu = false;
+            wifi_edit = false;
             wifi_monitor_ready = false;
             ble_monitor_ready = false;
             last_radio_retry_us = esp_timer_get_time();
@@ -1228,7 +1324,15 @@ static void close_active_menu_for_back( void )
     }
     else if( RFSCOUT_APP_WIFI_BT == active_app && wifi_menu )
     {
-        close_wifi_menu();
+        if( wifi_edit )
+        {
+            wifi_edit = false;
+            render_wifi_menu();
+        }
+        else
+        {
+            close_wifi_menu();
+        }
         emit_event( RFSCOUT_EVENT_BACK, 0 );
     }
     else if( RFSCOUT_APP_CC1101 == active_app && cc_menu )
@@ -1264,6 +1368,7 @@ esp_err_t app_manager_init( void )
     last_thermal_probe_us = esp_timer_get_time();
     last_radio_retry_us = 0;
     wifi_menu = false;
+    wifi_edit = false;
     cc_menu = false;
     cc_edit = false;
     cc_limit = false;

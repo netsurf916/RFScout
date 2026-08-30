@@ -18,9 +18,6 @@
 #include <stdint.h>
 
 #define RFSCOUT_SURVEILLANCE_HISTORY_CAPACITY 64U
-#define RFSCOUT_SURVEILLANCE_TIMEOUT_MULTIPLIER 3U
-#define RFSCOUT_SURVEILLANCE_TIMEOUT_MS                                                            \
-    ( RFSCOUT_DEVICE_TIMEOUT_MS * RFSCOUT_SURVEILLANCE_TIMEOUT_MULTIPLIER )
 #define RFSCOUT_SURVEILLANCE_CLASS_COUNT ( (size_t)SURVEILLANCE_OTHER + 1U )
 
 /** @brief Initialize the retained surveillance history. */

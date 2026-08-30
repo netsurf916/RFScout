@@ -6,6 +6,8 @@
 
 #include "surveillance_history.h"
 
+#include "device_config.h"
+
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -40,16 +42,17 @@ static bool same_identity( const surveillance_history_entry_t *a_entry,
 }
 
 /**
- * @brief Remove detections older than the extended surveillance window.
+ * @brief Remove detections older than the configured surveillance window.
  * @details Removal swaps the last active entry into an expired slot. The fixed
  *          store never allocates or frees memory during normal operation.
  */
 static void expire_stale_entries( uint32_t a_now_ms )
 {
+    const uint32_t timeout_ms = (uint32_t)device_config_surveillance_timeout_seconds() * 1000U;
     size_t i = 0;
     while( i < entry_count )
     {
-        if( (uint32_t)( a_now_ms - entries[ i ].last_seen_ms ) < RFSCOUT_SURVEILLANCE_TIMEOUT_MS )
+        if( (uint32_t)( a_now_ms - entries[ i ].last_seen_ms ) < timeout_ms )
         {
             ++i;
             continue;

@@ -17,7 +17,7 @@
 #include <stdint.h>
 
 #define NRF24_CHANNEL_COUNT 126U
-#define NRF24_FINGERPRINT_MAX 5U
+#define NRF24_FINGERPRINT_MAX 6U
 #define NRF24_FINGERPRINT_LABEL_MAX 24U
 
 /** @brief Active nRF24 channel sweep configuration. */

@@ -108,6 +108,9 @@ static void set_defaults( void )
     config.recorder_input_gain_db = CONFIG_RECORDER_INPUT_GAIN_DEFAULT_DB;
     config.wifi_device_feedback_enabled = true;
     config.ble_device_feedback_enabled = true;
+    config.wifi_timeout_seconds = RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS;
+    config.ble_timeout_seconds = RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS;
+    config.surveillance_timeout_seconds = RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS;
 
     for( size_t index = 0; index < RFSCOUT_APP_COUNT; ++index )
     {
@@ -142,7 +145,29 @@ static bool json_bool( const cJSON *a_parent, const char *a_name, bool a_default
     return cJSON_IsBool( item ) ? cJSON_IsTrue( item ) : a_default;
 }
 
-/** @brief Apply validated application enablement and app-owned notification overrides. */
+static bool timeout_seconds_valid( uint16_t a_seconds )
+{
+    return ( a_seconds >= RFSCOUT_OBSERVATION_TIMEOUT_MIN_SECONDS ) &&
+           ( a_seconds <= RFSCOUT_OBSERVATION_TIMEOUT_MAX_SECONDS ) &&
+           ( 0U == ( a_seconds % RFSCOUT_OBSERVATION_TIMEOUT_STEP_SECONDS ) );
+}
+
+/** @brief Read one optional bounded observation timeout, retaining a default when invalid. */
+static uint16_t
+json_timeout_seconds( const cJSON *a_parent, const char *a_name, uint16_t a_default )
+{
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive( a_parent, a_name );
+    if( !cJSON_IsNumber( item ) ||
+        ( item->valueint < (int)RFSCOUT_OBSERVATION_TIMEOUT_MIN_SECONDS ) ||
+        ( item->valueint > (int)RFSCOUT_OBSERVATION_TIMEOUT_MAX_SECONDS ) ||
+        ( 0 != ( item->valueint % (int)RFSCOUT_OBSERVATION_TIMEOUT_STEP_SECONDS ) ) )
+    {
+        return a_default;
+    }
+    return (uint16_t)item->valueint;
+}
+
+/** @brief Apply validated application enablement and app-owned preference overrides. */
 static void load_apps( const cJSON *a_root )
 {
     const cJSON *apps = cJSON_GetObjectItemCaseSensitive( a_root, "apps" );
@@ -168,6 +193,21 @@ static void load_apps( const cJSON *a_root )
 
         config.apps_enabled[ index ] =
             json_bool( app_item, "enabled", config.apps_enabled[ index ] );
+
+        if( RFSCOUT_APP_WIFI_BT == app )
+        {
+            const cJSON *retention = cJSON_GetObjectItemCaseSensitive( app_item, "retention" );
+            if( cJSON_IsObject( retention ) )
+            {
+                config.wifi_timeout_seconds =
+                    json_timeout_seconds( retention, "wifi_seconds", config.wifi_timeout_seconds );
+                config.ble_timeout_seconds = json_timeout_seconds(
+                    retention, "bluetooth_seconds", config.ble_timeout_seconds );
+                config.surveillance_timeout_seconds = json_timeout_seconds(
+                    retention, "surveillance_seconds", config.surveillance_timeout_seconds );
+            }
+        }
+
         const rfscout_app_audio_policy_t *policy = app_audio_policy_get( app );
         const cJSON *notifications = cJSON_GetObjectItemCaseSensitive( app_item, "notifications" );
         if( !policy->notifications_supported || !cJSON_IsObject( notifications ) )
@@ -570,6 +610,14 @@ static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_tim
         const rfscout_app_id_t app = (rfscout_app_id_t)index;
         cJSON *app_item = cJSON_AddObjectToObject( apps, app_config_name( app ) );
         cJSON_AddBoolToObject( app_item, "enabled", config.apps_enabled[ index ] );
+        if( RFSCOUT_APP_WIFI_BT == app )
+        {
+            cJSON *retention = cJSON_AddObjectToObject( app_item, "retention" );
+            cJSON_AddNumberToObject( retention, "wifi_seconds", config.wifi_timeout_seconds );
+            cJSON_AddNumberToObject( retention, "bluetooth_seconds", config.ble_timeout_seconds );
+            cJSON_AddNumberToObject(
+                retention, "surveillance_seconds", config.surveillance_timeout_seconds );
+        }
         const rfscout_app_audio_policy_t *policy = app_audio_policy_get( app );
         if( policy->notifications_supported )
         {
@@ -801,6 +849,69 @@ esp_err_t device_config_set_ble_device_feedback_enabled( bool a_enabled )
     if( config.ble_device_feedback_enabled != a_enabled )
     {
         config.ble_device_feedback_enabled = a_enabled;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+uint16_t device_config_wifi_timeout_seconds( void )
+{
+    return timeout_seconds_valid( config.wifi_timeout_seconds )
+               ? config.wifi_timeout_seconds
+               : RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS;
+}
+
+esp_err_t device_config_set_wifi_timeout_seconds( uint16_t a_seconds )
+{
+    if( !timeout_seconds_valid( a_seconds ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( config.wifi_timeout_seconds != a_seconds )
+    {
+        config.wifi_timeout_seconds = a_seconds;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+uint16_t device_config_ble_timeout_seconds( void )
+{
+    return timeout_seconds_valid( config.ble_timeout_seconds )
+               ? config.ble_timeout_seconds
+               : RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS;
+}
+
+esp_err_t device_config_set_ble_timeout_seconds( uint16_t a_seconds )
+{
+    if( !timeout_seconds_valid( a_seconds ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( config.ble_timeout_seconds != a_seconds )
+    {
+        config.ble_timeout_seconds = a_seconds;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+uint16_t device_config_surveillance_timeout_seconds( void )
+{
+    return timeout_seconds_valid( config.surveillance_timeout_seconds )
+               ? config.surveillance_timeout_seconds
+               : RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS;
+}
+
+esp_err_t device_config_set_surveillance_timeout_seconds( uint16_t a_seconds )
+{
+    if( !timeout_seconds_valid( a_seconds ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( config.surveillance_timeout_seconds != a_seconds )
+    {
+        config.surveillance_timeout_seconds = a_seconds;
         config_dirty = true;
     }
     return ESP_OK;
