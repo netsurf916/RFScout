@@ -760,7 +760,7 @@ static bool leave_app( rfscout_app_id_t a_app )
     {
         if( app_activated && !cc1101_stop() )
         {
-            quiesced = false;
+            return false;
         }
         cc1101_activity_reset();
         cc1101_activity_reset_counts();
@@ -771,7 +771,7 @@ static bool leave_app( rfscout_app_id_t a_app )
     {
         if( app_activated && !nrf24_stop() )
         {
-            quiesced = false;
+            return false;
         }
         nrf24_activity_reset();
         memset( nr_notification_counts, 0, sizeof( nr_notification_counts ) );

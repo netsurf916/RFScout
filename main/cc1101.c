@@ -375,6 +375,10 @@ bool cc1101_stop( void )
     if( worker_active )
     {
         running = true;
+        if( NULL != scan_task )
+        {
+            xTaskNotifyGive( scan_task );
+        }
         ESP_LOGE( TAG,
                   "scan worker did not quiesce within %u ms; resuming scan",
                   (unsigned)CC1101_STOP_TIMEOUT_MS );
