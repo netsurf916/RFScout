@@ -35,7 +35,7 @@
 #define NRF24_PACKET_HEADER_Y 82
 #define NRF24_PACKET_ROW_START_Y 94
 #define NRF24_PACKET_ROW_HEIGHT 11
-#define NRF24_PACKET_PREVIEW_ROWS 5U
+#define NRF24_PACKET_PREVIEW_ROWS 7U
 #define NRF24_PACKET_PREVIEW_BYTES 8U
 #define CC_MENU_ITEM_COUNT 8U
 #define NRF24_MENU_ITEM_COUNT 8U
@@ -49,9 +49,8 @@ static void format_mhz( char *a_buffer, size_t a_capacity, uint32_t a_frequency_
               (unsigned long)( a_frequency_khz % 1000U ) );
 }
 
-static void format_packet_preview( const nrf24_recent_packet_t *a_packet,
-                                   char *a_buffer,
-                                   size_t a_capacity )
+static void
+format_packet_preview( const nrf24_recent_packet_t *a_packet, char *a_buffer, size_t a_capacity )
 {
     if( ( NULL == a_packet ) || ( NULL == a_buffer ) || ( 0U == a_capacity ) )
     {
@@ -141,8 +140,8 @@ void radio_app_view_cc1101_spectrum( const uint8_t *a_current,
 
             if( a_peak[ i ] > 0U )
             {
-                int peak_y =
-                    APP_GRAPH_Y + CC_GRAPH_HEIGHT - (int)a_peak[ i ] * ( CC_GRAPH_HEIGHT - 3 ) / 255;
+                int peak_y = APP_GRAPH_Y + CC_GRAPH_HEIGHT -
+                             (int)a_peak[ i ] * ( CC_GRAPH_HEIGHT - 3 ) / 255;
                 if( peak_y < APP_GRAPH_Y )
                 {
                     peak_y = APP_GRAPH_Y;
@@ -285,8 +284,11 @@ void radio_app_view_cc1101_menu( unsigned a_selected,
               "%u/%u SAMPLES",
               (unsigned)a_samples,
               (unsigned)CC1101_MAX_SWEEP_SAMPLES );
-    display_draw_text(
-        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, value, a_limit_reached ? theme->warning : theme->secondary, 1U );
+    display_draw_text( UI_LAYOUT_LEFT_X,
+                       UI_LAYOUT_FOOTER_Y,
+                       value,
+                       a_limit_reached ? theme->warning : theme->secondary,
+                       1U );
     (void)display_present();
 }
 
@@ -342,11 +344,8 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
 
             if( height > 0 )
             {
-                display_fill_rect( x,
-                                   APP_GRAPH_Y + NRF24_GRAPH_HEIGHT - height,
-                                   2,
-                                   height,
-                                   theme->graph_primary );
+                display_fill_rect(
+                    x, APP_GRAPH_Y + NRF24_GRAPH_HEIGHT - height, 2, height, theme->graph_primary );
             }
 
             if( a_slow[ channel ] > 0U )
@@ -364,8 +363,7 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
 
     display_draw_text( UI_LAYOUT_LEFT_X, NRF24_PACKET_HEADER_Y, "PACKETS", theme->secondary, 1U );
     nrf24_recent_packet_t packets[ NRF24_PACKET_PREVIEW_ROWS ];
-    const size_t packet_count =
-        nrf24_activity_recent_packets( packets, NRF24_PACKET_PREVIEW_ROWS );
+    const size_t packet_count = nrf24_activity_recent_packets( packets, NRF24_PACKET_PREVIEW_ROWS );
     for( size_t index = 0U; index < packet_count; ++index )
     {
         format_packet_preview( &packets[ index ], line, sizeof( line ) );
@@ -407,8 +405,6 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
         }
     }
 
-    display_draw_text(
-        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "FAST ACTIVITY / PEAK HOLD", theme->secondary, 1U );
     (void)display_present();
 }
 
