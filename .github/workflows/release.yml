@@ -163,13 +163,18 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+          fetch-depth: 0
+
       - name: Download verified release bundle
         uses: actions/download-artifact@v8
         with:
           name: rfscout-${{ needs.validate.outputs.version }}
           path: dist
 
-      - name: Create draft release
+      - name: Create release tag and draft release
         env:
           GH_TOKEN: ${{ github.token }}
           COMMIT: ${{ needs.validate.outputs.commit }}
@@ -180,11 +185,26 @@ jobs:
           if [[ "$PRERELEASE" == "true" ]]; then
             prerelease+=(--prerelease)
           fi
+
+          cleanup_tag=true
+          cleanup() {
+            if [[ "$cleanup_tag" == "true" ]]; then
+              git push origin ":refs/tags/$VERSION" || true
+            fi
+          }
+          trap cleanup EXIT
+
+          git tag "$VERSION" "$COMMIT"
+          git push origin "refs/tags/$VERSION"
+
           gh release create "$VERSION" dist/* \
             --repo "$GITHUB_REPOSITORY" \
-            --target "$COMMIT" \
+            --verify-tag \
             --title "RFScout $VERSION" \
             --draft \
             --fail-on-no-commits \
             --generate-notes \
             "${prerelease[@]}"
+
+          cleanup_tag=false
+          trap - EXIT
