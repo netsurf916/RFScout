@@ -223,5 +223,26 @@ jobs:
             --generate-notes \
             "${prerelease[@]}"
 
+          # Draft releases use a temporary untagged-* web URL until publication,
+          # even when the semantic Git tag already exists. Verify the API binding
+          # rather than treating that temporary URL as the release identity.
+          release_tag=$(gh release view "$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json tagName \
+            --jq .tagName)
+          if [[ "$release_tag" != "$VERSION" ]]; then
+            echo "Draft release is bound to $release_tag instead of $VERSION" >&2
+            exit 1
+          fi
+
+          remote_commit=$(git ls-remote origin "refs/tags/$VERSION" | cut -f1)
+          if [[ "$remote_commit" != "$COMMIT" ]]; then
+            echo "Remote tag $VERSION points to $remote_commit instead of $COMMIT" >&2
+            exit 1
+          fi
+
+          echo "Draft release verified for $VERSION at $COMMIT"
+          echo "After publication: https://github.com/$GITHUB_REPOSITORY/releases/tag/$VERSION"
+
           cleanup_tag=false
           trap - EXIT
