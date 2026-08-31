@@ -51,8 +51,13 @@ static void set_dimmed( void )
     ESP_LOGI( TAG, "display dimmed after inactivity" );
 }
 
-static void set_off( void )
+static esp_err_t enter_off_state( const char *a_reason )
 {
+    if( DISPLAY_IDLE_OFF == state )
+    {
+        return ESP_OK;
+    }
+
     const device_config_t *config = device_config_get();
     const uint8_t previous_brightness = ( DISPLAY_IDLE_DIMMED == state )
                                             ? dim_brightness( config->brightness_percent )
@@ -64,11 +69,14 @@ static void set_off( void )
     {
         display_set_brightness( previous_brightness );
         ESP_LOGW( TAG, "could not put LCD into hardware sleep: %s", esp_err_to_name( result ) );
-        return;
+        return result;
     }
 
     state = DISPLAY_IDLE_OFF;
-    ESP_LOGI( TAG, "display entered ST7789 hardware sleep after inactivity" );
+    ESP_LOGI( TAG,
+              "display entered ST7789 hardware sleep (%s)",
+              ( NULL != a_reason ) ? a_reason : "requested" );
+    return ESP_OK;
 }
 
 static bool wake_display( void )
@@ -117,6 +125,19 @@ esp_err_t display_idle_init( void )
     return result;
 }
 
+esp_err_t display_idle_request_off( void )
+{
+    const esp_err_t result = enter_off_state( "explicit request" );
+    if( ESP_OK == result )
+    {
+        /* Treat the request as the activity boundary for the new off state. A
+           later physical gesture still wakes and is consumed in the normal
+           display-idle path. */
+        last_activity_us = esp_timer_get_time();
+    }
+    return result;
+}
+
 void display_idle_poll( void )
 {
     const int64_t now_us = esp_timer_get_time();
@@ -143,7 +164,7 @@ void display_idle_poll( void )
     {
         if( DISPLAY_IDLE_OFF != state )
         {
-            set_off();
+            (void)enter_off_state( "inactivity" );
         }
         return;
     }
