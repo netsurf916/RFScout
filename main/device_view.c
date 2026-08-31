@@ -17,6 +17,7 @@
 #include "log_writer.h"
 #include "morse.h"
 #include "observation_store.h"
+#include "power.h"
 #include "storage.h"
 #include "ui_chrome.h"
 #include "ui_layout.h"
@@ -47,17 +48,20 @@
 #define DEVICE_ITEM_LOGGING 18U
 #define DEVICE_ITEM_ALERT_MODE 19U
 #define DEVICE_ITEM_ALERT_VOLUME 20U
-#define DEVICE_ITEM_SAVE 21U
-/* Per-detection Morse mappings are app-owned and intentionally live beyond the
-   globally reachable Device-settings item range. Keep these constants only for
-   compatibility with shared formatting/configuration helpers below. */
-#define DEVICE_ITEM_NOTIFICATION_FIRST 22U
+#define DEVICE_ITEM_POWER_BUTTON 21U
+#define DEVICE_ITEM_SAVE 22U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 23U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
 #define DEVICE_ITEM_COUNT ( DEVICE_ITEM_SAVE + 1U )
 #define DEVICE_ROWS_PER_PAGE 6U
 #define DEVICE_LOG_SHUTDOWN_TIMEOUT_MS 3000U
 #define DEVICE_ALERT_VOLUME_STEP 10
+
+#define POWER_MENU_BACK 0U
+#define POWER_MENU_SHORT_PRESS 1U
+#define POWER_MENU_LONG_PRESS 2U
+#define POWER_MENU_ITEM_COUNT 3U
 
 static const uint16_t DIM_TIMEOUT_OPTIONS[] = { 0U, 30U, 60U, 120U, 300U };
 static const uint16_t OFF_TIMEOUT_OPTIONS[] = { 0U, 60U, 120U, 300U, 600U, 1800U };
@@ -73,6 +77,8 @@ static unsigned selected_item;
 static bool editing;
 static struct tm edited_time;
 static bool save_error;
+static bool power_menu_open;
+static unsigned power_selected_item;
 
 static void emit_device_event( rfscout_event_type_t a_type, int32_t a_value )
 {
@@ -196,7 +202,8 @@ static bool item_direct_toggle( unsigned a_item )
 
 static bool item_editable( unsigned a_item )
 {
-    return ( DEVICE_ITEM_BACK != a_item ) && ( DEVICE_ITEM_SAVE != a_item );
+    return ( DEVICE_ITEM_BACK != a_item ) && ( DEVICE_ITEM_POWER_BUTTON != a_item ) &&
+           ( DEVICE_ITEM_SAVE != a_item );
 }
 
 static const char *item_label( unsigned a_item )
@@ -245,6 +252,8 @@ static const char *item_label( unsigned a_item )
             return "Notifications";
         case DEVICE_ITEM_ALERT_VOLUME:
             return "Alert volume";
+        case DEVICE_ITEM_POWER_BUTTON:
+            return "Power button";
         case DEVICE_ITEM_SAVE:
             return "Save config";
         default:
@@ -369,6 +378,93 @@ static void draw_row( int a_y, unsigned a_item )
     }
 }
 
+static power_action_t next_power_action( power_action_t a_current, bool a_long_press )
+{
+    power_action_t candidate = a_current;
+    for( unsigned attempt = 0U; attempt < POWER_ACTION_COUNT; ++attempt )
+    {
+        candidate = (power_action_t)( ( (unsigned)candidate + 1U ) % (unsigned)POWER_ACTION_COUNT );
+        if( power_action_supported( candidate, a_long_press ) )
+        {
+            return candidate;
+        }
+    }
+    return POWER_ACTION_NONE;
+}
+
+static void draw_power_menu_row( int a_y,
+                                 unsigned a_item,
+                                 const char *a_label,
+                                 const char *a_value )
+{
+    const bool active = power_selected_item == a_item;
+    const uint16_t color = active ? COLOR_SELECTED : COLOR_TEXT;
+    if( active )
+    {
+        display_draw_text( UI_LAYOUT_LEFT_X, a_y, ">", color, 1U );
+    }
+    display_draw_text( UI_LAYOUT_LABEL_X, a_y, a_label, color, 1U );
+    if( NULL != a_value )
+    {
+        display_draw_text( 214, a_y, a_value, active ? COLOR_ACCENT : COLOR_DIM, 1U );
+    }
+}
+
+static void render_power_menu( void )
+{
+    const device_config_t *config = device_config_get();
+    display_clear( COLOR_BACKGROUND );
+    ui_chrome_draw( "POWER BUTTON", COLOR_DIM );
+    draw_power_menu_row( UI_LAYOUT_MENU_START_Y, POWER_MENU_BACK, "Back", NULL );
+    draw_power_menu_row( UI_LAYOUT_MENU_START_Y + UI_LAYOUT_MENU_ROW_HEIGHT,
+                         POWER_MENU_SHORT_PRESS,
+                         "Short press",
+                         power_action_name( config->power_button_short_action ) );
+    draw_power_menu_row( UI_LAYOUT_MENU_START_Y + 2 * UI_LAYOUT_MENU_ROW_HEIGHT,
+                         POWER_MENU_LONG_PRESS,
+                         "Long press",
+                         power_action_name( config->power_button_long_action ) );
+
+    const char *hint = ( POWER_MENU_BACK == power_selected_item ) ? "CENTER BACK"
+                                                                  : "CENTER CYCLE";
+    char footer[ 64 ];
+    snprintf( footer,
+              sizeof( footer ),
+              "%u/%u  TURN SELECT / %s",
+              (unsigned)( power_selected_item + 1U ),
+              (unsigned)POWER_MENU_ITEM_COUNT,
+              hint );
+    display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, footer, COLOR_DIM, 1U );
+    (void)display_present();
+}
+
+static void cycle_power_action( bool a_long_press )
+{
+    const device_config_t *config = device_config_get();
+    const power_action_t old_action = a_long_press ? config->power_button_long_action
+                                                   : config->power_button_short_action;
+    const power_action_t new_action = next_power_action( old_action, a_long_press );
+    if( new_action == old_action )
+    {
+        return;
+    }
+
+    const esp_err_t result = a_long_press
+                                 ? device_config_set_power_button_long_action( new_action )
+                                 : device_config_set_power_button_short_action( new_action );
+    if( ESP_OK != result )
+    {
+        save_error = true;
+        emit_device_event( RFSCOUT_EVENT_ERROR, -1 );
+        return;
+    }
+
+    log_config_change( a_long_press ? "power.long_press" : "power.short_press",
+                       power_action_name( old_action ),
+                       power_action_name( new_action ) );
+    emit_device_event( RFSCOUT_EVENT_NAVIGATE, 1 );
+}
+
 static void draw_home_logo( void )
 {
     display_fill_rect( 50, 54, 8, 48, COLOR_ACCENT );
@@ -391,6 +487,12 @@ void device_view_landing( void )
 
 void device_view_render( void )
 {
+    if( power_menu_open )
+    {
+        render_power_menu();
+        return;
+    }
+
     display_clear( COLOR_BACKGROUND );
     ui_chrome_draw( "DEVICE SETTINGS", COLOR_DIM );
     const unsigned page_start = ( selected_item / DEVICE_ROWS_PER_PAGE ) * DEVICE_ROWS_PER_PAGE;
@@ -427,6 +529,8 @@ void device_view_enter( void )
     selected_item = DEVICE_ITEM_BACK;
     editing = false;
     save_error = false;
+    power_menu_open = false;
+    power_selected_item = POWER_MENU_BACK;
     refresh_edited_time();
     device_view_render();
 }
@@ -447,6 +551,21 @@ static void move_selection( int a_delta )
         selected_item = (unsigned)item;
         emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
     }
+}
+
+static void move_power_selection( int a_delta )
+{
+    int item = (int)power_selected_item + ( ( a_delta > 0 ) ? 1 : -1 );
+    if( item < 0 )
+    {
+        item = (int)POWER_MENU_ITEM_COUNT - 1;
+    }
+    if( item >= (int)POWER_MENU_ITEM_COUNT )
+    {
+        item = 0;
+    }
+    power_selected_item = (unsigned)item;
+    emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
 }
 
 static void toggle_app( rfscout_app_id_t a_app, const char *a_key )
@@ -544,8 +663,6 @@ static void adjust_theme( int a_delta )
                            ui_theme_display_name( old_theme ),
                            ui_theme_display_name( new_theme ) );
         save_error = false;
-        /* The new theme is already active here. Entering Discipline therefore remains silent,
-           while leaving it immediately restores accepted-action feedback. */
         emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
     }
     else if( new_theme != old_theme )
@@ -745,7 +862,7 @@ static void adjust_alert_mode( int a_delta )
         mode = 0;
     }
     if( (rfscout_alert_mode_t)mode != old_mode &&
-        ( ESP_OK == device_config_set_alert_mode( (rfscout_alert_mode_t)mode ) ) )
+        ( ESP_OK == device_config_set_alert_mode( (rfscout_alert_mode_t)mode ) )
     {
         log_config_change( "notifications.mode",
                            alert_mode_name( old_mode ),
@@ -907,12 +1024,44 @@ static void adjust_selected( int a_delta )
 
 bool device_view_input( bool a_pressed, int a_delta )
 {
+    if( power_menu_open )
+    {
+        if( a_pressed )
+        {
+            if( POWER_MENU_BACK == power_selected_item )
+            {
+                power_menu_open = false;
+                emit_device_event( RFSCOUT_EVENT_BACK, 0 );
+            }
+            else
+            {
+                cycle_power_action( POWER_MENU_LONG_PRESS == power_selected_item );
+            }
+            device_view_render();
+            return false;
+        }
+        if( 0 != a_delta )
+        {
+            move_power_selection( a_delta );
+            device_view_render();
+        }
+        return false;
+    }
+
     if( a_pressed )
     {
         if( ( DEVICE_ITEM_BACK == selected_item ) && !editing )
         {
             emit_device_event( RFSCOUT_EVENT_BACK, 0 );
             return true;
+        }
+        if( ( DEVICE_ITEM_POWER_BUTTON == selected_item ) && !editing )
+        {
+            power_menu_open = true;
+            power_selected_item = POWER_MENU_BACK;
+            emit_device_event( RFSCOUT_EVENT_ENTER, 1 );
+            device_view_render();
+            return false;
         }
         if( ( DEVICE_ITEM_SAVE == selected_item ) && !editing )
         {
