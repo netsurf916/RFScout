@@ -33,6 +33,7 @@
 static const char *TAG = "power";
 static bool raw_pressed;
 static bool stable_pressed;
+static bool suppress_until_release;
 static int64_t raw_changed_us;
 static int64_t pressed_since_us;
 static power_status_t status;
@@ -160,6 +161,7 @@ esp_err_t power_init( void )
 {
     raw_pressed = ( 0 == gpio_get_level( RFSCOUT_BOARD_USER_KEY_PIN ) );
     stable_pressed = raw_pressed;
+    suppress_until_release = false;
     raw_changed_us = esp_timer_get_time();
     pressed_since_us = stable_pressed ? raw_changed_us : 0;
     status.state = POWER_HOLD_IDLE;
@@ -167,10 +169,42 @@ esp_err_t power_init( void )
     return ESP_OK;
 }
 
+void power_consume_wake_input( void )
+{
+    const int64_t now_us = esp_timer_get_time();
+    const bool pressed = ( 0 == gpio_get_level( RFSCOUT_BOARD_USER_KEY_PIN ) );
+
+    if( !pressed )
+    {
+        return;
+    }
+
+    raw_pressed = true;
+    stable_pressed = true;
+    suppress_until_release = true;
+    raw_changed_us = now_us;
+    pressed_since_us = 0;
+    set_power_status( POWER_HOLD_IDLE, 0U );
+}
+
 void power_poll( void )
 {
     const int64_t now_us = esp_timer_get_time();
     const bool pressed = ( 0 == gpio_get_level( RFSCOUT_BOARD_USER_KEY_PIN ) );
+
+    if( suppress_until_release )
+    {
+        raw_pressed = pressed;
+        stable_pressed = pressed;
+        raw_changed_us = now_us;
+        pressed_since_us = 0;
+        set_power_status( POWER_HOLD_IDLE, 0U );
+        if( !pressed )
+        {
+            suppress_until_release = false;
+        }
+        return;
+    }
 
     if( pressed != raw_pressed )
     {
