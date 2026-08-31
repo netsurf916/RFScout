@@ -13,6 +13,7 @@
 #include "device_config.h"
 #include "device_time.h"
 #include "display.h"
+#include "display_idle.h"
 #include "event.h"
 #include "log_writer.h"
 #include "morse.h"
@@ -28,28 +29,30 @@
 
 #define DEVICE_ITEM_BACK 0U
 #define DEVICE_ITEM_BRIGHTNESS 1U
-#define DEVICE_ITEM_THEME 2U
-#define DEVICE_ITEM_CLOCK_FORMAT 3U
-#define DEVICE_ITEM_TIMEZONE 4U
-#define DEVICE_ITEM_STARTUP 5U
-#define DEVICE_ITEM_YEAR 6U
-#define DEVICE_ITEM_MONTH 7U
-#define DEVICE_ITEM_DAY 8U
-#define DEVICE_ITEM_HOUR 9U
-#define DEVICE_ITEM_MINUTE 10U
-#define DEVICE_ITEM_WIFI 11U
-#define DEVICE_ITEM_CC1101 12U
-#define DEVICE_ITEM_NRF24 13U
-#define DEVICE_ITEM_AUDIO 14U
-#define DEVICE_ITEM_THERMAL 15U
-#define DEVICE_ITEM_LOGGING 16U
-#define DEVICE_ITEM_ALERT_MODE 17U
-#define DEVICE_ITEM_ALERT_VOLUME 18U
-#define DEVICE_ITEM_SAVE 19U
+#define DEVICE_ITEM_DIM_AFTER 2U
+#define DEVICE_ITEM_SCREEN_OFF 3U
+#define DEVICE_ITEM_THEME 4U
+#define DEVICE_ITEM_CLOCK_FORMAT 5U
+#define DEVICE_ITEM_TIMEZONE 6U
+#define DEVICE_ITEM_STARTUP 7U
+#define DEVICE_ITEM_YEAR 8U
+#define DEVICE_ITEM_MONTH 9U
+#define DEVICE_ITEM_DAY 10U
+#define DEVICE_ITEM_HOUR 11U
+#define DEVICE_ITEM_MINUTE 12U
+#define DEVICE_ITEM_WIFI 13U
+#define DEVICE_ITEM_CC1101 14U
+#define DEVICE_ITEM_NRF24 15U
+#define DEVICE_ITEM_AUDIO 16U
+#define DEVICE_ITEM_THERMAL 17U
+#define DEVICE_ITEM_LOGGING 18U
+#define DEVICE_ITEM_ALERT_MODE 19U
+#define DEVICE_ITEM_ALERT_VOLUME 20U
+#define DEVICE_ITEM_SAVE 21U
 /* Per-detection Morse mappings are app-owned and intentionally live beyond the
    globally reachable Device-settings item range. Keep these constants only for
    compatibility with shared formatting/configuration helpers below. */
-#define DEVICE_ITEM_NOTIFICATION_FIRST 20U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 22U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
 #define DEVICE_ITEM_COUNT ( DEVICE_ITEM_SAVE + 1U )
@@ -170,6 +173,10 @@ static const char *item_label( unsigned a_item )
             return "Back";
         case DEVICE_ITEM_BRIGHTNESS:
             return "Brightness";
+        case DEVICE_ITEM_DIM_AFTER:
+            return "Dim after";
+        case DEVICE_ITEM_SCREEN_OFF:
+            return "Screen off";
         case DEVICE_ITEM_THEME:
             return "Theme";
         case DEVICE_ITEM_CLOCK_FORMAT:
@@ -224,6 +231,18 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
     {
         case DEVICE_ITEM_BRIGHTNESS:
             snprintf( a_value, a_capacity, "%u%%", (unsigned)config->brightness_percent );
+            break;
+        case DEVICE_ITEM_DIM_AFTER:
+            snprintf( a_value,
+                      a_capacity,
+                      "%s",
+                      display_idle_timeout_label( display_idle_dim_timeout_seconds() ) );
+            break;
+        case DEVICE_ITEM_SCREEN_OFF:
+            snprintf( a_value,
+                      a_capacity,
+                      "%s",
+                      display_idle_timeout_label( display_idle_off_timeout_seconds() ) );
             break;
         case DEVICE_ITEM_THEME:
             snprintf( a_value, a_capacity, "%s", ui_theme_display_name( ui_theme_current() ) );
@@ -693,6 +712,30 @@ static void adjust_notification_character( unsigned a_item, int a_delta )
     emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
 }
 
+static void adjust_idle_timeout( bool a_dim, int a_delta )
+{
+    const uint32_t old_value =
+        a_dim ? display_idle_dim_timeout_seconds() : display_idle_off_timeout_seconds();
+    const esp_err_t result = a_dim ? display_idle_adjust_dim_timeout( a_delta )
+                                   : display_idle_adjust_off_timeout( a_delta );
+    if( ESP_OK != result )
+    {
+        save_error = true;
+        return;
+    }
+
+    const uint32_t new_value =
+        a_dim ? display_idle_dim_timeout_seconds() : display_idle_off_timeout_seconds();
+    if( new_value != old_value )
+    {
+        log_config_change( a_dim ? "display.dim_after" : "display.screen_off_after",
+                           display_idle_timeout_label( old_value ),
+                           display_idle_timeout_label( new_value ) );
+        emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
+    }
+    save_error = false;
+}
+
 static void adjust_selected( int a_delta )
 {
     const device_config_t *config = device_config_get();
@@ -719,6 +762,14 @@ static void adjust_selected( int a_delta )
             log_config_change( "display.brightness", old_text, new_text );
             emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
         }
+    }
+    else if( DEVICE_ITEM_DIM_AFTER == selected_item )
+    {
+        adjust_idle_timeout( true, a_delta );
+    }
+    else if( DEVICE_ITEM_SCREEN_OFF == selected_item )
+    {
+        adjust_idle_timeout( false, a_delta );
     }
     else if( DEVICE_ITEM_THEME == selected_item )
     {
