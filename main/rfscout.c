@@ -14,6 +14,7 @@
 #include "device_config.h"
 #include "device_time.h"
 #include "display.h"
+#include "display_idle.h"
 #include "event.h"
 #include "feedback.h"
 #include "log_writer.h"
@@ -224,6 +225,11 @@ void app_main( void )
 
     ESP_ERROR_CHECK( app_manager_init() );
     display_set_brightness( device_config_get()->brightness_percent );
+    result = display_idle_init();
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG, "display idle persistence unavailable; using defaults: %s", esp_err_to_name( result ) );
+    }
 
     if( storage_is_available() && device_config_get()->logging_enabled )
     {
@@ -246,6 +252,7 @@ void app_main( void )
     while( true )
     {
         platform_poll();
+        display_idle_poll();
         power_poll();
         battery_poll();
         observation_store_housekeeping();
@@ -253,8 +260,8 @@ void app_main( void )
         status_bar_poll();
         battery_indicator_poll();
 
-        /* Presentation remains periodic for every app, including static Home. The display layer
-         * skips the LCD transfer when neither framebuffer nor overlay state was invalidated. */
+        /* Apps keep composing their logical views while the display is blank. The shared
+         * presentation layer suppresses LCD transfers until wake, then presents the latest frame. */
         (void)display_present();
 
         app_logging_poll();
