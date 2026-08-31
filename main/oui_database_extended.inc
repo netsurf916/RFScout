@@ -13727,7 +13727,7 @@ static const oui36_record_t oui36_records[] = {
     { 0x70B3D5949ULL, "National Radio & Telecommunicat" },
     { 0x70B3D594AULL, "SHENZHEN WISEWING INTERNET TECH" },
     { 0x70B3D594BULL, "RF Code" },
-    { 0x70B3D594CULL, "Honeywell/Intelligrated" },
+    { 0x70B3D594CULL, "Intelligrated System" },
     { 0x70B3D594DULL, "SEASON DESIGN TECHNOLOGY" },
     { 0x70B3D594EULL, "BP Lubricants USA" },
     { 0x70B3D594FULL, "MART NETWORK SOLUTIONS LTD" },
