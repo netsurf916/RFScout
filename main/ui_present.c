@@ -7,6 +7,7 @@
 
 #include "display.h"
 
+#include "display_idle.h"
 #include "power.h"
 #include "ui_theme.h"
 
@@ -59,6 +60,13 @@ static void draw_power_overlay( const power_status_t *a_status )
 esp_err_t display_present( void )
 {
     if( !display_is_dirty() )
+    {
+        return ESP_OK;
+    }
+
+    /* Apps continue composing the logical framebuffer while the display is
+       blank. Leave it dirty and skip LCD GRAM transfers until a wake event. */
+    if( !display_idle_presentation_enabled() )
     {
         return ESP_OK;
     }
