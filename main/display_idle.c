@@ -28,10 +28,8 @@ static int64_t last_activity_us;
 static rfscout_display_idle_state_t idle_state = RFSCOUT_DISPLAY_IDLE_ACTIVE;
 static bool presentation_enabled = true;
 
-static uint32_t adjusted_option( uint32_t a_current,
-                                 int a_direction,
-                                 const uint32_t *a_options,
-                                 size_t a_count )
+static uint32_t
+adjusted_option( uint32_t a_current, int a_direction, const uint32_t *a_options, size_t a_count )
 {
     size_t current = 0U;
     for( size_t index = 0U; index < a_count; ++index )
