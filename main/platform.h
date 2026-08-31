@@ -38,6 +38,23 @@ esp_err_t platform_init( void );
 void platform_poll( void );
 
 /**
+ * @brief Return whether any physical user control currently represents activity.
+ *
+ * This bypasses the global input lock so device-level wake policy can observe
+ * encoder movement, center-button activity, or the user/power key before normal
+ * semantic input filtering occurs.
+ */
+bool platform_user_activity( void );
+
+/**
+ * @brief Consume the encoder/button gesture that woke a dimmed or blank display.
+ *
+ * If the center button is still held, its complete press/release sequence is
+ * suppressed so the wake gesture cannot later become Select, Back, or Input Lock.
+ */
+void platform_consume_wake_input( void );
+
+/**
  * @brief Consume one board-neutral user-input event.
  *
  * Navigation values are signed and may represent multiple accumulated steps.
