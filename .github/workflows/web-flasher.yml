@@ -9,9 +9,6 @@ on:
   pull_request:
     types:
       - closed
-  release:
-    types:
-      - published
   workflow_dispatch:
 
 permissions:
@@ -29,7 +26,6 @@ jobs:
   build-site:
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'release' ||
       github.event_name == 'pull_request' ||
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
