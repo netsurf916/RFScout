@@ -188,14 +188,22 @@ jobs:
 
           cleanup_tag=false
           cleanup() {
-            if [[ "$cleanup_tag" == "true" ]]; then
-              remote_commit=$(git ls-remote --refs origin "refs/tags/$VERSION" | awk '{print $1}')
-              if [[ "$remote_commit" == "$COMMIT" ]]; then
-                git push origin ":refs/tags/$VERSION" || true
-              else
-                echo "Not deleting $VERSION because the remote tag no longer points to $COMMIT"
-              fi
+            if [[ "$cleanup_tag" != "true" ]]; then
+              return
             fi
+
+            # gh creates the draft and uploads assets in separate API calls. If
+            # the draft already exists, preserve its semantic tag even when a
+            # later asset upload fails so the partial release remains coherent.
+            if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "Preserving $VERSION because a GitHub Release already exists"
+              return
+            fi
+
+            # Delete only the exact tag this job created. The lease makes the
+            # ownership check and deletion atomic with respect to remote changes.
+            git push --force-with-lease="refs/tags/$VERSION:$COMMIT" \
+              origin ":refs/tags/$VERSION" || true
           }
           trap cleanup EXIT
 
