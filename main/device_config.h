@@ -13,6 +13,7 @@
 #include "alert.h"
 #include "app_manager.h"
 #include "esp_err.h"
+#include "power.h"
 #include "ui_theme.h"
 
 #include <stdbool.h>
@@ -42,6 +43,8 @@ typedef struct
     uint8_t brightness_percent;
     uint16_t display_dim_timeout_seconds;
     uint16_t display_off_timeout_seconds;
+    power_action_t power_button_short_action;
+    power_action_t power_button_long_action;
     bool apps_enabled[ RFSCOUT_APP_COUNT ];
     rfscout_app_id_t startup_app;
     bool logging_enabled;
@@ -92,6 +95,12 @@ esp_err_t device_config_set_display_dim_timeout( uint16_t a_seconds );
 
 /** @brief Change inactivity timeout before LCD output is disabled; zero disables screen-off. */
 esp_err_t device_config_set_display_off_timeout( uint16_t a_seconds );
+
+/** @brief Change the semantic action assigned to a short power-button press. */
+esp_err_t device_config_set_power_button_short_action( power_action_t a_action );
+
+/** @brief Change the semantic action assigned to a long power-button press. */
+esp_err_t device_config_set_power_button_long_action( power_action_t a_action );
 
 /** @brief Change 12/24-hour clock presentation. */
 esp_err_t device_config_set_clock_24h( bool a_enabled );
