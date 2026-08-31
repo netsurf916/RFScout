@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.build_web_flasher import candidate_entry, release_entries
+from tools.build_web_flasher import candidate_entries, release_entries
 
 
 class WebFlasherCatalogTest(unittest.TestCase):
@@ -40,52 +40,64 @@ class WebFlasherCatalogTest(unittest.TestCase):
                 "firmware/releases/v1.2.3/manifest.web.json",
             )
 
-    def test_candidate_entry_copies_bundle_and_labels_pr(self) -> None:
+    def test_candidate_entries_preserve_multiple_pull_requests(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             site = root / "site"
-            candidate = root / "candidate" / "artifact"
-            candidate.mkdir(parents=True)
-            (candidate / "manifest.web.json").write_text(
-                json.dumps(
-                    {
-                        "name": "RFScout",
-                        "version": "candidate-123456789abc",
-                        "builds": [],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            (candidate / "rfscout-candidate-full.bin").write_bytes(b"firmware")
+            candidates = root / "candidates"
 
-            entry = candidate_entry(
+            for pr, version in ((42, "candidate-aaaa"), (52, "candidate-bbbb")):
+                artifact = candidates / f"pr-{pr}" / "artifact"
+                artifact.mkdir(parents=True)
+                (artifact / "manifest.web.json").write_text(
+                    json.dumps({"name": "RFScout", "version": version, "builds": []}),
+                    encoding="utf-8",
+                )
+                (artifact / "rfscout-candidate-full.bin").write_bytes(b"firmware")
+
+            entries = candidate_entries(
                 site,
-                root / "candidate",
-                "123456789abcdef0",
-                "pull_request",
-                "42",
-                "https://github.example/run/1",
+                candidates,
+                [
+                    {
+                        "pr": 42,
+                        "sha": "aaaaaaaaaaaa1111",
+                        "run_url": "https://github.example/run/42",
+                    },
+                    {
+                        "pr": 52,
+                        "sha": "bbbbbbbbbbbb2222",
+                        "run_url": "https://github.example/run/52",
+                    },
+                ],
             )
 
-            self.assertIsNotNone(entry)
-            self.assertEqual(entry["label"], "PR #42 candidate")
-            self.assertEqual(entry["pr"], 42)
+            self.assertEqual([entry["pr"] for entry in entries], [52, 42])
+            self.assertEqual(entries[0]["label"], "PR #52 candidate")
+            self.assertEqual(
+                entries[0]["manifest"],
+                "firmware/candidates/pr-52/manifest.web.json",
+            )
             self.assertTrue(
-                (site / "firmware" / "candidate" / "rfscout-candidate-full.bin").is_file()
+                (site / "firmware" / "candidates" / "pr-42" / "rfscout-candidate-full.bin").is_file()
+            )
+            self.assertTrue(
+                (site / "firmware" / "candidates" / "pr-52" / "rfscout-candidate-full.bin").is_file()
             )
 
-    def test_candidate_entry_is_optional(self) -> None:
+    def test_candidate_entries_skip_missing_or_invalid_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            entry = candidate_entry(
+            entries = candidate_entries(
                 root / "site",
-                root / "candidate",
-                "",
-                "",
-                "",
-                "",
+                root / "candidates",
+                [
+                    {"pr": 12, "sha": "123456789abc", "run_url": ""},
+                    {"pr": 0, "sha": "bad"},
+                    {"pr": 13, "sha": ""},
+                ],
             )
-            self.assertIsNone(entry)
+            self.assertEqual(entries, [])
 
 
 if __name__ == "__main__":

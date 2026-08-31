@@ -26,23 +26,25 @@ The normal **Build and formatting** workflow:
 4. validates/packages the flash layout; and
 5. retains the candidate bundle as a short-lived GitHub Actions artifact.
 
-Draft pull requests intentionally skip the expensive ESP-IDF candidate build. Mark a PR Ready for Review before expecting a browser-flashable candidate.
+New draft pull requests intentionally skip the expensive ESP-IDF candidate build. Mark a PR Ready for Review when a fresh browser-flashable candidate is needed. If a PR already has a successful candidate for its current head and is later converted back to draft without changing that head, the existing candidate remains eligible for the browser flasher until the PR changes, closes, or the artifact expires.
 
 Candidate artifacts are diagnostic build products, not releases, and are never marked stable automatically.
 
 ## Browser flasher
 
-The **Publish browser flasher** workflow runs after a successful eligible **Build and formatting** workflow, whenever a GitHub Release is published, and when started manually. It assembles a GitHub Pages site from published releases plus the candidate artifact from the triggering build when available.
+The **Publish browser flasher** workflow runs after a successful eligible **Build and formatting** workflow, whenever a GitHub Release is published, when a pull request is closed, and when started manually. Each deployment rebuilds the catalog from published releases plus the current successful candidate build for every open pull request whose artifact is still available.
 
 The static flasher shell uses the repository's `assets/logo.png` branding and RFScout orange/white visual theme. The workflow copies the logo into the Pages artifact so the deployed site remains self-contained alongside the mirrored firmware files and manifests.
 
-For pull-request builds, the candidate is placed first in the firmware selector and labeled with the PR number. Published releases remain selectable below it. Each deployment is self-contained: firmware files and manifests are copied into the Pages artifact rather than fetched by the browser from authenticated Actions endpoints.
+Open pull-request candidates are kept independently under `firmware/candidates/pr-N/` and are labeled with their PR numbers in the selector. A newer build from another PR therefore does not overwrite an existing candidate. Only a successful candidate matching the PR's current head commit is exposed, so a stale build from an earlier revision is not offered after the PR changes. Draft status by itself does not hide an otherwise current, successful candidate; PRs without a current successful artifact, or whose candidate artifacts have expired, are omitted.
 
-Publishing a release therefore refreshes the browser flasher automatically. A manual **Publish browser flasher** dispatch remains available for recovery or maintenance, but normal release publication should not require it.
+Ordinary `main` push artifacts are not exposed as browser-flasher candidates. Once a PR is merged or closed, the next flasher refresh removes its candidate from the catalog; the explicit pull-request-close trigger handles closes that do not otherwise cause a `main` build. Published releases remain durable entries below the current PR candidates.
+
+Each deployment is self-contained: firmware files and manifests are copied into the Pages artifact rather than fetched by the browser from authenticated Actions endpoints. Publishing a release therefore refreshes the browser flasher automatically. A manual **Publish browser flasher** dispatch remains available for recovery or maintenance, but normal release publication should not require it.
 
 GitHub Pages uses **GitHub Actions** as its publishing source. The flasher requires HTTPS and Web Serial; Chromium-based desktop browsers such as Edge and Chrome are the supported path. The workflow has been validated end-to-end on target hardware.
 
-A Pages deployment represents the most recently completed eligible build or release-publication refresh. It is a hardware-validation convenience, not permanent hosting for every historical PR candidate.
+The candidate portion of a Pages deployment represents currently open, testable pull requests rather than permanent hosting for historical PR builds. Published GitHub Releases provide the durable firmware history.
 
 ## Preparing a draft release
 

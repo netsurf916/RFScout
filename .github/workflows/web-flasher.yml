@@ -6,6 +6,9 @@ on:
       - Build and formatting
     types:
       - completed
+  pull_request:
+    types:
+      - closed
   release:
     types:
       - published
@@ -14,6 +17,7 @@ on:
 permissions:
   actions: read
   contents: read
+  pull-requests: read
   pages: write
   id-token: write
 
@@ -26,6 +30,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'release' ||
+      github.event_name == 'pull_request' ||
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
 
@@ -77,46 +82,64 @@ jobs:
               --dir "$destination"
           done
 
-      - name: Download candidate firmware from triggering build
-        if: github.event_name == 'workflow_run'
+      - name: Collect current pull request candidates
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
-          mkdir -p candidate
-          artifact_count=$(gh api \
-            "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" \
-            --jq '[.artifacts[] | select(.name | startswith("rfscout-candidate-"))] | length')
+          mkdir -p candidates
+          printf '[]\n' > candidates.json
 
-          if [[ "$artifact_count" -eq 0 ]]; then
-            echo "No candidate firmware artifact is available for this run."
-            exit 0
-          fi
+          gh api --paginate \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
+            --jq '.[] | [.number, .head.sha] | @tsv' \
+          | while IFS=$'\t' read -r pr sha; do
+              runs=$(gh api --method GET \
+                "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs" \
+                -f event=pull_request \
+                -f status=success \
+                -f head_sha="$sha" \
+                -f per_page=20)
 
-          if [[ "$artifact_count" -ne 1 ]]; then
-            echo "Expected one candidate firmware artifact, found $artifact_count" >&2
-            exit 1
-          fi
+              run=$(jq -c --argjson pr "$pr" \
+                '[.workflow_runs[] | select(any(.pull_requests[]?; .number == $pr))][0] // empty' \
+                <<< "$runs")
+              if [[ -z "$run" ]]; then
+                echo "Skipping PR #$pr: no successful build for current head $sha"
+                continue
+              fi
 
-          gh run download "$RUN_ID" \
-            --pattern 'rfscout-candidate-*' \
-            --dir candidate
+              run_id=$(jq -r '.id' <<< "$run")
+              run_url=$(jq -r '.html_url' <<< "$run")
+              artifact_name=$(gh api \
+                "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts" \
+                --jq '[.artifacts[] | select((.expired | not) and (.name | startswith("rfscout-candidate-")))] | .[0].name // empty')
+              if [[ -z "$artifact_name" ]]; then
+                echo "Skipping PR #$pr: candidate artifact is unavailable or expired"
+                continue
+              fi
+
+              gh run download "$run_id" \
+                --name "$artifact_name" \
+                --dir "candidates/pr-$pr"
+
+              temporary=$(mktemp)
+              jq \
+                --argjson pr "$pr" \
+                --arg sha "$sha" \
+                --arg run_url "$run_url" \
+                '. + [{pr: $pr, sha: $sha, run_url: $run_url}]' \
+                candidates.json > "$temporary"
+              mv "$temporary" candidates.json
+            done
 
       - name: Build firmware catalog
-        env:
-          CANDIDATE_SHA: ${{ github.event.workflow_run.head_sha }}
-          CANDIDATE_EVENT: ${{ github.event.workflow_run.event }}
-          CANDIDATE_PR: ${{ github.event.workflow_run.pull_requests[0].number }}
-          CANDIDATE_RUN_URL: ${{ github.event.workflow_run.html_url }}
         run: |
           python3 tools/build_web_flasher.py \
             --site-dir site \
             --releases-json releases.json \
-            --candidate-dir candidate \
-            --candidate-sha "$CANDIDATE_SHA" \
-            --candidate-event "$CANDIDATE_EVENT" \
-            --candidate-pr "$CANDIDATE_PR" \
-            --candidate-run-url "$CANDIDATE_RUN_URL"
+            --candidate-root candidates \
+            --candidates-json candidates.json
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v6
