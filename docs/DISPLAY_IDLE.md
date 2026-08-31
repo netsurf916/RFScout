@@ -29,7 +29,7 @@ After the screen-off timeout:
 - presentation calls do not transfer the framebuffer over SPI while LCD output is disabled;
 - application acquisition, logging, and Tone/Morse notifications continue normally.
 
-The screen-off state is intentionally not exposed to individual applications.
+The screen-off state is intentionally not exposed to individual applications. Audible alerts do not wake or otherwise reset the display-idle state; only physical user activity does.
 
 ## Wake behavior
 
