@@ -14,54 +14,19 @@
 
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "nvs.h"
 
 #include <stddef.h>
 
-#define DISPLAY_IDLE_NVS_NAMESPACE "display_idle"
-#define DISPLAY_IDLE_NVS_DIM_KEY "dim_s"
-#define DISPLAY_IDLE_NVS_OFF_KEY "off_s"
-#define DISPLAY_IDLE_DEFAULT_DIM_SECONDS 120U
-#define DISPLAY_IDLE_DEFAULT_OFF_SECONDS 600U
 #define DISPLAY_IDLE_DIM_BRIGHTNESS_PERCENT 10U
 
 static const char *TAG = "display_idle";
 static const uint32_t dim_options[] = { 0U, 30U, 60U, 120U, 300U };
 static const uint32_t off_options[] = { 0U, 60U, 120U, 300U, 600U, 1800U };
-static uint32_t dim_timeout_seconds = DISPLAY_IDLE_DEFAULT_DIM_SECONDS;
-static uint32_t off_timeout_seconds = DISPLAY_IDLE_DEFAULT_OFF_SECONDS;
+static uint32_t dim_timeout_seconds = RFSCOUT_DISPLAY_DIM_TIMEOUT_DEFAULT_SECONDS;
+static uint32_t off_timeout_seconds = RFSCOUT_DISPLAY_OFF_TIMEOUT_DEFAULT_SECONDS;
 static int64_t last_activity_us;
 static rfscout_display_idle_state_t idle_state = RFSCOUT_DISPLAY_IDLE_ACTIVE;
 static bool presentation_enabled = true;
-
-static bool option_valid( uint32_t a_value, const uint32_t *a_options, size_t a_count )
-{
-    for( size_t index = 0U; index < a_count; ++index )
-    {
-        if( a_options[ index ] == a_value )
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-static esp_err_t persist_timeout( const char *a_key, uint32_t a_value )
-{
-    nvs_handle_t handle;
-    esp_err_t result = nvs_open( DISPLAY_IDLE_NVS_NAMESPACE, NVS_READWRITE, &handle );
-    if( ESP_OK != result )
-    {
-        return result;
-    }
-    result = nvs_set_u32( handle, a_key, a_value );
-    if( ESP_OK == result )
-    {
-        result = nvs_commit( handle );
-    }
-    nvs_close( handle );
-    return result;
-}
 
 static uint32_t adjusted_option( uint32_t a_current,
                                  int a_direction,
@@ -119,35 +84,11 @@ static void wake_display( int64_t a_now_us )
 
 esp_err_t display_idle_init( void )
 {
-    dim_timeout_seconds = DISPLAY_IDLE_DEFAULT_DIM_SECONDS;
-    off_timeout_seconds = DISPLAY_IDLE_DEFAULT_OFF_SECONDS;
+    dim_timeout_seconds = device_config_display_dim_timeout_seconds();
+    off_timeout_seconds = device_config_display_off_timeout_seconds();
     last_activity_us = esp_timer_get_time();
     idle_state = RFSCOUT_DISPLAY_IDLE_ACTIVE;
     presentation_enabled = true;
-
-    nvs_handle_t handle;
-    esp_err_t result = nvs_open( DISPLAY_IDLE_NVS_NAMESPACE, NVS_READONLY, &handle );
-    if( ESP_ERR_NVS_NOT_FOUND == result )
-    {
-        return ESP_OK;
-    }
-    if( ESP_OK != result )
-    {
-        return result;
-    }
-
-    uint32_t stored = 0U;
-    if( ESP_OK == nvs_get_u32( handle, DISPLAY_IDLE_NVS_DIM_KEY, &stored ) &&
-        option_valid( stored, dim_options, sizeof( dim_options ) / sizeof( dim_options[ 0 ] ) ) )
-    {
-        dim_timeout_seconds = stored;
-    }
-    if( ESP_OK == nvs_get_u32( handle, DISPLAY_IDLE_NVS_OFF_KEY, &stored ) &&
-        option_valid( stored, off_options, sizeof( off_options ) / sizeof( off_options[ 0 ] ) ) )
-    {
-        off_timeout_seconds = stored;
-    }
-    nvs_close( handle );
     return ESP_OK;
 }
 
@@ -221,7 +162,7 @@ esp_err_t display_idle_adjust_dim_timeout( int a_direction )
                                            a_direction,
                                            dim_options,
                                            sizeof( dim_options ) / sizeof( dim_options[ 0 ] ) );
-    const esp_err_t result = persist_timeout( DISPLAY_IDLE_NVS_DIM_KEY, next );
+    const esp_err_t result = device_config_set_display_dim_timeout_seconds( (uint16_t)next );
     if( ESP_OK == result )
     {
         dim_timeout_seconds = next;
@@ -240,7 +181,7 @@ esp_err_t display_idle_adjust_off_timeout( int a_direction )
                                            a_direction,
                                            off_options,
                                            sizeof( off_options ) / sizeof( off_options[ 0 ] ) );
-    const esp_err_t result = persist_timeout( DISPLAY_IDLE_NVS_OFF_KEY, next );
+    const esp_err_t result = device_config_set_display_off_timeout_seconds( (uint16_t)next );
     if( ESP_OK == result )
     {
         off_timeout_seconds = next;
