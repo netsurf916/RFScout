@@ -25,7 +25,7 @@
  */
 esp_err_t display_init( void );
 
-/** @brief Set LCD backlight brightness from 10 to 100 percent. */
+/** @brief Set LCD backlight brightness from 0 (off) through 100 percent. */
 void display_set_brightness( uint8_t a_percent );
 
 /** @brief Mark the composed LCD state dirty even when framebuffer pixels did not change. */
@@ -130,6 +130,8 @@ esp_err_t display_flush( void );
  *
  * Implemented by the shared UI presentation layer so application views can use one periodic
  * presentation entry point. Unchanged frames are skipped by the display dirty-state machinery.
+ * The global display-idle policy may also defer LCD transfer while preserving the dirty logical
+ * framebuffer for presentation on wake.
  *
  * @return ESP_OK when already clean or presentation succeeds; an ESP-IDF error otherwise.
  */
