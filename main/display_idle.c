@@ -63,31 +63,40 @@ static void set_off( void )
     ESP_LOGI( TAG, "display output disabled after inactivity" );
 }
 
-static void wake_display( void )
+static bool wake_display( void )
 {
     const device_config_t *config = device_config_get();
     if( DISPLAY_IDLE_OFF == state )
     {
-        const esp_err_t result = display_set_output_enabled( true );
-        if( ESP_OK != result )
+        const esp_err_t enabled = display_set_output_enabled( true );
+        if( ESP_OK != enabled )
         {
-            ESP_LOGW( TAG, "could not re-enable LCD output: %s", esp_err_to_name( result ) );
+            ESP_LOGW( TAG, "could not re-enable LCD output: %s", esp_err_to_name( enabled ) );
+            return false;
         }
-        else
+
+        /* Keep the backlight dark until the latest application framebuffer has
+           replaced the LCD's pre-timeout contents. */
+        display_invalidate();
+        const esp_err_t presented = display_present();
+        if( ESP_OK != presented )
         {
-            /* Keep the backlight dark until the latest application framebuffer has
-               replaced the LCD's pre-timeout contents. */
-            display_invalidate();
-            const esp_err_t presented = display_present();
-            if( ESP_OK != presented )
+            ESP_LOGW( TAG, "wake presentation failed: %s", esp_err_to_name( presented ) );
+            const esp_err_t disabled = display_set_output_enabled( false );
+            if( ESP_OK != disabled )
             {
-                ESP_LOGW( TAG, "wake presentation failed: %s", esp_err_to_name( presented ) );
+                ESP_LOGW( TAG,
+                          "could not restore LCD-off state after wake failure: %s",
+                          esp_err_to_name( disabled ) );
             }
+            return false;
         }
     }
+
     display_set_brightness( config->brightness_percent );
     state = DISPLAY_IDLE_ACTIVE;
     ESP_LOGI( TAG, "display woke from user activity" );
+    return true;
 }
 
 esp_err_t display_idle_init( void )
@@ -110,7 +119,7 @@ void display_idle_poll( void )
                lock, app navigation, menu, or power-button semantics can see it. */
             platform_consume_wake_input();
             power_consume_wake_input();
-            wake_display();
+            (void)wake_display();
         }
         last_activity_us = now_us;
         return;
