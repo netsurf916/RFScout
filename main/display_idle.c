@@ -32,6 +32,7 @@ typedef enum
 
 static display_idle_state_t state;
 static int64_t last_activity_us;
+static bool off_requested;
 
 static uint8_t dim_brightness( uint8_t a_normal_percent )
 {
@@ -120,6 +121,7 @@ esp_err_t display_idle_init( void )
 {
     state = DISPLAY_IDLE_ACTIVE;
     last_activity_us = esp_timer_get_time();
+    off_requested = false;
     const esp_err_t result = display_exit_low_power();
     display_set_brightness( device_config_get()->brightness_percent );
     return result;
@@ -127,15 +129,11 @@ esp_err_t display_idle_init( void )
 
 esp_err_t display_idle_request_off( void )
 {
-    const esp_err_t result = enter_off_state( "explicit request" );
-    if( ESP_OK == result )
-    {
-        /* Treat the request as the activity boundary for the new off state. A
-           later physical gesture still wakes and is consumed in the normal
-           display-idle path. */
-        last_activity_us = esp_timer_get_time();
-    }
-    return result;
+    /* Queue the transition rather than forcing it synchronously. A short power-button
+       release is still visible to the platform activity detector in this loop; waiting
+       for a quiet poll prevents that same gesture from immediately waking the LCD. */
+    off_requested = true;
+    return ESP_OK;
 }
 
 void display_idle_poll( void )
@@ -152,6 +150,17 @@ void display_idle_poll( void )
             (void)wake_display();
         }
         last_activity_us = now_us;
+        return;
+    }
+
+    if( off_requested )
+    {
+        const esp_err_t result = enter_off_state( "explicit request" );
+        if( ESP_OK == result )
+        {
+            off_requested = false;
+            last_activity_us = now_us;
+        }
         return;
     }
 
