@@ -54,9 +54,9 @@ static void set_dimmed( void )
 static void set_off( void )
 {
     const device_config_t *config = device_config_get();
-    const uint8_t previous_brightness =
-        ( DISPLAY_IDLE_DIMMED == state ) ? dim_brightness( config->brightness_percent )
-                                        : config->brightness_percent;
+    const uint8_t previous_brightness = ( DISPLAY_IDLE_DIMMED == state )
+                                            ? dim_brightness( config->brightness_percent )
+                                            : config->brightness_percent;
 
     display_set_brightness( 0U );
     const esp_err_t result = display_enter_low_power();
@@ -79,7 +79,8 @@ static bool wake_display( void )
         const esp_err_t enabled = display_exit_low_power();
         if( ESP_OK != enabled )
         {
-            ESP_LOGW( TAG, "could not wake LCD from hardware sleep: %s", esp_err_to_name( enabled ) );
+            ESP_LOGW(
+                TAG, "could not wake LCD from hardware sleep: %s", esp_err_to_name( enabled ) );
             return false;
         }
 
