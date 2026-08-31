@@ -50,55 +50,52 @@ def release_entries(a_site_dir: Path, a_releases: list[dict]) -> list[dict]:
     return entries
 
 
-def candidate_entry(
-    a_site_dir: Path,
-    a_candidate_dir: Path,
-    a_sha: str,
-    a_event: str,
-    a_pr: str,
-    a_run_url: str,
-) -> dict | None:
-    manifests = sorted(a_candidate_dir.rglob("manifest.web.json"))
-    if not manifests:
-        return None
+def candidate_entries(
+    a_site_dir: Path, a_candidate_root: Path, a_candidates: list[dict]
+) -> list[dict]:
+    entries: list[dict] = []
+    for candidate in a_candidates:
+        pr = candidate.get("pr")
+        sha = candidate.get("sha")
+        run_url = candidate.get("run_url")
+        if not isinstance(pr, int) or pr <= 0 or not isinstance(sha, str) or not sha:
+            continue
 
-    source = manifests[0].parent
-    destination = a_site_dir / "firmware" / "candidate"
-    if destination.exists():
-        shutil.rmtree(destination)
-    shutil.copytree(source, destination)
+        source_root = a_candidate_root / f"pr-{pr}"
+        manifests = sorted(source_root.rglob("manifest.web.json"))
+        if not manifests:
+            continue
 
-    short_sha = a_sha[:12] if a_sha else "unknown"
-    if a_event == "pull_request" and a_pr:
-        label = f"PR #{a_pr} candidate"
-        identifier = f"pr-{a_pr}-{short_sha}"
-        pr_number: int | None = int(a_pr)
-    else:
-        label = f"{a_event or 'workflow'} candidate {short_sha}"
-        identifier = f"candidate-{short_sha}"
-        pr_number = None
+        source = manifests[0].parent
+        destination = a_site_dir / "firmware" / "candidates" / f"pr-{pr}"
+        if destination.exists():
+            shutil.rmtree(destination)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source, destination)
 
-    return {
-        "id": identifier,
-        "kind": "candidate",
-        "label": label,
-        "version": manifest_version(destination / "manifest.web.json"),
-        "manifest": "firmware/candidate/manifest.web.json",
-        "commit": a_sha or None,
-        "pr": pr_number,
-        "run_url": a_run_url or None,
-    }
+        short_sha = sha[:12]
+        entries.append(
+            {
+                "id": f"pr-{pr}-{short_sha}",
+                "kind": "candidate",
+                "label": f"PR #{pr} candidate",
+                "version": manifest_version(destination / "manifest.web.json"),
+                "manifest": f"firmware/candidates/pr-{pr}/manifest.web.json",
+                "commit": sha,
+                "pr": pr,
+                "run_url": run_url if isinstance(run_url, str) and run_url else None,
+            }
+        )
+
+    return sorted(entries, key=lambda entry: entry["pr"], reverse=True)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--site-dir", type=Path, required=True)
     parser.add_argument("--releases-json", type=Path, required=True)
-    parser.add_argument("--candidate-dir", type=Path, required=True)
-    parser.add_argument("--candidate-sha", default="")
-    parser.add_argument("--candidate-event", default="")
-    parser.add_argument("--candidate-pr", default="")
-    parser.add_argument("--candidate-run-url", default="")
+    parser.add_argument("--candidate-root", type=Path, required=True)
+    parser.add_argument("--candidates-json", type=Path, required=True)
     return parser.parse_args()
 
 
@@ -108,17 +105,12 @@ def main() -> int:
     if not isinstance(releases, list):
         raise ValueError("release metadata must be a JSON array")
 
-    entries = release_entries(args.site_dir, releases)
-    candidate = candidate_entry(
-        args.site_dir,
-        args.candidate_dir,
-        args.candidate_sha,
-        args.candidate_event,
-        args.candidate_pr,
-        args.candidate_run_url,
-    )
-    if candidate is not None:
-        entries.insert(0, candidate)
+    candidates = load_json(args.candidates_json)
+    if not isinstance(candidates, list):
+        raise ValueError("candidate metadata must be a JSON array")
+
+    entries = candidate_entries(args.site_dir, args.candidate_root, candidates)
+    entries.extend(release_entries(args.site_dir, releases))
 
     write_json(
         args.site_dir / "catalog.json",
