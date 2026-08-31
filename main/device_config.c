@@ -93,11 +93,27 @@ timezone_default( size_t a_index, const char *a_name, const char *a_label, const
     copy_string( zone->posix, sizeof( zone->posix ), a_posix );
 }
 
+/** @brief Return whether one configured dim timeout is a supported UI preset. */
+static bool display_dim_timeout_valid( uint16_t a_seconds )
+{
+    return ( 0U == a_seconds ) || ( 30U == a_seconds ) || ( 60U == a_seconds ) ||
+           ( 120U == a_seconds ) || ( 300U == a_seconds );
+}
+
+/** @brief Return whether one configured display-off timeout is a supported UI preset. */
+static bool display_off_timeout_valid( uint16_t a_seconds )
+{
+    return ( 0U == a_seconds ) || ( 60U == a_seconds ) || ( 120U == a_seconds ) ||
+           ( 300U == a_seconds ) || ( 600U == a_seconds ) || ( 1800U == a_seconds );
+}
+
 /** @brief Restore all compiled configuration defaults. */
 static void set_defaults( void )
 {
     memset( &config, 0, sizeof( config ) );
     config.brightness_percent = CONFIG_BRIGHTNESS_DEFAULT;
+    config.display_dim_timeout_seconds = RFSCOUT_DISPLAY_DIM_TIMEOUT_DEFAULT_SECONDS;
+    config.display_off_timeout_seconds = RFSCOUT_DISPLAY_OFF_TIMEOUT_DEFAULT_SECONDS;
     config.startup_app = RFSCOUT_APP_DEVICE;
     config.logging_enabled = true;
     config.clock_24h = false;
@@ -283,6 +299,24 @@ static void load_display( const cJSON *a_root )
     {
         config.brightness_percent = (uint8_t)brightness->valueint;
     }
+
+    const cJSON *dim_after = cJSON_GetObjectItemCaseSensitive( display, "dim_after_seconds" );
+    if( cJSON_IsNumber( dim_after ) && ( dim_after->valueint >= 0 ) &&
+        ( dim_after->valueint <= UINT16_MAX ) &&
+        display_dim_timeout_valid( (uint16_t)dim_after->valueint ) )
+    {
+        config.display_dim_timeout_seconds = (uint16_t)dim_after->valueint;
+    }
+
+    const cJSON *screen_off =
+        cJSON_GetObjectItemCaseSensitive( display, "screen_off_after_seconds" );
+    if( cJSON_IsNumber( screen_off ) && ( screen_off->valueint >= 0 ) &&
+        ( screen_off->valueint <= UINT16_MAX ) &&
+        display_off_timeout_valid( (uint16_t)screen_off->valueint ) )
+    {
+        config.display_off_timeout_seconds = (uint16_t)screen_off->valueint;
+    }
+
     config.clock_24h = json_bool( display, "clock_24h", config.clock_24h );
     const cJSON *theme = cJSON_GetObjectItemCaseSensitive( display, "theme" );
     if( cJSON_IsString( theme ) && NULL != theme->valuestring )
@@ -601,6 +635,9 @@ static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_tim
 
     cJSON *display = cJSON_AddObjectToObject( root, "display" );
     cJSON_AddNumberToObject( display, "brightness", config.brightness_percent );
+    cJSON_AddNumberToObject( display, "dim_after_seconds", config.display_dim_timeout_seconds );
+    cJSON_AddNumberToObject(
+        display, "screen_off_after_seconds", config.display_off_timeout_seconds );
     cJSON_AddBoolToObject( display, "clock_24h", config.clock_24h );
     cJSON_AddStringToObject( display, "theme", ui_theme_config_name( config.theme ) );
 
@@ -936,6 +973,48 @@ esp_err_t device_config_set_brightness( uint8_t a_percent )
     if( config.brightness_percent != a_percent )
     {
         config.brightness_percent = a_percent;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+uint16_t device_config_display_dim_timeout_seconds( void )
+{
+    return display_dim_timeout_valid( config.display_dim_timeout_seconds )
+               ? config.display_dim_timeout_seconds
+               : RFSCOUT_DISPLAY_DIM_TIMEOUT_DEFAULT_SECONDS;
+}
+
+esp_err_t device_config_set_display_dim_timeout_seconds( uint16_t a_seconds )
+{
+    if( !display_dim_timeout_valid( a_seconds ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( config.display_dim_timeout_seconds != a_seconds )
+    {
+        config.display_dim_timeout_seconds = a_seconds;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+uint16_t device_config_display_off_timeout_seconds( void )
+{
+    return display_off_timeout_valid( config.display_off_timeout_seconds )
+               ? config.display_off_timeout_seconds
+               : RFSCOUT_DISPLAY_OFF_TIMEOUT_DEFAULT_SECONDS;
+}
+
+esp_err_t device_config_set_display_off_timeout_seconds( uint16_t a_seconds )
+{
+    if( !display_off_timeout_valid( a_seconds ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( config.display_off_timeout_seconds != a_seconds )
+    {
+        config.display_off_timeout_seconds = a_seconds;
         config_dirty = true;
     }
     return ESP_OK;
