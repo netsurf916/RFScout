@@ -225,11 +225,7 @@ void app_main( void )
 
     ESP_ERROR_CHECK( app_manager_init() );
     display_set_brightness( device_config_get()->brightness_percent );
-    result = display_idle_init();
-    if( ESP_OK != result )
-    {
-        ESP_LOGW( TAG, "display idle persistence unavailable; using defaults: %s", esp_err_to_name( result ) );
-    }
+    ESP_ERROR_CHECK( display_idle_init() );
 
     if( storage_is_available() && device_config_get()->logging_enabled )
     {
@@ -251,8 +247,10 @@ void app_main( void )
 
     while( true )
     {
-        platform_poll();
+        /* Physical activity wakes the display and consumes the complete wake gesture before
+         * semantic platform/input-lock or power-button handling can act on it. */
         display_idle_poll();
+        platform_poll();
         power_poll();
         battery_poll();
         observation_store_housekeeping();
