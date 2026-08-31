@@ -29,6 +29,8 @@
 #define RFSCOUT_OBSERVATION_TIMEOUT_MAX_SECONDS 300U
 #define RFSCOUT_OBSERVATION_TIMEOUT_STEP_SECONDS 10U
 #define RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS 60U
+#define RFSCOUT_DISPLAY_DIM_TIMEOUT_DEFAULT_SECONDS 120U
+#define RFSCOUT_DISPLAY_OFF_TIMEOUT_DEFAULT_SECONDS 600U
 
 typedef struct
 {
@@ -40,6 +42,8 @@ typedef struct
 typedef struct
 {
     uint8_t brightness_percent;
+    uint16_t display_dim_timeout_seconds;
+    uint16_t display_off_timeout_seconds;
     bool apps_enabled[ RFSCOUT_APP_COUNT ];
     rfscout_app_id_t startup_app;
     bool logging_enabled;
@@ -84,6 +88,15 @@ esp_err_t device_config_set_logging_enabled( bool a_enabled );
 
 /** @brief Change display brightness percentage. */
 esp_err_t device_config_set_brightness( uint8_t a_percent );
+
+/** @brief Return the global inactivity interval before display dimming, or zero when disabled. */
+uint16_t device_config_display_dim_timeout_seconds( void );
+/** @brief Change the global display-dim timeout to one of the supported preset values. */
+esp_err_t device_config_set_display_dim_timeout_seconds( uint16_t a_seconds );
+/** @brief Return the global inactivity interval before display blanking, or zero when disabled. */
+uint16_t device_config_display_off_timeout_seconds( void );
+/** @brief Change the global display-off timeout to one of the supported preset values. */
+esp_err_t device_config_set_display_off_timeout_seconds( uint16_t a_seconds );
 
 /** @brief Change 12/24-hour clock presentation. */
 esp_err_t device_config_set_clock_24h( bool a_enabled );
