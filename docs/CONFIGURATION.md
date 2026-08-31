@@ -13,6 +13,8 @@ A representative schema-v2 configuration is:
   "version": 2,
   "display": {
     "brightness": 70,
+    "dim_after_seconds": 120,
+    "screen_off_after_seconds": 600,
     "clock_24h": false,
     "theme": "indoor"
   },
@@ -139,6 +141,19 @@ Current themes are:
 
 Discipline does not disable explicitly requested application content audio such as Recorder playback. Theme sound policy is environmental policy layered on top of app-native behavior and user notification preferences; it does not overwrite those preferences.
 
+## Display idle configuration
+
+Display dimming and blanking are global presentation settings under the canonical `display` object. They do not change the active application or stop background processing.
+
+- `dim_after_seconds` defaults to `120` and accepts `0`, `30`, `60`, `120`, or `300`. Zero disables automatic dimming.
+- `screen_off_after_seconds` defaults to `600` and accepts `0`, `60`, `120`, `300`, `600`, or `1800`. Zero disables automatic screen blanking.
+
+The Device Settings UI presents these values as **Off**, seconds, or human-readable minute values. When dimmed, RFScout reduces the backlight to 10% but keeps normal LCD presentation active. When screen-off is reached, the backlight is disabled and LCD GRAM transfers are deferred while applications continue updating the logical framebuffer.
+
+Any physical user input wakes a dimmed or blank display and is consumed as a wake-only gesture. Wake detection occurs before input-lock, application, and power-button semantics, so the same gesture cannot also navigate, select, toggle input lock, enter deep sleep, or start physical power-off. Input lock does not prevent display wake. Audio alerts continue normally and do not themselves wake the screen.
+
+See [Display idle behavior](DISPLAY_IDLE.md) for the presentation and wake-consumption contract.
+
 ## WiFi / BT retention configuration
 
 WiFi / BT owns three independent retention settings under `apps.wifi_bt.retention`:
@@ -172,7 +187,7 @@ Missing or invalid recognized fields retain compiled defaults. Home/Device is al
 
 A disabled or unavailable configured startup target falls back to Home for the current boot without rewriting the saved preference. Thermal additionally requires a detected MLX90640.
 
-The compiled global notification mode is `OFF`. Notification volume defaults to 50. Each application notification category has a compiled Morse-character default; valid one-character saved values override defaults individually. Wi-Fi, Bluetooth, and surveillance retention each default to 60 seconds.
+The compiled global notification mode is `OFF`. Notification volume defaults to 50. Each application notification category has a compiled Morse-character default; valid one-character saved values override defaults individually. Wi-Fi, Bluetooth, and surveillance retention each default to 60 seconds. Display dimming defaults to 2 minutes and screen blanking defaults to 10 minutes.
 
 ## Home and Device Settings
 
@@ -181,6 +196,8 @@ Home is the pass-through landing state of the non-disableable Device application
 Current Device Settings include:
 
 - LCD brightness;
+- display dim timeout;
+- display screen-off timeout;
 - display theme (Indoor, Outdoor, Night, Discipline);
 - 12/24-hour clock format;
 - timezone selection;
