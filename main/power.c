@@ -123,7 +123,8 @@ static void restore_display_after_failed_power_off( void )
     const esp_err_t presented = display_present();
     if( ESP_OK != presented )
     {
-        ESP_LOGE( TAG, "could not refresh LCD after failed power off: %s", esp_err_to_name( presented ) );
+        ESP_LOGE(
+            TAG, "could not refresh LCD after failed power off: %s", esp_err_to_name( presented ) );
         return;
     }
     display_set_brightness( device_config_get()->brightness_percent );
