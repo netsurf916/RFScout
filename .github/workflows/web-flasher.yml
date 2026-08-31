@@ -89,11 +89,10 @@ jobs:
           mkdir -p candidates
           printf '[]\n' > candidates.json
 
-          gh pr list \
-            --state open \
-            --limit 100 \
-            --json number,headRefOid \
-            --jq '.[] | [.number, .headRefOid] | @tsv' \
+          gh api --paginate \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
+            --jq '.[] | [.number, .head.sha] | @tsv' \
           | while IFS=$'\t' read -r pr sha; do
               runs=$(gh api --method GET \
                 "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs" \
