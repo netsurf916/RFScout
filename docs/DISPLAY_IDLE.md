@@ -25,6 +25,7 @@ After the screen-off timeout:
 
 - the backlight is set to zero;
 - ST7789 display output is disabled;
+- the ST7789 enters its hardware sleep-in state, stopping panel scanning/oscillator activity while retaining display memory;
 - applications continue rendering into RFScout's normal framebuffer;
 - presentation calls do not transfer the framebuffer over SPI while LCD output is disabled;
 - application acquisition, logging, and Tone/Morse notifications continue normally.
@@ -45,8 +46,10 @@ This means the first wake gesture does **not**:
 
 The global input lock does not block display wake detection. A locked device still wakes from encoder movement, the center button, or the user/power button; ordinary lock rules apply again only to subsequent input after the display is awake.
 
-When waking from screen-off, RFScout re-enables the ST7789 while the backlight remains dark, presents the latest framebuffer, and only then restores the configured brightness. This avoids briefly showing stale LCD contents from before the timeout.
+When waking from screen-off, RFScout sends ST7789 sleep-out and waits for the panel driver's required settling interval, re-enables display output while the backlight remains dark, presents the latest framebuffer, and only then restores the configured brightness. This avoids briefly showing stale LCD contents from before the timeout.
 
 ## Relationship to system sleep
 
-Automatic screen-off is not ESP32 deep sleep and does not use the physical power-off path. The existing user-button sleep and hold-to-power-off gestures remain separate explicit power controls and operate normally while the display is active.
+Automatic screen-off is not ESP32 deep sleep and does not use the physical power-off path. Applications therefore continue running while only the LCD is asleep.
+
+The explicit user-button deep-sleep and hold-to-power-off paths use the same LCD low-power primitive before the ESP32 sleeps or the PMU is asked to remove system power: the backlight is darkened, display output is disabled, and the ST7789 is placed into hardware sleep. If a physical power-off request fails, RFScout wakes and refreshes the panel before restoring the configured backlight brightness.

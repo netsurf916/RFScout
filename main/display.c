@@ -34,6 +34,7 @@ static uint16_t *framebuffer;
 static uint16_t *dma_buffer;
 static bool display_dirty = true;
 static bool output_enabled;
+static bool low_power_active;
 
 /** @brief Compact 5x7 printable ASCII font used by the RFScout LCD UI. */
 // clang-format off
@@ -103,6 +104,68 @@ esp_err_t display_set_output_enabled( bool a_enabled )
 bool display_output_enabled( void )
 {
     return output_enabled;
+}
+
+esp_err_t display_enter_low_power( void )
+{
+    if( NULL == panel )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if( low_power_active )
+    {
+        return ESP_OK;
+    }
+
+    const esp_err_t output_result = display_set_output_enabled( false );
+    if( ESP_OK != output_result )
+    {
+        return output_result;
+    }
+
+    const esp_err_t sleep_result = esp_lcd_panel_disp_sleep( panel, true );
+    if( ESP_OK != sleep_result )
+    {
+        (void)display_set_output_enabled( true );
+        return sleep_result;
+    }
+
+    low_power_active = true;
+    return ESP_OK;
+}
+
+esp_err_t display_exit_low_power( void )
+{
+    if( NULL == panel )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if( !low_power_active )
+    {
+        return display_set_output_enabled( true );
+    }
+
+    const esp_err_t sleep_result = esp_lcd_panel_disp_sleep( panel, false );
+    if( ESP_OK != sleep_result )
+    {
+        return sleep_result;
+    }
+
+    const esp_err_t output_result = display_set_output_enabled( true );
+    if( ESP_OK != output_result )
+    {
+        (void)esp_lcd_panel_disp_sleep( panel, true );
+        return output_result;
+    }
+
+    low_power_active = false;
+    display_invalidate();
+    return ESP_OK;
+}
+
+bool display_low_power_active( void )
+{
+    return low_power_active;
 }
 
 void display_invalidate( void )
@@ -188,6 +251,7 @@ esp_err_t display_init( void )
 {
     display_dirty = true;
     output_enabled = false;
+    low_power_active = false;
 
     const esp_err_t bus_result = board_spi_init();
     if( ESP_OK != bus_result )

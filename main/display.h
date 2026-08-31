@@ -34,6 +34,25 @@ esp_err_t display_set_output_enabled( bool a_enabled );
 /** @brief Return whether LCD output transfers are currently enabled. */
 bool display_output_enabled( void );
 
+/**
+ * @brief Disable ST7789 output and enter the controller's hardware sleep mode.
+ *
+ * The application framebuffer remains allocated and may continue changing while the panel sleeps.
+ * Callers should darken the external backlight before entering this state.
+ */
+esp_err_t display_enter_low_power( void );
+
+/**
+ * @brief Exit ST7789 hardware sleep and re-enable display output.
+ *
+ * The ST7789 driver observes the required sleep-out settling interval before this call returns. The
+ * framebuffer is invalidated so the caller can refresh panel RAM before restoring the backlight.
+ */
+esp_err_t display_exit_low_power( void );
+
+/** @brief Return whether the ST7789 controller is currently in hardware sleep mode. */
+bool display_low_power_active( void );
+
 /** @brief Mark the composed LCD state dirty even when framebuffer pixels did not change. */
 void display_invalidate( void );
 

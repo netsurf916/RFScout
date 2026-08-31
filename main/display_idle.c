@@ -53,16 +53,22 @@ static void set_dimmed( void )
 
 static void set_off( void )
 {
-    const esp_err_t result = display_set_output_enabled( false );
+    const device_config_t *config = device_config_get();
+    const uint8_t previous_brightness = ( DISPLAY_IDLE_DIMMED == state )
+                                            ? dim_brightness( config->brightness_percent )
+                                            : config->brightness_percent;
+
+    display_set_brightness( 0U );
+    const esp_err_t result = display_enter_low_power();
     if( ESP_OK != result )
     {
-        ESP_LOGW( TAG, "could not disable LCD output: %s", esp_err_to_name( result ) );
+        display_set_brightness( previous_brightness );
+        ESP_LOGW( TAG, "could not put LCD into hardware sleep: %s", esp_err_to_name( result ) );
         return;
     }
 
-    display_set_brightness( 0U );
     state = DISPLAY_IDLE_OFF;
-    ESP_LOGI( TAG, "display output disabled after inactivity" );
+    ESP_LOGI( TAG, "display entered ST7789 hardware sleep after inactivity" );
 }
 
 static bool wake_display( void )
@@ -70,10 +76,11 @@ static bool wake_display( void )
     const device_config_t *config = device_config_get();
     if( DISPLAY_IDLE_OFF == state )
     {
-        const esp_err_t enabled = display_set_output_enabled( true );
+        const esp_err_t enabled = display_exit_low_power();
         if( ESP_OK != enabled )
         {
-            ESP_LOGW( TAG, "could not re-enable LCD output: %s", esp_err_to_name( enabled ) );
+            ESP_LOGW(
+                TAG, "could not wake LCD from hardware sleep: %s", esp_err_to_name( enabled ) );
             return false;
         }
 
@@ -84,12 +91,12 @@ static bool wake_display( void )
         if( ESP_OK != presented )
         {
             ESP_LOGW( TAG, "wake presentation failed: %s", esp_err_to_name( presented ) );
-            const esp_err_t disabled = display_set_output_enabled( false );
-            if( ESP_OK != disabled )
+            const esp_err_t sleeping = display_enter_low_power();
+            if( ESP_OK != sleeping )
             {
                 ESP_LOGW( TAG,
-                          "could not restore LCD-off state after wake failure: %s",
-                          esp_err_to_name( disabled ) );
+                          "could not restore LCD sleep state after wake failure: %s",
+                          esp_err_to_name( sleeping ) );
             }
             return false;
         }
@@ -105,7 +112,7 @@ esp_err_t display_idle_init( void )
 {
     state = DISPLAY_IDLE_ACTIVE;
     last_activity_us = esp_timer_get_time();
-    const esp_err_t result = display_set_output_enabled( true );
+    const esp_err_t result = display_exit_low_power();
     display_set_brightness( device_config_get()->brightness_percent );
     return result;
 }

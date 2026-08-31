@@ -98,6 +98,38 @@ static bool prepare_storage_for_power_state( bool a_checkpoint_time )
     return true;
 }
 
+/** @brief Put the LCD into its lowest software-controlled power state. */
+static void prepare_display_for_power_state( void )
+{
+    display_set_brightness( 0U );
+    const esp_err_t result = display_enter_low_power();
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG, "could not put LCD into hardware sleep: %s", esp_err_to_name( result ) );
+    }
+}
+
+/** @brief Restore the display if a physical power-off request fails. */
+static void restore_display_after_failed_power_off( void )
+{
+    const esp_err_t result = display_exit_low_power();
+    if( ESP_OK != result )
+    {
+        ESP_LOGE( TAG, "could not wake LCD after failed power off: %s", esp_err_to_name( result ) );
+        return;
+    }
+
+    display_invalidate();
+    const esp_err_t presented = display_present();
+    if( ESP_OK != presented )
+    {
+        ESP_LOGE(
+            TAG, "could not refresh LCD after failed power off: %s", esp_err_to_name( presented ) );
+        return;
+    }
+    display_set_brightness( device_config_get()->brightness_percent );
+}
+
 /** @brief Restore SD state after a failed physical power-off request. */
 static void restore_storage_after_failed_power_off( void )
 {
@@ -128,6 +160,7 @@ static void enter_sleep( void )
     }
 
     session_state_store( app_manager_current(), platform_input_locked() );
+    prepare_display_for_power_state();
 
     ESP_ERROR_CHECK( esp_sleep_enable_ext1_wakeup_io( 1ULL << RFSCOUT_BOARD_USER_KEY_PIN,
                                                       ESP_EXT1_WAKEUP_ANY_LOW ) );
@@ -240,11 +273,13 @@ void power_poll( void )
             return;
         }
 
+        prepare_display_for_power_state();
         const esp_err_t result = battery_shutdown();
         if( ESP_OK != result )
         {
             ESP_LOGE( TAG, "power off failed: %s", esp_err_to_name( result ) );
             restore_storage_after_failed_power_off();
+            restore_display_after_failed_power_off();
             set_power_status( POWER_HOLD_IDLE, 0U );
         }
         return;
