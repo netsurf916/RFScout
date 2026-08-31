@@ -34,6 +34,7 @@ static uint16_t *framebuffer;
 static uint16_t *dma_buffer;
 static bool display_dirty = true;
 static bool output_enabled;
+static bool low_power_active;
 
 /** @brief Compact 5x7 printable ASCII font used by the RFScout LCD UI. */
 // clang-format off
@@ -41,7 +42,7 @@ static const uint8_t font[ 95 ][ 5 ] =
 {
     {0,0,0,0,0},{0,0,95,0,0},{0,7,0,7,0},{20,127,20,127,20},{36,42,127,42,18},{35,19,8,100,98},{54,73,85,34,80},{0,5,3,0,0},{0,28,34,65,0},{0,65,34,28,0},{20,8,62,8,20},{8,8,62,8,8},{0,80,48,0,0},{8,8,8,8,8},{0,96,96,0,0},{32,16,8,4,2},
     {62,81,73,69,62},{0,66,127,64,0},{66,97,81,73,70},{33,65,69,75,49},{24,20,18,127,16},{39,69,69,69,57},{60,74,73,73,48},{1,113,9,5,3},{54,73,73,73,54},{6,73,73,41,30},{0,54,54,0,0},{0,86,54,0,0},{8,20,34,65,0},{20,20,20,20,20},{0,65,34,20,8},{2,1,81,9,6},{50,73,121,65,62},
-    {126,17,17,17,126},{127,73,73,73,54},{62,65,65,65,34},{127,65,65,34,28},{127,73,73,73,65},{127,9,9,9,1},{62,65,73,73,122},{127,8,8,8,127},{0,65,127,65,0},{32,64,65,63,1},{127,8,20,34,65},{127,64,64,64,64},{127,2,12,2,127},{127,4,8,16,127},{62,65,65,65,62},{127,9,9,9,6},{62,65,81,33,94},{127,9,25,41,70},{70,73,73,73,49},{1,1,127,1,1},{63,64,64,64,63},{31,32,64,32,31},{63,64,56,64,63},{99,20,8,20,99},{7,8,112,8,7},{97,81,73,69,67},{0,127,65,65,0},{2,4,8,16,32},{0,65,65,127,0},{4,2,1,2,4},{64,64,64,64,64},{0,1,2,4,0},
+    {126,17,17,17,126},{127,73,73,73,54},{62,65,65,65,34},{127,65,65,34,28},{127,73,73,73,65},{127,9,9,9,1},{62,65,73,73,122},{127,8,8,8,127},{0,65,127,65,0},{32,64,65,63,1},{127,8,20,34,65},{127,64,64,64,64},{127,2,12,2,127},{127,4,8,16,127},{62,65,65,65,62},{127,9,25,41,70},{70,73,73,73,49},{1,1,127,1,1},{63,64,64,64,63},{31,32,64,32,31},{63,64,56,64,63},{99,20,8,20,99},{7,8,112,8,7},{97,81,73,69,67},{0,127,65,65,0},{2,4,8,16,32},{0,65,65,127,0},{4,2,1,2,4},{64,64,64,64,64},{0,1,2,4,0},
     {32,84,84,84,120},{127,72,68,68,56},{56,68,68,68,32},{56,68,68,72,127},{56,84,84,84,24},{8,126,9,1,2},{12,82,82,82,62},{127,8,4,4,120},{0,68,125,64,0},{32,64,68,61,0},{127,16,40,68,0},{0,65,127,64,0},{124,4,24,4,120},{124,8,4,4,120},{56,68,68,68,56},{124,20,20,20,8},{8,20,20,24,124},{124,8,4,4,8},{72,84,84,84,32},{4,63,68,64,32},{60,64,64,32,124},{28,32,64,32,28},{60,64,48,64,60},{68,40,16,40,68},{12,80,80,80,60},{68,100,84,76,68},{0,8,54,65,0},{0,0,127,0,0},{0,65,54,8,0},{8,4,8,16,8}
 };
 // clang-format on
@@ -103,6 +104,68 @@ esp_err_t display_set_output_enabled( bool a_enabled )
 bool display_output_enabled( void )
 {
     return output_enabled;
+}
+
+esp_err_t display_enter_low_power( void )
+{
+    if( NULL == panel )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if( low_power_active )
+    {
+        return ESP_OK;
+    }
+
+    const esp_err_t output_result = display_set_output_enabled( false );
+    if( ESP_OK != output_result )
+    {
+        return output_result;
+    }
+
+    const esp_err_t sleep_result = esp_lcd_panel_disp_sleep( panel, true );
+    if( ESP_OK != sleep_result )
+    {
+        (void)display_set_output_enabled( true );
+        return sleep_result;
+    }
+
+    low_power_active = true;
+    return ESP_OK;
+}
+
+esp_err_t display_exit_low_power( void )
+{
+    if( NULL == panel )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if( !low_power_active )
+    {
+        return display_set_output_enabled( true );
+    }
+
+    const esp_err_t sleep_result = esp_lcd_panel_disp_sleep( panel, false );
+    if( ESP_OK != sleep_result )
+    {
+        return sleep_result;
+    }
+
+    const esp_err_t output_result = display_set_output_enabled( true );
+    if( ESP_OK != output_result )
+    {
+        (void)esp_lcd_panel_disp_sleep( panel, true );
+        return output_result;
+    }
+
+    low_power_active = false;
+    display_invalidate();
+    return ESP_OK;
+}
+
+bool display_low_power_active( void )
+{
+    return low_power_active;
 }
 
 void display_invalidate( void )
@@ -188,6 +251,7 @@ esp_err_t display_init( void )
 {
     display_dirty = true;
     output_enabled = false;
+    low_power_active = false;
 
     const esp_err_t bus_result = board_spi_init();
     if( ESP_OK != bus_result )
