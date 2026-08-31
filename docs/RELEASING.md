@@ -32,15 +32,17 @@ Candidate artifacts are diagnostic build products, not releases, and are never m
 
 ## Browser flasher
 
-The **Publish browser flasher** workflow runs after a successful eligible **Build and formatting** workflow and can also be started manually. It assembles a GitHub Pages site from published releases plus the candidate artifact from the triggering build when available.
+The **Publish browser flasher** workflow runs after a successful eligible **Build and formatting** workflow, whenever a GitHub Release is published, and when started manually. It assembles a GitHub Pages site from published releases plus the candidate artifact from the triggering build when available.
 
 The static flasher shell uses the repository's `assets/logo.png` branding and RFScout orange/white visual theme. The workflow copies the logo into the Pages artifact so the deployed site remains self-contained alongside the mirrored firmware files and manifests.
 
 For pull-request builds, the candidate is placed first in the firmware selector and labeled with the PR number. Published releases remain selectable below it. Each deployment is self-contained: firmware files and manifests are copied into the Pages artifact rather than fetched by the browser from authenticated Actions endpoints.
 
+Publishing a release therefore refreshes the browser flasher automatically. A manual **Publish browser flasher** dispatch remains available for recovery or maintenance, but normal release publication should not require it.
+
 GitHub Pages uses **GitHub Actions** as its publishing source. The flasher requires HTTPS and Web Serial; Chromium-based desktop browsers such as Edge and Chrome are the supported path. The workflow has been validated end-to-end on target hardware.
 
-A Pages deployment represents the most recently completed eligible build. It is a hardware-validation convenience, not permanent hosting for every historical PR candidate.
+A Pages deployment represents the most recently completed eligible build or release-publication refresh. It is a hardware-validation convenience, not permanent hosting for every historical PR candidate.
 
 ## Preparing a draft release
 
@@ -52,7 +54,9 @@ From the repository **Actions** page, select **Prepare firmware release**, choos
 
 The workflow resolves the source ref to an immutable commit and rejects requests when the version is malformed/duplicate, the source is not part of `main`, or the source contains no commits after the latest published release.
 
-It repeats formatting, packaging tests, the ESP-IDF build, and bundle generation at that exact commit. Only after those jobs pass does it create a **draft** GitHub Release and its tag. The workflow never publishes the draft automatically.
+It repeats formatting, packaging tests, the ESP-IDF build, and bundle generation at that exact commit. Only after those jobs pass does it create the semantic version tag at the validated commit and then create the **draft** GitHub Release against that existing tag. This explicit ordering prevents GitHub from assigning a temporary `untagged-*` release identity while a release is under review.
+
+If draft creation itself fails after the workflow has pushed the tag, the workflow removes that newly-created tag before exiting. A successfully prepared draft intentionally retains its semantic tag while release notes and hardware validation are completed. The workflow never publishes the draft automatically.
 
 ## Publishing
 
@@ -64,7 +68,7 @@ Before publishing a draft:
 4. record hardware validation in the release notes; and
 5. publish the release deliberately through GitHub.
 
-A subsequent browser-flasher deployment discovers the published release assets; it does not rebuild the firmware during publication/deployment.
+Publishing preserves the semantic tag created during draft preparation. The release publication event automatically starts **Publish browser flasher**, which discovers the now-published release assets and republishes the firmware catalog. The flasher does not rebuild firmware during publication/deployment.
 
 ## Installation behavior
 

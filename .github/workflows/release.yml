@@ -163,13 +163,18 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+          fetch-depth: 0
+
       - name: Download verified release bundle
         uses: actions/download-artifact@v8
         with:
           name: rfscout-${{ needs.validate.outputs.version }}
           path: dist
 
-      - name: Create draft release
+      - name: Create release tag and draft release
         env:
           GH_TOKEN: ${{ github.token }}
           COMMIT: ${{ needs.validate.outputs.commit }}
@@ -180,11 +185,43 @@ jobs:
           if [[ "$PRERELEASE" == "true" ]]; then
             prerelease+=(--prerelease)
           fi
+
+          cleanup_tag=false
+          cleanup() {
+            if [[ "$cleanup_tag" != "true" ]]; then
+              return
+            fi
+
+            # gh creates the draft and uploads assets in separate API calls. If
+            # the draft already exists, preserve its semantic tag even when a
+            # later asset upload fails so the partial release remains coherent.
+            if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "Preserving $VERSION because a GitHub Release already exists"
+              return
+            fi
+
+            # Delete only the exact tag this job created. The lease makes the
+            # ownership check and deletion atomic with respect to remote changes.
+            git push --force-with-lease="refs/tags/$VERSION:$COMMIT" \
+              origin ":refs/tags/$VERSION" || true
+          }
+          trap cleanup EXIT
+
+          git tag "$VERSION" "$COMMIT"
+          # Create the remote tag only if it is still absent. This closes the race
+          # between validation and publication without taking ownership of a tag
+          # another maintainer may have created in the meantime.
+          git push --force-with-lease="refs/tags/$VERSION:" origin "refs/tags/$VERSION"
+          cleanup_tag=true
+
           gh release create "$VERSION" dist/* \
             --repo "$GITHUB_REPOSITORY" \
-            --target "$COMMIT" \
+            --verify-tag \
             --title "RFScout $VERSION" \
             --draft \
             --fail-on-no-commits \
             --generate-notes \
             "${prerelease[@]}"
+
+          cleanup_tag=false
+          trap - EXIT
