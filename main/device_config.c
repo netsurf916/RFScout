@@ -273,9 +273,8 @@ static void load_apps( const cJSON *a_root )
     }
 }
 
-static uint16_t json_display_timeout_seconds( const cJSON *a_parent,
-                                              const char *a_name,
-                                              uint16_t a_default )
+static uint16_t
+json_display_timeout_seconds( const cJSON *a_parent, const char *a_name, uint16_t a_default )
 {
     const cJSON *item = cJSON_GetObjectItemCaseSensitive( a_parent, a_name );
     if( !cJSON_IsNumber( item ) || item->valueint < 0 ||
@@ -629,10 +628,8 @@ static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_tim
 
     cJSON *display = cJSON_AddObjectToObject( root, "display" );
     cJSON_AddNumberToObject( display, "brightness", config.brightness_percent );
-    cJSON_AddNumberToObject(
-        display, "dim_timeout_seconds", config.display_dim_timeout_seconds );
-    cJSON_AddNumberToObject(
-        display, "off_timeout_seconds", config.display_off_timeout_seconds );
+    cJSON_AddNumberToObject( display, "dim_timeout_seconds", config.display_dim_timeout_seconds );
+    cJSON_AddNumberToObject( display, "off_timeout_seconds", config.display_off_timeout_seconds );
     cJSON_AddBoolToObject( display, "clock_24h", config.clock_24h );
     cJSON_AddStringToObject( display, "theme", ui_theme_config_name( config.theme ) );
 

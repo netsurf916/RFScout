@@ -121,8 +121,7 @@ void display_idle_poll( void )
     const uint16_t off_seconds = config->display_off_timeout_seconds;
     const uint16_t dim_seconds = config->display_dim_timeout_seconds;
 
-    if( ( 0U != off_seconds ) &&
-        ( idle_us >= (int64_t)off_seconds * DISPLAY_IDLE_US_PER_SECOND ) )
+    if( ( 0U != off_seconds ) && ( idle_us >= (int64_t)off_seconds * DISPLAY_IDLE_US_PER_SECOND ) )
     {
         if( DISPLAY_IDLE_OFF != state )
         {

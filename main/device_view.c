@@ -134,10 +134,8 @@ static void format_timeout( uint16_t a_seconds, char *a_value, size_t a_capacity
     }
 }
 
-static uint16_t next_timeout_option( const uint16_t *a_options,
-                                     size_t a_count,
-                                     uint16_t a_current,
-                                     int a_delta )
+static uint16_t
+next_timeout_option( const uint16_t *a_options, size_t a_count, uint16_t a_current, int a_delta )
 {
     size_t index = 0U;
     for( size_t item = 0U; item < a_count; ++item )
@@ -470,11 +468,11 @@ static void adjust_display_timeout( bool a_off_timeout, int a_delta )
 
     if( !a_off_timeout )
     {
-        const uint16_t new_dim = next_timeout_option( DIM_TIMEOUT_OPTIONS,
-                                                      sizeof( DIM_TIMEOUT_OPTIONS ) /
-                                                          sizeof( DIM_TIMEOUT_OPTIONS[ 0 ] ),
-                                                      old_dim,
-                                                      a_delta );
+        const uint16_t new_dim =
+            next_timeout_option( DIM_TIMEOUT_OPTIONS,
+                                 sizeof( DIM_TIMEOUT_OPTIONS ) / sizeof( DIM_TIMEOUT_OPTIONS[ 0 ] ),
+                                 old_dim,
+                                 a_delta );
         uint16_t new_off = old_off;
         if( ( 0U != new_dim ) && ( 0U != new_off ) && ( new_off <= new_dim ) )
         {
