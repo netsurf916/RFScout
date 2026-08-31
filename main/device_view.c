@@ -392,10 +392,8 @@ static power_action_t next_power_action( power_action_t a_current, bool a_long_p
     return POWER_ACTION_NONE;
 }
 
-static void draw_power_menu_row( int a_y,
-                                 unsigned a_item,
-                                 const char *a_label,
-                                 const char *a_value )
+static void
+draw_power_menu_row( int a_y, unsigned a_item, const char *a_label, const char *a_value )
 {
     const bool active = power_selected_item == a_item;
     const uint16_t color = active ? COLOR_SELECTED : COLOR_TEXT;
@@ -425,8 +423,7 @@ static void render_power_menu( void )
                          "Long press",
                          power_action_name( config->power_button_long_action ) );
 
-    const char *hint = ( POWER_MENU_BACK == power_selected_item ) ? "CENTER BACK"
-                                                                  : "CENTER CYCLE";
+    const char *hint = ( POWER_MENU_BACK == power_selected_item ) ? "CENTER BACK" : "CENTER CYCLE";
     char footer[ 64 ];
     snprintf( footer,
               sizeof( footer ),
@@ -441,8 +438,8 @@ static void render_power_menu( void )
 static void cycle_power_action( bool a_long_press )
 {
     const device_config_t *config = device_config_get();
-    const power_action_t old_action = a_long_press ? config->power_button_long_action
-                                                   : config->power_button_short_action;
+    const power_action_t old_action =
+        a_long_press ? config->power_button_long_action : config->power_button_short_action;
     const power_action_t new_action = next_power_action( old_action, a_long_press );
     if( new_action == old_action )
     {
@@ -862,7 +859,7 @@ static void adjust_alert_mode( int a_delta )
         mode = 0;
     }
     if( (rfscout_alert_mode_t)mode != old_mode &&
-        ( ESP_OK == device_config_set_alert_mode( (rfscout_alert_mode_t)mode ) )
+        ( ESP_OK == device_config_set_alert_mode( (rfscout_alert_mode_t)mode ) ) )
     {
         log_config_change( "notifications.mode",
                            alert_mode_name( old_mode ),

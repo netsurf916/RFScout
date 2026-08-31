@@ -264,7 +264,8 @@ static void execute_action( power_action_t a_action, bool a_long_press )
 {
     if( !power_action_supported( a_action, a_long_press ) )
     {
-        ESP_LOGW( TAG, "unsupported power action=%d long=%u", (int)a_action, a_long_press ? 1U : 0U );
+        ESP_LOGW(
+            TAG, "unsupported power action=%d long=%u", (int)a_action, a_long_press ? 1U : 0U );
         set_idle_status();
         return;
     }
@@ -412,9 +413,8 @@ void power_poll( void )
     if( held_us >= POWER_LONG_PRESS_HOLD_US )
     {
         long_action_fired = true;
-        ESP_LOGI( TAG,
-                  "user key long press completed; action=%s",
-                  power_action_name( long_action ) );
+        ESP_LOGI(
+            TAG, "user key long press completed; action=%s", power_action_name( long_action ) );
         execute_action( long_action, true );
         return;
     }
