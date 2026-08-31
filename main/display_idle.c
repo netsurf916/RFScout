@@ -53,12 +53,14 @@ static void set_dimmed( void )
 
 static void set_off( void )
 {
-    display_set_brightness( 0U );
     const esp_err_t result = display_set_output_enabled( false );
     if( ESP_OK != result )
     {
         ESP_LOGW( TAG, "could not disable LCD output: %s", esp_err_to_name( result ) );
+        return;
     }
+
+    display_set_brightness( 0U );
     state = DISPLAY_IDLE_OFF;
     ESP_LOGI( TAG, "display output disabled after inactivity" );
 }
