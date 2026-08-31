@@ -26,7 +26,7 @@ The normal **Build and formatting** workflow:
 4. validates/packages the flash layout; and
 5. retains the candidate bundle as a short-lived GitHub Actions artifact.
 
-Draft pull requests intentionally skip the expensive ESP-IDF candidate build. Mark a PR Ready for Review before expecting a browser-flashable candidate.
+New draft pull requests intentionally skip the expensive ESP-IDF candidate build. Mark a PR Ready for Review when a fresh browser-flashable candidate is needed. If a PR already has a successful candidate for its current head and is later converted back to draft without changing that head, the existing candidate remains eligible for the browser flasher until the PR changes, closes, or the artifact expires.
 
 Candidate artifacts are diagnostic build products, not releases, and are never marked stable automatically.
 
@@ -36,7 +36,7 @@ The **Publish browser flasher** workflow runs after a successful eligible **Buil
 
 The static flasher shell uses the repository's `assets/logo.png` branding and RFScout orange/white visual theme. The workflow copies the logo into the Pages artifact so the deployed site remains self-contained alongside the mirrored firmware files and manifests.
 
-Open pull-request candidates are kept independently under `firmware/candidates/pr-N/` and are labeled with their PR numbers in the selector. A newer build from another PR therefore does not overwrite an existing candidate. Only a successful candidate matching the PR's current head commit is exposed, so a stale build from an earlier revision is not offered after the PR changes. Draft PRs and PRs whose candidate artifacts have expired are omitted until they have a current available build.
+Open pull-request candidates are kept independently under `firmware/candidates/pr-N/` and are labeled with their PR numbers in the selector. A newer build from another PR therefore does not overwrite an existing candidate. Only a successful candidate matching the PR's current head commit is exposed, so a stale build from an earlier revision is not offered after the PR changes. Draft status by itself does not hide an otherwise current, successful candidate; PRs without a current successful artifact, or whose candidate artifacts have expired, are omitted.
 
 Ordinary `main` push artifacts are not exposed as browser-flasher candidates. Once a PR is merged or closed, the next flasher refresh removes its candidate from the catalog; the explicit pull-request-close trigger handles closes that do not otherwise cause a `main` build. Published releases remain durable entries below the current PR candidates.
 
