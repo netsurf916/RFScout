@@ -34,6 +34,9 @@ esp_err_t power_init( void );
 /** @brief Poll the user button and execute sleep/shutdown actions. */
 void power_poll( void );
 
+/** @brief Consume a currently held user-button gesture because it was used only to wake the display. */
+void power_consume_wake_input( void );
+
 /** @brief Return the current power-button hold state for UI rendering. */
 void power_get_status( power_status_t *a_status );
 

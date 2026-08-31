@@ -261,6 +261,44 @@ void platform_poll( void )
     }
 }
 
+bool platform_input_activity_pending( void )
+{
+    bool movement;
+    bool button_activity;
+
+    portENTER_CRITICAL( &encoder_lock );
+    movement = ( 0 != encoder_delta );
+    portEXIT_CRITICAL( &encoder_lock );
+
+    portENTER_CRITICAL( &encoder_button_lock );
+    button_activity = encoder_button_down || ( encoder_button_pending_duration_us > 0 );
+    portEXIT_CRITICAL( &encoder_button_lock );
+
+    return movement || button_activity || encoder_button_event || encoder_button_long_event ||
+           encoder_button_back_event || ( 0 == gpio_get_level( RFSCOUT_BOARD_USER_KEY_PIN ) );
+}
+
+void platform_consume_wake_input( void )
+{
+    clear_encoder_delta();
+    encoder_button_event = false;
+    encoder_button_long_event = false;
+    encoder_button_back_event = false;
+
+    uint32_t press_sequence;
+    bool button_down;
+    portENTER_CRITICAL( &encoder_button_lock );
+    encoder_button_pending_duration_us = 0;
+    encoder_button_pending_sequence = 0U;
+    press_sequence = encoder_button_press_sequence;
+    button_down = encoder_button_down;
+    portEXIT_CRITICAL( &encoder_button_lock );
+
+    encoder_button_seen_sequence = press_sequence;
+    encoder_button_lock_sequence = press_sequence;
+    encoder_button_lock_fired = button_down;
+}
+
 bool platform_input_get( rfscout_input_event_t *a_event )
 {
     if( NULL == a_event )

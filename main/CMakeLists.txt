@@ -95,6 +95,7 @@ idf_component_register(
         "display.c"
         "display_mask.c"
         "display_brightness.c"
+        "display_idle.c"
         "ui_present.c"
         "ui.c"
         "radio_monitor.c"

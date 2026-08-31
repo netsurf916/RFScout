@@ -13,6 +13,8 @@ A representative schema-v2 configuration is:
   "version": 2,
   "display": {
     "brightness": 70,
+    "dim_timeout_seconds": 120,
+    "off_timeout_seconds": 300,
     "clock_24h": false,
     "theme": "indoor"
   },
@@ -102,6 +104,8 @@ A representative schema-v2 configuration is:
 }
 ```
 
+The display inactivity values are total idle times measured from the most recent physical user activity. `dim_timeout_seconds` defaults to 120 seconds and `off_timeout_seconds` defaults to 300 seconds; zero disables the corresponding stage. When both are nonzero, `off_timeout_seconds` must be later than `dim_timeout_seconds`. Automatic screen-off only disables LCD presentation: applications, logging, acquisition, and audible notifications continue running. See [Display idle behavior](DISPLAY_IDLE.md) for wake/input semantics.
+
 The historical configuration key remains `apps.audio` because the application enum still uses `RFSCOUT_APP_AUDIO`; the user-facing application is Recorder. `apps.startup` writes user-facing aliases where useful: `home` for Device and `recorder` for Audio. The loader also accepts the historical internal names `device` and `audio`.
 
 An application `enabled` value is a user preference, not a promise that the hardware exists. CC1101, nRF24, and Recorder are additionally gated by one-time startup hardware probes; if a fixed radio or the board PDM microphone is absent, that application is omitted from navigation for the current boot even when configured enabled. The saved preference is preserved so the same configuration can be used across differently populated T-Embed variants. Thermal remains dynamically probed because it is an external attachable peripheral.
@@ -139,6 +143,12 @@ Current themes are:
 
 Discipline does not disable explicitly requested application content audio such as Recorder playback. Theme sound policy is environmental policy layered on top of app-native behavior and user notification preferences; it does not overwrite those preferences.
 
+## Display inactivity
+
+Display dimming and screen-off are global presentation settings under `display.dim_timeout_seconds` and `display.off_timeout_seconds`. The compiled defaults are two minutes before dimming and five minutes before screen-off. The Device Settings choices are documented in [Display idle behavior](DISPLAY_IDLE.md).
+
+Screen-off does not enter ESP32 deep sleep and does not stop application work. RFScout continues app acquisition, logging, framebuffer rendering, and audible notifications while LCD output is disabled. Any physical user input can wake the display even while global input lock is active; the wake gesture is consumed and is not delivered to the app or power-control gesture handlers.
+
 ## WiFi / BT retention configuration
 
 WiFi / BT owns three independent retention settings under `apps.wifi_bt.retention`:
@@ -172,6 +182,8 @@ Missing or invalid recognized fields retain compiled defaults. Home/Device is al
 
 A disabled or unavailable configured startup target falls back to Home for the current boot without rewriting the saved preference. Thermal additionally requires a detected MLX90640.
 
+The compiled display brightness is 70%, dim timeout is 120 seconds, and screen-off timeout is 300 seconds. A zero dim or screen-off timeout disables that stage. When both are enabled, screen-off must be later than dim.
+
 The compiled global notification mode is `OFF`. Notification volume defaults to 50. Each application notification category has a compiled Morse-character default; valid one-character saved values override defaults individually. Wi-Fi, Bluetooth, and surveillance retention each default to 60 seconds.
 
 ## Home and Device Settings
@@ -181,6 +193,8 @@ Home is the pass-through landing state of the non-disableable Device application
 Current Device Settings include:
 
 - LCD brightness;
+- display dim timeout;
+- display screen-off timeout;
 - display theme (Indoor, Outdoor, Night, Discipline);
 - 12/24-hour clock format;
 - timezone selection;

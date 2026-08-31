@@ -25,8 +25,14 @@
  */
 esp_err_t display_init( void );
 
-/** @brief Set LCD backlight brightness from 10 to 100 percent. */
+/** @brief Set LCD backlight brightness from 0 through 100 percent. Zero is reserved for display-idle blanking. */
 void display_set_brightness( uint8_t a_percent );
+
+/** @brief Enable or disable ST7789 display output without changing the application framebuffer. */
+esp_err_t display_set_output_enabled( bool a_enabled );
+
+/** @brief Return whether LCD output transfers are currently enabled. */
+bool display_output_enabled( void );
 
 /** @brief Mark the composed LCD state dirty even when framebuffer pixels did not change. */
 void display_invalidate( void );

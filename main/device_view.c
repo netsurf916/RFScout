@@ -28,34 +28,39 @@
 
 #define DEVICE_ITEM_BACK 0U
 #define DEVICE_ITEM_BRIGHTNESS 1U
-#define DEVICE_ITEM_THEME 2U
-#define DEVICE_ITEM_CLOCK_FORMAT 3U
-#define DEVICE_ITEM_TIMEZONE 4U
-#define DEVICE_ITEM_STARTUP 5U
-#define DEVICE_ITEM_YEAR 6U
-#define DEVICE_ITEM_MONTH 7U
-#define DEVICE_ITEM_DAY 8U
-#define DEVICE_ITEM_HOUR 9U
-#define DEVICE_ITEM_MINUTE 10U
-#define DEVICE_ITEM_WIFI 11U
-#define DEVICE_ITEM_CC1101 12U
-#define DEVICE_ITEM_NRF24 13U
-#define DEVICE_ITEM_AUDIO 14U
-#define DEVICE_ITEM_THERMAL 15U
-#define DEVICE_ITEM_LOGGING 16U
-#define DEVICE_ITEM_ALERT_MODE 17U
-#define DEVICE_ITEM_ALERT_VOLUME 18U
-#define DEVICE_ITEM_SAVE 19U
+#define DEVICE_ITEM_DIM_TIMEOUT 2U
+#define DEVICE_ITEM_OFF_TIMEOUT 3U
+#define DEVICE_ITEM_THEME 4U
+#define DEVICE_ITEM_CLOCK_FORMAT 5U
+#define DEVICE_ITEM_TIMEZONE 6U
+#define DEVICE_ITEM_STARTUP 7U
+#define DEVICE_ITEM_YEAR 8U
+#define DEVICE_ITEM_MONTH 9U
+#define DEVICE_ITEM_DAY 10U
+#define DEVICE_ITEM_HOUR 11U
+#define DEVICE_ITEM_MINUTE 12U
+#define DEVICE_ITEM_WIFI 13U
+#define DEVICE_ITEM_CC1101 14U
+#define DEVICE_ITEM_NRF24 15U
+#define DEVICE_ITEM_AUDIO 16U
+#define DEVICE_ITEM_THERMAL 17U
+#define DEVICE_ITEM_LOGGING 18U
+#define DEVICE_ITEM_ALERT_MODE 19U
+#define DEVICE_ITEM_ALERT_VOLUME 20U
+#define DEVICE_ITEM_SAVE 21U
 /* Per-detection Morse mappings are app-owned and intentionally live beyond the
    globally reachable Device-settings item range. Keep these constants only for
    compatibility with shared formatting/configuration helpers below. */
-#define DEVICE_ITEM_NOTIFICATION_FIRST 20U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 22U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
 #define DEVICE_ITEM_COUNT ( DEVICE_ITEM_SAVE + 1U )
 #define DEVICE_ROWS_PER_PAGE 6U
 #define DEVICE_LOG_SHUTDOWN_TIMEOUT_MS 3000U
 #define DEVICE_ALERT_VOLUME_STEP 10
+
+static const uint16_t DIM_TIMEOUT_OPTIONS[] = { 0U, 30U, 60U, 120U, 300U };
+static const uint16_t OFF_TIMEOUT_OPTIONS[] = { 0U, 60U, 120U, 300U, 600U, 1800U };
 
 #define COLOR_BACKGROUND ( ui_theme_get()->background )
 #define COLOR_TEXT ( ui_theme_get()->text )
@@ -111,6 +116,38 @@ static void refresh_edited_time( void )
 static const char *on_off( bool a_value )
 {
     return a_value ? "On" : "Off";
+}
+
+static void format_timeout( uint16_t a_seconds, char *a_value, size_t a_capacity )
+{
+    if( 0U == a_seconds )
+    {
+        snprintf( a_value, a_capacity, "Off" );
+    }
+    else if( 0U == ( a_seconds % 60U ) )
+    {
+        snprintf( a_value, a_capacity, "%um", (unsigned)( a_seconds / 60U ) );
+    }
+    else
+    {
+        snprintf( a_value, a_capacity, "%us", (unsigned)a_seconds );
+    }
+}
+
+static uint16_t
+next_timeout_option( const uint16_t *a_options, size_t a_count, uint16_t a_current, int a_delta )
+{
+    size_t index = 0U;
+    for( size_t item = 0U; item < a_count; ++item )
+    {
+        if( a_options[ item ] == a_current )
+        {
+            index = item;
+            break;
+        }
+    }
+    index = ( a_delta > 0 ) ? ( index + 1U ) % a_count : ( index + a_count - 1U ) % a_count;
+    return a_options[ index ];
 }
 
 static const char *startup_app_name( rfscout_app_id_t a_app )
@@ -170,6 +207,10 @@ static const char *item_label( unsigned a_item )
             return "Back";
         case DEVICE_ITEM_BRIGHTNESS:
             return "Brightness";
+        case DEVICE_ITEM_DIM_TIMEOUT:
+            return "Dim after";
+        case DEVICE_ITEM_OFF_TIMEOUT:
+            return "Screen off";
         case DEVICE_ITEM_THEME:
             return "Theme";
         case DEVICE_ITEM_CLOCK_FORMAT:
@@ -224,6 +265,12 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
     {
         case DEVICE_ITEM_BRIGHTNESS:
             snprintf( a_value, a_capacity, "%u%%", (unsigned)config->brightness_percent );
+            break;
+        case DEVICE_ITEM_DIM_TIMEOUT:
+            format_timeout( config->display_dim_timeout_seconds, a_value, a_capacity );
+            break;
+        case DEVICE_ITEM_OFF_TIMEOUT:
+            format_timeout( config->display_off_timeout_seconds, a_value, a_capacity );
             break;
         case DEVICE_ITEM_THEME:
             snprintf( a_value, a_capacity, "%s", ui_theme_display_name( ui_theme_current() ) );
@@ -410,6 +457,71 @@ static void toggle_app( rfscout_app_id_t a_app, const char *a_key )
         log_config_change( a_key, on_off( old_value ), on_off( !old_value ) );
         emit_device_event( !old_value ? RFSCOUT_EVENT_ENABLE : RFSCOUT_EVENT_DISABLE,
                            !old_value ? 1 : 0 );
+    }
+}
+
+static void adjust_display_timeout( bool a_off_timeout, int a_delta )
+{
+    const device_config_t *config = device_config_get();
+    const uint16_t old_dim = config->display_dim_timeout_seconds;
+    const uint16_t old_off = config->display_off_timeout_seconds;
+
+    if( !a_off_timeout )
+    {
+        const uint16_t new_dim =
+            next_timeout_option( DIM_TIMEOUT_OPTIONS,
+                                 sizeof( DIM_TIMEOUT_OPTIONS ) / sizeof( DIM_TIMEOUT_OPTIONS[ 0 ] ),
+                                 old_dim,
+                                 a_delta );
+        uint16_t new_off = old_off;
+        if( ( 0U != new_dim ) && ( 0U != new_off ) && ( new_off <= new_dim ) )
+        {
+            new_off = 0U;
+            for( size_t item = 1U;
+                 item < sizeof( OFF_TIMEOUT_OPTIONS ) / sizeof( OFF_TIMEOUT_OPTIONS[ 0 ] );
+                 ++item )
+            {
+                if( OFF_TIMEOUT_OPTIONS[ item ] > new_dim )
+                {
+                    new_off = OFF_TIMEOUT_OPTIONS[ item ];
+                    break;
+                }
+            }
+            if( ESP_OK != device_config_set_display_off_timeout( new_off ) )
+            {
+                return;
+            }
+        }
+        if( ESP_OK == device_config_set_display_dim_timeout( new_dim ) )
+        {
+            char old_text[ 16 ];
+            char new_text[ 16 ];
+            format_timeout( old_dim, old_text, sizeof( old_text ) );
+            format_timeout( new_dim, new_text, sizeof( new_text ) );
+            log_config_change( "display.dim_timeout_seconds", old_text, new_text );
+            emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
+        }
+        return;
+    }
+
+    uint16_t candidate = old_off;
+    const size_t option_count = sizeof( OFF_TIMEOUT_OPTIONS ) / sizeof( OFF_TIMEOUT_OPTIONS[ 0 ] );
+    for( size_t attempt = 0U; attempt < option_count; ++attempt )
+    {
+        candidate = next_timeout_option( OFF_TIMEOUT_OPTIONS, option_count, candidate, a_delta );
+        if( ( 0U == candidate ) || ( 0U == old_dim ) || ( candidate > old_dim ) )
+        {
+            break;
+        }
+    }
+    if( ESP_OK == device_config_set_display_off_timeout( candidate ) )
+    {
+        char old_text[ 16 ];
+        char new_text[ 16 ];
+        format_timeout( old_off, old_text, sizeof( old_text ) );
+        format_timeout( candidate, new_text, sizeof( new_text ) );
+        log_config_change( "display.off_timeout_seconds", old_text, new_text );
+        emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
     }
 }
 
@@ -719,6 +831,14 @@ static void adjust_selected( int a_delta )
             log_config_change( "display.brightness", old_text, new_text );
             emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
         }
+    }
+    else if( DEVICE_ITEM_DIM_TIMEOUT == selected_item )
+    {
+        adjust_display_timeout( false, a_delta );
+    }
+    else if( DEVICE_ITEM_OFF_TIMEOUT == selected_item )
+    {
+        adjust_display_timeout( true, a_delta );
     }
     else if( DEVICE_ITEM_THEME == selected_item )
     {

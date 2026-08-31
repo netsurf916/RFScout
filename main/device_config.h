@@ -40,6 +40,8 @@ typedef struct
 typedef struct
 {
     uint8_t brightness_percent;
+    uint16_t display_dim_timeout_seconds;
+    uint16_t display_off_timeout_seconds;
     bool apps_enabled[ RFSCOUT_APP_COUNT ];
     rfscout_app_id_t startup_app;
     bool logging_enabled;
@@ -84,6 +86,12 @@ esp_err_t device_config_set_logging_enabled( bool a_enabled );
 
 /** @brief Change display brightness percentage. */
 esp_err_t device_config_set_brightness( uint8_t a_percent );
+
+/** @brief Change inactivity timeout before display dimming; zero disables dimming. */
+esp_err_t device_config_set_display_dim_timeout( uint16_t a_seconds );
+
+/** @brief Change inactivity timeout before LCD output is disabled; zero disables screen-off. */
+esp_err_t device_config_set_display_off_timeout( uint16_t a_seconds );
 
 /** @brief Change 12/24-hour clock presentation. */
 esp_err_t device_config_set_clock_24h( bool a_enabled );

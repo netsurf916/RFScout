@@ -35,6 +35,7 @@ static bool raw_pressed;
 static bool stable_pressed;
 static int64_t raw_changed_us;
 static int64_t pressed_since_us;
+static bool suppress_current_press;
 static power_status_t status;
 
 /** @brief Update UI-visible power state and invalidate the composed display when it changes. */
@@ -162,15 +163,40 @@ esp_err_t power_init( void )
     stable_pressed = raw_pressed;
     raw_changed_us = esp_timer_get_time();
     pressed_since_us = stable_pressed ? raw_changed_us : 0;
+    suppress_current_press = false;
     status.state = POWER_HOLD_IDLE;
     status.seconds_remaining = 0U;
     return ESP_OK;
+}
+
+void power_consume_wake_input( void )
+{
+    if( 0 == gpio_get_level( RFSCOUT_BOARD_USER_KEY_PIN ) )
+    {
+        suppress_current_press = true;
+        pressed_since_us = 0;
+        set_power_status( POWER_HOLD_IDLE, 0U );
+    }
 }
 
 void power_poll( void )
 {
     const int64_t now_us = esp_timer_get_time();
     const bool pressed = ( 0 == gpio_get_level( RFSCOUT_BOARD_USER_KEY_PIN ) );
+
+    if( suppress_current_press )
+    {
+        raw_pressed = pressed;
+        stable_pressed = pressed;
+        raw_changed_us = now_us;
+        pressed_since_us = 0;
+        set_power_status( POWER_HOLD_IDLE, 0U );
+        if( !pressed )
+        {
+            suppress_current_press = false;
+        }
+        return;
+    }
 
     if( pressed != raw_pressed )
     {
