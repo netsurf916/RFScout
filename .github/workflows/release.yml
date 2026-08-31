@@ -186,16 +186,25 @@ jobs:
             prerelease+=(--prerelease)
           fi
 
-          cleanup_tag=true
+          cleanup_tag=false
           cleanup() {
             if [[ "$cleanup_tag" == "true" ]]; then
-              git push origin ":refs/tags/$VERSION" || true
+              remote_commit=$(git ls-remote --refs origin "refs/tags/$VERSION" | awk '{print $1}')
+              if [[ "$remote_commit" == "$COMMIT" ]]; then
+                git push origin ":refs/tags/$VERSION" || true
+              else
+                echo "Not deleting $VERSION because the remote tag no longer points to $COMMIT"
+              fi
             fi
           }
           trap cleanup EXIT
 
           git tag "$VERSION" "$COMMIT"
-          git push origin "refs/tags/$VERSION"
+          # Create the remote tag only if it is still absent. This closes the race
+          # between validation and publication without taking ownership of a tag
+          # another maintainer may have created in the meantime.
+          git push --force-with-lease="refs/tags/$VERSION:" origin "refs/tags/$VERSION"
+          cleanup_tag=true
 
           gh release create "$VERSION" dist/* \
             --repo "$GITHUB_REPOSITORY" \
