@@ -37,6 +37,7 @@ static volatile uint32_t encoder_button_press_sequence;
 static volatile uint32_t encoder_button_pending_sequence;
 static uint32_t encoder_button_seen_sequence;
 static uint32_t encoder_button_lock_sequence;
+static uint32_t encoder_button_suppressed_sequence;
 static bool encoder_button_event;
 static bool encoder_button_long_event;
 static bool encoder_button_back_event;
@@ -176,6 +177,7 @@ esp_err_t platform_init( void )
     encoder_button_pending_sequence = 0U;
     encoder_button_seen_sequence = encoder_button_press_sequence;
     encoder_button_lock_sequence = 0U;
+    encoder_button_suppressed_sequence = 0U;
     encoder_button_event = false;
     encoder_button_long_event = false;
     encoder_button_back_event = false;
@@ -221,14 +223,16 @@ void platform_poll( void )
         encoder_button_lock_fired = ( press_sequence == encoder_button_lock_sequence );
     }
 
-    if( button_down && !encoder_button_lock_fired && ( pressed_us > 0 ) &&
+    if( button_down && !encoder_button_lock_fired &&
+        ( press_sequence != encoder_button_suppressed_sequence ) && ( pressed_us > 0 ) &&
         ( now_us - pressed_us ) >= ENCODER_BUTTON_LOCK_HOLD_US )
     {
         toggle_input_lock( press_sequence );
     }
 
     if( completed_duration_us < ENCODER_BUTTON_DEBOUNCE_US ||
-        completed_sequence == encoder_button_lock_sequence )
+        completed_sequence == encoder_button_lock_sequence ||
+        completed_sequence == encoder_button_suppressed_sequence )
     {
         return;
     }
@@ -259,6 +263,45 @@ void platform_poll( void )
     {
         encoder_button_event = true;
     }
+}
+
+bool platform_user_activity( void )
+{
+    bool navigation_activity;
+    bool button_activity;
+
+    portENTER_CRITICAL( &encoder_lock );
+    navigation_activity = ( 0 != encoder_delta );
+    portEXIT_CRITICAL( &encoder_lock );
+
+    portENTER_CRITICAL( &encoder_button_lock );
+    button_activity = encoder_button_down || ( 0U != encoder_button_pending_sequence );
+    portEXIT_CRITICAL( &encoder_button_lock );
+
+    return navigation_activity || button_activity ||
+           ( 0 == gpio_get_level( RFSCOUT_BOARD_USER_KEY_PIN ) );
+}
+
+void platform_consume_wake_input( void )
+{
+    clear_encoder_delta();
+
+    portENTER_CRITICAL( &encoder_button_lock );
+    if( encoder_button_down )
+    {
+        encoder_button_suppressed_sequence = encoder_button_press_sequence;
+    }
+    else if( 0U != encoder_button_pending_sequence )
+    {
+        encoder_button_suppressed_sequence = encoder_button_pending_sequence;
+    }
+    encoder_button_pending_duration_us = 0;
+    encoder_button_pending_sequence = 0U;
+    portEXIT_CRITICAL( &encoder_button_lock );
+
+    encoder_button_event = false;
+    encoder_button_long_event = false;
+    encoder_button_back_event = false;
 }
 
 bool platform_input_get( rfscout_input_event_t *a_event )
