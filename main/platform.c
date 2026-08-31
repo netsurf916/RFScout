@@ -30,6 +30,9 @@ static volatile int encoder_accumulator;
 static volatile int encoder_delta;
 static portMUX_TYPE encoder_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE encoder_button_lock = portMUX_INITIALIZER_UNLOCKED;
+static portMUX_TYPE activity_lock = portMUX_INITIALIZER_UNLOCKED;
+static volatile uint32_t activity_sequence;
+static uint32_t activity_seen_sequence;
 static volatile bool encoder_button_down;
 static volatile int64_t encoder_button_pressed_us;
 static volatile int64_t encoder_button_pending_duration_us;
@@ -44,6 +47,14 @@ static bool encoder_button_back_event;
 static bool encoder_button_lock_fired;
 static bool input_locked;
 
+/** @brief Record physical activity before semantic input-lock filtering. */
+static void IRAM_ATTR note_activity_isr( void )
+{
+    portENTER_CRITICAL_ISR( &activity_lock );
+    ++activity_sequence;
+    portEXIT_CRITICAL_ISR( &activity_lock );
+}
+
 /** @brief Decode one quadrature transition from either encoder GPIO edge. */
 static void IRAM_ATTR encoder_isr( void *a_argument )
 {
@@ -52,6 +63,7 @@ static void IRAM_ATTR encoder_isr( void *a_argument )
 
     const uint8_t current = (uint8_t)( ( gpio_get_level( RFSCOUT_BOARD_ENCODER_A_PIN ) << 1 ) |
                                        gpio_get_level( RFSCOUT_BOARD_ENCODER_B_PIN ) );
+    bool detent = false;
 
     portENTER_CRITICAL_ISR( &encoder_lock );
     encoder_accumulator += transitions[ ( ( encoder_state << 2 ) | current ) & 0x0FU ];
@@ -67,15 +79,21 @@ static void IRAM_ATTR encoder_isr( void *a_argument )
         {
             ++encoder_delta;
             encoder_accumulator = 0;
+            detent = true;
         }
         else if( encoder_accumulator <= -ENCODER_TRANSITIONS_PER_DETENT )
         {
             --encoder_delta;
             encoder_accumulator = 0;
+            detent = true;
         }
     }
 
     portEXIT_CRITICAL_ISR( &encoder_lock );
+    if( detent )
+    {
+        note_activity_isr();
+    }
 }
 
 /** @brief Capture encoder-button edges even while presentation blocks the application loop. */
@@ -84,6 +102,7 @@ static void IRAM_ATTR encoder_button_isr( void *a_argument )
     (void)a_argument;
     const bool pressed = ( 0 == gpio_get_level( RFSCOUT_BOARD_ENCODER_KEY_PIN ) );
     const int64_t now_us = esp_timer_get_time();
+    bool new_press = false;
 
     portENTER_CRITICAL_ISR( &encoder_button_lock );
     if( pressed )
@@ -93,6 +112,7 @@ static void IRAM_ATTR encoder_button_isr( void *a_argument )
             encoder_button_down = true;
             encoder_button_pressed_us = now_us;
             ++encoder_button_press_sequence;
+            new_press = true;
         }
     }
     else if( encoder_button_down )
@@ -111,6 +131,10 @@ static void IRAM_ATTR encoder_button_isr( void *a_argument )
         }
     }
     portEXIT_CRITICAL_ISR( &encoder_button_lock );
+    if( new_press )
+    {
+        note_activity_isr();
+    }
 }
 
 /** @brief Discard accumulated rotary movement so locked movement cannot leak through later. */
@@ -170,6 +194,8 @@ esp_err_t platform_init( void )
                                gpio_get_level( RFSCOUT_BOARD_ENCODER_B_PIN ) );
     encoder_accumulator = 0;
     encoder_delta = 0;
+    activity_sequence = 0U;
+    activity_seen_sequence = 0U;
     encoder_button_down = ( 0 == gpio_get_level( RFSCOUT_BOARD_ENCODER_KEY_PIN ) );
     encoder_button_pressed_us = encoder_button_down ? esp_timer_get_time() : 0;
     encoder_button_pending_duration_us = 0;
@@ -267,19 +293,17 @@ void platform_poll( void )
 
 bool platform_user_activity( void )
 {
-    bool navigation_activity;
-    bool button_activity;
+    bool activity = false;
 
-    portENTER_CRITICAL( &encoder_lock );
-    navigation_activity = ( 0 != encoder_delta );
-    portEXIT_CRITICAL( &encoder_lock );
+    portENTER_CRITICAL( &activity_lock );
+    if( activity_sequence != activity_seen_sequence )
+    {
+        activity_seen_sequence = activity_sequence;
+        activity = true;
+    }
+    portEXIT_CRITICAL( &activity_lock );
 
-    portENTER_CRITICAL( &encoder_button_lock );
-    button_activity = encoder_button_down || ( 0U != encoder_button_pending_sequence );
-    portEXIT_CRITICAL( &encoder_button_lock );
-
-    return navigation_activity || button_activity ||
-           ( 0 == gpio_get_level( RFSCOUT_BOARD_USER_KEY_PIN ) );
+    return activity || ( 0 == gpio_get_level( RFSCOUT_BOARD_USER_KEY_PIN ) );
 }
 
 void platform_consume_wake_input( void )
