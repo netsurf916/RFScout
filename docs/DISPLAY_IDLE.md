@@ -9,6 +9,8 @@ Device Settings exposes two persistent inactivity controls:
 - **Dim after**: `Off`, `30s`, `1m`, `2m`, or `5m`. The default is `2m`.
 - **Screen off**: `Off`, `1m`, `2m`, `5m`, `10m`, or `30m`. The default is `5m`.
 
+Both values are measured from the most recent physical user activity. The screen-off value is therefore a total idle time, not an additional delay after dimming.
+
 When both are enabled, the screen-off timeout must be later than the dim timeout. If increasing the dim timeout would overlap the configured screen-off timeout, RFScout advances the screen-off timeout to the next valid value.
 
 The values are stored in the `display` section of `/sdcard/rfscout.json` as `dim_timeout_seconds` and `off_timeout_seconds`. Zero disables the corresponding stage.
