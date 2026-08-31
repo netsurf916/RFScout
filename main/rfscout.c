@@ -14,6 +14,7 @@
 #include "device_config.h"
 #include "device_time.h"
 #include "display.h"
+#include "display_idle.h"
 #include "event.h"
 #include "feedback.h"
 #include "log_writer.h"
@@ -224,6 +225,7 @@ void app_main( void )
 
     ESP_ERROR_CHECK( app_manager_init() );
     display_set_brightness( device_config_get()->brightness_percent );
+    ESP_ERROR_CHECK( display_idle_init() );
 
     if( storage_is_available() && device_config_get()->logging_enabled )
     {
@@ -245,6 +247,9 @@ void app_main( void )
 
     while( true )
     {
+        /* Display wake interception runs before semantic input processing. Applications
+           continue polling/rendering normally while LCD output is disabled. */
+        display_idle_poll();
         platform_poll();
         power_poll();
         battery_poll();

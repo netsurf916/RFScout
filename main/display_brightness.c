@@ -67,10 +67,6 @@ void display_set_brightness( uint8_t a_percent )
     {
         return;
     }
-    if( a_percent < 10U )
-    {
-        a_percent = 10U;
-    }
     if( a_percent > 100U )
     {
         a_percent = 100U;

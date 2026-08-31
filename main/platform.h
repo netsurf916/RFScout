@@ -38,6 +38,17 @@ esp_err_t platform_init( void );
 void platform_poll( void );
 
 /**
+ * @brief Return whether any physical user activity is pending, independent of input lock.
+ *
+ * Used by the global display-idle policy before ordinary input dispatch so a locked
+ * device can still wake its display without leaking the wake gesture into an app.
+ */
+bool platform_input_activity_pending( void );
+
+/** @brief Discard the complete physical input gesture currently being used to wake the display. */
+void platform_consume_wake_input( void );
+
+/**
  * @brief Consume one board-neutral user-input event.
  *
  * Navigation values are signed and may represent multiple accumulated steps.

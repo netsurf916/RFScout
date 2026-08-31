@@ -27,6 +27,9 @@
 #define CONFIG_BACKUP_PATH RFSCOUT_CONFIG_PATH ".bak"
 #define CONFIG_BAD_PATH RFSCOUT_CONFIG_PATH ".bad"
 #define CONFIG_BRIGHTNESS_DEFAULT 70U
+#define CONFIG_DISPLAY_DIM_TIMEOUT_DEFAULT_SECONDS 120U
+#define CONFIG_DISPLAY_OFF_TIMEOUT_DEFAULT_SECONDS 300U
+#define CONFIG_DISPLAY_TIMEOUT_MAX_SECONDS 3600U
 #define CONFIG_RECORDER_VOLUME_DEFAULT 50U
 #define CONFIG_RECORDER_INPUT_GAIN_DEFAULT_DB 12U
 #define CONFIG_MIN_VALID_EPOCH 1577836800LL
@@ -98,6 +101,8 @@ static void set_defaults( void )
 {
     memset( &config, 0, sizeof( config ) );
     config.brightness_percent = CONFIG_BRIGHTNESS_DEFAULT;
+    config.display_dim_timeout_seconds = CONFIG_DISPLAY_DIM_TIMEOUT_DEFAULT_SECONDS;
+    config.display_off_timeout_seconds = CONFIG_DISPLAY_OFF_TIMEOUT_DEFAULT_SECONDS;
     config.startup_app = RFSCOUT_APP_DEVICE;
     config.logging_enabled = true;
     config.clock_24h = false;
@@ -268,6 +273,19 @@ static void load_apps( const cJSON *a_root )
     }
 }
 
+static uint16_t json_display_timeout_seconds( const cJSON *a_parent,
+                                              const char *a_name,
+                                              uint16_t a_default )
+{
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive( a_parent, a_name );
+    if( !cJSON_IsNumber( item ) || item->valueint < 0 ||
+        item->valueint > (int)CONFIG_DISPLAY_TIMEOUT_MAX_SECONDS )
+    {
+        return a_default;
+    }
+    return (uint16_t)item->valueint;
+}
+
 /** @brief Apply validated display preference overrides. */
 static void load_display( const cJSON *a_root )
 {
@@ -282,6 +300,16 @@ static void load_display( const cJSON *a_root )
         ( brightness->valueint <= 100 ) )
     {
         config.brightness_percent = (uint8_t)brightness->valueint;
+    }
+    config.display_dim_timeout_seconds = json_display_timeout_seconds(
+        display, "dim_timeout_seconds", config.display_dim_timeout_seconds );
+    config.display_off_timeout_seconds = json_display_timeout_seconds(
+        display, "off_timeout_seconds", config.display_off_timeout_seconds );
+    if( ( 0U != config.display_dim_timeout_seconds ) &&
+        ( 0U != config.display_off_timeout_seconds ) &&
+        ( config.display_off_timeout_seconds <= config.display_dim_timeout_seconds ) )
+    {
+        config.display_off_timeout_seconds = 0U;
     }
     config.clock_24h = json_bool( display, "clock_24h", config.clock_24h );
     const cJSON *theme = cJSON_GetObjectItemCaseSensitive( display, "theme" );
@@ -601,6 +629,10 @@ static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_tim
 
     cJSON *display = cJSON_AddObjectToObject( root, "display" );
     cJSON_AddNumberToObject( display, "brightness", config.brightness_percent );
+    cJSON_AddNumberToObject(
+        display, "dim_timeout_seconds", config.display_dim_timeout_seconds );
+    cJSON_AddNumberToObject(
+        display, "off_timeout_seconds", config.display_off_timeout_seconds );
     cJSON_AddBoolToObject( display, "clock_24h", config.clock_24h );
     cJSON_AddStringToObject( display, "theme", ui_theme_config_name( config.theme ) );
 
@@ -936,6 +968,38 @@ esp_err_t device_config_set_brightness( uint8_t a_percent )
     if( config.brightness_percent != a_percent )
     {
         config.brightness_percent = a_percent;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+esp_err_t device_config_set_display_dim_timeout( uint16_t a_seconds )
+{
+    if( a_seconds > CONFIG_DISPLAY_TIMEOUT_MAX_SECONDS ||
+        ( ( 0U != a_seconds ) && ( 0U != config.display_off_timeout_seconds ) &&
+          ( a_seconds >= config.display_off_timeout_seconds ) ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( config.display_dim_timeout_seconds != a_seconds )
+    {
+        config.display_dim_timeout_seconds = a_seconds;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+esp_err_t device_config_set_display_off_timeout( uint16_t a_seconds )
+{
+    if( a_seconds > CONFIG_DISPLAY_TIMEOUT_MAX_SECONDS ||
+        ( ( 0U != a_seconds ) && ( 0U != config.display_dim_timeout_seconds ) &&
+          ( a_seconds <= config.display_dim_timeout_seconds ) ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( config.display_off_timeout_seconds != a_seconds )
+    {
+        config.display_off_timeout_seconds = a_seconds;
         config_dirty = true;
     }
     return ESP_OK;

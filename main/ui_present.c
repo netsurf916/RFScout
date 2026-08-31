@@ -58,6 +58,10 @@ static void draw_power_overlay( const power_status_t *a_status )
 
 esp_err_t display_present( void )
 {
+    if( !display_output_enabled() )
+    {
+        return ESP_OK;
+    }
     if( !display_is_dirty() )
     {
         return ESP_OK;

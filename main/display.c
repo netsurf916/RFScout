@@ -33,6 +33,7 @@ static volatile bool transfer_done;
 static uint16_t *framebuffer;
 static uint16_t *dma_buffer;
 static bool display_dirty = true;
+static bool output_enabled;
 
 /** @brief Compact 5x7 printable ASCII font used by the RFScout LCD UI. */
 // clang-format off
@@ -70,6 +71,38 @@ static bool valid_rect( int a_x, int a_y, int a_width, int a_height )
     return ( a_x >= 0 ) && ( a_y >= 0 ) && ( a_width > 0 ) && ( a_height > 0 ) &&
            ( a_x + a_width <= RFSCOUT_DISPLAY_WIDTH ) &&
            ( a_y + a_height <= RFSCOUT_DISPLAY_HEIGHT );
+}
+
+esp_err_t display_set_output_enabled( bool a_enabled )
+{
+    if( NULL == panel )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if( output_enabled == a_enabled )
+    {
+        if( a_enabled )
+        {
+            display_invalidate();
+        }
+        return ESP_OK;
+    }
+
+    const esp_err_t result = esp_lcd_panel_disp_on_off( panel, a_enabled );
+    if( ESP_OK == result )
+    {
+        output_enabled = a_enabled;
+        if( a_enabled )
+        {
+            display_invalidate();
+        }
+    }
+    return result;
+}
+
+bool display_output_enabled( void )
+{
+    return output_enabled;
 }
 
 void display_invalidate( void )
@@ -154,6 +187,7 @@ static void draw_character( int a_x, int a_y, char a_character, uint16_t a_color
 esp_err_t display_init( void )
 {
     display_dirty = true;
+    output_enabled = false;
 
     const esp_err_t bus_result = board_spi_init();
     if( ESP_OK != bus_result )
@@ -210,6 +244,7 @@ esp_err_t display_init( void )
         esp_lcd_panel_set_gap( panel, RFSCOUT_BOARD_DISPLAY_X_GAP, RFSCOUT_BOARD_DISPLAY_Y_GAP ) );
     ESP_ERROR_CHECK( esp_lcd_panel_invert_color( panel, true ) );
     ESP_ERROR_CHECK( esp_lcd_panel_disp_on_off( panel, true ) );
+    output_enabled = true;
 
     display_clear( 0x0000U );
     ESP_ERROR_CHECK( display_flush() );
@@ -304,7 +339,7 @@ esp_err_t display_write_rect(
 
 esp_err_t display_flush( void )
 {
-    if( !display_dirty )
+    if( !display_dirty || !output_enabled )
     {
         return ESP_OK;
     }
