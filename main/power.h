@@ -34,6 +34,14 @@ esp_err_t power_init( void );
 /** @brief Poll the user button and execute sleep/shutdown actions. */
 void power_poll( void );
 
+/**
+ * @brief Consume a user-key gesture used only to wake a dimmed/off display.
+ *
+ * If the key is currently held, power handling ignores it through release so
+ * the wake action cannot also become sleep or a shutdown hold.
+ */
+void power_consume_wake_input( void );
+
 /** @brief Return the current power-button hold state for UI rendering. */
 void power_get_status( power_status_t *a_status );
 
