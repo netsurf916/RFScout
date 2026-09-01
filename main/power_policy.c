@@ -163,6 +163,30 @@ static void poll_low_battery( void )
     }
 }
 
+static power_action_t thermal_effective_action( power_action_t a_configured_action )
+{
+    if( POWER_ACTION_POWER_OFF != a_configured_action ||
+        !power_action_available( POWER_ACTION_SLEEP ) )
+    {
+        return a_configured_action;
+    }
+
+    /* BATFET disable cannot remove system power while external input remains.
+       Confirm a fresh charger state before relying on physical power-off. If the
+       charger cannot prove that external power is absent, deep sleep is the safe
+       conservative fallback because it stops active execution on supplied power. */
+    battery_refresh();
+    battery_status_t battery;
+    if( !battery_get_status( &battery ) || !battery.charger_fresh || battery.external_power )
+    {
+        ESP_LOGW( TAG,
+                  "thermal power-off cannot confirm removable power; using sleep fallback" );
+        return POWER_ACTION_SLEEP;
+    }
+
+    return a_configured_action;
+}
+
 static void poll_high_temperature( void )
 {
     const device_config_t *config = device_config_get();
@@ -224,17 +248,19 @@ static void poll_high_temperature( void )
        actively worsening condition rather than an energy-reserve condition. Reset
        the battery latch as well so it may re-arm if the thermal condition clears. */
     reset_low_battery( true );
+    const power_action_t effective_action = thermal_effective_action( action );
     if( power_request_transition( POWER_TRANSITION_HIGH_TEMPERATURE,
-                                  action,
+                                  effective_action,
                                   "HIGH TEMPERATURE",
                                   POWER_POLICY_TRANSITION_DELAY_SECONDS ) )
     {
         high_temperature_latched = true;
         ESP_LOGW( TAG,
-                  "high temperature protection requested: %.1f C >= %u C action=%s",
+                  "high temperature protection requested: %.1f C >= %u C action=%s%s",
                   (double)temperature_c,
                   (unsigned)threshold,
-                  power_action_name( action ) );
+                  power_action_name( effective_action ),
+                  ( effective_action != action ) ? " (fallback)" : "" );
     }
 }
 
