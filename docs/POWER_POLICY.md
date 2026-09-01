@@ -19,6 +19,8 @@ The policy values are stored in the existing `power` object in `/sdcard/rfscout.
 
 Low-battery protection evaluates the fuel-gauge state of charge once per second. The configured threshold must be met for five consecutive **fresh, successfully read** samples before a transition is requested. A failed fuel-gauge read breaks the confirmation run rather than reusing the previous cached percentage.
 
+A low-battery transition also requires **fresh charger telemetry confirming that external power is absent**. Cached charger state is acceptable for status display but is never used to authorize a protective sleep or power-off. If charger status cannot be freshly read during confirmation or during an active warning countdown, the pending transition is cancelled and confirmation restarts after trustworthy charger telemetry returns.
+
 Low-battery protection is inhibited while external power is present or the battery is charging/complete. Connecting external power during the warning countdown clears the condition and cancels the pending transition. After a low-battery condition has fired, it rearms only after the battery rises at least three percentage points above the configured threshold.
 
 ## High-temperature behavior
