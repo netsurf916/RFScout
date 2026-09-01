@@ -29,4 +29,13 @@ void display_idle_poll( void );
  */
 esp_err_t display_idle_request_off( void );
 
+/**
+ * @brief Request that the display become visible without synthesizing user input.
+ *
+ * Device-level warnings use this path so a dimmed/off panel can present urgent
+ * status while ordinary wake gestures remain fully consumed by display_idle.
+ * The request also clears any queued explicit screen-off transition.
+ */
+esp_err_t display_idle_request_wake( void );
+
 #endif // _RFSCOUT_DISPLAY_IDLE_H_

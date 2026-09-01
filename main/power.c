@@ -397,6 +397,11 @@ bool power_request_transition( power_transition_reason_t a_reason,
     requested_transition_deadline_us = esp_timer_get_time() + (int64_t)a_delay_seconds * 1000000LL;
     snprintf(
         requested_transition_message, sizeof( requested_transition_message ), "%s", a_message );
+    const esp_err_t wake_result = display_idle_request_wake();
+    if( ESP_OK != wake_result )
+    {
+        ESP_LOGW( TAG, "could not wake display for protective transition: %s", esp_err_to_name( wake_result ) );
+    }
     display_invalidate();
     return true;
 }
@@ -474,6 +479,27 @@ static void execute_policy_action( power_action_t a_action )
     }
 }
 
+/** @brief Revalidate hardware-sensitive policy actions immediately before execution. */
+static power_action_t resolve_policy_action_at_execution( power_transition_reason_t a_reason,
+                                                          power_action_t a_action )
+{
+    if( ( POWER_TRANSITION_HIGH_TEMPERATURE != a_reason ) ||
+        ( POWER_ACTION_POWER_OFF != a_action ) || !power_action_available( POWER_ACTION_SLEEP ) )
+    {
+        return a_action;
+    }
+
+    battery_refresh();
+    battery_status_t battery;
+    if( !battery_get_status( &battery ) || !battery.charger_fresh || battery.external_power )
+    {
+        ESP_LOGW( TAG,
+                  "thermal power-off no longer has confirmed removable power; using sleep" );
+        return POWER_ACTION_SLEEP;
+    }
+    return a_action;
+}
+
 static void update_requested_transition( int64_t a_now_us )
 {
     if( !requested_transition_pending )
@@ -484,7 +510,8 @@ static void update_requested_transition( int64_t a_now_us )
     if( a_now_us >= requested_transition_deadline_us )
     {
         const power_transition_reason_t reason = requested_transition_reason;
-        const power_action_t action = requested_transition_action;
+        const power_action_t action =
+            resolve_policy_action_at_execution( reason, requested_transition_action );
         char message[ POWER_STATUS_MESSAGE_MAX ];
         char detail[ POWER_STATUS_DETAIL_MAX ];
         snprintf( message, sizeof( message ), "%s", requested_transition_message );
