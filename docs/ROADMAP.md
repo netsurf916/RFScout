@@ -56,24 +56,33 @@ Release criteria:
 
 This makes app entry/exit analogous to crossing a transactional resource-ownership boundary: a transition may take slightly longer when cleanup is required, but the next application starts from a predictable memory baseline. The pre-reclamation safety gate is mandatory; irreversible cleanup and reclamation happen only after that gate succeeds, and post-reclamation checks are accounting assertions rather than a substitute for proving that execution contexts have stopped.
 
-### Milestone 3: dynamic WiFi / BT retention
+### Milestone 3: dynamic WiFi/BLE retention and observation model
 
-Replace fixed-capacity thinking in WiFi / BT retained observations with dynamically growable app-owned storage backed by the memory manager.
+Rename the user-facing **WiFi / BT** application to **WiFi / BLE** and replace fixed-capacity/MAC-address-centric thinking with dynamically growable app-owned observation, identity, and relationship state backed by the memory manager.
 
 Retention controls should support three semantic classes:
 
 - **Instant** — no intentional retention grace period. An entry is eligible for removal on the next normal housekeeping pass once it is no longer current according to the collector's observation semantics.
-- **Timed** — retain the existing configurable finite timeout behavior for users who want a rolling recent-history window.
-- **Never** — do not age the entry out while WiFi / BT remains the active application. `Never` is session-scoped, not permanent storage: switching away from WiFi / BT still frees its retained observation memory under the app-exit contract.
+- **Timed** — retain configurable finite timeout behavior for users who want a rolling recent-history window.
+- **Never** — do not age the entry out while WiFi/BLE remains the active application. `Never` is session-scoped, not permanent storage: switching away still frees app-owned observation, identity, relationship, and history state under the app-exit contract.
 
-Goals:
+Timeouts define whether evidence is current rather than requiring an object under active inspection to disappear immediately. A selected/deep-dive object may become stale while temporarily retained for UI stability; once unreferenced, normal retention and memory-pressure reclamation apply.
 
-- Preserve independent Wi-Fi and BLE source aging for merged observations.
-- Apply the same clear Instant/Timed/Never model to other WiFi / BT retained lists where it is semantically appropriate, including surveillance retention, rather than creating subtly different timeout vocabularies.
-- Grow retained storage on demand until memory pressure requires a documented degradation/eviction policy.
-- Do not silently convert `Never` into a hidden fixed maximum that defeats the setting. If memory becomes constrained, surface the condition and use an explicit policy.
+Identity and analysis goals:
+
+- Stop equating every observed MAC address with a physical device. Preserve raw observed addresses while introducing stable app-internal entity IDs, observed-identity sets, and confidence/provenance for any correlation.
+- Preserve independent Wi-Fi and BLE source aging where a higher-level entity contains evidence from both radios.
+- Treat randomized-address correlation as evidence rather than proof. Never merge stable/associated identities solely from similar fingerprints, and do not claim persistent physical identity across independently randomized associations/private-address rotations without adequate passive evidence.
+- Replace the Wi-Fi collector's MAC-only reduction with richer semantic 802.11 observations where practical, preserving address roles/BSSID, frame type/subtype, sequence information, channel/RSSI, SSID labels, relevant capability information, and association evidence.
+- Use authentication/association/reassociation exchanges and ordinary associated data traffic as useful client/AP topology evidence; EAPOL/handshake traffic strengthens confidence but is not required to discover an associated client.
+- Keep randomized Probe Requests as useful transient evidence while preventing each rotating probe MAC from inflating the primary device count one-for-one. Conservative short-lived clustering may use compatible timing, sequence, capability, channel/RSSI, and other evidence while retaining uncertain observations separately.
+- Make radio type a first-class view dimension: **Combined / Wi-Fi / BLE**.
+- Wi-Fi views should include **SSIDs, APs, Clients, Unassociated, and Probes**. SSID grouping is label-based analysis only: an SSID is non-unique, so same-named APs must remain distinct BSSIDs and must not be presented as one logical network/topology unless separate observed evidence supports a stronger relationship.
+- BLE views should use BLE-native semantics such as **Devices, Advertisers, Beacons, and Services/Capabilities** rather than inventing AP/probe terminology or claiming unobserved central/peripheral connections.
+- Use the main screen for actively updated analytical projections and context-sensitive menus for relationship drill-down. Internal IDs plus active/stale state should keep selections stable while observations continue to update.
+- Grow retained storage on demand until memory pressure requires a documented degradation/eviction policy, preferentially discarding stale/low-confidence transient evidence before current/high-confidence entities when semantically safe.
 - Preserve detection notification behavior independently from whether an observation remains visible in retained history.
-- Keep all retained observation/history memory app-owned so leaving WiFi / BT returns it to the common pool.
+- Keep all WiFi/BLE observation, identity, relationship, and retained-history memory app-owned so leaving the app returns it to the common pool.
 
 ### Milestone 4: application-by-application improvement pass
 
@@ -86,14 +95,21 @@ Every current application should receive an explicit 0.4.0 review rather than tr
 - Audit settings interaction against the shared semantic menu policy so toggles and small choices use direct center-button cycling while genuine values retain enter/edit/exit behavior.
 - Keep Home lightweight and free of large app-owned allocations so it remains a useful neutral baseline when measuring whether another app released its resources.
 
-#### WiFi / BT
+#### WiFi/BLE
 
-- Move retained device/source/surveillance collections to dynamically growable app-owned storage.
-- Add Instant and Never retention choices alongside finite timeout values.
-- Preserve source-specific aging inside merged observations.
-- Review list/detail presentation so increased storage capacity remains usable rather than merely allowing an unbounded invisible collection.
+- Rename the app from WiFi / BT to WiFi / BLE when the implementation lands and update production documentation accordingly.
+- Move retained observation/source/surveillance plus identity/relationship state to dynamically growable app-owned storage.
+- Add Instant and Never retention choices alongside finite timeout values, with active/stale semantics that keep deep-dive navigation stable.
+- Replace MAC-equals-device counting with semantic observations, stable internal entity IDs, observed-identity sets, and confidence/provenance.
+- Parse enough 802.11 roles/subtypes/metadata to distinguish APs, associated clients, unassociated/probe activity, and defensible topology evidence.
+- Use ordinary associated traffic and management exchanges for associated-client discovery; treat handshake/EAPOL observations as stronger confirmation rather than a requirement.
+- Cluster randomized probe identities conservatively into ephemeral scan sessions only where evidence supports it, leaving uncertain observations distinct.
+- Add Combined/Wi-Fi/BLE radio selection and radio-specific views: Wi-Fi SSIDs/APs/Clients/Unassociated/Probes and BLE Devices/Advertisers/Beacons/Services.
+- Treat SSID views as non-unique label groupings, never as automatic logical-network identity or shared topology.
+- Add actively updated relationship drill-down without cursor/selection instability as entries become stale.
+- Preserve source-specific aging inside higher-level entities and keep unassociated/probe-only evidence explicitly lower-confidence than associated-client evidence.
 - Add memory-pressure handling and diagnostics without dropping passive collection stability.
-- Ensure all collectors are quiesced before retained storage is reclaimed on exit.
+- Ensure both collectors are quiesced before app-owned observation/identity state is reclaimed on exit.
 
 #### CC1101
 
@@ -182,7 +198,10 @@ v0.4.0 should not be considered complete until:
 - the shared app-scoped memory manager is implemented and used by data-heavy current applications where appropriate;
 - supported RFScout hardware targets provide usable PSRAM as a platform requirement;
 - application exit passes the pre-reclamation safety gate and reliably reclaims all app-owned dynamic memory only after workers/callbacks/timers can no longer reference it;
-- WiFi / BT exposes Instant, finite timed, and Never retention semantics backed by growable storage;
+- WiFi/BLE exposes Instant, finite timed, and Never retention semantics backed by growable app-owned storage;
+- WiFi/BLE no longer treats every observed MAC as a physical device: randomized probe/private-address activity is represented conservatively with raw-identity provenance and confidence, and rotating probe MACs do not inflate the primary device count one-for-one;
+- Wi-Fi exposes defensible AP/client/probe relationships from appropriate 802.11 evidence, with handshake/EAPOL observation optional for ordinary associated-client discovery and SSID groupings clearly treated as non-unique labels rather than automatic network identity;
+- the app provides Combined/Wi-Fi/BLE radio selection, Wi-Fi SSIDs/APs/Clients/Unassociated/Probes views, BLE Devices/Advertisers/Beacons/Services views, and live deep-dive navigation that remains stable as observations age from active to stale;
 - every current application has completed its documented improvement review or has an explicit, documented reason for deferral;
 - visual theme and Normal/Quiet audio policy are independent, with legacy Discipline configuration migrated to Night + Quiet;
 - Quiet suppresses incidental and detection-notification sound presentation without suppressing explicitly requested application content audio;
