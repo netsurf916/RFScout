@@ -400,7 +400,9 @@ bool power_request_transition( power_transition_reason_t a_reason,
     const esp_err_t wake_result = display_idle_request_wake();
     if( ESP_OK != wake_result )
     {
-        ESP_LOGW( TAG, "could not wake display for protective transition: %s", esp_err_to_name( wake_result ) );
+        ESP_LOGW( TAG,
+                  "could not wake display for protective transition: %s",
+                  esp_err_to_name( wake_result ) );
     }
     display_invalidate();
     return true;
@@ -493,8 +495,7 @@ static power_action_t resolve_policy_action_at_execution( power_transition_reaso
     battery_status_t battery;
     if( !battery_get_status( &battery ) || !battery.charger_fresh || battery.external_power )
     {
-        ESP_LOGW( TAG,
-                  "thermal power-off no longer has confirmed removable power; using sleep" );
+        ESP_LOGW( TAG, "thermal power-off no longer has confirmed removable power; using sleep" );
         return POWER_ACTION_SLEEP;
     }
     return a_action;
