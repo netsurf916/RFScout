@@ -1434,6 +1434,11 @@ static void close_active_menu_for_back( void )
     }
     if( RFSCOUT_APP_DEVICE == active_app && device_menu )
     {
+        if( device_view_back() )
+        {
+            emit_event( RFSCOUT_EVENT_BACK, 0 );
+            return;
+        }
         device_menu = false;
         device_view_landing();
         emit_event( RFSCOUT_EVENT_BACK, 0 );
