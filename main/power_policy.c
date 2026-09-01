@@ -179,8 +179,7 @@ static power_action_t thermal_effective_action( power_action_t a_configured_acti
     battery_status_t battery;
     if( !battery_get_status( &battery ) || !battery.charger_fresh || battery.external_power )
     {
-        ESP_LOGW( TAG,
-                  "thermal power-off cannot confirm removable power; using sleep fallback" );
+        ESP_LOGW( TAG, "thermal power-off cannot confirm removable power; using sleep fallback" );
         return POWER_ACTION_SLEEP;
     }
 
