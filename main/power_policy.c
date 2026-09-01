@@ -80,7 +80,7 @@ static void poll_low_battery( void )
     }
 
     battery_status_t battery;
-    if( !battery_get_status( &battery ) || !battery.available )
+    if( !battery_get_status( &battery ) )
     {
         if( !low_battery_latched )
         {
@@ -89,10 +89,25 @@ static void poll_low_battery( void )
         return;
     }
 
+    /* External power cancellation does not depend on a fresh percentage read.
+       A charger sample may remain usable even when the fuel-gauge transaction
+       failed during the same refresh. */
     if( battery.external_power || ( BATTERY_CHARGE_CHARGING == battery.charge_state ) ||
         ( BATTERY_CHARGE_COMPLETE == battery.charge_state ) )
     {
         reset_low_battery( true );
+        return;
+    }
+
+    /* Cached percentage remains useful to the UI during transient I2C errors,
+       but protective confirmation must only advance on a percentage obtained by
+       the latest refresh. A missed sample breaks the consecutive-sample run. */
+    if( !battery.available || !battery.percentage_fresh )
+    {
+        if( !low_battery_latched )
+        {
+            low_battery_samples = 0U;
+        }
         return;
     }
 
