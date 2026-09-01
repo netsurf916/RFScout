@@ -40,21 +40,65 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'pull_request' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      github.event_name == 'workflow_run'
     runs-on: ubuntu-24.04
+    outputs:
+      ready: ${{ steps.stability.outputs.ready }}
 
     steps:
+      - name: Check candidate catalog stability
+        id: stability
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ready=true
+
+          while IFS=$'\t' read -r pr sha draft; do
+            runs=$(gh api --method GET \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs" \
+              -f event=pull_request \
+              -f head_sha="$sha" \
+              -f per_page=100)
+
+            matching=$(jq -c --argjson pr "$pr" \
+              '[.workflow_runs[] | select(any(.pull_requests[]?; .number == $pr))]' \
+              <<< "$runs")
+            count=$(jq 'length' <<< "$matching")
+            pending=$(jq '[.[] | select(.status != "completed")] | length' <<< "$matching")
+
+            if [[ "$draft" != "true" && "$count" -eq 0 ]]; then
+              echo "Deferring Pages refresh: PR #$pr current head $sha has no Build and formatting run yet"
+              ready=false
+              continue
+            fi
+
+            if [[ "$pending" -ne 0 ]]; then
+              echo "Deferring Pages refresh: PR #$pr current head $sha is still building"
+              ready=false
+            fi
+          done < <(
+            gh api --paginate \
+              -H 'Accept: application/vnd.github+json' \
+              "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
+              --jq '.[] | [.number, .head.sha, .draft] | @tsv'
+          )
+
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v6
+        if: steps.stability.outputs.ready == 'true'
         with:
           ref: main
 
       - name: Stage flasher application
+        if: steps.stability.outputs.ready == 'true'
         run: |
           mkdir -p site
           cp -R web/flasher/. site/
           cp assets/logo.png site/logo.png
 
       - name: Mirror published firmware releases
+        if: steps.stability.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -92,6 +136,7 @@ jobs:
           done
 
       - name: Collect current pull request candidates
+        if: steps.stability.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -108,26 +153,33 @@ jobs:
                 -f event=pull_request \
                 -f status=success \
                 -f head_sha="$sha" \
-                -f per_page=20)
+                -f per_page=100)
 
-              run=$(jq -c --argjson pr "$pr" \
-                '[.workflow_runs[] | select(any(.pull_requests[]?; .number == $pr))][0] // empty' \
-                <<< "$runs")
-              if [[ -z "$run" ]]; then
-                echo "Skipping PR #$pr: no successful build for current head $sha"
+              run=""
+              artifact_name=""
+              while IFS= read -r candidate_run; do
+                run_id=$(jq -r '.id' <<< "$candidate_run")
+                candidate_artifact=$(gh api \
+                  "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts" \
+                  --jq '[.artifacts[] | select((.expired | not) and (.name | startswith("rfscout-candidate-")))] | .[0].name // empty')
+                if [[ -n "$candidate_artifact" ]]; then
+                  run="$candidate_run"
+                  artifact_name="$candidate_artifact"
+                  break
+                fi
+              done < <(
+                jq -c --argjson pr "$pr" \
+                  '.workflow_runs[] | select(any(.pull_requests[]?; .number == $pr))' \
+                  <<< "$runs"
+              )
+
+              if [[ -z "$run" || -z "$artifact_name" ]]; then
+                echo "Skipping PR #$pr: no live successful candidate for current head $sha"
                 continue
               fi
 
               run_id=$(jq -r '.id' <<< "$run")
               run_url=$(jq -r '.html_url' <<< "$run")
-              artifact_name=$(gh api \
-                "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts" \
-                --jq '[.artifacts[] | select((.expired | not) and (.name | startswith("rfscout-candidate-")))] | .[0].name // empty')
-              if [[ -z "$artifact_name" ]]; then
-                echo "Skipping PR #$pr: candidate artifact is unavailable or expired"
-                continue
-              fi
-
               gh run download "$run_id" \
                 --name "$artifact_name" \
                 --dir "candidates/pr-$pr"
@@ -143,6 +195,7 @@ jobs:
             done
 
       - name: Build firmware catalog
+        if: steps.stability.outputs.ready == 'true'
         run: |
           python3 tools/build_web_flasher.py \
             --site-dir site \
@@ -151,15 +204,18 @@ jobs:
             --candidates-json candidates.json
 
       - name: Configure GitHub Pages
+        if: steps.stability.outputs.ready == 'true'
         uses: actions/configure-pages@v6
 
       - name: Upload GitHub Pages artifact
+        if: steps.stability.outputs.ready == 'true'
         uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
   deploy:
     needs: build-site
+    if: needs.build-site.outputs.ready == 'true'
     runs-on: ubuntu-24.04
     environment:
       name: github-pages

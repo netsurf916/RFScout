@@ -32,13 +32,17 @@ Candidate artifacts are diagnostic build products, not releases, and are never m
 
 ## Browser flasher
 
-The **Publish browser flasher** workflow runs after a successful eligible **Build and formatting** workflow, whenever a GitHub Release is published, when a pull request is closed, and when started manually. Each deployment rebuilds the catalog from published releases plus the current successful candidate build for every open pull request whose artifact is still available.
+The **Publish browser flasher** workflow reevaluates the catalog whenever a **Build and formatting** workflow completes, whenever a GitHub Release is published, when a pull request is closed, and when started manually. Each completed Pages deployment is rebuilt from published releases plus the current successful candidate build for every open pull request whose artifact is still available.
+
+Candidate publication is intentionally atomic with respect to in-flight pull-request builds. Before replacing the deployed Pages snapshot, the workflow checks every open non-draft PR current head. If a current head does not yet have a recorded Build and formatting run, or any matching run is still queued/in progress, that refresh is deferred and the previously deployed flasher remains untouched. When the outstanding build settles, its workflow-completion event reevaluates the catalog: a successful current-head build replaces/adds the candidate, while a failed/cancelled current-head build causes that PR to be omitted on the next stable deployment. This prevents unrelated build completions from temporarily removing another PR's candidate while its replacement is still building.
 
 The static flasher shell uses the repository's `assets/logo.png` branding and RFScout orange/white visual theme. The workflow copies the logo into the Pages artifact so the deployed site remains self-contained alongside the mirrored firmware files and manifests.
 
-Open pull-request candidates are kept independently under `firmware/candidates/pr-N/` and are labeled with their PR numbers in the selector. A newer build from another PR therefore does not overwrite an existing candidate. Only a successful candidate matching the PR's current head commit is exposed, so a stale build from an earlier revision is not offered after the PR changes. Draft status by itself does not hide an otherwise current, successful candidate; PRs without a current successful artifact, or whose candidate artifacts have expired, are omitted.
+Open pull-request candidates are kept independently under `firmware/candidates/pr-N/` and are labeled with their PR numbers in the selector. A newer build from another PR therefore does not overwrite an existing candidate. Only a successful candidate matching the PR's current head commit is included in a newly published catalog, so a stale build from an earlier revision is not deliberately republished after the new head settles. While a replacement build is still in flight, the prior Pages deployment may continue to show the previous candidate because the site is left unchanged rather than publishing a partial catalog. Draft status by itself does not hide an otherwise current, successful candidate; PRs without a current successful artifact, or whose candidate artifacts have expired, are omitted once the catalog is stable enough to republish.
 
-Ordinary `main` push artifacts are not exposed as browser-flasher candidates. Once a PR is merged or closed, the next flasher refresh removes its candidate from the catalog; the explicit pull-request-close trigger handles closes that do not otherwise cause a `main` build. Published releases remain durable entries below the current PR candidates.
+Candidate discovery checks successful workflow runs for the PR's current head until it finds a live `rfscout-candidate-*` artifact instead of assuming the newest successful run necessarily contains firmware. This avoids formatting-only or rerun records masking a still-valid candidate artifact for the same source head.
+
+Ordinary `main` push artifacts are not exposed as browser-flasher candidates. Once a PR is merged or closed, the next stable flasher refresh removes its candidate from the catalog; the explicit pull-request-close trigger handles closes that do not otherwise cause a `main` build. Published releases remain durable entries below the current PR candidates.
 
 Each deployment is self-contained: firmware files and manifests are copied into the Pages artifact rather than fetched by the browser from authenticated Actions endpoints. Publishing a release therefore refreshes the browser flasher automatically. A manual **Publish browser flasher** dispatch remains available for recovery or maintenance, but normal release publication should not require it.
 
@@ -70,7 +74,7 @@ Before publishing a draft:
 4. record hardware validation in the release notes; and
 5. publish the release deliberately through GitHub.
 
-Publishing preserves the semantic tag created during draft preparation. The release publication event automatically starts **Publish browser flasher**, which discovers the now-published release assets and republishes the firmware catalog. The flasher does not rebuild firmware during publication/deployment.
+Publishing preserves the semantic tag created during draft preparation. The release publication event automatically starts **Publish browser flasher**, which discovers the now-published release assets and republishes the firmware catalog once candidate state is stable. The flasher does not rebuild firmware during publication/deployment.
 
 ## Installation behavior
 
