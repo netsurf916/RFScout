@@ -89,7 +89,7 @@ bool power_action_supported( power_action_t a_action, bool a_long_press )
         case POWER_ACTION_SLEEP:
             return !a_long_press && ( 0 != RFSCOUT_BOARD_CAN_DEEP_SLEEP );
         case POWER_ACTION_POWER_OFF:
-            return a_long_press && ( 0 != RFSCOUT_BOARD_CAN_POWER_OFF );
+            return 0 != RFSCOUT_BOARD_CAN_POWER_OFF;
         case POWER_ACTION_COUNT:
         default:
             return false;

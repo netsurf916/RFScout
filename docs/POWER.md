@@ -11,6 +11,7 @@ Device Settings includes a **Power button** submenu. The submenu uses the direct
 - `None`
 - `Screen off`
 - `Sleep`
+- `Power off`
 
 **Long press** supports, when available on the board:
 
