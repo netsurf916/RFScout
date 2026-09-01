@@ -14,6 +14,7 @@
 
 #include "cJSON.h"
 #include "esp_log.h"
+#include "nvs.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -31,6 +32,9 @@
 #define CONFIG_DISPLAY_TIMEOUT_MAX_SECONDS 3600
 #define CONFIG_MIN_VALID_EPOCH 1577836800LL
 #define CONFIG_MAX_VALID_EPOCH 4133980799LL
+#define LEGACY_THEME_NVS_NAMESPACE "rfscout_ui"
+#define LEGACY_THEME_NVS_KEY "theme"
+#define LEGACY_THEME_NVS_VALUE_CAPACITY 16U
 
 static const char *TAG = "config_recovery";
 
@@ -612,6 +616,116 @@ static bool merge_object( cJSON *a_target,
     return true;
 }
 
+static void legacy_audio_gains_for_theme( rfscout_theme_id_t a_theme,
+                                          int *a_interaction_gain,
+                                          int *a_notification_gain )
+{
+    *a_interaction_gain = 35;
+    *a_notification_gain = 100;
+    if( RFSCOUT_THEME_OUTDOOR == a_theme )
+    {
+        *a_interaction_gain = 55;
+    }
+    else if( RFSCOUT_THEME_NIGHT == a_theme )
+    {
+        *a_interaction_gain = 20;
+        *a_notification_gain = 60;
+    }
+}
+
+static bool active_needs_legacy_nvs_theme( const cJSON *a_root )
+{
+    int version = 0;
+    if( !schema_version( a_root, &version ) || 1 != version )
+    {
+        return false;
+    }
+    const cJSON *display = cJSON_GetObjectItemCaseSensitive( a_root, "display" );
+    const cJSON *theme =
+        cJSON_IsObject( display ) ? cJSON_GetObjectItemCaseSensitive( display, "theme" ) : NULL;
+    return !cJSON_IsString( theme );
+}
+
+static bool read_legacy_nvs_theme( rfscout_theme_id_t *a_theme, bool *a_quiet )
+{
+    if( NULL == a_theme || NULL == a_quiet )
+    {
+        return false;
+    }
+
+    nvs_handle_t handle;
+    if( ESP_OK != nvs_open( LEGACY_THEME_NVS_NAMESPACE, NVS_READONLY, &handle ) )
+    {
+        return false;
+    }
+
+    char stored[ LEGACY_THEME_NVS_VALUE_CAPACITY ];
+    size_t stored_length = sizeof( stored );
+    const esp_err_t result = nvs_get_str( handle, LEGACY_THEME_NVS_KEY, stored, &stored_length );
+    nvs_close( handle );
+    if( ESP_OK != result )
+    {
+        return false;
+    }
+
+    *a_quiet = false;
+    if( 0 == strcasecmp( stored, "discipline" ) )
+    {
+        *a_theme = RFSCOUT_THEME_NIGHT;
+        *a_quiet = true;
+        return true;
+    }
+    return ui_theme_from_config_name( stored, a_theme );
+}
+
+static bool apply_legacy_nvs_theme( cJSON *a_candidate, const cJSON *a_active )
+{
+    if( !active_needs_legacy_nvs_theme( a_active ) )
+    {
+        return true;
+    }
+
+    rfscout_theme_id_t theme = RFSCOUT_THEME_INDOOR;
+    bool quiet = false;
+    if( !read_legacy_nvs_theme( &theme, &quiet ) )
+    {
+        return true;
+    }
+
+    cJSON *display = cJSON_GetObjectItemCaseSensitive( a_candidate, "display" );
+    cJSON *theme_item =
+        cJSON_IsObject( display ) ? cJSON_GetObjectItemCaseSensitive( display, "theme" ) : NULL;
+    cJSON *audio = cJSON_GetObjectItemCaseSensitive( a_candidate, "audio" );
+    cJSON *policy =
+        cJSON_IsObject( audio ) ? cJSON_GetObjectItemCaseSensitive( audio, "policy" ) : NULL;
+    cJSON *interaction =
+        cJSON_IsObject( audio )
+            ? cJSON_GetObjectItemCaseSensitive( audio, "interaction_gain_percent" )
+            : NULL;
+    cJSON *notification =
+        cJSON_IsObject( audio )
+            ? cJSON_GetObjectItemCaseSensitive( audio, "notification_gain_percent" )
+            : NULL;
+    if( !cJSON_IsString( theme_item ) || !cJSON_IsString( policy ) ||
+        !cJSON_IsNumber( interaction ) || !cJSON_IsNumber( notification ) ||
+        !cJSON_SetValuestring( theme_item, ui_theme_config_name( theme ) ) ||
+        !cJSON_SetValuestring( policy, quiet ? "quiet" : "normal" ) )
+    {
+        return false;
+    }
+
+    int interaction_gain = 35;
+    int notification_gain = 100;
+    legacy_audio_gains_for_theme( theme, &interaction_gain, &notification_gain );
+    cJSON_SetNumberValue( interaction, interaction_gain );
+    cJSON_SetNumberValue( notification, notification_gain );
+    ESP_LOGW( TAG,
+              "imported schema-v1 NVS theme=%s audio_policy=%s before downgrade recovery",
+              ui_theme_config_name( theme ),
+              quiet ? "quiet" : "normal" );
+    return true;
+}
+
 static bool normalize_legacy_theme( cJSON *a_root )
 {
     cJSON *display = cJSON_GetObjectItemCaseSensitive( a_root, "display" );
@@ -803,7 +917,11 @@ esp_err_t device_config_recover_downgrade( void )
     }
     else
     {
-        if( !merge_object( candidate, active, "", true ) )
+        if( !apply_legacy_nvs_theme( candidate, active ) )
+        {
+            result = ESP_ERR_INVALID_RESPONSE;
+        }
+        else if( !merge_object( candidate, active, "", true ) )
         {
             result = ESP_ERR_NO_MEM;
         }
