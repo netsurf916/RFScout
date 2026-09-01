@@ -89,6 +89,17 @@ static void poll_low_battery( void )
         return;
     }
 
+    /* A low-battery transition is only safe to retain when the latest charger
+       refresh confirms that external power is absent. Cached charger state is
+       suitable for UI display, but not for deciding whether BATFET shutdown can
+       actually remove power. If charger telemetry is uncertain, cancel and
+       restart confirmation once fresh source-state evidence is available. */
+    if( !battery.charger_fresh )
+    {
+        reset_low_battery( true );
+        return;
+    }
+
     /* External power cancellation does not depend on a fresh percentage read.
        A charger sample may remain usable even when the fuel-gauge transaction
        failed during the same refresh. */
