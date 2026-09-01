@@ -33,6 +33,13 @@ static bool high_temperature_latched;
 static temperature_sensor_handle_t temperature_sensor;
 static bool temperature_available;
 
+static bool transition_active( power_transition_reason_t a_reason )
+{
+    power_status_t status;
+    power_get_status( &status );
+    return ( status.reason == a_reason ) && ( POWER_HOLD_IDLE != status.state );
+}
+
 static void reset_low_battery( bool a_cancel_transition )
 {
     low_battery_samples = 0U;
@@ -64,10 +71,21 @@ static void poll_low_battery( void )
         return;
     }
 
+    /* Once a protective countdown is active, force a fresh charger/fuel-gauge
+       sample on every policy pass. This gives newly connected external power a
+       chance to cancel the transition before power_poll() may execute it. */
+    if( low_battery_latched )
+    {
+        battery_refresh();
+    }
+
     battery_status_t battery;
     if( !battery_get_status( &battery ) || !battery.available )
     {
-        low_battery_samples = 0U;
+        if( !low_battery_latched )
+        {
+            low_battery_samples = 0U;
+        }
         return;
     }
 
@@ -86,8 +104,24 @@ static void poll_low_battery( void )
         return;
     }
 
-    if( battery.percentage > threshold || low_battery_latched )
+    if( low_battery_latched )
     {
+        if( transition_active( POWER_TRANSITION_LOW_BATTERY ) )
+        {
+            return;
+        }
+
+        /* The requested action returned without changing power state. Re-arm
+           confirmation so a still-unsafe battery condition can retry. */
+        low_battery_latched = false;
+        low_battery_samples = 0U;
+    }
+
+    if( battery.percentage > threshold )
+    {
+        /* Confirmation is consecutive, not cumulative across samples that leave
+           the trigger range but remain inside the hysteresis band. */
+        low_battery_samples = 0U;
         return;
     }
 
@@ -129,7 +163,10 @@ static void poll_high_temperature( void )
     const esp_err_t result = temperature_sensor_get_celsius( temperature_sensor, &temperature_c );
     if( ESP_OK != result )
     {
-        high_temperature_samples = 0U;
+        if( !high_temperature_latched )
+        {
+            high_temperature_samples = 0U;
+        }
         ESP_LOGW( TAG, "internal temperature read failed: %s", esp_err_to_name( result ) );
         return;
     }
@@ -140,8 +177,22 @@ static void poll_high_temperature( void )
         return;
     }
 
-    if( temperature_c < (float)threshold || high_temperature_latched )
+    if( high_temperature_latched )
     {
+        if( transition_active( POWER_TRANSITION_HIGH_TEMPERATURE ) )
+        {
+            return;
+        }
+
+        /* A failed sleep/shutdown request returns the power layer to idle. Re-arm
+           the thermal policy so a still-hot device can retry after confirmation. */
+        high_temperature_latched = false;
+        high_temperature_samples = 0U;
+    }
+
+    if( temperature_c < (float)threshold )
+    {
+        high_temperature_samples = 0U;
         return;
     }
 
