@@ -1019,6 +1019,19 @@ static void adjust_selected( int a_delta )
     }
 }
 
+bool device_view_back( void )
+{
+    if( !power_menu_open )
+    {
+        return false;
+    }
+
+    power_menu_open = false;
+    power_selected_item = POWER_MENU_BACK;
+    device_view_render();
+    return true;
+}
+
 bool device_view_input( bool a_pressed, int a_delta )
 {
     if( power_menu_open )
