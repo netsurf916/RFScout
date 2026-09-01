@@ -154,13 +154,13 @@ Design goals:
 - Quiet does not suppress explicitly requested content audio such as Recorder playback or future CW output.
 - Permit every useful combination, including Outdoor + Quiet, Night + Normal, and Night + Quiet.
 - Retire the standalone **Discipline** theme rather than preserving a permanently coupled visual/audio mode.
-- Migrate legacy Discipline configuration to **Night + Quiet** so existing behavior is preserved across the schema transition.
+- Migrate legacy Discipline configuration to **Night + Quiet** and materialize the Night environmental gain profile (`20%` interaction / `60%` notification). Quiet preserves the immediate silent behavior after migration; if the user later selects Normal, the migrated gains provide the expected Night audio profile rather than carrying forward Discipline's legacy `0%` / `0%` suppression.
 - Existing Indoor, Outdoor, and Night selections retain their visual choice and default to the **Normal** audio policy unless an explicit migrated audio-policy value exists.
 - Migration must also materialize the current theme-owned interaction and notification gains into independent audio state so Indoor preserves 35%/100%, Outdoor preserves 55%/100%, and Night preserves 20%/60%. These environmental gains remain separate from the existing global notification-volume setting.
 - Saving after migration should emit the independent theme, audio-policy, and migrated audio-gain fields and should not recreate obsolete Discipline state.
 - Add Audio Policy to Device Settings as a small direct-cycle choice consistent with the semantic menu policy.
 
-Validation should cover all six theme/policy combinations, verify that Quiet suppresses incidental and notification sound presentation but not explicit application content audio, verify that migrated Indoor/Outdoor/Night configurations retain their pre-migration effective sound levels, and verify that changing either axis never changes the other.
+Validation should cover all six theme/policy combinations, verify that Quiet suppresses incidental and notification sound presentation but not explicit application content audio, verify that migrated Discipline uses Night's 20%/60% environmental gains and that migrated Indoor/Outdoor/Night configurations retain their pre-migration effective sound levels, and verify that changing either axis never changes the other.
 
 ### Milestone 6: cross-application consistency and cleanup
 
@@ -237,7 +237,6 @@ The removed standalone Audio analyzer is not a current application. Only the com
 - Independent persistent global notification volume with perceptual output scaling.
 - Canonical alert descriptor registry.
 - Reproducible firmware packaging and manual draft-release workflow.
-
 ### MAC provenance and prefix identity
 
 **Status:** Done baseline — PRs #25-#26
@@ -357,7 +356,6 @@ Goals:
 - Keep detection-notification one-character Morse mappings separate from CW messages.
 
 ### 3. Log format and maintained parser
-
 **Priority:** Near term
 
 Make logs reliably machine-parseable without depending on fixed word positions.
