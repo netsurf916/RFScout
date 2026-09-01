@@ -258,9 +258,15 @@ void app_main( void )
            continue polling/rendering normally while LCD output is disabled. */
         display_idle_poll();
         platform_poll();
-        power_poll();
+
+        /* Refresh telemetry and evaluate protective policy before power_poll() is
+           allowed to execute an expired transition. During a pending low-battery
+           countdown the policy forces a fresh charger sample as an additional
+           execution-time guard. */
         battery_poll();
         power_policy_poll();
+        power_poll();
+
         observation_store_housekeeping();
         app_manager_poll();
         status_bar_poll();
