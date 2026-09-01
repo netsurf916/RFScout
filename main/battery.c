@@ -133,6 +133,7 @@ void battery_refresh( void )
 
     last_poll_us = esp_timer_get_time();
     battery_status_t next = cached_status;
+    next.percentage_fresh = false;
     bool gauge_sampled = false;
     uint16_t gauge_status = 0;
     if( NULL != gauge_device )
@@ -144,6 +145,7 @@ void battery_refresh( void )
         {
             next.percentage = (uint8_t)percentage;
             next.available = true;
+            next.percentage_fresh = true;
             next.gauge_available = true;
             gauge_sampled = true;
         }
