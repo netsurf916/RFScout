@@ -283,11 +283,6 @@ static void execute_action( power_action_t a_action, bool a_long_press )
             set_idle_status();
             return;
         case POWER_ACTION_SLEEP:
-            if( a_long_press )
-            {
-                set_power_status( POWER_HOLD_EXECUTING, a_action, 0U, "SLEEPING..." );
-                (void)display_present();
-            }
             enter_sleep();
             return;
         case POWER_ACTION_POWER_OFF:
@@ -392,8 +387,8 @@ void power_poll( void )
             const bool was_long = long_action_fired;
             pressed_since_us = 0;
             long_action_fired = false;
-
             set_idle_status();
+
             if( !was_long && ( held_us < POWER_SHORT_PRESS_MAX_US ) )
             {
                 execute_action( device_config_get()->power_button_short_action, false );
@@ -415,7 +410,6 @@ void power_poll( void )
         long_action_fired = true;
         ESP_LOGI(
             TAG, "user key long press completed; action=%s", power_action_name( long_action ) );
-
         execute_action( long_action, true );
         return;
     }
