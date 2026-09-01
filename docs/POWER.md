@@ -31,7 +31,9 @@ A configured long action of `None` has no countdown because there is no pending 
 
 ## Countdown presentation
 
-The global power-transition overlay is parameterized rather than hardcoded to shutdown. For the power button, a configured long hold shows `HOLD TO POWER OFF`, followed by `POWERING OFF...` once the threshold is reached. Sleep remains a semantic power action for short press and other device policies, but it is intentionally not exposed as a long-hold action because the same physical button is also the deep-sleep wake source.
+The global power-transition overlay is parameterized rather than hardcoded to shutdown. For the power button, a configured long hold shows `HOLD TO POWER OFF`, followed by `POWERING OFF...` once the threshold is reached.
+
+Sleep remains a semantic power action for short press and other device policies, but it is intentionally not exposed as a long-hold action. The physical power button is also the deep-sleep wake source, so excluding long-hold sleep keeps hold behavior unambiguous and avoids entering sleep while the wake source is still asserted.
 
 The overlay is applied by the shared presentation layer and does not become permanent application framebuffer content.
 
