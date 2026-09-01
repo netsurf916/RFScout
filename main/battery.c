@@ -92,7 +92,7 @@ attach_optional_device( uint16_t a_address, const char *a_name, i2c_master_dev_h
     }
     const esp_err_t result = board_i2c_add_device( a_address, a_device );
     if( ESP_OK == result )
-        ESP_LOGI( TAG, "%s detected at 0x%02X", a_name );
+        ESP_LOGI( TAG, "%s detected at 0x%02X", a_name, (unsigned)a_address );
     else
         ESP_LOGW( TAG, "unable to attach %s: %s", a_name, esp_err_to_name( result ) );
     return result;
