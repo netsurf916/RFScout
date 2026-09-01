@@ -24,6 +24,7 @@
 #include "oui_database.h"
 #include "platform.h"
 #include "power.h"
+#include "power_policy.h"
 #include "radio_monitor.h"
 #include "status_bar.h"
 #include "storage.h"
@@ -200,6 +201,12 @@ void app_main( void )
                   esp_err_to_name( result ) );
     }
 
+    result = power_policy_init();
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG, "protective power policy unavailable: %s", esp_err_to_name( result ) );
+    }
+
     result = ui_theme_init();
     if( ESP_OK != result )
     {
@@ -253,6 +260,7 @@ void app_main( void )
         platform_poll();
         power_poll();
         battery_poll();
+        power_policy_poll();
         observation_store_housekeeping();
         app_manager_poll();
         status_bar_poll();
