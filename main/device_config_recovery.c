@@ -304,8 +304,14 @@ static bool legacy_item_valid( const char *a_path, const char *a_name, const cJS
 
     if( '\0' == a_path[ 0 ] )
     {
-        static const char *const objects[] = {
-            "display", "power", "apps", "logging", "notifications", "recorder", "timezone", "time" };
+        static const char *const objects[] = { "display",
+                                               "power",
+                                               "apps",
+                                               "logging",
+                                               "notifications",
+                                               "recorder",
+                                               "timezone",
+                                               "time" };
         return cJSON_IsObject( a_item ) &&
                string_equals_any( a_name, objects, sizeof( objects ) / sizeof( objects[ 0 ] ) );
     }
@@ -363,7 +369,8 @@ static bool legacy_item_valid( const char *a_path, const char *a_name, const cJS
                    ( 0 == a_item->valueint ||
                      ( a_item->valueint >= (int)RFSCOUT_HIGH_TEMPERATURE_THRESHOLD_MIN_C &&
                        a_item->valueint <= (int)RFSCOUT_HIGH_TEMPERATURE_THRESHOLD_MAX_C &&
-                       0 == ( a_item->valueint % (int)RFSCOUT_HIGH_TEMPERATURE_THRESHOLD_STEP_C ) ) );
+                       0 == ( a_item->valueint %
+                              (int)RFSCOUT_HIGH_TEMPERATURE_THRESHOLD_STEP_C ) ) );
         }
         return false;
     }
@@ -389,7 +396,8 @@ static bool legacy_item_valid( const char *a_path, const char *a_name, const cJS
             NULL != a_item->valuestring )
         {
             static const char *const modes[] = { "OFF", "TONE", "MORSE" };
-            return string_equals_any( a_item->valuestring, modes, sizeof( modes ) / sizeof( modes[ 0 ] ) );
+            return string_equals_any(
+                a_item->valuestring, modes, sizeof( modes ) / sizeof( modes[ 0 ] ) );
         }
         if( 0 == strcmp( a_name, "volume" ) )
         {
@@ -416,7 +424,8 @@ static bool legacy_item_valid( const char *a_path, const char *a_name, const cJS
     {
         if( 0 == strcmp( a_name, "epoch" ) )
         {
-            return cJSON_IsNumber( a_item ) && a_item->valuedouble >= (double)CONFIG_MIN_VALID_EPOCH &&
+            return cJSON_IsNumber( a_item ) &&
+                   a_item->valuedouble >= (double)CONFIG_MIN_VALID_EPOCH &&
                    a_item->valuedouble <= (double)CONFIG_MAX_VALID_EPOCH;
         }
         return 0 == strcmp( a_name, "source" ) && cJSON_IsString( a_item ) &&
@@ -430,8 +439,10 @@ static bool legacy_item_valid( const char *a_path, const char *a_name, const cJS
             return cJSON_IsString( a_item ) && NULL != a_item->valuestring &&
                    app_name_valid( a_item->valuestring );
         }
-        static const char *const app_names[] = { "wifi_bt", "cc1101", "nrf24", "audio", "thermal", "device" };
-        return string_equals_any( a_name, app_names, sizeof( app_names ) / sizeof( app_names[ 0 ] ) ) &&
+        static const char *const app_names[] = {
+            "wifi_bt", "cc1101", "nrf24", "audio", "thermal", "device" };
+        return string_equals_any(
+                   a_name, app_names, sizeof( app_names ) / sizeof( app_names[ 0 ] ) ) &&
                ( cJSON_IsObject( a_item ) || cJSON_IsBool( a_item ) );
     }
 
@@ -468,7 +479,8 @@ static bool legacy_item_valid( const char *a_path, const char *a_name, const cJS
         }
         if( NULL != strstr( a_path, ".notifications.events" ) )
         {
-            return ( 0 == strcmp( a_name, "wifi_device" ) || 0 == strcmp( a_name, "ble_device" ) ) &&
+            return ( 0 == strcmp( a_name, "wifi_device" ) ||
+                     0 == strcmp( a_name, "ble_device" ) ) &&
                    cJSON_IsBool( a_item );
         }
         if( NULL != strstr( a_path, ".notifications" ) )
@@ -527,7 +539,8 @@ static bool merge_object( cJSON *a_target,
                 }
                 if( NULL != existing )
                 {
-                    if( !cJSON_ReplaceItemInObjectCaseSensitive( a_target, item->string, target_object ) )
+                    if( !cJSON_ReplaceItemInObjectCaseSensitive(
+                            a_target, item->string, target_object ) )
                     {
                         cJSON_Delete( target_object );
                         return false;
