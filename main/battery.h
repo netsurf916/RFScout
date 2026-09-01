@@ -28,6 +28,7 @@ typedef enum
 typedef struct
 {
     bool available;                      /**< State-of-charge percentage is valid. */
+    bool percentage_fresh;               /**< Percentage was read successfully by latest refresh. */
     bool gauge_available;                /**< BQ27220 fuel-gauge data has been read. */
     bool charger_available;              /**< BQ25896 charger data has been read. */
     bool external_power;                 /**< A non-OTG external power input is present. */
@@ -48,6 +49,8 @@ void battery_poll( void );
  *
  * Protective power policy uses this immediately before allowing a pending low-battery transition
  * to remain valid so newly connected external power can cancel the transition before execution.
+ * The percentage_fresh flag in the resulting status indicates whether this refresh obtained a new
+ * state-of-charge sample rather than retaining the previous cached percentage.
  */
 void battery_refresh( void );
 
