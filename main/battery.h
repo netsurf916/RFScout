@@ -43,6 +43,14 @@ esp_err_t battery_init( void );
 /** @brief Refresh cached battery telemetry when its polling interval elapses. */
 void battery_poll( void );
 
+/**
+ * @brief Refresh cached battery telemetry immediately, bypassing the normal polling interval.
+ *
+ * Protective power policy uses this immediately before allowing a pending low-battery transition
+ * to remain valid so newly connected external power can cancel the transition before execution.
+ */
+void battery_refresh( void );
+
 /** @brief Copy the most recently cached battery status. */
 bool battery_get_status( battery_status_t *a_status );
 
