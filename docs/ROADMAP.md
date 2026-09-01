@@ -237,6 +237,7 @@ The removed standalone Audio analyzer is not a current application. Only the com
 - Independent persistent global notification volume with perceptual output scaling.
 - Canonical alert descriptor registry.
 - Reproducible firmware packaging and manual draft-release workflow.
+
 ### MAC provenance and prefix identity
 
 **Status:** Done baseline — PRs #25-#26
@@ -356,6 +357,7 @@ Goals:
 - Keep detection-notification one-character Morse mappings separate from CW messages.
 
 ### 3. Log format and maintained parser
+
 **Priority:** Near term
 
 Make logs reliably machine-parseable without depending on fixed word positions.
