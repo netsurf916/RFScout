@@ -527,6 +527,29 @@ static bool merge_object( cJSON *a_target,
         }
 
         cJSON *existing = cJSON_GetObjectItemCaseSensitive( a_target, item->string );
+        if( 0 == strcmp( a_path, "apps" ) && cJSON_IsBool( item ) && cJSON_IsObject( existing ) )
+        {
+            cJSON *enabled = cJSON_CreateBool( cJSON_IsTrue( item ) );
+            if( NULL == enabled )
+            {
+                return false;
+            }
+            cJSON *existing_enabled = cJSON_GetObjectItemCaseSensitive( existing, "enabled" );
+            if( NULL != existing_enabled )
+            {
+                if( !cJSON_ReplaceItemInObjectCaseSensitive( existing, "enabled", enabled ) )
+                {
+                    cJSON_Delete( enabled );
+                    return false;
+                }
+            }
+            else if( !cJSON_AddItemToObject( existing, "enabled", enabled ) )
+            {
+                cJSON_Delete( enabled );
+                return false;
+            }
+            continue;
+        }
         if( cJSON_IsObject( item ) )
         {
             cJSON *target_object = existing;
@@ -595,7 +618,7 @@ static bool normalize_legacy_theme( cJSON *a_root )
     cJSON *theme =
         cJSON_IsObject( display ) ? cJSON_GetObjectItemCaseSensitive( display, "theme" ) : NULL;
     if( !cJSON_IsString( theme ) || NULL == theme->valuestring ||
-        0 != strcmp( theme->valuestring, "discipline" ) )
+        0 != strcasecmp( theme->valuestring, "discipline" ) )
     {
         return true;
     }
