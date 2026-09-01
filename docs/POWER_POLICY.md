@@ -17,7 +17,7 @@ The policy values are stored in the existing `power` object in `/sdcard/rfscout.
 
 ## Low-battery behavior
 
-Low-battery protection evaluates the fuel-gauge state of charge once per second. The configured threshold must be met for five consecutive samples before a transition is requested, avoiding reactions to a single transient sample.
+Low-battery protection evaluates the fuel-gauge state of charge once per second. The configured threshold must be met for five consecutive **fresh, successfully read** samples before a transition is requested. A failed fuel-gauge read breaks the confirmation run rather than reusing the previous cached percentage.
 
 Low-battery protection is inhibited while external power is present or the battery is charging/complete. Connecting external power during the warning countdown clears the condition and cancels the pending transition. After a low-battery condition has fired, it rearms only after the battery rises at least three percentage points above the configured threshold.
 
@@ -29,6 +29,8 @@ The configured temperature must be met for five consecutive one-second samples b
 
 A confirmed high-temperature transition takes priority over a pending low-battery transition because it represents an actively worsening thermal condition.
 
+When the configured high-temperature action is `Power off`, RFScout refreshes charger telemetry before requesting the transition. BATFET disable cannot remove system power while an external supply remains connected, so a fresh charger reading must confirm that external power is absent before physical power-off is used. If external power is present, charger status cannot be freshly confirmed, or the charger is unavailable, the thermal transition conservatively uses `Sleep` instead when deep sleep is supported. This stops active execution even while the board remains externally powered.
+
 ## Transition warning
 
 Protective transitions use the same global overlay implementation as the power-button hold countdown, but provide a reason and target action. For example:
@@ -38,12 +40,14 @@ LOW BATTERY
 POWER OFF IN 5
 ```
 
-and, with the default high-temperature action:
+and, with the default high-temperature action when removable power is confirmed:
 
 ```text
 HIGH TEMPERATURE
 POWER OFF IN 5
 ```
+
+If the thermal `Power off` safety check selects the externally-powered fallback, the overlay instead reports `SLEEP IN 5`.
 
 Both protective conditions default to `Power off`. `Sleep` remains configurable, but it is not the default because RFScout does not yet continue evaluating battery or temperature policy while in deep sleep. The warning lasts five seconds. It is not cancelled by ordinary user input. The policy that raised it may cancel it when the underlying condition clears, such as external power being connected during a low-battery warning. Once the delay expires, the overlay changes to the executing state (`SLEEPING...` or `POWERING OFF...`) and the normal semantic power-action path performs the transition.
 
