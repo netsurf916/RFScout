@@ -698,10 +698,9 @@ static bool apply_legacy_nvs_theme( cJSON *a_candidate, const cJSON *a_active )
     cJSON *audio = cJSON_GetObjectItemCaseSensitive( a_candidate, "audio" );
     cJSON *policy =
         cJSON_IsObject( audio ) ? cJSON_GetObjectItemCaseSensitive( audio, "policy" ) : NULL;
-    cJSON *interaction =
-        cJSON_IsObject( audio )
-            ? cJSON_GetObjectItemCaseSensitive( audio, "interaction_gain_percent" )
-            : NULL;
+    cJSON *interaction = cJSON_IsObject( audio )
+                             ? cJSON_GetObjectItemCaseSensitive( audio, "interaction_gain_percent" )
+                             : NULL;
     cJSON *notification =
         cJSON_IsObject( audio )
             ? cJSON_GetObjectItemCaseSensitive( audio, "notification_gain_percent" )
