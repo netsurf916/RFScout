@@ -36,23 +36,25 @@ Application switching must become a hard memory-ownership boundary.
 
 Required lifecycle ordering:
 
-1. Quiesce the current application's workers and peripheral activity using the existing bounded lifecycle contract.
-2. Cancel or drain callbacks/timers that can access app-owned dynamic memory.
-3. Perform application-specific exit cleanup that must run while its data is still valid.
-4. Verify that no worker, callback, timer, DMA completion path, or other execution context can still reference app-owned state. If verification fails, abort the transition and keep the application's memory intact.
-5. Reclaim all memory owned by that application through the memory manager.
-6. Verify allocator/accounting state reports no remaining allocations for the exited application.
-7. Enter/settle/activate the destination application.
+1. Begin a reversible transition-preparation phase by quiescing the current application's workers and peripheral activity using the existing bounded lifecycle contract.
+2. Cancel or drain callbacks/timers that can access app-owned dynamic memory, retaining enough state to restore them if the transition aborts.
+3. Perform only reversible app-specific preparation that leaves user-visible/runtime state recoverable; destructive cleanup is deferred until commit.
+4. Verify that no worker, callback, timer, DMA completion path, or other execution context can still reference app-owned state.
+5. If the reachability/safety gate fails, abort the transition, keep the application's memory intact, roll back the reversible preparation, and reactivate the source app in its prior operational state.
+6. After the final fallible safety gate succeeds, commit the transition by running destructive app-specific exit cleanup while its data is still valid.
+7. Reclaim all memory owned by that application through the memory manager.
+8. Verify allocator/accounting state reports no remaining allocations for the exited application.
+9. Enter/settle/activate the destination application.
 
 Release criteria:
 
 - Repeated rapid switching across every enabled application must not produce monotonic PSRAM/heap loss.
 - Leaving an application must free all memory owned by that app, including dynamically grown collections and scratch/work buffers.
-- A failed quiesce or failed pre-reclamation reachability/safety check must abort the transition before memory reclamation, preserving the current application's operational state.
+- A failed quiesce or failed pre-reclamation reachability/safety check must abort the transition before destructive cleanup or memory reclamation and restore the current application's operational state.
 - No destination application may activate while the previous app can still access reclaimed memory.
-- Stress diagnostics should record source/destination app, quiesce duration, safety-gate result, reclaimed bytes, remaining app-owned allocations, free heap/PSRAM, minimum-ever free heap, and largest free block where practical.
+- Stress diagnostics should record source/destination app, quiesce duration, safety-gate result, rollback/commit result, reclaimed bytes, remaining app-owned allocations, free heap/PSRAM, minimum-ever free heap, and largest free block where practical.
 
-This makes app entry/exit analogous to crossing a resource-ownership boundary: a transition may take slightly longer when cleanup is required, but the next application starts from a predictable memory baseline. The pre-reclamation safety gate is mandatory; post-reclamation checks are accounting assertions, not a substitute for proving that execution contexts have stopped.
+This makes app entry/exit analogous to crossing a transactional resource-ownership boundary: a transition may take slightly longer when cleanup is required, but the next application starts from a predictable memory baseline. The pre-reclamation safety gate is mandatory; irreversible cleanup and reclamation happen only after that gate succeeds, and post-reclamation checks are accounting assertions rather than a substitute for proving that execution contexts have stopped.
 
 ### Milestone 3: dynamic WiFi / BT retention
 
@@ -153,11 +155,12 @@ Design goals:
 - Permit every useful combination, including Outdoor + Quiet, Night + Normal, and Night + Quiet.
 - Retire the standalone **Discipline** theme rather than preserving a permanently coupled visual/audio mode.
 - Migrate legacy Discipline configuration to **Night + Quiet** so existing behavior is preserved across the schema transition.
-- Existing Indoor, Outdoor, and Night selections retain their visual choice and default to the backward-compatible **Normal** audio policy unless an explicit migrated audio-policy value exists.
-- Saving after migration should emit only the independent theme and audio-policy fields and should not recreate obsolete Discipline state.
+- Existing Indoor, Outdoor, and Night selections retain their visual choice and default to the **Normal** audio policy unless an explicit migrated audio-policy value exists.
+- Migration must also materialize the current theme-owned interaction and notification gains into independent audio state so Indoor preserves 35%/100%, Outdoor preserves 55%/100%, and Night preserves 20%/60%. These environmental gains remain separate from the existing global notification-volume setting.
+- Saving after migration should emit the independent theme, audio-policy, and migrated audio-gain fields and should not recreate obsolete Discipline state.
 - Add Audio Policy to Device Settings as a small direct-cycle choice consistent with the semantic menu policy.
 
-Validation should cover all six theme/policy combinations, verify that Quiet suppresses incidental and notification sound presentation but not explicit application content audio, and verify that changing either axis never changes the other.
+Validation should cover all six theme/policy combinations, verify that Quiet suppresses incidental and notification sound presentation but not explicit application content audio, verify that migrated Indoor/Outdoor/Night configurations retain their pre-migration effective sound levels, and verify that changing either axis never changes the other.
 
 ### Milestone 6: cross-application consistency and cleanup
 
