@@ -76,6 +76,51 @@ static bool app_from_config_name( const char *a_name, rfscout_app_id_t *a_app )
     return false;
 }
 
+static const char *power_action_config_name( power_action_t a_action )
+{
+    switch( a_action )
+    {
+        case POWER_ACTION_NONE:
+            return "none";
+        case POWER_ACTION_SCREEN_OFF:
+            return "screen_off";
+        case POWER_ACTION_SLEEP:
+            return "sleep";
+        case POWER_ACTION_POWER_OFF:
+            return "power_off";
+        case POWER_ACTION_COUNT:
+        default:
+            return "none";
+    }
+}
+
+static bool power_action_from_config_name( const char *a_name, power_action_t *a_action )
+{
+    if( NULL == a_name || NULL == a_action )
+    {
+        return false;
+    }
+    for( int action = (int)POWER_ACTION_NONE; action < (int)POWER_ACTION_COUNT; ++action )
+    {
+        if( 0 == strcasecmp( a_name, power_action_config_name( (power_action_t)action ) ) )
+        {
+            *a_action = (power_action_t)action;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool power_action_valid_for_gesture( power_action_t a_action, bool a_long_press )
+{
+    if( a_long_press )
+    {
+        return ( POWER_ACTION_NONE == a_action ) || ( POWER_ACTION_POWER_OFF == a_action );
+    }
+    return ( POWER_ACTION_NONE == a_action ) || ( POWER_ACTION_SCREEN_OFF == a_action ) ||
+           ( POWER_ACTION_SLEEP == a_action ) || ( POWER_ACTION_POWER_OFF == a_action );
+}
+
 /** @brief Copy a bounded configuration string. */
 static void copy_string( char *a_destination, size_t a_capacity, const char *a_source )
 {
@@ -103,6 +148,8 @@ static void set_defaults( void )
     config.brightness_percent = CONFIG_BRIGHTNESS_DEFAULT;
     config.display_dim_timeout_seconds = CONFIG_DISPLAY_DIM_TIMEOUT_DEFAULT_SECONDS;
     config.display_off_timeout_seconds = CONFIG_DISPLAY_OFF_TIMEOUT_DEFAULT_SECONDS;
+    config.power_button_short_action = POWER_ACTION_SLEEP;
+    config.power_button_long_action = POWER_ACTION_POWER_OFF;
     config.startup_app = RFSCOUT_APP_DEVICE;
     config.logging_enabled = true;
     config.clock_24h = false;
@@ -187,7 +234,6 @@ static void load_apps( const cJSON *a_root )
         const cJSON *app_item = cJSON_GetObjectItemCaseSensitive( apps, app_config_name( app ) );
         if( cJSON_IsBool( app_item ) )
         {
-            /* v1 compatibility: app entries were booleans. */
             config.apps_enabled[ index ] = cJSON_IsTrue( app_item );
             continue;
         }
@@ -319,6 +365,33 @@ static void load_display( const cJSON *a_root )
         {
             config.theme = parsed_theme;
         }
+    }
+}
+
+/** @brief Apply validated power-button preference overrides. */
+static void load_power( const cJSON *a_root )
+{
+    const cJSON *power = cJSON_GetObjectItemCaseSensitive( a_root, "power" );
+    if( !cJSON_IsObject( power ) )
+    {
+        return;
+    }
+
+    power_action_t parsed;
+    const cJSON *short_press = cJSON_GetObjectItemCaseSensitive( power, "short_press" );
+    if( cJSON_IsString( short_press ) && NULL != short_press->valuestring &&
+        power_action_from_config_name( short_press->valuestring, &parsed ) &&
+        power_action_valid_for_gesture( parsed, false ) )
+    {
+        config.power_button_short_action = parsed;
+    }
+
+    const cJSON *long_press = cJSON_GetObjectItemCaseSensitive( power, "long_press" );
+    if( cJSON_IsString( long_press ) && NULL != long_press->valuestring &&
+        power_action_from_config_name( long_press->valuestring, &parsed ) &&
+        power_action_valid_for_gesture( parsed, true ) )
+    {
+        config.power_button_long_action = parsed;
     }
 }
 
@@ -585,6 +658,7 @@ static esp_err_t load_file( void )
     }
 
     load_display( root );
+    load_power( root );
     load_apps( root );
     load_logging( root );
     load_notifications( root );
@@ -632,6 +706,12 @@ static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_tim
     cJSON_AddNumberToObject( display, "off_timeout_seconds", config.display_off_timeout_seconds );
     cJSON_AddBoolToObject( display, "clock_24h", config.clock_24h );
     cJSON_AddStringToObject( display, "theme", ui_theme_config_name( config.theme ) );
+
+    cJSON *power = cJSON_AddObjectToObject( root, "power" );
+    cJSON_AddStringToObject(
+        power, "short_press", power_action_config_name( config.power_button_short_action ) );
+    cJSON_AddStringToObject(
+        power, "long_press", power_action_config_name( config.power_button_long_action ) );
 
     cJSON *apps = cJSON_AddObjectToObject( root, "apps" );
     for( size_t index = 0; index < RFSCOUT_APP_COUNT; ++index )
@@ -997,6 +1077,34 @@ esp_err_t device_config_set_display_off_timeout( uint16_t a_seconds )
     if( config.display_off_timeout_seconds != a_seconds )
     {
         config.display_off_timeout_seconds = a_seconds;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+esp_err_t device_config_set_power_button_short_action( power_action_t a_action )
+{
+    if( !power_action_valid_for_gesture( a_action, false ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( config.power_button_short_action != a_action )
+    {
+        config.power_button_short_action = a_action;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+esp_err_t device_config_set_power_button_long_action( power_action_t a_action )
+{
+    if( !power_action_valid_for_gesture( a_action, true ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( config.power_button_long_action != a_action )
+    {
+        config.power_button_long_action = a_action;
         config_dirty = true;
     }
     return ESP_OK;

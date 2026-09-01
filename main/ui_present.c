@@ -13,6 +13,7 @@
 #include "esp_heap_caps.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #define POWER_OVERLAY_X 42
 #define POWER_OVERLAY_Y 50
@@ -22,7 +23,18 @@
 
 static uint16_t *overlay_backup;
 
-/** @brief Draw the hold-to-power-off overlay into the active framebuffer. */
+static int text_width( const char *a_text, unsigned a_scale )
+{
+    return (int)strlen( a_text ) * 6 * (int)a_scale;
+}
+
+static int centered_x( const char *a_text, unsigned a_scale )
+{
+    const int width = text_width( a_text, a_scale );
+    return POWER_OVERLAY_X + ( POWER_OVERLAY_WIDTH - width ) / 2;
+}
+
+/** @brief Draw the generic power-transition overlay into the active framebuffer. */
 static void draw_power_overlay( const power_status_t *a_status )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
@@ -44,16 +56,17 @@ static void draw_power_overlay( const power_status_t *a_status )
                        POWER_OVERLAY_HEIGHT,
                        theme->error );
 
-    if( POWER_HOLD_SHUTDOWN == a_status->state )
+    const char *message = ( '\0' != a_status->message[ 0 ] ) ? a_status->message : "POWER ACTION";
+    if( POWER_HOLD_EXECUTING == a_status->state )
     {
-        display_draw_text( 91, 77, "POWERING OFF...", theme->error, 2 );
+        display_draw_text( centered_x( message, 2U ), 77, message, theme->error, 2U );
         return;
     }
 
-    display_draw_text( 69, 63, "HOLD TO POWER OFF", theme->warning, 2 );
+    display_draw_text( centered_x( message, 2U ), 63, message, theme->warning, 2U );
     char countdown[ 4 ];
     snprintf( countdown, sizeof( countdown ), "%u", (unsigned)a_status->seconds_remaining );
-    display_draw_text( 150, 88, countdown, theme->error, 3 );
+    display_draw_text( centered_x( countdown, 3U ), 88, countdown, theme->error, 3U );
 }
 
 esp_err_t display_present( void )

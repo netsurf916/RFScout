@@ -32,6 +32,7 @@ typedef enum
 
 static display_idle_state_t state;
 static int64_t last_activity_us;
+static bool off_requested;
 
 static uint8_t dim_brightness( uint8_t a_normal_percent )
 {
@@ -51,8 +52,13 @@ static void set_dimmed( void )
     ESP_LOGI( TAG, "display dimmed after inactivity" );
 }
 
-static void set_off( void )
+static esp_err_t enter_off_state( const char *a_reason )
 {
+    if( DISPLAY_IDLE_OFF == state )
+    {
+        return ESP_OK;
+    }
+
     const device_config_t *config = device_config_get();
     const uint8_t previous_brightness = ( DISPLAY_IDLE_DIMMED == state )
                                             ? dim_brightness( config->brightness_percent )
@@ -64,11 +70,14 @@ static void set_off( void )
     {
         display_set_brightness( previous_brightness );
         ESP_LOGW( TAG, "could not put LCD into hardware sleep: %s", esp_err_to_name( result ) );
-        return;
+        return result;
     }
 
     state = DISPLAY_IDLE_OFF;
-    ESP_LOGI( TAG, "display entered ST7789 hardware sleep after inactivity" );
+    ESP_LOGI( TAG,
+              "display entered ST7789 hardware sleep (%s)",
+              ( NULL != a_reason ) ? a_reason : "requested" );
+    return ESP_OK;
 }
 
 static bool wake_display( void )
@@ -112,9 +121,19 @@ esp_err_t display_idle_init( void )
 {
     state = DISPLAY_IDLE_ACTIVE;
     last_activity_us = esp_timer_get_time();
+    off_requested = false;
     const esp_err_t result = display_exit_low_power();
     display_set_brightness( device_config_get()->brightness_percent );
     return result;
+}
+
+esp_err_t display_idle_request_off( void )
+{
+    /* Queue the transition rather than forcing it synchronously. A short power-button
+       release is still visible to the platform activity detector in this loop; waiting
+       for a quiet poll prevents that same gesture from immediately waking the LCD. */
+    off_requested = true;
+    return ESP_OK;
 }
 
 void display_idle_poll( void )
@@ -134,6 +153,17 @@ void display_idle_poll( void )
         return;
     }
 
+    if( off_requested )
+    {
+        const esp_err_t result = enter_off_state( "explicit request" );
+        if( ESP_OK == result )
+        {
+            off_requested = false;
+            last_activity_us = now_us;
+        }
+        return;
+    }
+
     const device_config_t *config = device_config_get();
     const int64_t idle_us = now_us - last_activity_us;
     const uint16_t off_seconds = config->display_off_timeout_seconds;
@@ -143,7 +173,7 @@ void display_idle_poll( void )
     {
         if( DISPLAY_IDLE_OFF != state )
         {
-            set_off();
+            (void)enter_off_state( "inactivity" );
         }
         return;
     }

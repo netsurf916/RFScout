@@ -32,6 +32,8 @@ After the screen-off timeout:
 
 The screen-off state is intentionally not exposed to individual applications. Audible alerts do not wake or otherwise reset the display-idle state; only physical user activity does.
 
+`display_idle` is the authoritative owner of the dim/off/wake presentation state. Device-level controls that need an immediate screen-off transition request it through `display_idle_request_off()` rather than invoking LCD low-power primitives directly. The explicit request and inactivity timeout therefore enter the same state and retain identical wake, framebuffer, and gesture-consumption behavior. The request API is deliberately device-level rather than app-facing so applications cannot take ownership of global display state.
+
 ## Wake behavior
 
 Any physical user input wakes a dimmed or off display. The wake gesture itself is consumed completely and is not delivered as ordinary input.

@@ -1,6 +1,6 @@
 /**
-    power.c : RFScout user-button power control
-    Description: Implements tap-to-sleep and hold-to-power-off behavior.
+    power.c : RFScout semantic power control
+    Description: Implements configurable short/long user-button gestures and board-supported power actions.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -13,6 +13,7 @@
 #include "device_config.h"
 #include "device_time.h"
 #include "display.h"
+#include "display_idle.h"
 #include "log_writer.h"
 #include "platform.h"
 #include "recorder.h"
@@ -24,9 +25,12 @@
 #include "esp_sleep.h"
 #include "esp_timer.h"
 
+#include <stdio.h>
+#include <string.h>
+
 #define POWER_DEBOUNCE_US 30000LL
-#define POWER_COUNTDOWN_START_US 500000LL
-#define POWER_SHUTDOWN_HOLD_US 3000000LL
+#define POWER_SHORT_PRESS_MAX_US 500000LL
+#define POWER_LONG_PRESS_HOLD_US 3000000LL
 #define POWER_LOG_FLUSH_TIMEOUT_MS 3000U
 #define POWER_RECORDER_STOP_TIMEOUT_MS 5000U
 
@@ -36,19 +40,86 @@ static bool stable_pressed;
 static int64_t raw_changed_us;
 static int64_t pressed_since_us;
 static bool suppress_current_press;
+static bool long_action_fired;
 static power_status_t status;
 
-/** @brief Update UI-visible power state and invalidate the composed display when it changes. */
-static void set_power_status( power_hold_state_t a_state, uint8_t a_seconds_remaining )
+static const char *power_action_prompt_name( power_action_t a_action )
 {
-    if( ( status.state == a_state ) && ( status.seconds_remaining == a_seconds_remaining ) )
+    switch( a_action )
+    {
+        case POWER_ACTION_SCREEN_OFF:
+            return "SCREEN OFF";
+        case POWER_ACTION_SLEEP:
+            return "SLEEP";
+        case POWER_ACTION_POWER_OFF:
+            return "POWER OFF";
+        case POWER_ACTION_NONE:
+        case POWER_ACTION_COUNT:
+        default:
+            return "NONE";
+    }
+}
+
+const char *power_action_name( power_action_t a_action )
+{
+    switch( a_action )
+    {
+        case POWER_ACTION_SCREEN_OFF:
+            return "Screen off";
+        case POWER_ACTION_SLEEP:
+            return "Sleep";
+        case POWER_ACTION_POWER_OFF:
+            return "Power off";
+        case POWER_ACTION_NONE:
+            return "None";
+        case POWER_ACTION_COUNT:
+        default:
+            return "Unknown";
+    }
+}
+
+bool power_action_supported( power_action_t a_action, bool a_long_press )
+{
+    switch( a_action )
+    {
+        case POWER_ACTION_NONE:
+            return true;
+        case POWER_ACTION_SCREEN_OFF:
+            return !a_long_press && ( 0 != RFSCOUT_BOARD_CAN_SCREEN_OFF );
+        case POWER_ACTION_SLEEP:
+            return !a_long_press && ( 0 != RFSCOUT_BOARD_CAN_DEEP_SLEEP );
+        case POWER_ACTION_POWER_OFF:
+            return 0 != RFSCOUT_BOARD_CAN_POWER_OFF;
+        case POWER_ACTION_COUNT:
+        default:
+            return false;
+    }
+}
+
+/** @brief Update UI-visible power state and invalidate the composed display when it changes. */
+static void set_power_status( power_hold_state_t a_state,
+                              power_action_t a_action,
+                              uint8_t a_seconds_remaining,
+                              const char *a_message )
+{
+    const char *message = ( NULL != a_message ) ? a_message : "";
+    if( ( status.state == a_state ) && ( status.action == a_action ) &&
+        ( status.seconds_remaining == a_seconds_remaining ) &&
+        ( 0 == strcmp( status.message, message ) ) )
     {
         return;
     }
 
     status.state = a_state;
+    status.action = a_action;
     status.seconds_remaining = a_seconds_remaining;
+    snprintf( status.message, sizeof( status.message ), "%s", message );
     display_invalidate();
+}
+
+static void set_idle_status( void )
+{
+    set_power_status( POWER_HOLD_IDLE, POWER_ACTION_NONE, 0U, "" );
 }
 
 /** @brief Stop logging, optionally checkpoint wall time, and unmount storage. */
@@ -98,7 +169,7 @@ static bool prepare_storage_for_power_state( bool a_checkpoint_time )
     return true;
 }
 
-/** @brief Put the LCD into its lowest software-controlled power state. */
+/** @brief Put the LCD into its lowest software-controlled power state before SoC sleep/shutdown. */
 static void prepare_display_for_power_state( void )
 {
     display_set_brightness( 0U );
@@ -156,6 +227,7 @@ static void enter_sleep( void )
     if( !prepare_storage_for_power_state( false ) )
     {
         ESP_LOGW( TAG, "sleep cancelled because persistent state could not be prepared" );
+        set_idle_status();
         return;
     }
 
@@ -167,27 +239,87 @@ static void enter_sleep( void )
     esp_deep_sleep_start();
 }
 
-/** @brief Update the UI-visible hold countdown. */
-static void update_countdown( int64_t a_held_us )
+/** @brief Perform an orderly physical power-off request. */
+static void power_off( void )
 {
-    if( a_held_us < POWER_COUNTDOWN_START_US )
+    if( !prepare_storage_for_power_state( true ) )
     {
-        set_power_status( POWER_HOLD_IDLE, 0U );
+        set_idle_status();
         return;
     }
 
+    prepare_display_for_power_state();
+    const esp_err_t result = battery_shutdown();
+    if( ESP_OK != result )
+    {
+        ESP_LOGE( TAG, "power off failed: %s", esp_err_to_name( result ) );
+        restore_storage_after_failed_power_off();
+        restore_display_after_failed_power_off();
+        set_idle_status();
+    }
+}
+
+/** @brief Execute one board-supported semantic action. */
+static void execute_action( power_action_t a_action, bool a_long_press )
+{
+    if( !power_action_supported( a_action, a_long_press ) )
+    {
+        ESP_LOGW(
+            TAG, "unsupported power action=%d long=%u", (int)a_action, a_long_press ? 1U : 0U );
+        set_idle_status();
+        return;
+    }
+
+    switch( a_action )
+    {
+        case POWER_ACTION_NONE:
+            set_idle_status();
+            return;
+        case POWER_ACTION_SCREEN_OFF:
+            if( ESP_OK != display_idle_request_off() )
+            {
+                ESP_LOGW( TAG, "display-off request failed" );
+            }
+            set_idle_status();
+            return;
+        case POWER_ACTION_SLEEP:
+            enter_sleep();
+            return;
+        case POWER_ACTION_POWER_OFF:
+            set_power_status( POWER_HOLD_EXECUTING, a_action, 0U, "POWERING OFF..." );
+            (void)display_present();
+            power_off();
+            return;
+        case POWER_ACTION_COUNT:
+        default:
+            set_idle_status();
+            return;
+    }
+}
+
+/** @brief Update the UI-visible countdown for a configured long action. */
+static void update_countdown( int64_t a_held_us, power_action_t a_action )
+{
+    if( ( a_held_us < POWER_SHORT_PRESS_MAX_US ) || ( POWER_ACTION_NONE == a_action ) ||
+        !power_action_supported( a_action, true ) )
+    {
+        set_idle_status();
+        return;
+    }
+
+    uint8_t remaining = 1U;
     if( a_held_us < 1000000LL )
     {
-        set_power_status( POWER_HOLD_COUNTDOWN, 3U );
+        remaining = 3U;
     }
     else if( a_held_us < 2000000LL )
     {
-        set_power_status( POWER_HOLD_COUNTDOWN, 2U );
+        remaining = 2U;
     }
-    else
-    {
-        set_power_status( POWER_HOLD_COUNTDOWN, 1U );
-    }
+
+    char message[ POWER_STATUS_MESSAGE_MAX ];
+    snprintf( message, sizeof( message ), "HOLD TO %s", power_action_prompt_name( a_action ) );
+    set_power_status( POWER_HOLD_COUNTDOWN, a_action, remaining, message );
 }
 
 esp_err_t power_init( void )
@@ -197,8 +329,10 @@ esp_err_t power_init( void )
     raw_changed_us = esp_timer_get_time();
     pressed_since_us = stable_pressed ? raw_changed_us : 0;
     suppress_current_press = false;
+    long_action_fired = false;
+    memset( &status, 0, sizeof( status ) );
     status.state = POWER_HOLD_IDLE;
-    status.seconds_remaining = 0U;
+    status.action = POWER_ACTION_NONE;
     return ESP_OK;
 }
 
@@ -208,7 +342,8 @@ void power_consume_wake_input( void )
     {
         suppress_current_press = true;
         pressed_since_us = 0;
-        set_power_status( POWER_HOLD_IDLE, 0U );
+        long_action_fired = false;
+        set_idle_status();
     }
 }
 
@@ -223,7 +358,8 @@ void power_poll( void )
         stable_pressed = pressed;
         raw_changed_us = now_us;
         pressed_since_us = 0;
-        set_power_status( POWER_HOLD_IDLE, 0U );
+        long_action_fired = false;
+        set_idle_status();
         if( !pressed )
         {
             suppress_current_press = false;
@@ -243,49 +379,42 @@ void power_poll( void )
         if( stable_pressed )
         {
             pressed_since_us = now_us;
+            long_action_fired = false;
         }
         else
         {
-            const int64_t held_us = now_us - pressed_since_us;
-            set_power_status( POWER_HOLD_IDLE, 0U );
+            const int64_t held_us = ( 0 != pressed_since_us ) ? now_us - pressed_since_us : 0;
+            const bool was_long = long_action_fired;
             pressed_since_us = 0;
-            if( held_us < POWER_COUNTDOWN_START_US )
+            long_action_fired = false;
+            set_idle_status();
+
+            if( !was_long && ( held_us < POWER_SHORT_PRESS_MAX_US ) )
             {
-                enter_sleep();
+                execute_action( device_config_get()->power_button_short_action, false );
             }
+            /* Releasing after the short window but before the long threshold is
+               deliberate cancellation. It never falls back to the short action. */
         }
     }
 
-    if( !stable_pressed || ( 0 == pressed_since_us ) )
+    if( !stable_pressed || ( 0 == pressed_since_us ) || long_action_fired )
     {
         return;
     }
 
     const int64_t held_us = now_us - pressed_since_us;
-    if( held_us >= POWER_SHUTDOWN_HOLD_US )
+    const power_action_t long_action = device_config_get()->power_button_long_action;
+    if( held_us >= POWER_LONG_PRESS_HOLD_US )
     {
-        set_power_status( POWER_HOLD_SHUTDOWN, 0U );
-        ESP_LOGI( TAG, "user key held for 3 seconds; requesting power off" );
-
-        if( !prepare_storage_for_power_state( true ) )
-        {
-            set_power_status( POWER_HOLD_IDLE, 0U );
-            return;
-        }
-
-        prepare_display_for_power_state();
-        const esp_err_t result = battery_shutdown();
-        if( ESP_OK != result )
-        {
-            ESP_LOGE( TAG, "power off failed: %s", esp_err_to_name( result ) );
-            restore_storage_after_failed_power_off();
-            restore_display_after_failed_power_off();
-            set_power_status( POWER_HOLD_IDLE, 0U );
-        }
+        long_action_fired = true;
+        ESP_LOGI(
+            TAG, "user key long press completed; action=%s", power_action_name( long_action ) );
+        execute_action( long_action, true );
         return;
     }
 
-    update_countdown( held_us );
+    update_countdown( held_us, long_action );
 }
 
 void power_get_status( power_status_t *a_status )
