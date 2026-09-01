@@ -134,6 +134,7 @@ void battery_refresh( void )
     last_poll_us = esp_timer_get_time();
     battery_status_t next = cached_status;
     next.percentage_fresh = false;
+    next.charger_fresh = false;
     bool gauge_sampled = false;
     uint16_t gauge_status = 0;
     if( NULL != gauge_device )
@@ -172,6 +173,7 @@ void battery_refresh( void )
                 valid_input || ( 0U != ( charger_status & BQ25896_POWER_GOOD_BIT ) );
             next.charge_state = charger_charge_state( charger_status, next.external_power );
             next.charger_available = true;
+            next.charger_fresh = true;
             charger_sampled = true;
         }
     }
