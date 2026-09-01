@@ -41,7 +41,6 @@ static int64_t raw_changed_us;
 static int64_t pressed_since_us;
 static bool suppress_current_press;
 static bool long_action_fired;
-static power_action_t long_action_pending_release;
 static power_status_t status;
 
 static const char *power_action_prompt_name( power_action_t a_action )
@@ -88,7 +87,7 @@ bool power_action_supported( power_action_t a_action, bool a_long_press )
         case POWER_ACTION_SCREEN_OFF:
             return !a_long_press && ( 0 != RFSCOUT_BOARD_CAN_SCREEN_OFF );
         case POWER_ACTION_SLEEP:
-            return 0 != RFSCOUT_BOARD_CAN_DEEP_SLEEP;
+            return !a_long_press && ( 0 != RFSCOUT_BOARD_CAN_DEEP_SLEEP );
         case POWER_ACTION_POWER_OFF:
             return a_long_press && ( 0 != RFSCOUT_BOARD_CAN_POWER_OFF );
         case POWER_ACTION_COUNT:
@@ -336,7 +335,6 @@ esp_err_t power_init( void )
     pressed_since_us = stable_pressed ? raw_changed_us : 0;
     suppress_current_press = false;
     long_action_fired = false;
-    long_action_pending_release = POWER_ACTION_NONE;
     memset( &status, 0, sizeof( status ) );
     status.state = POWER_HOLD_IDLE;
     status.action = POWER_ACTION_NONE;
@@ -350,7 +348,6 @@ void power_consume_wake_input( void )
         suppress_current_press = true;
         pressed_since_us = 0;
         long_action_fired = false;
-        long_action_pending_release = POWER_ACTION_NONE;
         set_idle_status();
     }
 }
@@ -367,7 +364,6 @@ void power_poll( void )
         raw_changed_us = now_us;
         pressed_since_us = 0;
         long_action_fired = false;
-        long_action_pending_release = POWER_ACTION_NONE;
         set_idle_status();
         if( !pressed )
         {
@@ -389,22 +385,13 @@ void power_poll( void )
         {
             pressed_since_us = now_us;
             long_action_fired = false;
-            long_action_pending_release = POWER_ACTION_NONE;
         }
         else
         {
             const int64_t held_us = ( 0 != pressed_since_us ) ? now_us - pressed_since_us : 0;
             const bool was_long = long_action_fired;
-            const power_action_t deferred_action = long_action_pending_release;
             pressed_since_us = 0;
             long_action_fired = false;
-            long_action_pending_release = POWER_ACTION_NONE;
-
-            if( POWER_ACTION_NONE != deferred_action )
-            {
-                execute_action( deferred_action, true );
-                return;
-            }
 
             set_idle_status();
             if( !was_long && ( held_us < POWER_SHORT_PRESS_MAX_US ) )
@@ -428,15 +415,6 @@ void power_poll( void )
         long_action_fired = true;
         ESP_LOGI(
             TAG, "user key long press completed; action=%s", power_action_name( long_action ) );
-
-        if( POWER_ACTION_SLEEP == long_action )
-        {
-            /* The user key is also the active-low deep-sleep wake source. Wait
-               for its debounced release so sleep cannot immediately wake itself. */
-            long_action_pending_release = long_action;
-            set_power_status( POWER_HOLD_EXECUTING, long_action, 0U, "RELEASE TO SLEEP" );
-            return;
-        }
 
         execute_action( long_action, true );
         return;

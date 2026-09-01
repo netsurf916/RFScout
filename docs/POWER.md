@@ -15,7 +15,6 @@ Device Settings includes a **Power button** submenu. The submenu uses the direct
 **Long press** supports, when available on the board:
 
 - `None`
-- `Sleep`
 - `Power off`
 
 The compatibility defaults preserve the original RFScout behavior: short press is `Sleep` and long press is `Power off`. The values are persisted in `/sdcard/rfscout.json` under the `power` object as `short_press` and `long_press`.
@@ -32,7 +31,7 @@ A configured long action of `None` has no countdown because there is no pending 
 
 ## Countdown presentation
 
-The global power-transition overlay is parameterized by the pending action rather than being hardcoded to shutdown. A long hold therefore shows an action-specific prompt such as `HOLD TO SLEEP` or `HOLD TO POWER OFF`, followed by `SLEEPING...` or `POWERING OFF...` once the threshold is reached.
+The global power-transition overlay is parameterized rather than hardcoded to shutdown. For the power button, a configured long hold shows `HOLD TO POWER OFF`, followed by `POWERING OFF...` once the threshold is reached. Sleep remains a semantic power action for short press and other device policies, but it is intentionally not exposed as a long-hold action because the same physical button is also the deep-sleep wake source.
 
 The overlay is applied by the shared presentation layer and does not become permanent application framebuffer content.
 
@@ -44,4 +43,4 @@ Display wake has priority over all configured power-button behavior. If the disp
 
 ## Board capabilities
 
-Board definitions advertise support for screen-off, deep sleep, and physical power-off. The menu cycles only through actions supported for that gesture on the active board. Configuration values remain semantic rather than naming PMU, GPIO, or SoC-specific mechanisms.
+Board definitions advertise support for screen-off, deep sleep, and physical power-off. Gesture suitability is intentionally separate from board capability: a board may support deep sleep while the long-hold menu still excludes `Sleep`. The menu cycles only through actions both supported by the board and valid for that gesture. Configuration values remain semantic rather than naming PMU, GPIO, or SoC-specific mechanisms.

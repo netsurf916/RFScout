@@ -115,8 +115,7 @@ static bool power_action_valid_for_gesture( power_action_t a_action, bool a_long
 {
     if( a_long_press )
     {
-        return ( POWER_ACTION_NONE == a_action ) || ( POWER_ACTION_SLEEP == a_action ) ||
-               ( POWER_ACTION_POWER_OFF == a_action );
+        return ( POWER_ACTION_NONE == a_action ) || ( POWER_ACTION_POWER_OFF == a_action );
     }
     return ( POWER_ACTION_NONE == a_action ) || ( POWER_ACTION_SCREEN_OFF == a_action ) ||
            ( POWER_ACTION_SLEEP == a_action );
