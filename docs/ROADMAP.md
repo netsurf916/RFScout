@@ -4,6 +4,193 @@ This is the canonical planning document for RFScout. Production documentation de
 
 Statuses describe implementation state, not release state.
 
+## v0.4.0 milestone plan
+
+**Status:** Planned
+
+v0.4.0 is intended to be a resource-management, lifecycle-stability, and application-quality release. The release should make application switching deterministic, allow data-heavy applications to use PSRAM opportunistically rather than being constrained by conservative fixed-size buffers, and establish a concrete improvement plan for every current application.
+
+The work in this section is planning only. It does not describe behavior implemented on current `main` until the corresponding implementation work is merged and the production documentation is updated.
+
+### Milestone 1: application-scoped PSRAM memory manager
+
+Introduce a shared memory manager for application-owned dynamic storage.
+
+Design goals:
+
+- Treat PSRAM as a reusable application resource rather than permanently partitioning large fixed buffers among applications that are not active at the same time.
+- Give the active application access to essentially all currently available application PSRAM, excluding memory reserved by the platform, long-lived services, the RTOS, display infrastructure, drivers, and other resources that must remain resident across application transitions.
+- Prefer PSRAM for large or growable application datasets while keeping latency-sensitive or DMA-constrained allocations in the memory class required by the underlying peripheral/API.
+- Allow application-owned collections to grow dynamically as observations, packets, captures, frames, history, or processing requirements increase instead of imposing arbitrary static limits solely to protect memory for inactive applications.
+- Track allocations by owning application so the application manager can reclaim an application's entire dynamic allocation set as one lifecycle operation.
+- Support normal allocation, capacity growth, and explicit release without requiring each application to invent its own allocator or growth policy.
+- Make allocation failure explicit and recoverable. Applications should preserve a usable bounded state, evict according to documented policy where appropriate, or report resource pressure rather than corrupting state or crashing.
+- Expose diagnostics including app-owned bytes, allocation count, peak app usage, free PSRAM, largest free block, and failed allocations where practical.
+- Treat PSRAM as a required platform capability for supported RFScout targets. Internal SRAM is reserved for system, stack, latency-sensitive, and hardware-constrained allocations rather than serving as a substitute for large application storage.
+
+The memory manager is not intended to hide ownership. Persistent device configuration, platform services, caches that intentionally span applications, and peripheral-driver allocations remain owned by their respective subsystems rather than being silently attached to the active app. A target without usable PSRAM is outside the supported RFScout platform contract rather than a reduced-capacity fallback configuration.
+
+### Milestone 2: deterministic app-exit reclamation
+
+Application switching must become a hard memory-ownership boundary.
+
+Required lifecycle ordering:
+
+1. Begin a reversible transition-preparation phase by quiescing the current application's workers and peripheral activity using the existing bounded lifecycle contract.
+2. Cancel or drain callbacks/timers that can access app-owned dynamic memory, retaining enough state to restore them if the transition aborts.
+3. Perform only reversible app-specific preparation that leaves user-visible/runtime state recoverable; destructive cleanup is deferred until commit.
+4. Verify that no worker, callback, timer, DMA completion path, or other execution context can still reference app-owned state.
+5. If the reachability/safety gate fails, abort the transition, keep the application's memory intact, roll back the reversible preparation, and reactivate the source app in its prior operational state.
+6. After the final fallible safety gate succeeds, commit the transition by running destructive app-specific exit cleanup while its data is still valid.
+7. Reclaim all memory owned by that application through the memory manager.
+8. Verify allocator/accounting state reports no remaining allocations for the exited application.
+9. Enter/settle/activate the destination application.
+
+Release criteria:
+
+- Repeated rapid switching across every enabled application must not produce monotonic PSRAM/heap loss.
+- Leaving an application must free all memory owned by that app, including dynamically grown collections and scratch/work buffers.
+- A failed quiesce or failed pre-reclamation reachability/safety check must abort the transition before destructive cleanup or memory reclamation and restore the current application's operational state.
+- No destination application may activate while the previous app can still access reclaimed memory.
+- Stress diagnostics should record source/destination app, quiesce duration, safety-gate result, rollback/commit result, reclaimed bytes, remaining app-owned allocations, free heap/PSRAM, minimum-ever free heap, and largest free block where practical.
+
+This makes app entry/exit analogous to crossing a transactional resource-ownership boundary: a transition may take slightly longer when cleanup is required, but the next application starts from a predictable memory baseline. The pre-reclamation safety gate is mandatory; irreversible cleanup and reclamation happen only after that gate succeeds, and post-reclamation checks are accounting assertions rather than a substitute for proving that execution contexts have stopped.
+
+### Milestone 3: dynamic WiFi / BT retention
+
+Replace fixed-capacity thinking in WiFi / BT retained observations with dynamically growable app-owned storage backed by the memory manager.
+
+Retention controls should support three semantic classes:
+
+- **Instant** — no intentional retention grace period. An entry is eligible for removal on the next normal housekeeping pass once it is no longer current according to the collector's observation semantics.
+- **Timed** — retain the existing configurable finite timeout behavior for users who want a rolling recent-history window.
+- **Never** — do not age the entry out while WiFi / BT remains the active application. `Never` is session-scoped, not permanent storage: switching away from WiFi / BT still frees its retained observation memory under the app-exit contract.
+
+Goals:
+
+- Preserve independent Wi-Fi and BLE source aging for merged observations.
+- Apply the same clear Instant/Timed/Never model to other WiFi / BT retained lists where it is semantically appropriate, including surveillance retention, rather than creating subtly different timeout vocabularies.
+- Grow retained storage on demand until memory pressure requires a documented degradation/eviction policy.
+- Do not silently convert `Never` into a hidden fixed maximum that defeats the setting. If memory becomes constrained, surface the condition and use an explicit policy.
+- Preserve detection notification behavior independently from whether an observation remains visible in retained history.
+- Keep all retained observation/history memory app-owned so leaving WiFi / BT returns it to the common pool.
+
+### Milestone 4: application-by-application improvement pass
+
+Every current application should receive an explicit 0.4.0 review rather than treating the memory manager as an isolated infrastructure change.
+
+#### Home / Device Settings
+
+- Add memory/lifecycle diagnostics sufficient to verify app-owned PSRAM behavior without a debugger, either directly in Device Settings or through a compact diagnostics surface reachable from Home.
+- Show total/free PSRAM, largest free block, current app-owned bytes, peak app-owned bytes, and the most recent transition/reclamation result where practical.
+- Audit settings interaction against the shared semantic menu policy so toggles and small choices use direct center-button cycling while genuine values retain enter/edit/exit behavior.
+- Keep Home lightweight and free of large app-owned allocations so it remains a useful neutral baseline when measuring whether another app released its resources.
+
+#### WiFi / BT
+
+- Move retained device/source/surveillance collections to dynamically growable app-owned storage.
+- Add Instant and Never retention choices alongside finite timeout values.
+- Preserve source-specific aging inside merged observations.
+- Review list/detail presentation so increased storage capacity remains usable rather than merely allowing an unbounded invisible collection.
+- Add memory-pressure handling and diagnostics without dropping passive collection stability.
+- Ensure all collectors are quiesced before retained storage is reclaimed on exit.
+
+#### CC1101
+
+- Move large sweep-history, detection-history, and future structured-capture storage to app-owned dynamic PSRAM where suitable.
+- Add burst duration and inter-burst timing enrichment.
+- Add conservative modulation/behavior inference without presenting heuristics as decoded product identity.
+- Add structured capture/history that can grow while the app remains active, subject to explicit memory-pressure policy.
+- Improve drill-down/history presentation where accumulated observations support it.
+- Verify that persistent worker shutdown completes before all CC1101 app-owned dynamic state is reclaimed.
+
+#### nRF24
+
+- Move packet/history/classifier working sets that do not require internal/DMA memory to app-owned dynamic PSRAM.
+- Strengthen passive Enhanced ShockBurst candidate discovery and validation so packet/history surfaces can be populated from defensible receive-only observations.
+- Grow validated packet/capture history dynamically during the active session rather than reserving a large permanent buffer.
+- Preserve strict receive-only behavior: no ACK generation, injection, replay, or active discovery.
+- Improve structured packet drill-down and classifier confidence using real hardware captures.
+- Verify that the radio worker is fully quiesced before packet/history memory is reclaimed.
+
+#### Recorder
+
+- Implement the shared calibrated Audio Input service already described in this roadmap so microphone ownership and measured-rate/gain telemetry are no longer Recorder-specific.
+- Use app-owned PSRAM for large Recorder work buffers, waveform/FFT history, catalog scratch storage, and asynchronous processing buffers where the ESP-IDF API does not require another memory class.
+- Keep DMA/I2S buffers in the memory class required by the hardware/API rather than forcing all audio allocation into PSRAM.
+- Make monitor/record/playback transitions explicitly release mode-specific scratch buffers when they are no longer useful.
+- Ensure leaving Recorder synchronously stops all audio activity before its app-owned memory is reclaimed.
+- Preserve completed recordings on SD; app-exit reclamation applies to runtime memory, not user data on storage.
+
+#### Thermal
+
+- Move interpolation/work/history buffers that can safely reside in PSRAM into app-owned dynamic storage.
+- Avoid permanently reserving thermal work memory while the optional sensor/app is inactive.
+- Add a modest history/inspection improvement, such as recent min/max/center-point trend or frame statistics, using dynamically sized storage rather than a global fixed allocation.
+- Review scale/palette/range controls for consistency with the shared menu interaction policy while keeping literal thermal pixel colors outside theme translation.
+- Stop hot-plug acquisition and all frame callbacks before thermal memory reclamation.
+
+### Milestone 5: independent visual theme and audio policy
+
+Separate visual presentation from device sound policy so choosing a display theme never implicitly changes audio behavior.
+
+Planned visual themes:
+
+- **Indoor** — normal RFScout presentation.
+- **Outdoor** — daylight/high-contrast presentation.
+- **Night** — red/orange low-light presentation.
+
+Planned audio policies:
+
+- **Normal** — incidental UI feedback and enabled detection notifications behave normally, subject to existing per-app notification controls, global notification mode/volume, and application-specific audio rules.
+- **Quiet** — suppress incidental interaction/event sounds and detection-notification presentation while preserving explicitly requested application content audio such as Recorder playback.
+
+Design goals:
+
+- Treat visual theme and audio policy as independent persistent configuration fields.
+- Keep theme resolution strictly visual; themes must not participate in deciding whether a sound is emitted.
+- Keep application content audio, detection notifications, and incidental UI feedback as distinct policy classes.
+- Quiet suppresses incidental UI feedback and audible detection-notification presentation without mutating the user's saved notification enablement, mappings, mode, or volume.
+- Quiet does not suppress explicitly requested content audio such as Recorder playback or future CW output.
+- Permit every useful combination, including Outdoor + Quiet, Night + Normal, and Night + Quiet.
+- Retire the standalone **Discipline** theme rather than preserving a permanently coupled visual/audio mode.
+- Migrate legacy Discipline configuration to **Night + Quiet** and materialize the Night environmental gain profile (`20%` interaction / `60%` notification). Quiet preserves the immediate silent behavior after migration; if the user later selects Normal, the migrated gains provide the expected Night audio profile rather than carrying forward Discipline's legacy `0%` / `0%` suppression.
+- Existing Indoor, Outdoor, and Night selections retain their visual choice and default to the **Normal** audio policy unless an explicit migrated audio-policy value exists.
+- Migration must also materialize the current theme-owned interaction and notification gains into independent audio state so Indoor preserves 35%/100%, Outdoor preserves 55%/100%, and Night preserves 20%/60%. These environmental gains remain separate from the existing global notification-volume setting.
+- Saving after migration should emit the independent theme, audio-policy, and migrated audio-gain fields and should not recreate obsolete Discipline state.
+- Add Audio Policy to Device Settings as a small direct-cycle choice consistent with the semantic menu policy.
+
+Validation should cover all six theme/policy combinations, verify that Quiet suppresses incidental and notification sound presentation but not explicit application content audio, verify that migrated Discipline uses Night's 20%/60% environmental gains and that migrated Indoor/Outdoor/Night configurations retain their pre-migration effective sound levels, and verify that changing either axis never changes the other.
+
+### Milestone 6: cross-application consistency and cleanup
+
+Use the 0.4.0 app review to remove behavioral inconsistencies that increase maintenance cost or make lifecycle bugs harder to reason about.
+
+Goals:
+
+- Apply the semantic menu policy consistently across all applications.
+- Keep visual theme logic independent from audio-policy resolution.
+- Standardize app entry/exit diagnostics and memory-manager instrumentation.
+- Document which allocations are app-scoped, service-scoped, DMA-constrained, or intentionally persistent.
+- Prefer shared growable containers/helpers over one-off realloc/capacity schemes in individual apps.
+- Remove obsolete planning text from production documents when 0.4.0 implementations supersede it, moving factual behavior into the appropriate production documentation at merge time.
+
+### v0.4.0 release gate
+
+v0.4.0 should not be considered complete until:
+
+- the shared app-scoped memory manager is implemented and used by data-heavy current applications where appropriate;
+- supported RFScout hardware targets provide usable PSRAM as a platform requirement;
+- application exit passes the pre-reclamation safety gate and reliably reclaims all app-owned dynamic memory only after workers/callbacks/timers can no longer reference it;
+- WiFi / BT exposes Instant, finite timed, and Never retention semantics backed by growable storage;
+- every current application has completed its documented improvement review or has an explicit, documented reason for deferral;
+- visual theme and Normal/Quiet audio policy are independent, with legacy Discipline configuration migrated to Night + Quiet;
+- Quiet suppresses incidental and detection-notification sound presentation without suppressing explicitly requested application content audio;
+- rapid-switch stress testing shows no monotonic heap/PSRAM loss, stale-worker access, or cross-app resource ownership violation;
+- memory pressure and allocation failure are handled without crashes or silent data corruption;
+- production documentation is updated to describe only the portions that are actually implemented; and
+- release notes summarize the memory/lifecycle contract and any user-visible app changes without implying unsupported behavior.
+
 ## Completed foundation
 
 ### Display, board support, and application lifecycle

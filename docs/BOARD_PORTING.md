@@ -1,60 +1,70 @@
 # Board targets and porting
 
-RFScout is moving toward one source tree that produces board-specific firmware images. The goal is to share application and service logic without turning each image into a universal firmware containing every supported board driver.
+RFScout uses one source tree to produce board-specific firmware images. Shared application/service logic should not require every image to contain every board driver.
 
 ## Current status
 
-The only supported target remains **LILYGO T-Embed CC1101 Plus**. The architecture does not yet claim support for another board.
-
-The target is selected through the `RFSCOUT_BOARD` Kconfig choice. Board definitions live under `main/boards/<target>/`; CMake adds only the selected board directory to the component include path. Existing source continues to include `board.h`, but that name resolves to the selected target rather than a repository-global pin map.
+The only supported target is currently **LILYGO T-Embed CC1101 Plus**. `RFSCOUT_BOARD` selects the target; board definitions live under `main/boards/<target>/` and CMake includes only the selected board directory.
 
 ## Board contract
 
-A board target owns physical facts such as:
+A board target owns physical facts and capabilities, including:
 
 - GPIO assignments and shared-bus wiring;
-- display geometry and board-specific peripheral addresses;
-- a human-readable `RFSCOUT_BOARD_NAME`;
-- compile-time `RFSCOUT_BOARD_HAS_*` capability constants.
+- display geometry and peripheral addresses;
+- `RFSCOUT_BOARD_NAME`;
+- compile-time `RFSCOUT_BOARD_HAS_*`/`RFSCOUT_BOARD_CAN_*` capability constants;
+- power/display actions and policy sensors available on that target;
+- PSRAM/flash assumptions needed by the platform.
 
-Capabilities are compile-time constants by design. As drivers are separated into target-specific source sets, CMake should use the selected board and its capabilities to avoid compiling unsupported hardware into that firmware image. Compile-time capability means that a board target can support a device; it does not require every product variant using that target to populate the device. Fixed optional devices such as CC1101, nRF24, and the board PDM microphone may therefore be probed once at startup and exposed only when detected.
+Application code should depend on services/capabilities, not board model names. Board-specific conditionals belong in board/platform/driver integration code.
 
-Application code should not test board model names. It should depend on a service or capability. Board-specific conditionals belong in board/platform/driver integration code.
+### PSRAM requirement
+
+RFScout's current platform model requires usable external PSRAM. Large persistent platform allocations such as the framebuffer already depend on it, and v0.4.0 planning intentionally treats PSRAM as a supported-target requirement rather than promising a reduced-capacity internal-SRAM fallback.
+
+Internal SRAM remains available for RTOS/system state, task stacks, DMA/peripheral-constrained buffers, and latency-sensitive allocations. A future board target should not be considered supported unless its configured memory topology satisfies RFScout's platform requirements.
 
 ## Input boundary
 
-`platform_input_get()` is the board-neutral input contract. It exposes semantic input rather than physical controls:
+`platform_input_get()` exposes board-neutral semantic input:
 
-- navigation with a signed step value;
+- navigation with signed steps;
 - select and long-select;
 - back;
 - character input.
 
-The T-Embed implementation adapts its rotary encoder and center button into this interface. The application manager now consumes this board-neutral path directly. Historical encoder-specific helpers may remain in platform code while lower-level cleanup continues, but new application code should not depend on them.
+The current T-Embed target adapts its rotary encoder and buttons into this interface. Applications should not depend directly on encoder GPIOs or a specific physical control layout.
 
-Application acceptance is a separate layer from board input. After a menu/application has interpreted input and committed an action or state change, it can emit an RFScout semantic event through `event.c/.h`; audible feedback is resolved from those accepted events rather than from raw controls.
+## Power boundary
 
-A future board may map a trackball, directional keys, keyboard, touch gestures, or another control scheme into the same input vocabulary without teaching application code about that hardware.
+Board targets advertise semantic power capabilities such as screen-off, deep sleep, and physical power-off. Device policy chooses among those semantic actions; target code owns PMU/GPIO/wake-source mechanics.
+
+Optional protective inputs are capabilities too. The current target advertises ESP32 internal-temperature support for high-temperature policy. Battery/fuel-gauge/charger availability remains a hardware/service concern rather than being assumed by application code.
+
+A board may support an action without every gesture exposing it. For example, deep sleep is supported by the current board, but long-hold `Sleep` is intentionally excluded because the physical power button is also the deep-sleep wake source.
 
 ## Audio boundary
 
-Board support should expose speaker/audio capability through the platform/service layer rather than board checks in application code. `audio_output` owns asynchronous speaker execution; semantic feedback and notifications sit above it. A board without a speaker should be able to keep application/event behavior intact while making audible output unavailable.
+Speaker and microphone behavior should be exposed through services/capabilities rather than board checks in application code. A target without speaker output can retain semantic event behavior while making audible presentation unavailable. Application content audio should not imply that every board uses the current T-Embed I2S topology.
 
-Likewise, application content audio is a capability/service concern rather than evidence that every board must implement the current T-Embed I2S topology.
+## Hardware availability versus enablement
+
+Compile-time capability means the target can support a device; it does not guarantee every product variant populates it. Fixed optional devices such as CC1101, nRF24, and the board microphone may be probed once at startup. Hot-plug peripherals such as external I2C devices should use dynamic probing.
 
 ## Adding a board
 
-A future board port should be introduced in stages:
+A new board port should:
 
-1. add a new Kconfig board choice and `main/boards/<target>/board.h`;
-2. select only that board's include path and board-specific sources in CMake;
-3. provide platform input, display, power, storage, and shared-bus integration needed for basic UI bring-up;
-4. enable hardware-backed capabilities only as their drivers are functional;
-5. expose applications according to capabilities rather than board identity;
-6. add the target to CI as a separate build artifact.
+1. add a Kconfig board choice and `main/boards/<target>/board.h`;
+2. provide target-specific defaults/source selection;
+3. satisfy platform prerequisites including display, input, power, storage, and usable PSRAM;
+4. expose only capabilities actually implemented;
+5. keep applications dependent on semantic services/capabilities;
+6. add a distinct CI/package target and hardware identity.
 
-Do not add a runtime board detector or compile unrelated board implementations into every image unless a future hardware family creates a concrete need for that behavior.
+Do not add runtime board detection or compile unrelated board implementations into every image unless a future hardware family creates a concrete need.
 
 ## Configuration overlays
 
-The repository-level `sdkconfig.defaults` remains the active default configuration while only one target exists. When a second target is added, board-specific defaults should move to target overlays selected by the build wrapper/CI so flash, PSRAM, partitioning, and peripheral configuration can legitimately differ without accumulating one board's assumptions in another board's image.
+The repository-level `sdkconfig.defaults` remains active while only one target exists. With multiple targets, board-specific defaults should move to selected overlays so flash, PSRAM, partitions, and peripheral configuration can differ without leaking one board's assumptions into another image.

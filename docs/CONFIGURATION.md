@@ -2,11 +2,9 @@
 
 This document describes configuration implemented on current `main`. Planned configuration concepts belong in [ROADMAP.md](ROADMAP.md).
 
-RFScout always starts from compiled defaults. When an SD card is mounted, persistent user preferences are loaded from `/sdcard/rfscout.json`. The current canonical schema version is **2**.
+RFScout starts from compiled defaults and, when SD is mounted, overlays persistent preferences from `/sdcard/rfscout.json`. The current canonical schema version is **2**. Unknown/obsolete fields are ignored; saving builds a fresh canonical document, so obsolete keys disappear and newly introduced fields are emitted with current defaults.
 
-## Configuration model
-
-A representative schema-v2 configuration is:
+## Representative schema
 
 ```json
 {
@@ -17,6 +15,14 @@ A representative schema-v2 configuration is:
     "off_timeout_seconds": 300,
     "clock_24h": false,
     "theme": "indoor"
+  },
+  "power": {
+    "short_press": "sleep",
+    "long_press": "power_off",
+    "low_battery_percent": 10,
+    "low_battery_action": "power_off",
+    "high_temperature_c": 90,
+    "high_temperature_action": "power_off"
   },
   "apps": {
     "wifi_bt": {
@@ -31,55 +37,19 @@ A representative schema-v2 configuration is:
         "events": {
           "wifi_device": true,
           "ble_device": true
-        },
-        "characters": {
-          "flock": "F",
-          "body_camera": "B",
-          "drone": "D",
-          "camera": "C",
-          "smart_glasses": "G",
-          "acoustic_sensor": "A",
-          "surveillance_other": "S"
         }
       }
     },
-    "cc1101": {
-      "enabled": true,
-      "notifications": {
-        "enabled": true,
-        "characters": {
-          "cc1101_narrow_ism": "N",
-          "cc1101_remote_sensor": "R",
-          "cc1101_carrier": "K",
-          "cc1101_bursty": "U",
-          "cc1101_wideband": "W"
-        }
-      }
-    },
-    "nrf24": {
-      "enabled": true,
-      "notifications": {
-        "enabled": true,
-        "characters": {
-          "nrf24_esb": "E",
-          "nrf24_input": "I",
-          "nrf24_sensor": "T",
-          "nrf24_wifi_like": "V",
-          "nrf24_ble_like": "L",
-          "nrf24_logitech_like": "X"
-        }
-      }
-    },
+    "cc1101": { "enabled": true },
+    "nrf24": { "enabled": true },
     "audio": { "enabled": true },
     "thermal": { "enabled": true },
     "device": { "enabled": true },
     "startup": "home"
   },
-  "logging": {
-    "enabled": true
-  },
+  "logging": { "enabled": true },
   "notifications": {
-    "mode": "MORSE",
+    "mode": "OFF",
     "volume": 50
   },
   "recorder": {
@@ -104,148 +74,88 @@ A representative schema-v2 configuration is:
 }
 ```
 
-The display inactivity values are total idle times measured from the most recent physical user activity. `dim_timeout_seconds` defaults to 120 seconds and `off_timeout_seconds` defaults to 300 seconds; zero disables the corresponding stage. When both are nonzero, `off_timeout_seconds` must be later than `dim_timeout_seconds`. Automatic screen-off only disables LCD presentation: applications, logging, acquisition, and audible notifications continue running. See [Display idle behavior](DISPLAY_IDLE.md) for wake/input semantics.
+Notification Morse-character maps are also stored beneath the owning application and are omitted above for brevity.
 
-The historical configuration key remains `apps.audio` because the application enum still uses `RFSCOUT_APP_AUDIO`; the user-facing application is Recorder. `apps.startup` writes user-facing aliases where useful: `home` for Device and `recorder` for Audio. The loader also accepts the historical internal names `device` and `audio`.
+## Loading and migration
 
-An application `enabled` value is a user preference, not a promise that the hardware exists. CC1101, nRF24, and Recorder are additionally gated by one-time startup hardware probes; if a fixed radio or the board PDM microphone is absent, that application is omitted from navigation for the current boot even when configured enabled. The saved preference is preserved so the same configuration can be used across differently populated T-Embed variants. Thermal remains dynamically probed because it is an external attachable peripheral.
+Configuration loading follows a defaults-plus-overlay model:
 
-The exact `time` object is emitted only when RFScout has valid saved wall-clock state to preserve.
-
-## Canonical loading and migration
-
-Configuration loading deliberately follows a defaults-plus-overlay model:
-
-1. populate all current compiled defaults;
-2. parse the existing JSON file;
-3. accept supported schema versions from 1 through the current version;
+1. populate current compiled defaults;
+2. parse the existing JSON document;
+3. accept schema versions 1 through the current version;
 4. overlay only recognized, type-correct, valid fields;
-5. translate recognized legacy schema-v1 fields into current runtime state;
-6. ignore unknown or obsolete fields;
-7. when saving, build a new canonical schema-v2 document from runtime state rather than copying the source JSON tree.
+5. translate recognized schema-v1 fields;
+6. ignore unknown/obsolete fields;
+7. on save, generate a new canonical schema-v2 document rather than editing the source tree in place.
 
-The result is intentionally migration-friendly. Fields introduced by newer firmware automatically retain current defaults when absent from an older file and appear on the next save. Unknown or retired fields are ignored during load and disappear when the canonical file is rewritten.
+A file claiming a future schema version is rejected rather than rewritten by older firmware. Invalid complete documents are retained as `rfscout.json.bad`; replacement uses `.tmp` and `.bak` files for recovery.
 
-A configuration claiming a schema version newer than the running firmware is rejected rather than being destructively downgraded. Invalid complete documents are retained as `rfscout.json.bad`, defaults are restored, and boot continues. Atomic replacement uses `.tmp` and `.bak` files for recovery.
+The historical application key `apps.audio` remains because the internal application ABI still uses `RFSCOUT_APP_AUDIO`; the user-facing application is Recorder. `apps.startup` writes user-facing aliases such as `home` and `recorder`, while the loader also accepts historical internal aliases.
 
-Schema v1 is still accepted. Its boolean application entries and global `notifications.characters` mappings are translated into the current app-owned representation when loaded. The next save writes only schema v2.
+## Display configuration
 
-## Display themes
+`display.brightness` is the normal backlight percentage. `dim_timeout_seconds` defaults to 120 seconds and `off_timeout_seconds` to 300 seconds; zero disables the corresponding stage. When both are enabled, screen-off must occur after dimming.
 
-Theme selection is part of canonical `/sdcard/rfscout.json` state under `display.theme`.
+Screen-off is a presentation state only: application acquisition, logging, framebuffer updates, and audible behavior continue. Any physical user input wakes a dim/off display, and the wake gesture is consumed before ordinary app, lock, or power-button handling. See [DISPLAY_IDLE.md](DISPLAY_IDLE.md).
 
-Current themes are:
+Current visual themes are **Indoor**, **Outdoor**, **Night**, and **Discipline**. Discipline uses the Night palette and currently also suppresses incidental interaction and notification audio while preserving explicit application content audio. The planned v0.4.0 separation of visual theme and audio policy is documented only in the roadmap until implemented.
 
-- **Indoor** — normal high-contrast RFScout orange/white presentation;
-- **Outdoor** — maximum daylight contrast;
-- **Night** — red/orange-oriented UI colors that reduce bright blue/green output;
-- **Discipline** — the same visual palette as Night plus suppression of incidental interaction and notification audio.
+## Power configuration
 
-Discipline does not disable explicitly requested application content audio such as Recorder playback. Theme sound policy is environmental policy layered on top of app-native behavior and user notification preferences; it does not overwrite those preferences.
+The `power` object stores both physical-button behavior and protective thresholds/actions. Valid action strings are `none`, `screen_off`, `sleep`, and `power_off`, subject to the specific gesture/policy and board capability.
 
-## Display inactivity
+Defaults are:
 
-Display dimming and screen-off are global presentation settings under `display.dim_timeout_seconds` and `display.off_timeout_seconds`. The compiled defaults are two minutes before dimming and five minutes before screen-off. The Device Settings choices are documented in [Display idle behavior](DISPLAY_IDLE.md).
+- `short_press`: `sleep`;
+- `long_press`: `power_off`;
+- `low_battery_percent`: `10` (`0`/Off is also valid; menu choices advance in 5% steps through 20%);
+- `low_battery_action`: `power_off`;
+- `high_temperature_c`: `90` (`0`/Off or 70, 80, 90, 100 C);
+- `high_temperature_action`: `power_off`.
 
-Screen-off does not enter ESP32 deep sleep and does not stop application work. RFScout continues app acquisition, logging, framebuffer rendering, and audible notifications while LCD output is disabled. Any physical user input can wake the display even while global input lock is active; the wake gesture is consumed and is not delivered to the app or power-control gesture handlers.
+The detailed confirmation, hysteresis, charger-freshness, thermal fallback, and transition-overlay contracts live in [POWER.md](POWER.md), which is the single production reference for power behavior.
 
-## WiFi / BT retention configuration
+## WiFi / BT retention
 
-WiFi / BT owns three independent retention settings under `apps.wifi_bt.retention`:
+WiFi / BT owns three independent retention settings under `apps.wifi_bt.retention`: `wifi_seconds`, `bluetooth_seconds`, and `surveillance_seconds`. All currently default to 60 seconds and accept 10 through 300 seconds in 10-second increments.
 
-- `wifi_seconds`: lifetime of Wi-Fi source membership in the live device list;
-- `bluetooth_seconds`: lifetime of Bluetooth source membership in the live device list;
-- `surveillance_seconds`: lifetime of retained classified detections in the surveillance list.
+Wi-Fi and BLE source membership age independently for a merged observation. Surveillance history has its own timeout. Planned `Instant` and `Never` semantics are roadmap work and are not current behavior.
 
-All three default to 60 seconds, accept values from 10 through 300 seconds, and use 10-second increments in the application settings menu. Missing, out-of-range, or non-step-aligned values retain the compiled 60-second default.
+## Notifications and Recorder audio
 
-Wi-Fi and Bluetooth age independently. If a normalized observation has been seen from both sources, one source can expire while the other remains live. The retained surveillance history has its own timeout so classified detections can be kept for a different period without changing ordinary device-list aging.
+Global `notifications.mode` is `OFF`, `TONE`, or `MORSE`; global volume is 0 through 100. Each detecting application owns its notification gate and Morse mappings. WiFi / BT additionally stores independent ordinary Wi-Fi and BLE discovery-feedback switches, which default enabled when absent.
 
-## Notification configuration
+Recorder playback volume is independent of notification volume. Recorder microphone input gain is currently 0 through +24 dB in 3 dB steps.
 
-RFScout separates global presentation from app-owned notification choices.
+## Application enablement and availability
 
-Global `notifications` contains:
+An app's `enabled` value is a user preference, not proof that hardware exists. CC1101, nRF24, and Recorder are additionally gated by startup hardware probes; Thermal is hot-plug probed because it is an external attachable peripheral. Home/Device is always enabled.
 
-- `mode`: `OFF`, `TONE`, or `MORSE`;
-- `volume`: `0` through `100`.
+A configured startup target that is disabled or unavailable falls back to Home for that boot without erasing the saved preference.
 
-Application notification settings live under the owning app. Detecting apps have an `enabled` master gate plus their own Morse-character mappings. WiFi / BT additionally contains `notifications.events.wifi_device` and `notifications.events.ble_device`, which independently control the lightweight beep for ordinary newly observed Wi-Fi and BLE devices.
-
-Those two discovery-event switches default to `true` when absent, preserving historical behavior for older configuration files. Turning the WiFi / BT notification master gate off suppresses both general discovery feedback and app-specific surveillance notifications without destroying the individual settings.
-
-Recorder content audio is separate from notification policy. Recorder playback volume is a distinct `0` through `100` preference and microphone input gain is a fixed digital gain from 0 through +24 dB in 3 dB steps.
-
-## Defaults and validation
-
-Missing or invalid recognized fields retain compiled defaults. Home/Device is always enabled even if configuration attempts to disable it. The compiled theme is Indoor and the compiled startup target is Home.
-
-A disabled or unavailable configured startup target falls back to Home for the current boot without rewriting the saved preference. Thermal additionally requires a detected MLX90640.
-
-The compiled display brightness is 70%, dim timeout is 120 seconds, and screen-off timeout is 300 seconds. A zero dim or screen-off timeout disables that stage. When both are enabled, screen-off must be later than dim.
-
-The compiled global notification mode is `OFF`. Notification volume defaults to 50. Each application notification category has a compiled Morse-character default; valid one-character saved values override defaults individually. Wi-Fi, Bluetooth, and surveillance retention each default to 60 seconds.
-
-## Home and Device Settings
-
-Home is the pass-through landing state of the non-disableable Device application. Center enters Device Settings; Back returns to Home.
+## Home / Device Settings
 
 Current Device Settings include:
 
-- LCD brightness;
-- display dim timeout;
-- display screen-off timeout;
-- display theme (Indoor, Outdoor, Night, Discipline);
-- 12/24-hour clock format;
-- timezone selection;
-- preferred startup application;
-- manual date and time;
-- enable/disable state for WiFi/BT, CC1101, nRF24, Recorder (`apps.audio`), and Thermal;
-- SD logging enablement;
-- global notification mode;
-- global notification volume;
-- explicit SD-backed configuration save.
+- brightness, dim timeout, screen-off timeout, and display theme;
+- **Power button** configuration;
+- **Power policy** configuration for low battery and high internal temperature;
+- 12/24-hour clock format, timezone, and manual date/time;
+- preferred startup application and per-app enablement;
+- SD logging;
+- global notification mode and volume;
+- explicit configuration save.
 
-Per-app notification enablement and Morse mappings are edited from the corresponding application settings rather than from the global Device menu. WiFi / BT also exposes ordinary Wi-Fi-device and BLE-device discovery feedback switches plus its three retention controls there.
+Per-app notification mappings and WiFi / BT retention controls remain in the owning application menus. Small finite choices use direct center-to-cycle behavior rather than a separate edit mode.
 
-Setters mark canonical configuration dirty. RFScout flushes dirty configuration before deep sleep so a setting changed immediately before sleep is not silently lost.
+Setters mark canonical configuration dirty. RFScout flushes dirty configuration before deep sleep. Without SD, settings can affect the running session but canonical persistence is unavailable.
 
-Without an SD card, settings can affect the running session but canonical persistence is unavailable.
+## Deep-sleep session state
 
-## Application settings inventory
-
-| Application | Current settings/actions | Notification controls |
-| --- | --- | --- |
-| WiFi / BT | Back; Notifications; WiFi timeout; BT timeout; Surveillance timeout; Reset detections | master gate; WiFi device beep; BLE device beep; Flock/ALPR; Body camera; Drone; Camera; Smart glasses; Acoustic sensor; Other surveillance |
-| CC1101 | Back; Profile; Low; High; Step; Notifications; Reset counts | master gate plus Narrowband; Remote/sensor; Carrier; Bursty RF; Wide RF Morse mappings |
-| nRF24 | Back; Low channel; High channel; Dwell; Packets; Notifications; Reset counts | master gate plus ESB device; Input; Sensor; WiFi-like; Hopping/BLE-like; Logitech-like Morse mappings |
-| Recorder | Back; New recording; Monitor; recording browser; playback volume; delete recording; monitor input gain | none currently; native app policy suppresses incidental feedback while preserving content audio |
-| Thermal | No application settings menu | none currently |
-| Home / Device Settings | global device settings and Save config | global mode and volume only |
-
-## Semantic event and sound-policy relationship
-
-Application/input code emits semantic events only after RFScout has accepted an action or state change. `feedback` resolves those events through the source application's native audio profile and active theme sound policy before asking `audio_output` to play disposable UI feedback.
-
-App-specific detection notifications use the notification subsystem rather than hard-coding tones in detection code. Global mode/volume is applied after the app's notification gate and category mapping. This keeps event meaning, user policy, theme policy, and audio execution separate.
-
-## Deep-sleep session persistence
-
-Deep sleep loses normal RAM, so RFScout keeps a deliberately small RTC-retained session record separate from canonical user configuration. It currently retains:
-
-- active application;
-- user-input lock state.
-
-The retained record is guarded by magic/version/checksum validation and is used only on a valid sleep wake. If the retained application is disabled or unavailable, normal fallback behavior applies.
-
-Transient UI transactions are intentionally not restored: open menus, selected rows, edit mode, queued sounds, and active Recorder capture/playback are discarded. Broader application-session persistence is a future framework concern rather than part of schema-v2 user configuration.
+Deep sleep loses normal RAM, so RFScout keeps a small RTC-retained session envelope separate from canonical configuration. It currently retains the active application and global input-lock state. Open menus, edit state, queued sounds, and active Recorder operations are intentionally not restored.
 
 ## Wall clock and timezones
 
-The ESP32 system wall clock is authoritative for the shared clock display, SD log timestamps, and normal filesystem calendar metadata. Monotonic time remains authoritative for polling, RF dwell, debounce, retries, timeouts, and housekeeping.
+The ESP32 system wall clock is authoritative for shared clock display, log timestamps, and normal filesystem calendar metadata. Monotonic time remains authoritative for polling, debounce, dwell, retries, housekeeping, and other intervals.
 
-Timezone choices are stored as data: stable `name`, user-facing `label`, and POSIX `TZ` rule. Manual calendar input is validated after local-time conversion so invalid/nonexistent local times are rejected.
-
-At startup, RFScout first inspects the already-running RTC-backed system clock. A wall clock from 2020 through the end of 2100 is treated as plausibly valid and is preserved across software resets, firmware flashing, and sleep while the RTC domain remains powered. If retained authority metadata is unavailable, the clock is labeled `RTC retained` rather than inventing GPS, NTP, or manual provenance.
-
-Only when the running wall clock is implausible does RFScout fall back to the saved configuration timestamp. On orderly hard power-off, RFScout can save the current epoch and authority source as a cold-boot continuity aid. Because complete board power removal stops the ESP32 clock, restored saved time is not treated as proof of ongoing synchronization. Saved checkpoints and manual time entry use the same supported 2020-through-2100 range.
+Timezone options are stored as stable `name`, user-facing `label`, and POSIX `TZ` rule. Manual time entry is validated after local-time conversion. A plausible RTC-backed wall clock is preserved across software resets, flashing, and deep sleep while that RTC domain remains powered; saved shutdown time is only a cold-boot continuity aid, not proof of synchronization.

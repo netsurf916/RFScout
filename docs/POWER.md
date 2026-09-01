@@ -1,51 +1,101 @@
-# Power controls
+# Power controls and protective policy
 
-RFScout treats power-button gestures as board-neutral semantic actions. The active board advertises which actions it can perform, and Device Settings only presents choices supported by that target.
+RFScout treats power transitions as board-neutral semantic actions. The active board advertises which actions and sensors it supports; Device Settings presents only combinations that are valid for that target.
 
-## Power button settings
+This document is the canonical production reference for both the physical power button and automatic low-battery/high-temperature protection. Display dimming and LCD sleep are documented separately in [DISPLAY_IDLE.md](DISPLAY_IDLE.md).
 
-Device Settings includes a **Power button** submenu. The submenu uses the direct-cycle menu semantic: rotate to select a row and press the center control to cycle the value. There is no separate edit mode for these small enumerations.
+## Power button
 
-**Short press** supports, when available on the board:
+Device Settings includes a **Power button** submenu using direct center-to-cycle controls.
+
+**Short press** supports, when available:
 
 - `None`
 - `Screen off`
 - `Sleep`
 - `Power off`
 
-**Long press** supports, when available on the board:
+**Long press** supports:
 
 - `None`
 - `Power off`
 
-The compatibility defaults preserve the original RFScout behavior: short press is `Sleep` and long press is `Power off`. The values are persisted in `/sdcard/rfscout.json` under the `power` object as `short_press` and `long_press`.
+Defaults preserve the original behavior: short press is `Sleep`; long press is `Power off`. Configuration is stored under `power.short_press` and `power.long_press` in `/sdcard/rfscout.json`.
 
-## Gesture timing
+### Gesture timing
 
-The power button deliberately has three timing regions:
+The power button has three intentional regions:
 
-1. A press released before the short-press window expires performs the configured short action.
-2. Once the long-press countdown has started, releasing before the long threshold cancels the gesture and performs no action.
-3. Holding through the long threshold performs the configured long action. The eventual release is consumed and cannot also produce a short action.
+1. release before the short-press window expires -> perform the configured short action;
+2. once the long-hold countdown has started, release before the long threshold -> cancel with no action;
+3. hold through the long threshold -> perform the configured long action; the eventual release is consumed.
 
-A configured long action of `None` has no countdown because there is no pending transition to communicate.
+A long action of `None` has no countdown. `Sleep` is intentionally not a long-hold choice because the physical button is also the deep-sleep wake source.
 
-## Countdown presentation
+`Screen off` requests the normal display-idle off state through `display_idle_request_off()`; it does not stop applications, radios, logging, or notifications.
 
-The global power-transition overlay is parameterized rather than hardcoded to shutdown. For the power button, a configured long hold shows `HOLD TO POWER OFF`, followed by `POWERING OFF...` once the threshold is reached.
+Display wake has priority over power gestures. If the LCD is dimmed or off, the entire gesture that wakes it is consumed. The user must release and begin a new gesture before a power action can occur.
 
-Sleep remains a semantic power action for short press and other device policies, but it is intentionally not exposed as a long-hold action. The physical power button is also the deep-sleep wake source, so excluding long-hold sleep keeps hold behavior unambiguous and avoids entering sleep while the wake source is still asserted.
+## Protective power policy
 
-Power off may be assigned to either gesture. Short-press power off provides an intentionally fast shutdown path on boards where the physical control is difficult to activate accidentally; long press retains the hold-to-confirm countdown path.
+Device Settings also includes a **Power policy** submenu.
 
-The overlay is applied by the shared presentation layer and does not become permanent application framebuffer content.
+- **Low battery**: `Off`, `5%`, `10%`, `15%`, `20%`; default `10%`.
+- **Low batt action**: supported `None`, `Sleep`, `Power off`; default `Power off`.
+- **High temp**: `Off`, `70 C`, `80 C`, `90 C`, `100 C`; default `90 C`.
+- **High temp action**: supported `None`, `Sleep`, `Power off`; default `Power off`.
 
-## Display wake priority
+The canonical configuration keys are:
 
-Display wake has priority over all configured power-button behavior. If the display is dimmed or off, the physical gesture that wakes it is consumed in its entirety. Holding that same gesture cannot subsequently begin a power countdown or perform a short action; the user must release and start a new gesture after the display is awake.
+```json
+"power": {
+  "short_press": "sleep",
+  "long_press": "power_off",
+  "low_battery_percent": 10,
+  "low_battery_action": "power_off",
+  "high_temperature_c": 90,
+  "high_temperature_action": "power_off"
+}
+```
 
-`Screen off` requests the normal display-idle off state through `display_idle_request_off()`. The request is serviced by the display-idle owner after the triggering physical activity has cleared, so the release that requested screen-off cannot immediately wake the panel again. Inactivity-driven and explicit screen-off therefore share the same LCD state, framebuffer behavior, and wake restoration path.
+`Screen off` is intentionally not a protective action because it leaves the active workload running.
 
-## Board capabilities
+### Low-battery behavior
 
-Board definitions advertise support for screen-off, deep sleep, and physical power-off. Gesture suitability is intentionally separate from board capability: a board may support deep sleep while the long-hold menu still excludes `Sleep`. The menu cycles only through actions both supported by the board and valid for that gesture. Configuration values remain semantic rather than naming PMU, GPIO, or SoC-specific mechanisms.
+Low-battery policy evaluates state of charge once per second. The threshold must be met for five consecutive **fresh successful fuel-gauge reads** before a transition is requested. Failed reads break the confirmation run instead of reusing cached percentage data.
+
+A protective low-battery transition additionally requires **fresh charger telemetry confirming external power is absent**. Cached charger state is acceptable for display, but not for authorizing a protective transition. Connecting external power during the warning cancels the pending transition. After firing, low-battery protection rearms only after charge rises at least three percentage points above the configured threshold.
+
+### High-temperature behavior
+
+High-temperature policy uses the ESP32-S3 internal temperature sensor when the board advertises that capability. This is SoC/die temperature and is unrelated to the MLX90640 Thermal application.
+
+The threshold must be met for five consecutive one-second samples. The condition rearms after temperature falls at least 5 C below the configured threshold. A confirmed high-temperature transition takes priority over a pending low-battery transition.
+
+If the selected high-temperature action is `Power off`, RFScout refreshes charger telemetry first. BATFET disable cannot remove power from an externally powered board, so physical power-off is used only when fresh telemetry confirms external power is absent. If external power is present, unavailable, or cannot be freshly confirmed, RFScout falls back to `Sleep` when deep sleep is supported so active execution still stops.
+
+## Transition overlay
+
+Power-button and protective transitions share the same global presentation layer. Examples include:
+
+```text
+HOLD TO POWER OFF
+```
+
+```text
+LOW BATTERY
+POWER OFF IN 5
+```
+
+```text
+HIGH TEMPERATURE
+SLEEP IN 5
+```
+
+Protective warnings last five seconds. Ordinary user input does not cancel them; the owning policy may cancel when the underlying condition clears. Once the delay expires, the overlay changes to the executing state and the common semantic power-action path performs the transition.
+
+## Board capability contract
+
+Board definitions advertise support for screen-off, deep sleep, physical power-off, and optional policy inputs such as internal temperature. Gesture suitability remains separate from raw capability: for example, a board can support deep sleep while long-hold `Sleep` remains intentionally unavailable.
+
+Power policy is device-level. Hardware-specific PMU, GPIO, charger, temperature-sensor, and wake-source mechanics remain behind board/platform services.

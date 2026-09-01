@@ -1,12 +1,12 @@
 # RFScout capabilities
 
-This document describes capabilities implemented on current `main`. Planned features and design ideas belong in [ROADMAP.md](ROADMAP.md).
+This document summarizes behavior implemented on current `main`. Planned features and design ideas belong in [ROADMAP.md](ROADMAP.md).
 
 ## Supported hardware and application order
 
-The currently supported board is **LILYGO T-Embed CC1101 Plus**. RFScout now uses a board-target/capability architecture intended to support additional boards without turning each firmware image into a universal bundle of all board drivers.
+The only supported target is currently **LILYGO T-Embed CC1101 Plus**. RFScout uses a board-target/capability boundary so application code depends on semantic services rather than board model names.
 
-RFScout starts on **Home** by default. Top-level navigation order is:
+Top-level application order is:
 
 1. WiFi / BT
 2. CC1101
@@ -15,134 +15,87 @@ RFScout starts on **Home** by default. Top-level navigation order is:
 5. Thermal, when enabled and detected
 6. Home / Device Settings
 
-Disabled applications are skipped. Home/Device is always available. Device Settings can select any listed application as the preferred startup target; a disabled or unavailable target falls back to Home for the current boot without erasing the saved preference.
-
-The application layer consumes board-neutral semantic input through `platform_input_get()` rather than directly depending on a rotary encoder.
+Disabled/unavailable applications are skipped. Home is always available. A disabled or unavailable preferred startup target falls back to Home for the current boot without erasing the saved preference.
 
 ## WiFi / BT
 
-Implemented behavior includes passive Wi-Fi and BLE observation, rolling recent-device state, IEEE vendor attribution using MA-L/MA-M/MA-S/IAB longest-prefix matching, explicit `RANDOM` handling for private/local addresses, explicit `UNKNOWN` handling for unresolved public addresses, surveillance-oriented multi-signal classification, retained surveillance history, and `RESET DETECTIONS`.
+WiFi / BT passively observes Wi-Fi and BLE activity, maintains recent-device state, performs IEEE longest-prefix vendor attribution, distinguishes private/random addresses from unresolved public addresses, and applies conservative surveillance-oriented classification from multiple signals.
 
-Wi-Fi, Bluetooth, and retained surveillance entries have independent app-owned retention controls. Each defaults to 60 seconds and is adjustable from 10 through 300 seconds in 10-second steps. Wi-Fi and Bluetooth source membership age independently for a merged observation, while the separate surveillance timeout controls how long classified detections remain in the retained surveillance list.
+Wi-Fi, Bluetooth, and retained surveillance history currently have independent 10–300 second retention controls in 10-second steps, defaulting to 60 seconds. Wi-Fi and BLE membership age independently inside merged observations. Ordinary Wi-Fi/BLE discovery cues can be enabled independently; classified surveillance detections use app-specific notification categories.
 
-Ordinary newly observed Wi-Fi and BLE devices can produce lightweight general detection feedback. Wi-Fi and BLE discovery cues are independently configurable. Classified surveillance observations use application-specific notification categories instead and do not also generate the ordinary client-discovery cue.
-
-WiFi / BT owns its notification settings: a master notification gate, the two ordinary discovery switches, and Morse mappings for its surveillance categories. Leaving WiFi / BT stops the Wi-Fi and BLE collectors.
+Leaving WiFi / BT stops both collectors.
 
 ## CC1101
 
-Implemented behavior includes direct-RSSI sub-GHz sweeps, configurable profiles/range/step, a live current-sweep activity histogram, a 128-sample sweep limit, conservative RF-shape detection categories, app-owned audible notifications when counts advance, and `RESET COUNTS`.
-
-The CC1101 settings menu includes its notification page. The categories describe observed RF behavior and are not protocol/product decodes. Classification retains only the immediately previous sweep where temporal comparison is useful; there is no user-visible slow-decay peak-hold state or associated display processing.
+CC1101 performs receive-only RSSI sweeps with configurable profiles/range/step, a live histogram, bounded 128-sample sweeps, conservative RF-behavior categories, application-owned notifications, and count reset. Classification labels are heuristics about observed RF behavior, not decoded product identity.
 
 ## nRF24
 
-Implemented behavior includes configurable channel bounds and dwell time, a fast-decay activity histogram, an ingestion API plus bounded newest-first storage for CRC-validated Enhanced ShockBurst observations, address-based count deduplication, conservative detection categories, app-owned notifications, and `RESET COUNTS`. The main view reserves seven rows for newest validated packets in `channel | raw hex` form and the packet browser exposes deeper metadata. The current scanner produces RPD energy observations only, so those packet surfaces remain empty until receive-only ESB candidate discovery and validation feed the ingestion API.
+nRF24 performs receive-only 2.4 GHz RPD scanning with configurable channel bounds/dwell, a fast-decay activity histogram, conservative classification, bounded storage for validated Enhanced ShockBurst observations, packet preview/browser surfaces, app-owned notifications, and count reset.
 
-The nRF24 settings menu includes the packet browser and notification page. Wi-Fi-like wide activity and hopping/BLE-like activity remain separate detection categories and counters (`Wi-Fi?` and `Hopping RF?`) rather than being merged into a generic `Other` row. Spectrum-only activity that does not support a specific device identity remains broadly categorized.
+The current scanner itself produces RPD energy observations only, so packet surfaces remain empty until receive-only ESB discovery/validation feeds the ingestion API. RFScout does not generate ACKs, inject, replay, or actively discover devices.
 
 ## Recorder
 
-Recorder replaces the former standalone Audio spectrum analyzer.
+Recorder provides SD-backed 16-bit mono WAV capture/playback, runtime PDM clock and delivered PCM-rate measurement, measured-rate WAV metadata, asynchronous trim/DC-removal/normalization, recording browsing/deletion, independent playback volume, live monitor FFT, and fixed input gain from 0 through +24 dB in 3 dB steps.
 
-Implemented behavior includes:
-
-- 16-bit mono PCM WAV recording under `/sdcard/audio/`;
-- SD-required recording and playback with nonfatal `NO SD CARD` behavior;
-- automatic recording-directory creation;
-- asynchronous capture and save processing outside the UI loop;
-- runtime PDM-clock measurement and delivered-PCM-rate measurement;
-- WAV metadata based on the measured effective PCM rate;
-- 300 ms head and 600 ms tail trimming, DC removal, and bounded normalization;
-- validated recording enumeration, duration/size metadata, newest-first ordering, deletion, and immediate list refresh after save;
-- asynchronous WAV playback through I2S1;
-- Recorder-specific persistent playback volume independent of notification volume;
-- a `MONITOR` mode with live microphone FFT display;
-- persistent fixed microphone input gain from 0 through +24 dB in 3 dB steps.
-
-Recorder has a native audio-centric policy: incidental interaction/general-event feedback is suppressed while intentional content audio remains available. The source tree retains the historical `audio_spectrum` compatibility interface because the application enum/navigation ABI still uses `RFSCOUT_APP_AUDIO`.
+Recorder has a native audio-centric policy: incidental feedback is suppressed while intentional content audio remains available. The historical `RFSCOUT_APP_AUDIO` / `audio_spectrum` compatibility naming remains internally.
 
 ## Thermal
 
-Thermal is available when an MLX90640 is detected on the external I2C/Qwiic interface and the application is enabled. The sensor's native 32x24 frame is interpolated for the LCD. Thermal currently has no discrete detection classifier. Its labels and chrome follow the active display theme while the thermal image itself retains its literal sensor palette.
+Thermal is available when an enabled MLX90640 is detected on the external I2C/Qwiic interface. Its native 32x24 data is interpolated for the LCD. Literal thermal imagery bypasses semantic theme translation; chrome and labels remain theme-aware.
 
 ## Home / Device Settings
 
-Home is a branded pass-through landing screen backed by the non-disableable Device application. Rotation continues top-level navigation; center enters Device Settings.
+Home is the non-disableable Device application's branded landing state. Center opens Device Settings.
 
-Implemented Device Settings include display brightness, selectable display theme, 12/24-hour clock presentation, timezone selection, preferred startup application, manual date/time, per-application enablement, SD logging, global notification mode, global notification volume, and explicit configuration save.
+Implemented global settings include:
 
-App-specific notification enablement, category mappings, and WiFi / BT retention controls are configured from the owning applications rather than centrally in Device Settings.
+- brightness, display dim timeout, screen-off timeout, and theme;
+- configurable short/long power-button actions;
+- low-battery and high-internal-temperature protective power policy;
+- 12/24-hour clock, timezone, and manual date/time;
+- startup application and per-app enablement;
+- SD logging;
+- global notification mode and volume;
+- explicit configuration save.
 
-Current themes are **Indoor**, **Outdoor**, **Night**, and **Discipline**. Discipline uses the Night visual palette and additionally suppresses incidental interaction and notification audio. Explicit Recorder/content audio remains available.
+Small finite settings use direct center-to-cycle interaction. Per-app notification mappings and WiFi / BT retention controls remain in their owning app menus.
 
-Theme selection is persisted in canonical `/sdcard/rfscout.json` configuration rather than separate NVS state.
+Current themes are **Indoor**, **Outdoor**, **Night**, and **Discipline**. Discipline uses Night's visual palette and also suppresses incidental interaction and notification audio while preserving explicit content audio. The planned v0.4.0 theme/audio-policy separation is not implemented yet.
 
-## Semantic feedback and input lock
+## Power and display behavior
 
-RFScout emits semantic events after actions/state changes are accepted. Implemented event classes include navigation, activation, enter/back, enable/disable, input lock/unlock, theme change, general detection, application notification, warning, and error.
+Power-button actions are board-capability aware. Short press may be `None`, `Screen off`, `Sleep`, or `Power off`; long press may be `None` or `Power off`. A dimmed/off display consumes the complete first wake gesture before power-button semantics run.
 
-The two-second center-button hold toggles the global input lock. While locked, ordinary navigation/select input is ignored. The feedback sound is emitted only after the lock/unlock transition has committed, not merely because the button is being held.
+Protective policy can respond to confirmed low battery or high ESP32 internal temperature with `None`, `Sleep`, or `Power off`, subject to board support. Low battery requires fresh fuel-gauge and charger evidence; high-temperature power-off falls back to sleep when removable power cannot be freshly confirmed. See [POWER.md](POWER.md).
 
-`feedback` combines event meaning, native app audio policy, and the active theme sound policy before submitting disposable UI audio.
+Automatic display dim/off affects LCD presentation only. Applications, logging, RF acquisition, framebuffer updates, and audible notifications continue. The ST7789 enters hardware sleep for the off state. See [DISPLAY_IDLE.md](DISPLAY_IDLE.md).
 
-## Audible notifications and speaker output
+## Feedback, notifications, and content audio
 
-Global notification presentation remains **OFF**, **TONE**, or **MORSE** plus a global volume. Application notification gates and Morse mappings are app-owned. This allows a future app to be natively quiet without weakening global notification behavior elsewhere.
+RFScout distinguishes semantic interaction feedback, application-owned detection notifications, and intentional application content audio. Global notification presentation is `OFF`, `TONE`, or `MORSE` plus volume; each detecting app owns its notification gate and mappings.
 
-Speaker output is asynchronous. UI feedback is disposable rather than queued indefinitely. Recorder/application content audio is distinct from event feedback and detection notifications.
+`feedback` currently combines event meaning, the source app's native audio policy, and the active theme's sound policy. Speaker execution is asynchronous and disposable UI feedback is not allowed to build a long backlog behind content audio.
 
-## Configuration and migration
+## Configuration and persistence
 
-Persistent preferences use `/sdcard/rfscout.json` schema **version 2**. Loading starts from current firmware defaults and overlays recognized valid values. Schema v1 is accepted and translated where supported.
+Persistent preferences use `/sdcard/rfscout.json` schema version **2**. Loading starts from defaults and overlays recognized valid fields; schema v1 is translated where supported. Unknown keys are ignored and pruned on the next canonical save. Future schema versions are rejected rather than destructively rewritten.
 
-Unknown/obsolete fields are ignored. Saving constructs a new canonical document, so unknown keys are pruned and new fields missing from older files appear with current defaults. Configurations claiming a future schema version are rejected instead of being destructively rewritten by older firmware.
+Canonical configuration includes display, power, app enablement/startup, logging, notifications, WiFi / BT retention, Recorder preferences, timezone data, and optional saved wall-clock continuity state. See [CONFIGURATION.md](CONFIGURATION.md).
 
-WiFi / BT ordinary Wi-Fi/BLE discovery switches default ON when absent. Its three retention values default to 60 seconds when absent or invalid, preserving migration behavior for existing schema-v2 files.
+Deep sleep separately retains a small RTC-backed session record containing the active app and input-lock state. Open menus, edit state, queued sounds, and active Recorder operations are not resumed.
 
-## Deep-sleep behavior
+## Shared UI/status and storage
 
-RFScout separately retains a small RTC-backed session envelope across deep sleep. The active application and user-input lock state survive a valid sleep wake. Retained state is versioned/checksummed and is not used as ordinary long-term user configuration.
+Application views use shared top chrome for title, local time/status, battery, and semantic color roles. Status information includes SD/error state and battery/charging telemetry when available.
 
-Transient UI/menu/edit state and active Recorder operations are intentionally not resumed. Dirty canonical configuration is flushed before deep sleep.
-
-## Shared UI/status behavior
-
-Application views use shared top chrome for title placement, local time/status icons, battery indication, and semantic color orchestration. Theme roles cover background, text, secondary information, dividers, accent/selection, informational/success/warning/error state, graph colors, and Home-logo colors.
-
-Raw framebuffer paths remain available for true image/sensor data such as the Thermal heat map.
-
-Implemented status information includes local wall time, mounted SD state, sticky filesystem/logging error state, battery state of charge, and charging/power telemetry when available.
-
-## Storage and logging
-
-RFScout can operate without an SD card. When mounted, storage provides canonical configuration persistence, Recorder files, and asynchronous logs. Logging uses `rfscout-00.log` through `rfscout-99.log`, up to 4 MiB per segment, with an approximate normal maximum of 400 MiB and a free-space reserve policy.
-
-With valid wall time, records use UTC ISO-8601 timestamps. Before time is established, records use an explicit `UP+<milliseconds>` monotonic marker.
-
-## Time
-
-The ESP32 system wall clock is authoritative for display, log timestamps, and normal filesystem calendar metadata. Monotonic timers remain authoritative for debounce, RF dwell, retries, timeouts, and housekeeping.
-
-Manual time setting and timezone selection are implemented in Device Settings. Orderly hard power-off can persist a shutdown epoch/source to SD as a cold-boot continuity aid. Deep sleep preserves RTC-running time separately.
+RFScout can run without SD, but SD provides canonical configuration persistence, Recorder files, and asynchronous rotating logs. Logging uses `rfscout-00.log` through `rfscout-99.log`, up to 4 MiB per segment, with a free-space reserve policy.
 
 ## Hardware/resource boundaries
 
-Physical bus ownership is board-specific. On the current T-Embed target:
-
-- LCD, microSD, CC1101, and nRF24 share SPI resources;
-- board I2C is shared by battery/power telemetry and optional external I2C peripherals;
-- I2S0 is used by Recorder for PDM microphone recording/monitoring;
-- I2S1 is used by the asynchronous speaker service.
-
-Application code should depend on capabilities and service interfaces rather than board identity.
-
-## Browser flashing and releases
-
-Ready-for-review PRs and `main` builds can produce short-lived candidate bundles. Durable GitHub Releases are prepared deliberately through the manual release workflow. See [RELEASING.md](RELEASING.md).
+On the current target, LCD/microSD/CC1101/nRF24 share SPI resources; board power telemetry and external sensors share I2C; Recorder uses I2S0 for PDM input; the speaker service uses I2S1. The current firmware also depends on usable external PSRAM for large persistent platform allocations such as the framebuffer.
 
 ## Not currently implemented
 
-Automatic ambient-light theme selection is not implemented. The proposed future separation of audio audibility thresholds from visual themes is also not implemented; current theme sound policy remains part of `ui_theme`.
-
-Broader per-app session persistence/unification, NFC/PN532 tools, IR tools, GPS UI/location, a standalone CW sender, shared Audio Input service, external RTC integration, active RF transmission/replay, and other future concepts remain roadmap items rather than current applications.
+The v0.4.0 app-scoped PSRAM memory manager, dynamic `Instant`/`Never` WiFi / BT retention, independent Normal/Quiet audio policy, shared calibrated Audio Input service, CW sender, broader session persistence, GPS/location UI, NFC/IR tools, and active RF transmission/replay remain roadmap work.
