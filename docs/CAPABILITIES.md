@@ -51,7 +51,8 @@ Home is the non-disableable Device application's branded landing state. Center o
 
 Implemented global settings include:
 
-- brightness, display dim timeout, screen-off timeout, and theme;
+- brightness, display dim timeout, screen-off timeout, and visual theme;
+- independent `Normal` / `Quiet` Audio policy;
 - configurable short/long power-button actions;
 - low-battery and high-internal-temperature protective power policy;
 - 12/24-hour clock, timezone, and manual date/time;
@@ -62,7 +63,12 @@ Implemented global settings include:
 
 Small finite settings use direct center-to-cycle interaction. Per-app notification mappings and WiFi / BT retention controls remain in their owning app menus.
 
-Current themes are **Indoor**, **Outdoor**, **Night**, and **Discipline**. Discipline uses Night's visual palette and also suppresses incidental interaction and notification audio while preserving explicit content audio. The planned v0.4.0 theme/audio-policy separation is not implemented yet.
+Visual themes are **Indoor**, **Outdoor**, and **Night**. They affect presentation only. The independent Audio policy is:
+
+- **Normal** — permits incidental semantic feedback and enabled detection notifications subject to app/global policy;
+- **Quiet** — suppresses incidental/event audio and detection-notification presentation without changing the saved notification gates, mappings, mode, or volume.
+
+Quiet does not suppress explicitly requested application content audio such as Recorder playback. Recorder's native app policy remains a separate layer and can still suppress incidental feedback in Normal mode.
 
 ## Power and display behavior
 
@@ -70,19 +76,19 @@ Power-button actions are board-capability aware. Short press may be `None`, `Scr
 
 Protective policy can respond to confirmed low battery or high ESP32 internal temperature with `None`, `Sleep`, or `Power off`, subject to board support. Low battery requires fresh fuel-gauge and charger evidence; high-temperature power-off falls back to sleep when removable power cannot be freshly confirmed. See [POWER.md](POWER.md).
 
-Automatic display dim/off affects LCD presentation only. Applications, logging, RF acquisition, framebuffer updates, and audible notifications continue. The ST7789 enters hardware sleep for the off state. See [DISPLAY_IDLE.md](DISPLAY_IDLE.md).
+Automatic display dim/off affects LCD presentation only. Applications, logging, RF acquisition, framebuffer updates, and audio behavior continue. The ST7789 enters hardware sleep for the off state. See [DISPLAY_IDLE.md](DISPLAY_IDLE.md).
 
 ## Feedback, notifications, and content audio
 
 RFScout distinguishes semantic interaction feedback, application-owned detection notifications, and intentional application content audio. Global notification presentation is `OFF`, `TONE`, or `MORSE` plus volume; each detecting app owns its notification gate and mappings.
 
-`feedback` currently combines event meaning, the source app's native audio policy, and the active theme's sound policy. Speaker execution is asynchronous and disposable UI feedback is not allowed to build a long backlog behind content audio.
+`feedback` combines event meaning, the source app's native audio policy, and the independent device Audio policy. `alert` applies the same device Audio policy to detection-notification presentation. Neither path consults the visual theme. Speaker execution is asynchronous and disposable UI feedback is not allowed to build a long backlog behind content audio.
 
 ## Configuration and persistence
 
-Persistent preferences use `/sdcard/rfscout.json` schema version **2**. Loading starts from defaults and overlays recognized valid fields; schema v1 is translated where supported. Unknown keys are ignored and pruned on the next canonical save. Future schema versions are rejected rather than destructively rewritten.
+Persistent preferences use `/sdcard/rfscout.json` schema version **3**. Loading starts from defaults and overlays recognized valid fields; schema v1/v2 are translated where supported. Unknown keys are ignored and pruned on the next canonical save. Future schema versions are rejected rather than destructively rewritten.
 
-Canonical configuration includes display, power, app enablement/startup, logging, notifications, WiFi / BT retention, Recorder preferences, timezone data, and optional saved wall-clock continuity state. See [CONFIGURATION.md](CONFIGURATION.md).
+Legacy `Discipline` theme state migrates to **Night + Quiet**. Indoor/Outdoor/Night remain the three visual themes; `audio.policy` stores `normal` or `quiet` separately. See [CONFIGURATION.md](CONFIGURATION.md).
 
 Deep sleep separately retains a small RTC-backed session record containing the active app and input-lock state. Open menus, edit state, queued sounds, and active Recorder operations are not resumed.
 
@@ -98,4 +104,4 @@ On the current target, LCD/microSD/CC1101/nRF24 share SPI resources; board power
 
 ## Not currently implemented
 
-The v0.4.0 app-scoped PSRAM memory manager, dynamic `Instant`/`Never` WiFi / BT retention, independent Normal/Quiet audio policy, shared calibrated Audio Input service, CW sender, broader session persistence, GPS/location UI, NFC/IR tools, and active RF transmission/replay remain roadmap work.
+The v0.4.0 app-scoped PSRAM memory manager, dynamic `Instant`/`Never` WiFi / BT retention, shared calibrated Audio Input service, CW sender, broader session persistence, GPS/location UI, NFC/IR tools, and active RF transmission/replay remain roadmap work.

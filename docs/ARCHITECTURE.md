@@ -34,9 +34,11 @@ RFScout distinguishes:
 2. application-owned detection notifications;
 3. intentional application content audio.
 
-`feedback.c/.h` consumes semantic events and currently resolves incidental sound through both native `app_audio_policy` and active theme sound policy. `notification.c/.h` owns detection categories and app-owned notification gates/mappings. `audio_output.c/.h` owns asynchronous speaker execution and class arbitration.
+`app_audio_policy.c/.h` describes application-native traits such as Recorder's intentionally quiet incidental behavior. `audio_policy.c/.h` independently defines the device-wide **Normal** / **Quiet** presentation policy. `feedback.c/.h` combines semantic event meaning, native app policy, and device Audio policy. `notification.c/.h` owns detection vocabulary/preferences; `alert.c/.h` applies global notification mode/volume plus device Audio policy. `audio_output.c/.h` owns asynchronous speaker execution and class arbitration.
 
-Current themes are Indoor, Outdoor, Night, and Discipline. Discipline reuses Night's palette and suppresses incidental/notification audio while preserving explicit content audio. Planned v0.4.0 separation of visual theme from Normal/Quiet audio policy is not current behavior.
+The visual theme layer no longer participates in sound resolution. `ui_theme.c/.h` owns only the Indoor, Outdoor, and Night palettes. A theme change therefore cannot alter audibility, and an Audio-policy change cannot alter colors.
+
+Quiet suppresses incidental/event feedback and detection-notification presentation without mutating the underlying app notification gates, Morse mappings, global mode, or global volume. Explicit application content audio such as Recorder playback bypasses that suppression.
 
 ## WiFi / BT data path
 
@@ -68,11 +70,12 @@ MLX90640 is an optional hot-plug I2C/Qwiic peripheral. Thermal acquires only whi
 
 ## Configuration and persistence
 
-`device_config.c/.h` owns defaults plus optional `/sdcard/rfscout.json` schema-v2 persistence. Loading overlays recognized valid fields on defaults; schema v1 is translated; unknown fields are ignored; future schema versions are rejected.
+`device_config.c/.h` owns defaults plus optional `/sdcard/rfscout.json` schema-v3 persistence. Schema v1/v2 are accepted and migrated where supported; unknown fields are ignored; future schema versions are rejected.
 
-Canonical configuration currently covers:
+Canonical configuration covers:
 
-- display brightness/idle/theme;
+- display brightness/idle and visual theme;
+- independent device Audio policy;
 - power-button actions and protective power policy;
 - app enablement/startup;
 - logging;
@@ -80,6 +83,8 @@ Canonical configuration currently covers:
 - WiFi / BT retention;
 - Recorder preferences;
 - timezone and saved wall-clock continuity state.
+
+Legacy `display.theme: "discipline"` maps to visual Night plus Quiet audio policy. Canonical v3 output writes only the independent fields (`display.theme` and `audio.policy`).
 
 See [CONFIGURATION.md](CONFIGURATION.md).
 

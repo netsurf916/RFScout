@@ -1,6 +1,6 @@
 /**
     alert.c : RFScout audible notification presentation policy
-    Description: Resolves semantic notification events through app, global, and theme policy into audio requests.
+    Description: Resolves semantic notification events through app, global, and device audio policy into requests.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -8,11 +8,11 @@
 #include "alert.h"
 
 #include "audio_output.h"
+#include "audio_policy.h"
 #include "device_config.h"
 #include "event.h"
 #include "morse.h"
 #include "notification_preferences.h"
-#include "ui_theme.h"
 
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -35,12 +35,14 @@ static SemaphoreHandle_t alert_mutex;
 
 static uint8_t effective_notification_volume_locked( void )
 {
-    const ui_theme_sound_policy_t *policy = ui_theme_sound_get();
+    const rfscout_audio_policy_t *policy = audio_policy_get( device_config_audio_policy() );
     if( ( NULL == policy ) || !policy->notification_audio )
     {
         return 0U;
     }
-    return (uint8_t)( ( (uint16_t)volume_percent * policy->notification_volume_percent ) / 100U );
+    return (uint8_t)( ( (uint16_t)volume_percent *
+                        device_config_get()->audio_notification_gain_percent ) /
+                      100U );
 }
 
 static bool request_generic_locked( char a_character )
@@ -97,9 +99,9 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
         return;
     }
 
-    if( RFSCOUT_EVENT_THEME_CHANGED == a_event->type )
+    if( RFSCOUT_EVENT_AUDIO_POLICY_CHANGED == a_event->type )
     {
-        const ui_theme_sound_policy_t *policy = ui_theme_sound_get();
+        const rfscout_audio_policy_t *policy = audio_policy_get( device_config_audio_policy() );
         if( ( NULL == policy ) || !policy->notification_audio )
         {
             audio_output_cancel_notifications_pending();
