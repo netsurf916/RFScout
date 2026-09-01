@@ -121,6 +121,12 @@ static bool power_action_valid_for_gesture( power_action_t a_action, bool a_long
            ( POWER_ACTION_SLEEP == a_action ) || ( POWER_ACTION_POWER_OFF == a_action );
 }
 
+static bool power_action_valid_for_policy( power_action_t a_action )
+{
+    return ( POWER_ACTION_NONE == a_action ) || ( POWER_ACTION_SLEEP == a_action ) ||
+           ( POWER_ACTION_POWER_OFF == a_action );
+}
+
 /** @brief Copy a bounded configuration string. */
 static void copy_string( char *a_destination, size_t a_capacity, const char *a_source )
 {
@@ -150,6 +156,10 @@ static void set_defaults( void )
     config.display_off_timeout_seconds = CONFIG_DISPLAY_OFF_TIMEOUT_DEFAULT_SECONDS;
     config.power_button_short_action = POWER_ACTION_SLEEP;
     config.power_button_long_action = POWER_ACTION_POWER_OFF;
+    config.low_battery_threshold_percent = 10U;
+    config.low_battery_action = POWER_ACTION_POWER_OFF;
+    config.high_temperature_threshold_c = 90U;
+    config.high_temperature_action = POWER_ACTION_POWER_OFF;
     config.startup_app = RFSCOUT_APP_DEVICE;
     config.logging_enabled = true;
     config.clock_24h = false;
@@ -392,6 +402,39 @@ static void load_power( const cJSON *a_root )
         power_action_valid_for_gesture( parsed, true ) )
     {
         config.power_button_long_action = parsed;
+    }
+
+    const cJSON *low_battery = cJSON_GetObjectItemCaseSensitive( power, "low_battery_percent" );
+    if( cJSON_IsNumber( low_battery ) && low_battery->valueint >= 0 &&
+        low_battery->valueint <= (int)RFSCOUT_LOW_BATTERY_THRESHOLD_MAX_PERCENT &&
+        ( 0 == low_battery->valueint || 0 == ( low_battery->valueint % 5 ) ) )
+    {
+        config.low_battery_threshold_percent = (uint8_t)low_battery->valueint;
+    }
+    const cJSON *low_action = cJSON_GetObjectItemCaseSensitive( power, "low_battery_action" );
+    if( cJSON_IsString( low_action ) && NULL != low_action->valuestring &&
+        power_action_from_config_name( low_action->valuestring, &parsed ) &&
+        power_action_valid_for_policy( parsed ) )
+    {
+        config.low_battery_action = parsed;
+    }
+
+    const cJSON *high_temperature = cJSON_GetObjectItemCaseSensitive( power, "high_temperature_c" );
+    if( cJSON_IsNumber( high_temperature ) &&
+        ( 0 == high_temperature->valueint ||
+          ( high_temperature->valueint >= (int)RFSCOUT_HIGH_TEMPERATURE_THRESHOLD_MIN_C &&
+            high_temperature->valueint <= (int)RFSCOUT_HIGH_TEMPERATURE_THRESHOLD_MAX_C &&
+            0 == ( high_temperature->valueint %
+                   (int)RFSCOUT_HIGH_TEMPERATURE_THRESHOLD_STEP_C ) ) ) )
+    {
+        config.high_temperature_threshold_c = (uint8_t)high_temperature->valueint;
+    }
+    const cJSON *high_action = cJSON_GetObjectItemCaseSensitive( power, "high_temperature_action" );
+    if( cJSON_IsString( high_action ) && NULL != high_action->valuestring &&
+        power_action_from_config_name( high_action->valuestring, &parsed ) &&
+        power_action_valid_for_policy( parsed ) )
+    {
+        config.high_temperature_action = parsed;
     }
 }
 
@@ -712,6 +755,13 @@ static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_tim
         power, "short_press", power_action_config_name( config.power_button_short_action ) );
     cJSON_AddStringToObject(
         power, "long_press", power_action_config_name( config.power_button_long_action ) );
+    cJSON_AddNumberToObject( power, "low_battery_percent", config.low_battery_threshold_percent );
+    cJSON_AddStringToObject(
+        power, "low_battery_action", power_action_config_name( config.low_battery_action ) );
+    cJSON_AddNumberToObject( power, "high_temperature_c", config.high_temperature_threshold_c );
+    cJSON_AddStringToObject( power,
+                             "high_temperature_action",
+                             power_action_config_name( config.high_temperature_action ) );
 
     cJSON *apps = cJSON_AddObjectToObject( root, "apps" );
     for( size_t index = 0; index < RFSCOUT_APP_COUNT; ++index )
@@ -1105,6 +1155,66 @@ esp_err_t device_config_set_power_button_long_action( power_action_t a_action )
     if( config.power_button_long_action != a_action )
     {
         config.power_button_long_action = a_action;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+esp_err_t device_config_set_low_battery_threshold( uint8_t a_percent )
+{
+    if( a_percent > RFSCOUT_LOW_BATTERY_THRESHOLD_MAX_PERCENT ||
+        ( 0U != a_percent && 0U != ( a_percent % 5U ) ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( config.low_battery_threshold_percent != a_percent )
+    {
+        config.low_battery_threshold_percent = a_percent;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+esp_err_t device_config_set_low_battery_action( power_action_t a_action )
+{
+    if( !power_action_valid_for_policy( a_action ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( config.low_battery_action != a_action )
+    {
+        config.low_battery_action = a_action;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+esp_err_t device_config_set_high_temperature_threshold( uint8_t a_temperature_c )
+{
+    if( 0U != a_temperature_c &&
+        ( a_temperature_c < RFSCOUT_HIGH_TEMPERATURE_THRESHOLD_MIN_C ||
+          a_temperature_c > RFSCOUT_HIGH_TEMPERATURE_THRESHOLD_MAX_C ||
+          0U != ( a_temperature_c % RFSCOUT_HIGH_TEMPERATURE_THRESHOLD_STEP_C ) ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( config.high_temperature_threshold_c != a_temperature_c )
+    {
+        config.high_temperature_threshold_c = a_temperature_c;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+esp_err_t device_config_set_high_temperature_action( power_action_t a_action )
+{
+    if( !power_action_valid_for_policy( a_action ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( config.high_temperature_action != a_action )
+    {
+        config.high_temperature_action = a_action;
         config_dirty = true;
     }
     return ESP_OK;

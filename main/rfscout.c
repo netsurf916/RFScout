@@ -24,6 +24,7 @@
 #include "oui_database.h"
 #include "platform.h"
 #include "power.h"
+#include "power_policy.h"
 #include "radio_monitor.h"
 #include "status_bar.h"
 #include "storage.h"
@@ -200,6 +201,12 @@ void app_main( void )
                   esp_err_to_name( result ) );
     }
 
+    result = power_policy_init();
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG, "protective power policy unavailable: %s", esp_err_to_name( result ) );
+    }
+
     result = ui_theme_init();
     if( ESP_OK != result )
     {
@@ -251,8 +258,15 @@ void app_main( void )
            continue polling/rendering normally while LCD output is disabled. */
         display_idle_poll();
         platform_poll();
-        power_poll();
+
+        /* Refresh telemetry and evaluate protective policy before power_poll() is
+           allowed to execute an expired transition. During a pending low-battery
+           countdown the policy forces a fresh charger sample as an additional
+           execution-time guard. */
         battery_poll();
+        power_policy_poll();
+        power_poll();
+
         observation_store_housekeeping();
         app_manager_poll();
         status_bar_poll();

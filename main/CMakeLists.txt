@@ -82,6 +82,8 @@ idf_component_register(
         "surveillance_history.c"
         "platform.c"
         "power.c"
+        "power_policy.c"
+        "power_policy_view.c"
         "session_state.c"
         "board_spi.c"
         "board_i2c.c"
@@ -104,6 +106,6 @@ idf_component_register(
         "storage.c"
         "log_writer.c"
     INCLUDE_DIRS "." "${RFSCOUT_BOARD_DIR}" "${CMAKE_CURRENT_BINARY_DIR}"
-    PRIV_REQUIRES bt cjson esp_driver_ledc
+    PRIV_REQUIRES bt cjson esp_driver_ledc esp_driver_tsens
     REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_timer driver esp_driver_i2c esp_driver_i2s esp_driver_pcnt esp_lcd fatfs sdmmc
 )

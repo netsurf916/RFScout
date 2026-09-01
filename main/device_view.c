@@ -18,6 +18,7 @@
 #include "morse.h"
 #include "observation_store.h"
 #include "power.h"
+#include "power_policy_view.h"
 #include "storage.h"
 #include "ui_chrome.h"
 #include "ui_layout.h"
@@ -49,8 +50,9 @@
 #define DEVICE_ITEM_ALERT_MODE 19U
 #define DEVICE_ITEM_ALERT_VOLUME 20U
 #define DEVICE_ITEM_POWER_BUTTON 21U
-#define DEVICE_ITEM_SAVE 22U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 23U
+#define DEVICE_ITEM_POWER_POLICY 22U
+#define DEVICE_ITEM_SAVE 23U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 24U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
 #define DEVICE_ITEM_COUNT ( DEVICE_ITEM_SAVE + 1U )
@@ -79,6 +81,7 @@ static struct tm edited_time;
 static bool save_error;
 static bool power_menu_open;
 static unsigned power_selected_item;
+static bool power_policy_menu_open;
 
 static void emit_device_event( rfscout_event_type_t a_type, int32_t a_value )
 {
@@ -203,7 +206,7 @@ static bool item_direct_toggle( unsigned a_item )
 static bool item_editable( unsigned a_item )
 {
     return ( DEVICE_ITEM_BACK != a_item ) && ( DEVICE_ITEM_POWER_BUTTON != a_item ) &&
-           ( DEVICE_ITEM_SAVE != a_item );
+           ( DEVICE_ITEM_POWER_POLICY != a_item ) && ( DEVICE_ITEM_SAVE != a_item );
 }
 
 static const char *item_label( unsigned a_item )
@@ -254,6 +257,8 @@ static const char *item_label( unsigned a_item )
             return "Alert volume";
         case DEVICE_ITEM_POWER_BUTTON:
             return "Power button";
+        case DEVICE_ITEM_POWER_POLICY:
+            return "Power policy";
         case DEVICE_ITEM_SAVE:
             return "Save config";
         default:
@@ -484,6 +489,11 @@ void device_view_landing( void )
 
 void device_view_render( void )
 {
+    if( power_policy_menu_open )
+    {
+        power_policy_view_render();
+        return;
+    }
     if( power_menu_open )
     {
         render_power_menu();
@@ -528,6 +538,7 @@ void device_view_enter( void )
     save_error = false;
     power_menu_open = false;
     power_selected_item = POWER_MENU_BACK;
+    power_policy_menu_open = false;
     refresh_edited_time();
     device_view_render();
 }
@@ -1021,6 +1032,12 @@ static void adjust_selected( int a_delta )
 
 bool device_view_back( void )
 {
+    if( power_policy_menu_open )
+    {
+        power_policy_menu_open = false;
+        device_view_render();
+        return true;
+    }
     if( !power_menu_open )
     {
         return false;
@@ -1034,6 +1051,16 @@ bool device_view_back( void )
 
 bool device_view_input( bool a_pressed, int a_delta )
 {
+    if( power_policy_menu_open )
+    {
+        if( power_policy_view_input( a_pressed, a_delta ) )
+        {
+            power_policy_menu_open = false;
+            device_view_render();
+        }
+        return false;
+    }
+
     if( power_menu_open )
     {
         if( a_pressed )
@@ -1071,6 +1098,13 @@ bool device_view_input( bool a_pressed, int a_delta )
             power_selected_item = POWER_MENU_BACK;
             emit_device_event( RFSCOUT_EVENT_ENTER, 1 );
             device_view_render();
+            return false;
+        }
+        if( ( DEVICE_ITEM_POWER_POLICY == selected_item ) && !editing )
+        {
+            power_policy_menu_open = true;
+            emit_device_event( RFSCOUT_EVENT_ENTER, 1 );
+            power_policy_view_enter();
             return false;
         }
         if( ( DEVICE_ITEM_SAVE == selected_item ) && !editing )

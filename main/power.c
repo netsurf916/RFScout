@@ -42,6 +42,11 @@ static int64_t pressed_since_us;
 static bool suppress_current_press;
 static bool long_action_fired;
 static power_status_t status;
+static bool requested_transition_pending;
+static power_transition_reason_t requested_transition_reason;
+static power_action_t requested_transition_action;
+static int64_t requested_transition_deadline_us;
+static char requested_transition_message[ POWER_STATUS_MESSAGE_MAX ];
 
 static const char *power_action_prompt_name( power_action_t a_action )
 {
@@ -78,16 +83,16 @@ const char *power_action_name( power_action_t a_action )
     }
 }
 
-bool power_action_supported( power_action_t a_action, bool a_long_press )
+bool power_action_available( power_action_t a_action )
 {
     switch( a_action )
     {
         case POWER_ACTION_NONE:
             return true;
         case POWER_ACTION_SCREEN_OFF:
-            return !a_long_press && ( 0 != RFSCOUT_BOARD_CAN_SCREEN_OFF );
+            return 0 != RFSCOUT_BOARD_CAN_SCREEN_OFF;
         case POWER_ACTION_SLEEP:
-            return !a_long_press && ( 0 != RFSCOUT_BOARD_CAN_DEEP_SLEEP );
+            return 0 != RFSCOUT_BOARD_CAN_DEEP_SLEEP;
         case POWER_ACTION_POWER_OFF:
             return 0 != RFSCOUT_BOARD_CAN_POWER_OFF;
         case POWER_ACTION_COUNT:
@@ -96,30 +101,48 @@ bool power_action_supported( power_action_t a_action, bool a_long_press )
     }
 }
 
+bool power_action_supported( power_action_t a_action, bool a_long_press )
+{
+    if( !power_action_available( a_action ) )
+    {
+        return false;
+    }
+    if( a_long_press )
+    {
+        return ( POWER_ACTION_NONE == a_action ) || ( POWER_ACTION_POWER_OFF == a_action );
+    }
+    return true;
+}
+
 /** @brief Update UI-visible power state and invalidate the composed display when it changes. */
 static void set_power_status( power_hold_state_t a_state,
                               power_action_t a_action,
+                              power_transition_reason_t a_reason,
                               uint8_t a_seconds_remaining,
-                              const char *a_message )
+                              const char *a_message,
+                              const char *a_detail )
 {
     const char *message = ( NULL != a_message ) ? a_message : "";
+    const char *detail = ( NULL != a_detail ) ? a_detail : "";
     if( ( status.state == a_state ) && ( status.action == a_action ) &&
-        ( status.seconds_remaining == a_seconds_remaining ) &&
-        ( 0 == strcmp( status.message, message ) ) )
+        ( status.reason == a_reason ) && ( status.seconds_remaining == a_seconds_remaining ) &&
+        ( 0 == strcmp( status.message, message ) ) && ( 0 == strcmp( status.detail, detail ) ) )
     {
         return;
     }
 
     status.state = a_state;
     status.action = a_action;
+    status.reason = a_reason;
     status.seconds_remaining = a_seconds_remaining;
     snprintf( status.message, sizeof( status.message ), "%s", message );
+    snprintf( status.detail, sizeof( status.detail ), "%s", detail );
     display_invalidate();
 }
 
 static void set_idle_status( void )
 {
-    set_power_status( POWER_HOLD_IDLE, POWER_ACTION_NONE, 0U, "" );
+    set_power_status( POWER_HOLD_IDLE, POWER_ACTION_NONE, POWER_TRANSITION_NONE, 0U, "", "" );
 }
 
 /** @brief Stop logging, optionally checkpoint wall time, and unmount storage. */
@@ -286,7 +309,8 @@ static void execute_action( power_action_t a_action, bool a_long_press )
             enter_sleep();
             return;
         case POWER_ACTION_POWER_OFF:
-            set_power_status( POWER_HOLD_EXECUTING, a_action, 0U, "POWERING OFF..." );
+            set_power_status(
+                POWER_HOLD_EXECUTING, a_action, POWER_TRANSITION_NONE, 0U, "POWERING OFF...", "" );
             (void)display_present();
             power_off();
             return;
@@ -319,7 +343,8 @@ static void update_countdown( int64_t a_held_us, power_action_t a_action )
 
     char message[ POWER_STATUS_MESSAGE_MAX ];
     snprintf( message, sizeof( message ), "HOLD TO %s", power_action_prompt_name( a_action ) );
-    set_power_status( POWER_HOLD_COUNTDOWN, a_action, remaining, message );
+    set_power_status(
+        POWER_HOLD_COUNTDOWN, a_action, POWER_TRANSITION_NONE, remaining, message, "" );
 }
 
 esp_err_t power_init( void )
@@ -333,7 +358,191 @@ esp_err_t power_init( void )
     memset( &status, 0, sizeof( status ) );
     status.state = POWER_HOLD_IDLE;
     status.action = POWER_ACTION_NONE;
+    status.reason = POWER_TRANSITION_NONE;
+    requested_transition_pending = false;
+    requested_transition_reason = POWER_TRANSITION_NONE;
+    requested_transition_action = POWER_ACTION_NONE;
+    requested_transition_deadline_us = 0;
+    requested_transition_message[ 0 ] = '\0';
     return ESP_OK;
+}
+
+bool power_request_transition( power_transition_reason_t a_reason,
+                               power_action_t a_action,
+                               const char *a_message,
+                               uint8_t a_delay_seconds )
+{
+    if( POWER_TRANSITION_NONE == a_reason || POWER_ACTION_NONE == a_action || NULL == a_message ||
+        '\0' == a_message[ 0 ] || 0U == a_delay_seconds || !power_action_available( a_action ) )
+    {
+        return false;
+    }
+
+    if( requested_transition_pending )
+    {
+        if( requested_transition_reason == a_reason )
+        {
+            return true;
+        }
+        if( POWER_TRANSITION_HIGH_TEMPERATURE == requested_transition_reason &&
+            POWER_TRANSITION_LOW_BATTERY == a_reason )
+        {
+            return false;
+        }
+    }
+
+    requested_transition_pending = true;
+    requested_transition_reason = a_reason;
+    requested_transition_action = a_action;
+    requested_transition_deadline_us = esp_timer_get_time() + (int64_t)a_delay_seconds * 1000000LL;
+    snprintf(
+        requested_transition_message, sizeof( requested_transition_message ), "%s", a_message );
+    const esp_err_t wake_result = display_idle_request_wake();
+    if( ESP_OK != wake_result )
+    {
+        ESP_LOGW( TAG,
+                  "could not wake display for protective transition: %s",
+                  esp_err_to_name( wake_result ) );
+    }
+    display_invalidate();
+    return true;
+}
+
+void power_cancel_transition( power_transition_reason_t a_reason )
+{
+    if( !requested_transition_pending ||
+        ( POWER_TRANSITION_NONE != a_reason && requested_transition_reason != a_reason ) )
+    {
+        return;
+    }
+    requested_transition_pending = false;
+    requested_transition_reason = POWER_TRANSITION_NONE;
+    requested_transition_action = POWER_ACTION_NONE;
+    requested_transition_deadline_us = 0;
+    requested_transition_message[ 0 ] = '\0';
+    set_idle_status();
+}
+
+static void format_requested_detail( power_action_t a_action,
+                                     uint8_t a_seconds_remaining,
+                                     bool a_executing,
+                                     char *a_output,
+                                     size_t a_capacity )
+{
+    if( a_executing )
+    {
+        switch( a_action )
+        {
+            case POWER_ACTION_SLEEP:
+                snprintf( a_output, a_capacity, "SLEEPING..." );
+                return;
+            case POWER_ACTION_POWER_OFF:
+                snprintf( a_output, a_capacity, "POWERING OFF..." );
+                return;
+            case POWER_ACTION_SCREEN_OFF:
+                snprintf( a_output, a_capacity, "SCREEN OFF..." );
+                return;
+            case POWER_ACTION_NONE:
+            case POWER_ACTION_COUNT:
+            default:
+                snprintf( a_output, a_capacity, "NO ACTION" );
+                return;
+        }
+    }
+
+    const char *name = power_action_prompt_name( a_action );
+    snprintf( a_output, a_capacity, "%s IN %u", name, (unsigned)a_seconds_remaining );
+}
+
+static void execute_policy_action( power_action_t a_action )
+{
+    if( !power_action_available( a_action ) )
+    {
+        set_idle_status();
+        return;
+    }
+    switch( a_action )
+    {
+        case POWER_ACTION_SCREEN_OFF:
+            (void)display_idle_request_off();
+            set_idle_status();
+            return;
+        case POWER_ACTION_SLEEP:
+            enter_sleep();
+            return;
+        case POWER_ACTION_POWER_OFF:
+            power_off();
+            return;
+        case POWER_ACTION_NONE:
+        case POWER_ACTION_COUNT:
+        default:
+            set_idle_status();
+            return;
+    }
+}
+
+/** @brief Revalidate hardware-sensitive policy actions immediately before execution. */
+static power_action_t resolve_policy_action_at_execution( power_transition_reason_t a_reason,
+                                                          power_action_t a_action )
+{
+    if( ( POWER_TRANSITION_HIGH_TEMPERATURE != a_reason ) ||
+        ( POWER_ACTION_POWER_OFF != a_action ) || !power_action_available( POWER_ACTION_SLEEP ) )
+    {
+        return a_action;
+    }
+
+    battery_refresh();
+    battery_status_t battery;
+    if( !battery_get_status( &battery ) || !battery.charger_fresh || battery.external_power )
+    {
+        ESP_LOGW( TAG, "thermal power-off no longer has confirmed removable power; using sleep" );
+        return POWER_ACTION_SLEEP;
+    }
+    return a_action;
+}
+
+static void update_requested_transition( int64_t a_now_us )
+{
+    if( !requested_transition_pending )
+    {
+        return;
+    }
+
+    if( a_now_us >= requested_transition_deadline_us )
+    {
+        const power_transition_reason_t reason = requested_transition_reason;
+        const power_action_t action =
+            resolve_policy_action_at_execution( reason, requested_transition_action );
+        char message[ POWER_STATUS_MESSAGE_MAX ];
+        char detail[ POWER_STATUS_DETAIL_MAX ];
+        snprintf( message, sizeof( message ), "%s", requested_transition_message );
+        format_requested_detail( action, 0U, true, detail, sizeof( detail ) );
+        requested_transition_pending = false;
+        requested_transition_reason = POWER_TRANSITION_NONE;
+        requested_transition_action = POWER_ACTION_NONE;
+        requested_transition_deadline_us = 0;
+        requested_transition_message[ 0 ] = '\0';
+        set_power_status( POWER_HOLD_EXECUTING, action, reason, 0U, message, detail );
+        (void)display_present();
+        execute_policy_action( action );
+        return;
+    }
+
+    const int64_t remaining_us = requested_transition_deadline_us - a_now_us;
+    uint8_t remaining = (uint8_t)( ( remaining_us + 999999LL ) / 1000000LL );
+    if( 0U == remaining )
+    {
+        remaining = 1U;
+    }
+    char detail[ POWER_STATUS_DETAIL_MAX ];
+    format_requested_detail(
+        requested_transition_action, remaining, false, detail, sizeof( detail ) );
+    set_power_status( POWER_HOLD_COUNTDOWN,
+                      requested_transition_action,
+                      requested_transition_reason,
+                      remaining,
+                      requested_transition_message,
+                      detail );
 }
 
 void power_consume_wake_input( void )
@@ -343,7 +552,10 @@ void power_consume_wake_input( void )
         suppress_current_press = true;
         pressed_since_us = 0;
         long_action_fired = false;
-        set_idle_status();
+        if( !requested_transition_pending )
+        {
+            set_idle_status();
+        }
     }
 }
 
@@ -351,6 +563,12 @@ void power_poll( void )
 {
     const int64_t now_us = esp_timer_get_time();
     const bool pressed = ( 0 == gpio_get_level( RFSCOUT_BOARD_USER_KEY_PIN ) );
+
+    if( requested_transition_pending )
+    {
+        update_requested_transition( now_us );
+        return;
+    }
 
     if( suppress_current_press )
     {

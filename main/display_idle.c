@@ -80,7 +80,7 @@ static esp_err_t enter_off_state( const char *a_reason )
     return ESP_OK;
 }
 
-static bool wake_display( void )
+static bool wake_display( const char *a_reason )
 {
     const device_config_t *config = device_config_get();
     if( DISPLAY_IDLE_OFF == state )
@@ -113,7 +113,7 @@ static bool wake_display( void )
 
     display_set_brightness( config->brightness_percent );
     state = DISPLAY_IDLE_ACTIVE;
-    ESP_LOGI( TAG, "display woke from user activity" );
+    ESP_LOGI( TAG, "display woke (%s)", ( NULL != a_reason ) ? a_reason : "requested" );
     return true;
 }
 
@@ -136,6 +136,18 @@ esp_err_t display_idle_request_off( void )
     return ESP_OK;
 }
 
+esp_err_t display_idle_request_wake( void )
+{
+    off_requested = false;
+    last_activity_us = esp_timer_get_time();
+    if( DISPLAY_IDLE_ACTIVE == state )
+    {
+        display_set_brightness( device_config_get()->brightness_percent );
+        return ESP_OK;
+    }
+    return wake_display( "device request" ) ? ESP_OK : ESP_FAIL;
+}
+
 void display_idle_poll( void )
 {
     const int64_t now_us = esp_timer_get_time();
@@ -147,7 +159,7 @@ void display_idle_poll( void )
                lock, app navigation, menu, or power-button semantics can see it. */
             platform_consume_wake_input();
             power_consume_wake_input();
-            (void)wake_display();
+            (void)wake_display( "user activity" );
         }
         last_activity_us = now_us;
         return;

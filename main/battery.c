@@ -126,35 +126,15 @@ static battery_charge_state_t charger_charge_state( uint8_t a_status, bool a_ext
     }
 }
 
-esp_err_t battery_init( void )
-{
-    if( initialized )
-        return ESP_OK;
-    memset( &cached_status, 0, sizeof( cached_status ) );
-    cached_status.charge_state = BATTERY_CHARGE_UNKNOWN;
-    const esp_err_t result = board_i2c_init();
-    if( ESP_OK != result )
-        return result;
-    (void)attach_optional_device(
-        RFSCOUT_BOARD_BQ27220_I2C_ADDRESS, "BQ27220 fuel gauge", &gauge_device );
-    (void)attach_optional_device(
-        RFSCOUT_BOARD_BQ25896_I2C_ADDRESS, "BQ25896 charger", &charger_device );
-    initialized = true;
-    last_poll_us = -BATTERY_POLL_INTERVAL_US;
-    battery_poll();
-    return ESP_OK;
-}
-
-void battery_poll( void )
+void battery_refresh( void )
 {
     if( !initialized )
         return;
-    const int64_t now_us = esp_timer_get_time();
-    if( ( now_us - last_poll_us ) < BATTERY_POLL_INTERVAL_US )
-        return;
-    last_poll_us = now_us;
 
+    last_poll_us = esp_timer_get_time();
     battery_status_t next = cached_status;
+    next.percentage_fresh = false;
+    next.charger_fresh = false;
     bool gauge_sampled = false;
     uint16_t gauge_status = 0;
     if( NULL != gauge_device )
@@ -166,6 +146,7 @@ void battery_poll( void )
         {
             next.percentage = (uint8_t)percentage;
             next.available = true;
+            next.percentage_fresh = true;
             next.gauge_available = true;
             gauge_sampled = true;
         }
@@ -192,6 +173,7 @@ void battery_poll( void )
                 valid_input || ( 0U != ( charger_status & BQ25896_POWER_GOOD_BIT ) );
             next.charge_state = charger_charge_state( charger_status, next.external_power );
             next.charger_available = true;
+            next.charger_fresh = true;
             charger_sampled = true;
         }
     }
@@ -203,6 +185,35 @@ void battery_poll( void )
                               ( BATTERY_CHARGE_COMPLETE == next.charge_state );
     }
     cached_status = next;
+}
+
+esp_err_t battery_init( void )
+{
+    if( initialized )
+        return ESP_OK;
+    memset( &cached_status, 0, sizeof( cached_status ) );
+    cached_status.charge_state = BATTERY_CHARGE_UNKNOWN;
+    const esp_err_t result = board_i2c_init();
+    if( ESP_OK != result )
+        return result;
+    (void)attach_optional_device(
+        RFSCOUT_BOARD_BQ27220_I2C_ADDRESS, "BQ27220 fuel gauge", &gauge_device );
+    (void)attach_optional_device(
+        RFSCOUT_BOARD_BQ25896_I2C_ADDRESS, "BQ25896 charger", &charger_device );
+    initialized = true;
+    last_poll_us = -BATTERY_POLL_INTERVAL_US;
+    battery_refresh();
+    return ESP_OK;
+}
+
+void battery_poll( void )
+{
+    if( !initialized )
+        return;
+    const int64_t now_us = esp_timer_get_time();
+    if( ( now_us - last_poll_us ) < BATTERY_POLL_INTERVAL_US )
+        return;
+    battery_refresh();
 }
 
 bool battery_get_status( battery_status_t *a_status )

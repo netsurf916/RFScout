@@ -30,6 +30,10 @@
 #define RFSCOUT_OBSERVATION_TIMEOUT_MAX_SECONDS 300U
 #define RFSCOUT_OBSERVATION_TIMEOUT_STEP_SECONDS 10U
 #define RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS 60U
+#define RFSCOUT_LOW_BATTERY_THRESHOLD_MAX_PERCENT 20U
+#define RFSCOUT_HIGH_TEMPERATURE_THRESHOLD_MIN_C 70U
+#define RFSCOUT_HIGH_TEMPERATURE_THRESHOLD_MAX_C 100U
+#define RFSCOUT_HIGH_TEMPERATURE_THRESHOLD_STEP_C 10U
 
 typedef struct
 {
@@ -45,6 +49,10 @@ typedef struct
     uint16_t display_off_timeout_seconds;
     power_action_t power_button_short_action;
     power_action_t power_button_long_action;
+    uint8_t low_battery_threshold_percent;
+    power_action_t low_battery_action;
+    uint8_t high_temperature_threshold_c;
+    power_action_t high_temperature_action;
     bool apps_enabled[ RFSCOUT_APP_COUNT ];
     rfscout_app_id_t startup_app;
     bool logging_enabled;
@@ -101,6 +109,15 @@ esp_err_t device_config_set_power_button_short_action( power_action_t a_action )
 
 /** @brief Change the semantic action assigned to a long power-button press. */
 esp_err_t device_config_set_power_button_long_action( power_action_t a_action );
+
+/** @brief Set low-battery protection threshold; zero disables the condition. */
+esp_err_t device_config_set_low_battery_threshold( uint8_t a_percent );
+/** @brief Set the semantic action requested for a confirmed low-battery condition. */
+esp_err_t device_config_set_low_battery_action( power_action_t a_action );
+/** @brief Set internal-temperature protection threshold in Celsius; zero disables it. */
+esp_err_t device_config_set_high_temperature_threshold( uint8_t a_temperature_c );
+/** @brief Set the semantic action requested for a confirmed high-temperature condition. */
+esp_err_t device_config_set_high_temperature_action( power_action_t a_action );
 
 /** @brief Change 12/24-hour clock presentation. */
 esp_err_t device_config_set_clock_24h( bool a_enabled );

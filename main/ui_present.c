@@ -57,6 +57,18 @@ static void draw_power_overlay( const power_status_t *a_status )
                        theme->error );
 
     const char *message = ( '\0' != a_status->message[ 0 ] ) ? a_status->message : "POWER ACTION";
+    if( '\0' != a_status->detail[ 0 ] )
+    {
+        display_draw_text( centered_x( message, 2U ),
+                           63,
+                           message,
+                           ( POWER_HOLD_EXECUTING == a_status->state ) ? theme->error
+                                                                       : theme->warning,
+                           2U );
+        display_draw_text(
+            centered_x( a_status->detail, 2U ), 88, a_status->detail, theme->error, 2U );
+        return;
+    }
     if( POWER_HOLD_EXECUTING == a_status->state )
     {
         display_draw_text( centered_x( message, 2U ), 77, message, theme->error, 2U );
