@@ -38,6 +38,12 @@ static bool owner_is_valid( rfscout_memory_owner_t a_owner )
         return true;
     }
 
+    if( ( RFSCOUT_MEMORY_OWNER_APPLICATION != a_owner.owner_class ) &&
+        ( RFSCOUT_MEMORY_OWNER_OPERATION != a_owner.owner_class ) )
+    {
+        return false;
+    }
+
     return ( a_owner.app >= 0 ) && ( a_owner.app < RFSCOUT_APP_COUNT );
 }
 
