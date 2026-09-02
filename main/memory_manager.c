@@ -156,7 +156,7 @@ esp_err_t memory_manager_init( void )
 
 rfscout_memory_owner_t memory_manager_app_owner( rfscout_app_id_t a_app )
 {
-    return (rfscout_memory_owner_t){
+    return ( rfscout_memory_owner_t ){
         .owner_class = RFSCOUT_MEMORY_OWNER_APPLICATION,
         .app = a_app,
         .operation = 0U,
@@ -166,7 +166,7 @@ rfscout_memory_owner_t memory_manager_app_owner( rfscout_app_id_t a_app )
 rfscout_memory_owner_t memory_manager_operation_owner( rfscout_app_id_t a_app,
                                                        uint16_t a_operation )
 {
-    return (rfscout_memory_owner_t){
+    return ( rfscout_memory_owner_t ){
         .owner_class = RFSCOUT_MEMORY_OWNER_OPERATION,
         .app = a_app,
         .operation = a_operation,
@@ -191,8 +191,8 @@ void *memory_manager_calloc( rfscout_memory_owner_t a_owner, size_t a_count, siz
         return NULL;
     }
 
-    memory_allocation_t *allocation = heap_caps_malloc(
-        sizeof( *allocation ), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT );
+    memory_allocation_t *allocation =
+        heap_caps_malloc( sizeof( *allocation ), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT );
     if( NULL == allocation )
     {
         heap_caps_free( pointer );
@@ -253,8 +253,8 @@ void *memory_manager_resize( rfscout_memory_owner_t a_owner,
         return a_pointer;
     }
 
-    void *replacement = heap_caps_realloc(
-        a_pointer, requested_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
+    void *replacement =
+        heap_caps_realloc( a_pointer, requested_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
     if( NULL == replacement )
     {
         record_failure( a_owner );
@@ -323,9 +323,8 @@ bool memory_manager_free( rfscout_memory_owner_t a_owner, void *a_pointer )
     return false;
 }
 
-static size_t release_matching( rfscout_app_id_t a_app,
-                                bool a_match_operation,
-                                uint16_t a_operation )
+static size_t
+release_matching( rfscout_app_id_t a_app, bool a_match_operation, uint16_t a_operation )
 {
     if( ( NULL == manager_lock ) || ( a_app < 0 ) || ( a_app >= RFSCOUT_APP_COUNT ) )
     {
@@ -342,9 +341,10 @@ static size_t release_matching( rfscout_app_id_t a_app,
         memory_allocation_t *allocation = *link;
         const bool app_owned = ( RFSCOUT_MEMORY_OWNER_PLATFORM != allocation->owner.owner_class ) &&
                                ( allocation->owner.app == a_app );
-        const bool operation_matches = !a_match_operation ||
-                                       ( ( RFSCOUT_MEMORY_OWNER_OPERATION == allocation->owner.owner_class ) &&
-                                         ( allocation->owner.operation == a_operation ) );
+        const bool operation_matches =
+            !a_match_operation ||
+            ( ( RFSCOUT_MEMORY_OWNER_OPERATION == allocation->owner.owner_class ) &&
+              ( allocation->owner.operation == a_operation ) );
         if( app_owned && operation_matches )
         {
             *link = allocation->next;
