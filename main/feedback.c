@@ -13,6 +13,7 @@
 #include "audio_policy.h"
 #include "device_config.h"
 #include "event.h"
+#include "system_events.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -23,14 +24,34 @@
 #define FEEDBACK_STATE_HZ 1300U
 #define FEEDBACK_LOCK_HZ 700U
 #define FEEDBACK_DETECTED_HZ 1000U
+#define FEEDBACK_CONNECTED_HZ 1550U
+#define FEEDBACK_DISCONNECTED_HZ 850U
 #define FEEDBACK_WARNING_HZ 650U
 #define FEEDBACK_ERROR_HZ 425U
 #define FEEDBACK_NAV_MS 18U
 #define FEEDBACK_ACTION_MS 35U
 #define FEEDBACK_STATE_MS 55U
 #define FEEDBACK_DETECTED_MS 45U
+#define FEEDBACK_SYSTEM_STATE_MS 70U
 #define FEEDBACK_WARNING_MS 65U
 #define FEEDBACK_ERROR_MS 90U
+
+static bool is_system_state_feedback( rfscout_event_type_t a_type )
+{
+    switch( a_type )
+    {
+        case RFSCOUT_EVENT_POWER_CONNECTED:
+        case RFSCOUT_EVENT_POWER_DISCONNECTED:
+        case RFSCOUT_EVENT_STORAGE_MOUNTED:
+        case RFSCOUT_EVENT_STORAGE_MOUNT_FAILED:
+        case RFSCOUT_EVENT_STORAGE_UNMOUNTED:
+        case RFSCOUT_EVENT_APP_AVAILABLE:
+        case RFSCOUT_EVENT_APP_UNAVAILABLE:
+            return true;
+        default:
+            return false;
+    }
+}
 
 static bool app_allows_feedback( uint8_t a_source, bool a_general_event )
 {
@@ -50,11 +71,18 @@ static bool app_allows_feedback( uint8_t a_source, bool a_general_event )
 static bool is_general_event( rfscout_event_type_t a_type )
 {
     return ( RFSCOUT_EVENT_DETECTED == a_type ) || ( RFSCOUT_EVENT_WARNING == a_type ) ||
-           ( RFSCOUT_EVENT_ERROR == a_type );
+           ( RFSCOUT_EVENT_ERROR == a_type ) || is_system_state_feedback( a_type );
 }
 
 static uint8_t policy_source_for_event( const rfscout_event_t *a_event )
 {
+    if( is_system_state_feedback( a_event->type ) )
+    {
+        /* System-state feedback is presented in the context of the visible app.
+           Recorder deliberately disables general-event feedback while recording
+           or monitoring so hardware-state chirps cannot contaminate microphone capture. */
+        return (uint8_t)app_manager_current();
+    }
     if( ( RFSCOUT_EVENT_SOURCE_SYSTEM == a_event->source ) &&
         ( ( RFSCOUT_EVENT_INPUT_LOCKED == a_event->type ) ||
           ( RFSCOUT_EVENT_INPUT_UNLOCKED == a_event->type ) ) )
@@ -82,6 +110,11 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
         {
             audio_output_cancel_feedback_pending();
         }
+        return;
+    }
+
+    if( is_system_state_feedback( a_event->type ) && !system_events_notifications_enabled() )
+    {
         return;
     }
 
@@ -132,6 +165,19 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
             frequency = FEEDBACK_DETECTED_HZ;
             duration = FEEDBACK_DETECTED_MS;
             break;
+        case RFSCOUT_EVENT_POWER_CONNECTED:
+        case RFSCOUT_EVENT_STORAGE_MOUNTED:
+        case RFSCOUT_EVENT_APP_AVAILABLE:
+            frequency = FEEDBACK_CONNECTED_HZ;
+            duration = FEEDBACK_SYSTEM_STATE_MS;
+            break;
+        case RFSCOUT_EVENT_POWER_DISCONNECTED:
+        case RFSCOUT_EVENT_STORAGE_UNMOUNTED:
+        case RFSCOUT_EVENT_APP_UNAVAILABLE:
+            frequency = FEEDBACK_DISCONNECTED_HZ;
+            duration = FEEDBACK_SYSTEM_STATE_MS;
+            break;
+        case RFSCOUT_EVENT_STORAGE_MOUNT_FAILED:
         case RFSCOUT_EVENT_WARNING:
             frequency = FEEDBACK_WARNING_HZ;
             duration = FEEDBACK_WARNING_MS;

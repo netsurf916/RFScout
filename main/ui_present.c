@@ -8,6 +8,7 @@
 #include "display.h"
 
 #include "power.h"
+#include "system_events.h"
 #include "ui_theme.h"
 
 #include "esp_heap_caps.h"
@@ -15,11 +16,11 @@
 #include <stdio.h>
 #include <string.h>
 
-#define POWER_OVERLAY_X 42
-#define POWER_OVERLAY_Y 50
-#define POWER_OVERLAY_WIDTH 236
-#define POWER_OVERLAY_HEIGHT 70
-#define POWER_OVERLAY_PIXEL_COUNT ( POWER_OVERLAY_WIDTH * POWER_OVERLAY_HEIGHT )
+#define GLOBAL_OVERLAY_X 42
+#define GLOBAL_OVERLAY_Y 50
+#define GLOBAL_OVERLAY_WIDTH 236
+#define GLOBAL_OVERLAY_HEIGHT 70
+#define GLOBAL_OVERLAY_PIXEL_COUNT ( GLOBAL_OVERLAY_WIDTH * GLOBAL_OVERLAY_HEIGHT )
 
 static uint16_t *overlay_backup;
 
@@ -31,30 +32,38 @@ static int text_width( const char *a_text, unsigned a_scale )
 static int centered_x( const char *a_text, unsigned a_scale )
 {
     const int width = text_width( a_text, a_scale );
-    return POWER_OVERLAY_X + ( POWER_OVERLAY_WIDTH - width ) / 2;
+    return GLOBAL_OVERLAY_X + ( GLOBAL_OVERLAY_WIDTH - width ) / 2;
+}
+
+static void draw_overlay_frame( uint16_t a_border_color )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    display_fill_rect( GLOBAL_OVERLAY_X,
+                       GLOBAL_OVERLAY_Y,
+                       GLOBAL_OVERLAY_WIDTH,
+                       GLOBAL_OVERLAY_HEIGHT,
+                       theme->background );
+    display_fill_rect(
+        GLOBAL_OVERLAY_X, GLOBAL_OVERLAY_Y, GLOBAL_OVERLAY_WIDTH, 2, a_border_color );
+    display_fill_rect( GLOBAL_OVERLAY_X,
+                       GLOBAL_OVERLAY_Y + GLOBAL_OVERLAY_HEIGHT - 2,
+                       GLOBAL_OVERLAY_WIDTH,
+                       2,
+                       a_border_color );
+    display_fill_rect(
+        GLOBAL_OVERLAY_X, GLOBAL_OVERLAY_Y, 2, GLOBAL_OVERLAY_HEIGHT, a_border_color );
+    display_fill_rect( GLOBAL_OVERLAY_X + GLOBAL_OVERLAY_WIDTH - 2,
+                       GLOBAL_OVERLAY_Y,
+                       2,
+                       GLOBAL_OVERLAY_HEIGHT,
+                       a_border_color );
 }
 
 /** @brief Draw the generic power-transition overlay into the active framebuffer. */
 static void draw_power_overlay( const power_status_t *a_status )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
-    display_fill_rect( POWER_OVERLAY_X,
-                       POWER_OVERLAY_Y,
-                       POWER_OVERLAY_WIDTH,
-                       POWER_OVERLAY_HEIGHT,
-                       theme->background );
-    display_fill_rect( POWER_OVERLAY_X, POWER_OVERLAY_Y, POWER_OVERLAY_WIDTH, 2, theme->error );
-    display_fill_rect( POWER_OVERLAY_X,
-                       POWER_OVERLAY_Y + POWER_OVERLAY_HEIGHT - 2,
-                       POWER_OVERLAY_WIDTH,
-                       2,
-                       theme->error );
-    display_fill_rect( POWER_OVERLAY_X, POWER_OVERLAY_Y, 2, POWER_OVERLAY_HEIGHT, theme->error );
-    display_fill_rect( POWER_OVERLAY_X + POWER_OVERLAY_WIDTH - 2,
-                       POWER_OVERLAY_Y,
-                       2,
-                       POWER_OVERLAY_HEIGHT,
-                       theme->error );
+    draw_overlay_frame( theme->error );
 
     const char *message = ( '\0' != a_status->message[ 0 ] ) ? a_status->message : "POWER ACTION";
     if( '\0' != a_status->detail[ 0 ] )
@@ -81,6 +90,29 @@ static void draw_power_overlay( const power_status_t *a_status )
     display_draw_text( centered_x( countdown, 3U ), 88, countdown, theme->error, 3U );
 }
 
+static void draw_system_event_overlay( const rfscout_system_event_notification_t *a_notification )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    uint16_t border = theme->accent;
+    if( RFSCOUT_SYSTEM_EVENT_WARNING == a_notification->severity )
+    {
+        border = theme->warning;
+    }
+    else if( RFSCOUT_SYSTEM_EVENT_CRITICAL == a_notification->severity )
+    {
+        border = theme->error;
+    }
+    draw_overlay_frame( border );
+
+    display_draw_text(
+        centered_x( a_notification->title, 2U ), 63, a_notification->title, border, 2U );
+    if( '\0' != a_notification->detail[ 0 ] )
+    {
+        display_draw_text(
+            centered_x( a_notification->detail, 2U ), 88, a_notification->detail, theme->text, 2U );
+    }
+}
+
 esp_err_t display_present( void )
 {
     if( !display_output_enabled() )
@@ -94,14 +126,16 @@ esp_err_t display_present( void )
 
     power_status_t status;
     power_get_status( &status );
-    if( POWER_HOLD_IDLE == status.state )
+    rfscout_system_event_notification_t system_notification;
+    const bool system_event_active = system_events_notification_get( &system_notification );
+    if( POWER_HOLD_IDLE == status.state && !system_event_active )
     {
         return display_flush();
     }
 
     if( NULL == overlay_backup )
     {
-        overlay_backup = heap_caps_malloc( POWER_OVERLAY_PIXEL_COUNT * sizeof( *overlay_backup ),
+        overlay_backup = heap_caps_malloc( GLOBAL_OVERLAY_PIXEL_COUNT * sizeof( *overlay_backup ),
                                            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
     }
     if( NULL == overlay_backup )
@@ -114,25 +148,33 @@ esp_err_t display_present( void )
         return result;
     }
 
-    const esp_err_t saved = display_read_rect( POWER_OVERLAY_X,
-                                               POWER_OVERLAY_Y,
-                                               POWER_OVERLAY_WIDTH,
-                                               POWER_OVERLAY_HEIGHT,
+    const esp_err_t saved = display_read_rect( GLOBAL_OVERLAY_X,
+                                               GLOBAL_OVERLAY_Y,
+                                               GLOBAL_OVERLAY_WIDTH,
+                                               GLOBAL_OVERLAY_HEIGHT,
                                                overlay_backup,
-                                               POWER_OVERLAY_PIXEL_COUNT );
+                                               GLOBAL_OVERLAY_PIXEL_COUNT );
     if( ESP_OK != saved )
     {
         return saved;
     }
 
-    draw_power_overlay( &status );
+    if( POWER_HOLD_IDLE != status.state )
+    {
+        draw_power_overlay( &status );
+    }
+    else
+    {
+        draw_system_event_overlay( &system_notification );
+    }
+
     const esp_err_t presented = display_flush();
-    const esp_err_t restored = display_write_rect( POWER_OVERLAY_X,
-                                                   POWER_OVERLAY_Y,
-                                                   POWER_OVERLAY_WIDTH,
-                                                   POWER_OVERLAY_HEIGHT,
+    const esp_err_t restored = display_write_rect( GLOBAL_OVERLAY_X,
+                                                   GLOBAL_OVERLAY_Y,
+                                                   GLOBAL_OVERLAY_WIDTH,
+                                                   GLOBAL_OVERLAY_HEIGHT,
                                                    overlay_backup,
-                                                   POWER_OVERLAY_PIXEL_COUNT );
+                                                   GLOBAL_OVERLAY_PIXEL_COUNT );
     if( ESP_OK != presented )
     {
         return presented;

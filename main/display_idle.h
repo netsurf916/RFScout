@@ -12,6 +12,8 @@
 
 #include "esp_err.h"
 
+#include <stdint.h>
+
 /** @brief Initialize the global display-idle state from current configuration. */
 esp_err_t display_idle_init( void );
 
@@ -37,5 +39,14 @@ esp_err_t display_idle_request_off( void );
  * The request also clears any queued explicit screen-off transition.
  */
 esp_err_t display_idle_request_wake( void );
+
+/**
+ * @brief Temporarily keep a dim/off display awake for a device notification.
+ *
+ * Unlike ordinary user/device wake, this does not move the inactivity origin. When the attention
+ * interval expires the original idle deadline immediately becomes authoritative again, allowing a
+ * notification-woken panel to return to dim/off without pretending the user interacted.
+ */
+esp_err_t display_idle_request_attention( uint32_t a_duration_ms );
 
 #endif // _RFSCOUT_DISPLAY_IDLE_H_
