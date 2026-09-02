@@ -266,6 +266,20 @@ static bool power_action_valid( const cJSON *a_item, bool a_long_press, bool a_p
                               sizeof( short_actions ) / sizeof( short_actions[ 0 ] ) );
 }
 
+static bool timezone_entry_valid( const cJSON *a_entry )
+{
+    if( !cJSON_IsObject( a_entry ) )
+    {
+        return false;
+    }
+    const cJSON *name = cJSON_GetObjectItemCaseSensitive( a_entry, "name" );
+    const cJSON *label = cJSON_GetObjectItemCaseSensitive( a_entry, "label" );
+    const cJSON *posix = cJSON_GetObjectItemCaseSensitive( a_entry, "posix" );
+    return cJSON_IsString( name ) && cJSON_IsString( label ) && cJSON_IsString( posix ) &&
+           NULL != name->valuestring && NULL != label->valuestring && NULL != posix->valuestring &&
+           '\0' != name->valuestring[ 0 ] && '\0' != posix->valuestring[ 0 ];
+}
+
 static bool timezone_options_valid( const cJSON *a_item )
 {
     if( !cJSON_IsArray( a_item ) )
@@ -275,17 +289,50 @@ static bool timezone_options_valid( const cJSON *a_item )
     const cJSON *entry = NULL;
     cJSON_ArrayForEach( entry, a_item )
     {
-        const cJSON *name = cJSON_GetObjectItemCaseSensitive( entry, "name" );
-        const cJSON *label = cJSON_GetObjectItemCaseSensitive( entry, "label" );
-        const cJSON *posix = cJSON_GetObjectItemCaseSensitive( entry, "posix" );
-        if( cJSON_IsString( name ) && cJSON_IsString( label ) && cJSON_IsString( posix ) &&
-            NULL != name->valuestring && NULL != label->valuestring && NULL != posix->valuestring &&
-            '\0' != name->valuestring[ 0 ] && '\0' != posix->valuestring[ 0 ] )
+        if( timezone_entry_valid( entry ) )
         {
             return true;
         }
     }
     return false;
+}
+
+static bool timezone_selection_in_options( const cJSON *a_options, const char *a_selected )
+{
+    if( !cJSON_IsArray( a_options ) || NULL == a_selected || '\0' == a_selected[ 0 ] )
+    {
+        return false;
+    }
+    const cJSON *entry = NULL;
+    cJSON_ArrayForEach( entry, a_options )
+    {
+        if( !timezone_entry_valid( entry ) )
+        {
+            continue;
+        }
+        const cJSON *name = cJSON_GetObjectItemCaseSensitive( entry, "name" );
+        if( 0 == strcmp( name->valuestring, a_selected ) )
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool timezone_pair_mergeable( const cJSON *a_target, const cJSON *a_source )
+{
+    const cJSON *target_options = cJSON_GetObjectItemCaseSensitive( a_target, "options" );
+    const cJSON *target_selected = cJSON_GetObjectItemCaseSensitive( a_target, "selected" );
+    const cJSON *source_options = cJSON_GetObjectItemCaseSensitive( a_source, "options" );
+    const cJSON *source_selected = cJSON_GetObjectItemCaseSensitive( a_source, "selected" );
+
+    const cJSON *effective_options =
+        timezone_options_valid( source_options ) ? source_options : target_options;
+    const cJSON *effective_selected =
+        cJSON_IsString( source_selected ) && NULL != source_selected->valuestring ? source_selected
+                                                                                 : target_selected;
+    return cJSON_IsString( effective_selected ) && NULL != effective_selected->valuestring &&
+           timezone_selection_in_options( effective_options, effective_selected->valuestring );
 }
 
 static bool valid_morse_character( const cJSON *a_item )
@@ -542,6 +589,8 @@ static bool merge_object( cJSON *a_target,
 
     const bool merge_display_timeouts =
         0 != strcmp( a_path, "display" ) || display_timeouts_mergeable( a_target, a_source );
+    const bool merge_timezone_pair =
+        0 != strcmp( a_path, "timezone" ) || timezone_pair_mergeable( a_target, a_source );
     const cJSON *item = NULL;
     cJSON_ArrayForEach( item, a_source )
     {
@@ -561,6 +610,11 @@ static bool merge_object( cJSON *a_target,
         if( 0 == strcmp( a_path, "display" ) && !merge_display_timeouts &&
             ( 0 == strcmp( item->string, "dim_timeout_seconds" ) ||
               0 == strcmp( item->string, "off_timeout_seconds" ) ) )
+        {
+            continue;
+        }
+        if( 0 == strcmp( a_path, "timezone" ) && !merge_timezone_pair &&
+            ( 0 == strcmp( item->string, "selected" ) || 0 == strcmp( item->string, "options" ) ) )
         {
             continue;
         }
@@ -843,6 +897,21 @@ static esp_err_t resume_interrupted_recovery( void )
     return ESP_FAIL;
 }
 
+static esp_err_t restore_interrupted_save_before_downgrade( void )
+{
+    if( 0 == access( RFSCOUT_CONFIG_PATH, F_OK ) || 0 != access( CONFIG_BACKUP_PATH, F_OK ) )
+    {
+        return ESP_OK;
+    }
+    if( 0 != rename( CONFIG_BACKUP_PATH, RFSCOUT_CONFIG_PATH ) )
+    {
+        ESP_LOGW( TAG, "failed to restore interrupted configuration save before reconciliation" );
+        return ESP_FAIL;
+    }
+    ESP_LOGW( TAG, "restored interrupted configuration save before downgrade reconciliation" );
+    return ESP_OK;
+}
+
 static esp_err_t restore_quarantine_over_active( bool a_preserve_displaced )
 {
     (void)unlink( CONFIG_DOWNGRADE_PATH );
@@ -900,13 +969,10 @@ esp_err_t device_config_recover_downgrade( void )
         return resume_result;
     }
 
-    /* An absent active document plus .bak means a normal atomic save was interrupted
-       after moving the previous active configuration aside. device_config_init() owns
-       that recovery and must restore .bak before an older quarantined .bad candidate
-       is considered. */
-    if( 0 != access( RFSCOUT_CONFIG_PATH, F_OK ) && 0 == access( CONFIG_BACKUP_PATH, F_OK ) )
+    const esp_err_t backup_result = restore_interrupted_save_before_downgrade();
+    if( ESP_OK != backup_result )
     {
-        return ESP_OK;
+        return backup_result;
     }
 
     cJSON *candidate = NULL;
