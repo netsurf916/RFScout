@@ -53,6 +53,14 @@ bool app_framework_check_available( rfscout_app_id_t a_app );
 /** @brief Refresh one app only when its descriptor is hot-pluggable. */
 void app_framework_refresh_hotplug( rfscout_app_id_t a_app );
 
+/**
+ * @brief Report an active hot-plug app's observed runtime availability.
+ * @details Active applications use this when normal device I/O proves that a
+ *          capability was lost or restored while periodic probing is suppressed.
+ */
+void app_framework_report_availability( rfscout_app_id_t a_app,
+                                        rfscout_app_availability_t a_availability );
+
 /** @brief Return whether the app uses delayed hardware activation after entry. */
 bool app_framework_requires_activation( rfscout_app_id_t a_app );
 
