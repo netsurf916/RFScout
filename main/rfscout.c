@@ -12,7 +12,6 @@
 #include "battery_indicator.h"
 #include "ble_monitor.h"
 #include "device_config.h"
-#include "device_config_recovery.h"
 #include "device_time.h"
 #include "display.h"
 #include "display_idle.h"
@@ -192,18 +191,6 @@ void app_main( void )
     if( ESP_OK != result )
     {
         ESP_LOGW( TAG, "SD storage unavailable: %s", esp_err_to_name( result ) );
-    }
-
-    if( storage_is_available() )
-    {
-        result = device_config_recover_downgrade();
-        if( ESP_OK != result )
-        {
-            ESP_LOGE( TAG,
-                      "configuration downgrade recovery failed; preserving recovery state: %s",
-                      esp_err_to_name( result ) );
-            return;
-        }
     }
 
     result = device_config_init();
