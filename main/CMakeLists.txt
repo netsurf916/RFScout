@@ -63,7 +63,6 @@ idf_component_register(
         "alert.c"
         "audio_output.c"
         "device_config.c"
-        "device_config_recovery.c"
         "device_time.c"
         "device_view.c"
         "home_landing.c"
