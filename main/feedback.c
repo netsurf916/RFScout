@@ -7,6 +7,7 @@
 
 #include "feedback.h"
 
+#include "alert.h"
 #include "app_audio_policy.h"
 #include "app_manager.h"
 #include "audio_output.h"
@@ -126,6 +127,11 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
     const rfscout_audio_category_t category = rfscout_event_audio_category( a_event->type );
     if( ( RFSCOUT_AUDIO_CATEGORY_COUNT == category ) ||
         ( RFSCOUT_EVENT_NOTIFICATION == a_event->type ) )
+    {
+        return;
+    }
+
+    if( ( RFSCOUT_AUDIO_CATEGORY_ALERT == category ) && ( RFSCOUT_ALERT_OFF == alert_mode() ) )
     {
         return;
     }
