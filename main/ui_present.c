@@ -108,11 +108,8 @@ static void draw_system_event_overlay( const rfscout_system_event_notification_t
         centered_x( a_notification->title, 2U ), 63, a_notification->title, border, 2U );
     if( '\0' != a_notification->detail[ 0 ] )
     {
-        display_draw_text( centered_x( a_notification->detail, 2U ),
-                           88,
-                           a_notification->detail,
-                           theme->text,
-                           2U );
+        display_draw_text(
+            centered_x( a_notification->detail, 2U ), 88, a_notification->detail, theme->text, 2U );
     }
 }
 
