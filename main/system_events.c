@@ -337,7 +337,8 @@ void system_events_poll( void )
         {
             thermal_state_known = true;
             thermal_available = available;
-            record_discovery( available ? RFSCOUT_EVENT_APP_AVAILABLE : RFSCOUT_EVENT_APP_UNAVAILABLE,
+            record_discovery( available ? RFSCOUT_EVENT_APP_AVAILABLE
+                                        : RFSCOUT_EVENT_APP_UNAVAILABLE,
                               (uint8_t)RFSCOUT_APP_THERMAL,
                               (int32_t)current_thermal );
         }
