@@ -30,6 +30,7 @@
 #include "storage.h"
 #include "surveillance.h"
 #include "surveillance_history.h"
+#include "system_events.h"
 #include "ui_theme.h"
 
 #include "esp_log.h"
@@ -179,6 +180,7 @@ void app_main( void )
     ESP_ERROR_CHECK( surveillance_history_init() );
     ESP_ERROR_CHECK( platform_init() );
     ESP_ERROR_CHECK( power_init() );
+    ESP_ERROR_CHECK( system_events_init() );
 
     result = notification_preferences_init();
     if( ESP_OK != result )
@@ -203,7 +205,15 @@ void app_main( void )
     result = storage_init();
     if( ESP_OK != result )
     {
+        rfscout_event_emit( RFSCOUT_EVENT_STORAGE_MOUNT_FAILED,
+                            RFSCOUT_EVENT_SOURCE_SYSTEM,
+                            (int32_t)result );
         ESP_LOGW( TAG, "SD storage unavailable: %s", esp_err_to_name( result ) );
+    }
+    else
+    {
+        rfscout_event_emit(
+            RFSCOUT_EVENT_STORAGE_MOUNTED, RFSCOUT_EVENT_SOURCE_SYSTEM, (int32_t)ESP_OK );
     }
 
     cleanup_pre_v1_config_artifacts();
@@ -246,8 +256,10 @@ void app_main( void )
     ESP_ERROR_CHECK( ble_monitor_init( on_observation ) );
 
     ESP_ERROR_CHECK( app_manager_init() );
+    system_events_poll();
     display_set_brightness( device_config_get()->brightness_percent );
     ESP_ERROR_CHECK( display_idle_init() );
+    system_events_enable_notifications();
 
     if( storage_is_available() && device_config_get()->logging_enabled )
     {
@@ -284,6 +296,7 @@ void app_main( void )
 
         observation_store_housekeeping();
         app_manager_poll();
+        system_events_poll();
         status_bar_poll();
         battery_indicator_poll();
 
