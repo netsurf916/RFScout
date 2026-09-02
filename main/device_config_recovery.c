@@ -218,7 +218,7 @@ static esp_err_t load_active_config( cJSON **a_root, active_config_state_t *a_st
         return ESP_OK;
     }
     *a_state = ( version < (int)RFSCOUT_CONFIG_SCHEMA_VERSION ) ? ACTIVE_CONFIG_OLDER
-                                                                 : ACTIVE_CONFIG_CURRENT;
+                                                                : ACTIVE_CONFIG_CURRENT;
     return ESP_OK;
 }
 
@@ -746,9 +746,7 @@ static bool active_needs_legacy_nvs_theme( const cJSON *a_root )
     return !cJSON_IsString( theme );
 }
 
-static esp_err_t read_legacy_nvs_theme( rfscout_theme_id_t *a_theme,
-                                        bool *a_quiet,
-                                        bool *a_found )
+static esp_err_t read_legacy_nvs_theme( rfscout_theme_id_t *a_theme, bool *a_quiet, bool *a_found )
 {
     if( NULL == a_theme || NULL == a_quiet || NULL == a_found )
     {
