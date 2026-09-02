@@ -245,45 +245,33 @@ void *memory_manager_resize( rfscout_memory_owner_t a_owner,
         ESP_LOGE( TAG, "resize rejected for untracked or mismatched owner pointer %p", a_pointer );
         return NULL;
     }
-    const size_t old_size = allocation->size;
-    xSemaphoreGive( manager_lock );
 
+    const size_t old_size = allocation->size;
     if( requested_size == old_size )
     {
+        xSemaphoreGive( manager_lock );
         return a_pointer;
     }
 
-    void *replacement = heap_caps_malloc( requested_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
+    void *replacement = heap_caps_realloc(
+        a_pointer, requested_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
     if( NULL == replacement )
     {
-        xSemaphoreTake( manager_lock, portMAX_DELAY );
         record_failure( a_owner );
         xSemaphoreGive( manager_lock );
         return NULL;
     }
 
-    memcpy( replacement, a_pointer, requested_size < old_size ? requested_size : old_size );
     if( requested_size > old_size )
     {
         memset( (uint8_t *)replacement + old_size, 0, requested_size - old_size );
     }
 
-    xSemaphoreTake( manager_lock, portMAX_DELAY );
-    allocation = find_allocation( a_pointer );
-    if( ( NULL == allocation ) || !owner_matches( allocation->owner, a_owner ) ||
-        ( allocation->size != old_size ) )
-    {
-        xSemaphoreGive( manager_lock );
-        heap_caps_free( replacement );
-        ESP_LOGE( TAG, "resize ownership changed while replacing pointer %p", a_pointer );
-        return NULL;
-    }
-
     allocation->pointer = replacement;
     allocation->size = requested_size;
-    rfscout_memory_stats_t *stats = &app_stats[ a_owner.app ];
     if( RFSCOUT_MEMORY_OWNER_PLATFORM != a_owner.owner_class )
     {
+        rfscout_memory_stats_t *stats = &app_stats[ a_owner.app ];
         stats->current_bytes = stats->current_bytes - old_size + requested_size;
         if( stats->current_bytes > stats->peak_bytes )
         {
@@ -292,7 +280,6 @@ void *memory_manager_resize( rfscout_memory_owner_t a_owner,
     }
     xSemaphoreGive( manager_lock );
 
-    heap_caps_free( a_pointer );
     return replacement;
 }
 
