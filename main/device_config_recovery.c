@@ -503,6 +503,33 @@ static bool legacy_item_valid( const char *a_path, const char *a_name, const cJS
     return false;
 }
 
+static bool display_timeout_value_valid( const cJSON *a_item )
+{
+    return cJSON_IsNumber( a_item ) && a_item->valueint >= 0 &&
+           a_item->valueint <= CONFIG_DISPLAY_TIMEOUT_MAX_SECONDS;
+}
+
+static bool display_timeouts_mergeable( const cJSON *a_target, const cJSON *a_source )
+{
+    const cJSON *target_dim = cJSON_GetObjectItemCaseSensitive( a_target, "dim_timeout_seconds" );
+    const cJSON *target_off = cJSON_GetObjectItemCaseSensitive( a_target, "off_timeout_seconds" );
+    const cJSON *source_dim = cJSON_GetObjectItemCaseSensitive( a_source, "dim_timeout_seconds" );
+    const cJSON *source_off = cJSON_GetObjectItemCaseSensitive( a_source, "off_timeout_seconds" );
+
+    int dim = display_timeout_value_valid( target_dim ) ? target_dim->valueint : 0;
+    int off = display_timeout_value_valid( target_off ) ? target_off->valueint : 0;
+    if( display_timeout_value_valid( source_dim ) )
+    {
+        dim = source_dim->valueint;
+    }
+    if( display_timeout_value_valid( source_off ) )
+    {
+        off = source_off->valueint;
+    }
+
+    return 0 == dim || 0 == off || off > dim;
+}
+
 static bool merge_object( cJSON *a_target,
                           const cJSON *a_source,
                           const char *a_path,
@@ -513,6 +540,8 @@ static bool merge_object( cJSON *a_target,
         return false;
     }
 
+    const bool merge_display_timeouts =
+        0 != strcmp( a_path, "display" ) || display_timeouts_mergeable( a_target, a_source );
     const cJSON *item = NULL;
     cJSON_ArrayForEach( item, a_source )
     {
@@ -526,6 +555,12 @@ static bool merge_object( cJSON *a_target,
             continue;
         }
         if( !legacy_item_valid( a_path, item->string, item ) )
+        {
+            continue;
+        }
+        if( 0 == strcmp( a_path, "display" ) && !merge_display_timeouts &&
+            ( 0 == strcmp( item->string, "dim_timeout_seconds" ) ||
+              0 == strcmp( item->string, "off_timeout_seconds" ) ) )
         {
             continue;
         }
