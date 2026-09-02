@@ -303,9 +303,14 @@ static bool timezone_selection_in_options( const cJSON *a_options, const char *a
     {
         return false;
     }
+    size_t count = 0U;
     const cJSON *entry = NULL;
     cJSON_ArrayForEach( entry, a_options )
     {
+        if( count >= RFSCOUT_TIMEZONE_MAX )
+        {
+            break;
+        }
         if( !timezone_entry_valid( entry ) )
         {
             continue;
@@ -315,6 +320,7 @@ static bool timezone_selection_in_options( const cJSON *a_options, const char *a
         {
             return true;
         }
+        ++count;
     }
     return false;
 }
