@@ -106,9 +106,12 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
 
     if( RFSCOUT_EVENT_AUDIO_POLICY_CHANGED == a_event->type )
     {
-        if( !audio_policy_category_enabled( device_config_audio_policy(), RFSCOUT_AUDIO_CATEGORY_UI ) ||
-            !audio_policy_category_enabled( device_config_audio_policy(), RFSCOUT_AUDIO_CATEGORY_EVENT ) ||
-            !audio_policy_category_enabled( device_config_audio_policy(), RFSCOUT_AUDIO_CATEGORY_ALERT ) )
+        if( !audio_policy_category_enabled( device_config_audio_policy(),
+                                            RFSCOUT_AUDIO_CATEGORY_UI ) ||
+            !audio_policy_category_enabled( device_config_audio_policy(),
+                                            RFSCOUT_AUDIO_CATEGORY_EVENT ) ||
+            !audio_policy_category_enabled( device_config_audio_policy(),
+                                            RFSCOUT_AUDIO_CATEGORY_ALERT ) )
         {
             audio_output_cancel_feedback_pending();
         }
