@@ -32,8 +32,10 @@ typedef enum
 } display_idle_state_t;
 
 static display_idle_state_t state;
+static display_idle_state_t attention_restore_state;
 static int64_t last_activity_us;
 static int64_t attention_until_us;
+static bool attention_restore_pending;
 static bool off_requested;
 
 static uint8_t dim_brightness( uint8_t a_normal_percent )
@@ -119,11 +121,41 @@ static bool wake_display( const char *a_reason )
     return true;
 }
 
+static void cancel_attention_restore( void )
+{
+    attention_until_us = 0;
+    attention_restore_pending = false;
+    attention_restore_state = DISPLAY_IDLE_ACTIVE;
+}
+
+static void restore_after_attention( void )
+{
+    if( !attention_restore_pending )
+    {
+        return;
+    }
+
+    const display_idle_state_t restore_state = attention_restore_state;
+    attention_restore_pending = false;
+    attention_restore_state = DISPLAY_IDLE_ACTIVE;
+
+    if( DISPLAY_IDLE_OFF == restore_state )
+    {
+        (void)enter_off_state( "attention expired" );
+    }
+    else if( DISPLAY_IDLE_DIMMED == restore_state )
+    {
+        set_dimmed();
+    }
+}
+
 esp_err_t display_idle_init( void )
 {
     state = DISPLAY_IDLE_ACTIVE;
+    attention_restore_state = DISPLAY_IDLE_ACTIVE;
     last_activity_us = esp_timer_get_time();
     attention_until_us = 0;
+    attention_restore_pending = false;
     off_requested = false;
     const esp_err_t result = display_exit_low_power();
     display_set_brightness( device_config_get()->brightness_percent );
@@ -135,7 +167,7 @@ esp_err_t display_idle_request_off( void )
     /* Queue the transition rather than forcing it synchronously. A short power-button
        release is still visible to the platform activity detector in this loop; waiting
        for a quiet poll prevents that same gesture from immediately waking the LCD. */
-    attention_until_us = 0;
+    cancel_attention_restore();
     off_requested = true;
     return ESP_OK;
 }
@@ -143,7 +175,7 @@ esp_err_t display_idle_request_off( void )
 esp_err_t display_idle_request_wake( void )
 {
     off_requested = false;
-    attention_until_us = 0;
+    cancel_attention_restore();
     last_activity_us = esp_timer_get_time();
     if( DISPLAY_IDLE_ACTIVE == state )
     {
@@ -169,6 +201,12 @@ esp_err_t display_idle_request_attention( uint32_t a_duration_ms )
     }
     off_requested = false;
 
+    if( !attention_restore_pending )
+    {
+        attention_restore_state = state;
+        attention_restore_pending = ( DISPLAY_IDLE_ACTIVE != state );
+    }
+
     if( DISPLAY_IDLE_ACTIVE == state )
     {
         display_set_brightness( device_config_get()->brightness_percent );
@@ -182,7 +220,7 @@ void display_idle_poll( void )
     const int64_t now_us = esp_timer_get_time();
     if( platform_input_activity_pending() )
     {
-        attention_until_us = 0;
+        cancel_attention_restore();
         if( DISPLAY_IDLE_ACTIVE != state )
         {
             /* Wake is a device-level gesture. Consume the entire gesture before
@@ -210,7 +248,15 @@ void display_idle_poll( void )
     {
         return;
     }
-    attention_until_us = 0;
+    if( 0 != attention_until_us )
+    {
+        attention_until_us = 0;
+        restore_after_attention();
+        if( DISPLAY_IDLE_ACTIVE != state )
+        {
+            return;
+        }
+    }
 
     const device_config_t *config = device_config_get();
     const int64_t idle_us = now_us - last_activity_us;
