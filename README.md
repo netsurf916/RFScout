@@ -51,7 +51,8 @@ Thermal uses an optional MLX90640 on the external I2C/Qwiic interface. Native 32
 
 Current global settings include:
 
-- brightness, display dim timeout, screen-off timeout, and theme;
+- brightness, display dim timeout, screen-off timeout, and visual theme;
+- independent **Audio policy** (`Normal` or `Quiet`);
 - configurable short/long **Power button** actions;
 - **Power policy** for low battery and high ESP32 internal temperature;
 - 12/24-hour clock, timezone, and manual time;
@@ -62,7 +63,12 @@ Current global settings include:
 
 Small finite choices use direct center-to-cycle behavior. App-owned notification settings and WiFi / BT retention remain in their respective app menus.
 
-Current themes are **Indoor**, **Outdoor**, **Night**, and **Discipline**. Discipline currently combines Night's palette with quieter incidental/notification behavior while preserving explicit content audio. The planned v0.4.0 separation into visual theme plus Normal/Quiet audio policy is roadmap work, not current behavior.
+Visual themes are **Indoor**, **Outdoor**, and **Night**. Theme selection affects presentation only. Audio policy is independent:
+
+- **Normal** permits ordinary incidental UI feedback and enabled detection notifications subject to the existing app/global notification controls.
+- **Quiet** suppresses incidental/event feedback and audible detection-notification presentation without mutating those saved notification preferences.
+
+Explicit application content audio such as Recorder playback remains available in Quiet. Existing Recorder-native policy also continues to suppress incidental feedback where appropriate regardless of the device-wide Audio policy.
 
 ## Power and display behavior
 
@@ -70,15 +76,17 @@ Short power-button presses can be configured as `None`, `Screen off`, `Sleep`, o
 
 Protective policy can request sleep/power-off after confirmed low battery or sustained high SoC temperature. Low-battery protection requires fresh fuel-gauge and charger telemetry. High-temperature `Power off` falls back to `Sleep` when removable power cannot be freshly confirmed. See [Power controls and protective policy](docs/POWER.md).
 
-Automatic screen-off affects LCD presentation only. Applications, logging, acquisition, framebuffer updates, and audible behavior continue while the ST7789 is asleep. See [Display idle behavior](docs/DISPLAY_IDLE.md).
+Automatic screen-off affects LCD presentation only. Applications, logging, acquisition, framebuffer updates, and audio policy continue while the ST7789 is asleep. See [Display idle behavior](docs/DISPLAY_IDLE.md).
 
 ## Feedback and notifications
 
-RFScout distinguishes incidental semantic feedback, application-owned detection notifications, and intentional application content audio. Global notification presentation is **OFF**, **TONE**, or **MORSE** plus volume; each detecting app owns its notification gate/mappings.
+RFScout distinguishes incidental semantic feedback, application-owned detection notifications, and intentional application content audio. Global notification presentation is **OFF**, **TONE**, or **MORSE** plus volume; each detecting app owns its notification gate/mappings. Device-wide Normal/Quiet policy is applied after those semantic/user-policy decisions and independently from the visual theme.
 
 ## Configuration and persistence
 
-Persistent preferences live in `/sdcard/rfscout.json` using schema version **2**. Loading starts from defaults and overlays recognized valid fields. Schema v1 is translated where supported; unknown keys are pruned on the next canonical save; future schema versions are rejected rather than destructively rewritten.
+Persistent preferences live in `/sdcard/rfscout.json` using schema version **3**. Loading starts from defaults and overlays recognized valid fields. Schema v1/v2 files are translated where supported; unknown keys are pruned on the next canonical save; future schema versions are rejected rather than destructively rewritten.
+
+Legacy `Discipline` theme state migrates to **Night + Quiet**. Existing Indoor/Outdoor/Night configurations retain their visual theme and use **Normal** unless an explicit audio policy is present. Canonical schema-v3 saves store the visual theme under `display.theme` and the independent policy under `audio.policy`.
 
 Deep sleep separately retains a small RTC-backed session record containing active app and input-lock state. See [Device configuration and wall clock](docs/CONFIGURATION.md).
 

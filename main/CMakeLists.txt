@@ -54,6 +54,7 @@ idf_component_register(
         "app_framework.c"
         "app_logging.c"
         "app_audio_policy.c"
+        "audio_policy.c"
         "event.c"
         "feedback.c"
         "notification.c"

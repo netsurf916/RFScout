@@ -1,6 +1,6 @@
 /**
     ui_theme.h : RFScout semantic theme interface
-    Description: Defines persisted visual themes and environmental interaction/notification sound policy.
+    Description: Defines persisted visual themes independently from device audio policy.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -20,7 +20,6 @@ typedef enum
     RFSCOUT_THEME_INDOOR = 0,
     RFSCOUT_THEME_OUTDOOR,
     RFSCOUT_THEME_NIGHT,
-    RFSCOUT_THEME_DISCIPLINE,
     RFSCOUT_THEME_COUNT
 } rfscout_theme_id_t;
 
@@ -43,28 +42,16 @@ typedef struct
     uint16_t logo_secondary;
 } ui_theme_palette_t;
 
-typedef struct
-{
-    bool interaction_audio;
-    bool notification_audio;
-    uint8_t interaction_volume_percent;
-    uint8_t notification_volume_percent;
-} ui_theme_sound_policy_t;
-
 /** @brief Load the persisted theme preference, defaulting to Indoor. */
 esp_err_t ui_theme_init( void );
-/** @brief Persist and activate one theme immediately. */
+/** @brief Persist and activate one visual theme immediately. */
 esp_err_t ui_theme_set( rfscout_theme_id_t a_theme );
-/** @brief Return the active theme identifier. */
+/** @brief Return the active visual theme identifier. */
 rfscout_theme_id_t ui_theme_current( void );
 /** @brief Return the palette for one theme, falling back to Indoor for invalid IDs. */
 const ui_theme_palette_t *ui_theme_palette( rfscout_theme_id_t a_theme );
 /** @brief Return the active semantic palette. */
 const ui_theme_palette_t *ui_theme_get( void );
-/** @brief Return environmental sound policy for one theme. */
-const ui_theme_sound_policy_t *ui_theme_sound_policy( rfscout_theme_id_t a_theme );
-/** @brief Return environmental sound policy for the active theme. */
-const ui_theme_sound_policy_t *ui_theme_sound_get( void );
 uint16_t ui_theme_resolve_legacy_color( uint16_t a_color );
 const char *ui_theme_config_name( rfscout_theme_id_t a_theme );
 const char *ui_theme_display_name( rfscout_theme_id_t a_theme );

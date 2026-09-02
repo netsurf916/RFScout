@@ -10,8 +10,9 @@
 #include "app_audio_policy.h"
 #include "app_manager.h"
 #include "audio_output.h"
+#include "audio_policy.h"
+#include "device_config.h"
 #include "event.h"
-#include "ui_theme.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -74,9 +75,9 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
         return;
     }
 
-    if( RFSCOUT_EVENT_THEME_CHANGED == a_event->type )
+    if( RFSCOUT_EVENT_AUDIO_POLICY_CHANGED == a_event->type )
     {
-        const ui_theme_sound_policy_t *policy = ui_theme_sound_get();
+        const rfscout_audio_policy_t *policy = audio_policy_get( device_config_audio_policy() );
         if( ( NULL == policy ) || !policy->interaction_audio )
         {
             audio_output_cancel_feedback_pending();
@@ -84,9 +85,9 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
         return;
     }
 
-    const ui_theme_sound_policy_t *policy = ui_theme_sound_get();
-    if( ( NULL == policy ) || !policy->interaction_audio ||
-        ( 0U == policy->interaction_volume_percent ) ||
+    const rfscout_audio_policy_t *policy = audio_policy_get( device_config_audio_policy() );
+    const uint8_t interaction_gain = device_config_get()->audio_interaction_gain_percent;
+    if( ( NULL == policy ) || !policy->interaction_audio || ( 0U == interaction_gain ) ||
         !app_allows_feedback( policy_source_for_event( a_event ),
                               is_general_event( a_event->type ) ) )
     {
@@ -143,14 +144,14 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
         case RFSCOUT_EVENT_ENTER:
             break;
         case RFSCOUT_EVENT_THEME_CHANGED:
+        case RFSCOUT_EVENT_AUDIO_POLICY_CHANGED:
         case RFSCOUT_EVENT_NOTIFICATION:
         case RFSCOUT_EVENT_TYPE_COUNT:
         default:
             return;
     }
 
-    (void)audio_output_play_feedback_tone(
-        frequency, duration, policy->interaction_volume_percent );
+    (void)audio_output_play_feedback_tone( frequency, duration, interaction_gain );
 }
 
 esp_err_t feedback_init( void )

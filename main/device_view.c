@@ -10,6 +10,7 @@
 #include "alert.h"
 #include "app_logging.h"
 #include "app_manager.h"
+#include "audio_policy.h"
 #include "device_config.h"
 #include "device_time.h"
 #include "display.h"
@@ -33,26 +34,27 @@
 #define DEVICE_ITEM_DIM_TIMEOUT 2U
 #define DEVICE_ITEM_OFF_TIMEOUT 3U
 #define DEVICE_ITEM_THEME 4U
-#define DEVICE_ITEM_CLOCK_FORMAT 5U
-#define DEVICE_ITEM_TIMEZONE 6U
-#define DEVICE_ITEM_STARTUP 7U
-#define DEVICE_ITEM_YEAR 8U
-#define DEVICE_ITEM_MONTH 9U
-#define DEVICE_ITEM_DAY 10U
-#define DEVICE_ITEM_HOUR 11U
-#define DEVICE_ITEM_MINUTE 12U
-#define DEVICE_ITEM_WIFI 13U
-#define DEVICE_ITEM_CC1101 14U
-#define DEVICE_ITEM_NRF24 15U
-#define DEVICE_ITEM_AUDIO 16U
-#define DEVICE_ITEM_THERMAL 17U
-#define DEVICE_ITEM_LOGGING 18U
-#define DEVICE_ITEM_ALERT_MODE 19U
-#define DEVICE_ITEM_ALERT_VOLUME 20U
-#define DEVICE_ITEM_POWER_BUTTON 21U
-#define DEVICE_ITEM_POWER_POLICY 22U
-#define DEVICE_ITEM_SAVE 23U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 24U
+#define DEVICE_ITEM_AUDIO_POLICY 5U
+#define DEVICE_ITEM_CLOCK_FORMAT 6U
+#define DEVICE_ITEM_TIMEZONE 7U
+#define DEVICE_ITEM_STARTUP 8U
+#define DEVICE_ITEM_YEAR 9U
+#define DEVICE_ITEM_MONTH 10U
+#define DEVICE_ITEM_DAY 11U
+#define DEVICE_ITEM_HOUR 12U
+#define DEVICE_ITEM_MINUTE 13U
+#define DEVICE_ITEM_WIFI 14U
+#define DEVICE_ITEM_CC1101 15U
+#define DEVICE_ITEM_NRF24 16U
+#define DEVICE_ITEM_AUDIO 17U
+#define DEVICE_ITEM_THERMAL 18U
+#define DEVICE_ITEM_LOGGING 19U
+#define DEVICE_ITEM_ALERT_MODE 20U
+#define DEVICE_ITEM_ALERT_VOLUME 21U
+#define DEVICE_ITEM_POWER_BUTTON 22U
+#define DEVICE_ITEM_POWER_POLICY 23U
+#define DEVICE_ITEM_SAVE 24U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 25U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
 #define DEVICE_ITEM_COUNT ( DEVICE_ITEM_SAVE + 1U )
@@ -197,10 +199,10 @@ static char next_morse_character( char a_current, int a_direction )
 
 static bool item_direct_toggle( unsigned a_item )
 {
-    return ( DEVICE_ITEM_CLOCK_FORMAT == a_item ) || ( DEVICE_ITEM_WIFI == a_item ) ||
-           ( DEVICE_ITEM_CC1101 == a_item ) || ( DEVICE_ITEM_NRF24 == a_item ) ||
-           ( DEVICE_ITEM_AUDIO == a_item ) || ( DEVICE_ITEM_THERMAL == a_item ) ||
-           ( DEVICE_ITEM_LOGGING == a_item );
+    return ( DEVICE_ITEM_AUDIO_POLICY == a_item ) || ( DEVICE_ITEM_CLOCK_FORMAT == a_item ) ||
+           ( DEVICE_ITEM_WIFI == a_item ) || ( DEVICE_ITEM_CC1101 == a_item ) ||
+           ( DEVICE_ITEM_NRF24 == a_item ) || ( DEVICE_ITEM_AUDIO == a_item ) ||
+           ( DEVICE_ITEM_THERMAL == a_item ) || ( DEVICE_ITEM_LOGGING == a_item );
 }
 
 static bool item_editable( unsigned a_item )
@@ -223,6 +225,8 @@ static const char *item_label( unsigned a_item )
             return "Screen off";
         case DEVICE_ITEM_THEME:
             return "Theme";
+        case DEVICE_ITEM_AUDIO_POLICY:
+            return "Audio policy";
         case DEVICE_ITEM_CLOCK_FORMAT:
             return "Clock format";
         case DEVICE_ITEM_TIMEZONE:
@@ -288,6 +292,10 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             break;
         case DEVICE_ITEM_THEME:
             snprintf( a_value, a_capacity, "%s", ui_theme_display_name( ui_theme_current() ) );
+            break;
+        case DEVICE_ITEM_AUDIO_POLICY:
+            snprintf(
+                a_value, a_capacity, "%s", audio_policy_display_name( config->audio_policy ) );
             break;
         case DEVICE_ITEM_CLOCK_FORMAT:
             snprintf( a_value, a_capacity, "%s", config->clock_24h ? "24h" : "12h" );
@@ -520,7 +528,7 @@ void device_view_render( void )
               (unsigned)( selected_item + 1U ),
               (unsigned)DEVICE_ITEM_COUNT,
               editing ? "TURN CHANGE / CENTER DONE"
-                      : ( item_direct_toggle( selected_item ) ? "CENTER TOGGLE"
+                      : ( item_direct_toggle( selected_item ) ? "CENTER CYCLE"
                                                               : "TURN SELECT / CENTER ENTER" ) );
     display_draw_text(
         UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, footer, editing ? COLOR_ACCENT : COLOR_DIM, 1U );
@@ -677,6 +685,32 @@ static void adjust_theme( int a_delta )
     {
         save_error = true;
     }
+}
+
+static void adjust_audio_policy( int a_delta )
+{
+    const rfscout_audio_policy_id_t old_policy = device_config_audio_policy();
+    int policy = (int)old_policy + ( ( a_delta > 0 ) ? 1 : -1 );
+    if( policy < 0 )
+    {
+        policy = RFSCOUT_AUDIO_POLICY_COUNT - 1;
+    }
+    if( policy >= RFSCOUT_AUDIO_POLICY_COUNT )
+    {
+        policy = 0;
+    }
+    const rfscout_audio_policy_id_t new_policy = (rfscout_audio_policy_id_t)policy;
+    if( new_policy == old_policy || ESP_OK != device_config_set_audio_policy( new_policy ) )
+    {
+        return;
+    }
+
+    log_config_change( "audio.policy",
+                       audio_policy_display_name( old_policy ),
+                       audio_policy_display_name( new_policy ) );
+    rfscout_event_emit(
+        RFSCOUT_EVENT_AUDIO_POLICY_CHANGED, RFSCOUT_EVENT_SOURCE_SYSTEM, (int32_t)new_policy );
+    emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
 }
 
 static void adjust_startup_app( int a_delta )
@@ -968,6 +1002,10 @@ static void adjust_selected( int a_delta )
     else if( DEVICE_ITEM_THEME == selected_item )
     {
         adjust_theme( a_delta );
+    }
+    else if( DEVICE_ITEM_AUDIO_POLICY == selected_item )
+    {
+        adjust_audio_policy( a_delta );
     }
     else if( DEVICE_ITEM_CLOCK_FORMAT == selected_item )
     {

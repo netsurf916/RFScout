@@ -1,6 +1,6 @@
 /**
     ui_theme.c : RFScout semantic theme implementation
-    Description: Supplies visual palettes and environmental sound policy to every application.
+    Description: Supplies visual palettes independently from device audio policy.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -64,46 +64,30 @@ static const ui_theme_palette_t palettes[ RFSCOUT_THEME_COUNT ] = {
             .logo_secondary = 0xFFFFU,
         },
     [RFSCOUT_THEME_NIGHT] = PALETTE_NIGHT,
-    /* Discipline is deliberately pixel-for-pixel identical to Night. Its only
-       additional behavior is the sound policy below, making it both light and
-       noise discipline rather than a separate visual aesthetic. */
-    [RFSCOUT_THEME_DISCIPLINE] = PALETTE_NIGHT,
 };
 
-static const ui_theme_sound_policy_t sound_policies[ RFSCOUT_THEME_COUNT ] = {
-    [RFSCOUT_THEME_INDOOR] =
-        {
-            .interaction_audio = true,
-            .notification_audio = true,
-            .interaction_volume_percent = 35U,
-            .notification_volume_percent = 100U,
-        },
-    [RFSCOUT_THEME_OUTDOOR] =
-        {
-            .interaction_audio = true,
-            .notification_audio = true,
-            .interaction_volume_percent = 55U,
-            .notification_volume_percent = 100U,
-        },
-    [RFSCOUT_THEME_NIGHT] =
-        {
-            .interaction_audio = true,
-            .notification_audio = true,
-            .interaction_volume_percent = 20U,
-            .notification_volume_percent = 60U,
-        },
-    [RFSCOUT_THEME_DISCIPLINE] =
-        {
-            .interaction_audio = false,
-            .notification_audio = false,
-            .interaction_volume_percent = 0U,
-            .notification_volume_percent = 0U,
-        },
-};
-
-static bool legacy_theme_read( rfscout_theme_id_t *a_theme )
+static void legacy_audio_gains_for_theme( rfscout_theme_id_t a_theme,
+                                          uint8_t *a_interaction_percent,
+                                          uint8_t *a_notification_percent )
 {
-    if( NULL == a_theme )
+    uint8_t interaction = 35U;
+    uint8_t notification = 100U;
+    if( RFSCOUT_THEME_OUTDOOR == a_theme )
+    {
+        interaction = 55U;
+    }
+    else if( RFSCOUT_THEME_NIGHT == a_theme )
+    {
+        interaction = 20U;
+        notification = 60U;
+    }
+    *a_interaction_percent = interaction;
+    *a_notification_percent = notification;
+}
+
+static bool legacy_theme_read( rfscout_theme_id_t *a_theme, bool *a_quiet )
+{
+    if( ( NULL == a_theme ) || ( NULL == a_quiet ) )
     {
         return false;
     }
@@ -119,7 +103,19 @@ static bool legacy_theme_read( rfscout_theme_id_t *a_theme )
     size_t stored_length = sizeof( stored );
     result = nvs_get_str( handle, THEME_NVS_KEY, stored, &stored_length );
     nvs_close( handle );
-    return ( ESP_OK == result ) && ui_theme_from_config_name( stored, a_theme );
+    if( ESP_OK != result )
+    {
+        return false;
+    }
+
+    *a_quiet = false;
+    if( 0 == strcasecmp( stored, "discipline" ) )
+    {
+        *a_theme = RFSCOUT_THEME_NIGHT;
+        *a_quiet = true;
+        return true;
+    }
+    return ui_theme_from_config_name( stored, a_theme );
 }
 
 static void legacy_theme_write( rfscout_theme_id_t a_theme )
@@ -194,11 +190,24 @@ esp_err_t ui_theme_init( void )
 
     const bool use_legacy = !storage_is_available() || config_needs_legacy_theme();
     rfscout_theme_id_t legacy_theme = RFSCOUT_THEME_INDOOR;
-    if( use_legacy && legacy_theme_read( &legacy_theme ) )
+    bool legacy_quiet = false;
+    if( use_legacy && legacy_theme_read( &legacy_theme, &legacy_quiet ) )
     {
+        uint8_t interaction_gain = 35U;
+        uint8_t notification_gain = 100U;
+        legacy_audio_gains_for_theme( legacy_theme, &interaction_gain, &notification_gain );
+
         (void)device_config_set_theme( legacy_theme );
+        (void)device_config_set_audio_policy( legacy_quiet ? RFSCOUT_AUDIO_POLICY_QUIET
+                                                           : RFSCOUT_AUDIO_POLICY_NORMAL );
+        (void)device_config_set_audio_gains( interaction_gain, notification_gain );
         active_theme = legacy_theme;
-        ESP_LOGI( TAG, "migrated legacy theme=%s", ui_theme_config_name( legacy_theme ) );
+        ESP_LOGI( TAG,
+                  "migrated legacy theme=%s audio_policy=%s gains=%u/%u",
+                  ui_theme_config_name( legacy_theme ),
+                  legacy_quiet ? "quiet" : "normal",
+                  (unsigned)interaction_gain,
+                  (unsigned)notification_gain );
 
         if( storage_is_available() )
         {
@@ -261,20 +270,6 @@ const ui_theme_palette_t *ui_theme_get( void )
     return ui_theme_palette( active_theme );
 }
 
-const ui_theme_sound_policy_t *ui_theme_sound_policy( rfscout_theme_id_t a_theme )
-{
-    if( a_theme >= RFSCOUT_THEME_COUNT )
-    {
-        a_theme = RFSCOUT_THEME_INDOOR;
-    }
-    return &sound_policies[ a_theme ];
-}
-
-const ui_theme_sound_policy_t *ui_theme_sound_get( void )
-{
-    return ui_theme_sound_policy( active_theme );
-}
-
 uint16_t ui_theme_resolve_legacy_color( uint16_t a_color )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
@@ -310,15 +305,13 @@ uint16_t ui_theme_resolve_legacy_color( uint16_t a_color )
 
 const char *ui_theme_config_name( rfscout_theme_id_t a_theme )
 {
-    static const char *names[ RFSCOUT_THEME_COUNT ] = {
-        "indoor", "outdoor", "night", "discipline" };
+    static const char *names[ RFSCOUT_THEME_COUNT ] = { "indoor", "outdoor", "night" };
     return ( a_theme < RFSCOUT_THEME_COUNT ) ? names[ a_theme ] : names[ RFSCOUT_THEME_INDOOR ];
 }
 
 const char *ui_theme_display_name( rfscout_theme_id_t a_theme )
 {
-    static const char *names[ RFSCOUT_THEME_COUNT ] = {
-        "Indoor", "Outdoor", "Night", "Discipline" };
+    static const char *names[ RFSCOUT_THEME_COUNT ] = { "Indoor", "Outdoor", "Night" };
     return ( a_theme < RFSCOUT_THEME_COUNT ) ? names[ a_theme ] : names[ RFSCOUT_THEME_INDOOR ];
 }
 

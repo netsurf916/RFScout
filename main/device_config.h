@@ -12,6 +12,7 @@
 
 #include "alert.h"
 #include "app_manager.h"
+#include "audio_policy.h"
 #include "esp_err.h"
 #include "power.h"
 #include "ui_theme.h"
@@ -21,7 +22,7 @@
 #include <stdint.h>
 
 #define RFSCOUT_CONFIG_PATH "/sdcard/rfscout.json"
-#define RFSCOUT_CONFIG_SCHEMA_VERSION 2U
+#define RFSCOUT_CONFIG_SCHEMA_VERSION 3U
 #define RFSCOUT_TIMEZONE_MAX 8U
 #define RFSCOUT_TIMEZONE_NAME_MAX 32U
 #define RFSCOUT_TIMEZONE_LABEL_MAX 24U
@@ -58,6 +59,9 @@ typedef struct
     bool logging_enabled;
     bool clock_24h;
     rfscout_theme_id_t theme;
+    rfscout_audio_policy_id_t audio_policy;
+    uint8_t audio_interaction_gain_percent;
+    uint8_t audio_notification_gain_percent;
     rfscout_alert_mode_t alert_mode;
     uint8_t alert_volume_percent;
     uint8_t recorder_volume_percent;
@@ -123,6 +127,11 @@ esp_err_t device_config_set_high_temperature_action( power_action_t a_action );
 esp_err_t device_config_set_clock_24h( bool a_enabled );
 rfscout_theme_id_t device_config_theme( void );
 esp_err_t device_config_set_theme( rfscout_theme_id_t a_theme );
+rfscout_audio_policy_id_t device_config_audio_policy( void );
+esp_err_t device_config_set_audio_policy( rfscout_audio_policy_id_t a_policy );
+/** @brief Set theme-independent interaction and notification environmental gains. */
+esp_err_t device_config_set_audio_gains( uint8_t a_interaction_percent,
+                                         uint8_t a_notification_percent );
 
 /** @brief Change the global audible notification mode. */
 esp_err_t device_config_set_alert_mode( rfscout_alert_mode_t a_mode );

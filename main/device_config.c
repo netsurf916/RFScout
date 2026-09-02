@@ -30,6 +30,8 @@
 #define CONFIG_DISPLAY_DIM_TIMEOUT_DEFAULT_SECONDS 120U
 #define CONFIG_DISPLAY_OFF_TIMEOUT_DEFAULT_SECONDS 300U
 #define CONFIG_DISPLAY_TIMEOUT_MAX_SECONDS 3600U
+#define CONFIG_AUDIO_INTERACTION_GAIN_DEFAULT_PERCENT 35U
+#define CONFIG_AUDIO_NOTIFICATION_GAIN_DEFAULT_PERCENT 100U
 #define CONFIG_RECORDER_VOLUME_DEFAULT 50U
 #define CONFIG_RECORDER_INPUT_GAIN_DEFAULT_DB 12U
 #define CONFIG_MIN_VALID_EPOCH 1577836800LL
@@ -41,6 +43,8 @@ static bool saved_time_valid;
 static int64_t saved_time_epoch;
 static char saved_time_source[ 24 ];
 static bool config_dirty;
+static bool config_upgrade_pending;
+static int config_source_version;
 
 static const char *app_config_name( rfscout_app_id_t a_app )
 {
@@ -127,6 +131,37 @@ static bool power_action_valid_for_policy( power_action_t a_action )
            ( POWER_ACTION_POWER_OFF == a_action );
 }
 
+static void legacy_audio_gains_for_theme( rfscout_theme_id_t a_theme,
+                                          uint8_t *a_interaction_percent,
+                                          uint8_t *a_notification_percent )
+{
+    uint8_t interaction = CONFIG_AUDIO_INTERACTION_GAIN_DEFAULT_PERCENT;
+    uint8_t notification = CONFIG_AUDIO_NOTIFICATION_GAIN_DEFAULT_PERCENT;
+    switch( a_theme )
+    {
+        case RFSCOUT_THEME_OUTDOOR:
+            interaction = 55U;
+            notification = 100U;
+            break;
+        case RFSCOUT_THEME_NIGHT:
+            interaction = 20U;
+            notification = 60U;
+            break;
+        case RFSCOUT_THEME_INDOOR:
+        case RFSCOUT_THEME_COUNT:
+        default:
+            break;
+    }
+    if( NULL != a_interaction_percent )
+    {
+        *a_interaction_percent = interaction;
+    }
+    if( NULL != a_notification_percent )
+    {
+        *a_notification_percent = notification;
+    }
+}
+
 /** @brief Copy a bounded configuration string. */
 static void copy_string( char *a_destination, size_t a_capacity, const char *a_source )
 {
@@ -164,6 +199,9 @@ static void set_defaults( void )
     config.logging_enabled = true;
     config.clock_24h = false;
     config.theme = RFSCOUT_THEME_INDOOR;
+    config.audio_policy = RFSCOUT_AUDIO_POLICY_NORMAL;
+    config.audio_interaction_gain_percent = CONFIG_AUDIO_INTERACTION_GAIN_DEFAULT_PERCENT;
+    config.audio_notification_gain_percent = CONFIG_AUDIO_NOTIFICATION_GAIN_DEFAULT_PERCENT;
     config.alert_mode = RFSCOUT_ALERT_OFF;
     config.alert_volume_percent = RFSCOUT_ALERT_VOLUME_DEFAULT_PERCENT;
     config.recorder_volume_percent = CONFIG_RECORDER_VOLUME_DEFAULT;
@@ -198,6 +236,8 @@ static void set_defaults( void )
     saved_time_epoch = 0;
     saved_time_source[ 0 ] = '\0';
     config_dirty = false;
+    config_upgrade_pending = false;
+    config_source_version = (int)RFSCOUT_CONFIG_SCHEMA_VERSION;
 }
 
 /** @brief Read one optional JSON boolean, retaining a default on type mismatch. */
@@ -341,7 +381,7 @@ json_display_timeout_seconds( const cJSON *a_parent, const char *a_name, uint16_
     return (uint16_t)item->valueint;
 }
 
-/** @brief Apply validated display preference overrides. */
+/** @brief Apply validated display preference overrides and older-theme audio migration. */
 static void load_display( const cJSON *a_root )
 {
     const cJSON *display = cJSON_GetObjectItemCaseSensitive( a_root, "display" );
@@ -367,14 +407,73 @@ static void load_display( const cJSON *a_root )
         config.display_off_timeout_seconds = 0U;
     }
     config.clock_24h = json_bool( display, "clock_24h", config.clock_24h );
+
     const cJSON *theme = cJSON_GetObjectItemCaseSensitive( display, "theme" );
-    if( cJSON_IsString( theme ) && NULL != theme->valuestring )
+    if( !cJSON_IsString( theme ) || NULL == theme->valuestring )
     {
-        rfscout_theme_id_t parsed_theme;
-        if( ui_theme_from_config_name( theme->valuestring, &parsed_theme ) )
+        return;
+    }
+
+    if( 0 == strcasecmp( theme->valuestring, "discipline" ) )
+    {
+        config.theme = RFSCOUT_THEME_NIGHT;
+        config.audio_policy = RFSCOUT_AUDIO_POLICY_QUIET;
+        legacy_audio_gains_for_theme( RFSCOUT_THEME_NIGHT,
+                                      &config.audio_interaction_gain_percent,
+                                      &config.audio_notification_gain_percent );
+        config_upgrade_pending = true;
+        return;
+    }
+
+    rfscout_theme_id_t parsed_theme;
+    if( !ui_theme_from_config_name( theme->valuestring, &parsed_theme ) )
+    {
+        return;
+    }
+    config.theme = parsed_theme;
+
+    if( config_source_version < 3 )
+    {
+        config.audio_policy = RFSCOUT_AUDIO_POLICY_NORMAL;
+        legacy_audio_gains_for_theme( parsed_theme,
+                                      &config.audio_interaction_gain_percent,
+                                      &config.audio_notification_gain_percent );
+    }
+}
+
+/** @brief Apply independent device-wide audio presentation policy and gain state. */
+static void load_audio_policy( const cJSON *a_root )
+{
+    const cJSON *audio = cJSON_GetObjectItemCaseSensitive( a_root, "audio" );
+    if( !cJSON_IsObject( audio ) )
+    {
+        return;
+    }
+
+    const cJSON *policy = cJSON_GetObjectItemCaseSensitive( audio, "policy" );
+    if( cJSON_IsString( policy ) && NULL != policy->valuestring )
+    {
+        rfscout_audio_policy_id_t parsed;
+        if( audio_policy_from_config_name( policy->valuestring, &parsed ) )
         {
-            config.theme = parsed_theme;
+            config.audio_policy = parsed;
         }
+    }
+
+    const cJSON *interaction_gain =
+        cJSON_GetObjectItemCaseSensitive( audio, "interaction_gain_percent" );
+    if( cJSON_IsNumber( interaction_gain ) && interaction_gain->valueint >= 0 &&
+        interaction_gain->valueint <= 100 )
+    {
+        config.audio_interaction_gain_percent = (uint8_t)interaction_gain->valueint;
+    }
+
+    const cJSON *notification_gain =
+        cJSON_GetObjectItemCaseSensitive( audio, "notification_gain_percent" );
+    if( cJSON_IsNumber( notification_gain ) && notification_gain->valueint >= 0 &&
+        notification_gain->valueint <= 100 )
+    {
+        config.audio_notification_gain_percent = (uint8_t)notification_gain->valueint;
     }
 }
 
@@ -699,8 +798,14 @@ static esp_err_t load_file( void )
         quarantine_config();
         return ESP_ERR_INVALID_VERSION;
     }
+    config_source_version = version->valueint;
+    if( config_source_version >= 2 && config_source_version < (int)RFSCOUT_CONFIG_SCHEMA_VERSION )
+    {
+        config_upgrade_pending = true;
+    }
 
     load_display( root );
+    load_audio_policy( root );
     load_power( root );
     load_apps( root );
     load_logging( root );
@@ -749,6 +854,13 @@ static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_tim
     cJSON_AddNumberToObject( display, "off_timeout_seconds", config.display_off_timeout_seconds );
     cJSON_AddBoolToObject( display, "clock_24h", config.clock_24h );
     cJSON_AddStringToObject( display, "theme", ui_theme_config_name( config.theme ) );
+
+    cJSON *audio = cJSON_AddObjectToObject( root, "audio" );
+    cJSON_AddStringToObject( audio, "policy", audio_policy_config_name( config.audio_policy ) );
+    cJSON_AddNumberToObject(
+        audio, "interaction_gain_percent", config.audio_interaction_gain_percent );
+    cJSON_AddNumberToObject(
+        audio, "notification_gain_percent", config.audio_notification_gain_percent );
 
     cJSON *power = cJSON_AddObjectToObject( root, "power" );
     cJSON_AddStringToObject(
@@ -879,7 +991,29 @@ esp_err_t device_config_init( void )
     const esp_err_t result = load_file();
     if( ESP_OK == result )
     {
-        config_dirty = false;
+        if( config_upgrade_pending )
+        {
+            const esp_err_t upgrade_result = device_config_save( false, 0, NULL );
+            if( ESP_OK != upgrade_result )
+            {
+                config_dirty = true;
+                ESP_LOGW( TAG,
+                          "configuration migration save failed: %s",
+                          esp_err_to_name( upgrade_result ) );
+            }
+            else
+            {
+                config_upgrade_pending = false;
+                ESP_LOGI( TAG,
+                          "migrated %s to schema %u",
+                          RFSCOUT_CONFIG_PATH,
+                          RFSCOUT_CONFIG_SCHEMA_VERSION );
+            }
+        }
+        else
+        {
+            config_dirty = false;
+        }
         ESP_LOGI( TAG, "loaded %s", RFSCOUT_CONFIG_PATH );
         return ESP_OK;
     }
@@ -949,6 +1083,42 @@ esp_err_t device_config_set_theme( rfscout_theme_id_t a_theme )
     if( config.theme != a_theme )
     {
         config.theme = a_theme;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+rfscout_audio_policy_id_t device_config_audio_policy( void )
+{
+    return config.audio_policy;
+}
+
+esp_err_t device_config_set_audio_policy( rfscout_audio_policy_id_t a_policy )
+{
+    if( a_policy >= RFSCOUT_AUDIO_POLICY_COUNT )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( config.audio_policy != a_policy )
+    {
+        config.audio_policy = a_policy;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+esp_err_t device_config_set_audio_gains( uint8_t a_interaction_percent,
+                                         uint8_t a_notification_percent )
+{
+    if( a_interaction_percent > 100U || a_notification_percent > 100U )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( config.audio_interaction_gain_percent != a_interaction_percent ||
+        config.audio_notification_gain_percent != a_notification_percent )
+    {
+        config.audio_interaction_gain_percent = a_interaction_percent;
+        config.audio_notification_gain_percent = a_notification_percent;
         config_dirty = true;
     }
     return ESP_OK;
@@ -1417,6 +1587,8 @@ esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a
     if( ESP_OK == result )
     {
         config_dirty = false;
+        config_upgrade_pending = false;
+        config_source_version = (int)RFSCOUT_CONFIG_SCHEMA_VERSION;
     }
     return result;
 }

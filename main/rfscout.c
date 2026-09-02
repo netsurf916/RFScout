@@ -38,8 +38,21 @@
 #include "nvs_flash.h"
 
 #include <string.h>
+#include <unistd.h>
 
 static const char *TAG = "rfscout";
+
+static void cleanup_pre_v1_config_artifacts( void )
+{
+    if( !storage_is_available() )
+    {
+        return;
+    }
+
+    (void)unlink( RFSCOUT_CONFIG_PATH ".bad" );
+    (void)unlink( RFSCOUT_CONFIG_PATH ".downgrade" );
+    (void)unlink( RFSCOUT_CONFIG_PATH ".recovering" );
+}
 
 static rfscout_notification_type_t
 notification_for_surveillance( surveillance_class_t a_classification )
@@ -193,7 +206,9 @@ void app_main( void )
         ESP_LOGW( TAG, "SD storage unavailable: %s", esp_err_to_name( result ) );
     }
 
+    cleanup_pre_v1_config_artifacts();
     result = device_config_init();
+    cleanup_pre_v1_config_artifacts();
     if( ESP_OK != result )
     {
         ESP_LOGW( TAG,
