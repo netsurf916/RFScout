@@ -7,6 +7,7 @@
 
 #include "thermal_view.h"
 
+#include "app_framework.h"
 #include "display.h"
 #include "mlx90640.h"
 #include "ui_chrome.h"
@@ -161,6 +162,20 @@ esp_err_t thermal_view_render( void )
     if( ESP_ERR_NOT_FINISHED == result )
     {
         return ESP_OK;
+    }
+
+    if( ESP_OK == result )
+    {
+        app_framework_report_availability(
+            RFSCOUT_APP_THERMAL, RFSCOUT_APP_AVAILABILITY_AVAILABLE );
+    }
+    else if( !mlx90640_is_detected() )
+    {
+        /* Periodic hot-plug probing intentionally skips the active app. Runtime
+           I/O failure is therefore authoritative for an active Thermal session
+           and must update the framework before app_manager navigates away. */
+        app_framework_report_availability(
+            RFSCOUT_APP_THERMAL, RFSCOUT_APP_AVAILABILITY_UNAVAILABLE );
     }
 
     const ui_theme_palette_t *theme = ui_theme_get();
