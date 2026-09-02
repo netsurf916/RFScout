@@ -30,6 +30,7 @@ static size_t history_count;
 static rfscout_system_event_notification_t notification;
 static int64_t notification_expires_us;
 static bool notifications_enabled;
+static bool attention_pending;
 static bool power_state_known;
 static bool external_power;
 static bool thermal_state_known;
@@ -235,7 +236,6 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
     char detail[ sizeof( notification.detail ) ];
     render_event( a_event, title, sizeof( title ), detail, sizeof( detail ) );
 
-    bool show_notification = false;
     portENTER_CRITICAL( &system_event_lock );
     history[ history_head ] = ( rfscout_system_event_entry_t ){
         .monotonic_us = now_us, .event = *a_event, .severity = severity };
@@ -252,16 +252,11 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
         snprintf( notification.title, sizeof( notification.title ), "%s", title );
         snprintf( notification.detail, sizeof( notification.detail ), "%s", detail );
         notification_expires_us = now_us + SYSTEM_EVENT_NOTIFICATION_US;
-        show_notification = true;
+        attention_pending = true;
     }
     portEXIT_CRITICAL( &system_event_lock );
 
     log_event( a_event, severity, title, detail );
-    if( show_notification )
-    {
-        (void)display_idle_request_attention( SYSTEM_EVENT_NOTIFICATION_MS );
-        display_invalidate();
-    }
 }
 
 esp_err_t system_events_init( void )
@@ -273,6 +268,7 @@ esp_err_t system_events_init( void )
     memset( &notification, 0, sizeof( notification ) );
     notification_expires_us = 0;
     notifications_enabled = false;
+    attention_pending = false;
     power_state_known = false;
     thermal_state_known = false;
     portEXIT_CRITICAL( &system_event_lock );
@@ -329,8 +325,9 @@ void system_events_poll( void )
         }
     }
 
-    bool expired = false;
     const int64_t now_us = esp_timer_get_time();
+    bool expired = false;
+    bool request_attention = false;
     portENTER_CRITICAL( &system_event_lock );
     if( notification.active && now_us >= notification_expires_us )
     {
@@ -338,8 +335,19 @@ void system_events_poll( void )
         notification_expires_us = 0;
         expired = true;
     }
+    if( attention_pending )
+    {
+        attention_pending = false;
+        request_attention = true;
+    }
     portEXIT_CRITICAL( &system_event_lock );
-    if( expired )
+
+    if( request_attention )
+    {
+        (void)display_idle_request_attention( SYSTEM_EVENT_NOTIFICATION_MS );
+        display_invalidate();
+    }
+    else if( expired )
     {
         display_invalidate();
     }
