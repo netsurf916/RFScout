@@ -205,9 +205,8 @@ void app_main( void )
     result = storage_init();
     if( ESP_OK != result )
     {
-        rfscout_event_emit( RFSCOUT_EVENT_STORAGE_MOUNT_FAILED,
-                            RFSCOUT_EVENT_SOURCE_SYSTEM,
-                            (int32_t)result );
+        rfscout_event_emit(
+            RFSCOUT_EVENT_STORAGE_MOUNT_FAILED, RFSCOUT_EVENT_SOURCE_SYSTEM, (int32_t)result );
         ESP_LOGW( TAG, "SD storage unavailable: %s", esp_err_to_name( result ) );
     }
     else
