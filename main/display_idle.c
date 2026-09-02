@@ -199,9 +199,17 @@ esp_err_t display_idle_request_attention( uint32_t a_duration_ms )
     {
         attention_until_us = requested_until;
     }
-    off_requested = false;
 
-    if( !attention_restore_pending )
+    /* A screen-off request may have been queued earlier in the same main-loop
+       iteration but not yet committed by display_idle_poll(). Preserve that
+       explicit user intent as the post-attention state instead of discarding it. */
+    if( off_requested )
+    {
+        attention_restore_state = DISPLAY_IDLE_OFF;
+        attention_restore_pending = true;
+        off_requested = false;
+    }
+    else if( !attention_restore_pending )
     {
         attention_restore_state = state;
         attention_restore_pending = ( DISPLAY_IDLE_ACTIVE != state );
