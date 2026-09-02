@@ -237,9 +237,8 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
 
     bool show_notification = false;
     portENTER_CRITICAL( &system_event_lock );
-    history[ history_head ] = (rfscout_system_event_entry_t){ .monotonic_us = now_us,
-                                                              .event = *a_event,
-                                                              .severity = severity };
+    history[ history_head ] = ( rfscout_system_event_entry_t ){
+        .monotonic_us = now_us, .event = *a_event, .severity = severity };
     history_head = ( history_head + 1U ) % RFSCOUT_SYSTEM_EVENT_HISTORY_CAPACITY;
     if( history_count < RFSCOUT_SYSTEM_EVENT_HISTORY_CAPACITY )
     {
@@ -366,12 +365,10 @@ bool system_events_history_get( size_t a_index, rfscout_system_event_entry_t *a_
     portENTER_CRITICAL( &system_event_lock );
     if( a_index < history_count )
     {
-        const size_t newest =
-            ( history_head + RFSCOUT_SYSTEM_EVENT_HISTORY_CAPACITY - 1U ) %
-            RFSCOUT_SYSTEM_EVENT_HISTORY_CAPACITY;
-        const size_t slot =
-            ( newest + RFSCOUT_SYSTEM_EVENT_HISTORY_CAPACITY - a_index ) %
-            RFSCOUT_SYSTEM_EVENT_HISTORY_CAPACITY;
+        const size_t newest = ( history_head + RFSCOUT_SYSTEM_EVENT_HISTORY_CAPACITY - 1U ) %
+                              RFSCOUT_SYSTEM_EVENT_HISTORY_CAPACITY;
+        const size_t slot = ( newest + RFSCOUT_SYSTEM_EVENT_HISTORY_CAPACITY - a_index ) %
+                            RFSCOUT_SYSTEM_EVENT_HISTORY_CAPACITY;
         *a_entry = history[ slot ];
         found = true;
     }
@@ -386,9 +383,10 @@ bool system_events_notification_get( rfscout_system_event_notification_t *a_noti
         return false;
     }
 
+    const int64_t now_us = esp_timer_get_time();
     bool active = false;
     portENTER_CRITICAL( &system_event_lock );
-    if( notification.active && esp_timer_get_time() < notification_expires_us )
+    if( notification.active && now_us < notification_expires_us )
     {
         *a_notification = notification;
         active = true;
