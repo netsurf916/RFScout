@@ -4,6 +4,8 @@ This document describes configuration implemented on current `main`. Planned con
 
 RFScout starts from compiled defaults and, when SD is mounted, overlays persistent preferences from `/sdcard/rfscout.json`. The current canonical schema version is **3**. Unknown/obsolete fields are ignored; saving builds a fresh canonical document, so obsolete keys disappear and newly introduced fields are emitted with current defaults.
 
+RFScout is still pre-1.0. The configuration format may continue to change while the project converges on a stable schema. Compatibility with configuration files from older or newer pre-1.0 firmware is therefore **best effort, not a release contract**. The project begins treating configuration backward compatibility as a compatibility requirement at the v1.0.0 milestone.
+
 ## Representative schema
 
 ```json
@@ -83,19 +85,20 @@ Notification Morse-character maps are also stored beneath the owning application
 
 ## Loading and migration
 
-Configuration loading follows a defaults-plus-overlay model:
+Configuration loading follows a deliberately simple defaults-plus-overlay model:
 
 1. populate current compiled defaults;
-2. parse the existing JSON document;
-3. accept schema versions 1 through the current version;
+2. try to parse the existing JSON document;
+3. when an older schema is recognized, apply the migrations the current firmware happens to support;
 4. overlay only recognized, type-correct, valid fields;
-5. translate recognized older-schema fields;
-6. map legacy `display.theme: "discipline"` to `display.theme: "night"` plus `audio.policy: "quiet"`;
-7. move legacy theme-owned sound gain into independent audio gain fields;
-8. ignore unknown/obsolete fields;
-9. on canonical save, generate a new schema-v3 document rather than editing the source tree in place.
+5. ignore unknown/obsolete fields;
+6. on canonical save, generate a fresh current-schema document rather than editing the source tree in place.
 
-Schema-v2 Indoor, Outdoor, and Night configurations retain their visual theme and migrate to **Normal** while preserving their previous effective sound levels:
+If the document cannot be parsed, claims an unsupported schema, or otherwise cannot be loaded safely, RFScout is allowed to discard it and write a correctly formatted configuration from current defaults. Pre-1.0 firmware does **not** preserve rejected files as a compatibility archive and does not attempt downgrade-round-trip reconciliation. Upgrading or downgrading pre-1.0 builds can therefore reset settings when formats diverge.
+
+The normal save path still uses `rfscout.json.tmp` and `rfscout.json.bak` transiently to avoid replacing the active file with a partial write. Those are implementation details, not persistent compatibility copies. Startup also removes legacy `rfscout.json.bad`, `rfscout.json.downgrade`, and `rfscout.json.recovering` artifacts left by development builds so the SD card does not accumulate configuration sidecars.
+
+The current schema-v2 -> schema-v3 loader retains a useful best-effort migration for the visual-theme/audio-policy split. Schema-v2 Indoor, Outdoor, and Night configurations retain their visual theme and migrate to **Normal** while preserving their previous effective sound levels:
 
 | Legacy theme | Interaction gain | Notification environmental gain |
 | --- | ---: | ---: |
@@ -105,13 +108,7 @@ Schema-v2 Indoor, Outdoor, and Night configurations retain their visual theme an
 
 Legacy Discipline maps to **Night + Quiet** and retains the Night-equivalent 20% / 60% gain state underneath Quiet. This means changing the migrated policy back to Normal later produces the same Night-level sound that existed before the separation rather than an unexpected loudness jump.
 
-Schema-v1 configurations that predate canonical `display.theme` still use the existing legacy NVS theme migration before they are rewritten. A schema-v3 file can explicitly store `audio.policy` and both gain fields. Canonical v3 output never writes `discipline` as a theme.
-
-A file claiming a future schema version is rejected rather than rewritten by older firmware. Invalid complete documents are retained as `rfscout.json.bad`; replacement uses `.tmp` and `.bak` files for recovery.
-
-Schema v3 also includes explicit downgrade-round-trip recovery for the schema-v2 behavior above. Before normal configuration loading, RFScout considers `rfscout.json.bad` only when it is a valid schema-v3 document with valid visual-theme and independent audio-policy/gain state; arbitrary corrupt or unrelated quarantine files are left untouched. If a valid older active configuration exists, settings that schema-v2 firmware could legitimately change are merged into the preserved v3 document while the schema-v3 version and independent `audio.*` policy/gain state remain authoritative. A downgraded legacy `discipline` selection is the exception: it is reconciled with the same canonical migration semantics as an ordinary load, becoming **Night + Quiet** with 20% interaction and 60% notification environmental gain. If the active downgraded file is corrupt, the already-validated v3 quarantine is preferred and the corrupt file is retained separately for diagnosis rather than replacing the good quarantine.
-
-The reconciliation write is itself transactional. RFScout writes the merged v3 document to `rfscout.json.recovering`, moves the downgraded active file to `rfscout.json.downgrade`, and then promotes the recovery document to the active path. On the next boot, an interrupted transaction is recognized before ordinary downgrade recovery: a valid `.recovering` document is completed, while an invalid recovery document is rolled back from `.downgrade` when possible. This preserves both schema-v3-only state and legitimate settings edited while running older firmware across a v0.4.0 -> schema-v2 downgrade -> v0.4.0 upgrade, including power loss during the reconciliation itself.
+Schema-v1 configurations that predate canonical `display.theme` can still use the existing legacy NVS theme migration when the current loader recognizes them. A schema-v3 file can explicitly store `audio.policy` and both gain fields. Canonical v3 output never writes `discipline` as a theme. These pre-v3 migration paths are conveniences for development-era upgrades and are not guaranteed compatibility behavior until the v1.0.0 configuration contract is established.
 
 The historical application key `apps.audio` remains because the internal application ABI still uses `RFSCOUT_APP_AUDIO`; the user-facing application is Recorder. `apps.startup` writes user-facing aliases such as `home` and `recorder`, while the loader also accepts historical internal aliases.
 
