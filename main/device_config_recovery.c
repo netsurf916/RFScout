@@ -185,22 +185,28 @@ static bool valid_schema_v3_candidate( const cJSON *a_root )
     return true;
 }
 
-static active_config_state_t load_active_config( cJSON **a_root )
+static esp_err_t load_active_config( cJSON **a_root, active_config_state_t *a_state )
 {
-    if( NULL == a_root )
+    if( NULL == a_root || NULL == a_state )
     {
-        return ACTIVE_CONFIG_INVALID;
+        return ESP_ERR_INVALID_ARG;
     }
     *a_root = NULL;
 
     const esp_err_t result = load_json_document( RFSCOUT_CONFIG_PATH, a_root );
     if( ESP_ERR_NOT_FOUND == result )
     {
-        return ACTIVE_CONFIG_MISSING;
+        *a_state = ACTIVE_CONFIG_MISSING;
+        return ESP_OK;
+    }
+    if( ESP_ERR_INVALID_SIZE == result || ESP_ERR_INVALID_RESPONSE == result )
+    {
+        *a_state = ACTIVE_CONFIG_INVALID;
+        return ESP_OK;
     }
     if( ESP_OK != result )
     {
-        return ACTIVE_CONFIG_INVALID;
+        return result;
     }
 
     int version = 0;
@@ -208,13 +214,12 @@ static active_config_state_t load_active_config( cJSON **a_root )
     {
         cJSON_Delete( *a_root );
         *a_root = NULL;
-        return ACTIVE_CONFIG_INVALID;
+        *a_state = ACTIVE_CONFIG_INVALID;
+        return ESP_OK;
     }
-    if( version < (int)RFSCOUT_CONFIG_SCHEMA_VERSION )
-    {
-        return ACTIVE_CONFIG_OLDER;
-    }
-    return ACTIVE_CONFIG_CURRENT;
+    *a_state = ( version < (int)RFSCOUT_CONFIG_SCHEMA_VERSION ) ? ACTIVE_CONFIG_OLDER
+                                                                 : ACTIVE_CONFIG_CURRENT;
+    return ESP_OK;
 }
 
 static bool string_equals_any( const char *a_value, const char *const *a_values, size_t a_count )
@@ -741,26 +746,38 @@ static bool active_needs_legacy_nvs_theme( const cJSON *a_root )
     return !cJSON_IsString( theme );
 }
 
-static bool read_legacy_nvs_theme( rfscout_theme_id_t *a_theme, bool *a_quiet )
+static esp_err_t read_legacy_nvs_theme( rfscout_theme_id_t *a_theme,
+                                        bool *a_quiet,
+                                        bool *a_found )
 {
-    if( NULL == a_theme || NULL == a_quiet )
+    if( NULL == a_theme || NULL == a_quiet || NULL == a_found )
     {
-        return false;
+        return ESP_ERR_INVALID_ARG;
     }
 
+    *a_found = false;
     nvs_handle_t handle;
-    if( ESP_OK != nvs_open( LEGACY_THEME_NVS_NAMESPACE, NVS_READONLY, &handle ) )
+    esp_err_t result = nvs_open( LEGACY_THEME_NVS_NAMESPACE, NVS_READONLY, &handle );
+    if( ESP_ERR_NVS_NOT_FOUND == result )
     {
-        return false;
+        return ESP_OK;
+    }
+    if( ESP_OK != result )
+    {
+        return result;
     }
 
     char stored[ LEGACY_THEME_NVS_VALUE_CAPACITY ];
     size_t stored_length = sizeof( stored );
-    const esp_err_t result = nvs_get_str( handle, LEGACY_THEME_NVS_KEY, stored, &stored_length );
+    result = nvs_get_str( handle, LEGACY_THEME_NVS_KEY, stored, &stored_length );
     nvs_close( handle );
+    if( ESP_ERR_NVS_NOT_FOUND == result )
+    {
+        return ESP_OK;
+    }
     if( ESP_OK != result )
     {
-        return false;
+        return result;
     }
 
     *a_quiet = false;
@@ -768,28 +785,60 @@ static bool read_legacy_nvs_theme( rfscout_theme_id_t *a_theme, bool *a_quiet )
     {
         *a_theme = RFSCOUT_THEME_NIGHT;
         *a_quiet = true;
-        return true;
+        *a_found = true;
+        return ESP_OK;
     }
-    return ui_theme_from_config_name( stored, a_theme );
+    if( ui_theme_from_config_name( stored, a_theme ) )
+    {
+        *a_found = true;
+    }
+    return ESP_OK;
 }
 
-static bool apply_legacy_nvs_theme( cJSON *a_candidate, const cJSON *a_active )
+static esp_err_t apply_legacy_nvs_theme( cJSON *a_candidate, const cJSON *a_active )
 {
     if( !active_needs_legacy_nvs_theme( a_active ) )
     {
-        return true;
+        return ESP_OK;
     }
 
     rfscout_theme_id_t theme = RFSCOUT_THEME_INDOOR;
     bool quiet = false;
-    if( !read_legacy_nvs_theme( &theme, &quiet ) )
+    bool found = false;
+    const esp_err_t read_result = read_legacy_nvs_theme( &theme, &quiet, &found );
+    if( ESP_OK != read_result )
     {
-        return true;
+        return read_result;
+    }
+    if( !found )
+    {
+        return ESP_OK;
     }
 
     cJSON *display = cJSON_GetObjectItemCaseSensitive( a_candidate, "display" );
     cJSON *theme_item =
         cJSON_IsObject( display ) ? cJSON_GetObjectItemCaseSensitive( display, "theme" ) : NULL;
+    if( !cJSON_IsString( theme_item ) || NULL == theme_item->valuestring )
+    {
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+
+    rfscout_theme_id_t candidate_theme = RFSCOUT_THEME_COUNT;
+    if( !ui_theme_from_config_name( theme_item->valuestring, &candidate_theme ) )
+    {
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+
+    /* A schema-v1 JSON file has no visual theme, so NVS will often simply repeat the
+       visual theme that was already present in the quarantined v3 document. In that
+       unchanged case the NVS value carries no evidence that the user changed the
+       independent v3 audio policy or gains; preserve them. Discipline is different:
+       it explicitly carries legacy quiet semantics and must still be imported. */
+    if( !quiet && candidate_theme == theme )
+    {
+        return ESP_OK;
+    }
+
     cJSON *audio = cJSON_GetObjectItemCaseSensitive( a_candidate, "audio" );
     cJSON *policy =
         cJSON_IsObject( audio ) ? cJSON_GetObjectItemCaseSensitive( audio, "policy" ) : NULL;
@@ -800,12 +849,12 @@ static bool apply_legacy_nvs_theme( cJSON *a_candidate, const cJSON *a_active )
         cJSON_IsObject( audio )
             ? cJSON_GetObjectItemCaseSensitive( audio, "notification_gain_percent" )
             : NULL;
-    if( !cJSON_IsString( theme_item ) || !cJSON_IsString( policy ) ||
-        !cJSON_IsNumber( interaction ) || !cJSON_IsNumber( notification ) ||
+    if( !cJSON_IsString( policy ) || !cJSON_IsNumber( interaction ) ||
+        !cJSON_IsNumber( notification ) ||
         !cJSON_SetValuestring( theme_item, ui_theme_config_name( theme ) ) ||
         !cJSON_SetValuestring( policy, quiet ? "quiet" : "normal" ) )
     {
-        return false;
+        return ESP_ERR_INVALID_RESPONSE;
     }
 
     int interaction_gain = 35;
@@ -817,7 +866,7 @@ static bool apply_legacy_nvs_theme( cJSON *a_candidate, const cJSON *a_active )
               "imported schema-v1 NVS theme=%s audio_policy=%s before downgrade recovery",
               ui_theme_config_name( theme ),
               quiet ? "quiet" : "normal" );
-    return true;
+    return ESP_OK;
 }
 
 static bool normalize_legacy_theme( cJSON *a_root )
@@ -987,10 +1036,17 @@ esp_err_t device_config_recover_downgrade( void )
     {
         return ESP_OK;
     }
+    if( ESP_ERR_INVALID_SIZE == candidate_result || ESP_ERR_INVALID_RESPONSE == candidate_result )
+    {
+        ESP_LOGW( TAG, "ignoring malformed quarantined configuration" );
+        return ESP_OK;
+    }
     if( ESP_OK != candidate_result )
     {
-        ESP_LOGW( TAG, "ignoring unreadable quarantined configuration" );
-        return ESP_OK;
+        ESP_LOGW( TAG,
+                  "quarantined configuration read failed; preserving recovery state: %s",
+                  esp_err_to_name( candidate_result ) );
+        return candidate_result;
     }
     if( !valid_schema_v3_candidate( candidate ) )
     {
@@ -1000,7 +1056,16 @@ esp_err_t device_config_recover_downgrade( void )
     }
 
     cJSON *active = NULL;
-    const active_config_state_t active_state = load_active_config( &active );
+    active_config_state_t active_state = ACTIVE_CONFIG_INVALID;
+    const esp_err_t active_result = load_active_config( &active, &active_state );
+    if( ESP_OK != active_result )
+    {
+        cJSON_Delete( candidate );
+        ESP_LOGW( TAG,
+                  "active downgraded configuration read failed; preserving recovery state: %s",
+                  esp_err_to_name( active_result ) );
+        return active_result;
+    }
     if( ACTIVE_CONFIG_CURRENT == active_state )
     {
         cJSON_Delete( active );
@@ -1023,23 +1088,20 @@ esp_err_t device_config_recover_downgrade( void )
     }
     else
     {
-        if( !apply_legacy_nvs_theme( candidate, active ) )
-        {
-            result = ESP_ERR_INVALID_RESPONSE;
-        }
-        else if( !merge_object( candidate, active, "", true ) )
+        result = apply_legacy_nvs_theme( candidate, active );
+        if( ESP_OK == result && !merge_object( candidate, active, "", true ) )
         {
             result = ESP_ERR_NO_MEM;
         }
-        else if( !normalize_legacy_theme( candidate ) )
+        else if( ESP_OK == result && !normalize_legacy_theme( candidate ) )
         {
             result = ESP_ERR_INVALID_RESPONSE;
         }
-        else if( !valid_schema_v3_candidate( candidate ) )
+        else if( ESP_OK == result && !valid_schema_v3_candidate( candidate ) )
         {
             result = ESP_ERR_INVALID_RESPONSE;
         }
-        else
+        else if( ESP_OK == result )
         {
             result = restore_merged_candidate( candidate );
         }
