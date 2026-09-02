@@ -336,7 +336,7 @@ static bool timezone_pair_mergeable( const cJSON *a_target, const cJSON *a_sourc
         timezone_options_valid( source_options ) ? source_options : target_options;
     const cJSON *effective_selected =
         cJSON_IsString( source_selected ) && NULL != source_selected->valuestring ? source_selected
-                                                                                 : target_selected;
+                                                                                  : target_selected;
     return cJSON_IsString( effective_selected ) && NULL != effective_selected->valuestring &&
            timezone_selection_in_options( effective_options, effective_selected->valuestring );
 }
