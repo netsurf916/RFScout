@@ -199,8 +199,10 @@ void app_main( void )
         result = device_config_recover_downgrade();
         if( ESP_OK != result )
         {
-            ESP_LOGW(
-                TAG, "configuration downgrade recovery failed: %s", esp_err_to_name( result ) );
+            ESP_LOGE( TAG,
+                      "configuration downgrade recovery failed; preserving recovery state: %s",
+                      esp_err_to_name( result ) );
+            return;
         }
     }
 
