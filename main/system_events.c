@@ -34,7 +34,7 @@ static bool attention_pending;
 static bool power_state_known;
 static bool external_power;
 static bool thermal_state_known;
-static rfscout_app_availability_t thermal_state;
+static bool thermal_available;
 static portMUX_TYPE system_event_lock = portMUX_INITIALIZER_UNLOCKED;
 
 static bool is_system_state_event( const rfscout_event_t *a_event )
@@ -222,9 +222,8 @@ static void log_event( const rfscout_event_t *a_event,
     }
 }
 
-static void on_event( const rfscout_event_t *a_event, void *a_context )
+static void record_event( const rfscout_event_t *a_event, bool a_allow_notification )
 {
-    (void)a_context;
     if( !is_system_state_event( a_event ) )
     {
         return;
@@ -245,7 +244,7 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
         ++history_count;
     }
 
-    if( notifications_enabled && notification_eligible( a_event ) )
+    if( a_allow_notification && notifications_enabled && notification_eligible( a_event ) )
     {
         notification.active = true;
         notification.severity = severity;
@@ -257,6 +256,18 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
     portEXIT_CRITICAL( &system_event_lock );
 
     log_event( a_event, severity, title, detail );
+}
+
+static void record_discovery( rfscout_event_type_t a_type, uint8_t a_source, int32_t a_value )
+{
+    const rfscout_event_t event = { .type = a_type, .source = a_source, .value = a_value };
+    record_event( &event, false );
+}
+
+static void on_event( const rfscout_event_t *a_event, void *a_context )
+{
+    (void)a_context;
+    record_event( a_event, true );
 }
 
 esp_err_t system_events_init( void )
@@ -297,11 +308,19 @@ void system_events_poll( void )
     battery_status_t battery;
     if( battery_get_status( &battery ) && battery.charger_available )
     {
-        if( !power_state_known || external_power != battery.external_power )
+        const int32_t percentage = battery.available ? (int32_t)battery.percentage : -1;
+        if( !power_state_known )
         {
             power_state_known = true;
             external_power = battery.external_power;
-            const int32_t percentage = battery.available ? (int32_t)battery.percentage : -1;
+            record_discovery( external_power ? RFSCOUT_EVENT_POWER_CONNECTED
+                                             : RFSCOUT_EVENT_POWER_DISCONNECTED,
+                              RFSCOUT_EVENT_SOURCE_SYSTEM,
+                              percentage );
+        }
+        else if( external_power != battery.external_power )
+        {
+            external_power = battery.external_power;
             rfscout_event_emit( external_power ? RFSCOUT_EVENT_POWER_CONNECTED
                                                : RFSCOUT_EVENT_POWER_DISCONNECTED,
                                 RFSCOUT_EVENT_SOURCE_SYSTEM,
@@ -313,11 +332,18 @@ void system_events_poll( void )
         app_framework_availability( RFSCOUT_APP_THERMAL );
     if( RFSCOUT_APP_AVAILABILITY_UNKNOWN != current_thermal )
     {
-        if( !thermal_state_known || thermal_state != current_thermal )
+        const bool available = RFSCOUT_APP_AVAILABILITY_AVAILABLE == current_thermal;
+        if( !thermal_state_known )
         {
             thermal_state_known = true;
-            thermal_state = current_thermal;
-            const bool available = RFSCOUT_APP_AVAILABILITY_AVAILABLE == current_thermal;
+            thermal_available = available;
+            record_discovery( available ? RFSCOUT_EVENT_APP_AVAILABLE : RFSCOUT_EVENT_APP_UNAVAILABLE,
+                              (uint8_t)RFSCOUT_APP_THERMAL,
+                              (int32_t)current_thermal );
+        }
+        else if( thermal_available != available )
+        {
+            thermal_available = available;
             rfscout_event_emit( available ? RFSCOUT_EVENT_APP_AVAILABLE
                                           : RFSCOUT_EVENT_APP_UNAVAILABLE,
                                 (uint8_t)RFSCOUT_APP_THERMAL,
