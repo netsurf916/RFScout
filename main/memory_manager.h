@@ -49,9 +49,6 @@ typedef struct
  */
 esp_err_t memory_manager_init( void );
 
-/** @brief Construct a platform/service-lifetime allocation owner. */
-rfscout_memory_owner_t memory_manager_platform_owner( void );
-
 /** @brief Construct an application-lifetime allocation owner. */
 rfscout_memory_owner_t memory_manager_app_owner( rfscout_app_id_t a_app );
 
