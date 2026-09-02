@@ -78,7 +78,10 @@ static uint8_t policy_source_for_event( const rfscout_event_t *a_event )
 {
     if( is_system_state_feedback( a_event->type ) )
     {
-        return RFSCOUT_EVENT_SOURCE_SYSTEM;
+        /* System-state feedback is presented in the context of the visible app.
+           Recorder deliberately disables general-event feedback while recording
+           or monitoring so hardware-state chirps cannot contaminate microphone capture. */
+        return (uint8_t)app_manager_current();
     }
     if( ( RFSCOUT_EVENT_SOURCE_SYSTEM == a_event->source ) &&
         ( ( RFSCOUT_EVENT_INPUT_LOCKED == a_event->type ) ||
