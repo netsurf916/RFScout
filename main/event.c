@@ -23,6 +23,40 @@ typedef struct
 static event_observer_t observers[ RFSCOUT_EVENT_OBSERVER_MAX ];
 static portMUX_TYPE event_lock = portMUX_INITIALIZER_UNLOCKED;
 
+rfscout_audio_category_t rfscout_event_audio_category( rfscout_event_type_t a_type )
+{
+    switch( a_type )
+    {
+        case RFSCOUT_EVENT_NAVIGATE:
+        case RFSCOUT_EVENT_ACTIVATE:
+        case RFSCOUT_EVENT_ENTER:
+        case RFSCOUT_EVENT_BACK:
+        case RFSCOUT_EVENT_ENABLE:
+        case RFSCOUT_EVENT_DISABLE:
+        case RFSCOUT_EVENT_INPUT_LOCKED:
+        case RFSCOUT_EVENT_INPUT_UNLOCKED:
+            return RFSCOUT_AUDIO_CATEGORY_UI;
+        case RFSCOUT_EVENT_DETECTED:
+        case RFSCOUT_EVENT_POWER_CONNECTED:
+        case RFSCOUT_EVENT_POWER_DISCONNECTED:
+        case RFSCOUT_EVENT_STORAGE_MOUNTED:
+        case RFSCOUT_EVENT_STORAGE_UNMOUNTED:
+        case RFSCOUT_EVENT_APP_AVAILABLE:
+        case RFSCOUT_EVENT_APP_UNAVAILABLE:
+            return RFSCOUT_AUDIO_CATEGORY_EVENT;
+        case RFSCOUT_EVENT_NOTIFICATION:
+        case RFSCOUT_EVENT_WARNING:
+        case RFSCOUT_EVENT_ERROR:
+        case RFSCOUT_EVENT_STORAGE_MOUNT_FAILED:
+            return RFSCOUT_AUDIO_CATEGORY_ALERT;
+        case RFSCOUT_EVENT_THEME_CHANGED:
+        case RFSCOUT_EVENT_AUDIO_POLICY_CHANGED:
+        case RFSCOUT_EVENT_TYPE_COUNT:
+        default:
+            return RFSCOUT_AUDIO_CATEGORY_COUNT;
+    }
+}
+
 bool rfscout_event_subscribe( rfscout_event_handler_t a_handler, void *a_context )
 {
     if( NULL == a_handler )

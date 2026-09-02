@@ -35,32 +35,34 @@
 #define DEVICE_ITEM_OFF_TIMEOUT 3U
 #define DEVICE_ITEM_THEME 4U
 #define DEVICE_ITEM_AUDIO_POLICY 5U
-#define DEVICE_ITEM_CLOCK_FORMAT 6U
-#define DEVICE_ITEM_TIMEZONE 7U
-#define DEVICE_ITEM_STARTUP 8U
-#define DEVICE_ITEM_YEAR 9U
-#define DEVICE_ITEM_MONTH 10U
-#define DEVICE_ITEM_DAY 11U
-#define DEVICE_ITEM_HOUR 12U
-#define DEVICE_ITEM_MINUTE 13U
-#define DEVICE_ITEM_WIFI 14U
-#define DEVICE_ITEM_CC1101 15U
-#define DEVICE_ITEM_NRF24 16U
-#define DEVICE_ITEM_AUDIO 17U
-#define DEVICE_ITEM_THERMAL 18U
-#define DEVICE_ITEM_LOGGING 19U
-#define DEVICE_ITEM_ALERT_MODE 20U
-#define DEVICE_ITEM_ALERT_VOLUME 21U
-#define DEVICE_ITEM_POWER_BUTTON 22U
-#define DEVICE_ITEM_POWER_POLICY 23U
-#define DEVICE_ITEM_SAVE 24U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 25U
+#define DEVICE_ITEM_UI_VOLUME 6U
+#define DEVICE_ITEM_EVENT_VOLUME 7U
+#define DEVICE_ITEM_ALERT_MODE 8U
+#define DEVICE_ITEM_ALERT_VOLUME 9U
+#define DEVICE_ITEM_CLOCK_FORMAT 10U
+#define DEVICE_ITEM_TIMEZONE 11U
+#define DEVICE_ITEM_STARTUP 12U
+#define DEVICE_ITEM_YEAR 13U
+#define DEVICE_ITEM_MONTH 14U
+#define DEVICE_ITEM_DAY 15U
+#define DEVICE_ITEM_HOUR 16U
+#define DEVICE_ITEM_MINUTE 17U
+#define DEVICE_ITEM_WIFI 18U
+#define DEVICE_ITEM_CC1101 19U
+#define DEVICE_ITEM_NRF24 20U
+#define DEVICE_ITEM_AUDIO 21U
+#define DEVICE_ITEM_THERMAL 22U
+#define DEVICE_ITEM_LOGGING 23U
+#define DEVICE_ITEM_POWER_BUTTON 24U
+#define DEVICE_ITEM_POWER_POLICY 25U
+#define DEVICE_ITEM_SAVE 26U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 27U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
 #define DEVICE_ITEM_COUNT ( DEVICE_ITEM_SAVE + 1U )
 #define DEVICE_ROWS_PER_PAGE 6U
 #define DEVICE_LOG_SHUTDOWN_TIMEOUT_MS 3000U
-#define DEVICE_ALERT_VOLUME_STEP 10
+#define DEVICE_AUDIO_VOLUME_STEP 10
 
 #define POWER_MENU_BACK 0U
 #define POWER_MENU_SHORT_PRESS 1U
@@ -199,10 +201,11 @@ static char next_morse_character( char a_current, int a_direction )
 
 static bool item_direct_toggle( unsigned a_item )
 {
-    return ( DEVICE_ITEM_AUDIO_POLICY == a_item ) || ( DEVICE_ITEM_CLOCK_FORMAT == a_item ) ||
-           ( DEVICE_ITEM_WIFI == a_item ) || ( DEVICE_ITEM_CC1101 == a_item ) ||
-           ( DEVICE_ITEM_NRF24 == a_item ) || ( DEVICE_ITEM_AUDIO == a_item ) ||
-           ( DEVICE_ITEM_THERMAL == a_item ) || ( DEVICE_ITEM_LOGGING == a_item );
+    return ( DEVICE_ITEM_AUDIO_POLICY == a_item ) || ( DEVICE_ITEM_ALERT_MODE == a_item ) ||
+           ( DEVICE_ITEM_CLOCK_FORMAT == a_item ) || ( DEVICE_ITEM_WIFI == a_item ) ||
+           ( DEVICE_ITEM_CC1101 == a_item ) || ( DEVICE_ITEM_NRF24 == a_item ) ||
+           ( DEVICE_ITEM_AUDIO == a_item ) || ( DEVICE_ITEM_THERMAL == a_item ) ||
+           ( DEVICE_ITEM_LOGGING == a_item );
 }
 
 static bool item_editable( unsigned a_item )
@@ -227,6 +230,14 @@ static const char *item_label( unsigned a_item )
             return "Theme";
         case DEVICE_ITEM_AUDIO_POLICY:
             return "Audio policy";
+        case DEVICE_ITEM_UI_VOLUME:
+            return "UI volume";
+        case DEVICE_ITEM_EVENT_VOLUME:
+            return "Event volume";
+        case DEVICE_ITEM_ALERT_MODE:
+            return "Alerts";
+        case DEVICE_ITEM_ALERT_VOLUME:
+            return "Alert volume";
         case DEVICE_ITEM_CLOCK_FORMAT:
             return "Clock format";
         case DEVICE_ITEM_TIMEZONE:
@@ -255,10 +266,6 @@ static const char *item_label( unsigned a_item )
             return "Thermal";
         case DEVICE_ITEM_LOGGING:
             return "SD logging";
-        case DEVICE_ITEM_ALERT_MODE:
-            return "Notifications";
-        case DEVICE_ITEM_ALERT_VOLUME:
-            return "Alert volume";
         case DEVICE_ITEM_POWER_BUTTON:
             return "Power button";
         case DEVICE_ITEM_POWER_POLICY:
@@ -296,6 +303,20 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
         case DEVICE_ITEM_AUDIO_POLICY:
             snprintf(
                 a_value, a_capacity, "%s", audio_policy_display_name( config->audio_policy ) );
+            break;
+        case DEVICE_ITEM_UI_VOLUME:
+            snprintf(
+                a_value, a_capacity, "%u%%", (unsigned)config->audio_interaction_gain_percent );
+            break;
+        case DEVICE_ITEM_EVENT_VOLUME:
+            snprintf(
+                a_value, a_capacity, "%u%%", (unsigned)config->audio_notification_gain_percent );
+            break;
+        case DEVICE_ITEM_ALERT_MODE:
+            snprintf( a_value, a_capacity, "%s", alert_mode_name( config->alert_mode ) );
+            break;
+        case DEVICE_ITEM_ALERT_VOLUME:
+            snprintf( a_value, a_capacity, "%u%%", (unsigned)config->alert_volume_percent );
             break;
         case DEVICE_ITEM_CLOCK_FORMAT:
             snprintf( a_value, a_capacity, "%s", config->clock_24h ? "24h" : "12h" );
@@ -350,12 +371,6 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
         case DEVICE_ITEM_LOGGING:
             snprintf( a_value, a_capacity, "%s", on_off( config->logging_enabled ) );
             break;
-        case DEVICE_ITEM_ALERT_MODE:
-            snprintf( a_value, a_capacity, "%s", alert_mode_name( config->alert_mode ) );
-            break;
-        case DEVICE_ITEM_ALERT_VOLUME:
-            snprintf( a_value, a_capacity, "%u%%", (unsigned)config->alert_volume_percent );
-            break;
         case DEVICE_ITEM_SAVE:
             snprintf( a_value, a_capacity, "%s", storage_is_available() ? "SD" : "No SD" );
             break;
@@ -365,9 +380,19 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             {
                 const rfscout_notification_type_t type = notification_for_item( a_item );
                 const char character = device_config_notification_character( type );
-                const char *pattern = morse_pattern( character );
-                snprintf(
-                    a_value, a_capacity, "%c %s", character, ( NULL != pattern ) ? pattern : "?" );
+                if( ' ' == character )
+                {
+                    snprintf( a_value, a_capacity, "OFF" );
+                }
+                else
+                {
+                    const char *pattern = morse_pattern( character );
+                    snprintf( a_value,
+                              a_capacity,
+                              "%c %s",
+                              character,
+                              ( NULL != pattern ) ? pattern : "?" );
+                }
             }
             break;
     }
@@ -713,6 +738,74 @@ static void adjust_audio_policy( int a_delta )
     emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
 }
 
+static void adjust_audio_volume( rfscout_audio_category_t a_category, int a_delta )
+{
+    const device_config_t *config = device_config_get();
+    uint8_t old_value;
+    const char *key;
+    switch( a_category )
+    {
+        case RFSCOUT_AUDIO_CATEGORY_UI:
+            old_value = config->audio_interaction_gain_percent;
+            key = "audio.ui_volume";
+            break;
+        case RFSCOUT_AUDIO_CATEGORY_EVENT:
+            old_value = config->audio_notification_gain_percent;
+            key = "audio.event_volume";
+            break;
+        case RFSCOUT_AUDIO_CATEGORY_ALERT:
+            old_value = config->alert_volume_percent;
+            key = "audio.alert_volume";
+            break;
+        case RFSCOUT_AUDIO_CATEGORY_CONTENT:
+        case RFSCOUT_AUDIO_CATEGORY_COUNT:
+        default:
+            return;
+    }
+
+    int value =
+        (int)old_value + ( ( a_delta > 0 ) ? DEVICE_AUDIO_VOLUME_STEP : -DEVICE_AUDIO_VOLUME_STEP );
+    if( value < 0 )
+    {
+        value = 0;
+    }
+    if( value > 100 )
+    {
+        value = 100;
+    }
+    if( value == old_value )
+    {
+        return;
+    }
+
+    esp_err_t result = ESP_ERR_INVALID_ARG;
+    if( RFSCOUT_AUDIO_CATEGORY_UI == a_category )
+    {
+        result = device_config_set_audio_gains( (uint8_t)value,
+                                                config->audio_notification_gain_percent );
+    }
+    else if( RFSCOUT_AUDIO_CATEGORY_EVENT == a_category )
+    {
+        result =
+            device_config_set_audio_gains( config->audio_interaction_gain_percent, (uint8_t)value );
+    }
+    else if( RFSCOUT_AUDIO_CATEGORY_ALERT == a_category )
+    {
+        result = device_config_set_alert_volume( (uint8_t)value );
+    }
+    if( ESP_OK != result )
+    {
+        return;
+    }
+
+    char old_text[ 8 ];
+    char new_text[ 8 ];
+    snprintf( old_text, sizeof( old_text ), "%u", (unsigned)old_value );
+    snprintf( new_text, sizeof( new_text ), "%u", (unsigned)value );
+    log_config_change( key, old_text, new_text );
+    emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
+}
+
 static void adjust_startup_app( int a_delta )
 {
     const rfscout_app_id_t old_app = device_config_startup_app();
@@ -913,34 +1006,6 @@ static void adjust_alert_mode( int a_delta )
     }
 }
 
-static void adjust_alert_volume( int a_delta )
-{
-    const uint8_t old_value = device_config_get()->alert_volume_percent;
-    int value =
-        (int)old_value + ( ( a_delta > 0 ) ? DEVICE_ALERT_VOLUME_STEP : -DEVICE_ALERT_VOLUME_STEP );
-    if( value < 0 )
-    {
-        value = 0;
-    }
-    if( value > RFSCOUT_ALERT_VOLUME_MAX_PERCENT )
-    {
-        value = RFSCOUT_ALERT_VOLUME_MAX_PERCENT;
-    }
-    if( value == old_value )
-    {
-        return;
-    }
-    if( ESP_OK == device_config_set_alert_volume( (uint8_t)value ) )
-    {
-        char old_text[ 8 ];
-        char new_text[ 8 ];
-        snprintf( old_text, sizeof( old_text ), "%u", (unsigned)old_value );
-        snprintf( new_text, sizeof( new_text ), "%u", (unsigned)value );
-        log_config_change( "notifications.volume", old_text, new_text );
-        emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
-    }
-}
-
 static void adjust_notification_character( unsigned a_item, int a_delta )
 {
     const rfscout_notification_type_t type = notification_for_item( a_item );
@@ -1007,6 +1072,22 @@ static void adjust_selected( int a_delta )
     {
         adjust_audio_policy( a_delta );
     }
+    else if( DEVICE_ITEM_UI_VOLUME == selected_item )
+    {
+        adjust_audio_volume( RFSCOUT_AUDIO_CATEGORY_UI, a_delta );
+    }
+    else if( DEVICE_ITEM_EVENT_VOLUME == selected_item )
+    {
+        adjust_audio_volume( RFSCOUT_AUDIO_CATEGORY_EVENT, a_delta );
+    }
+    else if( DEVICE_ITEM_ALERT_MODE == selected_item )
+    {
+        adjust_alert_mode( a_delta );
+    }
+    else if( DEVICE_ITEM_ALERT_VOLUME == selected_item )
+    {
+        adjust_audio_volume( RFSCOUT_AUDIO_CATEGORY_ALERT, a_delta );
+    }
     else if( DEVICE_ITEM_CLOCK_FORMAT == selected_item )
     {
         const bool old_value = config->clock_24h;
@@ -1052,14 +1133,6 @@ static void adjust_selected( int a_delta )
     else if( DEVICE_ITEM_LOGGING == selected_item )
     {
         toggle_logging();
-    }
-    else if( DEVICE_ITEM_ALERT_MODE == selected_item )
-    {
-        adjust_alert_mode( a_delta );
-    }
-    else if( DEVICE_ITEM_ALERT_VOLUME == selected_item )
-    {
-        adjust_alert_volume( a_delta );
     }
     else if( ( selected_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
              ( selected_item <= DEVICE_ITEM_NOTIFICATION_LAST ) )

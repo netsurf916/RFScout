@@ -1,6 +1,6 @@
 /**
-    alert.c : RFScout audible notification presentation policy
-    Description: Resolves semantic notification events through app, global, and device audio policy into requests.
+    alert.c : RFScout alert-class audio presentation policy
+    Description: Resolves semantic alerts through app, global, and device audio policy into requests.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -26,6 +26,7 @@
 #define ALERT_MORSE_WPM 20U
 #define ALERT_MORSE_UNIT_MS ( 1200U / ALERT_MORSE_WPM )
 #define ALERT_MORSE_DEFAULT_CHARACTER 'S'
+#define ALERT_AUDIO_OFF ' '
 
 static const char *TAG = "alert";
 static rfscout_alert_mode_t mode = RFSCOUT_ALERT_OFF;
@@ -33,21 +34,19 @@ static uint8_t volume_percent = RFSCOUT_ALERT_VOLUME_DEFAULT_PERCENT;
 static char morse_character = ALERT_MORSE_DEFAULT_CHARACTER;
 static SemaphoreHandle_t alert_mutex;
 
-static uint8_t effective_notification_volume_locked( void )
+static uint8_t effective_alert_volume_locked( void )
 {
-    const rfscout_audio_policy_t *policy = audio_policy_get( device_config_audio_policy() );
-    if( ( NULL == policy ) || !policy->notification_audio )
+    if( !audio_policy_category_enabled( device_config_audio_policy(),
+                                        RFSCOUT_AUDIO_CATEGORY_ALERT ) )
     {
         return 0U;
     }
-    return (uint8_t)( ( (uint16_t)volume_percent *
-                        device_config_get()->audio_notification_gain_percent ) /
-                      100U );
+    return volume_percent;
 }
 
 static bool request_generic_locked( char a_character )
 {
-    const uint8_t effective_volume = effective_notification_volume_locked();
+    const uint8_t effective_volume = effective_alert_volume_locked();
     if( ( RFSCOUT_ALERT_OFF == mode ) || ( 0U == effective_volume ) )
     {
         return true;
@@ -55,23 +54,24 @@ static bool request_generic_locked( char a_character )
 
     if( RFSCOUT_ALERT_TONE == mode )
     {
-        return audio_output_play_tone(
+        return audio_output_play_notification_tone(
             ALERT_TONE_FREQUENCY_HZ, ALERT_TONE_DURATION_MS, effective_volume );
     }
     if( RFSCOUT_ALERT_MORSE == mode && alert_morse_character_supported( a_character ) )
     {
-        return audio_output_play_morse( (char)toupper( (unsigned char)a_character ),
-                                        ALERT_TONE_FREQUENCY_HZ,
-                                        ALERT_MORSE_UNIT_MS,
-                                        effective_volume );
+        return audio_output_play_notification_morse( (char)toupper( (unsigned char)a_character ),
+                                                     ALERT_TONE_FREQUENCY_HZ,
+                                                     ALERT_MORSE_UNIT_MS,
+                                                     effective_volume );
     }
     return false;
 }
 
 static bool request_notification_locked( char a_character )
 {
-    const uint8_t effective_volume = effective_notification_volume_locked();
-    if( ( RFSCOUT_ALERT_OFF == mode ) || ( 0U == effective_volume ) )
+    const uint8_t effective_volume = effective_alert_volume_locked();
+    if( ( ALERT_AUDIO_OFF == a_character ) || ( RFSCOUT_ALERT_OFF == mode ) ||
+        ( 0U == effective_volume ) )
     {
         return true;
     }
@@ -101,8 +101,8 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
 
     if( RFSCOUT_EVENT_AUDIO_POLICY_CHANGED == a_event->type )
     {
-        const rfscout_audio_policy_t *policy = audio_policy_get( device_config_audio_policy() );
-        if( ( NULL == policy ) || !policy->notification_audio )
+        if( !audio_policy_category_enabled( device_config_audio_policy(),
+                                            RFSCOUT_AUDIO_CATEGORY_ALERT ) )
         {
             audio_output_cancel_notifications_pending();
         }
@@ -129,8 +129,8 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
         return;
     }
 
-    /* Intentional application playback owns the speaker. Notification priorities can be expanded
-       later, but routine detection alerts must not contaminate or queue behind content audio. */
+    /* Intentional application playback owns the speaker. Alert audio is disposable
+       and must not contaminate or queue behind content audio. */
     if( audio_output_playback_active() )
     {
         return;
@@ -138,7 +138,7 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
 
     if( ( NULL == alert_mutex ) || ( pdTRUE != xSemaphoreTake( alert_mutex, 0U ) ) )
     {
-        ESP_LOGW( TAG, "notification dropped while alert policy busy: %s", descriptor->label );
+        ESP_LOGW( TAG, "alert dropped while presentation policy busy: %s", descriptor->label );
         return;
     }
 
@@ -147,7 +147,7 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
     (void)xSemaphoreGive( alert_mutex );
     if( !queued )
     {
-        ESP_LOGW( TAG, "notification audio dropped: %s", descriptor->label );
+        ESP_LOGW( TAG, "alert audio dropped: %s", descriptor->label );
     }
 }
 

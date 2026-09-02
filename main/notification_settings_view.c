@@ -1,6 +1,6 @@
 /**
-    notification_settings_view.c : RFScout application notification settings view
-    Description: Renders per-app notification enablement and Morse mappings.
+    notification_settings_view.c : RFScout application alert settings view
+    Description: Renders per-app alert enablement and audio/Morse mappings.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -117,9 +117,17 @@ void notification_settings_view_render( rfscout_app_id_t a_app,
         }
 
         const char character = device_config_notification_character( descriptor->type );
-        const char *pattern = morse_pattern( character );
         char value[ 24 ];
-        snprintf( value, sizeof( value ), "%c %s", character, ( NULL != pattern ) ? pattern : "?" );
+        if( ' ' == character )
+        {
+            snprintf( value, sizeof( value ), "OFF" );
+        }
+        else
+        {
+            const char *pattern = morse_pattern( character );
+            snprintf(
+                value, sizeof( value ), "%c %s", character, ( NULL != pattern ) ? pattern : "?" );
+        }
         display_draw_text( UI_LAYOUT_LABEL_X, y, descriptor->label, foreground, 1U );
         display_draw_text( 232, y, value, active ? theme->selected : theme->secondary, 1U );
     }
@@ -130,7 +138,7 @@ void notification_settings_view_render( rfscout_app_id_t a_app,
               "%u/%u  %s",
               (unsigned)( a_selected + 1U ),
               item_count,
-              a_editing ? "TURN CHARACTER / CENTER DONE" : "TURN SELECT / CENTER ENTER" );
+              a_editing ? "TURN AUDIO / CENTER DONE" : "TURN SELECT / CENTER ENTER" );
     display_draw_text( UI_LAYOUT_LEFT_X,
                        UI_LAYOUT_FOOTER_Y,
                        footer,

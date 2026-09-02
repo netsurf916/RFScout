@@ -1,6 +1,6 @@
 /**
     feedback.c : RFScout semantic feedback policy
-    Description: Maps accepted UI/state and general events to disposable procedural sounds.
+    Description: Maps accepted UI/device, event, and warning/error semantics to disposable sounds.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -53,7 +53,19 @@ static bool is_system_state_feedback( rfscout_event_type_t a_type )
     }
 }
 
-static bool app_allows_feedback( uint8_t a_source, bool a_general_event )
+static uint8_t policy_source_for_event( const rfscout_event_t *a_event )
+{
+    if( is_system_state_feedback( a_event->type ) ||
+        ( ( RFSCOUT_EVENT_SOURCE_SYSTEM == a_event->source ) &&
+          ( ( RFSCOUT_EVENT_INPUT_LOCKED == a_event->type ) ||
+            ( RFSCOUT_EVENT_INPUT_UNLOCKED == a_event->type ) ) ) )
+    {
+        return (uint8_t)app_manager_current();
+    }
+    return a_event->source;
+}
+
+static bool app_allows_category( uint8_t a_source, rfscout_audio_category_t a_category )
 {
     if( RFSCOUT_EVENT_SOURCE_SYSTEM == a_source )
     {
@@ -63,36 +75,25 @@ static bool app_allows_feedback( uint8_t a_source, bool a_general_event )
     {
         return false;
     }
-
-    const rfscout_app_audio_policy_t *app = app_audio_policy_get( (rfscout_app_id_t)a_source );
-    return a_general_event ? app->general_event_feedback : app->interaction_feedback;
+    return app_audio_policy_allows( (rfscout_app_id_t)a_source, a_category );
 }
 
-static bool is_general_event( rfscout_event_type_t a_type )
+static uint8_t category_volume( rfscout_audio_category_t a_category )
 {
-    return ( RFSCOUT_EVENT_DETECTED == a_type ) || ( RFSCOUT_EVENT_WARNING == a_type ) ||
-           ( RFSCOUT_EVENT_ERROR == a_type ) || is_system_state_feedback( a_type );
-}
-
-static uint8_t policy_source_for_event( const rfscout_event_t *a_event )
-{
-    if( is_system_state_feedback( a_event->type ) )
+    const device_config_t *config = device_config_get();
+    switch( a_category )
     {
-        /* System-state feedback is presented in the context of the visible app.
-           Recorder deliberately disables general-event feedback while recording
-           or monitoring so hardware-state chirps cannot contaminate microphone capture. */
-        return (uint8_t)app_manager_current();
+        case RFSCOUT_AUDIO_CATEGORY_UI:
+            return config->audio_interaction_gain_percent;
+        case RFSCOUT_AUDIO_CATEGORY_EVENT:
+            return config->audio_notification_gain_percent;
+        case RFSCOUT_AUDIO_CATEGORY_ALERT:
+            return config->alert_volume_percent;
+        case RFSCOUT_AUDIO_CATEGORY_CONTENT:
+        case RFSCOUT_AUDIO_CATEGORY_COUNT:
+        default:
+            return 0U;
     }
-    if( ( RFSCOUT_EVENT_SOURCE_SYSTEM == a_event->source ) &&
-        ( ( RFSCOUT_EVENT_INPUT_LOCKED == a_event->type ) ||
-          ( RFSCOUT_EVENT_INPUT_UNLOCKED == a_event->type ) ) )
-    {
-        /* Lock state is system-owned, but its feedback happens in the context of
-           the visible app. Respect quiet app policy so Recorder never captures
-           a lock/unlock chirp while recording or monitoring. */
-        return (uint8_t)app_manager_current();
-    }
-    return a_event->source;
 }
 
 static void on_event( const rfscout_event_t *a_event, void *a_context )
@@ -105,8 +106,9 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
 
     if( RFSCOUT_EVENT_AUDIO_POLICY_CHANGED == a_event->type )
     {
-        const rfscout_audio_policy_t *policy = audio_policy_get( device_config_audio_policy() );
-        if( ( NULL == policy ) || !policy->interaction_audio )
+        if( !audio_policy_category_enabled( device_config_audio_policy(), RFSCOUT_AUDIO_CATEGORY_UI ) ||
+            !audio_policy_category_enabled( device_config_audio_policy(), RFSCOUT_AUDIO_CATEGORY_EVENT ) ||
+            !audio_policy_category_enabled( device_config_audio_policy(), RFSCOUT_AUDIO_CATEGORY_ALERT ) )
         {
             audio_output_cancel_feedback_pending();
         }
@@ -118,17 +120,20 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
         return;
     }
 
-    const rfscout_audio_policy_t *policy = audio_policy_get( device_config_audio_policy() );
-    const uint8_t interaction_gain = device_config_get()->audio_interaction_gain_percent;
-    if( ( NULL == policy ) || !policy->interaction_audio || ( 0U == interaction_gain ) ||
-        !app_allows_feedback( policy_source_for_event( a_event ),
-                              is_general_event( a_event->type ) ) )
+    const rfscout_audio_category_t category = rfscout_event_audio_category( a_event->type );
+    if( ( RFSCOUT_AUDIO_CATEGORY_COUNT == category ) ||
+        ( RFSCOUT_EVENT_NOTIFICATION == a_event->type ) )
     {
         return;
     }
 
-    /* Intentional application audio owns the speaker. Feedback is disposable
-       and must never queue behind playback for later surprise output. */
+    const uint8_t volume = category_volume( category );
+    if( !audio_policy_category_enabled( device_config_audio_policy(), category ) ||
+        ( 0U == volume ) || !app_allows_category( policy_source_for_event( a_event ), category ) )
+    {
+        return;
+    }
+
     if( audio_output_playback_active() )
     {
         return;
@@ -197,7 +202,14 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
             return;
     }
 
-    (void)audio_output_play_feedback_tone( frequency, duration, interaction_gain );
+    if( RFSCOUT_AUDIO_CATEGORY_ALERT == category )
+    {
+        (void)audio_output_play_notification_tone( frequency, duration, volume );
+    }
+    else
+    {
+        (void)audio_output_play_feedback_tone( frequency, duration, volume );
+    }
 }
 
 esp_err_t feedback_init( void )
