@@ -10,6 +10,8 @@
 #ifndef _RFSCOUT_EVENT_H_
 #define _RFSCOUT_EVENT_H_
 
+#include "audio_policy.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -49,6 +51,9 @@ typedef struct
 } rfscout_event_t;
 
 typedef void ( *rfscout_event_handler_t )( const rfscout_event_t *a_event, void *a_context );
+
+/** @brief Return the semantic audio class for an event, or COUNT when it is silent by definition. */
+rfscout_audio_category_t rfscout_event_audio_category( rfscout_event_type_t a_type );
 
 /** @brief Register one synchronous semantic-event observer. */
 bool rfscout_event_subscribe( rfscout_event_handler_t a_handler, void *a_context );

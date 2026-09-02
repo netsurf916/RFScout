@@ -81,7 +81,16 @@ RFScout is still pre-1.0. The configuration format may continue to change while 
 }
 ```
 
-Notification Morse-character maps are also stored beneath the owning application and are omitted above for brevity. The top-level `audio` object is device audio presentation policy/gain state; it is separate from the historical `apps.audio` key that represents Recorder internally.
+Alert Morse-character maps are also stored beneath the owning application and are omitted above for brevity. The top-level `audio` object is device audio presentation policy/gain state; it is separate from the historical `apps.audio` key that represents Recorder internally.
+
+The semantic audio model now distinguishes **UI/device**, **Event**, **Alert**, and **Content** audio. The current schema-v3 names predate that classification, so the persisted fields map as follows during this pre-1.0 transition:
+
+- `audio.interaction_gain_percent` is the global **UI volume**;
+- `audio.notification_gain_percent` is the global **Event volume**;
+- `notifications.volume` is the global **Alert volume**;
+- Recorder/content volume remains application-owned.
+
+Application and event APIs use the semantic class names rather than these historical persistence names so the JSON keys can be cleaned up in a later schema revision without leaking storage terminology into app code.
 
 ## Loading and migration
 
@@ -98,15 +107,15 @@ If the document cannot be parsed, claims an unsupported schema, or otherwise can
 
 The normal save path still uses `rfscout.json.tmp` and `rfscout.json.bak` transiently to avoid replacing the active file with a partial write. Those are implementation details, not persistent compatibility copies. Startup also removes legacy `rfscout.json.bad`, `rfscout.json.downgrade`, and `rfscout.json.recovering` artifacts left by development builds so the SD card does not accumulate configuration sidecars.
 
-The current schema-v2 -> schema-v3 loader retains a useful best-effort migration for the visual-theme/audio-policy split. Schema-v2 Indoor, Outdoor, and Night configurations retain their visual theme and migrate to **Normal** while preserving their previous effective sound levels:
+The current schema-v2 -> schema-v3 loader retains a useful best-effort migration for the visual-theme/audio-policy split. Schema-v2 Indoor, Outdoor, and Night configurations retain their visual theme and migrate to **Normal** while carrying forward the two gain values introduced by that migration:
 
-| Legacy theme | Interaction gain | Notification environmental gain |
+| Legacy theme | `interaction_gain_percent` | `notification_gain_percent` |
 | --- | ---: | ---: |
 | Indoor | 35% | 100% |
 | Outdoor | 55% | 100% |
 | Night | 20% | 60% |
 
-Legacy Discipline maps to **Night + Quiet** and retains the Night-equivalent 20% / 60% gain state underneath Quiet. This means changing the migrated policy back to Normal later produces the same Night-level sound that existed before the separation rather than an unexpected loudness jump.
+Under the semantic audio classification, those retained values become the initial UI and Event volumes respectively. Legacy Discipline maps to **Night + Quiet** and retains the Night-equivalent 20% / 60% values underneath Quiet. Because RFScout is still pre-1.0, this categorization deliberately favors a clean runtime/API model over preserving every development-era effective loudness combination from the short-lived environmental-gain interpretation.
 
 Schema-v1 configurations that predate canonical `display.theme` can still use the existing legacy NVS theme migration when the current loader recognizes them. A schema-v3 file can explicitly store `audio.policy` and both gain fields. Canonical v3 output never writes `discipline` as a theme. These pre-v3 migration paths are conveniences for development-era upgrades and are not guaranteed compatibility behavior until the v1.0.0 configuration contract is established.
 
@@ -122,14 +131,13 @@ Visual themes are **Indoor**, **Outdoor**, and **Night**. Theme selection affect
 
 Device-wide Audio policy is stored independently under `audio.policy`:
 
-- `normal` permits incidental/event feedback and enabled detection-notification presentation subject to existing app/global policy;
-- `quiet` suppresses those two audible classes without altering notification enablement, Morse mappings, global notification mode, global volume, or the stored environmental gains.
+- `normal` permits UI/device, Event, Alert, and explicitly requested Content audio subject to app/global policy;
+- `quiet` suppresses UI/device, Event, and Alert audio without changing their saved volumes, event switches, alert enablement, or Morse mappings;
+- explicitly requested Content audio such as Recorder playback remains available in Quiet.
 
-`interaction_gain_percent` is the theme-independent output level used for incidental/event feedback. `notification_gain_percent` is an environmental multiplier applied to the user's existing global notification volume; it does not replace that global volume. These fields primarily preserve pre-v3 effective behavior and are not currently exposed as separate Device Settings controls.
+The three global incidental levels are exposed in Device Settings as **UI volume**, **Event volume**, and **Alert volume**. Changing Audio policy never overwrites these values. App-native policy remains independent as well; Recorder can remain incidentally quiet even when the device Audio policy is Normal.
 
-Changing the visual theme in schema v3 does not modify Audio policy or either gain. Changing Audio policy does not modify the theme or gains. New/default configurations use Indoor-equivalent 35% interaction / 100% notification gain.
-
-Quiet does not suppress intentionally requested application content audio such as Recorder playback. App-native policy remains independent as well; Recorder can remain incidentally quiet even when the device Audio policy is Normal.
+Changing the visual theme in schema v3 does not modify Audio policy or any global audio level. Changing Audio policy does not modify the theme.
 
 ## Power configuration
 
@@ -152,13 +160,15 @@ WiFi / BT owns three independent retention settings under `apps.wifi_bt.retentio
 
 Wi-Fi and BLE source membership age independently for a merged observation. Surveillance history has its own timeout. Planned `Instant` and `Never` semantics are roadmap work and are not current behavior.
 
-## Notifications and Recorder audio
+## Events, alerts, and Recorder audio
 
-Global `notifications.mode` is `OFF`, `TONE`, or `MORSE`; global volume is 0 through 100. Each detecting application owns its notification gate and Morse mappings. WiFi / BT additionally stores independent ordinary Wi-Fi and BLE discovery-feedback switches, which default enabled when absent.
+Ordinary semantic activity such as `RFSCOUT_EVENT_DETECTED` is **Event** audio. WiFi / BT stores independent ordinary Wi-Fi and BLE event-feedback switches, which default enabled when absent. These quick activity beeps use the global Event volume.
 
-Audio policy is applied to presentation after those settings are evaluated. Quiet therefore temporarily suppresses audible notification presentation without destroying or rewriting the user's notification configuration. In Normal policy, the independent notification environmental gain is multiplied by the user's global notification volume.
+Attention-oriented semantic notifications are **Alert** audio. Global alert presentation is `OFF`, `TONE`, or `MORSE`; Alert volume is 0 through 100. Each detecting application owns its configurable alert gate and Morse mappings. Individual alert mappings may also be set to **Off**, suppressing audio for that category without removing the semantic event.
 
-Recorder playback volume is independent of notification volume. Recorder microphone input gain is currently 0 through +24 dB in 3 dB steps.
+Warnings and errors are also Alert-class sounds even when they do not have a configurable detection-alert descriptor. Quiet suppresses Alert presentation without destroying or rewriting alert configuration.
+
+Recorder playback volume is independent of the three incidental global volumes. Recorder microphone input gain is currently 0 through +24 dB in 3 dB steps.
 
 ## Application enablement and availability
 
@@ -172,15 +182,15 @@ Current Device Settings include:
 
 - brightness, dim timeout, screen-off timeout, and visual theme;
 - device-wide **Audio policy** (`Normal` / `Quiet`);
+- global **UI volume**, **Event volume**, **Alert** presentation mode, and **Alert volume**;
 - **Power button** configuration;
 - **Power policy** configuration for low battery and high internal temperature;
 - 12/24-hour clock format, timezone, and manual date/time;
 - preferred startup application and per-app enablement;
 - SD logging;
-- global notification mode and volume;
 - explicit configuration save.
 
-Per-app notification mappings and WiFi / BT retention controls remain in the owning application menus. Small finite choices use direct center-to-cycle behavior rather than a separate edit mode.
+Per-app alert mappings and WiFi / BT retention/event switches remain in the owning application menus. Small finite choices use direct center-to-cycle behavior rather than a separate edit mode; numeric volume/range values retain turn-to-adjust editing.
 
 Setters mark canonical configuration dirty. RFScout flushes dirty configuration before deep sleep. Without SD, settings can affect the running session but canonical persistence is unavailable.
 
