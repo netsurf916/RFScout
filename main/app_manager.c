@@ -1821,6 +1821,28 @@ rfscout_app_id_t app_manager_current( void )
     return active_app;
 }
 
+static bool recorder_dependency_lost( int64_t a_now )
+{
+    const rfscout_recorder_state_t state = recorder_state();
+    if( ( RFSCOUT_RECORDER_ERROR == state ) || ( RFSCOUT_RECORDER_NO_STORAGE == state ) )
+    {
+        return true;
+    }
+
+    if( ( RFSCOUT_RECORDER_IDLE != state ) && ( RFSCOUT_RECORDER_MONITORING != state ) )
+    {
+        return false;
+    }
+
+    if( a_now - last_active_dependency_probe_us < APP_ACTIVE_DEPENDENCY_INTERVAL_US )
+    {
+        return false;
+    }
+
+    last_active_dependency_probe_us = a_now;
+    return ESP_OK != storage_probe_card();
+}
+
 void app_manager_poll( void )
 {
     const int64_t now = esp_timer_get_time();
@@ -1963,20 +1985,16 @@ void app_manager_poll( void )
 
     if( RFSCOUT_APP_AUDIO == active_app )
     {
-        if( now - last_active_dependency_probe_us >= APP_ACTIVE_DEPENDENCY_INTERVAL_US )
+        if( recorder_dependency_lost( now ) )
         {
-            last_active_dependency_probe_us = now;
-            if( ESP_OK != storage_probe_card() )
+            app_framework_report_availability( RFSCOUT_APP_AUDIO,
+                                               RFSCOUT_APP_AVAILABILITY_UNAVAILABLE );
+            ESP_LOGW( TAG, "Recorder dependency lost; returning Home" );
+            if( transition_to_app( RFSCOUT_APP_DEVICE, false ) )
             {
-                app_framework_report_availability(
-                    RFSCOUT_APP_AUDIO, RFSCOUT_APP_AVAILABILITY_UNAVAILABLE );
-                ESP_LOGW( TAG, "Recorder SD dependency lost; returning Home" );
-                if( transition_to_app( RFSCOUT_APP_DEVICE, false ) )
-                {
-                    storage_shutdown();
-                }
-                return;
+                storage_shutdown();
             }
+            return;
         }
         if( audio_menu )
         {
@@ -2087,8 +2105,8 @@ void app_manager_poll( void )
     }
     if( !mlx90640_is_detected() )
     {
-        app_framework_report_availability(
-            RFSCOUT_APP_THERMAL, RFSCOUT_APP_AVAILABILITY_UNAVAILABLE );
+        app_framework_report_availability( RFSCOUT_APP_THERMAL,
+                                           RFSCOUT_APP_AVAILABILITY_UNAVAILABLE );
         (void)transition_to_app( RFSCOUT_APP_DEVICE, false );
         return;
     }
@@ -2100,8 +2118,8 @@ void app_manager_poll( void )
     const esp_err_t result = thermal_view_render();
     if( ( ESP_OK != result ) && ( ESP_ERR_NOT_FINISHED != result ) && !mlx90640_is_detected() )
     {
-        app_framework_report_availability(
-            RFSCOUT_APP_THERMAL, RFSCOUT_APP_AVAILABILITY_UNAVAILABLE );
+        app_framework_report_availability( RFSCOUT_APP_THERMAL,
+                                           RFSCOUT_APP_AVAILABILITY_UNAVAILABLE );
         (void)transition_to_app( RFSCOUT_APP_DEVICE, false );
     }
 }
