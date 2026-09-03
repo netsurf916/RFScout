@@ -1176,8 +1176,7 @@ static bool transition_to_app( rfscout_app_id_t a_destination, bool a_report_abo
         context.recorder_state_before = recorder_state();
         context.recorder_item_before = audio_item;
         context.recorder_gain_before = recorder_input_gain_db();
-        context.recorder_volume_before =
-            NULL != config ? config->recorder_volume_percent : 50U;
+        context.recorder_volume_before = NULL != config ? config->recorder_volume_percent : 50U;
     }
     const rfscout_app_lifecycle_hooks_t hooks = {
         .prepare = prepare_app_exit,
