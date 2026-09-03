@@ -734,6 +734,11 @@ typedef struct
     bool ble_stopped;
     bool cc_stopped;
     bool nr_stopped;
+    rfscout_recorder_state_t recorder_state_before;
+    unsigned recorder_item_before;
+    uint8_t recorder_gain_before;
+    uint8_t recorder_volume_before;
+    bool audio_stop_attempted;
     bool audio_quiesced;
     bool prepare_complete;
 } app_transition_context_t;
@@ -820,6 +825,11 @@ static esp_err_t prepare_app_exit( void *a_context )
             context->nr_stopped = true;
             break;
         case RFSCOUT_APP_AUDIO:
+            context->audio_stop_attempted =
+                ( RFSCOUT_RECORDER_RECORDING == context->recorder_state_before ) ||
+                ( RFSCOUT_RECORDER_SAVING == context->recorder_state_before ) ||
+                ( RFSCOUT_RECORDER_MONITORING == context->recorder_state_before ) ||
+                ( RFSCOUT_RECORDER_PLAYING == context->recorder_state_before );
             if( !recorder_prepare_storage_shutdown( APP_RECORDER_QUIESCE_TIMEOUT_MS ) )
             {
                 return ESP_ERR_TIMEOUT;
@@ -874,6 +884,71 @@ static bool app_exit_reachability_clear( void *a_context )
         default:
             return false;
     }
+}
+
+static esp_err_t reactivate_recorder_operation( app_transition_context_t *a_context )
+{
+    if( ( NULL == a_context ) || !a_context->audio_stop_attempted )
+    {
+        return ESP_OK;
+    }
+
+    if( recorder_state() == a_context->recorder_state_before )
+    {
+        return ESP_OK;
+    }
+
+    if( !wait_for_recorder_workers( APP_RECORDER_QUIESCE_TIMEOUT_MS ) )
+    {
+        ESP_LOGE( TAG, "Recorder could not drain workers before abort reactivation" );
+        return ESP_ERR_TIMEOUT;
+    }
+
+    if( ( RFSCOUT_RECORDER_RECORDING != a_context->recorder_state_before ) &&
+        ( RFSCOUT_RECORDER_MONITORING != a_context->recorder_state_before ) &&
+        ( RFSCOUT_RECORDER_PLAYING != a_context->recorder_state_before ) )
+    {
+        return ESP_OK;
+    }
+
+    if( RFSCOUT_RECORDER_IDLE != recorder_state() )
+    {
+        const esp_err_t refresh_result = recorder_refresh();
+        if( ESP_OK != refresh_result )
+        {
+            return refresh_result;
+        }
+    }
+
+    esp_err_t result = ESP_ERR_INVALID_STATE;
+    if( RFSCOUT_RECORDER_RECORDING == a_context->recorder_state_before )
+    {
+        recorder_set_input_gain_db( a_context->recorder_gain_before );
+        result = recorder_start_recording();
+        if( ESP_OK == result )
+        {
+            ESP_LOGW( TAG, "Recorder restarted recording after aborted app transition" );
+        }
+    }
+    else if( RFSCOUT_RECORDER_MONITORING == a_context->recorder_state_before )
+    {
+        result = recorder_start_monitor( a_context->recorder_gain_before );
+    }
+    else if( RFSCOUT_RECORDER_PLAYING == a_context->recorder_state_before )
+    {
+        if( a_context->recorder_item_before < AUDIO_BROWSER_FILE_BASE )
+        {
+            return ESP_ERR_INVALID_STATE;
+        }
+        result = recorder_start_playback( a_context->recorder_item_before - AUDIO_BROWSER_FILE_BASE,
+                                          a_context->recorder_volume_before );
+    }
+
+    if( ESP_OK == result )
+    {
+        audio_last_state = a_context->recorder_state_before;
+    }
+    return result;
 }
 
 static esp_err_t reactivate_app_exit( void *a_context )
@@ -932,6 +1007,8 @@ static esp_err_t reactivate_app_exit( void *a_context )
             }
             break;
         case RFSCOUT_APP_AUDIO:
+            first_error = reactivate_recorder_operation( context );
+            break;
         case RFSCOUT_APP_DEVICE:
         case RFSCOUT_APP_THERMAL:
         case RFSCOUT_APP_COUNT:
@@ -1091,7 +1168,17 @@ static bool transition_to_app( rfscout_app_id_t a_destination, bool a_report_abo
         .was_activated = app_activated,
         .wifi_was_ready = wifi_monitor_ready,
         .ble_was_ready = ble_monitor_ready,
+        .recorder_state_before = RFSCOUT_RECORDER_IDLE,
     };
+    if( RFSCOUT_APP_AUDIO == previous )
+    {
+        const device_config_t *config = device_config_get();
+        context.recorder_state_before = recorder_state();
+        context.recorder_item_before = audio_item;
+        context.recorder_gain_before = recorder_input_gain_db();
+        context.recorder_volume_before =
+            NULL != config ? config->recorder_volume_percent : 50U;
+    }
     const rfscout_app_lifecycle_hooks_t hooks = {
         .prepare = prepare_app_exit,
         .reachability_clear = app_exit_reachability_clear,
