@@ -55,6 +55,7 @@ idf_component_register(
         "app_logging.c"
         "app_audio_policy.c"
         "audio_policy.c"
+        "memory_manager.c"
         "event.c"
         "system_events.c"
         "feedback.c"
