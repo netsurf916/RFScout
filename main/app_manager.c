@@ -389,7 +389,7 @@ static void notification_input( bool a_pressed, int a_delta )
         {
             notification_edit = false;
             notification_settings_view_render( active_app, notification_item, false );
-            emit_event( RFSCOUT_EVENT_BACK, 0 );
+            emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
             return;
         }
         if( NOTIFICATION_MENU_BACK == notification_item )
