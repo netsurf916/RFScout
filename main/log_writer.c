@@ -440,20 +440,46 @@ static void writer_task_main( void *a_argument )
     {
         if( shutdown_requested && ( 0U == uxQueueMessagesWaiting( queue ) ) )
             break;
-        if( pdTRUE == xQueueReceive( queue, &record, pdMS_TO_TICKS( 100 ) ) &&
-            !write_record( &record ) )
+        if( pdTRUE == xQueueReceive( queue, &record, pdMS_TO_TICKS( 100 ) ) )
         {
-            ++dropped_records;
+            bool written = false;
+            if( storage_io_acquire( RFSCOUT_STORAGE_WAIT_FOREVER ) )
+            {
+                written = write_record( &record );
+                storage_io_release();
+            }
+            if( !written )
+            {
+                ++dropped_records;
+            }
         }
         const int64_t now_us = esp_timer_get_time();
         if( ( NULL != active_file ) && ( ( now_us - last_flush_us ) >= LOG_FLUSH_INTERVAL_US ) )
         {
-            if( 0 != fflush( active_file ) )
-                mark_io_error( "periodic log flush" );
+            if( storage_io_acquire( RFSCOUT_STORAGE_WAIT_FOREVER ) )
+            {
+                if( 0 != fflush( active_file ) )
+                    mark_io_error( "periodic log flush" );
+                storage_io_release();
+            }
+            else
+            {
+                io_error = true;
+                ESP_LOGE( TAG, "could not acquire SD I/O lock for periodic log flush" );
+            }
             last_flush_us = now_us;
         }
     }
-    close_segment();
+    if( storage_io_acquire( RFSCOUT_STORAGE_WAIT_FOREVER ) )
+    {
+        close_segment();
+        storage_io_release();
+    }
+    else
+    {
+        io_error = true;
+        ESP_LOGE( TAG, "could not acquire SD I/O lock for log shutdown" );
+    }
     writer_stopped = true;
     writer_task = NULL;
     vTaskDelete( NULL );
