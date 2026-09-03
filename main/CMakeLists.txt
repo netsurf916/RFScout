@@ -73,6 +73,7 @@ idf_component_register(
         "audio_spectrum.c"
         "audio_view.c"
         "recorder.c"
+        "recorder_lifecycle.c"
         "recorder_view.c"
         "wifi_settings_view.c"
         "cc1101.c"
