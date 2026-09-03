@@ -14,17 +14,64 @@
 #include "driver/spi_master.h"
 #include "esp_log.h"
 #include "esp_vfs_fat.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "sdmmc_cmd.h"
 
 #define STORAGE_MAX_OPEN_FILES 5
+#define STORAGE_PROBE_IO_TIMEOUT_MS 250U
 
 static const char *TAG = "storage";
 static sdmmc_card_t *card;
 static bool mounted;
 static bool media_lost;
+static StaticSemaphore_t io_mutex_control;
+static SemaphoreHandle_t io_mutex;
+
+static void ensure_io_mutex( void )
+{
+    if( NULL == io_mutex )
+    {
+        io_mutex = xSemaphoreCreateMutexStatic( &io_mutex_control );
+    }
+}
+
+bool storage_io_acquire( uint32_t a_timeout_ms )
+{
+    ensure_io_mutex();
+    if( NULL == io_mutex )
+    {
+        return false;
+    }
+
+    TickType_t timeout = portMAX_DELAY;
+    if( RFSCOUT_STORAGE_WAIT_FOREVER != a_timeout_ms )
+    {
+        timeout = pdMS_TO_TICKS( a_timeout_ms );
+        if( ( a_timeout_ms > 0U ) && ( 0U == timeout ) )
+        {
+            timeout = 1U;
+        }
+    }
+    return pdTRUE == xSemaphoreTake( io_mutex, timeout );
+}
+
+void storage_io_release( void )
+{
+    if( NULL != io_mutex )
+    {
+        (void)xSemaphoreGive( io_mutex );
+    }
+}
 
 esp_err_t storage_init( void )
 {
+    ensure_io_mutex();
+    if( NULL == io_mutex )
+    {
+        return ESP_ERR_NO_MEM;
+    }
+
     if( mounted )
     {
         return media_lost ? ESP_ERR_INVALID_STATE : ESP_OK;
@@ -106,6 +153,19 @@ esp_err_t storage_probe_card( void )
         return ESP_ERR_INVALID_STATE;
     }
 
+    /* sdmmc_get_status() bypasses the filesystem layer. Serialize it with asynchronous filesystem
+       writers so its raw command cannot land in the middle of a multi-command FAT transaction. */
+    if( !storage_io_acquire( STORAGE_PROBE_IO_TIMEOUT_MS ) )
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    if( !mounted || NULL == card || media_lost )
+    {
+        storage_io_release();
+        return ESP_ERR_INVALID_STATE;
+    }
+
     const esp_err_t result = sdmmc_get_status( card );
     if( ESP_OK != result )
     {
@@ -114,6 +174,7 @@ esp_err_t storage_probe_card( void )
                   "SD card presence probe failed and media is now latched unavailable: %s",
                   esp_err_to_name( result ) );
     }
+    storage_io_release();
     return result;
 }
 
