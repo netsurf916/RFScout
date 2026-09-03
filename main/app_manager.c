@@ -1067,8 +1067,10 @@ static bool transition_to_app( rfscout_app_id_t a_destination, bool a_report_abo
         app_lifecycle_transition( previous, a_destination, &hooks );
     if( !app_lifecycle_transition_committed( &diagnostics ) )
     {
-        log_lifecycle(
-            "transition-abort", previous, a_destination, esp_timer_get_time() - transition_started );
+        log_lifecycle( "transition-abort",
+                       previous,
+                       a_destination,
+                       esp_timer_get_time() - transition_started );
         if( a_report_abort )
         {
             emit_event( RFSCOUT_EVENT_ERROR, (int32_t)diagnostics.error );
@@ -1744,7 +1746,8 @@ esp_err_t app_manager_init( void )
     esp_err_t result = app_lifecycle_init();
     if( ESP_OK != result )
     {
-        ESP_LOGE( TAG, "application lifecycle initialization failed: %s", esp_err_to_name( result ) );
+        ESP_LOGE(
+            TAG, "application lifecycle initialization failed: %s", esp_err_to_name( result ) );
         return result;
     }
 
