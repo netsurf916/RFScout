@@ -40,6 +40,8 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include <string.h>
 
@@ -733,6 +735,39 @@ typedef struct
     bool prepare_complete;
 } app_transition_context_t;
 
+static bool recorder_worker_references_clear( void )
+{
+    const rfscout_recorder_state_t state = recorder_state();
+    if( ( RFSCOUT_RECORDER_IDLE != state ) && ( RFSCOUT_RECORDER_NO_STORAGE != state ) )
+    {
+        return false;
+    }
+
+    /*
+     * recorder_probe_microphone() rejects entry while the recorder owns an RX channel or while
+     * either recorder worker task still exists. Once those references are gone, the probe itself
+     * is synchronous and releases its temporary channel before returning. Detection/probe errors
+     * therefore do not invalidate the reachability proof; ESP_ERR_INVALID_STATE is the signal that
+     * a recorder-owned execution context or channel is still reachable.
+     */
+    return ESP_ERR_INVALID_STATE != recorder_probe_microphone();
+}
+
+static bool wait_for_recorder_workers( uint32_t a_timeout_ms )
+{
+    const int64_t deadline_us = esp_timer_get_time() + (int64_t)a_timeout_ms * 1000LL;
+    do
+    {
+        if( recorder_worker_references_clear() )
+        {
+            return true;
+        }
+        vTaskDelay( pdMS_TO_TICKS( 10U ) );
+    } while( esp_timer_get_time() < deadline_us );
+
+    return recorder_worker_references_clear();
+}
+
 static esp_err_t prepare_app_exit( void *a_context )
 {
     app_transition_context_t *context = a_context;
@@ -792,8 +827,9 @@ static esp_err_t prepare_app_exit( void *a_context )
             }
             recorder_stop();
             audio_spectrum_stop();
-            if( RFSCOUT_RECORDER_IDLE != recorder_state() )
+            if( !wait_for_recorder_workers( APP_RECORDER_QUIESCE_TIMEOUT_MS ) )
             {
+                ESP_LOGE( TAG, "Recorder worker/channel references did not quiesce before exit" );
                 return ESP_ERR_TIMEOUT;
             }
             context->audio_quiesced = true;
@@ -1551,7 +1587,7 @@ static void audio_input( bool a_pressed, bool a_long_pressed, int a_delta )
                 volume = 100;
             }
             if( ( volume != old_volume ) &&
-                ( ESP_OK == device_config_set_recorder_volume( (uint8_t)volume ) ) )
+                ( ESP_OK == device_config_set_recorder_volume( (uint8_t)volume ) )
             {
                 recorder_set_playback_volume( (uint8_t)volume );
                 emit_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
