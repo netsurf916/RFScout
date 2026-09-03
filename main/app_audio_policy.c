@@ -11,8 +11,8 @@ static const rfscout_app_audio_policy_t policies[ RFSCOUT_APP_COUNT ] = {
     [RFSCOUT_APP_SYSTEM_EVENTS] =
         {
             .ui_audio = true,
-            .event_audio = false,
-            .alert_audio = false,
+            .event_audio = true,
+            .alert_audio = true,
             .content_audio = false,
             .notifications_supported = false,
             .notifications_enabled_default = false,
