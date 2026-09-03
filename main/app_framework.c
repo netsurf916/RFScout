@@ -29,26 +29,24 @@ typedef struct
 } app_descriptor_t;
 
 static const char *TAG = "app_framework";
+static bool recorder_microphone_probed;
+static esp_err_t recorder_microphone_result = ESP_ERR_NOT_FOUND;
 
 static esp_err_t probe_recorder( void )
 {
-    if( !storage_is_available() )
+    if( !storage_is_available() || ( ESP_OK != storage_probe_card() ) )
     {
-        const esp_err_t mount_result = storage_init();
-        if( ESP_OK != mount_result )
-        {
-            return ESP_ERR_NOT_FOUND;
-        }
-    }
-
-    const esp_err_t storage_result = storage_probe_card();
-    if( ESP_OK != storage_result )
-    {
-        storage_shutdown();
         return ESP_ERR_NOT_FOUND;
     }
 
-    return recorder_probe_microphone();
+    /* The microphone is fixed board hardware, so probe it once even though Recorder's removable
+       SD dependency makes the aggregate application capability hot-pluggable. */
+    if( !recorder_microphone_probed )
+    {
+        recorder_microphone_result = recorder_probe_microphone();
+        recorder_microphone_probed = true;
+    }
+    return recorder_microphone_result;
 }
 
 static app_descriptor_t descriptors[ RFSCOUT_APP_COUNT ] = {
@@ -145,6 +143,8 @@ static rfscout_app_availability_t probe_descriptor( app_descriptor_t *a_descript
 
 esp_err_t app_framework_init( void )
 {
+    recorder_microphone_probed = false;
+    recorder_microphone_result = ESP_ERR_NOT_FOUND;
     for( int app = 0; app < RFSCOUT_APP_COUNT; ++app )
     {
         app_descriptor_t *descriptor = &descriptors[ app ];
