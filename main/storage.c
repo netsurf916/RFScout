@@ -74,6 +74,15 @@ void storage_shutdown( void )
         return;
     }
 
+    /* A detected physical removal may leave platform services holding VFS file objects. Do not
+       tear down that mount from an application-level dependency failure; the next reset/deep-sleep
+       will discard it, while ordinary orderly shutdown still unmounts healthy media. */
+    if( media_lost )
+    {
+        ESP_LOGW( TAG, "SD media was removed; keeping stale VFS mount until platform reset" );
+        return;
+    }
+
     const esp_err_t result = esp_vfs_fat_sdcard_unmount( RFSCOUT_STORAGE_MOUNT_POINT, card );
     if( ESP_OK != result )
     {
@@ -87,7 +96,7 @@ void storage_shutdown( void )
 
 bool storage_is_available( void )
 {
-    return mounted;
+    return mounted && !media_lost;
 }
 
 esp_err_t storage_probe_card( void )
