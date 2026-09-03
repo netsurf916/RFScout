@@ -11,6 +11,7 @@
 #include "mlx90640.h"
 #include "nrf24.h"
 #include "recorder.h"
+#include "storage.h"
 
 #include "esp_log.h"
 
@@ -29,6 +30,27 @@ typedef struct
 
 static const char *TAG = "app_framework";
 
+static esp_err_t probe_recorder( void )
+{
+    if( !storage_is_available() )
+    {
+        const esp_err_t mount_result = storage_init();
+        if( ESP_OK != mount_result )
+        {
+            return ESP_ERR_NOT_FOUND;
+        }
+    }
+
+    const esp_err_t storage_result = storage_probe_card();
+    if( ESP_OK != storage_result )
+    {
+        storage_shutdown();
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    return recorder_probe_microphone();
+}
+
 static app_descriptor_t descriptors[ RFSCOUT_APP_COUNT ] = {
     [RFSCOUT_APP_WIFI_BT] =
         { "WiFi / BT", RFSCOUT_APP_PROBE_NONE, NULL, true, RFSCOUT_APP_AVAILABILITY_AVAILABLE },
@@ -40,8 +62,8 @@ static app_descriptor_t descriptors[ RFSCOUT_APP_COUNT ] = {
     [RFSCOUT_APP_NRF24] =
         { "nRF24", RFSCOUT_APP_PROBE_STARTUP, nrf24_init, true, RFSCOUT_APP_AVAILABILITY_UNKNOWN },
     [RFSCOUT_APP_AUDIO] = { "Recorder",
-                            RFSCOUT_APP_PROBE_STARTUP,
-                            recorder_probe_microphone,
+                            RFSCOUT_APP_PROBE_HOTPLUG,
+                            probe_recorder,
                             false,
                             RFSCOUT_APP_AVAILABILITY_UNKNOWN },
     [RFSCOUT_APP_THERMAL] = { "Thermal",
