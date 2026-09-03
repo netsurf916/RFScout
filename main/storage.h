@@ -37,6 +37,14 @@ void storage_shutdown( void );
 bool storage_is_available( void );
 
 /**
+ * @brief Verify that the currently mounted physical SD card still responds.
+ * @return ESP_OK when the mounted card responds, ESP_ERR_INVALID_STATE when no card is mounted,
+ *         or the underlying SD/MMC status error when the card disappeared or became unusable.
+ * @note This does not unmount or remount storage; callers that own open files must quiesce them first.
+ */
+esp_err_t storage_probe_card( void );
+
+/**
  * @brief Query the filesystem capacity.
  * @param a_total_bytes Receives total filesystem bytes when non-NULL.
  * @param a_free_bytes Receives currently free filesystem bytes when non-NULL.
