@@ -26,21 +26,24 @@
 esp_err_t storage_init( void );
 
 /**
- * @brief Unmount the SD card and release storage resources.
+ * @brief Unmount healthy SD storage and release storage resources.
+ * @note A physically removed card is left as a stale VFS mount until platform reset so an
+ *       application-level loss detector cannot invalidate open platform-service file objects.
  */
 void storage_shutdown( void );
 
 /**
- * @brief Determine whether the SD card is currently mounted.
- * @return True when storage is available.
+ * @brief Determine whether mounted SD media is currently considered healthy and usable.
+ * @return True only while storage is mounted and no physical-media loss has been latched.
  */
 bool storage_is_available( void );
 
 /**
  * @brief Verify that the currently mounted physical SD card still responds.
- * @return ESP_OK when the mounted card responds, ESP_ERR_INVALID_STATE when no card is mounted,
- *         or the underlying SD/MMC status error when the card disappeared or became unusable.
- * @note This does not unmount or remount storage; callers that own open files must quiesce them first.
+ * @return ESP_OK when the mounted card responds, ESP_ERR_INVALID_STATE when no healthy card is
+ *         mounted, or the underlying SD/MMC status error when the card disappears or fails.
+ * @note A failed physical probe latches the media unavailable for the remainder of the running
+ *       platform session; the probe does not unmount/remount storage or invalidate open files.
  */
 esp_err_t storage_probe_card( void );
 
