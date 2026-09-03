@@ -46,6 +46,18 @@ jobs:
           main_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
           printf 'main\t%s\n' "$main_sha" > heads.tsv
 
+          main_runs=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs" \
+            -f event=push -f head_sha="$main_sha" -f per_page=100)
+          main_count=$(jq '.workflow_runs | length' <<< "$main_runs")
+          main_pending=$(jq '[.workflow_runs[] | select(.status != "completed")] | length' <<< "$main_runs")
+          if [[ "$main_count" -eq 0 ]]; then
+            echo "Deferring Pages refresh: current main $main_sha has no Build and formatting run yet"
+            ready=false
+          elif [[ "$main_pending" -ne 0 ]]; then
+            echo "Deferring Pages refresh: current main $main_sha is still building"
+            ready=false
+          fi
+
           gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
             --jq '.[] | [.number, .head.sha, .draft] | @tsv' | sort -n -k1,1 >> heads.tsv
 
