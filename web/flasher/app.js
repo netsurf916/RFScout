@@ -12,7 +12,13 @@ let builds = [];
 
 function describeKind(build) {
   if (build.kind === "candidate") {
+    if (build.source === "main") {
+      return "Development build from main";
+    }
     return build.pr ? `Pull request #${build.pr}` : "CI candidate";
+  }
+  if (build.draft) {
+    return build.prerelease ? "Draft prerelease" : "Draft release";
   }
   return build.prerelease ? "Published prerelease" : "Published release";
 }
