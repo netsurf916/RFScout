@@ -33,6 +33,7 @@
 #include "recorder.h"
 #include "session_state.h"
 #include "storage.h"
+#include "system_events_view.h"
 #include "surveillance_history.h"
 #include "thermal_view.h"
 #include "ui.h"
@@ -221,6 +222,7 @@ static void activate_app( void )
                 ESP_LOGW( TAG, "nRF24 unavailable" );
             }
             break;
+        case RFSCOUT_APP_SYSTEM_EVENTS:
         case RFSCOUT_APP_THERMAL:
         case RFSCOUT_APP_AUDIO:
         case RFSCOUT_APP_DEVICE:
@@ -843,6 +845,7 @@ static esp_err_t prepare_app_exit( void *a_context )
             }
             context->audio_quiesced = true;
             break;
+        case RFSCOUT_APP_SYSTEM_EVENTS:
         case RFSCOUT_APP_DEVICE:
         case RFSCOUT_APP_THERMAL:
         case RFSCOUT_APP_COUNT:
@@ -877,6 +880,7 @@ static bool app_exit_reachability_clear( void *a_context )
             return context->nr_stopped;
         case RFSCOUT_APP_AUDIO:
             return context->audio_quiesced;
+        case RFSCOUT_APP_SYSTEM_EVENTS:
         case RFSCOUT_APP_DEVICE:
         case RFSCOUT_APP_THERMAL:
             return true;
@@ -1017,6 +1021,7 @@ static esp_err_t reactivate_app_exit( void *a_context )
         case RFSCOUT_APP_AUDIO:
             first_error = reactivate_recorder_operation( context );
             break;
+        case RFSCOUT_APP_SYSTEM_EVENTS:
         case RFSCOUT_APP_DEVICE:
         case RFSCOUT_APP_THERMAL:
         case RFSCOUT_APP_COUNT:
@@ -1058,6 +1063,10 @@ static void commit_app_exit( void *a_context )
     {
         audio_item = AUDIO_BROWSER_BACK;
     }
+    else if( RFSCOUT_APP_SYSTEM_EVENTS == context->source )
+    {
+        system_events_view_leave();
+    }
 
     wifi_menu = false;
     wifi_edit = false;
@@ -1084,6 +1093,9 @@ static void enter_app( rfscout_app_id_t a_app )
     app_activated = !app_framework_requires_activation( a_app );
     switch( a_app )
     {
+        case RFSCOUT_APP_SYSTEM_EVENTS:
+            system_events_view_enter();
+            break;
         case RFSCOUT_APP_WIFI_BT:
             wifi_item = WIFI_MENU_BACK;
             wifi_menu = false;
@@ -1776,7 +1788,12 @@ static void close_active_menu_for_back( void )
         }
         return;
     }
-    if( RFSCOUT_APP_DEVICE == active_app && device_menu )
+    if( RFSCOUT_APP_SYSTEM_EVENTS == active_app && system_events_view_browsing() )
+    {
+        system_events_view_toggle_browse();
+        emit_event( RFSCOUT_EVENT_BACK, 0 );
+    }
+    else if( RFSCOUT_APP_DEVICE == active_app && device_menu )
     {
         if( device_view_back() )
         {
@@ -1989,6 +2006,35 @@ void app_manager_poll( void )
     if( notification_menu )
     {
         notification_input( pressed, delta );
+        return;
+    }
+
+    if( RFSCOUT_APP_SYSTEM_EVENTS == active_app )
+    {
+        if( pressed )
+        {
+            system_events_view_toggle_browse();
+            emit_event( RFSCOUT_EVENT_ACTIVATE, system_events_view_browsing() ? 1 : 0 );
+            return;
+        }
+        if( system_events_view_browsing() )
+        {
+            if( 0 != delta )
+            {
+                system_events_view_scroll( ( delta > 0 ) ? 1 : -1 );
+                emit_event( RFSCOUT_EVENT_NAVIGATE, ( delta > 0 ) ? 1 : -1 );
+            }
+            return;
+        }
+        if( switch_app_for_delta( delta ) )
+        {
+            return;
+        }
+        if( now - last_app_refresh_us >= APP_REFRESH_INTERVAL_US )
+        {
+            last_app_refresh_us = now;
+            system_events_view_render();
+        }
         return;
     }
 

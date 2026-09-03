@@ -50,6 +50,11 @@ static esp_err_t probe_recorder( void )
 }
 
 static app_descriptor_t descriptors[ RFSCOUT_APP_COUNT ] = {
+    [RFSCOUT_APP_SYSTEM_EVENTS] = { "System Events",
+                                    RFSCOUT_APP_PROBE_NONE,
+                                    NULL,
+                                    false,
+                                    RFSCOUT_APP_AVAILABILITY_AVAILABLE },
     [RFSCOUT_APP_WIFI_BT] =
         { "WiFi / BT", RFSCOUT_APP_PROBE_NONE, NULL, true, RFSCOUT_APP_AVAILABILITY_AVAILABLE },
     [RFSCOUT_APP_CC1101] = { "CC1101",

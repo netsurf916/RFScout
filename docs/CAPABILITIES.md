@@ -6,16 +6,19 @@ This document summarizes behavior implemented on current `main`. Planned feature
 
 The only supported target is currently **LILYGO T-Embed CC1101 Plus**. RFScout uses a board-target/capability boundary so application code depends on semantic services rather than board model names.
 
-Top-level application order is:
+Canonical application IDs and rotary order are:
 
-1. WiFi / BT
-2. CC1101
-3. nRF24
-4. Recorder
-5. Thermal, when enabled and detected
-6. Home / Device Settings
+0. System Events, optional and disabled by default
+1. Home / Device Settings
+2. WiFi / BT
+3. CC1101
+4. nRF24
+5. Recorder
+6. Thermal, when enabled and detected
 
-Disabled/unavailable applications are skipped. Home is always available. A disabled or unavailable preferred startup target falls back to Home for the current boot without erasing the saved preference.
+Disabled/unavailable applications are skipped, so the default visible order begins at Home. Home is always available. A disabled or unavailable preferred startup target falls back to Home for the current boot without erasing the saved preference.
+
+System Events is a read-only view of the volatile structured event ring. Center enters a stable Browse snapshot where the rotary encoder scrolls retained events; center exits Browse and returns the rotary encoder to application navigation.
 
 ## WiFi / BT
 

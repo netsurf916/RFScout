@@ -12,16 +12,17 @@ RFScout is intentionally passive wherever the underlying radio APIs allow it. It
 
 ## Applications
 
-Top-level navigation order is:
+Top-level application IDs and rotary order are:
 
-1. **WiFi / BT**
-2. **CC1101**
-3. **nRF24**
-4. **Recorder**
-5. **Thermal** — only when enabled and an MLX90640 is detected
-6. **Home / Device Settings**
+0. **System Events** — optional and disabled by default
+1. **Home / Device Settings**
+2. **WiFi / BT**
+3. **CC1101**
+4. **nRF24**
+5. **Recorder**
+6. **Thermal** — only when enabled and an MLX90640 is detected
 
-Home is the default startup target. A preferred startup app can be configured; disabled or unavailable targets fall back to Home for that boot without erasing the preference.
+With the default configuration, System Events is skipped so Home is the first visible application. Home is also the default startup target. A preferred startup app can be configured; disabled or unavailable targets fall back to Home for that boot without erasing the preference.
 
 The application layer consumes board-neutral semantic input rather than directly depending on a rotary encoder. Holding the center control for about two seconds toggles the global input lock; the separate physical power button remains available.
 

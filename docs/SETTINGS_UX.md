@@ -54,3 +54,8 @@ The per-alert Off choice uses the supported blank mapping sentinel. Existing map
 ## Maintenance rule
 
 When adding a new application setting, first classify it into the canonical categories above and follow the established interaction model. A new app should not establish its own ordering, sound taxonomy, or toggle workflow merely because its menu is implemented separately.
+
+
+## Full-screen list browsing
+
+A full-screen diagnostic list may explicitly claim the rotary encoder after a center-button action. System Events uses this pattern: normal mode reserves rotary input for application navigation; center enters Browse, rotary scrolls the stable list snapshot, and center exits Browse back to application navigation. The active mode must be visible in the footer.

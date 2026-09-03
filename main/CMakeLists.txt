@@ -59,6 +59,7 @@ idf_component_register(
         "memory_manager.c"
         "event.c"
         "system_events.c"
+        "system_events_view.c"
         "feedback.c"
         "notification.c"
         "notification_preferences.c"

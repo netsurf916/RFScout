@@ -16,6 +16,7 @@
 #include "nrf24.h"
 #include "nrf24_activity.h"
 #include "observation_store.h"
+#include "system_events.h"
 
 #include "esp_timer.h"
 
@@ -31,7 +32,14 @@ static bool initialized;
 static const char *app_name( rfscout_app_id_t a_app )
 {
     static const char *names[ RFSCOUT_APP_COUNT ] = {
-        "WIFI_BT", "CC1101", "NRF24", "RECORDER", "THERMAL", "DEVICE" };
+        [RFSCOUT_APP_SYSTEM_EVENTS] = "SYSTEM_EVENTS",
+        [RFSCOUT_APP_DEVICE] = "DEVICE",
+        [RFSCOUT_APP_WIFI_BT] = "WIFI_BT",
+        [RFSCOUT_APP_CC1101] = "CC1101",
+        [RFSCOUT_APP_NRF24] = "NRF24",
+        [RFSCOUT_APP_AUDIO] = "RECORDER",
+        [RFSCOUT_APP_THERMAL] = "THERMAL",
+    };
 
     return ( a_app < RFSCOUT_APP_COUNT ) ? names[ a_app ] : "UNKNOWN";
 }
@@ -43,6 +51,11 @@ static void write_periodic_record( rfscout_app_id_t a_app )
 
     switch( a_app )
     {
+        case RFSCOUT_APP_SYSTEM_EVENTS:
+            snprintf(
+                detail, sizeof( detail ), "retained=%u", (unsigned)system_events_history_count() );
+            break;
+
         case RFSCOUT_APP_WIFI_BT:
             snprintf( detail,
                       sizeof( detail ),
