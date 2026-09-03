@@ -34,9 +34,8 @@ static void log_transition( const rfscout_app_transition_diagnostics_t *a_diagno
               (unsigned)heap_caps_get_largest_free_block( MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT ) );
 }
 
-static rfscout_app_transition_diagnostics_t finish_transition(
-    rfscout_app_transition_diagnostics_t a_diagnostics,
-    int64_t a_started_us )
+static rfscout_app_transition_diagnostics_t
+finish_transition( rfscout_app_transition_diagnostics_t a_diagnostics, int64_t a_started_us )
 {
     a_diagnostics.elapsed_us = esp_timer_get_time() - a_started_us;
     last_transition = a_diagnostics;
@@ -44,12 +43,12 @@ static rfscout_app_transition_diagnostics_t finish_transition(
     return last_transition;
 }
 
-static rfscout_app_transition_diagnostics_t abort_transition(
-    rfscout_app_transition_diagnostics_t a_diagnostics,
-    rfscout_app_transition_outcome_t a_outcome,
-    esp_err_t a_error,
-    const rfscout_app_lifecycle_hooks_t *a_hooks,
-    int64_t a_started_us )
+static rfscout_app_transition_diagnostics_t
+abort_transition( rfscout_app_transition_diagnostics_t a_diagnostics,
+                  rfscout_app_transition_outcome_t a_outcome,
+                  esp_err_t a_error,
+                  const rfscout_app_lifecycle_hooks_t *a_hooks,
+                  int64_t a_started_us )
 {
     a_diagnostics.outcome = a_outcome;
     a_diagnostics.error = a_error;
@@ -69,7 +68,7 @@ static rfscout_app_transition_diagnostics_t abort_transition(
 
 esp_err_t app_lifecycle_init( void )
 {
-    last_transition = (rfscout_app_transition_diagnostics_t){
+    last_transition = ( rfscout_app_transition_diagnostics_t ){
         .from = RFSCOUT_APP_DEVICE,
         .to = RFSCOUT_APP_DEVICE,
         .outcome = RFSCOUT_APP_TRANSITION_NONE,
@@ -80,9 +79,7 @@ esp_err_t app_lifecycle_init( void )
 }
 
 rfscout_app_transition_diagnostics_t app_lifecycle_transition(
-    rfscout_app_id_t a_from,
-    rfscout_app_id_t a_to,
-    const rfscout_app_lifecycle_hooks_t *a_hooks )
+    rfscout_app_id_t a_from, rfscout_app_id_t a_to, const rfscout_app_lifecycle_hooks_t *a_hooks )
 {
     const int64_t started_us = esp_timer_get_time();
     rfscout_app_transition_diagnostics_t diagnostics = {
@@ -107,11 +104,8 @@ rfscout_app_transition_diagnostics_t app_lifecycle_transition(
         const esp_err_t result = a_hooks->prepare( a_hooks->context );
         if( ESP_OK != result )
         {
-            return abort_transition( diagnostics,
-                                     RFSCOUT_APP_TRANSITION_ABORTED_PREPARE,
-                                     result,
-                                     a_hooks,
-                                     started_us );
+            return abort_transition(
+                diagnostics, RFSCOUT_APP_TRANSITION_ABORTED_PREPARE, result, a_hooks, started_us );
         }
     }
 
@@ -149,8 +143,7 @@ rfscout_app_transition_diagnostics_t app_lifecycle_transition(
     return finish_transition( diagnostics, started_us );
 }
 
-bool app_lifecycle_transition_committed(
-    const rfscout_app_transition_diagnostics_t *a_diagnostics )
+bool app_lifecycle_transition_committed( const rfscout_app_transition_diagnostics_t *a_diagnostics )
 {
     if( NULL == a_diagnostics )
     {
