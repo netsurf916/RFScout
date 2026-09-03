@@ -15,7 +15,6 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: write
   contents: read
   pull-requests: read
   pages: write
@@ -26,16 +25,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  refresh-after-release:
-    if: github.event_name == 'release'
-    runs-on: ubuntu-24.04
-
-    steps:
-      - name: Refresh browser flasher from main
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run web-flasher.yml --repo "$GITHUB_REPOSITORY" --ref main
-
   build-site:
     if: >-
       github.event_name == 'workflow_dispatch' ||
@@ -44,49 +33,39 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       ready: ${{ steps.stability.outputs.ready }}
-      pr_snapshot: ${{ steps.stability.outputs.pr_snapshot }}
+      snapshot: ${{ steps.stability.outputs.snapshot }}
 
     steps:
-      - name: Check candidate catalog stability
+      - name: Check catalog stability
         id: stability
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           ready=true
+          main_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          printf 'main\t%s\n' "$main_sha" > heads.tsv
 
-          gh api --paginate \
-            -H 'Accept: application/vnd.github+json' \
-            "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
-            --jq '.[] | [.number, .head.sha, .draft] | @tsv' \
-            | sort -n -k1,1 > pr-heads.tsv
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
+            --jq '.[] | [.number, .head.sha, .draft] | @tsv' | sort -n -k1,1 >> heads.tsv
 
           while IFS=$'\t' read -r pr sha draft; do
-            runs=$(gh api --method GET \
-              "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs" \
-              -f event=pull_request \
-              -f head_sha="$sha" \
-              -f per_page=100)
-
-            matching=$(jq -c --argjson pr "$pr" \
-              '[.workflow_runs[] | select(any(.pull_requests[]?; .number == $pr))]' \
-              <<< "$runs")
+            [[ "$pr" == "main" ]] && continue
+            runs=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs" \
+              -f event=pull_request -f head_sha="$sha" -f per_page=100)
+            matching=$(jq -c --argjson pr "$pr" '[.workflow_runs[] | select(any(.pull_requests[]?; .number == $pr))]' <<< "$runs")
             count=$(jq 'length' <<< "$matching")
             pending=$(jq '[.[] | select(.status != "completed")] | length' <<< "$matching")
-
             if [[ "$draft" != "true" && "$count" -eq 0 ]]; then
-              echo "Deferring Pages refresh: PR #$pr current head $sha has no Build and formatting run yet"
+              echo "Deferring Pages refresh: PR #$pr current head has no build"
               ready=false
-              continue
-            fi
-
-            if [[ "$pending" -ne 0 ]]; then
-              echo "Deferring Pages refresh: PR #$pr current head $sha is still building"
+            elif [[ "$pending" -ne 0 ]]; then
+              echo "Deferring Pages refresh: PR #$pr current head is still building"
               ready=false
             fi
-          done < pr-heads.tsv
+          done < heads.tsv
 
           echo "ready=$ready" >> "$GITHUB_OUTPUT"
-          echo "pr_snapshot=$(base64 -w 0 pr-heads.tsv)" >> "$GITHUB_OUTPUT"
+          echo "snapshot=$(base64 -w 0 heads.tsv)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v6
         if: steps.stability.outputs.ready == 'true'
@@ -100,45 +79,29 @@ jobs:
           cp -R web/flasher/. site/
           cp assets/logo.png site/logo.png
 
-      - name: Mirror published firmware releases
+      - name: Mirror firmware releases including drafts
         if: steps.stability.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p site/firmware/releases
-          gh release list \
-            --exclude-drafts \
-            --limit 20 \
-            --json tagName,name,isPrerelease,publishedAt \
-            > releases.json
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '[.[] | {tagName: .tag_name, name: .name, isDraft: .draft, isPrerelease: .prerelease, publishedAt: .published_at}] | .[]' \
+            | jq -s 'sort_by(.publishedAt // "") | reverse | .[:20]' > releases.json
 
           jq -r '.[].tagName' releases.json | while IFS= read -r tag; do
             assets=$(gh release view "$tag" --json assets --jq '.assets[].name')
-            manifest_present=false
-            full_image_present=false
-            while IFS= read -r asset; do
-              if [[ "$asset" == "manifest.web.json" ]]; then
-                manifest_present=true
-              fi
-              if [[ "$asset" == rfscout-*-full.bin ]]; then
-                full_image_present=true
-              fi
-            done <<< "$assets"
-
-            if [[ "$manifest_present" != "true" || "$full_image_present" != "true" ]]; then
+            if ! grep -qx 'manifest.web.json' <<< "$assets" || ! grep -Eq '^rfscout-.*-full\.bin$' <<< "$assets"; then
               echo "Skipping $tag because it does not contain web-flasher assets"
               continue
             fi
-
             destination="site/firmware/releases/$tag"
             mkdir -p "$destination"
-            gh release download "$tag" \
-              --pattern 'manifest.web.json' \
-              --pattern 'rfscout-*-full.bin' \
-              --dir "$destination"
+            gh release download "$tag" --pattern manifest.json --pattern manifest.web.json \
+              --pattern 'rfscout-*-full.bin' --dir "$destination"
           done
 
-      - name: Collect current pull request candidates
+      - name: Collect current main and pull request candidates
         if: steps.stability.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -146,65 +109,39 @@ jobs:
           mkdir -p candidates
           printf '[]\n' > candidates.json
 
-          gh api --paginate \
-            -H 'Accept: application/vnd.github+json' \
-            "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
-            --jq '.[] | [.number, .head.sha] | @tsv' \
-          | while IFS=$'\t' read -r pr sha; do
-              runs=$(gh api --method GET \
-                "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs" \
-                -f event=pull_request \
-                -f status=success \
-                -f head_sha="$sha" \
-                -f per_page=100)
+          collect_candidate() {
+            source=$1
+            sha=$2
+            pr=${3:-}
+            event=$([[ "$source" == main ]] && echo push || echo pull_request)
+            runs=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs" \
+              -f event="$event" -f status=success -f head_sha="$sha" -f per_page=100)
+            run=$(jq -c '.workflow_runs[0] // empty' <<< "$runs")
+            [[ -z "$run" ]] && { echo "Skipping $source: no successful build for $sha"; return; }
+            run_id=$(jq -r .id <<< "$run")
+            artifact=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts" \
+              --jq '[.artifacts[] | select((.expired | not) and (.name | startswith("rfscout-candidate-")))] | .[0].name // empty')
+            [[ -z "$artifact" ]] && { echo "Skipping $source: candidate artifact unavailable"; return; }
+            run_url=$(jq -r .html_url <<< "$run")
+            destination=$([[ "$source" == main ]] && echo candidates/main || echo "candidates/pr-$pr")
+            gh run download "$run_id" --name "$artifact" --dir "$destination"
+            temporary=$(mktemp)
+            jq --arg source "$source" --arg sha "$sha" --arg run_url "$run_url" --arg pr "$pr" \
+              '. + [{source: $source, sha: $sha, run_url: $run_url} + (if $pr == "" then {} else {pr: ($pr|tonumber)} end)]' \
+              candidates.json > "$temporary"
+            mv "$temporary" candidates.json
+          }
 
-              run=""
-              artifact_name=""
-              while IFS= read -r candidate_run; do
-                run_id=$(jq -r '.id' <<< "$candidate_run")
-                candidate_artifact=$(gh api \
-                  "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts" \
-                  --jq '[.artifacts[] | select((.expired | not) and (.name | startswith("rfscout-candidate-")))] | .[0].name // empty')
-                if [[ -n "$candidate_artifact" ]]; then
-                  run="$candidate_run"
-                  artifact_name="$candidate_artifact"
-                  break
-                fi
-              done < <(
-                jq -c --argjson pr "$pr" \
-                  '.workflow_runs[] | select(any(.pull_requests[]?; .number == $pr))' \
-                  <<< "$runs"
-              )
-
-              if [[ -z "$run" || -z "$artifact_name" ]]; then
-                echo "Skipping PR #$pr: no live successful candidate for current head $sha"
-                continue
-              fi
-
-              run_id=$(jq -r '.id' <<< "$run")
-              run_url=$(jq -r '.html_url' <<< "$run")
-              gh run download "$run_id" \
-                --name "$artifact_name" \
-                --dir "candidates/pr-$pr"
-
-              temporary=$(mktemp)
-              jq \
-                --argjson pr "$pr" \
-                --arg sha "$sha" \
-                --arg run_url "$run_url" \
-                '. + [{pr: $pr, sha: $sha, run_url: $run_url}]' \
-                candidates.json > "$temporary"
-              mv "$temporary" candidates.json
-            done
+          main_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          collect_candidate main "$main_sha"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" --jq '.[] | [.number, .head.sha] | @tsv' \
+            | while IFS=$'\t' read -r pr sha; do collect_candidate pull_request "$sha" "$pr"; done
 
       - name: Build firmware catalog
         if: steps.stability.outputs.ready == 'true'
         run: |
-          python3 tools/build_web_flasher.py \
-            --site-dir site \
-            --releases-json releases.json \
-            --candidate-root candidates \
-            --candidates-json candidates.json
+          python3 tools/build_web_flasher.py --site-dir site --releases-json releases.json \
+            --candidate-root candidates --candidates-json candidates.json
 
       - name: Configure GitHub Pages
         if: steps.stability.outputs.ready == 'true'
@@ -223,28 +160,23 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-
     steps:
-      - name: Revalidate pull request head snapshot
+      - name: Revalidate catalog head snapshot
         id: revalidate
         env:
           GH_TOKEN: ${{ github.token }}
-          EXPECTED_PR_SNAPSHOT: ${{ needs.build-site.outputs.pr_snapshot }}
+          EXPECTED_SNAPSHOT: ${{ needs.build-site.outputs.snapshot }}
         run: |
-          gh api --paginate \
-            -H 'Accept: application/vnd.github+json' \
-            "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
-            --jq '.[] | [.number, .head.sha, .draft] | @tsv' \
-            | sort -n -k1,1 > current-pr-heads.tsv
-
-          current_snapshot=$(base64 -w 0 current-pr-heads.tsv)
-          if [[ "$current_snapshot" != "$EXPECTED_PR_SNAPSHOT" ]]; then
-            echo "Deferring Pages deployment: open pull-request heads changed while the site was being assembled"
+          main_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          printf 'main\t%s\n' "$main_sha" > heads.tsv
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
+            --jq '.[] | [.number, .head.sha, .draft] | @tsv' | sort -n -k1,1 >> heads.tsv
+          if [[ "$(base64 -w 0 heads.tsv)" != "$EXPECTED_SNAPSHOT" ]]; then
+            echo "Catalog heads changed while site was assembled; deferring deployment"
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            exit 0
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
-
-          echo "ready=true" >> "$GITHUB_OUTPUT"
 
       - name: Deploy browser flasher
         if: steps.revalidate.outputs.ready == 'true'
