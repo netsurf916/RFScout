@@ -21,12 +21,13 @@
 static const char *TAG = "storage";
 static sdmmc_card_t *card;
 static bool mounted;
+static bool media_lost;
 
 esp_err_t storage_init( void )
 {
     if( mounted )
     {
-        return ESP_OK;
+        return media_lost ? ESP_ERR_INVALID_STATE : ESP_OK;
     }
 
     const esp_err_t bus_result = board_spi_init();
@@ -52,11 +53,13 @@ esp_err_t storage_init( void )
     if( ESP_OK != result )
     {
         card = NULL;
+        media_lost = false;
         ESP_LOGW( TAG, "SD card unavailable: %s", esp_err_to_name( result ) );
         return result;
     }
 
     mounted = true;
+    media_lost = false;
     ESP_LOGI( TAG,
               "SD card mounted: %llu MiB",
               (unsigned long long)( ( (uint64_t)card->csd.capacity * card->csd.sector_size ) /
@@ -79,6 +82,7 @@ void storage_shutdown( void )
 
     card = NULL;
     mounted = false;
+    media_lost = false;
 }
 
 bool storage_is_available( void )
@@ -88,7 +92,7 @@ bool storage_is_available( void )
 
 esp_err_t storage_probe_card( void )
 {
-    if( !mounted || NULL == card )
+    if( !mounted || NULL == card || media_lost )
     {
         return ESP_ERR_INVALID_STATE;
     }
@@ -96,14 +100,17 @@ esp_err_t storage_probe_card( void )
     const esp_err_t result = sdmmc_get_status( card );
     if( ESP_OK != result )
     {
-        ESP_LOGW( TAG, "SD card presence probe failed: %s", esp_err_to_name( result ) );
+        media_lost = true;
+        ESP_LOGW( TAG,
+                  "SD card presence probe failed and media is now latched unavailable: %s",
+                  esp_err_to_name( result ) );
     }
     return result;
 }
 
 esp_err_t storage_get_capacity( uint64_t *a_total_bytes, uint64_t *a_free_bytes )
 {
-    if( !mounted )
+    if( !mounted || media_lost )
     {
         return ESP_ERR_INVALID_STATE;
     }
