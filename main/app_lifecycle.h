@@ -65,9 +65,7 @@ esp_err_t app_lifecycle_init( void );
  *          all remaining managed allocations for the source app are reclaimed and verified.
  */
 rfscout_app_transition_diagnostics_t app_lifecycle_transition(
-    rfscout_app_id_t a_from,
-    rfscout_app_id_t a_to,
-    const rfscout_app_lifecycle_hooks_t *a_hooks );
+    rfscout_app_id_t a_from, rfscout_app_id_t a_to, const rfscout_app_lifecycle_hooks_t *a_hooks );
 
 /** @brief Return true when the transition crossed the irreversible commit boundary. */
 bool app_lifecycle_transition_committed(
