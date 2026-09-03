@@ -157,7 +157,7 @@ esp_err_t storage_probe_card( void )
        writers so its raw command cannot land in the middle of a multi-command FAT transaction. */
     if( !storage_io_acquire( STORAGE_PROBE_IO_TIMEOUT_MS ) )
     {
-        return ESP_ERR_TIMEOUT;
+        return ESP_OK;
     }
 
     if( !mounted || NULL == card || media_lost )
