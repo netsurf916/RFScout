@@ -86,6 +86,21 @@ bool storage_is_available( void )
     return mounted;
 }
 
+esp_err_t storage_probe_card( void )
+{
+    if( !mounted || NULL == card )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    const esp_err_t result = sdmmc_get_status( card );
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG, "SD card presence probe failed: %s", esp_err_to_name( result ) );
+    }
+    return result;
+}
+
 esp_err_t storage_get_capacity( uint64_t *a_total_bytes, uint64_t *a_free_bytes )
 {
     if( !mounted )
