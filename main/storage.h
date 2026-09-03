@@ -54,12 +54,13 @@ void storage_io_release( void );
 
 /**
  * @brief Verify that the currently mounted physical SD card still responds.
- * @return ESP_OK when the mounted card responds, ESP_ERR_TIMEOUT when another storage transaction
- *         prevents a bounded probe, ESP_ERR_INVALID_STATE when no healthy card is mounted, or the
- *         underlying SD/MMC status error when the card disappears or fails.
+ * @return ESP_OK when the mounted card responds or when a concurrent filesystem transaction causes
+ *         this probe attempt to be deferred, ESP_ERR_INVALID_STATE when no healthy card is mounted,
+ *         or the underlying SD/MMC status error when the card disappears or fails.
  * @note A failed physical probe latches the media unavailable for the remainder of the running
- *       platform session; lock contention does not latch media loss. The probe does not
- *       unmount/remount storage or invalidate open files.
+ *       platform session. Lock contention merely defers the probe so callers do not interpret
+ *       normal logger activity as media loss. The probe does not unmount/remount storage or
+ *       invalidate open files.
  */
 esp_err_t storage_probe_card( void );
 
