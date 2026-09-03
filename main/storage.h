@@ -1,6 +1,6 @@
 /**
     storage.h : RFScout SD-card storage interface
-    Description: Owns SD-card mounting, unmounting, and capacity queries.
+    Description: Owns SD-card mounting, unmounting, capacity queries, and raw-card I/O arbitration.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -17,6 +17,7 @@
 
 #define RFSCOUT_STORAGE_MOUNT_POINT "/sdcard"
 #define RFSCOUT_STORAGE_LOG_DIRECTORY "/sdcard/logs"
+#define RFSCOUT_STORAGE_WAIT_FOREVER UINT32_MAX
 
 /**
  * @brief Mount the SD card on the board's already initialized shared SPI bus.
@@ -39,11 +40,26 @@ void storage_shutdown( void );
 bool storage_is_available( void );
 
 /**
+ * @brief Acquire the shared SD I/O arbitration lock.
+ * @param a_timeout_ms Maximum wait in milliseconds, or RFSCOUT_STORAGE_WAIT_FOREVER.
+ * @return True when the caller owns the lock.
+ * @note Callers that perform filesystem work from a task concurrent with storage_probe_card() must
+ *       hold this lock for the complete filesystem transaction so the raw card-status command
+ *       cannot interleave with it.
+ */
+bool storage_io_acquire( uint32_t a_timeout_ms );
+
+/** @brief Release the shared SD I/O arbitration lock after storage_io_acquire() succeeds. */
+void storage_io_release( void );
+
+/**
  * @brief Verify that the currently mounted physical SD card still responds.
- * @return ESP_OK when the mounted card responds, ESP_ERR_INVALID_STATE when no healthy card is
- *         mounted, or the underlying SD/MMC status error when the card disappears or fails.
+ * @return ESP_OK when the mounted card responds, ESP_ERR_TIMEOUT when another storage transaction
+ *         prevents a bounded probe, ESP_ERR_INVALID_STATE when no healthy card is mounted, or the
+ *         underlying SD/MMC status error when the card disappears or fails.
  * @note A failed physical probe latches the media unavailable for the remainder of the running
- *       platform session; the probe does not unmount/remount storage or invalidate open files.
+ *       platform session; lock contention does not latch media loss. The probe does not
+ *       unmount/remount storage or invalidate open files.
  */
 esp_err_t storage_probe_card( void );
 
