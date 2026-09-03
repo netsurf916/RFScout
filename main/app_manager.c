@@ -32,6 +32,7 @@
 #include "radio_monitor.h"
 #include "recorder.h"
 #include "session_state.h"
+#include "storage.h"
 #include "surveillance_history.h"
 #include "thermal_view.h"
 #include "ui.h"
@@ -48,6 +49,7 @@
 #define APP_REFRESH_INTERVAL_US 125000LL
 #define AUDIO_REFRESH_INTERVAL_US 100000LL
 #define APP_FEATURE_PROBE_INTERVAL_US 10000000LL
+#define APP_ACTIVE_DEPENDENCY_INTERVAL_US 500000LL
 #define APP_RADIO_RETRY_INTERVAL_US 1000000LL
 #define APP_ACTIVATION_DELAY_US 500000LL
 #define APP_RECORDER_QUIESCE_TIMEOUT_MS 5000U
@@ -94,6 +96,7 @@ static const char *TAG = "app_manager";
 static rfscout_app_id_t active_app;
 static int64_t last_app_refresh_us;
 static int64_t last_hotplug_probe_us;
+static int64_t last_active_dependency_probe_us;
 static int64_t last_radio_retry_us;
 static int64_t app_entered_us;
 static bool app_activated;
@@ -386,7 +389,7 @@ static void notification_input( bool a_pressed, int a_delta )
         {
             notification_edit = false;
             notification_settings_view_render( active_app, notification_item, false );
-            emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
+            emit_event( RFSCOUT_EVENT_BACK, 0 );
             return;
         }
         if( NOTIFICATION_MENU_BACK == notification_item )
@@ -737,18 +740,14 @@ typedef struct
 
 static bool recorder_worker_references_clear( void )
 {
-    const rfscout_recorder_state_t state = recorder_state();
-    if( ( RFSCOUT_RECORDER_IDLE != state ) && ( RFSCOUT_RECORDER_NO_STORAGE != state ) )
-    {
-        return false;
-    }
-
     /*
      * recorder_probe_microphone() rejects entry while the recorder owns an RX channel or while
      * either recorder worker task still exists. Once those references are gone, the probe itself
      * is synchronous and releases its temporary channel before returning. Detection/probe errors
      * therefore do not invalidate the reachability proof; ESP_ERR_INVALID_STATE is the signal that
-     * a recorder-owned execution context or channel is still reachable.
+     * a recorder-owned execution context or channel is still reachable. Recorder state itself is
+     * deliberately not part of this proof: an interrupted SD write may leave ERROR after all worker
+     * and channel references are safely gone.
      */
     return ESP_ERR_INVALID_STATE != recorder_probe_microphone();
 }
@@ -995,6 +994,7 @@ static void commit_app_exit( void *a_context )
 static void enter_app( rfscout_app_id_t a_app )
 {
     last_app_refresh_us = 0;
+    last_active_dependency_probe_us = 0;
     app_entered_us = esp_timer_get_time();
     app_activated = !app_framework_requires_activation( a_app );
     switch( a_app )
@@ -1750,6 +1750,7 @@ esp_err_t app_manager_init( void )
     const bool have_restored_session = session_state_restore( &restored_session );
     last_app_refresh_us = 0;
     last_hotplug_probe_us = esp_timer_get_time();
+    last_active_dependency_probe_us = 0;
     last_radio_retry_us = 0;
     app_entered_us = 0;
     app_activated = false;
@@ -1962,6 +1963,21 @@ void app_manager_poll( void )
 
     if( RFSCOUT_APP_AUDIO == active_app )
     {
+        if( now - last_active_dependency_probe_us >= APP_ACTIVE_DEPENDENCY_INTERVAL_US )
+        {
+            last_active_dependency_probe_us = now;
+            if( ESP_OK != storage_probe_card() )
+            {
+                app_framework_report_availability(
+                    RFSCOUT_APP_AUDIO, RFSCOUT_APP_AVAILABILITY_UNAVAILABLE );
+                ESP_LOGW( TAG, "Recorder SD dependency lost; returning Home" );
+                if( transition_to_app( RFSCOUT_APP_DEVICE, false ) )
+                {
+                    storage_shutdown();
+                }
+                return;
+            }
+        }
         if( audio_menu )
         {
             audio_input( pressed, long_pressed, delta );
@@ -2071,7 +2087,9 @@ void app_manager_poll( void )
     }
     if( !mlx90640_is_detected() )
     {
-        (void)transition_to_app( next_available_app( 1 ), false );
+        app_framework_report_availability(
+            RFSCOUT_APP_THERMAL, RFSCOUT_APP_AVAILABILITY_UNAVAILABLE );
+        (void)transition_to_app( RFSCOUT_APP_DEVICE, false );
         return;
     }
     if( now - last_app_refresh_us < APP_REFRESH_INTERVAL_US )
@@ -2082,6 +2100,8 @@ void app_manager_poll( void )
     const esp_err_t result = thermal_view_render();
     if( ( ESP_OK != result ) && ( ESP_ERR_NOT_FINISHED != result ) && !mlx90640_is_detected() )
     {
-        (void)transition_to_app( next_available_app( 1 ), false );
+        app_framework_report_availability(
+            RFSCOUT_APP_THERMAL, RFSCOUT_APP_AVAILABILITY_UNAVAILABLE );
+        (void)transition_to_app( RFSCOUT_APP_DEVICE, false );
     }
 }
