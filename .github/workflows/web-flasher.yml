@@ -29,7 +29,8 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'pull_request' ||
-      github.event_name == 'workflow_run'
+      github.event_name == 'workflow_run' ||
+      github.event_name == 'release'
     runs-on: ubuntu-24.04
     outputs:
       ready: ${{ steps.stability.outputs.ready }}
@@ -86,8 +87,11 @@ jobs:
         run: |
           mkdir -p site/firmware/releases
           gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-            --jq '[.[] | {tagName: .tag_name, name: .name, isDraft: .draft, isPrerelease: .prerelease, publishedAt: .published_at}] | .[]' \
-            | jq -s 'sort_by(.publishedAt // "") | reverse | .[:20]' > releases.json
+            --jq '[.[] | {tagName: .tag_name, name: .name, isDraft: .draft, isPrerelease: .prerelease, publishedAt: .published_at, createdAt: .created_at}] | .[]' \
+            | jq -s '
+                (map(select(.isDraft)) | sort_by(.createdAt // "") | reverse) +
+                (map(select(.isDraft | not)) | sort_by(.publishedAt // .createdAt // "") | reverse | .[:20])
+              ' > releases.json
 
           jq -r '.[].tagName' releases.json | while IFS= read -r tag; do
             assets=$(gh release view "$tag" --json assets --jq '.assets[].name')
