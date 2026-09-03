@@ -65,9 +65,6 @@ void recorder_stop_recording( void );
 /** @brief Stop SD-backed recorder activity before storage is unmounted. */
 bool recorder_prepare_storage_shutdown( uint32_t a_timeout_ms );
 
-/** @brief Return true only when recorder workers, input channels, and playback are quiescent. */
-bool recorder_is_quiescent( void );
-
 /** @brief Delete one enumerated recording and refresh the list. */
 esp_err_t recorder_delete_file( size_t a_index );
 
