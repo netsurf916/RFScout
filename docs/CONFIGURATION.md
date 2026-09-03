@@ -32,6 +32,7 @@ RFScout is still pre-1.0. The configuration format may continue to change while 
     "high_temperature_action": "power_off"
   },
   "apps": {
+    "system_events": { "enabled": false },
     "wifi_bt": {
       "enabled": true,
       "retention": {

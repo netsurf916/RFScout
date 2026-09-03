@@ -49,7 +49,14 @@ static int config_source_version;
 static const char *app_config_name( rfscout_app_id_t a_app )
 {
     static const char *names[ RFSCOUT_APP_COUNT ] = {
-        "wifi_bt", "cc1101", "nrf24", "audio", "thermal", "device" };
+        [RFSCOUT_APP_SYSTEM_EVENTS] = "system_events",
+        [RFSCOUT_APP_DEVICE] = "device",
+        [RFSCOUT_APP_WIFI_BT] = "wifi_bt",
+        [RFSCOUT_APP_CC1101] = "cc1101",
+        [RFSCOUT_APP_NRF24] = "nrf24",
+        [RFSCOUT_APP_AUDIO] = "audio",
+        [RFSCOUT_APP_THERMAL] = "thermal",
+    };
     return ( a_app < RFSCOUT_APP_COUNT ) ? names[ a_app ] : "device";
 }
 
@@ -219,6 +226,7 @@ static void set_defaults( void )
         config.notification_app_enabled[ index ] =
             policy->notifications_supported && policy->notifications_enabled_default;
     }
+    config.apps_enabled[ RFSCOUT_APP_SYSTEM_EVENTS ] = false;
     config.apps_enabled[ RFSCOUT_APP_DEVICE ] = true;
 
     for( size_t index = 0; index < RFSCOUT_NOTIFICATION_TYPE_COUNT; ++index )

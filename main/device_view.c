@@ -47,16 +47,17 @@
 #define DEVICE_ITEM_DAY 15U
 #define DEVICE_ITEM_HOUR 16U
 #define DEVICE_ITEM_MINUTE 17U
-#define DEVICE_ITEM_WIFI 18U
-#define DEVICE_ITEM_CC1101 19U
-#define DEVICE_ITEM_NRF24 20U
-#define DEVICE_ITEM_AUDIO 21U
-#define DEVICE_ITEM_THERMAL 22U
-#define DEVICE_ITEM_LOGGING 23U
-#define DEVICE_ITEM_POWER_BUTTON 24U
-#define DEVICE_ITEM_POWER_POLICY 25U
-#define DEVICE_ITEM_SAVE 26U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 27U
+#define DEVICE_ITEM_SYSTEM_EVENTS 18U
+#define DEVICE_ITEM_WIFI 19U
+#define DEVICE_ITEM_CC1101 20U
+#define DEVICE_ITEM_NRF24 21U
+#define DEVICE_ITEM_AUDIO 22U
+#define DEVICE_ITEM_THERMAL 23U
+#define DEVICE_ITEM_LOGGING 24U
+#define DEVICE_ITEM_POWER_BUTTON 25U
+#define DEVICE_ITEM_POWER_POLICY 26U
+#define DEVICE_ITEM_SAVE 27U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 28U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
 #define DEVICE_ITEM_COUNT ( DEVICE_ITEM_SAVE + 1U )
@@ -167,6 +168,8 @@ static const char *startup_app_name( rfscout_app_id_t a_app )
 {
     switch( a_app )
     {
+        case RFSCOUT_APP_SYSTEM_EVENTS:
+            return "System Events";
         case RFSCOUT_APP_WIFI_BT:
             return "WiFi / BT";
         case RFSCOUT_APP_CC1101:
@@ -202,10 +205,10 @@ static char next_morse_character( char a_current, int a_direction )
 static bool item_direct_toggle( unsigned a_item )
 {
     return ( DEVICE_ITEM_AUDIO_POLICY == a_item ) || ( DEVICE_ITEM_ALERT_MODE == a_item ) ||
-           ( DEVICE_ITEM_CLOCK_FORMAT == a_item ) || ( DEVICE_ITEM_WIFI == a_item ) ||
-           ( DEVICE_ITEM_CC1101 == a_item ) || ( DEVICE_ITEM_NRF24 == a_item ) ||
-           ( DEVICE_ITEM_AUDIO == a_item ) || ( DEVICE_ITEM_THERMAL == a_item ) ||
-           ( DEVICE_ITEM_LOGGING == a_item );
+           ( DEVICE_ITEM_CLOCK_FORMAT == a_item ) || ( DEVICE_ITEM_SYSTEM_EVENTS == a_item ) ||
+           ( DEVICE_ITEM_WIFI == a_item ) || ( DEVICE_ITEM_CC1101 == a_item ) ||
+           ( DEVICE_ITEM_NRF24 == a_item ) || ( DEVICE_ITEM_AUDIO == a_item ) ||
+           ( DEVICE_ITEM_THERMAL == a_item ) || ( DEVICE_ITEM_LOGGING == a_item );
 }
 
 static bool item_editable( unsigned a_item )
@@ -254,6 +257,8 @@ static const char *item_label( unsigned a_item )
             return "Hour";
         case DEVICE_ITEM_MINUTE:
             return "Minute";
+        case DEVICE_ITEM_SYSTEM_EVENTS:
+            return "System Events";
         case DEVICE_ITEM_WIFI:
             return "WiFi / BT";
         case DEVICE_ITEM_CC1101:
@@ -347,6 +352,12 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             break;
         case DEVICE_ITEM_MINUTE:
             snprintf( a_value, a_capacity, "%02d", edited_time.tm_min );
+            break;
+        case DEVICE_ITEM_SYSTEM_EVENTS:
+            snprintf( a_value,
+                      a_capacity,
+                      "%s",
+                      on_off( config->apps_enabled[ RFSCOUT_APP_SYSTEM_EVENTS ] ) );
             break;
         case DEVICE_ITEM_WIFI:
             snprintf(
@@ -809,21 +820,30 @@ static void adjust_audio_volume( rfscout_audio_category_t a_category, int a_delt
 static void adjust_startup_app( int a_delta )
 {
     const rfscout_app_id_t old_app = device_config_startup_app();
-    int app = (int)old_app + ( ( a_delta > 0 ) ? 1 : -1 );
-    if( app < 0 )
+    rfscout_app_id_t new_app = old_app;
+    const int direction = ( a_delta > 0 ) ? 1 : -1;
+    for( int attempt = 0; attempt < RFSCOUT_APP_COUNT; ++attempt )
     {
-        app = RFSCOUT_APP_COUNT - 1;
+        int app = (int)new_app + direction;
+        if( app < 0 )
+        {
+            app = RFSCOUT_APP_COUNT - 1;
+        }
+        else if( app >= RFSCOUT_APP_COUNT )
+        {
+            app = 0;
+        }
+        new_app = (rfscout_app_id_t)app;
+        if( ( RFSCOUT_APP_DEVICE == new_app ) || device_config_app_enabled( new_app ) )
+        {
+            break;
+        }
     }
-    if( app >= RFSCOUT_APP_COUNT )
-    {
-        app = 0;
-    }
-    const rfscout_app_id_t new_app = (rfscout_app_id_t)app;
     if( ( new_app != old_app ) && ( ESP_OK == device_config_set_startup_app( new_app ) ) )
     {
         log_config_change(
             "apps.startup", startup_app_name( old_app ), startup_app_name( new_app ) );
-        emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
+        emit_device_event( RFSCOUT_EVENT_NAVIGATE, direction );
     }
 }
 
@@ -1109,6 +1129,10 @@ static void adjust_selected( int a_delta )
     else if( ( selected_item >= DEVICE_ITEM_YEAR ) && ( selected_item <= DEVICE_ITEM_MINUTE ) )
     {
         adjust_time_field( selected_item, a_delta );
+    }
+    else if( DEVICE_ITEM_SYSTEM_EVENTS == selected_item )
+    {
+        toggle_app( RFSCOUT_APP_SYSTEM_EVENTS, "apps.system_events" );
     }
     else if( DEVICE_ITEM_WIFI == selected_item )
     {

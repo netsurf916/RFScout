@@ -122,3 +122,7 @@ On the current target:
 `storage` owns SD mount/state; `log_writer` owns queued rotating logs. Application views render their own content; `ui_chrome_draw()` owns common top chrome and `ui_present` owns final global overlays/presentation.
 
 Pull-request and `main` CI perform formatting/tests and eligible firmware packaging. Durable releases are prepared deliberately through the release workflow; see [RELEASING.md](RELEASING.md).
+
+## System Events application
+
+The RAM-only structured system-event ring is a platform service. The optional System Events application is a read-only view over that service and is disabled by default. Its canonical navigation slot is immediately before Home/Device Settings. Center toggles a stable browse snapshot: while browsing, rotary input scrolls retained events; outside browse mode, rotary input remains application navigation. The view owns no retained dynamic event storage and leaving it discards only its small UI snapshot.
