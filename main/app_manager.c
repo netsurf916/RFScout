@@ -898,6 +898,14 @@ static esp_err_t reactivate_recorder_operation( app_transition_context_t *a_cont
         return ESP_OK;
     }
 
+    /* A failed Prepare may have timed out on the separate speaker playback worker. Re-run the
+       bounded Recorder storage/output shutdown before attempting to queue replacement playback. */
+    if( !recorder_prepare_storage_shutdown( APP_RECORDER_QUIESCE_TIMEOUT_MS ) )
+    {
+        ESP_LOGE( TAG, "Recorder output/storage work did not quiesce before abort reactivation" );
+        return ESP_ERR_TIMEOUT;
+    }
+
     if( !wait_for_recorder_workers( APP_RECORDER_QUIESCE_TIMEOUT_MS ) )
     {
         ESP_LOGE( TAG, "Recorder could not drain workers before abort reactivation" );
