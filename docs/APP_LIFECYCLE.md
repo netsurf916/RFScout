@@ -54,7 +54,7 @@ Wi-Fi and BLE likewise remain initialized as platform services while their activ
 
 ## Recorder
 
-Entering Recorder should not open the microphone. `recorder_init()` is intentionally allowed at entry because it only prepares reusable synchronization state and refreshes the recording catalog; I2S microphone ownership begins only for recording or monitor actions. Leaving Recorder must synchronously stop recording/monitor/playback activity according to the existing bounded shutdown rules before the reachability gate can pass.
+Entering Recorder should not open the microphone. `recorder_init()` is intentionally allowed at entry because it only prepares reusable synchronization state and refreshes the recording catalog; I2S microphone ownership begins only for recording or monitor actions. Leaving Recorder synchronously stops recording/monitor/playback activity and then performs a bounded reachability wait. Both `IDLE` and `NO_STORAGE` are valid stopped states. The transition is not allowed to certify Recorder quiescence until its worker tasks and recorder-owned microphone channel have actually disappeared; the application manager uses the recorder's synchronous microphone probe as a conservative ownership check because that probe rejects entry while recorder worker/channel state is still reachable.
 
 ## UI interaction policy
 
