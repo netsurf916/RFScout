@@ -17,6 +17,21 @@ A meaningful action inside an application may activate it immediately when the a
 
 Application availability is owned by the application framework rather than hard-coded in navigation. Each application descriptor declares one of three probe policies: `none` for applications with no runtime hardware gate, `startup` for fixed/on-board hardware whose result is cached for the boot, or `hotplug` for attachable resources that may be re-probed before entry and periodically while inactive. Detection mechanics stay with the relevant service/driver; the framework only invokes the callback and retains its semantic availability state. CC1101, nRF24, and the board PDM microphone use startup-cached probing. Thermal uses hot-plug probing because it is an explicitly attachable I2C peripheral. Future UART/I2C Quick-port applications should normally use the same hot-plug policy. Probing is distinct from activation: a successful probe may prepare reusable driver state, but it must not start scanning, continuous acquisition, recording, or another app-owned workload.
 
+## Transactional exit boundary
+
+Application exit is transactional until the final reachability gate passes. The reusable coordinator in `app_lifecycle.c/.h` separates source-app exit into four stages:
+
+1. **Prepare** requests bounded worker/peripheral quiescence. Operations here must be reversible or have an explicit source-app reactivation path.
+2. **Reachability** verifies that no source worker, callback, timer, DMA completion path, or other execution context can still access app-owned dynamic state.
+3. **Commit** performs irreversible app-specific cleanup only after the final fallible safety gate succeeds.
+4. **Reclaim** releases all remaining managed application/operation allocations and verifies that the exited app owns zero managed allocations.
+
+A Prepare or Reachability failure aborts the transition before reclamation. The source application remains selected and its lifecycle hook reactivates any resource that was successfully stopped during the attempted transition. Managed app memory remains intact. The destination is not entered.
+
+Once Commit begins, rollback is no longer valid. After Commit, `app_lifecycle_transition()` owns `memory_manager_release_app()` and records the zero-allocation postcondition. A post-reclamation accounting failure is reported as a committed memory-invariant diagnostic; the destination still has to be entered because source memory may already have been released.
+
+The coordinator retains the most recent transition diagnostics: source and destination IDs, monotonically increasing sequence, outcome/error, reclaimed managed bytes, remaining managed allocation count, and elapsed time. Transition logs also include current free and largest-block PSRAM values for lifecycle/fragmentation testing.
+
 ## Peripheral ownership contract
 
 When application exit/quiesce returns, the application must satisfy all of the following:
@@ -35,11 +50,11 @@ If bounded quiesce fails, the application transition is aborted. RFScout must re
 
 CC1101 and nRF24 use persistent worker tasks. Their stop paths must therefore wait for the worker to observe the stop request and leave its active sweep before the application manager starts another shared-SPI peripheral. A stop flag alone is not a quiesce guarantee. If the bounded wait expires while the worker is still active, the radio restores its `running` state and reports failure so the manager can abort the transition without freezing acquisition in the retained app.
 
-Wi-Fi and BLE likewise remain initialized as platform services while their active scanning/monitoring is controlled by application activation.
+Wi-Fi and BLE likewise remain initialized as platform services while their active scanning/monitoring is controlled by application activation. A partially completed Wi-Fi/BLE stop attempt must restore whichever collectors were active before the transition if the transaction aborts.
 
 ## Recorder
 
-Entering Recorder should not open the microphone. `recorder_init()` is intentionally allowed at entry because it only prepares reusable synchronization state and refreshes the recording catalog; I2S microphone ownership begins only for recording or monitor actions. Leaving Recorder must synchronously stop recording/monitor/playback activity according to the existing bounded shutdown rules.
+Entering Recorder should not open the microphone. `recorder_init()` is intentionally allowed at entry because it only prepares reusable synchronization state and refreshes the recording catalog; I2S microphone ownership begins only for recording or monitor actions. Leaving Recorder must synchronously stop recording/monitor/playback activity according to the existing bounded shutdown rules before the reachability gate can pass.
 
 ## UI interaction policy
 
@@ -59,4 +74,6 @@ Application chrome and ordinary application content use semantic colors from `ui
 
 ## Stability diagnostics
 
-Lifecycle work should be tested by rapidly rotating through all enabled applications for an extended period. Transition diagnostics should include the source/destination application, activation/quiesce duration, free heap, minimum-ever free heap, and largest free block where practical. A falling largest-free-block value with otherwise stable total free heap suggests fragmentation; stable heap with failures points more strongly toward lifecycle races or peripheral ownership violations.
+Lifecycle work should be tested by rapidly rotating through all enabled applications for an extended period. Transition diagnostics include the source/destination application, transition outcome, reclaimed managed bytes, remaining managed allocations, elapsed time, free PSRAM, and largest free PSRAM block. Existing activation diagnostics continue to expose general heap information.
+
+The v0.4.0 release validation must still exercise failed quiesce/reachability paths, rapid Home/application cycles, low-memory conditions, and callback/timer races on hardware. A falling largest-free-block value with otherwise stable total free heap suggests fragmentation; stable heap with failures points more strongly toward lifecycle races or peripheral ownership violations. Successful app exit must leave zero managed allocations for the exited app, while an aborted transition must preserve the source app and its managed state.
