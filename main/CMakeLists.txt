@@ -51,6 +51,7 @@ idf_component_register(
     SRCS
         "rfscout.c"
         "app_manager.c"
+        "app_lifecycle.c"
         "app_framework.c"
         "app_logging.c"
         "app_audio_policy.c"

@@ -8,6 +8,7 @@
 #include "app_manager.h"
 
 #include "app_framework.h"
+#include "app_lifecycle.h"
 
 #include "audio_spectrum.h"
 #include "audio_view.h"
@@ -31,6 +32,7 @@
 #include "radio_monitor.h"
 #include "recorder.h"
 #include "session_state.h"
+#include "storage.h"
 #include "surveillance_history.h"
 #include "thermal_view.h"
 #include "ui.h"
@@ -39,14 +41,18 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include <string.h>
 
 #define APP_REFRESH_INTERVAL_US 125000LL
 #define AUDIO_REFRESH_INTERVAL_US 100000LL
 #define APP_FEATURE_PROBE_INTERVAL_US 10000000LL
+#define APP_ACTIVE_DEPENDENCY_INTERVAL_US 500000LL
 #define APP_RADIO_RETRY_INTERVAL_US 1000000LL
 #define APP_ACTIVATION_DELAY_US 500000LL
+#define APP_RECORDER_QUIESCE_TIMEOUT_MS 5000U
 
 #define WIFI_MENU_BACK 0U
 #define WIFI_MENU_RESET 1U
@@ -90,6 +96,7 @@ static const char *TAG = "app_manager";
 static rfscout_app_id_t active_app;
 static int64_t last_app_refresh_us;
 static int64_t last_hotplug_probe_us;
+static int64_t last_active_dependency_probe_us;
 static int64_t last_radio_retry_us;
 static int64_t app_entered_us;
 static bool app_activated;
@@ -717,54 +724,341 @@ static void render_audio( void )
     audio_view_render( NULL, NULL );
 }
 
-static bool leave_app( rfscout_app_id_t a_app )
+typedef struct
 {
-    bool quiesced = true;
-    if( RFSCOUT_APP_WIFI_BT == a_app )
+    rfscout_app_id_t source;
+    bool was_activated;
+    bool wifi_was_ready;
+    bool ble_was_ready;
+    bool wifi_stopped;
+    bool ble_stopped;
+    bool cc_stopped;
+    bool nr_stopped;
+    rfscout_recorder_state_t recorder_state_before;
+    unsigned recorder_item_before;
+    uint8_t recorder_gain_before;
+    uint8_t recorder_volume_before;
+    bool audio_stop_attempted;
+    bool audio_quiesced;
+    bool prepare_complete;
+} app_transition_context_t;
+
+static bool recorder_worker_references_clear( void )
+{
+    /*
+     * recorder_probe_microphone() rejects entry while the recorder owns an RX channel or while
+     * either recorder worker task still exists. Once those references are gone, the probe itself
+     * is synchronous and releases its temporary channel before returning. Detection/probe errors
+     * therefore do not invalidate the reachability proof; ESP_ERR_INVALID_STATE is the signal that
+     * a recorder-owned execution context or channel is still reachable. Recorder state itself is
+     * deliberately not part of this proof: an interrupted SD write may leave ERROR after all worker
+     * and channel references are safely gone.
+     */
+    return ESP_ERR_INVALID_STATE != recorder_probe_microphone();
+}
+
+static bool wait_for_recorder_workers( uint32_t a_timeout_ms )
+{
+    const int64_t deadline_us = esp_timer_get_time() + (int64_t)a_timeout_ms * 1000LL;
+    do
     {
-        if( app_activated )
+        if( recorder_worker_references_clear() )
         {
-            if( ESP_OK != ble_monitor_stop() )
-            {
-                quiesced = false;
-            }
-            if( ESP_OK != radio_monitor_stop() )
-            {
-                quiesced = false;
-            }
+            return true;
         }
+        vTaskDelay( pdMS_TO_TICKS( 10U ) );
+    } while( esp_timer_get_time() < deadline_us );
+
+    return recorder_worker_references_clear();
+}
+
+static esp_err_t prepare_app_exit( void *a_context )
+{
+    app_transition_context_t *context = a_context;
+    if( NULL == context )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if( !context->was_activated )
+    {
+        context->prepare_complete = true;
+        return ESP_OK;
+    }
+
+    switch( context->source )
+    {
+        case RFSCOUT_APP_WIFI_BT:
+            if( context->ble_was_ready )
+            {
+                const esp_err_t result = ble_monitor_stop();
+                context->ble_stopped = true;
+                ble_monitor_ready = false;
+                if( ESP_OK != result )
+                {
+                    return result;
+                }
+            }
+            if( context->wifi_was_ready )
+            {
+                const esp_err_t result = radio_monitor_stop();
+                context->wifi_stopped = true;
+                wifi_monitor_ready = false;
+                if( ESP_OK != result )
+                {
+                    return result;
+                }
+            }
+            break;
+        case RFSCOUT_APP_CC1101:
+            if( !cc1101_stop() )
+            {
+                return ESP_ERR_TIMEOUT;
+            }
+            context->cc_stopped = true;
+            break;
+        case RFSCOUT_APP_NRF24:
+            if( !nrf24_stop() )
+            {
+                return ESP_ERR_TIMEOUT;
+            }
+            context->nr_stopped = true;
+            break;
+        case RFSCOUT_APP_AUDIO:
+            context->audio_stop_attempted =
+                ( RFSCOUT_RECORDER_RECORDING == context->recorder_state_before ) ||
+                ( RFSCOUT_RECORDER_SAVING == context->recorder_state_before ) ||
+                ( RFSCOUT_RECORDER_MONITORING == context->recorder_state_before ) ||
+                ( RFSCOUT_RECORDER_PLAYING == context->recorder_state_before );
+            if( !recorder_prepare_storage_shutdown( APP_RECORDER_QUIESCE_TIMEOUT_MS ) )
+            {
+                return ESP_ERR_TIMEOUT;
+            }
+            recorder_stop();
+            audio_spectrum_stop();
+            if( !wait_for_recorder_workers( APP_RECORDER_QUIESCE_TIMEOUT_MS ) )
+            {
+                ESP_LOGE( TAG, "Recorder worker/channel references did not quiesce before exit" );
+                return ESP_ERR_TIMEOUT;
+            }
+            context->audio_quiesced = true;
+            break;
+        case RFSCOUT_APP_DEVICE:
+        case RFSCOUT_APP_THERMAL:
+        case RFSCOUT_APP_COUNT:
+        default:
+            break;
+    }
+
+    context->prepare_complete = true;
+    return ESP_OK;
+}
+
+static bool app_exit_reachability_clear( void *a_context )
+{
+    const app_transition_context_t *context = a_context;
+    if( ( NULL == context ) || !context->prepare_complete )
+    {
+        return false;
+    }
+    if( !context->was_activated )
+    {
+        return true;
+    }
+
+    switch( context->source )
+    {
+        case RFSCOUT_APP_WIFI_BT:
+            return ( !context->wifi_was_ready || context->wifi_stopped ) &&
+                   ( !context->ble_was_ready || context->ble_stopped );
+        case RFSCOUT_APP_CC1101:
+            return context->cc_stopped;
+        case RFSCOUT_APP_NRF24:
+            return context->nr_stopped;
+        case RFSCOUT_APP_AUDIO:
+            return context->audio_quiesced;
+        case RFSCOUT_APP_DEVICE:
+        case RFSCOUT_APP_THERMAL:
+            return true;
+        case RFSCOUT_APP_COUNT:
+        default:
+            return false;
+    }
+}
+
+static esp_err_t reactivate_recorder_operation( app_transition_context_t *a_context )
+{
+    if( ( NULL == a_context ) || !a_context->audio_stop_attempted )
+    {
+        return ESP_OK;
+    }
+
+    if( recorder_state() == a_context->recorder_state_before )
+    {
+        return ESP_OK;
+    }
+
+    /* A failed Prepare may have timed out on the separate speaker playback worker. Re-run the
+       bounded Recorder storage/output shutdown before attempting to queue replacement playback. */
+    if( !recorder_prepare_storage_shutdown( APP_RECORDER_QUIESCE_TIMEOUT_MS ) )
+    {
+        ESP_LOGE( TAG, "Recorder output/storage work did not quiesce before abort reactivation" );
+        return ESP_ERR_TIMEOUT;
+    }
+
+    if( !wait_for_recorder_workers( APP_RECORDER_QUIESCE_TIMEOUT_MS ) )
+    {
+        ESP_LOGE( TAG, "Recorder could not drain workers before abort reactivation" );
+        return ESP_ERR_TIMEOUT;
+    }
+
+    if( ( RFSCOUT_RECORDER_RECORDING != a_context->recorder_state_before ) &&
+        ( RFSCOUT_RECORDER_MONITORING != a_context->recorder_state_before ) &&
+        ( RFSCOUT_RECORDER_PLAYING != a_context->recorder_state_before ) )
+    {
+        return ESP_OK;
+    }
+
+    if( RFSCOUT_RECORDER_IDLE != recorder_state() )
+    {
+        const esp_err_t refresh_result = recorder_refresh();
+        if( ESP_OK != refresh_result )
+        {
+            return refresh_result;
+        }
+    }
+
+    esp_err_t result = ESP_ERR_INVALID_STATE;
+    if( RFSCOUT_RECORDER_RECORDING == a_context->recorder_state_before )
+    {
+        recorder_set_input_gain_db( a_context->recorder_gain_before );
+        result = recorder_start_recording();
+        if( ESP_OK == result )
+        {
+            ESP_LOGW( TAG, "Recorder restarted recording after aborted app transition" );
+        }
+    }
+    else if( RFSCOUT_RECORDER_MONITORING == a_context->recorder_state_before )
+    {
+        result = recorder_start_monitor( a_context->recorder_gain_before );
+    }
+    else if( RFSCOUT_RECORDER_PLAYING == a_context->recorder_state_before )
+    {
+        if( a_context->recorder_item_before < AUDIO_BROWSER_FILE_BASE )
+        {
+            return ESP_ERR_INVALID_STATE;
+        }
+        result = recorder_start_playback( a_context->recorder_item_before - AUDIO_BROWSER_FILE_BASE,
+                                          a_context->recorder_volume_before );
+    }
+
+    if( ESP_OK == result )
+    {
+        audio_last_state = a_context->recorder_state_before;
+    }
+    return result;
+}
+
+static esp_err_t reactivate_app_exit( void *a_context )
+{
+    app_transition_context_t *context = a_context;
+    if( NULL == context )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( !context->was_activated )
+    {
+        return ESP_OK;
+    }
+
+    esp_err_t first_error = ESP_OK;
+    switch( context->source )
+    {
+        case RFSCOUT_APP_WIFI_BT:
+            if( context->wifi_was_ready && context->wifi_stopped )
+            {
+                const esp_err_t result = radio_monitor_start();
+                wifi_monitor_ready = ( ESP_OK == result );
+                if( ( ESP_OK != result ) && ( ESP_OK == first_error ) )
+                {
+                    first_error = result;
+                }
+            }
+            if( context->ble_was_ready && context->ble_stopped )
+            {
+                const esp_err_t result = ble_monitor_start();
+                ble_monitor_ready = ( ESP_OK == result );
+                if( ( ESP_OK != result ) && ( ESP_OK == first_error ) )
+                {
+                    first_error = result;
+                }
+            }
+            break;
+        case RFSCOUT_APP_CC1101:
+            if( context->cc_stopped )
+            {
+                const esp_err_t result = cc1101_start();
+                if( ( ESP_OK != result ) && ( ESP_OK == first_error ) )
+                {
+                    first_error = result;
+                }
+            }
+            break;
+        case RFSCOUT_APP_NRF24:
+            if( context->nr_stopped )
+            {
+                const esp_err_t result = nrf24_start();
+                if( ( ESP_OK != result ) && ( ESP_OK == first_error ) )
+                {
+                    first_error = result;
+                }
+            }
+            break;
+        case RFSCOUT_APP_AUDIO:
+            first_error = reactivate_recorder_operation( context );
+            break;
+        case RFSCOUT_APP_DEVICE:
+        case RFSCOUT_APP_THERMAL:
+        case RFSCOUT_APP_COUNT:
+        default:
+            break;
+    }
+    return first_error;
+}
+
+static void commit_app_exit( void *a_context )
+{
+    const app_transition_context_t *context = a_context;
+    if( NULL == context )
+    {
+        return;
+    }
+
+    if( RFSCOUT_APP_WIFI_BT == context->source )
+    {
         wifi_monitor_ready = false;
         ble_monitor_ready = false;
         wifi_item = WIFI_MENU_BACK;
     }
-    else if( RFSCOUT_APP_CC1101 == a_app )
+    else if( RFSCOUT_APP_CC1101 == context->source )
     {
-        if( app_activated && !cc1101_stop() )
-        {
-            return false;
-        }
         cc1101_activity_reset();
         cc1101_activity_reset_counts();
         memset( cc_notification_counts, 0, sizeof( cc_notification_counts ) );
         cc_item = CC1101_MENU_BACK;
     }
-    else if( RFSCOUT_APP_NRF24 == a_app )
+    else if( RFSCOUT_APP_NRF24 == context->source )
     {
-        if( app_activated && !nrf24_stop() )
-        {
-            return false;
-        }
         nrf24_activity_reset();
         memset( nr_notification_counts, 0, sizeof( nr_notification_counts ) );
         nr_item = NRF24_MENU_BACK;
         nr_packet_item = 0U;
     }
-    else if( RFSCOUT_APP_AUDIO == a_app )
+    else if( RFSCOUT_APP_AUDIO == context->source )
     {
-        recorder_stop();
-        audio_spectrum_stop();
         audio_item = AUDIO_BROWSER_BACK;
     }
+
     wifi_menu = false;
     wifi_edit = false;
     cc_menu = false;
@@ -780,12 +1074,12 @@ static bool leave_app( rfscout_app_id_t a_app )
     device_menu = false;
     notification_menu = false;
     notification_edit = false;
-    return quiesced;
 }
 
 static void enter_app( rfscout_app_id_t a_app )
 {
     last_app_refresh_us = 0;
+    last_active_dependency_probe_us = 0;
     app_entered_us = esp_timer_get_time();
     app_activated = !app_framework_requires_activation( a_app );
     switch( a_app )
@@ -867,6 +1161,67 @@ static rfscout_app_id_t next_available_app( int a_direction )
     return active_app;
 }
 
+static bool transition_to_app( rfscout_app_id_t a_destination, bool a_report_abort )
+{
+    if( ( a_destination < 0 ) || ( a_destination >= RFSCOUT_APP_COUNT ) ||
+        ( a_destination == active_app ) )
+    {
+        return false;
+    }
+
+    const rfscout_app_id_t previous = active_app;
+    const int64_t transition_started = esp_timer_get_time();
+    app_transition_context_t context = {
+        .source = previous,
+        .was_activated = app_activated,
+        .wifi_was_ready = wifi_monitor_ready,
+        .ble_was_ready = ble_monitor_ready,
+        .recorder_state_before = RFSCOUT_RECORDER_IDLE,
+    };
+    if( RFSCOUT_APP_AUDIO == previous )
+    {
+        const device_config_t *config = device_config_get();
+        context.recorder_state_before = recorder_state();
+        context.recorder_item_before = audio_item;
+        context.recorder_gain_before = recorder_input_gain_db();
+        context.recorder_volume_before = NULL != config ? config->recorder_volume_percent : 50U;
+    }
+    const rfscout_app_lifecycle_hooks_t hooks = {
+        .prepare = prepare_app_exit,
+        .reachability_clear = app_exit_reachability_clear,
+        .reactivate = reactivate_app_exit,
+        .commit = commit_app_exit,
+        .context = &context,
+    };
+    const rfscout_app_transition_diagnostics_t diagnostics =
+        app_lifecycle_transition( previous, a_destination, &hooks );
+    if( !app_lifecycle_transition_committed( &diagnostics ) )
+    {
+        log_lifecycle( "transition-abort",
+                       previous,
+                       a_destination,
+                       esp_timer_get_time() - transition_started );
+        if( a_report_abort )
+        {
+            emit_event( RFSCOUT_EVENT_ERROR, (int32_t)diagnostics.error );
+        }
+        return false;
+    }
+
+    active_app = a_destination;
+    enter_app( active_app );
+    log_lifecycle( "transition", previous, active_app, esp_timer_get_time() - transition_started );
+    if( ESP_OK != diagnostics.error )
+    {
+        ESP_LOGE( TAG,
+                  "committed transition from=%d to=%d reported %s",
+                  (int)previous,
+                  (int)active_app,
+                  esp_err_to_name( diagnostics.error ) );
+    }
+    return true;
+}
+
 static bool switch_app_for_delta( int a_delta )
 {
     if( 0 == a_delta )
@@ -875,21 +1230,10 @@ static bool switch_app_for_delta( int a_delta )
     }
     const int direction = ( a_delta > 0 ) ? 1 : -1;
     const rfscout_app_id_t candidate = next_available_app( direction );
-    if( candidate == active_app )
+    if( !transition_to_app( candidate, true ) )
     {
         return false;
     }
-    const rfscout_app_id_t previous = active_app;
-    const int64_t transition_started = esp_timer_get_time();
-    if( !leave_app( previous ) )
-    {
-        log_lifecycle(
-            "quiesce-timeout", previous, candidate, esp_timer_get_time() - transition_started );
-        return false;
-    }
-    active_app = candidate;
-    enter_app( active_app );
-    log_lifecycle( "transition", previous, active_app, esp_timer_get_time() - transition_started );
     rfscout_event_emit( RFSCOUT_EVENT_NAVIGATE, (uint8_t)active_app, direction );
     return true;
 }
@@ -1486,14 +1830,10 @@ static void close_active_menu_for_back( void )
     }
     else if( RFSCOUT_APP_DEVICE != active_app )
     {
-        if( !leave_app( active_app ) )
+        if( transition_to_app( RFSCOUT_APP_DEVICE, true ) )
         {
-            emit_event( RFSCOUT_EVENT_ERROR, ESP_ERR_TIMEOUT );
-            return;
+            rfscout_event_emit( RFSCOUT_EVENT_BACK, (uint8_t)RFSCOUT_APP_DEVICE, 0 );
         }
-        active_app = RFSCOUT_APP_DEVICE;
-        enter_app( active_app );
-        rfscout_event_emit( RFSCOUT_EVENT_BACK, (uint8_t)RFSCOUT_APP_DEVICE, 0 );
     }
 }
 
@@ -1504,6 +1844,7 @@ esp_err_t app_manager_init( void )
     const bool have_restored_session = session_state_restore( &restored_session );
     last_app_refresh_us = 0;
     last_hotplug_probe_us = esp_timer_get_time();
+    last_active_dependency_probe_us = 0;
     last_radio_retry_us = 0;
     app_entered_us = 0;
     app_activated = false;
@@ -1533,7 +1874,15 @@ esp_err_t app_manager_init( void )
     memset( cc_notification_counts, 0, sizeof( cc_notification_counts ) );
     memset( nr_notification_counts, 0, sizeof( nr_notification_counts ) );
 
-    const esp_err_t result = ui_init();
+    esp_err_t result = app_lifecycle_init();
+    if( ESP_OK != result )
+    {
+        ESP_LOGE(
+            TAG, "application lifecycle initialization failed: %s", esp_err_to_name( result ) );
+        return result;
+    }
+
+    result = ui_init();
     if( ESP_OK != result )
     {
         return result;
@@ -1564,6 +1913,28 @@ esp_err_t app_manager_init( void )
 rfscout_app_id_t app_manager_current( void )
 {
     return active_app;
+}
+
+static bool recorder_dependency_lost( int64_t a_now )
+{
+    const rfscout_recorder_state_t state = recorder_state();
+    if( ( RFSCOUT_RECORDER_ERROR == state ) || ( RFSCOUT_RECORDER_NO_STORAGE == state ) )
+    {
+        return true;
+    }
+
+    if( ( RFSCOUT_RECORDER_IDLE != state ) && ( RFSCOUT_RECORDER_MONITORING != state ) )
+    {
+        return false;
+    }
+
+    if( a_now - last_active_dependency_probe_us < APP_ACTIVE_DEPENDENCY_INTERVAL_US )
+    {
+        return false;
+    }
+
+    last_active_dependency_probe_us = a_now;
+    return ESP_OK != storage_probe_card();
 }
 
 void app_manager_poll( void )
@@ -1708,6 +2079,14 @@ void app_manager_poll( void )
 
     if( RFSCOUT_APP_AUDIO == active_app )
     {
+        if( recorder_dependency_lost( now ) )
+        {
+            app_framework_report_availability( RFSCOUT_APP_AUDIO,
+                                               RFSCOUT_APP_AVAILABILITY_UNAVAILABLE );
+            ESP_LOGW( TAG, "Recorder dependency lost; returning Home" );
+            (void)transition_to_app( RFSCOUT_APP_DEVICE, false );
+            return;
+        }
         if( audio_menu )
         {
             audio_input( pressed, long_pressed, delta );
@@ -1817,9 +2196,9 @@ void app_manager_poll( void )
     }
     if( !mlx90640_is_detected() )
     {
-        leave_app( active_app );
-        active_app = next_available_app( 1 );
-        enter_app( active_app );
+        app_framework_report_availability( RFSCOUT_APP_THERMAL,
+                                           RFSCOUT_APP_AVAILABILITY_UNAVAILABLE );
+        (void)transition_to_app( RFSCOUT_APP_DEVICE, false );
         return;
     }
     if( now - last_app_refresh_us < APP_REFRESH_INTERVAL_US )
@@ -1830,8 +2209,8 @@ void app_manager_poll( void )
     const esp_err_t result = thermal_view_render();
     if( ( ESP_OK != result ) && ( ESP_ERR_NOT_FINISHED != result ) && !mlx90640_is_detected() )
     {
-        leave_app( active_app );
-        active_app = next_available_app( 1 );
-        enter_app( active_app );
+        app_framework_report_availability( RFSCOUT_APP_THERMAL,
+                                           RFSCOUT_APP_AVAILABILITY_UNAVAILABLE );
+        (void)transition_to_app( RFSCOUT_APP_DEVICE, false );
     }
 }

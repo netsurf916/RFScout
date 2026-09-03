@@ -29,16 +29,20 @@ For each application, the manager tracks:
 - current managed allocation count;
 - allocation-failure count.
 
-`memory_manager_release_operation()` reclaims one nested operation. `memory_manager_release_app()` reclaims every application and operation allocation associated with the selected app and returns the number of payload bytes released. `memory_manager_app_allocation_count()` provides the invariant needed by lifecycle code to verify that successful app exit leaves no managed allocations behind.
+`memory_manager_release_operation()` reclaims one nested operation. `memory_manager_release_app()` reclaims every application and operation allocation associated with the selected app and returns the number of payload bytes released. `memory_manager_app_allocation_count()` provides the invariant used by lifecycle code to verify that successful app exit leaves no managed allocations behind.
 
 Metadata for managed allocations is intentionally small and kept in internal memory so the ownership list remains available while PSRAM payloads are being reclaimed.
 
 ## Lifecycle boundary
 
-The memory manager provides reclamation mechanics; it does **not** decide when reclamation is safe. Application workers, callbacks, timers, DMA completion paths, and peripherals must first be quiesced according to [APP_LIFECYCLE.md](APP_LIFECYCLE.md). The v0.4.0 lifecycle integration work is responsible for placing `memory_manager_release_app()` after the final reachability/safety gate and for treating a non-zero post-release allocation count as an accounting invariant failure.
+The memory manager provides reclamation mechanics; `app_lifecycle.c` owns the application-exit reclamation boundary. Application workers, callbacks, timers, DMA completion paths, and peripherals first pass the transactional Prepare and Reachability stages described in [APP_LIFECYCLE.md](APP_LIFECYCLE.md). Only after that final fallible safety gate does the coordinator run irreversible app cleanup and call `memory_manager_release_app()`.
 
-No existing application storage is migrated merely by introducing this manager. Each application will move eligible retained state to managed PSRAM in subsequent v0.4.0 work, with its own memory-pressure semantics and quiesce validation.
+After reclamation, the coordinator verifies `memory_manager_app_allocation_count()` is zero. This postcondition checks allocator/accounting state only; it is not a substitute for proving reachability before memory is freed. A non-zero count is recorded as a committed memory-invariant diagnostic because rollback is unsafe once source allocations may already have been released.
+
+An aborted Prepare or Reachability stage never bulk-reclaims the source application's managed memory. The source remains selected and its resources are reactivated as necessary.
+
+Individual application storage is not automatically migrated merely because lifecycle reclamation is integrated. Each application moves eligible retained state to managed PSRAM in subsequent v0.4.0 work, with its own memory-pressure semantics and quiesce validation.
 
 ## Supported-target requirement
 
-Managed storage reinforces RFScout's existing platform requirement for usable external PSRAM. A future board port must provide a working SPIRAM heap; internal SRAM is not a reduced-capacity fallback for managed application history. See [BOARD_PORTING.md](BOARD_PORTING.md) for the board-level requirement.
+Managed storage reinforces RFScout's platform requirement for usable external PSRAM. `app_lifecycle_init()` initializes the managed allocator during application-manager startup and propagates an unsupported-target error rather than silently substituting internal SRAM. A future board port must provide a working SPIRAM heap; internal SRAM is not a reduced-capacity fallback for managed application history. See [BOARD_PORTING.md](BOARD_PORTING.md) for the board-level requirement.
