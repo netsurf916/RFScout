@@ -1990,10 +1990,7 @@ void app_manager_poll( void )
             app_framework_report_availability( RFSCOUT_APP_AUDIO,
                                                RFSCOUT_APP_AVAILABILITY_UNAVAILABLE );
             ESP_LOGW( TAG, "Recorder dependency lost; returning Home" );
-            if( transition_to_app( RFSCOUT_APP_DEVICE, false ) )
-            {
-                storage_shutdown();
-            }
+            (void)transition_to_app( RFSCOUT_APP_DEVICE, false );
             return;
         }
         if( audio_menu )
