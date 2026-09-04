@@ -385,6 +385,7 @@ bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new
         {
             *a_is_new = false;
         }
+        emit_event( OBSERVATION_STORE_EVENT_DROPPED_CAPACITY, a_observation );
         xSemaphoreGive( store_lock );
         return false;
     }
@@ -530,8 +531,8 @@ size_t observation_store_summary( observation_store_summary_t *a_summary,
     size_t unique_count = 0U;
     for( size_t i = 0U; i < vendor_observation_count; ++i )
     {
-        if( ( 0U == unique_count ) ||
-            ( 0 != strcmp( summary_vendors[ unique_count - 1U ].name, summary_vendors[ i ].name ) ) )
+        if( ( 0U == unique_count ) || ( 0 != strcmp( summary_vendors[ unique_count - 1U ].name,
+                                                     summary_vendors[ i ].name ) ) )
         {
             if( unique_count != i )
             {
