@@ -104,8 +104,8 @@ rfscout_app_transition_diagnostics_t app_lifecycle_transition(
         .sequence = ++transition_sequence,
     };
 
-    if( ( NULL == a_hooks ) || ( a_from < 0 ) || ( a_from >= RFSCOUT_APP_COUNT ) ||
-        ( a_to < 0 ) || ( a_to >= RFSCOUT_APP_COUNT ) || ( a_from == a_to ) )
+    if( ( NULL == a_hooks ) || ( a_from < 0 ) || ( a_from >= RFSCOUT_APP_COUNT ) || ( a_to < 0 ) ||
+        ( a_to >= RFSCOUT_APP_COUNT ) || ( a_from == a_to ) )
     {
         diagnostics.outcome = RFSCOUT_APP_TRANSITION_ABORTED_PREPARE;
         diagnostics.error = ESP_ERR_INVALID_ARG;
