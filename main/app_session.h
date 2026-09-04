@@ -16,6 +16,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 typedef esp_err_t ( *rfscout_app_service_fn )( void *a_context );
 
@@ -25,6 +26,9 @@ typedef esp_err_t ( *rfscout_app_service_fn )( void *a_context );
  *          when it currently owns no managed memory or asynchronous platform services.
  */
 esp_err_t app_session_ensure( rfscout_app_id_t a_app );
+
+/** @brief Return a monotonically changing identifier for the current app-session lifetime. */
+uint32_t app_session_generation( void );
 
 /** @brief Allocate zero-initialized PSRAM owned by the current app session. */
 void *app_session_calloc( size_t a_count, size_t a_size );
