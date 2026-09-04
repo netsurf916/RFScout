@@ -6,8 +6,8 @@
 
 #include "observation_store.h"
 
+#include "app_session.h"
 #include "device_config.h"
-#include "memory_manager.h"
 
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -16,42 +16,30 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define OBSERVATION_SUMMARY_OPERATION 1U
-
 static rf_device_t *devices;
 static size_t device_count;
 static size_t device_capacity;
 static observation_vendor_count_t *summary_vendors;
 static size_t summary_vendor_capacity;
+static uint32_t store_generation;
 static SemaphoreHandle_t store_lock;
 static observation_store_event_callback_t event_callback;
 static void *event_context;
 
-static rfscout_memory_owner_t store_owner( void )
+static void synchronize_session_store( void )
 {
-    return memory_manager_app_owner( RFSCOUT_APP_WIFI_BT );
-}
-
-static rfscout_memory_owner_t summary_owner( void )
-{
-    return memory_manager_operation_owner( RFSCOUT_APP_WIFI_BT, OBSERVATION_SUMMARY_OPERATION );
-}
-
-static void synchronize_reclaimed_store( void )
-{
-    if( ( NULL != devices ) && !memory_manager_pointer_owned_by( store_owner(), devices ) )
+    const uint32_t generation = app_session_generation();
+    if( store_generation == generation )
     {
-        devices = NULL;
-        device_count = 0U;
-        device_capacity = 0U;
+        return;
     }
 
-    if( ( NULL != summary_vendors ) &&
-        !memory_manager_pointer_owned_by( summary_owner(), summary_vendors ) )
-    {
-        summary_vendors = NULL;
-        summary_vendor_capacity = 0U;
-    }
+    devices = NULL;
+    device_count = 0U;
+    device_capacity = 0U;
+    summary_vendors = NULL;
+    summary_vendor_capacity = 0U;
+    store_generation = generation;
 }
 
 static bool ensure_capacity( size_t a_required )
@@ -76,8 +64,7 @@ static bool ensure_capacity( size_t a_required )
         capacity *= 2U;
     }
 
-    rf_device_t *replacement =
-        memory_manager_resize( store_owner(), devices, capacity, sizeof( *devices ) );
+    rf_device_t *replacement = app_session_resize( devices, capacity, sizeof( *devices ) );
     if( NULL == replacement )
     {
         return false;
@@ -110,8 +97,8 @@ static bool ensure_summary_capacity( size_t a_required )
         capacity *= 2U;
     }
 
-    observation_vendor_count_t *replacement = memory_manager_resize(
-        summary_owner(), summary_vendors, capacity, sizeof( *summary_vendors ) );
+    observation_vendor_count_t *replacement =
+        app_session_resize( summary_vendors, capacity, sizeof( *summary_vendors ) );
     if( NULL == replacement )
     {
         return false;
@@ -280,6 +267,7 @@ esp_err_t observation_store_init( void )
     device_capacity = 0U;
     summary_vendors = NULL;
     summary_vendor_capacity = 0U;
+    store_generation = app_session_generation();
     event_callback = NULL;
     event_context = NULL;
     store_lock = xSemaphoreCreateMutex();
@@ -310,7 +298,7 @@ bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new
     }
 
     xSemaphoreTake( store_lock, portMAX_DELAY );
-    synchronize_reclaimed_store();
+    synchronize_session_store();
     expire_stale_devices( current_time_ms() );
 
     for( size_t i = 0U; i < device_count; ++i )
@@ -410,7 +398,7 @@ void observation_store_reset( void )
     }
 
     xSemaphoreTake( store_lock, portMAX_DELAY );
-    synchronize_reclaimed_store();
+    synchronize_session_store();
     if( NULL != devices )
     {
         memset( devices, 0, device_capacity * sizeof( *devices ) );
@@ -426,7 +414,7 @@ void observation_store_housekeeping( void )
         return;
     }
     xSemaphoreTake( store_lock, portMAX_DELAY );
-    synchronize_reclaimed_store();
+    synchronize_session_store();
     expire_stale_devices( current_time_ms() );
     xSemaphoreGive( store_lock );
 }
@@ -438,7 +426,7 @@ size_t observation_store_count( void )
         return 0U;
     }
     xSemaphoreTake( store_lock, portMAX_DELAY );
-    synchronize_reclaimed_store();
+    synchronize_session_store();
     expire_stale_devices( current_time_ms() );
     const size_t result = device_count;
     xSemaphoreGive( store_lock );
@@ -452,7 +440,7 @@ size_t observation_store_surveillance_count( void )
         return 0U;
     }
     xSemaphoreTake( store_lock, portMAX_DELAY );
-    synchronize_reclaimed_store();
+    synchronize_session_store();
     expire_stale_devices( current_time_ms() );
     size_t result = 0U;
     for( size_t i = 0U; i < device_count; ++i )
@@ -476,7 +464,7 @@ size_t observation_store_summary( observation_store_summary_t *a_summary,
     }
 
     xSemaphoreTake( store_lock, portMAX_DELAY );
-    synchronize_reclaimed_store();
+    synchronize_session_store();
     expire_stale_devices( current_time_ms() );
     memset( a_summary, 0, sizeof( *a_summary ) );
     a_summary->device_count = device_count;
