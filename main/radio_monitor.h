@@ -12,6 +12,8 @@
 #include "esp_err.h"
 #include "observation_store.h"
 
+#include <stdbool.h>
+
 typedef void ( *radio_observation_fn )( rf_device_t *a_observation );
 
 typedef enum
@@ -30,6 +32,9 @@ esp_err_t radio_monitor_start( void );
 
 /** @brief Stop promiscuous reception and Wi-Fi hardware while app is inactive. */
 esp_err_t radio_monitor_stop( void );
+
+/** @brief Return whether the app currently requests Wi-Fi observation delivery. */
+bool radio_monitor_is_running( void );
 
 /** @brief Advance the channel-hopping state machine when required. */
 void radio_monitor_step( void );
