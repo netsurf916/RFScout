@@ -92,8 +92,7 @@ static void promiscuous( void *buf, wifi_promiscuous_pkt_type_t type )
     const uint8_t *frame = pkt->payload;
     if( pkt->rx_ctrl.sig_len >= 24U )
     {
-        const uint16_t frame_control =
-            (uint16_t)frame[ 0 ] | ( (uint16_t)frame[ 1 ] << 8U );
+        const uint16_t frame_control = (uint16_t)frame[ 0 ] | ( (uint16_t)frame[ 1 ] << 8U );
         const uint8_t frame_type = ( frame_control >> 2U ) & 0x3U;
         const uint8_t to_ds = ( frame_control >> 8U ) & 1U;
         const uint8_t from_ds = ( frame_control >> 9U ) & 1U;
@@ -106,9 +105,7 @@ static void promiscuous( void *buf, wifi_promiscuous_pkt_type_t type )
             }
             else if( ( 2U == frame_type ) && !( to_ds && from_ds ) )
             {
-                emit_mac( to_ds ? frame + 4 : frame + 16,
-                          pkt->rx_ctrl.rssi,
-                          pkt->rx_ctrl.channel );
+                emit_mac( to_ds ? frame + 4 : frame + 16, pkt->rx_ctrl.rssi, pkt->rx_ctrl.channel );
             }
         }
     }
