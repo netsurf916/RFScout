@@ -145,7 +145,15 @@ jobs:
                 artifact="$candidate_artifact"
                 break
               fi
-            done < <(jq -c '.workflow_runs[]' <<< "$runs")
+            done < <(
+              if [[ "$source" == main ]]; then
+                jq -c '.workflow_runs[]' <<< "$runs"
+              else
+                jq -c --argjson pr "$pr" \
+                  '.workflow_runs[] | select(any(.pull_requests[]?; .number == $pr))' \
+                  <<< "$runs"
+              fi
+            )
 
             [[ -z "$run" ]] && { echo "Skipping $source: no live successful candidate for $sha"; return; }
             run_id=$(jq -r .id <<< "$run")
