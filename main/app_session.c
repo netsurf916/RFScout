@@ -24,12 +24,16 @@
 #define APP_SESSION_MAX_SERVICES 8U
 #define APP_SESSION_RECORDER_QUIESCE_TIMEOUT_MS 5000U
 
+typedef bool ( *app_session_service_active_fn )( void *a_context );
+
 typedef struct
 {
     const char *name;
     rfscout_app_service_fn start;
     rfscout_app_service_fn stop;
+    app_session_service_active_fn active;
     void *context;
+    bool stopped_for_close;
 } app_session_service_t;
 
 static const char *TAG = "app_session";
@@ -37,7 +41,7 @@ static rfscout_app_id_t session_app = RFSCOUT_APP_COUNT;
 static uint32_t session_generation;
 static app_session_service_t services[ APP_SESSION_MAX_SERVICES ];
 static size_t service_count;
-static size_t close_stopped_count;
+static bool close_in_progress;
 static bool ready_to_reclaim;
 
 static bool session_active( void )
@@ -62,6 +66,12 @@ static esp_err_t stop_wifi( void *a_context )
     return radio_monitor_stop();
 }
 
+static bool wifi_active( void *a_context )
+{
+    (void)a_context;
+    return radio_monitor_is_running();
+}
+
 static esp_err_t start_ble( void *a_context )
 {
     (void)a_context;
@@ -72,6 +82,12 @@ static esp_err_t stop_ble( void *a_context )
 {
     (void)a_context;
     return ble_monitor_stop();
+}
+
+static bool ble_active( void *a_context )
+{
+    (void)a_context;
+    return ble_monitor_is_running();
 }
 
 static esp_err_t start_cc1101( void *a_context )
@@ -127,28 +143,63 @@ static esp_err_t stop_recorder( void *a_context )
     return ESP_OK;
 }
 
+static esp_err_t register_service( const char *a_name,
+                                   rfscout_app_service_fn a_start,
+                                   rfscout_app_service_fn a_stop,
+                                   app_session_service_active_fn a_active,
+                                   void *a_context )
+{
+    if( !session_active() || ( NULL == a_stop ) )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    for( size_t i = 0U; i < service_count; ++i )
+    {
+        if( ( services[ i ].stop == a_stop ) && ( services[ i ].context == a_context ) )
+        {
+            return ESP_OK;
+        }
+    }
+    if( service_count >= APP_SESSION_MAX_SERVICES )
+    {
+        ESP_LOGE( TAG, "app=%d exceeded platform service slots", (int)session_app );
+        return ESP_ERR_NO_MEM;
+    }
+
+    services[ service_count++ ] = ( app_session_service_t ){
+        .name = a_name,
+        .start = a_start,
+        .stop = a_stop,
+        .active = a_active,
+        .context = a_context,
+        .stopped_for_close = false,
+    };
+    return ESP_OK;
+}
+
 static esp_err_t register_platform_services( rfscout_app_id_t a_app )
 {
     switch( a_app )
     {
         case RFSCOUT_APP_WIFI_BT:
         {
-            esp_err_t result = app_session_register_service( "Wi-Fi", start_wifi, stop_wifi, NULL );
+            esp_err_t result = register_service( "Wi-Fi", start_wifi, stop_wifi, wifi_active, NULL );
             if( ESP_OK == result )
             {
-                result = app_session_register_service( "BLE", start_ble, stop_ble, NULL );
+                result = register_service( "BLE", start_ble, stop_ble, ble_active, NULL );
             }
             return result;
         }
         case RFSCOUT_APP_CC1101:
-            return app_session_register_service( "CC1101", start_cc1101, stop_cc1101, NULL );
+            return register_service( "CC1101", start_cc1101, stop_cc1101, NULL, NULL );
         case RFSCOUT_APP_NRF24:
-            return app_session_register_service( "nRF24", start_nrf24, stop_nrf24, NULL );
+            return register_service( "nRF24", start_nrf24, stop_nrf24, NULL, NULL );
         case RFSCOUT_APP_AUDIO:
             /* Recorder operation restoration is semantic app state and remains in the optional
                app rollback hook. The session owns the safety proof that no Recorder execution
                context can still reach app memory before reclamation. */
-            return app_session_register_service( "Recorder", NULL, stop_recorder, NULL );
+            return register_service( "Recorder", NULL, stop_recorder, NULL, NULL );
         case RFSCOUT_APP_SYSTEM_EVENTS:
         case RFSCOUT_APP_THERMAL:
         case RFSCOUT_APP_DEVICE:
@@ -162,7 +213,7 @@ static void reset_session_state( void )
 {
     memset( services, 0, sizeof( services ) );
     service_count = 0U;
-    close_stopped_count = 0U;
+    close_in_progress = false;
     ready_to_reclaim = false;
 }
 
@@ -188,8 +239,8 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
             return ESP_OK;
         }
 
-        if( ( 0U != memory_manager_app_allocation_count( session_app ) ) ||
-            ( 0U != close_stopped_count ) || ready_to_reclaim )
+        if( ( 0U != memory_manager_app_allocation_count( session_app ) ) || close_in_progress ||
+            ready_to_reclaim )
         {
             return ESP_ERR_INVALID_STATE;
         }
@@ -247,31 +298,7 @@ esp_err_t app_session_register_service( const char *a_name,
                                         rfscout_app_service_fn a_stop,
                                         void *a_context )
 {
-    if( !session_active() || ( NULL == a_stop ) )
-    {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    for( size_t i = 0U; i < service_count; ++i )
-    {
-        if( ( services[ i ].stop == a_stop ) && ( services[ i ].context == a_context ) )
-        {
-            return ESP_OK;
-        }
-    }
-    if( service_count >= APP_SESSION_MAX_SERVICES )
-    {
-        ESP_LOGE( TAG, "app=%d exceeded platform service slots", (int)session_app );
-        return ESP_ERR_NO_MEM;
-    }
-
-    services[ service_count++ ] = ( app_session_service_t ){
-        .name = a_name,
-        .start = a_start,
-        .stop = a_stop,
-        .context = a_context,
-    };
-    return ESP_OK;
+    return register_service( a_name, a_start, a_stop, NULL, a_context );
 }
 
 esp_err_t app_session_prepare_close( void )
@@ -281,11 +308,21 @@ esp_err_t app_session_prepare_close( void )
         return ESP_ERR_INVALID_STATE;
     }
 
+    close_in_progress = true;
     ready_to_reclaim = false;
-    close_stopped_count = 0U;
+    for( size_t i = 0U; i < service_count; ++i )
+    {
+        services[ i ].stopped_for_close = false;
+    }
+
     for( size_t i = service_count; i > 0U; --i )
     {
         app_session_service_t *service = &services[ i - 1U ];
+        if( ( NULL != service->active ) && !service->active( service->context ) )
+        {
+            continue;
+        }
+
         const esp_err_t result = service->stop( service->context );
         if( ESP_OK != result )
         {
@@ -296,7 +333,7 @@ esp_err_t app_session_prepare_close( void )
                       esp_err_to_name( result ) );
             return result;
         }
-        ++close_stopped_count;
+        service->stopped_for_close = true;
     }
 
     ready_to_reclaim = true;
@@ -311,11 +348,10 @@ esp_err_t app_session_abort_close( void )
     }
 
     esp_err_t first_error = ESP_OK;
-    const size_t first_stopped = service_count - close_stopped_count;
-    for( size_t i = first_stopped; i < service_count; ++i )
+    for( size_t i = 0U; i < service_count; ++i )
     {
         app_session_service_t *service = &services[ i ];
-        if( NULL == service->start )
+        if( !service->stopped_for_close || ( NULL == service->start ) )
         {
             continue;
         }
@@ -335,7 +371,11 @@ esp_err_t app_session_abort_close( void )
         }
     }
 
-    close_stopped_count = 0U;
+    for( size_t i = 0U; i < service_count; ++i )
+    {
+        services[ i ].stopped_for_close = false;
+    }
+    close_in_progress = false;
     ready_to_reclaim = false;
     return first_error;
 }
