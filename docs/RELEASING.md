@@ -42,6 +42,8 @@ The browser flasher is intentionally a continuous view of RFScout's current deve
 
 The **Publish browser flasher** workflow reevaluates the catalog when a **Build and formatting** workflow completes, when a pull request closes, when a release is published, when supported release deletion events are delivered, when started manually, and on an hourly reconciliation schedule. Successful **Prepare firmware release** completion also dispatches a flasher refresh so a newly prepared draft can become available for hardware validation without waiting for an unrelated CI event.
 
+Release events are relay-only. GitHub executes a `release`-triggered workflow in the release tag context, while the `github-pages` environment is intentionally restricted to `main`. The release-triggered job therefore dispatches **Publish browser flasher** on `main`; only that main-context run assembles and deploys Pages. Do not move Pages deployment back into the tag-context release run or weaken the environment restriction to make it pass.
+
 Each completed Pages deployment is rebuilt from the current repository state rather than incrementally editing the previous deployment. Current `main`, current PR heads, and currently visible GitHub Releases are rediscovered each time. This means expired candidate artifacts, closed PR candidates, and withdrawn releases disappear from the next successful reconciliation rather than remaining as permanent Pages content.
 
 Candidate publication is intentionally atomic with respect to in-flight builds. Before replacing the deployed Pages snapshot, the workflow verifies that the current `main` HEAD has a Build and formatting run and is no longer building, and it performs equivalent checks for every open non-draft PR current head. If a required build is missing or still queued/in progress, the refresh is deferred and the previously deployed flasher remains untouched.
@@ -62,7 +64,7 @@ Each deployment is self-contained: firmware files and manifests are copied into 
 
 GitHub does not emit `release: deleted` workflow activity for draft releases. As a result, manually deleting a prepared draft cannot trigger an immediate event-driven cleanup. The hourly flasher reconciliation is the fallback that removes such withdrawn drafts from the public Pages mirror; a maintainer can also run **Publish browser flasher** manually for immediate cleanup. Treat a deleted draft as potentially still downloadable from the previous Pages deployment until one of those reconciliations succeeds.
 
-Publishing a draft triggers an immediate release event, so the flasher refreshes and removes the draft label once candidate state is stable. Deleting a published/non-draft release can also trigger release-event reconciliation where GitHub supplies that event.
+Publishing a draft triggers an immediate release event. That tag-context event relays a fresh flasher run onto `main`, and the main-context run removes the draft label once candidate state is stable. Deleting a published/non-draft release can use the same relay where GitHub supplies that event.
 
 The static flasher shell uses the repository's `assets/logo.png` branding and RFScout orange/white visual theme. GitHub Pages uses **GitHub Actions** as its publishing source. The flasher requires HTTPS and Web Serial; Chromium-based desktop browsers such as Edge and Chrome are the supported path.
 
@@ -95,7 +97,7 @@ Before publishing a draft:
 5. record hardware validation in the release notes; and
 6. publish the release deliberately through GitHub.
 
-Publishing preserves the semantic tag created during draft preparation. The release publication event automatically starts **Publish browser flasher**, which discovers the now-published release state and republishes the firmware catalog so the draft label is removed once candidate state is stable. The flasher does not rebuild firmware during publication/deployment.
+Publishing preserves the semantic tag created during draft preparation. The release publication event automatically starts the tag-context relay, which dispatches **Publish browser flasher** on `main`. The main-context run discovers the now-published release state and republishes the firmware catalog so the draft label is removed once candidate state is stable. The flasher does not rebuild firmware during publication/deployment.
 
 ## Withdrawing a prepared draft
 
