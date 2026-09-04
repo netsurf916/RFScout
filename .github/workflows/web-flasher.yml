@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: read
+  actions: write
   contents: write
   pull-requests: read
   pages: write
@@ -29,12 +29,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  refresh-after-release:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Refresh browser flasher from main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run web-flasher.yml --repo "$GITHUB_REPOSITORY" --ref main
+
   build-site:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'pull_request' ||
       github.event_name == 'workflow_run' ||
-      github.event_name == 'release' ||
       github.event_name == 'schedule'
     runs-on: ubuntu-24.04
     outputs:
