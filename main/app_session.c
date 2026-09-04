@@ -226,9 +226,8 @@ static bool ensure_current_app_session( void )
 
 void *app_session_calloc( size_t a_count, size_t a_size )
 {
-    return ensure_current_app_session()
-               ? memory_manager_calloc( session_owner(), a_count, a_size )
-               : NULL;
+    return ensure_current_app_session() ? memory_manager_calloc( session_owner(), a_count, a_size )
+                                        : NULL;
 }
 
 void *app_session_resize( void *a_pointer, size_t a_count, size_t a_size )
@@ -308,7 +307,7 @@ esp_err_t app_session_abort_close( void )
 {
     if( !session_active() )
     {
-        return ESP_ERR_INVALID_STATE;
+        return ESP_OK;
     }
 
     esp_err_t first_error = ESP_OK;
