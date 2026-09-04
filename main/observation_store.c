@@ -13,11 +13,16 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
+#include <stdlib.h>
 #include <string.h>
+
+#define OBSERVATION_SUMMARY_OPERATION 1U
 
 static rf_device_t *devices;
 static size_t device_count;
 static size_t device_capacity;
+static observation_vendor_count_t *summary_vendors;
+static size_t summary_vendor_capacity;
 static SemaphoreHandle_t store_lock;
 static observation_store_event_callback_t event_callback;
 static void *event_context;
@@ -27,6 +32,11 @@ static rfscout_memory_owner_t store_owner( void )
     return memory_manager_app_owner( RFSCOUT_APP_WIFI_BT );
 }
 
+static rfscout_memory_owner_t summary_owner( void )
+{
+    return memory_manager_operation_owner( RFSCOUT_APP_WIFI_BT, OBSERVATION_SUMMARY_OPERATION );
+}
+
 static void synchronize_reclaimed_store( void )
 {
     if( ( NULL != devices ) && !memory_manager_pointer_owned_by( store_owner(), devices ) )
@@ -34,6 +44,13 @@ static void synchronize_reclaimed_store( void )
         devices = NULL;
         device_count = 0U;
         device_capacity = 0U;
+    }
+
+    if( ( NULL != summary_vendors ) &&
+        !memory_manager_pointer_owned_by( summary_owner(), summary_vendors ) )
+    {
+        summary_vendors = NULL;
+        summary_vendor_capacity = 0U;
     }
 }
 
@@ -68,6 +85,40 @@ static bool ensure_capacity( size_t a_required )
 
     devices = replacement;
     device_capacity = capacity;
+    return true;
+}
+
+static bool ensure_summary_capacity( size_t a_required )
+{
+    if( a_required <= summary_vendor_capacity )
+    {
+        return true;
+    }
+
+    size_t capacity = summary_vendor_capacity;
+    if( 0U == capacity )
+    {
+        capacity = RFSCOUT_OBSERVATION_INITIAL_CAPACITY;
+    }
+    while( capacity < a_required )
+    {
+        if( capacity > ( SIZE_MAX / 2U ) )
+        {
+            capacity = a_required;
+            break;
+        }
+        capacity *= 2U;
+    }
+
+    observation_vendor_count_t *replacement = memory_manager_resize(
+        summary_owner(), summary_vendors, capacity, sizeof( *summary_vendors ) );
+    if( NULL == replacement )
+    {
+        return false;
+    }
+
+    summary_vendors = replacement;
+    summary_vendor_capacity = capacity;
     return true;
 }
 
@@ -126,7 +177,7 @@ static void expire_stale_devices( uint32_t a_now_ms )
         (uint32_t)RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS * 1000U;
     const uint32_t managed_mask = RF_SOURCE_BIT( RF_SOURCE_WIFI ) | RF_SOURCE_BIT( RF_SOURCE_BLE );
 
-    size_t i = 0;
+    size_t i = 0U;
     while( i < device_count )
     {
         rf_device_t *device = &devices[ i ];
@@ -200,11 +251,35 @@ static void expire_stale_devices( uint32_t a_now_ms )
     }
 }
 
+static int compare_vendor_name( const void *a_left, const void *a_right )
+{
+    const observation_vendor_count_t *left = a_left;
+    const observation_vendor_count_t *right = a_right;
+    return strcmp( left->name, right->name );
+}
+
+static int compare_vendor_count( const void *a_left, const void *a_right )
+{
+    const observation_vendor_count_t *left = a_left;
+    const observation_vendor_count_t *right = a_right;
+    if( left->count > right->count )
+    {
+        return -1;
+    }
+    if( left->count < right->count )
+    {
+        return 1;
+    }
+    return strcmp( left->name, right->name );
+}
+
 esp_err_t observation_store_init( void )
 {
     devices = NULL;
     device_count = 0U;
     device_capacity = 0U;
+    summary_vendors = NULL;
+    summary_vendor_capacity = 0U;
     event_callback = NULL;
     event_context = NULL;
     store_lock = xSemaphoreCreateMutex();
@@ -238,7 +313,7 @@ bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new
     synchronize_reclaimed_store();
     expire_stale_devices( current_time_ms() );
 
-    for( size_t i = 0; i < device_count; ++i )
+    for( size_t i = 0U; i < device_count; ++i )
     {
         if( !same_identity( &devices[ i ], a_observation ) )
         {
@@ -390,20 +465,90 @@ size_t observation_store_surveillance_count( void )
     return result;
 }
 
-size_t observation_store_snapshot( rf_device_t *a_output, size_t a_capacity )
+size_t observation_store_summary( observation_store_summary_t *a_summary,
+                                  observation_vendor_count_t *a_vendors,
+                                  size_t a_vendor_capacity )
 {
-    if( ( NULL == a_output ) || ( 0U == a_capacity ) || ( NULL == store_lock ) )
+    if( ( NULL == a_summary ) || ( NULL == store_lock ) )
     {
         return 0U;
     }
+
     xSemaphoreTake( store_lock, portMAX_DELAY );
     synchronize_reclaimed_store();
     expire_stale_devices( current_time_ms() );
-    const size_t count = ( device_count < a_capacity ) ? device_count : a_capacity;
-    if( 0U != count )
+    memset( a_summary, 0, sizeof( *a_summary ) );
+    a_summary->device_count = device_count;
+
+    const bool collect_vendors = ( NULL != a_vendors ) && ( 0U != a_vendor_capacity ) &&
+                                 ( 0U != device_count ) && ensure_summary_capacity( device_count );
+    size_t vendor_observation_count = 0U;
+
+    for( size_t i = 0U; i < device_count; ++i )
     {
-        memcpy( a_output, devices, count * sizeof( *a_output ) );
+        const rf_device_t *device = &devices[ i ];
+        if( 0U != ( device->source_mask & RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) )
+        {
+            ++a_summary->wifi_count;
+        }
+        if( 0U != ( device->source_mask & RF_SOURCE_BIT( RF_SOURCE_BLE ) ) )
+        {
+            ++a_summary->ble_count;
+        }
+
+        if( rf_device_address_is_randomized( device ) )
+        {
+            ++a_summary->random_count;
+            continue;
+        }
+        if( '\0' == device->vendor[ 0 ] )
+        {
+            ++a_summary->unknown_count;
+            continue;
+        }
+        if( collect_vendors )
+        {
+            strlcpy( summary_vendors[ vendor_observation_count ].name,
+                     device->vendor,
+                     sizeof( summary_vendors[ vendor_observation_count ].name ) );
+            summary_vendors[ vendor_observation_count ].count = 1U;
+            ++vendor_observation_count;
+        }
     }
+
+    if( !collect_vendors || ( 0U == vendor_observation_count ) )
+    {
+        xSemaphoreGive( store_lock );
+        return 0U;
+    }
+
+    qsort( summary_vendors,
+           vendor_observation_count,
+           sizeof( *summary_vendors ),
+           compare_vendor_name );
+
+    size_t unique_count = 0U;
+    for( size_t i = 0U; i < vendor_observation_count; ++i )
+    {
+        if( ( 0U == unique_count ) ||
+            ( 0 != strcmp( summary_vendors[ unique_count - 1U ].name, summary_vendors[ i ].name ) ) )
+        {
+            if( unique_count != i )
+            {
+                summary_vendors[ unique_count ] = summary_vendors[ i ];
+            }
+            summary_vendors[ unique_count ].count = 1U;
+            ++unique_count;
+        }
+        else
+        {
+            ++summary_vendors[ unique_count - 1U ].count;
+        }
+    }
+
+    qsort( summary_vendors, unique_count, sizeof( *summary_vendors ), compare_vendor_count );
+    const size_t result = ( unique_count < a_vendor_capacity ) ? unique_count : a_vendor_capacity;
+    memcpy( a_vendors, summary_vendors, result * sizeof( *a_vendors ) );
     xSemaphoreGive( store_lock );
-    return count;
+    return result;
 }
