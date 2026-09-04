@@ -516,10 +516,10 @@ size_t observation_store_summary( observation_store_summary_t *a_summary,
             ++vendor_observation_count;
         }
     }
+    xSemaphoreGive( store_lock );
 
     if( !collect_vendors || ( 0U == vendor_observation_count ) )
     {
-        xSemaphoreGive( store_lock );
         return 0U;
     }
 
@@ -550,6 +550,5 @@ size_t observation_store_summary( observation_store_summary_t *a_summary,
     qsort( summary_vendors, unique_count, sizeof( *summary_vendors ), compare_vendor_count );
     const size_t result = ( unique_count < a_vendor_capacity ) ? unique_count : a_vendor_capacity;
     memcpy( a_vendors, summary_vendors, result * sizeof( *a_vendors ) );
-    xSemaphoreGive( store_lock );
     return result;
 }
