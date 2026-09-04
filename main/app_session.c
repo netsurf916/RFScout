@@ -6,17 +6,23 @@
 
 #include "app_session.h"
 
+#include "audio_spectrum.h"
 #include "ble_monitor.h"
 #include "cc1101.h"
 #include "memory_manager.h"
 #include "nrf24.h"
 #include "radio_monitor.h"
+#include "recorder.h"
 
 #include "esp_log.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include <string.h>
 
 #define APP_SESSION_MAX_SERVICES 8U
+#define APP_SESSION_RECORDER_QUIESCE_TIMEOUT_MS 5000U
 
 typedef struct
 {
@@ -92,6 +98,35 @@ static esp_err_t stop_nrf24( void *a_context )
     return nrf24_stop() ? ESP_OK : ESP_ERR_TIMEOUT;
 }
 
+static bool recorder_references_clear( void )
+{
+    return ESP_ERR_INVALID_STATE != recorder_probe_microphone();
+}
+
+static esp_err_t stop_recorder( void *a_context )
+{
+    (void)a_context;
+
+    if( !recorder_prepare_storage_shutdown( APP_SESSION_RECORDER_QUIESCE_TIMEOUT_MS ) )
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+    recorder_stop();
+    audio_spectrum_stop();
+
+    const int64_t deadline_us =
+        esp_timer_get_time() + (int64_t)APP_SESSION_RECORDER_QUIESCE_TIMEOUT_MS * 1000LL;
+    while( !recorder_references_clear() )
+    {
+        if( esp_timer_get_time() >= deadline_us )
+        {
+            return ESP_ERR_TIMEOUT;
+        }
+        vTaskDelay( pdMS_TO_TICKS( 10U ) );
+    }
+    return ESP_OK;
+}
+
 static esp_err_t register_platform_services( rfscout_app_id_t a_app )
 {
     switch( a_app )
@@ -109,8 +144,12 @@ static esp_err_t register_platform_services( rfscout_app_id_t a_app )
             return app_session_register_service( "CC1101", start_cc1101, stop_cc1101, NULL );
         case RFSCOUT_APP_NRF24:
             return app_session_register_service( "nRF24", start_nrf24, stop_nrf24, NULL );
-        case RFSCOUT_APP_SYSTEM_EVENTS:
         case RFSCOUT_APP_AUDIO:
+            /* Recorder operation restoration is semantic app state and remains in the optional
+               app rollback hook. The session owns the safety proof that no Recorder execution
+               context can still reach app memory before reclamation. */
+            return app_session_register_service( "Recorder", NULL, stop_recorder, NULL );
+        case RFSCOUT_APP_SYSTEM_EVENTS:
         case RFSCOUT_APP_THERMAL:
         case RFSCOUT_APP_DEVICE:
         case RFSCOUT_APP_COUNT:
