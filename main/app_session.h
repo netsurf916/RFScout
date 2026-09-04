@@ -21,7 +21,8 @@ typedef esp_err_t ( *rfscout_app_service_fn )( void *a_context );
 
 /**
  * @brief Ensure the platform has a resource session for the selected application.
- * @details The lifecycle coordinator owns this call. Applications do not open/close sessions.
+ * @details The lifecycle coordinator owns session creation. Every active app has a session, even
+ *          when it currently owns no managed memory or asynchronous platform services.
  */
 esp_err_t app_session_ensure( rfscout_app_id_t a_app );
 
@@ -48,9 +49,16 @@ esp_err_t app_session_register_service( const char *a_name,
 /**
  * @brief Stop every registered platform service and prove the session is safe to reclaim.
  * @details A service stop succeeds only after callbacks/workers can no longer reach app memory.
- *          Failure preserves app memory and reactivates touched services best-effort.
+ *          On failure the session remains intact and must be aborted before normal app execution
+ *          resumes.
  */
 esp_err_t app_session_prepare_close( void );
+
+/**
+ * @brief Abort a prepared/partially prepared close and reactivate touched platform services.
+ * @return ESP_OK when all touched services were restored, otherwise the first restart error.
+ */
+esp_err_t app_session_abort_close( void );
 
 /** @brief Return whether every registered platform service has safely quiesced. */
 bool app_session_ready_to_reclaim( void );
