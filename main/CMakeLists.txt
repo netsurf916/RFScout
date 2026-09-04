@@ -52,6 +52,7 @@ idf_component_register(
         "rfscout.c"
         "app_manager.c"
         "app_lifecycle.c"
+        "app_session.c"
         "app_framework.c"
         "app_logging.c"
         "app_audio_policy.c"
