@@ -59,8 +59,11 @@ esp_err_t app_session_register_service( const char *a_name,
 esp_err_t app_session_prepare_close( void );
 
 /**
- * @brief Abort a prepared/partially prepared close and reactivate touched platform services.
- * @return ESP_OK when all touched services were restored, otherwise the first restart error.
+ * @brief Abort a prepared/partially prepared close and reactivate services that actually stopped.
+ * @details The service whose stop call failed is not restarted by the session because a failed
+ *          stop may already have restored its own active state. Only services whose stop returned
+ *          ESP_OK before a later failure are eligible for generic restart.
+ * @return ESP_OK when all stopped services were restored, otherwise the first restart error.
  */
 esp_err_t app_session_abort_close( void );
 
