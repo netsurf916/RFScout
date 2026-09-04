@@ -16,7 +16,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define RFSCOUT_DEVICE_CAPACITY 1000
+#define RFSCOUT_OBSERVATION_INITIAL_CAPACITY 32U
 #define RFSCOUT_VENDOR_NAME_MAX 32
 #define RFSCOUT_DEVICE_NAME_MAX 32
 #define RFSCOUT_MFG_DATA_MAX 24
@@ -133,7 +133,10 @@ typedef void ( *observation_store_event_callback_t )( observation_store_event_t 
                                                       const rf_device_t *a_device,
                                                       void *a_context );
 
-/** @brief Initialize the observation store in external PSRAM. */
+/**
+ * @brief Initialize synchronization for the WiFi/BLE observation store.
+ * @details Retained observation payload memory is allocated lazily while the application is active.
+ */
 esp_err_t observation_store_init( void );
 
 /** @brief Register the live-list lifecycle callback. */
@@ -143,7 +146,7 @@ void observation_store_set_event_callback( observation_store_event_callback_t a_
 /** @brief Add or refresh one normalized device observation. */
 bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new );
 
-/** @brief Clear all live observations while retaining the allocated store and callback. */
+/** @brief Clear all live observations while retaining any current app-owned capacity. */
 void observation_store_reset( void );
 
 /**
