@@ -110,9 +110,8 @@ void *app_session_calloc( size_t a_count, size_t a_size )
 
 void *app_session_resize( void *a_pointer, size_t a_count, size_t a_size )
 {
-    return session_active()
-               ? memory_manager_resize( session_owner(), a_pointer, a_count, a_size )
-               : NULL;
+    return session_active() ? memory_manager_resize( session_owner(), a_pointer, a_count, a_size )
+                            : NULL;
 }
 
 bool app_session_free( void *a_pointer )
