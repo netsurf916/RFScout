@@ -49,7 +49,7 @@ Home/Device Settings, System Events, and Thermal currently have no asynchronous 
 8. verify zero source allocations remain; and
 9. create the destination session before the destination app begins using app resources.
 
-If a transition aborts, `app_session_abort_close()` reactivates services touched by the failed close attempt where a generic restart is available. App-specific rollback is reserved for semantic state that cannot be inferred by the platform—for example restoring the exact Recorder operation the user had active. Memory stays intact until close succeeds.
+If a transition aborts, `app_session_abort_close()` restarts only services that were active and whose stop operation actually succeeded before a later failure. A service whose stop call itself fails is not generically restarted because that stop implementation may already have restored its active state. App-specific rollback is reserved for semantic state that cannot be inferred by the platform—for example restoring the exact Recorder operation the user had active. Memory stays intact until close succeeds.
 
 This keeps the Prepare/Reachability/Commit/Reclaim machinery as platform fault-containment rather than an API each new app must implement.
 
