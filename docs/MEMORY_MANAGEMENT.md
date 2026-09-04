@@ -31,7 +31,7 @@ For each application, the manager tracks:
 
 `memory_manager_release_operation()` reclaims one nested operation. `memory_manager_release_app()` reclaims every application and operation allocation associated with the selected app and returns the number of payload bytes released. `memory_manager_app_allocation_count()` provides the invariant used by lifecycle code to verify that successful app exit leaves no managed allocations behind.
 
-Metadata for managed allocations is intentionally small and kept in internal memory so the ownership list remains available while PSRAM payloads are being reclaimed.
+Metadata for managed allocations is intentionally small and kept in internal memory so the ownership list remains available while PSRAM payloads are being reclaimed. `memory_manager_pointer_owned_by()` lets a module compare a cached pointer value against that metadata without dereferencing the pointer. This is used when lifecycle bulk reclamation owns the physical free but a long-lived service object must lazily invalidate its cached app-owned pointer before the next session.
 
 ## Lifecycle boundary
 
@@ -41,7 +41,9 @@ After reclamation, the coordinator verifies `memory_manager_app_allocation_count
 
 An aborted Prepare or Reachability stage never bulk-reclaims the source application's managed memory. The source remains selected and its resources are reactivated as necessary.
 
-Individual application storage is not automatically migrated merely because lifecycle reclamation is integrated. Each application moves eligible retained state to managed PSRAM in subsequent v0.4.0 work, with its own memory-pressure semantics and quiesce validation.
+The WiFi/BLE normalized observation store is the first retained application dataset migrated onto this boundary. It allocates no observation payload at boot, grows geometrically from a small initial capacity while the app is collecting, and is reclaimed by the normal WiFi/BLE lifecycle transition after both collectors have stopped. The observation-store synchronization object remains platform-resident so the next WiFi/BLE session can safely detect reclamation and allocate a fresh app-owned collection.
+
+Other application storage is not automatically migrated merely because lifecycle reclamation is integrated. CC1101, nRF24, Recorder, Thermal, WiFi/BLE surveillance history, and future WiFi/BLE identity/relationship state move eligible retained state to managed PSRAM in subsequent v0.4.0 work, with their own memory-pressure semantics and quiesce validation.
 
 ## Supported-target requirement
 
