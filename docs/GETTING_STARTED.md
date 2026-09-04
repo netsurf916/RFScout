@@ -110,13 +110,24 @@ idf.py -p /dev/ttyACM0 flash monitor
 
 Exit the monitor with **Ctrl+]**.
 
-## Browser flashing PR candidates and releases
+## Browser flashing development builds and releases
 
-RFScout also publishes a GitHub Pages browser flasher through the **Publish browser flasher** workflow.
+RFScout also publishes a GitHub Pages browser flasher through the **Publish browser flasher** workflow. The catalog is intentionally a view of the current development/release lifecycle, not just a list of published releases.
 
-Ready-for-review pull requests that pass the full ESP-IDF build produce a short-lived candidate bundle. A successful eligible build triggers the Pages deployment, which presents that PR candidate ahead of published releases. Draft PRs intentionally skip the expensive ESP-IDF build and therefore do not produce a browser-flashable candidate.
+The flasher can contain:
 
-Use a desktop Chromium-based browser such as Edge or Chrome with Web Serial support. Connect the device over USB, open the RFScout GitHub Pages flasher, choose the desired PR candidate or published release, and use the ESP Web Tools install control.
+- the newest successful candidate for the current `main` HEAD, labeled as a development build;
+- successful candidates for current open pull requests;
+- prepared GitHub draft releases, clearly labeled as drafts; and
+- published/prerelease GitHub Releases.
+
+Ready-for-review pull requests that pass the full ESP-IDF build produce a short-lived candidate bundle. Draft PRs intentionally skip the expensive ESP-IDF build and therefore do not create a new candidate, although a still-current candidate created before a PR was converted back to draft can remain available until the head changes, the PR closes, or the artifact expires.
+
+The current `main` candidate is normally presented as the primary development build. If a prepared draft or published release represents the same packaged commit, the named release supersedes the duplicate `main` entry. PR candidates remain independently selectable for testing unmerged work.
+
+Prepared draft releases are intentionally mirrored to the public Pages flasher so they can be hardware-tested before GitHub publication. A GitHub draft therefore must not be treated as private firmware once release preparation succeeds.
+
+Use a desktop Chromium-based browser such as Edge or Chrome with Web Serial support. Connect the device over USB, open the RFScout GitHub Pages flasher, choose the desired development, PR, draft-release, or published-release entry, and use the ESP Web Tools install control.
 
 The browser flasher is intended for quick target-hardware validation. Local `idf.py flash monitor` remains the better path when serial logs or debugger-oriented development are needed.
 
