@@ -166,12 +166,21 @@ esp_err_t radio_monitor_set_region( rf_wifi_region_t value )
         return err;
     }
     region = value;
-    if( running && ( channel > max_channel ) )
+    if( radio_monitor_is_running() && ( channel > max_channel ) )
     {
         channel = 1;
         err = esp_wifi_set_channel( channel, WIFI_SECOND_CHAN_NONE );
     }
     return err;
+}
+
+bool radio_monitor_is_running( void )
+{
+    bool result;
+    portENTER_CRITICAL( &callback_lock );
+    result = running;
+    portEXIT_CRITICAL( &callback_lock );
+    return result;
 }
 
 esp_err_t radio_monitor_start( void )
@@ -273,7 +282,7 @@ esp_err_t radio_monitor_init( radio_observation_fn callback )
 
 void radio_monitor_step( void )
 {
-    if( !running )
+    if( !radio_monitor_is_running() )
     {
         return;
     }
