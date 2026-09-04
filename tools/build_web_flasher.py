@@ -157,7 +157,7 @@ def main() -> int:
 
     releases_entries = release_entries(args.site_dir, releases)
     candidates_entries = candidate_entries(args.site_dir, args.candidate_root, candidates)
-    entries = deduplicate(releases_entries + candidates_entries)
+    entries = deduplicate(candidates_entries + releases_entries)
 
     write_json(args.site_dir / "catalog.json", {"schema_version": 1, "builds": entries})
     return 0
