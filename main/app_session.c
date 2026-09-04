@@ -28,6 +28,7 @@ typedef struct
 
 static const char *TAG = "app_session";
 static rfscout_app_id_t session_app = RFSCOUT_APP_COUNT;
+static uint32_t session_generation;
 static app_session_service_t services[ APP_SESSION_MAX_SERVICES ];
 static size_t service_count;
 static size_t close_attempted_count;
@@ -126,6 +127,15 @@ static void reset_session_state( void )
     ready_to_reclaim = false;
 }
 
+static void advance_generation( void )
+{
+    ++session_generation;
+    if( 0U == session_generation )
+    {
+        ++session_generation;
+    }
+}
+
 esp_err_t app_session_ensure( rfscout_app_id_t a_app )
 {
     if( ( a_app < 0 ) || ( a_app >= RFSCOUT_APP_COUNT ) )
@@ -154,6 +164,7 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
 
     session_app = a_app;
     reset_session_state();
+    advance_generation();
 
     const esp_err_t result = register_platform_services( a_app );
     if( ESP_OK != result )
@@ -162,6 +173,11 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
         session_app = RFSCOUT_APP_COUNT;
     }
     return result;
+}
+
+uint32_t app_session_generation( void )
+{
+    return session_generation;
 }
 
 static bool ensure_current_app_session( void )
