@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: read
   pages: write
   id-token: write
@@ -132,12 +132,22 @@ jobs:
             event=$([[ "$source" == main ]] && echo push || echo pull_request)
             runs=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs" \
               -f event="$event" -f status=success -f head_sha="$sha" -f per_page=100)
-            run=$(jq -c '.workflow_runs[0] // empty' <<< "$runs")
-            [[ -z "$run" ]] && { echo "Skipping $source: no successful build for $sha"; return; }
+
+            run=""
+            artifact=""
+            while IFS= read -r candidate_run; do
+              run_id=$(jq -r .id <<< "$candidate_run")
+              candidate_artifact=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts" \
+                --jq '[.artifacts[] | select((.expired | not) and (.name | startswith("rfscout-candidate-")))] | .[0].name // empty')
+              if [[ -n "$candidate_artifact" ]]; then
+                run="$candidate_run"
+                artifact="$candidate_artifact"
+                break
+              fi
+            done < <(jq -c '.workflow_runs[]' <<< "$runs")
+
+            [[ -z "$run" ]] && { echo "Skipping $source: no live successful candidate for $sha"; return; }
             run_id=$(jq -r .id <<< "$run")
-            artifact=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts" \
-              --jq '[.artifacts[] | select((.expired | not) and (.name | startswith("rfscout-candidate-")))] | .[0].name // empty')
-            [[ -z "$artifact" ]] && { echo "Skipping $source: candidate artifact unavailable"; return; }
             run_url=$(jq -r .html_url <<< "$run")
             destination=$([[ "$source" == main ]] && echo candidates/main || echo "candidates/pr-$pr")
             gh run download "$run_id" --name "$artifact" --dir "$destination"
