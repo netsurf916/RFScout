@@ -37,7 +37,7 @@ static rfscout_app_id_t session_app = RFSCOUT_APP_COUNT;
 static uint32_t session_generation;
 static app_session_service_t services[ APP_SESSION_MAX_SERVICES ];
 static size_t service_count;
-static size_t close_attempted_count;
+static size_t close_stopped_count;
 static bool ready_to_reclaim;
 
 static bool session_active( void )
@@ -162,7 +162,7 @@ static void reset_session_state( void )
 {
     memset( services, 0, sizeof( services ) );
     service_count = 0U;
-    close_attempted_count = 0U;
+    close_stopped_count = 0U;
     ready_to_reclaim = false;
 }
 
@@ -189,7 +189,7 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
         }
 
         if( ( 0U != memory_manager_app_allocation_count( session_app ) ) ||
-            ( 0U != close_attempted_count ) || ready_to_reclaim )
+            ( 0U != close_stopped_count ) || ready_to_reclaim )
         {
             return ESP_ERR_INVALID_STATE;
         }
@@ -282,11 +282,10 @@ esp_err_t app_session_prepare_close( void )
     }
 
     ready_to_reclaim = false;
-    close_attempted_count = 0U;
+    close_stopped_count = 0U;
     for( size_t i = service_count; i > 0U; --i )
     {
         app_session_service_t *service = &services[ i - 1U ];
-        ++close_attempted_count;
         const esp_err_t result = service->stop( service->context );
         if( ESP_OK != result )
         {
@@ -297,6 +296,7 @@ esp_err_t app_session_prepare_close( void )
                       esp_err_to_name( result ) );
             return result;
         }
+        ++close_stopped_count;
     }
 
     ready_to_reclaim = true;
@@ -311,8 +311,8 @@ esp_err_t app_session_abort_close( void )
     }
 
     esp_err_t first_error = ESP_OK;
-    const size_t first_attempted = service_count - close_attempted_count;
-    for( size_t i = first_attempted; i < service_count; ++i )
+    const size_t first_stopped = service_count - close_stopped_count;
+    for( size_t i = first_stopped; i < service_count; ++i )
     {
         app_session_service_t *service = &services[ i ];
         if( NULL == service->start )
@@ -335,7 +335,7 @@ esp_err_t app_session_abort_close( void )
         }
     }
 
-    close_attempted_count = 0U;
+    close_stopped_count = 0U;
     ready_to_reclaim = false;
     return first_error;
 }
