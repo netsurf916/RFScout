@@ -118,6 +118,14 @@ static esp_err_t register_platform_services( rfscout_app_id_t a_app )
     }
 }
 
+static void reset_session_state( void )
+{
+    memset( services, 0, sizeof( services ) );
+    service_count = 0U;
+    close_attempted_count = 0U;
+    ready_to_reclaim = false;
+}
+
 esp_err_t app_session_ensure( rfscout_app_id_t a_app )
 {
     if( ( a_app < 0 ) || ( a_app >= RFSCOUT_APP_COUNT ) )
@@ -126,37 +134,58 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
     }
     if( session_active() )
     {
-        return ( session_app == a_app ) ? ESP_OK : ESP_ERR_INVALID_STATE;
+        if( session_app == a_app )
+        {
+            return ESP_OK;
+        }
+
+        if( ( 0U != memory_manager_app_allocation_count( session_app ) ) ||
+            ( 0U != close_attempted_count ) || ready_to_reclaim )
+        {
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        /* Startup/session restoration can select the final app after lifecycle initialization.
+           Rebinding an unused descriptor-only session is safe because it owns no app memory and
+           no close transaction has begun. */
+        reset_session_state();
+        session_app = RFSCOUT_APP_COUNT;
     }
 
     session_app = a_app;
-    memset( services, 0, sizeof( services ) );
-    service_count = 0U;
-    close_attempted_count = 0U;
-    ready_to_reclaim = false;
+    reset_session_state();
 
     const esp_err_t result = register_platform_services( a_app );
     if( ESP_OK != result )
     {
+        reset_session_state();
         session_app = RFSCOUT_APP_COUNT;
     }
     return result;
 }
 
+static bool ensure_current_app_session( void )
+{
+    return ESP_OK == app_session_ensure( app_manager_current() );
+}
+
 void *app_session_calloc( size_t a_count, size_t a_size )
 {
-    return session_active() ? memory_manager_calloc( session_owner(), a_count, a_size ) : NULL;
+    return ensure_current_app_session()
+               ? memory_manager_calloc( session_owner(), a_count, a_size )
+               : NULL;
 }
 
 void *app_session_resize( void *a_pointer, size_t a_count, size_t a_size )
 {
-    return session_active() ? memory_manager_resize( session_owner(), a_pointer, a_count, a_size )
-                            : NULL;
+    return ensure_current_app_session()
+               ? memory_manager_resize( session_owner(), a_pointer, a_count, a_size )
+               : NULL;
 }
 
 bool app_session_free( void *a_pointer )
 {
-    return session_active() && memory_manager_free( session_owner(), a_pointer );
+    return ensure_current_app_session() && memory_manager_free( session_owner(), a_pointer );
 }
 
 esp_err_t app_session_register_service( const char *a_name,
@@ -270,9 +299,6 @@ void app_session_commit_close( void )
         return;
     }
 
-    memset( services, 0, sizeof( services ) );
-    service_count = 0U;
-    close_attempted_count = 0U;
-    ready_to_reclaim = false;
+    reset_session_state();
     session_app = RFSCOUT_APP_COUNT;
 }
