@@ -220,13 +220,13 @@ esp_err_t radio_monitor_stop( void )
     const bool was_running = running;
     running = false;
     portEXIT_CRITICAL( &callback_lock );
-    if( !was_running )
-    {
-        return ESP_OK;
-    }
 
-    (void)esp_wifi_set_promiscuous( false );
-    const esp_err_t stop_result = esp_wifi_stop();
+    esp_err_t stop_result = ESP_OK;
+    if( was_running )
+    {
+        (void)esp_wifi_set_promiscuous( false );
+        stop_result = esp_wifi_stop();
+    }
 
     const TickType_t started = xTaskGetTickCount();
     const TickType_t timeout = pdMS_TO_TICKS( WIFI_CALLBACK_QUIESCE_TIMEOUT_MS );
@@ -242,7 +242,10 @@ esp_err_t radio_monitor_stop( void )
         vTaskDelay( pdMS_TO_TICKS( 1U ) );
     }
 
-    ESP_LOGI( TAG, "Wi-Fi monitor stopped for inactive app" );
+    if( was_running )
+    {
+        ESP_LOGI( TAG, "Wi-Fi monitor stopped for inactive app" );
+    }
     return stop_result;
 }
 
