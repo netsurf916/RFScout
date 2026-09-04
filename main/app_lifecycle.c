@@ -1,12 +1,13 @@
 /**
     app_lifecycle.c : RFScout transactional application lifecycle coordinator
-    Description: Coordinates reversible exit preparation, reachability gating, commit, managed-memory reclamation, and diagnostics.
+    Description: Coordinates reversible exit preparation, platform-session quiesce, commit, managed-memory reclamation, and diagnostics.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
 
 #include "app_lifecycle.h"
 
+#include "app_session.h"
 #include "memory_manager.h"
 
 #include "esp_heap_caps.h"
@@ -99,9 +100,23 @@ rfscout_app_transition_diagnostics_t app_lifecycle_transition(
         return finish_transition( diagnostics, started_us );
     }
 
+    esp_err_t result = app_session_ensure( a_from );
+    if( ESP_OK != result )
+    {
+        return abort_transition(
+            diagnostics, RFSCOUT_APP_TRANSITION_ABORTED_PREPARE, result, a_hooks, started_us );
+    }
+
+    result = app_session_prepare_close();
+    if( ESP_OK != result )
+    {
+        return abort_transition(
+            diagnostics, RFSCOUT_APP_TRANSITION_ABORTED_PREPARE, result, a_hooks, started_us );
+    }
+
     if( NULL != a_hooks->prepare )
     {
-        const esp_err_t result = a_hooks->prepare( a_hooks->context );
+        result = a_hooks->prepare( a_hooks->context );
         if( ESP_OK != result )
         {
             return abort_transition(
@@ -109,7 +124,7 @@ rfscout_app_transition_diagnostics_t app_lifecycle_transition(
         }
     }
 
-    if( !a_hooks->reachability_clear( a_hooks->context ) )
+    if( !app_session_ready_to_reclaim() || !a_hooks->reachability_clear( a_hooks->context ) )
     {
         return abort_transition( diagnostics,
                                  RFSCOUT_APP_TRANSITION_ABORTED_REACHABILITY,
@@ -122,6 +137,7 @@ rfscout_app_transition_diagnostics_t app_lifecycle_transition(
     {
         a_hooks->commit( a_hooks->context );
     }
+    app_session_commit_close();
 
     diagnostics.reclaimed_bytes = memory_manager_release_app( a_from );
     diagnostics.remaining_allocations = memory_manager_app_allocation_count( a_from );
