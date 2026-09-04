@@ -2,474 +2,394 @@
 
 This is the canonical planning document for RFScout. Production documentation describes implemented behavior; future design, priorities, follow-up work, and brainstorming belong here so intent is not scattered across operational docs.
 
-Statuses describe implementation state, not release state.
+Statuses describe implementation state, not release state. Active release planning is maintained here rather than in release-specific roadmap files.
 
 ## v0.4.0 milestone plan
 
-**Status:** Planned
+**Status:** In progress
 
-v0.4.0 is intended to be a resource-management, lifecycle-stability, and application-quality release. The release should make application switching deterministic, allow data-heavy applications to use PSRAM opportunistically rather than being constrained by conservative fixed-size buffers, and establish a concrete improvement plan for every current application.
+v0.4.0 is a resource-management, lifecycle-stability, and application-quality release. The release should make application switching deterministic, allow data-heavy applications to use PSRAM opportunistically instead of being constrained by arbitrary fixed-capacity buffers, and improve each current application on top of that lifecycle model.
 
-The work in this section is planning only. It does not describe behavior implemented on current `main` until the corresponding implementation work is merged and the production documentation is updated.
+Several foundations originally planned for v0.4.0 are already present on `main` and were included in the published v0.3.2 firmware. Git history is authoritative for those implementation boundaries:
 
-### Milestone 1: application-scoped PSRAM memory manager
+- **PR #60 — implemented:** independent Indoor/Outdoor/Night visual themes and Normal/Quiet audio policy.
+- **PR #61 — implemented:** shared semantic system-event history, presentation, attention-wake, and initial hardware/system event sources.
+- **PR #63 — implemented:** owner-aware PSRAM memory manager with application/operation ownership, safe growth, accounting, failure tracking, and bulk reclamation.
+- **PR #64 — implemented:** transactional Prepare / Reachability / Commit / Reclaim application transitions and post-reclamation accounting checks.
+- **PR #65 — implemented:** optional System Events / Recent Events application over the shared volatile event history.
 
-Introduce a shared memory manager for application-owned dynamic storage.
+Release-level stress and hardware validation remain outstanding even where the underlying implementation is already merged.
 
-Design goals:
+### Release objective
 
-- Treat PSRAM as a reusable application resource rather than permanently partitioning large fixed buffers among applications that are not active at the same time.
-- Give the active application access to essentially all currently available application PSRAM, excluding memory reserved by the platform, long-lived services, the RTOS, display infrastructure, drivers, and other resources that must remain resident across application transitions.
-- Prefer PSRAM for large or growable application datasets while keeping latency-sensitive or DMA-constrained allocations in the memory class required by the underlying peripheral/API.
-- Allow application-owned collections to grow dynamically as observations, packets, captures, frames, history, or processing requirements increase instead of imposing arbitrary static limits solely to protect memory for inactive applications.
-- Track allocations by owning application so the application manager can reclaim an application's entire dynamic allocation set as one lifecycle operation.
-- Support normal allocation, capacity growth, and explicit release without requiring each application to invent its own allocator or growth policy.
-- Make allocation failure explicit and recoverable. Applications should preserve a usable bounded state, evict according to documented policy where appropriate, or report resource pressure rather than corrupting state or crashing.
-- Expose diagnostics including app-owned bytes, allocation count, peak app usage, free PSRAM, largest free block, and failed allocations where practical.
-- Treat PSRAM as a required platform capability for supported RFScout targets. Internal SRAM is reserved for system, stack, latency-sensitive, and hardware-constrained allocations rather than serving as a substitute for large application storage.
+RFScout applications should behave like isolated consumers of a common pool of dynamic memory:
 
-The memory manager is not intended to hide ownership. Persistent device configuration, platform services, caches that intentionally span applications, and peripheral-driver allocations remain owned by their respective subsystems rather than being silently attached to the active app. A target without usable PSRAM is outside the supported RFScout platform contract rather than a reduced-capacity fallback configuration.
+- long-lived platform services keep only memory that genuinely must survive application changes;
+- the active application may dynamically consume available PSRAM for retained observations, history, captures, and scratch processing;
+- application exit first quiesces hardware/workers and proves that no execution context can still reference app-owned state;
+- irreversible cleanup and reclamation happen only after that safety gate succeeds;
+- the next application starts from a predictable memory baseline and can reuse the released PSRAM;
+- PSRAM is a platform requirement for supported RFScout hardware targets.
 
-### Milestone 2: deterministic app-exit reclamation
+This is resource isolation by lifecycle, not a promise that literally every byte of physical PSRAM is available to an application. Platform, RTOS, display, driver, DMA, and service allocations that must remain resident are excluded from the app-owned pool. Internal SRAM remains reserved for the system, stacks, latency-sensitive state, and allocations constrained by ESP-IDF or peripheral hardware.
 
-Application switching must become a hard memory-ownership boundary.
+### Workstream A: application-scoped PSRAM memory manager
 
-Required lifecycle ordering:
+**Status:** Implemented by PR #63.
 
-1. Begin a reversible transition-preparation phase by quiescing the current application's workers and peripheral activity using the existing bounded lifecycle contract.
-2. Cancel or drain callbacks/timers that can access app-owned dynamic memory, retaining enough state to restore them if the transition aborts.
-3. Perform only reversible app-specific preparation that leaves user-visible/runtime state recoverable; destructive cleanup is deferred until commit.
-4. Verify that no worker, callback, timer, DMA completion path, or other execution context can still reference app-owned state.
-5. If the reachability/safety gate fails, abort the transition, keep the application's memory intact, roll back the reversible preparation, and reactivate the source app in its prior operational state.
-6. After the final fallible safety gate succeeds, commit the transition by running destructive app-specific exit cleanup while its data is still valid.
-7. Reclaim all memory owned by that application through the memory manager.
-8. Verify allocator/accounting state reports no remaining allocations for the exited application.
-9. Enter/settle/activate the destination application.
+Implemented behavior:
 
-Release criteria:
+- explicit platform/service, application, and nested operation ownership;
+- PSRAM-only managed allocation for eligible application storage;
+- safe growth with overflow checks and failure preserving the existing allocation;
+- owner validation and diagnosable ownership errors;
+- current/peak app payload usage, allocation count, and allocation-failure tracking;
+- application-wide and operation-wide reclamation;
+- unsupported-target failure when usable PSRAM is absent rather than silent internal-SRAM fallback.
 
-- Repeated rapid switching across every enabled application must not produce monotonic PSRAM/heap loss.
-- Leaving an application must free all memory owned by that app, including dynamically grown collections and scratch/work buffers.
-- A failed quiesce or failed pre-reclamation reachability/safety check must abort the transition before destructive cleanup or memory reclamation and restore the current application's operational state.
-- No destination application may activate while the previous app can still access reclaimed memory.
-- Stress diagnostics should record source/destination app, quiesce duration, safety-gate result, rollback/commit result, reclaimed bytes, remaining app-owned allocations, free heap/PSRAM, minimum-ever free heap, and largest free block where practical.
+The manager is intended for meaningfully sized retained observations, histories, captures, and processing state. Tiny transient objects and DMA/peripheral-constrained allocations should continue to use the appropriate native allocation path.
 
-This makes app entry/exit analogous to crossing a transactional resource-ownership boundary: a transition may take slightly longer when cleanup is required, but the next application starts from a predictable memory baseline. The pre-reclamation safety gate is mandatory; irreversible cleanup and reclamation happen only after that gate succeeds, and post-reclamation checks are accounting assertions rather than a substitute for proving that execution contexts have stopped.
+Preferred memory-pressure order remains:
 
-### Milestone 3: dynamic WiFi/BLE retention and observation model
+1. Preserve correctness and current data.
+2. Release reconstructable scratch/cache data.
+3. Evict oldest/lowest-value retained history where semantics permit.
+4. Surface resource pressure.
+5. Continue in a bounded state.
 
-Rename the user-facing **WiFi / BT** application to **WiFi / BLE** and replace fixed-capacity/MAC-address-centric thinking with dynamically growable app-owned observation, identity, and relationship state backed by the memory manager.
+A crash, overwrite, or undocumented conversion of an unlimited/session-retained mode into a hidden fixed item limit is not acceptable.
 
-Retention controls should support three semantic classes:
+### Workstream B: deterministic app-exit reclamation
 
-- **Instant** — no intentional retention grace period. An entry is eligible for removal on the next normal housekeeping pass once it is no longer current according to the collector's observation semantics.
-- **Timed** — retain configurable finite timeout behavior for users who want a rolling recent-history window.
-- **Never** — do not age the entry out while WiFi/BLE remains the active application. `Never` is session-scoped, not permanent storage: switching away still frees app-owned observation, identity, relationship, and history state under the app-exit contract.
+**Status:** Implemented by PR #64; hardware stress/fault-injection validation remains open.
 
-Timeouts define whether evidence is current rather than requiring an object under active inspection to disappear immediately. A selected/deep-dive object may become stale while temporarily retained for UI stability; once unreferenced, normal retention and memory-pressure reclamation apply.
+Application changes now follow a transactional boundary:
 
-Identity and analysis goals:
+1. Request quiesce from the source application.
+2. Wait for bounded worker/peripheral shutdown.
+3. Abort and reactivate the source if quiesce fails.
+4. Cancel/drain callbacks, timers, and other reversible reachability paths.
+5. Perform only reversible pre-exit preparation.
+6. Verify that no worker, callback, timer, DMA completion path, or other execution context can reference app-owned memory.
+7. Commit irreversible app-specific cleanup only after the final fallible safety gate.
+8. Reclaim all remaining memory owned by the source application.
+9. Verify zero remaining managed allocations for the exited application.
+10. Record transition diagnostics.
+11. Enter/settle/activate the destination application.
 
-- Stop equating every observed MAC address with a physical device. Preserve raw observed addresses while introducing stable app-internal entity IDs, observed-identity sets, and confidence/provenance for any correlation.
-- Preserve independent Wi-Fi and BLE source aging where a higher-level entity contains evidence from both radios.
-- Treat randomized-address correlation as evidence rather than proof. Never merge stable/associated identities solely from similar fingerprints, and do not claim persistent physical identity across independently randomized associations/private-address rotations without adequate passive evidence.
-- Replace the Wi-Fi collector's MAC-only reduction with richer semantic 802.11 observations where practical, preserving address roles/BSSID, frame type/subtype, sequence information, channel/RSSI, SSID labels, relevant capability information, and association evidence.
-- Use authentication/association/reassociation exchanges and ordinary associated data traffic as useful client/AP topology evidence; EAPOL/handshake traffic strengthens confidence but is not required to discover an associated client.
-- Keep randomized Probe Requests as useful transient evidence while preventing each rotating probe MAC from inflating the primary device count one-for-one. Conservative short-lived clustering may use compatible timing, sequence, capability, channel/RSSI, and other evidence while retaining uncertain observations separately.
-- Make radio type a first-class view dimension: **Combined / Wi-Fi / BLE**.
-- Wi-Fi views should include **SSIDs, APs, Clients, Unassociated, and Probes**. SSID grouping is label-based analysis only: an SSID is non-unique, so same-named APs must remain distinct BSSIDs and must not be presented as one logical network/topology unless separate observed evidence supports a stronger relationship.
-- BLE views should use BLE-native semantics such as **Devices, Advertisers, Beacons, and Services/Capabilities** rather than inventing AP/probe terminology or claiming unobserved central/peripheral connections.
-- Use the main screen for actively updated analytical projections and context-sensitive menus for relationship drill-down. Internal IDs plus active/stale state should keep selections stable while observations continue to update.
-- Grow retained storage on demand until memory pressure requires a documented degradation/eviction policy, preferentially discarding stale/low-confidence transient evidence before current/high-confidence entities when semantically safe.
-- Preserve detection notification behavior independently from whether an observation remains visible in retained history.
-- Keep all WiFi/BLE observation, identity, relationship, and retained-history memory app-owned so leaving the app returns it to the common pool.
+Outstanding validation includes rapid app rotation, repeated Home/app cycles, large histories, Recorder transitions, Thermal attach/detach, forced quiesce/reachability failures, callback/timer races, low-memory behavior, baseline-memory stability, and largest-free-block stability.
 
-### Milestone 4: application-by-application improvement pass
+### Workstream C: dynamic WiFi/BLE retention and observation model
 
-Every current application should receive an explicit 0.4.0 review rather than treating the memory manager as an isolated infrastructure change.
+**Status:** In progress. PR #68 begins the application-data migration onto Workstreams A/B.
+
+PR #68 implements the first storage/lifecycle slice:
+
+- remove the boot-time fixed 1000-entry retained observation allocation;
+- allocate retained Wi-Fi/BLE observations lazily in app-owned PSRAM;
+- grow observation capacity geometrically as observations arrive rather than imposing a fixed item ceiling;
+- reclaim the observation collection through the existing WiFi/BLE application-exit transaction after both collectors have stopped;
+- preserve current finite timeout behavior and independent Wi-Fi/BLE source aging;
+- remove the former 1000-item UI mirror/capacity assumption;
+- build the current summary directly from the live collection using growable app-owned scratch, while keeping only the physically displayable top brand rows in the UI itself.
+
+The remaining WiFi/BLE design is intentionally broader than this first storage PR.
+
+#### Retention semantics
+
+Support three semantic classes:
+
+- **Instant** — no intentional retention grace period. An observation becomes removable on the next normal housekeeping pass once it is no longer current.
+- **Timed** — configurable finite rolling retention.
+- **Never** — no age-based removal while WiFi/BLE remains active. This is session-scoped, not persistent storage; leaving the application still releases app-owned history.
+
+Timeouts define whether evidence is current, not whether an object under active inspection must immediately disappear. A selected/deep-dive object may become stale while temporarily retained for UI stability; once unreferenced, normal retention and memory-pressure policy apply.
+
+#### Identity and Wi-Fi semantics
+
+- Stop equating every observed MAC address with a physical device.
+- Preserve raw observed addresses while introducing stable app-internal entity IDs, observed-identity sets, and confidence/provenance for correlations.
+- Preserve independent source aging where higher-level entities contain evidence from multiple radios.
+- Treat randomized-address correlation as evidence, never proof.
+- Do not merge stable identities solely because fingerprints look similar.
+- Keep randomized Probe Requests as useful transient evidence while preventing rotating probe MACs from inflating the primary device count one-for-one.
+- Parse enough 802.11 metadata to preserve address roles/BSSID, frame type/subtype, sequence behavior, channel/RSSI, SSID labels, relevant capabilities, and association evidence.
+- Use authentication/association/reassociation exchanges and ordinary associated data traffic as useful topology evidence; EAPOL/handshake traffic strengthens confidence but is not required for ordinary associated-client discovery.
+- Treat SSID grouping as label-based analysis only. Same-named APs remain distinct unless separate evidence supports a stronger relationship.
+
+#### BLE semantics
+
+BLE views should reflect what passive observation can actually establish:
+
+- **Devices** — entity-centric observations where correlation has adequate evidence.
+- **Advertisers** — rawer advertisement/address activity.
+- **Beacons** — recognized beacon/manufacturer-specific formats where supported.
+- **Services/Capabilities** — advertised services, manufacturer data, names, appearance/capability metadata, and related advertisement-derived information.
+
+Do not invent a BLE AP hierarchy or claim unobserved central/peripheral connections. Address rotation/private-address correlation must retain confidence and provenance.
+
+#### WiFi/BLE UI
+
+Make radio type a first-class view dimension:
+
+- **Combined / Wi-Fi / BLE**
+- Wi-Fi: **SSIDs / APs / Clients / Unassociated / Probes**
+- BLE: **Devices / Advertisers / Beacons / Services**
+
+The main screen should remain an actively updated analytical projection. Deeper relationships belong in context-sensitive drill-down. Internal IDs plus active/stale state should keep selection stable while observations continue changing.
+
+#### Remaining WiFi/BLE checklist
+
+- [ ] Rename user-facing WiFi / BT to WiFi / BLE across UI and production documentation.
+- [x] Move the normalized retained observation collection to growable app-owned PSRAM. Implemented by PR #68.
+- [x] Remove the fixed 1000-item retained-store and UI-mirror limit. Implemented by PR #68.
+- [ ] Move retained surveillance history to growable app-owned memory.
+- [ ] Add Instant / Timed / Never Wi-Fi and BLE retention.
+- [ ] Apply equivalent semantics to surveillance retention where appropriate.
+- [ ] Add active/stale UI semantics for selected objects.
+- [ ] Replace MAC-equals-device counting with semantic entities, identity sets, confidence, and provenance.
+- [ ] Parse richer Wi-Fi roles/subtypes/metadata and association evidence.
+- [ ] Conservatively cluster randomized probe activity where evidence supports it.
+- [ ] Add Combined/Wi-Fi/BLE radio selection and radio-specific projections.
+- [ ] Add stable relationship drill-down without cursor/selection instability.
+- [ ] Define/test memory-pressure eviction behavior favoring current/high-confidence data over stale/transient evidence where appropriate.
+- [ ] Prove both collectors stop before all app-owned observation/identity memory is released.
+- [ ] Perform repeated enter/exit, large-growth, low-memory, and collector/reclamation race testing on hardware.
+
+### Workstream D: application-by-application improvement pass
+
+Every current application receives an explicit v0.4.0 review rather than treating the memory manager as an isolated infrastructure change.
 
 #### Home / Device Settings
 
-- Add memory/lifecycle diagnostics sufficient to verify app-owned PSRAM behavior without a debugger, either directly in Device Settings or through a compact diagnostics surface reachable from Home.
-- Show total/free PSRAM, largest free block, current app-owned bytes, peak app-owned bytes, and the most recent transition/reclamation result where practical.
-- Audit settings interaction against the shared semantic menu policy so toggles and small choices use direct center-button cycling while genuine values retain enter/edit/exit behavior.
-- Keep Home lightweight and free of large app-owned allocations so it remains a useful neutral baseline when measuring whether another app released its resources.
-
-#### WiFi/BLE
-
-- Rename the app from WiFi / BT to WiFi / BLE when the implementation lands and update production documentation accordingly.
-- Move retained observation/source/surveillance plus identity/relationship state to dynamically growable app-owned storage.
-- Add Instant and Never retention choices alongside finite timeout values, with active/stale semantics that keep deep-dive navigation stable.
-- Replace MAC-equals-device counting with semantic observations, stable internal entity IDs, observed-identity sets, and confidence/provenance.
-- Parse enough 802.11 roles/subtypes/metadata to distinguish APs, associated clients, unassociated/probe activity, and defensible topology evidence.
-- Use ordinary associated traffic and management exchanges for associated-client discovery; treat handshake/EAPOL observations as stronger confirmation rather than a requirement.
-- Cluster randomized probe identities conservatively into ephemeral scan sessions only where evidence supports it, leaving uncertain observations distinct.
-- Add Combined/Wi-Fi/BLE radio selection and radio-specific views: Wi-Fi SSIDs/APs/Clients/Unassociated/Probes and BLE Devices/Advertisers/Beacons/Services.
-- Treat SSID views as non-unique label groupings, never as automatic logical-network identity or shared topology.
-- Add actively updated relationship drill-down without cursor/selection instability as entries become stale.
-- Preserve source-specific aging inside higher-level entities and keep unassociated/probe-only evidence explicitly lower-confidence than associated-client evidence.
-- Add memory-pressure handling and diagnostics without dropping passive collection stability.
-- Ensure both collectors are quiesced before app-owned observation/identity state is reclaimed on exit.
+- [ ] Add memory/lifecycle diagnostics or a compact diagnostics entry point.
+- [ ] Show free/total PSRAM and largest free block where supported.
+- [ ] Show current/peak active-app owned memory.
+- [ ] Show the latest transition/reclaimed-byte result where useful.
+- [ ] Audit toggles/choices/values against semantic menu behavior.
+- [ ] Keep Home a low-allocation baseline application.
+- [ ] Derive useful compact capability/status indicators from semantic application availability.
 
 #### CC1101
 
-- Move large sweep-history, detection-history, and future structured-capture storage to app-owned dynamic PSRAM where suitable.
-- Add burst duration and inter-burst timing enrichment.
-- Add conservative modulation/behavior inference without presenting heuristics as decoded product identity.
-- Add structured capture/history that can grow while the app remains active, subject to explicit memory-pressure policy.
-- Improve drill-down/history presentation where accumulated observations support it.
-- Verify that persistent worker shutdown completes before all CC1101 app-owned dynamic state is reclaimed.
+- [ ] Move eligible history/capture storage to app-owned PSRAM.
+- [ ] Add burst duration and inter-burst timing observations.
+- [ ] Add conservative modulation/behavior inference without presenting heuristics as decoded identity.
+- [ ] Add structured growable capture/history and useful drill-down.
+- [ ] Define memory-pressure behavior and prove worker quiesce before memory release.
 
 #### nRF24
 
-- Move packet/history/classifier working sets that do not require internal/DMA memory to app-owned dynamic PSRAM.
-- Strengthen passive Enhanced ShockBurst candidate discovery and validation so packet/history surfaces can be populated from defensible receive-only observations.
-- Grow validated packet/capture history dynamically during the active session rather than reserving a large permanent buffer.
-- Preserve strict receive-only behavior: no ACK generation, injection, replay, or active discovery.
-- Improve structured packet drill-down and classifier confidence using real hardware captures.
-- Verify that the radio worker is fully quiesced before packet/history memory is reclaimed.
+- [ ] Move eligible packet/history/classifier storage to app-owned PSRAM.
+- [ ] Strengthen passive Enhanced ShockBurst candidate discovery/validation.
+- [ ] Populate packet/history surfaces only from validated observations.
+- [ ] Grow validated packet/capture history dynamically and improve drill-down/confidence presentation.
+- [ ] Preserve strict receive-only behavior: no ACK generation, injection, replay, or active discovery.
+- [ ] Prove worker quiesce before packet/history memory release.
 
 #### Recorder
 
-- Implement the shared calibrated Audio Input service already described in this roadmap so microphone ownership and measured-rate/gain telemetry are no longer Recorder-specific.
-- Use app-owned PSRAM for large Recorder work buffers, waveform/FFT history, catalog scratch storage, and asynchronous processing buffers where the ESP-IDF API does not require another memory class.
-- Keep DMA/I2S buffers in the memory class required by the hardware/API rather than forcing all audio allocation into PSRAM.
-- Make monitor/record/playback transitions explicitly release mode-specific scratch buffers when they are no longer useful.
-- Ensure leaving Recorder synchronously stops all audio activity before its app-owned memory is reclaimed.
-- Preserve completed recordings on SD; app-exit reclamation applies to runtime memory, not user data on storage.
+- [ ] Implement the shared calibrated Audio Input service described later in this roadmap.
+- [ ] Separate app-owned PSRAM work buffers from DMA/internal-memory requirements.
+- [ ] Release mode/operation scratch at appropriate boundaries while keeping SD recordings independent of runtime reclamation.
+- [ ] Prove microphone/playback workers stop before app memory release and validate repeated transitions.
+- [ ] Keep speaker/output loudness in percentage semantics and microphone/input digital gain in dB.
+- [ ] Revisit the current `0..+24 dB` input-gain range against measured hardware behavior.
 
 #### Thermal
 
-- Move interpolation/work/history buffers that can safely reside in PSRAM into app-owned dynamic storage.
-- Avoid permanently reserving thermal work memory while the optional sensor/app is inactive.
-- Add a modest history/inspection improvement, such as recent min/max/center-point trend or frame statistics, using dynamically sized storage rather than a global fixed allocation.
-- Review scale/palette/range controls for consistency with the shared menu interaction policy while keeping literal thermal pixel colors outside theme translation.
-- Stop hot-plug acquisition and all frame callbacks before thermal memory reclamation.
+- [ ] Move eligible interpolation/history work buffers to app-owned PSRAM and allocate large work state only while needed.
+- [ ] Add a small useful history/statistics inspection feature using dynamic storage.
+- [ ] Audit controls against semantic menu behavior and prove acquisition/callback shutdown before release.
+- [ ] Implement MLX90640 calibration-data extraction and calibrated per-pixel temperature conversion before presenting absolute temperature values.
+- [ ] Validate calibrated temperatures on hardware against a reasonable reference.
+- [ ] Evaluate higher-quality interpolation/upscaling while preserving truthful 32x24 sensor resolution and aspect ratio.
+- [ ] Define useful palette mapping, automatic range behavior, and optional user-lockable range.
+- [ ] Keep min/max/center presentation stable while ranges change.
+- [ ] Add sensible filtering and invalid-pixel handling without hiding real transients.
 
-### Milestone 5: independent visual theme and audio policy
+### Workstream E: visual theme and audio-policy separation
 
-Separate visual presentation from device sound policy so choosing a display theme never implicitly changes audio behavior.
+**Status:** Implemented by PR #60; release-level combination/migration validation remains open.
 
-Planned visual themes:
+Implemented behavior:
 
-- **Indoor** — normal RFScout presentation.
-- **Outdoor** — daylight/high-contrast presentation.
-- **Night** — red/orange low-light presentation.
+- visual themes are Indoor, Outdoor, and Night;
+- Audio Policy is independently Normal or Quiet;
+- Quiet suppresses incidental UI/event feedback and audible detection notifications without mutating saved notification configuration;
+- explicitly requested content audio such as Recorder playback is not suppressed by Quiet;
+- legacy Discipline migrates to Night + Quiet with the intended migrated environmental gains;
+- recognized older configuration is migrated best-effort while unsupported/unusable pre-1.0 configuration may be regenerated from current defaults.
 
-Planned audio policies:
+Outstanding validation:
 
-- **Normal** — incidental UI feedback and enabled detection notifications behave normally, subject to existing per-app notification controls, global notification mode/volume, and application-specific audio rules.
-- **Quiet** — suppress incidental interaction/event sounds and detection-notification presentation while preserving explicitly requested application content audio such as Recorder playback.
+- [ ] Verify all Indoor/Outdoor/Night + Normal/Quiet combinations.
+- [ ] Verify Quiet suppression versus explicit content audio.
+- [ ] Verify recognized schema migration/default regeneration.
+- [ ] Verify migrated gains and complete theme/audio independence.
 
-Design goals:
+### Workstream F: system events, transient history, and notification wake
 
-- Treat visual theme and audio policy as independent persistent configuration fields.
-- Keep theme resolution strictly visual; themes must not participate in deciding whether a sound is emitted.
-- Keep application content audio, detection notifications, and incidental UI feedback as distinct policy classes.
-- Quiet suppresses incidental UI feedback and audible detection-notification presentation without mutating the user's saved notification enablement, mappings, mode, or volume.
-- Quiet does not suppress explicitly requested content audio such as Recorder playback or future CW output.
-- Permit every useful combination, including Outdoor + Quiet, Night + Normal, and Night + Quiet.
-- Retire the standalone **Discipline** theme rather than preserving a permanently coupled visual/audio mode.
-- Migrate legacy Discipline configuration to **Night + Quiet** and materialize the Night environmental gain profile (`20%` interaction / `60%` notification). Quiet preserves the immediate silent behavior after migration; if the user later selects Normal, the migrated gains provide the expected Night audio profile rather than carrying forward Discipline's legacy `0%` / `0%` suppression.
-- Existing Indoor, Outdoor, and Night selections retain their visual choice and default to the **Normal** audio policy unless an explicit migrated audio-policy value exists.
-- Migration must also materialize the current theme-owned interaction and notification gains into independent audio state so Indoor preserves 35%/100%, Outdoor preserves 55%/100%, and Night preserves 20%/60%. These environmental gains remain separate from the existing global notification-volume setting.
-- Saving after migration should emit the independent theme, audio-policy, and migrated audio-gain fields and should not recreate obsolete Discipline state.
-- Add Audio Policy to Device Settings as a small direct-cycle choice consistent with the semantic menu policy.
+**Status:** Initial implementation landed in PR #61; Recent Events UI landed in PR #65.
 
-Validation should cover all six theme/policy combinations, verify that Quiet suppresses incidental and notification sound presentation but not explicit application content audio, verify that migrated Discipline uses Night's 20%/60% environmental gains and that migrated Indoor/Outdoor/Night configurations retain their pre-migration effective sound levels, and verify that changing either axis never changes the other.
+Implemented behavior includes:
 
-### Milestone 6: cross-application consistency and cleanup
+- shared semantic system-state event IDs on the existing event dispatcher;
+- fixed-size RAM-only recent-event history independent from normal diagnostics;
+- charger connect/disconnect, startup SD mount/mount-failure, and Thermal availability events;
+- transient global event overlay without changing application lifecycle state;
+- notification-driven display attention wake preserving the original inactivity deadline;
+- common acquired/lost procedural cues under Normal/Quiet audio policy;
+- boot-state discovery retained/logged without interactive notification behavior;
+- optional default-disabled System Events application with stable browse snapshot.
 
-Use the 0.4.0 app review to remove behavioral inconsistencies that increase maintenance cost or make lifecycle bugs harder to reason about.
+Remaining work:
 
-Goals:
+- [ ] Detect reliable runtime SD insertion/removal and write-failure transitions where the storage stack permits it.
+- [ ] Add further hot-pluggable peripheral/capability events as hardware support expands.
+- [ ] Decide whether SD-backed logs need a dedicated system-event record type beyond ESP diagnostics.
+- [ ] Refine event payloads where one compact integer is insufficient without turning events into preformatted strings.
+- [ ] Add per-event presentation controls only if practical use demonstrates a real need.
+- [ ] Validate overlay/wake behavior from active, dimmed, and hardware-sleep states.
+- [ ] Validate protective power overlays retain priority.
+- [ ] Validate rapid event bursts overwrite history safely without creating an audible backlog.
 
-- Apply the semantic menu policy consistently across all applications.
-- Keep visual theme logic independent from audio-policy resolution.
-- Standardize app entry/exit diagnostics and memory-manager instrumentation.
-- Document which allocations are app-scoped, service-scoped, DMA-constrained, or intentionally persistent.
-- Prefer shared growable containers/helpers over one-off realloc/capacity schemes in individual apps.
-- Remove obsolete planning text from production documents when 0.4.0 implementations supersede it, moving factual behavior into the appropriate production documentation at merge time.
+### Cross-application consistency and audio controls
 
-### v0.4.0 release gate
+- [ ] Apply semantic menu behavior consistently across all applications.
+- [ ] Audit labels for consistent `volume`, `level`, and `gain` semantics.
+- [ ] Keep speaker/output loudness user-facing as percentages unless calibration justifies another unit.
+- [ ] Keep microphone/input gain in dB.
+- [ ] Decide whether notification and Recorder/content playback levels remain independent or participate in an explicit shared/master output policy.
+- [ ] If a master output policy is introduced, define composition with Normal/Quiet, environmental gain, content audio, defaults, persistence, clamping, and migration.
 
-v0.4.0 should not be considered complete until:
+### v0.4.0 release validation gate
 
-- the shared app-scoped memory manager is implemented and used by data-heavy current applications where appropriate;
-- supported RFScout hardware targets provide usable PSRAM as a platform requirement;
-- application exit passes the pre-reclamation safety gate and reliably reclaims all app-owned dynamic memory only after workers/callbacks/timers can no longer reference it;
-- WiFi/BLE exposes Instant, finite timed, and Never retention semantics backed by growable app-owned storage;
-- WiFi/BLE no longer treats every observed MAC as a physical device: randomized probe/private-address activity is represented conservatively with raw-identity provenance and confidence, and rotating probe MACs do not inflate the primary device count one-for-one;
-- Wi-Fi exposes defensible AP/client/probe relationships from appropriate 802.11 evidence, with handshake/EAPOL observation optional for ordinary associated-client discovery and SSID groupings clearly treated as non-unique labels rather than automatic network identity;
-- the app provides Combined/Wi-Fi/BLE radio selection, Wi-Fi SSIDs/APs/Clients/Unassociated/Probes views, BLE Devices/Advertisers/Beacons/Services views, and live deep-dive navigation that remains stable as observations age from active to stale;
-- every current application has completed its documented improvement review or has an explicit, documented reason for deferral;
-- visual theme and Normal/Quiet audio policy are independent, with legacy Discipline configuration migrated to Night + Quiet;
-- Quiet suppresses incidental and detection-notification sound presentation without suppressing explicitly requested application content audio;
-- rapid-switch stress testing shows no monotonic heap/PSRAM loss, stale-worker access, or cross-app resource ownership violation;
-- memory pressure and allocation failure are handled without crashes or silent data corruption;
-- production documentation is updated to describe only the portions that are actually implemented; and
-- release notes summarize the memory/lifecycle contract and any user-visible app changes without implying unsupported behavior.
+v0.4.0 is not complete until:
 
-## Completed foundation
+- [ ] All tests/build/format checks pass.
+- [ ] App-switch stress testing shows a stable memory baseline, no ownership violations, and zero app-owned allocations after successful exit.
+- [ ] Pre-reclamation safety gates prove no worker/callback/timer can reference app memory; forced failures fully restore the source app before irreversible cleanup.
+- [ ] Largest free block remains stable enough to rule out systematic fragmentation/leak growth.
+- [ ] WiFi/BLE Instant, finite timed, and Never behavior is verified, including full reclamation on exit and memory-pressure paths.
+- [ ] Wi-Fi primary device counts are not inflated one-for-one by rotating randomized Probe Request MACs.
+- [ ] Wi-Fi AP/client topology and probe relationships are derived from appropriate 802.11 evidence; handshake observation is not required for ordinary associated-client discovery.
+- [ ] SSID groupings remain non-unique labels unless separate evidence supports a stronger relationship.
+- [ ] Unassociated/probe-only identities remain clearly lower-confidence/transient and conservative clustering does not merge unrelated stable clients.
+- [ ] Combined/Wi-Fi/BLE main views and deep dives remain actively updated without destabilizing user selection.
+- [ ] BLE views use BLE-native semantics and do not claim AP-like hierarchy or unobserved connections.
+- [ ] Rotating Wi-Fi/BLE addresses preserve raw identity/provenance and correlation remains evidence rather than guaranteed physical identity.
+- [ ] Supported hardware provides usable PSRAM and fails clearly when the platform requirement is unmet.
+- [ ] Recorder DMA/internal-memory requirements remain in compatible memory and audio controls use documented percentage-versus-dB semantics.
+- [ ] Thermal absolute-temperature presentation is gated on calibrated MLX90640 conversion and hardware validation.
+- [ ] Shared capability/status presentation derives from semantic application availability.
+- [ ] Theme selection and Normal/Quiet audio policy operate independently with migration/default behavior verified.
+- [ ] System-event history remains bounded/volatile, notifications do not disturb application lifecycle state, and attention wake returns to the original idle timeline.
+- [ ] Production documentation reflects implemented behavior and release notes distinguish user-visible changes from internal resource-management work.
 
-### Display, board support, and application lifecycle
+## Completed foundation before v0.4.0
 
-**Status:** Done — PRs #1-#7
+The following baseline work is already complete and remains relevant context for later roadmap items:
 
-- Native ESP-IDF ST7789 display/framebuffer support for the T-Embed CC1101 Plus.
-- Shared board pin/SPI ownership.
-- 16 MB flash layout with a larger factory application partition.
-- WiFi/BLE situational-awareness UI and surveillance classification groundwork.
-- Bounded asynchronous SD logging and shared status presentation.
-- Multi-application lifecycle/navigation framework.
+- **PRs #1-#7:** native display/framebuffer support, board/SPI ownership, flash layout, WiFi/BLE surveillance groundwork, bounded SD logging, shared status presentation, and multi-application lifecycle/navigation.
+- **PRs #8-#11:** receive-only CC1101 and nRF24 analyzer baselines.
+- **PRs #12-#19:** early audio experiments, shared status/power presentation, unified application logging, review cleanup, and clang-format 18 canonicalization.
+- **PRs #20-#24:** device configuration/time, Home-era settings foundation, notifications/audio output, and release packaging.
+- **PRs #25-#26:** randomized/private address distinction and IEEE prefix attribution.
+- **PR #27:** SD-backed Recorder replacing the former standalone Audio analyzer.
+- **PR #28:** shared Audio Input architecture captured for later implementation.
+- **PR #29:** shared UI layout/chrome consistency.
+- **PR #30:** browser flasher.
+- **PR #32:** Home and configurable startup.
+- **PR #33:** global visual themes.
 
-### CC1101 and nRF24 analyzers
+## Near-term work after the current v0.4.0 slice
 
-**Status:** Done baseline — PRs #8-#11
-
-- Receive-only CC1101 RSSI spectrum scanning with bounded sweeps, peak hold, conservative detection categories, and reset controls.
-- Receive-only nRF24 2.4 GHz activity scanning with RPD history, peak hold, passive ESB classification groundwork, address deduplication, detection counts, and reset controls.
-
-Further classifier/protocol enrichment is tracked below.
-
-### Audio analyzer experiments and codebase cleanup
-
-**Status:** Superseded/Done — PRs #12-#19
-
-- Initial PDM/FFT experiments established microphone hardware behavior but were later replaced by Recorder.
-- Shared application status presentation and global power-off overlay were established.
-- Application logging was unified.
-- Historical review findings were closed.
-- The hand-maintained firmware tree was canonicalized with clang-format 18 and full-tree CI enforcement.
-
-The removed standalone Audio analyzer is not a current application. Only the compatibility ABI remains until a later naming cleanup.
-
-### Device configuration, time, notifications, and release tooling
-
-**Status:** Done baseline — PRs #20-#24
-
-- SD-backed `/sdcard/rfscout.json` with compiled fallbacks and recovery-safe replacement.
-- Device pass-through landing screen and center-entered settings.
-- App enablement, brightness, timezone/manual time, SD logging preference, and wall-clock provenance.
-- Asynchronous I2S1 speaker service.
-- Device-wide Off/Tone/Morse notifications with per-category characters.
-- Independent persistent global notification volume with perceptual output scaling.
-- Canonical alert descriptor registry.
-- Reproducible firmware packaging and manual draft-release workflow.
-
-### MAC provenance and prefix identity
-
-**Status:** Done baseline — PRs #25-#26
-
-- Separate `RANDOM` private/local addresses from unresolved public `UNKNOWN` addresses.
-- IEEE MA-L, MA-M, MA-S/OUI-36, and IAB longest-prefix attribution.
-- Curated surveillance-prefix metadata integrated through the common identity lookup while remaining separate from authoritative IEEE ownership.
-- Deterministic generator coverage and scheduled registry refresh.
-
-### Recorder replacement
-
-**Status:** Done baseline — PR #27
-
-- Replace the former standalone Audio spectrum analyzer with SD-backed Recorder.
-- Record 16-bit mono PCM WAV under `/sdcard/audio/`.
-- Measure PDM clock and delivered PCM rate at runtime instead of trusting nominal divider/sample-rate assumptions.
-- Write measured effective rate into WAV metadata.
-- Add asynchronous save processing with 300 ms head trim, 600 ms tail trim, DC removal, and bounded normalization.
-- Enumerate/refresh validated recordings, play through I2S1, and delete from the browser.
-- Add independent persistent Recorder playback volume.
-- Add Recorder `MONITOR` mode with live FFT spectrum and persistent 0..+24 dB fixed digital input gain.
-
-### Audio-input design capture
-
-**Status:** Design captured, implementation pending — PR #28
-
-PR #28 intentionally recorded the architecture goal but did **not** implement a new shared Audio Input service. The detailed implementation plan is consolidated below under Near-term work.
-
-### Shared UI layout/chrome consistency
-
-**Status:** Done baseline — PR #29
-
-- Shared title/layout metrics.
-- `ui_chrome_draw()` owns common title/status/battery presentation.
-- Long titles are constrained away from the right-side status region.
-- Device, Recorder, WiFi/BT, CC1101, nRF24, and Thermal use consistent top chrome/layout conventions.
-- Footer placement remains optional; data-heavy views may use the bottom of the display.
-
-### Browser flasher
-
-**Status:** Done baseline — PR #30
-
-- GitHub Pages + ESP Web Tools browser flasher.
-- Published release assets mirrored into the Pages deployment.
-- Candidate from the most recent triggering eligible build exposed ahead of releases when present.
-- Same-origin firmware/manifests avoid browser authentication/CORS problems.
-- Hardware flashing validated with a Chromium-based browser/Web Serial.
-
-### Home and configurable startup
-
-**Status:** Implemented — PR #32
-
-- Turn the Device pass-through landing state into branded RFScout **Home** while preserving center-entered Device Settings.
-- Keep Home/Device non-disableable and in normal top-level navigation.
-- Default startup to Home instead of WiFi/BT.
-- Persist a preferred startup target as backward-compatible schema-v1 `apps.startup` configuration.
-- Allow Home, WiFi/BT, CC1101, nRF24, Recorder, or Thermal as the preferred startup target.
-- Fall back to Home for the current boot when the configured target is disabled or unavailable without erasing the saved preference.
-- Generate compact indexed LCD Home branding from canonical `assets/logo.png` artwork at build time.
-- Reuse `assets/logo.png` and the RFScout orange/white identity in the GitHub Pages browser flasher.
-- Preserve established per-application lifecycle and initialization behavior while adding startup selection.
-
-### Global display themes
-
-**Status:** Implemented — PR #33
-
-- Centralize semantic UI color roles rather than allowing each application to independently define presentation colors.
-- Add persistent Indoor, Outdoor, and Night themes.
-- Keep Indoor aligned with the orange/white RFScout identity.
-- Prioritize high daylight contrast in Outdoor instead of carrying forward the earlier subdued-secondary-color direction.
-- Shift Night toward red/orange presentation while preserving state distinctions.
-- Add Theme beside Brightness in Device Settings with immediate application and NVS-backed persistence independent of SD availability.
-- Route historical application UI colors through the common semantic palette as a compatibility bridge.
-- Keep literal sensor/image data outside theme translation through raw framebuffer paths.
-- Apply theme logo roles to the Home bitmap and control affordances.
-
-Automatic theme selection from ambient light or time-of-day remains a possible future presentation enhancement rather than current behavior.
-
-## Near-term work
-
-### 1. Shared calibrated Audio Input service
+### Shared calibrated Audio Input service
 
 **Priority:** High
 
-The microphone is a board resource and should not remain Recorder-specific. Implement a shared service that Recorder and live analysis consume.
+The microphone is a board resource and should not remain Recorder-specific.
 
 Goals:
 
-- Move I2S0/PDM channel ownership out of `recorder.c` into a single service.
-- Keep the board microphone on its deterministic LEFT slot.
-- Configure toward a desired physical PDM outcome rather than assuming an ESP-IDF request produces the requested clock/rate.
-- Measure the physical PDM clock with PCNT after configuration.
-- Compare measured clock to the target and use bounded `i2s_channel_reconfig_pdm_rx_clock()` correction iterations.
-- Clamp requests to known-safe limits and reject measured microphone clocks outside the supported range.
-- Measure delivered PCM throughput and expose an effective sample rate.
-- Expose requested rate, measured PDM clock, effective PCM rate, calibration result, level, peak, and clipping telemetry.
-- Centralize fixed digital input gain (0..+24 dB in 3 dB steps) so Recorder and Monitor consume the same post-gain stream.
-- Serialize ownership so recording and monitoring cannot independently open I2S0.
-- Keep whole-recording operations such as DC correction, trim, and normalization in Recorder rather than the hardware service.
-- Make FFT frequency interpretation use the measured effective PCM rate.
+- move I2S0/PDM ownership out of `recorder.c` into a shared service;
+- keep the board microphone on its deterministic LEFT slot;
+- configure toward a desired physical PDM outcome rather than assuming an ESP-IDF request produces the requested clock/rate;
+- measure physical PDM clock with PCNT and use bounded reconfiguration when necessary;
+- clamp requests to known-safe limits and reject measured clocks outside the supported range;
+- measure delivered PCM throughput and expose an effective sample rate;
+- expose requested rate, measured clock, effective rate, calibration result, level, peak, and clipping telemetry;
+- centralize fixed digital input gain so Recorder and live analysis consume the same post-gain stream;
+- serialize microphone ownership so recording and monitoring cannot independently open I2S0;
+- keep whole-recording operations such as DC correction, trim, and normalization in Recorder;
+- make FFT frequency interpretation use the measured effective PCM rate.
 
-Validation should include quiet room, speech, whistle, transient/clap, monitor-to-record transitions, repeated app entry/exit, and consistency across cold boots/ESP-IDF updates.
+Future consumers may include tuner/pitch analysis and microphone-side CW/Morse receive. Those remain distinct from RF-side decoding and are not v0.4.0 release blockers unless separately promoted.
 
-### 2. CW/Morse sender application
+### CW/Morse sender application
 
 **Priority:** Near term
 
-Add a separate **CW** application rather than overloading Recorder.
+- compose strings with the rotary encoder and center button;
+- persist user-defined strings in `/sdcard/rfscout.json`;
+- browse/select/add/delete saved messages;
+- send complete messages through the shared Morse/speaker service;
+- keep detection-notification one-character mappings separate from CW messages.
 
-Goals:
-
-- Compose strings with the rotary encoder and center button.
-- Persist user-defined strings in `/sdcard/rfscout.json`.
-- Add newly created strings to configuration and remove deleted strings from configuration.
-- Browse/select saved messages.
-- Send complete messages through the shared Morse/speaker service.
-- Keep detection-notification one-character Morse mappings separate from CW messages.
-
-### 3. Log format and maintained parser
+### Log format and maintained parser
 
 **Priority:** Near term
 
-Make logs reliably machine-parseable without depending on fixed word positions.
-
-Goals:
-
-- Stable `key=value` fields.
-- Quote/escape free-form values that can contain spaces.
-- Stable field naming/order by record type.
-- Explicit schema/version marker if needed.
-- Maintained reference parser that emits JSON and/or CSV.
-- Regression tests for missing, unknown, long, and multi-word values.
-- Preserve UTC ISO-8601 timestamps and explicit uptime fallback.
-
-### 4. CC1101 enrichment
-
-**Priority:** Near/medium term
-
-- Burst duration and inter-burst timing.
-- Conservative modulation/behavior inference.
-- Structured captures for offline analysis.
-- Per-category drill-down where observations support it.
-- Time-windowed activity/count models where more useful than session-only counts.
-- Avoid presenting heuristic classifications as decoded product identities.
-
-### 5. nRF24 enrichment
-
-**Priority:** Near/medium term
-
-- Strengthen passive Enhanced ShockBurst candidate discovery/validation.
-- Validate framing/CRC sufficiently before treating observations as packets.
-- Improve classifier confidence from real hardware captures.
-- Preserve receive-only behavior: no ACK generation, injection, replay, or active discovery.
-- Add structured captures/drill-down and time-windowed activity where useful.
-- Follow the evidence levels, scan modes, and passive guardrails documented in
-  [nRF24 research and direction](NRF24_RESEARCH.md).
+- stable `key=value` fields;
+- quote/escape free-form values containing spaces;
+- stable field naming/order by record type;
+- explicit schema/version marker if needed;
+- maintained reference parser producing JSON and/or CSV;
+- regression tests for missing, unknown, long, and multi-word values;
+- preserve UTC ISO-8601 timestamps and explicit uptime fallback.
 
 ## Medium-term platform work
 
 ### Location and external time authorities
 
-- Discover supported external RTCs without silently changing clock authority.
-- When an RTC is detected, explicitly offer **Read RTC** or **Set RTC**.
-- Add GPS/GNSS as a shared Location & Time service rather than only a standalone UI.
-- Use GNSS UTC as an explicit time authority.
-- Expose location/fix/satellite/accuracy information.
-- Optionally attach location metadata to RF observations/captures when enabled.
-- Add NTP only under explicit networking policy.
-- Define clear authority-transition rules among manual, saved, RTC, GNSS, and NTP sources.
+- discover supported external RTCs without silently changing clock authority;
+- explicitly offer **Read RTC** or **Set RTC** when an RTC is detected;
+- add GPS/GNSS as a shared Location & Time service rather than only a standalone UI;
+- use GNSS UTC as an explicit time authority;
+- expose fix/location/satellite/accuracy information;
+- optionally attach location metadata to observations/captures when enabled;
+- add NTP only under explicit networking policy;
+- define authority transitions among manual, saved, RTC, GNSS, and NTP sources.
 
 ### Diagnostics and self-measurement
 
 Add a dedicated diagnostics surface that reports measured subsystem state rather than only initialization success.
 
-Candidate diagnostics:
+Candidate diagnostics include board/reset identity, flash/PSRAM/heap, SD state/errors, battery/power, WiFi/BLE, CC1101/nRF24, microphone clock/rate/gain/clipping, speaker state, and GPS/RTC state when implemented.
 
-- ESP32/board identity and reset reason;
-- flash/PSRAM/heap;
-- SD capacity/state/errors;
-- battery/power state;
-- WiFi/BLE state;
-- CC1101/nRF24 state;
-- microphone requested rate, measured PDM clock, delivered PCM rate, gain, clipping;
-- speaker state;
-- GPS/RTC state when implemented.
-
-Favor **desired physical outcome -> configure -> measure -> correct/validate** for clocked/timing-sensitive peripherals.
+Favor **desired physical outcome -> configure -> measure -> correct/validate** for timing-sensitive peripherals.
 
 ### Board/peripheral inventory
 
-Systematically inventory the target-board schematic and code so every onboard peripheral, power rail, GPIO, bus device, interrupt, and expansion interface is used, intentionally reserved, or documented as conflicting/unavailable. Repeat the inventory for materially different supported board variants.
+Systematically inventory each supported board schematic and implementation so every onboard peripheral, power rail, GPIO, bus device, interrupt, and expansion interface is used, intentionally reserved, or documented as conflicting/unavailable.
 
 ### Multi-target build, release, and browser flasher
 
 **Priority:** Medium/platform prerequisite
 
-Extend the release pipeline and browser flasher so one RFScout version or PR candidate can carry multiple hardware-target builds without the deployment layer maintaining a separate hard-coded target list.
-
-Goals:
-
-- Give every supported board a stable hardware target ID and user-facing display name independent of MCU family.
-- Make board metadata the canonical source for build/package identity rather than duplicating board-name maps across CMake, CI, packaging, and the web UI.
-- Build/package each supported hardware target into its own deterministic directory and self-describing RFScout manifest.
-- Include hardware target ID/name, IDF target/chip family, flash assumptions, version, commit, and image metadata in the packaged manifest.
-- Let candidate/release artifacts contain any number of successfully produced target directories.
-- Have the web-flasher catalog discover the target manifests actually present in an artifact instead of assuming a fixed set of boards.
-- Model the catalog as build/version -> hardware targets -> ESP Web Tools manifest.
-- Present Hardware and Firmware as separate user choices, filtering firmware choices to versions that actually provide the selected board target.
-- Keep chip-family compatibility distinct from board identity so boards sharing an ESP32 family cannot be mistaken for interchangeable firmware targets.
-- Preserve an explicit manual hardware choice for clean-install/bootloader flashing; treat any future USB/runtime board auto-identification only as a convenience layer.
-- Cover candidates, published releases, missing-target cases, and deterministic catalog generation with packaging tests.
-
-This work should also revisit browser-flasher publication concurrency so PR candidates and `main` builds do not unnecessarily replace or cancel one another while publishing the shared Pages environment.
+- give every supported board a stable hardware target ID and display name independent of MCU family;
+- make board metadata the canonical source for build/package identity;
+- package each target into a deterministic, self-describing target directory/manifest;
+- include hardware target ID/name, IDF target/chip family, flash assumptions, version, commit, and image metadata;
+- allow candidate/release artifacts to contain any number of successfully built targets;
+- let the web catalog discover target manifests instead of maintaining a hard-coded board list;
+- model the catalog as build/version -> hardware targets -> ESP Web Tools manifest;
+- present Hardware and Firmware as separate choices and filter versions by actual target availability;
+- keep chip-family compatibility distinct from board identity;
+- preserve explicit manual hardware selection for clean-install/bootloader flashing;
+- cover candidates, releases, missing targets, and deterministic catalog generation with tests;
+- revisit Pages publication concurrency so PR candidates and `main` builds do not unnecessarily replace one another.
 
 ## Longer-term applications and capabilities
 
@@ -477,7 +397,7 @@ This work should also revisit browser-flasher publication concurrency so PR cand
 - IR analyzer/transmit tools, with transmit behavior explicit and separate from passive monitoring.
 - GPS map/location UI beyond the shared Location & Time service.
 - Structured export/capture browsing.
-- More detailed WiFi channel/utilization and management-frame statistics where ESP32-S3 APIs provide defensible data.
+- More detailed Wi-Fi channel/utilization and management-frame statistics where hardware APIs provide defensible data.
 - Deeper BLE advertisement/manufacturer/service-data interpretation and conservative address-rotation correlation.
 
 ## Brainstorming
@@ -509,14 +429,16 @@ These are ideas worth preserving, not committed scope or priority.
 
 ### Presentation ideas
 
-- Automatic Indoor/Outdoor/Night selection from an ambient-light signal or explicit schedule, with manual override and hysteresis.
+- Automatic Indoor/Outdoor/Night selection from ambient light or explicit schedule, with manual override and hysteresis.
 - Additional compact data visualizations that preserve readability on the 320x170 display.
 - Theme-specific status/icon variants where useful outdoors/night.
 - Optional onboarding/help hints that do not permanently consume data-display area.
 
 ## Roadmap maintenance rules
 
-- When a planned feature becomes implemented, move the factual behavior into the appropriate production documentation and mark the roadmap item complete.
+- `ROADMAP.md` is the single canonical planning location, including active release milestones.
+- When a planned feature becomes implemented, move factual behavior into the appropriate production documentation and mark the roadmap item complete here.
+- Do not create parallel release-specific roadmap/status documents unless the material genuinely cannot be maintained coherently here.
 - Do not leave future-tense design promises in README, Architecture, Capabilities, Configuration, SD-card, or Release docs.
-- Keep speculative/vision material here unless it becomes a concrete implementation document needed for active development.
+- Keep speculative/vision material here unless a separate technical research document is genuinely needed for a specialized subject.
 - A merged planning-only PR does not mean its feature is implemented; status must distinguish design capture from production code.
