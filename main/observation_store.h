@@ -17,7 +17,6 @@
 #include <stdint.h>
 
 #define RFSCOUT_OBSERVATION_INITIAL_CAPACITY 32U
-#define RFSCOUT_DEVICE_CAPACITY 1000U
 #define RFSCOUT_VENDOR_NAME_MAX 32
 #define RFSCOUT_DEVICE_NAME_MAX 32
 #define RFSCOUT_MFG_DATA_MAX 24
@@ -102,6 +101,23 @@ typedef struct
     bool has_remote_id;
 } rf_device_t;
 
+/** @brief One vendor/count row returned by an observation summary. */
+typedef struct
+{
+    char name[ RFSCOUT_VENDOR_NAME_MAX ];
+    size_t count;
+} observation_vendor_count_t;
+
+/** @brief Aggregate counts for the current live observation collection. */
+typedef struct
+{
+    size_t device_count;
+    size_t wifi_count;
+    size_t ble_count;
+    size_t unknown_count;
+    size_t random_count;
+} observation_store_summary_t;
+
 /**
  * @brief Return whether an observation uses a randomized/private link-layer address.
  * @details Wi-Fi uses the IEEE locally-administered bit. NimBLE address types use bit 0 to
@@ -163,7 +179,15 @@ size_t observation_store_count( void );
 /** @brief Return the number of currently active observations classified as surveillance. */
 size_t observation_store_surveillance_count( void );
 
-/** @brief Copy a consistent snapshot of the currently active observation store. */
-size_t observation_store_snapshot( rf_device_t *a_output, size_t a_capacity );
+/**
+ * @brief Build current aggregate counts and the most common known vendors.
+ * @param a_summary Destination for aggregate counts.
+ * @param a_vendors Optional destination for vendor rows sorted by descending count.
+ * @param a_vendor_capacity Number of vendor rows the caller can display.
+ * @return Number of vendor rows written.
+ */
+size_t observation_store_summary( observation_store_summary_t *a_summary,
+                                  observation_vendor_count_t *a_vendors,
+                                  size_t a_vendor_capacity );
 
 #endif // _RFSCOUT_OBSERVATION_STORE_H_
