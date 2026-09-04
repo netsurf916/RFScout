@@ -32,23 +32,25 @@ Candidate artifacts are diagnostic build products, not releases, and are never m
 
 ## Browser flasher
 
-The **Publish browser flasher** workflow reevaluates the catalog whenever a **Build and formatting** workflow completes, whenever a GitHub Release is published, when a pull request is closed, and when started manually. Each completed Pages deployment is rebuilt from published releases plus the current successful candidate build for every open pull request whose artifact is still available.
+The **Publish browser flasher** workflow reevaluates the catalog whenever a **Build and formatting** workflow completes, whenever a GitHub Release is published, when a pull request is closed, and when started manually. Each completed Pages deployment is rebuilt from eligible GitHub Releases plus the current successful candidate build for `main` and every open pull request whose artifact is still available.
 
-Candidate publication is intentionally atomic with respect to in-flight pull-request builds. Before replacing the deployed Pages snapshot, the workflow checks every open non-draft PR current head. If a current head does not yet have a recorded Build and formatting run, or any matching run is still queued/in progress, that refresh is deferred and the previously deployed flasher remains untouched. The workflow also captures the exact open-PR head/draft snapshot used for that stability decision and revalidates it immediately before the Pages deployment step; if any PR head, draft state, or open/closed membership changes while the site is being assembled, publication is deferred rather than deploying a mixed snapshot. When the outstanding build or PR-state change settles, its normal workflow event reevaluates the catalog. A successful current-head build replaces/adds the candidate, while a failed/cancelled current-head build causes that PR to be omitted on the next stable deployment. This prevents unrelated build completions or mid-refresh PR synchronization from temporarily publishing a partial/stale candidate catalog.
+Candidate publication is intentionally atomic with respect to in-flight pull-request builds. Before replacing the deployed Pages snapshot, the workflow checks every open non-draft PR current head. If a current head does not yet have a recorded Build and formatting run, or any matching run is still queued/in progress, that refresh is deferred and the previously deployed flasher remains untouched. The workflow also captures the exact `main` and open-PR head/draft snapshot used for that stability decision and revalidates it immediately before the Pages deployment step; if any head, draft state, or open/closed membership changes while the site is being assembled, publication is deferred rather than deploying a mixed snapshot. When the outstanding build or PR-state change settles, its normal workflow event reevaluates the catalog. A successful current-head build replaces/adds the candidate, while a failed/cancelled current-head build causes that source to be omitted on the next stable deployment. This prevents unrelated build completions or mid-refresh synchronization from temporarily publishing a partial/stale candidate catalog.
 
 The static flasher shell uses the repository's `assets/logo.png` branding and RFScout orange/white visual theme. The workflow copies the logo into the Pages artifact so the deployed site remains self-contained alongside the mirrored firmware files and manifests.
 
 Open pull-request candidates are kept independently under `firmware/candidates/pr-N/` and are labeled with their PR numbers in the selector. A newer build from another PR therefore does not overwrite an existing candidate. Only a successful candidate matching the PR's current head commit is included in a newly published catalog, so a stale build from an earlier revision is not deliberately republished after the new head settles. While a replacement build is still in flight, the prior Pages deployment may continue to show the previous candidate because the site is left unchanged rather than publishing a partial catalog. Draft status by itself does not hide an otherwise current, successful candidate; PRs without a current successful artifact, or whose candidate artifacts have expired, are omitted once the catalog is stable enough to republish.
 
-Candidate discovery checks successful workflow runs for the PR's current head until it finds a live `rfscout-candidate-*` artifact instead of assuming the newest successful run necessarily contains firmware. This avoids formatting-only or rerun records masking a still-valid candidate artifact for the same source head.
+Candidate discovery checks successful workflow runs for the requested source head until it finds a live `rfscout-candidate-*` artifact instead of assuming the newest successful run necessarily contains firmware. Pull-request lookup additionally filters runs by PR number so two PRs sharing a head SHA cannot cross-select each other's merge-ref firmware.
 
-Ordinary `main` push artifacts are not exposed as browser-flasher candidates. Once a PR is merged or closed, the next stable flasher refresh removes its candidate from the catalog; the explicit pull-request-close trigger handles closes that do not otherwise cause a `main` build. Published releases remain durable entries below the current PR candidates.
+The current successful `main` push candidate is exposed as a development entry unless the same packaged commit is already represented by a named GitHub Release. Published releases remain durable catalog entries, and matching release metadata takes precedence over a duplicate `main` entry.
 
 Each deployment is self-contained: firmware files and manifests are copied into the Pages artifact rather than fetched by the browser from authenticated Actions endpoints. Publishing a release therefore refreshes the browser flasher automatically. A manual **Publish browser flasher** dispatch remains available for recovery or maintenance, but normal release publication should not require it.
 
+**Important:** GitHub draft status is not a privacy boundary for RFScout firmware once a draft has been successfully prepared. The release-preparation workflow triggers a browser-flasher refresh, and the flasher mirrors valid draft release assets into the public GitHub Pages site so they can be installed for pre-publication hardware validation. Anyone who knows or discovers the Pages site can download those mirrored draft firmware files before the GitHub Release is formally published. Do not place confidential, embargoed, security-sensitive, or otherwise non-public firmware/assets into a prepared draft. Use a separate private validation path if the firmware must remain private until publication.
+
 GitHub Pages uses **GitHub Actions** as its publishing source. The flasher requires HTTPS and Web Serial; Chromium-based desktop browsers such as Edge and Chrome are the supported path. The workflow has been validated end-to-end on target hardware.
 
-The candidate portion of a Pages deployment represents currently open, testable pull requests rather than permanent hosting for historical PR builds. Published GitHub Releases provide the durable firmware history.
+The candidate portion of a Pages deployment represents current testable development builds rather than permanent hosting for historical CI artifacts. Published GitHub Releases provide the durable firmware history.
 
 ## Preparing a draft release
 
@@ -62,19 +64,22 @@ The workflow resolves the source ref to an immutable commit and rejects requests
 
 It repeats formatting, packaging tests, the ESP-IDF build, and bundle generation at that exact commit. Only after those jobs pass does it create the semantic version tag at the validated commit and then create the **draft** GitHub Release against that existing tag. This explicit ordering prevents GitHub from assigning a temporary `untagged-*` release identity while a release is under review.
 
-If draft creation itself fails after the workflow has pushed the tag, the workflow removes that newly-created tag before exiting. A successfully prepared draft intentionally retains its semantic tag while release notes and hardware validation are completed. The workflow never publishes the draft automatically.
+If draft creation itself fails after the workflow has pushed the tag, the workflow removes that newly-created tag before exiting. A successfully prepared draft intentionally retains its semantic tag while release notes and hardware validation are completed. The workflow never publishes the GitHub Release automatically.
+
+A successfully prepared draft is nevertheless **publicly exposed through the browser flasher**: its valid web-flasher assets are mirrored to GitHub Pages as a draft-labeled catalog entry. Treat draft preparation as the point at which the firmware becomes publicly downloadable for validation purposes, not as a private staging step.
 
 ## Publishing
 
 Before publishing a draft:
 
-1. review the generated release notes/version;
-2. verify the archive/checksums;
-3. perform applicable target-hardware installation and smoke tests;
-4. record hardware validation in the release notes; and
-5. publish the release deliberately through GitHub.
+1. confirm that the firmware and release assets are suitable for public exposure (they may already be downloadable from the browser flasher while the GitHub Release is still a draft);
+2. review the generated release notes/version;
+3. verify the archive/checksums;
+4. perform applicable target-hardware installation and smoke tests using the draft-labeled browser-flasher entry where appropriate;
+5. record hardware validation in the release notes; and
+6. publish the release deliberately through GitHub.
 
-Publishing preserves the semantic tag created during draft preparation. The release publication event automatically starts **Publish browser flasher**, which discovers the now-published release assets and republishes the firmware catalog once candidate state is stable. The flasher does not rebuild firmware during publication/deployment.
+Publishing preserves the semantic tag created during draft preparation. The release publication event automatically starts **Publish browser flasher**, which discovers the now-published release state and republishes the firmware catalog so the draft label is removed once candidate state is stable. The flasher does not rebuild firmware during publication/deployment.
 
 ## Installation behavior
 
