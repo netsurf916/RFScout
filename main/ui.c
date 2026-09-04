@@ -88,8 +88,7 @@ static void render_summary( void )
     const ui_theme_palette_t *theme = ui_theme_get();
     observation_store_summary_t summary = { 0 };
     observation_vendor_count_t vendors[ UI_MAX_KNOWN_BRANDS ] = { 0 };
-    const size_t vendor_count =
-        observation_store_summary( &summary, vendors, UI_MAX_KNOWN_BRANDS );
+    const size_t vendor_count = observation_store_summary( &summary, vendors, UI_MAX_KNOWN_BRANDS );
     uint16_t signature_counts[ SURVEILLANCE_SIGNATURE_COUNT ] = { 0 };
     const size_t surveillance_count =
         surveillance_history_signature_counts( signature_counts, SURVEILLANCE_SIGNATURE_COUNT );
@@ -116,11 +115,8 @@ static void render_summary( void )
     int y = UI_LIST_START_Y;
     for( size_t i = 0U; i < vendor_count; ++i )
     {
-        snprintf( line,
-                  sizeof( line ),
-                  "%-27.27s %3u",
-                  vendors[ i ].name,
-                  (unsigned)vendors[ i ].count );
+        snprintf(
+            line, sizeof( line ), "%-27.27s %3u", vendors[ i ].name, (unsigned)vendors[ i ].count );
         display_draw_text( UI_LAYOUT_LEFT_X, y, line, theme->warning, 1 );
         y += UI_LIST_ROW_HEIGHT;
     }
