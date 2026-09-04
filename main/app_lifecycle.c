@@ -1,6 +1,6 @@
 /**
     app_lifecycle.c : RFScout transactional application lifecycle coordinator
-    Description: Coordinates reversible exit preparation, platform-session quiesce, commit, managed-memory reclamation, and diagnostics.
+    Description: Coordinates app-session quiesce, optional semantic cleanup, managed-memory reclamation, and diagnostics.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -54,10 +54,17 @@ abort_transition( rfscout_app_transition_diagnostics_t a_diagnostics,
     a_diagnostics.outcome = a_outcome;
     a_diagnostics.error = a_error;
 
-    if( ( NULL != a_hooks->reactivate ) && ( ESP_OK != a_hooks->reactivate( a_hooks->context ) ) )
+    const esp_err_t session_result = app_session_abort_close();
+    esp_err_t app_result = ESP_OK;
+    if( NULL != a_hooks->reactivate )
+    {
+        app_result = a_hooks->reactivate( a_hooks->context );
+    }
+
+    if( ( ESP_OK != session_result ) || ( ESP_OK != app_result ) )
     {
         a_diagnostics.outcome = RFSCOUT_APP_TRANSITION_ABORTED_REACTIVATION;
-        a_diagnostics.error = ESP_ERR_INVALID_STATE;
+        a_diagnostics.error = ( ESP_OK != session_result ) ? session_result : app_result;
         ESP_LOGE( TAG,
                   "source app reactivation failed after aborted transition from=%d to=%d",
                   (int)a_diagnostics.from,
@@ -76,7 +83,13 @@ esp_err_t app_lifecycle_init( void )
         .error = ESP_OK,
     };
     transition_sequence = 0U;
-    return memory_manager_init();
+
+    esp_err_t result = memory_manager_init();
+    if( ESP_OK == result )
+    {
+        result = app_session_ensure( app_manager_current() );
+    }
+    return result;
 }
 
 rfscout_app_transition_diagnostics_t app_lifecycle_transition(
@@ -91,9 +104,8 @@ rfscout_app_transition_diagnostics_t app_lifecycle_transition(
         .sequence = ++transition_sequence,
     };
 
-    if( ( NULL == a_hooks ) || ( NULL == a_hooks->reachability_clear ) || ( a_from < 0 ) ||
-        ( a_from >= RFSCOUT_APP_COUNT ) || ( a_to < 0 ) || ( a_to >= RFSCOUT_APP_COUNT ) ||
-        ( a_from == a_to ) )
+    if( ( NULL == a_hooks ) || ( a_from < 0 ) || ( a_from >= RFSCOUT_APP_COUNT ) ||
+        ( a_to < 0 ) || ( a_to >= RFSCOUT_APP_COUNT ) || ( a_from == a_to ) )
     {
         diagnostics.outcome = RFSCOUT_APP_TRANSITION_ABORTED_PREPARE;
         diagnostics.error = ESP_ERR_INVALID_ARG;
@@ -124,7 +136,9 @@ rfscout_app_transition_diagnostics_t app_lifecycle_transition(
         }
     }
 
-    if( !app_session_ready_to_reclaim() || !a_hooks->reachability_clear( a_hooks->context ) )
+    const bool app_reachability_clear =
+        ( NULL == a_hooks->reachability_clear ) || a_hooks->reachability_clear( a_hooks->context );
+    if( !app_session_ready_to_reclaim() || !app_reachability_clear )
     {
         return abort_transition( diagnostics,
                                  RFSCOUT_APP_TRANSITION_ABORTED_REACHABILITY,
@@ -154,6 +168,18 @@ rfscout_app_transition_diagnostics_t app_lifecycle_transition(
     {
         diagnostics.outcome = RFSCOUT_APP_TRANSITION_COMMITTED;
         diagnostics.error = ESP_OK;
+    }
+
+    result = app_session_ensure( a_to );
+    if( ESP_OK != result )
+    {
+        diagnostics.outcome = RFSCOUT_APP_TRANSITION_COMMITTED_MEMORY_INVARIANT;
+        diagnostics.error = result;
+        ESP_LOGE( TAG,
+                  "destination app session creation failed from=%d to=%d: %s",
+                  (int)a_from,
+                  (int)a_to,
+                  esp_err_to_name( result ) );
     }
 
     return finish_transition( diagnostics, started_us );
