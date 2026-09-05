@@ -9,6 +9,8 @@
 #include "event.h"
 #include "system_events_view.h"
 
+#include <stddef.h>
+
 #define SYSTEM_EVENTS_REFRESH_INTERVAL_US 125000LL
 
 static int64_t last_refresh_us;
@@ -18,8 +20,8 @@ static void emit_event( rfscout_event_type_t a_type, int32_t a_value )
     rfscout_event_emit( a_type, (uint8_t)RFSCOUT_APP_SYSTEM_EVENTS, a_value );
 }
 
-static rfscout_app_runtime_result_t system_events_runtime(
-    const rfscout_app_runtime_event_t *a_event )
+static rfscout_app_runtime_result_t
+system_events_runtime( const rfscout_app_runtime_event_t *a_event )
 {
     if( NULL == a_event )
     {
