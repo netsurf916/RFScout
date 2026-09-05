@@ -1,0 +1,35 @@
+name: Temporary dependency lock refresh
+
+on:
+  push:
+    branches:
+      - feature/internal-config-storage
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    container: espressif/idf:release-v6.1
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/internal-config-storage
+          fetch-depth: 0
+      - name: Refresh component lock
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          idf.py -DRFSCOUT_FORMAT_CHECK=OFF set-target esp32s3
+      - name: Commit lock change
+        shell: bash
+        run: |
+          if git diff --quiet -- dependencies.lock; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dependencies.lock
+          git commit -m "Refresh managed component lock for LittleFS"
+          git push origin HEAD:feature/internal-config-storage
