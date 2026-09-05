@@ -10,7 +10,7 @@
 #ifndef _RFSCOUT_MEMORY_MANAGER_H_
 #define _RFSCOUT_MEMORY_MANAGER_H_
 
-#include "app_manager.h"
+#include "app_descriptor.h"
 
 #include "esp_err.h"
 
@@ -86,16 +86,6 @@ void *memory_manager_resize( rfscout_memory_owner_t a_owner,
  * @return true when the pointer was NULL or released by its owner, false on ownership error.
  */
 bool memory_manager_free( rfscout_memory_owner_t a_owner, void *a_pointer );
-
-/**
- * @brief Check whether a pointer is still tracked for the expected owner.
- * @details The pointer value is compared only against allocator metadata and is never dereferenced.
- *          This lets app modules discard stale cached pointers after lifecycle bulk reclamation.
- * @param a_owner Expected owner of the allocation.
- * @param a_pointer Pointer value to inspect.
- * @return true only when the pointer is currently tracked for the expected owner.
- */
-bool memory_manager_pointer_owned_by( rfscout_memory_owner_t a_owner, const void *a_pointer );
 
 /**
  * @brief Release all allocations owned by one application, including nested operations.
