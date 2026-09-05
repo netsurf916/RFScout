@@ -119,9 +119,6 @@ rfscout_app_transition_diagnostics_t app_lifecycle_transition(
             diagnostics, RFSCOUT_APP_TRANSITION_ABORTED_PREPARE, result, a_hooks, started_us );
     }
 
-    /* Capture/finalize app-semantic state before platform services are torn down. Recorder, for
-       example, needs its pre-close operation recorded so an aborted session close can restore the
-       user's recording/monitor/playback state. */
     if( NULL != a_hooks->prepare )
     {
         result = a_hooks->prepare( a_hooks->context );
@@ -133,21 +130,14 @@ rfscout_app_transition_diagnostics_t app_lifecycle_transition(
     }
 
     result = app_session_prepare_close();
-    if( ESP_OK != result )
+    if( ( ESP_OK != result ) || !app_session_ready_to_reclaim() )
     {
+        if( ESP_OK == result )
+        {
+            result = ESP_ERR_INVALID_STATE;
+        }
         return abort_transition(
             diagnostics, RFSCOUT_APP_TRANSITION_ABORTED_PREPARE, result, a_hooks, started_us );
-    }
-
-    const bool app_reachability_clear =
-        ( NULL == a_hooks->reachability_clear ) || a_hooks->reachability_clear( a_hooks->context );
-    if( !app_session_ready_to_reclaim() || !app_reachability_clear )
-    {
-        return abort_transition( diagnostics,
-                                 RFSCOUT_APP_TRANSITION_ABORTED_REACHABILITY,
-                                 ESP_ERR_INVALID_STATE,
-                                 a_hooks,
-                                 started_us );
     }
 
     if( NULL != a_hooks->commit )
