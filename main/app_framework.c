@@ -92,7 +92,7 @@ esp_err_t app_framework_init( void )
         const rfscout_app_descriptor_t *descriptor = rfscout_app_registry[ app ];
         availability[ app ] = RFSCOUT_APP_AVAILABILITY_UNKNOWN;
         if( ( NULL == descriptor ) || ( descriptor->id != (rfscout_app_id_t)app ) ||
-            ( NULL == descriptor->name ) )
+            ( NULL == descriptor->name ) || ( NULL == descriptor->runtime ) )
         {
             ESP_LOGE( TAG, "invalid compiled-in app descriptor id=%d", app );
             return ESP_ERR_INVALID_STATE;
@@ -145,12 +145,6 @@ void app_framework_report_availability( rfscout_app_id_t a_app,
         return;
     }
     retain_availability( a_app, a_availability );
-}
-
-bool app_framework_requires_activation( rfscout_app_id_t a_app )
-{
-    const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
-    return ( NULL != descriptor ) && descriptor->requires_activation;
 }
 
 rfscout_app_availability_t app_framework_availability( rfscout_app_id_t a_app )
