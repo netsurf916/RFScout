@@ -64,6 +64,7 @@ typedef struct
 {
     rfscout_app_runtime_event_type_t type;
     int64_t now_us;
+    bool activated;
     rfscout_input_event_t input;
 } rfscout_app_runtime_event_t;
 
