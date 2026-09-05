@@ -112,7 +112,7 @@ static bool power_action_from_config_name( const char *a_name, power_action_t *a
     }
     for( int action = (int)POWER_ACTION_NONE; action < (int)POWER_ACTION_COUNT; ++action )
     {
-        if( 0 == strcasecmp( a_name, power_action_config_name( (power_action_t)action ) )
+        if( 0 == strcasecmp( a_name, power_action_config_name( (power_action_t)action ) ) )
         {
             *a_action = (power_action_t)action;
             return true;
