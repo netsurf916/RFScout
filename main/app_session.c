@@ -204,8 +204,7 @@ static esp_err_t register_platform_services( rfscout_app_id_t a_app )
             return result;
         }
         case RFSCOUT_APP_CC1101:
-            return register_service(
-                "CC1101", start_cc1101, stop_cc1101, NULL, NULL, false, NULL );
+            return register_service( "CC1101", start_cc1101, stop_cc1101, NULL, NULL, false, NULL );
         case RFSCOUT_APP_NRF24:
             return register_service( "nRF24", start_nrf24, stop_nrf24, NULL, NULL, false, NULL );
         case RFSCOUT_APP_AUDIO:
