@@ -15,7 +15,7 @@ Several foundations originally planned for v0.4.0 are already present on `main` 
 - **PR #60 — implemented:** independent Indoor/Outdoor/Night visual themes and Normal/Quiet audio policy.
 - **PR #61 — implemented:** shared semantic system-event history, presentation, attention-wake, and initial hardware/system event sources.
 - **PR #63 — implemented:** owner-aware PSRAM memory manager with application/operation ownership, safe growth, accounting, failure tracking, and bulk reclamation.
-- **PR #64 — implemented:** transactional Prepare / Reachability / Commit / Reclaim application transitions and post-reclamation accounting checks.
+- **PR #64 — implemented:** transactional application-transition/reclamation foundation with post-reclamation accounting checks.
 - **PR #65 — implemented:** optional System Events / Recent Events application over the shared volatile event history.
 
 Release-level stress and hardware validation remain outstanding even where the underlying implementation is already merged.
@@ -26,8 +26,8 @@ RFScout applications should behave like isolated consumers of a common pool of d
 
 - long-lived platform services keep only memory that genuinely must survive application changes;
 - the active application may dynamically consume available PSRAM for retained observations, history, captures, and scratch processing;
-- application exit first quiesces hardware/workers and proves that no execution context can still reference app-owned state;
-- irreversible cleanup and reclamation happen only after that safety gate succeeds;
+- application exit asks the app resource session to quiesce its platform services, and a successful session close is the proof that workers/callbacks can no longer reach app-owned state;
+- irreversible cleanup and reclamation happen only after that platform-owned safety gate succeeds;
 - the next application starts from a predictable memory baseline and can reuse the released PSRAM;
 - PSRAM is a platform requirement for supported RFScout hardware targets.
 
@@ -61,34 +61,34 @@ A crash, overwrite, or undocumented conversion of an unlimited/session-retained 
 
 ### Workstream B: deterministic app-exit reclamation
 
-**Status:** Implemented by PR #64; hardware stress/fault-injection validation remains open.
+**Status:** Transactional foundation implemented by PR #64; simplified resource-session model implemented by PR #68; hardware stress/fault-injection validation remains open.
 
-Application changes now follow a transactional boundary:
+Application changes now use a single platform-owned resource-session boundary rather than parallel app-specific reachability protocols:
 
-1. Request quiesce from the source application.
-2. Wait for bounded worker/peripheral shutdown.
-3. Abort and reactivate the source if quiesce fails.
-4. Cancel/drain callbacks, timers, and other reversible reachability paths.
-5. Perform only reversible pre-exit preparation.
-6. Verify that no worker, callback, timer, DMA completion path, or other execution context can reference app-owned memory.
-7. Commit irreversible app-specific cleanup only after the final fallible safety gate.
-8. Reclaim all remaining memory owned by the source application.
-9. Verify zero remaining managed allocations for the exited application.
-10. Record transition diagnostics.
-11. Enter/settle/activate the destination application.
+1. Ensure the source application has a resource session.
+2. Preserve any user-visible semantic rollback state the platform cannot infer, such as the exact active Recorder operation.
+3. Ask the session to stop/quiesce every platform service associated with the source app.
+4. Abort without reclaiming memory and restore the source service set if any service cannot quiesce safely.
+5. Treat successful session close as the platform reachability proof; applications do not implement separate worker/callback reachability callbacks.
+6. Commit irreversible app-visible exit cleanup.
+7. Reclaim all remaining memory owned by the source application and verify zero managed allocations remain.
+8. Create the destination session before the destination app begins using app-scoped resources.
 
-Outstanding validation includes rapid app rotation, repeated Home/app cycles, large histories, Recorder transitions, Thermal attach/detach, forced quiesce/reachability failures, callback/timer races, low-memory behavior, baseline-memory stability, and largest-free-block stability.
+PR #68 also removes duplicate Wi-Fi/BLE, CC1101, and nRF24 stop/restart bookkeeping from `app_manager`; service failure/recovery semantics now live with the platform session. Service membership is platform-defined rather than negotiated through a public registration API or arbitrary service-slot quota.
+
+Outstanding validation includes rapid app rotation, repeated Home/app cycles, large histories, Recorder transitions, Thermal attach/detach, forced service-quiesce failures, callback/timer races, low-memory behavior, baseline-memory stability, and largest-free-block stability.
 
 ### Workstream C: dynamic WiFi/BLE retention and observation model
 
-**Status:** In progress. PR #68 begins the application-data migration onto Workstreams A/B.
+**Status:** In progress. PR #68 begins the application-data migration onto Workstreams A/B and establishes the simplified session abstraction across current apps.
 
 PR #68 implements the first storage/lifecycle slice:
 
 - remove the boot-time fixed 1000-entry retained observation allocation;
 - allocate retained Wi-Fi/BLE observations lazily in app-owned PSRAM;
 - grow observation capacity geometrically as observations arrive rather than imposing a fixed item ceiling;
-- reclaim the observation collection through the existing WiFi/BLE application-exit transaction after both collectors have stopped;
+- reclaim the observation collection through the WiFi/BLE resource-session close after both collectors have drained;
+- make the session the sole platform-service quiescence/restart authority for WiFi/BLE, CC1101, nRF24, and Recorder safety;
 - preserve current finite timeout behavior and independent Wi-Fi/BLE source aging;
 - remove the former 1000-item UI mirror/capacity assumption;
 - build the current summary directly from the live collection using growable app-owned scratch, while keeping only the physically displayable top brand rows in the UI itself.
