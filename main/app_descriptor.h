@@ -88,8 +88,8 @@ typedef rfscout_app_runtime_result_t ( *rfscout_app_runtime_handler_t )(
  * @details Probe implementations may use platform/service APIs but must leave hardware inactive.
  *          Service lifetime is declared as capability bits and remains implemented by the platform.
  *          Runtime handlers own app-local UI/state but not driver teardown or memory reachability.
- *          Leave hooks are optional and reserved for app-specific transition veto or reversible
- *          semantic state; ordinary apps should leave them NULL.
+ *          The optional leave-prepare hook is reserved for app-specific transition vetoes; ordinary
+ *          apps should leave it NULL.
  */
 typedef struct
 {
@@ -101,7 +101,6 @@ typedef struct
     uint32_t services;
     rfscout_app_runtime_handler_t runtime;
     esp_err_t ( *prepare_leave )( void );
-    esp_err_t ( *reactivate_leave )( void );
 } rfscout_app_descriptor_t;
 
 #endif // _RFSCOUT_APP_DESCRIPTOR_H_
