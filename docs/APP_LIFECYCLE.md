@@ -15,9 +15,23 @@ Large/growable app data should use `app_session_calloc()`, `app_session_resize()
 
 Every active app has a session, including apps that currently need no dynamic PSRAM or asynchronous platform service. This gives future applications the same resource model without requiring a new lifecycle API.
 
+## Application descriptors and source layout
+
+Each compiled-in app exports one `rfscout_app_descriptor_t`. The descriptor owns the app's identity, display name, availability-probe policy/function, delayed-activation policy, and platform-service dependency mask. `app_framework` discovers those descriptors from the compiled app registry instead of duplicating app-specific metadata in framework switch statements or tables.
+
+Platform-service bits describe capabilities the app consumes; they do not expose driver mechanics. For example, the WiFi/BT descriptor declares Wi-Fi and BLE monitoring services, while `app_session` maps those capabilities to the actual ESP-IDF/NimBLE start, stop, drain, and recovery behavior. Replacing a driver therefore does not require changing the app descriptor unless the capability contract itself changes.
+
+Source organization follows the same boundary:
+
+- `main/apps/<app>/` contains app-owned descriptors, views, analysis, and retained app state;
+- `main/services/<capability>/` contains reusable hardware/platform services and their driver-specific lifecycle behavior; and
+- `main/` contains core orchestration such as the app framework/manager, lifecycle/session coordination, configuration, and platform entry points.
+
+The compiled registry remains deliberately simple rather than implementing runtime ELF/shared-object loading. Adding an app should normally require its module/descriptor, one build/registry entry, and its normal invocation-cycle integration; it should not require new memory, hardware-stop, reachability, or probe-policy logic in the core framework.
+
 ## Platform-service contract
 
-The platform internally associates asynchronous services with each app session. Applications use those services; they do not register raw start/stop callbacks themselves.
+The platform internally associates asynchronous services with each app session from the active app descriptor. Applications use those services; they do not register raw start/stop callbacks themselves.
 
 A successful platform-service stop means:
 
@@ -43,7 +57,7 @@ Home/Device Settings, System Events, and Thermal currently have no asynchronous 
 
 1. ensure the source session exists;
 2. run optional app-semantic preparation, when needed;
-3. ask the session to quiesce every platform service belonging to the source app;
+3. ask the session to quiesce every platform service declared by the source app;
 4. abort without reclaiming memory if semantic preparation or service teardown cannot complete safely;
 5. commit app-visible exit cleanup;
 6. bulk-reclaim all source-app managed memory;
@@ -60,7 +74,7 @@ App-specific rollback is reserved for semantic state the platform cannot infer. 
 
 App-session PSRAM is for retained observations, histories, captures, and other meaningfully sized growable state. Small transient objects, task stacks, DMA buffers, driver-required internal allocations, and hardware-constrained buffers continue to use the ESP-IDF memory class required by their platform service.
 
-There is deliberately no arbitrary per-app item quota. Collections grow according to available resources and their retention semantics. UI code should bound presentation work, not retained data. When memory pressure occurs, prefer correctness/current data, release reconstructable scratch, evict stale/low-value history where semantically safe, surface pressure, and continue in a bounded state.
+There is deliberately no arbitrary per-app item quota. Collections grow according to available resources and their retention semantics. UI code should bound presentation work, not retained data. When memory pressure occurs, prefer correctness and current data, release reconstructable scratch, evict stale/low-value history where semantically safe, surface pressure, and continue in a bounded state.
 
 PSRAM is a supported-platform requirement for this model. RFScout does not silently convert internal SRAM into a reduced-capacity substitute for large app-session storage.
 
@@ -74,7 +88,7 @@ The store uses the app-session generation to invalidate cached pointers after a 
 
 ## Availability and dependency loss
 
-Application availability remains owned by the application framework using `none`, `startup`, or `hotplug` probe policies. Probing is separate from activation and must not leave continuous acquisition running.
+Application availability is derived from each app descriptor using `none`, `startup`, or `hotplug` probe policies. Probing is separate from activation and must not leave continuous acquisition running.
 
 If an active app loses a required dependency, RFScout returns transactionally to Home. The same session-close contract applies. If safe close cannot complete, the source app and its memory are preserved rather than reclaiming potentially reachable state.
 
