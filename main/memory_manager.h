@@ -10,7 +10,7 @@
 #ifndef _RFSCOUT_MEMORY_MANAGER_H_
 #define _RFSCOUT_MEMORY_MANAGER_H_
 
-#include "app_manager.h"
+#include "app_descriptor.h"
 
 #include "esp_err.h"
 

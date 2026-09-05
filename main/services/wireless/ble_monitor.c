@@ -39,7 +39,6 @@ static bool scanning;
 static portMUX_TYPE callback_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t observation_callbacks_inflight;
 
-/** @brief Add one unique 16-bit BLE service UUID to an observation. */
 static void add_service_uuid( rf_device_t *a_observation, uint16_t a_uuid )
 {
     for( size_t index = 0U; index < a_observation->service_uuid_count; ++index )
@@ -56,7 +55,6 @@ static void add_service_uuid( rf_device_t *a_observation, uint16_t a_uuid )
     }
 }
 
-/** @brief Parse one passive BLE advertisement into the normalized RF record. */
 static void parse_adv( const struct ble_gap_disc_desc *a_description, rf_device_t *a_observation )
 {
     memset( a_observation, 0, sizeof( *a_observation ) );
@@ -140,7 +138,6 @@ static void parse_adv( const struct ble_gap_disc_desc *a_description, rf_device_
 
 static void start_scan( void );
 
-/** @brief Atomically claim one observation-delivery callback if scanning is still requested. */
 static bool begin_observation_callback( void )
 {
     bool deliver;
@@ -154,7 +151,6 @@ static bool begin_observation_callback( void )
     return deliver;
 }
 
-/** @brief Release one in-flight observation-delivery callback. */
 static void end_observation_callback( void )
 {
     portENTER_CRITICAL( &callback_lock );
@@ -165,7 +161,6 @@ static void end_observation_callback( void )
     portEXIT_CRITICAL( &callback_lock );
 }
 
-/** @brief Return whether active scanning is still requested. */
 static bool scan_is_requested( void )
 {
     bool requested;
@@ -175,7 +170,6 @@ static bool scan_is_requested( void )
     return requested;
 }
 
-/** @brief Return the number of callbacks that may still deliver observations. */
 static uint32_t observation_callbacks_active( void )
 {
     uint32_t active;
@@ -185,7 +179,6 @@ static uint32_t observation_callbacks_active( void )
     return active;
 }
 
-/** @brief Handle passive BLE discovery events. */
 static int gap_event( struct ble_gap_event *a_event, void *a_argument )
 {
     (void)a_argument;
@@ -214,7 +207,6 @@ static int gap_event( struct ble_gap_event *a_event, void *a_argument )
     return 0;
 }
 
-/** @brief Start passive BLE scanning when the WiFi/BT app owns the radio. */
 static void start_scan( void )
 {
     if( !host_synced || !scan_is_requested() || scanning )
@@ -241,7 +233,6 @@ static void start_scan( void )
     }
 }
 
-/** @brief Complete NimBLE host synchronization and start scanning if requested. */
 static void on_sync( void )
 {
     int result = ble_hs_util_ensure_addr( 0 );
@@ -261,12 +252,16 @@ static void on_sync( void )
     }
 }
 
-/** @brief Run the NimBLE host task. */
 static void host_task( void *a_argument )
 {
     (void)a_argument;
     nimble_port_run();
     nimble_port_freertos_deinit();
+}
+
+bool ble_monitor_is_running( void )
+{
+    return scan_is_requested();
 }
 
 esp_err_t ble_monitor_start( void )

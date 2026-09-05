@@ -15,14 +15,12 @@
 #include "ui_layout.h"
 #include "ui_theme.h"
 
-#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 
 #include <stdio.h>
-#include <string.h>
 
-#define UI_MAX_KNOWN_BRANDS 8
+#define UI_MAX_KNOWN_BRANDS 8U
 #define UI_REFRESH_INTERVAL_US 100000LL
 #define UI_LIST_START_Y 43
 #define UI_LIST_ROW_HEIGHT 12
@@ -32,12 +30,6 @@
 #define UI_COLUMN_DIVIDER_X 198
 #define UI_SURVEILLANCE_X 205
 #define UI_SURVEILLANCE_LABEL_WIDTH 14
-
-typedef struct
-{
-    char name[ RFSCOUT_VENDOR_NAME_MAX ];
-    uint16_t count;
-} brand_count_t;
 
 static const surveillance_signature_id_t surveillance_rows[] = {
     SURVEILLANCE_SIGNATURE_FLOCK,
@@ -54,48 +46,6 @@ static const surveillance_signature_id_t surveillance_rows[] = {
 
 static const char *TAG = "ui";
 static int64_t last_refresh_us;
-static rf_device_t *snapshot;
-static brand_count_t *brands;
-
-static void add_brand( const char *a_name )
-{
-    if( ( NULL == brands ) || ( NULL == a_name ) || ( '\0' == a_name[ 0 ] ) )
-    {
-        return;
-    }
-
-    size_t slot = RFSCOUT_DEVICE_CAPACITY;
-    for( size_t i = 0; i < RFSCOUT_DEVICE_CAPACITY; ++i )
-    {
-        if( ( 0U != brands[ i ].count ) && ( 0 == strcmp( brands[ i ].name, a_name ) ) )
-        {
-            slot = i;
-            break;
-        }
-        if( ( RFSCOUT_DEVICE_CAPACITY == slot ) && ( 0U == brands[ i ].count ) )
-        {
-            slot = i;
-        }
-    }
-
-    if( RFSCOUT_DEVICE_CAPACITY == slot )
-    {
-        return;
-    }
-    if( 0U == brands[ slot ].count )
-    {
-        strlcpy( brands[ slot ].name, a_name, sizeof( brands[ slot ].name ) );
-    }
-    ++brands[ slot ].count;
-
-    while( ( slot > 0U ) && ( brands[ slot ].count > brands[ slot - 1U ].count ) )
-    {
-        const brand_count_t temporary = brands[ slot - 1U ];
-        brands[ slot - 1U ] = brands[ slot ];
-        brands[ slot ] = temporary;
-        --slot;
-    }
-}
 
 static void draw_static_rows( size_t a_unknown_count, size_t a_random_count )
 {
@@ -114,7 +64,7 @@ static void draw_surveillance_rows( const uint16_t *a_signature_counts )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     int y = UI_LIST_START_Y;
-    for( size_t row = 0; row < sizeof( surveillance_rows ) / sizeof( surveillance_rows[ 0 ] );
+    for( size_t row = 0U; row < sizeof( surveillance_rows ) / sizeof( surveillance_rows[ 0 ] );
          ++row )
     {
         const surveillance_signature_id_t signature = surveillance_rows[ row ];
@@ -135,40 +85,13 @@ static void draw_surveillance_rows( const uint16_t *a_signature_counts )
 
 static void render_summary( void )
 {
-    if( ( NULL == snapshot ) || ( NULL == brands ) )
-    {
-        return;
-    }
-
     const ui_theme_palette_t *theme = ui_theme_get();
-    memset( brands, 0, RFSCOUT_DEVICE_CAPACITY * sizeof( *brands ) );
+    observation_store_summary_t summary = { 0 };
+    observation_vendor_count_t vendors[ UI_MAX_KNOWN_BRANDS ] = { 0 };
+    const size_t vendor_count = observation_store_summary( &summary, vendors, UI_MAX_KNOWN_BRANDS );
     uint16_t signature_counts[ SURVEILLANCE_SIGNATURE_COUNT ] = { 0 };
-    const size_t device_count = observation_store_snapshot( snapshot, RFSCOUT_DEVICE_CAPACITY );
     const size_t surveillance_count =
         surveillance_history_signature_counts( signature_counts, SURVEILLANCE_SIGNATURE_COUNT );
-    size_t wifi_count = 0;
-    size_t ble_count = 0;
-    size_t unknown_count = 0;
-    size_t random_count = 0;
-
-    for( size_t i = 0; i < device_count; ++i )
-    {
-        if( 0U != ( snapshot[ i ].source_mask & RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) )
-            ++wifi_count;
-        if( 0U != ( snapshot[ i ].source_mask & RF_SOURCE_BIT( RF_SOURCE_BLE ) ) )
-            ++ble_count;
-
-        if( rf_device_address_is_randomized( &snapshot[ i ] ) )
-            ++random_count;
-        else if( '\0' == snapshot[ i ].vendor[ 0 ] )
-            ++unknown_count;
-        else
-            add_brand( snapshot[ i ].vendor );
-    }
-
-    size_t brand_count = 0;
-    while( ( brand_count < UI_MAX_KNOWN_BRANDS ) && ( 0U != brands[ brand_count ].count ) )
-        ++brand_count;
 
     display_clear( theme->background );
     ui_chrome_draw( "WIFI / BT", theme->secondary );
@@ -177,9 +100,9 @@ static void render_summary( void )
     snprintf( line,
               sizeof( line ),
               "DEV %u   WIFI %u   BLE %u",
-              (unsigned)device_count,
-              (unsigned)wifi_count,
-              (unsigned)ble_count );
+              (unsigned)summary.device_count,
+              (unsigned)summary.wifi_count,
+              (unsigned)summary.ble_count );
     display_draw_text( UI_LAYOUT_LEFT_X, 25, line, theme->normal, 1 );
 
     snprintf( line, sizeof( line ), "SURVEILLANCE %u", (unsigned)surveillance_count );
@@ -190,15 +113,15 @@ static void render_summary( void )
     display_fill_rect( UI_COLUMN_DIVIDER_X, 36, 1, RFSCOUT_DISPLAY_HEIGHT - 36, theme->divider );
 
     int y = UI_LIST_START_Y;
-    for( size_t i = 0; i < brand_count; ++i )
+    for( size_t i = 0U; i < vendor_count; ++i )
     {
         snprintf(
-            line, sizeof( line ), "%-27.27s %3u", brands[ i ].name, (unsigned)brands[ i ].count );
+            line, sizeof( line ), "%-27.27s %3u", vendors[ i ].name, (unsigned)vendors[ i ].count );
         display_draw_text( UI_LAYOUT_LEFT_X, y, line, theme->warning, 1 );
         y += UI_LIST_ROW_HEIGHT;
     }
 
-    draw_static_rows( unknown_count, random_count );
+    draw_static_rows( summary.unknown_count, summary.random_count );
     draw_surveillance_rows( signature_counts );
 
     if( ESP_OK != display_present() )
@@ -209,26 +132,9 @@ static void render_summary( void )
 
 esp_err_t ui_init( void )
 {
-    snapshot = heap_caps_calloc(
-        RFSCOUT_DEVICE_CAPACITY, sizeof( *snapshot ), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
-    brands = heap_caps_calloc(
-        RFSCOUT_DEVICE_CAPACITY, sizeof( *brands ), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
-    if( ( NULL == snapshot ) || ( NULL == brands ) )
-    {
-        heap_caps_free( snapshot );
-        heap_caps_free( brands );
-        snapshot = NULL;
-        brands = NULL;
-        return ESP_ERR_NO_MEM;
-    }
-
     const esp_err_t result = display_init();
     if( ESP_OK != result )
     {
-        heap_caps_free( snapshot );
-        heap_caps_free( brands );
-        snapshot = NULL;
-        brands = NULL;
         return result;
     }
     last_refresh_us = 0;
@@ -240,7 +146,9 @@ void ui_poll( void )
 {
     const int64_t now_us = esp_timer_get_time();
     if( ( now_us - last_refresh_us ) < UI_REFRESH_INTERVAL_US )
+    {
         return;
+    }
     last_refresh_us = now_us;
     render_summary();
 }

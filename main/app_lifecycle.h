@@ -1,6 +1,6 @@
 /**
     app_lifecycle.h : RFScout transactional application lifecycle coordinator
-    Description: Declares prepare, reachability, commit, reactivation, reclamation, and transition diagnostics.
+    Description: Declares semantic prepare/reactivation hooks, reclamation, and transition diagnostics.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -24,16 +24,19 @@ typedef enum
     RFSCOUT_APP_TRANSITION_NONE = 0,
     RFSCOUT_APP_TRANSITION_COMMITTED,
     RFSCOUT_APP_TRANSITION_ABORTED_PREPARE,
-    RFSCOUT_APP_TRANSITION_ABORTED_REACHABILITY,
     RFSCOUT_APP_TRANSITION_ABORTED_REACTIVATION,
     RFSCOUT_APP_TRANSITION_COMMITTED_MEMORY_INVARIANT
 } rfscout_app_transition_outcome_t;
 
-/** @brief Fallible/reversible and irreversible hooks for one source application. */
+/**
+ * @brief Optional application-semantic hooks around the platform-owned resource session.
+ * @details Applications do not implement service reachability. The session layer owns stopping and
+ *          restoring platform services; these hooks exist only for semantic state the platform
+ *          cannot infer, such as restoring the exact Recorder operation after an aborted close.
+ */
 typedef struct
 {
     esp_err_t ( *prepare )( void *a_context );
-    bool ( *reachability_clear )( void *a_context );
     esp_err_t ( *reactivate )( void *a_context );
     void ( *commit )( void *a_context );
     void *context;
@@ -52,17 +55,15 @@ typedef struct
     uint32_t sequence;
 } rfscout_app_transition_diagnostics_t;
 
-/**
- * @brief Initialize lifecycle coordination and the managed PSRAM allocator.
- * @return ESP_OK when lifecycle prerequisites are available.
- */
+/** @brief Initialize lifecycle coordination and the managed PSRAM allocator. */
 esp_err_t app_lifecycle_init( void );
 
 /**
- * @brief Execute a transactional application exit through the final reclamation invariant.
- * @details Prepare and reachability are fallible. Failure before commit invokes reactivation and
- *          leaves app-owned memory intact. Commit is the irreversible boundary; after it returns,
- *          all remaining managed allocations for the source app are reclaimed and verified.
+ * @brief Execute a transactional application exit through bulk reclamation.
+ * @details Semantic Prepare runs first, then the platform resource session quiesces its services.
+ *          Any failure before commit invokes session restoration and the optional semantic
+ *          reactivation hook while leaving app-owned memory intact. After commit, all remaining
+ *          managed allocations for the source app are reclaimed and verified.
  */
 rfscout_app_transition_diagnostics_t app_lifecycle_transition(
     rfscout_app_id_t a_from, rfscout_app_id_t a_to, const rfscout_app_lifecycle_hooks_t *a_hooks );

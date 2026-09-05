@@ -11,7 +11,9 @@
 #define _RFSCOUT_BLE_MONITOR_H_
 
 #include "esp_err.h"
-#include "observation_store.h"
+#include "rf_observation.h"
+
+#include <stdbool.h>
 
 /**
  * @brief Callback invoked when passive BLE scanning produces an observation.
@@ -27,5 +29,8 @@ esp_err_t ble_monitor_start( void );
 
 /** @brief Stop BLE scanning while another app is active. */
 esp_err_t ble_monitor_stop( void );
+
+/** @brief Return whether the app currently requests BLE observation delivery. */
+bool ble_monitor_is_running( void );
 
 #endif // _RFSCOUT_BLE_MONITOR_H_

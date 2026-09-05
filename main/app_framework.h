@@ -1,6 +1,6 @@
 /**
-    app_framework.h : RFScout application capability framework
-    Description: Declares app-owned availability probing policies and cached capability state.
+    app_framework.h : RFScout application descriptor framework
+    Description: Discovers compiled-in app descriptors and retains capability availability state.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -10,19 +10,9 @@
 #ifndef _RFSCOUT_APP_FRAMEWORK_H_
 #define _RFSCOUT_APP_FRAMEWORK_H_
 
-#include "app_manager.h"
-
-#include "esp_err.h"
+#include "app_descriptor.h"
 
 #include <stdbool.h>
-
-/** @brief When an application's hardware availability should be probed. */
-typedef enum
-{
-    RFSCOUT_APP_PROBE_NONE = 0,
-    RFSCOUT_APP_PROBE_STARTUP,
-    RFSCOUT_APP_PROBE_HOTPLUG
-} rfscout_app_probe_policy_t;
 
 /** @brief Semantic result retained by the framework after an app probe. */
 typedef enum
@@ -33,31 +23,19 @@ typedef enum
     RFSCOUT_APP_AVAILABILITY_ERROR
 } rfscout_app_availability_t;
 
-/**
- * @brief Initialize app descriptors and run startup/hot-plug discovery once.
- *
- * Probe callbacks own their device-specific detection mechanics and must return
- * hardware to an inactive state before they return. Successful probing does not
- * imply application activation or ongoing peripheral ownership.
- */
+/** @brief Validate descriptors and run startup/hot-plug discovery once. */
 esp_err_t app_framework_init( void );
 
-/**
- * @brief Check whether an app's required runtime capability is available.
- *
- * Startup-cached capabilities return their boot-time result. Hot-pluggable
- * capabilities execute their app-owned probe before returning.
- */
+/** @brief Return one compiled-in app descriptor or NULL for an unknown ID. */
+const rfscout_app_descriptor_t *app_framework_descriptor( rfscout_app_id_t a_app );
+
+/** @brief Check whether an app's required runtime capability is available. */
 bool app_framework_check_available( rfscout_app_id_t a_app );
 
 /** @brief Refresh one app only when its descriptor is hot-pluggable. */
 void app_framework_refresh_hotplug( rfscout_app_id_t a_app );
 
-/**
- * @brief Report an active hot-plug app's observed runtime availability.
- * @details Active applications use this when normal device I/O proves that a
- *          capability was lost or restored while periodic probing is suppressed.
- */
+/** @brief Report an active hot-plug app's observed runtime availability. */
 void app_framework_report_availability( rfscout_app_id_t a_app,
                                         rfscout_app_availability_t a_availability );
 
@@ -66,6 +44,9 @@ bool app_framework_requires_activation( rfscout_app_id_t a_app );
 
 /** @brief Return the descriptor's probe policy. */
 rfscout_app_probe_policy_t app_framework_probe_policy( rfscout_app_id_t a_app );
+
+/** @brief Return the platform service mask declared by the app descriptor. */
+uint32_t app_framework_services( rfscout_app_id_t a_app );
 
 /** @brief Return the most recently retained availability state. */
 rfscout_app_availability_t app_framework_availability( rfscout_app_id_t a_app );

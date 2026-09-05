@@ -1,116 +1,75 @@
 /**
-    app_framework.c : RFScout application capability framework implementation
-    Description: Keeps probing policy in app descriptors while device-specific detection remains in each service/driver.
+    app_framework.c : RFScout application descriptor framework implementation
+    Description: Discovers compiled-in app descriptors and retains capability availability state.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
 
 #include "app_framework.h"
 
-#include "cc1101.h"
-#include "mlx90640.h"
-#include "nrf24.h"
-#include "recorder.h"
-#include "storage.h"
+#include "apps/app_registry.h"
 
 #include "esp_log.h"
 
 #include <stddef.h>
 
-typedef esp_err_t ( *app_probe_fn_t )( void );
-
-typedef struct
-{
-    const char *name;
-    rfscout_app_probe_policy_t probe_policy;
-    app_probe_fn_t probe;
-    bool requires_activation;
-    rfscout_app_availability_t availability;
-} app_descriptor_t;
-
 static const char *TAG = "app_framework";
-static bool recorder_microphone_probed;
-static esp_err_t recorder_microphone_result = ESP_ERR_NOT_FOUND;
+static const rfscout_app_descriptor_t *descriptors[ RFSCOUT_APP_COUNT ];
+static rfscout_app_availability_t availability[ RFSCOUT_APP_COUNT ];
 
-static esp_err_t probe_recorder( void )
+static bool app_id_valid( rfscout_app_id_t a_app )
 {
-    if( !storage_is_available() || ( ESP_OK != storage_probe_card() ) )
-    {
-        return ESP_ERR_NOT_FOUND;
-    }
-
-    /* The microphone is fixed board hardware, so probe it once even though Recorder's removable
-       SD dependency makes the aggregate application capability hot-pluggable. */
-    if( !recorder_microphone_probed )
-    {
-        recorder_microphone_result = recorder_probe_microphone();
-        recorder_microphone_probed = true;
-    }
-    return recorder_microphone_result;
+    return (unsigned)a_app < (unsigned)RFSCOUT_APP_COUNT;
 }
 
-static app_descriptor_t descriptors[ RFSCOUT_APP_COUNT ] = {
-    [RFSCOUT_APP_SYSTEM_EVENTS] = { "System Events",
-                                    RFSCOUT_APP_PROBE_NONE,
-                                    NULL,
-                                    false,
-                                    RFSCOUT_APP_AVAILABILITY_AVAILABLE },
-    [RFSCOUT_APP_WIFI_BT] =
-        { "WiFi / BT", RFSCOUT_APP_PROBE_NONE, NULL, true, RFSCOUT_APP_AVAILABILITY_AVAILABLE },
-    [RFSCOUT_APP_CC1101] = { "CC1101",
-                             RFSCOUT_APP_PROBE_STARTUP,
-                             cc1101_init,
-                             true,
-                             RFSCOUT_APP_AVAILABILITY_UNKNOWN },
-    [RFSCOUT_APP_NRF24] =
-        { "nRF24", RFSCOUT_APP_PROBE_STARTUP, nrf24_init, true, RFSCOUT_APP_AVAILABILITY_UNKNOWN },
-    [RFSCOUT_APP_AUDIO] = { "Recorder",
-                            RFSCOUT_APP_PROBE_HOTPLUG,
-                            probe_recorder,
-                            false,
-                            RFSCOUT_APP_AVAILABILITY_UNKNOWN },
-    [RFSCOUT_APP_THERMAL] = { "Thermal",
-                              RFSCOUT_APP_PROBE_HOTPLUG,
-                              mlx90640_probe,
-                              true,
-                              RFSCOUT_APP_AVAILABILITY_UNKNOWN },
-    [RFSCOUT_APP_DEVICE] =
-        { "Home", RFSCOUT_APP_PROBE_NONE, NULL, false, RFSCOUT_APP_AVAILABILITY_AVAILABLE },
-};
-
-static app_descriptor_t *descriptor_for( rfscout_app_id_t a_app )
+const rfscout_app_descriptor_t *app_framework_descriptor( rfscout_app_id_t a_app )
 {
-    if( (unsigned)a_app >= (unsigned)RFSCOUT_APP_COUNT )
+    if( !app_id_valid( a_app ) )
     {
         return NULL;
     }
-    return &descriptors[ a_app ];
+    if( NULL != descriptors[ a_app ] )
+    {
+        return descriptors[ a_app ];
+    }
+
+    /* Session/lifecycle initialization precedes the normal framework probe pass. Descriptor
+       metadata is immutable, so it is safe to discover it directly from the compiled registry. */
+    for( size_t i = 0U; i < rfscout_app_registry_count; ++i )
+    {
+        const rfscout_app_descriptor_t *descriptor = rfscout_app_registry[ i ];
+        if( ( NULL != descriptor ) && ( descriptor->id == a_app ) )
+        {
+            return descriptor;
+        }
+    }
+    return NULL;
 }
 
-static void retain_availability( app_descriptor_t *a_descriptor,
-                                 rfscout_app_availability_t a_availability )
+static void retain_availability( rfscout_app_id_t a_app, rfscout_app_availability_t a_availability )
 {
-    if( NULL == a_descriptor || a_descriptor->availability == a_availability )
+    const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
+    if( ( NULL == descriptor ) || ( availability[ a_app ] == a_availability ) )
     {
         return;
     }
 
-    a_descriptor->availability = a_availability;
+    availability[ a_app ] = a_availability;
     if( RFSCOUT_APP_AVAILABILITY_AVAILABLE == a_availability )
     {
-        ESP_LOGI( TAG, "%s available", a_descriptor->name );
+        ESP_LOGI( TAG, "%s available", descriptor->name );
     }
     else if( RFSCOUT_APP_AVAILABILITY_UNAVAILABLE == a_availability )
     {
-        ESP_LOGI( TAG, "%s unavailable", a_descriptor->name );
+        ESP_LOGI( TAG, "%s unavailable", descriptor->name );
     }
     else if( RFSCOUT_APP_AVAILABILITY_ERROR == a_availability )
     {
-        ESP_LOGW( TAG, "%s availability error", a_descriptor->name );
+        ESP_LOGW( TAG, "%s availability error", descriptor->name );
     }
 }
 
-static rfscout_app_availability_t probe_descriptor( app_descriptor_t *a_descriptor )
+static rfscout_app_availability_t probe_descriptor( const rfscout_app_descriptor_t *a_descriptor )
 {
     if( NULL == a_descriptor )
     {
@@ -118,44 +77,66 @@ static rfscout_app_availability_t probe_descriptor( app_descriptor_t *a_descript
     }
     if( NULL == a_descriptor->probe )
     {
-        retain_availability( a_descriptor, RFSCOUT_APP_AVAILABILITY_AVAILABLE );
-        return a_descriptor->availability;
+        retain_availability( a_descriptor->id, RFSCOUT_APP_AVAILABILITY_AVAILABLE );
+        return availability[ a_descriptor->id ];
     }
 
     const esp_err_t result = a_descriptor->probe();
-    rfscout_app_availability_t availability = RFSCOUT_APP_AVAILABILITY_ERROR;
+    rfscout_app_availability_t current = RFSCOUT_APP_AVAILABILITY_ERROR;
     if( ESP_OK == result )
     {
-        availability = RFSCOUT_APP_AVAILABILITY_AVAILABLE;
+        current = RFSCOUT_APP_AVAILABILITY_AVAILABLE;
     }
     else if( ( ESP_ERR_NOT_FOUND == result ) || ( ESP_ERR_INVALID_RESPONSE == result ) ||
              ( ESP_ERR_TIMEOUT == result ) )
     {
-        availability = RFSCOUT_APP_AVAILABILITY_UNAVAILABLE;
+        current = RFSCOUT_APP_AVAILABILITY_UNAVAILABLE;
     }
 
-    const rfscout_app_availability_t previous = a_descriptor->availability;
-    retain_availability( a_descriptor, availability );
-    if( previous != availability && RFSCOUT_APP_AVAILABILITY_ERROR == availability )
+    const rfscout_app_availability_t previous = availability[ a_descriptor->id ];
+    retain_availability( a_descriptor->id, current );
+    if( ( previous != current ) && ( RFSCOUT_APP_AVAILABILITY_ERROR == current ) )
     {
         ESP_LOGW( TAG,
                   "%s availability probe failed: %s",
                   a_descriptor->name,
                   esp_err_to_name( result ) );
     }
-    return a_descriptor->availability;
+    return availability[ a_descriptor->id ];
 }
 
 esp_err_t app_framework_init( void )
 {
-    recorder_microphone_probed = false;
-    recorder_microphone_result = ESP_ERR_NOT_FOUND;
     for( int app = 0; app < RFSCOUT_APP_COUNT; ++app )
     {
-        app_descriptor_t *descriptor = &descriptors[ app ];
+        descriptors[ app ] = NULL;
+        availability[ app ] = RFSCOUT_APP_AVAILABILITY_UNKNOWN;
+    }
+
+    for( size_t i = 0U; i < rfscout_app_registry_count; ++i )
+    {
+        const rfscout_app_descriptor_t *descriptor = rfscout_app_registry[ i ];
+        if( ( NULL == descriptor ) || !app_id_valid( descriptor->id ) ||
+            ( NULL != descriptors[ descriptor->id ] ) || ( NULL == descriptor->name ) )
+        {
+            ESP_LOGE(
+                TAG, "invalid or duplicate compiled-in app descriptor index=%u", (unsigned)i );
+            return ESP_ERR_INVALID_STATE;
+        }
+        descriptors[ descriptor->id ] = descriptor;
+    }
+
+    for( int app = 0; app < RFSCOUT_APP_COUNT; ++app )
+    {
+        const rfscout_app_descriptor_t *descriptor = descriptors[ app ];
+        if( NULL == descriptor )
+        {
+            ESP_LOGE( TAG, "missing compiled-in app descriptor id=%d", app );
+            return ESP_ERR_NOT_FOUND;
+        }
         if( RFSCOUT_APP_PROBE_NONE == descriptor->probe_policy )
         {
-            descriptor->availability = RFSCOUT_APP_AVAILABILITY_AVAILABLE;
+            availability[ app ] = RFSCOUT_APP_AVAILABILITY_AVAILABLE;
             continue;
         }
         (void)probe_descriptor( descriptor );
@@ -165,7 +146,7 @@ esp_err_t app_framework_init( void )
 
 bool app_framework_check_available( rfscout_app_id_t a_app )
 {
-    app_descriptor_t *descriptor = descriptor_for( a_app );
+    const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
     if( NULL == descriptor )
     {
         return false;
@@ -174,12 +155,12 @@ bool app_framework_check_available( rfscout_app_id_t a_app )
     {
         (void)probe_descriptor( descriptor );
     }
-    return RFSCOUT_APP_AVAILABILITY_AVAILABLE == descriptor->availability;
+    return RFSCOUT_APP_AVAILABILITY_AVAILABLE == availability[ a_app ];
 }
 
 void app_framework_refresh_hotplug( rfscout_app_id_t a_app )
 {
-    app_descriptor_t *descriptor = descriptor_for( a_app );
+    const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
     if( ( NULL != descriptor ) && ( RFSCOUT_APP_PROBE_HOTPLUG == descriptor->probe_policy ) )
     {
         (void)probe_descriptor( descriptor );
@@ -189,29 +170,34 @@ void app_framework_refresh_hotplug( rfscout_app_id_t a_app )
 void app_framework_report_availability( rfscout_app_id_t a_app,
                                         rfscout_app_availability_t a_availability )
 {
-    app_descriptor_t *descriptor = descriptor_for( a_app );
-    if( NULL == descriptor || RFSCOUT_APP_PROBE_HOTPLUG != descriptor->probe_policy ||
-        RFSCOUT_APP_AVAILABILITY_UNKNOWN == a_availability )
+    const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
+    if( ( NULL == descriptor ) || ( RFSCOUT_APP_PROBE_HOTPLUG != descriptor->probe_policy ) ||
+        ( RFSCOUT_APP_AVAILABILITY_UNKNOWN == a_availability ) )
     {
         return;
     }
-    retain_availability( descriptor, a_availability );
+    retain_availability( a_app, a_availability );
 }
 
 bool app_framework_requires_activation( rfscout_app_id_t a_app )
 {
-    const app_descriptor_t *descriptor = descriptor_for( a_app );
+    const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
     return ( NULL != descriptor ) && descriptor->requires_activation;
 }
 
 rfscout_app_probe_policy_t app_framework_probe_policy( rfscout_app_id_t a_app )
 {
-    const app_descriptor_t *descriptor = descriptor_for( a_app );
+    const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
     return ( NULL != descriptor ) ? descriptor->probe_policy : RFSCOUT_APP_PROBE_NONE;
+}
+
+uint32_t app_framework_services( rfscout_app_id_t a_app )
+{
+    const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
+    return ( NULL != descriptor ) ? descriptor->services : RFSCOUT_APP_SERVICE_NONE;
 }
 
 rfscout_app_availability_t app_framework_availability( rfscout_app_id_t a_app )
 {
-    const app_descriptor_t *descriptor = descriptor_for( a_app );
-    return ( NULL != descriptor ) ? descriptor->availability : RFSCOUT_APP_AVAILABILITY_ERROR;
+    return app_id_valid( a_app ) ? availability[ a_app ] : RFSCOUT_APP_AVAILABILITY_ERROR;
 }

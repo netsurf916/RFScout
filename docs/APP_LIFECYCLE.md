@@ -1,78 +1,100 @@
-# Application lifecycle
+# Application lifecycle and resources
 
-RFScout treats application navigation and peripheral ownership as separate phases. This keeps rapid browsing responsive without repeatedly starting and stopping radios, sensors, or audio hardware.
+RFScout treats every active application as a temporary **resource session**. The active app may use available application PSRAM and platform services; closing the app safely stops those services and releases the entire app-owned memory set. App implementations should not need allocator owner IDs, callback counters, service-stop bookkeeping, or custom memory-reachability protocols.
 
-## Lifecycle states
+## Application-facing contract
 
-An application transition has four conceptual phases:
+The intended application model is deliberately small:
 
-1. **Enter** — the destination becomes the active visible application and prepares only inexpensive UI/runtime state.
-2. **Settle** — hardware activation is deferred for a short monotonic-time interval. Navigation remains available and leaving during this interval cancels activation.
-3. **Activate** — after the settle interval, the still-active application may start workers, scanning, DMA, continuous sensor acquisition, or other peripheral activity.
-4. **Quiesce** — before ownership moves to another application, active workers stop and shared hardware is left idle. Quiesce is bounded but synchronous from the application manager's point of view.
+1. **Enter** — prepare inexpensive UI/runtime state.
+2. **Settle** — optionally defer hardware activation so rapid navigation stays responsive.
+3. **Activate** — use platform services and app-session memory as needed.
+4. **Close** — preserve or finalize only user-visible semantic state the app itself understands. Platform services and app memory are closed/reclaimed by the framework.
 
-The settle interval is not a blocking delay. It is evaluated from the normal application-manager poll path using monotonic time. Home and other applications that do not need delayed peripheral activation do not pay an artificial delay.
+Large/growable app data should use `app_session_calloc()`, `app_session_resize()`, and `app_session_free()`. The session layer binds those allocations to the active app automatically. The lower-level `memory_manager` remains internal ownership/accounting machinery and should not normally appear in application code.
 
-A meaningful action inside an application may activate it immediately when the action requires that application's hardware. Merely rotating through applications does not.
+Every active app has a session, including apps that currently need no dynamic PSRAM or asynchronous platform service. This gives future applications the same resource model without requiring a new lifecycle API.
 
-Application availability is owned by the application framework rather than hard-coded in navigation. Each application descriptor declares one of three probe policies: `none` for applications with no runtime hardware gate, `startup` for fixed/on-board hardware whose result is cached for the boot, or `hotplug` for attachable or removable dependencies that may be re-probed before entry and periodically while inactive. Detection mechanics stay with the relevant service/driver; the framework only invokes the callback and retains its semantic availability state. CC1101 and nRF24 use startup-cached probing. Thermal uses hot-plug probing because it is an explicitly attachable I2C peripheral. Recorder uses an aggregate hot-plug capability because entry requires both the fixed board PDM microphone and healthy SD storage: the microphone probe is cached like other fixed board hardware, while SD health is checked on each Recorder availability decision. A missing or failed SD card prevents entry. Future UART/I2C Quick-port applications should normally use the same hot-plug policy. Probing is distinct from activation: a successful probe may prepare reusable driver state, but it must not start scanning, continuous acquisition, recording, or another app-owned workload.
+## Application descriptors and source layout
 
-## Transactional exit boundary
+Each compiled-in app exports one `rfscout_app_descriptor_t`. The descriptor owns the app's identity, display name, availability-probe policy/function, delayed-activation policy, and platform-service dependency mask. `app_framework` discovers those descriptors from the compiled app registry instead of duplicating app-specific metadata in framework switch statements or tables.
 
-Application exit is transactional until the final reachability gate passes. The reusable coordinator in `app_lifecycle.c/.h` separates source-app exit into four stages:
+Platform-service bits describe capabilities the app consumes; they do not expose driver mechanics. For example, the WiFi/BT descriptor declares Wi-Fi and BLE monitoring services, while `app_session` maps those capabilities to the actual ESP-IDF/NimBLE start, stop, drain, and recovery behavior. Replacing a driver therefore does not require changing the app descriptor unless the capability contract itself changes.
 
-1. **Prepare** requests bounded worker/peripheral quiescence. Operations here must be reversible or have an explicit source-app reactivation path.
-2. **Reachability** verifies that no source worker, callback, timer, DMA completion path, or other execution context can still access app-owned dynamic state.
-3. **Commit** performs irreversible app-specific cleanup only after the final fallible safety gate succeeds.
-4. **Reclaim** releases all remaining managed application/operation allocations and verifies that the exited app owns zero managed allocations.
+Source organization follows the same boundary:
 
-A Prepare or Reachability failure aborts the transition before reclamation. The source application remains selected and its lifecycle hook reactivates any resource that was successfully stopped during the attempted transition. Managed app memory remains intact. The destination is not entered.
+- `main/apps/<app>/` contains app-owned descriptors, views, analysis, and retained app state;
+- `main/services/<capability>/` contains reusable hardware/platform services and their driver-specific lifecycle behavior; and
+- `main/` contains core orchestration such as the app framework/manager, lifecycle/session coordination, configuration, and platform entry points.
 
-Once Commit begins, rollback is no longer valid. After Commit, `app_lifecycle_transition()` owns `memory_manager_release_app()` and records the zero-allocation postcondition. A post-reclamation accounting failure is reported as a committed memory-invariant diagnostic; the destination still has to be entered because source memory may already have been released.
+The compiled registry remains deliberately simple rather than implementing runtime ELF/shared-object loading. Adding an app should normally require its module/descriptor, one build/registry entry, and its normal invocation-cycle integration; it should not require new memory, hardware-stop, reachability, or probe-policy logic in the core framework.
 
-The coordinator retains the most recent transition diagnostics: source and destination IDs, monotonically increasing sequence, outcome/error, reclaimed managed bytes, remaining managed allocation count, and elapsed time. Transition logs also include current free and largest-block PSRAM values for lifecycle/fragmentation testing.
+## Platform-service contract
 
-## Dependency-loss fallback
+The platform internally associates asynchronous services with each app session from the active app descriptor. Applications use those services; they do not register raw start/stop callbacks themselves.
 
-A user-requested navigation step may skip unavailable applications and continue to the next available application. An **involuntary** exit is different: when the active application loses a required runtime dependency, RFScout returns transactionally to Home/Device Settings rather than selecting the next application in the rotation order. Home is the stable dependency-light landing application and prevents several unavailable/degraded applications from appearing to fail one after another.
+A successful platform-service stop means:
 
-The fallback still obeys the normal transactional exit contract. Workers and open resources belonging to the failing application must quiesce and pass the reachability gate before Home is entered. If that safety transition cannot complete, RFScout retains the source application rather than reclaiming live state or cascading elsewhere.
+- no new callback/work that can reach app state will be admitted;
+- already-admitted callbacks/workers have drained;
+- shared hardware is left in a safe inactive state; and
+- app-owned memory can no longer be reached through that service.
 
-## Peripheral ownership contract
+The app therefore does not implement service-specific reachability tests. The platform owns that proof.
 
-When application exit/quiesce returns, the application must satisfy all of the following:
+Current session-managed services are:
 
-- no worker is still issuing transactions to a shared peripheral bus;
-- no timer or callback can mutate application runtime state that has been reset for the next entry;
-- DMA/I2S acquisition owned by the application has stopped or reached a documented safe state;
-- chip-select, enable, RF-path, and similar control signals are left in their inactive state;
-- pending display data may remain cached, but it must not imply that acquisition is still running.
+- **WiFi/BLE** — Wi-Fi promiscuous observation and BLE scanning;
+- **CC1101** — the receive-only sweep worker and RF path;
+- **nRF24** — the receive-only activity worker and radio state; and
+- **Recorder** — Recorder worker/channel shutdown and reachability proof.
 
-Long-lived platform services may remain initialized. Initialization and activation are deliberately different concepts: creating a reusable driver/service once is preferable to repeated allocation, while active acquisition belongs to the application lifecycle.
+Home/Device Settings, System Events, and Thermal currently have no asynchronous service requiring session teardown. They still use the same resource-session lifetime. Thermal acquisition is synchronous from the app poll/render path today; if a future Thermal implementation adds a worker, DMA path, or callback, that mechanism belongs behind a platform service rather than a new app-specific lifecycle API.
 
-If bounded quiesce fails, the application transition is aborted. RFScout must retain ownership with the current application rather than allow the next application to begin using a resource that may still be active. A stop implementation that has already withdrawn its run request must roll that request back on timeout so the retained application remains operational rather than becoming a selected-but-inactive view. Failed quiesce must also preserve the retained application's runtime counters, detection history, and menu state; exit cleanup occurs only after quiescence succeeds. A rollback that resumes a persistent worker must explicitly wake that worker so a race with its active-to-waiting transition cannot leave the retained app dormant. The notification may be delivered while the worker is still unwinding; FreeRTOS retains it until the worker reaches its next notification wait, which closes that race without starting a second worker.
+## Transactional close
 
-## Shared SPI radios
+`app_lifecycle.c` keeps the fault-containment machinery underneath the small app API:
 
-CC1101 and nRF24 use persistent worker tasks. Their stop paths must therefore wait for the worker to observe the stop request and leave its active sweep before the application manager starts another shared-SPI peripheral. A stop flag alone is not a quiesce guarantee. If the bounded wait expires while the worker is still active, the radio restores its `running` state and reports failure so the manager can abort the transition without freezing acquisition in the retained app.
+1. ensure the source session exists;
+2. run optional app-semantic preparation, when needed;
+3. ask the session to quiesce every platform service declared by the source app;
+4. abort without reclaiming memory if semantic preparation or service teardown cannot complete safely;
+5. commit app-visible exit cleanup;
+6. bulk-reclaim all source-app managed memory;
+7. verify zero source allocations remain; and
+8. create the destination session before the destination app begins using app resources.
 
-Wi-Fi and BLE likewise remain initialized as platform services while their active scanning/monitoring is controlled by application activation. A partially completed Wi-Fi/BLE stop attempt must restore whichever collectors were active before the transition if the transaction aborts. BLE cancellation is not itself a reachability proof: `ble_monitor_stop()` closes observation admission atomically, requests scan cancellation, and then waits for every already-admitted observation callback to leave its delivery path before returning success. A callback-drain timeout aborts the application transition instead of allowing managed WiFi/BT state to be reclaimed underneath an in-flight NimBLE callback.
+There is no separate application reachability phase anymore. A successful session close *is* the platform reachability proof. This keeps the safety invariant in one place and avoids parallel per-app stop/restart state in `app_manager`.
 
-## Recorder
+If a transition aborts, `app_session_abort_close()` restores the original platform-service set according to each service's failure semantics. Services that were active and successfully stopped are restarted. A service whose stop call fails may either have already self-restored its active state or use a platform-internal failed-stop recovery callback; the session records which case applies so it does not double-start self-restoring workers.
 
-Recorder depends on both the board PDM microphone and SD storage. The application framework checks both dependencies before entry; Recorder is skipped/unavailable when the SD card is absent or unhealthy even if the microphone is present. Entering Recorder still does not leave the microphone open: `recorder_init()` only prepares reusable synchronization state and refreshes the recording catalog, while I2S microphone ownership begins only for recording or monitor actions.
+App-specific rollback is reserved for semantic state the platform cannot infer. Recorder is the current example: the manager snapshots the recording/monitor/playback operation before transition, while the session owns worker/channel safety. If the transition aborts, Recorder semantic rollback restores the user's prior operation after the platform has restored a safe service state.
 
-While Recorder is active but not performing SD-backed file I/O, the application manager periodically asks the storage service to verify that the mounted physical card still responds. The status probe runs during idle/monitoring rather than concurrently with Recorder recording/playback transactions. During recording, saving, or playback, the active file operation itself is the media-loss detector; a resulting Recorder `ERROR` or `NO_STORAGE` state is treated as a dependency failure. In either path Recorder is marked unavailable and a transactional exit to Home begins. Recording, monitoring, and playback are stopped before the application transition commits. The final reachability proof is based on actual Recorder worker/channel ownership rather than the Recorder presentation state, so an interrupted SD operation cannot trap the user in Recorder after its worker is gone.
+## Memory policy
 
-Recorder Prepare also snapshots the active operation before quiescing it. If the lifecycle transaction subsequently aborts, the Audio reactivation hook waits for any old Recorder worker/channel references to drain and attempts to restore the prior recording, monitor, or playback operation with its previous gain/volume and selected recording. A restarted recording necessarily begins a new WAV file because the original recording may already have entered finalization; this preserves the active-operation contract without reopening or corrupting a finalized file. If the dependency that caused the failure is genuinely unavailable, reactivation can itself fail and the lifecycle diagnostics report `ABORTED_REACTIVATION` rather than pretending that the retained Recorder view is healthy.
+App-session PSRAM is for retained observations, histories, captures, and other meaningfully sized growable state. Small transient objects, task stacks, DMA buffers, driver-required internal allocations, and hardware-constrained buffers continue to use the ESP-IDF memory class required by their platform service.
 
-Physical SD loss does not cause Recorder to tear down the VFS mount itself because platform services such as the logger may still own open file objects. The stale mount is therefore left for platform reset/deep-sleep cleanup, while `storage_is_available()` and Recorder availability remain false. Automatic same-session remount/recovery is intentionally not attempted by this lifecycle path; a future coordinated storage-hotplug service may add that behavior safely across all storage consumers.
+There is deliberately no arbitrary per-app item quota. Collections grow according to available resources and their retention semantics. UI code should bound presentation work, not retained data. When memory pressure occurs, prefer correctness and current data, release reconstructable scratch, evict stale/low-value history where semantically safe, surface pressure, and continue in a bounded state.
 
-Thermal follows the same user-facing fallback rule for its removable sensor: loss of the active sensor returns directly to Home rather than rotating into another application.
+PSRAM is a supported-platform requirement for this model. RFScout does not silently convert internal SRAM into a reduced-capacity substitute for large app-session storage.
+
+## WiFi/BLE migration
+
+WiFi/BLE is the first data-heavy app moved to session memory. The normalized observation store no longer reserves 1000 entries at boot and no longer has a 1000-item retention ceiling. It grows geometrically in app-session PSRAM.
+
+The summary UI no longer keeps another fixed 1000-entry observation/brand mirror. It derives exact aggregate counts from the live store and only stores the rows that physically fit on the display. Summary scratch is also session-owned.
+
+The store uses the app-session generation to invalidate cached pointers after a prior WiFi/BLE session has been reclaimed. It refreshes that generation after any allocation that may lazily bind the active session, so a restored startup app cannot cause a newly allocated collection to be mistaken for stale state. It does not inspect lower-level allocator ownership metadata.
+
+## Availability and dependency loss
+
+Application availability is derived from each app descriptor using `none`, `startup`, or `hotplug` probe policies. Probing is separate from activation and must not leave continuous acquisition running.
+
+If an active app loses a required dependency, RFScout returns transactionally to Home. The same session-close contract applies. If safe close cannot complete, the source app and its memory are preserved rather than reclaiming potentially reachable state.
 
 ## UI interaction policy
 
-Menu behavior should follow the semantic type of an item rather than the menu that contains it:
+Menu behavior follows semantic item type:
 
 - **Action** — center executes immediately.
 - **Toggle** — center changes On/Off immediately.
@@ -80,14 +102,10 @@ Menu behavior should follow the semantic type of an item rather than the menu th
 - **Value** — center enters edit mode, rotation adjusts, center exits.
 - **Submenu** — center enters the child view.
 
-Simple On/Off settings should not require center, rotate, center. Rotation is reserved for navigation unless a value genuinely benefits from edit mode.
+Simple On/Off settings should not require center, rotate, center.
 
-## Theme contract
+## Validation
 
-Application chrome and ordinary application content use semantic colors from `ui_theme`. Raw colors are reserved for literal data imagery such as thermal pixels. Discipline intentionally uses the Night visual palette; therefore any visual difference between Night and Discipline outside an explicit policy/status indicator is a presentation bug. Their intended difference is environmental sound policy.
+Release testing should rapidly rotate through every enabled application and exercise low memory, callback races, worker-stop timeouts, dependency loss, Recorder transitions, and failed-close rollback.
 
-## Stability diagnostics
-
-Lifecycle work should be tested by rapidly rotating through all enabled applications for an extended period. Transition diagnostics include the source/destination application, transition outcome, reclaimed managed bytes, remaining managed allocations, elapsed time, free PSRAM, and largest free PSRAM block. Existing activation diagnostics continue to expose general heap information.
-
-The v0.4.0 release validation must still exercise failed quiesce/reachability paths, rapid Home/application cycles, low-memory conditions, callback/timer races, Recorder SD removal during idle/monitor/record/playback states, and other active dependency-loss cases on hardware. A falling largest-free-block value with otherwise stable total free heap suggests fragmentation; stable heap with failures points more strongly toward lifecycle races or peripheral ownership violations. Successful app exit must leave zero managed allocations for the exited app, while an aborted transition must preserve the source app and its managed state.
+Successful app exit must leave zero managed allocations for the exited app. An aborted transition must preserve its app memory. Baseline free PSRAM and largest-free-block behavior should not decline monotonically across repeated app cycles.

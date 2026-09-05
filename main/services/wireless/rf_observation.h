@@ -1,22 +1,19 @@
 /**
-    observation_store.h : RFScout normalized observation store
-    Description: Defines device observations shared by collectors, classifiers, and UI.
+    rf_observation.h : RFScout normalized RF observation contract
+    Description: Defines normalized observations shared by wireless collectors and applications.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
 
 #pragma once
 
-#ifndef _RFSCOUT_OBSERVATION_STORE_H_
-#define _RFSCOUT_OBSERVATION_STORE_H_
-
-#include "esp_err.h"
+#ifndef _RFSCOUT_RF_OBSERVATION_H_
+#define _RFSCOUT_RF_OBSERVATION_H_
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#define RFSCOUT_DEVICE_CAPACITY 1000
 #define RFSCOUT_VENDOR_NAME_MAX 32
 #define RFSCOUT_DEVICE_NAME_MAX 32
 #define RFSCOUT_MFG_DATA_MAX 24
@@ -122,44 +119,4 @@ static inline bool rf_device_address_is_randomized( const rf_device_t *a_device 
     return wifi_randomized || ble_randomized;
 }
 
-typedef enum
-{
-    OBSERVATION_STORE_EVENT_ADDED = 0,
-    OBSERVATION_STORE_EVENT_DROPPED_TIMEOUT,
-    OBSERVATION_STORE_EVENT_DROPPED_CAPACITY
-} observation_store_event_t;
-
-typedef void ( *observation_store_event_callback_t )( observation_store_event_t a_event,
-                                                      const rf_device_t *a_device,
-                                                      void *a_context );
-
-/** @brief Initialize the observation store in external PSRAM. */
-esp_err_t observation_store_init( void );
-
-/** @brief Register the live-list lifecycle callback. */
-void observation_store_set_event_callback( observation_store_event_callback_t a_callback,
-                                           void *a_context );
-
-/** @brief Add or refresh one normalized device observation. */
-bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new );
-
-/** @brief Clear all live observations while retaining the allocated store and callback. */
-void observation_store_reset( void );
-
-/**
- * @brief Expire stale source memberships without requiring active radio collection or UI rendering.
- * @details Wi-Fi and Bluetooth source membership age independently according to app configuration;
- *          a merged observation remains live while at least one source is still within its window.
- */
-void observation_store_housekeeping( void );
-
-/** @brief Return the number of currently active observations. */
-size_t observation_store_count( void );
-
-/** @brief Return the number of currently active observations classified as surveillance. */
-size_t observation_store_surveillance_count( void );
-
-/** @brief Copy a consistent snapshot of the currently active observation store. */
-size_t observation_store_snapshot( rf_device_t *a_output, size_t a_capacity );
-
-#endif // _RFSCOUT_OBSERVATION_STORE_H_
+#endif // _RFSCOUT_RF_OBSERVATION_H_
