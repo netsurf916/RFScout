@@ -1,6 +1,6 @@
 /**
     config_store.c : RFScout internal configuration persistence
-    Description: Mounts internal SPIFFS and exchanges configuration through explicit SD files.
+    Description: Mounts internal LittleFS and exchanges configuration through explicit SD files.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -11,8 +11,8 @@
 #include "storage.h"
 
 #include "cJSON.h"
+#include "esp_littlefs.h"
 #include "esp_log.h"
-#include "esp_vfs_spiffs.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -253,16 +253,16 @@ esp_err_t config_store_init( void )
     }
     initialized = true;
 
-    const esp_vfs_spiffs_conf_t config = {
+    const esp_vfs_littlefs_conf_t config = {
         .base_path = RFSCOUT_INTERNAL_CONFIG_ROOT,
         .partition_label = "storage",
-        .max_files = 4,
         .format_if_mount_failed = true,
+        .dont_mount = false,
     };
-    const esp_err_t result = esp_vfs_spiffs_register( &config );
+    const esp_err_t result = esp_vfs_littlefs_register( &config );
     if( ESP_OK != result )
     {
-        ESP_LOGE( TAG, "internal SPIFFS mount failed: %s", esp_err_to_name( result ) );
+        ESP_LOGE( TAG, "internal LittleFS mount failed: %s", esp_err_to_name( result ) );
         return result;
     }
 
