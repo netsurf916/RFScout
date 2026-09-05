@@ -1,6 +1,6 @@
 /**
     app_lifecycle.c : RFScout transactional application lifecycle coordinator
-    Description: Coordinates app-session quiesce, optional semantic cleanup, managed-memory reclamation, and diagnostics.
+    Description: Coordinates app semantic preparation, app-session quiesce, managed-memory reclamation, and diagnostics.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -119,13 +119,9 @@ rfscout_app_transition_diagnostics_t app_lifecycle_transition(
             diagnostics, RFSCOUT_APP_TRANSITION_ABORTED_PREPARE, result, a_hooks, started_us );
     }
 
-    result = app_session_prepare_close();
-    if( ESP_OK != result )
-    {
-        return abort_transition(
-            diagnostics, RFSCOUT_APP_TRANSITION_ABORTED_PREPARE, result, a_hooks, started_us );
-    }
-
+    /* Capture/finalize app-semantic state before platform services are torn down. Recorder, for
+       example, needs its pre-close operation recorded so an aborted session close can restore the
+       user's recording/monitor/playback state. */
     if( NULL != a_hooks->prepare )
     {
         result = a_hooks->prepare( a_hooks->context );
@@ -134,6 +130,13 @@ rfscout_app_transition_diagnostics_t app_lifecycle_transition(
             return abort_transition(
                 diagnostics, RFSCOUT_APP_TRANSITION_ABORTED_PREPARE, result, a_hooks, started_us );
         }
+    }
+
+    result = app_session_prepare_close();
+    if( ESP_OK != result )
+    {
+        return abort_transition(
+            diagnostics, RFSCOUT_APP_TRANSITION_ABORTED_PREPARE, result, a_hooks, started_us );
     }
 
     const bool app_reachability_clear =
