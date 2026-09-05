@@ -8,10 +8,10 @@ RFScout resolves globally administered Wi-Fi/BLE MAC addresses against the IEEE 
 
 | Registry | Prefix | Generated table | Purpose |
 | --- | ---: | --- | --- |
-| MA-L / OUI | 24 bits | `oui_database.inc` | Traditional large-block vendor assignments |
-| MA-M | 28 bits | `oui_database_extended.inc` | Medium-block vendor assignments |
-| MA-S / OUI-36 | 36 bits | `oui_database_extended.inc` | Small-block vendor assignments |
-| Legacy IAB | 36 bits | `oui_database_extended.inc` | Historical small-block assignments |
+| MA-L / OUI | 24 bits | `main/services/wireless/oui_database.inc` | Traditional large-block vendor assignments |
+| MA-M | 28 bits | `main/services/wireless/oui_database_extended.inc` | Medium-block vendor assignments |
+| MA-S / OUI-36 | 36 bits | `main/services/wireless/oui_database_extended.inc` | Small-block vendor assignments |
+| Legacy IAB | 36 bits | `main/services/wireless/oui_database_extended.inc` | Historical small-block assignments |
 
 Runtime vendor resolution uses longest-prefix precedence: 36-bit, then 28-bit, then 24-bit. On an exact 36-bit collision, current MA-S data takes precedence over legacy IAB data.
 
@@ -21,19 +21,19 @@ IEEE vendor attribution is skipped for multicast and locally administered addres
 
 ## Curated surveillance prefixes
 
-`data/surveillance_signatures.csv` remains a human-curated RFScout dataset. `tools/update_surveillance.py` generates `main/surveillance_signatures.inc`, but that generated table is consumed by `oui_database.c`, not directly by `surveillance.c`.
+`data/surveillance_signatures.csv` remains a human-curated RFScout dataset. `tools/update_surveillance.py` generates `main/services/wireless/surveillance_signatures.inc`, but that generated table is consumed by `main/services/wireless/oui_database.c`, not directly by the higher-level surveillance classifier.
 
 This distinction is intentional:
 
 - IEEE data answers **who owns this globally assigned address block?**
 - RFScout curated metadata answers **does this observed prefix contribute surveillance evidence?**
-- `surveillance.c` answers **does the combined evidence cross the detection threshold?**
+- the surveillance classifier answers **does the combined evidence cross the detection threshold?**
 
 A curated prefix can therefore carry surveillance significance without being an IEEE vendor assignment. This is required for the field-verified locally administered Flock prefix currently present in the curated dataset.
 
 ## Classifier evidence
 
-`oui_database_lookup_info()` returns vendor identity and optional curated surveillance metadata in one result. `surveillance_match()` consumes that prefix evidence alongside independent sources such as:
+`oui_database_lookup_info()` returns vendor identity and optional curated surveillance metadata in one result. The surveillance classifier consumes that prefix evidence alongside independent sources such as:
 
 - advertised BLE names;
 - BLE manufacturer/company identifiers;
@@ -48,12 +48,13 @@ Prefix metadata is therefore one evidence source, not a replacement for the mult
 When changing IEEE registry support, update together:
 
 - `tools/update_oui.py`;
-- `main/oui_database.c/.h`;
+- `main/services/wireless/oui_database.c` and `main/services/wireless/oui_database.h`;
+- `main/services/wireless/oui_database.inc` and `main/services/wireless/oui_database_extended.inc` through the generator rather than by hand;
 - `.github/workflows/update-oui.yml`;
 - generator tests in `tests/test_update_oui.py`;
 - this document and README if user-visible behavior changes.
 
-When changing curated surveillance prefixes, update `data/surveillance_signatures.csv` and regenerate with `tools/update_surveillance.py`. Do not hand-edit the generated `.inc` table.
+When changing curated surveillance prefixes, update `data/surveillance_signatures.csv` and regenerate `main/services/wireless/surveillance_signatures.inc` with `tools/update_surveillance.py`. Do not hand-edit the generated `.inc` table.
 
 When adding a new surveillance signature/classification, also review the notification enum/descriptor registry, the WiFi/BT notification mapping in `rfscout.c`, user-visible signature labels, and documentation.
 
@@ -67,4 +68,4 @@ python3 tools/update_surveillance.py
 python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
-The scheduled **Refresh IEEE OUI database** GitHub Action performs the two generation steps and commits changes to the MA-L, extended IEEE, curated surveillance, and advisory validation outputs.
+The scheduled **Refresh IEEE OUI database** GitHub Action performs the two generation steps and commits changes to the MA-L, extended IEEE, curated surveillance, and advisory validation outputs under their current service/data paths.
