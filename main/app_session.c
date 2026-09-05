@@ -6,6 +6,7 @@
 
 #include "app_session.h"
 
+#include "app_framework.h"
 #include "audio_spectrum.h"
 #include "ble_monitor.h"
 #include "cc1101.h"
@@ -26,6 +27,7 @@ typedef bool ( *app_session_service_active_fn )( void *a_context );
 
 typedef struct
 {
+    uint32_t capability;
     const char *name;
     app_session_service_fn start;
     app_session_service_fn stop;
@@ -41,8 +43,7 @@ typedef struct
 static const char *TAG = "app_session";
 static rfscout_app_id_t session_app = RFSCOUT_APP_COUNT;
 static uint32_t session_generation;
-static app_session_service_t *services;
-static size_t service_count;
+static uint32_t session_services;
 static bool close_in_progress;
 static bool ready_to_reclaim;
 
@@ -135,8 +136,9 @@ static esp_err_t stop_recorder( void *a_context )
     return ESP_OK;
 }
 
-static app_session_service_t wifi_bt_services[] = {
+static app_session_service_t platform_services[] = {
     {
+        .capability = RFSCOUT_APP_SERVICE_WIFI_MONITOR,
         .name = "Wi-Fi",
         .start = start_wifi,
         .stop = stop_wifi,
@@ -145,6 +147,7 @@ static app_session_service_t wifi_bt_services[] = {
         .always_stop_for_close = true,
     },
     {
+        .capability = RFSCOUT_APP_SERVICE_BLE_MONITOR,
         .name = "BLE",
         .start = start_ble,
         .stop = stop_ble,
@@ -152,30 +155,29 @@ static app_session_service_t wifi_bt_services[] = {
         .active = ble_active,
         .always_stop_for_close = true,
     },
-};
-
-static app_session_service_t cc1101_services[] = {
     {
+        .capability = RFSCOUT_APP_SERVICE_CC1101,
         .name = "CC1101",
         .start = start_cc1101,
         .stop = stop_cc1101,
     },
-};
-
-static app_session_service_t nrf24_services[] = {
     {
+        .capability = RFSCOUT_APP_SERVICE_NRF24,
         .name = "nRF24",
         .start = start_nrf24,
         .stop = stop_nrf24,
     },
-};
-
-static app_session_service_t recorder_services[] = {
     {
+        .capability = RFSCOUT_APP_SERVICE_RECORDER,
         .name = "Recorder",
         .stop = stop_recorder,
     },
 };
+
+static size_t platform_service_count( void )
+{
+    return sizeof( platform_services ) / sizeof( platform_services[ 0 ] );
+}
 
 static bool session_active( void )
 {
@@ -187,54 +189,25 @@ static rfscout_memory_owner_t session_owner( void )
     return memory_manager_app_owner( session_app );
 }
 
-static void clear_close_state( void )
+static bool service_selected( const app_session_service_t *a_service )
 {
-    for( size_t i = 0U; i < service_count; ++i )
-    {
-        services[ i ].was_active_for_close = false;
-        services[ i ].stopped_for_close = false;
-        services[ i ].failed_for_close = false;
-    }
+    return 0U != ( session_services & a_service->capability );
 }
 
-static void select_platform_services( rfscout_app_id_t a_app )
+static void clear_close_state( void )
 {
-    services = NULL;
-    service_count = 0U;
-
-    switch( a_app )
+    for( size_t i = 0U; i < platform_service_count(); ++i )
     {
-        case RFSCOUT_APP_WIFI_BT:
-            services = wifi_bt_services;
-            service_count = sizeof( wifi_bt_services ) / sizeof( wifi_bt_services[ 0 ] );
-            break;
-        case RFSCOUT_APP_CC1101:
-            services = cc1101_services;
-            service_count = sizeof( cc1101_services ) / sizeof( cc1101_services[ 0 ] );
-            break;
-        case RFSCOUT_APP_NRF24:
-            services = nrf24_services;
-            service_count = sizeof( nrf24_services ) / sizeof( nrf24_services[ 0 ] );
-            break;
-        case RFSCOUT_APP_AUDIO:
-            services = recorder_services;
-            service_count = sizeof( recorder_services ) / sizeof( recorder_services[ 0 ] );
-            break;
-        case RFSCOUT_APP_SYSTEM_EVENTS:
-        case RFSCOUT_APP_THERMAL:
-        case RFSCOUT_APP_DEVICE:
-        case RFSCOUT_APP_COUNT:
-        default:
-            break;
+        platform_services[ i ].was_active_for_close = false;
+        platform_services[ i ].stopped_for_close = false;
+        platform_services[ i ].failed_for_close = false;
     }
-    clear_close_state();
 }
 
 static void reset_session_state( void )
 {
     clear_close_state();
-    services = NULL;
-    service_count = 0U;
+    session_services = RFSCOUT_APP_SERVICE_NONE;
     close_in_progress = false;
     ready_to_reclaim = false;
 }
@@ -254,6 +227,10 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
     {
         return ESP_ERR_INVALID_ARG;
     }
+    if( NULL == app_framework_descriptor( a_app ) )
+    {
+        return ESP_ERR_NOT_FOUND;
+    }
     if( session_active() )
     {
         if( session_app == a_app )
@@ -271,7 +248,7 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
 
     session_app = a_app;
     reset_session_state();
-    select_platform_services( a_app );
+    session_services = app_framework_services( a_app );
     advance_generation();
     return ESP_OK;
 }
@@ -315,9 +292,14 @@ esp_err_t app_session_prepare_close( void )
     ready_to_reclaim = false;
     clear_close_state();
 
-    for( size_t i = service_count; i > 0U; --i )
+    for( size_t i = platform_service_count(); i > 0U; --i )
     {
-        app_session_service_t *service = &services[ i - 1U ];
+        app_session_service_t *service = &platform_services[ i - 1U ];
+        if( !service_selected( service ) )
+        {
+            continue;
+        }
+
         service->was_active_for_close =
             ( NULL == service->active ) || service->active( service->context );
         if( !service->was_active_for_close && !service->always_stop_for_close )
@@ -351,9 +333,14 @@ esp_err_t app_session_abort_close( void )
     }
 
     esp_err_t first_error = ESP_OK;
-    for( size_t i = 0U; i < service_count; ++i )
+    for( size_t i = 0U; i < platform_service_count(); ++i )
     {
-        app_session_service_t *service = &services[ i ];
+        app_session_service_t *service = &platform_services[ i ];
+        if( !service_selected( service ) )
+        {
+            continue;
+        }
+
         app_session_service_fn restart = NULL;
         if( service->was_active_for_close && service->failed_for_close )
         {
