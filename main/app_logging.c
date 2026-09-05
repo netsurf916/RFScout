@@ -39,6 +39,7 @@ static const char *app_name( rfscout_app_id_t a_app )
         [RFSCOUT_APP_NRF24] = "NRF24",
         [RFSCOUT_APP_AUDIO] = "RECORDER",
         [RFSCOUT_APP_THERMAL] = "THERMAL",
+        [RFSCOUT_APP_AUDIO_SPECTRUM] = "AUDIO_SPECTRUM",
     };
 
     return ( a_app < RFSCOUT_APP_COUNT ) ? names[ a_app ] : "UNKNOWN";
@@ -104,6 +105,14 @@ static void write_periodic_record( rfscout_app_id_t a_app )
                       (unsigned)recorder_state(),
                       (unsigned)recorder_file_count(),
                       (unsigned long)recorder_recorded_bytes() );
+            break;
+
+        case RFSCOUT_APP_AUDIO_SPECTRUM:
+            snprintf( detail,
+                      sizeof( detail ),
+                      "state=%u gain_db=%u",
+                      (unsigned)recorder_state(),
+                      (unsigned)recorder_input_gain_db() );
             break;
 
         case RFSCOUT_APP_THERMAL:
