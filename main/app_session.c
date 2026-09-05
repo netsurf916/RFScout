@@ -19,9 +19,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#include <string.h>
-
-#define APP_SESSION_MAX_SERVICES 8U
 #define APP_SESSION_RECORDER_QUIESCE_TIMEOUT_MS 5000U
 
 typedef esp_err_t ( *app_session_service_fn )( void *a_context );
@@ -44,20 +41,10 @@ typedef struct
 static const char *TAG = "app_session";
 static rfscout_app_id_t session_app = RFSCOUT_APP_COUNT;
 static uint32_t session_generation;
-static app_session_service_t services[ APP_SESSION_MAX_SERVICES ];
+static app_session_service_t *services;
 static size_t service_count;
 static bool close_in_progress;
 static bool ready_to_reclaim;
-
-static bool session_active( void )
-{
-    return ( session_app >= 0 ) && ( session_app < RFSCOUT_APP_COUNT );
-}
-
-static rfscout_memory_owner_t session_owner( void )
-{
-    return memory_manager_app_owner( session_app );
-}
 
 static esp_err_t start_wifi( void *a_context )
 {
@@ -148,77 +135,105 @@ static esp_err_t stop_recorder( void *a_context )
     return ESP_OK;
 }
 
-static esp_err_t register_service( const char *a_name,
-                                   app_session_service_fn a_start,
-                                   app_session_service_fn a_stop,
-                                   app_session_service_fn a_recover_failed_stop,
-                                   app_session_service_active_fn a_active,
-                                   bool a_always_stop_for_close,
-                                   void *a_context )
+static app_session_service_t wifi_bt_services[] = {
+    {
+        .name = "Wi-Fi",
+        .start = start_wifi,
+        .stop = stop_wifi,
+        .recover_failed_stop = start_wifi,
+        .active = wifi_active,
+        .always_stop_for_close = true,
+    },
+    {
+        .name = "BLE",
+        .start = start_ble,
+        .stop = stop_ble,
+        .recover_failed_stop = start_ble,
+        .active = ble_active,
+        .always_stop_for_close = true,
+    },
+};
+
+static app_session_service_t cc1101_services[] = {
+    {
+        .name = "CC1101",
+        .start = start_cc1101,
+        .stop = stop_cc1101,
+    },
+};
+
+static app_session_service_t nrf24_services[] = {
+    {
+        .name = "nRF24",
+        .start = start_nrf24,
+        .stop = stop_nrf24,
+    },
+};
+
+static app_session_service_t recorder_services[] = {
+    {
+        .name = "Recorder",
+        .stop = stop_recorder,
+    },
+};
+
+static bool session_active( void )
 {
-    if( !session_active() || ( NULL == a_stop ) )
-    {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    for( size_t i = 0U; i < service_count; ++i )
-    {
-        if( ( services[ i ].stop == a_stop ) && ( services[ i ].context == a_context ) )
-        {
-            return ESP_OK;
-        }
-    }
-    if( service_count >= APP_SESSION_MAX_SERVICES )
-    {
-        ESP_LOGE( TAG, "app=%d exceeded platform service slots", (int)session_app );
-        return ESP_ERR_NO_MEM;
-    }
-
-    services[ service_count++ ] = ( app_session_service_t ){
-        .name = a_name,
-        .start = a_start,
-        .stop = a_stop,
-        .recover_failed_stop = a_recover_failed_stop,
-        .active = a_active,
-        .context = a_context,
-        .always_stop_for_close = a_always_stop_for_close,
-    };
-    return ESP_OK;
+    return ( session_app >= 0 ) && ( session_app < RFSCOUT_APP_COUNT );
 }
 
-static esp_err_t register_platform_services( rfscout_app_id_t a_app )
+static rfscout_memory_owner_t session_owner( void )
 {
+    return memory_manager_app_owner( session_app );
+}
+
+static void clear_close_state( void )
+{
+    for( size_t i = 0U; i < service_count; ++i )
+    {
+        services[ i ].was_active_for_close = false;
+        services[ i ].stopped_for_close = false;
+        services[ i ].failed_for_close = false;
+    }
+}
+
+static void select_platform_services( rfscout_app_id_t a_app )
+{
+    services = NULL;
+    service_count = 0U;
+
     switch( a_app )
     {
         case RFSCOUT_APP_WIFI_BT:
-        {
-            esp_err_t result = register_service(
-                "Wi-Fi", start_wifi, stop_wifi, start_wifi, wifi_active, true, NULL );
-            if( ESP_OK == result )
-            {
-                result = register_service(
-                    "BLE", start_ble, stop_ble, start_ble, ble_active, true, NULL );
-            }
-            return result;
-        }
+            services = wifi_bt_services;
+            service_count = sizeof( wifi_bt_services ) / sizeof( wifi_bt_services[ 0 ] );
+            break;
         case RFSCOUT_APP_CC1101:
-            return register_service( "CC1101", start_cc1101, stop_cc1101, NULL, NULL, false, NULL );
+            services = cc1101_services;
+            service_count = sizeof( cc1101_services ) / sizeof( cc1101_services[ 0 ] );
+            break;
         case RFSCOUT_APP_NRF24:
-            return register_service( "nRF24", start_nrf24, stop_nrf24, NULL, NULL, false, NULL );
+            services = nrf24_services;
+            service_count = sizeof( nrf24_services ) / sizeof( nrf24_services[ 0 ] );
+            break;
         case RFSCOUT_APP_AUDIO:
-            return register_service( "Recorder", NULL, stop_recorder, NULL, NULL, false, NULL );
+            services = recorder_services;
+            service_count = sizeof( recorder_services ) / sizeof( recorder_services[ 0 ] );
+            break;
         case RFSCOUT_APP_SYSTEM_EVENTS:
         case RFSCOUT_APP_THERMAL:
         case RFSCOUT_APP_DEVICE:
         case RFSCOUT_APP_COUNT:
         default:
-            return ESP_OK;
+            break;
     }
+    clear_close_state();
 }
 
 static void reset_session_state( void )
 {
-    memset( services, 0, sizeof( services ) );
+    clear_close_state();
+    services = NULL;
     service_count = 0U;
     close_in_progress = false;
     ready_to_reclaim = false;
@@ -245,28 +260,20 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
         {
             return ESP_OK;
         }
-
         if( ( 0U != memory_manager_app_allocation_count( session_app ) ) || close_in_progress ||
             ready_to_reclaim )
         {
             return ESP_ERR_INVALID_STATE;
         }
-
         reset_session_state();
         session_app = RFSCOUT_APP_COUNT;
     }
 
     session_app = a_app;
     reset_session_state();
+    select_platform_services( a_app );
     advance_generation();
-
-    const esp_err_t result = register_platform_services( a_app );
-    if( ESP_OK != result )
-    {
-        reset_session_state();
-        session_app = RFSCOUT_APP_COUNT;
-    }
-    return result;
+    return ESP_OK;
 }
 
 uint32_t app_session_generation( void )
@@ -306,12 +313,7 @@ esp_err_t app_session_prepare_close( void )
 
     close_in_progress = true;
     ready_to_reclaim = false;
-    for( size_t i = 0U; i < service_count; ++i )
-    {
-        services[ i ].was_active_for_close = false;
-        services[ i ].stopped_for_close = false;
-        services[ i ].failed_for_close = false;
-    }
+    clear_close_state();
 
     for( size_t i = service_count; i > 0U; --i )
     {
@@ -330,7 +332,7 @@ esp_err_t app_session_prepare_close( void )
             ESP_LOGE( TAG,
                       "app=%d service=%s did not close safely: %s",
                       (int)session_app,
-                      ( NULL != service->name ) ? service->name : "unnamed",
+                      service->name,
                       esp_err_to_name( result ) );
             return result;
         }
@@ -361,7 +363,6 @@ esp_err_t app_session_abort_close( void )
         {
             restart = service->start;
         }
-
         if( NULL == restart )
         {
             continue;
@@ -373,7 +374,7 @@ esp_err_t app_session_abort_close( void )
             ESP_LOGE( TAG,
                       "app=%d service=%s could not reactivate after close abort: %s",
                       (int)session_app,
-                      ( NULL != service->name ) ? service->name : "unnamed",
+                      service->name,
                       esp_err_to_name( result ) );
             if( ESP_OK == first_error )
             {
@@ -382,12 +383,7 @@ esp_err_t app_session_abort_close( void )
         }
     }
 
-    for( size_t i = 0U; i < service_count; ++i )
-    {
-        services[ i ].was_active_for_close = false;
-        services[ i ].stopped_for_close = false;
-        services[ i ].failed_for_close = false;
-    }
+    clear_close_state();
     close_in_progress = false;
     ready_to_reclaim = false;
     return first_error;
