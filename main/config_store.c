@@ -8,6 +8,7 @@
 #include "config_store.h"
 
 #include "device_config.h"
+#include "event.h"
 #include "storage.h"
 
 #include "cJSON.h"
@@ -258,17 +259,36 @@ esp_err_t config_store_init( void )
     const esp_vfs_littlefs_conf_t config = {
         .base_path = RFSCOUT_INTERNAL_CONFIG_ROOT,
         .partition_label = "storage",
-        .format_if_mount_failed = true,
+        .format_if_mount_failed = false,
         .dont_mount = false,
     };
-    const esp_err_t result = esp_vfs_littlefs_register( &config );
+    esp_err_t result = esp_vfs_littlefs_register( &config );
     if( ESP_OK != result )
     {
+        ESP_LOGW( TAG,
+                  "internal LittleFS mount failed; attempting format: %s",
+                  esp_err_to_name( result ) );
+        result = esp_littlefs_format( config.partition_label );
+        if( ESP_OK == result )
+        {
+            rfscout_event_emit( RFSCOUT_EVENT_INTERNAL_STORAGE_FORMATTED,
+                                RFSCOUT_EVENT_SOURCE_SYSTEM,
+                                (int32_t)ESP_OK );
+            result = esp_vfs_littlefs_register( &config );
+        }
+    }
+    if( ESP_OK != result )
+    {
+        rfscout_event_emit( RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED,
+                            RFSCOUT_EVENT_SOURCE_SYSTEM,
+                            (int32_t)result );
         ESP_LOGE( TAG, "internal LittleFS mount failed: %s", esp_err_to_name( result ) );
         return result;
     }
 
     available = true;
+    rfscout_event_emit(
+        RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNTED, RFSCOUT_EVENT_SOURCE_SYSTEM, (int32_t)ESP_OK );
     cleanup_internal_artifacts();
     import_sd_config();
     return ESP_OK;

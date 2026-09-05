@@ -7,6 +7,8 @@
 
 #include "device_config.h"
 
+#include "event.h"
+
 #include "app_audio_policy.h"
 #include "config_store.h"
 #include "notification.h"
@@ -980,6 +982,12 @@ esp_err_t device_config_init( void )
             else
             {
                 config_upgrade_pending = false;
+                if( config_store_imported() )
+                {
+                    rfscout_event_emit( RFSCOUT_EVENT_CONFIG_IMPORTED,
+                                        RFSCOUT_EVENT_SOURCE_SYSTEM,
+                                        (int32_t)RFSCOUT_CONFIG_SCHEMA_VERSION );
+                }
             }
         }
         else
@@ -1002,7 +1010,14 @@ esp_err_t device_config_init( void )
                   "internal configuration invalid; replacing with defaults: %s",
                   esp_err_to_name( result ) );
     }
-    return device_config_save( false, 0, NULL );
+    const esp_err_t save_result = device_config_save( false, 0, NULL );
+    if( ESP_OK == save_result )
+    {
+        rfscout_event_emit( RFSCOUT_EVENT_CONFIG_DEFAULTED,
+                            RFSCOUT_EVENT_SOURCE_SYSTEM,
+                            (int32_t)RFSCOUT_CONFIG_SCHEMA_VERSION );
+    }
+    return save_result;
 }
 
 const device_config_t *device_config_get( void )
