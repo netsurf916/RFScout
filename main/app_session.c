@@ -7,6 +7,7 @@
 #include "app_session.h"
 
 #include "app_framework.h"
+#include "app_manager.h"
 #include "audio_spectrum.h"
 #include "ble_monitor.h"
 #include "cc1101.h"
