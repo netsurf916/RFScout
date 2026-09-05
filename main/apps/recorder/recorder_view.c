@@ -1,138 +1,194 @@
 /**
-    recorder_view.c : RFScout recorder application UI
-    Description: Renders storage-dependent recording and playback state for the Recorder app.
+    recorder_view.c : RFScout Recorder application UI
+    Description: Renders recording, playback, and the SD-backed recording browser.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
 
 #include "recorder_view.h"
 
-#include "battery_indicator.h"
 #include "display.h"
 #include "recorder.h"
-#include "status_bar.h"
+#include "ui_chrome.h"
+#include "ui_layout.h"
 #include "ui_theme.h"
 
+#include "esp_timer.h"
+
+#include <stddef.h>
 #include <stdio.h>
 
-static void draw_status_chrome( void )
+#define RECORDER_BROWSER_BACK 0U
+#define RECORDER_BROWSER_NEW 1U
+#define RECORDER_BROWSER_FILE_BASE 2U
+
+static char saving_spinner( void )
 {
-    status_bar_draw();
-    battery_indicator_draw();
+    static const char frames[] = "|/-\\";
+    const uint64_t step = (uint64_t)( esp_timer_get_time() / 150000LL );
+    return frames[ step % ( sizeof( frames ) - 1U ) ];
 }
 
-static const char *state_name( rfscout_recorder_state_t a_state )
+void recorder_view_landing( const char *a_playback_name, uint8_t a_playback_volume )
 {
-    switch( a_state )
-    {
-        case RFSCOUT_RECORDER_RECORDING:
-            return "RECORDING";
-        case RFSCOUT_RECORDER_PLAYING:
-            return "PLAYING";
-        case RFSCOUT_RECORDER_NO_STORAGE:
-            return "NO SD CARD";
-        case RFSCOUT_RECORDER_ERROR:
-            return "ERROR";
-        case RFSCOUT_RECORDER_IDLE:
-        default:
-            return "READY";
-    }
-}
-
-void recorder_view_render( size_t a_selected )
-{
-    (void)a_selected;
     const ui_theme_palette_t *theme = ui_theme_get();
-    const rfscout_recorder_state_t state = recorder_state();
     display_clear( theme->background );
-    display_draw_text( 8, 7, "RECORDER", theme->secondary, 2U );
-    draw_status_chrome();
+    ui_chrome_draw( "RECORDER", theme->secondary );
 
-    const uint16_t state_color =
-        ( RFSCOUT_RECORDER_NO_STORAGE == state || RFSCOUT_RECORDER_ERROR == state )
-            ? theme->error
-            : theme->warning;
-    display_draw_text( 8, 38, state_name( state ), state_color, 1U );
-
+    const rfscout_recorder_state_t state = recorder_state();
     char line[ 80 ];
     if( RFSCOUT_RECORDER_RECORDING == state )
     {
-        snprintf( line, sizeof( line ), "%s", recorder_active_name() );
-        display_draw_text( 8, 63, line, theme->text, 1U );
-        const uint32_t seconds = recorder_recorded_bytes() / ( RFSCOUT_RECORDER_SAMPLE_RATE * 2U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 38, "REC", theme->error, 2U );
+        const uint32_t seconds = recorder_recording_elapsed_seconds();
         snprintf( line,
                   sizeof( line ),
-                  "%02lu:%02lu  %lu KB",
+                  "%02lu:%02lu  %s",
                   (unsigned long)( seconds / 60U ),
                   (unsigned long)( seconds % 60U ),
-                  (unsigned long)( recorder_recorded_bytes() / 1024U ) );
-        display_draw_text( 8, 88, line, theme->divider, 1U );
-        display_draw_text( 8, 144, "CENTER: STOP", theme->secondary, 1U );
+                  recorder_input_slot_name() );
+        display_draw_text( UI_LAYOUT_LEFT_X, 69, line, theme->text, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 91, recorder_active_name(), theme->divider, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X,
+                           UI_LAYOUT_FOOTER_Y,
+                           "CENTER: STOP  NAVIGATION LOCKED",
+                           theme->secondary,
+                           1U );
+    }
+    else if( RFSCOUT_RECORDER_SAVING == state )
+    {
+        char saving[ 24 ];
+        snprintf( saving, sizeof( saving ), "SAVING... %c", saving_spinner() );
+        display_draw_text( UI_LAYOUT_LEFT_X, 42, saving, theme->warning, 2U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 78, recorder_active_name(), theme->text, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X,
+                           UI_LAYOUT_FOOTER_Y,
+                           "PLEASE WAIT - NAVIGATION LOCKED",
+                           theme->secondary,
+                           1U );
     }
     else if( RFSCOUT_RECORDER_PLAYING == state )
     {
-        display_draw_text( 8, 63, "PLAYBACK ACTIVE", theme->text, 1U );
-        display_draw_text( 8, 144, "CENTER: STOP", theme->secondary, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 40, "PLAYING", theme->success, 2U );
+        display_draw_text( UI_LAYOUT_LEFT_X,
+                           72,
+                           ( NULL != a_playback_name ) ? a_playback_name : "",
+                           theme->text,
+                           1U );
+        snprintf( line, sizeof( line ), "VOLUME: %u%%", (unsigned)a_playback_volume );
+        display_draw_text( UI_LAYOUT_LEFT_X, 94, line, theme->divider, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X,
+                           UI_LAYOUT_FOOTER_Y,
+                           "CENTER: STOP  TURN: VOLUME",
+                           theme->secondary,
+                           1U );
     }
     else if( RFSCOUT_RECORDER_NO_STORAGE == state )
     {
-        display_draw_text( 8, 63, "Insert/mount SD card", theme->divider, 1U );
-        display_draw_text( 8, 88, "/sdcard/audio required", theme->divider, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 42, "NO SD CARD", theme->error, 2U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 76, "/sdcard/audio unavailable", theme->divider, 1U );
+    }
+    else if( RFSCOUT_RECORDER_ERROR == state )
+    {
+        display_draw_text( UI_LAYOUT_LEFT_X, 42, "RECORDER ERROR", theme->error, 2U );
+        display_draw_text(
+            UI_LAYOUT_LEFT_X, 76, "Check SD card and microphone", theme->divider, 1U );
     }
     else
     {
+        display_draw_text( UI_LAYOUT_LEFT_X, 42, "READY", theme->warning, 2U );
         snprintf( line, sizeof( line ), "%u RECORDINGS", (unsigned)recorder_file_count() );
-        display_draw_text( 8, 63, line, theme->text, 1U );
-        display_draw_text( 8, 103, "CENTER: MENU", theme->secondary, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 78, line, theme->text, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 105, "16 kHz / 16-bit mono WAV", theme->divider, 1U );
+        display_draw_text(
+            UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: OPEN", theme->secondary, 1U );
     }
-
-    display_draw_text( 8, 121, "16 kHz / 16-bit mono WAV", theme->divider, 1U );
     (void)display_present();
 }
 
-void recorder_view_files( size_t a_selected )
+void recorder_view_browser( unsigned a_selected,
+                            bool a_delete_mode,
+                            bool a_delete_confirm,
+                            const char *a_playback_name,
+                            uint8_t a_playback_volume )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     display_clear( theme->background );
-    display_draw_text( 8, 7, "RECORDINGS", theme->secondary, 2U );
-    draw_status_chrome();
+    ui_chrome_draw( "RECORDER", theme->secondary );
 
-    const size_t count = recorder_file_count();
-    if( 0U == count )
+    const rfscout_recorder_state_t state = recorder_state();
+    if( ( RFSCOUT_RECORDER_RECORDING == state ) || ( RFSCOUT_RECORDER_SAVING == state ) ||
+        ( RFSCOUT_RECORDER_PLAYING == state ) )
     {
-        display_draw_text( 8, 48, "NO PLAYABLE WAV FILES", theme->divider, 1U );
-        display_draw_text( 8, 144, "CENTER: BACK", theme->secondary, 1U );
+        recorder_view_landing( a_playback_name, a_playback_volume );
+        return;
+    }
+
+    if( a_delete_mode )
+    {
+        const size_t index = a_selected >= RECORDER_BROWSER_FILE_BASE
+                                 ? (size_t)( a_selected - RECORDER_BROWSER_FILE_BASE )
+                                 : 0U;
+        const rfscout_recording_t *recording = recorder_file( index );
+        display_draw_text( UI_LAYOUT_LEFT_X, 42, "DELETE RECORDING?", theme->error, 2U );
+        display_draw_text(
+            UI_LAYOUT_LEFT_X, 76, recording ? recording->name : "recording", theme->text, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X,
+                           108,
+                           a_delete_confirm ? "  CANCEL   > DELETE" : "> CANCEL     DELETE",
+                           a_delete_confirm ? theme->error : theme->selected,
+                           1U );
+        display_draw_text( UI_LAYOUT_LEFT_X,
+                           UI_LAYOUT_FOOTER_Y,
+                           "TURN: CHOOSE  CENTER: CONFIRM",
+                           theme->secondary,
+                           1U );
         (void)display_present();
         return;
     }
 
-    if( a_selected >= count )
+    const unsigned item_count = RECORDER_BROWSER_FILE_BASE + (unsigned)recorder_file_count();
+    const unsigned first = a_selected > 3U ? a_selected - 3U : 0U;
+    for( unsigned row = 0U; row < 6U && first + row < item_count; ++row )
     {
-        a_selected = count - 1U;
-    }
-
-    const size_t first = ( a_selected > 2U ) ? a_selected - 2U : 0U;
-    for( size_t row = 0U; row < 5U && ( first + row ) < count; ++row )
-    {
-        const size_t index = first + row;
-        const rfscout_recording_t *recording = recorder_file( index );
-        if( NULL == recording )
-        {
-            continue;
-        }
-
+        const unsigned item = first + row;
+        const bool selected = item == a_selected;
         char line[ 96 ];
-        snprintf( line,
-                  sizeof( line ),
-                  "%c %-24.24s %02lu:%02lu",
-                  ( index == a_selected ) ? '>' : ' ',
-                  recording->name,
-                  (unsigned long)( recording->duration_seconds / 60U ),
-                  (unsigned long)( recording->duration_seconds % 60U ) );
-        display_draw_text(
-            8, 40 + (int)row * 20, line, index == a_selected ? theme->selected : theme->text, 1U );
+        if( RECORDER_BROWSER_BACK == item )
+        {
+            snprintf( line, sizeof( line ), "%c BACK", selected ? '>' : ' ' );
+        }
+        else if( RECORDER_BROWSER_NEW == item )
+        {
+            snprintf( line, sizeof( line ), "%c NEW RECORDING", selected ? '>' : ' ' );
+        }
+        else
+        {
+            const rfscout_recording_t *recording =
+                recorder_file( (size_t)( item - RECORDER_BROWSER_FILE_BASE ) );
+            if( NULL == recording )
+            {
+                continue;
+            }
+            snprintf( line,
+                      sizeof( line ),
+                      "%c %-22.22s %02lu:%02lu",
+                      selected ? '>' : ' ',
+                      recording->name,
+                      (unsigned long)( recording->duration_seconds / 60U ),
+                      (unsigned long)( recording->duration_seconds % 60U ) );
+        }
+        display_draw_text( UI_LAYOUT_LEFT_X,
+                           38 + (int)row * 18,
+                           line,
+                           selected ? theme->selected : theme->text,
+                           1U );
     }
 
-    display_draw_text( 8, 144, "TURN: SELECT CENTER: PLAY", theme->secondary, 1U );
+    display_draw_text( UI_LAYOUT_LEFT_X,
+                       UI_LAYOUT_FOOTER_Y,
+                       "CENTER: SELECT  HOLD FILE: DELETE",
+                       theme->secondary,
+                       1U );
     (void)display_present();
 }

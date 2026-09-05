@@ -1,6 +1,6 @@
 /**
-    recorder.h : RFScout SD-backed audio recorder interface
-    Description: Records microphone PCM to WAV files and enumerates playable recordings.
+    services/audio/recorder.h : RFScout shared microphone, recorder, and playback service
+    Description: Exposes microphone monitoring plus SD-backed WAV recording and playback.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -68,7 +68,7 @@ bool recorder_prepare_storage_shutdown( uint32_t a_timeout_ms );
 /** @brief Delete one enumerated recording and refresh the list. */
 esp_err_t recorder_delete_file( size_t a_index );
 
-/** @brief Start live microphone spectrum monitoring. */
+/** @brief Start live microphone spectrum monitoring; storage is not required. */
 esp_err_t recorder_start_monitor( uint8_t a_gain_db );
 
 /** @brief Stop live microphone spectrum monitoring. */
@@ -77,7 +77,7 @@ void recorder_stop_monitor( void );
 /** @brief Copy the latest live spectrum bins and return the copied count. */
 size_t recorder_monitor_bins( uint8_t *a_bins, size_t a_capacity );
 
-/** @brief Set fixed digital microphone input gain in dB (0..24 in 3 dB steps). */
+/** @brief Set fixed digital microphone input gain in dB (0..48 in 3 dB steps). */
 void recorder_set_input_gain_db( uint8_t a_gain_db );
 
 /** @brief Return active fixed digital microphone input gain in dB. */

@@ -53,11 +53,12 @@
 #define DEVICE_ITEM_NRF24 21U
 #define DEVICE_ITEM_AUDIO 22U
 #define DEVICE_ITEM_THERMAL 23U
-#define DEVICE_ITEM_LOGGING 24U
-#define DEVICE_ITEM_POWER_BUTTON 25U
-#define DEVICE_ITEM_POWER_POLICY 26U
-#define DEVICE_ITEM_SAVE 27U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 28U
+#define DEVICE_ITEM_AUDIO_SPECTRUM 24U
+#define DEVICE_ITEM_LOGGING 25U
+#define DEVICE_ITEM_POWER_BUTTON 26U
+#define DEVICE_ITEM_POWER_POLICY 27U
+#define DEVICE_ITEM_SAVE 28U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 29U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
 #define DEVICE_ITEM_COUNT ( DEVICE_ITEM_SAVE + 1U )
@@ -180,6 +181,8 @@ static const char *startup_app_name( rfscout_app_id_t a_app )
             return "Recorder";
         case RFSCOUT_APP_THERMAL:
             return "Thermal";
+        case RFSCOUT_APP_AUDIO_SPECTRUM:
+            return "Audio Spectrum";
         case RFSCOUT_APP_DEVICE:
         case RFSCOUT_APP_COUNT:
         default:
@@ -208,7 +211,8 @@ static bool item_direct_toggle( unsigned a_item )
            ( DEVICE_ITEM_CLOCK_FORMAT == a_item ) || ( DEVICE_ITEM_SYSTEM_EVENTS == a_item ) ||
            ( DEVICE_ITEM_WIFI == a_item ) || ( DEVICE_ITEM_CC1101 == a_item ) ||
            ( DEVICE_ITEM_NRF24 == a_item ) || ( DEVICE_ITEM_AUDIO == a_item ) ||
-           ( DEVICE_ITEM_THERMAL == a_item ) || ( DEVICE_ITEM_LOGGING == a_item );
+           ( DEVICE_ITEM_THERMAL == a_item ) || ( DEVICE_ITEM_AUDIO_SPECTRUM == a_item ) ||
+           ( DEVICE_ITEM_LOGGING == a_item );
 }
 
 static bool item_editable( unsigned a_item )
@@ -269,6 +273,8 @@ static const char *item_label( unsigned a_item )
             return "Audio";
         case DEVICE_ITEM_THERMAL:
             return "Thermal";
+        case DEVICE_ITEM_AUDIO_SPECTRUM:
+            return "Audio Spectrum";
         case DEVICE_ITEM_LOGGING:
             return "SD logging";
         case DEVICE_ITEM_POWER_BUTTON:
@@ -378,6 +384,12 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
         case DEVICE_ITEM_THERMAL:
             snprintf(
                 a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_THERMAL ] ) );
+            break;
+        case DEVICE_ITEM_AUDIO_SPECTRUM:
+            snprintf( a_value,
+                      a_capacity,
+                      "%s",
+                      on_off( config->apps_enabled[ RFSCOUT_APP_AUDIO_SPECTRUM ] ) );
             break;
         case DEVICE_ITEM_LOGGING:
             snprintf( a_value, a_capacity, "%s", on_off( config->logging_enabled ) );
@@ -1153,6 +1165,10 @@ static void adjust_selected( int a_delta )
     else if( DEVICE_ITEM_THERMAL == selected_item )
     {
         toggle_app( RFSCOUT_APP_THERMAL, "apps.thermal" );
+    }
+    else if( DEVICE_ITEM_AUDIO_SPECTRUM == selected_item )
+    {
+        toggle_app( RFSCOUT_APP_AUDIO_SPECTRUM, "apps.audio_spectrum" );
     }
     else if( DEVICE_ITEM_LOGGING == selected_item )
     {

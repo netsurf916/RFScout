@@ -1,6 +1,6 @@
 /**
-    recorder_view.h : RFScout recorder application UI
-    Description: Renders SD availability, recording state, and validated WAV recordings.
+    recorder_view.h : RFScout Recorder application UI
+    Description: Renders recording, playback, and the SD-backed recording browser.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -10,12 +10,14 @@
 #ifndef _RFSCOUT_RECORDER_VIEW_H_
 #define _RFSCOUT_RECORDER_VIEW_H_
 
-#include <stddef.h>
+#include <stdbool.h>
+#include <stdint.h>
 
-/** @brief Render the recorder landing screen and active operation state. */
-void recorder_view_render( size_t a_selected );
-
-/** @brief Render the recording browser with one selected file. */
-void recorder_view_files( size_t a_selected );
+void recorder_view_landing( const char *a_playback_name, uint8_t a_playback_volume );
+void recorder_view_browser( unsigned a_selected,
+                            bool a_delete_mode,
+                            bool a_delete_confirm,
+                            const char *a_playback_name,
+                            uint8_t a_playback_volume );
 
 #endif // _RFSCOUT_RECORDER_VIEW_H_

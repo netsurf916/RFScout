@@ -56,6 +56,7 @@ static const char *app_config_name( rfscout_app_id_t a_app )
         [RFSCOUT_APP_NRF24] = "nrf24",
         [RFSCOUT_APP_AUDIO] = "audio",
         [RFSCOUT_APP_THERMAL] = "thermal",
+        [RFSCOUT_APP_AUDIO_SPECTRUM] = "audio_spectrum",
     };
     return ( a_app < RFSCOUT_APP_COUNT ) ? names[ a_app ] : "device";
 }

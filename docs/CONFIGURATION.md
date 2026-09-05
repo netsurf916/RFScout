@@ -50,6 +50,7 @@ RFScout starts from compiled defaults and, when SD is mounted, overlays `/sdcard
     "nrf24": { "enabled": true },
     "audio": { "enabled": true },
     "thermal": { "enabled": true },
+    "audio_spectrum": { "enabled": true },
     "device": { "enabled": true },
     "startup": "home"
   },
@@ -80,7 +81,7 @@ RFScout starts from compiled defaults and, when SD is mounted, overlays `/sdcard
 }
 ```
 
-Alert Morse maps are stored beneath their owning app and omitted above for brevity. The historical `apps.audio` key represents Recorder internally; user-facing startup aliases such as `home` and `recorder` are written canonically while historical aliases remain accepted where supported.
+Alert Morse maps are stored beneath their owning app and omitted above for brevity. The historical `apps.audio` key represents Recorder internally; `apps.audio_spectrum` independently controls the Audio Spectrum app. User-facing startup aliases such as `home` and `recorder` are written canonically while historical aliases remain accepted where supported.
 
 ## Load/save and migration rules
 
@@ -130,7 +131,7 @@ RFScout distinguishes **UI/device**, **Event**, **Alert**, and **Content** audio
 - `quiet` suppresses UI, Event, and Alert presentation without rewriting saved levels, app switches, alert enablement, or Morse mappings;
 - requested Content such as Recorder playback remains available.
 
-Global Alert presentation is `OFF`, `TONE`, or `MORSE`. Individual alert mappings may also be Off without deleting the semantic/log event. Recorder microphone input gain is currently 0 through +24 dB in 3 dB steps; playback volume is independent of the three global incidental levels.
+Global Alert presentation is `OFF`, `TONE`, or `MORSE`. Individual alert mappings may also be Off without deleting the semantic/log event. Recorder playback volume is independent of the three global incidental levels. The persisted `recorder.input_gain_db` remains the Recorder capture-gain setting and currently accepts **0 through +24 dB in 3 dB steps**. Audio Spectrum has a separate runtime live-monitor gain from **0 through +48 dB in 3 dB steps**; that live setting is not currently persisted to `rfscout.json`. Whether these should converge on one calibrated persisted Audio Input setting remains roadmap work.
 
 ## Power button and protective policy
 
@@ -153,9 +154,9 @@ Manual and protective transitions share the same global overlay and semantic exe
 
 ## Application enablement and availability
 
-An app's `enabled` value is user preference, not hardware proof. Home/Device is always available. CC1101 and nRF24 use startup availability probes; Recorder and Thermal are hot-plug aware. A disabled/unavailable preferred startup app falls back to Home for that boot without erasing the preference.
+An app's `enabled` value is user preference, not hardware proof. Home/Device is always available. CC1101, nRF24, and Audio Spectrum use startup availability probes; Recorder and Thermal are hot-plug aware. A disabled/unavailable preferred startup app falls back to Home for that boot without erasing the preference.
 
-Current Device Settings expose brightness/dim/off/theme, Audio policy and global levels, power-button/power-policy choices, clock/timezone/manual time, startup/app enablement, SD logging, and explicit save. Small finite choices use direct center-to-cycle behavior; numeric ranges retain edit/rotate interaction. Per-app alert mappings and WiFi / BT retention stay in the owning app menus.
+Current Device Settings expose brightness/dim/off/theme, Audio policy and global levels, power-button/power-policy choices, clock/timezone/manual time, startup/app enablement, SD logging, and explicit save. Audio Spectrum is enabled independently from Recorder. Small finite choices use direct center-to-cycle behavior; numeric ranges retain edit/rotate interaction. Per-app alert mappings and WiFi / BT retention stay in the owning app menus.
 
 ## WiFi / BT retention
 
@@ -165,11 +166,11 @@ Wi-Fi and BLE source membership age independently in merged observations. Survei
 
 ## SD, Recorder files, and logging
 
-The current board has no separate SD card-detect GPIO; storage becomes available after successful mount/probe. Mount failure is nonfatal to radio/sensor apps but prevents canonical persistence and Recorder file operations.
+The current board has no separate SD card-detect GPIO; storage becomes available after successful mount/probe. Mount failure is nonfatal to radio/sensor apps and Audio Spectrum but prevents canonical persistence and Recorder file operations.
 
 The conservative board-tested baseline is a FAT-compatible SanDisk card of 32 GB or less. Cards shipped as exFAT may require reformatting to a supported FAT filesystem.
 
-Recorder uses `/sdcard/audio/` and writes 16-bit mono PCM WAV. It records the measured effective PCM sample rate in the WAV header. Supported playback validation accepts 8–48 kHz mono 16-bit PCM. Current post-processing includes 300 ms head trim, 600 ms tail trim, DC removal, and bounded normalization.
+Recorder uses `/sdcard/audio/` and writes 16-bit mono PCM WAV. It records the measured effective PCM sample rate in the WAV header. Supported playback validation accepts 8–48 kHz mono 16-bit PCM. Current post-processing includes 300 ms head trim, 600 ms tail trim, DC removal, and bounded normalization. Live FFT/spectrum monitoring belongs to Audio Spectrum and does not require storage.
 
 Logs rotate through `rfscout-00.log` ... `rfscout-99.log`, up to 4 MiB each (about 400 MiB normal maximum), while attempting to retain at least 64 MiB filesystem free. Valid wall time uses UTC ISO-8601 timestamps; before wall time is established logs use explicit monotonic `UP+...` timestamps.
 

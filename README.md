@@ -2,7 +2,7 @@
 
 RFScout is a handheld **RF situational-awareness** instrument. The currently supported board is the **LILYGO T-Embed CC1101 Plus / ESP32-S3**. The firmware uses board-target and capability boundaries so additional hardware can be supported without compiling every board implementation into one universal image.
 
-RFScout combines passive Wi-Fi/BLE observation, sub-GHz spectrum awareness, 2.4 GHz nRF24 activity analysis, SD-backed audio recording/monitoring, optional thermal imaging, battery/power telemetry, SD logging, device-wide configuration, semantic event feedback, and application-scoped notifications.
+RFScout combines passive Wi-Fi/BLE observation, sub-GHz spectrum awareness, 2.4 GHz nRF24 activity analysis, SD-backed audio recording/playback, live microphone spectrum monitoring, optional thermal imaging, battery/power telemetry, SD logging, device-wide configuration, semantic event feedback, and application-scoped notifications.
 
 <p align="center">
   <img src="assets/device.jpg" alt="RFScout running on a LILYGO T-Embed CC1101 Plus" width="800">
@@ -21,6 +21,7 @@ Top-level rotary order is:
 4. **nRF24**
 5. **Recorder**
 6. **Thermal** — only when enabled and an MLX90640 is detected
+7. **Audio Spectrum** — when enabled and the microphone is available
 
 Disabled or unavailable apps are skipped. Home is always available and is the default/fallback startup target. The application layer consumes board-neutral semantic input rather than directly depending on a rotary encoder.
 
@@ -40,7 +41,11 @@ nRF24 performs receive-only 2.4 GHz RPD scanning with configurable channel bound
 
 ### Recorder
 
-Recorder uses the internal PDM microphone and SD storage for 16-bit mono WAV capture/playback. It measures effective PDM/PCM timing at runtime, applies asynchronous trim/DC-removal/normalization, supports recording browse/delete, independent playback volume, live monitor FFT, and configurable microphone input gain.
+Recorder uses the internal PDM microphone and SD storage for 16-bit mono WAV capture and playback. It measures effective PDM/PCM timing at runtime, applies asynchronous trim/DC-removal/normalization, supports recording browse/delete, and has independent playback volume. Active recording or finalization blocks app transitions until the file is safely complete; RFScout does not stop a recording and later attempt to reconstruct or restart it after an aborted transition.
+
+### Audio Spectrum
+
+Audio Spectrum is the separate live microphone FFT/spectrum app and does not require an SD card. On its main view, rotary input remains normal global app navigation; center opens app-local settings. The current setting is fixed digital microphone input gain from **0 through +48 dB in 3 dB steps**.
 
 ### Thermal
 
@@ -66,7 +71,7 @@ See [Device configuration and persistence](docs/CONFIGURATION.md) for the detail
 
 ## Hardware and memory
 
-The current target's LCD, microSD, CC1101, and nRF24 share SPI; battery/power telemetry and external sensors share I2C; Recorder uses I2S0 and the speaker service uses I2S1.
+The current target's LCD, microSD, CC1101, and nRF24 share SPI; battery/power telemetry and external sensors share I2C; shared microphone/audio capture uses I2S0 and the speaker service uses I2S1.
 
 RFScout requires usable external **PSRAM**. Large app-owned collections can grow dynamically during an app resource session and are reclaimed only after the platform proves workers/callbacks no longer reference them. Internal SRAM remains reserved for system, stack, DMA/hardware-constrained, and latency-sensitive allocations.
 

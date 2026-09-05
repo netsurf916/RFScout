@@ -10,7 +10,7 @@
 #ifndef _RFSCOUT_APP_AUDIO_POLICY_H_
 #define _RFSCOUT_APP_AUDIO_POLICY_H_
 
-#include "app_manager.h"
+#include "app_descriptor.h"
 #include "audio_policy.h"
 
 #include <stdbool.h>

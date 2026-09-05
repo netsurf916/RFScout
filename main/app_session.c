@@ -8,7 +8,6 @@
 
 #include "app_framework.h"
 #include "app_manager.h"
-#include "audio_spectrum.h"
 #include "ble_monitor.h"
 #include "cc1101.h"
 #include "memory_manager.h"
@@ -113,6 +112,14 @@ static bool recorder_references_clear( void )
     return ESP_ERR_INVALID_STATE != recorder_probe_microphone();
 }
 
+static bool audio_capture_active( void *a_context )
+{
+    (void)a_context;
+    const rfscout_recorder_state_t state = recorder_state();
+    return ( RFSCOUT_RECORDER_RECORDING == state ) || ( RFSCOUT_RECORDER_SAVING == state ) ||
+           ( RFSCOUT_RECORDER_MONITORING == state ) || ( RFSCOUT_RECORDER_PLAYING == state );
+}
+
 static esp_err_t stop_recorder( void *a_context )
 {
     (void)a_context;
@@ -122,7 +129,6 @@ static esp_err_t stop_recorder( void *a_context )
         return ESP_ERR_TIMEOUT;
     }
     recorder_stop();
-    audio_spectrum_stop();
 
     const int64_t deadline_us =
         esp_timer_get_time() + (int64_t)APP_SESSION_RECORDER_QUIESCE_TIMEOUT_MS * 1000LL;
@@ -169,9 +175,10 @@ static app_session_service_t platform_services[] = {
         .stop = stop_nrf24,
     },
     {
-        .capability = RFSCOUT_APP_SERVICE_RECORDER,
-        .name = "Recorder",
+        .capability = RFSCOUT_APP_SERVICE_AUDIO_CAPTURE,
+        .name = "Audio capture",
         .stop = stop_recorder,
+        .active = audio_capture_active,
     },
 };
 

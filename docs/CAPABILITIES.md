@@ -15,6 +15,7 @@ Canonical rotary order:
 4. nRF24
 5. Recorder
 6. Thermal — when enabled/detected
+7. Audio Spectrum — when the microphone is available
 
 Disabled or unavailable apps are skipped. Home is always available and is the fallback when a preferred startup app cannot run.
 
@@ -48,9 +49,17 @@ Acquisition and presentation use separate cadences: sweep data continues feeding
 
 ## Recorder
 
-Recorder provides SD-backed 16-bit mono PCM WAV capture/playback, runtime PDM/effective-rate measurement, measured-rate WAV metadata, asynchronous trim/DC-removal/normalization, recording browse/delete, independent playback volume, live monitor FFT, and microphone input gain from 0 through +24 dB in 3 dB steps.
+Recorder provides SD-backed 16-bit mono PCM WAV capture/playback, runtime PDM/effective-rate measurement, measured-rate WAV metadata, asynchronous trim/DC-removal/normalization, recording browse/delete, and independent playback volume.
 
-Recorder content audio remains available under device Quiet policy; incidental feedback can be suppressed by the app's native policy. Worker/channel shutdown is session-managed while exact recording/monitor/playback rollback state remains semantic app state.
+Live microphone spectrum monitoring is no longer a Recorder mode; it is the separate **Audio Spectrum** app. While Recorder is actively recording or finalizing a recording, app transitions are intentionally blocked. The user stops recording with center, saving completes, and normal navigation then resumes. RFScout does not attempt to reconstruct or restart an interrupted recording after a failed transition. Playback may be stopped normally when Recorder is left.
+
+Recorder content audio remains available under device Quiet policy; incidental feedback can be suppressed by the app's native policy. Worker/channel shutdown remains session-managed.
+
+## Audio Spectrum
+
+Audio Spectrum is a microphone-only live FFT/spectrum app and does not require an SD card. The normal view leaves rotary input available for global app navigation; center opens the app-local settings view.
+
+The current setting is fixed digital microphone input gain from **0 through +48 dB in 3 dB steps**. Center or Back closes settings. The shared audio-capture service owns microphone/channel lifetime so Audio Spectrum uses the same ordinary app/session contract as the radio and sensor apps rather than Recorder-specific rollback semantics.
 
 ## Thermal
 
@@ -68,7 +77,7 @@ Implemented global settings include:
 - configurable short/long power-button actions;
 - low-battery and high-internal-temperature protective power policy;
 - 12/24-hour clock, timezone, and manual date/time;
-- startup application and per-app enablement;
+- startup application and per-app enablement, including Audio Spectrum independently from Recorder;
 - SD logging;
 - explicit configuration save.
 
@@ -96,14 +105,14 @@ The device-wide Normal/Quiet policy is independent of visual theme. Speaker outp
 
 Persistent preferences use `/sdcard/rfscout.json` schema version **3**. Loading begins with defaults and overlays recognized valid fields; v1/v2 migration is best effort while RFScout remains pre-1.0. Future schema versions are rejected rather than destructively rewritten. See [CONFIGURATION.md](CONFIGURATION.md).
 
-RFScout can operate without SD for radio/sensor use. SD provides canonical persistence, Recorder files under `/sdcard/audio/`, and asynchronous rotating logs. The conservative board-tested baseline is a FAT-compatible SanDisk card of 32 GB or less. Logs rotate through 100 files of up to 4 MiB each while preserving a free-space reserve.
+RFScout can operate without SD for radio/sensor use and for Audio Spectrum. SD provides canonical persistence, Recorder files under `/sdcard/audio/`, and asynchronous rotating logs. The conservative board-tested baseline is a FAT-compatible SanDisk card of 32 GB or less. Logs rotate through 100 files of up to 4 MiB each while preserving a free-space reserve.
 
 ## Hardware and memory boundaries
 
-LCD/microSD/CC1101/nRF24 share SPI resources; power telemetry/external sensors share I2C; Recorder microphone uses I2S0; speaker output uses I2S1.
+LCD/microSD/CC1101/nRF24 share SPI resources; power telemetry/external sensors share I2C; the shared audio-capture service uses I2S0 for the microphone; speaker output uses I2S1.
 
 Usable external **PSRAM is required**. App-scoped memory/session infrastructure is implemented: growable app-owned state can consume PSRAM during the session and is reclaimed after platform services prove they no longer reference it.
 
 ## Not currently implemented
 
-Major v0.4.0 work still outstanding includes Instant/Timed/Never WiFi/BLE retention semantics, semantic Wi-Fi/BLE entity/correlation views, dynamic surveillance-history migration, broader app-by-app PSRAM/history improvements, the calibrated shared Audio Input service, thermal calibration, and release-level stress/fault-injection validation. The canonical checklist and status are in [ROADMAP.md](ROADMAP.md).
+Major v0.4.0 work still outstanding includes Instant/Timed/Never WiFi/BLE retention semantics, semantic Wi-Fi/BLE entity/correlation views, dynamic surveillance-history migration, broader app-by-app PSRAM/history improvements, the planned further calibration/generalization of the Audio Input service, thermal calibration, and release-level stress/fault-injection validation. The canonical checklist and status are in [ROADMAP.md](ROADMAP.md).

@@ -1,6 +1,7 @@
+
 /**
-    recorder.c : RFScout SD-backed audio recorder implementation
-    Description: Captures PDM microphone audio to validated PCM WAV files and manages playback entries.
+    services/audio/recorder.c : RFScout shared microphone, recorder, and playback service
+    Description: Owns microphone capture/FFT plus SD-backed WAV recording and playback.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -583,9 +584,24 @@ static FILE *open_unique_recording( char *a_path, size_t a_path_capacity )
 
 static uint32_t input_gain_q12( uint8_t a_gain_db )
 {
-    static const uint16_t gains[] = {
-        4096U, 5793U, 8189U, 11571U, 16306U, 23099U, 32664U, 46170U, 65268U };
-    const unsigned index = ( a_gain_db > 24U ? 24U : a_gain_db ) / 3U;
+    static const uint32_t gains[] = { 4096U,
+                                      5793U,
+                                      8189U,
+                                      11571U,
+                                      16306U,
+                                      23099U,
+                                      32664U,
+                                      46170U,
+                                      65268U,
+                                      92195U,
+                                      130226U,
+                                      183967U,
+                                      259811U,
+                                      367017U,
+                                      518451U,
+                                      732342U,
+                                      1034455U };
+    const unsigned index = ( a_gain_db > 48U ? 48U : a_gain_db ) / 3U;
     return gains[ index ];
 }
 
@@ -1125,7 +1141,8 @@ static void monitor_worker( void *a_argument )
 
 esp_err_t recorder_start_monitor( uint8_t a_gain_db )
 {
-    if( RFSCOUT_RECORDER_IDLE != recorder_state() )
+    const rfscout_recorder_state_t current = recorder_state();
+    if( ( RFSCOUT_RECORDER_IDLE != current ) && ( RFSCOUT_RECORDER_NO_STORAGE != current ) )
         return ESP_ERR_INVALID_STATE;
     recorder_set_input_gain_db( a_gain_db );
     memset( monitor_spectrum, 0, sizeof( monitor_spectrum ) );
@@ -1171,8 +1188,8 @@ size_t recorder_monitor_bins( uint8_t *a_bins, size_t a_capacity )
 
 void recorder_set_input_gain_db( uint8_t a_gain_db )
 {
-    if( a_gain_db > 24U )
-        a_gain_db = 24U;
+    if( a_gain_db > 48U )
+        a_gain_db = 48U;
     input_gain_db = (uint8_t)( ( a_gain_db / 3U ) * 3U );
 }
 

@@ -130,18 +130,6 @@ static void render_summary( void )
     }
 }
 
-esp_err_t ui_init( void )
-{
-    const esp_err_t result = display_init();
-    if( ESP_OK != result )
-    {
-        return result;
-    }
-    last_refresh_us = 0;
-    render_summary();
-    return ESP_OK;
-}
-
 void ui_poll( void )
 {
     const int64_t now_us = esp_timer_get_time();
