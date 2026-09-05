@@ -389,5 +389,4 @@ const rfscout_app_descriptor_t rfscout_recorder_app = {
     .services = RFSCOUT_APP_SERVICE_AUDIO_CAPTURE,
     .runtime = recorder_runtime,
     .prepare_leave = prepare_leave,
-    .reactivate_leave = NULL,
 };
