@@ -29,7 +29,7 @@ static char saving_spinner( void )
     return frames[ step % ( sizeof( frames ) - 1U ) ];
 }
 
-void recorder_view_landing( void )
+void recorder_view_landing( const char *a_playback_name, uint8_t a_playback_volume )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     display_clear( theme->background );
@@ -70,7 +70,13 @@ void recorder_view_landing( void )
     else if( RFSCOUT_RECORDER_PLAYING == state )
     {
         display_draw_text( UI_LAYOUT_LEFT_X, 40, "PLAYING", theme->success, 2U );
-        display_draw_text( UI_LAYOUT_LEFT_X, 74, recorder_active_name(), theme->text, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X,
+                           72,
+                           ( NULL != a_playback_name ) ? a_playback_name : "",
+                           theme->text,
+                           1U );
+        snprintf( line, sizeof( line ), "VOLUME: %u%%", (unsigned)a_playback_volume );
+        display_draw_text( UI_LAYOUT_LEFT_X, 94, line, theme->divider, 1U );
         display_draw_text( UI_LAYOUT_LEFT_X,
                            UI_LAYOUT_FOOTER_Y,
                            "CENTER: STOP  TURN: VOLUME",
@@ -100,7 +106,11 @@ void recorder_view_landing( void )
     (void)display_present();
 }
 
-void recorder_view_browser( unsigned a_selected, bool a_delete_mode, bool a_delete_confirm )
+void recorder_view_browser( unsigned a_selected,
+                            bool a_delete_mode,
+                            bool a_delete_confirm,
+                            const char *a_playback_name,
+                            uint8_t a_playback_volume )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     display_clear( theme->background );
@@ -110,7 +120,7 @@ void recorder_view_browser( unsigned a_selected, bool a_delete_mode, bool a_dele
     if( ( RFSCOUT_RECORDER_RECORDING == state ) || ( RFSCOUT_RECORDER_SAVING == state ) ||
         ( RFSCOUT_RECORDER_PLAYING == state ) )
     {
-        recorder_view_landing();
+        recorder_view_landing( a_playback_name, a_playback_volume );
         return;
     }
 
