@@ -26,6 +26,9 @@ esp_err_t config_store_init( void );
 /** @brief Return whether the internal persistence filesystem is mounted and usable. */
 bool config_store_is_available( void );
 
+/** @brief Return whether this boot consumed an SD configuration import. */
+bool config_store_imported( void );
+
 /**
  * @brief Synchronize the SD example with the authoritative internal configuration.
  * @details This is a no-op when SD is unavailable or the files already match byte-for-byte.
