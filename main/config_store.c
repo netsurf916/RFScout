@@ -301,11 +301,22 @@ esp_err_t config_store_sync_example( void )
         return ESP_OK;
     }
 
-    const esp_err_t result = atomic_copy(
-        RFSCOUT_INTERNAL_CONFIG_PATH, SD_CONFIG_EXAMPLE_TEMP_PATH, RFSCOUT_SD_CONFIG_EXAMPLE_PATH );
-    if( ESP_OK == result )
+    const esp_err_t copy_result =
+        copy_file_to_temp( RFSCOUT_INTERNAL_CONFIG_PATH, SD_CONFIG_EXAMPLE_TEMP_PATH );
+    if( ESP_OK != copy_result )
     {
-        ESP_LOGI( TAG, "updated %s", RFSCOUT_SD_CONFIG_EXAMPLE_PATH );
+        return copy_result;
     }
-    return result;
+
+    /* FAT does not replace an existing destination with rename(). The SD example is disposable and
+       non-authoritative, so remove the stale copy only after the complete replacement is durable. */
+    (void)unlink( RFSCOUT_SD_CONFIG_EXAMPLE_PATH );
+    if( 0 != rename( SD_CONFIG_EXAMPLE_TEMP_PATH, RFSCOUT_SD_CONFIG_EXAMPLE_PATH ) )
+    {
+        (void)unlink( SD_CONFIG_EXAMPLE_TEMP_PATH );
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI( TAG, "updated %s", RFSCOUT_SD_CONFIG_EXAMPLE_PATH );
+    return ESP_OK;
 }
