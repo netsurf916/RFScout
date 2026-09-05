@@ -10,7 +10,7 @@
 #ifndef _RFSCOUT_SESSION_STATE_H_
 #define _RFSCOUT_SESSION_STATE_H_
 
-#include "app_manager.h"
+#include "app_descriptor.h"
 
 #include <stdbool.h>
 
