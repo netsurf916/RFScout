@@ -11,6 +11,7 @@
 #define _RFSCOUT_RF_OBSERVATION_H_
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define RFSCOUT_VENDOR_NAME_MAX 32
