@@ -228,7 +228,9 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
     {
         return ESP_ERR_INVALID_ARG;
     }
-    if( NULL == app_framework_descriptor( a_app ) )
+
+    const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
+    if( NULL == descriptor )
     {
         return ESP_ERR_NOT_FOUND;
     }
@@ -249,7 +251,7 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
 
     session_app = a_app;
     reset_session_state();
-    session_services = app_framework_services( a_app );
+    session_services = descriptor->services;
     advance_generation();
     return ESP_OK;
 }
