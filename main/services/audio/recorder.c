@@ -583,9 +583,10 @@ static FILE *open_unique_recording( char *a_path, size_t a_path_capacity )
 
 static uint32_t input_gain_q12( uint8_t a_gain_db )
 {
-    static const uint16_t gains[] = {
-        4096U, 5793U, 8189U, 11571U, 16306U, 23099U, 32664U, 46170U, 65268U };
-    const unsigned index = ( a_gain_db > 24U ? 24U : a_gain_db ) / 3U;
+    static const uint32_t gains[] = { 4096U,   5793U,   8189U,   11571U,  16306U,  23099U,
+                                      32664U,  46170U,  65268U,  92195U,  130226U, 183967U,
+                                      259811U, 367017U, 518451U, 732342U, 1034455U };
+    const unsigned index = ( a_gain_db > 48U ? 48U : a_gain_db ) / 3U;
     return gains[ index ];
 }
 
