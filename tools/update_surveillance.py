@@ -7,9 +7,10 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+WIRELESS_SERVICE = ROOT / "main" / "services" / "wireless"
 SOURCE = ROOT / "data" / "surveillance_signatures.csv"
-IEEE_SOURCE = ROOT / "main" / "oui_database.inc"
-OUT = ROOT / "main" / "surveillance_signatures.inc"
+IEEE_SOURCE = WIRELESS_SERVICE / "oui_database.inc"
+OUT = WIRELESS_SERVICE / "surveillance_signatures.inc"
 REPORT = ROOT / "data" / "surveillance_oui_validation.csv"
 
 CLASS_MAP = {
