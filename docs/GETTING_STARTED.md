@@ -199,8 +199,8 @@ Avoid running the complete ESP-IDF build/flash process as root.
 
 - [Architecture](ARCHITECTURE.md)
 - [Capabilities](CAPABILITIES.md)
-- [Configuration](CONFIGURATION.md)
-- [SD card behavior](SD_CARD.md)
+- [Configuration and persistence](CONFIGURATION.md)
+- [Board targets and porting](BOARD_PORTING.md)
 - [Firmware releases](RELEASING.md)
 - [Coding style](CODING_STYLE.md)
 - [Roadmap](ROADMAP.md)
