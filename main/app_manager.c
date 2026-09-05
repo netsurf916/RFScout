@@ -75,10 +75,11 @@ static rfscout_app_runtime_result_t dispatch_runtime( rfscout_app_id_t a_app,
         .type = a_type,
         .now_us = a_now_us,
         .activated = a_activated,
-        .input = {
-            .type = RFSCOUT_INPUT_NONE,
-            .value = 0,
-        },
+        .input =
+            {
+                .type = RFSCOUT_INPUT_NONE,
+                .value = 0,
+            },
     };
     if( NULL != a_input )
     {
@@ -92,8 +93,7 @@ static void enter_app( rfscout_app_id_t a_app )
     const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
     app_entered_us = esp_timer_get_time();
     app_activated = ( NULL == descriptor ) || !descriptor->requires_activation;
-    (void)dispatch_runtime(
-        a_app, RFSCOUT_APP_RUNTIME_ENTER, NULL, app_entered_us, app_activated );
+    (void)dispatch_runtime( a_app, RFSCOUT_APP_RUNTIME_ENTER, NULL, app_entered_us, app_activated );
     ESP_LOGI( TAG, "switched app=%d", (int)a_app );
 }
 
@@ -157,11 +157,8 @@ static void commit_app_exit( void *a_context )
     {
         return;
     }
-    (void)dispatch_runtime( descriptor->id,
-                            RFSCOUT_APP_RUNTIME_LEAVE,
-                            NULL,
-                            esp_timer_get_time(),
-                            app_activated );
+    (void)dispatch_runtime(
+        descriptor->id, RFSCOUT_APP_RUNTIME_LEAVE, NULL, esp_timer_get_time(), app_activated );
 }
 
 static bool transition_to_app( rfscout_app_id_t a_destination, bool a_report_abort )
@@ -229,8 +226,7 @@ static bool switch_app_for_navigation( int32_t a_delta )
 
 static void handle_runtime_result( rfscout_app_runtime_result_t a_result )
 {
-    if( ( RFSCOUT_APP_RUNTIME_REQUEST_HOME == a_result ) &&
-        ( RFSCOUT_APP_DEVICE != active_app ) )
+    if( ( RFSCOUT_APP_RUNTIME_REQUEST_HOME == a_result ) && ( RFSCOUT_APP_DEVICE != active_app ) )
     {
         (void)transition_to_app( RFSCOUT_APP_DEVICE, false );
     }
