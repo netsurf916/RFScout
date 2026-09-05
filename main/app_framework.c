@@ -24,7 +24,26 @@ static bool app_id_valid( rfscout_app_id_t a_app )
 
 const rfscout_app_descriptor_t *app_framework_descriptor( rfscout_app_id_t a_app )
 {
-    return app_id_valid( a_app ) ? descriptors[ a_app ] : NULL;
+    if( !app_id_valid( a_app ) )
+    {
+        return NULL;
+    }
+    if( NULL != descriptors[ a_app ] )
+    {
+        return descriptors[ a_app ];
+    }
+
+    /* Session/lifecycle initialization precedes the normal framework probe pass. Descriptor
+       metadata is immutable, so it is safe to discover it directly from the compiled registry. */
+    for( size_t i = 0U; i < rfscout_app_registry_count; ++i )
+    {
+        const rfscout_app_descriptor_t *descriptor = rfscout_app_registry[ i ];
+        if( ( NULL != descriptor ) && ( descriptor->id == a_app ) )
+        {
+            return descriptor;
+        }
+    }
+    return NULL;
 }
 
 const char *app_framework_name( rfscout_app_id_t a_app )
