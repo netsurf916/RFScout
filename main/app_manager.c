@@ -142,14 +142,6 @@ static esp_err_t prepare_app_exit( void *a_context )
                : ESP_OK;
 }
 
-static esp_err_t reactivate_app_exit( void *a_context )
-{
-    const rfscout_app_descriptor_t *descriptor = a_context;
-    return ( NULL != descriptor ) && ( NULL != descriptor->reactivate_leave )
-               ? descriptor->reactivate_leave()
-               : ESP_OK;
-}
-
 static void commit_app_exit( void *a_context )
 {
     const rfscout_app_descriptor_t *descriptor = a_context;
@@ -174,7 +166,6 @@ static bool transition_to_app( rfscout_app_id_t a_destination, bool a_report_abo
     const int64_t transition_started = esp_timer_get_time();
     const rfscout_app_lifecycle_hooks_t hooks = {
         .prepare = prepare_app_exit,
-        .reactivate = reactivate_app_exit,
         .commit = commit_app_exit,
         .context = (void *)source_descriptor,
     };
