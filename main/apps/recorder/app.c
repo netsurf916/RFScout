@@ -472,6 +472,17 @@ static rfscout_app_runtime_result_t recorder_runtime( const rfscout_app_runtime_
         menu_item = AUDIO_BROWSER_BACK;
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
+    if( ( RFSCOUT_APP_RUNTIME_INPUT == a_event->type ) ||
+        ( RFSCOUT_APP_RUNTIME_POLL == a_event->type ) )
+    {
+        if( dependency_lost( a_event->now_us ) )
+        {
+            app_framework_report_availability( RFSCOUT_APP_AUDIO,
+                                               RFSCOUT_APP_AVAILABILITY_UNAVAILABLE );
+            ESP_LOGW( TAG, "Recorder dependency lost; returning Home" );
+            return RFSCOUT_APP_RUNTIME_REQUEST_HOME;
+        }
+    }
     if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type )
     {
         if( menu_active )
@@ -495,13 +506,6 @@ static rfscout_app_runtime_result_t recorder_runtime( const rfscout_app_runtime_
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
 
-    if( dependency_lost( a_event->now_us ) )
-    {
-        app_framework_report_availability( RFSCOUT_APP_AUDIO,
-                                           RFSCOUT_APP_AVAILABILITY_UNAVAILABLE );
-        ESP_LOGW( TAG, "Recorder dependency lost; returning Home" );
-        return RFSCOUT_APP_RUNTIME_REQUEST_HOME;
-    }
     if( menu_active )
     {
         poll_menu( a_event->now_us );
