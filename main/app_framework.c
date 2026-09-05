@@ -8,6 +8,7 @@
 #include "app_framework.h"
 
 #include "apps/app_registry.h"
+#include "event.h"
 
 #include "esp_log.h"
 
@@ -29,7 +30,13 @@ const rfscout_app_descriptor_t *app_framework_descriptor( rfscout_app_id_t a_app
 static void retain_availability( rfscout_app_id_t a_app, rfscout_app_availability_t a_availability )
 {
     const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
-    if( ( NULL == descriptor ) || ( availability[ a_app ] == a_availability ) )
+    if( NULL == descriptor )
+    {
+        return;
+    }
+
+    const rfscout_app_availability_t previous = availability[ a_app ];
+    if( previous == a_availability )
     {
         return;
     }
@@ -46,6 +53,23 @@ static void retain_availability( rfscout_app_id_t a_app, rfscout_app_availabilit
     else if( RFSCOUT_APP_AVAILABILITY_ERROR == a_availability )
     {
         ESP_LOGW( TAG, "%s availability error", descriptor->name );
+    }
+
+    if( RFSCOUT_APP_AVAILABILITY_UNKNOWN == previous )
+    {
+        rfscout_event_emit( RFSCOUT_EVENT_APP_DISCOVERED, (uint8_t)a_app, (int32_t)a_availability );
+    }
+    else if( RFSCOUT_APP_AVAILABILITY_AVAILABLE == a_availability )
+    {
+        rfscout_event_emit( RFSCOUT_EVENT_APP_AVAILABLE, (uint8_t)a_app, (int32_t)a_availability );
+    }
+    else if( RFSCOUT_APP_AVAILABILITY_UNAVAILABLE == a_availability )
+    {
+        rfscout_event_emit( RFSCOUT_EVENT_APP_UNAVAILABLE, (uint8_t)a_app, (int32_t)a_availability );
+    }
+    else if( RFSCOUT_APP_AVAILABILITY_ERROR == a_availability )
+    {
+        rfscout_event_emit( RFSCOUT_EVENT_APP_PROBE_ERROR, (uint8_t)a_app, (int32_t)a_availability );
     }
 }
 
