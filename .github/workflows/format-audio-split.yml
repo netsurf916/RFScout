@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   format:
-    if: github.event.head_commit.message == 'Apply canonical formatting to audio split'
+    if: github.event.head_commit.message == 'Format all audio split files'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -23,7 +23,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends clang-format-18
       - name: Format and commit
         run: |
-          python3 tools/check_format.py --fix
+          python3 tools/check_format.py --all --fix
           git diff --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
