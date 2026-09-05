@@ -310,6 +310,10 @@ esp_err_t app_session_register_service( const char *a_name,
                                         rfscout_app_service_fn a_stop,
                                         void *a_context )
 {
+    if( !ensure_current_app_session() )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     return register_service( a_name, a_start, a_stop, NULL, NULL, false, a_context );
 }
 
