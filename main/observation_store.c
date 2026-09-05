@@ -72,6 +72,7 @@ static bool ensure_capacity( size_t a_required )
 
     devices = replacement;
     device_capacity = capacity;
+    store_generation = app_session_generation();
     return true;
 }
 
@@ -106,6 +107,7 @@ static bool ensure_summary_capacity( size_t a_required )
 
     summary_vendors = replacement;
     summary_vendor_capacity = capacity;
+    store_generation = app_session_generation();
     return true;
 }
 
