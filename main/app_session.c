@@ -34,6 +34,8 @@ typedef struct
     rfscout_app_service_fn recover_failed_stop;
     app_session_service_active_fn active;
     void *context;
+    bool always_stop_for_close;
+    bool was_active_for_close;
     bool stopped_for_close;
     bool failed_for_close;
 } app_session_service_t;
@@ -150,6 +152,7 @@ static esp_err_t register_service( const char *a_name,
                                    rfscout_app_service_fn a_stop,
                                    rfscout_app_service_fn a_recover_failed_stop,
                                    app_session_service_active_fn a_active,
+                                   bool a_always_stop_for_close,
                                    void *a_context )
 {
     if( !session_active() || ( NULL == a_stop ) )
@@ -177,6 +180,8 @@ static esp_err_t register_service( const char *a_name,
         .recover_failed_stop = a_recover_failed_stop,
         .active = a_active,
         .context = a_context,
+        .always_stop_for_close = a_always_stop_for_close,
+        .was_active_for_close = false,
         .stopped_for_close = false,
         .failed_for_close = false,
     };
@@ -189,24 +194,25 @@ static esp_err_t register_platform_services( rfscout_app_id_t a_app )
     {
         case RFSCOUT_APP_WIFI_BT:
         {
-            esp_err_t result =
-                register_service( "Wi-Fi", start_wifi, stop_wifi, start_wifi, wifi_active, NULL );
+            esp_err_t result = register_service(
+                "Wi-Fi", start_wifi, stop_wifi, start_wifi, wifi_active, true, NULL );
             if( ESP_OK == result )
             {
-                result =
-                    register_service( "BLE", start_ble, stop_ble, start_ble, ble_active, NULL );
+                result = register_service(
+                    "BLE", start_ble, stop_ble, start_ble, ble_active, true, NULL );
             }
             return result;
         }
         case RFSCOUT_APP_CC1101:
-            return register_service( "CC1101", start_cc1101, stop_cc1101, NULL, NULL, NULL );
+            return register_service(
+                "CC1101", start_cc1101, stop_cc1101, NULL, NULL, false, NULL );
         case RFSCOUT_APP_NRF24:
-            return register_service( "nRF24", start_nrf24, stop_nrf24, NULL, NULL, NULL );
+            return register_service( "nRF24", start_nrf24, stop_nrf24, NULL, NULL, false, NULL );
         case RFSCOUT_APP_AUDIO:
             /* Recorder operation restoration is semantic app state and remains in the optional
                app rollback hook. The session owns the safety proof that no Recorder execution
                context can still reach app memory before reclamation. */
-            return register_service( "Recorder", NULL, stop_recorder, NULL, NULL, NULL );
+            return register_service( "Recorder", NULL, stop_recorder, NULL, NULL, false, NULL );
         case RFSCOUT_APP_SYSTEM_EVENTS:
         case RFSCOUT_APP_THERMAL:
         case RFSCOUT_APP_DEVICE:
@@ -305,7 +311,7 @@ esp_err_t app_session_register_service( const char *a_name,
                                         rfscout_app_service_fn a_stop,
                                         void *a_context )
 {
-    return register_service( a_name, a_start, a_stop, NULL, NULL, a_context );
+    return register_service( a_name, a_start, a_stop, NULL, NULL, false, a_context );
 }
 
 esp_err_t app_session_prepare_close( void )
@@ -319,6 +325,7 @@ esp_err_t app_session_prepare_close( void )
     ready_to_reclaim = false;
     for( size_t i = 0U; i < service_count; ++i )
     {
+        services[ i ].was_active_for_close = false;
         services[ i ].stopped_for_close = false;
         services[ i ].failed_for_close = false;
     }
@@ -326,7 +333,9 @@ esp_err_t app_session_prepare_close( void )
     for( size_t i = service_count; i > 0U; --i )
     {
         app_session_service_t *service = &services[ i - 1U ];
-        if( ( NULL != service->active ) && !service->active( service->context ) )
+        service->was_active_for_close =
+            ( NULL == service->active ) || service->active( service->context );
+        if( !service->was_active_for_close && !service->always_stop_for_close )
         {
             continue;
         }
@@ -361,11 +370,11 @@ esp_err_t app_session_abort_close( void )
     {
         app_session_service_t *service = &services[ i ];
         rfscout_app_service_fn restart = NULL;
-        if( service->failed_for_close )
+        if( service->was_active_for_close && service->failed_for_close )
         {
             restart = service->recover_failed_stop;
         }
-        else if( service->stopped_for_close )
+        else if( service->was_active_for_close && service->stopped_for_close )
         {
             restart = service->start;
         }
@@ -392,6 +401,7 @@ esp_err_t app_session_abort_close( void )
 
     for( size_t i = 0U; i < service_count; ++i )
     {
+        services[ i ].was_active_for_close = false;
         services[ i ].stopped_for_close = false;
         services[ i ].failed_for_close = false;
     }
