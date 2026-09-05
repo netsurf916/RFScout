@@ -65,11 +65,13 @@ static void retain_availability( rfscout_app_id_t a_app, rfscout_app_availabilit
     }
     else if( RFSCOUT_APP_AVAILABILITY_UNAVAILABLE == a_availability )
     {
-        rfscout_event_emit( RFSCOUT_EVENT_APP_UNAVAILABLE, (uint8_t)a_app, (int32_t)a_availability );
+        rfscout_event_emit(
+            RFSCOUT_EVENT_APP_UNAVAILABLE, (uint8_t)a_app, (int32_t)a_availability );
     }
     else if( RFSCOUT_APP_AVAILABILITY_ERROR == a_availability )
     {
-        rfscout_event_emit( RFSCOUT_EVENT_APP_PROBE_ERROR, (uint8_t)a_app, (int32_t)a_availability );
+        rfscout_event_emit(
+            RFSCOUT_EVENT_APP_PROBE_ERROR, (uint8_t)a_app, (int32_t)a_availability );
     }
 }
 
