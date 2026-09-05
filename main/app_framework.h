@@ -29,9 +29,6 @@ esp_err_t app_framework_init( void );
 /** @brief Return one compiled-in app descriptor or NULL for an unknown ID. */
 const rfscout_app_descriptor_t *app_framework_descriptor( rfscout_app_id_t a_app );
 
-/** @brief Return the descriptor's user-facing application name. */
-const char *app_framework_name( rfscout_app_id_t a_app );
-
 /** @brief Check whether an app's required runtime capability is available. */
 bool app_framework_check_available( rfscout_app_id_t a_app );
 
