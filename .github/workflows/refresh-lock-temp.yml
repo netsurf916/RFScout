@@ -20,11 +20,14 @@ jobs:
       - name: Refresh component lock
         shell: bash
         run: |
+          cd "$GITHUB_WORKSPACE"
           . "$IDF_PATH/export.sh"
           idf.py -DRFSCOUT_FORMAT_CHECK=OFF set-target esp32s3
       - name: Commit lock change
         shell: bash
         run: |
+          cd "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           if git diff --quiet -- dependencies.lock; then
             exit 0
           fi
