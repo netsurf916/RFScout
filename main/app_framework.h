@@ -42,12 +42,6 @@ void app_framework_report_availability( rfscout_app_id_t a_app,
 /** @brief Return whether the app uses delayed hardware activation after entry. */
 bool app_framework_requires_activation( rfscout_app_id_t a_app );
 
-/** @brief Return the descriptor's probe policy. */
-rfscout_app_probe_policy_t app_framework_probe_policy( rfscout_app_id_t a_app );
-
-/** @brief Return the platform service mask declared by the app descriptor. */
-uint32_t app_framework_services( rfscout_app_id_t a_app );
-
 /** @brief Return the most recently retained availability state. */
 rfscout_app_availability_t app_framework_availability( rfscout_app_id_t a_app );
 

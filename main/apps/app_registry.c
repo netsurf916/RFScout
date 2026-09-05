@@ -14,15 +14,12 @@ extern const rfscout_app_descriptor_t rfscout_nrf24_app;
 extern const rfscout_app_descriptor_t rfscout_recorder_app;
 extern const rfscout_app_descriptor_t rfscout_thermal_app;
 
-const rfscout_app_descriptor_t *const rfscout_app_registry[] = {
-    &rfscout_system_events_app,
-    &rfscout_home_app,
-    &rfscout_wifi_ble_app,
-    &rfscout_cc1101_app,
-    &rfscout_nrf24_app,
-    &rfscout_recorder_app,
-    &rfscout_thermal_app,
+const rfscout_app_descriptor_t *const rfscout_app_registry[ RFSCOUT_APP_COUNT ] = {
+    [RFSCOUT_APP_SYSTEM_EVENTS] = &rfscout_system_events_app,
+    [RFSCOUT_APP_DEVICE] = &rfscout_home_app,
+    [RFSCOUT_APP_WIFI_BT] = &rfscout_wifi_ble_app,
+    [RFSCOUT_APP_CC1101] = &rfscout_cc1101_app,
+    [RFSCOUT_APP_NRF24] = &rfscout_nrf24_app,
+    [RFSCOUT_APP_AUDIO] = &rfscout_recorder_app,
+    [RFSCOUT_APP_THERMAL] = &rfscout_thermal_app,
 };
-
-const size_t rfscout_app_registry_count =
-    sizeof( rfscout_app_registry ) / sizeof( rfscout_app_registry[ 0 ] );

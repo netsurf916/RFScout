@@ -12,7 +12,7 @@ RFScout is intentionally passive wherever the underlying radio APIs allow it. It
 
 ## Applications
 
-Top-level application IDs and rotary order are:
+Top-level rotary order is:
 
 0. **System Events** — optional and disabled by default
 1. **Home / Device Settings**
@@ -22,19 +22,17 @@ Top-level application IDs and rotary order are:
 5. **Recorder**
 6. **Thermal** — only when enabled and an MLX90640 is detected
 
-With the default configuration, System Events is skipped so Home is the first visible application. Home is also the default startup target. A preferred startup app can be configured; disabled or unavailable targets fall back to Home for that boot without erasing the preference.
-
-The application layer consumes board-neutral semantic input rather than directly depending on a rotary encoder. Holding the center control for about two seconds toggles the global input lock; the separate physical power button remains available.
+Disabled or unavailable apps are skipped. Home is always available and is the default/fallback startup target. The application layer consumes board-neutral semantic input rather than directly depending on a rotary encoder.
 
 ### WiFi / BT
 
-WiFi / BT passively observes Wi-Fi/BLE traffic, tracks recent devices, performs longest-prefix IEEE vendor attribution, distinguishes private/random addresses from unresolved public addresses, and combines multiple signals for conservative surveillance-oriented classification.
+WiFi / BT passively observes Wi-Fi/BLE traffic, tracks recent devices in growable app-session PSRAM, performs longest-prefix IEEE vendor attribution, distinguishes private/random addresses from unresolved public addresses, and combines multiple signals for conservative surveillance-oriented classification.
 
 Wi-Fi, BLE, and retained surveillance history currently have independent 10–300 second retention controls. Ordinary Wi-Fi/BLE discovery feedback can be enabled independently; surveillance categories use app-owned notifications.
 
 ### CC1101
 
-CC1101 performs receive-only RSSI spectrum sweeps with configurable profiles/range/step, a live activity histogram, bounded 128-sample sweeps, conservative RF-behavior classifications, notifications, and count reset.
+CC1101 performs receive-only RSSI spectrum sweeps with configurable profiles/range/step, a live activity histogram, conservative RF-behavior classifications, notifications, and count reset.
 
 ### nRF24
 
@@ -42,7 +40,7 @@ nRF24 performs receive-only 2.4 GHz RPD scanning with configurable channel bound
 
 ### Recorder
 
-Recorder uses the internal PDM microphone and SD storage for 16-bit mono WAV capture/playback. It measures effective PDM/PCM timing at runtime, applies asynchronous trim/DC-removal/normalization, supports recording browse/delete, independent playback volume, live monitor FFT, and fixed microphone input gain.
+Recorder uses the internal PDM microphone and SD storage for 16-bit mono WAV capture/playback. It measures effective PDM/PCM timing at runtime, applies asynchronous trim/DC-removal/normalization, supports recording browse/delete, independent playback volume, live monitor FFT, and configurable microphone input gain.
 
 ### Thermal
 
@@ -50,52 +48,29 @@ Thermal uses an optional MLX90640 on the external I2C/Qwiic interface. Native 32
 
 ## Home / Device Settings
 
-Current global settings include:
-
-- brightness, display dim timeout, screen-off timeout, and visual theme;
-- independent **Audio policy** (`Normal` or `Quiet`);
-- configurable short/long **Power button** actions;
-- **Power policy** for low battery and high ESP32 internal temperature;
-- 12/24-hour clock, timezone, and manual time;
-- startup application and application enablement;
-- SD logging;
-- global notification mode and volume;
-- explicit configuration save.
+Current global settings include brightness/display idle, visual theme, independent **Normal / Quiet** Audio policy, UI/Event/Alert presentation levels, short/long power-button actions, low-battery/high-temperature protective policy, clock/timezone/manual time, startup/app enablement, SD logging, and explicit configuration save.
 
 Small finite choices use direct center-to-cycle behavior. App-owned notification settings and WiFi / BT retention remain in their respective app menus.
 
-Visual themes are **Indoor**, **Outdoor**, and **Night**. Theme selection affects presentation only. Audio policy is independent:
+Visual themes are **Indoor**, **Outdoor**, and **Night** and affect presentation only. Quiet suppresses incidental UI/Event/Alert presentation without mutating saved notification preferences. Explicit application content audio such as Recorder playback remains available.
 
-- **Normal** permits ordinary incidental UI feedback and enabled detection notifications subject to the existing app/global notification controls.
-- **Quiet** suppresses incidental/event feedback and audible detection-notification presentation without mutating those saved notification preferences.
+## Power, display, and persistence
 
-Explicit application content audio such as Recorder playback remains available in Quiet. Existing Recorder-native policy also continues to suppress incidental feedback where appropriate regardless of the device-wide Audio policy.
+Automatic screen-off affects LCD presentation only. Applications, logging, acquisition, framebuffer updates, and audio continue while the ST7789 is asleep. The whole first physical wake gesture is consumed before ordinary app, lock, or power-button handling.
 
-## Power and display behavior
+Short power-button presses can be configured as None, Screen off, Sleep, or Power off; long press supports None or Power off. Protective policy can request sleep/power-off after confirmed low battery or sustained high SoC temperature, using fresh telemetry and conservative external-power checks.
 
-Short power-button presses can be configured as `None`, `Screen off`, `Sleep`, or `Power off`; long press supports `None` or `Power off`. If the display is dimmed/off, the entire first wake gesture is consumed before power-button behavior is evaluated.
+Persistent preferences live in `/sdcard/rfscout.json` schema version **3**. Loading starts from defaults and overlays recognized values; pre-v1.0 older-schema migration is best effort. Legacy Discipline migrates to **Night + Quiet**. Deep sleep separately retains a small RTC-backed session record containing active app and input-lock state.
 
-Protective policy can request sleep/power-off after confirmed low battery or sustained high SoC temperature. Low-battery protection requires fresh fuel-gauge and charger telemetry. High-temperature `Power off` falls back to `Sleep` when removable power cannot be freshly confirmed. See [Power controls and protective policy](docs/POWER.md).
-
-Automatic screen-off affects LCD presentation only. Applications, logging, acquisition, framebuffer updates, and audio policy continue while the ST7789 is asleep. See [Display idle behavior](docs/DISPLAY_IDLE.md).
-
-## Feedback and notifications
-
-RFScout distinguishes incidental semantic feedback, application-owned detection notifications, and intentional application content audio. Global notification presentation is **OFF**, **TONE**, or **MORSE** plus volume; each detecting app owns its notification gate/mappings. Device-wide Normal/Quiet policy is applied after those semantic/user-policy decisions and independently from the visual theme.
-
-## Configuration and persistence
-
-Persistent preferences live in `/sdcard/rfscout.json` using schema version **3**. Loading starts from defaults and overlays recognized valid fields. Schema v1/v2 files are translated where supported; unknown keys are pruned on the next canonical save; future schema versions are rejected rather than destructively rewritten.
-
-Legacy `Discipline` theme state migrates to **Night + Quiet**. Existing Indoor/Outdoor/Night configurations retain their visual theme and use **Normal** unless an explicit audio policy is present. Canonical schema-v3 saves store the visual theme under `display.theme` and the independent policy under `audio.policy`.
-
-Deep sleep separately retains a small RTC-backed session record containing active app and input-lock state. See [Device configuration and wall clock](docs/CONFIGURATION.md).
+See [Device configuration and persistence](docs/CONFIGURATION.md) for the detailed configuration, display-idle, power, SD, logging, and migration contracts.
 
 ## Hardware and memory
 
 The current target's LCD, microSD, CC1101, and nRF24 share SPI; battery/power telemetry and external sensors share I2C; Recorder uses I2S0 and the speaker service uses I2S1.
 
-RFScout currently requires usable external **PSRAM**. Large platform allocations such as the framebuffer already depend on it; internal SRAM is reserved for system, stacks, DMA/hardware-constrained, and latency-sensitive allocations. See [Board targets and porting](docs/BOARD_PORTING.md).
+RFScout requires usable external **PSRAM**. Large app-owned collections can grow dynamically during an app resource session and are reclaimed only after the platform proves workers/callbacks no longer reference them. Internal SRAM remains reserved for system, stack, DMA/hardware-constrained, and latency-sensitive allocations.
+
+See [Board targets and porting](docs/BOARD_PORTING.md).
 
 ## Build and flashing
 
@@ -111,18 +86,17 @@ Ready-for-review pull requests can produce short-lived candidate bundles. Publis
 
 ## Documentation
 
-Production documentation describes current `main`; forward-looking design belongs in the roadmap.
+The documentation is intentionally consolidated. Production pages describe current behavior; future design and release planning belong only in the roadmap.
 
-- [Capabilities](docs/CAPABILITIES.md) — implemented user-visible capabilities
-- [Architecture](docs/ARCHITECTURE.md) — module ownership and resource boundaries
-- [Application lifecycle](docs/APP_LIFECYCLE.md) — enter/settle/activate/quiesce contract
+- [Capabilities](docs/CAPABILITIES.md) — implemented user-visible behavior
+- [Architecture](docs/ARCHITECTURE.md) — app/service boundaries, lifecycle, resource sessions, UI/audio/power/storage architecture
+- [Device configuration and persistence](docs/CONFIGURATION.md) — schema, migration, display/power behavior, SD/logging, time
 - [Board targets and porting](docs/BOARD_PORTING.md) — board/capability/memory contract
-- [Device configuration and wall clock](docs/CONFIGURATION.md) — schema, migration, and time
-- [Power controls and protective policy](docs/POWER.md) — button and automatic power transitions
-- [Display idle behavior](docs/DISPLAY_IDLE.md) — LCD dim/off/wake semantics
-- [SD card behavior](docs/SD_CARD.md) — storage, Recorder, and logging
+- [Prefix identity](docs/PREFIX_IDENTITY.md) — generated OUI/prefix and surveillance identity data
+- [Coding style](docs/CODING_STYLE.md) — source/style requirements
+- [Getting started](docs/GETTING_STARTED.md) — development setup
 - [Firmware releases](docs/RELEASING.md) — candidate/release/browser-flasher workflow
-- [Roadmap](docs/ROADMAP.md) — completed work and future plans
+- [Roadmap](docs/ROADMAP.md) — canonical completed-work and future-release planning
 
 ## License
 
