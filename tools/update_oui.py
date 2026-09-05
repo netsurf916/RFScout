@@ -10,8 +10,9 @@ import urllib.error
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-MA_L_OUT = ROOT / "main" / "oui_database.inc"
-EXTENDED_OUT = ROOT / "main" / "oui_database_extended.inc"
+WIRELESS_SERVICE = ROOT / "main" / "services" / "wireless"
+MA_L_OUT = WIRELESS_SERVICE / "oui_database.inc"
+EXTENDED_OUT = WIRELESS_SERVICE / "oui_database_extended.inc"
 REGISTRIES = {
     "ma_l": ("https://standards-oui.ieee.org/oui/oui.csv", 6),
     "ma_m": ("https://standards-oui.ieee.org/oui28/mam.csv", 7),
