@@ -107,7 +107,7 @@ static void account_remove( rfscout_memory_owner_t a_owner, size_t a_size )
     --stats->allocation_count;
 }
 
-static memory_allocation_t *find_allocation( const void *a_pointer )
+static memory_allocation_t *find_allocation( void *a_pointer )
 {
     for( memory_allocation_t *allocation = allocations; NULL != allocation;
          allocation = allocation->next )
@@ -327,20 +327,6 @@ bool memory_manager_free( rfscout_memory_owner_t a_owner, void *a_pointer )
 
     ESP_LOGE( TAG, "free rejected for untracked pointer %p", a_pointer );
     return false;
-}
-
-bool memory_manager_pointer_owned_by( rfscout_memory_owner_t a_owner, const void *a_pointer )
-{
-    if( ( NULL == a_pointer ) || ( NULL == manager_lock ) || !owner_is_valid( a_owner ) )
-    {
-        return false;
-    }
-
-    xSemaphoreTake( manager_lock, portMAX_DELAY );
-    const memory_allocation_t *allocation = find_allocation( a_pointer );
-    const bool result = ( NULL != allocation ) && owner_matches( allocation->owner, a_owner );
-    xSemaphoreGive( manager_lock );
-    return result;
 }
 
 static size_t
