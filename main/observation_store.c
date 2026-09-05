@@ -13,7 +13,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
-#include <stdlib.h>
 #include <string.h>
 
 static rf_device_t *devices;
@@ -78,7 +77,18 @@ static bool ensure_capacity( size_t a_required )
 
 static bool ensure_summary_capacity( size_t a_required )
 {
-    if( a_required <= summary_vendor_capacity )
+    if( 0U == a_required )
+    {
+        return true;
+    }
+
+    size_t required_slots = a_required;
+    if( required_slots <= ( SIZE_MAX / 2U ) )
+    {
+        required_slots *= 2U;
+    }
+
+    if( required_slots <= summary_vendor_capacity )
     {
         return true;
     }
@@ -86,13 +96,13 @@ static bool ensure_summary_capacity( size_t a_required )
     size_t capacity = summary_vendor_capacity;
     if( 0U == capacity )
     {
-        capacity = RFSCOUT_OBSERVATION_INITIAL_CAPACITY;
+        capacity = RFSCOUT_OBSERVATION_INITIAL_CAPACITY * 2U;
     }
-    while( capacity < a_required )
+    while( capacity < required_slots )
     {
         if( capacity > ( SIZE_MAX / 2U ) )
         {
-            capacity = a_required;
+            capacity = required_slots;
             break;
         }
         capacity *= 2U;
@@ -109,6 +119,95 @@ static bool ensure_summary_capacity( size_t a_required )
     summary_vendor_capacity = capacity;
     store_generation = app_session_generation();
     return true;
+}
+
+static uint32_t vendor_hash( const char *a_name )
+{
+    uint32_t hash = 2166136261U;
+    for( const unsigned char *current = (const unsigned char *)a_name; '\0' != *current; ++current )
+    {
+        hash ^= *current;
+        hash *= 16777619U;
+    }
+    return hash;
+}
+
+static void count_vendor( const char *a_name )
+{
+    if( ( NULL == summary_vendors ) || ( 0U == summary_vendor_capacity ) )
+    {
+        return;
+    }
+
+    size_t slot = (size_t)vendor_hash( a_name ) & ( summary_vendor_capacity - 1U );
+    for( size_t probes = 0U; probes < summary_vendor_capacity; ++probes )
+    {
+        observation_vendor_count_t *entry = &summary_vendors[ slot ];
+        if( 0U == entry->count )
+        {
+            strlcpy( entry->name, a_name, sizeof( entry->name ) );
+            entry->count = 1U;
+            return;
+        }
+        if( 0 == strcmp( entry->name, a_name ) )
+        {
+            ++entry->count;
+            return;
+        }
+        slot = ( slot + 1U ) & ( summary_vendor_capacity - 1U );
+    }
+}
+
+static bool vendor_precedes( const observation_vendor_count_t *a_left,
+                             const observation_vendor_count_t *a_right )
+{
+    if( a_left->count != a_right->count )
+    {
+        return a_left->count > a_right->count;
+    }
+    return strcmp( a_left->name, a_right->name ) < 0;
+}
+
+static size_t select_top_vendors( observation_vendor_count_t *a_output, size_t a_capacity )
+{
+    if( ( NULL == a_output ) || ( 0U == a_capacity ) )
+    {
+        return 0U;
+    }
+
+    size_t result_count = 0U;
+    memset( a_output, 0, a_capacity * sizeof( *a_output ) );
+
+    for( size_t i = 0U; i < summary_vendor_capacity; ++i )
+    {
+        const observation_vendor_count_t *candidate = &summary_vendors[ i ];
+        if( 0U == candidate->count )
+        {
+            continue;
+        }
+
+        size_t position = 0U;
+        while( ( position < result_count ) && !vendor_precedes( candidate, &a_output[ position ] ) )
+        {
+            ++position;
+        }
+        if( position >= a_capacity )
+        {
+            continue;
+        }
+
+        const size_t last = ( result_count < a_capacity ) ? result_count : ( a_capacity - 1U );
+        for( size_t move = last; move > position; --move )
+        {
+            a_output[ move ] = a_output[ move - 1U ];
+        }
+        a_output[ position ] = *candidate;
+        if( result_count < a_capacity )
+        {
+            ++result_count;
+        }
+    }
+    return result_count;
 }
 
 static uint32_t current_time_ms( void )
@@ -240,28 +339,6 @@ static void expire_stale_devices( uint32_t a_now_ms )
     }
 }
 
-static int compare_vendor_name( const void *a_left, const void *a_right )
-{
-    const observation_vendor_count_t *left = a_left;
-    const observation_vendor_count_t *right = a_right;
-    return strcmp( left->name, right->name );
-}
-
-static int compare_vendor_count( const void *a_left, const void *a_right )
-{
-    const observation_vendor_count_t *left = a_left;
-    const observation_vendor_count_t *right = a_right;
-    if( left->count > right->count )
-    {
-        return -1;
-    }
-    if( left->count < right->count )
-    {
-        return 1;
-    }
-    return strcmp( left->name, right->name );
-}
-
 esp_err_t observation_store_init( void )
 {
     devices = NULL;
@@ -327,7 +404,7 @@ bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new
             wifi_last_seen = a_observation->last_seen_ms;
         }
         if( ( RF_SOURCE_BLE == a_observation->last_source ) ||
-            ( 0U != ( a_observation->source_mask & RF_SOURCE_BIT( RF_SOURCE_BLE ) ) ) )
+            ( 0U != ( a_observation->source_mask & RF_SOURCE_BIT( RF_SOURCE_BLE ) ) )
         {
             ble_last_seen = a_observation->last_seen_ms;
         }
@@ -473,7 +550,10 @@ size_t observation_store_summary( observation_store_summary_t *a_summary,
 
     const bool collect_vendors = ( NULL != a_vendors ) && ( 0U != a_vendor_capacity ) &&
                                  ( 0U != device_count ) && ensure_summary_capacity( device_count );
-    size_t vendor_observation_count = 0U;
+    if( collect_vendors )
+    {
+        memset( summary_vendors, 0, summary_vendor_capacity * sizeof( *summary_vendors ) );
+    }
 
     for( size_t i = 0U; i < device_count; ++i )
     {
@@ -499,46 +579,10 @@ size_t observation_store_summary( observation_store_summary_t *a_summary,
         }
         if( collect_vendors )
         {
-            strlcpy( summary_vendors[ vendor_observation_count ].name,
-                     device->vendor,
-                     sizeof( summary_vendors[ vendor_observation_count ].name ) );
-            summary_vendors[ vendor_observation_count ].count = 1U;
-            ++vendor_observation_count;
+            count_vendor( device->vendor );
         }
     }
     xSemaphoreGive( store_lock );
 
-    if( !collect_vendors || ( 0U == vendor_observation_count ) )
-    {
-        return 0U;
-    }
-
-    qsort( summary_vendors,
-           vendor_observation_count,
-           sizeof( *summary_vendors ),
-           compare_vendor_name );
-
-    size_t unique_count = 0U;
-    for( size_t i = 0U; i < vendor_observation_count; ++i )
-    {
-        if( ( 0U == unique_count ) || ( 0 != strcmp( summary_vendors[ unique_count - 1U ].name,
-                                                     summary_vendors[ i ].name ) ) )
-        {
-            if( unique_count != i )
-            {
-                summary_vendors[ unique_count ] = summary_vendors[ i ];
-            }
-            summary_vendors[ unique_count ].count = 1U;
-            ++unique_count;
-        }
-        else
-        {
-            ++summary_vendors[ unique_count - 1U ].count;
-        }
-    }
-
-    qsort( summary_vendors, unique_count, sizeof( *summary_vendors ), compare_vendor_count );
-    const size_t result = ( unique_count < a_vendor_capacity ) ? unique_count : a_vendor_capacity;
-    memcpy( a_vendors, summary_vendors, result * sizeof( *a_vendors ) );
-    return result;
+    return collect_vendors ? select_top_vendors( a_vendors, a_vendor_capacity ) : 0U;
 }
