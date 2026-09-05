@@ -92,7 +92,7 @@ Formatting-only changes should not intentionally alter behavior. If cleanup expo
 
 ## Generated files
 
-Generated source such as `main/oui_database.inc` and `main/surveillance_signatures.inc` is exempt from hand-formatting rules. The generator must produce deterministic, readable output and the generated file should not be edited manually.
+Generated source such as `main/services/wireless/oui_database.inc`, `main/services/wireless/oui_database_extended.inc`, and `main/services/wireless/surveillance_signatures.inc` is exempt from hand-formatting rules. The generator must produce deterministic, readable output and the generated file should not be edited manually.
 
 ## Python and YAML
 
