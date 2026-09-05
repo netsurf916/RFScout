@@ -1,6 +1,6 @@
 /**
     app_descriptor.h : RFScout application descriptor contract
-    Description: Defines compiled-in app metadata and platform capability dependencies.
+    Description: Defines compiled-in app metadata, runtime dispatch, and platform capability dependencies.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -9,6 +9,8 @@
 
 #ifndef _RFSCOUT_APP_DESCRIPTOR_H_
 #define _RFSCOUT_APP_DESCRIPTOR_H_
+
+#include "platform.h"
 
 #include "esp_err.h"
 
@@ -47,10 +49,45 @@ typedef enum
     RFSCOUT_APP_SERVICE_RECORDER = 1U << 4
 } rfscout_app_service_mask_t;
 
+/** @brief Runtime events delivered by the application manager to the active app module. */
+typedef enum
+{
+    RFSCOUT_APP_RUNTIME_ENTER = 0,
+    RFSCOUT_APP_RUNTIME_ACTIVATE,
+    RFSCOUT_APP_RUNTIME_INPUT,
+    RFSCOUT_APP_RUNTIME_POLL,
+    RFSCOUT_APP_RUNTIME_LEAVE
+} rfscout_app_runtime_event_type_t;
+
+/** @brief One application-runtime dispatch. */
+typedef struct
+{
+    rfscout_app_runtime_event_type_t type;
+    int64_t now_us;
+    rfscout_input_event_t input;
+} rfscout_app_runtime_event_t;
+
+/** @brief Result returned by an app runtime handler. */
+typedef enum
+{
+    /** The event was not app-local; core may apply its global fallback. */
+    RFSCOUT_APP_RUNTIME_IGNORED = 0,
+    /** The app consumed the event or completed its periodic work. */
+    RFSCOUT_APP_RUNTIME_HANDLED,
+    /** The app lost a required runtime dependency and requests a transition to Home. */
+    RFSCOUT_APP_RUNTIME_REQUEST_HOME
+} rfscout_app_runtime_result_t;
+
+typedef rfscout_app_runtime_result_t ( *rfscout_app_runtime_handler_t )(
+    const rfscout_app_runtime_event_t *a_event );
+
 /**
- * @brief Self-contained metadata exported by each compiled-in application module.
+ * @brief Self-contained metadata and runtime contract exported by each compiled-in app module.
  * @details Probe implementations may use platform/service APIs but must leave hardware inactive.
  *          Service lifetime is declared as capability bits and remains implemented by the platform.
+ *          Runtime handlers own app-local UI/state but not driver teardown or memory reachability.
+ *          Leave hooks are optional and reserved for reversible semantic state needed on transition
+ *          abort; ordinary apps should leave them NULL.
  */
 typedef struct
 {
@@ -60,6 +97,9 @@ typedef struct
     esp_err_t ( *probe )( void );
     bool requires_activation;
     uint32_t services;
+    rfscout_app_runtime_handler_t runtime;
+    esp_err_t ( *prepare_leave )( void );
+    esp_err_t ( *reactivate_leave )( void );
 } rfscout_app_descriptor_t;
 
 #endif // _RFSCOUT_APP_DESCRIPTOR_H_
