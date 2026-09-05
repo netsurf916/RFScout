@@ -49,25 +49,18 @@ static rfscout_app_transition_diagnostics_t
 abort_transition( rfscout_app_transition_diagnostics_t a_diagnostics,
                   rfscout_app_transition_outcome_t a_outcome,
                   esp_err_t a_error,
-                  const rfscout_app_lifecycle_hooks_t *a_hooks,
                   int64_t a_started_us )
 {
     a_diagnostics.outcome = a_outcome;
     a_diagnostics.error = a_error;
 
     const esp_err_t session_result = app_session_abort_close();
-    esp_err_t app_result = ESP_OK;
-    if( NULL != a_hooks->reactivate )
-    {
-        app_result = a_hooks->reactivate( a_hooks->context );
-    }
-
-    if( ( ESP_OK != session_result ) || ( ESP_OK != app_result ) )
+    if( ESP_OK != session_result )
     {
         a_diagnostics.outcome = RFSCOUT_APP_TRANSITION_ABORTED_REACTIVATION;
-        a_diagnostics.error = ( ESP_OK != session_result ) ? session_result : app_result;
+        a_diagnostics.error = session_result;
         ESP_LOGE( TAG,
-                  "source app reactivation failed after aborted transition from=%d to=%d",
+                  "source service reactivation failed after aborted transition from=%d to=%d",
                   (int)a_diagnostics.from,
                   (int)a_diagnostics.to );
     }
@@ -141,7 +134,7 @@ rfscout_app_transition_diagnostics_t app_lifecycle_transition(
             result = ESP_ERR_INVALID_STATE;
         }
         return abort_transition(
-            diagnostics, RFSCOUT_APP_TRANSITION_ABORTED_PREPARE, result, a_hooks, started_us );
+            diagnostics, RFSCOUT_APP_TRANSITION_ABORTED_PREPARE, result, started_us );
     }
 
     if( NULL != a_hooks->commit )
