@@ -61,6 +61,8 @@ static const char *source_name( uint8_t a_source )
             return "AUD";
         case RFSCOUT_APP_THERMAL:
             return "THM";
+        case RFSCOUT_APP_AUDIO_SPECTRUM:
+            return "SPC";
         case RFSCOUT_APP_COUNT:
         default:
             return "???";
