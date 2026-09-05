@@ -1,0 +1,174 @@
+name: Apply internal storage event update
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/internal-config-storage
+      - name: Apply event changes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('main/event.h')
+          s = p.read_text()
+          s = s.replace('    RFSCOUT_EVENT_STORAGE_UNMOUNTED,\n    RFSCOUT_EVENT_APP_AVAILABLE,', '''    RFSCOUT_EVENT_STORAGE_UNMOUNTED,
+    RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNTED,
+    RFSCOUT_EVENT_INTERNAL_STORAGE_FORMATTED,
+    RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED,
+    RFSCOUT_EVENT_CONFIG_IMPORTED,
+    RFSCOUT_EVENT_CONFIG_DEFAULTED,
+    RFSCOUT_EVENT_APP_AVAILABLE,''')
+          p.write_text(s)
+
+          p = Path('main/system_events.c')
+          s = p.read_text()
+          s = s.replace('''        case RFSCOUT_EVENT_STORAGE_UNMOUNTED:\n        case RFSCOUT_EVENT_APP_AVAILABLE:''', '''        case RFSCOUT_EVENT_STORAGE_UNMOUNTED:
+        case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNTED:
+        case RFSCOUT_EVENT_INTERNAL_STORAGE_FORMATTED:
+        case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED:
+        case RFSCOUT_EVENT_CONFIG_IMPORTED:
+        case RFSCOUT_EVENT_CONFIG_DEFAULTED:
+        case RFSCOUT_EVENT_APP_AVAILABLE:''')
+          s = s.replace('''        RFSCOUT_EVENT_STORAGE_MOUNT_FAILED == a_event->type )''', '''        RFSCOUT_EVENT_STORAGE_MOUNT_FAILED == a_event->type ||
+        RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED == a_event->type )''')
+          # Internal startup/config events belong in history but should not wake/notify the user.
+          s = s.replace('''        case RFSCOUT_EVENT_STORAGE_UNMOUNTED:\n        case RFSCOUT_EVENT_APP_AVAILABLE:\n        case RFSCOUT_EVENT_APP_UNAVAILABLE:\n        case RFSCOUT_EVENT_WARNING:''', '''        case RFSCOUT_EVENT_STORAGE_UNMOUNTED:
+        case RFSCOUT_EVENT_APP_AVAILABLE:
+        case RFSCOUT_EVENT_APP_UNAVAILABLE:
+        case RFSCOUT_EVENT_WARNING:''', 1)
+          marker = '''        case RFSCOUT_EVENT_STORAGE_UNMOUNTED:\n            snprintf( a_title, a_title_size, "SD CARD" );\n            snprintf( a_detail, a_detail_size, "UNMOUNTED" );\n            break;'''
+          replacement = marker + '''
+        case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNTED:
+            snprintf( a_title, a_title_size, "INTERNAL STORAGE" );
+            snprintf( a_detail, a_detail_size, "MOUNTED" );
+            break;
+        case RFSCOUT_EVENT_INTERNAL_STORAGE_FORMATTED:
+            snprintf( a_title, a_title_size, "INTERNAL STORAGE" );
+            snprintf( a_detail, a_detail_size, "FORMATTED" );
+            break;
+        case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED:
+            snprintf( a_title, a_title_size, "INTERNAL STORAGE" );
+            snprintf( a_detail, a_detail_size, "MOUNT FAILED" );
+            break;
+        case RFSCOUT_EVENT_CONFIG_IMPORTED:
+            snprintf( a_title, a_title_size, "CONFIG" );
+            snprintf( a_detail, a_detail_size, "IMPORTED FROM SD" );
+            break;
+        case RFSCOUT_EVENT_CONFIG_DEFAULTED:
+            snprintf( a_title, a_title_size, "CONFIG" );
+            snprintf( a_detail, a_detail_size, "DEFAULTS RESTORED" );
+            break;'''
+          if marker not in s:
+              raise SystemExit('render marker not found')
+          s = s.replace(marker, replacement)
+          p.write_text(s)
+
+          p = Path('main/config_store.c')
+          s = p.read_text()
+          s = s.replace('#include "device_config.h"\n#include "storage.h"', '#include "device_config.h"\n#include "event.h"\n#include "storage.h"')
+          old = '''    const esp_vfs_littlefs_conf_t config = {
+        .base_path = RFSCOUT_INTERNAL_CONFIG_ROOT,
+        .partition_label = "storage",
+        .format_if_mount_failed = true,
+        .dont_mount = false,
+    };
+    const esp_err_t result = esp_vfs_littlefs_register( &config );
+    if( ESP_OK != result )
+    {
+        ESP_LOGE( TAG, "internal LittleFS mount failed: %s", esp_err_to_name( result ) );
+        return result;
+    }
+
+    available = true;'''
+          new = '''    const esp_vfs_littlefs_conf_t config = {
+        .base_path = RFSCOUT_INTERNAL_CONFIG_ROOT,
+        .partition_label = "storage",
+        .format_if_mount_failed = false,
+        .dont_mount = false,
+    };
+    esp_err_t result = esp_vfs_littlefs_register( &config );
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG,
+                  "internal LittleFS mount failed; attempting format: %s",
+                  esp_err_to_name( result ) );
+        result = esp_littlefs_format( config.partition_label );
+        if( ESP_OK == result )
+        {
+            rfscout_event_emit( RFSCOUT_EVENT_INTERNAL_STORAGE_FORMATTED,
+                                RFSCOUT_EVENT_SOURCE_SYSTEM,
+                                (int32_t)ESP_OK );
+            result = esp_vfs_littlefs_register( &config );
+        }
+    }
+    if( ESP_OK != result )
+    {
+        rfscout_event_emit( RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED,
+                            RFSCOUT_EVENT_SOURCE_SYSTEM,
+                            (int32_t)result );
+        ESP_LOGE( TAG, "internal LittleFS mount failed: %s", esp_err_to_name( result ) );
+        return result;
+    }
+
+    available = true;
+    rfscout_event_emit( RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNTED,
+                        RFSCOUT_EVENT_SOURCE_SYSTEM,
+                        (int32_t)ESP_OK );'''
+          if old not in s:
+              raise SystemExit('config_store mount block not found')
+          s = s.replace(old, new)
+          p.write_text(s)
+
+          p = Path('main/device_config.c')
+          s = p.read_text()
+          if '#include "event.h"' not in s:
+              s = s.replace('#include "device_config.h"', '#include "device_config.h"\n\n#include "event.h"', 1)
+          old = '''            else
+            {
+                config_upgrade_pending = false;
+            }'''
+          new = '''            else
+            {
+                config_upgrade_pending = false;
+                if( config_store_imported() )
+                {
+                    rfscout_event_emit( RFSCOUT_EVENT_CONFIG_IMPORTED,
+                                        RFSCOUT_EVENT_SOURCE_SYSTEM,
+                                        (int32_t)RFSCOUT_CONFIG_SCHEMA_VERSION );
+                }
+            }'''
+          if old not in s:
+              raise SystemExit('normalization block not found')
+          s = s.replace(old, new, 1)
+          old = '''    return device_config_save( false, 0, NULL );
+}'''
+          new = '''    const esp_err_t save_result = device_config_save( false, 0, NULL );
+    if( ESP_OK == save_result )
+    {
+        rfscout_event_emit( RFSCOUT_EVENT_CONFIG_DEFAULTED,
+                            RFSCOUT_EVENT_SOURCE_SYSTEM,
+                            (int32_t)RFSCOUT_CONFIG_SCHEMA_VERSION );
+    }
+    return save_result;
+}'''
+          # Replace only the occurrence at end of device_config_init, nearest preceding warning text.
+          idx = s.find('internal configuration invalid; replacing with defaults')
+          pos = s.find(old, idx)
+          if pos < 0:
+              raise SystemExit('default save block not found')
+          s = s[:pos] + s[pos:].replace(old, new, 1)
+          p.write_text(s)
+          PY
+          python3 tools/check_format.py --all --fix
+          git rm .github/workflows/system-event-update-temp.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add main/event.h main/system_events.c main/config_store.c main/device_config.c
+          git commit -m "feat: report internal persistence in system events"
+          git push origin HEAD:feature/internal-config-storage
