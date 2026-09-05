@@ -61,9 +61,8 @@ static rfscout_app_runtime_result_t home_runtime( const rfscout_app_runtime_even
     if( menu_active )
     {
         const bool pressed = RFSCOUT_INPUT_SELECT == a_event->input.type;
-        const int delta = RFSCOUT_INPUT_NAVIGATION == a_event->input.type
-                              ? (int)a_event->input.value
-                              : 0;
+        const int delta =
+            RFSCOUT_INPUT_NAVIGATION == a_event->input.type ? (int)a_event->input.value : 0;
         if( device_view_input( pressed, delta ) )
         {
             menu_active = false;
