@@ -781,8 +781,7 @@ static esp_err_t load_file( void )
     }
 
     const cJSON *version = cJSON_GetObjectItemCaseSensitive( root, "version" );
-    if( !cJSON_IsNumber( version ) ||
-        version->valueint != (int)RFSCOUT_CONFIG_SCHEMA_VERSION )
+    if( !cJSON_IsNumber( version ) || version->valueint != (int)RFSCOUT_CONFIG_SCHEMA_VERSION )
     {
         cJSON_Delete( root );
         discard_invalid_config();
@@ -989,9 +988,8 @@ esp_err_t device_config_init( void )
             const esp_err_t sync_result = config_store_sync_example();
             if( ESP_OK != sync_result )
             {
-                ESP_LOGW( TAG,
-                          "configuration example sync failed: %s",
-                          esp_err_to_name( sync_result ) );
+                ESP_LOGW(
+                    TAG, "configuration example sync failed: %s", esp_err_to_name( sync_result ) );
             }
         }
         ESP_LOGI( TAG, "loaded %s", RFSCOUT_INTERNAL_CONFIG_PATH );
@@ -1574,9 +1572,8 @@ esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a
         const esp_err_t sync_result = config_store_sync_example();
         if( ESP_OK != sync_result )
         {
-            ESP_LOGW( TAG,
-                      "configuration example sync failed: %s",
-                      esp_err_to_name( sync_result ) );
+            ESP_LOGW(
+                TAG, "configuration example sync failed: %s", esp_err_to_name( sync_result ) );
         }
     }
     return result;
