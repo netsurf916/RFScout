@@ -16,6 +16,7 @@
 #include "esp_log.h"
 
 #include <stddef.h>
+#include <string.h>
 
 #define RECORDER_REFRESH_INTERVAL_US 100000LL
 #define RECORDER_DEPENDENCY_INTERVAL_US 500000LL
@@ -31,6 +32,8 @@ static bool browser_active;
 static bool delete_mode;
 static bool delete_confirm;
 static unsigned browser_item;
+static char playback_name[ RFSCOUT_RECORDER_NAME_MAX ];
+static uint8_t playback_volume = 50U;
 static rfscout_recorder_state_t last_state = RFSCOUT_RECORDER_IDLE;
 static int64_t last_refresh_us;
 static int64_t last_dependency_probe_us;
@@ -58,11 +61,12 @@ static void render( void )
 {
     if( browser_active )
     {
-        recorder_view_browser( browser_item, delete_mode, delete_confirm );
+        recorder_view_browser(
+            browser_item, delete_mode, delete_confirm, playback_name, playback_volume );
     }
     else
     {
-        recorder_view_landing();
+        recorder_view_landing( playback_name, playback_volume );
     }
 }
 
@@ -79,6 +83,7 @@ static void stop_playback( void )
 {
     recorder_stop();
     save_volume();
+    playback_name[ 0 ] = '\0';
     render();
 }
 
@@ -126,7 +131,8 @@ static bool handle_active_operation( const rfscout_input_event_t *a_input )
             if( ( volume != old_volume ) &&
                 ( ESP_OK == device_config_set_recorder_volume( (uint8_t)volume ) ) )
             {
-                recorder_set_playback_volume( (uint8_t)volume );
+                playback_volume = (uint8_t)volume;
+                recorder_set_playback_volume( playback_volume );
                 emit_event( RFSCOUT_EVENT_NAVIGATE, a_input->value > 0 ? 1 : -1 );
             }
             render();
@@ -228,10 +234,21 @@ static void handle_browser_input( const rfscout_input_event_t *a_input )
         }
 
         const size_t index = (size_t)( browser_item - RECORDER_BROWSER_FILE_BASE );
+        const rfscout_recording_t *recording = recorder_file( index );
         const device_config_t *config = device_config_get();
-        const uint8_t volume = NULL != config ? config->recorder_volume_percent : 50U;
-        if( ESP_OK != recorder_start_playback( index, volume ) )
+        playback_volume = NULL != config ? config->recorder_volume_percent : 50U;
+        if( NULL != recording )
         {
+            strncpy( playback_name, recording->name, sizeof( playback_name ) - 1U );
+            playback_name[ sizeof( playback_name ) - 1U ] = '\0';
+        }
+        else
+        {
+            playback_name[ 0 ] = '\0';
+        }
+        if( ESP_OK != recorder_start_playback( index, playback_volume ) )
+        {
+            playback_name[ 0 ] = '\0';
             ESP_LOGW( TAG, "could not start playback" );
         }
         render();
@@ -295,6 +312,7 @@ static void poll_recorder( int64_t a_now_us )
         if( ( RFSCOUT_RECORDER_PLAYING == last_state ) && ( RFSCOUT_RECORDER_IDLE == current ) )
         {
             save_volume();
+            playback_name[ 0 ] = '\0';
         }
         if( ( RFSCOUT_RECORDER_SAVING == last_state ) && ( RFSCOUT_RECORDER_IDLE == current ) )
         {
@@ -325,6 +343,9 @@ static rfscout_app_runtime_result_t recorder_runtime( const rfscout_app_runtime_
         delete_mode = false;
         delete_confirm = false;
         browser_item = RECORDER_BROWSER_BACK;
+        playback_name[ 0 ] = '\0';
+        const device_config_t *config = device_config_get();
+        playback_volume = NULL != config ? config->recorder_volume_percent : 50U;
         last_state = RFSCOUT_RECORDER_IDLE;
         last_refresh_us = 0;
         last_dependency_probe_us = 0;
@@ -340,6 +361,7 @@ static rfscout_app_runtime_result_t recorder_runtime( const rfscout_app_runtime_
         browser_active = false;
         delete_mode = false;
         delete_confirm = false;
+        playback_name[ 0 ] = '\0';
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
     if( ( RFSCOUT_APP_RUNTIME_INPUT == a_event->type ) ||
