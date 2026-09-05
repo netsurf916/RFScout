@@ -17,6 +17,7 @@
 #include "display_idle.h"
 #include "event.h"
 #include "feedback.h"
+#include "input.h"
 #include "log_writer.h"
 #include "notification.h"
 #include "notification_preferences.h"
@@ -137,10 +138,6 @@ static void on_observation( rf_device_t *a_observation )
         return;
     }
 
-    /* An ordinary newly observed WiFi/BLE device gets the lightweight general
-       detection cue. Classified surveillance instead uses its app-specific
-       notification (for example Camera -> Morse C) so one observation does not
-       produce both sounds. */
     const rfscout_wifi_detection_event_t detection_event =
         ( RF_SOURCE_BLE == a_observation->last_source ) ? RFSCOUT_WIFI_DETECTION_BLE_DEVICE
                                                         : RFSCOUT_WIFI_DETECTION_WIFI_DEVICE;
@@ -166,8 +163,9 @@ void app_main( void )
     ESP_ERROR_CHECK( observation_store_init() );
     ESP_ERROR_CHECK( surveillance_history_init() );
     ESP_ERROR_CHECK( platform_init() );
-    ESP_ERROR_CHECK( power_init() );
     ESP_ERROR_CHECK( system_events_init() );
+    ESP_ERROR_CHECK( input_init() );
+    ESP_ERROR_CHECK( power_init() );
 
     result = notification_preferences_init();
     if( ESP_OK != result )
@@ -233,9 +231,6 @@ void app_main( void )
     }
 
     ESP_ERROR_CHECK( device_time_init() );
-
-    /* Initialize reusable radio services before app selection. Neither monitor
-       starts acquisition until the app manager activates WiFi/BT. */
     ESP_ERROR_CHECK( radio_monitor_init( on_observation ) );
     ESP_ERROR_CHECK( ble_monitor_init( on_observation ) );
 
@@ -265,15 +260,10 @@ void app_main( void )
 
     while( true )
     {
-        /* Display wake interception runs before semantic input processing. Applications
-           continue polling/rendering normally while LCD output is disabled. */
+        /* Display wake interception runs before semantic input dispatch. */
         display_idle_poll();
-        platform_poll();
+        input_poll();
 
-        /* Refresh telemetry and evaluate protective policy before power_poll() is
-           allowed to execute an expired transition. During a pending low-battery
-           countdown the policy forces a fresh charger sample as an additional
-           execution-time guard. */
         battery_poll();
         power_policy_poll();
         power_poll();
@@ -284,8 +274,6 @@ void app_main( void )
         status_bar_poll();
         battery_indicator_poll();
 
-        /* Presentation remains periodic for every app, including static Home. The display layer
-         * skips the LCD transfer when neither framebuffer nor overlay state was invalidated. */
         (void)display_present();
 
         app_logging_poll();
