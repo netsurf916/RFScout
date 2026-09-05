@@ -20,6 +20,9 @@ static size_t device_count;
 static size_t device_capacity;
 static observation_vendor_count_t *summary_vendors;
 static size_t summary_vendor_capacity;
+static size_t *summary_vendor_slots;
+static size_t summary_vendor_slot_capacity;
+static size_t summary_vendor_count;
 static uint32_t store_generation;
 static SemaphoreHandle_t store_lock;
 static observation_store_event_callback_t event_callback;
@@ -38,6 +41,9 @@ static void synchronize_session_store( void )
     device_capacity = 0U;
     summary_vendors = NULL;
     summary_vendor_capacity = 0U;
+    summary_vendor_slots = NULL;
+    summary_vendor_slot_capacity = 0U;
+    summary_vendor_count = 0U;
     store_generation = generation;
 }
 
@@ -88,37 +94,73 @@ static bool ensure_summary_capacity( size_t a_required )
         required_slots *= 2U;
     }
 
-    if( required_slots <= summary_vendor_capacity )
+    if( required_slots > summary_vendor_capacity )
     {
-        return true;
-    }
-
-    size_t capacity = summary_vendor_capacity;
-    if( 0U == capacity )
-    {
-        capacity = RFSCOUT_OBSERVATION_INITIAL_CAPACITY * 2U;
-    }
-    while( capacity < required_slots )
-    {
-        if( capacity > ( SIZE_MAX / 2U ) )
+        size_t capacity = summary_vendor_capacity;
+        if( 0U == capacity )
         {
-            capacity = required_slots;
-            break;
+            capacity = RFSCOUT_OBSERVATION_INITIAL_CAPACITY * 2U;
         }
-        capacity *= 2U;
+        while( capacity < required_slots )
+        {
+            if( capacity > ( SIZE_MAX / 2U ) )
+            {
+                capacity = required_slots;
+                break;
+            }
+            capacity *= 2U;
+        }
+
+        observation_vendor_count_t *replacement =
+            app_session_resize( summary_vendors, capacity, sizeof( *summary_vendors ) );
+        if( NULL == replacement )
+        {
+            return false;
+        }
+
+        summary_vendors = replacement;
+        summary_vendor_capacity = capacity;
+        store_generation = app_session_generation();
     }
 
-    observation_vendor_count_t *replacement =
-        app_session_resize( summary_vendors, capacity, sizeof( *summary_vendors ) );
-    if( NULL == replacement )
+    if( a_required > summary_vendor_slot_capacity )
     {
-        return false;
+        size_t capacity = summary_vendor_slot_capacity;
+        if( 0U == capacity )
+        {
+            capacity = RFSCOUT_OBSERVATION_INITIAL_CAPACITY;
+        }
+        while( capacity < a_required )
+        {
+            if( capacity > ( SIZE_MAX / 2U ) )
+            {
+                capacity = a_required;
+                break;
+            }
+            capacity *= 2U;
+        }
+
+        size_t *replacement = app_session_resize( summary_vendor_slots, capacity, sizeof( *summary_vendor_slots ) );
+        if( NULL == replacement )
+        {
+            return false;
+        }
+
+        summary_vendor_slots = replacement;
+        summary_vendor_slot_capacity = capacity;
+        store_generation = app_session_generation();
     }
 
-    summary_vendors = replacement;
-    summary_vendor_capacity = capacity;
-    store_generation = app_session_generation();
     return true;
+}
+
+static void clear_summary_vendors( void )
+{
+    for( size_t i = 0U; i < summary_vendor_count; ++i )
+    {
+        memset( &summary_vendors[ summary_vendor_slots[ i ] ], 0, sizeof( *summary_vendors ) );
+    }
+    summary_vendor_count = 0U;
 }
 
 static uint32_t vendor_hash( const char *a_name )
@@ -147,6 +189,10 @@ static void count_vendor( const char *a_name )
         {
             strlcpy( entry->name, a_name, sizeof( entry->name ) );
             entry->count = 1U;
+            if( summary_vendor_count < summary_vendor_slot_capacity )
+            {
+                summary_vendor_slots[ summary_vendor_count++ ] = slot;
+            }
             return;
         }
         if( 0 == strcmp( entry->name, a_name ) )
@@ -178,13 +224,9 @@ static size_t select_top_vendors( observation_vendor_count_t *a_output, size_t a
     size_t result_count = 0U;
     memset( a_output, 0, a_capacity * sizeof( *a_output ) );
 
-    for( size_t i = 0U; i < summary_vendor_capacity; ++i )
+    for( size_t i = 0U; i < summary_vendor_count; ++i )
     {
-        const observation_vendor_count_t *candidate = &summary_vendors[ i ];
-        if( 0U == candidate->count )
-        {
-            continue;
-        }
+        const observation_vendor_count_t *candidate = &summary_vendors[ summary_vendor_slots[ i ] ];
 
         size_t position = 0U;
         while( ( position < result_count ) && !vendor_precedes( candidate, &a_output[ position ] ) )
@@ -346,6 +388,9 @@ esp_err_t observation_store_init( void )
     device_capacity = 0U;
     summary_vendors = NULL;
     summary_vendor_capacity = 0U;
+    summary_vendor_slots = NULL;
+    summary_vendor_slot_capacity = 0U;
+    summary_vendor_count = 0U;
     store_generation = app_session_generation();
     event_callback = NULL;
     event_context = NULL;
@@ -548,12 +593,9 @@ size_t observation_store_summary( observation_store_summary_t *a_summary,
     memset( a_summary, 0, sizeof( *a_summary ) );
     a_summary->device_count = device_count;
 
+    clear_summary_vendors();
     const bool collect_vendors = ( NULL != a_vendors ) && ( 0U != a_vendor_capacity ) &&
                                  ( 0U != device_count ) && ensure_summary_capacity( device_count );
-    if( collect_vendors )
-    {
-        memset( summary_vendors, 0, summary_vendor_capacity * sizeof( *summary_vendors ) );
-    }
 
     for( size_t i = 0U; i < device_count; ++i )
     {
