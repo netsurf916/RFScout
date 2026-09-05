@@ -61,6 +61,8 @@ Usable external PSRAM is a supported-platform requirement. RFScout does not sile
 
 Physical controls are translated to semantic input before app handling. Only accepted semantic actions/state changes emit feedback events; raw encoder/contact movement does not itself imply sound.
 
+On the current one-center-button target, completed button edges are captured independently from the main presentation loop so a click can survive a temporary synchronous LCD stall. Hold timing is part of the semantic input contract: approximately 0.8 to under 1.5 seconds produces `LONG_SELECT`, 1.5 to under 2 seconds produces `BACK`, and a two-second hold toggles the global input lock. The final release after a lock-toggle hold is consumed.
+
 Common settings use one interaction model:
 
 - **Action** — center executes immediately.
