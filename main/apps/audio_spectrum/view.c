@@ -55,8 +55,7 @@ void audio_spectrum_view_render( uint8_t a_gain_db, bool a_settings )
             const int height = (int)bins[ index ] * graph_h / 100;
             if( height > 0 )
             {
-                display_fill_rect(
-                    x, graph_y + graph_h - height, 2, height, theme->graph_primary );
+                display_fill_rect( x, graph_y + graph_h - height, 2, height, theme->graph_primary );
             }
         }
     }

@@ -1126,8 +1126,7 @@ static void monitor_worker( void *a_argument )
 esp_err_t recorder_start_monitor( uint8_t a_gain_db )
 {
     const rfscout_recorder_state_t current = recorder_state();
-    if( ( RFSCOUT_RECORDER_IDLE != current ) &&
-        ( RFSCOUT_RECORDER_NO_STORAGE != current ) )
+    if( ( RFSCOUT_RECORDER_IDLE != current ) && ( RFSCOUT_RECORDER_NO_STORAGE != current ) )
         return ESP_ERR_INVALID_STATE;
     recorder_set_input_gain_db( a_gain_db );
     memset( monitor_spectrum, 0, sizeof( monitor_spectrum ) );

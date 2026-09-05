@@ -85,7 +85,8 @@ void recorder_view_landing( void )
     else if( RFSCOUT_RECORDER_ERROR == state )
     {
         display_draw_text( UI_LAYOUT_LEFT_X, 42, "RECORDER ERROR", theme->error, 2U );
-        display_draw_text( UI_LAYOUT_LEFT_X, 76, "Check SD card and microphone", theme->divider, 1U );
+        display_draw_text(
+            UI_LAYOUT_LEFT_X, 76, "Check SD card and microphone", theme->divider, 1U );
     }
     else
     {

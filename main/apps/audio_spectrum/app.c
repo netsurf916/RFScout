@@ -41,8 +41,7 @@ static void render( void )
     audio_spectrum_view_render( gain_db, settings_active );
 }
 
-static rfscout_app_runtime_result_t
-spectrum_runtime( const rfscout_app_runtime_event_t *a_event )
+static rfscout_app_runtime_result_t spectrum_runtime( const rfscout_app_runtime_event_t *a_event )
 {
     if( NULL == a_event )
     {
@@ -64,7 +63,8 @@ spectrum_runtime( const rfscout_app_runtime_event_t *a_event )
         const esp_err_t result = recorder_start_monitor( gain_db );
         if( ESP_OK != result )
         {
-            ESP_LOGW( TAG, "could not start audio spectrum monitor: %s", esp_err_to_name( result ) );
+            ESP_LOGW(
+                TAG, "could not start audio spectrum monitor: %s", esp_err_to_name( result ) );
             return RFSCOUT_APP_RUNTIME_REQUEST_HOME;
         }
         monitor_started = true;
@@ -93,9 +93,9 @@ spectrum_runtime( const rfscout_app_runtime_event_t *a_event )
             }
             if( RFSCOUT_INPUT_NAVIGATION == a_event->input.type )
             {
-                int next = (int)gain_db +
-                           ( a_event->input.value > 0 ? (int)SPECTRUM_GAIN_STEP_DB
-                                                    : -(int)SPECTRUM_GAIN_STEP_DB );
+                int next =
+                    (int)gain_db + ( a_event->input.value > 0 ? (int)SPECTRUM_GAIN_STEP_DB
+                                                              : -(int)SPECTRUM_GAIN_STEP_DB );
                 if( next < (int)SPECTRUM_GAIN_MIN_DB )
                 {
                     next = (int)SPECTRUM_GAIN_MIN_DB;
@@ -109,8 +109,7 @@ spectrum_runtime( const rfscout_app_runtime_event_t *a_event )
                     gain_db = (uint8_t)next;
                     recorder_set_input_gain_db( gain_db );
                     render();
-                    emit_event(
-                        RFSCOUT_EVENT_NAVIGATE, a_event->input.value > 0 ? 1 : -1 );
+                    emit_event( RFSCOUT_EVENT_NAVIGATE, a_event->input.value > 0 ? 1 : -1 );
                 }
                 return RFSCOUT_APP_RUNTIME_HANDLED;
             }

@@ -181,8 +181,8 @@ static void handle_browser_input( const rfscout_input_event_t *a_input )
                 const unsigned count = RECORDER_BROWSER_FILE_BASE + (unsigned)recorder_file_count();
                 if( browser_item >= count )
                 {
-                    browser_item = count > RECORDER_BROWSER_FILE_BASE ? count - 1U
-                                                                      : RECORDER_BROWSER_NEW;
+                    browser_item =
+                        count > RECORDER_BROWSER_FILE_BASE ? count - 1U : RECORDER_BROWSER_NEW;
                 }
             }
             delete_mode = false;
@@ -298,8 +298,8 @@ static void poll_recorder( int64_t a_now_us )
         }
         if( ( RFSCOUT_RECORDER_SAVING == last_state ) && ( RFSCOUT_RECORDER_IDLE == current ) )
         {
-            browser_item = recorder_file_count() > 0U ? RECORDER_BROWSER_FILE_BASE
-                                                       : RECORDER_BROWSER_NEW;
+            browser_item =
+                recorder_file_count() > 0U ? RECORDER_BROWSER_FILE_BASE : RECORDER_BROWSER_NEW;
         }
         last_state = current;
         last_refresh_us = a_now_us;
