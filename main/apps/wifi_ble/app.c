@@ -8,7 +8,7 @@
 
 const rfscout_app_descriptor_t rfscout_wifi_ble_app = {
     .id = RFSCOUT_APP_WIFI_BT,
-    .name = "WiFi / BLE",
+    .name = "WiFi / BT",
     .probe_policy = RFSCOUT_APP_PROBE_NONE,
     .probe = NULL,
     .requires_activation = true,
