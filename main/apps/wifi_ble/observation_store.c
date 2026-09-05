@@ -140,7 +140,8 @@ static bool ensure_summary_capacity( size_t a_required )
             capacity *= 2U;
         }
 
-        size_t *replacement = app_session_resize( summary_vendor_slots, capacity, sizeof( *summary_vendor_slots ) );
+        size_t *replacement =
+            app_session_resize( summary_vendor_slots, capacity, sizeof( *summary_vendor_slots ) );
         if( NULL == replacement )
         {
             return false;
