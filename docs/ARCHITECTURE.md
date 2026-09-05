@@ -162,11 +162,11 @@ Deep sleep stores only a small RTC-backed session envelope (currently active app
 
 RFScout separates device-owned durable state from removable bulk/interchange storage.
 
-The internal `storage` SPIFFS partition is mounted at `/internal`. `/internal/rfscout.json` is the sole durable authoritative configuration file. Configuration updates are written completely to `/internal/rfscout.json.tmp`, flushed, and then atomically renamed over the live file. A stale temporary is discarded on boot; RFScout does not retain internal backup, quarantine, or history copies. Missing, corrupt, or incompatible internal configuration is replaced with compiled defaults.
+The internal `storage` LittleFS partition is mounted at `/internal`. `/internal/rfscout.json` is the sole durable authoritative configuration file. Configuration updates are written completely to `/internal/rfscout.json.tmp`, flushed, and then atomically renamed over the live file. A stale temporary is discarded on boot; RFScout does not retain internal backup, quarantine, or history copies. Missing, corrupt, or incompatible internal configuration is replaced with compiled defaults.
 
 SD remains the removable/bulk-storage service. `/sdcard/rfscout.json` is a one-shot configuration import: a valid current-schema document is committed to internal flash before the import is deleted, while an invalid import is preserved as `/sdcard/rfscout.json.bad`. `/sdcard/rfscout-example.json` mirrors the authoritative internal file when SD is available and is rewritten only when its contents differ. Recorder WAV files remain under `/sdcard/audio/`, and rotating logs remain SD-only.
 
-The 16 MiB target flash allocates 8 MiB to the factory application and approximately 8 MiB to internal SPIFFS. Configuration currently consumes only the single live file plus its short-lived write temporary; the remaining capacity is intentionally available for a future system-owned persistent-record/database service rather than direct app filesystem ownership.
+The 16 MiB target flash allocates 8 MiB to the factory application and approximately 8 MiB to internal LittleFS. Configuration currently consumes only the single live file plus its short-lived write temporary; the remaining capacity is intentionally available for a future system-owned persistent-record/database service rather than direct app filesystem ownership.
 
 The conservative board-tested SD baseline is a FAT-compatible SanDisk card of 32 GB or less. The current board exposes no dedicated card-detect GPIO, so availability is established by successful mount/probe. Logging rotates `rfscout-00.log` through `rfscout-99.log` at up to 4 MiB each and attempts to preserve at least 64 MiB free.
 

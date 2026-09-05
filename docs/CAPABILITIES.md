@@ -115,7 +115,7 @@ LCD/microSD/CC1101/nRF24 share SPI resources; power telemetry/external sensors s
 
 Usable external **PSRAM is required**. App-scoped memory/session infrastructure is implemented: growable app-owned state can consume PSRAM during the session and is reclaimed after platform services prove they no longer reference it.
 
-The 16 MiB internal flash is split into an 8 MiB factory application partition and approximately 8 MiB of SPIFFS internal persistence. Configuration currently uses only one durable internal file plus its short-lived write temporary; the remaining capacity is reserved for future system-owned persistent records rather than direct app filesystem ownership.
+The 16 MiB internal flash is split into an 8 MiB factory application partition and approximately 8 MiB of LittleFS internal persistence. Configuration currently uses only one durable internal file plus its short-lived write temporary; the remaining capacity is reserved for future system-owned persistent records rather than direct app filesystem ownership.
 
 ## Not currently implemented
 

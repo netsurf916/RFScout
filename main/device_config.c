@@ -967,7 +967,7 @@ esp_err_t device_config_init( void )
     const esp_err_t result = load_file();
     if( ESP_OK == result )
     {
-        if( config_upgrade_pending )
+        if( config_store_imported() || config_upgrade_pending )
         {
             const esp_err_t upgrade_result = device_config_save( false, 0, NULL );
             if( ESP_OK != upgrade_result )

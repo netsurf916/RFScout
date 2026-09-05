@@ -85,11 +85,11 @@ Alert Morse maps are stored beneath their owning app and omitted above for brevi
 
 ## Authority, load, and save rules
 
-The internal SPIFFS partition is the single source of truth during normal operation. The durable live file is `/internal/rfscout.json`; no internal backup, quarantine, or history copies are retained.
+The internal LittleFS partition is the single source of truth during normal operation. The durable live file is `/internal/rfscout.json`; no internal backup, quarantine, or history copies are retained.
 
 Startup follows this order:
 
-1. mount internal SPIFFS;
+1. mount internal LittleFS;
 2. remove any stale internal write temporary and legacy development sidecars;
 3. if `/sdcard/rfscout.json` exists, validate it as a current-schema import;
 4. if valid, copy it to `/internal/rfscout.json.tmp`, flush it, and atomically rename it over the internal live file;
@@ -168,7 +168,7 @@ Wi-Fi and BLE source membership age independently in merged observations. Survei
 
 ## Internal flash, SD, Recorder files, and logging
 
-The 16 MiB flash layout reserves an 8 MiB factory application partition and the remaining approximately 8 MiB SPIFFS partition for internal persistence. Configuration currently uses only the single live JSON file (plus a short-lived write temporary); the remaining internal capacity is intentionally left available for future system-owned persistent records/database use.
+The 16 MiB flash layout reserves an 8 MiB factory application partition and the remaining approximately 8 MiB LittleFS partition for internal persistence. Configuration currently uses only the single live JSON file (plus a short-lived write temporary); the remaining internal capacity is intentionally left available for future system-owned persistent records/database use.
 
 The current board has no separate SD card-detect GPIO; SD storage becomes available after successful mount/probe. SD absence is nonfatal to configuration persistence, radio/sensor apps, and Audio Spectrum. It prevents Recorder file operations, SD logs, configuration import/export-example synchronization, and other bulk/removable-storage operations.
 
