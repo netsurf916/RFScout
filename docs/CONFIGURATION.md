@@ -1,10 +1,8 @@
-# Device configuration and wall clock
+# Device configuration and persistence
 
-This document describes configuration implemented on current `main`. Planned configuration concepts belong in [ROADMAP.md](ROADMAP.md).
+This is the canonical production reference for persistent settings and device-level presentation/power behavior. Planned configuration concepts belong in [ROADMAP.md](ROADMAP.md).
 
-RFScout starts from compiled defaults and, when SD is mounted, overlays persistent preferences from `/sdcard/rfscout.json`. The current canonical schema version is **3**. Unknown/obsolete fields are ignored; saving builds a fresh canonical document, so obsolete keys disappear and newly introduced fields are emitted with current defaults.
-
-RFScout is still pre-1.0. The configuration format may continue to change while the project converges on a stable schema. Compatibility with configuration files from older or newer pre-1.0 firmware is therefore **best effort, not a release contract**. The project begins treating configuration backward compatibility as a compatibility requirement at the v1.0.0 milestone.
+RFScout starts from compiled defaults and, when SD is mounted, overlays `/sdcard/rfscout.json`. The current canonical schema is **version 3**. RFScout is still pre-1.0, so compatibility with development-era schemas is best effort until v1.0.0.
 
 ## Representative schema
 
@@ -82,125 +80,105 @@ RFScout is still pre-1.0. The configuration format may continue to change while 
 }
 ```
 
-Alert Morse-character maps are also stored beneath the owning application and are omitted above for brevity. The top-level `audio` object is device audio presentation policy/gain state; it is separate from the historical `apps.audio` key that represents Recorder internally.
+Alert Morse maps are stored beneath their owning app and omitted above for brevity. The historical `apps.audio` key represents Recorder internally; user-facing startup aliases such as `home` and `recorder` are written canonically while historical aliases remain accepted where supported.
 
-The semantic audio model now distinguishes **UI/device**, **Event**, **Alert**, and **Content** audio. The current schema-v3 names predate that classification, so the persisted fields map as follows during this pre-1.0 transition:
+## Load/save and migration rules
 
-- `audio.interaction_gain_percent` is the global **UI volume**;
-- `audio.notification_gain_percent` is the global **Event volume**;
-- `notifications.volume` is the global **Alert volume**;
-- Recorder/content volume remains application-owned.
+Configuration loading follows defaults-plus-overlay:
 
-Application and event APIs use the semantic class names rather than these historical persistence names so the JSON keys can be cleaned up in a later schema revision without leaking storage terminology into app code.
+1. populate current defaults;
+2. parse the existing document if present;
+3. apply supported older-schema migrations;
+4. overlay only recognized, type-correct values;
+5. ignore unknown/obsolete fields; and
+6. build a fresh current-schema document on save.
 
-## Loading and migration
+Malformed, unsupported, or unsafe pre-1.0 configuration may be discarded and replaced with current defaults. Future schema versions are rejected rather than destructively rewritten by older firmware.
 
-Configuration loading follows a deliberately simple defaults-plus-overlay model:
+Normal writes use `rfscout.json.tmp` and `rfscout.json.bak` transiently so a partial write does not replace the active configuration. Legacy development sidecars are cleaned at startup. Dirty configuration is flushed before deep sleep and SD unmount.
 
-1. populate current compiled defaults;
-2. try to parse the existing JSON document;
-3. when an older schema is recognized, apply the migrations the current firmware happens to support;
-4. overlay only recognized, type-correct, valid fields;
-5. ignore unknown/obsolete fields;
-6. on canonical save, generate a fresh current-schema document rather than editing the source tree in place.
+Schema-v2 -> v3 preserves the visual-theme/audio-policy split. Indoor, Outdoor, and Night retain their visual theme and migrate to **Normal** with the historical gain defaults shown below. Legacy Discipline maps to **Night + Quiet**.
 
-If the document cannot be parsed, claims an unsupported schema, or otherwise cannot be loaded safely, RFScout is allowed to discard it and write a correctly formatted configuration from current defaults. Pre-1.0 firmware does **not** preserve rejected files as a compatibility archive and does not attempt downgrade-round-trip reconciliation. Upgrading or downgrading pre-1.0 builds can therefore reset settings when formats diverge.
-
-The normal save path still uses `rfscout.json.tmp` and `rfscout.json.bak` transiently to avoid replacing the active file with a partial write. Those are implementation details, not persistent compatibility copies. Startup also removes legacy `rfscout.json.bad`, `rfscout.json.downgrade`, and `rfscout.json.recovering` artifacts left by development builds so the SD card does not accumulate configuration sidecars.
-
-The current schema-v2 -> schema-v3 loader retains a useful best-effort migration for the visual-theme/audio-policy split. Schema-v2 Indoor, Outdoor, and Night configurations retain their visual theme and migrate to **Normal** while carrying forward the two gain values introduced by that migration:
-
-| Legacy theme | `interaction_gain_percent` | `notification_gain_percent` |
+| Legacy theme | UI gain | Event gain |
 | --- | ---: | ---: |
 | Indoor | 35% | 100% |
 | Outdoor | 55% | 100% |
-| Night | 20% | 60% |
+| Night / Discipline | 20% | 60% |
 
-Under the semantic audio classification, those retained values become the initial UI and Event volumes respectively. Legacy Discipline maps to **Night + Quiet** and retains the Night-equivalent 20% / 60% values underneath Quiet. Because RFScout is still pre-1.0, this categorization deliberately favors a clean runtime/API model over preserving every development-era effective loudness combination from the short-lived environmental-gain interpretation.
+Canonical v3 never writes `discipline` as a theme.
 
-Schema-v1 configurations that predate canonical `display.theme` can still use the existing legacy NVS theme migration when the current loader recognizes them. A schema-v3 file can explicitly store `audio.policy` and both gain fields. Canonical v3 output never writes `discipline` as a theme. These pre-v3 migration paths are conveniences for development-era upgrades and are not guaranteed compatibility behavior until the v1.0.0 configuration contract is established.
+## Display and theme
 
-The historical application key `apps.audio` remains because the internal application ABI still uses `RFSCOUT_APP_AUDIO`; the user-facing application is Recorder. `apps.startup` writes user-facing aliases such as `home` and `recorder`, while the loader also accepts historical internal aliases.
+`display.brightness` is the normal backlight percentage. `dim_timeout_seconds` defaults to 120 seconds and `off_timeout_seconds` to 300 seconds; zero disables a stage. When both are enabled, screen-off must occur after dimming.
 
-## Display theme and audio policy
+Dim/off are presentation states only. Applications, RF acquisition, logging, framebuffer work, and audio continue. In the off state RFScout sets the backlight to zero, disables ST7789 output, and places the panel in hardware sleep. Physical user activity wakes the display; the complete wake gesture is consumed before app navigation, lock handling, or power-button behavior. Wake performs panel sleep-out/settle, presents the latest framebuffer while dark, then restores configured brightness.
 
-`display.brightness` is the normal backlight percentage. `dim_timeout_seconds` defaults to 120 seconds and `off_timeout_seconds` to 300 seconds; zero disables the corresponding stage. When both are enabled, screen-off must occur after dimming.
+Visual themes are **Indoor**, **Outdoor**, and **Night** and affect colors only.
 
-Screen-off is a presentation state only: application acquisition, logging, framebuffer updates, and audio behavior continue. Any physical user input wakes a dim/off display, and the wake gesture is consumed before ordinary app, lock, or power-button handling. See [DISPLAY_IDLE.md](DISPLAY_IDLE.md).
+## Audio policy and volumes
 
-Visual themes are **Indoor**, **Outdoor**, and **Night**. Theme selection affects colors/presentation only and is stored under `display.theme`.
+RFScout distinguishes **UI/device**, **Event**, **Alert**, and **Content** audio. Current schema-v3 names predate that terminology:
 
-Device-wide Audio policy is stored independently under `audio.policy`:
+- `audio.interaction_gain_percent` -> global **UI volume**;
+- `audio.notification_gain_percent` -> global **Event volume**;
+- `notifications.volume` -> global **Alert volume**;
+- Recorder/content volume remains app-owned.
 
-- `normal` permits UI/device, Event, Alert, and explicitly requested Content audio subject to app/global policy;
-- `quiet` suppresses UI/device, Event, and Alert audio without changing their saved volumes, event switches, alert enablement, or Morse mappings;
-- explicitly requested Content audio such as Recorder playback remains available in Quiet.
+`audio.policy` is independent from theme:
 
-The three global incidental levels are exposed in Device Settings as **UI volume**, **Event volume**, and **Alert volume**. Changing Audio policy never overwrites these values. App-native policy remains independent as well; Recorder can remain incidentally quiet even when the device Audio policy is Normal.
+- `normal` permits UI, Event, Alert, and requested Content subject to app/user policy;
+- `quiet` suppresses UI, Event, and Alert presentation without rewriting saved levels, app switches, alert enablement, or Morse mappings;
+- requested Content such as Recorder playback remains available.
 
-Changing the visual theme in schema v3 does not modify Audio policy or any global audio level. Changing Audio policy does not modify the theme.
+Global Alert presentation is `OFF`, `TONE`, or `MORSE`. Individual alert mappings may also be Off without deleting the semantic/log event. Recorder microphone input gain is currently 0 through +24 dB in 3 dB steps; playback volume is independent of the three global incidental levels.
 
-## Power configuration
+## Power button and protective policy
 
-The `power` object stores both physical-button behavior and protective thresholds/actions. Valid action strings are `none`, `screen_off`, `sleep`, and `power_off`, subject to the specific gesture/policy and board capability.
+Valid semantic power actions are `none`, `screen_off`, `sleep`, and `power_off`, subject to gesture/policy and board capability.
 
-Defaults are:
+Defaults:
 
-- `short_press`: `sleep`;
-- `long_press`: `power_off`;
-- `low_battery_percent`: `10` (`0`/Off is also valid; menu choices advance in 5% steps through 20%);
-- `low_battery_action`: `power_off`;
-- `high_temperature_c`: `90` (`0`/Off or 70, 80, 90, 100 C);
-- `high_temperature_action`: `power_off`.
+- short press: `sleep`;
+- long press: `power_off`;
+- low battery: 10%, action `power_off`;
+- high internal temperature: 90 C, action `power_off`.
 
-The detailed confirmation, hysteresis, charger-freshness, thermal fallback, and transition-overlay contracts live in [POWER.md](POWER.md), which is the single production reference for power behavior.
+Short press may expose None, Screen off, Sleep, or Power off. Long press exposes None or Power off; Sleep is intentionally not a long-hold action because the same button is the deep-sleep wake source. If the display is dim/off, wake consumes the whole gesture before power semantics run.
 
-## WiFi / BT retention
+Low-battery protection requires the threshold for five consecutive **fresh successful** fuel-gauge reads plus fresh charger telemetry confirming external power is absent. Failed reads break confirmation. External power cancels a pending low-battery action; the condition rearms after charge rises three percentage points above threshold.
 
-WiFi / BT owns three independent retention settings under `apps.wifi_bt.retention`: `wifi_seconds`, `bluetooth_seconds`, and `surveillance_seconds`. All currently default to 60 seconds and accept 10 through 300 seconds in 10-second increments.
+High-temperature policy uses the ESP32-S3 internal temperature sensor, not MLX90640. It requires five consecutive one-second samples and rearms 5 C below threshold. High temperature takes priority over low battery. When high-temperature action is Power off, RFScout refreshes charger evidence first; if external-power absence cannot be freshly established, it falls back to Sleep when supported.
 
-Wi-Fi and BLE source membership age independently for a merged observation. Surveillance history has its own timeout. Planned `Instant` and `Never` semantics are roadmap work and are not current behavior.
-
-## Events, alerts, and Recorder audio
-
-Ordinary semantic activity such as `RFSCOUT_EVENT_DETECTED` is **Event** audio. WiFi / BT stores independent ordinary Wi-Fi and BLE event-feedback switches, which default enabled when absent. These quick activity beeps use the global Event volume.
-
-Attention-oriented semantic notifications are **Alert** audio. Global alert presentation is `OFF`, `TONE`, or `MORSE`; Alert volume is 0 through 100. Each detecting application owns its configurable alert gate and Morse mappings. Individual alert mappings may also be set to **Off**, suppressing audio for that category without removing the semantic event.
-
-Warnings and errors are also Alert-class sounds even when they do not have a configurable detection-alert descriptor. Quiet suppresses Alert presentation without destroying or rewriting alert configuration.
-
-Recorder playback volume is independent of the three incidental global volumes. Recorder microphone input gain is currently 0 through +24 dB in 3 dB steps.
+Manual and protective transitions share the same global overlay and semantic execution path. Protective warnings use a five-second countdown and are canceled only when the owning policy observes that the underlying condition cleared.
 
 ## Application enablement and availability
 
-An app's `enabled` value is a user preference, not proof that hardware exists. CC1101, nRF24, and Recorder are additionally gated by startup hardware probes; Thermal is hot-plug probed because it is an external attachable peripheral. Home/Device is always enabled.
+An app's `enabled` value is user preference, not hardware proof. Home/Device is always available. CC1101 and nRF24 use startup availability probes; Recorder and Thermal are hot-plug aware. A disabled/unavailable preferred startup app falls back to Home for that boot without erasing the preference.
 
-A configured startup target that is disabled or unavailable falls back to Home for that boot without erasing the saved preference.
+Current Device Settings expose brightness/dim/off/theme, Audio policy and global levels, power-button/power-policy choices, clock/timezone/manual time, startup/app enablement, SD logging, and explicit save. Small finite choices use direct center-to-cycle behavior; numeric ranges retain edit/rotate interaction. Per-app alert mappings and WiFi / BT retention stay in the owning app menus.
 
-## Home / Device Settings
+## WiFi / BT retention
 
-Current Device Settings include:
+Current production retention is three independent values under `apps.wifi_bt.retention`: `wifi_seconds`, `bluetooth_seconds`, and `surveillance_seconds`. Each defaults to 60 seconds and accepts 10–300 seconds in 10-second steps.
 
-- brightness, dim timeout, screen-off timeout, and visual theme;
-- device-wide **Audio policy** (`Normal` / `Quiet`);
-- global **UI volume**, **Event volume**, **Alert** presentation mode, and **Alert volume**;
-- **Power button** configuration;
-- **Power policy** configuration for low battery and high internal temperature;
-- 12/24-hour clock format, timezone, and manual date/time;
-- preferred startup application and per-app enablement;
-- SD logging;
-- explicit configuration save.
+Wi-Fi and BLE source membership age independently in merged observations. Surveillance history has its own window. Planned `Instant` and `Never` semantics remain in [ROADMAP.md](ROADMAP.md).
 
-Per-app alert mappings and WiFi / BT retention/event switches remain in the owning application menus. Small finite choices use direct center-to-cycle behavior rather than a separate edit mode; numeric volume/range values retain turn-to-adjust editing.
+## SD, Recorder files, and logging
 
-Setters mark canonical configuration dirty. RFScout flushes dirty configuration before deep sleep. Without SD, settings can affect the running session but canonical persistence is unavailable.
+The current board has no separate SD card-detect GPIO; storage becomes available after successful mount/probe. Mount failure is nonfatal to radio/sensor apps but prevents canonical persistence and Recorder file operations.
+
+The conservative board-tested baseline is a FAT-compatible SanDisk card of 32 GB or less. Cards shipped as exFAT may require reformatting to a supported FAT filesystem.
+
+Recorder uses `/sdcard/audio/` and writes 16-bit mono PCM WAV. It records the measured effective PCM sample rate in the WAV header. Supported playback validation accepts 8–48 kHz mono 16-bit PCM. Current post-processing includes 300 ms head trim, 600 ms tail trim, DC removal, and bounded normalization.
+
+Logs rotate through `rfscout-00.log` ... `rfscout-99.log`, up to 4 MiB each (about 400 MiB normal maximum), while attempting to retain at least 64 MiB filesystem free. Valid wall time uses UTC ISO-8601 timestamps; before wall time is established logs use explicit monotonic `UP+...` timestamps.
 
 ## Deep-sleep session state
 
-Deep sleep loses normal RAM, so RFScout keeps a small RTC-retained session envelope separate from canonical configuration. It currently retains the active application and global input-lock state. Open menus, edit state, queued sounds, and active Recorder operations are intentionally not restored.
+Deep sleep loses normal RAM, so RFScout keeps a small RTC-backed envelope separate from canonical configuration. It currently stores active app and global input-lock state. Menus, edit state, queued sounds, and active Recorder operations are intentionally not restored.
 
 ## Wall clock and timezones
 
-The ESP32 system wall clock is authoritative for shared clock display, log timestamps, and normal filesystem calendar metadata. Monotonic time remains authoritative for polling, debounce, dwell, retries, housekeeping, and other intervals.
+The ESP32 system wall clock is authoritative for shared display time, log timestamps, and filesystem calendar metadata. Monotonic time remains authoritative for debounce, dwell, retries, housekeeping, and intervals.
 
-Timezone options are stored as stable `name`, user-facing `label`, and POSIX `TZ` rule. Manual time entry is validated after local-time conversion. A plausible RTC-backed wall clock is preserved across software resets, flashing, and deep sleep while that RTC domain remains powered; saved shutdown time is only a cold-boot continuity aid, not proof of synchronization.
+Timezone options use stable `name`, user-facing `label`, and POSIX `TZ` rule. Manual time is validated after local-time conversion. RTC-backed wall time may survive resets/flashing/deep sleep while that domain remains powered; saved shutdown time is only a cold-boot continuity aid, not synchronization proof.
