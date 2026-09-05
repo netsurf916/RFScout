@@ -299,8 +299,6 @@ void app_manager_poll( void )
         last_hotplug_probe_us = now_us;
     }
 
-    activate_app_if_ready( now_us );
-
     rfscout_input_event_t input;
     if( platform_input_get( &input ) )
     {
@@ -313,6 +311,10 @@ void app_manager_poll( void )
         }
         if( RFSCOUT_APP_RUNTIME_HANDLED == result )
         {
+            if( RFSCOUT_INPUT_BACK != input.type )
+            {
+                activate_app_if_ready( now_us );
+            }
             return;
         }
 
@@ -331,6 +333,7 @@ void app_manager_poll( void )
         }
     }
 
+    activate_app_if_ready( now_us );
     const rfscout_app_runtime_result_t result =
         dispatch_runtime( active_app, RFSCOUT_APP_RUNTIME_POLL, NULL, now_us, app_activated );
     handle_runtime_result( result );
