@@ -1483,7 +1483,7 @@ static void audio_input( bool a_pressed, bool a_long_pressed, int a_delta )
                 volume = 100;
             }
             if( ( volume != old_volume ) &&
-                ( ESP_OK == device_config_set_recorder_volume( (uint8_t)volume ) )
+                ( ESP_OK == device_config_set_recorder_volume( (uint8_t)volume ) ) )
             {
                 recorder_set_playback_volume( (uint8_t)volume );
                 emit_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
