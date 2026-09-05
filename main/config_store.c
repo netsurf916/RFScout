@@ -28,6 +28,7 @@
 static const char *TAG = "config_store";
 static bool initialized;
 static bool available;
+static bool imported;
 
 static void cleanup_internal_artifacts( void )
 {
@@ -234,6 +235,7 @@ static void import_sd_config( void )
                   esp_err_to_name( result ) );
         return;
     }
+    imported = true;
 
     if( 0 != unlink( RFSCOUT_SD_CONFIG_IMPORT_PATH ) )
     {
@@ -275,6 +277,11 @@ esp_err_t config_store_init( void )
 bool config_store_is_available( void )
 {
     return available;
+}
+
+bool config_store_imported( void )
+{
+    return imported;
 }
 
 esp_err_t config_store_sync_example( void )
