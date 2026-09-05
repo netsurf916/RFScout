@@ -33,9 +33,18 @@ static bool notifications_enabled;
 static bool attention_pending;
 static bool power_state_known;
 static bool external_power;
-static bool thermal_state_known;
-static bool thermal_available;
 static portMUX_TYPE system_event_lock = portMUX_INITIALIZER_UNLOCKED;
+
+static const char *app_name( uint8_t a_source )
+{
+    if( a_source >= (uint8_t)RFSCOUT_APP_COUNT )
+    {
+        return "HARDWARE";
+    }
+    const rfscout_app_descriptor_t *descriptor =
+        app_framework_descriptor( (rfscout_app_id_t)a_source );
+    return ( NULL != descriptor && NULL != descriptor->name ) ? descriptor->name : "HARDWARE";
+}
 
 static bool is_system_state_event( const rfscout_event_t *a_event )
 {
@@ -56,8 +65,12 @@ static bool is_system_state_event( const rfscout_event_t *a_event )
         case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED:
         case RFSCOUT_EVENT_CONFIG_IMPORTED:
         case RFSCOUT_EVENT_CONFIG_DEFAULTED:
+        case RFSCOUT_EVENT_APP_DISCOVERED:
         case RFSCOUT_EVENT_APP_AVAILABLE:
         case RFSCOUT_EVENT_APP_UNAVAILABLE:
+        case RFSCOUT_EVENT_APP_PROBE_ERROR:
+        case RFSCOUT_EVENT_DISPLAY_PROVIDER_SELECTED:
+        case RFSCOUT_EVENT_INPUT_PROVIDER_SELECTED:
             return true;
         case RFSCOUT_EVENT_WARNING:
         case RFSCOUT_EVENT_ERROR:
@@ -79,7 +92,10 @@ static rfscout_system_event_severity_t severity_for( const rfscout_event_t *a_ev
     }
     if( RFSCOUT_EVENT_WARNING == a_event->type ||
         RFSCOUT_EVENT_STORAGE_MOUNT_FAILED == a_event->type ||
-        RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED == a_event->type )
+        RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED == a_event->type ||
+        RFSCOUT_EVENT_APP_PROBE_ERROR == a_event->type ||
+        ( RFSCOUT_EVENT_APP_DISCOVERED == a_event->type &&
+          RFSCOUT_APP_AVAILABILITY_ERROR == (rfscout_app_availability_t)a_event->value ) )
     {
         return RFSCOUT_SYSTEM_EVENT_WARNING;
     }
@@ -184,21 +200,41 @@ static void render_event( const rfscout_event_t *a_event,
             snprintf( a_title, a_title_size, "CONFIG" );
             snprintf( a_detail, a_detail_size, "DEFAULTS RESTORED" );
             break;
+        case RFSCOUT_EVENT_APP_DISCOVERED:
+            snprintf( a_title, a_title_size, "%s", app_name( a_event->source ) );
+            if( RFSCOUT_APP_AVAILABILITY_AVAILABLE == (rfscout_app_availability_t)a_event->value )
+            {
+                snprintf( a_detail, a_detail_size, "DETECTED" );
+            }
+            else if( RFSCOUT_APP_AVAILABILITY_UNAVAILABLE ==
+                     (rfscout_app_availability_t)a_event->value )
+            {
+                snprintf( a_detail, a_detail_size, "NOT PRESENT" );
+            }
+            else
+            {
+                snprintf( a_detail, a_detail_size, "PROBE ERROR" );
+            }
+            break;
         case RFSCOUT_EVENT_APP_AVAILABLE:
-            snprintf( a_title,
-                      a_title_size,
-                      ( RFSCOUT_APP_THERMAL == (rfscout_app_id_t)a_event->source )
-                          ? "THERMAL CAMERA"
-                          : "HARDWARE" );
+            snprintf( a_title, a_title_size, "%s", app_name( a_event->source ) );
             snprintf( a_detail, a_detail_size, "CONNECTED" );
             break;
         case RFSCOUT_EVENT_APP_UNAVAILABLE:
-            snprintf( a_title,
-                      a_title_size,
-                      ( RFSCOUT_APP_THERMAL == (rfscout_app_id_t)a_event->source )
-                          ? "THERMAL CAMERA"
-                          : "HARDWARE" );
+            snprintf( a_title, a_title_size, "%s", app_name( a_event->source ) );
             snprintf( a_detail, a_detail_size, "DISCONNECTED" );
+            break;
+        case RFSCOUT_EVENT_APP_PROBE_ERROR:
+            snprintf( a_title, a_title_size, "%s", app_name( a_event->source ) );
+            snprintf( a_detail, a_detail_size, "PROBE ERROR" );
+            break;
+        case RFSCOUT_EVENT_DISPLAY_PROVIDER_SELECTED:
+            snprintf( a_title, a_title_size, "DISPLAY" );
+            snprintf( a_detail, a_detail_size, "ST7789 SELECTED" );
+            break;
+        case RFSCOUT_EVENT_INPUT_PROVIDER_SELECTED:
+            snprintf( a_title, a_title_size, "INPUT" );
+            snprintf( a_detail, a_detail_size, "ROTARY/BUTTONS SELECTED" );
             break;
         case RFSCOUT_EVENT_WARNING:
             snprintf( a_title, a_title_size, "SYSTEM WARNING" );
@@ -312,7 +348,6 @@ esp_err_t system_events_init( void )
     notifications_enabled = false;
     attention_pending = false;
     power_state_known = false;
-    thermal_state_known = false;
     portEXIT_CRITICAL( &system_event_lock );
 
     return rfscout_event_subscribe( on_event, NULL ) ? ESP_OK : ESP_ERR_NO_MEM;
@@ -356,30 +391,6 @@ void system_events_poll( void )
                                                : RFSCOUT_EVENT_POWER_DISCONNECTED,
                                 RFSCOUT_EVENT_SOURCE_SYSTEM,
                                 percentage );
-        }
-    }
-
-    const rfscout_app_availability_t current_thermal =
-        app_framework_availability( RFSCOUT_APP_THERMAL );
-    if( RFSCOUT_APP_AVAILABILITY_UNKNOWN != current_thermal )
-    {
-        const bool available = RFSCOUT_APP_AVAILABILITY_AVAILABLE == current_thermal;
-        if( !thermal_state_known )
-        {
-            thermal_state_known = true;
-            thermal_available = available;
-            record_discovery( available ? RFSCOUT_EVENT_APP_AVAILABLE
-                                        : RFSCOUT_EVENT_APP_UNAVAILABLE,
-                              (uint8_t)RFSCOUT_APP_THERMAL,
-                              (int32_t)current_thermal );
-        }
-        else if( thermal_available != available )
-        {
-            thermal_available = available;
-            rfscout_event_emit( available ? RFSCOUT_EVENT_APP_AVAILABLE
-                                          : RFSCOUT_EVENT_APP_UNAVAILABLE,
-                                (uint8_t)RFSCOUT_APP_THERMAL,
-                                (int32_t)current_thermal );
         }
     }
 
