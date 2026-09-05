@@ -1,6 +1,10 @@
-# RFScout architecture
+# Architecture
 
-RFScout separates **applications**, **platform services**, and **board definitions** so app behavior does not own hardware teardown, memory reachability, or physical pin/bus details.
+This is the canonical production architecture reference for RFScout. It describes implemented boundaries and invariants on current `main`; future design and release planning belong in [ROADMAP.md](ROADMAP.md).
+
+## Board, app, and service boundaries
+
+RFScout is one source tree producing board-specific firmware images. The current target is **LILYGO T-Embed CC1101 Plus**. `RFSCOUT_BOARD` selects physical definitions under `main/boards/<target>/`; application code consumes semantic services/capabilities rather than board names. See [BOARD_PORTING.md](BOARD_PORTING.md).
 
 Source ownership follows the same rule:
 
@@ -18,7 +22,7 @@ Each compiled-in application exports one `rfscout_app_descriptor_t`. The descrip
 
 Canonical rotary order is System Events -> Home / Device Settings -> WiFi / BT -> CC1101 -> nRF24 -> Recorder -> Thermal -> Audio Spectrum. Disabled or unavailable apps are skipped. CC1101/nRF24/Audio Spectrum use startup-cached availability probes; Recorder/Thermal are hot-plug aware.
 
-## Runtime dispatch contract
+### Runtime dispatch contract
 
 The manager dispatches a deliberately small set of events to the active descriptor:
 
@@ -63,21 +67,70 @@ On an aborted service close, the session restores only platform service state th
 
 Current session-managed asynchronous services are Wi-Fi monitoring, BLE scanning, CC1101, nRF24, and shared audio capture/Recorder activity. Thermal acquisition is synchronous today; any future worker/DMA/callback path belongs behind a service rather than a new app-specific lifecycle protocol.
 
-## Memory policy
+### Memory policy
 
-PSRAM is a supported-platform requirement. Large/growable application collections use app-session memory and disappear when the app session ends. Internal SRAM remains for stacks, DMA/hardware-constrained buffers, low-level driver state, and latency-sensitive/system use.
+App-session PSRAM is intended for retained observations, histories, captures, and other meaningfully sized growable state. Task stacks, DMA buffers, driver-required internal allocations, and latency-sensitive objects continue to use the memory class required by ESP-IDF/hardware.
 
-The design deliberately separates persistent storage from app-session RAM. Future app-owned durable records should be mediated by a platform persistence service rather than keeping app RAM alive across exits.
+There is deliberately no arbitrary per-app item quota. Collections grow according to resources and retention semantics; presentation work should be bounded separately. Under pressure, prefer current/correct data, release reconstructable scratch, evict stale/low-value history where semantics allow, surface pressure, and continue safely.
 
-## WiFi / BT
+Usable external PSRAM is a supported-platform requirement. RFScout does not silently substitute internal SRAM with a hidden smaller item ceiling.
 
-WiFi/BLE observations use app-session PSRAM and grow dynamically while the app is active. Wi-Fi and BLE collectors are shared services; callback admission/drain is complete before retained observation memory can be reclaimed.
+## Semantic input and UI behavior
+
+Physical controls are translated to semantic input before app handling. Only accepted semantic actions/state changes emit feedback events; raw encoder/contact movement does not itself imply sound.
+
+On the current one-center-button target, completed button edges are captured independently from the main presentation loop so a click can survive a temporary synchronous LCD stall. Hold timing is part of the semantic input contract: approximately 0.8 to under 1.5 seconds produces `LONG_SELECT`, 1.5 to under 2 seconds produces `BACK`, and a two-second hold toggles the global input lock. The final release after a lock-toggle hold is consumed.
+
+Common settings use one interaction model:
+
+- **Action** — center executes immediately.
+- **Toggle** — center changes On/Off immediately.
+- **Choice** — center cycles a small finite set when unambiguous.
+- **Value** — center enters edit, rotation adjusts, center exits.
+- **Submenu** — center enters a child view.
+
+Application settings use the relative order: Back; alerts/notifications; acquisition/detection; display/presentation; storage/logging/recording; advanced/hardware-specific; destructive/reset actions. Empty placeholder categories are not added. Full-screen diagnostic lists may explicitly claim the encoder after a visible mode change (System Events Browse is the current example).
+
+## Audio and feedback architecture
+
+RFScout separates semantic meaning from presentation. Four audio classes are used:
+
+| Class | Meaning | Level owner |
+| --- | --- | --- |
+| UI / device | navigation, accepted actions, lock/device feedback | global UI volume |
+| Event | lightweight informational activity/detection cue | global Event volume |
+| Alert | warning/error and configurable attention notification | global Alert volume |
+| Content | explicitly requested app audio, e.g. Recorder playback | app-owned |
+
+`app_audio_policy` describes which classes make sense for an app. `audio_policy` independently applies device-wide **Normal** / **Quiet** presentation. `feedback` combines semantic events with app/device policy; `notification` owns detection vocabulary/preferences; `alert` applies notification mode/mappings; the audio-output service owns speaker arbitration.
+
+Normal permits all classes subject to app/user policy. Quiet suppresses UI, Event, and Alert presentation without rewriting saved volumes, app gates, alert enablement, or Morse mappings. Explicit Content remains available. Disposable feedback/alerts are dropped rather than queued behind active Content audio.
+
+Visual themes are independent: Indoor, Outdoor, and Night alter presentation colors only.
+
+## WiFi / BLE data path
+
+```text
+Wi-Fi monitor ---\
+                  +--> normalized observation --> prefix identity --> surveillance classifier
+BLE monitor -----/              |                        |
+                                v                        v
+                         recent device store       retained detections
+                                |                        |
+                                +-----------> WiFi / BT UI
+```
+
+The normalized observation collection is app-session PSRAM and grows according to available resources rather than a fixed item ceiling. It uses a session-owned identity index so collector ingestion does not linearly rescan the collection for every callback. Expiration runs through housekeeping; Wi-Fi and BLE membership age independently.
+
+Current production retention is independently configurable for Wi-Fi, BLE, and surveillance history from 10–300 seconds in 10-second steps, default 60 seconds. Planned `Instant` / `Never` semantics and richer entity correlation remain roadmap work.
+
+Presentation derives summaries from live state while retaining only displayable rows/scratch appropriate to the view. Prefix identity tables and surveillance matching are documented in [PREFIX_IDENTITY.md](PREFIX_IDENTITY.md).
 
 ## CC1101 and nRF24
 
-Both radios are receive-only analysis paths. Their persistent workers are platform services associated with the owning app session. Shared-SPI ownership cannot move until the source worker has observed its stop request and hardware is inactive.
+CC1101 uses a worker for receive-only RSSI sweeps and conservative behavior classification. nRF24 uses receive-only RPD sweeps plus a separate ingestion/storage path for validated Enhanced ShockBurst observations. Both workers are session services and must quiesce before app memory reclamation.
 
-nRF24's RPD bit is threshold evidence (roughly whether received power exceeded the radio threshold), not decoded-packet RSSI. Packet/fingerprint heuristics are therefore descriptive evidence rather than protocol guarantees.
+nRF24's RPD bit is threshold evidence (roughly whether received power exceeded the device threshold), not RSSI and not packet proof. The production scanner currently generates RPD energy observations only; packet browser/detail surfaces consume only separately CRC-validated observations. RFScout does not generate ACKs, inject, replay, pair, probe, or actively discover nRF24 devices. Future receive-only ESB discovery must keep acquisition/validation separate from presentation and preserve that passive boundary; detailed implementation planning remains in the roadmap.
 
 RF acquisition and LCD presentation run at different cadences. nRF24 sweep work occurs in its worker while completed display snapshots are coalesced; input edge capture is designed to survive temporary synchronous LCD/main-loop stalls.
 
@@ -93,26 +146,31 @@ Further calibration/generalization of the shared Audio Input service remains roa
 
 ## Thermal
 
-Thermal acquisition currently runs synchronously from the app's normal poll/render path. MLX90640 availability is hot-plug aware. A future asynchronous implementation belongs behind a platform service before it may retain references across app teardown.
+MLX90640 is an optional hot-plug I2C/Qwiic peripheral exposed by the thermal service. Thermal acquisition is synchronous while active. Native sensor resolution is 32x24; display interpolation must not imply additional sensor resolution. Literal image pixels bypass theme translation while labels/chrome remain theme-aware.
 
-## Power and session state
+## Power, display idle, and sleep
 
-Manual and policy-triggered sleep/power-off use the same semantic power path. Deep sleep stores only a small RTC-backed session envelope (currently active app and input-lock state). Menus, edit state, queued sounds, and active Recorder operations are not resumed. Dirty authoritative configuration is flushed internally before sleep.
+Power actions are semantic and board-capability aware. Short press may be None, Screen off, Sleep, or Power off; long press may be None or Power off. Display wake has priority: a complete gesture that wakes a dim/off display is consumed before app, lock, or power-button handling.
+
+Display dim/off is presentation policy, **not** application lifecycle or ESP32 sleep. The off state sets backlight to zero, disables ST7789 output, enters panel hardware sleep, and suppresses framebuffer SPI presentation while apps/acquisition/logging/audio continue. Wake performs panel sleep-out/settle, presents the latest framebuffer while dark, then restores brightness.
+
+Protective policy can react to sustained low battery or high ESP32 internal temperature. Low-battery action requires five consecutive fresh fuel-gauge reads plus fresh evidence that external power is absent; it rearms after charge rises three percentage points above threshold. High-temperature action requires five consecutive samples and rearms 5 C below threshold. High-temperature Power off falls back to Sleep when external-power absence cannot be freshly established. Manual/protective transitions share the global transition overlay and semantic execution path.
+
+Deep sleep stores only a small RTC-backed session envelope (currently active app and input-lock state). Menus, edit state, queued sounds, and active Recorder operations are not resumed. Dirty authoritative configuration is flushed before sleep.
 
 ## Storage and persistence
 
-RFScout has two deliberately distinct persistent-storage roles:
+RFScout separates device-owned durable state from removable bulk/interchange storage.
 
-- **Internal SPIFFS** is device-owned durable state. The 16 MiB flash currently allocates 8 MiB to the application and approximately 8 MiB to SPIFFS. `/internal/rfscout.json` is the sole authoritative configuration file; updates use only a transient `.tmp` followed by atomic rename. Missing/corrupt/incompatible internal configuration is replaced with compiled defaults rather than retaining backup/quarantine copies.
-- **SD/FAT storage** is removable interchange and bulk storage. `/sdcard/rfscout.json` is a one-shot configuration import, `/sdcard/rfscout-example.json` mirrors the internal configuration when contents differ, Recorder WAV files live under `/sdcard/audio/`, and rotating logs remain SD-only.
+The internal `storage` SPIFFS partition is mounted at `/internal`. `/internal/rfscout.json` is the sole durable authoritative configuration file. Configuration updates are written completely to `/internal/rfscout.json.tmp`, flushed, and then atomically renamed over the live file. A stale temporary is discarded on boot; RFScout does not retain internal backup, quarantine, or history copies. Missing, corrupt, or incompatible internal configuration is replaced with compiled defaults.
 
-A valid SD configuration import is copied through the internal temporary file and committed before the source import is deleted. Invalid imports are renamed to `/sdcard/rfscout.json.bad` so user input is preserved without repeated boot-time retries. SD absence never prevents ordinary configuration persistence.
+SD remains the removable/bulk-storage service. `/sdcard/rfscout.json` is a one-shot configuration import: a valid current-schema document is committed to internal flash before the import is deleted, while an invalid import is preserved as `/sdcard/rfscout.json.bad`. `/sdcard/rfscout-example.json` mirrors the authoritative internal file when SD is available and is rewritten only when its contents differ. Recorder WAV files remain under `/sdcard/audio/`, and rotating logs remain SD-only.
 
-The remaining internal SPIFFS capacity is intentionally unused today. A future generic persistent-record/database service may use it so apps can retain durable records across session teardown without weakening the app-memory lifecycle contract.
+The 16 MiB target flash allocates 8 MiB to the factory application and approximately 8 MiB to internal SPIFFS. Configuration currently consumes only the single live file plus its short-lived write temporary; the remaining capacity is intentionally available for a future system-owned persistent-record/database service rather than direct app filesystem ownership.
 
 The conservative board-tested SD baseline is a FAT-compatible SanDisk card of 32 GB or less. The current board exposes no dedicated card-detect GPIO, so availability is established by successful mount/probe. Logging rotates `rfscout-00.log` through `rfscout-99.log` at up to 4 MiB each and attempts to preserve at least 64 MiB free.
 
-## Shared buses and presentation
+## Shared hardware/resource boundaries
 
 On the current target:
 
@@ -127,6 +185,6 @@ Application views render their content; the display service owns common top chro
 
 Release testing should rapidly rotate every enabled app and exercise low memory, callback races, worker-stop timeouts, dependency loss, Recorder recording/save transition vetoes, Audio Spectrum entry/exit, and failed-close rollback. Successful app exit must leave zero managed allocations for the exited app; an aborted transition must preserve its memory/state. Baseline free PSRAM and largest-free-block behavior should not decline monotonically across repeated cycles.
 
-Persistence validation should additionally cover boot without SD, valid/invalid SD config imports, internal corruption/default replacement, interrupted internal temp writes, example no-op synchronization when unchanged, and repeated configuration saves without accumulating internal files.
+Persistence validation should additionally cover boot without SD, valid/invalid SD config imports, internal corruption/default replacement, interrupted internal temp writes, example no-op synchronization when unchanged, and repeated configuration saves without accumulating internal sidecar files.
 
 Build/release workflow is documented in [RELEASING.md](RELEASING.md); board requirements in [BOARD_PORTING.md](BOARD_PORTING.md); user-visible behavior in [CAPABILITIES.md](CAPABILITIES.md).
