@@ -14,7 +14,18 @@
 
 #define THERMAL_REFRESH_INTERVAL_US 125000LL
 
+static bool service_initialized;
 static int64_t last_refresh_us;
+
+static esp_err_t probe_thermal( void )
+{
+    if( !service_initialized )
+    {
+        service_initialized = true;
+        return mlx90640_init();
+    }
+    return mlx90640_probe();
+}
 
 static rfscout_app_runtime_result_t thermal_runtime( const rfscout_app_runtime_event_t *a_event )
 {
@@ -63,7 +74,7 @@ const rfscout_app_descriptor_t rfscout_thermal_app = {
     .id = RFSCOUT_APP_THERMAL,
     .name = "Thermal",
     .probe_policy = RFSCOUT_APP_PROBE_HOTPLUG,
-    .probe = mlx90640_probe,
+    .probe = probe_thermal,
     .requires_activation = true,
     .services = RFSCOUT_APP_SERVICE_NONE,
     .runtime = thermal_runtime,
