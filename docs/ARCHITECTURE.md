@@ -10,26 +10,44 @@ Source ownership follows the same rule:
 
 ```text
 main/
-  apps/<app>/           app descriptor, views, analysis, app-owned state
+  apps/<app>/           app descriptor, controller, views, analysis, app-owned state
   services/<service>/   reusable hardware/platform capability implementation
   boards/<target>/      physical board definitions
-  app_*.c               core app orchestration/lifecycle/session framework
+  app_*.c               core app discovery/navigation/lifecycle/session framework
 ```
 
-Compiled-in applications export `rfscout_app_descriptor_t` metadata: identity/name, availability probe policy/function, delayed activation policy, and platform-service dependencies. `app_framework` discovers descriptors through the compiled registry. Normal navigation remains centralized in `app_manager`; hardware-specific stop/drain/recovery behavior does not.
+Each compiled-in application exports one `rfscout_app_descriptor_t`. The descriptor owns its identity/name, availability probe policy/function, delayed-activation policy, platform-service dependencies, and runtime handler. `app_framework` discovers descriptors through the compiled registry; normal app behavior is not implemented through app-ID switches in `app_manager`.
+
+`app_manager` owns only cross-application policy: active-app selection, availability filtering, settle/activation timing, global navigation, and transactional lifecycle coordination. App modules own their menu/subview state, rendering decisions, app-local input interpretation, normal polling, and dependency-loss behavior. Hardware-specific stop/drain/recovery remains behind platform services and resource sessions.
 
 Canonical rotary order is System Events -> Home / Device Settings -> WiFi / BT -> CC1101 -> nRF24 -> Recorder -> Thermal. Disabled or unavailable apps are skipped. CC1101/nRF24 use startup-cached availability probes; Recorder/Thermal are hot-plug aware.
+
+### Runtime dispatch contract
+
+The manager dispatches a deliberately small set of events to the active descriptor:
+
+- **ENTER** — initialize app-local UI/runtime state after a transition commits;
+- **ACTIVATE** — delivered after the common settle delay for apps that request delayed activation;
+- **INPUT** — one board-neutral semantic input event;
+- **POLL** — periodic app work/render opportunity; and
+- **LEAVE** — committed app-local cleanup after platform services have safely quiesced.
+
+An app reports whether INPUT was consumed. Unconsumed navigation remains global next/previous-app switching; unconsumed Back returns to Home. This keeps global navigation policy centralized without teaching the manager how an individual app's menu works. Rapid navigation through a delayed app can therefore leave it before activation, preserving the settle behavior that avoids starting hardware merely because the user rotated past an app.
+
+Normal apps need only their module/descriptor, build/registry entry, and whatever semantic services they consume. Adding a normal app should not require modifying `app_manager.c`, `app_session.c`, or driver-specific teardown logic. Shared controls such as per-app notification editing are reusable helpers invoked by app modules rather than state embedded in the manager.
+
+Recorder is the exceptional transition case: its descriptor also supplies optional semantic prepare/reactivate hooks so an aborted transition can restore the exact recording/monitor/playback operation. Those hooks describe user-visible semantic state only; Recorder worker/channel reachability remains a resource-session responsibility.
 
 ## Application lifecycle and resource sessions
 
 Every active app has a temporary **resource session**, including apps that currently allocate no dynamic PSRAM. Apps should not manage allocator owner IDs, callback counters, or driver-specific reachability protocols.
 
-The application-facing lifecycle is intentionally small:
+The application-facing lifecycle remains intentionally small:
 
-1. **Enter** — establish inexpensive UI/runtime state.
-2. **Settle** — optionally defer hardware activation so rapid navigation remains responsive.
-3. **Activate** — use declared platform services and app-session memory.
-4. **Close** — preserve/finalize only user-visible semantic state the app itself understands.
+1. **Enter** — establish inexpensive app-local state.
+2. **Settle** — optionally defer activation so rapid navigation stays responsive.
+3. **Activate** — begin normal app/service work after the common settle point.
+4. **Close** — preserve/finalize only user-visible semantic state the app itself understands; platform teardown and memory reclamation remain framework-owned.
 
 Growable retained app state uses `app_session_calloc()`, `app_session_resize()`, and `app_session_free()`. The lower-level memory manager supplies ownership/accounting/bulk reclamation and is not normally an app API.
 
@@ -39,13 +57,13 @@ A transition is transactional:
 2. capture reversible semantic rollback state when needed;
 3. quiesce every platform service declared by the source descriptor;
 4. if any service cannot quiesce safely, restore the source service/semantic state and do **not** reclaim memory;
-5. after successful service close, commit irreversible app-visible cleanup;
+5. after successful service close, dispatch committed app-local LEAVE cleanup;
 6. bulk-reclaim all source-app managed memory and verify no managed allocation remains; and
-7. establish the destination session before it can use app resources.
+7. establish the destination session before ENTER can use app resources.
 
 A successful service stop means no new work that can reference app state can enter, admitted callbacks/workers have drained, and shared hardware is safely inactive. Successful session close is therefore the reachability proof; apps do not implement a second reachability phase.
 
-On an aborted close, the session restarts services that were active and successfully stopped. Failed-stop recovery is service-specific so a self-restoring worker is not started twice. App-specific rollback is reserved for semantic state the platform cannot infer. Recorder is the current example: worker/channel safety is session-owned, while restoring the exact prior recording/monitor/playback operation is semantic state.
+On an aborted close, the session restarts services that were active and successfully stopped. Failed-stop recovery is service-specific so a self-restoring worker is not started twice. App-specific rollback is reserved for semantic state the platform cannot infer.
 
 Current session-managed asynchronous services are Wi-Fi monitoring, BLE scanning, CC1101, nRF24, and Recorder. Thermal acquisition is synchronous today; any future worker/DMA/callback path belongs behind a service rather than a new app-specific lifecycle protocol.
 
