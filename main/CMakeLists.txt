@@ -13,9 +13,6 @@ else()
     message(FATAL_ERROR "No supported RFScout board target selected")
 endif()
 
-# Re-run CMake when either bitmap input changes so an incremental idf.py build
-# cannot reuse a stale generated header. Keep this out of ESP-IDF's script-mode
-# component-requirements pass, where directory property changes are unnecessary.
 if(NOT CMAKE_SCRIPT_MODE_FILE)
     set_property(
         DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
@@ -35,11 +32,6 @@ if(NOT HOME_LOGO_RESULT EQUAL 0)
     message(FATAL_ERROR "Failed to generate RFScout Home logo bitmap")
 endif()
 
-# Keep Device Settings in device_view.c while replacing its original procedural
-# landing implementation with the canonical bitmap-backed Home implementation.
-# ESP-IDF evaluates component CMake files once in script mode while discovering
-# requirements; source-property commands are not scriptable and must only run
-# during the normal configure pass.
 if(NOT CMAKE_SCRIPT_MODE_FILE)
     set_source_files_properties(
         "device_view.c"
@@ -54,6 +46,14 @@ idf_component_register(
         "app_lifecycle.c"
         "app_session.c"
         "app_framework.c"
+        "apps/app_registry.c"
+        "apps/system_events/app.c"
+        "apps/home/app.c"
+        "apps/wifi_ble/app.c"
+        "apps/cc1101/app.c"
+        "apps/nrf24/app.c"
+        "apps/recorder/app.c"
+        "apps/thermal/app.c"
         "app_logging.c"
         "app_audio_policy.c"
         "audio_policy.c"
