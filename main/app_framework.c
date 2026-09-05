@@ -46,12 +46,6 @@ const rfscout_app_descriptor_t *app_framework_descriptor( rfscout_app_id_t a_app
     return NULL;
 }
 
-const char *app_framework_name( rfscout_app_id_t a_app )
-{
-    const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
-    return ( NULL != descriptor ) ? descriptor->name : "Unknown";
-}
-
 static void retain_availability( rfscout_app_id_t a_app, rfscout_app_availability_t a_availability )
 {
     const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
