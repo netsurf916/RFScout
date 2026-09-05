@@ -10,7 +10,7 @@
 #ifndef _RFSCOUT_APP_DESCRIPTOR_H_
 #define _RFSCOUT_APP_DESCRIPTOR_H_
 
-#include "platform.h"
+#include "input.h"
 
 #include "esp_err.h"
 
