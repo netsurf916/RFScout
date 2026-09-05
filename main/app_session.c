@@ -229,3 +229,176 @@ static void advance_generation( void )
     }
 }
 
+esp_err_t app_session_ensure( rfscout_app_id_t a_app )
+{
+    if( ( a_app < 0 ) || ( a_app >= RFSCOUT_APP_COUNT ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
+    if( NULL == descriptor )
+    {
+        return ESP_ERR_NOT_FOUND;
+    }
+    if( session_active() )
+    {
+        if( session_app == a_app )
+        {
+            return ESP_OK;
+        }
+        if( ( 0U != memory_manager_app_allocation_count( session_app ) ) || close_in_progress ||
+            ready_to_reclaim )
+        {
+            return ESP_ERR_INVALID_STATE;
+        }
+        reset_session_state();
+        session_app = RFSCOUT_APP_COUNT;
+    }
+
+    session_app = a_app;
+    reset_session_state();
+    session_services = descriptor->services;
+    advance_generation();
+    return ESP_OK;
+}
+
+uint32_t app_session_generation( void )
+{
+    return session_generation;
+}
+
+static bool ensure_current_app_session( void )
+{
+    return ESP_OK == app_session_ensure( app_manager_current() );
+}
+
+void *app_session_calloc( size_t a_count, size_t a_size )
+{
+    return ensure_current_app_session() ? memory_manager_calloc( session_owner(), a_count, a_size )
+                                        : NULL;
+}
+
+void *app_session_resize( void *a_pointer, size_t a_count, size_t a_size )
+{
+    return ensure_current_app_session()
+               ? memory_manager_resize( session_owner(), a_pointer, a_count, a_size )
+               : NULL;
+}
+
+bool app_session_free( void *a_pointer )
+{
+    return ensure_current_app_session() && memory_manager_free( session_owner(), a_pointer );
+}
+
+esp_err_t app_session_prepare_close( void )
+{
+    if( !session_active() )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    close_in_progress = true;
+    ready_to_reclaim = false;
+    clear_close_state();
+
+    for( size_t i = platform_service_count(); i > 0U; --i )
+    {
+        app_session_service_t *service = &platform_services[ i - 1U ];
+        if( !service_selected( service ) )
+        {
+            continue;
+        }
+
+        service->was_active_for_close =
+            ( NULL == service->active ) || service->active( service->context );
+        if( !service->was_active_for_close && !service->always_stop_for_close )
+        {
+            continue;
+        }
+
+        const esp_err_t result = service->stop( service->context );
+        if( ESP_OK != result )
+        {
+            service->failed_for_close = true;
+            ESP_LOGE( TAG,
+                      "app=%d service=%s did not close safely: %s",
+                      (int)session_app,
+                      service->name,
+                      esp_err_to_name( result ) );
+            return result;
+        }
+        service->stopped_for_close = true;
+    }
+
+    ready_to_reclaim = true;
+    return ESP_OK;
+}
+
+esp_err_t app_session_abort_close( void )
+{
+    if( !session_active() )
+    {
+        return ESP_OK;
+    }
+
+    esp_err_t first_error = ESP_OK;
+    for( size_t i = 0U; i < platform_service_count(); ++i )
+    {
+        app_session_service_t *service = &platform_services[ i ];
+        if( !service_selected( service ) )
+        {
+            continue;
+        }
+
+        app_session_service_fn restart = NULL;
+        if( service->was_active_for_close && service->failed_for_close )
+        {
+            restart = service->recover_failed_stop;
+        }
+        else if( service->was_active_for_close && service->stopped_for_close )
+        {
+            restart = service->start;
+        }
+        if( NULL == restart )
+        {
+            continue;
+        }
+
+        const esp_err_t result = restart( service->context );
+        if( ESP_OK != result )
+        {
+            ESP_LOGE( TAG,
+                      "app=%d service=%s could not reactivate after close abort: %s",
+                      (int)session_app,
+                      service->name,
+                      esp_err_to_name( result ) );
+            if( ESP_OK == first_error )
+            {
+                first_error = result;
+            }
+        }
+    }
+
+    clear_close_state();
+    close_in_progress = false;
+    ready_to_reclaim = false;
+    return first_error;
+}
+
+bool app_session_ready_to_reclaim( void )
+{
+    return session_active() && ready_to_reclaim;
+}
+
+void app_session_commit_close( void )
+{
+    if( !ready_to_reclaim )
+    {
+        ESP_LOGE( TAG, "refusing to commit an app session that has not quiesced" );
+        return;
+    }
+
+    reset_session_state();
+    session_app = RFSCOUT_APP_COUNT;
+}
