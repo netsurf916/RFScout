@@ -52,8 +52,7 @@ const char *app_framework_name( rfscout_app_id_t a_app )
     return ( NULL != descriptor ) ? descriptor->name : "Unknown";
 }
 
-static void retain_availability( rfscout_app_id_t a_app,
-                                 rfscout_app_availability_t a_availability )
+static void retain_availability( rfscout_app_id_t a_app, rfscout_app_availability_t a_availability )
 {
     const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
     if( ( NULL == descriptor ) || ( availability[ a_app ] == a_availability ) )
@@ -126,7 +125,8 @@ esp_err_t app_framework_init( void )
         if( ( NULL == descriptor ) || !app_id_valid( descriptor->id ) ||
             ( NULL != descriptors[ descriptor->id ] ) || ( NULL == descriptor->name ) )
         {
-            ESP_LOGE( TAG, "invalid or duplicate compiled-in app descriptor index=%u", (unsigned)i );
+            ESP_LOGE(
+                TAG, "invalid or duplicate compiled-in app descriptor index=%u", (unsigned)i );
             return ESP_ERR_INVALID_STATE;
         }
         descriptors[ descriptor->id ] = descriptor;
