@@ -10,7 +10,7 @@
 #ifndef _RFSCOUT_APP_LIFECYCLE_H_
 #define _RFSCOUT_APP_LIFECYCLE_H_
 
-#include "app_manager.h"
+#include "app_descriptor.h"
 
 #include "esp_err.h"
 
