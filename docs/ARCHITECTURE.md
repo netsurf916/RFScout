@@ -20,7 +20,7 @@ Each compiled-in application exports one `rfscout_app_descriptor_t`. The descrip
 
 `app_manager` owns only cross-application policy: active-app selection, availability filtering, settle/activation timing, global navigation, and transactional lifecycle coordination. App modules own their menu/subview state, rendering decisions, app-local input interpretation, normal polling, and dependency-loss behavior. Hardware-specific stop/drain/recovery remains behind platform services and resource sessions.
 
-Canonical rotary order is System Events -> Home / Device Settings -> WiFi / BT -> CC1101 -> nRF24 -> Recorder -> Thermal. Disabled or unavailable apps are skipped. CC1101/nRF24 use startup-cached availability probes; Recorder/Thermal are hot-plug aware.
+Canonical rotary order is System Events -> Home / Device Settings -> WiFi / BT -> CC1101 -> nRF24 -> Recorder -> Thermal -> Audio Spectrum. Disabled or unavailable apps are skipped. CC1101/nRF24/Audio Spectrum use startup-cached availability probes; Recorder/Thermal are hot-plug aware.
 
 ### Runtime dispatch contract
 
@@ -36,7 +36,7 @@ An app reports whether INPUT was consumed. Unconsumed navigation remains global 
 
 Normal apps need only their module/descriptor, build/registry entry, and whatever semantic services they consume. Adding a normal app should not require modifying `app_manager.c`, `app_session.c`, or driver-specific teardown logic. Shared controls such as per-app notification editing are reusable helpers invoked by app modules rather than state embedded in the manager.
 
-Recorder is the exceptional transition case: its descriptor also supplies optional semantic prepare/reactivate hooks so an aborted transition can restore the exact recording/monitor/playback operation. Those hooks describe user-visible semantic state only; Recorder worker/channel reachability remains a resource-session responsibility.
+Optional app-specific prepare hooks are reserved for semantic transition vetoes that the platform cannot infer. Recorder uses this only while recording or finalizing a recording: navigation is blocked until the recording has been stopped and saved. RFScout does not stop a recording and later attempt to reconstruct or restart it after an aborted transition. Audio Spectrum needs no special transition hooks and follows the normal descriptor/session contract.
 
 ## Application lifecycle and resource sessions
 
@@ -47,25 +47,25 @@ The application-facing lifecycle remains intentionally small:
 1. **Enter** — establish inexpensive app-local state.
 2. **Settle** — optionally defer activation so rapid navigation stays responsive.
 3. **Activate** — begin normal app/service work after the common settle point.
-4. **Close** — preserve/finalize only user-visible semantic state the app itself understands; platform teardown and memory reclamation remain framework-owned.
+4. **Close** — optionally veto an unsafe semantic transition before platform teardown; otherwise platform teardown and memory reclamation remain framework-owned.
 
 Growable retained app state uses `app_session_calloc()`, `app_session_resize()`, and `app_session_free()`. The lower-level memory manager supplies ownership/accounting/bulk reclamation and is not normally an app API.
 
 A transition is transactional:
 
 1. ensure the source resource session exists;
-2. capture reversible semantic rollback state when needed;
+2. allow an optional app-semantic prepare/veto before service teardown begins;
 3. quiesce every platform service declared by the source descriptor;
-4. if any service cannot quiesce safely, restore the source service/semantic state and do **not** reclaim memory;
+4. if any service cannot quiesce safely, restore service state where the service supports recovery and do **not** reclaim memory;
 5. after successful service close, dispatch committed app-local LEAVE cleanup;
 6. bulk-reclaim all source-app managed memory and verify no managed allocation remains; and
 7. establish the destination session before ENTER can use app resources.
 
-A successful service stop means no new work that can reference app state can enter, admitted callbacks/workers have drained, and shared hardware is safely inactive. Successful session close is therefore the reachability proof; apps do not implement a second reachability phase.
+A prepare veto happens before session teardown, so it does not trigger service rollback. A successful service stop means no new work that can reference app state can enter, admitted callbacks/workers have drained, and shared hardware is safely inactive. Successful session close is therefore the reachability proof; apps do not implement a second reachability phase.
 
-On an aborted close, the session restarts services that were active and successfully stopped. Failed-stop recovery is service-specific so a self-restoring worker is not started twice. App-specific rollback is reserved for semantic state the platform cannot infer.
+On an aborted service close, the session restarts services that were active and successfully stopped when a safe restart operation exists. Failed-stop recovery is service-specific so a self-restoring worker is not started twice. App-level reactivation hooks remain optional for genuinely reversible semantic state, but normal apps—including Audio Spectrum—do not need them.
 
-Current session-managed asynchronous services are Wi-Fi monitoring, BLE scanning, CC1101, nRF24, and Recorder. Thermal acquisition is synchronous today; any future worker/DMA/callback path belongs behind a service rather than a new app-specific lifecycle protocol.
+Current session-managed asynchronous services are Wi-Fi monitoring, BLE scanning, CC1101, nRF24, and shared audio capture/Recorder activity. Thermal acquisition is synchronous today; any future worker/DMA/callback path belongs behind a service rather than a new app-specific lifecycle protocol.
 
 ### Memory policy
 
@@ -134,13 +134,15 @@ nRF24's RPD bit is threshold evidence (roughly whether received power exceeded t
 
 RF acquisition and LCD presentation run at different cadences. nRF24 sweep work occurs in its worker while completed display snapshots are coalesced; input edge capture is designed to survive temporary synchronous LCD/main-loop stalls.
 
-## Recorder
+## Recorder and Audio Spectrum
 
-Recorder currently uses I2S0/PDM microphone capture, runtime effective-rate measurement, live monitor FFT, app-owned input gain, asynchronous recording post-processing, SD recording catalog, and I2S1 playback through the shared speaker service.
+The shared audio-capture service owns I2S0/PDM microphone access, runtime effective-rate measurement, the live FFT monitor worker, SD recording machinery, and the microphone/channel teardown contract. App modules consume those semantic operations rather than owning I2S/DMA details.
 
-Recordings are 16-bit mono PCM WAV. The effective delivered sample rate is written to the WAV header. Save processing applies the current trim/DC-removal/bounded-normalization pipeline. Recorder files are independent of runtime app-memory reclamation.
+**Recorder** is the storage-backed app. It provides recording, asynchronous save/post-processing, recording catalog/delete, and I2S1 playback through the shared speaker service. Recordings are 16-bit mono PCM WAV; the effective delivered sample rate is written to the WAV header and save processing applies the current trim/DC-removal/bounded-normalization pipeline. Recorder files are independent of runtime app-memory reclamation. Active recording/saving blocks an app transition until the operation is safely complete; playback may be stopped during normal app exit.
 
-The planned calibrated shared Audio Input service is not yet implemented.
+**Audio Spectrum** is a separate microphone-only app. It can run without SD storage, starts monitoring after the common app settle point, renders the live FFT spectrum, and uses center to enter its local settings view. The current setting is fixed digital microphone input gain from 0 through +48 dB in 3 dB steps. With settings closed, rotary input remains global app navigation. Audio Spectrum has no Recorder-specific semantic rollback path.
+
+Further calibration/generalization of the shared Audio Input service remains roadmap work.
 
 ## Thermal
 
@@ -158,7 +160,7 @@ Deep sleep stores only a small RTC-backed session envelope (currently active app
 
 ## Storage and persistence
 
-The storage service owns SD mount/state and asynchronous rotating logs. Mount failure is nonfatal; radio/sensor apps continue, while persistence and Recorder file operations require mounted storage.
+The storage service owns SD mount/state and asynchronous rotating logs. Mount failure is nonfatal; radio/sensor apps and Audio Spectrum continue, while persistence and Recorder file operations require mounted storage.
 
 The conservative board-tested baseline is a FAT-compatible SanDisk card of 32 GB or less. The current board exposes no dedicated card-detect GPIO, so availability is established by successful mount/probe. Logging rotates `rfscout-00.log` through `rfscout-99.log` at up to 4 MiB each and attempts to preserve at least 64 MiB free.
 
@@ -170,13 +172,13 @@ On the current target:
 
 - LCD, microSD, CC1101, and nRF24 share SPI resources;
 - battery/power devices and external sensors share board I2C;
-- Recorder microphone uses I2S0;
+- shared microphone/audio capture uses I2S0;
 - the asynchronous speaker service uses I2S1.
 
 Application views render their content; the display service owns common top chrome and final global overlays/presentation. The RAM-only System Events ring is a platform service and its optional app is a read-only browse view.
 
 ## Validation invariants
 
-Release testing should rapidly rotate every enabled app and exercise low memory, callback races, worker-stop timeouts, dependency loss, Recorder transitions, and failed-close rollback. Successful app exit must leave zero managed allocations for the exited app; an aborted transition must preserve its memory/state. Baseline free PSRAM and largest-free-block behavior should not decline monotonically across repeated cycles.
+Release testing should rapidly rotate every enabled app and exercise low memory, callback races, worker-stop timeouts, dependency loss, Recorder recording/save transition vetoes, Audio Spectrum entry/exit, and failed-close rollback. Successful app exit must leave zero managed allocations for the exited app; an aborted transition must preserve its memory/state. Baseline free PSRAM and largest-free-block behavior should not decline monotonically across repeated cycles.
 
 Build/release workflow is documented in [RELEASING.md](RELEASING.md); board requirements in [BOARD_PORTING.md](BOARD_PORTING.md); user-visible behavior in [CAPABILITIES.md](CAPABILITIES.md).
