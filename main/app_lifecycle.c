@@ -115,8 +115,9 @@ rfscout_app_transition_diagnostics_t app_lifecycle_transition(
     esp_err_t result = app_session_ensure( a_from );
     if( ESP_OK != result )
     {
-        return abort_transition(
-            diagnostics, RFSCOUT_APP_TRANSITION_ABORTED_PREPARE, result, a_hooks, started_us );
+        diagnostics.outcome = RFSCOUT_APP_TRANSITION_ABORTED_PREPARE;
+        diagnostics.error = result;
+        return finish_transition( diagnostics, started_us );
     }
 
     if( NULL != a_hooks->prepare )
