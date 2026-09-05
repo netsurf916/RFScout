@@ -24,14 +24,15 @@
 #define APP_SESSION_MAX_SERVICES 8U
 #define APP_SESSION_RECORDER_QUIESCE_TIMEOUT_MS 5000U
 
+typedef esp_err_t ( *app_session_service_fn )( void *a_context );
 typedef bool ( *app_session_service_active_fn )( void *a_context );
 
 typedef struct
 {
     const char *name;
-    rfscout_app_service_fn start;
-    rfscout_app_service_fn stop;
-    rfscout_app_service_fn recover_failed_stop;
+    app_session_service_fn start;
+    app_session_service_fn stop;
+    app_session_service_fn recover_failed_stop;
     app_session_service_active_fn active;
     void *context;
     bool always_stop_for_close;
@@ -148,9 +149,9 @@ static esp_err_t stop_recorder( void *a_context )
 }
 
 static esp_err_t register_service( const char *a_name,
-                                   rfscout_app_service_fn a_start,
-                                   rfscout_app_service_fn a_stop,
-                                   rfscout_app_service_fn a_recover_failed_stop,
+                                   app_session_service_fn a_start,
+                                   app_session_service_fn a_stop,
+                                   app_session_service_fn a_recover_failed_stop,
                                    app_session_service_active_fn a_active,
                                    bool a_always_stop_for_close,
                                    void *a_context )
@@ -181,9 +182,6 @@ static esp_err_t register_service( const char *a_name,
         .active = a_active,
         .context = a_context,
         .always_stop_for_close = a_always_stop_for_close,
-        .was_active_for_close = false,
-        .stopped_for_close = false,
-        .failed_for_close = false,
     };
     return ESP_OK;
 }
@@ -208,9 +206,6 @@ static esp_err_t register_platform_services( rfscout_app_id_t a_app )
         case RFSCOUT_APP_NRF24:
             return register_service( "nRF24", start_nrf24, stop_nrf24, NULL, NULL, false, NULL );
         case RFSCOUT_APP_AUDIO:
-            /* Recorder operation restoration is semantic app state and remains in the optional
-               app rollback hook. The session owns the safety proof that no Recorder execution
-               context can still reach app memory before reclamation. */
             return register_service( "Recorder", NULL, stop_recorder, NULL, NULL, false, NULL );
         case RFSCOUT_APP_SYSTEM_EVENTS:
         case RFSCOUT_APP_THERMAL:
@@ -257,9 +252,6 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
             return ESP_ERR_INVALID_STATE;
         }
 
-        /* Startup/session restoration can select the final app after lifecycle initialization.
-           Rebinding an unused descriptor-only session is safe because it owns no app memory and
-           no close transaction has begun. */
         reset_session_state();
         session_app = RFSCOUT_APP_COUNT;
     }
@@ -303,18 +295,6 @@ void *app_session_resize( void *a_pointer, size_t a_count, size_t a_size )
 bool app_session_free( void *a_pointer )
 {
     return ensure_current_app_session() && memory_manager_free( session_owner(), a_pointer );
-}
-
-esp_err_t app_session_register_service( const char *a_name,
-                                        rfscout_app_service_fn a_start,
-                                        rfscout_app_service_fn a_stop,
-                                        void *a_context )
-{
-    if( !ensure_current_app_session() )
-    {
-        return ESP_ERR_INVALID_STATE;
-    }
-    return register_service( a_name, a_start, a_stop, NULL, NULL, false, a_context );
 }
 
 esp_err_t app_session_prepare_close( void )
@@ -372,7 +352,7 @@ esp_err_t app_session_abort_close( void )
     for( size_t i = 0U; i < service_count; ++i )
     {
         app_session_service_t *service = &services[ i ];
-        rfscout_app_service_fn restart = NULL;
+        app_session_service_fn restart = NULL;
         if( service->was_active_for_close && service->failed_for_close )
         {
             restart = service->recover_failed_stop;
