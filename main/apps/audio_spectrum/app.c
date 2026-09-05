@@ -157,5 +157,4 @@ const rfscout_app_descriptor_t rfscout_audio_spectrum_app = {
     .services = RFSCOUT_APP_SERVICE_AUDIO_CAPTURE,
     .runtime = spectrum_runtime,
     .prepare_leave = NULL,
-    .reactivate_leave = NULL,
 };
