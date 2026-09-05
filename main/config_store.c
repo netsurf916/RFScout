@@ -83,8 +83,8 @@ static esp_err_t validate_config_document( const char *a_path )
         return ESP_ERR_INVALID_RESPONSE;
     }
     const cJSON *version = cJSON_GetObjectItemCaseSensitive( root, "version" );
-    const bool valid = cJSON_IsNumber( version ) &&
-                       ( version->valueint == (int)RFSCOUT_CONFIG_SCHEMA_VERSION );
+    const bool valid =
+        cJSON_IsNumber( version ) && ( version->valueint == (int)RFSCOUT_CONFIG_SCHEMA_VERSION );
     cJSON_Delete( root );
     return valid ? ESP_OK : ESP_ERR_INVALID_VERSION;
 }
@@ -220,16 +220,13 @@ static void import_sd_config( void )
     const esp_err_t validation = validate_config_document( RFSCOUT_SD_CONFIG_IMPORT_PATH );
     if( ESP_OK != validation )
     {
-        ESP_LOGW( TAG,
-                  "SD configuration import rejected: %s",
-                  esp_err_to_name( validation ) );
+        ESP_LOGW( TAG, "SD configuration import rejected: %s", esp_err_to_name( validation ) );
         quarantine_sd_import();
         return;
     }
 
-    const esp_err_t result = atomic_copy( RFSCOUT_SD_CONFIG_IMPORT_PATH,
-                                          INTERNAL_CONFIG_TEMP_PATH,
-                                          RFSCOUT_INTERNAL_CONFIG_PATH );
+    const esp_err_t result = atomic_copy(
+        RFSCOUT_SD_CONFIG_IMPORT_PATH, INTERNAL_CONFIG_TEMP_PATH, RFSCOUT_INTERNAL_CONFIG_PATH );
     if( ESP_OK != result )
     {
         ESP_LOGW( TAG,
@@ -297,9 +294,8 @@ esp_err_t config_store_sync_example( void )
         return ESP_OK;
     }
 
-    const esp_err_t result = atomic_copy( RFSCOUT_INTERNAL_CONFIG_PATH,
-                                          SD_CONFIG_EXAMPLE_TEMP_PATH,
-                                          RFSCOUT_SD_CONFIG_EXAMPLE_PATH );
+    const esp_err_t result = atomic_copy(
+        RFSCOUT_INTERNAL_CONFIG_PATH, SD_CONFIG_EXAMPLE_TEMP_PATH, RFSCOUT_SD_CONFIG_EXAMPLE_PATH );
     if( ESP_OK == result )
     {
         ESP_LOGI( TAG, "updated %s", RFSCOUT_SD_CONFIG_EXAMPLE_PATH );
