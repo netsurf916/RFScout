@@ -7,6 +7,7 @@
 
 #include "app_lifecycle.h"
 
+#include "app_manager.h"
 #include "app_session.h"
 #include "memory_manager.h"
 
@@ -125,8 +126,10 @@ rfscout_app_transition_diagnostics_t app_lifecycle_transition(
         result = a_hooks->prepare( a_hooks->context );
         if( ESP_OK != result )
         {
-            return abort_transition(
-                diagnostics, RFSCOUT_APP_TRANSITION_ABORTED_PREPARE, result, a_hooks, started_us );
+            /* No session close has begun yet. A semantic veto needs no service rollback. */
+            diagnostics.outcome = RFSCOUT_APP_TRANSITION_ABORTED_PREPARE;
+            diagnostics.error = result;
+            return finish_transition( diagnostics, started_us );
         }
     }
 
