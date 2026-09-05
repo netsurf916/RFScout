@@ -1,10 +1,87 @@
 /**
-    apps/home/app.c : Home application descriptor
+    apps/home/app.c : Home application descriptor and runtime
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
 
 #include "app_descriptor.h"
+
+#include "device_view.h"
+#include "event.h"
+
+#include <stddef.h>
+
+static bool menu_active;
+
+static void emit_event( rfscout_event_type_t a_type, int32_t a_value )
+{
+    rfscout_event_emit( a_type, (uint8_t)RFSCOUT_APP_DEVICE, a_value );
+}
+
+static rfscout_app_runtime_result_t home_runtime( const rfscout_app_runtime_event_t *a_event )
+{
+    if( NULL == a_event )
+    {
+        return RFSCOUT_APP_RUNTIME_IGNORED;
+    }
+
+    if( RFSCOUT_APP_RUNTIME_ENTER == a_event->type )
+    {
+        menu_active = false;
+        device_view_landing();
+        return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
+    if( RFSCOUT_APP_RUNTIME_LEAVE == a_event->type )
+    {
+        menu_active = false;
+        return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
+    if( RFSCOUT_APP_RUNTIME_INPUT != a_event->type )
+    {
+        return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
+
+    if( RFSCOUT_INPUT_BACK == a_event->input.type )
+    {
+        if( !menu_active )
+        {
+            return RFSCOUT_APP_RUNTIME_IGNORED;
+        }
+        if( device_view_back() )
+        {
+            emit_event( RFSCOUT_EVENT_BACK, 0 );
+            return RFSCOUT_APP_RUNTIME_HANDLED;
+        }
+        menu_active = false;
+        device_view_landing();
+        emit_event( RFSCOUT_EVENT_BACK, 0 );
+        return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
+
+    if( menu_active )
+    {
+        const bool pressed = RFSCOUT_INPUT_SELECT == a_event->input.type;
+        const int delta = RFSCOUT_INPUT_NAVIGATION == a_event->input.type
+                              ? (int)a_event->input.value
+                              : 0;
+        if( device_view_input( pressed, delta ) )
+        {
+            menu_active = false;
+            device_view_landing();
+        }
+        return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
+
+    if( RFSCOUT_INPUT_SELECT == a_event->input.type )
+    {
+        menu_active = true;
+        device_view_enter();
+        emit_event( RFSCOUT_EVENT_ENTER, 0 );
+        return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
+
+    return RFSCOUT_APP_RUNTIME_IGNORED;
+}
 
 const rfscout_app_descriptor_t rfscout_home_app = {
     .id = RFSCOUT_APP_DEVICE,
@@ -13,4 +90,5 @@ const rfscout_app_descriptor_t rfscout_home_app = {
     .probe = NULL,
     .requires_activation = false,
     .services = RFSCOUT_APP_SERVICE_NONE,
+    .runtime = home_runtime,
 };
