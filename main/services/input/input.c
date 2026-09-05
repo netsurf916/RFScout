@@ -51,8 +51,7 @@ static rfscout_input_provider_t provider;
 static void IRAM_ATTR encoder_isr( void *a_argument )
 {
     (void)a_argument;
-    static const int8_t transitions[ 16 ] = { 0, -1, 1, 0, 1, 0, 0, -1,
-                                              -1, 0, 0, 1, 0, 1, -1, 0 };
+    static const int8_t transitions[ 16 ] = { 0, -1, 1, 0, 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, -1, 0 };
 
     const uint8_t current = (uint8_t)( ( gpio_get_level( RFSCOUT_BOARD_ENCODER_A_PIN ) << 1 ) |
                                        gpio_get_level( RFSCOUT_BOARD_ENCODER_B_PIN ) );
@@ -187,11 +186,16 @@ esp_err_t input_init( void )
     {
         return result;
     }
-    if( ESP_OK != ( result = gpio_set_intr_type( RFSCOUT_BOARD_ENCODER_A_PIN, GPIO_INTR_ANYEDGE ) ) ||
-        ESP_OK != ( result = gpio_set_intr_type( RFSCOUT_BOARD_ENCODER_B_PIN, GPIO_INTR_ANYEDGE ) ) ||
-        ESP_OK != ( result = gpio_set_intr_type( RFSCOUT_BOARD_ENCODER_KEY_PIN, GPIO_INTR_ANYEDGE ) ) ||
-        ESP_OK != ( result = gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_A_PIN, encoder_isr, NULL ) ) ||
-        ESP_OK != ( result = gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_B_PIN, encoder_isr, NULL ) ) ||
+    if( ESP_OK !=
+            ( result = gpio_set_intr_type( RFSCOUT_BOARD_ENCODER_A_PIN, GPIO_INTR_ANYEDGE ) ) ||
+        ESP_OK !=
+            ( result = gpio_set_intr_type( RFSCOUT_BOARD_ENCODER_B_PIN, GPIO_INTR_ANYEDGE ) ) ||
+        ESP_OK !=
+            ( result = gpio_set_intr_type( RFSCOUT_BOARD_ENCODER_KEY_PIN, GPIO_INTR_ANYEDGE ) ) ||
+        ESP_OK !=
+            ( result = gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_A_PIN, encoder_isr, NULL ) ) ||
+        ESP_OK !=
+            ( result = gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_B_PIN, encoder_isr, NULL ) ) ||
         ESP_OK != ( result = gpio_isr_handler_add(
                         RFSCOUT_BOARD_ENCODER_KEY_PIN, encoder_button_isr, NULL ) ) )
     {
@@ -200,9 +204,8 @@ esp_err_t input_init( void )
 
     provider = RFSCOUT_INPUT_PROVIDER_ROTARY_BUTTONS;
     ESP_LOGI( TAG, "rotary/button input provider selected" );
-    rfscout_event_emit( RFSCOUT_EVENT_INPUT_PROVIDER_SELECTED,
-                        RFSCOUT_EVENT_SOURCE_SYSTEM,
-                        (int32_t)provider );
+    rfscout_event_emit(
+        RFSCOUT_EVENT_INPUT_PROVIDER_SELECTED, RFSCOUT_EVENT_SOURCE_SYSTEM, (int32_t)provider );
     return ESP_OK;
 #endif
 }
