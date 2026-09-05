@@ -11,6 +11,8 @@
 
 #include "esp_log.h"
 
+#include <stddef.h>
+
 static const char *TAG = "app_framework";
 static rfscout_app_availability_t availability[ RFSCOUT_APP_COUNT ];
 
