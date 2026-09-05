@@ -27,6 +27,7 @@ typedef enum
     RFSCOUT_APP_NRF24,
     RFSCOUT_APP_AUDIO,
     RFSCOUT_APP_THERMAL,
+    RFSCOUT_APP_AUDIO_SPECTRUM,
     RFSCOUT_APP_COUNT
 } rfscout_app_id_t;
 
@@ -87,8 +88,8 @@ typedef rfscout_app_runtime_result_t ( *rfscout_app_runtime_handler_t )(
  * @details Probe implementations may use platform/service APIs but must leave hardware inactive.
  *          Service lifetime is declared as capability bits and remains implemented by the platform.
  *          Runtime handlers own app-local UI/state but not driver teardown or memory reachability.
- *          Leave hooks are optional and reserved for reversible semantic state needed on transition
- *          abort; ordinary apps should leave them NULL.
+ *          Leave hooks are optional and reserved for app-specific transition veto or reversible
+ *          semantic state; ordinary apps should leave them NULL.
  */
 typedef struct
 {
