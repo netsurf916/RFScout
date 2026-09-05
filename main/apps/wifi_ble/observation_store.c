@@ -404,7 +404,7 @@ bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new
             wifi_last_seen = a_observation->last_seen_ms;
         }
         if( ( RF_SOURCE_BLE == a_observation->last_source ) ||
-            ( 0U != ( a_observation->source_mask & RF_SOURCE_BIT( RF_SOURCE_BLE ) ) )
+            ( 0U != ( a_observation->source_mask & RF_SOURCE_BIT( RF_SOURCE_BLE ) ) ) )
         {
             ble_last_seen = a_observation->last_seen_ms;
         }
