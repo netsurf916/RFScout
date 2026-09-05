@@ -1,6 +1,6 @@
 /**
     device_config.h : RFScout persistent device configuration
-    Description: Defines compiled defaults, SD-backed JSON preferences, application enablement, and notifications.
+    Description: Defines compiled defaults, internal JSON preferences, application enablement, and notifications.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -21,7 +21,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define RFSCOUT_CONFIG_PATH "/sdcard/rfscout.json"
+#define RFSCOUT_CONFIG_PATH "/internal/rfscout.json"
 #define RFSCOUT_CONFIG_SCHEMA_VERSION 3U
 #define RFSCOUT_TIMEZONE_MAX 8U
 #define RFSCOUT_TIMEZONE_NAME_MAX 32U
@@ -78,7 +78,7 @@ typedef struct
     size_t timezone_count;
 } device_config_t;
 
-/** @brief Initialize compiled defaults and optionally load SD-backed configuration. */
+/** @brief Initialize compiled defaults and load/repair the authoritative internal configuration. */
 esp_err_t device_config_init( void );
 
 /** @brief Return the active device configuration. */
@@ -186,7 +186,7 @@ const device_timezone_t *device_config_timezone( void );
 bool device_config_saved_time( int64_t *a_epoch, const char **a_source );
 
 /**
- * @brief Atomically persist current preferences and optional wall-clock bootstrap state to SD.
+ * @brief Atomically persist current preferences and optional wall-clock bootstrap state internally.
  * @param a_update_time True to replace/clear the saved shutdown epoch; false to preserve it.
  * @param a_epoch New saved epoch when @p a_update_time is true.
  * @param a_time_source Stable source token for the supplied epoch.
