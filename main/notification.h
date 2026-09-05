@@ -10,7 +10,7 @@
 #ifndef _RFSCOUT_NOTIFICATION_H_
 #define _RFSCOUT_NOTIFICATION_H_
 
-#include "app_manager.h"
+#include "app_descriptor.h"
 
 #include <stdbool.h>
 #include <stddef.h>
