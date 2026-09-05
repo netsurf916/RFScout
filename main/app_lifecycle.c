@@ -57,10 +57,10 @@ abort_transition( rfscout_app_transition_diagnostics_t a_diagnostics,
     const esp_err_t session_result = app_session_abort_close();
     if( ESP_OK != session_result )
     {
-        a_diagnostics.outcome = RFSCOUT_APP_TRANSITION_ABORTED_REACTIVATION;
+        a_diagnostics.outcome = RFSCOUT_APP_TRANSITION_ABORTED_SERVICE_RESTORE;
         a_diagnostics.error = session_result;
         ESP_LOGE( TAG,
-                  "source service reactivation failed after aborted transition from=%d to=%d",
+                  "source service restore failed after aborted transition from=%d to=%d",
                   (int)a_diagnostics.from,
                   (int)a_diagnostics.to );
     }
