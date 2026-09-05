@@ -2,7 +2,7 @@
 
 This is the canonical production reference for persistent settings and device-level presentation/power behavior. Planned configuration concepts belong in [ROADMAP.md](ROADMAP.md).
 
-RFScout starts from compiled defaults and, when SD is mounted, overlays `/sdcard/rfscout.json`. The current canonical schema is **version 3**. RFScout is still pre-1.0, so compatibility with development-era schemas is best effort until v1.0.0.
+RFScout starts from compiled defaults and treats the configuration stored in internal flash as authoritative. The current canonical schema is **version 3**. An SD card is optional for configuration persistence; when present it provides an explicit import path and a synchronized human-readable example/current copy.
 
 ## Representative schema
 
@@ -81,32 +81,34 @@ RFScout starts from compiled defaults and, when SD is mounted, overlays `/sdcard
 }
 ```
 
-Alert Morse maps are stored beneath their owning app and omitted above for brevity. The historical `apps.audio` key represents Recorder internally; `apps.audio_spectrum` independently controls the Audio Spectrum app. User-facing startup aliases such as `home` and `recorder` are written canonically while historical aliases remain accepted where supported.
+Alert Morse maps are stored beneath their owning app and omitted above for brevity. The historical `apps.audio` key represents Recorder internally; `apps.audio_spectrum` independently controls the Audio Spectrum app. User-facing startup aliases such as `home` and `recorder` are written canonically where supported.
 
-## Load/save and migration rules
+## Authority, load, and save rules
 
-Configuration loading follows defaults-plus-overlay:
+The internal SPIFFS partition is the single source of truth during normal operation. The durable live file is `/internal/rfscout.json`; no internal backup, quarantine, or history copies are retained.
 
-1. populate current defaults;
-2. parse the existing document if present;
-3. apply supported older-schema migrations;
-4. overlay only recognized, type-correct values;
-5. ignore unknown/obsolete fields; and
-6. build a fresh current-schema document on save.
+Startup follows this order:
 
-Malformed, unsupported, or unsafe pre-1.0 configuration may be discarded and replaced with current defaults. Future schema versions are rejected rather than destructively rewritten by older firmware.
+1. mount internal SPIFFS;
+2. remove any stale internal write temporary and legacy development sidecars;
+3. if `/sdcard/rfscout.json` exists, validate it as a current-schema import;
+4. if valid, copy it to `/internal/rfscout.json.tmp`, flush it, and atomically rename it over the internal live file;
+5. delete the SD import only after the internal commit succeeds;
+6. if the SD import is malformed or has an incompatible schema, rename it to `/sdcard/rfscout.json.bad` and leave the internal configuration unchanged;
+7. load the internal configuration over compiled defaults; and
+8. if the internal file is missing, corrupt, or incompatible, replace it with a freshly generated current-default configuration.
 
-Normal writes use `rfscout.json.tmp` and `rfscout.json.bak` transiently so a partial write does not replace the active configuration. Legacy development sidecars are cleaned at startup. Dirty configuration is flushed before deep sleep and SD unmount.
+Internal writes always serialize a complete configuration to `/internal/rfscout.json.tmp`, flush and close it, then atomically rename it over `/internal/rfscout.json`. The temporary is disposable after an interrupted write; RFScout never treats it as a second authoritative configuration.
 
-Schema-v2 -> v3 preserves the visual-theme/audio-policy split. Indoor, Outdoor, and Night retain their visual theme and migrate to **Normal** with the historical gain defaults shown below. Legacy Discipline maps to **Night + Quiet**.
+Internal schema compatibility is deliberately simple while RFScout remains pre-1.0: the stored internal document must match the firmware's current schema. An incompatible internal document is replaced by current defaults rather than migrated through backup/recovery files.
 
-| Legacy theme | UI gain | Event gain |
-| --- | ---: | ---: |
-| Indoor | 35% | 100% |
-| Outdoor | 55% | 100% |
-| Night / Discipline | 20% | 60% |
+### SD import and example workflow
 
-Canonical v3 never writes `discipline` as a theme.
+`/sdcard/rfscout.json` means **import this configuration**. RFScout never uses it as the normal live configuration. A successful import consumes and removes the file. A failed parse/schema validation preserves the user's input as `/sdcard/rfscout.json.bad` so it is not retried on every boot.
+
+`/sdcard/rfscout-example.json` is never imported under that name. It is a byte-for-byte copy of the current authoritative internal configuration and is intended to show the exact schema and current values a user can copy, rename to `rfscout.json`, edit, and reinsert for import.
+
+RFScout compares the example and internal files before writing. If they already match, the SD card is not rewritten. The example is refreshed at startup and after an authoritative internal configuration save when SD is available.
 
 ## Display and theme
 
@@ -114,7 +116,7 @@ Canonical v3 never writes `discipline` as a theme.
 
 Dim/off are presentation states only. Applications, RF acquisition, logging, framebuffer work, and audio continue. In the off state RFScout sets the backlight to zero, disables ST7789 output, and places the panel in hardware sleep. Physical user activity wakes the display; the complete wake gesture is consumed before app navigation, lock handling, or power-button behavior. Wake performs panel sleep-out/settle, presents the latest framebuffer while dark, then restores configured brightness.
 
-Visual themes are **Indoor**, **Outdoor**, and **Night** and affect colors only.
+Visual themes are **Indoor**, **Outdoor**, and **Night** and affect colors only. Legacy `discipline` theme text is normalized to **Night + Quiet** if encountered in an otherwise current-schema document.
 
 ## Audio policy and volumes
 
@@ -164,15 +166,17 @@ Current production retention is three independent values under `apps.wifi_bt.ret
 
 Wi-Fi and BLE source membership age independently in merged observations. Surveillance history has its own window. Planned `Instant` and `Never` semantics remain in [ROADMAP.md](ROADMAP.md).
 
-## SD, Recorder files, and logging
+## Internal flash, SD, Recorder files, and logging
 
-The current board has no separate SD card-detect GPIO; storage becomes available after successful mount/probe. Mount failure is nonfatal to radio/sensor apps and Audio Spectrum but prevents canonical persistence and Recorder file operations.
+The 16 MiB flash layout reserves an 8 MiB factory application partition and the remaining approximately 8 MiB SPIFFS partition for internal persistence. Configuration currently uses only the single live JSON file (plus a short-lived write temporary); the remaining internal capacity is intentionally left available for future system-owned persistent records/database use.
+
+The current board has no separate SD card-detect GPIO; SD storage becomes available after successful mount/probe. SD absence is nonfatal to configuration persistence, radio/sensor apps, and Audio Spectrum. It prevents Recorder file operations, SD logs, configuration import/export-example synchronization, and other bulk/removable-storage operations.
 
 The conservative board-tested baseline is a FAT-compatible SanDisk card of 32 GB or less. Cards shipped as exFAT may require reformatting to a supported FAT filesystem.
 
 Recorder uses `/sdcard/audio/` and writes 16-bit mono PCM WAV. It records the measured effective PCM sample rate in the WAV header. Supported playback validation accepts 8–48 kHz mono 16-bit PCM. Current post-processing includes 300 ms head trim, 600 ms tail trim, DC removal, and bounded normalization. Live FFT/spectrum monitoring belongs to Audio Spectrum and does not require storage.
 
-Logs rotate through `rfscout-00.log` ... `rfscout-99.log`, up to 4 MiB each (about 400 MiB normal maximum), while attempting to retain at least 64 MiB filesystem free. Valid wall time uses UTC ISO-8601 timestamps; before wall time is established logs use explicit monotonic `UP+...` timestamps.
+Logs remain SD-only. They rotate through `rfscout-00.log` ... `rfscout-99.log`, up to 4 MiB each (about 400 MiB normal maximum), while attempting to retain at least 64 MiB filesystem free. Valid wall time uses UTC ISO-8601 timestamps; before wall time is established logs use explicit monotonic `UP+...` timestamps.
 
 ## Deep-sleep session state
 
