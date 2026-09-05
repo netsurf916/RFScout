@@ -10,7 +10,6 @@
 #include "app_framework.h"
 #include "app_lifecycle.h"
 
-#include "audio_spectrum.h"
 #include "audio_view.h"
 #include "ble_monitor.h"
 #include "cc1101.h"
@@ -116,8 +115,6 @@ static bool audio_delete_confirm;
 static bool device_menu;
 static bool notification_menu;
 static bool notification_edit;
-static bool wifi_monitor_ready;
-static bool ble_monitor_ready;
 static unsigned wifi_item;
 static unsigned cc_item;
 static unsigned nr_item;
@@ -159,20 +156,18 @@ static bool app_available( rfscout_app_id_t a_app )
 static void start_wifi_bt_collectors( void )
 {
     esp_err_t result;
-    if( !wifi_monitor_ready )
+    if( !radio_monitor_is_running() )
     {
         result = radio_monitor_start();
-        wifi_monitor_ready = ( ESP_OK == result );
-        if( !wifi_monitor_ready )
+        if( ESP_OK != result )
         {
             ESP_LOGW( TAG, "Wi-Fi monitor start failed: %s; retrying", esp_err_to_name( result ) );
         }
     }
-    if( !ble_monitor_ready )
+    if( !ble_monitor_is_running() )
     {
         result = ble_monitor_start();
-        ble_monitor_ready = ( ESP_OK == result );
-        if( !ble_monitor_ready )
+        if( ESP_OK != result )
         {
             ESP_LOGW( TAG, "BLE monitor start failed: %s; retrying", esp_err_to_name( result ) );
         }
@@ -729,33 +724,14 @@ static void render_audio( void )
 typedef struct
 {
     rfscout_app_id_t source;
-    bool was_activated;
-    bool wifi_was_ready;
-    bool ble_was_ready;
-    bool wifi_stopped;
-    bool ble_stopped;
-    bool cc_stopped;
-    bool nr_stopped;
     rfscout_recorder_state_t recorder_state_before;
     unsigned recorder_item_before;
     uint8_t recorder_gain_before;
     uint8_t recorder_volume_before;
-    bool audio_stop_attempted;
-    bool audio_quiesced;
-    bool prepare_complete;
 } app_transition_context_t;
 
 static bool recorder_worker_references_clear( void )
 {
-    /*
-     * recorder_probe_microphone() rejects entry while the recorder owns an RX channel or while
-     * either recorder worker task still exists. Once those references are gone, the probe itself
-     * is synchronous and releases its temporary channel before returning. Detection/probe errors
-     * therefore do not invalidate the reachability proof; ESP_ERR_INVALID_STATE is the signal that
-     * a recorder-owned execution context or channel is still reachable. Recorder state itself is
-     * deliberately not part of this proof: an interrupted SD write may leave ERROR after all worker
-     * and channel references are safely gone.
-     */
     return ESP_ERR_INVALID_STATE != recorder_probe_microphone();
 }
 
@@ -774,153 +750,32 @@ static bool wait_for_recorder_workers( uint32_t a_timeout_ms )
     return recorder_worker_references_clear();
 }
 
-static esp_err_t prepare_app_exit( void *a_context )
+static esp_err_t reactivate_recorder_operation( app_transition_context_t *a_context )
 {
-    app_transition_context_t *context = a_context;
-    if( NULL == context )
+    if( NULL == a_context )
     {
         return ESP_ERR_INVALID_ARG;
     }
-
-    if( !context->was_activated )
-    {
-        context->prepare_complete = true;
-        return ESP_OK;
-    }
-
-    switch( context->source )
-    {
-        case RFSCOUT_APP_WIFI_BT:
-            if( context->ble_was_ready )
-            {
-                const esp_err_t result = ble_monitor_stop();
-                context->ble_stopped = true;
-                ble_monitor_ready = false;
-                if( ESP_OK != result )
-                {
-                    return result;
-                }
-            }
-            if( context->wifi_was_ready )
-            {
-                const esp_err_t result = radio_monitor_stop();
-                context->wifi_stopped = true;
-                wifi_monitor_ready = false;
-                if( ESP_OK != result )
-                {
-                    return result;
-                }
-            }
-            break;
-        case RFSCOUT_APP_CC1101:
-            if( !cc1101_stop() )
-            {
-                return ESP_ERR_TIMEOUT;
-            }
-            context->cc_stopped = true;
-            break;
-        case RFSCOUT_APP_NRF24:
-            if( !nrf24_stop() )
-            {
-                return ESP_ERR_TIMEOUT;
-            }
-            context->nr_stopped = true;
-            break;
-        case RFSCOUT_APP_AUDIO:
-            context->audio_stop_attempted =
-                ( RFSCOUT_RECORDER_RECORDING == context->recorder_state_before ) ||
-                ( RFSCOUT_RECORDER_SAVING == context->recorder_state_before ) ||
-                ( RFSCOUT_RECORDER_MONITORING == context->recorder_state_before ) ||
-                ( RFSCOUT_RECORDER_PLAYING == context->recorder_state_before );
-            if( !recorder_prepare_storage_shutdown( APP_RECORDER_QUIESCE_TIMEOUT_MS ) )
-            {
-                return ESP_ERR_TIMEOUT;
-            }
-            recorder_stop();
-            audio_spectrum_stop();
-            if( !wait_for_recorder_workers( APP_RECORDER_QUIESCE_TIMEOUT_MS ) )
-            {
-                ESP_LOGE( TAG, "Recorder worker/channel references did not quiesce before exit" );
-                return ESP_ERR_TIMEOUT;
-            }
-            context->audio_quiesced = true;
-            break;
-        case RFSCOUT_APP_SYSTEM_EVENTS:
-        case RFSCOUT_APP_DEVICE:
-        case RFSCOUT_APP_THERMAL:
-        case RFSCOUT_APP_COUNT:
-        default:
-            break;
-    }
-
-    context->prepare_complete = true;
-    return ESP_OK;
-}
-
-static bool app_exit_reachability_clear( void *a_context )
-{
-    const app_transition_context_t *context = a_context;
-    if( ( NULL == context ) || !context->prepare_complete )
-    {
-        return false;
-    }
-    if( !context->was_activated )
-    {
-        return true;
-    }
-
-    switch( context->source )
-    {
-        case RFSCOUT_APP_WIFI_BT:
-            return ( !context->wifi_was_ready || context->wifi_stopped ) &&
-                   ( !context->ble_was_ready || context->ble_stopped );
-        case RFSCOUT_APP_CC1101:
-            return context->cc_stopped;
-        case RFSCOUT_APP_NRF24:
-            return context->nr_stopped;
-        case RFSCOUT_APP_AUDIO:
-            return context->audio_quiesced;
-        case RFSCOUT_APP_SYSTEM_EVENTS:
-        case RFSCOUT_APP_DEVICE:
-        case RFSCOUT_APP_THERMAL:
-            return true;
-        case RFSCOUT_APP_COUNT:
-        default:
-            return false;
-    }
-}
-
-static esp_err_t reactivate_recorder_operation( app_transition_context_t *a_context )
-{
-    if( ( NULL == a_context ) || !a_context->audio_stop_attempted )
-    {
-        return ESP_OK;
-    }
-
-    if( recorder_state() == a_context->recorder_state_before )
-    {
-        return ESP_OK;
-    }
-
-    /* A failed Prepare may have timed out on the separate speaker playback worker. Re-run the
-       bounded Recorder storage/output shutdown before attempting to queue replacement playback. */
-    if( !recorder_prepare_storage_shutdown( APP_RECORDER_QUIESCE_TIMEOUT_MS ) )
-    {
-        ESP_LOGE( TAG, "Recorder output/storage work did not quiesce before abort reactivation" );
-        return ESP_ERR_TIMEOUT;
-    }
-
-    if( !wait_for_recorder_workers( APP_RECORDER_QUIESCE_TIMEOUT_MS ) )
-    {
-        ESP_LOGE( TAG, "Recorder could not drain workers before abort reactivation" );
-        return ESP_ERR_TIMEOUT;
-    }
-
     if( ( RFSCOUT_RECORDER_RECORDING != a_context->recorder_state_before ) &&
         ( RFSCOUT_RECORDER_MONITORING != a_context->recorder_state_before ) &&
         ( RFSCOUT_RECORDER_PLAYING != a_context->recorder_state_before ) )
     {
         return ESP_OK;
+    }
+    if( recorder_state() == a_context->recorder_state_before )
+    {
+        return ESP_OK;
+    }
+
+    if( !recorder_prepare_storage_shutdown( APP_RECORDER_QUIESCE_TIMEOUT_MS ) )
+    {
+        ESP_LOGE( TAG, "Recorder output/storage work did not quiesce before abort reactivation" );
+        return ESP_ERR_TIMEOUT;
+    }
+    if( !wait_for_recorder_workers( APP_RECORDER_QUIESCE_TIMEOUT_MS ) )
+    {
+        ESP_LOGE( TAG, "Recorder could not drain workers before abort reactivation" );
+        return ESP_ERR_TIMEOUT;
     }
 
     if( RFSCOUT_RECORDER_IDLE != recorder_state() )
@@ -970,65 +825,8 @@ static esp_err_t reactivate_app_exit( void *a_context )
     {
         return ESP_ERR_INVALID_ARG;
     }
-    if( !context->was_activated )
-    {
-        return ESP_OK;
-    }
-
-    esp_err_t first_error = ESP_OK;
-    switch( context->source )
-    {
-        case RFSCOUT_APP_WIFI_BT:
-            if( context->wifi_was_ready && context->wifi_stopped )
-            {
-                const esp_err_t result = radio_monitor_start();
-                wifi_monitor_ready = ( ESP_OK == result );
-                if( ( ESP_OK != result ) && ( ESP_OK == first_error ) )
-                {
-                    first_error = result;
-                }
-            }
-            if( context->ble_was_ready && context->ble_stopped )
-            {
-                const esp_err_t result = ble_monitor_start();
-                ble_monitor_ready = ( ESP_OK == result );
-                if( ( ESP_OK != result ) && ( ESP_OK == first_error ) )
-                {
-                    first_error = result;
-                }
-            }
-            break;
-        case RFSCOUT_APP_CC1101:
-            if( context->cc_stopped )
-            {
-                const esp_err_t result = cc1101_start();
-                if( ( ESP_OK != result ) && ( ESP_OK == first_error ) )
-                {
-                    first_error = result;
-                }
-            }
-            break;
-        case RFSCOUT_APP_NRF24:
-            if( context->nr_stopped )
-            {
-                const esp_err_t result = nrf24_start();
-                if( ( ESP_OK != result ) && ( ESP_OK == first_error ) )
-                {
-                    first_error = result;
-                }
-            }
-            break;
-        case RFSCOUT_APP_AUDIO:
-            first_error = reactivate_recorder_operation( context );
-            break;
-        case RFSCOUT_APP_SYSTEM_EVENTS:
-        case RFSCOUT_APP_DEVICE:
-        case RFSCOUT_APP_THERMAL:
-        case RFSCOUT_APP_COUNT:
-        default:
-            break;
-    }
-    return first_error;
+    return ( RFSCOUT_APP_AUDIO == context->source ) ? reactivate_recorder_operation( context )
+                                                    : ESP_OK;
 }
 
 static void commit_app_exit( void *a_context )
@@ -1041,8 +839,6 @@ static void commit_app_exit( void *a_context )
 
     if( RFSCOUT_APP_WIFI_BT == context->source )
     {
-        wifi_monitor_ready = false;
-        ble_monitor_ready = false;
         wifi_item = WIFI_MENU_BACK;
     }
     else if( RFSCOUT_APP_CC1101 == context->source )
@@ -1100,8 +896,6 @@ static void enter_app( rfscout_app_id_t a_app )
             wifi_item = WIFI_MENU_BACK;
             wifi_menu = false;
             wifi_edit = false;
-            wifi_monitor_ready = false;
-            ble_monitor_ready = false;
             last_radio_retry_us = 0;
             break;
         case RFSCOUT_APP_CC1101:
@@ -1185,9 +979,6 @@ static bool transition_to_app( rfscout_app_id_t a_destination, bool a_report_abo
     const int64_t transition_started = esp_timer_get_time();
     app_transition_context_t context = {
         .source = previous,
-        .was_activated = app_activated,
-        .wifi_was_ready = wifi_monitor_ready,
-        .ble_was_ready = ble_monitor_ready,
         .recorder_state_before = RFSCOUT_RECORDER_IDLE,
     };
     if( RFSCOUT_APP_AUDIO == previous )
@@ -1199,8 +990,7 @@ static bool transition_to_app( rfscout_app_id_t a_destination, bool a_report_abo
         context.recorder_volume_before = NULL != config ? config->recorder_volume_percent : 50U;
     }
     const rfscout_app_lifecycle_hooks_t hooks = {
-        .prepare = prepare_app_exit,
-        .reachability_clear = app_exit_reachability_clear,
+        .prepare = NULL,
         .reactivate = reactivate_app_exit,
         .commit = commit_app_exit,
         .context = &context,
@@ -1693,7 +1483,7 @@ static void audio_input( bool a_pressed, bool a_long_pressed, int a_delta )
                 volume = 100;
             }
             if( ( volume != old_volume ) &&
-                ( ESP_OK == device_config_set_recorder_volume( (uint8_t)volume ) ) )
+                ( ESP_OK == device_config_set_recorder_volume( (uint8_t)volume ) )
             {
                 recorder_set_playback_volume( (uint8_t)volume );
                 emit_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
@@ -1886,8 +1676,6 @@ esp_err_t app_manager_init( void )
     nr_packet_item = 0U;
     audio_item = AUDIO_BROWSER_BACK;
     notification_item = NOTIFICATION_MENU_BACK;
-    wifi_monitor_ready = false;
-    ble_monitor_ready = false;
     memset( cc_notification_counts, 0, sizeof( cc_notification_counts ) );
     memset( nr_notification_counts, 0, sizeof( nr_notification_counts ) );
 
@@ -2213,7 +2001,7 @@ void app_manager_poll( void )
             }
             return;
         }
-        if( ( !wifi_monitor_ready || !ble_monitor_ready ) &&
+        if( ( !radio_monitor_is_running() || !ble_monitor_is_running() ) &&
             ( now - last_radio_retry_us >= APP_RADIO_RETRY_INTERVAL_US ) )
         {
             last_radio_retry_us = now;
