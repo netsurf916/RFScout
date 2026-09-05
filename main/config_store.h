@@ -1,6 +1,6 @@
 /**
     config_store.h : RFScout internal configuration persistence
-    Description: Owns the internal SPIFFS configuration mount and SD import/example exchange.
+    Description: Owns the internal LittleFS configuration mount and SD import/example exchange.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
