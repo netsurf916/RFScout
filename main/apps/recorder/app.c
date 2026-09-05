@@ -226,8 +226,7 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
         return;
     }
 
-    if( ( RFSCOUT_INPUT_LONG_SELECT == a_input->type ) &&
-        ( menu_item >= AUDIO_BROWSER_FILE_BASE ) )
+    if( ( RFSCOUT_INPUT_LONG_SELECT == a_input->type ) && ( menu_item >= AUDIO_BROWSER_FILE_BASE ) )
     {
         menu_editing = true;
         delete_confirm = false;
