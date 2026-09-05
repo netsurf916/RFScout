@@ -40,14 +40,16 @@ Home/Device Settings, System Events, and Thermal currently have no asynchronous 
 `app_lifecycle.c` keeps a transactional implementation underneath the simple app API:
 
 1. ensure the source session exists;
-2. ask the session to close all registered platform services;
-3. abort without reclaiming memory if any service cannot close safely;
-4. run optional app-semantic Prepare work when needed;
+2. run optional app-semantic Prepare work while the source services are still active;
+3. ask the session to close all registered platform services;
+4. abort without reclaiming memory if semantic Prepare or any service close cannot complete safely;
 5. verify the session plus any remaining specialized semantic reachability condition;
 6. commit irreversible app cleanup;
 7. bulk-reclaim all source-app managed memory;
 8. verify zero source allocations remain; and
 9. create the destination session before the destination app begins using app resources.
+
+Semantic Prepare deliberately runs before platform-service teardown so an app can snapshot reversible user-visible state, such as the exact Recorder operation, before the service changes it. Prepare must therefore **not** assume workers, callbacks, DMA paths, or peripherals have already quiesced. The session layer performs that safety transition immediately afterward.
 
 If a transition aborts, `app_session_abort_close()` restores the original platform-service set according to each service's failure semantics. Services that were active and successfully stopped are restarted. A service whose stop call fails may either have already self-restored its active state or use a platform-internal failed-stop recovery callback; the session records which case applies so it does not double-start self-restoring workers. App-specific rollback is reserved for semantic state that cannot be inferred by the platform—for example restoring the exact Recorder operation the user had active. Memory stays intact until close succeeds.
 
@@ -67,7 +69,7 @@ WiFi/BLE is the first data-heavy app moved to session memory. The normalized obs
 
 The summary UI no longer keeps another fixed 1000-entry observation/brand mirror. It requests aggregate counts and only stores the rows that physically fit on the display. Growable summary scratch is also session-owned.
 
-The store uses the app-session generation to invalidate cached pointers after a prior WiFi/BLE session has been reclaimed. It does not inspect lower-level allocator ownership metadata.
+The store uses the app-session generation to invalidate cached pointers after a prior WiFi/BLE session has been reclaimed. It refreshes that generation after any allocation that may lazily bind the active session, so a restored startup app cannot cause a newly allocated collection to be mistaken for stale state. It does not inspect lower-level allocator ownership metadata.
 
 ## Recorder semantic cleanup
 
