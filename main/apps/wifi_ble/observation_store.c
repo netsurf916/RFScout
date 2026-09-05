@@ -18,6 +18,8 @@
 static rf_device_t *devices;
 static size_t device_count;
 static size_t device_capacity;
+static size_t *identity_index;
+static size_t identity_index_capacity;
 static observation_vendor_count_t *summary_vendors;
 static size_t summary_vendor_capacity;
 static size_t *summary_vendor_slots;
@@ -39,6 +41,8 @@ static void synchronize_session_store( void )
     devices = NULL;
     device_count = 0U;
     device_capacity = 0U;
+    identity_index = NULL;
+    identity_index_capacity = 0U;
     summary_vendors = NULL;
     summary_vendor_capacity = 0U;
     summary_vendor_slots = NULL;
@@ -79,6 +83,131 @@ static bool ensure_capacity( size_t a_required )
     device_capacity = capacity;
     store_generation = app_session_generation();
     return true;
+}
+
+static uint32_t identity_hash( const rf_device_t *a_device )
+{
+    uint32_t hash = 2166136261U;
+    for( size_t i = 0U; i < sizeof( a_device->address ); ++i )
+    {
+        hash ^= a_device->address[ i ];
+        hash *= 16777619U;
+    }
+    hash ^= a_device->address_type;
+    hash *= 16777619U;
+    return hash;
+}
+
+static bool same_identity( const rf_device_t *a_left, const rf_device_t *a_right )
+{
+    return ( a_left->address_type == a_right->address_type ) &&
+           ( 0 == memcmp( a_left->address, a_right->address, 6 ) );
+}
+
+static void identity_index_insert( size_t a_device_index )
+{
+    if( ( NULL == identity_index ) || ( 0U == identity_index_capacity ) ||
+        ( a_device_index >= device_count ) )
+    {
+        return;
+    }
+
+    size_t slot =
+        (size_t)identity_hash( &devices[ a_device_index ] ) & ( identity_index_capacity - 1U );
+    for( size_t probes = 0U; probes < identity_index_capacity; ++probes )
+    {
+        if( 0U == identity_index[ slot ] )
+        {
+            identity_index[ slot ] = a_device_index + 1U;
+            return;
+        }
+        slot = ( slot + 1U ) & ( identity_index_capacity - 1U );
+    }
+}
+
+static void rebuild_identity_index( void )
+{
+    if( ( NULL == identity_index ) || ( 0U == identity_index_capacity ) )
+    {
+        return;
+    }
+
+    memset( identity_index, 0, identity_index_capacity * sizeof( *identity_index ) );
+    for( size_t i = 0U; i < device_count; ++i )
+    {
+        identity_index_insert( i );
+    }
+}
+
+static bool ensure_identity_index_capacity( size_t a_required )
+{
+    size_t required_slots = a_required;
+    if( required_slots <= ( SIZE_MAX / 2U ) )
+    {
+        required_slots *= 2U;
+    }
+    if( required_slots < 2U )
+    {
+        required_slots = 2U;
+    }
+
+    if( required_slots <= identity_index_capacity )
+    {
+        return true;
+    }
+
+    size_t capacity = identity_index_capacity;
+    if( 0U == capacity )
+    {
+        capacity = RFSCOUT_OBSERVATION_INITIAL_CAPACITY * 2U;
+    }
+    while( capacity < required_slots )
+    {
+        if( capacity > ( SIZE_MAX / 2U ) )
+        {
+            return false;
+        }
+        capacity *= 2U;
+    }
+
+    size_t *replacement = app_session_resize( identity_index, capacity, sizeof( *identity_index ) );
+    if( NULL == replacement )
+    {
+        return false;
+    }
+
+    identity_index = replacement;
+    identity_index_capacity = capacity;
+    store_generation = app_session_generation();
+    rebuild_identity_index();
+    return true;
+}
+
+static size_t find_identity( const rf_device_t *a_observation )
+{
+    if( ( NULL == identity_index ) || ( 0U == identity_index_capacity ) )
+    {
+        return SIZE_MAX;
+    }
+
+    size_t slot = (size_t)identity_hash( a_observation ) & ( identity_index_capacity - 1U );
+    for( size_t probes = 0U; probes < identity_index_capacity; ++probes )
+    {
+        const size_t encoded_index = identity_index[ slot ];
+        if( 0U == encoded_index )
+        {
+            return SIZE_MAX;
+        }
+
+        const size_t device_index = encoded_index - 1U;
+        if( ( device_index < device_count ) &&
+            same_identity( &devices[ device_index ], a_observation ) )
+        {
+            return device_index;
+        }
+        slot = ( slot + 1U ) & ( identity_index_capacity - 1U );
+    }
+    return SIZE_MAX;
 }
 
 static bool ensure_summary_capacity( size_t a_required )
@@ -272,12 +401,6 @@ static uint32_t timeout_ms_for_source( rf_source_t a_source )
     return (uint32_t)seconds * 1000U;
 }
 
-static bool same_identity( const rf_device_t *a_left, const rf_device_t *a_right )
-{
-    return ( a_left->address_type == a_right->address_type ) &&
-           ( 0 == memcmp( a_left->address, a_right->address, 6 ) );
-}
-
 static void emit_event( observation_store_event_t a_event, const rf_device_t *a_device )
 {
     if( NULL != event_callback )
@@ -300,13 +423,14 @@ static void initialize_source_times( rf_device_t *a_device )
     }
 }
 
-static void expire_stale_devices( uint32_t a_now_ms )
+static bool expire_stale_devices( uint32_t a_now_ms )
 {
     const uint32_t wifi_timeout_ms = timeout_ms_for_source( RF_SOURCE_WIFI );
     const uint32_t ble_timeout_ms = timeout_ms_for_source( RF_SOURCE_BLE );
     const uint32_t fallback_timeout_ms =
         (uint32_t)RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS * 1000U;
     const uint32_t managed_mask = RF_SOURCE_BIT( RF_SOURCE_WIFI ) | RF_SOURCE_BIT( RF_SOURCE_BLE );
+    bool removed = false;
 
     size_t i = 0U;
     while( i < device_count )
@@ -379,7 +503,10 @@ static void expire_stale_devices( uint32_t a_now_ms )
         }
         memset( &devices[ device_count ], 0, sizeof( devices[ device_count ] ) );
         emit_event( OBSERVATION_STORE_EVENT_DROPPED_TIMEOUT, &dropped );
+        removed = true;
     }
+
+    return removed;
 }
 
 esp_err_t observation_store_init( void )
@@ -387,6 +514,8 @@ esp_err_t observation_store_init( void )
     devices = NULL;
     device_count = 0U;
     device_capacity = 0U;
+    identity_index = NULL;
+    identity_index_capacity = 0U;
     summary_vendors = NULL;
     summary_vendor_capacity = 0U;
     summary_vendor_slots = NULL;
@@ -424,23 +553,19 @@ bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new
 
     xSemaphoreTake( store_lock, portMAX_DELAY );
     synchronize_session_store();
-    expire_stale_devices( current_time_ms() );
 
-    for( size_t i = 0U; i < device_count; ++i )
+    const size_t existing_index = find_identity( a_observation );
+    if( SIZE_MAX != existing_index )
     {
-        if( !same_identity( &devices[ i ], a_observation ) )
-        {
-            continue;
-        }
-
-        const uint32_t first_seen = devices[ i ].first_seen_ms;
-        const uint32_t sources = devices[ i ].source_mask | a_observation->source_mask;
-        uint32_t wifi_last_seen = devices[ i ].wifi_last_seen_ms;
-        uint32_t ble_last_seen = devices[ i ].ble_last_seen_ms;
-        const surveillance_class_t prior_class = devices[ i ].surveillance;
-        const surveillance_signature_id_t prior_signature = devices[ i ].surveillance_signature;
-        const uint8_t prior_score = devices[ i ].surveillance_score;
-        const uint8_t prior_evidence = devices[ i ].surveillance_evidence;
+        const uint32_t first_seen = devices[ existing_index ].first_seen_ms;
+        const uint32_t sources = devices[ existing_index ].source_mask | a_observation->source_mask;
+        uint32_t wifi_last_seen = devices[ existing_index ].wifi_last_seen_ms;
+        uint32_t ble_last_seen = devices[ existing_index ].ble_last_seen_ms;
+        const surveillance_class_t prior_class = devices[ existing_index ].surveillance;
+        const surveillance_signature_id_t prior_signature =
+            devices[ existing_index ].surveillance_signature;
+        const uint8_t prior_score = devices[ existing_index ].surveillance_score;
+        const uint8_t prior_evidence = devices[ existing_index ].surveillance_evidence;
         char prior_vendor[ RFSCOUT_VENDOR_NAME_MAX ];
         char prior_name[ RFSCOUT_DEVICE_NAME_MAX ];
 
@@ -455,33 +580,33 @@ bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new
             ble_last_seen = a_observation->last_seen_ms;
         }
 
-        memcpy( prior_vendor, devices[ i ].vendor, sizeof( prior_vendor ) );
-        memcpy( prior_name, devices[ i ].name, sizeof( prior_name ) );
-        const bool prior_has_name = devices[ i ].has_name;
+        memcpy( prior_vendor, devices[ existing_index ].vendor, sizeof( prior_vendor ) );
+        memcpy( prior_name, devices[ existing_index ].name, sizeof( prior_name ) );
+        const bool prior_has_name = devices[ existing_index ].has_name;
 
-        devices[ i ] = *a_observation;
-        devices[ i ].first_seen_ms = first_seen;
-        devices[ i ].source_mask = sources;
-        devices[ i ].wifi_last_seen_ms = wifi_last_seen;
-        devices[ i ].ble_last_seen_ms = ble_last_seen;
+        devices[ existing_index ] = *a_observation;
+        devices[ existing_index ].first_seen_ms = first_seen;
+        devices[ existing_index ].source_mask = sources;
+        devices[ existing_index ].wifi_last_seen_ms = wifi_last_seen;
+        devices[ existing_index ].ble_last_seen_ms = ble_last_seen;
 
-        if( SURVEILLANCE_NONE == devices[ i ].surveillance )
+        if( SURVEILLANCE_NONE == devices[ existing_index ].surveillance )
         {
-            devices[ i ].surveillance = prior_class;
-            devices[ i ].surveillance_signature = prior_signature;
-            devices[ i ].surveillance_score = prior_score;
-            devices[ i ].surveillance_evidence = prior_evidence;
+            devices[ existing_index ].surveillance = prior_class;
+            devices[ existing_index ].surveillance_signature = prior_signature;
+            devices[ existing_index ].surveillance_score = prior_score;
+            devices[ existing_index ].surveillance_evidence = prior_evidence;
         }
 
-        if( '\0' == devices[ i ].vendor[ 0 ] )
+        if( '\0' == devices[ existing_index ].vendor[ 0 ] )
         {
-            memcpy( devices[ i ].vendor, prior_vendor, sizeof( prior_vendor ) );
+            memcpy( devices[ existing_index ].vendor, prior_vendor, sizeof( prior_vendor ) );
         }
 
-        if( !devices[ i ].has_name && prior_has_name )
+        if( !devices[ existing_index ].has_name && prior_has_name )
         {
-            memcpy( devices[ i ].name, prior_name, sizeof( prior_name ) );
-            devices[ i ].has_name = true;
+            memcpy( devices[ existing_index ].name, prior_name, sizeof( prior_name ) );
+            devices[ existing_index ].has_name = true;
         }
 
         if( NULL != a_is_new )
@@ -492,7 +617,8 @@ bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new
         return true;
     }
 
-    if( !ensure_capacity( device_count + 1U ) )
+    if( !ensure_capacity( device_count + 1U ) ||
+        !ensure_identity_index_capacity( device_count + 1U ) )
     {
         if( NULL != a_is_new )
         {
@@ -506,6 +632,7 @@ bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new
     const size_t slot = device_count++;
     devices[ slot ] = *a_observation;
     initialize_source_times( &devices[ slot ] );
+    identity_index_insert( slot );
     emit_event( OBSERVATION_STORE_EVENT_ADDED, &devices[ slot ] );
     if( NULL != a_is_new )
     {
@@ -528,6 +655,10 @@ void observation_store_reset( void )
     {
         memset( devices, 0, device_capacity * sizeof( *devices ) );
     }
+    if( NULL != identity_index )
+    {
+        memset( identity_index, 0, identity_index_capacity * sizeof( *identity_index ) );
+    }
     device_count = 0U;
     xSemaphoreGive( store_lock );
 }
@@ -540,7 +671,10 @@ void observation_store_housekeeping( void )
     }
     xSemaphoreTake( store_lock, portMAX_DELAY );
     synchronize_session_store();
-    expire_stale_devices( current_time_ms() );
+    if( expire_stale_devices( current_time_ms() ) )
+    {
+        rebuild_identity_index();
+    }
     xSemaphoreGive( store_lock );
 }
 
@@ -552,7 +686,6 @@ size_t observation_store_count( void )
     }
     xSemaphoreTake( store_lock, portMAX_DELAY );
     synchronize_session_store();
-    expire_stale_devices( current_time_ms() );
     const size_t result = device_count;
     xSemaphoreGive( store_lock );
     return result;
@@ -566,7 +699,6 @@ size_t observation_store_surveillance_count( void )
     }
     xSemaphoreTake( store_lock, portMAX_DELAY );
     synchronize_session_store();
-    expire_stale_devices( current_time_ms() );
     size_t result = 0U;
     for( size_t i = 0U; i < device_count; ++i )
     {
@@ -590,7 +722,6 @@ size_t observation_store_summary( observation_store_summary_t *a_summary,
 
     xSemaphoreTake( store_lock, portMAX_DELAY );
     synchronize_session_store();
-    expire_stale_devices( current_time_ms() );
     memset( a_summary, 0, sizeof( *a_summary ) );
     a_summary->device_count = device_count;
 
