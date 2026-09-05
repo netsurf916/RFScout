@@ -17,7 +17,7 @@ A board target owns physical facts and capabilities, including:
 - power/display actions and policy sensors available on that target;
 - PSRAM/flash assumptions needed by the platform.
 
-Application code should depend on services/capabilities, not board model names. Board-specific conditionals belong in board/platform/driver integration code.
+Application code should depend on services/capabilities, not board model names. Board-specific conditionals belong in board/service/driver integration code.
 
 ### PSRAM requirement
 
@@ -27,14 +27,24 @@ Internal SRAM remains available for RTOS/system state, task stacks, DMA/peripher
 
 ## Input boundary
 
-`platform_input_get()` exposes board-neutral semantic input:
+The `input` service exposes board-neutral semantic input:
 
 - navigation with signed steps;
 - select and long-select;
 - back;
 - character input.
 
-The current T-Embed target adapts its rotary encoder and buttons into this interface. Applications should not depend directly on encoder GPIOs or a specific physical control layout.
+The current T-Embed provider adapts its rotary encoder and buttons into this interface. Applications receive semantic input through the active-app runtime; they should not depend on encoder GPIOs or a particular control layout. Unhandled navigation/Back may fall through to global policy.
+
+Physical activity used for display wake remains distinct from dispatchable semantic input. A complete gesture consumed to wake the display is discarded before app, lock, or power semantics can observe it. Accepted RFScout state changes use the separate shared event dispatcher; raw physical activity is not broadcast merely because it occurred.
+
+A future target may compose multiple compatible input providers, such as keyboard plus trackball/buttons, without changing the application input contract.
+
+## Display boundary
+
+The `display` service owns framebuffer/presentation behavior and exposes runtime provider metadata through `display_info()`, including selected provider, geometry, and supported capabilities. The current T-Embed image selects the ST7789 provider and retains its existing RGB565 framebuffer implementation.
+
+Board builds still provide compile-time geometry for legacy/static layout code. New adaptive layout code should prefer runtime display metadata so provider selection can evolve without exposing controller identity to applications. Controller-specific low-power/output behavior stays behind the display service.
 
 ## Power boundary
 
@@ -52,6 +62,8 @@ Speaker and microphone behavior should be exposed through services/capabilities 
 
 Compile-time capability means the target can support a device; it does not guarantee every product variant populates it. Fixed optional devices such as CC1101, nRF24, and the board microphone may be probed once at startup. Hot-plug peripherals such as external I2C devices should use dynamic probing.
 
+Probe state is retained centrally. The first known result is recorded in the RAM-only System Events history without interactive notification; later availability/error records are emitted only when the retained state changes. Periodic unchanged probes must not produce ring-buffer noise.
+
 ## Adding a board
 
 A new board port should:
@@ -63,7 +75,7 @@ A new board port should:
 5. keep applications dependent on semantic services/capabilities;
 6. add a distinct CI/package target and hardware identity.
 
-Do not add runtime board detection or compile unrelated board implementations into every image unless a future hardware family creates a concrete need.
+Do not add runtime board detection or compile unrelated board implementations into every image unless a future hardware family creates a concrete need. Provider selection should remain constrained to implementations plausible for the selected board image.
 
 ## Configuration overlays
 
