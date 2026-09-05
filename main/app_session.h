@@ -18,8 +18,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef esp_err_t ( *rfscout_app_service_fn )( void *a_context );
-
 /**
  * @brief Ensure the platform has a resource session for the selected application.
  * @details The lifecycle coordinator owns session creation. Every active app has a session, even
@@ -40,34 +38,20 @@ void *app_session_resize( void *a_pointer, size_t a_count, size_t a_size );
 bool app_session_free( void *a_pointer );
 
 /**
- * @brief Register a platform service used by the current app session.
- * @details Platform wrappers/registry code own service registration; application implementations
- *          should normally only use the service. Re-registering a stop callback/context pair is
- *          harmless.
- */
-esp_err_t app_session_register_service( const char *a_name,
-                                        rfscout_app_service_fn a_start,
-                                        rfscout_app_service_fn a_stop,
-                                        void *a_context );
-
-/**
- * @brief Stop every registered platform service and prove the session is safe to reclaim.
- * @details A service stop succeeds only after callbacks/workers can no longer reach app memory.
- *          On failure the session remains intact and must be aborted before normal app execution
- *          resumes.
+ * @brief Stop every platform service belonging to the session and prove it safe to reclaim.
+ * @details Platform service ownership is registered internally by the platform. Applications do
+ *          not implement callback counters or lifecycle service hooks. A service stop succeeds only
+ *          after callbacks/workers can no longer reach app memory.
  */
 esp_err_t app_session_prepare_close( void );
 
 /**
  * @brief Abort a prepared/partially prepared close and restore the source service set.
- * @details Successfully stopped services are restarted. Platform-registered services whose failed
- *          stop disables their active state may also provide an internal recovery callback; services
- *          that self-restore on stop failure are not restarted a second time.
  * @return ESP_OK when required service restoration succeeded, otherwise the first restart error.
  */
 esp_err_t app_session_abort_close( void );
 
-/** @brief Return whether every registered platform service has safely quiesced. */
+/** @brief Return whether every platform service has safely quiesced. */
 bool app_session_ready_to_reclaim( void );
 
 /** @brief Commit a successful close; app_lifecycle subsequently bulk-reclaims app memory. */
