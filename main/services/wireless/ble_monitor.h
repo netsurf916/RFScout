@@ -11,7 +11,7 @@
 #define _RFSCOUT_BLE_MONITOR_H_
 
 #include "esp_err.h"
-#include "observation_store.h"
+#include "rf_observation.h"
 
 #include <stdbool.h>
 
