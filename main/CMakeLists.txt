@@ -67,6 +67,7 @@ idf_component_register(
         "app_lifecycle.c"
         "app_session.c"
         "app_framework.c"
+        "app_notification_menu.c"
         "apps/app_registry.c"
         "apps/system_events/app.c"
         "apps/system_events/system_events_view.c"
