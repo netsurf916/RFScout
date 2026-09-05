@@ -1,6 +1,6 @@
 /**
-    recorder.h : RFScout SD-backed audio recorder interface
-    Description: Records microphone PCM to WAV files and enumerates playable recordings.
+    services/audio/recorder.h : RFScout shared microphone, recorder, and playback service
+    Description: Exposes microphone monitoring plus SD-backed WAV recording and playback.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */

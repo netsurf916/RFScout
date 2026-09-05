@@ -1,6 +1,6 @@
 /**
-    recorder.c : RFScout SD-backed audio recorder implementation
-    Description: Captures PDM microphone audio to validated PCM WAV files and manages playback entries.
+    services/audio/recorder.c : RFScout shared microphone, recorder, and playback service
+    Description: Owns microphone capture/FFT plus SD-backed WAV recording and playback.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -1125,7 +1125,9 @@ static void monitor_worker( void *a_argument )
 
 esp_err_t recorder_start_monitor( uint8_t a_gain_db )
 {
-    if( RFSCOUT_RECORDER_IDLE != recorder_state() )
+    const rfscout_recorder_state_t current = recorder_state();
+    if( ( RFSCOUT_RECORDER_IDLE != current ) &&
+        ( RFSCOUT_RECORDER_NO_STORAGE != current ) )
         return ESP_ERR_INVALID_STATE;
     recorder_set_input_gain_db( a_gain_db );
     memset( monitor_spectrum, 0, sizeof( monitor_spectrum ) );
@@ -1171,8 +1173,8 @@ size_t recorder_monitor_bins( uint8_t *a_bins, size_t a_capacity )
 
 void recorder_set_input_gain_db( uint8_t a_gain_db )
 {
-    if( a_gain_db > 24U )
-        a_gain_db = 24U;
+    if( a_gain_db > 48U )
+        a_gain_db = 48U;
     input_gain_db = (uint8_t)( ( a_gain_db / 3U ) * 3U );
 }
 
