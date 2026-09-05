@@ -1,6 +1,6 @@
 /**
     device_config.c : RFScout persistent device configuration implementation
-    Description: Loads validated SD-backed JSON preferences over compiled defaults and writes them atomically.
+    Description: Loads validated internal JSON preferences over compiled defaults and writes them atomically.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -8,8 +8,8 @@
 #include "device_config.h"
 
 #include "app_audio_policy.h"
+#include "config_store.h"
 #include "notification.h"
-#include "storage.h"
 #include "ui_theme.h"
 
 #include "cJSON.h"
@@ -23,9 +23,7 @@
 #include <strings.h>
 #include <unistd.h>
 
-#define CONFIG_TEMP_PATH RFSCOUT_CONFIG_PATH ".tmp"
-#define CONFIG_BACKUP_PATH RFSCOUT_CONFIG_PATH ".bak"
-#define CONFIG_BAD_PATH RFSCOUT_CONFIG_PATH ".bad"
+#define CONFIG_TEMP_PATH RFSCOUT_INTERNAL_CONFIG_PATH ".tmp"
 #define CONFIG_BRIGHTNESS_DEFAULT 70U
 #define CONFIG_DISPLAY_DIM_TIMEOUT_DEFAULT_SECONDS 120U
 #define CONFIG_DISPLAY_OFF_TIMEOUT_DEFAULT_SECONDS 300U
@@ -114,7 +112,7 @@ static bool power_action_from_config_name( const char *a_name, power_action_t *a
     }
     for( int action = (int)POWER_ACTION_NONE; action < (int)POWER_ACTION_COUNT; ++action )
     {
-        if( 0 == strcasecmp( a_name, power_action_config_name( (power_action_t)action ) ) )
+        if( 0 == strcasecmp( a_name, power_action_config_name( (power_action_t)action ) )
         {
             *a_action = (power_action_t)action;
             return true;
@@ -734,33 +732,16 @@ static bool timezone_selected_valid( void )
     return false;
 }
 
-/** @brief Quarantine a configuration document that cannot safely be loaded. */
-static void quarantine_config( void )
+/** @brief Discard an internal configuration document that cannot safely be loaded. */
+static void discard_invalid_config( void )
 {
-    (void)unlink( CONFIG_BAD_PATH );
-    (void)rename( RFSCOUT_CONFIG_PATH, CONFIG_BAD_PATH );
+    (void)unlink( RFSCOUT_INTERNAL_CONFIG_PATH );
 }
 
-/** @brief Recover the previous configuration after an interrupted replacement. */
-static void recover_interrupted_save( void )
-{
-    if( 0 == access( RFSCOUT_CONFIG_PATH, F_OK ) )
-    {
-        return;
-    }
-    if( 0 == access( CONFIG_BACKUP_PATH, F_OK ) )
-    {
-        if( 0 == rename( CONFIG_BACKUP_PATH, RFSCOUT_CONFIG_PATH ) )
-        {
-            ESP_LOGW( TAG, "recovered configuration after interrupted save" );
-        }
-    }
-}
-
-/** @brief Parse and apply the configuration file from SD. */
+/** @brief Parse and apply the authoritative configuration file from internal flash. */
 static esp_err_t load_file( void )
 {
-    FILE *file = fopen( RFSCOUT_CONFIG_PATH, "rb" );
+    FILE *file = fopen( RFSCOUT_INTERNAL_CONFIG_PATH, "rb" );
     if( NULL == file )
     {
         return ( ENOENT == errno ) ? ESP_ERR_NOT_FOUND : ESP_FAIL;
@@ -795,23 +776,19 @@ static esp_err_t load_file( void )
     free( buffer );
     if( NULL == root )
     {
-        quarantine_config();
+        discard_invalid_config();
         return ESP_ERR_INVALID_RESPONSE;
     }
 
     const cJSON *version = cJSON_GetObjectItemCaseSensitive( root, "version" );
-    if( !cJSON_IsNumber( version ) || version->valueint < 1 ||
-        version->valueint > (int)RFSCOUT_CONFIG_SCHEMA_VERSION )
+    if( !cJSON_IsNumber( version ) ||
+        version->valueint != (int)RFSCOUT_CONFIG_SCHEMA_VERSION )
     {
         cJSON_Delete( root );
-        quarantine_config();
+        discard_invalid_config();
         return ESP_ERR_INVALID_VERSION;
     }
     config_source_version = version->valueint;
-    if( config_source_version >= 2 && config_source_version < (int)RFSCOUT_CONFIG_SCHEMA_VERSION )
-    {
-        config_upgrade_pending = true;
-    }
 
     load_display( root );
     load_audio_policy( root );
@@ -966,37 +943,28 @@ static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_tim
     return root;
 }
 
-/** @brief Replace the active configuration while retaining crash recovery. */
+/** @brief Atomically replace the sole authoritative internal configuration. */
 static esp_err_t replace_config_file( void )
 {
-    (void)unlink( CONFIG_BACKUP_PATH );
-
-    if( ( 0 != rename( RFSCOUT_CONFIG_PATH, CONFIG_BACKUP_PATH ) ) && ( ENOENT != errno ) )
+    if( 0 != rename( CONFIG_TEMP_PATH, RFSCOUT_INTERNAL_CONFIG_PATH ) )
     {
         (void)unlink( CONFIG_TEMP_PATH );
         return ESP_FAIL;
     }
-
-    if( 0 != rename( CONFIG_TEMP_PATH, RFSCOUT_CONFIG_PATH ) )
-    {
-        (void)rename( CONFIG_BACKUP_PATH, RFSCOUT_CONFIG_PATH );
-        (void)unlink( CONFIG_TEMP_PATH );
-        return ESP_FAIL;
-    }
-
-    (void)unlink( CONFIG_BACKUP_PATH );
     return ESP_OK;
 }
 
 esp_err_t device_config_init( void )
 {
     set_defaults();
-    if( !storage_is_available() )
+
+    const esp_err_t store_result = config_store_init();
+    if( ESP_OK != store_result )
     {
-        return ESP_OK;
+        return store_result;
     }
 
-    recover_interrupted_save();
+    (void)unlink( CONFIG_TEMP_PATH );
     const esp_err_t result = load_file();
     if( ESP_OK == result )
     {
@@ -1007,30 +975,34 @@ esp_err_t device_config_init( void )
             {
                 config_dirty = true;
                 ESP_LOGW( TAG,
-                          "configuration migration save failed: %s",
+                          "configuration normalization save failed: %s",
                           esp_err_to_name( upgrade_result ) );
             }
             else
             {
                 config_upgrade_pending = false;
-                ESP_LOGI( TAG,
-                          "migrated %s to schema %u",
-                          RFSCOUT_CONFIG_PATH,
-                          RFSCOUT_CONFIG_SCHEMA_VERSION );
             }
         }
         else
         {
             config_dirty = false;
+            const esp_err_t sync_result = config_store_sync_example();
+            if( ESP_OK != sync_result )
+            {
+                ESP_LOGW( TAG,
+                          "configuration example sync failed: %s",
+                          esp_err_to_name( sync_result ) );
+            }
         }
-        ESP_LOGI( TAG, "loaded %s", RFSCOUT_CONFIG_PATH );
+        ESP_LOGI( TAG, "loaded %s", RFSCOUT_INTERNAL_CONFIG_PATH );
         return ESP_OK;
     }
 
     if( ESP_ERR_NOT_FOUND != result )
     {
-        ESP_LOGW(
-            TAG, "configuration invalid; regenerating defaults: %s", esp_err_to_name( result ) );
+        ESP_LOGW( TAG,
+                  "internal configuration invalid; replacing with defaults: %s",
+                  esp_err_to_name( result ) );
     }
     return device_config_save( false, 0, NULL );
 }
@@ -1553,7 +1525,7 @@ bool device_config_saved_time( int64_t *a_epoch, const char **a_source )
 
 esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a_time_source )
 {
-    if( !storage_is_available() )
+    if( !config_store_is_available() )
     {
         return ESP_ERR_INVALID_STATE;
     }
@@ -1598,6 +1570,14 @@ esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a
         config_dirty = false;
         config_upgrade_pending = false;
         config_source_version = (int)RFSCOUT_CONFIG_SCHEMA_VERSION;
+
+        const esp_err_t sync_result = config_store_sync_example();
+        if( ESP_OK != sync_result )
+        {
+            ESP_LOGW( TAG,
+                      "configuration example sync failed: %s",
+                      esp_err_to_name( sync_result ) );
+        }
     }
     return result;
 }
