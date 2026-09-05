@@ -131,7 +131,7 @@ RFScout distinguishes **UI/device**, **Event**, **Alert**, and **Content** audio
 - `quiet` suppresses UI, Event, and Alert presentation without rewriting saved levels, app switches, alert enablement, or Morse mappings;
 - requested Content such as Recorder playback remains available.
 
-Global Alert presentation is `OFF`, `TONE`, or `MORSE`. Individual alert mappings may also be Off without deleting the semantic/log event. Recorder playback volume is independent of the three global incidental levels. The shared microphone input-gain setting remains stored as `recorder.input_gain_db`; Audio Spectrum exposes live adjustment from 0 through +48 dB in 3 dB steps, while recording consumes the configured microphone gain when a new capture starts.
+Global Alert presentation is `OFF`, `TONE`, or `MORSE`. Individual alert mappings may also be Off without deleting the semantic/log event. Recorder playback volume is independent of the three global incidental levels. The persisted `recorder.input_gain_db` remains the Recorder capture-gain setting and currently accepts **0 through +24 dB in 3 dB steps**. Audio Spectrum has a separate runtime live-monitor gain from **0 through +48 dB in 3 dB steps**; that live setting is not currently persisted to `rfscout.json`. Whether these should converge on one calibrated persisted Audio Input setting remains roadmap work.
 
 ## Power button and protective policy
 
