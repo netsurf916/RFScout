@@ -11,8 +11,13 @@
 #define _RFSCOUT_RECORDER_VIEW_H_
 
 #include <stdbool.h>
+#include <stdint.h>
 
-void recorder_view_landing( void );
-void recorder_view_browser( unsigned a_selected, bool a_delete_mode, bool a_delete_confirm );
+void recorder_view_landing( const char *a_playback_name, uint8_t a_playback_volume );
+void recorder_view_browser( unsigned a_selected,
+                            bool a_delete_mode,
+                            bool a_delete_confirm,
+                            const char *a_playback_name,
+                            uint8_t a_playback_volume );
 
 #endif // _RFSCOUT_RECORDER_VIEW_H_
