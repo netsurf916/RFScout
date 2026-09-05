@@ -11,9 +11,7 @@
 
 #include "app_descriptor.h"
 
-#include <stddef.h>
-
-extern const rfscout_app_descriptor_t *const rfscout_app_registry[];
-extern const size_t rfscout_app_registry_count;
+/** @brief Compiled-in descriptors indexed directly by rfscout_app_id_t. */
+extern const rfscout_app_descriptor_t *const rfscout_app_registry[ RFSCOUT_APP_COUNT ];
 
 #endif // _RFSCOUT_APP_REGISTRY_H_
