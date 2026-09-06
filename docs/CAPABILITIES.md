@@ -78,7 +78,8 @@ Implemented global settings include:
 - UI, Event, and Alert presentation levels/policy;
 - configurable short/long power-button actions;
 - low-battery and high-internal-temperature protective power policy;
-- 12/24-hour clock, timezone, and manual date/time;
+- persistent 12/24-hour clock presentation and timezone;
+- manual date/time controls that update the running RTC-backed system clock only;
 - startup application and per-app enablement, including Audio Spectrum independently from Recorder;
 - SD logging;
 - explicit configuration save.
@@ -105,9 +106,11 @@ The device-wide Normal/Quiet policy is independent of visual theme. Speaker outp
 
 ## Configuration, storage, and logging
 
-Persistent preferences use firmware-managed internal records. Device-wide policy lives under `system/config`; application preferences live under descriptor-bound `app/<persistence_key>/config` ownership. SD configuration import/example files are no longer part of the runtime contract.
+Persistent preferences use firmware-managed internal records. Device-wide policy lives under `system/config`; application preferences use descriptor-bound `app/<persistence_key>/config` records only when the user has changed app settings away from compiled defaults. Returning all app settings to their defaults removes the app record again.
 
-An SD card is not required to retain device or app settings and is not consulted for configuration. Future settings transfer should use an explicit firmware-managed import/export operation rather than exposing internal record files.
+Records are limited to 16 KiB and use atomic same-directory temporary replacement. Interrupted-write temporaries are discarded during the persistence service's startup cleanup pass. An SD card is not required to retain device or app settings and is not consulted for configuration. Future settings transfer should use an explicit firmware-managed import/export operation rather than exposing internal record files.
+
+Wall-clock epoch/source state is not configuration. RFScout uses the RTC-backed system clock directly for display, log timestamps, and filesystem calendar metadata. Manual date/time and future GPS/NTP adjustments change runtime clock state; timezone and clock presentation remain persistent preferences.
 
 System Events/dmesg records internal-storage mount/recovery status and configuration-default recovery separately from SD-card mount state. RFScout can operate without SD for configuration, radio/sensor use, and Audio Spectrum. SD remains the home for Recorder files under `/sdcard/audio/` and asynchronous rotating logs. The conservative board-tested baseline is a FAT-compatible SanDisk card of 32 GB or less. Logs rotate through 100 files of up to 4 MiB each while preserving a free-space reserve.
 
@@ -121,4 +124,4 @@ The current 16 MiB mainline flash layout uses an 8 MiB factory application parti
 
 ## Not currently implemented
 
-Major v0.4.0 work still outstanding includes Instant/Timed/Never WiFi/BLE retention semantics, semantic Wi-Fi/BLE entity/correlation views, broader app-by-app PSRAM/history improvements, the planned further calibration/generalization of the Audio Input service, thermal calibration, a generic app-facing persistent record/database service, and release-level stress/fault-injection validation. The canonical checklist and status are in [ROADMAP.md](ROADMAP.md).
+Major v0.4.0 work still outstanding includes Instant/Timed/Never WiFi/BLE retention semantics, semantic Wi-Fi/BLE entity/correlation views, broader app-by-app PSRAM/history improvements, the planned further calibration/generalization of the Audio Input service, thermal calibration, and release-level stress/fault-injection validation. The canonical checklist and status are in [ROADMAP.md](ROADMAP.md).
