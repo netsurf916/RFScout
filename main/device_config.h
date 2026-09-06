@@ -190,8 +190,12 @@ esp_err_t device_config_set_timezone( const char *a_name );
 /** @brief Return the selected timezone definition or NULL when unavailable. */
 const device_timezone_t *device_config_timezone( void );
 
-/** @brief Atomically persist current user preferences internally. */
-esp_err_t device_config_save( void );
+/**
+ * @brief Atomically persist current user preferences internally.
+ * @details The legacy time arguments are retained temporarily for source compatibility and ignored;
+ *          wall-clock state is runtime RTC state and is never written to configuration.
+ */
+esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a_time_source );
 /** @brief Persist preferences only when a setter has changed canonical configuration. */
 esp_err_t device_config_save_if_dirty( void );
 
