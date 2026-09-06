@@ -223,8 +223,6 @@ static void handle_browser_input( const rfscout_input_event_t *a_input )
         }
         if( RECORDER_BROWSER_NEW == browser_item )
         {
-            const device_config_t *config = device_config_get();
-            recorder_set_input_gain_db( NULL != config ? config->recorder_input_gain_db : 12U );
             if( ESP_OK != recorder_start_recording() )
             {
                 ESP_LOGW( TAG, "could not start recording" );
