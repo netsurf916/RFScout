@@ -1,0 +1,25 @@
+name: PR71 canonicalization cleanup
+on:
+  push:
+    branches:
+      - feature/internal-config-storage
+    paths:
+      - .github/workflows/pr71-canonicalize.yml
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Apply canonicalization cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 .github/pr71_canonicalize.py
+          git rm .github/pr71_canonicalize.py .github/workflows/pr71-canonicalize.yml
+          git add main/device_config.c docs/CONFIGURATION.md docs/ROADMAP.md
+          git commit -m "Canonicalize partially invalid internal configuration"
+          git push origin HEAD:feature/internal-config-storage
