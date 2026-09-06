@@ -9,20 +9,10 @@
 
 #include "device_config.h"
 #include "event.h"
-#include "storage.h"
 
-#include "cJSON.h"
 #include "esp_log.h"
-#include "nvs.h"
 
-#include <stddef.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <strings.h>
-
-#define THEME_NVS_NAMESPACE "rfscout_ui"
-#define THEME_NVS_KEY "theme"
-#define THEME_NVS_VALUE_CAPACITY 16U
 
 static const char *TAG = "ui_theme";
 static rfscout_theme_id_t active_theme = RFSCOUT_THEME_INDOOR;
@@ -66,159 +56,9 @@ static const ui_theme_palette_t palettes[ RFSCOUT_THEME_COUNT ] = {
     [RFSCOUT_THEME_NIGHT] = PALETTE_NIGHT,
 };
 
-static void legacy_audio_gains_for_theme( rfscout_theme_id_t a_theme,
-                                          uint8_t *a_interaction_percent,
-                                          uint8_t *a_notification_percent )
-{
-    uint8_t interaction = 35U;
-    uint8_t notification = 100U;
-    if( RFSCOUT_THEME_OUTDOOR == a_theme )
-    {
-        interaction = 55U;
-    }
-    else if( RFSCOUT_THEME_NIGHT == a_theme )
-    {
-        interaction = 20U;
-        notification = 60U;
-    }
-    *a_interaction_percent = interaction;
-    *a_notification_percent = notification;
-}
-
-static bool legacy_theme_read( rfscout_theme_id_t *a_theme, bool *a_quiet )
-{
-    if( ( NULL == a_theme ) || ( NULL == a_quiet ) )
-    {
-        return false;
-    }
-
-    nvs_handle_t handle;
-    esp_err_t result = nvs_open( THEME_NVS_NAMESPACE, NVS_READONLY, &handle );
-    if( ESP_OK != result )
-    {
-        return false;
-    }
-
-    char stored[ THEME_NVS_VALUE_CAPACITY ];
-    size_t stored_length = sizeof( stored );
-    result = nvs_get_str( handle, THEME_NVS_KEY, stored, &stored_length );
-    nvs_close( handle );
-    if( ESP_OK != result )
-    {
-        return false;
-    }
-
-    *a_quiet = false;
-    if( 0 == strcasecmp( stored, "discipline" ) )
-    {
-        *a_theme = RFSCOUT_THEME_NIGHT;
-        *a_quiet = true;
-        return true;
-    }
-    return ui_theme_from_config_name( stored, a_theme );
-}
-
-static void legacy_theme_write( rfscout_theme_id_t a_theme )
-{
-    nvs_handle_t handle;
-    esp_err_t result = nvs_open( THEME_NVS_NAMESPACE, NVS_READWRITE, &handle );
-    if( ESP_OK != result )
-    {
-        return;
-    }
-    result = nvs_set_str( handle, THEME_NVS_KEY, ui_theme_config_name( a_theme ) );
-    if( ESP_OK == result )
-    {
-        (void)nvs_commit( handle );
-    }
-    nvs_close( handle );
-}
-
-static bool config_needs_legacy_theme( void )
-{
-    FILE *file = fopen( RFSCOUT_CONFIG_PATH, "rb" );
-    if( NULL == file )
-    {
-        return false;
-    }
-    if( 0 != fseek( file, 0, SEEK_END ) )
-    {
-        fclose( file );
-        return false;
-    }
-    const long length = ftell( file );
-    if( ( length <= 0L ) || ( length > 16384L ) || ( 0 != fseek( file, 0, SEEK_SET ) ) )
-    {
-        fclose( file );
-        return false;
-    }
-
-    char *buffer = calloc( (size_t)length + 1U, 1U );
-    if( NULL == buffer )
-    {
-        fclose( file );
-        return false;
-    }
-    const bool read_ok = ( (size_t)length == fread( buffer, 1U, (size_t)length, file ) );
-    fclose( file );
-    if( !read_ok )
-    {
-        free( buffer );
-        return false;
-    }
-
-    cJSON *root = cJSON_Parse( buffer );
-    free( buffer );
-    if( NULL == root )
-    {
-        return false;
-    }
-
-    const cJSON *version = cJSON_GetObjectItemCaseSensitive( root, "version" );
-    const cJSON *display = cJSON_GetObjectItemCaseSensitive( root, "display" );
-    const cJSON *theme =
-        cJSON_IsObject( display ) ? cJSON_GetObjectItemCaseSensitive( display, "theme" ) : NULL;
-    const bool needs_legacy =
-        cJSON_IsNumber( version ) && ( 1 == version->valueint ) && !cJSON_IsString( theme );
-    cJSON_Delete( root );
-    return needs_legacy;
-}
-
 esp_err_t ui_theme_init( void )
 {
     active_theme = device_config_theme();
-
-    const bool use_legacy = !storage_is_available() || config_needs_legacy_theme();
-    rfscout_theme_id_t legacy_theme = RFSCOUT_THEME_INDOOR;
-    bool legacy_quiet = false;
-    if( use_legacy && legacy_theme_read( &legacy_theme, &legacy_quiet ) )
-    {
-        uint8_t interaction_gain = 35U;
-        uint8_t notification_gain = 100U;
-        legacy_audio_gains_for_theme( legacy_theme, &interaction_gain, &notification_gain );
-
-        (void)device_config_set_theme( legacy_theme );
-        (void)device_config_set_audio_policy( legacy_quiet ? RFSCOUT_AUDIO_POLICY_QUIET
-                                                           : RFSCOUT_AUDIO_POLICY_NORMAL );
-        (void)device_config_set_audio_gains( interaction_gain, notification_gain );
-        active_theme = legacy_theme;
-        ESP_LOGI( TAG,
-                  "migrated legacy theme=%s audio_policy=%s gains=%u/%u",
-                  ui_theme_config_name( legacy_theme ),
-                  legacy_quiet ? "quiet" : "normal",
-                  (unsigned)interaction_gain,
-                  (unsigned)notification_gain );
-
-        if( storage_is_available() )
-        {
-            const esp_err_t save_result = device_config_save( false, 0, NULL );
-            if( ESP_OK != save_result )
-            {
-                ESP_LOGW(
-                    TAG, "legacy theme migration save failed: %s", esp_err_to_name( save_result ) );
-            }
-        }
-    }
     return ESP_OK;
 }
 
@@ -234,7 +74,6 @@ esp_err_t ui_theme_set( rfscout_theme_id_t a_theme )
         return result;
     }
     active_theme = a_theme;
-    legacy_theme_write( a_theme );
     ESP_LOGI( TAG, "theme=%s", ui_theme_config_name( a_theme ) );
     rfscout_event_emit(
         RFSCOUT_EVENT_THEME_CHANGED, RFSCOUT_EVENT_SOURCE_SYSTEM, (int32_t)a_theme );

@@ -1,15 +1,17 @@
 /**
     device_config.c : RFScout persistent device configuration implementation
-    Description: Loads validated SD-backed JSON preferences over compiled defaults and writes them atomically.
+    Description: Loads validated internal JSON preferences over compiled defaults and writes them atomically.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
 
 #include "device_config.h"
 
+#include "event.h"
+
 #include "app_audio_policy.h"
+#include "config_store.h"
 #include "notification.h"
-#include "storage.h"
 #include "ui_theme.h"
 
 #include "cJSON.h"
@@ -23,9 +25,7 @@
 #include <strings.h>
 #include <unistd.h>
 
-#define CONFIG_TEMP_PATH RFSCOUT_CONFIG_PATH ".tmp"
-#define CONFIG_BACKUP_PATH RFSCOUT_CONFIG_PATH ".bak"
-#define CONFIG_BAD_PATH RFSCOUT_CONFIG_PATH ".bad"
+#define CONFIG_TEMP_PATH RFSCOUT_INTERNAL_CONFIG_PATH ".tmp"
 #define CONFIG_BRIGHTNESS_DEFAULT 70U
 #define CONFIG_DISPLAY_DIM_TIMEOUT_DEFAULT_SECONDS 120U
 #define CONFIG_DISPLAY_OFF_TIMEOUT_DEFAULT_SECONDS 300U
@@ -43,8 +43,6 @@ static bool saved_time_valid;
 static int64_t saved_time_epoch;
 static char saved_time_source[ 24 ];
 static bool config_dirty;
-static bool config_upgrade_pending;
-static int config_source_version;
 
 static const char *app_config_name( rfscout_app_id_t a_app )
 {
@@ -139,37 +137,6 @@ static bool power_action_valid_for_policy( power_action_t a_action )
            ( POWER_ACTION_POWER_OFF == a_action );
 }
 
-static void legacy_audio_gains_for_theme( rfscout_theme_id_t a_theme,
-                                          uint8_t *a_interaction_percent,
-                                          uint8_t *a_notification_percent )
-{
-    uint8_t interaction = CONFIG_AUDIO_INTERACTION_GAIN_DEFAULT_PERCENT;
-    uint8_t notification = CONFIG_AUDIO_NOTIFICATION_GAIN_DEFAULT_PERCENT;
-    switch( a_theme )
-    {
-        case RFSCOUT_THEME_OUTDOOR:
-            interaction = 55U;
-            notification = 100U;
-            break;
-        case RFSCOUT_THEME_NIGHT:
-            interaction = 20U;
-            notification = 60U;
-            break;
-        case RFSCOUT_THEME_INDOOR:
-        case RFSCOUT_THEME_COUNT:
-        default:
-            break;
-    }
-    if( NULL != a_interaction_percent )
-    {
-        *a_interaction_percent = interaction;
-    }
-    if( NULL != a_notification_percent )
-    {
-        *a_notification_percent = notification;
-    }
-}
-
 /** @brief Copy a bounded configuration string. */
 static void copy_string( char *a_destination, size_t a_capacity, const char *a_source )
 {
@@ -245,8 +212,6 @@ static void set_defaults( void )
     saved_time_epoch = 0;
     saved_time_source[ 0 ] = '\0';
     config_dirty = false;
-    config_upgrade_pending = false;
-    config_source_version = (int)RFSCOUT_CONFIG_SCHEMA_VERSION;
 }
 
 /** @brief Read one optional JSON boolean, retaining a default on type mismatch. */
@@ -390,7 +355,7 @@ json_display_timeout_seconds( const cJSON *a_parent, const char *a_name, uint16_
     return (uint16_t)item->valueint;
 }
 
-/** @brief Apply validated display preference overrides and older-theme audio migration. */
+/** @brief Apply validated display preference overrides. */
 static void load_display( const cJSON *a_root )
 {
     const cJSON *display = cJSON_GetObjectItemCaseSensitive( a_root, "display" );
@@ -418,35 +383,17 @@ static void load_display( const cJSON *a_root )
     config.clock_24h = json_bool( display, "clock_24h", config.clock_24h );
 
     const cJSON *theme = cJSON_GetObjectItemCaseSensitive( display, "theme" );
-    if( !cJSON_IsString( theme ) || NULL == theme->valuestring )
+    if( cJSON_IsString( theme ) && NULL != theme->valuestring )
     {
-        return;
-    }
-
-    if( 0 == strcasecmp( theme->valuestring, "discipline" ) )
-    {
-        config.theme = RFSCOUT_THEME_NIGHT;
-        config.audio_policy = RFSCOUT_AUDIO_POLICY_QUIET;
-        legacy_audio_gains_for_theme( RFSCOUT_THEME_NIGHT,
-                                      &config.audio_interaction_gain_percent,
-                                      &config.audio_notification_gain_percent );
-        config_upgrade_pending = true;
-        return;
-    }
-
-    rfscout_theme_id_t parsed_theme;
-    if( !ui_theme_from_config_name( theme->valuestring, &parsed_theme ) )
-    {
-        return;
-    }
-    config.theme = parsed_theme;
-
-    if( config_source_version < 3 )
-    {
-        config.audio_policy = RFSCOUT_AUDIO_POLICY_NORMAL;
-        legacy_audio_gains_for_theme( parsed_theme,
-                                      &config.audio_interaction_gain_percent,
-                                      &config.audio_notification_gain_percent );
+        rfscout_theme_id_t parsed_theme;
+        if( ui_theme_from_config_name( theme->valuestring, &parsed_theme ) )
+        {
+            config.theme = parsed_theme;
+        }
+        else
+        {
+            ESP_LOGE( TAG, "invalid theme '%s'; using default", theme->valuestring );
+        }
     }
 }
 
@@ -634,7 +581,7 @@ static void load_recorder( const cJSON *a_root )
     }
     const cJSON *input_gain = cJSON_GetObjectItemCaseSensitive( recorder, "input_gain_db" );
     if( cJSON_IsNumber( input_gain ) && ( input_gain->valueint >= 0 ) &&
-        ( input_gain->valueint <= 24 ) && ( 0 == ( input_gain->valueint % 3 ) ) )
+        ( input_gain->valueint <= 48 ) && ( 0 == ( input_gain->valueint % 3 ) ) )
     {
         config.recorder_input_gain_db = (uint8_t)input_gain->valueint;
     }
@@ -734,33 +681,16 @@ static bool timezone_selected_valid( void )
     return false;
 }
 
-/** @brief Quarantine a configuration document that cannot safely be loaded. */
-static void quarantine_config( void )
+/** @brief Discard an internal configuration document that cannot safely be loaded. */
+static void discard_invalid_config( void )
 {
-    (void)unlink( CONFIG_BAD_PATH );
-    (void)rename( RFSCOUT_CONFIG_PATH, CONFIG_BAD_PATH );
+    (void)unlink( RFSCOUT_INTERNAL_CONFIG_PATH );
 }
 
-/** @brief Recover the previous configuration after an interrupted replacement. */
-static void recover_interrupted_save( void )
-{
-    if( 0 == access( RFSCOUT_CONFIG_PATH, F_OK ) )
-    {
-        return;
-    }
-    if( 0 == access( CONFIG_BACKUP_PATH, F_OK ) )
-    {
-        if( 0 == rename( CONFIG_BACKUP_PATH, RFSCOUT_CONFIG_PATH ) )
-        {
-            ESP_LOGW( TAG, "recovered configuration after interrupted save" );
-        }
-    }
-}
-
-/** @brief Parse and apply the configuration file from SD. */
+/** @brief Parse and apply the authoritative configuration file from internal flash. */
 static esp_err_t load_file( void )
 {
-    FILE *file = fopen( RFSCOUT_CONFIG_PATH, "rb" );
+    FILE *file = fopen( RFSCOUT_INTERNAL_CONFIG_PATH, "rb" );
     if( NULL == file )
     {
         return ( ENOENT == errno ) ? ESP_ERR_NOT_FOUND : ESP_FAIL;
@@ -795,24 +725,17 @@ static esp_err_t load_file( void )
     free( buffer );
     if( NULL == root )
     {
-        quarantine_config();
+        discard_invalid_config();
         return ESP_ERR_INVALID_RESPONSE;
     }
 
     const cJSON *version = cJSON_GetObjectItemCaseSensitive( root, "version" );
-    if( !cJSON_IsNumber( version ) || version->valueint < 1 ||
-        version->valueint > (int)RFSCOUT_CONFIG_SCHEMA_VERSION )
+    if( !cJSON_IsNumber( version ) || version->valueint != (int)RFSCOUT_CONFIG_SCHEMA_VERSION )
     {
         cJSON_Delete( root );
-        quarantine_config();
+        discard_invalid_config();
         return ESP_ERR_INVALID_VERSION;
     }
-    config_source_version = version->valueint;
-    if( config_source_version >= 2 && config_source_version < (int)RFSCOUT_CONFIG_SCHEMA_VERSION )
-    {
-        config_upgrade_pending = true;
-    }
-
     load_display( root );
     load_audio_policy( root );
     load_power( root );
@@ -966,73 +889,162 @@ static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_tim
     return root;
 }
 
-/** @brief Replace the active configuration while retaining crash recovery. */
+/** @brief Check whether the stored document already matches RFScout's canonical serialization. */
+static esp_err_t config_file_is_canonical( bool *a_canonical )
+{
+    if( NULL == a_canonical )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *a_canonical = false;
+
+    cJSON *root = build_json( false, 0, NULL );
+    if( NULL == root )
+    {
+        return ESP_ERR_NO_MEM;
+    }
+    char *text = cJSON_Print( root );
+    cJSON_Delete( root );
+    if( NULL == text )
+    {
+        return ESP_ERR_NO_MEM;
+    }
+
+    FILE *file = fopen( RFSCOUT_INTERNAL_CONFIG_PATH, "rb" );
+    if( NULL == file )
+    {
+        free( text );
+        return ( ENOENT == errno ) ? ESP_ERR_NOT_FOUND : ESP_FAIL;
+    }
+
+    const size_t text_length = strlen( text );
+    bool matches = true;
+    for( size_t offset = 0U; offset < text_length; )
+    {
+        char buffer[ 256 ];
+        const size_t remaining = text_length - offset;
+        const size_t wanted = remaining < sizeof( buffer ) ? remaining : sizeof( buffer );
+        const size_t count = fread( buffer, 1U, wanted, file );
+        if( count != wanted || 0 != memcmp( buffer, text + offset, wanted ) )
+        {
+            matches = false;
+            break;
+        }
+        offset += wanted;
+    }
+    if( matches )
+    {
+        matches = ( '\n' == fgetc( file ) ) && ( EOF == fgetc( file ) ) && !ferror( file );
+    }
+
+    fclose( file );
+    free( text );
+    *a_canonical = matches;
+    return ESP_OK;
+}
+
+/** @brief Atomically replace the sole authoritative internal configuration. */
 static esp_err_t replace_config_file( void )
 {
-    (void)unlink( CONFIG_BACKUP_PATH );
-
-    if( ( 0 != rename( RFSCOUT_CONFIG_PATH, CONFIG_BACKUP_PATH ) ) && ( ENOENT != errno ) )
+    if( 0 != rename( CONFIG_TEMP_PATH, RFSCOUT_INTERNAL_CONFIG_PATH ) )
     {
         (void)unlink( CONFIG_TEMP_PATH );
         return ESP_FAIL;
     }
-
-    if( 0 != rename( CONFIG_TEMP_PATH, RFSCOUT_CONFIG_PATH ) )
-    {
-        (void)rename( CONFIG_BACKUP_PATH, RFSCOUT_CONFIG_PATH );
-        (void)unlink( CONFIG_TEMP_PATH );
-        return ESP_FAIL;
-    }
-
-    (void)unlink( CONFIG_BACKUP_PATH );
     return ESP_OK;
 }
 
 esp_err_t device_config_init( void )
 {
     set_defaults();
-    if( !storage_is_available() )
+
+    const esp_err_t store_result = config_store_init();
+    if( ESP_OK != store_result )
     {
-        return ESP_OK;
+        return store_result;
     }
 
-    recover_interrupted_save();
+    (void)unlink( CONFIG_TEMP_PATH );
     const esp_err_t result = load_file();
     if( ESP_OK == result )
     {
-        if( config_upgrade_pending )
+        bool canonical = false;
+        const esp_err_t canonical_result = config_file_is_canonical( &canonical );
+        if( ESP_OK != canonical_result )
         {
-            const esp_err_t upgrade_result = device_config_save( false, 0, NULL );
-            if( ESP_OK != upgrade_result )
+            ESP_LOGW( TAG,
+                      "configuration canonical comparison failed: %s",
+                      esp_err_to_name( canonical_result ) );
+        }
+
+        bool canonical_ready = canonical;
+        if( !canonical )
+        {
+            const esp_err_t save_result = device_config_save( false, 0, NULL );
+            if( ESP_OK != save_result )
             {
                 config_dirty = true;
                 ESP_LOGW( TAG,
-                          "configuration migration save failed: %s",
-                          esp_err_to_name( upgrade_result ) );
+                          "configuration canonical save failed: %s",
+                          esp_err_to_name( save_result ) );
             }
             else
             {
-                config_upgrade_pending = false;
-                ESP_LOGI( TAG,
-                          "migrated %s to schema %u",
-                          RFSCOUT_CONFIG_PATH,
-                          RFSCOUT_CONFIG_SCHEMA_VERSION );
+                canonical_ready = true;
             }
         }
         else
         {
             config_dirty = false;
         }
-        ESP_LOGI( TAG, "loaded %s", RFSCOUT_CONFIG_PATH );
+
+        if( canonical_ready && config_store_import_pending() )
+        {
+            const esp_err_t finalize_result = config_store_finalize_import();
+            if( ESP_OK == finalize_result )
+            {
+                rfscout_event_emit( RFSCOUT_EVENT_CONFIG_IMPORTED,
+                                    RFSCOUT_EVENT_SOURCE_SYSTEM,
+                                    (int32_t)RFSCOUT_CONFIG_SCHEMA_VERSION );
+            }
+            else
+            {
+                ESP_LOGW( TAG,
+                          "configuration import finalization failed: %s",
+                          esp_err_to_name( finalize_result ) );
+            }
+        }
+
+        const esp_err_t sync_result = config_store_sync_example();
+        if( ESP_OK != sync_result )
+        {
+            ESP_LOGW(
+                TAG, "configuration example sync failed: %s", esp_err_to_name( sync_result ) );
+        }
+        ESP_LOGI( TAG, "loaded %s", RFSCOUT_INTERNAL_CONFIG_PATH );
         return ESP_OK;
     }
 
     if( ESP_ERR_NOT_FOUND != result )
     {
-        ESP_LOGW(
-            TAG, "configuration invalid; regenerating defaults: %s", esp_err_to_name( result ) );
+        ESP_LOGW( TAG,
+                  "internal configuration invalid; replacing with defaults: %s",
+                  esp_err_to_name( result ) );
     }
-    return device_config_save( false, 0, NULL );
+    const esp_err_t save_result = device_config_save( false, 0, NULL );
+    if( ESP_OK == save_result )
+    {
+        rfscout_event_emit( RFSCOUT_EVENT_CONFIG_DEFAULTED,
+                            RFSCOUT_EVENT_SOURCE_SYSTEM,
+                            (int32_t)RFSCOUT_CONFIG_SCHEMA_VERSION );
+        const esp_err_t sync_result = config_store_sync_example();
+        if( ESP_OK != sync_result )
+        {
+            ESP_LOGW(
+                TAG, "configuration example sync failed: %s", esp_err_to_name( sync_result ) );
+        }
+    }
+    return save_result;
 }
 
 const device_config_t *device_config_get( void )
@@ -1553,7 +1565,7 @@ bool device_config_saved_time( int64_t *a_epoch, const char **a_source )
 
 esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a_time_source )
 {
-    if( !storage_is_available() )
+    if( !config_store_is_available() )
     {
         return ESP_ERR_INVALID_STATE;
     }
@@ -1596,8 +1608,6 @@ esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a
     if( ESP_OK == result )
     {
         config_dirty = false;
-        config_upgrade_pending = false;
-        config_source_version = (int)RFSCOUT_CONFIG_SCHEMA_VERSION;
     }
     return result;
 }

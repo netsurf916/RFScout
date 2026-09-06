@@ -65,9 +65,9 @@ Automatic screen-off affects LCD presentation only. Applications, logging, acqui
 
 Short power-button presses can be configured as None, Screen off, Sleep, or Power off; long press supports None or Power off. Protective policy can request sleep/power-off after confirmed low battery or sustained high SoC temperature, using fresh telemetry and conservative external-power checks.
 
-Persistent preferences live in `/sdcard/rfscout.json` schema version **3**. Loading starts from defaults and overlays recognized values; pre-v1.0 older-schema migration is best effort. Legacy Discipline migrates to **Night + Quiet**. Deep sleep separately retains a small RTC-backed session record containing active app and input-lock state.
+Persistent preferences live in internal flash at `/internal/rfscout.json` using schema version **3**, so normal settings persistence does not depend on an SD card. `/sdcard/rfscout.json` is an explicit one-shot import file, while `/sdcard/rfscout-example.json` is synchronized from the current internal configuration at startup when removable storage is available. Deep sleep separately retains a small RTC-backed session record containing active app and input-lock state.
 
-See [Device configuration and persistence](docs/CONFIGURATION.md) for the detailed configuration, display-idle, power, SD, logging, and migration contracts.
+See [Device configuration and persistence](docs/CONFIGURATION.md) for the detailed configuration, display-idle, power, internal-flash, SD, logging, and schema contracts.
 
 ## Hardware and memory
 

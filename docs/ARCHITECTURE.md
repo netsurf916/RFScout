@@ -156,15 +156,21 @@ Display dim/off is presentation policy, **not** application lifecycle or ESP32 s
 
 Protective policy can react to sustained low battery or high ESP32 internal temperature. Low-battery action requires five consecutive fresh fuel-gauge reads plus fresh evidence that external power is absent; it rearms after charge rises three percentage points above threshold. High-temperature action requires five consecutive samples and rearms 5 C below threshold. High-temperature Power off falls back to Sleep when external-power absence cannot be freshly established. Manual/protective transitions share the global transition overlay and semantic execution path.
 
-Deep sleep stores only a small RTC-backed session envelope (currently active app and input-lock state). Menus, edit state, queued sounds, and active Recorder operations are not resumed. Dirty canonical configuration is flushed before sleep.
+Deep sleep stores only a small RTC-backed session envelope (currently active app and input-lock state). Menus, edit state, queued sounds, and active Recorder operations are not resumed. Dirty authoritative configuration is flushed before sleep.
 
 ## Storage and persistence
 
-The storage service owns SD mount/state and asynchronous rotating logs. Mount failure is nonfatal; radio/sensor apps and Audio Spectrum continue, while persistence and Recorder file operations require mounted storage.
+RFScout separates device-owned durable state from removable bulk/interchange storage.
 
-The conservative board-tested baseline is a FAT-compatible SanDisk card of 32 GB or less. The current board exposes no dedicated card-detect GPIO, so availability is established by successful mount/probe. Logging rotates `rfscout-00.log` through `rfscout-99.log` at up to 4 MiB each and attempts to preserve at least 64 MiB free.
+The internal `storage` LittleFS partition is mounted at `/internal`. `/internal/rfscout.json` is the sole durable authoritative configuration file. Configuration updates are written completely to `/internal/rfscout.json.tmp`, flushed, and then atomically renamed over the live file. A stale temporary is discarded on boot; RFScout does not retain internal backup, quarantine, or history copies. Missing, corrupt, or incompatible internal configuration is replaced with compiled defaults.
 
-Canonical preferences live in `/sdcard/rfscout.json`; see [CONFIGURATION.md](CONFIGURATION.md). Recorder files live under `/sdcard/audio/`.
+SD remains the removable/bulk-storage service. `/sdcard/rfscout.json` is a one-shot configuration import: a valid current-schema document is committed to internal flash before the import is deleted, while an invalid import is preserved as `/sdcard/rfscout.json.bad`. `/sdcard/rfscout-example.json` is synchronized from the authoritative internal file at startup when SD is available and is rewritten only when its contents differ. Recorder WAV files remain under `/sdcard/audio/`, and rotating logs remain SD-only.
+
+The 16 MiB target flash allocates 8 MiB to the factory application and approximately 8 MiB to internal LittleFS. Configuration currently consumes only the single live file plus its short-lived write temporary; the remaining capacity is intentionally available for a future system-owned persistent-record/database service rather than direct app filesystem ownership.
+
+Internal-storage mount, recovery-format/mount-failure, configuration-default recovery, and successful SD configuration import are recorded in the volatile System Events/dmesg history as distinct semantic events. Startup discovery is retained without interactive notification.
+
+The conservative board-tested SD baseline is a FAT-compatible SanDisk card of 32 GB or less. The current board exposes no dedicated card-detect GPIO, so availability is established by successful mount/probe. Logging rotates `rfscout-00.log` through `rfscout-99.log` at up to 4 MiB each and attempts to preserve at least 64 MiB free.
 
 ## Shared hardware/resource boundaries
 
@@ -180,5 +186,7 @@ Application views render their content; the display service owns common top chro
 ## Validation invariants
 
 Release testing should rapidly rotate every enabled app and exercise low memory, callback races, worker-stop timeouts, dependency loss, Recorder recording/save transition vetoes, Audio Spectrum entry/exit, and failed-close rollback. Successful app exit must leave zero managed allocations for the exited app; an aborted transition must preserve its memory/state. Baseline free PSRAM and largest-free-block behavior should not decline monotonically across repeated cycles.
+
+Persistence validation should additionally cover boot without SD, valid/invalid SD config imports, internal corruption/default replacement, interrupted internal temp writes, example no-op synchronization when unchanged, and repeated configuration saves without accumulating internal sidecar files.
 
 Build/release workflow is documented in [RELEASING.md](RELEASING.md); board requirements in [BOARD_PORTING.md](BOARD_PORTING.md); user-visible behavior in [CAPABILITIES.md](CAPABILITIES.md).

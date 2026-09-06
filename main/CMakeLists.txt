@@ -105,6 +105,7 @@ idf_component_register(
         "notification_preferences.c"
         "notification_settings_view.c"
         "alert.c"
+        "config_store.c"
         "device_config.c"
         "device_time.c"
         "platform.c"

@@ -51,6 +51,11 @@ static bool is_system_state_event( const rfscout_event_t *a_event )
         case RFSCOUT_EVENT_STORAGE_MOUNTED:
         case RFSCOUT_EVENT_STORAGE_MOUNT_FAILED:
         case RFSCOUT_EVENT_STORAGE_UNMOUNTED:
+        case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNTED:
+        case RFSCOUT_EVENT_INTERNAL_STORAGE_FORMATTED:
+        case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED:
+        case RFSCOUT_EVENT_CONFIG_IMPORTED:
+        case RFSCOUT_EVENT_CONFIG_DEFAULTED:
         case RFSCOUT_EVENT_APP_AVAILABLE:
         case RFSCOUT_EVENT_APP_UNAVAILABLE:
             return true;
@@ -73,7 +78,8 @@ static rfscout_system_event_severity_t severity_for( const rfscout_event_t *a_ev
         return RFSCOUT_SYSTEM_EVENT_CRITICAL;
     }
     if( RFSCOUT_EVENT_WARNING == a_event->type ||
-        RFSCOUT_EVENT_STORAGE_MOUNT_FAILED == a_event->type )
+        RFSCOUT_EVENT_STORAGE_MOUNT_FAILED == a_event->type ||
+        RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED == a_event->type )
     {
         return RFSCOUT_SYSTEM_EVENT_WARNING;
     }
@@ -93,6 +99,11 @@ static bool notification_eligible( const rfscout_event_t *a_event )
         case RFSCOUT_EVENT_STORAGE_MOUNTED:
         case RFSCOUT_EVENT_STORAGE_MOUNT_FAILED:
         case RFSCOUT_EVENT_STORAGE_UNMOUNTED:
+        case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNTED:
+        case RFSCOUT_EVENT_INTERNAL_STORAGE_FORMATTED:
+        case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED:
+        case RFSCOUT_EVENT_CONFIG_IMPORTED:
+        case RFSCOUT_EVENT_CONFIG_DEFAULTED:
         case RFSCOUT_EVENT_APP_AVAILABLE:
         case RFSCOUT_EVENT_APP_UNAVAILABLE:
         case RFSCOUT_EVENT_WARNING:
@@ -152,6 +163,26 @@ static void render_event( const rfscout_event_t *a_event,
         case RFSCOUT_EVENT_STORAGE_UNMOUNTED:
             snprintf( a_title, a_title_size, "SD CARD" );
             snprintf( a_detail, a_detail_size, "UNMOUNTED" );
+            break;
+        case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNTED:
+            snprintf( a_title, a_title_size, "INTERNAL STORAGE" );
+            snprintf( a_detail, a_detail_size, "MOUNTED" );
+            break;
+        case RFSCOUT_EVENT_INTERNAL_STORAGE_FORMATTED:
+            snprintf( a_title, a_title_size, "INTERNAL STORAGE" );
+            snprintf( a_detail, a_detail_size, "FORMATTED" );
+            break;
+        case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED:
+            snprintf( a_title, a_title_size, "INTERNAL STORAGE" );
+            snprintf( a_detail, a_detail_size, "MOUNT FAILED" );
+            break;
+        case RFSCOUT_EVENT_CONFIG_IMPORTED:
+            snprintf( a_title, a_title_size, "CONFIG" );
+            snprintf( a_detail, a_detail_size, "IMPORTED FROM SD" );
+            break;
+        case RFSCOUT_EVENT_CONFIG_DEFAULTED:
+            snprintf( a_title, a_title_size, "CONFIG" );
+            snprintf( a_detail, a_detail_size, "DEFAULTS RESTORED" );
             break;
         case RFSCOUT_EVENT_APP_AVAILABLE:
             snprintf( a_title,

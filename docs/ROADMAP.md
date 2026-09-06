@@ -61,7 +61,7 @@ A crash, overwrite, or undocumented conversion of an unlimited/session-retained 
 
 ### Workstream B: deterministic app-exit reclamation
 
-**Status:** Transactional foundation implemented by PR #64; simplified resource-session model implemented by PR #68; descriptor-driven runtime and simplified semantic-veto model are being completed by PR #70; hardware stress/fault-injection validation remains open.
+**Status:** Transactional foundation implemented by PR #64; simplified resource-session model implemented by PR #68; descriptor-driven runtime and simplified semantic-veto model implemented by PR #70; hardware stress/fault-injection validation remains open.
 
 Application changes use a single platform-owned resource-session boundary rather than parallel app-specific reachability or rollback protocols:
 
@@ -77,6 +77,8 @@ Application changes use a single platform-owned resource-session boundary rather
 PR #68 removes duplicate Wi-Fi/BLE, CC1101, and nRF24 stop/restart bookkeeping from `app_manager`; service failure/recovery semantics live with the platform session. Service membership is platform-defined rather than negotiated through a public registration API or arbitrary service-slot quota.
 
 PR #70 moves normal app runtime behavior behind compiled descriptors and removes the former app-level reactivation hook. Recorder now uses only a pre-teardown veto while recording or finalizing a file; RFScout does not stop an active recording and later attempt to reconstruct/restart it after an aborted transition. Playback may stop during an ordinary committed leave. Audio Spectrum follows the normal resource-session lifecycle with no Recorder-specific rollback behavior.
+
+Storage/resource policy distinguishes hard lifecycle dependencies from optional operation-time facilities. Hard services remain descriptor-managed; optional facilities such as removable storage are checked only by the service/operation that explicitly requires them, while internal persistence remains a separate device-owned capability.
 
 Outstanding validation includes rapid app rotation, repeated Home/app cycles, large histories, Recorder recording/save transition vetoes, Audio Spectrum rapid skip-through and no-SD operation, Thermal attach/detach, forced service-quiesce failures, callback/timer races, low-memory behavior, baseline-memory stability, and largest-free-block stability.
 
@@ -219,7 +221,7 @@ Every current application receives an explicit v0.4.0 review rather than treatin
 
 ### Workstream E: visual theme and audio-policy separation
 
-**Status:** Implemented by PR #60; release-level combination/migration validation remains open.
+**Status:** Implemented by PR #60; release-level combination/configuration validation remains open.
 
 Implemented behavior:
 
@@ -227,25 +229,25 @@ Implemented behavior:
 - Audio Policy is independently Normal or Quiet;
 - Quiet suppresses incidental UI/event feedback and audible detection notifications without mutating saved notification configuration;
 - explicitly requested content audio such as Recorder playback is not suppressed by Quiet;
-- legacy Discipline migrates to Night + Quiet with the intended migrated environmental gains;
-- recognized older configuration is migrated best-effort while unsupported/unusable pre-1.0 configuration may be regenerated from current defaults.
+- unsupported or invalid current-schema field values retain their compiled defaults and are rewritten canonically;
+- incompatible internal configuration schemas are replaced with current compiled defaults rather than migrated or retained as recovery copies.
 
 Outstanding validation:
 
 - [ ] Verify all Indoor/Outdoor/Night + Normal/Quiet combinations.
 - [ ] Verify Quiet suppression versus explicit content audio.
-- [ ] Verify recognized schema migration/default regeneration.
-- [ ] Verify migrated gains and complete theme/audio independence.
+- [ ] Verify incompatible-schema/default regeneration.
+- [ ] Verify invalid current-schema values retain compiled defaults and theme/audio independence.
 
 ### Workstream F: system events, transient history, and notification wake
 
-**Status:** Initial implementation landed in PR #61; Recent Events UI landed in PR #65.
+**Status:** Initial implementation landed in PR #61; Recent Events UI landed in PR #65; internal-persistence/configuration events added by PR #71.
 
 Implemented behavior includes:
 
 - shared semantic system-state event IDs on the existing event dispatcher;
 - fixed-size RAM-only recent-event history independent from normal diagnostics;
-- charger connect/disconnect, startup SD mount/mount-failure, and Thermal availability events;
+- charger connect/disconnect, startup SD and internal-storage status, configuration import/default recovery, and Thermal availability events;
 - transient global event overlay without changing application lifecycle state;
 - notification-driven display attention wake preserving the original inactivity deadline;
 - common acquired/lost procedural cues under Normal/Quiet audio policy;
@@ -338,29 +340,53 @@ Goals:
 
 Future consumers may include tuner/pitch analysis and microphone-side CW/Morse receive. Those remain distinct from RF-side decoding and are not v0.4.0 release blockers unless separately promoted.
 
-### CW/Morse sender application
+### Log format, levels, and maintained parser
 
 **Priority:** Near term
 
-- compose strings with the rotary encoder and center button;
-- persist user-defined strings in `/sdcard/rfscout.json`;
-- browse/select/add/delete saved messages;
-- send complete messages through the shared Morse/speaker service;
-- keep detection-notification one-character mappings separate from CW messages.
+Rework application/system logging as a common policy rather than letting each feature independently decide how much diagnostic or observational data to emit. Logging levels should provide a practical way to reduce log volume while retaining important operational and decoded/observed records at the selected level.
 
-### Log format and maintained parser
-
-**Priority:** Near term
-
-- stable `key=value` fields;
-- quote/escape free-form values containing spaces;
-- stable field naming/order by record type;
-- explicit schema/version marker if needed;
-- maintained reference parser producing JSON and/or CSV;
-- regression tests for missing, unknown, long, and multi-word values;
+- define a small, consistent set of logging levels and their intended semantics;
+- make the configured log level part of authoritative device configuration;
+- classify existing log records by level and tune emitted detail so lowering the level predictably reduces volume rather than disabling arbitrary subsystems;
+- keep important application observations, warnings, and failures semantically distinct from verbose/debug diagnostics;
+- allow applications such as future CW/Morse receive to emit structured decoded-message records through the common logger when enabled at the selected level;
+- keep internal app-browsable history and SD logging separate: a decoded message may be retained internally for browsing and independently mirrored to the SD log when policy and removable storage permit;
+- use stable `key=value` fields and quote/escape free-form values containing spaces;
+- use stable field naming/order by record type and an explicit schema/version marker if needed;
+- maintain a reference parser producing JSON and/or CSV;
+- add regression tests for levels, missing/unknown fields, long values, and quoting;
 - preserve UTC ISO-8601 timestamps and explicit uptime fallback.
 
 ## Medium-term platform work
+
+### System-owned internal persistent record/database service
+
+**Priority:** Platform prerequisite for applications that need small durable browsable histories without removable storage.
+
+Build a compact service over internal persistence that owns record layout, bounds/retention, durability, and iteration so applications do not know LittleFS paths or filesystem topology. It should support small app-specific durable collections while keeping configuration, removable bulk files, and transient/session PSRAM data semantically separate.
+
+- [ ] Define service-owned namespacing/record identity and bounded retention semantics.
+- [ ] Provide compact put/get/delete/iterate operations suitable for on-device browsing.
+- [ ] Define corruption/recovery behavior without exposing raw filesystem ownership to applications.
+- [ ] Keep SD logging/export optional and separate from authoritative internal record state.
+- [ ] Validate write endurance and bounded-space behavior for expected low-volume records.
+
+### CW/Morse application
+
+**Priority:** After the system-owned internal persistent record/database service.
+
+**Dependency:** Implement after the internal record/database service above so receive/decode history can be browsed persistently without requiring an SD card.
+
+- compose transmit strings with the rotary encoder and center button;
+- store user-defined transmit message **presets** as ordinary CW app configuration in authoritative `rfscout.json`;
+- browse/select/add/delete transmit presets through the app UI;
+- send complete messages through the shared Morse/speaker service;
+- keep detection-notification one-character mappings separate from CW transmit presets;
+- if receive/decoding is added, store a small browsable decoded-message history through the system-owned internal record service rather than configuration;
+- emit structured decoded-message records through the common logger when receive/decoding is enabled, subject to the configured logging level;
+- keep decoded-message SD logging independent from internal app history so the app remains fully useful without removable storage;
+- reserve SD-specific files for genuinely bulk/raw capture data if such capture is added later.
 
 ### Location and external time authorities
 

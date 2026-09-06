@@ -103,9 +103,11 @@ The device-wide Normal/Quiet policy is independent of visual theme. Speaker outp
 
 ## Configuration, storage, and logging
 
-Persistent preferences use `/sdcard/rfscout.json` schema version **3**. Loading begins with defaults and overlays recognized valid fields; v1/v2 migration is best effort while RFScout remains pre-1.0. Future schema versions are rejected rather than destructively rewritten. See [CONFIGURATION.md](CONFIGURATION.md).
+Persistent preferences use the authoritative internal `/internal/rfscout.json` schema version **3**. Loading begins with defaults and overlays recognized valid fields from a current-schema internal document. A missing, corrupt, or incompatible internal configuration is replaced with current compiled defaults. Internal saves write a complete temporary file and atomically rename it over the live file; persistent internal backup/quarantine copies are not retained. See [CONFIGURATION.md](CONFIGURATION.md).
 
-RFScout can operate without SD for radio/sensor use and for Audio Spectrum. SD provides canonical persistence, Recorder files under `/sdcard/audio/`, and asynchronous rotating logs. The conservative board-tested baseline is a FAT-compatible SanDisk card of 32 GB or less. Logs rotate through 100 files of up to 4 MiB each while preserving a free-space reserve.
+An SD card is no longer required to retain device settings. `/sdcard/rfscout.json` is an explicit one-shot import; a valid current-schema import is committed internally before deletion, while an invalid import is preserved as `/sdcard/rfscout.json.bad`. `/sdcard/rfscout-example.json` is synchronized from the authoritative internal configuration at startup when SD is available and is rewritten only when its contents differ.
+
+System Events/dmesg records internal-storage mount/recovery status and accepted configuration import/default recovery separately from SD-card mount state. RFScout can operate without SD for configuration, radio/sensor use, and Audio Spectrum. SD remains the home for Recorder files under `/sdcard/audio/` and asynchronous rotating logs. The conservative board-tested baseline is a FAT-compatible SanDisk card of 32 GB or less. Logs rotate through 100 files of up to 4 MiB each while preserving a free-space reserve.
 
 ## Hardware and memory boundaries
 
@@ -113,6 +115,8 @@ LCD/microSD/CC1101/nRF24 share SPI resources; power telemetry/external sensors s
 
 Usable external **PSRAM is required**. App-scoped memory/session infrastructure is implemented: growable app-owned state can consume PSRAM during the session and is reclaimed after platform services prove they no longer reference it.
 
+The 16 MiB internal flash is split into an 8 MiB factory application partition and approximately 8 MiB of LittleFS internal persistence. Configuration currently uses only one durable internal file plus its short-lived write temporary; the remaining capacity is reserved for future system-owned persistent records rather than direct app filesystem ownership.
+
 ## Not currently implemented
 
-Major v0.4.0 work still outstanding includes Instant/Timed/Never WiFi/BLE retention semantics, semantic Wi-Fi/BLE entity/correlation views, dynamic surveillance-history migration, broader app-by-app PSRAM/history improvements, the planned further calibration/generalization of the Audio Input service, thermal calibration, and release-level stress/fault-injection validation. The canonical checklist and status are in [ROADMAP.md](ROADMAP.md).
+Major v0.4.0 work still outstanding includes Instant/Timed/Never WiFi/BLE retention semantics, semantic Wi-Fi/BLE entity/correlation views, dynamic surveillance-history migration, broader app-by-app PSRAM/history improvements, the planned further calibration/generalization of the Audio Input service, thermal calibration, a generic app-facing persistent record/database service, and release-level stress/fault-injection validation. The canonical checklist and status are in [ROADMAP.md](ROADMAP.md).

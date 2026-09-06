@@ -145,19 +145,21 @@ static void set_idle_status( void )
     set_power_status( POWER_HOLD_IDLE, POWER_ACTION_NONE, POWER_TRANSITION_NONE, 0U, "", "" );
 }
 
-/** @brief Stop logging, optionally checkpoint wall time, and unmount storage. */
+/** @brief Flush internal state, then stop removable-storage users when SD is present. */
 static bool prepare_storage_for_power_state( bool a_checkpoint_time )
 {
-    if( !storage_is_available() )
+    if( a_checkpoint_time )
     {
-        return true;
+        const esp_err_t checkpoint = device_time_checkpoint();
+        if( ESP_OK != checkpoint )
+        {
+            ESP_LOGW( TAG, "wall-clock checkpoint failed: %s", esp_err_to_name( checkpoint ) );
+        }
     }
-
-    /* Deep sleep is allowed directly from an open settings page. Flush any
-       canonical user-configuration changes before stopping storage users so a
-       save failure leaves the running session intact. */
-    if( !a_checkpoint_time )
+    else
     {
+        /* Deep sleep is allowed directly from an open settings page. Internal persistence is
+           independent of removable media, so flush dirty configuration before considering SD. */
         const esp_err_t save_result = device_config_save_if_dirty();
         if( ESP_OK != save_result )
         {
@@ -165,6 +167,11 @@ static bool prepare_storage_for_power_state( bool a_checkpoint_time )
                 TAG, "configuration save before sleep failed: %s", esp_err_to_name( save_result ) );
             return false;
         }
+    }
+
+    if( !storage_is_available() )
+    {
+        return true;
     }
 
     if( !recorder_prepare_storage_shutdown( POWER_RECORDER_STOP_TIMEOUT_MS ) )
@@ -177,15 +184,6 @@ static bool prepare_storage_for_power_state( bool a_checkpoint_time )
     {
         ESP_LOGW( TAG, "storage remains mounted because logger did not stop" );
         return false;
-    }
-
-    if( a_checkpoint_time )
-    {
-        const esp_err_t checkpoint = device_time_checkpoint();
-        if( ESP_OK != checkpoint )
-        {
-            ESP_LOGW( TAG, "wall-clock checkpoint failed: %s", esp_err_to_name( checkpoint ) );
-        }
     }
 
     storage_shutdown();
