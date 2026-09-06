@@ -55,7 +55,7 @@ static void render_menu( const rfscout_app_notification_menu_t *a_menu )
 
 static bool close_menu( rfscout_app_notification_menu_t *a_menu )
 {
-    const esp_err_t save_result = device_config_save();
+    const esp_err_t save_result = device_config_save( false, 0, NULL );
     if( ( ESP_OK != save_result ) && ( ESP_ERR_INVALID_STATE != save_result ) )
     {
         ESP_LOGW( TAG, "notification settings save failed: %s", esp_err_to_name( save_result ) );
