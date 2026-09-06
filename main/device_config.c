@@ -43,7 +43,6 @@ static bool saved_time_valid;
 static int64_t saved_time_epoch;
 static char saved_time_source[ 24 ];
 static bool config_dirty;
-static bool config_upgrade_pending;
 static int config_source_version;
 
 static const char *app_config_name( rfscout_app_id_t a_app )
@@ -245,7 +244,6 @@ static void set_defaults( void )
     saved_time_epoch = 0;
     saved_time_source[ 0 ] = '\0';
     config_dirty = false;
-    config_upgrade_pending = false;
     config_source_version = (int)RFSCOUT_CONFIG_SCHEMA_VERSION;
 }
 
@@ -969,7 +967,7 @@ esp_err_t device_config_init( void )
     const esp_err_t result = load_file();
     if( ESP_OK == result )
     {
-        if( config_store_import_pending() || config_upgrade_pending )
+        if( config_store_import_pending() )
         {
             const esp_err_t upgrade_result = device_config_save( false, 0, NULL );
             if( ESP_OK != upgrade_result )
@@ -981,8 +979,7 @@ esp_err_t device_config_init( void )
             }
             else
             {
-                config_upgrade_pending = false;
-                if( config_store_import_pending() )
+                            if( config_store_import_pending() )
                 {
                     const esp_err_t finalize_result = config_store_finalize_import();
                     if( ESP_OK == finalize_result )
@@ -1598,8 +1595,7 @@ esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a
     if( ESP_OK == result )
     {
         config_dirty = false;
-        config_upgrade_pending = false;
-        config_source_version = (int)RFSCOUT_CONFIG_SCHEMA_VERSION;
+            config_source_version = (int)RFSCOUT_CONFIG_SCHEMA_VERSION;
     }
     return result;
 }
