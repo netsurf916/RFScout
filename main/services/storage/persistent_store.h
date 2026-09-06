@@ -61,8 +61,8 @@ esp_err_t app_store_context_current( rfscout_app_store_context_t *a_context );
 
 /**
  * @brief App persistence using an explicitly captured session identity.
- * @details These calls reject stale contexts and participate in app-session lifecycle blocking so
- *          a transition cannot reclaim the owning session while an operation is in progress.
+ * @details These calls reject stale contexts. Asynchronous app work remains responsible for using
+ *          the existing app lifecycle prepare hook to veto transition while its write is active.
  */
 esp_err_t app_store_write_context( const rfscout_app_store_context_t *a_context,
                                    const char *a_key,
