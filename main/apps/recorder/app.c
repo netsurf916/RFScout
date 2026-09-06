@@ -72,7 +72,7 @@ static void render( void )
 
 static void save_volume( void )
 {
-    const esp_err_t result = device_config_save();
+    const esp_err_t result = device_config_save( false, 0, NULL );
     if( ESP_OK != result )
     {
         ESP_LOGW( TAG, "could not save Recorder volume: %s", esp_err_to_name( result ) );
