@@ -1,0 +1,25 @@
+name: PR71 format fix
+on:
+  push:
+    branches:
+      - feature/internal-config-storage
+    paths:
+      - .github/workflows/pr71-formatfix.yml
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Apply indentation fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 .github/pr71_formatfix.py
+          git rm .github/pr71_formatfix.py .github/workflows/pr71-formatfix.yml
+          git add main/device_config.c
+          git commit -m "Fix config cleanup formatting"
+          git push origin HEAD:feature/internal-config-storage
