@@ -72,6 +72,8 @@ typedef struct
     rfscout_alert_mode_t alert_mode;
     uint8_t alert_volume_percent;
     uint8_t recorder_volume_percent;
+    /* Legacy schema-v3 compatibility only; Recorder no longer applies digital capture gain. */
+    uint8_t recorder_input_gain_db;
     bool notification_app_enabled[ RFSCOUT_APP_COUNT ];
     bool wifi_device_feedback_enabled;
     bool ble_device_feedback_enabled;
@@ -86,109 +88,58 @@ typedef struct
 
 /** @brief Initialize compiled defaults and load/repair the authoritative internal configuration. */
 esp_err_t device_config_init( void );
-
-/** @brief Return the active device configuration. */
 const device_config_t *device_config_get( void );
-
-/** @brief Return whether one application is enabled by device configuration. */
 bool device_config_app_enabled( rfscout_app_id_t a_app );
-
-/** @brief Change whether one application is enabled; Device/Home itself always remains enabled. */
 esp_err_t device_config_set_app_enabled( rfscout_app_id_t a_app, bool a_enabled );
-
-/** @brief Change the preferred startup application. */
 esp_err_t device_config_set_startup_app( rfscout_app_id_t a_app );
-
-/** @brief Return the configured startup application. */
 rfscout_app_id_t device_config_startup_app( void );
-
-/** @brief Change logging preference. */
 esp_err_t device_config_set_logging_enabled( bool a_enabled );
-
-/** @brief Change display brightness percentage. */
 esp_err_t device_config_set_brightness( uint8_t a_percent );
-
-/** @brief Change inactivity timeout before display dimming; zero disables dimming. */
 esp_err_t device_config_set_display_dim_timeout( uint16_t a_seconds );
-
-/** @brief Change inactivity timeout before LCD output is disabled; zero disables screen-off. */
 esp_err_t device_config_set_display_off_timeout( uint16_t a_seconds );
-
-/** @brief Change the semantic action assigned to a short power-button press. */
 esp_err_t device_config_set_power_button_short_action( power_action_t a_action );
-
-/** @brief Change the semantic action assigned to a long power-button press. */
 esp_err_t device_config_set_power_button_long_action( power_action_t a_action );
-
-/** @brief Set low-battery protection threshold; zero disables the condition. */
 esp_err_t device_config_set_low_battery_threshold( uint8_t a_percent );
-/** @brief Set the semantic action requested for a confirmed low-battery condition. */
 esp_err_t device_config_set_low_battery_action( power_action_t a_action );
-/** @brief Set internal-temperature protection threshold in Celsius; zero disables it. */
 esp_err_t device_config_set_high_temperature_threshold( uint8_t a_temperature_c );
-/** @brief Set the semantic action requested for a confirmed high-temperature condition. */
 esp_err_t device_config_set_high_temperature_action( power_action_t a_action );
-
-/** @brief Change 12/24-hour clock presentation. */
 esp_err_t device_config_set_clock_24h( bool a_enabled );
 rfscout_theme_id_t device_config_theme( void );
 esp_err_t device_config_set_theme( rfscout_theme_id_t a_theme );
 rfscout_audio_policy_id_t device_config_audio_policy( void );
 esp_err_t device_config_set_audio_policy( rfscout_audio_policy_id_t a_policy );
-/** @brief Set theme-independent interaction and notification environmental gains. */
 esp_err_t device_config_set_audio_gains( uint8_t a_interaction_percent,
                                          uint8_t a_notification_percent );
-
-/** @brief Change the global audible notification mode. */
 esp_err_t device_config_set_alert_mode( rfscout_alert_mode_t a_mode );
-
-/** @brief Change the global notification volume percentage from 0 through 100. */
 esp_err_t device_config_set_alert_volume( uint8_t a_percent );
-
-/** @brief Change Recorder playback volume percentage from 0 through 100. */
 esp_err_t device_config_set_recorder_volume( uint8_t a_percent );
+/** @brief Legacy schema-v3 compatibility setter; Recorder does not apply this value. */
+esp_err_t device_config_set_recorder_input_gain( uint8_t a_gain_db );
 bool device_config_notification_app_enabled( rfscout_app_id_t a_app );
 esp_err_t device_config_set_notification_app_enabled( rfscout_app_id_t a_app, bool a_enabled );
-
-/** @brief Return whether ordinary Wi-Fi discoveries may emit the general detection event. */
 bool device_config_wifi_device_feedback_enabled( void );
-/** @brief Change whether ordinary Wi-Fi discoveries may emit the general detection event. */
 esp_err_t device_config_set_wifi_device_feedback_enabled( bool a_enabled );
-/** @brief Return whether ordinary BLE discoveries may emit the general detection event. */
 bool device_config_ble_device_feedback_enabled( void );
-/** @brief Change whether ordinary BLE discoveries may emit the general detection event. */
 esp_err_t device_config_set_ble_device_feedback_enabled( bool a_enabled );
-
-/** @brief Return the Wi-Fi live-list timeout in seconds. */
 uint16_t device_config_wifi_timeout_seconds( void );
-/** @brief Change the Wi-Fi live-list timeout in 10-second steps from 10 through 300 seconds. */
 esp_err_t device_config_set_wifi_timeout_seconds( uint16_t a_seconds );
-/** @brief Return the Bluetooth live-list timeout in seconds. */
 uint16_t device_config_ble_timeout_seconds( void );
-/** @brief Change the Bluetooth live-list timeout in 10-second steps from 10 through 300 seconds. */
 esp_err_t device_config_set_ble_timeout_seconds( uint16_t a_seconds );
-/** @brief Return the surveillance evidence threshold policy. */
 rfscout_surveillance_sensitivity_t device_config_surveillance_sensitivity( void );
-/** @brief Change surveillance sensitivity between High, Medium, and Low. */
 esp_err_t
 device_config_set_surveillance_sensitivity( rfscout_surveillance_sensitivity_t a_sensitivity );
-
-/** @brief Return the configured Morse character for one notification category. */
 char device_config_notification_character( rfscout_notification_type_t a_type );
-
-/** @brief Change the Morse character for one notification category. */
 esp_err_t device_config_set_notification_character( rfscout_notification_type_t a_type,
                                                     char a_character );
-
-/** @brief Select a timezone definition by configured name. */
 esp_err_t device_config_set_timezone( const char *a_name );
-
-/** @brief Return the selected timezone definition or NULL when unavailable. */
 const device_timezone_t *device_config_timezone( void );
 
-/** @brief Atomically persist the current firmware-managed user preferences. */
-esp_err_t device_config_save( void );
-/** @brief Persist preferences only when a setter has changed canonical configuration. */
+/**
+ * @brief Persist current firmware-managed user preferences internally.
+ * @details The time arguments are legacy source-compatibility parameters and are ignored; wall time
+ *          is runtime RTC state and is never persisted by this API.
+ */
+esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a_time_source );
 esp_err_t device_config_save_if_dirty( void );
 
 #endif // _RFSCOUT_DEVICE_CONFIG_H_
