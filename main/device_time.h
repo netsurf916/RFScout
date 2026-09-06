@@ -1,6 +1,6 @@
 /**
     device_time.h : RFScout authoritative wall-clock service
-    Description: Owns system wall time, timezone application, source tracking, and display/log formatting.
+    Description: Owns runtime wall time, timezone application, source diagnostics, and formatting.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -14,44 +14,38 @@
 
 #include <stdbool.h>
 #include <stddef.h>
-#include <stdint.h>
 #include <time.h>
 
 typedef enum
 {
-    RFSCOUT_TIME_SOURCE_UNSET = 0,
-    RFSCOUT_TIME_SOURCE_CONFIG,
+    RFSCOUT_TIME_SOURCE_RTC = 0,
     RFSCOUT_TIME_SOURCE_MANUAL,
     RFSCOUT_TIME_SOURCE_GPS,
-    RFSCOUT_TIME_SOURCE_RTC,
     RFSCOUT_TIME_SOURCE_NTP
 } rfscout_time_source_t;
 
-/**
- * @brief Initialize timezone and optionally restore system wall time from configuration.
- * @note A restored clock preserves the original authority token and is separately marked as saved state.
- */
+/** @brief Initialize timezone and treat the current system/RTC wall clock as authoritative. */
 esp_err_t device_time_init( void );
 
 /**
- * @brief Set authoritative wall time from a supplied epoch and source.
+ * @brief Set runtime wall time from a supplied epoch and source.
  * @param a_epoch UTC epoch seconds.
- * @param a_source Authority that supplied the time.
+ * @param a_source Source that supplied the adjustment.
  * @param a_detail Optional source detail, such as `rtc:ds3231`.
  */
 esp_err_t
 device_time_set_epoch( time_t a_epoch, rfscout_time_source_t a_source, const char *a_detail );
 
-/** @brief Return current epoch when wall time is valid. */
+/** @brief Return the current RTC-backed system epoch. */
 bool device_time_now( time_t *a_epoch );
 
-/** @brief Return the source most recently used to establish wall time. */
+/** @brief Return the source most recently used to adjust wall time during this boot. */
 rfscout_time_source_t device_time_source( void );
 
-/** @brief Return source detail such as an RTC model token. */
+/** @brief Return transient source detail for the current boot. */
 const char *device_time_source_detail( void );
 
-/** @brief Return a stable display label for the current time source. */
+/** @brief Return a display label for the current boot's most recent time source. */
 const char *device_time_source_label( void );
 
 /** @brief Apply the timezone currently selected in device configuration. */
@@ -63,7 +57,7 @@ bool device_time_format_clock( char *a_buffer, size_t a_capacity );
 /** @brief Format an epoch as UTC ISO-8601 for logs. */
 bool device_time_format_iso8601_utc( time_t a_epoch, char *a_buffer, size_t a_capacity );
 
-/** @brief Persist current wall time into the configuration during orderly hard shutdown. */
+/** @brief Flush dirty user preferences before an orderly hard shutdown. */
 esp_err_t device_time_checkpoint( void );
 
 #endif // _RFSCOUT_DEVICE_TIME_H_
