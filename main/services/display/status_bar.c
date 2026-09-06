@@ -9,9 +9,9 @@
 
 #include "device_time.h"
 #include "display.h"
+#include "input.h"
 #include "log_writer.h"
 #include "mlx90640.h"
-#include "platform.h"
 #include "storage.h"
 #include "ui_theme.h"
 
@@ -31,28 +31,21 @@
 static bool have_last_state;
 static rfscout_status_bar_state_t last_state;
 
-/** @brief Draw a compact closed-padlock glyph for the global input lock. */
 static void draw_lock_icon( int a_x )
 {
     const int y = STATUS_BAR_ICON_Y;
     const ui_theme_palette_t *theme = ui_theme_get();
-
-    /* Rounded shackle. */
     display_fill_rect( a_x + 3, y + 1, 6, 1, theme->warning );
     display_fill_rect( a_x + 2, y + 2, 1, 4, theme->warning );
     display_fill_rect( a_x + 9, y + 2, 1, 4, theme->warning );
-
-    /* Solid lock body with a tiny keyway cutout. */
     display_fill_rect( a_x + 1, y + 6, 10, 7, theme->warning );
     display_fill_rect( a_x + 5, y + 8, 2, 3, theme->background );
 }
 
-/** @brief Draw a compact SD-card glyph using the supplied subdued/error color. */
 static void draw_sd_icon( int a_x, uint16_t a_color, bool a_error )
 {
     const int y = STATUS_BAR_ICON_Y;
     const ui_theme_palette_t *theme = ui_theme_get();
-
     display_fill_rect( a_x, y + 2, 1, 11, a_color );
     display_fill_rect( a_x + 1, y + 1, 8, 1, a_color );
     display_fill_rect( a_x + 9, y + 2, 2, 1, a_color );
@@ -61,7 +54,6 @@ static void draw_sd_icon( int a_x, uint16_t a_color, bool a_error )
     display_fill_rect( a_x + 2, y + 4, 2, 3, a_color );
     display_fill_rect( a_x + 5, y + 4, 2, 3, a_color );
     display_fill_rect( a_x + 8, y + 4, 2, 3, a_color );
-
     if( a_error )
     {
         display_fill_rect( a_x + 3, y + 8, 6, 3, theme->background );
@@ -70,19 +62,16 @@ static void draw_sd_icon( int a_x, uint16_t a_color, bool a_error )
     }
 }
 
-/** @brief Draw a subdued thermal-camera glyph when the MLX90640 is available. */
 static void draw_thermal_icon( int a_x )
 {
     const int y = STATUS_BAR_ICON_Y;
     const ui_theme_palette_t *theme = ui_theme_get();
-
     display_fill_rect( a_x + 1, y + 3, 11, 8, theme->info );
     display_fill_rect( a_x + 3, y + 1, 5, 2, theme->info );
     display_fill_rect( a_x + 3, y + 5, 7, 4, theme->background );
     display_fill_rect( a_x + 5, y + 5, 3, 4, theme->info );
 }
 
-/** @brief Return whether two status snapshots would render identically. */
 static bool status_equal( const rfscout_status_bar_state_t *a_left,
                           const rfscout_status_bar_state_t *a_right )
 {
@@ -101,7 +90,7 @@ bool status_bar_snapshot( rfscout_status_bar_state_t *a_state )
     }
 
     memset( a_state, 0, sizeof( *a_state ) );
-    a_state->input_locked = platform_input_locked();
+    a_state->input_locked = input_locked();
     a_state->sd_available = storage_is_available();
     a_state->storage_error = log_writer_has_error();
     a_state->thermal_available = mlx90640_is_detected();
@@ -124,14 +113,12 @@ void status_bar_draw_state( const rfscout_status_bar_state_t *a_state )
                        theme->background );
 
     int x = STATUS_BAR_RIGHT_X;
-
     if( a_state->input_locked )
     {
         x -= STATUS_BAR_ICON_WIDTH;
         draw_lock_icon( x );
         x -= STATUS_BAR_ICON_GAP;
     }
-
     if( a_state->sd_available )
     {
         x -= STATUS_BAR_ICON_WIDTH;
@@ -139,7 +126,6 @@ void status_bar_draw_state( const rfscout_status_bar_state_t *a_state )
         draw_sd_icon( x, color, a_state->storage_error );
         x -= STATUS_BAR_ICON_GAP;
     }
-
     if( a_state->thermal_available )
     {
         x -= STATUS_BAR_ICON_WIDTH;
@@ -178,6 +164,5 @@ void status_bar_poll( void )
     {
         return;
     }
-
     status_bar_draw_state( &state );
 }

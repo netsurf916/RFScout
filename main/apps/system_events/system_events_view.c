@@ -7,6 +7,7 @@
 
 #include "system_events_view.h"
 
+#include "app_framework.h"
 #include "app_manager.h"
 #include "display.h"
 #include "system_events.h"
@@ -69,6 +70,17 @@ static const char *source_name( uint8_t a_source )
     }
 }
 
+static const char *event_app_name( uint8_t a_source )
+{
+    if( a_source >= (uint8_t)RFSCOUT_APP_COUNT )
+    {
+        return "HARDWARE";
+    }
+    const rfscout_app_descriptor_t *descriptor =
+        app_framework_descriptor( (rfscout_app_id_t)a_source );
+    return ( NULL != descriptor && NULL != descriptor->name ) ? descriptor->name : "HARDWARE";
+}
+
 static void event_text( const rfscout_event_t *a_event, char *a_text, size_t a_capacity )
 {
     if( NULL == a_event || NULL == a_text || 0U == a_capacity )
@@ -92,11 +104,32 @@ static void event_text( const rfscout_event_t *a_event, char *a_text, size_t a_c
         case RFSCOUT_EVENT_STORAGE_UNMOUNTED:
             snprintf( a_text, a_capacity, "SD UNMOUNTED" );
             break;
+        case RFSCOUT_EVENT_APP_DISCOVERED:
+            if( RFSCOUT_APP_AVAILABILITY_AVAILABLE == (rfscout_app_availability_t)a_event->value )
+            {
+                snprintf( a_text, a_capacity, "%s DETECTED", event_app_name( a_event->source ) );
+            }
+            else if( RFSCOUT_APP_AVAILABILITY_UNAVAILABLE ==
+                     (rfscout_app_availability_t)a_event->value )
+            {
+                snprintf( a_text, a_capacity, "%s NOT PRESENT", event_app_name( a_event->source ) );
+            }
+            else
+            {
+                snprintf( a_text, a_capacity, "%s UNAVAILABLE", event_app_name( a_event->source ) );
+            }
+            break;
         case RFSCOUT_EVENT_APP_AVAILABLE:
-            snprintf( a_text, a_capacity, "APP AVAILABLE" );
+            snprintf( a_text, a_capacity, "%s CONNECTED", event_app_name( a_event->source ) );
             break;
         case RFSCOUT_EVENT_APP_UNAVAILABLE:
-            snprintf( a_text, a_capacity, "APP UNAVAILABLE" );
+            snprintf( a_text, a_capacity, "%s DISCONNECTED", event_app_name( a_event->source ) );
+            break;
+        case RFSCOUT_EVENT_DISPLAY_PROVIDER_SELECTED:
+            snprintf( a_text, a_capacity, "DISPLAY ST7789" );
+            break;
+        case RFSCOUT_EVENT_INPUT_PROVIDER_SELECTED:
+            snprintf( a_text, a_capacity, "INPUT ROTARY/BUTTONS" );
             break;
         case RFSCOUT_EVENT_WARNING:
             snprintf( a_text, a_capacity, "SYSTEM WARNING" );

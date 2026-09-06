@@ -17,24 +17,30 @@ A board target owns physical facts and capabilities, including:
 - power/display actions and policy sensors available on that target;
 - PSRAM/flash assumptions needed by the platform.
 
-Application code should depend on services/capabilities, not board model names. Board-specific conditionals belong in board/platform/driver integration code.
+Application code should depend on services/capabilities, not board model names. Board-specific conditionals belong in board/service/driver integration code.
 
 ### PSRAM requirement
 
-RFScout's current platform model requires usable external PSRAM. Large persistent platform allocations such as the framebuffer already depend on it, and v0.4.0 planning intentionally treats PSRAM as a supported-target requirement rather than promising a reduced-capacity internal-SRAM fallback.
-
-Internal SRAM remains available for RTOS/system state, task stacks, DMA/peripheral-constrained buffers, and latency-sensitive allocations. A future board target should not be considered supported unless its configured memory topology satisfies RFScout's platform requirements.
+Supported targets require usable external PSRAM. Internal SRAM remains reserved for RTOS/system state, task stacks, DMA/peripheral-constrained buffers, and latency-sensitive allocations; RFScout does not promise a reduced-capacity internal-SRAM fallback.
 
 ## Input boundary
 
-`platform_input_get()` exposes board-neutral semantic input:
+The `input` service exposes board-neutral semantic input:
 
 - navigation with signed steps;
 - select and long-select;
 - back;
 - character input.
 
-The current T-Embed target adapts its rotary encoder and buttons into this interface. Applications should not depend directly on encoder GPIOs or a specific physical control layout.
+The current T-Embed provider adapts its rotary encoder and buttons to this interface. Applications receive semantic input through the active-app runtime and do not depend on GPIOs or physical control layout. Unhandled navigation/Back may fall through to global policy.
+
+Display-wake activity is separate from dispatchable input: a gesture used to wake the display is consumed before app, lock, or power handling. Future targets may compose compatible providers without changing the application contract.
+
+## Display boundary
+
+The `display` service owns framebuffer/presentation behavior and exposes runtime provider metadata through `display_info()`, including selected provider, geometry, and supported capabilities. The current T-Embed image selects the ST7789 provider and retains its existing RGB565 framebuffer implementation.
+
+Board builds still provide compile-time geometry for legacy/static layout code. New adaptive layout code should prefer runtime display metadata so provider selection can evolve without exposing controller identity to applications. Controller-specific low-power/output behavior stays behind the display service.
 
 ## Power boundary
 
@@ -52,6 +58,8 @@ Speaker and microphone behavior should be exposed through services/capabilities 
 
 Compile-time capability means the target can support a device; it does not guarantee every product variant populates it. Fixed optional devices such as CC1101, nRF24, and the board microphone may be probed once at startup. Hot-plug peripherals such as external I2C devices should use dynamic probing.
 
+Probe state is retained centrally as **available** or **unavailable**. The first known result is recorded silently in System Events; later records are emitted only when availability changes. Detailed probe failures stay in diagnostic logs rather than becoming a third availability state.
+
 ## Adding a board
 
 A new board port should:
@@ -63,7 +71,7 @@ A new board port should:
 5. keep applications dependent on semantic services/capabilities;
 6. add a distinct CI/package target and hardware identity.
 
-Do not add runtime board detection or compile unrelated board implementations into every image unless a future hardware family creates a concrete need.
+Do not add runtime board detection or compile unrelated board implementations into every image unless a future hardware family creates a concrete need. Provider selection should remain constrained to implementations plausible for the selected board image.
 
 ## Configuration overlays
 

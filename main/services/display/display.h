@@ -1,6 +1,6 @@
 /**
-    display.h : RFScout LCD interface
-    Description: Provides a small framebuffer-backed ST7789 drawing interface.
+    display.h : RFScout display service
+    Description: Provides framebuffer drawing and runtime metadata for the selected display provider.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -10,59 +10,70 @@
 #ifndef _RFSCOUT_DISPLAY_H_
 #define _RFSCOUT_DISPLAY_H_
 
+#include "board.h"
 #include "esp_err.h"
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#define RFSCOUT_DISPLAY_WIDTH 320
-#define RFSCOUT_DISPLAY_HEIGHT 170
+/* Current layout code may still use board-build geometry constants. New adaptive layout code should
+   prefer display_info() so a future board family can select compatible providers at startup. */
+#define RFSCOUT_DISPLAY_WIDTH RFSCOUT_BOARD_DISPLAY_WIDTH
+#define RFSCOUT_DISPLAY_HEIGHT RFSCOUT_BOARD_DISPLAY_HEIGHT
 
-/**
- * @brief Initialize the T-Embed ST7789 display.
- * @return ESP_OK on success; an ESP-IDF error code on failure.
- */
+typedef enum
+{
+    RFSCOUT_DISPLAY_PROVIDER_NONE = 0,
+    RFSCOUT_DISPLAY_PROVIDER_ST7789
+} rfscout_display_provider_t;
+
+typedef enum
+{
+    RFSCOUT_DISPLAY_CAP_BRIGHTNESS = 1U << 0,
+    RFSCOUT_DISPLAY_CAP_LOW_POWER = 1U << 1
+} rfscout_display_capability_t;
+
+typedef struct
+{
+    rfscout_display_provider_t provider;
+    const char *name;
+    uint16_t width;
+    uint16_t height;
+    uint32_t capabilities;
+} rfscout_display_info_t;
+
+/** @brief Return runtime metadata for the board-selected display provider. */
+const rfscout_display_info_t *display_info( void );
+
+/** @brief Initialize the board-selected display provider and framebuffer. */
 esp_err_t display_init( void );
 
-/** @brief Set LCD backlight brightness from 0 through 100 percent. Zero is reserved for display-idle blanking. */
+/** @brief Set display brightness from 0 through 100 percent. Zero is reserved for idle blanking. */
 void display_set_brightness( uint8_t a_percent );
 
-/** @brief Enable or disable ST7789 display output without changing the application framebuffer. */
+/** @brief Enable or disable display output without changing the application framebuffer. */
 esp_err_t display_set_output_enabled( bool a_enabled );
 
-/** @brief Return whether LCD output transfers are currently enabled. */
+/** @brief Return whether display output transfers are currently enabled. */
 bool display_output_enabled( void );
 
-/**
- * @brief Disable ST7789 output and enter the controller's hardware sleep mode.
- *
- * The application framebuffer remains allocated and may continue changing while the panel sleeps.
- * Callers should darken the external backlight before entering this state.
- */
+/** @brief Disable output and enter the selected provider's supported low-power state. */
 esp_err_t display_enter_low_power( void );
 
-/**
- * @brief Exit ST7789 hardware sleep and re-enable display output.
- *
- * The ST7789 driver observes the required sleep-out settling interval before this call returns. The
- * framebuffer is invalidated so the caller can refresh panel RAM before restoring the backlight.
- */
+/** @brief Exit the selected provider's low-power state and restore output. */
 esp_err_t display_exit_low_power( void );
 
-/** @brief Return whether the ST7789 controller is currently in hardware sleep mode. */
+/** @brief Return whether the selected display provider is currently in low-power mode. */
 bool display_low_power_active( void );
 
-/** @brief Mark the composed LCD state dirty even when framebuffer pixels did not change. */
+/** @brief Mark the composed display state dirty even when framebuffer pixels did not change. */
 void display_invalidate( void );
 
-/** @brief Return whether the LCD needs another presentation. */
+/** @brief Return whether the display needs another presentation. */
 bool display_is_dirty( void );
 
-/**
- * @brief Mark the current composed presentation clean after transient overlay restoration.
- * @note Intended for the shared presentation layer after a successful LCD flush.
- */
+/** @brief Mark the current composed presentation clean after transient overlay restoration. */
 void display_mark_clean( void );
 
 /**
@@ -74,24 +85,13 @@ void display_mark_clean( void );
  */
 void display_clear( uint16_t a_color );
 
-/**
- * @brief Draw text using RFScout's compact 5x7 font and mark the framebuffer dirty.
- * @param a_x Left coordinate in pixels.
- * @param a_y Top coordinate in pixels.
- * @param a_text NUL-terminated text.
- * @param a_color RGB565 foreground color or historical RFScout UI color token.
- * @param a_scale Integer glyph scale; values below one are treated as one.
- */
+/** @brief Draw text using RFScout's compact 5x7 font and mark the framebuffer dirty. */
 void display_draw_text( int a_x, int a_y, const char *a_text, uint16_t a_color, unsigned a_scale );
 
 /** @brief Draw a theme-aware filled rectangle and mark the framebuffer dirty. */
 void display_fill_rect( int a_x, int a_y, int a_width, int a_height, uint16_t a_color );
 
-/**
- * @brief Draw a literal RGB565 rectangle without semantic theme translation and mark it dirty.
- *
- * Intended for sensor/data imagery such as thermal maps, not application chrome.
- */
+/** @brief Draw a literal RGB565 rectangle without semantic theme translation. */
 void display_fill_rect_raw( int a_x, int a_y, int a_width, int a_height, uint16_t a_color );
 
 /**
@@ -99,16 +99,6 @@ void display_fill_rect_raw( int a_x, int a_y, int a_width, int a_height, uint16_
  *
  * Mask rows are packed MSB-first with a stride of `(a_width + 7) / 8` bytes. Set bits write the
  * resolved foreground color; clear bits are transparent and leave the existing framebuffer intact.
- * This is intended for small overlay glyphs rather than full-screen imagery.
- *
- * @param a_x Left coordinate in pixels.
- * @param a_y Top coordinate in pixels.
- * @param a_width Mask width in pixels.
- * @param a_height Mask height in pixels.
- * @param a_mask Packed one-bit row-major mask.
- * @param a_mask_size Number of bytes available in @p a_mask.
- * @param a_color RGB565 foreground color or historical RFScout UI color token.
- * @return ESP_OK on success; ESP_ERR_INVALID_ARG for invalid dimensions or mask storage.
  */
 esp_err_t display_draw_mask( int a_x,
                              int a_y,
@@ -118,46 +108,18 @@ esp_err_t display_draw_mask( int a_x,
                              size_t a_mask_size,
                              uint16_t a_color );
 
-/**
- * @brief Copy a framebuffer rectangle into a caller-provided RGB565 buffer.
- * @param a_x Left coordinate.
- * @param a_y Top coordinate.
- * @param a_width Rectangle width.
- * @param a_height Rectangle height.
- * @param a_pixels Destination buffer in row-major order.
- * @param a_pixel_capacity Number of RGB565 pixels available in @p a_pixels.
- * @return ESP_OK on success; ESP_ERR_INVALID_ARG for an invalid rectangle or buffer.
- */
+/** @brief Copy a framebuffer rectangle into a caller-provided RGB565 buffer. */
 esp_err_t display_read_rect(
     int a_x, int a_y, int a_width, int a_height, uint16_t *a_pixels, size_t a_pixel_capacity );
 
-/**
- * @brief Write literal RGB565 pixels into the framebuffer and mark it dirty.
- * @param a_x Left coordinate.
- * @param a_y Top coordinate.
- * @param a_width Rectangle width.
- * @param a_height Rectangle height.
- * @param a_pixels Source buffer in row-major order.
- * @param a_pixel_count Number of RGB565 pixels available in @p a_pixels.
- * @return ESP_OK on success; ESP_ERR_INVALID_ARG for an invalid rectangle or buffer.
- */
+/** @brief Write literal RGB565 pixels into the framebuffer and mark it dirty. */
 esp_err_t display_write_rect(
     int a_x, int a_y, int a_width, int a_height, const uint16_t *a_pixels, size_t a_pixel_count );
 
-/**
- * @brief Transfer the framebuffer to the LCD only when its composed state is dirty.
- * @return ESP_OK when already clean or after a successful transfer; an ESP-IDF error on failure.
- */
+/** @brief Transfer the framebuffer to the display only when its composed state is dirty. */
 esp_err_t display_flush( void );
 
-/**
- * @brief Present the framebuffer with RFScout's global UI overlays.
- *
- * Implemented by the shared UI presentation layer so application views can use one periodic
- * presentation entry point. Unchanged frames are skipped by the display dirty-state machinery.
- *
- * @return ESP_OK when already clean or presentation succeeds; an ESP-IDF error otherwise.
- */
+/** @brief Present the framebuffer with RFScout's global UI overlays. */
 esp_err_t display_present( void );
 
 #endif // _RFSCOUT_DISPLAY_H_

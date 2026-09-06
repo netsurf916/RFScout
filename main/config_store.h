@@ -20,7 +20,7 @@
 #define RFSCOUT_SD_CONFIG_BAD_PATH RFSCOUT_SD_CONFIG_IMPORT_PATH ".bad"
 #define RFSCOUT_SD_CONFIG_EXAMPLE_PATH "/sdcard/rfscout-example.json"
 
-/** @brief Mount internal persistence and consume a valid SD configuration import when present. */
+/** @brief Mount internal persistence and stage a valid SD configuration import when present. */
 esp_err_t config_store_init( void );
 
 /** @brief Return whether the internal persistence filesystem is mounted and usable. */

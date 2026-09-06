@@ -19,8 +19,7 @@ typedef enum
 {
     RFSCOUT_APP_AVAILABILITY_UNKNOWN = 0,
     RFSCOUT_APP_AVAILABILITY_AVAILABLE,
-    RFSCOUT_APP_AVAILABILITY_UNAVAILABLE,
-    RFSCOUT_APP_AVAILABILITY_ERROR
+    RFSCOUT_APP_AVAILABILITY_UNAVAILABLE
 } rfscout_app_availability_t;
 
 /** @brief Validate descriptors and run startup/hot-plug discovery once. */

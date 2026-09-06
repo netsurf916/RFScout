@@ -9,7 +9,7 @@
 
 #include "device_config.h"
 #include "display.h"
-#include "platform.h"
+#include "input.h"
 #include "power.h"
 
 #include "esp_log.h"
@@ -73,13 +73,15 @@ static esp_err_t enter_off_state( const char *a_reason )
     if( ESP_OK != result )
     {
         display_set_brightness( previous_brightness );
-        ESP_LOGW( TAG, "could not put LCD into hardware sleep: %s", esp_err_to_name( result ) );
+        ESP_LOGW( TAG, "could not put display into low power: %s", esp_err_to_name( result ) );
         return result;
     }
 
     state = DISPLAY_IDLE_OFF;
+    const rfscout_display_info_t *info = display_info();
     ESP_LOGI( TAG,
-              "display entered ST7789 hardware sleep (%s)",
+              "display entered %s low power (%s)",
+              ( NULL != info && NULL != info->name ) ? info->name : "provider",
               ( NULL != a_reason ) ? a_reason : "requested" );
     return ESP_OK;
 }
@@ -93,12 +95,12 @@ static bool wake_display( const char *a_reason )
         if( ESP_OK != enabled )
         {
             ESP_LOGW(
-                TAG, "could not wake LCD from hardware sleep: %s", esp_err_to_name( enabled ) );
+                TAG, "could not wake display from low power: %s", esp_err_to_name( enabled ) );
             return false;
         }
 
         /* Keep the backlight dark until the latest application framebuffer has
-           replaced the LCD's pre-timeout contents. */
+           replaced the panel's pre-timeout contents. */
         display_invalidate();
         const esp_err_t presented = display_present();
         if( ESP_OK != presented )
@@ -108,7 +110,7 @@ static bool wake_display( const char *a_reason )
             if( ESP_OK != sleeping )
             {
                 ESP_LOGW( TAG,
-                          "could not restore LCD sleep state after wake failure: %s",
+                          "could not restore display low-power state after wake failure: %s",
                           esp_err_to_name( sleeping ) );
             }
             return false;
@@ -164,9 +166,6 @@ esp_err_t display_idle_init( void )
 
 esp_err_t display_idle_request_off( void )
 {
-    /* Queue the transition rather than forcing it synchronously. A short power-button
-       release is still visible to the platform activity detector in this loop; waiting
-       for a quiet poll prevents that same gesture from immediately waking the LCD. */
     cancel_attention_restore();
     off_requested = true;
     return ESP_OK;
@@ -200,9 +199,6 @@ esp_err_t display_idle_request_attention( uint32_t a_duration_ms )
         attention_until_us = requested_until;
     }
 
-    /* A screen-off request may have been queued earlier in the same main-loop
-       iteration but not yet committed by display_idle_poll(). Preserve that
-       explicit user intent as the post-attention state instead of discarding it. */
     if( off_requested )
     {
         attention_restore_state = DISPLAY_IDLE_OFF;
@@ -226,14 +222,12 @@ esp_err_t display_idle_request_attention( uint32_t a_duration_ms )
 void display_idle_poll( void )
 {
     const int64_t now_us = esp_timer_get_time();
-    if( platform_input_activity_pending() )
+    if( input_activity_pending() )
     {
         cancel_attention_restore();
         if( DISPLAY_IDLE_ACTIVE != state )
         {
-            /* Wake is a device-level gesture. Consume the entire gesture before
-               lock, app navigation, menu, or power-button semantics can see it. */
-            platform_consume_wake_input();
+            input_consume_wake();
             power_consume_wake_input();
             (void)wake_display( "user activity" );
         }

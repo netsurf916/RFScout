@@ -15,6 +15,7 @@
 #include "display.h"
 #include "display_idle.h"
 #include "log_writer.h"
+#include "input.h"
 #include "platform.h"
 #include "recorder.h"
 #include "session_state.h"
@@ -252,7 +253,7 @@ static void enter_sleep( void )
         return;
     }
 
-    session_state_store( app_manager_current(), platform_input_locked() );
+    session_state_store( app_manager_current(), input_locked() );
     prepare_display_for_power_state();
 
     ESP_ERROR_CHECK( esp_sleep_enable_ext1_wakeup_io( 1ULL << RFSCOUT_BOARD_USER_KEY_PIN,

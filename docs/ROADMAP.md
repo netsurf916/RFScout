@@ -243,24 +243,16 @@ Outstanding validation:
 
 **Status:** Initial implementation landed in PR #61; Recent Events UI landed in PR #65; internal-persistence/configuration events added by PR #71.
 
-Implemented behavior includes:
-
-- shared semantic system-state event IDs on the existing event dispatcher;
-- fixed-size RAM-only recent-event history independent from normal diagnostics;
-- charger connect/disconnect, startup SD and internal-storage status, configuration import/default recovery, and Thermal availability events;
-- transient global event overlay without changing application lifecycle state;
-- notification-driven display attention wake preserving the original inactivity deadline;
-- common acquired/lost procedural cues under Normal/Quiet audio policy;
-- boot-state discovery retained/logged without interactive notification behavior;
-- optional default-disabled System Events application with stable browse snapshot.
+Implemented behavior includes the RAM-only semantic event history/UI, transient attention presentation, power/storage/configuration events, and descriptor-driven application/hardware availability. PR #72 generalizes first-known availability and input/display provider diagnostics while keeping startup discovery silent.
 
 Remaining work:
 
 - [ ] Detect reliable runtime SD insertion/removal and write-failure transitions where the storage stack permits it.
-- [ ] Add further hot-pluggable peripheral/capability events as hardware support expands.
+- [ ] Add events for future hot-pluggable peripherals/capabilities that are not represented by the descriptor availability framework.
 - [ ] Decide whether SD-backed logs need a dedicated system-event record type beyond ESP diagnostics.
 - [ ] Refine event payloads where one compact integer is insufficient without turning events into preformatted strings.
 - [ ] Add per-event presentation controls only if practical use demonstrates a real need.
+- [ ] Define per-event presentation policy separately for history retention, transient overlay/display wake, and audible feedback; keep startup discovery silent unless field use demonstrates a need.
 - [ ] Validate overlay/wake behavior from active, dimmed, and hardware-sleep states.
 - [ ] Validate protective power overlays retain priority.
 - [ ] Validate rapid event bursts overwrite history safely without creating an audible backlog.

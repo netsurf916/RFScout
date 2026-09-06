@@ -12,7 +12,7 @@
 #include "device_config.h"
 #include "display.h"
 #include "event.h"
-#include "platform.h"
+#include "input.h"
 #include "session_state.h"
 
 #include "esp_heap_caps.h"
@@ -245,6 +245,13 @@ esp_err_t app_manager_init( void )
     {
         return result;
     }
+    const rfscout_display_info_t *display = display_info();
+    if( NULL != display )
+    {
+        rfscout_event_emit( RFSCOUT_EVENT_DISPLAY_PROVIDER_SELECTED,
+                            RFSCOUT_EVENT_SOURCE_SYSTEM,
+                            (int32_t)display->provider );
+    }
 
     result = app_framework_init();
     if( ESP_OK != result )
@@ -287,7 +294,7 @@ void app_manager_poll( void )
     }
 
     rfscout_input_event_t input;
-    if( platform_input_get( &input ) )
+    if( input_get( &input ) )
     {
         const rfscout_app_runtime_result_t result = dispatch_runtime(
             active_app, RFSCOUT_APP_RUNTIME_INPUT, &input, now_us, app_activated );
