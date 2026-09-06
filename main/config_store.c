@@ -263,11 +263,9 @@ esp_err_t config_store_init( void )
         .dont_mount = false,
     };
     esp_err_t result = esp_vfs_littlefs_register( &config );
-    if( ESP_OK != result )
+    if( ESP_FAIL == result )
     {
-        ESP_LOGW( TAG,
-                  "internal LittleFS mount failed; attempting format: %s",
-                  esp_err_to_name( result ) );
+        ESP_LOGW( TAG, "internal LittleFS mount failed; attempting format" );
         result = esp_littlefs_format( config.partition_label );
         if( ESP_OK == result )
         {
