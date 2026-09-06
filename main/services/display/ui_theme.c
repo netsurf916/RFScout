@@ -77,7 +77,7 @@ esp_err_t ui_theme_set( rfscout_theme_id_t a_theme )
     ESP_LOGI( TAG, "theme=%s", ui_theme_config_name( a_theme ) );
     rfscout_event_emit(
         RFSCOUT_EVENT_THEME_CHANGED, RFSCOUT_EVENT_SOURCE_SYSTEM, (int32_t)a_theme );
-    const esp_err_t save_result = device_config_save();
+    const esp_err_t save_result = device_config_save( false, 0, NULL );
     if( ESP_ERR_INVALID_STATE == save_result )
     {
         return ESP_OK;
@@ -163,7 +163,7 @@ bool ui_theme_from_config_name( const char *a_name, rfscout_theme_id_t *a_theme 
 
     for( unsigned index = 0U; index < RFSCOUT_THEME_COUNT; ++index )
     {
-        if( 0 == strcasecmp( a_name, ui_theme_config_name( (rfscout_theme_id_t)index ) ) )
+        if( 0 == strcasecmp( a_name, ui_theme_config_name( (rfscout_theme_id_t)index ) )
         {
             *a_theme = (rfscout_theme_id_t)index;
             return true;
