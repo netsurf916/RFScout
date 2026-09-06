@@ -6,13 +6,15 @@ RFScout starts from compiled defaults and overlays firmware-managed records from
 
 ## Persistence ownership
 
-Durable state is addressed semantically rather than by filesystem paths:
+Durable state is addressed by logical owner and key rather than caller-visible filesystem paths:
 
-- `system/config` owns device-wide policy: display/power behavior, theme, timezone/clock presentation, logging, app enablement/startup choice, global audio policy/gains, and global alert policy.
-- `app/<persistence_key>/config` owns application-specific preference overrides. The compiled app descriptor supplies the stable persistence key; app-facing store calls derive ownership from the active app session and cannot select another app namespace.
-- other `system/*` or `app/<persistence_key>/*` records are reserved for durable state that is not configuration, such as future T-Deck Plus touch calibration or browsable app history.
+- logical `system/config` owns device-wide policy: display/power behavior, theme, timezone/clock presentation, logging, app enablement/startup choice, global audio policy/gains, and global alert policy;
+- logical `app/<persistence_key>/config` owns application-specific preference overrides. The compiled app descriptor supplies the stable persistence identity; app-facing store calls derive ownership from the active app session and cannot select another app namespace;
+- other logical `system/*` or `app/<persistence_key>/*` records are reserved for durable state that is not configuration, such as future T-Deck Plus touch calibration or browsable app history.
 
-The persistent-store service owns LittleFS mounting, path construction, record availability, and atomic replacement. Records are bounded to 16 KiB. Each record is written to a temporary in the same ownership directory, flushed/synchronized, then renamed over its one live copy. Interrupted-write `.tmp` files are ignored as authority and removed by one startup cleanup pass; no periodic cleanup task runs.
+These names are an API model, not literal filenames. The persistent-store service hashes logical record keys with SHA-256 to fixed filesystem-safe names; app persistence identities are likewise mapped to private app-scope directories. Callers may therefore use opaque logical keys without depending on LittleFS naming rules. Logical keys are nonempty and bounded to 256 bytes.
+
+The persistent-store service owns LittleFS mounting, physical path construction, record availability, and synchronization. Filesystem operations are serialized internally by the service, so callers do not manage storage mutexes. Records are bounded to 16 KiB and each write atomically replaces one record through a same-directory temporary, flush/fsync, and rename. Atomicity is per record rather than a transaction across multiple records. Interrupted-write `.tmp` files are ignored as authority and removed by one startup cleanup pass; no periodic cleanup task runs. Reads and existence checks do not create app directories.
 
 The existing `device_config` API remains the in-memory compatibility surface so UI and policy callers do not need to know which record owns a setting. App enablement remains system policy even when that app owns its own preferences.
 
@@ -20,11 +22,11 @@ The existing `device_config` API remains the in-memory compatibility surface so 
 
 System configuration currently uses schema version 3. App configuration records have their own record version and may evolve independently.
 
-App records are **override-only**. If an app has no persisted user changes, it has no `config` record and uses its compiled defaults directly. Only values that differ from the compiled defaults are serialized. Returning all app preferences to their defaults removes the app record again. This lets later firmware change defaults without an old materialized-default record accidentally becoming a permanent user preference.
+App records are **override-only**. If an app has no persisted user changes, it has no `config` record and uses its compiled defaults directly. Only values that differ from the compiled defaults are serialized. Returning all app preferences to their defaults removes the app record again. This lets later firmware change defaults without a newly materialized default record becoming a permanent user preference.
 
-Missing app records therefore mean defaults, while malformed, incompatible, or invalid records are ignored and rewritten/removed through canonical saves rather than trusted blindly.
+Missing app records therefore mean defaults. Malformed, incompatible, or invalid data is not trusted; RFScout may fall back to sane compiled defaults and rewrite canonical configuration. Configuration recovery deliberately favors a known-good baseline over elaborate partial-state salvage.
 
-The first firmware using this model may read the former `/internal/rfscout.json` once. A successful canonical save splits that legacy document into `system/config` plus only the app-owned overrides that actually differ from current compiled defaults, then removes the old file and stale sidecars. SD-based configuration import is not restored.
+The first firmware using this model may read the former `/internal/rfscout.json` once. A successful canonical save splits that legacy document into system and app-owned records, then removes the old file and stale sidecars. Because the old monolithic schema did not distinguish an explicit user choice from a value that happened to equal an old default, migration preserves valid legacy values according to the compatibility logic available in that firmware rather than promising to infer historical user intent.
 
 If settings portability is added later, it should be an explicit firmware-managed Export/Import operation that validates owned records rather than exposing the internal persistence representation as an editable interchange format.
 
@@ -42,7 +44,9 @@ RFScout distinguishes **UI/device**, **Event**, **Alert**, and **Content** audio
 
 `normal` permits UI, Event, Alert, and requested Content subject to their normal controls. `quiet` suppresses UI, Event, and Alert presentation without rewriting saved levels or semantic events; requested Content such as Recorder playback remains available.
 
-Global Alert presentation is `OFF`, `TONE`, or `MORSE`. Recorder capture gain is app-owned and accepts **0 through +48 dB in 3 dB steps**. Audio Spectrum has no persisted input-gain setting: it analyzes the raw microphone stream through its high-pass/DC blocker and displays an automatically ranged FFT; `AUTO N dB` is the current display-window span, not signal gain.
+Global Alert presentation is `OFF`, `TONE`, or `MORSE`. Recorder capture no longer has a user-visible digital input-gain policy: it records the microphone stream without software pre-amplification, then post-processes the completed WAV through trim, DC/low-frequency high-pass filtering, and bounded normalization. Audio Spectrum uses the same shared one-pole high-pass primitive before its FFT and then applies automatic display ranging; `AUTO N dB` is the current display-window span, not signal gain.
+
+The schema-v3 in-memory compatibility structure may still recognize the former Recorder input-gain member while old call surfaces are retired, but Recorder does not apply that value to capture and new behavior must not depend on it.
 
 ## Power button and protective policy
 
@@ -58,8 +62,8 @@ App `enabled` state and the preferred startup app are system-owned policy, not h
 
 Current app-owned configuration includes:
 
-- **WiFi/BLE:** source retention, surveillance sensitivity, app notification enablement/event choices, and alert-character mappings.
-- **Recorder/Audio:** playback volume and capture input gain, plus any Audio-owned notification preferences.
+- **WiFi/BLE:** source retention, surveillance sensitivity, app notification enablement/event choices, and alert-character mappings;
+- **Recorder/Audio:** playback volume plus Audio-owned notification preferences;
 - other apps own their notification/config fragments only when they have persisted app-specific overrides.
 
 WiFi/BLE surveillance sensitivity is `high`, `medium`, or `low`, defaulting to `high`. High accepts curated name evidence, Medium requires curated prefix/OUI or stronger evidence, and Low requires distinctive company/service evidence or Remote ID. Sensitivity is an evidence threshold, not accumulated confidence.
@@ -70,7 +74,7 @@ Wi-Fi and BLE retention each default to 60 seconds and currently accept 10–300
 
 Internal LittleFS is for bounded records that must survive app exit and reboot. PSRAM remains volatile app-session working memory. The current mainline partition map still provides roughly 8 MiB of LittleFS; the OTA work in PR #75 plans a smaller approximately 4 MiB durable budget alongside two 6 MiB application slots, so persistent consumers must not depend on today's partition size.
 
-SD remains for removable/bulk content such as logs, WAV recordings, captures, and future explicit transfer packages. SD absence is nonfatal to internal configuration, radio/sensor apps, and Audio Spectrum. It prevents SD-backed operations such as Recorder file creation/playback and SD logging.
+SD remains for removable/bulk content such as logs, WAV recordings, captures, and future explicit transfer packages. SD absence is nonfatal to internal configuration, radio/sensor apps, and Audio Spectrum. It prevents SD-backed operations such as Recorder file creation/playback and SD logging. Saving device/app configuration never depends on SD availability.
 
 Recorder uses `/sdcard/audio/` for 16-bit mono PCM WAV files. Logs remain SD-only and use the RTC-backed system wall clock for their UTC timestamps.
 
@@ -78,12 +82,12 @@ Recorder uses `/sdcard/audio/` for 16-bit mono PCM WAV files. Logs remain SD-onl
 
 Deep sleep loses ordinary RAM, so RFScout keeps a small RTC-backed session envelope separate from persistent configuration. It currently preserves active-app/input-lock session state; menus, edit state, queued sounds, and active Recorder operations are not reconstructed.
 
-The ESP32 RTC-backed system wall clock is authoritative for displayed time, log timestamps, and filesystem calendar metadata. RFScout does not persist an epoch, saved-time validity flag, or clock-source token in configuration. Manual date/time controls update the running system clock only; future GPS/NTP updates do the same. On startup RFScout simply uses the clock value supplied by the RTC domain. The most recent Manual/GPS/NTP/RTC source may be retained as transient diagnostics for the current boot, but it is not durable state.
+The ESP32 RTC-backed system wall clock is authoritative for displayed time, log timestamps, and filesystem calendar metadata. RFScout does not persist an epoch, saved-time validity flag, or clock-source token in configuration. Manual date/time controls update the running system clock only; future GPS/NTP updates use the same runtime clock API. On startup RFScout simply uses the clock value supplied by the RTC domain. Source identity is not durable clock state.
 
 Timezone selection and 12/24-hour presentation remain persistent user preferences. Monotonic time remains authoritative for debounce, dwell, retries, housekeeping, and intervals.
 
 ## Erase and update semantics
 
-A full-device erase destroys `system/*` and `app/*` internal records, including device/app configuration and future calibration/history records. It does not erase removable SD contents.
+A full-device erase destroys system and app internal records, including device/app configuration and future calibration/history records. It does not erase removable SD contents.
 
 Ordinary firmware updates with an unchanged partition layout are expected to preserve internal records. Partition-layout migrations may require a destructive installation and must make that explicit to the user; the web-flasher/OTA planning in PR #75 owns that user-facing distinction.
