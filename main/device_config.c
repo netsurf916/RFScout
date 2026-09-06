@@ -993,12 +993,13 @@ esp_err_t device_config_init( void )
         else
         {
             config_dirty = false;
-            const esp_err_t sync_result = config_store_sync_example();
-            if( ESP_OK != sync_result )
-            {
-                ESP_LOGW(
-                    TAG, "configuration example sync failed: %s", esp_err_to_name( sync_result ) );
-            }
+        }
+
+        const esp_err_t sync_result = config_store_sync_example();
+        if( ESP_OK != sync_result )
+        {
+            ESP_LOGW(
+                TAG, "configuration example sync failed: %s", esp_err_to_name( sync_result ) );
         }
         ESP_LOGI( TAG, "loaded %s", RFSCOUT_INTERNAL_CONFIG_PATH );
         return ESP_OK;
@@ -1016,6 +1017,12 @@ esp_err_t device_config_init( void )
         rfscout_event_emit( RFSCOUT_EVENT_CONFIG_DEFAULTED,
                             RFSCOUT_EVENT_SOURCE_SYSTEM,
                             (int32_t)RFSCOUT_CONFIG_SCHEMA_VERSION );
+        const esp_err_t sync_result = config_store_sync_example();
+        if( ESP_OK != sync_result )
+        {
+            ESP_LOGW(
+                TAG, "configuration example sync failed: %s", esp_err_to_name( sync_result ) );
+        }
     }
     return save_result;
 }
@@ -1583,13 +1590,6 @@ esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a
         config_dirty = false;
         config_upgrade_pending = false;
         config_source_version = (int)RFSCOUT_CONFIG_SCHEMA_VERSION;
-
-        const esp_err_t sync_result = config_store_sync_example();
-        if( ESP_OK != sync_result )
-        {
-            ESP_LOGW(
-                TAG, "configuration example sync failed: %s", esp_err_to_name( sync_result ) );
-        }
     }
     return result;
 }

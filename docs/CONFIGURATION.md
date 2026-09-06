@@ -108,7 +108,7 @@ Internal schema compatibility is deliberately simple while RFScout remains pre-1
 
 `/sdcard/rfscout-example.json` is never imported under that name. It is a byte-for-byte copy of the current authoritative internal configuration and is intended to show the exact schema and current values a user can copy, rename to `rfscout.json`, edit, and reinsert for import.
 
-RFScout compares the example and internal files before writing. If they already match, the SD card is not rewritten. The example is refreshed at startup and after an authoritative internal configuration save when SD is available.
+RFScout compares the example and internal files before writing. If they already match, the SD card is not rewritten. The example is synchronized once at startup, after import/load/default recovery has established the authoritative internal configuration. Ordinary internal configuration saves do not touch removable storage.
 
 ## Display and theme
 
