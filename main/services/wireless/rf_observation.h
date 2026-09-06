@@ -34,7 +34,7 @@ typedef enum
 typedef enum
 {
     SURVEILLANCE_NONE = 0,
-    SURVEILLANCE_FLOCK,
+    SURVEILLANCE_ALPR,
     SURVEILLANCE_BODY_CAMERA,
     SURVEILLANCE_DRONE,
     SURVEILLANCE_CAMERA,
@@ -57,6 +57,10 @@ typedef enum
     SURVEILLANCE_SIGNATURE_DAHUA,
     SURVEILLANCE_SIGNATURE_REMOTE_ID,
     SURVEILLANCE_SIGNATURE_META,
+    SURVEILLANCE_SIGNATURE_BRILLIANT_FRAME,
+    SURVEILLANCE_SIGNATURE_EVEN_G1,
+    SURVEILLANCE_SIGNATURE_SOLOS_AIRGO,
+    SURVEILLANCE_SIGNATURE_ROKID,
     SURVEILLANCE_SIGNATURE_COUNT
 } surveillance_signature_id_t;
 
@@ -69,6 +73,12 @@ typedef enum
     SURVEILLANCE_EVIDENCE_REMOTE_ID = 1U << 4,
     SURVEILLANCE_EVIDENCE_PAYLOAD = 1U << 5
 } surveillance_evidence_t;
+
+typedef enum
+{
+    RFSCOUT_BLE_SERVICE_FINGERPRINT_BRILLIANT_FRAME = 1U << 0,
+    RFSCOUT_BLE_SERVICE_FINGERPRINT_ROKID_CXR = 1U << 1
+} rfscout_ble_service_fingerprint_t;
 
 typedef struct
 {
@@ -84,7 +94,6 @@ typedef struct
     uint32_t ble_last_seen_ms;
     surveillance_class_t surveillance;
     surveillance_signature_id_t surveillance_signature;
-    uint8_t surveillance_score;
     uint8_t surveillance_evidence;
     char vendor[ RFSCOUT_VENDOR_NAME_MAX ];
     char name[ RFSCOUT_DEVICE_NAME_MAX ];
@@ -95,6 +104,7 @@ typedef struct
     bool has_manufacturer_data;
     uint16_t service_uuids[ RFSCOUT_BLE_SERVICE_UUID_MAX ];
     uint8_t service_uuid_count;
+    uint32_t ble_service_fingerprints;
     bool has_remote_id;
 } rf_device_t;
 

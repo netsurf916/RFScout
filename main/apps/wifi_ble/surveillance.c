@@ -1,80 +1,90 @@
 /**
     surveillance.c : RFScout surveillance classification
-    Description: Correlates curated prefix metadata, BLE names, manufacturer IDs, services, and Remote ID.
+    Description: Matches curated prefix, BLE name/company/service fingerprints, and Remote ID evidence.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
 
 #include "surveillance.h"
 
+#include "device_config.h"
 #include "oui_database.h"
 
 #include <ctype.h>
 #include <string.h>
 
-#define SCORE_NAME 45U
-#define SCORE_COMPANY 80U
-#define SCORE_RAVEN 70U
-#define SCORE_REMOTE_ID 100U
-#define SCORE_ALERT_THRESHOLD 60U
 #define FLOCK_COMPANY_ID 0x09C8U
+#define EVIDENCE_PRIORITY_NAME 1U
+#define EVIDENCE_PRIORITY_OUI 3U
+#define EVIDENCE_PRIORITY_DISTINCTIVE 4U
+#define EVIDENCE_PRIORITY_REMOTE_ID 5U
 
 typedef struct
 {
     const char *fragment;
     surveillance_class_t classification;
     surveillance_signature_id_t signature;
-    uint8_t score;
+    bool prefix_only;
 } name_signature_t;
 
 typedef struct
 {
     surveillance_class_t classification;
-    uint8_t score;
     uint8_t evidence;
+    uint8_t priority;
+    bool matched;
 } candidate_t;
 
 static const name_signature_t name_signatures[] = {
-    { "AXON", SURVEILLANCE_BODY_CAMERA, SURVEILLANCE_SIGNATURE_AXON, SCORE_NAME },
-    { "FLOCKCAM", SURVEILLANCE_FLOCK, SURVEILLANCE_SIGNATURE_FLOCK, SCORE_NAME },
-    { "FS EXT BATTERY", SURVEILLANCE_FLOCK, SURVEILLANCE_SIGNATURE_FLOCK, SCORE_NAME },
-    { "PENGUIN", SURVEILLANCE_FLOCK, SURVEILLANCE_SIGNATURE_FLOCK, SCORE_NAME },
-    { "PIGVISION", SURVEILLANCE_FLOCK, SURVEILLANCE_SIGNATURE_FLOCK, SCORE_NAME },
-    { "FS-", SURVEILLANCE_FLOCK, SURVEILLANCE_SIGNATURE_FLOCK, SCORE_NAME },
-    { "RING", SURVEILLANCE_CAMERA, SURVEILLANCE_SIGNATURE_RING, SCORE_NAME },
-    { "RAY-BAN", SURVEILLANCE_SMART_GLASSES, SURVEILLANCE_SIGNATURE_META, SCORE_NAME },
-    { "RAYBAN", SURVEILLANCE_SMART_GLASSES, SURVEILLANCE_SIGNATURE_META, SCORE_NAME },
+    { "AXON", SURVEILLANCE_BODY_CAMERA, SURVEILLANCE_SIGNATURE_AXON, false },
+    { "FLOCKCAM", SURVEILLANCE_ALPR, SURVEILLANCE_SIGNATURE_FLOCK, false },
+    { "FS EXT BATTERY", SURVEILLANCE_ALPR, SURVEILLANCE_SIGNATURE_FLOCK, false },
+    { "PENGUIN", SURVEILLANCE_ALPR, SURVEILLANCE_SIGNATURE_FLOCK, false },
+    { "PIGVISION", SURVEILLANCE_ALPR, SURVEILLANCE_SIGNATURE_FLOCK, false },
+    { "FS-", SURVEILLANCE_ALPR, SURVEILLANCE_SIGNATURE_FLOCK, true },
+    { "RING", SURVEILLANCE_CAMERA, SURVEILLANCE_SIGNATURE_RING, false },
+    { "RAY-BAN", SURVEILLANCE_SMART_GLASSES, SURVEILLANCE_SIGNATURE_META, false },
+    { "RAYBAN", SURVEILLANCE_SMART_GLASSES, SURVEILLANCE_SIGNATURE_META, false },
+    { "OAKLEY META", SURVEILLANCE_SMART_GLASSES, SURVEILLANCE_SIGNATURE_META, false },
+    { "G1_", SURVEILLANCE_SMART_GLASSES, SURVEILLANCE_SIGNATURE_EVEN_G1, true },
+    { "AIRGO", SURVEILLANCE_SMART_GLASSES, SURVEILLANCE_SIGNATURE_SOLOS_AIRGO, false },
 };
 
-/** @brief Return true when a string contains a fragment without case sensitivity. */
+static bool starts_with_ci( const char *a_value, const char *a_fragment )
+{
+    if( ( NULL == a_value ) || ( NULL == a_fragment ) )
+    {
+        return false;
+    }
+    while( '\0' != *a_fragment )
+    {
+        if( ( '\0' == *a_value ) ||
+            ( toupper( (unsigned char)*a_value ) != toupper( (unsigned char)*a_fragment ) ) )
+        {
+            return false;
+        }
+        ++a_value;
+        ++a_fragment;
+    }
+    return true;
+}
+
 static bool contains_ci( const char *a_value, const char *a_fragment )
 {
     if( ( NULL == a_value ) || ( NULL == a_fragment ) )
     {
         return false;
     }
-
-    const size_t fragment_length = strlen( a_fragment );
     for( ; '\0' != *a_value; ++a_value )
     {
-        size_t i = 0;
-        while( ( i < fragment_length ) && ( '\0' != a_value[ i ] ) &&
-               ( toupper( (unsigned char)a_value[ i ] ) ==
-                 toupper( (unsigned char)a_fragment[ i ] ) ) )
-        {
-            ++i;
-        }
-
-        if( i == fragment_length )
+        if( starts_with_ci( a_value, a_fragment ) )
         {
             return true;
         }
     }
-
     return false;
 }
 
-/** @brief Return true when a normalized BLE observation advertises a service. */
 static bool has_service( const rf_device_t *a_observation, uint16_t a_uuid )
 {
     for( size_t i = 0; i < a_observation->service_uuid_count; ++i )
@@ -84,77 +94,78 @@ static bool has_service( const rf_device_t *a_observation, uint16_t a_uuid )
             return true;
         }
     }
-
     return false;
 }
 
-/**
- * @brief Add one independent evidence source to a candidate signature.
- * @details Each evidence type contributes at most once to a given candidate so
- *          repeated matching strings cannot inflate confidence artificially.
- */
 static void add_evidence( candidate_t *a_candidates,
                           surveillance_class_t a_classification,
                           surveillance_signature_id_t a_signature,
-                          uint8_t a_score,
-                          uint8_t a_evidence )
+                          uint8_t a_evidence,
+                          uint8_t a_priority )
 {
     if( ( NULL == a_candidates ) || ( SURVEILLANCE_SIGNATURE_NONE == a_signature ) ||
-        ( a_signature >= SURVEILLANCE_SIGNATURE_COUNT ) || ( 0U == a_score ) )
+        ( a_signature >= SURVEILLANCE_SIGNATURE_COUNT ) )
     {
         return;
     }
 
     candidate_t *candidate = &a_candidates[ a_signature ];
     candidate->classification = a_classification;
-
-    if( 0U != ( candidate->evidence & a_evidence ) )
-    {
-        return;
-    }
-
     candidate->evidence |= a_evidence;
-    const unsigned combined_score = (unsigned)candidate->score + a_score;
-    candidate->score = ( combined_score > 100U ) ? 100U : (uint8_t)combined_score;
+    candidate->matched = true;
+    if( a_priority > candidate->priority )
+    {
+        candidate->priority = a_priority;
+    }
 }
 
-/** @brief Select the highest-confidence candidate that crosses the alert threshold. */
+static uint8_t minimum_evidence_priority( void )
+{
+    switch( device_config_surveillance_sensitivity() )
+    {
+        case RFSCOUT_SURVEILLANCE_SENSITIVITY_LOW:
+            return EVIDENCE_PRIORITY_DISTINCTIVE;
+        case RFSCOUT_SURVEILLANCE_SENSITIVITY_MEDIUM:
+            return EVIDENCE_PRIORITY_OUI;
+        case RFSCOUT_SURVEILLANCE_SENSITIVITY_HIGH:
+        default:
+            return EVIDENCE_PRIORITY_NAME;
+    }
+}
+
 static surveillance_match_t select_best_candidate( const candidate_t *a_candidates )
 {
     surveillance_match_t best = { 0 };
+    uint8_t best_priority = 0U;
+    const uint8_t minimum_priority = minimum_evidence_priority();
 
     for( size_t signature = (size_t)SURVEILLANCE_SIGNATURE_FLOCK;
          signature < (size_t)SURVEILLANCE_SIGNATURE_COUNT;
          ++signature )
     {
         const candidate_t *candidate = &a_candidates[ signature ];
-        if( ( candidate->score < SCORE_ALERT_THRESHOLD ) || ( candidate->score <= best.score ) )
+        if( !candidate->matched || ( candidate->priority < minimum_priority ) ||
+            ( candidate->priority <= best_priority ) )
         {
             continue;
         }
-
         best.classification = candidate->classification;
         best.signature = (surveillance_signature_id_t)signature;
-        best.score = candidate->score;
         best.evidence = candidate->evidence;
+        best_priority = candidate->priority;
     }
-
     return best;
 }
 
 surveillance_match_t surveillance_match( const rf_device_t *a_observation )
 {
     candidate_t candidates[ SURVEILLANCE_SIGNATURE_COUNT ] = { 0 };
-
     if( NULL == a_observation )
     {
         surveillance_match_t empty = { 0 };
         return empty;
     }
 
-    /* Prefix-derived surveillance metadata is owned by oui_database. That lookup intentionally
-       evaluates curated prefixes even for locally administered addresses because the curated
-       dataset contains field-verified LAA evidence that is not an IEEE vendor assignment. */
     oui_database_match_t identity;
     if( oui_database_lookup_info( a_observation->address, &identity ) &&
         ( SURVEILLANCE_SIGNATURE_NONE != identity.surveillance_signature ) )
@@ -162,40 +173,58 @@ surveillance_match_t surveillance_match( const rf_device_t *a_observation )
         add_evidence( candidates,
                       identity.surveillance_classification,
                       identity.surveillance_signature,
-                      identity.surveillance_score,
-                      SURVEILLANCE_EVIDENCE_OUI );
+                      SURVEILLANCE_EVIDENCE_OUI,
+                      EVIDENCE_PRIORITY_OUI );
     }
 
     if( a_observation->has_name )
     {
         for( size_t i = 0; i < sizeof( name_signatures ) / sizeof( name_signatures[ 0 ] ); ++i )
         {
-            if( !contains_ci( a_observation->name, name_signatures[ i ].fragment ) )
+            const bool matched =
+                name_signatures[ i ].prefix_only
+                    ? starts_with_ci( a_observation->name, name_signatures[ i ].fragment )
+                    : contains_ci( a_observation->name, name_signatures[ i ].fragment );
+            if( matched )
             {
-                continue;
+                add_evidence( candidates,
+                              name_signatures[ i ].classification,
+                              name_signatures[ i ].signature,
+                              SURVEILLANCE_EVIDENCE_NAME,
+                              EVIDENCE_PRIORITY_NAME );
             }
-
-            add_evidence( candidates,
-                          name_signatures[ i ].classification,
-                          name_signatures[ i ].signature,
-                          name_signatures[ i ].score,
-                          SURVEILLANCE_EVIDENCE_NAME );
         }
     }
 
     if( FLOCK_COMPANY_ID == a_observation->company_id )
     {
         add_evidence( candidates,
-                      SURVEILLANCE_FLOCK,
+                      SURVEILLANCE_ALPR,
                       SURVEILLANCE_SIGNATURE_FLOCK,
-                      SCORE_COMPANY,
-                      SURVEILLANCE_EVIDENCE_COMPANY_ID );
+                      SURVEILLANCE_EVIDENCE_COMPANY_ID,
+                      EVIDENCE_PRIORITY_DISTINCTIVE );
     }
 
-    /* Raven Acoustic Monitoring advertises a distinctive family of adjacent
-       BLE services. Requiring two services avoids treating one generic UUID as
-       sufficient evidence. */
-    unsigned raven_services = 0;
+    if( 0U != ( a_observation->ble_service_fingerprints &
+                RFSCOUT_BLE_SERVICE_FINGERPRINT_BRILLIANT_FRAME ) )
+    {
+        add_evidence( candidates,
+                      SURVEILLANCE_SMART_GLASSES,
+                      SURVEILLANCE_SIGNATURE_BRILLIANT_FRAME,
+                      SURVEILLANCE_EVIDENCE_SERVICE_UUID,
+                      EVIDENCE_PRIORITY_DISTINCTIVE );
+    }
+    if( 0U !=
+        ( a_observation->ble_service_fingerprints & RFSCOUT_BLE_SERVICE_FINGERPRINT_ROKID_CXR ) )
+    {
+        add_evidence( candidates,
+                      SURVEILLANCE_SMART_GLASSES,
+                      SURVEILLANCE_SIGNATURE_ROKID,
+                      SURVEILLANCE_EVIDENCE_SERVICE_UUID,
+                      EVIDENCE_PRIORITY_DISTINCTIVE );
+    }
+
+    unsigned raven_services = 0U;
     for( uint16_t uuid = 0x3100U; uuid <= 0x3500U; uuid += 0x0100U )
     {
         if( has_service( a_observation, uuid ) )
@@ -203,14 +232,13 @@ surveillance_match_t surveillance_match( const rf_device_t *a_observation )
             ++raven_services;
         }
     }
-
     if( raven_services >= 2U )
     {
         add_evidence( candidates,
                       SURVEILLANCE_AUDIO,
                       SURVEILLANCE_SIGNATURE_RAVEN,
-                      SCORE_RAVEN,
-                      SURVEILLANCE_EVIDENCE_SERVICE_UUID );
+                      SURVEILLANCE_EVIDENCE_SERVICE_UUID,
+                      EVIDENCE_PRIORITY_DISTINCTIVE );
     }
 
     if( a_observation->has_remote_id )
@@ -218,8 +246,8 @@ surveillance_match_t surveillance_match( const rf_device_t *a_observation )
         add_evidence( candidates,
                       SURVEILLANCE_DRONE,
                       SURVEILLANCE_SIGNATURE_REMOTE_ID,
-                      SCORE_REMOTE_ID,
-                      SURVEILLANCE_EVIDENCE_REMOTE_ID );
+                      SURVEILLANCE_EVIDENCE_REMOTE_ID,
+                      EVIDENCE_PRIORITY_REMOTE_ID );
     }
 
     return select_best_candidate( candidates );
@@ -256,6 +284,14 @@ const char *surveillance_signature_label( surveillance_signature_id_t a_signatur
             return "DRONE/RemoteID";
         case SURVEILLANCE_SIGNATURE_META:
             return "GLASS/Meta";
+        case SURVEILLANCE_SIGNATURE_BRILLIANT_FRAME:
+            return "GLASS/Frame";
+        case SURVEILLANCE_SIGNATURE_EVEN_G1:
+            return "GLASS/Even G1";
+        case SURVEILLANCE_SIGNATURE_SOLOS_AIRGO:
+            return "GLASS/Solos";
+        case SURVEILLANCE_SIGNATURE_ROKID:
+            return "GLASS/Rokid";
         default:
             return "OTHER";
     }
@@ -265,7 +301,7 @@ const char *surveillance_name( surveillance_class_t a_classification )
 {
     switch( a_classification )
     {
-        case SURVEILLANCE_FLOCK:
+        case SURVEILLANCE_ALPR:
             return "ALPR";
         case SURVEILLANCE_BODY_CAMERA:
             return "Body camera";
@@ -288,8 +324,8 @@ char surveillance_morse_letter( surveillance_class_t a_classification )
 {
     switch( a_classification )
     {
-        case SURVEILLANCE_FLOCK:
-            return 'F';
+        case SURVEILLANCE_ALPR:
+            return 'L';
         case SURVEILLANCE_BODY_CAMERA:
             return 'B';
         case SURVEILLANCE_DRONE:

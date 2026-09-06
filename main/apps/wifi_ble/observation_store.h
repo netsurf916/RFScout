@@ -36,9 +36,17 @@ typedef struct
     size_t random_count;
 } observation_store_summary_t;
 
+typedef struct
+{
+    surveillance_signature_id_t signature;
+    uint16_t count;
+    uint32_t last_seen_ms;
+} observation_surveillance_signature_t;
+
 typedef enum
 {
     OBSERVATION_STORE_EVENT_ADDED = 0,
+    OBSERVATION_STORE_EVENT_SURVEILLANCE_CHANGED,
     OBSERVATION_STORE_EVENT_DROPPED_TIMEOUT,
     OBSERVATION_STORE_EVENT_DROPPED_CAPACITY
 } observation_store_event_t;
@@ -57,8 +65,14 @@ esp_err_t observation_store_init( void );
 void observation_store_set_event_callback( observation_store_event_callback_t a_callback,
                                            void *a_context );
 
-/** @brief Add or refresh one normalized device observation. */
-bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new );
+/**
+ * @brief Add or refresh one normalized device observation.
+ * @param a_is_new Optional output set when this identity is newly active.
+ * @param a_surveillance_new Optional output set when this active identity first becomes surveillance.
+ */
+bool observation_store_observe( const rf_device_t *a_observation,
+                                bool *a_is_new,
+                                bool *a_surveillance_new );
 
 /** @brief Clear all live observations while retaining any current app-owned capacity. */
 void observation_store_reset( void );
@@ -75,6 +89,14 @@ size_t observation_store_count( void );
 
 /** @brief Return the number of currently active observations classified as surveillance. */
 size_t observation_store_surveillance_count( void );
+
+/**
+ * @brief Return active surveillance signatures derived from the canonical observation collection.
+ * @return Total number of active signature groups, which may exceed a_capacity.
+ */
+size_t observation_store_active_surveillance( observation_surveillance_signature_t *a_rows,
+                                              size_t a_capacity,
+                                              size_t *a_total_devices );
 
 /**
  * @brief Build current aggregate counts and the most common known vendors.

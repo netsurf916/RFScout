@@ -86,6 +86,47 @@ static bool app_from_config_name( const char *a_name, rfscout_app_id_t *a_app )
     return false;
 }
 
+static const char *
+surveillance_sensitivity_config_name( rfscout_surveillance_sensitivity_t a_sensitivity )
+{
+    switch( a_sensitivity )
+    {
+        case RFSCOUT_SURVEILLANCE_SENSITIVITY_MEDIUM:
+            return "medium";
+        case RFSCOUT_SURVEILLANCE_SENSITIVITY_LOW:
+            return "low";
+        case RFSCOUT_SURVEILLANCE_SENSITIVITY_HIGH:
+        default:
+            return "high";
+    }
+}
+
+static bool
+surveillance_sensitivity_from_config_name( const char *a_name,
+                                           rfscout_surveillance_sensitivity_t *a_sensitivity )
+{
+    if( ( NULL == a_name ) || ( NULL == a_sensitivity ) )
+    {
+        return false;
+    }
+    if( 0 == strcasecmp( a_name, "high" ) )
+    {
+        *a_sensitivity = RFSCOUT_SURVEILLANCE_SENSITIVITY_HIGH;
+        return true;
+    }
+    if( 0 == strcasecmp( a_name, "medium" ) )
+    {
+        *a_sensitivity = RFSCOUT_SURVEILLANCE_SENSITIVITY_MEDIUM;
+        return true;
+    }
+    if( 0 == strcasecmp( a_name, "low" ) )
+    {
+        *a_sensitivity = RFSCOUT_SURVEILLANCE_SENSITIVITY_LOW;
+        return true;
+    }
+    return false;
+}
+
 static const char *power_action_config_name( power_action_t a_action )
 {
     switch( a_action )
@@ -185,7 +226,7 @@ static void set_defaults( void )
     config.ble_device_feedback_enabled = true;
     config.wifi_timeout_seconds = RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS;
     config.ble_timeout_seconds = RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS;
-    config.surveillance_timeout_seconds = RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS;
+    config.surveillance_sensitivity = RFSCOUT_SURVEILLANCE_SENSITIVITY_HIGH;
 
     for( size_t index = 0; index < RFSCOUT_APP_COUNT; ++index )
     {
@@ -278,8 +319,22 @@ static void load_apps( const cJSON *a_root )
                     json_timeout_seconds( retention, "wifi_seconds", config.wifi_timeout_seconds );
                 config.ble_timeout_seconds = json_timeout_seconds(
                     retention, "bluetooth_seconds", config.ble_timeout_seconds );
-                config.surveillance_timeout_seconds = json_timeout_seconds(
-                    retention, "surveillance_seconds", config.surveillance_timeout_seconds );
+            }
+            const cJSON *sensitivity =
+                cJSON_GetObjectItemCaseSensitive( app_item, "surveillance_sensitivity" );
+            if( cJSON_IsString( sensitivity ) && ( NULL != sensitivity->valuestring ) )
+            {
+                rfscout_surveillance_sensitivity_t parsed;
+                if( surveillance_sensitivity_from_config_name( sensitivity->valuestring, &parsed ) )
+                {
+                    config.surveillance_sensitivity = parsed;
+                }
+                else
+                {
+                    ESP_LOGE( TAG,
+                              "invalid surveillance sensitivity '%s'; using default",
+                              sensitivity->valuestring );
+                }
             }
         }
 
@@ -818,8 +873,10 @@ static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_tim
             cJSON *retention = cJSON_AddObjectToObject( app_item, "retention" );
             cJSON_AddNumberToObject( retention, "wifi_seconds", config.wifi_timeout_seconds );
             cJSON_AddNumberToObject( retention, "bluetooth_seconds", config.ble_timeout_seconds );
-            cJSON_AddNumberToObject(
-                retention, "surveillance_seconds", config.surveillance_timeout_seconds );
+            cJSON_AddStringToObject(
+                app_item,
+                "surveillance_sensitivity",
+                surveillance_sensitivity_config_name( config.surveillance_sensitivity ) );
         }
         const rfscout_app_audio_policy_t *policy = app_audio_policy_get( app );
         if( policy->notifications_supported )
@@ -1246,22 +1303,23 @@ esp_err_t device_config_set_ble_timeout_seconds( uint16_t a_seconds )
     return ESP_OK;
 }
 
-uint16_t device_config_surveillance_timeout_seconds( void )
+rfscout_surveillance_sensitivity_t device_config_surveillance_sensitivity( void )
 {
-    return timeout_seconds_valid( config.surveillance_timeout_seconds )
-               ? config.surveillance_timeout_seconds
-               : RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS;
+    return ( config.surveillance_sensitivity < RFSCOUT_SURVEILLANCE_SENSITIVITY_COUNT )
+               ? config.surveillance_sensitivity
+               : RFSCOUT_SURVEILLANCE_SENSITIVITY_HIGH;
 }
 
-esp_err_t device_config_set_surveillance_timeout_seconds( uint16_t a_seconds )
+esp_err_t
+device_config_set_surveillance_sensitivity( rfscout_surveillance_sensitivity_t a_sensitivity )
 {
-    if( !timeout_seconds_valid( a_seconds ) )
+    if( a_sensitivity >= RFSCOUT_SURVEILLANCE_SENSITIVITY_COUNT )
     {
         return ESP_ERR_INVALID_ARG;
     }
-    if( config.surveillance_timeout_seconds != a_seconds )
+    if( config.surveillance_sensitivity != a_sensitivity )
     {
-        config.surveillance_timeout_seconds = a_seconds;
+        config.surveillance_sensitivity = a_sensitivity;
         config_dirty = true;
     }
     return ESP_OK;

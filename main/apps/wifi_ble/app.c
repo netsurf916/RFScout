@@ -13,7 +13,6 @@
 #include "notification_preferences.h"
 #include "observation_store.h"
 #include "radio_monitor.h"
-#include "surveillance_history.h"
 #include "ui.h"
 #include "wifi_settings_view.h"
 
@@ -26,9 +25,9 @@
 #define WIFI_MENU_BACK 0U
 #define WIFI_MENU_RESET 1U
 #define WIFI_MENU_NOTIFICATIONS 2U
-#define WIFI_MENU_WIFI_TIMEOUT 3U
-#define WIFI_MENU_BLE_TIMEOUT 4U
-#define WIFI_MENU_SURVEILLANCE_TIMEOUT 5U
+#define WIFI_MENU_SENSITIVITY 3U
+#define WIFI_MENU_WIFI_TIMEOUT 4U
+#define WIFI_MENU_BLE_TIMEOUT 5U
 #define WIFI_MENU_ITEM_COUNT 6U
 
 static const char *TAG = "wifi_ble_app";
@@ -48,9 +47,9 @@ static void render_menu( void )
     wifi_settings_view_render( menu_item,
                                menu_editing,
                                notification_preferences_app_enabled( RFSCOUT_APP_WIFI_BT ),
+                               device_config_surveillance_sensitivity(),
                                device_config_wifi_timeout_seconds(),
-                               device_config_ble_timeout_seconds(),
-                               device_config_surveillance_timeout_seconds() );
+                               device_config_ble_timeout_seconds() );
 }
 
 static void render_menu_callback( void *a_context )
@@ -145,8 +144,22 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
             app_notification_menu_open( &notification_menu );
             return;
         }
-        if( ( WIFI_MENU_WIFI_TIMEOUT == menu_item ) || ( WIFI_MENU_BLE_TIMEOUT == menu_item ) ||
-            ( WIFI_MENU_SURVEILLANCE_TIMEOUT == menu_item ) )
+        if( WIFI_MENU_SENSITIVITY == menu_item )
+        {
+            rfscout_surveillance_sensitivity_t sensitivity =
+                device_config_surveillance_sensitivity();
+            sensitivity =
+                (rfscout_surveillance_sensitivity_t)( ( (unsigned)sensitivity + 1U ) %
+                                                      (unsigned)
+                                                          RFSCOUT_SURVEILLANCE_SENSITIVITY_COUNT );
+            if( ESP_OK == device_config_set_surveillance_sensitivity( sensitivity ) )
+            {
+                render_menu();
+                emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
+            }
+            return;
+        }
+        if( ( WIFI_MENU_WIFI_TIMEOUT == menu_item ) || ( WIFI_MENU_BLE_TIMEOUT == menu_item ) )
         {
             menu_editing = true;
             render_menu();
@@ -156,7 +169,6 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
         if( WIFI_MENU_RESET == menu_item )
         {
             observation_store_reset();
-            surveillance_history_reset();
             close_menu();
             emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
         }
@@ -185,12 +197,6 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
             result = device_config_set_ble_timeout_seconds(
                 adjust_timeout_seconds( old_value, direction ) );
         }
-        else if( WIFI_MENU_SURVEILLANCE_TIMEOUT == menu_item )
-        {
-            old_value = device_config_surveillance_timeout_seconds();
-            result = device_config_set_surveillance_timeout_seconds(
-                adjust_timeout_seconds( old_value, direction ) );
-        }
         if( ESP_OK == result )
         {
             uint16_t new_value = old_value;
@@ -201,10 +207,6 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
             else if( WIFI_MENU_BLE_TIMEOUT == menu_item )
             {
                 new_value = device_config_ble_timeout_seconds();
-            }
-            else if( WIFI_MENU_SURVEILLANCE_TIMEOUT == menu_item )
-            {
-                new_value = device_config_surveillance_timeout_seconds();
             }
             if( new_value != old_value )
             {

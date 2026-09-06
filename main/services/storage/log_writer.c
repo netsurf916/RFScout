@@ -55,7 +55,6 @@ typedef struct
     int8_t rssi;
     uint16_t channel;
     surveillance_signature_id_t signature;
-    uint8_t score;
     uint8_t evidence;
     char vendor[ RFSCOUT_VENDOR_NAME_MAX ];
     char name[ RFSCOUT_DEVICE_NAME_MAX ];
@@ -355,31 +354,33 @@ static bool write_record( const log_record_t *a_record )
                                                                      : "UNKNOWN";
         char identity[ LOG_IDENTITY_MAX ];
         format_text( raw_identity, identity, sizeof( identity ) );
-        if( OBSERVATION_STORE_EVENT_ADDED == a_record->event )
+        if( ( OBSERVATION_STORE_EVENT_ADDED == a_record->event ) ||
+            ( OBSERVATION_STORE_EVENT_SURVEILLANCE_CHANGED == a_record->event ) )
         {
             char evidence[ 64 ];
             format_evidence( a_record->evidence, evidence, sizeof( evidence ) );
             const char *signature = ( SURVEILLANCE_SIGNATURE_NONE != a_record->signature )
                                         ? surveillance_signature_label( a_record->signature )
                                         : "-";
-            length = snprintf( line,
-                               sizeof( line ),
-                               "%s ADDED %s rssi=%d ch=%u mac=%02X:%02X:%02X:%02X:%02X:%02X "
-                               "identity=\"%s\" surveillance=%s score=%u evidence=%s\n",
-                               timestamp,
-                               source,
-                               a_record->rssi,
-                               (unsigned)a_record->channel,
-                               a_record->address[ 0 ],
-                               a_record->address[ 1 ],
-                               a_record->address[ 2 ],
-                               a_record->address[ 3 ],
-                               a_record->address[ 4 ],
-                               a_record->address[ 5 ],
-                               identity,
-                               signature,
-                               (unsigned)a_record->score,
-                               evidence );
+            length = snprintf(
+                line,
+                sizeof( line ),
+                "%s %s %s rssi=%d ch=%u mac=%02X:%02X:%02X:%02X:%02X:%02X "
+                "identity=\"%s\" surveillance=%s evidence=%s\n",
+                timestamp,
+                ( OBSERVATION_STORE_EVENT_ADDED == a_record->event ) ? "ADDED" : "SURVEILLANCE",
+                source,
+                a_record->rssi,
+                (unsigned)a_record->channel,
+                a_record->address[ 0 ],
+                a_record->address[ 1 ],
+                a_record->address[ 2 ],
+                a_record->address[ 3 ],
+                a_record->address[ 4 ],
+                a_record->address[ 5 ],
+                identity,
+                signature,
+                evidence );
         }
         else
         {
@@ -529,7 +530,6 @@ bool log_writer_device_event( observation_store_event_t a_event, const rf_device
                             .rssi = a_device->rssi,
                             .channel = a_device->channel,
                             .signature = a_device->surveillance_signature,
-                            .score = a_device->surveillance_score,
                             .evidence = a_device->surveillance_evidence };
     stamp_record( &record );
     memcpy( record.address, a_device->address, sizeof( record.address ) );

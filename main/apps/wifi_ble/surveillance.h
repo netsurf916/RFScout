@@ -15,7 +15,6 @@ typedef struct
 {
     surveillance_class_t classification;
     surveillance_signature_id_t signature;
-    uint8_t score;
     uint8_t evidence;
 } surveillance_match_t;
 

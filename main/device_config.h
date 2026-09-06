@@ -36,6 +36,14 @@
 #define RFSCOUT_HIGH_TEMPERATURE_THRESHOLD_MAX_C 100U
 #define RFSCOUT_HIGH_TEMPERATURE_THRESHOLD_STEP_C 10U
 
+typedef enum
+{
+    RFSCOUT_SURVEILLANCE_SENSITIVITY_HIGH = 0,
+    RFSCOUT_SURVEILLANCE_SENSITIVITY_MEDIUM,
+    RFSCOUT_SURVEILLANCE_SENSITIVITY_LOW,
+    RFSCOUT_SURVEILLANCE_SENSITIVITY_COUNT
+} rfscout_surveillance_sensitivity_t;
+
 typedef struct
 {
     char name[ RFSCOUT_TIMEZONE_NAME_MAX ];
@@ -71,7 +79,7 @@ typedef struct
     bool ble_device_feedback_enabled;
     uint16_t wifi_timeout_seconds;
     uint16_t ble_timeout_seconds;
-    uint16_t surveillance_timeout_seconds;
+    rfscout_surveillance_sensitivity_t surveillance_sensitivity;
     char notification_characters[ RFSCOUT_NOTIFICATION_TYPE_COUNT ];
     char timezone_selected[ RFSCOUT_TIMEZONE_NAME_MAX ];
     device_timezone_t timezones[ RFSCOUT_TIMEZONE_MAX ];
@@ -164,10 +172,11 @@ esp_err_t device_config_set_wifi_timeout_seconds( uint16_t a_seconds );
 uint16_t device_config_ble_timeout_seconds( void );
 /** @brief Change the Bluetooth live-list timeout in 10-second steps from 10 through 300 seconds. */
 esp_err_t device_config_set_ble_timeout_seconds( uint16_t a_seconds );
-/** @brief Return the retained surveillance-list timeout in seconds. */
-uint16_t device_config_surveillance_timeout_seconds( void );
-/** @brief Change the surveillance-list timeout in 10-second steps from 10 through 300 seconds. */
-esp_err_t device_config_set_surveillance_timeout_seconds( uint16_t a_seconds );
+/** @brief Return the surveillance evidence threshold policy. */
+rfscout_surveillance_sensitivity_t device_config_surveillance_sensitivity( void );
+/** @brief Change surveillance sensitivity between High, Medium, and Low. */
+esp_err_t
+device_config_set_surveillance_sensitivity( rfscout_surveillance_sensitivity_t a_sensitivity );
 
 /** @brief Return the configured Morse character for one notification category. */
 char device_config_notification_character( rfscout_notification_type_t a_type );
