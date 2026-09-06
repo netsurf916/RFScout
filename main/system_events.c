@@ -63,7 +63,6 @@ static bool is_system_state_event( const rfscout_event_t *a_event )
         case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNTED:
         case RFSCOUT_EVENT_INTERNAL_STORAGE_FORMATTED:
         case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED:
-        case RFSCOUT_EVENT_CONFIG_IMPORTED:
         case RFSCOUT_EVENT_CONFIG_DEFAULTED:
         case RFSCOUT_EVENT_APP_DISCOVERED:
         case RFSCOUT_EVENT_APP_AVAILABLE:
@@ -114,7 +113,6 @@ static bool notification_eligible( const rfscout_event_t *a_event )
         case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNTED:
         case RFSCOUT_EVENT_INTERNAL_STORAGE_FORMATTED:
         case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED:
-        case RFSCOUT_EVENT_CONFIG_IMPORTED:
         case RFSCOUT_EVENT_CONFIG_DEFAULTED:
         case RFSCOUT_EVENT_APP_AVAILABLE:
         case RFSCOUT_EVENT_APP_UNAVAILABLE:
@@ -187,10 +185,6 @@ static void render_event( const rfscout_event_t *a_event,
         case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED:
             snprintf( a_title, a_title_size, "INTERNAL STORAGE" );
             snprintf( a_detail, a_detail_size, "MOUNT FAILED" );
-            break;
-        case RFSCOUT_EVENT_CONFIG_IMPORTED:
-            snprintf( a_title, a_title_size, "CONFIG" );
-            snprintf( a_detail, a_detail_size, "IMPORTED FROM SD" );
             break;
         case RFSCOUT_EVENT_CONFIG_DEFAULTED:
             snprintf( a_title, a_title_size, "CONFIG" );
