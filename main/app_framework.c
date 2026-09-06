@@ -78,15 +78,14 @@ static rfscout_app_availability_t probe_descriptor( const rfscout_app_descriptor
     }
 
     const esp_err_t result = a_descriptor->probe();
-    const rfscout_app_availability_t current =
-        ( ESP_OK == result ) ? RFSCOUT_APP_AVAILABILITY_AVAILABLE
-                             : RFSCOUT_APP_AVAILABILITY_UNAVAILABLE;
+    const rfscout_app_availability_t current = ( ESP_OK == result )
+                                                   ? RFSCOUT_APP_AVAILABILITY_AVAILABLE
+                                                   : RFSCOUT_APP_AVAILABILITY_UNAVAILABLE;
 
     const rfscout_app_availability_t previous = availability[ a_descriptor->id ];
     retain_availability( a_descriptor->id, current );
-    if( ( ESP_OK != result ) && ( previous != current ) &&
-        ( ESP_ERR_NOT_FOUND != result ) && ( ESP_ERR_INVALID_RESPONSE != result ) &&
-        ( ESP_ERR_TIMEOUT != result ) )
+    if( ( ESP_OK != result ) && ( previous != current ) && ( ESP_ERR_NOT_FOUND != result ) &&
+        ( ESP_ERR_INVALID_RESPONSE != result ) && ( ESP_ERR_TIMEOUT != result ) )
     {
         ESP_LOGW( TAG,
                   "%s availability probe failed: %s",
