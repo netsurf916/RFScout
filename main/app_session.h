@@ -31,6 +31,14 @@ rfscout_app_id_t app_session_app( void );
 /** @brief Return a monotonically changing identifier for the current app-session lifetime. */
 uint32_t app_session_generation( void );
 
+/**
+ * @brief Hold the current app session for a short operation that must finish before transition.
+ * @details The app/generation pair must identify the current session. A close is rejected while
+ *          operations are held, and new operations are rejected once close preparation begins.
+ */
+esp_err_t app_session_operation_begin( rfscout_app_id_t a_app, uint32_t a_generation );
+void app_session_operation_end( rfscout_app_id_t a_app, uint32_t a_generation );
+
 /** @brief Allocate zero-initialized PSRAM owned by the current app session. */
 void *app_session_calloc( size_t a_count, size_t a_size );
 
