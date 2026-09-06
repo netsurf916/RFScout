@@ -13,6 +13,9 @@
 
 #include "esp_littlefs.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "mbedtls/sha256.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -23,34 +26,23 @@
 
 #define PERSISTENT_SYSTEM_ROOT RFSCOUT_INTERNAL_ROOT "/system"
 #define PERSISTENT_APP_ROOT RFSCOUT_INTERNAL_ROOT "/app"
+#define PERSISTENT_HASH_BYTES 32U
+#define PERSISTENT_HASH_HEX_LENGTH ( PERSISTENT_HASH_BYTES * 2U )
 #define PERSISTENT_PATH_MAX 192U
 
 static const char *TAG = "persistent_store";
 static bool initialized;
 static bool available;
-
-static bool valid_name( const char *a_name, size_t a_max_length )
-{
-    if( NULL == a_name || '\0' == a_name[ 0 ] )
-    {
-        return false;
-    }
-    size_t length = 0U;
-    for( ; '\0' != a_name[ length ]; ++length )
-    {
-        const char c = a_name[ length ];
-        const bool valid = ( c >= 'a' && c <= 'z' ) || ( c >= 'A' && c <= 'Z' ) ||
-                           ( c >= '0' && c <= '9' ) || '_' == c || '-' == c || '.' == c;
-        if( !valid || length >= a_max_length )
-        {
-            return false;
-        }
-    }
-    return length <= a_max_length;
-}
+static StaticSemaphore_t store_mutex_buffer;
+static SemaphoreHandle_t store_mutex;
 
 static esp_err_t ensure_directory( const char *a_path )
 {
+    struct stat info;
+    if( 0 == stat( a_path, &info ) )
+    {
+        return S_ISDIR( info.st_mode ) ? ESP_OK : ESP_ERR_INVALID_STATE;
+    }
     if( 0 == mkdir( a_path, 0755 ) || EEXIST == errno )
     {
         return ESP_OK;
@@ -108,14 +100,60 @@ static void cleanup_temp_directory( const char *a_path, bool a_recurse_one_level
     closedir( directory );
 }
 
-static esp_err_t
-build_record_paths( const char *a_scope, const char *a_key, char *a_path, char *a_temp_path )
+static esp_err_t hash_string( const char *a_value, char a_hex[ PERSISTENT_HASH_HEX_LENGTH + 1U ] )
 {
-    if( !valid_name( a_key, RFSCOUT_PERSISTENT_KEY_MAX ) )
+    if( NULL == a_value || '\0' == a_value[ 0 ] )
     {
         return ESP_ERR_INVALID_ARG;
     }
-    const int path_length = snprintf( a_path, PERSISTENT_PATH_MAX, "%s/%s", a_scope, a_key );
+    const size_t length = strnlen( a_value, RFSCOUT_PERSISTENT_KEY_MAX_BYTES + 1U );
+    if( 0U == length || length > RFSCOUT_PERSISTENT_KEY_MAX_BYTES )
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    unsigned char digest[ PERSISTENT_HASH_BYTES ];
+    if( 0 != mbedtls_sha256_ret( (const unsigned char *)a_value, length, digest, 0 ) )
+    {
+        return ESP_FAIL;
+    }
+    for( size_t index = 0U; index < PERSISTENT_HASH_BYTES; ++index )
+    {
+        (void)snprintf( &a_hex[ index * 2U ], 3U, "%02x", digest[ index ] );
+    }
+    a_hex[ PERSISTENT_HASH_HEX_LENGTH ] = '\0';
+    return ESP_OK;
+}
+
+static esp_err_t app_scope( rfscout_app_id_t a_app, char *a_scope )
+{
+    const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
+    if( NULL == descriptor || NULL == descriptor->persistence_key ||
+        '\0' == descriptor->persistence_key[ 0 ] )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    char hash[ PERSISTENT_HASH_HEX_LENGTH + 1U ];
+    esp_err_t result = hash_string( descriptor->persistence_key, hash );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+    const int length = snprintf( a_scope, PERSISTENT_PATH_MAX, "%s/%s", PERSISTENT_APP_ROOT, hash );
+    return ( length < 0 || length >= (int)PERSISTENT_PATH_MAX ) ? ESP_ERR_INVALID_SIZE : ESP_OK;
+}
+
+static esp_err_t
+build_record_paths( const char *a_scope, const char *a_key, char *a_path, char *a_temp_path )
+{
+    char hash[ PERSISTENT_HASH_HEX_LENGTH + 1U ];
+    esp_err_t result = hash_string( a_key, hash );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+    const int path_length = snprintf( a_path, PERSISTENT_PATH_MAX, "%s/%s", a_scope, hash );
     const int temp_length = snprintf( a_temp_path, PERSISTENT_PATH_MAX, "%s.tmp", a_path );
     if( path_length < 0 || temp_length < 0 || path_length >= (int)PERSISTENT_PATH_MAX ||
         temp_length >= (int)PERSISTENT_PATH_MAX )
@@ -125,25 +163,24 @@ build_record_paths( const char *a_scope, const char *a_key, char *a_path, char *
     return ESP_OK;
 }
 
-static esp_err_t app_scope( rfscout_app_id_t a_app, char *a_scope )
+static bool store_lock( void )
 {
-    const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
-    if( NULL == descriptor ||
-        !valid_name( descriptor->persistence_key, RFSCOUT_PERSISTENT_KEY_MAX ) )
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-    const int length = snprintf(
-        a_scope, PERSISTENT_PATH_MAX, "%s/%s", PERSISTENT_APP_ROOT, descriptor->persistence_key );
-    if( length < 0 || length >= (int)PERSISTENT_PATH_MAX )
-    {
-        return ESP_ERR_INVALID_SIZE;
-    }
-    return ensure_directory( a_scope );
+    return NULL != store_mutex && pdTRUE == xSemaphoreTake( store_mutex, portMAX_DELAY );
 }
 
-static esp_err_t
-record_write( const char *a_scope, const char *a_key, const void *a_data, size_t a_length )
+static void store_unlock( void )
+{
+    if( NULL != store_mutex )
+    {
+        (void)xSemaphoreGive( store_mutex );
+    }
+}
+
+static esp_err_t record_write( const char *a_scope,
+                               bool a_create_scope,
+                               const char *a_key,
+                               const void *a_data,
+                               size_t a_length )
 {
     if( !available )
     {
@@ -165,12 +202,28 @@ record_write( const char *a_scope, const char *a_key, const void *a_data, size_t
     {
         return result;
     }
+    if( !store_lock() )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if( a_create_scope )
+    {
+        result = ensure_directory( a_scope );
+        if( ESP_OK != result )
+        {
+            store_unlock();
+            return result;
+        }
+    }
 
     (void)unlink( temp_path );
     FILE *file = fopen( temp_path, "wb" );
     if( NULL == file )
     {
-        return ( ENOSPC == errno ) ? ESP_ERR_NO_MEM : ESP_FAIL;
+        const int saved_errno = errno;
+        store_unlock();
+        return ( ENOSPC == saved_errno ) ? ESP_ERR_NO_MEM : ESP_FAIL;
     }
 
     bool ok = ( 0U == a_length ) || ( a_length == fwrite( a_data, 1U, a_length, file ) );
@@ -186,14 +239,18 @@ record_write( const char *a_scope, const char *a_key, const void *a_data, size_t
     {
         const int saved_errno = errno;
         (void)unlink( temp_path );
+        store_unlock();
         return ( ENOSPC == saved_errno ) ? ESP_ERR_NO_MEM : ESP_FAIL;
     }
     if( 0 != rename( temp_path, path ) )
     {
         const int saved_errno = errno;
         (void)unlink( temp_path );
+        store_unlock();
         return ( ENOSPC == saved_errno ) ? ESP_ERR_NO_MEM : ESP_FAIL;
     }
+
+    store_unlock();
     return ESP_OK;
 }
 
@@ -216,15 +273,22 @@ static esp_err_t record_read(
     {
         return result;
     }
+    if( !store_lock() )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
 
     FILE *file = fopen( path, "rb" );
     if( NULL == file )
     {
-        return ( ENOENT == errno ) ? ESP_ERR_NOT_FOUND : ESP_FAIL;
+        const int saved_errno = errno;
+        store_unlock();
+        return ( ENOENT == saved_errno ) ? ESP_ERR_NOT_FOUND : ESP_FAIL;
     }
     if( 0 != fseek( file, 0, SEEK_END ) )
     {
         fclose( file );
+        store_unlock();
         return ESP_FAIL;
     }
     const long length = ftell( file );
@@ -232,6 +296,7 @@ static esp_err_t record_read(
         0 != fseek( file, 0, SEEK_SET ) )
     {
         fclose( file );
+        store_unlock();
         return ( length > (long)RFSCOUT_PERSISTENT_RECORD_MAX_BYTES ) ? ESP_ERR_INVALID_SIZE
                                                                       : ESP_FAIL;
     }
@@ -239,19 +304,23 @@ static esp_err_t record_read(
     if( NULL == a_data && 0U == a_capacity )
     {
         fclose( file );
+        store_unlock();
         return ESP_OK;
     }
     if( NULL == a_data || (size_t)length > a_capacity )
     {
         fclose( file );
+        store_unlock();
         return ESP_ERR_INVALID_SIZE;
     }
     if( length > 0L && (size_t)length != fread( a_data, 1U, (size_t)length, file ) )
     {
         fclose( file );
+        store_unlock();
         return ESP_FAIL;
     }
     fclose( file );
+    store_unlock();
     return ESP_OK;
 }
 
@@ -261,26 +330,43 @@ static esp_err_t record_remove( const char *a_scope, const char *a_key )
     {
         return ESP_ERR_INVALID_STATE;
     }
+
     char path[ PERSISTENT_PATH_MAX ];
     char temp_path[ PERSISTENT_PATH_MAX ];
-    const esp_err_t result = build_record_paths( a_scope, a_key, path, temp_path );
+    esp_err_t result = build_record_paths( a_scope, a_key, path, temp_path );
     if( ESP_OK != result )
     {
         return result;
     }
+    if( !store_lock() )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     if( 0 == unlink( path ) )
     {
+        store_unlock();
         return ESP_OK;
     }
-    return ( ENOENT == errno ) ? ESP_ERR_NOT_FOUND : ESP_FAIL;
+    const int saved_errno = errno;
+    store_unlock();
+    return ( ENOENT == saved_errno ) ? ESP_ERR_NOT_FOUND : ESP_FAIL;
 }
 
 static bool record_exists( const char *a_scope, const char *a_key )
 {
+    if( !available )
+    {
+        return false;
+    }
     char path[ PERSISTENT_PATH_MAX ];
     char temp_path[ PERSISTENT_PATH_MAX ];
-    return available && ESP_OK == build_record_paths( a_scope, a_key, path, temp_path ) &&
-           0 == access( path, F_OK );
+    if( ESP_OK != build_record_paths( a_scope, a_key, path, temp_path ) || !store_lock() )
+    {
+        return false;
+    }
+    const bool exists = 0 == access( path, F_OK );
+    store_unlock();
+    return exists;
 }
 
 esp_err_t persistent_store_init( void )
@@ -290,6 +376,11 @@ esp_err_t persistent_store_init( void )
         return available ? ESP_OK : ESP_ERR_INVALID_STATE;
     }
     initialized = true;
+    store_mutex = xSemaphoreCreateMutexStatic( &store_mutex_buffer );
+    if( NULL == store_mutex )
+    {
+        return ESP_ERR_NO_MEM;
+    }
 
     const esp_vfs_littlefs_conf_t config = {
         .base_path = RFSCOUT_INTERNAL_ROOT,
@@ -342,7 +433,7 @@ bool persistent_store_is_available( void )
 
 esp_err_t system_store_write( const char *a_key, const void *a_data, size_t a_length )
 {
-    return record_write( PERSISTENT_SYSTEM_ROOT, a_key, a_data, a_length );
+    return record_write( PERSISTENT_SYSTEM_ROOT, false, a_key, a_data, a_length );
 }
 
 esp_err_t system_store_read( const char *a_key, void *a_data, size_t a_capacity, size_t *a_length )
@@ -367,7 +458,7 @@ esp_err_t persistent_store_app_write( rfscout_app_id_t a_app,
 {
     char scope[ PERSISTENT_PATH_MAX ];
     const esp_err_t result = app_scope( a_app, scope );
-    return ( ESP_OK == result ) ? record_write( scope, a_key, a_data, a_length ) : result;
+    return ( ESP_OK == result ) ? record_write( scope, true, a_key, a_data, a_length ) : result;
 }
 
 esp_err_t persistent_store_app_read(
