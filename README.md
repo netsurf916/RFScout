@@ -45,7 +45,7 @@ Recorder uses the internal PDM microphone and SD storage for 16-bit mono WAV cap
 
 ### Audio Spectrum
 
-Audio Spectrum is the separate live microphone FFT/spectrum app and does not require an SD card. On its main view, rotary input remains normal global app navigation; center opens app-local settings. The current setting is fixed digital microphone input gain from **0 through +48 dB in 3 dB steps**.
+Audio Spectrum is the separate live microphone FFT/spectrum app and does not require an SD card. On its main view, rotary input remains normal global app navigation. The spectrum uses raw microphone PCM with continuous high-pass/DC-block filtering and a smoothed automatic dB display range, avoiding pre-FFT digital amplification and clipping. The `AUTO N dB` readout is the current display-window span, not microphone gain.
 
 ### Thermal
 

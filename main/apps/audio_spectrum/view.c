@@ -15,33 +15,20 @@
 #include <stddef.h>
 #include <stdio.h>
 
-void audio_spectrum_view_render( uint8_t a_gain_db, bool a_settings )
+void audio_spectrum_view_render( void )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     display_clear( theme->background );
     ui_chrome_draw( "AUDIO SPECTRUM", theme->secondary );
 
-    if( a_settings )
-    {
-        char line[ 48 ];
-        display_draw_text( UI_LAYOUT_LEFT_X, 42, "SETTINGS", theme->text, 2U );
-        snprintf( line, sizeof( line ), "> INPUT GAIN  +%u dB", (unsigned)a_gain_db );
-        display_draw_text( UI_LAYOUT_LEFT_X, 82, line, theme->selected, 1U );
-        display_draw_text( UI_LAYOUT_LEFT_X, 111, "0-48 dB / 3 dB steps", theme->divider, 1U );
-        display_draw_text( UI_LAYOUT_LEFT_X,
-                           UI_LAYOUT_FOOTER_Y,
-                           "TURN: ADJUST  CENTER/BACK: CLOSE",
-                           theme->secondary,
-                           1U );
-        (void)display_present();
-        return;
-    }
-
     uint8_t bins[ RFSCOUT_RECORDER_MONITOR_BINS ];
     const size_t count = recorder_monitor_bins( bins, sizeof( bins ) );
-    char line[ 48 ];
-    snprintf( line, sizeof( line ), "LIVE MIC   GAIN +%u dB", (unsigned)a_gain_db );
-    display_draw_text( UI_LAYOUT_LEFT_X, 34, line, theme->text, 1U );
+    char range_line[ 48 ];
+    snprintf( range_line,
+              sizeof( range_line ),
+              "LIVE MIC   AUTO %u dB",
+              (unsigned)recorder_monitor_range_db() );
+    display_draw_text( UI_LAYOUT_LEFT_X, 34, range_line, theme->text, 1U );
 
     const int graph_x = UI_LAYOUT_LEFT_X;
     const int graph_y = 57;
@@ -60,7 +47,7 @@ void audio_spectrum_view_render( uint8_t a_gain_db, bool a_settings )
         }
     }
 
-    display_draw_text( UI_LAYOUT_LEFT_X, 132, "CENTER: SETTINGS", theme->secondary, 1U );
+    display_draw_text( UI_LAYOUT_LEFT_X, 132, "HIGHPASS + DC BLOCK", theme->secondary, 1U );
     display_draw_text(
         UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN: CHANGE APP", theme->secondary, 1U );
     (void)display_present();

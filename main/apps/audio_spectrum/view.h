@@ -9,9 +9,6 @@
 #ifndef _RFSCOUT_AUDIO_SPECTRUM_VIEW_H_
 #define _RFSCOUT_AUDIO_SPECTRUM_VIEW_H_
 
-#include <stdbool.h>
-#include <stdint.h>
-
-void audio_spectrum_view_render( uint8_t a_gain_db, bool a_settings );
+void audio_spectrum_view_render( void );
 
 #endif // _RFSCOUT_AUDIO_SPECTRUM_VIEW_H_
