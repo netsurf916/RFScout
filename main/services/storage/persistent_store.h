@@ -15,9 +15,17 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #define RFSCOUT_INTERNAL_ROOT "/internal"
 #define RFSCOUT_PERSISTENT_KEY_MAX 48U
+#define RFSCOUT_PERSISTENT_RECORD_MAX_BYTES 16384U
+
+typedef struct
+{
+    rfscout_app_id_t app;
+    uint32_t generation;
+} rfscout_app_store_context_t;
 
 /** @brief Mount and initialize the system-owned internal persistence service. */
 esp_err_t persistent_store_init( void );
@@ -46,9 +54,33 @@ esp_err_t persistent_store_app_remove( rfscout_app_id_t a_app, const char *a_key
 bool persistent_store_app_exists( rfscout_app_id_t a_app, const char *a_key );
 
 /**
- * @brief Atomically replace a record owned by the current application session.
- * @details The caller cannot name another application's namespace; ownership is derived
- *          from app_session_app() and the descriptor persistence_key.
+ * @brief Capture the current app-session identity for asynchronous persistence work.
+ * @details The context becomes invalid when the owning app session closes or is replaced.
+ */
+esp_err_t app_store_context_current( rfscout_app_store_context_t *a_context );
+
+/**
+ * @brief App persistence using an explicitly captured session identity.
+ * @details These calls reject stale contexts and participate in app-session lifecycle blocking so
+ *          a transition cannot reclaim the owning session while an operation is in progress.
+ */
+esp_err_t app_store_write_context( const rfscout_app_store_context_t *a_context,
+                                   const char *a_key,
+                                   const void *a_data,
+                                   size_t a_length );
+esp_err_t app_store_read_context( const rfscout_app_store_context_t *a_context,
+                                  const char *a_key,
+                                  void *a_data,
+                                  size_t a_capacity,
+                                  size_t *a_length );
+esp_err_t app_store_remove_context( const rfscout_app_store_context_t *a_context,
+                                    const char *a_key );
+bool app_store_exists_context( const rfscout_app_store_context_t *a_context, const char *a_key );
+
+/**
+ * @brief Convenience access to records owned by the current application session.
+ * @details Synchronous app code may use these directly. Asynchronous work should capture a
+ *          rfscout_app_store_context_t before dispatch and use the context variants above.
  */
 esp_err_t app_store_write( const char *a_key, const void *a_data, size_t a_length );
 esp_err_t app_store_read( const char *a_key, void *a_data, size_t a_capacity, size_t *a_length );
