@@ -229,7 +229,7 @@ Implemented behavior:
 - Audio Policy is independently Normal or Quiet;
 - Quiet suppresses incidental UI/event feedback and audible detection notifications without mutating saved notification configuration;
 - explicitly requested content audio such as Recorder playback is not suppressed by Quiet;
-- the legacy `discipline` token is normalized to Night + Quiet when encountered inside an otherwise current-schema configuration;
+- unsupported or invalid current-schema field values retain their compiled defaults; legacy theme aliases are not supported;
 - incompatible internal configuration schemas are replaced with current compiled defaults rather than migrated or retained as recovery copies.
 
 Outstanding validation:

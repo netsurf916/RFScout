@@ -43,7 +43,6 @@ static bool saved_time_valid;
 static int64_t saved_time_epoch;
 static char saved_time_source[ 24 ];
 static bool config_dirty;
-static int config_source_version;
 
 static const char *app_config_name( rfscout_app_id_t a_app )
 {
@@ -138,37 +137,6 @@ static bool power_action_valid_for_policy( power_action_t a_action )
            ( POWER_ACTION_POWER_OFF == a_action );
 }
 
-static void legacy_audio_gains_for_theme( rfscout_theme_id_t a_theme,
-                                          uint8_t *a_interaction_percent,
-                                          uint8_t *a_notification_percent )
-{
-    uint8_t interaction = CONFIG_AUDIO_INTERACTION_GAIN_DEFAULT_PERCENT;
-    uint8_t notification = CONFIG_AUDIO_NOTIFICATION_GAIN_DEFAULT_PERCENT;
-    switch( a_theme )
-    {
-        case RFSCOUT_THEME_OUTDOOR:
-            interaction = 55U;
-            notification = 100U;
-            break;
-        case RFSCOUT_THEME_NIGHT:
-            interaction = 20U;
-            notification = 60U;
-            break;
-        case RFSCOUT_THEME_INDOOR:
-        case RFSCOUT_THEME_COUNT:
-        default:
-            break;
-    }
-    if( NULL != a_interaction_percent )
-    {
-        *a_interaction_percent = interaction;
-    }
-    if( NULL != a_notification_percent )
-    {
-        *a_notification_percent = notification;
-    }
-}
-
 /** @brief Copy a bounded configuration string. */
 static void copy_string( char *a_destination, size_t a_capacity, const char *a_source )
 {
@@ -244,7 +212,6 @@ static void set_defaults( void )
     saved_time_epoch = 0;
     saved_time_source[ 0 ] = '\0';
     config_dirty = false;
-    config_source_version = (int)RFSCOUT_CONFIG_SCHEMA_VERSION;
 }
 
 /** @brief Read one optional JSON boolean, retaining a default on type mismatch. */
@@ -388,7 +355,7 @@ json_display_timeout_seconds( const cJSON *a_parent, const char *a_name, uint16_
     return (uint16_t)item->valueint;
 }
 
-/** @brief Apply validated display preference overrides and older-theme audio migration. */
+/** @brief Apply validated display preference overrides. */
 static void load_display( const cJSON *a_root )
 {
     const cJSON *display = cJSON_GetObjectItemCaseSensitive( a_root, "display" );
@@ -416,35 +383,17 @@ static void load_display( const cJSON *a_root )
     config.clock_24h = json_bool( display, "clock_24h", config.clock_24h );
 
     const cJSON *theme = cJSON_GetObjectItemCaseSensitive( display, "theme" );
-    if( !cJSON_IsString( theme ) || NULL == theme->valuestring )
+    if( cJSON_IsString( theme ) && NULL != theme->valuestring )
     {
-        return;
-    }
-
-    if( 0 == strcasecmp( theme->valuestring, "discipline" ) )
-    {
-        config.theme = RFSCOUT_THEME_NIGHT;
-        config.audio_policy = RFSCOUT_AUDIO_POLICY_QUIET;
-        legacy_audio_gains_for_theme( RFSCOUT_THEME_NIGHT,
-                                      &config.audio_interaction_gain_percent,
-                                      &config.audio_notification_gain_percent );
-        config_upgrade_pending = true;
-        return;
-    }
-
-    rfscout_theme_id_t parsed_theme;
-    if( !ui_theme_from_config_name( theme->valuestring, &parsed_theme ) )
-    {
-        return;
-    }
-    config.theme = parsed_theme;
-
-    if( config_source_version < 3 )
-    {
-        config.audio_policy = RFSCOUT_AUDIO_POLICY_NORMAL;
-        legacy_audio_gains_for_theme( parsed_theme,
-                                      &config.audio_interaction_gain_percent,
-                                      &config.audio_notification_gain_percent );
+        rfscout_theme_id_t parsed_theme;
+        if( ui_theme_from_config_name( theme->valuestring, &parsed_theme ) )
+        {
+            config.theme = parsed_theme;
+        }
+        else
+        {
+            ESP_LOGW( TAG, "invalid theme '%s'; using default", theme->valuestring );
+        }
     }
 }
 
@@ -632,7 +581,7 @@ static void load_recorder( const cJSON *a_root )
     }
     const cJSON *input_gain = cJSON_GetObjectItemCaseSensitive( recorder, "input_gain_db" );
     if( cJSON_IsNumber( input_gain ) && ( input_gain->valueint >= 0 ) &&
-        ( input_gain->valueint <= 24 ) && ( 0 == ( input_gain->valueint % 3 ) ) )
+        ( input_gain->valueint <= 48 ) && ( 0 == ( input_gain->valueint % 3 ) ) )
     {
         config.recorder_input_gain_db = (uint8_t)input_gain->valueint;
     }
@@ -787,8 +736,6 @@ static esp_err_t load_file( void )
         discard_invalid_config();
         return ESP_ERR_INVALID_VERSION;
     }
-    config_source_version = version->valueint;
-
     load_display( root );
     load_audio_policy( root );
     load_power( root );
@@ -1595,8 +1542,7 @@ esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a
     if( ESP_OK == result )
     {
         config_dirty = false;
-        config_source_version = (int)RFSCOUT_CONFIG_SCHEMA_VERSION;
-    }
+        }
     return result;
 }
 
