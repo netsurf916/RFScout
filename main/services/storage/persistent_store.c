@@ -15,7 +15,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-#include "mbedtls/sha256.h"
+#include "psa/crypto.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -112,8 +112,15 @@ static esp_err_t hash_string( const char *a_value, char a_hex[ PERSISTENT_HASH_H
         return ESP_ERR_INVALID_SIZE;
     }
 
-    unsigned char digest[ PERSISTENT_HASH_BYTES ];
-    if( 0 != mbedtls_sha256_ret( (const unsigned char *)a_value, length, digest, 0 ) )
+    uint8_t digest[ PERSISTENT_HASH_BYTES ];
+    size_t digest_length = 0U;
+    const psa_status_t status = psa_hash_compute( PSA_ALG_SHA_256,
+                                                  (const uint8_t *)a_value,
+                                                  length,
+                                                  digest,
+                                                  sizeof( digest ),
+                                                  &digest_length );
+    if( PSA_SUCCESS != status || sizeof( digest ) != digest_length )
     {
         return ESP_FAIL;
     }
@@ -380,6 +387,10 @@ esp_err_t persistent_store_init( void )
     if( NULL == store_mutex )
     {
         return ESP_ERR_NO_MEM;
+    }
+    if( PSA_SUCCESS != psa_crypto_init() )
+    {
+        return ESP_FAIL;
     }
 
     const esp_vfs_littlefs_conf_t config = {
