@@ -151,7 +151,7 @@ static bool power_action_from_config_name( const char *a_name, power_action_t *a
     }
     for( int action = (int)POWER_ACTION_NONE; action < (int)POWER_ACTION_COUNT; ++action )
     {
-        if( 0 == strcasecmp( a_name, power_action_config_name( (power_action_t)action ) )
+        if( 0 == strcasecmp( a_name, power_action_config_name( (power_action_t)action ) ) )
         {
             *a_action = (power_action_t)action;
             return true;
@@ -815,9 +815,8 @@ static bool notification_character_overrides_default( rfscout_app_id_t a_app )
     {
         const rfscout_notification_descriptor_t *descriptor =
             notification_descriptor_for_app( a_app, item );
-        if( NULL != descriptor &&
-            config.notification_characters[ descriptor->type ] !=
-                alert_notification_default_character( descriptor->type ) )
+        if( NULL != descriptor && config.notification_characters[ descriptor->type ] !=
+                                      alert_notification_default_character( descriptor->type ) )
         {
             return true;
         }
@@ -902,7 +901,8 @@ static cJSON *build_app_override_record( rfscout_app_id_t a_app )
             }
             if( config.ble_timeout_seconds != RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS )
             {
-                cJSON_AddNumberToObject( retention, "bluetooth_seconds", config.ble_timeout_seconds );
+                cJSON_AddNumberToObject(
+                    retention, "bluetooth_seconds", config.ble_timeout_seconds );
             }
         }
         if( RFSCOUT_SURVEILLANCE_SENSITIVITY_HIGH != config.surveillance_sensitivity )
@@ -1275,7 +1275,7 @@ esp_err_t device_config_init( void )
 
         if( legacy_config_loaded || app_config_rewrite_needed || !canonical )
         {
-            const esp_err_t save_result = device_config_save();
+            const esp_err_t save_result = device_config_save( false, 0, NULL );
             if( ESP_OK != save_result )
             {
                 config_dirty = true;
@@ -1299,7 +1299,7 @@ esp_err_t device_config_init( void )
                   "internal configuration invalid; replacing with defaults: %s",
                   esp_err_to_name( result ) );
     }
-    const esp_err_t save_result = device_config_save();
+    const esp_err_t save_result = device_config_save( false, 0, NULL );
     if( ESP_OK == save_result )
     {
         rfscout_event_emit( RFSCOUT_EVENT_CONFIG_DEFAULTED,
@@ -1809,8 +1809,12 @@ const device_timezone_t *device_config_timezone( void )
     return NULL;
 }
 
-esp_err_t device_config_save( void )
+esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a_time_source )
 {
+    (void)a_update_time;
+    (void)a_epoch;
+    (void)a_time_source;
+
     if( !persistent_store_is_available() )
     {
         return ESP_ERR_INVALID_STATE;
@@ -1853,5 +1857,5 @@ esp_err_t device_config_save( void )
 
 esp_err_t device_config_save_if_dirty( void )
 {
-    return config_dirty ? device_config_save() : ESP_OK;
+    return config_dirty ? device_config_save( false, 0, NULL ) : ESP_OK;
 }
