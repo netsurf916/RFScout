@@ -405,6 +405,7 @@ static rfscout_app_runtime_result_t recorder_runtime( const rfscout_app_runtime_
 const rfscout_app_descriptor_t rfscout_recorder_app = {
     .id = RFSCOUT_APP_AUDIO,
     .name = "Recorder",
+    .persistence_key = "audio",
     .probe_policy = RFSCOUT_APP_PROBE_HOTPLUG,
     .probe = probe_recorder,
     .requires_activation = false,

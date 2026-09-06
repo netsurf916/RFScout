@@ -147,7 +147,7 @@ The main screen should remain an actively updated analytical projection. Deeper 
 - [ ] Rename user-facing WiFi / BT to WiFi / BLE across UI and production documentation.
 - [x] Move the normalized retained observation collection to growable app-owned PSRAM. Implemented by PR #68.
 - [x] Remove the fixed 1000-item retained-store and UI-mirror limit. Implemented by PR #68.
-- [ ] Add generic persistent record/database support for apps that need browsable history beyond active observation lifetime, rather than recreating a surveillance-specific live store.
+- [x] Add a generic internal persistent-record service with atomic system-owned records and descriptor-confined app namespaces; migrate device/app configuration onto that ownership model and remove SD configuration authority. Implemented by PR #77.
 - [ ] Add Instant / Timed / Never Wi-Fi and BLE retention.
 - [x] Keep surveillance classification on the canonical active observation record, sharing normal device expiry and re-arm semantics without accumulated confidence or a parallel active-surveillance list. Implemented by PR #73.
 - [ ] Add active/stale UI semantics for selected objects.

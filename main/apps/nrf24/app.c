@@ -385,6 +385,7 @@ static rfscout_app_runtime_result_t nrf24_runtime( const rfscout_app_runtime_eve
 const rfscout_app_descriptor_t rfscout_nrf24_app = {
     .id = RFSCOUT_APP_NRF24,
     .name = "nRF24",
+    .persistence_key = "nrf24",
     .probe_policy = RFSCOUT_APP_PROBE_STARTUP,
     .probe = nrf24_init,
     .requires_activation = true,

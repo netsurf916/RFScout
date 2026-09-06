@@ -105,11 +105,11 @@ The device-wide Normal/Quiet policy is independent of visual theme. Speaker outp
 
 ## Configuration, storage, and logging
 
-Persistent preferences use the authoritative internal `/internal/rfscout.json` schema version **3**. Loading begins with defaults and overlays recognized valid fields from a current-schema internal document. A missing, corrupt, or incompatible internal configuration is replaced with current compiled defaults. Internal saves write a complete temporary file and atomically rename it over the live file; persistent internal backup/quarantine copies are not retained. See [CONFIGURATION.md](CONFIGURATION.md).
+Persistent preferences use firmware-managed internal records. Device-wide policy lives under `system/config`; application preferences live under descriptor-bound `app/<persistence_key>/config` ownership. SD configuration import/example files are no longer part of the runtime contract.
 
-An SD card is no longer required to retain device settings. `/sdcard/rfscout.json` is an explicit one-shot import; a valid current-schema import is committed internally before deletion, while an invalid import is preserved as `/sdcard/rfscout.json.bad`. `/sdcard/rfscout-example.json` is synchronized from the authoritative internal configuration at startup when SD is available and is rewritten only when its contents differ.
+An SD card is not required to retain device or app settings and is not consulted for configuration. Future settings transfer should use an explicit firmware-managed import/export operation rather than exposing internal record files.
 
-System Events/dmesg records internal-storage mount/recovery status and accepted configuration import/default recovery separately from SD-card mount state. RFScout can operate without SD for configuration, radio/sensor use, and Audio Spectrum. SD remains the home for Recorder files under `/sdcard/audio/` and asynchronous rotating logs. The conservative board-tested baseline is a FAT-compatible SanDisk card of 32 GB or less. Logs rotate through 100 files of up to 4 MiB each while preserving a free-space reserve.
+System Events/dmesg records internal-storage mount/recovery status and configuration-default recovery separately from SD-card mount state. RFScout can operate without SD for configuration, radio/sensor use, and Audio Spectrum. SD remains the home for Recorder files under `/sdcard/audio/` and asynchronous rotating logs. The conservative board-tested baseline is a FAT-compatible SanDisk card of 32 GB or less. Logs rotate through 100 files of up to 4 MiB each while preserving a free-space reserve.
 
 ## Hardware and memory boundaries
 
@@ -117,7 +117,7 @@ LCD/microSD/CC1101/nRF24 share SPI resources; power telemetry/external sensors s
 
 Usable external **PSRAM is required**. App-scoped memory/session infrastructure is implemented: growable app-owned state can consume PSRAM during the session and is reclaimed after platform services prove they no longer reference it.
 
-The 16 MiB internal flash is split into an 8 MiB factory application partition and approximately 8 MiB of LittleFS internal persistence. Configuration currently uses only one durable internal file plus its short-lived write temporary; the remaining capacity is reserved for future system-owned persistent records rather than direct app filesystem ownership.
+The current 16 MiB mainline flash layout uses an 8 MiB factory application partition and approximately 8 MiB of LittleFS internal persistence. Persistent state is stored as bounded owned records rather than direct app filesystem content; planned A/B OTA partitioning will reduce that durable budget, so consumers must remain size-independent.
 
 ## Not currently implemented
 

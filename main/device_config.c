@@ -10,7 +10,7 @@
 #include "event.h"
 
 #include "app_audio_policy.h"
-#include "config_store.h"
+#include "persistent_store.h"
 #include "notification.h"
 #include "ui_theme.h"
 
@@ -25,7 +25,8 @@
 #include <strings.h>
 #include <unistd.h>
 
-#define CONFIG_TEMP_PATH RFSCOUT_INTERNAL_CONFIG_PATH ".tmp"
+#define LEGACY_CONFIG_PATH RFSCOUT_INTERNAL_ROOT "/rfscout.json"
+#define APP_CONFIG_RECORD_VERSION 1
 #define CONFIG_BRIGHTNESS_DEFAULT 70U
 #define CONFIG_DISPLAY_DIM_TIMEOUT_DEFAULT_SECONDS 120U
 #define CONFIG_DISPLAY_OFF_TIMEOUT_DEFAULT_SECONDS 300U
@@ -43,6 +44,8 @@ static bool saved_time_valid;
 static int64_t saved_time_epoch;
 static char saved_time_source[ 24 ];
 static bool config_dirty;
+static bool legacy_config_loaded;
+static bool app_config_rewrite_needed;
 
 static const char *app_config_name( rfscout_app_id_t a_app )
 {
@@ -736,44 +739,258 @@ static bool timezone_selected_valid( void )
     return false;
 }
 
-/** @brief Discard an internal configuration document that cannot safely be loaded. */
+/** @brief Discard configuration state that cannot safely be loaded. */
 static void discard_invalid_config( void )
 {
-    (void)unlink( RFSCOUT_INTERNAL_CONFIG_PATH );
+    if( legacy_config_loaded )
+    {
+        (void)unlink( LEGACY_CONFIG_PATH );
+        legacy_config_loaded = false;
+        return;
+    }
+    (void)system_store_remove( "config" );
+}
+
+static esp_err_t
+read_store_text( bool a_system, rfscout_app_id_t a_app, const char *a_key, char **a_text )
+{
+    if( NULL == a_text )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *a_text = NULL;
+    size_t length = 0U;
+    esp_err_t result = a_system ? system_store_read( a_key, NULL, 0U, &length )
+                                : persistent_store_app_read( a_app, a_key, NULL, 0U, &length );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+    char *text = calloc( length + 1U, 1U );
+    if( NULL == text )
+    {
+        return ESP_ERR_NO_MEM;
+    }
+    result = a_system ? system_store_read( a_key, text, length, &length )
+                      : persistent_store_app_read( a_app, a_key, text, length, &length );
+    if( ESP_OK != result )
+    {
+        free( text );
+        return result;
+    }
+    text[ length ] = '\0';
+    *a_text = text;
+    return ESP_OK;
+}
+
+static void merge_app_config_records( cJSON *a_root )
+{
+    cJSON *apps = cJSON_GetObjectItemCaseSensitive( a_root, "apps" );
+    if( !cJSON_IsObject( apps ) )
+    {
+        apps = cJSON_AddObjectToObject( a_root, "apps" );
+    }
+    for( size_t index = 0U; index < RFSCOUT_APP_COUNT; ++index )
+    {
+        const rfscout_app_id_t app = (rfscout_app_id_t)index;
+        char *text = NULL;
+        if( ESP_OK != read_store_text( false, app, "config", &text ) )
+        {
+            continue;
+        }
+        cJSON *fragment = cJSON_Parse( text );
+        free( text );
+        if( !cJSON_IsObject( fragment ) )
+        {
+            cJSON_Delete( fragment );
+            app_config_rewrite_needed = true;
+            continue;
+        }
+        const cJSON *record_version = cJSON_GetObjectItemCaseSensitive( fragment, "version" );
+        if( !cJSON_IsNumber( record_version ) ||
+            record_version->valueint != APP_CONFIG_RECORD_VERSION )
+        {
+            cJSON_Delete( fragment );
+            app_config_rewrite_needed = true;
+            continue;
+        }
+
+        cJSON *app_item = cJSON_GetObjectItemCaseSensitive( apps, app_config_name( app ) );
+        const bool enabled =
+            cJSON_IsBool( app_item )
+                ? cJSON_IsTrue( app_item )
+                : ( cJSON_IsObject( app_item )
+                        ? json_bool( app_item, "enabled", config.apps_enabled[ index ] )
+                        : config.apps_enabled[ index ] );
+        if( !cJSON_IsObject( app_item ) )
+        {
+            cJSON *replacement = cJSON_CreateObject();
+            cJSON_AddBoolToObject( replacement, "enabled", enabled );
+            if( NULL != app_item )
+            {
+                cJSON_ReplaceItemInObjectCaseSensitive( apps, app_config_name( app ), replacement );
+            }
+            else
+            {
+                cJSON_AddItemToObject( apps, app_config_name( app ), replacement );
+            }
+            app_item = replacement;
+        }
+
+        cJSON *child = NULL;
+        cJSON_ArrayForEach( child, fragment )
+        {
+            if( NULL == child->string || 0 == strcmp( child->string, "version" ) )
+            {
+                continue;
+            }
+            if( RFSCOUT_APP_AUDIO == app && 0 == strcmp( child->string, "recorder" ) )
+            {
+                cJSON_DeleteItemFromObjectCaseSensitive( a_root, "recorder" );
+                cJSON_AddItemToObject( a_root, "recorder", cJSON_Duplicate( child, true ) );
+                continue;
+            }
+            cJSON_DeleteItemFromObjectCaseSensitive( app_item, child->string );
+            cJSON_AddItemToObject( app_item, child->string, cJSON_Duplicate( child, true ) );
+        }
+        cJSON_Delete( fragment );
+    }
+}
+
+static esp_err_t persist_app_config_records( cJSON *a_root )
+{
+    cJSON *apps = cJSON_GetObjectItemCaseSensitive( a_root, "apps" );
+    if( !cJSON_IsObject( apps ) )
+    {
+        return ESP_OK;
+    }
+
+    for( size_t index = 0U; index < RFSCOUT_APP_COUNT; ++index )
+    {
+        const rfscout_app_id_t app = (rfscout_app_id_t)index;
+        cJSON *app_item = cJSON_GetObjectItemCaseSensitive( apps, app_config_name( app ) );
+        const bool enabled =
+            cJSON_IsBool( app_item )
+                ? cJSON_IsTrue( app_item )
+                : ( cJSON_IsObject( app_item )
+                        ? json_bool( app_item, "enabled", config.apps_enabled[ index ] )
+                        : config.apps_enabled[ index ] );
+
+        cJSON *fragment = cJSON_CreateObject();
+        if( NULL == fragment )
+        {
+            return ESP_ERR_NO_MEM;
+        }
+        cJSON_AddNumberToObject( fragment, "version", APP_CONFIG_RECORD_VERSION );
+        if( cJSON_IsObject( app_item ) )
+        {
+            cJSON *child = NULL;
+            cJSON_ArrayForEach( child, app_item )
+            {
+                if( NULL == child->string || 0 == strcmp( child->string, "enabled" ) )
+                {
+                    continue;
+                }
+                cJSON_AddItemToObject( fragment, child->string, cJSON_Duplicate( child, true ) );
+            }
+        }
+        if( RFSCOUT_APP_AUDIO == app )
+        {
+            cJSON *recorder = cJSON_GetObjectItemCaseSensitive( a_root, "recorder" );
+            if( cJSON_IsObject( recorder ) )
+            {
+                cJSON_AddItemToObject( fragment, "recorder", cJSON_Duplicate( recorder, true ) );
+            }
+        }
+
+        if( 1 == cJSON_GetArraySize( fragment ) )
+        {
+            cJSON_Delete( fragment );
+            const esp_err_t remove_result = persistent_store_app_remove( app, "config" );
+            if( ESP_OK != remove_result && ESP_ERR_NOT_FOUND != remove_result )
+            {
+                return remove_result;
+            }
+            if( NULL != app_item )
+            {
+                cJSON_ReplaceItemInObjectCaseSensitive(
+                    apps, app_config_name( app ), cJSON_CreateBool( enabled ) );
+            }
+            else
+            {
+                cJSON_AddBoolToObject( apps, app_config_name( app ), enabled );
+            }
+            continue;
+        }
+
+        char *text = cJSON_PrintUnformatted( fragment );
+        cJSON_Delete( fragment );
+        if( NULL == text )
+        {
+            return ESP_ERR_NO_MEM;
+        }
+        const esp_err_t result = persistent_store_app_write( app, "config", text, strlen( text ) );
+        free( text );
+        if( ESP_OK != result )
+        {
+            return result;
+        }
+
+        if( NULL != app_item )
+        {
+            cJSON_ReplaceItemInObjectCaseSensitive(
+                apps, app_config_name( app ), cJSON_CreateBool( enabled ) );
+        }
+        else
+        {
+            cJSON_AddBoolToObject( apps, app_config_name( app ), enabled );
+        }
+    }
+    cJSON_DeleteItemFromObjectCaseSensitive( a_root, "recorder" );
+    return ESP_OK;
 }
 
 /** @brief Parse and apply the authoritative configuration file from internal flash. */
 static esp_err_t load_file( void )
 {
-    FILE *file = fopen( RFSCOUT_INTERNAL_CONFIG_PATH, "rb" );
-    if( NULL == file )
+    char *buffer = NULL;
+    esp_err_t result = read_store_text( true, RFSCOUT_APP_DEVICE, "config", &buffer );
+    if( ESP_ERR_NOT_FOUND == result )
     {
-        return ( ENOENT == errno ) ? ESP_ERR_NOT_FOUND : ESP_FAIL;
+        FILE *legacy = fopen( LEGACY_CONFIG_PATH, "rb" );
+        if( NULL == legacy )
+        {
+            return ESP_ERR_NOT_FOUND;
+        }
+        if( 0 != fseek( legacy, 0, SEEK_END ) )
+        {
+            fclose( legacy );
+            return ESP_FAIL;
+        }
+        const long legacy_length = ftell( legacy );
+        if( legacy_length <= 0L || legacy_length > 65536L || 0 != fseek( legacy, 0, SEEK_SET ) )
+        {
+            fclose( legacy );
+            return ESP_ERR_INVALID_SIZE;
+        }
+        buffer = calloc( (size_t)legacy_length + 1U, 1U );
+        if( NULL == buffer )
+        {
+            fclose( legacy );
+            return ESP_ERR_NO_MEM;
+        }
+        if( (size_t)legacy_length != fread( buffer, 1U, (size_t)legacy_length, legacy ) )
+        {
+            fclose( legacy );
+            free( buffer );
+            return ESP_FAIL;
+        }
+        fclose( legacy );
+        legacy_config_loaded = true;
     }
-    if( 0 != fseek( file, 0, SEEK_END ) )
+    else if( ESP_OK != result )
     {
-        fclose( file );
-        return ESP_FAIL;
-    }
-    const long length = ftell( file );
-    if( ( length <= 0L ) || ( length > 16384L ) || ( 0 != fseek( file, 0, SEEK_SET ) ) )
-    {
-        fclose( file );
-        return ESP_ERR_INVALID_SIZE;
-    }
-
-    char *buffer = calloc( (size_t)length + 1U, 1U );
-    if( NULL == buffer )
-    {
-        fclose( file );
-        return ESP_ERR_NO_MEM;
-    }
-    const size_t read_count = fread( buffer, 1U, (size_t)length, file );
-    fclose( file );
-    if( read_count != (size_t)length )
-    {
-        free( buffer );
-        return ESP_FAIL;
+        return result;
     }
 
     cJSON *root = cJSON_Parse( buffer );
@@ -783,6 +1000,8 @@ static esp_err_t load_file( void )
         discard_invalid_config();
         return ESP_ERR_INVALID_RESPONSE;
     }
+
+    merge_app_config_records( root );
 
     const cJSON *version = cJSON_GetObjectItemCaseSensitive( root, "version" );
     if( !cJSON_IsNumber( version ) || version->valueint != (int)RFSCOUT_CONFIG_SCHEMA_VERSION )
@@ -946,7 +1165,7 @@ static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_tim
     return root;
 }
 
-/** @brief Check whether the stored document already matches RFScout's canonical serialization. */
+/** @brief Check whether the system configuration record matches canonical serialization. */
 static esp_err_t config_file_is_canonical( bool *a_canonical )
 {
     if( NULL == a_canonical )
@@ -954,60 +1173,54 @@ static esp_err_t config_file_is_canonical( bool *a_canonical )
         return ESP_ERR_INVALID_ARG;
     }
     *a_canonical = false;
-
     cJSON *root = build_json( false, 0, NULL );
     if( NULL == root )
     {
         return ESP_ERR_NO_MEM;
     }
+    cJSON *apps = cJSON_GetObjectItemCaseSensitive( root, "apps" );
+    if( cJSON_IsObject( apps ) )
+    {
+        for( size_t index = 0U; index < RFSCOUT_APP_COUNT; ++index )
+        {
+            const rfscout_app_id_t app = (rfscout_app_id_t)index;
+            cJSON *app_item = cJSON_GetObjectItemCaseSensitive( apps, app_config_name( app ) );
+            const bool enabled =
+                cJSON_IsBool( app_item )
+                    ? cJSON_IsTrue( app_item )
+                    : ( cJSON_IsObject( app_item )
+                            ? json_bool( app_item, "enabled", config.apps_enabled[ index ] )
+                            : config.apps_enabled[ index ] );
+            if( NULL != app_item )
+            {
+                cJSON_ReplaceItemInObjectCaseSensitive(
+                    apps, app_config_name( app ), cJSON_CreateBool( enabled ) );
+            }
+            else
+            {
+                cJSON_AddBoolToObject( apps, app_config_name( app ), enabled );
+            }
+        }
+    }
+    cJSON_DeleteItemFromObjectCaseSensitive( root, "recorder" );
     char *text = cJSON_Print( root );
     cJSON_Delete( root );
     if( NULL == text )
     {
         return ESP_ERR_NO_MEM;
     }
-
-    FILE *file = fopen( RFSCOUT_INTERNAL_CONFIG_PATH, "rb" );
-    if( NULL == file )
+    char *stored = NULL;
+    const esp_err_t result = read_store_text( true, RFSCOUT_APP_DEVICE, "config", &stored );
+    if( ESP_OK != result )
     {
         free( text );
-        return ( ENOENT == errno ) ? ESP_ERR_NOT_FOUND : ESP_FAIL;
+        return result;
     }
-
     const size_t text_length = strlen( text );
-    bool matches = true;
-    for( size_t offset = 0U; offset < text_length; )
-    {
-        char buffer[ 256 ];
-        const size_t remaining = text_length - offset;
-        const size_t wanted = remaining < sizeof( buffer ) ? remaining : sizeof( buffer );
-        const size_t count = fread( buffer, 1U, wanted, file );
-        if( count != wanted || 0 != memcmp( buffer, text + offset, wanted ) )
-        {
-            matches = false;
-            break;
-        }
-        offset += wanted;
-    }
-    if( matches )
-    {
-        matches = ( '\n' == fgetc( file ) ) && ( EOF == fgetc( file ) ) && !ferror( file );
-    }
-
-    fclose( file );
+    const size_t stored_length = strlen( stored );
+    *a_canonical = text_length == stored_length && 0 == memcmp( text, stored, text_length );
+    free( stored );
     free( text );
-    *a_canonical = matches;
-    return ESP_OK;
-}
-
-/** @brief Atomically replace the sole authoritative internal configuration. */
-static esp_err_t replace_config_file( void )
-{
-    if( 0 != rename( CONFIG_TEMP_PATH, RFSCOUT_INTERNAL_CONFIG_PATH ) )
-    {
-        (void)unlink( CONFIG_TEMP_PATH );
-        return ESP_FAIL;
-    }
     return ESP_OK;
 }
 
@@ -1015,18 +1228,18 @@ esp_err_t device_config_init( void )
 {
     set_defaults();
 
-    const esp_err_t store_result = config_store_init();
+    const esp_err_t store_result = persistent_store_init();
     if( ESP_OK != store_result )
     {
         return store_result;
     }
 
-    (void)unlink( CONFIG_TEMP_PATH );
     const esp_err_t result = load_file();
     if( ESP_OK == result )
     {
         bool canonical = false;
-        const esp_err_t canonical_result = config_file_is_canonical( &canonical );
+        const esp_err_t canonical_result =
+            legacy_config_loaded ? ESP_OK : config_file_is_canonical( &canonical );
         if( ESP_OK != canonical_result )
         {
             ESP_LOGW( TAG,
@@ -1034,8 +1247,7 @@ esp_err_t device_config_init( void )
                       esp_err_to_name( canonical_result ) );
         }
 
-        bool canonical_ready = canonical;
-        if( !canonical )
+        if( legacy_config_loaded || app_config_rewrite_needed || !canonical )
         {
             const esp_err_t save_result = device_config_save( false, 0, NULL );
             if( ESP_OK != save_result )
@@ -1045,40 +1257,13 @@ esp_err_t device_config_init( void )
                           "configuration canonical save failed: %s",
                           esp_err_to_name( save_result ) );
             }
-            else
-            {
-                canonical_ready = true;
-            }
         }
         else
         {
             config_dirty = false;
         }
 
-        if( canonical_ready && config_store_import_pending() )
-        {
-            const esp_err_t finalize_result = config_store_finalize_import();
-            if( ESP_OK == finalize_result )
-            {
-                rfscout_event_emit( RFSCOUT_EVENT_CONFIG_IMPORTED,
-                                    RFSCOUT_EVENT_SOURCE_SYSTEM,
-                                    (int32_t)RFSCOUT_CONFIG_SCHEMA_VERSION );
-            }
-            else
-            {
-                ESP_LOGW( TAG,
-                          "configuration import finalization failed: %s",
-                          esp_err_to_name( finalize_result ) );
-            }
-        }
-
-        const esp_err_t sync_result = config_store_sync_example();
-        if( ESP_OK != sync_result )
-        {
-            ESP_LOGW(
-                TAG, "configuration example sync failed: %s", esp_err_to_name( sync_result ) );
-        }
-        ESP_LOGI( TAG, "loaded %s", RFSCOUT_INTERNAL_CONFIG_PATH );
+        ESP_LOGI( TAG, "loaded persistent configuration" );
         return ESP_OK;
     }
 
@@ -1094,12 +1279,6 @@ esp_err_t device_config_init( void )
         rfscout_event_emit( RFSCOUT_EVENT_CONFIG_DEFAULTED,
                             RFSCOUT_EVENT_SOURCE_SYSTEM,
                             (int32_t)RFSCOUT_CONFIG_SCHEMA_VERSION );
-        const esp_err_t sync_result = config_store_sync_example();
-        if( ESP_OK != sync_result )
-        {
-            ESP_LOGW(
-                TAG, "configuration example sync failed: %s", esp_err_to_name( sync_result ) );
-        }
     }
     return save_result;
 }
@@ -1623,7 +1802,7 @@ bool device_config_saved_time( int64_t *a_epoch, const char **a_source )
 
 esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a_time_source )
 {
-    if( !config_store_is_available() )
+    if( !persistent_store_is_available() )
     {
         return ESP_ERR_INVALID_STATE;
     }
@@ -1633,6 +1812,12 @@ esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a
     {
         return ESP_ERR_NO_MEM;
     }
+    const esp_err_t app_result = persist_app_config_records( root );
+    if( ESP_OK != app_result )
+    {
+        cJSON_Delete( root );
+        return app_result;
+    }
     char *text = cJSON_Print( root );
     cJSON_Delete( root );
     if( NULL == text )
@@ -1640,32 +1825,19 @@ esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a
         return ESP_ERR_NO_MEM;
     }
 
-    FILE *file = fopen( CONFIG_TEMP_PATH, "wb" );
-    if( NULL == file )
-    {
-        free( text );
-        return ESP_FAIL;
-    }
-    const size_t length = strlen( text );
-    bool ok = ( length == fwrite( text, 1U, length, file ) );
-    ok = ok && ( EOF != fputc( '\n', file ) );
-    ok = ok && ( 0 == fflush( file ) );
-    ok = ok && ( 0 == fsync( fileno( file ) ) );
-    if( 0 != fclose( file ) )
-    {
-        ok = false;
-    }
+    const esp_err_t result = system_store_write( "config", text, strlen( text ) );
     free( text );
-
-    if( !ok )
-    {
-        (void)unlink( CONFIG_TEMP_PATH );
-        return ESP_FAIL;
-    }
-    const esp_err_t result = replace_config_file();
     if( ESP_OK == result )
     {
         config_dirty = false;
+        if( legacy_config_loaded )
+        {
+            (void)unlink( LEGACY_CONFIG_PATH );
+            (void)unlink( LEGACY_CONFIG_PATH ".tmp" );
+            (void)unlink( LEGACY_CONFIG_PATH ".bak" );
+            (void)unlink( LEGACY_CONFIG_PATH ".bad" );
+            legacy_config_loaded = false;
+        }
     }
     return result;
 }

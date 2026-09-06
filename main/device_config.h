@@ -1,6 +1,6 @@
 /**
     device_config.h : RFScout persistent device configuration
-    Description: Defines compiled defaults, internal JSON preferences, application enablement, and notifications.
+    Description: Defines compiled defaults and firmware-managed system/application preferences.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -21,7 +21,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define RFSCOUT_CONFIG_PATH "/internal/rfscout.json"
 #define RFSCOUT_CONFIG_SCHEMA_VERSION 3U
 #define RFSCOUT_TIMEZONE_MAX 8U
 #define RFSCOUT_TIMEZONE_NAME_MAX 32U

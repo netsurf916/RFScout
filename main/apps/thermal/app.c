@@ -73,6 +73,7 @@ static rfscout_app_runtime_result_t thermal_runtime( const rfscout_app_runtime_e
 const rfscout_app_descriptor_t rfscout_thermal_app = {
     .id = RFSCOUT_APP_THERMAL,
     .name = "Thermal",
+    .persistence_key = "thermal",
     .probe_policy = RFSCOUT_APP_PROBE_HOTPLUG,
     .probe = probe_thermal,
     .requires_activation = true,

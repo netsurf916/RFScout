@@ -95,6 +95,7 @@ static rfscout_app_runtime_result_t spectrum_runtime( const rfscout_app_runtime_
 const rfscout_app_descriptor_t rfscout_audio_spectrum_app = {
     .id = RFSCOUT_APP_AUDIO_SPECTRUM,
     .name = "Audio Spectrum",
+    .persistence_key = "audio_spectrum",
     .probe_policy = RFSCOUT_APP_PROBE_STARTUP,
     .probe = probe_audio_spectrum,
     .requires_activation = true,

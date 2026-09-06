@@ -85,6 +85,7 @@ static rfscout_app_runtime_result_t home_runtime( const rfscout_app_runtime_even
 const rfscout_app_descriptor_t rfscout_home_app = {
     .id = RFSCOUT_APP_DEVICE,
     .name = "Home",
+    .persistence_key = "device",
     .probe_policy = RFSCOUT_APP_PROBE_NONE,
     .probe = NULL,
     .requires_activation = false,

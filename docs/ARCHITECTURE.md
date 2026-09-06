@@ -16,7 +16,7 @@ main/
   app_*.c               core app discovery/navigation/lifecycle/session framework
 ```
 
-Each compiled-in application exports one `rfscout_app_descriptor_t`. The descriptor owns identity/name, availability probing, delayed activation, service dependencies, and runtime handling. `app_framework` discovers descriptors through the compiled registry and retains probed capability state as unknown, available, or unavailable. Probe error detail remains diagnostic logging rather than application state.
+Each compiled-in application exports one `rfscout_app_descriptor_t`. The descriptor owns identity/name, a stable persistence key, availability probing, delayed activation, service dependencies, and runtime handling. `app_framework` discovers descriptors through the compiled registry and retains probed capability state as unknown, available, or unavailable. Probe error detail remains diagnostic logging rather than application state.
 
 `app_manager` owns only cross-application policy: active-app selection, availability filtering, settle/activation timing, global navigation, and transactional lifecycle coordination. App modules own their menu/subview state, rendering decisions, app-local input interpretation, normal polling, and dependency-loss behavior. Hardware-specific stop/drain/recovery remains behind platform services and resource sessions.
 
@@ -162,13 +162,13 @@ Deep sleep stores only a small RTC-backed session envelope (currently active app
 
 RFScout separates device-owned durable state from removable bulk/interchange storage.
 
-The internal `storage` LittleFS partition is mounted at `/internal`. `/internal/rfscout.json` is the sole durable authoritative configuration file. Configuration updates are written completely to `/internal/rfscout.json.tmp`, flushed, and then atomically renamed over the live file. A stale temporary is discarded on boot; RFScout does not retain internal backup, quarantine, or history copies. Missing, corrupt, or incompatible internal configuration is replaced with compiled defaults.
+The internal `storage` LittleFS partition is owned by the persistent-record service. Core/system callers use privileged `system/*` records while applications are confined to namespaces derived from their compiled descriptor `persistence_key`. Records are opaque to the storage layer and are atomically replaced; callers own schema/version validation. Configuration is the first consumer, split between `system/config` and app-owned `config` records. SD remains removable/bulk storage and is not a configuration authority.
 
-SD remains the removable/bulk-storage service. `/sdcard/rfscout.json` is a one-shot configuration import: a valid current-schema document is committed to internal flash before the import is deleted, while an invalid import is preserved as `/sdcard/rfscout.json.bad`. `/sdcard/rfscout-example.json` is synchronized from the authoritative internal file at startup when SD is available and is rewritten only when its contents differ. Recorder WAV files remain under `/sdcard/audio/`, and rotating logs remain SD-only.
+SD remains the removable/bulk-storage service rather than a configuration authority. Recorder WAV files remain under `/sdcard/audio/`, and rotating logs remain SD-only. A future settings-transfer feature, if added, should be an explicit firmware-managed import/export operation rather than direct record-file editing.
 
-The 16 MiB target flash allocates 8 MiB to the factory application and approximately 8 MiB to internal LittleFS. Configuration currently consumes only the single live file plus its short-lived write temporary; the remaining capacity is intentionally available for a future system-owned persistent-record/database service rather than direct app filesystem ownership.
+The current 16 MiB mainline target allocates 8 MiB to the factory application and approximately 8 MiB to internal LittleFS. The persistent-record abstraction is size-independent because the OTA work plans to reduce the durable partition to roughly 4 MiB; consumers must remain bounded and must not infer partition capacity from the current board image.
 
-Internal-storage mount, recovery-format/mount-failure, configuration-default recovery, and successful SD configuration import are recorded in the volatile System Events/dmesg history as distinct semantic events. Startup discovery is retained without interactive notification.
+Internal-storage mount, recovery-format/mount-failure, and configuration-default recovery are recorded in the volatile System Events/dmesg history as distinct semantic events. Startup discovery is retained without interactive notification.
 
 The conservative board-tested SD baseline is a FAT-compatible SanDisk card of 32 GB or less. The current board exposes no dedicated card-detect GPIO, so availability is established by successful mount/probe. Logging rotates `rfscout-00.log` through `rfscout-99.log` at up to 4 MiB each and attempts to preserve at least 64 MiB free.
 
