@@ -156,13 +156,15 @@ The display service owns framebuffer presentation plus runtime provider metadata
 
 Protective policy can react to sustained low battery or high ESP32 internal temperature. Low-battery action requires five consecutive fresh fuel-gauge reads plus fresh evidence that external power is absent; it rearms after charge rises three percentage points above threshold. High-temperature action requires five consecutive samples and rearms 5 C below threshold. High-temperature Power off falls back to Sleep when external-power absence cannot be freshly established. Manual/protective transitions share the global transition overlay and semantic execution path.
 
-Deep sleep stores only a small RTC-backed session envelope (currently active app and input-lock state). Menus, edit state, queued sounds, and active Recorder operations are not resumed. Dirty authoritative configuration is flushed before sleep.
+Deep sleep stores only a small RTC-backed session envelope (currently active app and input-lock state). Menus, edit state, queued sounds, and active Recorder operations are not resumed. Dirty authoritative configuration is flushed before sleep. Wall-clock epoch/source state is not checkpointed into configuration; the RTC-backed system clock remains the clock authority.
 
 ## Storage and persistence
 
 RFScout separates device-owned durable state from removable bulk/interchange storage.
 
-The internal `storage` LittleFS partition is owned by the persistent-record service. Core/system callers use privileged `system/*` records while applications are confined to namespaces derived from their compiled descriptor `persistence_key`. Records are opaque to the storage layer and are atomically replaced; callers own schema/version validation. Configuration is the first consumer, split between `system/config` and app-owned `config` records. SD remains removable/bulk storage and is not a configuration authority.
+The internal `storage` LittleFS partition is owned by the persistent-record service. Core/system callers use privileged `system/*` records while applications are confined to namespaces derived from their compiled descriptor `persistence_key`. Records are opaque to the storage layer, limited to 16 KiB, and atomically replaced; callers own schema/version validation. Interrupted-write temporaries are removed by one startup cleanup pass rather than a background housekeeping task.
+
+Configuration is the first consumer. Device-wide user policy lives in `system/config`; app enablement/startup remains system policy. App-owned `config` records are sparse overrides: absence means compiled defaults, only changed app values are serialized, and returning all app settings to defaults removes that record. Runtime wall-clock epoch/source state is deliberately outside persistent configuration; timezone and clock-presentation preferences remain durable.
 
 SD remains the removable/bulk-storage service rather than a configuration authority. Recorder WAV files remain under `/sdcard/audio/`, and rotating logs remain SD-only. A future settings-transfer feature, if added, should be an explicit firmware-managed import/export operation rather than direct record-file editing.
 
@@ -187,9 +189,10 @@ Application views render their content; the display service owns common top chro
 
 Release testing should rapidly rotate every enabled app and exercise low memory, callback races, worker-stop timeouts, dependency loss, Recorder recording/save transition vetoes, Audio Spectrum entry/exit, and failed-close rollback. Successful app exit must leave zero managed allocations for the exited app; an aborted transition must preserve its memory/state. Baseline free PSRAM and largest-free-block behavior should not decline monotonically across repeated cycles.
 
-Persistence validation should additionally cover boot without SD, valid/invalid SD config imports, internal corruption/default replacement, interrupted internal temp writes, example no-op synchronization when unchanged, and repeated configuration saves without accumulating internal sidecar files.
+Persistence validation should additionally cover boot without SD, missing/app-default records, sparse app overrides and return-to-default record removal, legacy internal configuration migration, internal corruption/default replacement, oversized-record rejection, interrupted temporary cleanup on reboot, and repeated saves without accumulating authoritative sidecar/history files. RTC testing should verify that arbitrary RTC values are used directly, manual/GPS/NTP adjustments are runtime-only, and timezone/12–24-hour preferences remain durable.
 
 Build/release workflow is documented in [RELEASING.md](RELEASING.md); board requirements in [BOARD_PORTING.md](BOARD_PORTING.md); user-visible behavior in [CAPABILITIES.md](CAPABILITIES.md).
+
 ## Surveillance classification
 
 Surveillance classification is evidence-driven rather than confidence-accumulating. The app-level High / Medium / Low sensitivity setting chooses the minimum evidence strength required for a single observation to establish a signature; High is the default. Repeated observations refresh active presence; they do not raise a numeric confidence score, and an active identity retains its first qualifying surveillance classification until expiry. The canonical observation store owns alert re-arm through ordinary device expiry, and the UI derives both general and surveillance projections from that same active collection rather than retaining a second surveillance list.
