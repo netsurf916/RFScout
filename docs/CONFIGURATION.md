@@ -8,19 +8,23 @@ RFScout starts from compiled defaults and overlays firmware-managed records from
 
 Durable state is addressed semantically rather than by filesystem paths:
 
-- `system/config` owns device-wide policy: display/power behavior, theme, time/timezone, logging, app enablement/startup choice, global audio policy/gains, and global alert policy.
-- `app/<persistence_key>/config` owns application-specific preferences. The compiled app descriptor supplies the stable persistence key; app-facing store calls derive ownership from the active app session and cannot select another app namespace.
+- `system/config` owns device-wide policy: display/power behavior, theme, timezone/clock presentation, logging, app enablement/startup choice, global audio policy/gains, and global alert policy.
+- `app/<persistence_key>/config` owns application-specific preference overrides. The compiled app descriptor supplies the stable persistence key; app-facing store calls derive ownership from the active app session and cannot select another app namespace.
 - other `system/*` or `app/<persistence_key>/*` records are reserved for durable state that is not configuration, such as future T-Deck Plus touch calibration or browsable app history.
 
-The persistent-store service owns LittleFS mounting, path construction, record availability, and atomic replacement. Each record is written to a temporary in the same ownership directory, flushed/synchronized, then renamed over its one live copy. Normal persistence does not retain backup/history/quarantine sidecars.
+The persistent-store service owns LittleFS mounting, path construction, record availability, and atomic replacement. Records are bounded to 16 KiB. Each record is written to a temporary in the same ownership directory, flushed/synchronized, then renamed over its one live copy. Interrupted-write `.tmp` files are ignored as authority and removed by one startup cleanup pass; no periodic cleanup task runs.
 
 The existing `device_config` API remains the in-memory compatibility surface so UI and policy callers do not need to know which record owns a setting. App enablement remains system policy even when that app owns its own preferences.
 
 ## Defaults, schemas, and migration
 
-System configuration currently uses schema version 3. App configuration records have their own record version and may evolve independently. Missing, malformed, incompatible, or invalid values retain compiled defaults; canonical saves rewrite the effective representation.
+System configuration currently uses schema version 3. App configuration records have their own record version and may evolve independently.
 
-The first firmware using this model may read the former `/internal/rfscout.json` once. A successful canonical save splits that legacy document into `system/config` plus app-owned `config` records and removes the old file and stale sidecars. SD-based configuration import is not restored.
+App records are **override-only**. If an app has no persisted user changes, it has no `config` record and uses its compiled defaults directly. Only values that differ from the compiled defaults are serialized. Returning all app preferences to their defaults removes the app record again. This lets later firmware change defaults without an old materialized-default record accidentally becoming a permanent user preference.
+
+Missing app records therefore mean defaults, while malformed, incompatible, or invalid records are ignored and rewritten/removed through canonical saves rather than trusted blindly.
+
+The first firmware using this model may read the former `/internal/rfscout.json` once. A successful canonical save splits that legacy document into `system/config` plus only the app-owned overrides that actually differ from current compiled defaults, then removes the old file and stale sidecars. SD-based configuration import is not restored.
 
 If settings portability is added later, it should be an explicit firmware-managed Export/Import operation that validates owned records rather than exposing the internal persistence representation as an editable interchange format.
 
@@ -56,7 +60,7 @@ Current app-owned configuration includes:
 
 - **WiFi/BLE:** source retention, surveillance sensitivity, app notification enablement/event choices, and alert-character mappings.
 - **Recorder/Audio:** playback volume and capture input gain, plus any Audio-owned notification preferences.
-- other apps own their notification/config fragments only when they have persisted app-specific settings.
+- other apps own their notification/config fragments only when they have persisted app-specific overrides.
 
 WiFi/BLE surveillance sensitivity is `high`, `medium`, or `low`, defaulting to `high`. High accepts curated name evidence, Medium requires curated prefix/OUI or stronger evidence, and Low requires distinctive company/service evidence or Remote ID. Sensitivity is an evidence threshold, not accumulated confidence.
 
@@ -68,13 +72,15 @@ Internal LittleFS is for bounded records that must survive app exit and reboot. 
 
 SD remains for removable/bulk content such as logs, WAV recordings, captures, and future explicit transfer packages. SD absence is nonfatal to internal configuration, radio/sensor apps, and Audio Spectrum. It prevents SD-backed operations such as Recorder file creation/playback and SD logging.
 
-Recorder uses `/sdcard/audio/` for 16-bit mono PCM WAV files. Logs remain SD-only and use UTC ISO-8601 timestamps when wall time is valid, with explicit monotonic `UP+...` timestamps before authority is established.
+Recorder uses `/sdcard/audio/` for 16-bit mono PCM WAV files. Logs remain SD-only and use the RTC-backed system wall clock for their UTC timestamps.
 
 ## Deep sleep, time, and timezones
 
 Deep sleep loses ordinary RAM, so RFScout keeps a small RTC-backed session envelope separate from persistent configuration. It currently preserves active-app/input-lock session state; menus, edit state, queued sounds, and active Recorder operations are not reconstructed.
 
-The ESP32 system wall clock is authoritative for displayed time, log timestamps, and filesystem calendar metadata. Monotonic time remains authoritative for debounce, dwell, retries, housekeeping, and intervals. Timezone options use a stable name, user-facing label, and POSIX `TZ` rule. Saved shutdown time is a cold-boot continuity aid rather than proof of synchronization.
+The ESP32 RTC-backed system wall clock is authoritative for displayed time, log timestamps, and filesystem calendar metadata. RFScout does not persist an epoch, saved-time validity flag, or clock-source token in configuration. Manual date/time controls update the running system clock only; future GPS/NTP updates do the same. On startup RFScout simply uses the clock value supplied by the RTC domain. The most recent Manual/GPS/NTP/RTC source may be retained as transient diagnostics for the current boot, but it is not durable state.
+
+Timezone selection and 12/24-hour presentation remain persistent user preferences. Monotonic time remains authoritative for debounce, dwell, retries, housekeeping, and intervals.
 
 ## Erase and update semantics
 
