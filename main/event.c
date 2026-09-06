@@ -51,6 +51,11 @@ rfscout_audio_category_t rfscout_event_audio_category( rfscout_event_type_t a_ty
             return RFSCOUT_AUDIO_CATEGORY_ALERT;
         case RFSCOUT_EVENT_THEME_CHANGED:
         case RFSCOUT_EVENT_AUDIO_POLICY_CHANGED:
+        case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNTED:
+        case RFSCOUT_EVENT_INTERNAL_STORAGE_FORMATTED:
+        case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED:
+        case RFSCOUT_EVENT_CONFIG_IMPORTED:
+        case RFSCOUT_EVENT_CONFIG_DEFAULTED:
         case RFSCOUT_EVENT_TYPE_COUNT:
         default:
             return RFSCOUT_AUDIO_CATEGORY_COUNT;
