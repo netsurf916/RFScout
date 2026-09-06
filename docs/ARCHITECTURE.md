@@ -16,7 +16,7 @@ main/
   app_*.c               core app discovery/navigation/lifecycle/session framework
 ```
 
-Each compiled-in application exports one `rfscout_app_descriptor_t`. The descriptor owns its identity/name, availability probe policy/function, delayed-activation policy, platform-service dependencies, and runtime handler. `app_framework` discovers descriptors through the compiled registry; normal app behavior is not implemented through app-ID switches in `app_manager`.
+Each compiled-in application exports one `rfscout_app_descriptor_t`. The descriptor owns identity/name, availability probing, delayed activation, service dependencies, and runtime handling. `app_framework` discovers descriptors through the compiled registry and retains probed capability state as unknown, available, or unavailable. Probe error detail remains diagnostic logging rather than application state.
 
 `app_manager` owns only cross-application policy: active-app selection, availability filtering, settle/activation timing, global navigation, and transactional lifecycle coordination. App modules own their menu/subview state, rendering decisions, app-local input interpretation, normal polling, and dependency-loss behavior. Hardware-specific stop/drain/recovery remains behind platform services and resource sessions.
 
@@ -77,9 +77,9 @@ Usable external PSRAM is a supported-platform requirement. RFScout does not sile
 
 ## Semantic input and UI behavior
 
-Physical controls are translated to semantic input before app handling. Only accepted semantic actions/state changes emit feedback events; raw encoder/contact movement does not itself imply sound.
+The `input` service translates board controls into focused semantic input before app handling. Physical activity used to wake the display is a separate path and the complete wake gesture is consumed before app, lock, or power semantics. Only accepted semantic actions/state changes emit feedback events.
 
-On the current one-center-button target, completed button edges are captured independently from the main presentation loop so a click can survive a temporary synchronous LCD stall. Hold timing is part of the semantic input contract: approximately 0.8 to under 1.5 seconds produces `LONG_SELECT`, 1.5 to under 2 seconds produces `BACK`, and a two-second hold toggles the global input lock. The final release after a lock-toggle hold is consumed.
+On the current rotary/button provider, edge capture survives temporary main-loop/display stalls. Holds of roughly 0.8–1.5 seconds produce `LONG_SELECT`, 1.5–2 seconds produce `BACK`, and two seconds toggles the global input lock; the release that completes a lock toggle is consumed.
 
 Common settings use one interaction model:
 
@@ -150,9 +150,9 @@ MLX90640 is an optional hot-plug I2C/Qwiic peripheral exposed by the thermal ser
 
 ## Power, display idle, and sleep
 
-Power actions are semantic and board-capability aware. Short press may be None, Screen off, Sleep, or Power off; long press may be None or Power off. Display wake has priority: a complete gesture that wakes a dim/off display is consumed before app, lock, or power-button handling.
+Power actions are semantic and board-capability aware. Short press may be None, Screen off, Sleep, or Power off; long press may be None or Power off. Display wake has priority over ordinary input and power-button handling.
 
-Display dim/off is presentation policy, **not** application lifecycle or ESP32 sleep. The off state sets backlight to zero, disables ST7789 output, enters panel hardware sleep, and suppresses framebuffer SPI presentation while apps/acquisition/logging/audio continue. Wake performs panel sleep-out/settle, presents the latest framebuffer while dark, then restores brightness.
+The display service owns framebuffer presentation plus runtime provider metadata (provider, geometry, capabilities). Display dim/off is presentation policy, **not** application lifecycle or ESP32 sleep. The current ST7789 provider disables output and enters controller low power while apps/acquisition/logging/audio continue; wake restores the provider, presents the latest framebuffer while dark, then restores brightness.
 
 Protective policy can react to sustained low battery or high ESP32 internal temperature. Low-battery action requires five consecutive fresh fuel-gauge reads plus fresh evidence that external power is absent; it rearms after charge rises three percentage points above threshold. High-temperature action requires five consecutive samples and rearms 5 C below threshold. High-temperature Power off falls back to Sleep when external-power absence cannot be freshly established. Manual/protective transitions share the global transition overlay and semantic execution path.
 

@@ -4,7 +4,7 @@ This document summarizes behavior implemented on current `main`. Architecture/in
 
 ## Supported target and application order
 
-The current supported target is **LILYGO T-Embed CC1101 Plus / ESP32-S3**. Application code consumes board-neutral services/capabilities rather than board names.
+The current supported target is **LILYGO T-Embed CC1101 Plus / ESP32-S3**. RFScout exposes board-neutral input/display services; applications consume semantic input and capabilities rather than board or controller identities.
 
 Canonical rotary order:
 
@@ -89,7 +89,7 @@ Visual themes are **Indoor**, **Outdoor**, and **Night** and affect colors only.
 
 Short power-button actions may be None, Screen off, Sleep, or Power off; long press may be None or Power off, subject to board capabilities. A dim/off display consumes the entire first wake gesture before ordinary input or power semantics.
 
-Automatic screen-off affects presentation only. The ST7789 enters hardware sleep and framebuffer transfers are suppressed while apps, logging, RF acquisition, and audio continue.
+Automatic screen-off affects presentation only. The display service enters the selected provider's low-power state and suppresses framebuffer transfers while apps, logging, RF acquisition, and audio continue. The current provider is ST7789.
 
 Protective policy can act on sustained low battery or high ESP32 internal temperature. Low-battery action requires fresh gauge and charger evidence; high-temperature Power off falls back to Sleep when external-power absence cannot be freshly established. Detailed persisted values/semantics are in [CONFIGURATION.md](CONFIGURATION.md).
 

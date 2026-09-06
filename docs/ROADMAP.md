@@ -243,17 +243,7 @@ Outstanding validation:
 
 **Status:** Initial implementation landed in PR #61; Recent Events UI landed in PR #65; internal-persistence/configuration events added by PR #71.
 
-Implemented behavior includes:
-
-- shared semantic system-state event IDs on the existing event dispatcher;
-- fixed-size RAM-only recent-event history independent from normal diagnostics;
-- charger connect/disconnect, startup SD and internal-storage status, configuration import/default recovery, and descriptor-driven application/hardware availability events;
-- transient global event overlay without changing application lifecycle state;
-- notification-driven display attention wake preserving the original inactivity deadline;
-- common acquired/lost procedural cues under Normal/Quiet audio policy;
-- boot-state discovery retained/logged without interactive notification behavior;
-- provider-selection and first-known application/hardware usability diagnostics generalized by PR #72;
-- optional default-disabled System Events application with stable browse snapshot.
+Implemented behavior includes the RAM-only semantic event history/UI, transient attention presentation, power/storage/configuration events, and descriptor-driven application/hardware availability. PR #72 generalizes first-known availability and input/display provider diagnostics while keeping startup discovery silent.
 
 Remaining work:
 
