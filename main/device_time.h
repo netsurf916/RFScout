@@ -16,6 +16,15 @@
 #include <stddef.h>
 #include <time.h>
 
+/* Compatibility call tokens only. RFScout does not retain time-source state. */
+typedef enum
+{
+    RFSCOUT_TIME_SOURCE_RTC = 0,
+    RFSCOUT_TIME_SOURCE_MANUAL,
+    RFSCOUT_TIME_SOURCE_GPS,
+    RFSCOUT_TIME_SOURCE_NTP
+} rfscout_time_source_t;
+
 /** @brief Initialize timezone for the authoritative RTC-backed system wall clock. */
 esp_err_t device_time_init( void );
 /**
