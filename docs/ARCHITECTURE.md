@@ -140,7 +140,7 @@ The shared audio-capture service owns I2S0/PDM microphone access, runtime effect
 
 **Recorder** is the storage-backed app. It provides recording, asynchronous save/post-processing, recording catalog/delete, and I2S1 playback through the shared speaker service. Recordings are 16-bit mono PCM WAV; the effective delivered sample rate is written to the WAV header and save processing applies the current trim/DC-removal/bounded-normalization pipeline. Recorder files are independent of runtime app-memory reclamation. Active recording/saving blocks an app transition until the operation is safely complete; playback may be stopped during normal app exit.
 
-**Audio Spectrum** is a separate microphone-only app. It can run without SD storage, starts monitoring after the common app settle point, renders the live FFT spectrum, and uses center to enter its local settings view. The current setting is fixed digital microphone input gain from 0 through +48 dB in 3 dB steps. With settings closed, rotary input remains global app navigation. Audio Spectrum has no Recorder-specific semantic rollback path.
+**Audio Spectrum** is a separate microphone-only app. It can run without SD storage, starts monitoring after the common app settle point, renders the live FFT spectrum, and uses raw microphone PCM with continuous high-pass/DC-block filtering plus a smoothed automatic dB display range, avoiding pre-FFT digital amplification and clipping. The live `AUTO N dB` value is the current display-window span rather than input gain. Rotary input remains global app navigation. Audio Spectrum has no Recorder-specific semantic rollback path.
 
 Further calibration/generalization of the shared Audio Input service remains roadmap work.
 

@@ -68,14 +68,17 @@ bool recorder_prepare_storage_shutdown( uint32_t a_timeout_ms );
 /** @brief Delete one enumerated recording and refresh the list. */
 esp_err_t recorder_delete_file( size_t a_index );
 
-/** @brief Start live microphone spectrum monitoring; storage is not required. */
-esp_err_t recorder_start_monitor( uint8_t a_gain_db );
+/** @brief Start raw live microphone spectrum monitoring with automatic display scaling. */
+esp_err_t recorder_start_monitor( void );
 
 /** @brief Stop live microphone spectrum monitoring. */
 void recorder_stop_monitor( void );
 
 /** @brief Copy the latest live spectrum bins and return the copied count. */
 size_t recorder_monitor_bins( uint8_t *a_bins, size_t a_capacity );
+
+/** @brief Return the current automatic spectrum display span in dB. */
+uint8_t recorder_monitor_range_db( void );
 
 /** @brief Set fixed digital microphone input gain in dB (0..48 in 3 dB steps). */
 void recorder_set_input_gain_db( uint8_t a_gain_db );

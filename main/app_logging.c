@@ -110,9 +110,9 @@ static void write_periodic_record( rfscout_app_id_t a_app )
         case RFSCOUT_APP_AUDIO_SPECTRUM:
             snprintf( detail,
                       sizeof( detail ),
-                      "state=%u gain_db=%u",
+                      "state=%u range_db=%u",
                       (unsigned)recorder_state(),
-                      (unsigned)recorder_input_gain_db() );
+                      (unsigned)recorder_monitor_range_db() );
             break;
 
         case RFSCOUT_APP_THERMAL:

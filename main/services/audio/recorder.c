@@ -59,6 +59,11 @@
 #define RECORDER_MONITOR_FFT_SIZE 256U
 #define RECORDER_MONITOR_TASK_STACK 6144U
 #define RECORDER_MONITOR_TASK_PRIORITY 3U
+#define RECORDER_MONITOR_FIRST_FFT_BIN 1U
+#define RECORDER_MONITOR_HIGHPASS_ALPHA 0.98f
+#define RECORDER_MONITOR_MIN_RANGE_DB 24.0f
+#define RECORDER_MONITOR_HEADROOM_DB 3.0f
+#define RECORDER_MONITOR_RANGE_SMOOTH 0.05f
 #define RECORDER_EXPECTED_BYTES_PER_SECOND                                                         \
     ( RFSCOUT_RECORDER_SAMPLE_RATE * RECORDER_CHANNELS * ( RECORDER_BITS_PER_SAMPLE / 8U ) )
 
@@ -93,6 +98,14 @@ static TaskHandle_t monitor_task;
 static volatile bool monitor_running;
 static volatile uint8_t input_gain_db = 12U;
 static uint8_t monitor_spectrum[ RFSCOUT_RECORDER_MONITOR_BINS ];
+static bool monitor_range_initialized;
+static float monitor_floor_db;
+static float monitor_ceiling_db;
+static volatile uint8_t monitor_range_db;
+static float monitor_highpass_previous_input;
+static float monitor_highpass_previous_output;
+static float monitor_fft_frame[ RECORDER_MONITOR_FFT_SIZE ];
+static size_t monitor_fft_frame_count;
 
 static void write_u16_le( uint8_t *a_target, uint16_t a_value )
 {
@@ -1039,16 +1052,15 @@ static bool wait_for_record_worker( uint32_t a_timeout_ms )
     return true;
 }
 
-static void compute_monitor_fft( const int16_t *a_samples, size_t a_count )
+static void compute_monitor_fft( const float *a_samples )
 {
     float re[ RECORDER_MONITOR_FFT_SIZE ];
     float im[ RECORDER_MONITOR_FFT_SIZE ];
     for( size_t i = 0; i < RECORDER_MONITOR_FFT_SIZE; ++i )
     {
-        const float sample = i < a_count ? (float)a_samples[ i ] : 0.0f;
         const float window = 0.5f - 0.5f * cosf( 2.0f * (float)M_PI * (float)i /
                                                  (float)( RECORDER_MONITOR_FFT_SIZE - 1U ) );
-        re[ i ] = sample * window;
+        re[ i ] = a_samples[ i ] * window;
         im[ i ] = 0.0f;
     }
     for( size_t i = 1U, j = 0U; i < RECORDER_MONITOR_FFT_SIZE; ++i )
@@ -1090,18 +1102,93 @@ static void compute_monitor_fft( const int16_t *a_samples, size_t a_count )
             }
         }
     }
+
+    float db_bins[ RFSCOUT_RECORDER_MONITOR_BINS ];
+    float sorted[ RFSCOUT_RECORDER_MONITOR_BINS ];
     for( size_t bin = 0U; bin < RFSCOUT_RECORDER_MONITOR_BINS; ++bin )
     {
-        const size_t fft_bin = bin + 1U;
+        const size_t fft_bin = RECORDER_MONITOR_FIRST_FFT_BIN + bin;
         const float mag = sqrtf( re[ fft_bin ] * re[ fft_bin ] + im[ fft_bin ] * im[ fft_bin ] ) /
                           (float)RECORDER_MONITOR_FFT_SIZE;
-        const float db = 20.0f * log10f( mag + 1.0f );
-        int level = (int)( ( db - 20.0f ) * 100.0f / 70.0f );
+        db_bins[ bin ] = 20.0f * log10f( mag + 1.0f );
+        sorted[ bin ] = db_bins[ bin ];
+    }
+
+    for( size_t i = 1U; i < RFSCOUT_RECORDER_MONITOR_BINS; ++i )
+    {
+        const float value = sorted[ i ];
+        size_t j = i;
+        while( j > 0U && sorted[ j - 1U ] > value )
+        {
+            sorted[ j ] = sorted[ j - 1U ];
+            --j;
+        }
+        sorted[ j ] = value;
+    }
+
+    const float floor_target = sorted[ RFSCOUT_RECORDER_MONITOR_BINS / 4U ];
+    const float peak_target = sorted[ RFSCOUT_RECORDER_MONITOR_BINS - 1U ];
+    float ceiling_target = peak_target + RECORDER_MONITOR_HEADROOM_DB;
+    if( ceiling_target < floor_target + RECORDER_MONITOR_MIN_RANGE_DB )
+    {
+        ceiling_target = floor_target + RECORDER_MONITOR_MIN_RANGE_DB;
+    }
+
+    if( !monitor_range_initialized )
+    {
+        monitor_floor_db = floor_target;
+        monitor_ceiling_db = ceiling_target;
+        monitor_range_initialized = true;
+    }
+    else
+    {
+        monitor_floor_db += ( floor_target - monitor_floor_db ) * RECORDER_MONITOR_RANGE_SMOOTH;
+        if( ceiling_target > monitor_ceiling_db )
+        {
+            monitor_ceiling_db = ceiling_target;
+        }
+        else
+        {
+            monitor_ceiling_db +=
+                ( ceiling_target - monitor_ceiling_db ) * RECORDER_MONITOR_RANGE_SMOOTH;
+        }
+        if( monitor_ceiling_db < monitor_floor_db + RECORDER_MONITOR_MIN_RANGE_DB )
+        {
+            monitor_ceiling_db = monitor_floor_db + RECORDER_MONITOR_MIN_RANGE_DB;
+        }
+    }
+
+    const float span = monitor_ceiling_db - monitor_floor_db;
+    const int rounded_span = (int)( span + 0.5f );
+    monitor_range_db =
+        (uint8_t)( rounded_span < 1 ? 1 : ( rounded_span > 255 ? 255 : rounded_span ) );
+    for( size_t bin = 0U; bin < RFSCOUT_RECORDER_MONITOR_BINS; ++bin )
+    {
+        int level =
+            span > 0.0f ? (int)( ( db_bins[ bin ] - monitor_floor_db ) * 100.0f / span ) : 0;
         if( level < 0 )
             level = 0;
         if( level > 100 )
             level = 100;
         monitor_spectrum[ bin ] = (uint8_t)level;
+    }
+}
+
+static void monitor_process_samples( const int16_t *a_samples, size_t a_count )
+{
+    for( size_t i = 0U; i < a_count; ++i )
+    {
+        const float input = (float)a_samples[ i ];
+        const float filtered = input - monitor_highpass_previous_input +
+                               RECORDER_MONITOR_HIGHPASS_ALPHA * monitor_highpass_previous_output;
+        monitor_highpass_previous_input = input;
+        monitor_highpass_previous_output = filtered;
+        monitor_fft_frame[ monitor_fft_frame_count++ ] = filtered;
+        if( RECORDER_MONITOR_FFT_SIZE == monitor_fft_frame_count )
+        {
+            compute_monitor_fft( monitor_fft_frame );
+            monitor_fft_frame_count = 0U;
+        }
     }
 }
 
@@ -1116,20 +1203,29 @@ static void monitor_worker( void *a_argument )
         (void)i2s_channel_read(
             rx_channel, samples, sizeof( samples ), &discarded, pdMS_TO_TICKS( 20 ) );
     }
+    unsigned timeout_streak = 0U;
     while( monitor_running )
     {
         size_t bytes = 0U;
         const esp_err_t result = i2s_channel_read(
             rx_channel, samples, sizeof( samples ), &bytes, pdMS_TO_TICKS( 100 ) );
         if( ESP_ERR_TIMEOUT == result )
+        {
+            ++timeout_streak;
+            if( 10U == timeout_streak || 0U == ( timeout_streak % 100U ) )
+            {
+                ESP_LOGW( TAG, "spectrum input timed out %u consecutive reads", timeout_streak );
+            }
             continue;
+        }
         if( ESP_OK != result )
+        {
+            ESP_LOGW( TAG, "spectrum input read failed: %s", esp_err_to_name( result ) );
             break;
+        }
+        timeout_streak = 0U;
         const size_t count = bytes / sizeof( samples[ 0 ] );
-        for( size_t i = 0U; i < count; ++i )
-            samples[ i ] = apply_input_gain( samples[ i ] );
-        if( count >= RECORDER_MONITOR_FFT_SIZE )
-            compute_monitor_fft( samples, RECORDER_MONITOR_FFT_SIZE );
+        monitor_process_samples( samples, count );
     }
     release_channel();
     monitor_running = false;
@@ -1139,13 +1235,19 @@ static void monitor_worker( void *a_argument )
     vTaskDelete( NULL );
 }
 
-esp_err_t recorder_start_monitor( uint8_t a_gain_db )
+esp_err_t recorder_start_monitor( void )
 {
     const rfscout_recorder_state_t current = recorder_state();
     if( ( RFSCOUT_RECORDER_IDLE != current ) && ( RFSCOUT_RECORDER_NO_STORAGE != current ) )
         return ESP_ERR_INVALID_STATE;
-    recorder_set_input_gain_db( a_gain_db );
     memset( monitor_spectrum, 0, sizeof( monitor_spectrum ) );
+    monitor_range_initialized = false;
+    monitor_floor_db = 0.0f;
+    monitor_ceiling_db = 0.0f;
+    monitor_range_db = (uint8_t)RECORDER_MONITOR_MIN_RANGE_DB;
+    monitor_highpass_previous_input = 0.0f;
+    monitor_highpass_previous_output = 0.0f;
+    monitor_fft_frame_count = 0U;
     esp_err_t result = open_microphone();
     if( ESP_OK != result )
         return result;
@@ -1184,6 +1286,11 @@ size_t recorder_monitor_bins( uint8_t *a_bins, size_t a_capacity )
         a_capacity < RFSCOUT_RECORDER_MONITOR_BINS ? a_capacity : RFSCOUT_RECORDER_MONITOR_BINS;
     memcpy( a_bins, monitor_spectrum, count );
     return count;
+}
+
+uint8_t recorder_monitor_range_db( void )
+{
+    return monitor_range_db;
 }
 
 void recorder_set_input_gain_db( uint8_t a_gain_db )

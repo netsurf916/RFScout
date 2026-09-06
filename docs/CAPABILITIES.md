@@ -59,9 +59,9 @@ Recorder content audio remains available under device Quiet policy; incidental f
 
 ## Audio Spectrum
 
-Audio Spectrum is a microphone-only live FFT/spectrum app and does not require an SD card. The normal view leaves rotary input available for global app navigation; center opens the app-local settings view.
+Audio Spectrum is a microphone-only live FFT/spectrum app and does not require an SD card. The live view leaves rotary input available for global app navigation.
 
-The current setting is fixed digital microphone input gain from **0 through +48 dB in 3 dB steps**. Center or Back closes settings. The shared audio-capture service owns microphone/channel lifetime so Audio Spectrum uses the same ordinary app/session contract as the radio and sensor apps rather than Recorder-specific rollback semantics.
+The spectrum uses raw microphone PCM with continuous high-pass/DC-block filtering and a smoothed automatic dB display range, avoiding pre-FFT digital amplification and clipping. The live `AUTO N dB` readout reports the current display-window span rather than microphone gain. The shared audio-capture service owns microphone/channel lifetime so Audio Spectrum uses the same ordinary app/session contract as the radio and sensor apps rather than Recorder-specific rollback semantics.
 
 ## Thermal
 

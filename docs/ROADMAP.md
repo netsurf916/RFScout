@@ -202,9 +202,9 @@ Every current application receives an explicit v0.4.0 review rather than treatin
 
 #### Audio Spectrum
 
-- [ ] Validate the current `0..+48 dB` live digital input-gain range against measured hardware behavior and clipping/noise characteristics.
-- [ ] Decide whether live Spectrum gain and Recorder capture gain should share one persisted setting or remain deliberately independent; document/migrate the schema accordingly if persistence changes.
-- [ ] Add useful spectrum controls only where they improve interpretation (for example averaging/smoothing, peak hold, or display scale) without making the app contract complex.
+- [x] Keep Audio Spectrum analysis on raw PCM rather than Recorder capture gain; replace the clipping-prone pre-FFT `0..+48 dB` control with continuous high-pass/DC-block filtering and smoothed automatic dB display scaling.
+- [ ] Tune automatic range attack/decay and low-frequency cutoff on hardware if field use shows the defaults need adjustment.
+- [ ] Add further spectrum controls only where they improve interpretation (for example averaging/smoothing or peak hold) without making the app contract complex.
 - [ ] Validate rapid skip-through before delayed activation, repeated entry/exit, and microphone-only operation without SD storage.
 
 #### Thermal
