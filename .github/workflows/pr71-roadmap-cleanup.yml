@@ -1,0 +1,25 @@
+name: PR71 roadmap cleanup
+on:
+  push:
+    branches:
+      - feature/internal-config-storage
+    paths:
+      - .github/workflows/pr71-roadmap-cleanup.yml
+permissions:
+  contents: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Apply roadmap cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 .github/pr71_roadmap_cleanup.py
+          git rm .github/pr71_roadmap_cleanup.py .github/workflows/pr71-roadmap-cleanup.yml
+          git add docs/ROADMAP.md
+          git commit -m "Align roadmap with strict config parsing"
+          git push origin HEAD:feature/internal-config-storage
