@@ -1,0 +1,220 @@
+from pathlib import Path
+
+BASE_ROADMAP = Path("/tmp/roadmap-base.md")
+
+
+def once(text, old, new, label):
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f"{label}: expected 1 match, found {count}")
+    return text.replace(old, new, 1)
+
+
+# Keep SD example synchronization startup-only.
+p = Path("main/device_config.c")
+s = p.read_text()
+s = once(
+    s,
+    '''        else
+        {
+            config_dirty = false;
+            const esp_err_t sync_result = config_store_sync_example();
+            if( ESP_OK != sync_result )
+            {
+                ESP_LOGW(
+                    TAG, "configuration example sync failed: %s", esp_err_to_name( sync_result ) );
+            }
+        }
+        ESP_LOGI( TAG, "loaded %s", RFSCOUT_INTERNAL_CONFIG_PATH );
+        return ESP_OK;
+''',
+    '''        else
+        {
+            config_dirty = false;
+        }
+
+        const esp_err_t sync_result = config_store_sync_example();
+        if( ESP_OK != sync_result )
+        {
+            ESP_LOGW(
+                TAG, "configuration example sync failed: %s", esp_err_to_name( sync_result ) );
+        }
+        ESP_LOGI( TAG, "loaded %s", RFSCOUT_INTERNAL_CONFIG_PATH );
+        return ESP_OK;
+''',
+    "startup example sync",
+)
+s = once(
+    s,
+    '''    if( ESP_OK == save_result )
+    {
+        rfscout_event_emit( RFSCOUT_EVENT_CONFIG_DEFAULTED,
+                            RFSCOUT_EVENT_SOURCE_SYSTEM,
+                            (int32_t)RFSCOUT_CONFIG_SCHEMA_VERSION );
+    }
+    return save_result;
+''',
+    '''    if( ESP_OK == save_result )
+    {
+        rfscout_event_emit( RFSCOUT_EVENT_CONFIG_DEFAULTED,
+                            RFSCOUT_EVENT_SOURCE_SYSTEM,
+                            (int32_t)RFSCOUT_CONFIG_SCHEMA_VERSION );
+        const esp_err_t sync_result = config_store_sync_example();
+        if( ESP_OK != sync_result )
+        {
+            ESP_LOGW(
+                TAG, "configuration example sync failed: %s", esp_err_to_name( sync_result ) );
+        }
+    }
+    return save_result;
+''',
+    "default example sync",
+)
+s = once(
+    s,
+    '''        config_dirty = false;
+        config_upgrade_pending = false;
+        config_source_version = (int)RFSCOUT_CONFIG_SCHEMA_VERSION;
+
+        const esp_err_t sync_result = config_store_sync_example();
+        if( ESP_OK != sync_result )
+        {
+            ESP_LOGW(
+                TAG, "configuration example sync failed: %s", esp_err_to_name( sync_result ) );
+        }
+''',
+    '''        config_dirty = false;
+        config_upgrade_pending = false;
+        config_source_version = (int)RFSCOUT_CONFIG_SCHEMA_VERSION;
+''',
+    "remove save-time example sync",
+)
+p.write_text(s)
+
+# Align production documentation with startup-only synchronization.
+p = Path("docs/CONFIGURATION.md")
+s = p.read_text()
+s = once(
+    s,
+    "RFScout compares the example and internal files before writing. If they already match, the SD card is not rewritten. The example is refreshed at startup and after an authoritative internal configuration save when SD is available.",
+    "RFScout compares the example and internal files before writing. If they already match, the SD card is not rewritten. The example is synchronized once at startup, after import/load/default recovery has established the authoritative internal configuration. Ordinary internal configuration saves do not touch removable storage.",
+    "configuration example policy",
+)
+p.write_text(s)
+
+# Start roadmap from the exact PR base so unrelated planning detail is preserved.
+p = Path("docs/ROADMAP.md")
+s = BASE_ROADMAP.read_text()
+s = once(
+    s,
+    "**Status:** Transactional foundation implemented by PR #64; simplified resource-session model implemented by PR #68; descriptor-driven runtime and simplified semantic-veto model are being completed by PR #70; hardware stress/fault-injection validation remains open.",
+    "**Status:** Transactional foundation implemented by PR #64; simplified resource-session model implemented by PR #68; descriptor-driven runtime and simplified semantic-veto model implemented by PR #70; hardware stress/fault-injection validation remains open.",
+    "PR70 roadmap status",
+)
+marker = "PR #70 moves normal app runtime behavior behind compiled descriptors and removes the former app-level reactivation hook. Recorder now uses only a pre-teardown veto while recording or finalizing a file; RFScout does not stop an active recording and later attempt to reconstruct/restart it after an aborted transition. Playback may stop during an ordinary committed leave. Audio Spectrum follows the normal resource-session lifecycle with no Recorder-specific rollback behavior.\n"
+s = once(
+    s,
+    marker,
+    marker + "\nStorage/resource policy distinguishes hard lifecycle dependencies from optional operation-time facilities. Hard services remain descriptor-managed; optional facilities such as removable storage are checked only by the service/operation that explicitly requires them, while internal persistence remains a separate device-owned capability.\n",
+    "storage dependency policy",
+)
+s = once(
+    s,
+    "- legacy Discipline migrates to Night + Quiet with the intended migrated environmental gains;\n- recognized older configuration is migrated best-effort while unsupported/unusable pre-1.0 configuration may be regenerated from current defaults.",
+    "- the legacy `discipline` token is normalized to Night + Quiet when encountered inside an otherwise current-schema configuration;\n- incompatible internal configuration schemas are replaced with current compiled defaults rather than migrated or retained as recovery copies.",
+    "schema policy",
+)
+s = once(
+    s,
+    "- [ ] Verify recognized schema migration/default regeneration.\n- [ ] Verify migrated gains and complete theme/audio independence.",
+    "- [ ] Verify incompatible-schema/default regeneration.\n- [ ] Verify current-schema legacy-token normalization and complete theme/audio independence.",
+    "schema validation",
+)
+s = once(
+    s,
+    "**Status:** Initial implementation landed in PR #61; Recent Events UI landed in PR #65.",
+    "**Status:** Initial implementation landed in PR #61; Recent Events UI landed in PR #65; internal-persistence/configuration events added by PR #71.",
+    "system events status",
+)
+s = once(
+    s,
+    "- charger connect/disconnect, startup SD mount/mount-failure, and Thermal availability events;",
+    "- charger connect/disconnect, startup SD and internal-storage status, configuration import/default recovery, and Thermal availability events;",
+    "system events storage",
+)
+old_cw = '''### CW/Morse sender application
+
+**Priority:** Near term
+
+- compose strings with the rotary encoder and center button;
+- persist user-defined strings in `/sdcard/rfscout.json`;
+- browse/select/add/delete saved messages;
+- send complete messages through the shared Morse/speaker service;
+- keep detection-notification one-character mappings separate from CW messages.
+
+'''
+s = once(s, old_cw, "", "old CW section")
+old_log = '''### Log format and maintained parser
+
+**Priority:** Near term
+
+- stable `key=value` fields;
+- quote/escape free-form values containing spaces;
+- stable field naming/order by record type;
+- explicit schema/version marker if needed;
+- maintained reference parser producing JSON and/or CSV;
+- regression tests for missing, unknown, long, and multi-word values;
+- preserve UTC ISO-8601 timestamps and explicit uptime fallback.
+'''
+new_log = '''### Log format, levels, and maintained parser
+
+**Priority:** Near term
+
+Rework application/system logging as a common policy rather than letting each feature independently decide how much diagnostic or observational data to emit. Logging levels should provide a practical way to reduce log volume while retaining important operational and decoded/observed records at the selected level.
+
+- define a small, consistent set of logging levels and their intended semantics;
+- make the configured log level part of authoritative device configuration;
+- classify existing log records by level and tune emitted detail so lowering the level predictably reduces volume rather than disabling arbitrary subsystems;
+- keep important application observations, warnings, and failures semantically distinct from verbose/debug diagnostics;
+- allow applications such as future CW/Morse receive to emit structured decoded-message records through the common logger when enabled at the selected level;
+- keep internal app-browsable history and SD logging separate: a decoded message may be retained internally for browsing and independently mirrored to the SD log when policy and removable storage permit;
+- use stable `key=value` fields and quote/escape free-form values containing spaces;
+- use stable field naming/order by record type and an explicit schema/version marker if needed;
+- maintain a reference parser producing JSON and/or CSV;
+- add regression tests for levels, missing/unknown fields, long values, and quoting;
+- preserve UTC ISO-8601 timestamps and explicit uptime fallback.
+'''
+s = once(s, old_log, new_log, "logging plan")
+insert = '''## Medium-term platform work
+
+### System-owned internal persistent record/database service
+
+**Priority:** Platform prerequisite for applications that need small durable browsable histories without removable storage.
+
+Build a compact service over internal persistence that owns record layout, bounds/retention, durability, and iteration so applications do not know LittleFS paths or filesystem topology. It should support small app-specific durable collections while keeping configuration, removable bulk files, and transient/session PSRAM data semantically separate.
+
+- [ ] Define service-owned namespacing/record identity and bounded retention semantics.
+- [ ] Provide compact put/get/delete/iterate operations suitable for on-device browsing.
+- [ ] Define corruption/recovery behavior without exposing raw filesystem ownership to applications.
+- [ ] Keep SD logging/export optional and separate from authoritative internal record state.
+- [ ] Validate write endurance and bounded-space behavior for expected low-volume records.
+
+### CW/Morse application
+
+**Priority:** After the system-owned internal persistent record/database service.
+
+**Dependency:** Implement after the internal record/database service above so receive/decode history can be browsed persistently without requiring an SD card.
+
+- compose transmit strings with the rotary encoder and center button;
+- store user-defined transmit message **presets** as ordinary CW app configuration in authoritative `rfscout.json`;
+- browse/select/add/delete transmit presets through the app UI;
+- send complete messages through the shared Morse/speaker service;
+- keep detection-notification one-character mappings separate from CW transmit presets;
+- if receive/decoding is added, store a small browsable decoded-message history through the system-owned internal record service rather than configuration;
+- emit structured decoded-message records through the common logger when receive/decoding is enabled, subject to the configured logging level;
+- keep decoded-message SD logging independent from internal app history so the app remains fully useful without removable storage;
+- reserve SD-specific files for genuinely bulk/raw capture data if such capture is added later.
+
+'''
+s = once(s, "## Medium-term platform work\n\n", insert, "record service and CW ordering")
+p.write_text(s)
