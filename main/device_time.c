@@ -81,3 +81,8 @@ bool device_time_format_iso8601_utc( time_t a_epoch, char *a_buffer, size_t a_ca
     }
     return 0U != strftime( a_buffer, a_capacity, "%Y-%m-%dT%H:%M:%SZ", &utc );
 }
+
+esp_err_t device_time_checkpoint( void )
+{
+    return device_config_save_if_dirty();
+}
