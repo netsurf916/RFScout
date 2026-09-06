@@ -10,6 +10,8 @@
 #ifndef _RFSCOUT_AUDIO_FILTER_H_
 #define _RFSCOUT_AUDIO_FILTER_H_
 
+#include <stddef.h>
+
 #define RFSCOUT_AUDIO_HIGHPASS_ALPHA 0.98f
 
 typedef struct
