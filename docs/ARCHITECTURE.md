@@ -168,6 +168,8 @@ SD remains the removable/bulk-storage service. `/sdcard/rfscout.json` is a one-s
 
 The 16 MiB target flash allocates 8 MiB to the factory application and approximately 8 MiB to internal LittleFS. Configuration currently consumes only the single live file plus its short-lived write temporary; the remaining capacity is intentionally available for a future system-owned persistent-record/database service rather than direct app filesystem ownership.
 
+Internal-storage mount, recovery-format/mount-failure, configuration-default recovery, and successful SD configuration import are recorded in the volatile System Events/dmesg history as distinct semantic events. Startup discovery is retained without interactive notification.
+
 The conservative board-tested SD baseline is a FAT-compatible SanDisk card of 32 GB or less. The current board exposes no dedicated card-detect GPIO, so availability is established by successful mount/probe. Logging rotates `rfscout-00.log` through `rfscout-99.log` at up to 4 MiB each and attempts to preserve at least 64 MiB free.
 
 ## Shared hardware/resource boundaries

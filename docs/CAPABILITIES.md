@@ -107,7 +107,7 @@ Persistent preferences use the authoritative internal `/internal/rfscout.json` s
 
 An SD card is no longer required to retain device settings. `/sdcard/rfscout.json` is an explicit one-shot import; a valid current-schema import is committed internally before deletion, while an invalid import is preserved as `/sdcard/rfscout.json.bad`. `/sdcard/rfscout-example.json` mirrors the authoritative internal configuration when SD is available and is rewritten only when its contents differ.
 
-RFScout can operate without SD for configuration, radio/sensor use, and Audio Spectrum. SD remains the home for Recorder files under `/sdcard/audio/` and asynchronous rotating logs. The conservative board-tested baseline is a FAT-compatible SanDisk card of 32 GB or less. Logs rotate through 100 files of up to 4 MiB each while preserving a free-space reserve.
+System Events/dmesg records internal-storage mount/recovery status and accepted configuration import/default recovery separately from SD-card mount state. RFScout can operate without SD for configuration, radio/sensor use, and Audio Spectrum. SD remains the home for Recorder files under `/sdcard/audio/` and asynchronous rotating logs. The conservative board-tested baseline is a FAT-compatible SanDisk card of 32 GB or less. Logs rotate through 100 files of up to 4 MiB each while preserving a free-space reserve.
 
 ## Hardware and memory boundaries
 

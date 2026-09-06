@@ -219,7 +219,7 @@ Every current application receives an explicit v0.4.0 review rather than treatin
 
 ### Workstream E: visual theme and audio-policy separation
 
-**Status:** Implemented by PR #60; release-level combination/migration validation remains open.
+**Status:** Implemented by PR #60; release-level combination/configuration validation remains open.
 
 Implemented behavior:
 
@@ -227,15 +227,15 @@ Implemented behavior:
 - Audio Policy is independently Normal or Quiet;
 - Quiet suppresses incidental UI/event feedback and audible detection notifications without mutating saved notification configuration;
 - explicitly requested content audio such as Recorder playback is not suppressed by Quiet;
-- legacy Discipline migrates to Night + Quiet with the intended migrated environmental gains;
-- recognized older configuration is migrated best-effort while unsupported/unusable pre-1.0 configuration may be regenerated from current defaults.
+- the legacy `discipline` token is normalized to Night + Quiet when encountered inside an otherwise current-schema configuration;
+- incompatible internal configuration schemas are replaced with current compiled defaults rather than migrated or retained as recovery copies.
 
 Outstanding validation:
 
 - [ ] Verify all Indoor/Outdoor/Night + Normal/Quiet combinations.
 - [ ] Verify Quiet suppression versus explicit content audio.
-- [ ] Verify recognized schema migration/default regeneration.
-- [ ] Verify migrated gains and complete theme/audio independence.
+- [ ] Verify incompatible-schema/default regeneration.
+- [ ] Verify current-schema legacy-token normalization and complete theme/audio independence.
 
 ### Workstream F: system events, transient history, and notification wake
 
@@ -245,7 +245,7 @@ Implemented behavior includes:
 
 - shared semantic system-state event IDs on the existing event dispatcher;
 - fixed-size RAM-only recent-event history independent from normal diagnostics;
-- charger connect/disconnect, startup SD mount/mount-failure, and Thermal availability events;
+- charger connect/disconnect, startup SD and internal-storage status, configuration import/default recovery, and Thermal availability events;
 - transient global event overlay without changing application lifecycle state;
 - notification-driven display attention wake preserving the original inactivity deadline;
 - common acquired/lost procedural cues under Normal/Quiet audio policy;
@@ -294,7 +294,7 @@ v0.4.0 is not complete until:
 - [ ] Recorder DMA/internal-memory requirements remain in compatible memory and audio controls use documented percentage-versus-dB semantics.
 - [ ] Thermal absolute-temperature presentation is gated on calibrated MLX90640 conversion and hardware validation.
 - [ ] Shared capability/status presentation derives from semantic application availability.
-- [ ] Theme selection and Normal/Quiet audio policy operate independently with migration/default behavior verified.
+- [ ] Theme selection and Normal/Quiet audio policy operate independently with current-schema normalization/default-replacement behavior verified.
 - [ ] System-event history remains bounded/volatile, notifications do not disturb application lifecycle state, and attention wake returns to the original idle timeline.
 - [ ] Production documentation reflects implemented behavior and release notes distinguish user-visible changes from internal resource-management work.
 
@@ -343,7 +343,7 @@ Future consumers may include tuner/pitch analysis and microphone-side CW/Morse r
 **Priority:** Near term
 
 - compose strings with the rotary encoder and center button;
-- persist user-defined strings in `/sdcard/rfscout.json`;
+- persist user-defined strings through the planned system-owned internal record service rather than SD configuration or app-owned filesystem paths;
 - browse/select/add/delete saved messages;
 - send complete messages through the shared Morse/speaker service;
 - keep detection-notification one-character mappings separate from CW messages.
@@ -377,7 +377,7 @@ Future consumers may include tuner/pitch analysis and microphone-side CW/Morse r
 
 Add a dedicated diagnostics surface that reports measured subsystem state rather than only initialization success.
 
-Candidate diagnostics include board/reset identity, flash/PSRAM/heap, SD state/errors, battery/power, WiFi/BLE, CC1101/nRF24, microphone clock/rate/gain/clipping, speaker state, and GPS/RTC state when implemented.
+Candidate diagnostics include board/reset identity, flash/PSRAM/heap, internal persistence state/errors, SD state/errors, battery/power, WiFi/BLE, CC1101/nRF24, microphone clock/rate/gain/clipping, speaker state, and GPS/RTC state when implemented.
 
 Favor **desired physical outcome -> configure -> measure -> correct/validate** for timing-sensitive peripherals.
 
