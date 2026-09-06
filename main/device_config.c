@@ -977,7 +977,8 @@ esp_err_t device_config_init( void )
                       esp_err_to_name( canonical_result ) );
         }
 
-        if( config_store_import_pending() || !canonical )
+        bool canonical_ready = canonical;
+        if( !canonical )
         {
             const esp_err_t save_result = device_config_save( false, 0, NULL );
             if( ESP_OK != save_result )
@@ -987,26 +988,31 @@ esp_err_t device_config_init( void )
                           "configuration canonical save failed: %s",
                           esp_err_to_name( save_result ) );
             }
-            else if( config_store_import_pending() )
+            else
             {
-                const esp_err_t finalize_result = config_store_finalize_import();
-                if( ESP_OK == finalize_result )
-                {
-                    rfscout_event_emit( RFSCOUT_EVENT_CONFIG_IMPORTED,
-                                        RFSCOUT_EVENT_SOURCE_SYSTEM,
-                                        (int32_t)RFSCOUT_CONFIG_SCHEMA_VERSION );
-                }
-                else
-                {
-                    ESP_LOGW( TAG,
-                              "configuration import finalization failed: %s",
-                              esp_err_to_name( finalize_result ) );
-                }
+                canonical_ready = true;
             }
         }
         else
         {
             config_dirty = false;
+        }
+
+        if( canonical_ready && config_store_import_pending() )
+        {
+            const esp_err_t finalize_result = config_store_finalize_import();
+            if( ESP_OK == finalize_result )
+            {
+                rfscout_event_emit( RFSCOUT_EVENT_CONFIG_IMPORTED,
+                                    RFSCOUT_EVENT_SOURCE_SYSTEM,
+                                    (int32_t)RFSCOUT_CONFIG_SCHEMA_VERSION );
+            }
+            else
+            {
+                ESP_LOGW( TAG,
+                          "configuration import finalization failed: %s",
+                          esp_err_to_name( finalize_result ) );
+            }
         }
 
         const esp_err_t sync_result = config_store_sync_example();
