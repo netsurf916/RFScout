@@ -395,7 +395,7 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             snprintf( a_value, a_capacity, "%s", on_off( config->logging_enabled ) );
             break;
         case DEVICE_ITEM_SAVE:
-            snprintf( a_value, a_capacity, "%s", storage_is_available() ? "SD" : "No SD" );
+            snprintf( a_value, a_capacity, "Internal" );
             break;
         default:
             if( ( a_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
