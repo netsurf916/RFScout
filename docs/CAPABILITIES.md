@@ -10,7 +10,7 @@ Canonical rotary order:
 
 0. System Events — optional, disabled by default
 1. Home / Device Settings
-2. WiFi / BLE
+2. WiFi / BT
 3. CC1101
 4. nRF24
 5. Recorder
@@ -21,9 +21,9 @@ Disabled or unavailable apps are skipped. Home is always available and is the fa
 
 System Events is a read-only view of the RAM-only structured event ring. Center enters/exits a stable Browse snapshot; rotary input scrolls only while Browse is active.
 
-## WiFi / BLE
+## WiFi / BT
 
-WiFi / BLE passively observes Wi-Fi and BLE activity, performs longest-prefix IEEE vendor attribution, distinguishes randomized/private addresses from unresolved public addresses, and applies conservative surveillance-oriented classification.
+WiFi / BT passively observes Wi-Fi and BLE activity, performs longest-prefix IEEE vendor attribution, distinguishes randomized/private addresses from unresolved public addresses, and applies conservative surveillance-oriented classification.
 
 The normalized live observation store grows in app-session PSRAM rather than reserving or enforcing a fixed item capacity. Collector ingestion uses an address/type identity index rather than rescanning the full collection per callback. Both the general summary and surveillance view are projections of this one canonical active-device collection.
 
@@ -51,7 +51,9 @@ Acquisition and presentation use separate cadences: sweep data continues feeding
 
 ## Recorder
 
-Recorder provides SD-backed 16-bit mono PCM WAV capture/playback, runtime PDM/effective-rate measurement, measured-rate WAV metadata, asynchronous trim/DC-removal/normalization, recording browse/delete, and independent playback volume.
+Recorder provides SD-backed 16-bit mono PCM WAV capture/playback, runtime PDM/effective-rate measurement, measured-rate WAV metadata, asynchronous post-processing, recording browse/delete, and independent playback volume.
+
+Capture is not software pre-amplified. After capture completes, Recorder trims startup/tail artifacts, removes DC/very-low-frequency energy with the same shared one-pole high-pass primitive used by Audio Spectrum, then applies bounded normalization before finalizing the WAV. This keeps the saved signal treatment consistent with the spectrum path without risking pre-normalization clipping during capture.
 
 Live microphone spectrum monitoring is no longer a Recorder mode; it is the separate **Audio Spectrum** app. While Recorder is actively recording or finalizing a recording, app transitions are intentionally blocked. The user stops recording with center, saving completes, and normal navigation then resumes. RFScout does not attempt to reconstruct or restart an interrupted recording after a failed transition. Playback may be stopped normally when Recorder is left.
 
@@ -61,7 +63,7 @@ Recorder content audio remains available under device Quiet policy; incidental f
 
 Audio Spectrum is a microphone-only live FFT/spectrum app and does not require an SD card. The live view leaves rotary input available for global app navigation.
 
-The spectrum uses raw microphone PCM with continuous high-pass/DC-block filtering and a smoothed automatic dB display range, avoiding pre-FFT digital amplification and clipping. The live `AUTO N dB` readout reports the current display-window span rather than microphone gain. The shared audio-capture service owns microphone/channel lifetime so Audio Spectrum uses the same ordinary app/session contract as the radio and sensor apps rather than Recorder-specific rollback semantics.
+The spectrum uses raw microphone PCM with the shared continuous high-pass/DC-block filter and a smoothed automatic dB display range, avoiding pre-FFT digital amplification and clipping. The live `AUTO N dB` readout reports the current display-window span rather than microphone gain. The shared audio-capture service owns microphone/channel lifetime so Audio Spectrum uses the same ordinary app/session contract as the radio and sensor apps rather than Recorder-specific rollback semantics.
 
 ## Thermal
 
@@ -82,9 +84,9 @@ Implemented global settings include:
 - manual date/time controls that update the running RTC-backed system clock only;
 - startup application and per-app enablement, including Audio Spectrum independently from Recorder;
 - SD logging;
-- explicit configuration save.
+- explicit internal configuration save.
 
-Small finite choices use direct center-to-cycle behavior; numeric ranges use edit/rotate. Per-app alert mappings, surveillance sensitivity, and WiFi / BLE retention remain in their owning app menus.
+Small finite choices use direct center-to-cycle behavior; numeric ranges use edit/rotate. Per-app alert mappings, surveillance sensitivity, and WiFi / BT retention remain in their owning app menus.
 
 Visual themes are **Indoor**, **Outdoor**, and **Night** and affect colors only. **Quiet** suppresses incidental UI/Event/Alert presentation without rewriting saved app notification gates, mappings, mode, or volume. Explicit application Content audio such as Recorder playback remains available.
 
@@ -106,13 +108,15 @@ The device-wide Normal/Quiet policy is independent of visual theme. Speaker outp
 
 ## Configuration, storage, and logging
 
-Persistent preferences use firmware-managed internal records. Device-wide policy lives under `system/config`; application preferences use descriptor-bound `app/<persistence_key>/config` records only when the user has changed app settings away from compiled defaults. Returning all app settings to their defaults removes the app record again.
+Persistent preferences use firmware-managed internal records. `system/config` and `app/<persistence_key>/config` are logical ownership names, not literal filenames. The persistence service hashes opaque logical keys to fixed filesystem-safe names, serializes filesystem operations internally, limits each record to 16 KiB, and atomically replaces individual records through a same-directory temporary. Callers do not manage persistence locks or construct LittleFS paths.
 
-Records are limited to 16 KiB and use atomic same-directory temporary replacement. Interrupted-write temporaries are discarded during the persistence service's startup cleanup pass. An SD card is not required to retain device or app settings and is not consulted for configuration. Future settings transfer should use an explicit firmware-managed import/export operation rather than exposing internal record files.
+Application configuration records exist only for overrides from compiled defaults; returning all app settings to defaults removes the app record. Interrupted-write temporaries are discarded during the persistence service's startup cleanup pass. Reads do not create app storage directories.
+
+An SD card is not required to retain or save device/app settings and is not consulted for configuration. SD remains removable bulk storage for Recorder WAVs and asynchronous logs. Future settings transfer should use an explicit firmware-managed import/export operation rather than exposing internal record files.
 
 Wall-clock epoch/source state is not configuration. RFScout uses the RTC-backed system clock directly for display, log timestamps, and filesystem calendar metadata. Manual date/time and future GPS/NTP adjustments change runtime clock state; timezone and clock presentation remain persistent preferences.
 
-System Events/dmesg records internal-storage mount/recovery status and configuration-default recovery separately from SD-card mount state. RFScout can operate without SD for configuration, radio/sensor use, and Audio Spectrum. SD remains the home for Recorder files under `/sdcard/audio/` and asynchronous rotating logs. The conservative board-tested baseline is a FAT-compatible SanDisk card of 32 GB or less. Logs rotate through 100 files of up to 4 MiB each while preserving a free-space reserve.
+System Events/dmesg records internal-storage mount/recovery status and configuration-default recovery separately from SD-card mount state. RFScout can operate without SD for configuration, radio/sensor use, and Audio Spectrum. The conservative board-tested SD baseline is a FAT-compatible SanDisk card of 32 GB or less. Logs rotate through 100 files of up to 4 MiB each while preserving a free-space reserve.
 
 ## Hardware and memory boundaries
 
