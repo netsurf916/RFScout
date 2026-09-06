@@ -18,8 +18,11 @@
 
 /** @brief Initialize timezone for the authoritative RTC-backed system wall clock. */
 esp_err_t device_time_init( void );
-/** @brief Set the running RTC-backed system wall clock to one UTC epoch. */
-esp_err_t device_time_set_epoch( time_t a_epoch );
+/**
+ * @brief Set the running RTC-backed system wall clock to one UTC epoch.
+ * @details Additional legacy source/detail arguments are accepted and ignored; source is not state.
+ */
+esp_err_t device_time_set_epoch( time_t a_epoch, ... );
 /** @brief Return the current RTC-backed system epoch. */
 bool device_time_now( time_t *a_epoch );
 /** @brief Apply the timezone currently selected in device configuration. */
