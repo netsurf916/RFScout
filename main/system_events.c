@@ -202,11 +202,6 @@ static void render_event( const rfscout_event_t *a_event,
             {
                 snprintf( a_detail, a_detail_size, "DETECTED" );
             }
-            else if( RFSCOUT_APP_AVAILABILITY_UNAVAILABLE ==
-                     (rfscout_app_availability_t)a_event->value )
-            {
-                snprintf( a_detail, a_detail_size, "NOT PRESENT" );
-            }
             else
             {
                 snprintf( a_detail, a_detail_size, "UNAVAILABLE" );
@@ -219,9 +214,6 @@ static void render_event( const rfscout_event_t *a_event,
         case RFSCOUT_EVENT_APP_UNAVAILABLE:
             snprintf( a_title, a_title_size, "%s", app_name( a_event->source ) );
             snprintf( a_detail, a_detail_size, "DISCONNECTED" );
-            break;
-            snprintf( a_title, a_title_size, "%s", app_name( a_event->source ) );
-            snprintf( a_detail, a_detail_size, "PROBE ERROR" );
             break;
         case RFSCOUT_EVENT_DISPLAY_PROVIDER_SELECTED:
             snprintf( a_title, a_title_size, "DISPLAY" );

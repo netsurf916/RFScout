@@ -252,6 +252,7 @@ Remaining work:
 - [ ] Decide whether SD-backed logs need a dedicated system-event record type beyond ESP diagnostics.
 - [ ] Refine event payloads where one compact integer is insufficient without turning events into preformatted strings.
 - [ ] Add per-event presentation controls only if practical use demonstrates a real need.
+- [ ] Define per-event presentation policy separately for history retention, transient overlay/display wake, and audible feedback; keep startup discovery silent unless field use demonstrates a need.
 - [ ] Validate overlay/wake behavior from active, dimmed, and hardware-sleep states.
 - [ ] Validate protective power overlays retain priority.
 - [ ] Validate rapid event bursts overwrite history safely without creating an audible backlog.
