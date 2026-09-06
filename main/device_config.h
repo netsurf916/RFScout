@@ -190,17 +190,9 @@ esp_err_t device_config_set_timezone( const char *a_name );
 /** @brief Return the selected timezone definition or NULL when unavailable. */
 const device_timezone_t *device_config_timezone( void );
 
-/** @brief Return saved cold-boot wall-clock state loaded from configuration. */
-bool device_config_saved_time( int64_t *a_epoch, const char **a_source );
-
-/**
- * @brief Atomically persist current preferences and optional wall-clock bootstrap state internally.
- * @param a_update_time True to replace/clear the saved shutdown epoch; false to preserve it.
- * @param a_epoch New saved epoch when @p a_update_time is true.
- * @param a_time_source Stable source token for the supplied epoch.
- */
-esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a_time_source );
-/** @brief Persist runtime preferences only when a setter has changed canonical configuration. */
+/** @brief Atomically persist current user preferences internally. */
+esp_err_t device_config_save( void );
+/** @brief Persist preferences only when a setter has changed canonical configuration. */
 esp_err_t device_config_save_if_dirty( void );
 
 #endif // _RFSCOUT_DEVICE_CONFIG_H_
