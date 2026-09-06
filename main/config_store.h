@@ -26,8 +26,11 @@ esp_err_t config_store_init( void );
 /** @brief Return whether the internal persistence filesystem is mounted and usable. */
 bool config_store_is_available( void );
 
-/** @brief Return whether this boot consumed an SD configuration import. */
-bool config_store_imported( void );
+/** @brief Return whether a validated SD import is awaiting canonicalization/finalization. */
+bool config_store_import_pending( void );
+
+/** @brief Consume the SD import after its internal copy has been canonicalized successfully. */
+esp_err_t config_store_finalize_import( void );
 
 /**
  * @brief Synchronize the SD example with the authoritative internal configuration.

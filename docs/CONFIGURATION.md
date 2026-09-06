@@ -93,7 +93,7 @@ Startup follows this order:
 2. remove any stale internal write temporary and legacy development sidecars;
 3. if `/sdcard/rfscout.json` exists, validate it as a current-schema import;
 4. if valid, copy it to `/internal/rfscout.json.tmp`, flush it, and atomically rename it over the internal live file;
-5. delete the SD import only after the internal commit succeeds;
+5. load and canonicalize the imported configuration internally, then delete the SD import only after that canonical save succeeds;
 6. if the SD import is malformed or has an incompatible schema, rename it to `/sdcard/rfscout.json.bad` and leave the internal configuration unchanged;
 7. load the internal configuration over compiled defaults; and
 8. if the internal file is missing, corrupt, or incompatible, replace it with a freshly generated current-default configuration.
@@ -104,7 +104,7 @@ Internal schema compatibility is deliberately simple while RFScout remains pre-1
 
 ### SD import and example workflow
 
-`/sdcard/rfscout.json` means **import this configuration**. RFScout never uses it as the normal live configuration. A successful import consumes and removes the file. A failed parse/schema validation preserves the user's input as `/sdcard/rfscout.json.bad` so it is not retried on every boot.
+`/sdcard/rfscout.json` means **import this configuration**. RFScout never uses it as the normal live configuration. A successful import consumes and removes the file only after the internal copy has been parsed and canonicalized successfully. A failed parse/schema validation preserves the user's input as `/sdcard/rfscout.json.bad` so it is not retried on every boot.
 
 `/sdcard/rfscout-example.json` is never imported under that name. It is a byte-for-byte copy of the current authoritative internal configuration and is intended to show the exact schema and current values a user can copy, rename to `rfscout.json`, edit, and reinsert for import.
 

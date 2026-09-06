@@ -29,7 +29,7 @@
 static const char *TAG = "config_store";
 static bool initialized;
 static bool available;
-static bool imported;
+static bool import_pending;
 
 static void cleanup_internal_artifacts( void )
 {
@@ -236,16 +236,8 @@ static void import_sd_config( void )
                   esp_err_to_name( result ) );
         return;
     }
-    imported = true;
-
-    if( 0 != unlink( RFSCOUT_SD_CONFIG_IMPORT_PATH ) )
-    {
-        ESP_LOGW( TAG, "imported SD configuration but could not remove the source file" );
-    }
-    else
-    {
-        ESP_LOGI( TAG, "imported SD configuration into internal flash" );
-    }
+    import_pending = true;
+    ESP_LOGI( TAG, "staged SD configuration in internal flash" );
 }
 
 esp_err_t config_store_init( void )
@@ -297,9 +289,30 @@ bool config_store_is_available( void )
     return available;
 }
 
-bool config_store_imported( void )
+bool config_store_import_pending( void )
 {
-    return imported;
+    return import_pending;
+}
+
+esp_err_t config_store_finalize_import( void )
+{
+    if( !import_pending )
+    {
+        return ESP_OK;
+    }
+    if( !storage_is_available() )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if( 0 != unlink( RFSCOUT_SD_CONFIG_IMPORT_PATH ) )
+    {
+        ESP_LOGW( TAG, "canonicalized SD configuration but could not remove the source file" );
+        return ESP_FAIL;
+    }
+
+    import_pending = false;
+    ESP_LOGI( TAG, "completed SD configuration import" );
+    return ESP_OK;
 }
 
 esp_err_t config_store_sync_example( void )

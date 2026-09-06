@@ -969,7 +969,7 @@ esp_err_t device_config_init( void )
     const esp_err_t result = load_file();
     if( ESP_OK == result )
     {
-        if( config_store_imported() || config_upgrade_pending )
+        if( config_store_import_pending() || config_upgrade_pending )
         {
             const esp_err_t upgrade_result = device_config_save( false, 0, NULL );
             if( ESP_OK != upgrade_result )
@@ -982,11 +982,21 @@ esp_err_t device_config_init( void )
             else
             {
                 config_upgrade_pending = false;
-                if( config_store_imported() )
+                if( config_store_import_pending() )
                 {
-                    rfscout_event_emit( RFSCOUT_EVENT_CONFIG_IMPORTED,
-                                        RFSCOUT_EVENT_SOURCE_SYSTEM,
-                                        (int32_t)RFSCOUT_CONFIG_SCHEMA_VERSION );
+                    const esp_err_t finalize_result = config_store_finalize_import();
+                    if( ESP_OK == finalize_result )
+                    {
+                        rfscout_event_emit( RFSCOUT_EVENT_CONFIG_IMPORTED,
+                                            RFSCOUT_EVENT_SOURCE_SYSTEM,
+                                            (int32_t)RFSCOUT_CONFIG_SCHEMA_VERSION );
+                    }
+                    else
+                    {
+                        ESP_LOGW( TAG,
+                                  "configuration import finalization failed: %s",
+                                  esp_err_to_name( finalize_result ) );
+                    }
                 }
             }
         }
