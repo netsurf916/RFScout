@@ -392,7 +392,7 @@ static void load_display( const cJSON *a_root )
         }
         else
         {
-            ESP_LOGW( TAG, "invalid theme '%s'; using default", theme->valuestring );
+            ESP_LOGE( TAG, "invalid theme '%s'; using default", theme->valuestring );
         }
     }
 }
@@ -1542,7 +1542,7 @@ esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a
     if( ESP_OK == result )
     {
         config_dirty = false;
-        }
+    }
     return result;
 }
 

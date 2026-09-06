@@ -116,7 +116,7 @@ RFScout compares the example and internal files before writing. If they already 
 
 Dim/off are presentation states only. Applications, RF acquisition, logging, framebuffer work, and audio continue. In the off state RFScout sets the backlight to zero, disables ST7789 output, and places the panel in hardware sleep. Physical user activity wakes the display; the complete wake gesture is consumed before app navigation, lock handling, or power-button behavior. Wake performs panel sleep-out/settle, presents the latest framebuffer while dark, then restores configured brightness.
 
-Visual themes are **Indoor**, **Outdoor**, and **Night** and affect colors only. Legacy `discipline` theme text is normalized to **Night + Quiet** if encountered in an otherwise current-schema document.
+Visual themes are **Indoor**, **Outdoor**, and **Night** and affect colors only. Unsupported theme values, including legacy aliases such as `discipline`, retain the compiled default and are reported as configuration errors.
 
 ## Audio policy and volumes
 
@@ -133,7 +133,7 @@ RFScout distinguishes **UI/device**, **Event**, **Alert**, and **Content** audio
 - `quiet` suppresses UI, Event, and Alert presentation without rewriting saved levels, app switches, alert enablement, or Morse mappings;
 - requested Content such as Recorder playback remains available.
 
-Global Alert presentation is `OFF`, `TONE`, or `MORSE`. Individual alert mappings may also be Off without deleting the semantic/log event. Recorder playback volume is independent of the three global incidental levels. The persisted `recorder.input_gain_db` remains the Recorder capture-gain setting and currently accepts **0 through +24 dB in 3 dB steps**. Audio Spectrum has a separate runtime live-monitor gain from **0 through +48 dB in 3 dB steps**; that live setting is not currently persisted to `rfscout.json`. Whether these should converge on one calibrated persisted Audio Input setting remains roadmap work.
+Global Alert presentation is `OFF`, `TONE`, or `MORSE`. Individual alert mappings may also be Off without deleting the semantic/log event. Recorder playback volume is independent of the three global incidental levels. The persisted `recorder.input_gain_db` remains the Recorder capture-gain setting and currently accepts **0 through +48 dB in 3 dB steps**. Audio Spectrum has a separate runtime live-monitor gain from **0 through +48 dB in 3 dB steps**; that live setting is not currently persisted to `rfscout.json`. Whether these should converge on one calibrated persisted Audio Input setting remains roadmap work.
 
 ## Power button and protective policy
 
