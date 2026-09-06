@@ -100,7 +100,7 @@ Startup follows this order:
 
 Internal writes always serialize a complete configuration to `/internal/rfscout.json.tmp`, flush and close it, then atomically rename it over `/internal/rfscout.json`. The temporary is disposable after an interrupted write; RFScout never treats it as a second authoritative configuration.
 
-Internal schema compatibility is deliberately simple while RFScout remains pre-1.0: the stored internal document must match the firmware's current schema. An incompatible internal document is replaced by current defaults rather than migrated through backup/recovery files.
+Internal schema compatibility is deliberately simple while RFScout remains pre-1.0: the stored internal document must match the firmware's current schema. An incompatible internal document is replaced by current defaults rather than migrated through backup/recovery files. A current-schema document is rewritten once when its effective parsed values differ from RFScout's canonical serialization, so defaulted invalid values, unknown fields, aliases, and noncanonical formatting do not persist as authoritative state.
 
 ### SD import and example workflow
 
@@ -116,7 +116,7 @@ RFScout compares the example and internal files before writing. If they already 
 
 Dim/off are presentation states only. Applications, RF acquisition, logging, framebuffer work, and audio continue. In the off state RFScout sets the backlight to zero, disables ST7789 output, and places the panel in hardware sleep. Physical user activity wakes the display; the complete wake gesture is consumed before app navigation, lock handling, or power-button behavior. Wake performs panel sleep-out/settle, presents the latest framebuffer while dark, then restores configured brightness.
 
-Visual themes are **Indoor**, **Outdoor**, and **Night** and affect colors only. Unsupported theme values, including legacy aliases such as `discipline`, retain the compiled default and are reported as configuration errors.
+Visual themes are **Indoor**, **Outdoor**, and **Night** and affect colors only. Unsupported theme values retain the compiled default and are reported as configuration errors.
 
 ## Audio policy and volumes
 

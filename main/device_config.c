@@ -889,6 +889,60 @@ static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_tim
     return root;
 }
 
+/** @brief Check whether the stored document already matches RFScout's canonical serialization. */
+static esp_err_t config_file_is_canonical( bool *a_canonical )
+{
+    if( NULL == a_canonical )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *a_canonical = false;
+
+    cJSON *root = build_json( false, 0, NULL );
+    if( NULL == root )
+    {
+        return ESP_ERR_NO_MEM;
+    }
+    char *text = cJSON_Print( root );
+    cJSON_Delete( root );
+    if( NULL == text )
+    {
+        return ESP_ERR_NO_MEM;
+    }
+
+    FILE *file = fopen( RFSCOUT_INTERNAL_CONFIG_PATH, "rb" );
+    if( NULL == file )
+    {
+        free( text );
+        return ( ENOENT == errno ) ? ESP_ERR_NOT_FOUND : ESP_FAIL;
+    }
+
+    const size_t text_length = strlen( text );
+    bool matches = true;
+    for( size_t offset = 0U; offset < text_length; )
+    {
+        char buffer[ 256 ];
+        const size_t remaining = text_length - offset;
+        const size_t wanted = remaining < sizeof( buffer ) ? remaining : sizeof( buffer );
+        const size_t count = fread( buffer, 1U, wanted, file );
+        if( count != wanted || 0 != memcmp( buffer, text + offset, wanted ) )
+        {
+            matches = false;
+            break;
+        }
+        offset += wanted;
+    }
+    if( matches )
+    {
+        matches = ( '\n' == fgetc( file ) ) && ( EOF == fgetc( file ) ) && !ferror( file );
+    }
+
+    fclose( file );
+    free( text );
+    *a_canonical = matches;
+    return ESP_OK;
+}
+
 /** @brief Atomically replace the sole authoritative internal configuration. */
 static esp_err_t replace_config_file( void )
 {
@@ -914,33 +968,39 @@ esp_err_t device_config_init( void )
     const esp_err_t result = load_file();
     if( ESP_OK == result )
     {
-        if( config_store_import_pending() )
+        bool canonical = false;
+        const esp_err_t canonical_result = config_file_is_canonical( &canonical );
+        if( ESP_OK != canonical_result )
         {
-            const esp_err_t upgrade_result = device_config_save( false, 0, NULL );
-            if( ESP_OK != upgrade_result )
+            ESP_LOGW( TAG,
+                      "configuration canonical comparison failed: %s",
+                      esp_err_to_name( canonical_result ) );
+        }
+
+        if( config_store_import_pending() || !canonical )
+        {
+            const esp_err_t save_result = device_config_save( false, 0, NULL );
+            if( ESP_OK != save_result )
             {
                 config_dirty = true;
                 ESP_LOGW( TAG,
-                          "configuration normalization save failed: %s",
-                          esp_err_to_name( upgrade_result ) );
+                          "configuration canonical save failed: %s",
+                          esp_err_to_name( save_result ) );
             }
-            else
+            else if( config_store_import_pending() )
             {
-                if( config_store_import_pending() )
+                const esp_err_t finalize_result = config_store_finalize_import();
+                if( ESP_OK == finalize_result )
                 {
-                    const esp_err_t finalize_result = config_store_finalize_import();
-                    if( ESP_OK == finalize_result )
-                    {
-                        rfscout_event_emit( RFSCOUT_EVENT_CONFIG_IMPORTED,
-                                            RFSCOUT_EVENT_SOURCE_SYSTEM,
-                                            (int32_t)RFSCOUT_CONFIG_SCHEMA_VERSION );
-                    }
-                    else
-                    {
-                        ESP_LOGW( TAG,
-                                  "configuration import finalization failed: %s",
-                                  esp_err_to_name( finalize_result ) );
-                    }
+                    rfscout_event_emit( RFSCOUT_EVENT_CONFIG_IMPORTED,
+                                        RFSCOUT_EVENT_SOURCE_SYSTEM,
+                                        (int32_t)RFSCOUT_CONFIG_SCHEMA_VERSION );
+                }
+                else
+                {
+                    ESP_LOGW( TAG,
+                              "configuration import finalization failed: %s",
+                              esp_err_to_name( finalize_result ) );
                 }
             }
         }
