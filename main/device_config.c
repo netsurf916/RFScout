@@ -979,7 +979,7 @@ esp_err_t device_config_init( void )
             }
             else
             {
-                            if( config_store_import_pending() )
+                if( config_store_import_pending() )
                 {
                     const esp_err_t finalize_result = config_store_finalize_import();
                     if( ESP_OK == finalize_result )
@@ -1595,7 +1595,7 @@ esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a
     if( ESP_OK == result )
     {
         config_dirty = false;
-            config_source_version = (int)RFSCOUT_CONFIG_SCHEMA_VERSION;
+        config_source_version = (int)RFSCOUT_CONFIG_SCHEMA_VERSION;
     }
     return result;
 }
