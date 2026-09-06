@@ -411,8 +411,7 @@ esp_err_t app_store_context_current( rfscout_app_store_context_t *a_context )
 static bool app_context_current( const rfscout_app_store_context_t *a_context )
 {
     return NULL != a_context && a_context->app >= 0 && a_context->app < RFSCOUT_APP_COUNT &&
-           a_context->app == app_session_app() &&
-           a_context->generation == app_session_generation();
+           a_context->app == app_session_app() && a_context->generation == app_session_generation();
 }
 
 esp_err_t app_store_write_context( const rfscout_app_store_context_t *a_context,
@@ -439,9 +438,8 @@ esp_err_t app_store_read_context( const rfscout_app_store_context_t *a_context,
 esp_err_t app_store_remove_context( const rfscout_app_store_context_t *a_context,
                                     const char *a_key )
 {
-    return app_context_current( a_context )
-               ? persistent_store_app_remove( a_context->app, a_key )
-               : ESP_ERR_INVALID_STATE;
+    return app_context_current( a_context ) ? persistent_store_app_remove( a_context->app, a_key )
+                                            : ESP_ERR_INVALID_STATE;
 }
 
 bool app_store_exists_context( const rfscout_app_store_context_t *a_context, const char *a_key )
@@ -460,8 +458,9 @@ esp_err_t app_store_read( const char *a_key, void *a_data, size_t a_capacity, si
 {
     rfscout_app_store_context_t context;
     const esp_err_t result = app_store_context_current( &context );
-    return ESP_OK == result ? app_store_read_context( &context, a_key, a_data, a_capacity, a_length )
-                            : result;
+    return ESP_OK == result
+               ? app_store_read_context( &context, a_key, a_data, a_capacity, a_length )
+               : result;
 }
 
 esp_err_t app_store_remove( const char *a_key )
