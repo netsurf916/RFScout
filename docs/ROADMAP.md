@@ -134,14 +134,22 @@ PR #70 establishes the shared audio-capture boundary. Remaining work is calibrat
 
 Future consumers may include tuner/pitch analysis and microphone-side CW/Morse receive.
 
-### Log format and maintained parser
+### Log format, levels, and maintained parser
 
 **Priority:** Near term
 
-- stable `key=value` fields and quoting/escaping;
-- stable naming/order and explicit schema/version marker if needed;
-- maintained reference parser producing JSON and/or CSV;
-- regression tests;
+Rework application/system logging as a common policy rather than letting each feature independently decide how much diagnostic or observational data to emit. Logging levels should provide a practical way to reduce log volume while retaining important operational and decoded/observed records at the selected level.
+
+- define a small, consistent set of logging levels and their intended semantics;
+- make the configured log level part of authoritative device configuration;
+- classify existing log records by level and tune emitted detail so lowering the level predictably reduces volume rather than disabling arbitrary subsystems;
+- keep important application observations, warnings, and failures semantically distinct from verbose/debug diagnostics;
+- allow applications such as future CW/Morse receive to emit structured decoded-message records through the common logger when enabled at the selected level;
+- keep internal app-browsable history and SD logging separate: a decoded message may be retained internally for browsing and independently mirrored to the SD log when policy and removable storage permit;
+- use stable `key=value` fields and quoting/escaping;
+- use stable naming/order and an explicit schema/version marker if needed;
+- maintain a reference parser producing JSON and/or CSV;
+- add regression tests for levels, missing/unknown fields, long values, and quoting;
 - preserve UTC ISO-8601 timestamps and explicit uptime fallback.
 
 ## Medium-term platform work
@@ -170,7 +178,8 @@ Build a compact service over internal persistence that owns record layout, bound
 - send complete messages through the shared Morse/speaker service;
 - keep detection-notification one-character mappings separate from CW transmit presets;
 - if receive/decoding is added, store a small browsable decoded-message history through the system-owned internal record service rather than configuration;
-- optionally mirror decoded-message activity to the normal SD log/export path when removable storage is available, without making SD a runtime requirement;
+- emit structured decoded-message records through the common logger when receive/decoding is enabled, subject to the configured logging level;
+- keep decoded-message SD logging independent from internal app history so the app remains fully useful without removable storage;
 - reserve SD-specific files for genuinely bulk/raw capture data if such capture is added later.
 
 ### Location and external time authorities
