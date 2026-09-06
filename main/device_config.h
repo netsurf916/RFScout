@@ -72,7 +72,6 @@ typedef struct
     rfscout_alert_mode_t alert_mode;
     uint8_t alert_volume_percent;
     uint8_t recorder_volume_percent;
-    uint8_t recorder_input_gain_db;
     bool notification_app_enabled[ RFSCOUT_APP_COUNT ];
     bool wifi_device_feedback_enabled;
     bool ble_device_feedback_enabled;
@@ -148,9 +147,6 @@ esp_err_t device_config_set_alert_volume( uint8_t a_percent );
 
 /** @brief Change Recorder playback volume percentage from 0 through 100. */
 esp_err_t device_config_set_recorder_volume( uint8_t a_percent );
-
-/** @brief Change Recorder fixed digital input gain (0..24 dB, 3 dB steps). */
-esp_err_t device_config_set_recorder_input_gain( uint8_t a_gain_db );
 bool device_config_notification_app_enabled( rfscout_app_id_t a_app );
 esp_err_t device_config_set_notification_app_enabled( rfscout_app_id_t a_app, bool a_enabled );
 
@@ -190,12 +186,8 @@ esp_err_t device_config_set_timezone( const char *a_name );
 /** @brief Return the selected timezone definition or NULL when unavailable. */
 const device_timezone_t *device_config_timezone( void );
 
-/**
- * @brief Atomically persist current user preferences internally.
- * @details The legacy time arguments are retained temporarily for source compatibility and ignored;
- *          wall-clock state is runtime RTC state and is never written to configuration.
- */
-esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a_time_source );
+/** @brief Atomically persist the current firmware-managed user preferences. */
+esp_err_t device_config_save( void );
 /** @brief Persist preferences only when a setter has changed canonical configuration. */
 esp_err_t device_config_save_if_dirty( void );
 
