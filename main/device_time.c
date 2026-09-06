@@ -32,7 +32,7 @@ esp_err_t device_time_init( void )
     return device_time_apply_timezone();
 }
 
-esp_err_t device_time_set_epoch( time_t a_epoch )
+esp_err_t device_time_set_epoch( time_t a_epoch, ... )
 {
     const struct timeval value = {
         .tv_sec = a_epoch,
