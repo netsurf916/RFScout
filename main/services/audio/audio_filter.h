@@ -36,8 +36,8 @@ static inline float audio_highpass_process( rfscout_audio_highpass_t *a_state, f
     {
         return a_input;
     }
-    const float output = a_input - a_state->previous_input +
-                         RFSCOUT_AUDIO_HIGHPASS_ALPHA * a_state->previous_output;
+    const float output =
+        a_input - a_state->previous_input + RFSCOUT_AUDIO_HIGHPASS_ALPHA * a_state->previous_output;
     a_state->previous_input = a_input;
     a_state->previous_output = output;
     return output;
