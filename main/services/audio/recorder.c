@@ -690,8 +690,8 @@ static bool trim_and_normalize_recording( void )
             return false;
         for( size_t i = 0; i < read; ++i )
         {
-            const float filtered = audio_highpass_process(
-                &write_filter, (float)( (int32_t)samples[ i ] - dc_mean ) );
+            const float filtered =
+                audio_highpass_process( &write_filter, (float)( (int32_t)samples[ i ] - dc_mean ) );
             int32_t scaled = (int32_t)( filtered * (float)gain_q10 / 1024.0f );
             if( scaled > INT16_MAX )
             {
