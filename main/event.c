@@ -57,7 +57,6 @@ rfscout_audio_category_t rfscout_event_audio_category( rfscout_event_type_t a_ty
         case RFSCOUT_EVENT_CONFIG_IMPORTED:
         case RFSCOUT_EVENT_CONFIG_DEFAULTED:
         case RFSCOUT_EVENT_APP_DISCOVERED:
-        case RFSCOUT_EVENT_APP_PROBE_ERROR:
         case RFSCOUT_EVENT_DISPLAY_PROVIDER_SELECTED:
         case RFSCOUT_EVENT_INPUT_PROVIDER_SELECTED:
         case RFSCOUT_EVENT_TYPE_COUNT:

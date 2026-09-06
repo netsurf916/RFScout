@@ -62,7 +62,7 @@ Speaker and microphone behavior should be exposed through services/capabilities 
 
 Compile-time capability means the target can support a device; it does not guarantee every product variant populates it. Fixed optional devices such as CC1101, nRF24, and the board microphone may be probed once at startup. Hot-plug peripherals such as external I2C devices should use dynamic probing.
 
-Probe state is retained centrally. The first known result is recorded in the RAM-only System Events history without interactive notification; later availability/error records are emitted only when the retained state changes. Periodic unchanged probes must not produce ring-buffer noise.
+Probe state is retained centrally as usable or unavailable. The first known result is recorded in the RAM-only System Events history without interactive notification; later availability changes are emitted only when the retained state changes. Detailed probe failures remain diagnostic-log data rather than a separate application-availability state. Periodic unchanged probes must not produce ring-buffer noise.
 
 ## Adding a board
 

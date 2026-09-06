@@ -116,7 +116,7 @@ static void event_text( const rfscout_event_t *a_event, char *a_text, size_t a_c
             }
             else
             {
-                snprintf( a_text, a_capacity, "%s PROBE ERROR", event_app_name( a_event->source ) );
+                snprintf( a_text, a_capacity, "%s UNAVAILABLE", event_app_name( a_event->source ) );
             }
             break;
         case RFSCOUT_EVENT_APP_AVAILABLE:
@@ -124,9 +124,6 @@ static void event_text( const rfscout_event_t *a_event, char *a_text, size_t a_c
             break;
         case RFSCOUT_EVENT_APP_UNAVAILABLE:
             snprintf( a_text, a_capacity, "%s DISCONNECTED", event_app_name( a_event->source ) );
-            break;
-        case RFSCOUT_EVENT_APP_PROBE_ERROR:
-            snprintf( a_text, a_capacity, "%s PROBE ERROR", event_app_name( a_event->source ) );
             break;
         case RFSCOUT_EVENT_DISPLAY_PROVIDER_SELECTED:
             snprintf( a_text, a_capacity, "DISPLAY ST7789" );

@@ -50,11 +50,6 @@ static void retain_availability( rfscout_app_id_t a_app, rfscout_app_availabilit
     {
         ESP_LOGI( TAG, "%s unavailable", descriptor->name );
     }
-    else if( RFSCOUT_APP_AVAILABILITY_ERROR == a_availability )
-    {
-        ESP_LOGW( TAG, "%s availability error", descriptor->name );
-    }
-
     if( RFSCOUT_APP_AVAILABILITY_UNKNOWN == previous )
     {
         rfscout_event_emit( RFSCOUT_EVENT_APP_DISCOVERED, (uint8_t)a_app, (int32_t)a_availability );
@@ -68,18 +63,13 @@ static void retain_availability( rfscout_app_id_t a_app, rfscout_app_availabilit
         rfscout_event_emit(
             RFSCOUT_EVENT_APP_UNAVAILABLE, (uint8_t)a_app, (int32_t)a_availability );
     }
-    else if( RFSCOUT_APP_AVAILABILITY_ERROR == a_availability )
-    {
-        rfscout_event_emit(
-            RFSCOUT_EVENT_APP_PROBE_ERROR, (uint8_t)a_app, (int32_t)a_availability );
-    }
 }
 
 static rfscout_app_availability_t probe_descriptor( const rfscout_app_descriptor_t *a_descriptor )
 {
     if( NULL == a_descriptor )
     {
-        return RFSCOUT_APP_AVAILABILITY_ERROR;
+        return RFSCOUT_APP_AVAILABILITY_UNAVAILABLE;
     }
     if( NULL == a_descriptor->probe )
     {
@@ -88,20 +78,15 @@ static rfscout_app_availability_t probe_descriptor( const rfscout_app_descriptor
     }
 
     const esp_err_t result = a_descriptor->probe();
-    rfscout_app_availability_t current = RFSCOUT_APP_AVAILABILITY_ERROR;
-    if( ESP_OK == result )
-    {
-        current = RFSCOUT_APP_AVAILABILITY_AVAILABLE;
-    }
-    else if( ( ESP_ERR_NOT_FOUND == result ) || ( ESP_ERR_INVALID_RESPONSE == result ) ||
-             ( ESP_ERR_TIMEOUT == result ) )
-    {
-        current = RFSCOUT_APP_AVAILABILITY_UNAVAILABLE;
-    }
+    const rfscout_app_availability_t current =
+        ( ESP_OK == result ) ? RFSCOUT_APP_AVAILABILITY_AVAILABLE
+                             : RFSCOUT_APP_AVAILABILITY_UNAVAILABLE;
 
     const rfscout_app_availability_t previous = availability[ a_descriptor->id ];
     retain_availability( a_descriptor->id, current );
-    if( ( previous != current ) && ( RFSCOUT_APP_AVAILABILITY_ERROR == current ) )
+    if( ( ESP_OK != result ) && ( previous != current ) &&
+        ( ESP_ERR_NOT_FOUND != result ) && ( ESP_ERR_INVALID_RESPONSE != result ) &&
+        ( ESP_ERR_TIMEOUT != result ) )
     {
         ESP_LOGW( TAG,
                   "%s availability probe failed: %s",
@@ -175,5 +160,5 @@ void app_framework_report_availability( rfscout_app_id_t a_app,
 
 rfscout_app_availability_t app_framework_availability( rfscout_app_id_t a_app )
 {
-    return app_id_valid( a_app ) ? availability[ a_app ] : RFSCOUT_APP_AVAILABILITY_ERROR;
+    return app_id_valid( a_app ) ? availability[ a_app ] : RFSCOUT_APP_AVAILABILITY_UNAVAILABLE;
 }

@@ -247,17 +247,18 @@ Implemented behavior includes:
 
 - shared semantic system-state event IDs on the existing event dispatcher;
 - fixed-size RAM-only recent-event history independent from normal diagnostics;
-- charger connect/disconnect, startup SD and internal-storage status, configuration import/default recovery, and Thermal availability events;
+- charger connect/disconnect, startup SD and internal-storage status, configuration import/default recovery, and descriptor-driven application/hardware availability events;
 - transient global event overlay without changing application lifecycle state;
 - notification-driven display attention wake preserving the original inactivity deadline;
 - common acquired/lost procedural cues under Normal/Quiet audio policy;
 - boot-state discovery retained/logged without interactive notification behavior;
+- provider-selection and first-known application/hardware usability diagnostics generalized by PR #72;
 - optional default-disabled System Events application with stable browse snapshot.
 
 Remaining work:
 
 - [ ] Detect reliable runtime SD insertion/removal and write-failure transitions where the storage stack permits it.
-- [ ] Add further hot-pluggable peripheral/capability events as hardware support expands.
+- [ ] Add events for future hot-pluggable peripherals/capabilities that are not represented by the descriptor availability framework.
 - [ ] Decide whether SD-backed logs need a dedicated system-event record type beyond ESP diagnostics.
 - [ ] Refine event payloads where one compact integer is insufficient without turning events into preformatted strings.
 - [ ] Add per-event presentation controls only if practical use demonstrates a real need.

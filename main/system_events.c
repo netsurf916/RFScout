@@ -68,7 +68,6 @@ static bool is_system_state_event( const rfscout_event_t *a_event )
         case RFSCOUT_EVENT_APP_DISCOVERED:
         case RFSCOUT_EVENT_APP_AVAILABLE:
         case RFSCOUT_EVENT_APP_UNAVAILABLE:
-        case RFSCOUT_EVENT_APP_PROBE_ERROR:
         case RFSCOUT_EVENT_DISPLAY_PROVIDER_SELECTED:
         case RFSCOUT_EVENT_INPUT_PROVIDER_SELECTED:
             return true;
@@ -92,10 +91,7 @@ static rfscout_system_event_severity_t severity_for( const rfscout_event_t *a_ev
     }
     if( RFSCOUT_EVENT_WARNING == a_event->type ||
         RFSCOUT_EVENT_STORAGE_MOUNT_FAILED == a_event->type ||
-        RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED == a_event->type ||
-        RFSCOUT_EVENT_APP_PROBE_ERROR == a_event->type ||
-        ( RFSCOUT_EVENT_APP_DISCOVERED == a_event->type &&
-          RFSCOUT_APP_AVAILABILITY_ERROR == (rfscout_app_availability_t)a_event->value ) )
+        RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED == a_event->type )
     {
         return RFSCOUT_SYSTEM_EVENT_WARNING;
     }
@@ -213,7 +209,7 @@ static void render_event( const rfscout_event_t *a_event,
             }
             else
             {
-                snprintf( a_detail, a_detail_size, "PROBE ERROR" );
+                snprintf( a_detail, a_detail_size, "UNAVAILABLE" );
             }
             break;
         case RFSCOUT_EVENT_APP_AVAILABLE:
@@ -224,7 +220,6 @@ static void render_event( const rfscout_event_t *a_event,
             snprintf( a_title, a_title_size, "%s", app_name( a_event->source ) );
             snprintf( a_detail, a_detail_size, "DISCONNECTED" );
             break;
-        case RFSCOUT_EVENT_APP_PROBE_ERROR:
             snprintf( a_title, a_title_size, "%s", app_name( a_event->source ) );
             snprintf( a_detail, a_detail_size, "PROBE ERROR" );
             break;
