@@ -237,7 +237,7 @@ Outstanding validation:
 - [ ] Verify all Indoor/Outdoor/Night + Normal/Quiet combinations.
 - [ ] Verify Quiet suppression versus explicit content audio.
 - [ ] Verify incompatible-schema/default regeneration.
-- [ ] Verify current-schema legacy-token normalization and complete theme/audio independence.
+- [ ] Verify invalid current-schema values retain compiled defaults and theme/audio independence.
 
 ### Workstream F: system events, transient history, and notification wake
 
