@@ -19,12 +19,12 @@
 void wifi_settings_view_render( unsigned a_selected,
                                 bool a_editing,
                                 bool a_notifications_enabled,
+                                rfscout_surveillance_sensitivity_t a_sensitivity,
                                 uint16_t a_wifi_timeout_seconds,
-                                uint16_t a_ble_timeout_seconds,
-                                uint16_t a_surveillance_timeout_seconds )
+                                uint16_t a_ble_timeout_seconds )
 {
     static const char *labels[ WIFI_SETTINGS_ITEM_COUNT ] = {
-        "BACK", "RESET DETECTIONS", "NOTIFICATIONS", "WIFI TIMEOUT", "BT TIMEOUT", "SURV TIMEOUT" };
+        "BACK", "RESET DETECTIONS", "NOTIFICATIONS", "SENSITIVITY", "WIFI TIMEOUT", "BT TIMEOUT" };
     const ui_theme_palette_t *theme = ui_theme_get();
 
     display_clear( theme->background );
@@ -34,7 +34,7 @@ void wifi_settings_view_render( unsigned a_selected,
     {
         const int y = UI_LAYOUT_MENU_START_Y + (int)item * UI_LAYOUT_MENU_ROW_HEIGHT;
         const bool active = ( item == a_selected );
-        const bool editable = ( item >= 3U ) && ( item <= 5U );
+        const bool editable = ( item >= 4U ) && ( item <= 5U );
         display_draw_text( UI_LAYOUT_LEFT_X,
                            y,
                            active ? ( a_editing && editable ? "*" : ">" ) : " ",
@@ -51,15 +51,25 @@ void wifi_settings_view_render( unsigned a_selected,
         }
         else if( 3U == item )
         {
-            snprintf( value, sizeof( value ), "%u s", (unsigned)a_wifi_timeout_seconds );
+            static const char *names[ RFSCOUT_SURVEILLANCE_SENSITIVITY_COUNT ] = {
+                [RFSCOUT_SURVEILLANCE_SENSITIVITY_HIGH] = "HIGH",
+                [RFSCOUT_SURVEILLANCE_SENSITIVITY_MEDIUM] = "MEDIUM",
+                [RFSCOUT_SURVEILLANCE_SENSITIVITY_LOW] = "LOW",
+            };
+            snprintf( value,
+                      sizeof( value ),
+                      "%s",
+                      ( a_sensitivity < RFSCOUT_SURVEILLANCE_SENSITIVITY_COUNT )
+                          ? names[ a_sensitivity ]
+                          : "HIGH" );
         }
         else if( 4U == item )
         {
-            snprintf( value, sizeof( value ), "%u s", (unsigned)a_ble_timeout_seconds );
+            snprintf( value, sizeof( value ), "%u s", (unsigned)a_wifi_timeout_seconds );
         }
         else if( 5U == item )
         {
-            snprintf( value, sizeof( value ), "%u s", (unsigned)a_surveillance_timeout_seconds );
+            snprintf( value, sizeof( value ), "%u s", (unsigned)a_ble_timeout_seconds );
         }
 
         if( '\0' != value[ 0 ] )

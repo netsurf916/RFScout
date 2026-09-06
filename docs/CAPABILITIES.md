@@ -10,7 +10,7 @@ Canonical rotary order:
 
 0. System Events — optional, disabled by default
 1. Home / Device Settings
-2. WiFi / BT
+2. WiFi / BLE
 3. CC1101
 4. nRF24
 5. Recorder
@@ -21,15 +21,17 @@ Disabled or unavailable apps are skipped. Home is always available and is the fa
 
 System Events is a read-only view of the RAM-only structured event ring. Center enters/exits a stable Browse snapshot; rotary input scrolls only while Browse is active.
 
-## WiFi / BT
+## WiFi / BLE
 
-WiFi / BT passively observes Wi-Fi and BLE activity, performs longest-prefix IEEE vendor attribution, distinguishes randomized/private addresses from unresolved public addresses, and applies conservative surveillance-oriented classification.
+WiFi / BLE passively observes Wi-Fi and BLE activity, performs longest-prefix IEEE vendor attribution, distinguishes randomized/private addresses from unresolved public addresses, and applies conservative surveillance-oriented classification.
 
-The normalized live observation store now grows in app-session PSRAM rather than reserving or enforcing a fixed 1000-item capacity. Collector ingestion uses an address/type identity index rather than rescanning the full collection per callback. Summary/presentation state is bounded independently from retained history.
+The normalized live observation store grows in app-session PSRAM rather than reserving or enforcing a fixed item capacity. Collector ingestion uses an address/type identity index rather than rescanning the full collection per callback. Both the general summary and surveillance view are projections of this one canonical active-device collection.
 
-Wi-Fi, BLE, and retained surveillance history currently have independent 10–300 second retention controls in 10-second steps, defaulting to 60 seconds. Wi-Fi and BLE membership age independently inside merged observations. Ordinary Wi-Fi/BLE discovery cues can be enabled independently; classified surveillance detections use app-specific alert categories.
+Wi-Fi and BLE source membership age independently using their respective 10–300 second retention controls, defaulting to 60 seconds. Surveillance classification is an attribute of the canonical device record and expires with that record; there is no separate surveillance retention list or timeout.
 
-Leaving the app transactionally drains/stops both collectors before its app-owned PSRAM is released.
+Curated surveillance signatures detect from the first observation that meets the configured **High / Medium / Low** sensitivity threshold, defaulting to High. Repeats for the same active device refresh its canonical observation rather than building confidence. Only currently active surveillance signatures are shown, ordered by recent activity with overflow compacted when necessary. Alerts are configured by semantic category such as ALPR, body camera, drone, camera, smart glasses, and acoustic sensor. Smart-glasses matching includes Meta/Ray-Ban/Oakley naming plus curated Brilliant Frame and Rokid BLE services, Even G1 naming, and Solos AirGo naming.
+
+Ordinary Wi-Fi/BLE discovery cues can be enabled independently. Leaving the app transactionally drains/stops both collectors before its app-owned PSRAM is released.
 
 ## CC1101
 
@@ -81,7 +83,7 @@ Implemented global settings include:
 - SD logging;
 - explicit configuration save.
 
-Small finite choices use direct center-to-cycle behavior; numeric ranges use edit/rotate. Per-app alert mappings and WiFi / BT retention remain in their owning app menus.
+Small finite choices use direct center-to-cycle behavior; numeric ranges use edit/rotate. Per-app alert mappings, surveillance sensitivity, and WiFi / BLE retention remain in their owning app menus.
 
 Visual themes are **Indoor**, **Outdoor**, and **Night** and affect colors only. **Quiet** suppresses incidental UI/Event/Alert presentation without rewriting saved app notification gates, mappings, mode, or volume. Explicit application Content audio such as Recorder playback remains available.
 
@@ -119,4 +121,4 @@ The 16 MiB internal flash is split into an 8 MiB factory application partition a
 
 ## Not currently implemented
 
-Major v0.4.0 work still outstanding includes Instant/Timed/Never WiFi/BLE retention semantics, semantic Wi-Fi/BLE entity/correlation views, dynamic surveillance-history migration, broader app-by-app PSRAM/history improvements, the planned further calibration/generalization of the Audio Input service, thermal calibration, a generic app-facing persistent record/database service, and release-level stress/fault-injection validation. The canonical checklist and status are in [ROADMAP.md](ROADMAP.md).
+Major v0.4.0 work still outstanding includes Instant/Timed/Never WiFi/BLE retention semantics, semantic Wi-Fi/BLE entity/correlation views, broader app-by-app PSRAM/history improvements, the planned further calibration/generalization of the Audio Input service, thermal calibration, a generic app-facing persistent record/database service, and release-level stress/fault-injection validation. The canonical checklist and status are in [ROADMAP.md](ROADMAP.md).

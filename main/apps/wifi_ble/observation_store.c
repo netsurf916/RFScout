@@ -544,11 +544,18 @@ void observation_store_set_event_callback( observation_store_event_callback_t a_
     xSemaphoreGive( store_lock );
 }
 
-bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new )
+bool observation_store_observe( const rf_device_t *a_observation,
+                                bool *a_is_new,
+                                bool *a_surveillance_new )
 {
     if( ( NULL == a_observation ) || ( NULL == store_lock ) )
     {
         return false;
+    }
+
+    if( NULL != a_surveillance_new )
+    {
+        *a_surveillance_new = false;
     }
 
     xSemaphoreTake( store_lock, portMAX_DELAY );
@@ -564,7 +571,6 @@ bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new
         const surveillance_class_t prior_class = devices[ existing_index ].surveillance;
         const surveillance_signature_id_t prior_signature =
             devices[ existing_index ].surveillance_signature;
-        const uint8_t prior_score = devices[ existing_index ].surveillance_score;
         const uint8_t prior_evidence = devices[ existing_index ].surveillance_evidence;
         char prior_vendor[ RFSCOUT_VENDOR_NAME_MAX ];
         char prior_name[ RFSCOUT_DEVICE_NAME_MAX ];
@@ -590,14 +596,20 @@ bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new
         devices[ existing_index ].wifi_last_seen_ms = wifi_last_seen;
         devices[ existing_index ].ble_last_seen_ms = ble_last_seen;
 
-        if( SURVEILLANCE_NONE == devices[ existing_index ].surveillance )
+        const bool became_surveillance =
+            ( SURVEILLANCE_NONE == prior_class ) &&
+            ( SURVEILLANCE_NONE != devices[ existing_index ].surveillance ) &&
+            ( SURVEILLANCE_SIGNATURE_NONE != devices[ existing_index ].surveillance_signature );
+        if( SURVEILLANCE_NONE != prior_class )
         {
             devices[ existing_index ].surveillance = prior_class;
             devices[ existing_index ].surveillance_signature = prior_signature;
-            devices[ existing_index ].surveillance_score = prior_score;
-            devices[ existing_index ].surveillance_evidence = prior_evidence;
+            devices[ existing_index ].surveillance_evidence |= prior_evidence;
         }
-
+        if( NULL != a_surveillance_new )
+        {
+            *a_surveillance_new = became_surveillance;
+        }
         if( '\0' == devices[ existing_index ].vendor[ 0 ] )
         {
             memcpy( devices[ existing_index ].vendor, prior_vendor, sizeof( prior_vendor ) );
@@ -607,6 +619,11 @@ bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new
         {
             memcpy( devices[ existing_index ].name, prior_name, sizeof( prior_name ) );
             devices[ existing_index ].has_name = true;
+        }
+
+        if( became_surveillance )
+        {
+            emit_event( OBSERVATION_STORE_EVENT_SURVEILLANCE_CHANGED, &devices[ existing_index ] );
         }
 
         if( NULL != a_is_new )
@@ -637,6 +654,12 @@ bool observation_store_observe( const rf_device_t *a_observation, bool *a_is_new
     if( NULL != a_is_new )
     {
         *a_is_new = true;
+    }
+    if( NULL != a_surveillance_new )
+    {
+        *a_surveillance_new =
+            ( SURVEILLANCE_NONE != devices[ slot ].surveillance ) &&
+            ( SURVEILLANCE_SIGNATURE_NONE != devices[ slot ].surveillance_signature );
     }
     xSemaphoreGive( store_lock );
     return true;
@@ -709,6 +732,81 @@ size_t observation_store_surveillance_count( void )
     }
     xSemaphoreGive( store_lock );
     return result;
+}
+
+size_t observation_store_active_surveillance( observation_surveillance_signature_t *a_rows,
+                                              size_t a_capacity,
+                                              size_t *a_total_devices )
+{
+    if( NULL != a_total_devices )
+    {
+        *a_total_devices = 0U;
+    }
+    if( NULL == store_lock )
+    {
+        return 0U;
+    }
+
+    observation_surveillance_signature_t grouped[ SURVEILLANCE_SIGNATURE_COUNT ] = { 0 };
+    xSemaphoreTake( store_lock, portMAX_DELAY );
+    synchronize_session_store();
+    size_t total_devices = 0U;
+    for( size_t i = 0U; i < device_count; ++i )
+    {
+        const rf_device_t *device = &devices[ i ];
+        const size_t signature = (size_t)device->surveillance_signature;
+        if( ( SURVEILLANCE_NONE == device->surveillance ) ||
+            ( signature <= (size_t)SURVEILLANCE_SIGNATURE_NONE ) ||
+            ( signature >= (size_t)SURVEILLANCE_SIGNATURE_COUNT ) )
+        {
+            continue;
+        }
+        ++total_devices;
+        grouped[ signature ].signature = device->surveillance_signature;
+        ++grouped[ signature ].count;
+        if( device->last_seen_ms > grouped[ signature ].last_seen_ms )
+        {
+            grouped[ signature ].last_seen_ms = device->last_seen_ms;
+        }
+    }
+    xSemaphoreGive( store_lock );
+
+    if( NULL != a_total_devices )
+    {
+        *a_total_devices = total_devices;
+    }
+
+    size_t group_count = 0U;
+    for( size_t signature = 1U; signature < (size_t)SURVEILLANCE_SIGNATURE_COUNT; ++signature )
+    {
+        if( 0U == grouped[ signature ].count )
+        {
+            continue;
+        }
+        ++group_count;
+        if( ( NULL == a_rows ) || ( 0U == a_capacity ) )
+        {
+            continue;
+        }
+        size_t position = 0U;
+        const size_t used = ( group_count - 1U < a_capacity ) ? group_count - 1U : a_capacity;
+        while( ( position < used ) &&
+               ( a_rows[ position ].last_seen_ms >= grouped[ signature ].last_seen_ms ) )
+        {
+            ++position;
+        }
+        if( position >= a_capacity )
+        {
+            continue;
+        }
+        const size_t last = ( used < a_capacity ) ? used : ( a_capacity - 1U );
+        for( size_t move = last; move > position; --move )
+        {
+            a_rows[ move ] = a_rows[ move - 1U ];
+        }
+        a_rows[ position ] = grouped[ signature ];
+    }
+    return group_count;
 }
 
 size_t observation_store_summary( observation_store_summary_t *a_summary,

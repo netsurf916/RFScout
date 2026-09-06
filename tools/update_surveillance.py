@@ -14,7 +14,7 @@ OUT = WIRELESS_SERVICE / "surveillance_signatures.inc"
 REPORT = ROOT / "data" / "surveillance_oui_validation.csv"
 
 CLASS_MAP = {
-    "ALPR": "SURVEILLANCE_FLOCK",
+    "ALPR": "SURVEILLANCE_ALPR",
     "BODY": "SURVEILLANCE_BODY_CAMERA",
     "CAM": "SURVEILLANCE_CAMERA",
     "GLASS": "SURVEILLANCE_SMART_GLASSES",

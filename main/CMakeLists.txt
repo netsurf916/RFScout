@@ -81,7 +81,6 @@ idf_component_register(
         "apps/wifi_ble/wifi_settings_view.c"
         "apps/wifi_ble/observation_store.c"
         "apps/wifi_ble/surveillance.c"
-        "apps/wifi_ble/surveillance_history.c"
         "apps/cc1101/app.c"
         "apps/cc1101/cc1101_activity.c"
         "apps/nrf24/app.c"

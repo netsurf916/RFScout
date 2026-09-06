@@ -190,3 +190,6 @@ Release testing should rapidly rotate every enabled app and exercise low memory,
 Persistence validation should additionally cover boot without SD, valid/invalid SD config imports, internal corruption/default replacement, interrupted internal temp writes, example no-op synchronization when unchanged, and repeated configuration saves without accumulating internal sidecar files.
 
 Build/release workflow is documented in [RELEASING.md](RELEASING.md); board requirements in [BOARD_PORTING.md](BOARD_PORTING.md); user-visible behavior in [CAPABILITIES.md](CAPABILITIES.md).
+## Surveillance classification
+
+Surveillance classification is evidence-driven rather than confidence-accumulating. The app-level High / Medium / Low sensitivity setting chooses the minimum evidence strength required for a single observation to establish a signature; High is the default. Repeated observations refresh active presence; they do not raise a numeric confidence score, and an active identity retains its first qualifying surveillance classification until expiry. The canonical observation store owns alert re-arm through ordinary device expiry, and the UI derives both general and surveillance projections from that same active collection rather than retaining a second surveillance list.

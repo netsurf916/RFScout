@@ -20,7 +20,6 @@ typedef struct
     uint8_t vendor_prefix_bits;
     surveillance_class_t surveillance_classification;
     surveillance_signature_id_t surveillance_signature;
-    uint8_t surveillance_score;
 } oui_database_match_t;
 
 /**

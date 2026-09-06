@@ -30,7 +30,6 @@
 #include "status_bar.h"
 #include "storage.h"
 #include "surveillance.h"
-#include "surveillance_history.h"
 #include "system_events.h"
 #include "ui_theme.h"
 
@@ -48,8 +47,8 @@ notification_for_surveillance( surveillance_class_t a_classification )
 {
     switch( a_classification )
     {
-        case SURVEILLANCE_FLOCK:
-            return RFSCOUT_NOTIFICATION_FLOCK;
+        case SURVEILLANCE_ALPR:
+            return RFSCOUT_NOTIFICATION_ALPR;
         case SURVEILLANCE_BODY_CAMERA:
             return RFSCOUT_NOTIFICATION_BODY_CAMERA;
         case SURVEILLANCE_DRONE:
@@ -86,16 +85,35 @@ static void on_observation( rf_device_t *a_observation )
     const surveillance_match_t match = surveillance_match( a_observation );
     a_observation->surveillance = match.classification;
     a_observation->surveillance_signature = match.signature;
-    a_observation->surveillance_score = match.score;
     a_observation->surveillance_evidence = match.evidence;
 
-    if( SURVEILLANCE_NONE != match.classification )
+    bool is_new = false;
+    bool surveillance_new = false;
+    if( !observation_store_observe( a_observation, &is_new, &surveillance_new ) )
     {
-        surveillance_history_observe( a_observation );
+        return;
     }
 
-    bool is_new = false;
-    if( !observation_store_observe( a_observation, &is_new ) || !is_new )
+    if( surveillance_new )
+    {
+        const rfscout_notification_type_t notification =
+            notification_for_surveillance( match.classification );
+        ESP_LOGW( TAG,
+                  "ALERT %s evidence=0x%02x source=%s name=\"%s\" company=0x%04x morse=%c",
+                  surveillance_signature_label( match.signature ),
+                  (unsigned)match.evidence,
+                  ( RF_SOURCE_BLE == a_observation->last_source ) ? "BLE" : "WiFi",
+                  a_observation->has_name ? a_observation->name : "",
+                  (unsigned)a_observation->company_id,
+                  device_config_notification_character( notification ) );
+
+        platform_set_alert_led( true );
+        (void)notification_emit( notification );
+        platform_set_alert_led( false );
+        return;
+    }
+
+    if( !is_new )
     {
         return;
     }
@@ -120,24 +138,6 @@ static void on_observation( rf_device_t *a_observation )
               a_observation->channel,
               alert_suffix );
 
-    if( SURVEILLANCE_NONE != match.classification )
-    {
-        const rfscout_notification_type_t notification =
-            notification_for_surveillance( match.classification );
-        ESP_LOGW( TAG,
-                  "ALERT %s score=%u evidence=0x%02x mode=%s morse=%c",
-                  surveillance_signature_label( match.signature ),
-                  (unsigned)match.score,
-                  (unsigned)match.evidence,
-                  alert_mode_name( alert_mode() ),
-                  device_config_notification_character( notification ) );
-
-        platform_set_alert_led( true );
-        (void)notification_emit( notification );
-        platform_set_alert_led( false );
-        return;
-    }
-
     const rfscout_wifi_detection_event_t detection_event =
         ( RF_SOURCE_BLE == a_observation->last_source ) ? RFSCOUT_WIFI_DETECTION_BLE_DEVICE
                                                         : RFSCOUT_WIFI_DETECTION_WIFI_DEVICE;
@@ -161,7 +161,6 @@ void app_main( void )
     ESP_ERROR_CHECK( result );
 
     ESP_ERROR_CHECK( observation_store_init() );
-    ESP_ERROR_CHECK( surveillance_history_init() );
     ESP_ERROR_CHECK( platform_init() );
     ESP_ERROR_CHECK( system_events_init() );
     ESP_ERROR_CHECK( input_init() );

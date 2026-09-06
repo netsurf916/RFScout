@@ -38,30 +38,6 @@ typedef struct
 #include "oui_database_extended.inc"
 #include "surveillance_signatures.inc"
 
-/** @brief Return the standalone confidence assigned to curated prefix evidence. */
-static uint8_t surveillance_prefix_score( surveillance_signature_id_t a_signature )
-{
-    switch( a_signature )
-    {
-        case SURVEILLANCE_SIGNATURE_FLOCK:
-        case SURVEILLANCE_SIGNATURE_AXON:
-        case SURVEILLANCE_SIGNATURE_RING:
-        case SURVEILLANCE_SIGNATURE_VERKADA:
-            return 75U;
-
-        case SURVEILLANCE_SIGNATURE_AXIS:
-        case SURVEILLANCE_SIGNATURE_HIKVISION:
-        case SURVEILLANCE_SIGNATURE_DAHUA:
-            return 60U;
-
-        case SURVEILLANCE_SIGNATURE_META:
-            return 35U;
-
-        default:
-            return 0U;
-    }
-}
-
 static const char *lookup_24( uint32_t a_prefix )
 {
     size_t low = 0U;
@@ -204,7 +180,6 @@ bool oui_database_lookup_info( const uint8_t a_address[ 6 ], oui_database_match_
     {
         a_match->surveillance_classification = surveillance->classification;
         a_match->surveillance_signature = surveillance->signature;
-        a_match->surveillance_score = surveillance_prefix_score( surveillance->signature );
     }
 
     return ( NULL != a_match->vendor ) ||

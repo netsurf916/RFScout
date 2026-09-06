@@ -33,10 +33,10 @@ RFScout starts from compiled defaults and treats the configuration stored in int
     "system_events": { "enabled": false },
     "wifi_bt": {
       "enabled": true,
+      "surveillance_sensitivity": "high",
       "retention": {
         "wifi_seconds": 60,
-        "bluetooth_seconds": 60,
-        "surveillance_seconds": 60
+        "bluetooth_seconds": 60
       },
       "notifications": {
         "enabled": true,
@@ -160,11 +160,13 @@ An app's `enabled` value is user preference, not hardware proof. Home/Device is 
 
 Current Device Settings expose brightness/dim/off/theme, Audio policy and global levels, power-button/power-policy choices, clock/timezone/manual time, startup/app enablement, SD logging, and explicit save. Audio Spectrum is enabled independently from Recorder. Small finite choices use direct center-to-cycle behavior; numeric ranges retain edit/rotate interaction. Per-app alert mappings and WiFi / BT retention stay in the owning app menus.
 
-## WiFi / BT retention
+## WiFi / BT surveillance sensitivity and retention
 
-Current production retention is three independent values under `apps.wifi_bt.retention`: `wifi_seconds`, `bluetooth_seconds`, and `surveillance_seconds`. Each defaults to 60 seconds and accepts 10–300 seconds in 10-second steps.
+`apps.wifi_bt.surveillance_sensitivity` accepts `high`, `medium`, or `low` and defaults to `high`. High accepts curated name evidence, Medium requires curated prefix/OUI or stronger evidence, and Low requires distinctive company/service evidence or Remote ID. Sensitivity is an evidence threshold, not accumulated confidence: repeated packets do not increase confidence, and an active device keeps its initial surveillance classification until its presence expires.
 
-Wi-Fi and BLE source membership age independently in merged observations. Surveillance history has its own window. Planned `Instant` and `Never` semantics remain in [ROADMAP.md](ROADMAP.md).
+Current production retention is two source-specific values under `apps.wifi_bt.retention`: `wifi_seconds` and `bluetooth_seconds`. Each defaults to 60 seconds and accepts 10–300 seconds in 10-second steps. Surveillance is an attribute of the canonical active device record and therefore shares that device lifetime rather than using a separate timeout.
+
+Wi-Fi and BLE source membership age independently in merged observations. Surveillance classification follows the lifetime of the canonical active device record. Planned `Instant` and `Never` semantics remain in [ROADMAP.md](ROADMAP.md).
 
 ## Internal flash, SD, Recorder files, and logging
 

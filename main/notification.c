@@ -14,7 +14,7 @@
 #define NOTIFICATION_DEFAULT_CHARACTER 'S'
 
 static const rfscout_notification_descriptor_t descriptors[] = {
-    { RFSCOUT_NOTIFICATION_FLOCK, RFSCOUT_APP_WIFI_BT, "flock", "Flock / ALPR", 'F' },
+    { RFSCOUT_NOTIFICATION_ALPR, RFSCOUT_APP_WIFI_BT, "alpr", "ALPR", 'L' },
     { RFSCOUT_NOTIFICATION_BODY_CAMERA, RFSCOUT_APP_WIFI_BT, "body_camera", "Body camera", 'B' },
     { RFSCOUT_NOTIFICATION_DRONE, RFSCOUT_APP_WIFI_BT, "drone", "Drone", 'D' },
     { RFSCOUT_NOTIFICATION_CAMERA, RFSCOUT_APP_WIFI_BT, "camera", "Camera", 'C' },
