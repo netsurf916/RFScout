@@ -77,7 +77,7 @@ esp_err_t ui_theme_set( rfscout_theme_id_t a_theme )
     ESP_LOGI( TAG, "theme=%s", ui_theme_config_name( a_theme ) );
     rfscout_event_emit(
         RFSCOUT_EVENT_THEME_CHANGED, RFSCOUT_EVENT_SOURCE_SYSTEM, (int32_t)a_theme );
-    const esp_err_t save_result = device_config_save( false, 0, NULL );
+    const esp_err_t save_result = device_config_save();
     if( ESP_ERR_INVALID_STATE == save_result )
     {
         return ESP_OK;
