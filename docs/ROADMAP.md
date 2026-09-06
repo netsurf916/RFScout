@@ -221,7 +221,7 @@ Every current application receives an explicit v0.4.0 review rather than treatin
 
 ### Workstream E: visual theme and audio-policy separation
 
-**Status:** Implemented by PR #60; release-level combination/migration validation remains open.
+**Status:** Implemented by PR #60; release-level combination/configuration validation remains open.
 
 Implemented behavior:
 
