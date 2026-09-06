@@ -18,7 +18,7 @@
 #include <stdint.h>
 
 #define RFSCOUT_INTERNAL_ROOT "/internal"
-#define RFSCOUT_PERSISTENT_KEY_MAX 48U
+#define RFSCOUT_PERSISTENT_KEY_MAX_BYTES 256U
 #define RFSCOUT_PERSISTENT_RECORD_MAX_BYTES 16384U
 
 typedef struct
@@ -32,7 +32,12 @@ esp_err_t persistent_store_init( void );
 /** @brief Return whether internal persistence is mounted and usable. */
 bool persistent_store_is_available( void );
 
-/** @brief Atomically replace one privileged system record. */
+/**
+ * @brief Atomically replace one privileged system record.
+ * @details Logical keys are opaque strings. The service hashes them to fixed filesystem names and
+ *          serializes filesystem operations internally, so callers do not need path-safe keys or
+ *          storage locking.
+ */
 esp_err_t system_store_write( const char *a_key, const void *a_data, size_t a_length );
 /** @brief Read one privileged system record; NULL/0 may be used to query required length. */
 esp_err_t system_store_read( const char *a_key, void *a_data, size_t a_capacity, size_t *a_length );
@@ -41,8 +46,8 @@ bool system_store_exists( const char *a_key );
 
 /**
  * @brief Privileged core access to one compiled application's records.
- * @details Used by system orchestration such as device_config when it must load/save all
- *          application configuration records. Application modules should use app_store_*.
+ * @details Used by system orchestration such as device_config when it must load/save application
+ *          configuration records. Application modules should use app_store_*.
  */
 esp_err_t persistent_store_app_write( rfscout_app_id_t a_app,
                                       const char *a_key,
@@ -62,7 +67,7 @@ esp_err_t app_store_context_current( rfscout_app_store_context_t *a_context );
 /**
  * @brief App persistence using an explicitly captured session identity.
  * @details These calls reject stale contexts. Asynchronous app work remains responsible for using
- *          the existing app lifecycle prepare hook to veto transition while its write is active.
+ *          the existing app lifecycle prepare hook to veto transition while its operation is active.
  */
 esp_err_t app_store_write_context( const rfscout_app_store_context_t *a_context,
                                    const char *a_key,
