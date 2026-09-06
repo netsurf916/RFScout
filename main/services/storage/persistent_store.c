@@ -14,6 +14,7 @@
 #include "esp_littlefs.h"
 #include "esp_log.h"
 
+#include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -57,6 +58,56 @@ static esp_err_t ensure_directory( const char *a_path )
     return ESP_FAIL;
 }
 
+static bool temp_name( const char *a_name )
+{
+    const size_t length = strlen( a_name );
+    return length > 4U && 0 == strcmp( a_name + length - 4U, ".tmp" );
+}
+
+/** @brief Remove only interrupted-write temporaries when the persistence service starts. */
+static void cleanup_temp_directory( const char *a_path, bool a_recurse_one_level )
+{
+    DIR *directory = opendir( a_path );
+    if( NULL == directory )
+    {
+        return;
+    }
+
+    struct dirent *entry = NULL;
+    while( NULL != ( entry = readdir( directory ) ) )
+    {
+        if( 0 == strcmp( entry->d_name, "." ) || 0 == strcmp( entry->d_name, ".." ) )
+        {
+            continue;
+        }
+
+        char path[ PERSISTENT_PATH_MAX ];
+        const int length = snprintf( path, sizeof( path ), "%s/%s", a_path, entry->d_name );
+        if( length < 0 || length >= (int)sizeof( path ) )
+        {
+            continue;
+        }
+
+        struct stat info;
+        if( 0 != stat( path, &info ) )
+        {
+            continue;
+        }
+        if( S_ISREG( info.st_mode ) && temp_name( entry->d_name ) )
+        {
+            if( 0 != unlink( path ) && ENOENT != errno )
+            {
+                ESP_LOGW( TAG, "could not remove stale temporary %s", path );
+            }
+        }
+        else if( a_recurse_one_level && S_ISDIR( info.st_mode ) )
+        {
+            cleanup_temp_directory( path, false );
+        }
+    }
+    closedir( directory );
+}
+
 static esp_err_t
 build_record_paths( const char *a_scope, const char *a_key, char *a_path, char *a_temp_path )
 {
@@ -97,6 +148,10 @@ record_write( const char *a_scope, const char *a_key, const void *a_data, size_t
     if( !available )
     {
         return ESP_ERR_INVALID_STATE;
+    }
+    if( a_length > RFSCOUT_PERSISTENT_RECORD_MAX_BYTES )
+    {
+        return ESP_ERR_INVALID_SIZE;
     }
     if( NULL == a_data && a_length > 0U )
     {
@@ -173,10 +228,12 @@ static esp_err_t record_read(
         return ESP_FAIL;
     }
     const long length = ftell( file );
-    if( length < 0L || 0 != fseek( file, 0, SEEK_SET ) )
+    if( length < 0L || length > (long)RFSCOUT_PERSISTENT_RECORD_MAX_BYTES ||
+        0 != fseek( file, 0, SEEK_SET ) )
     {
         fclose( file );
-        return ESP_FAIL;
+        return ( length > (long)RFSCOUT_PERSISTENT_RECORD_MAX_BYTES ) ? ESP_ERR_INVALID_SIZE
+                                                                      : ESP_FAIL;
     }
     *a_length = (size_t)length;
     if( NULL == a_data && 0U == a_capacity )
@@ -268,6 +325,9 @@ esp_err_t persistent_store_init( void )
         return result;
     }
 
+    cleanup_temp_directory( PERSISTENT_SYSTEM_ROOT, false );
+    cleanup_temp_directory( PERSISTENT_APP_ROOT, true );
+
     available = true;
     rfscout_event_emit(
         RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNTED, RFSCOUT_EVENT_SOURCE_SYSTEM, (int32_t)ESP_OK );
@@ -332,45 +392,88 @@ bool persistent_store_app_exists( rfscout_app_id_t a_app, const char *a_key )
     return ESP_OK == app_scope( a_app, scope ) && record_exists( scope, a_key );
 }
 
-static esp_err_t current_app( rfscout_app_id_t *a_app )
+esp_err_t app_store_context_current( rfscout_app_store_context_t *a_context )
 {
-    if( NULL == a_app )
+    if( NULL == a_context )
     {
         return ESP_ERR_INVALID_ARG;
     }
     const rfscout_app_id_t app = app_session_app();
-    if( app >= RFSCOUT_APP_COUNT )
+    if( app < 0 || app >= RFSCOUT_APP_COUNT )
     {
         return ESP_ERR_INVALID_STATE;
     }
-    *a_app = app;
+    a_context->app = app;
+    a_context->generation = app_session_generation();
     return ESP_OK;
+}
+
+static bool app_context_current( const rfscout_app_store_context_t *a_context )
+{
+    return NULL != a_context && a_context->app >= 0 && a_context->app < RFSCOUT_APP_COUNT &&
+           a_context->app == app_session_app() &&
+           a_context->generation == app_session_generation();
+}
+
+esp_err_t app_store_write_context( const rfscout_app_store_context_t *a_context,
+                                   const char *a_key,
+                                   const void *a_data,
+                                   size_t a_length )
+{
+    return app_context_current( a_context )
+               ? persistent_store_app_write( a_context->app, a_key, a_data, a_length )
+               : ESP_ERR_INVALID_STATE;
+}
+
+esp_err_t app_store_read_context( const rfscout_app_store_context_t *a_context,
+                                  const char *a_key,
+                                  void *a_data,
+                                  size_t a_capacity,
+                                  size_t *a_length )
+{
+    return app_context_current( a_context )
+               ? persistent_store_app_read( a_context->app, a_key, a_data, a_capacity, a_length )
+               : ESP_ERR_INVALID_STATE;
+}
+
+esp_err_t app_store_remove_context( const rfscout_app_store_context_t *a_context,
+                                    const char *a_key )
+{
+    return app_context_current( a_context )
+               ? persistent_store_app_remove( a_context->app, a_key )
+               : ESP_ERR_INVALID_STATE;
+}
+
+bool app_store_exists_context( const rfscout_app_store_context_t *a_context, const char *a_key )
+{
+    return app_context_current( a_context ) && persistent_store_app_exists( a_context->app, a_key );
 }
 
 esp_err_t app_store_write( const char *a_key, const void *a_data, size_t a_length )
 {
-    rfscout_app_id_t app;
-    const esp_err_t result = current_app( &app );
-    return ESP_OK == result ? persistent_store_app_write( app, a_key, a_data, a_length ) : result;
+    rfscout_app_store_context_t context;
+    const esp_err_t result = app_store_context_current( &context );
+    return ESP_OK == result ? app_store_write_context( &context, a_key, a_data, a_length ) : result;
 }
 
 esp_err_t app_store_read( const char *a_key, void *a_data, size_t a_capacity, size_t *a_length )
 {
-    rfscout_app_id_t app;
-    const esp_err_t result = current_app( &app );
-    return ESP_OK == result ? persistent_store_app_read( app, a_key, a_data, a_capacity, a_length )
+    rfscout_app_store_context_t context;
+    const esp_err_t result = app_store_context_current( &context );
+    return ESP_OK == result ? app_store_read_context( &context, a_key, a_data, a_capacity, a_length )
                             : result;
 }
 
 esp_err_t app_store_remove( const char *a_key )
 {
-    rfscout_app_id_t app;
-    const esp_err_t result = current_app( &app );
-    return ESP_OK == result ? persistent_store_app_remove( app, a_key ) : result;
+    rfscout_app_store_context_t context;
+    const esp_err_t result = app_store_context_current( &context );
+    return ESP_OK == result ? app_store_remove_context( &context, a_key ) : result;
 }
 
 bool app_store_exists( const char *a_key )
 {
-    rfscout_app_id_t app;
-    return ESP_OK == current_app( &app ) && persistent_store_app_exists( app, a_key );
+    rfscout_app_store_context_t context;
+    return ESP_OK == app_store_context_current( &context ) &&
+           app_store_exists_context( &context, a_key );
 }
