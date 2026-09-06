@@ -1,4 +1,3 @@
-
 /**
     services/audio/recorder.c : RFScout shared microphone, recorder, and playback service
     Description: Owns microphone capture/FFT plus SD-backed WAV recording and playback.
@@ -8,6 +7,7 @@
 
 #include "recorder.h"
 
+#include "audio_filter.h"
 #include "audio_output.h"
 #include "board.h"
 #include "device_time.h"
@@ -60,7 +60,6 @@
 #define RECORDER_MONITOR_TASK_STACK 6144U
 #define RECORDER_MONITOR_TASK_PRIORITY 3U
 #define RECORDER_MONITOR_FIRST_FFT_BIN 1U
-#define RECORDER_MONITOR_HIGHPASS_ALPHA 0.98f
 #define RECORDER_MONITOR_MIN_RANGE_DB 24.0f
 #define RECORDER_MONITOR_HEADROOM_DB 3.0f
 #define RECORDER_MONITOR_RANGE_SMOOTH 0.05f
@@ -96,14 +95,12 @@ static uint32_t measured_pdm_clock_hz;
 static uint32_t recording_wav_sample_rate = 12800U;
 static TaskHandle_t monitor_task;
 static volatile bool monitor_running;
-static volatile uint8_t input_gain_db = 12U;
 static uint8_t monitor_spectrum[ RFSCOUT_RECORDER_MONITOR_BINS ];
 static bool monitor_range_initialized;
 static float monitor_floor_db;
 static float monitor_ceiling_db;
 static volatile uint8_t monitor_range_db;
-static float monitor_highpass_previous_input;
-static float monitor_highpass_previous_output;
+static rfscout_audio_highpass_t monitor_highpass;
 static float monitor_fft_frame[ RECORDER_MONITOR_FFT_SIZE ];
 static size_t monitor_fft_frame_count;
 
@@ -532,16 +529,10 @@ esp_err_t recorder_probe_microphone( void )
 static void make_recording_name( char *a_name, size_t a_capacity )
 {
     time_t epoch;
-    if( device_time_now( &epoch ) )
-    {
-        struct tm local;
-        localtime_r( &epoch, &local );
-        (void)strftime( a_name, a_capacity, "%Y%m%d-%H%M%S.wav", &local );
-        return;
-    }
-
-    const uint64_t seconds = (uint64_t)esp_timer_get_time() / 1000000ULL;
-    snprintf( a_name, a_capacity, "rec-%010llu.wav", (unsigned long long)seconds );
+    (void)device_time_now( &epoch );
+    struct tm local;
+    localtime_r( &epoch, &local );
+    (void)strftime( a_name, a_capacity, "%Y%m%d-%H%M%S.wav", &local );
 }
 
 static FILE *open_unique_recording( char *a_path, size_t a_path_capacity )
@@ -595,39 +586,6 @@ static FILE *open_unique_recording( char *a_path, size_t a_path_capacity )
     return NULL;
 }
 
-static uint32_t input_gain_q12( uint8_t a_gain_db )
-{
-    static const uint32_t gains[] = { 4096U,
-                                      5793U,
-                                      8189U,
-                                      11571U,
-                                      16306U,
-                                      23099U,
-                                      32664U,
-                                      46170U,
-                                      65268U,
-                                      92195U,
-                                      130226U,
-                                      183967U,
-                                      259811U,
-                                      367017U,
-                                      518451U,
-                                      732342U,
-                                      1034455U };
-    const unsigned index = ( a_gain_db > 48U ? 48U : a_gain_db ) / 3U;
-    return gains[ index ];
-}
-
-static int16_t apply_input_gain( int16_t a_sample )
-{
-    int32_t scaled = (int32_t)( (int64_t)a_sample * input_gain_q12( input_gain_db ) / 4096LL );
-    if( scaled > INT16_MAX )
-        scaled = INT16_MAX;
-    if( scaled < INT16_MIN )
-        scaled = INT16_MIN;
-    return (int16_t)scaled;
-}
-
 static bool trim_and_normalize_recording( void )
 {
     if( NULL == record_file || 0U == data_bytes || 0U == recording_wav_sample_rate )
@@ -644,7 +602,7 @@ static bool trim_and_normalize_recording( void )
     if( start_bytes + end_bytes >= data_bytes )
     {
         ESP_LOGW( TAG,
-                  "trim/normalize: too short bytes=%u start=%u end=%u; leaving untrimmed",
+                  "trim/filter/normalize: too short bytes=%u start=%u end=%u; leaving untrimmed",
                   (unsigned)data_bytes,
                   (unsigned)start_bytes,
                   (unsigned)end_bytes );
@@ -678,7 +636,9 @@ static bool trim_and_normalize_recording( void )
     const int32_t dc_mean = (int32_t)( signed_sum / (int64_t)count_total );
 
     uint64_t absolute_sum = 0U;
-    uint32_t centered_peak = 0U;
+    uint32_t filtered_peak = 0U;
+    rfscout_audio_highpass_t analysis_filter;
+    audio_highpass_reset( &analysis_filter );
     remaining = retained_bytes;
     if( 0 != fseek( record_file, RECORDER_WAV_HEADER_SIZE + (long)start_bytes, SEEK_SET ) )
         return false;
@@ -692,11 +652,14 @@ static bool trim_and_normalize_recording( void )
             return false;
         for( size_t i = 0; i < read; ++i )
         {
-            const int32_t centered = (int32_t)samples[ i ] - dc_mean;
-            const uint32_t absolute = (uint32_t)( centered < 0 ? -centered : centered );
+            const float filtered = audio_highpass_process(
+                &analysis_filter, (float)( (int32_t)samples[ i ] - dc_mean ) );
+            const float magnitude = fabsf( filtered );
+            const uint32_t absolute =
+                (uint32_t)( magnitude > (float)UINT32_MAX ? (float)UINT32_MAX : magnitude );
             absolute_sum += absolute;
-            if( absolute > centered_peak )
-                centered_peak = absolute;
+            if( absolute > filtered_peak )
+                filtered_peak = absolute;
         }
         remaining -= (uint32_t)( read * sizeof( int16_t ) );
     }
@@ -712,6 +675,8 @@ static bool trim_and_normalize_recording( void )
     uint64_t clipped = 0U;
     uint32_t source_offset = RECORDER_WAV_HEADER_SIZE + start_bytes;
     uint32_t destination_offset = RECORDER_WAV_HEADER_SIZE;
+    rfscout_audio_highpass_t write_filter;
+    audio_highpass_reset( &write_filter );
     remaining = retained_bytes;
     while( remaining > 0U )
     {
@@ -725,8 +690,9 @@ static bool trim_and_normalize_recording( void )
             return false;
         for( size_t i = 0; i < read; ++i )
         {
-            int32_t scaled =
-                (int32_t)( ( (int64_t)( (int32_t)samples[ i ] - dc_mean ) * gain_q10 ) / 1024LL );
+            const float filtered = audio_highpass_process(
+                &write_filter, (float)( (int32_t)samples[ i ] - dc_mean ) );
+            int32_t scaled = (int32_t)( filtered * (float)gain_q10 / 1024.0f );
             if( scaled > INT16_MAX )
             {
                 scaled = INT16_MAX;
@@ -752,15 +718,16 @@ static bool trim_and_normalize_recording( void )
                         (off_t)( RECORDER_WAV_HEADER_SIZE + retained_bytes ) ) )
         return false;
     ESP_LOGI( TAG,
-              "trim/normalize: start=%ums end=%ums bytes=%u->%u dc=%ld avg=%u peak=%u "
-              "gain=%u.%02ux clipped=%llu/%llu",
+              "trim/filter/normalize: start=%ums end=%ums bytes=%u->%u dc=%ld alpha=%.2f "
+              "avg=%u peak=%u gain=%u.%02ux clipped=%llu/%llu",
               RECORDER_TRIM_START_MS,
               RECORDER_TRIM_END_MS,
               (unsigned)data_bytes,
               (unsigned)retained_bytes,
               (long)dc_mean,
+              (double)RFSCOUT_AUDIO_HIGHPASS_ALPHA,
               (unsigned)average,
-              (unsigned)centered_peak,
+              (unsigned)filtered_peak,
               (unsigned)( gain_q10 / 1024U ),
               (unsigned)( ( gain_q10 % 1024U ) * 100U / 1024U ),
               (unsigned long long)clipped,
@@ -858,10 +825,6 @@ static void record_worker( void *a_argument )
         diagnostic_input_bytes += (uint32_t)bytes;
 
         const size_t samples = bytes / sizeof( int16_t );
-        for( size_t sample = 0U; sample < samples; ++sample )
-        {
-            dma_samples[ sample ] = apply_input_gain( dma_samples[ sample ] );
-        }
         if( !diagnostic_initial_snapshot_logged && samples > 0U )
         {
             log_pcm_snapshot( "PCM first", dma_samples, samples );
@@ -1178,12 +1141,8 @@ static void monitor_process_samples( const int16_t *a_samples, size_t a_count )
 {
     for( size_t i = 0U; i < a_count; ++i )
     {
-        const float input = (float)a_samples[ i ];
-        const float filtered = input - monitor_highpass_previous_input +
-                               RECORDER_MONITOR_HIGHPASS_ALPHA * monitor_highpass_previous_output;
-        monitor_highpass_previous_input = input;
-        monitor_highpass_previous_output = filtered;
-        monitor_fft_frame[ monitor_fft_frame_count++ ] = filtered;
+        monitor_fft_frame[ monitor_fft_frame_count++ ] =
+            audio_highpass_process( &monitor_highpass, (float)a_samples[ i ] );
         if( RECORDER_MONITOR_FFT_SIZE == monitor_fft_frame_count )
         {
             compute_monitor_fft( monitor_fft_frame );
@@ -1245,8 +1204,7 @@ esp_err_t recorder_start_monitor( void )
     monitor_floor_db = 0.0f;
     monitor_ceiling_db = 0.0f;
     monitor_range_db = (uint8_t)RECORDER_MONITOR_MIN_RANGE_DB;
-    monitor_highpass_previous_input = 0.0f;
-    monitor_highpass_previous_output = 0.0f;
+    audio_highpass_reset( &monitor_highpass );
     monitor_fft_frame_count = 0U;
     esp_err_t result = open_microphone();
     if( ESP_OK != result )
@@ -1291,18 +1249,6 @@ size_t recorder_monitor_bins( uint8_t *a_bins, size_t a_capacity )
 uint8_t recorder_monitor_range_db( void )
 {
     return monitor_range_db;
-}
-
-void recorder_set_input_gain_db( uint8_t a_gain_db )
-{
-    if( a_gain_db > 48U )
-        a_gain_db = 48U;
-    input_gain_db = (uint8_t)( ( a_gain_db / 3U ) * 3U );
-}
-
-uint8_t recorder_input_gain_db( void )
-{
-    return input_gain_db;
 }
 
 esp_err_t recorder_init( void )
