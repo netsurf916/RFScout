@@ -27,7 +27,8 @@ typedef struct
     uint8_t reserved;
 } device_time_policy_record_t;
 
-_Static_assert( sizeof( device_time_policy_record_t ) <= 16U, "time policy record must stay bounded" );
+_Static_assert( sizeof( device_time_policy_record_t ) <= 16U,
+                "time policy record must stay bounded" );
 
 static bool time_valid;
 static rfscout_time_source_t time_source;
@@ -50,8 +51,9 @@ static void load_mode( void )
     size_t length = 0U;
     const esp_err_t result =
         system_store_read( DEVICE_TIME_POLICY_KEY, &record, sizeof( record ), &length );
-    if( ESP_OK == result && sizeof( record ) == length && DEVICE_TIME_POLICY_MAGIC == record.magic &&
-        DEVICE_TIME_POLICY_VERSION == record.version && record.mode <= RFSCOUT_TIME_MODE_MANUAL )
+    if( ESP_OK == result && sizeof( record ) == length &&
+        DEVICE_TIME_POLICY_MAGIC == record.magic && DEVICE_TIME_POLICY_VERSION == record.version &&
+        record.mode <= RFSCOUT_TIME_MODE_MANUAL )
     {
         time_mode = (rfscout_time_mode_t)record.mode;
         return;
