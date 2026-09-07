@@ -164,8 +164,8 @@ bool board_profile_has( rfscout_board_capability_t a_capability );
 #define RFSCOUT_BOARD_HAS_PDM_MIC ( board_profile_has( RFSCOUT_BOARD_CAP_PDM_MIC ) )
 #define RFSCOUT_BOARD_HAS_SPEAKER ( board_profile_has( RFSCOUT_BOARD_CAP_SPEAKER ) )
 #define RFSCOUT_BOARD_HAS_GLOBAL_TABS ( board_profile_has( RFSCOUT_BOARD_CAP_GLOBAL_TABS ) )
-/* Internal-temperature support is currently built into the universal image for both profiles. */
-#define RFSCOUT_BOARD_HAS_INTERNAL_TEMPERATURE 1
+#define RFSCOUT_BOARD_HAS_INTERNAL_TEMPERATURE                                              \
+    ( board_profile_has( RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE ) )
 #define RFSCOUT_BOARD_HAS_SD ( board_profile_has( RFSCOUT_BOARD_CAP_SD ) )
 #define RFSCOUT_BOARD_CAN_SCREEN_OFF ( board_profile_has( RFSCOUT_BOARD_CAP_SCREEN_OFF ) )
 #define RFSCOUT_BOARD_CAN_DEEP_SLEEP ( board_profile_has( RFSCOUT_BOARD_CAP_DEEP_SLEEP ) )
