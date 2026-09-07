@@ -43,6 +43,13 @@ void input_poll( void );
 bool input_activity_pending( void );
 void input_consume_wake( void );
 bool input_get( rfscout_input_event_t *a_event );
+/**
+ * @brief Return whether device-wide user input is locked.
+ * @details This is semantic policy, not provider state. All authoritative user-input paths must
+ *          honor it, including rotary/trackball events, touch/pointer dispatch, and future
+ *          keyboard character events. Physical activity may still be observed for display-wake
+ *          and for the deliberate hold gesture used to unlock input.
+ */
 bool input_locked( void );
 rfscout_input_provider_t input_provider( void );
 
