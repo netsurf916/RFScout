@@ -53,12 +53,11 @@
 #define DEVICE_ITEM_LOGGING 20U
 #define DEVICE_ITEM_POWER_BUTTON 21U
 #define DEVICE_ITEM_POWER_POLICY 22U
-#define DEVICE_ITEM_SAVE 23U
-#define DEVICE_ITEM_TOUCH_CALIBRATION 24U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 25U
+#define DEVICE_ITEM_TOUCH_CALIBRATION 23U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 24U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
-#define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_SAVE + 1U )
+#define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_POWER_POLICY + 1U )
 #define DEVICE_ROWS_PER_PAGE 6U
 #define DEVICE_LOG_SHUTDOWN_TIMEOUT_MS 3000U
 #define DEVICE_AUDIO_VOLUME_STEP 10
@@ -241,7 +240,7 @@ static bool item_editable( unsigned a_item )
 {
     return ( DEVICE_ITEM_BACK != a_item ) && ( DEVICE_ITEM_TIME != a_item ) &&
            ( DEVICE_ITEM_POWER_BUTTON != a_item ) && ( DEVICE_ITEM_POWER_POLICY != a_item ) &&
-           ( DEVICE_ITEM_SAVE != a_item ) && ( DEVICE_ITEM_TOUCH_CALIBRATION != a_item );
+           ( DEVICE_ITEM_TOUCH_CALIBRATION != a_item );
 }
 
 static const char *item_label( unsigned a_item )
@@ -294,8 +293,6 @@ static const char *item_label( unsigned a_item )
             return "Power button";
         case DEVICE_ITEM_POWER_POLICY:
             return "Power policy";
-        case DEVICE_ITEM_SAVE:
-            return "Save config";
         case DEVICE_ITEM_TOUCH_CALIBRATION:
             return "Touch calibration";
         default:
@@ -390,9 +387,6 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             break;
         case DEVICE_ITEM_LOGGING:
             snprintf( a_value, a_capacity, "%s", on_off( config->logging_enabled ) );
-            break;
-        case DEVICE_ITEM_SAVE:
-            snprintf( a_value, a_capacity, "Internal" );
             break;
         case DEVICE_ITEM_TOUCH_CALIBRATION:
             snprintf( a_value,
@@ -1524,14 +1518,6 @@ bool device_view_input( bool a_pressed, int a_delta )
             const esp_err_t result = touch_calibration_begin();
             emit_device_event( ESP_OK == result ? RFSCOUT_EVENT_ACTIVATE : RFSCOUT_EVENT_ERROR,
                                ESP_OK == result ? 0 : (int32_t)result );
-            device_view_render();
-            return false;
-        }
-        if( ( DEVICE_ITEM_SAVE == selected_item ) && !editing )
-        {
-            save_error = ( ESP_OK != device_config_save() );
-            emit_device_event( save_error ? RFSCOUT_EVENT_ERROR : RFSCOUT_EVENT_ACTIVATE,
-                               save_error ? -1 : 0 );
             device_view_render();
             return false;
         }
