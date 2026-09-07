@@ -11,6 +11,14 @@ choice RFSCOUT_BOARD
 config RFSCOUT_BOARD_TEMBED_CC1101_PLUS
     bool "LILYGO T-Embed CC1101 Plus"
 
+config RFSCOUT_BOARD_TDECK
+    bool "LILYGO T-Deck"
+    help
+        Build the standard T-Deck target. Initial support establishes board geometry,
+        capabilities, and shared peripheral pin ownership; keyboard/trackball input,
+        SX1262, and ES7210 microphone support are enabled incrementally behind the
+        existing service abstractions.
+
 endchoice
 
 endmenu
