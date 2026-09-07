@@ -132,6 +132,6 @@ idf_component_register(
         "services/display/navigation_bar.c"
         "services/display/ui_present.c"
     INCLUDE_DIRS ${RFSCOUT_INCLUDE_DIRS} "${CMAKE_CURRENT_BINARY_DIR}"
-    PRIV_REQUIRES bt cjson esp_driver_ledc esp_driver_tsens mbedtls
+    PRIV_REQUIRES bt cjson esp_adc esp_driver_ledc esp_driver_tsens mbedtls
     REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_timer driver esp_driver_i2c esp_driver_i2s esp_driver_pcnt esp_lcd fatfs sdmmc
 )
