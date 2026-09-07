@@ -162,6 +162,13 @@ static bool prepare_for_power_state( void )
         return true;
     }
 
+    const rfscout_recorder_state_t recorder = recorder_state();
+    if( ( RFSCOUT_RECORDER_RECORDING == recorder ) || ( RFSCOUT_RECORDER_SAVING == recorder ) )
+    {
+        ESP_LOGW( TAG, "power transition cancelled while Recorder is recording or saving" );
+        return false;
+    }
+
     if( !recorder_prepare_storage_shutdown( POWER_RECORDER_STOP_TIMEOUT_MS ) )
     {
         ESP_LOGW( TAG, "power transition cancelled because Recorder did not stop" );
