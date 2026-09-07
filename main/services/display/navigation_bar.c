@@ -121,10 +121,8 @@ void navigation_bar_poll( void )
     }
 
     const int tab_height = view.height < NAV_TAB_HEIGHT ? view.height : NAV_TAB_HEIGHT;
-    if( ( sample.x < (uint16_t)view.x ) ||
-        ( sample.x >= (uint16_t)( view.x + (int)view.width ) ) ||
-        ( sample.y < (uint16_t)view.y ) ||
-        ( sample.y >= (uint16_t)( view.y + tab_height ) ) )
+    if( ( sample.x < (uint16_t)view.x ) || ( sample.x >= (uint16_t)( view.x + (int)view.width ) ) ||
+        ( sample.y < (uint16_t)view.y ) || ( sample.y >= (uint16_t)( view.y + tab_height ) ) )
     {
         return;
     }
