@@ -10,6 +10,7 @@
 #include "device_time.h"
 #include "gps.h"
 #include "storage.h"
+#include "storage_internal.h"
 #include "surveillance.h"
 
 #include "esp_log.h"
