@@ -10,8 +10,8 @@
 #ifndef _RFSCOUT_DISPLAY_H_
 #define _RFSCOUT_DISPLAY_H_
 
+#include "app_view.h"
 #include "board.h"
-#include "view.h"
 #include "esp_err.h"
 
 #include <stdbool.h>
