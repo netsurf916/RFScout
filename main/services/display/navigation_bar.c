@@ -11,6 +11,7 @@
 #include "app_manager.h"
 #include "device_config.h"
 #include "display.h"
+#include "input.h"
 #include "touch.h"
 #include "ui_theme.h"
 
@@ -100,6 +101,16 @@ void navigation_bar_poll( void )
     if( !touch_sample_get( &sample ) || !sample.calibrated || touch_calibration_active() )
     {
         touch_pressed = false;
+        return;
+    }
+
+    /* Input lock is a device-wide user-input policy, not a property of the trackball/rotary
+       provider. Latch the current finger state while locked so unlocking cannot turn a held
+       touch into an app-switch action. Future app-level pointer dispatch must honor the same
+       policy before delivering touch to an application. */
+    if( input_locked() )
+    {
+        touch_pressed = sample.pressed;
         return;
     }
 
