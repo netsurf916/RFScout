@@ -91,13 +91,10 @@ static bool parse_int_field( const char *a_text, long *a_value )
     return true;
 }
 
-static bool nmea_coordinate( const char *a_value,
-                             char a_hemisphere,
-                             bool a_latitude,
-                             double *a_result )
+static bool
+nmea_coordinate( const char *a_value, char a_hemisphere, bool a_latitude, double *a_result )
 {
-    if( NULL == a_result ||
-        ( a_latitude && 'N' != a_hemisphere && 'S' != a_hemisphere ) ||
+    if( NULL == a_result || ( a_latitude && 'N' != a_hemisphere && 'S' != a_hemisphere ) ||
         ( !a_latitude && 'E' != a_hemisphere && 'W' != a_hemisphere ) )
     {
         return false;
@@ -162,8 +159,7 @@ static bool leap_year( int a_year )
 
 static unsigned days_in_month( int a_year, unsigned a_month )
 {
-    static const uint8_t DAYS[] = { 31U, 28U, 31U, 30U, 31U, 30U,
-                                    31U, 31U, 30U, 31U, 30U, 31U };
+    static const uint8_t DAYS[] = { 31U, 28U, 31U, 30U, 31U, 30U, 31U, 31U, 30U, 31U, 30U, 31U };
     if( a_month < 1U || a_month > 12U )
     {
         return 0U;
@@ -330,8 +326,7 @@ static void parse_line( char *a_line )
 
 static void probe_next_baud( int64_t a_now )
 {
-    if( baud_locked ||
-        ( a_now - baud_probe_started_us ) / 1000LL < (int64_t)GPS_BAUD_PROBE_MS )
+    if( baud_locked || ( a_now - baud_probe_started_us ) / 1000LL < (int64_t)GPS_BAUD_PROBE_MS )
     {
         return;
     }
