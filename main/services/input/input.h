@@ -34,33 +34,23 @@ typedef struct
 typedef enum
 {
     RFSCOUT_INPUT_PROVIDER_NONE = 0,
-    RFSCOUT_INPUT_PROVIDER_ROTARY_BUTTONS
+    RFSCOUT_INPUT_PROVIDER_ROTARY_BUTTONS,
+    RFSCOUT_INPUT_PROVIDER_TRACKBALL_BUTTONS
 } rfscout_input_provider_t;
 
-/** @brief Initialize the board-selected input provider(s). */
 esp_err_t input_init( void );
-
-/** @brief Poll low-rate gesture processing for the active input provider(s). */
 void input_poll( void );
-
-/** @brief Return whether any physical user activity is pending, independent of input lock. */
 bool input_activity_pending( void );
-
-/** @brief Discard the complete physical gesture currently being used to wake the display. */
 void input_consume_wake( void );
-
-/**
- * @brief Consume one board-neutral semantic input event.
- * @details Navigation values are signed and may represent multiple accumulated steps. Character
- *          events carry the input character/codepoint in value. Physical providers remain hidden
- *          from applications.
- */
 bool input_get( rfscout_input_event_t *a_event );
-
-/** @brief Return whether ordinary semantic user input is globally locked. */
+/**
+ * @brief Return whether device-wide user input is locked.
+ * @details This is semantic policy, not provider state. All authoritative user-input paths must
+ *          honor it, including rotary/trackball events, touch/pointer dispatch, and future
+ *          keyboard character events. Physical activity may still be observed for display-wake
+ *          and for the deliberate hold gesture used to unlock input.
+ */
 bool input_locked( void );
-
-/** @brief Return the currently selected primary provider for diagnostics. */
 rfscout_input_provider_t input_provider( void );
 
 #endif // _RFSCOUT_INPUT_H_

@@ -17,7 +17,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define RFSCOUT_ALERT_VOLUME_DEFAULT_PERCENT 50U
+#define RFSCOUT_ALERT_VOLUME_DEFAULT_PERCENT 30U
 #define RFSCOUT_ALERT_VOLUME_MAX_PERCENT 100U
 
 typedef enum

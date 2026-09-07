@@ -8,6 +8,7 @@
 #include "app_framework.h"
 
 #include "apps/app_registry.h"
+#include "board.h"
 #include "event.h"
 #include "persistent_store.h"
 
@@ -67,11 +68,35 @@ static void retain_availability( rfscout_app_id_t a_app, rfscout_app_availabilit
     }
 }
 
+static bool profile_supports_services( uint32_t a_services )
+{
+    if( ( 0U != ( a_services & RFSCOUT_APP_SERVICE_CC1101 ) ) && !RFSCOUT_BOARD_HAS_CC1101 )
+    {
+        return false;
+    }
+    if( ( 0U != ( a_services & RFSCOUT_APP_SERVICE_NRF24 ) ) && !RFSCOUT_BOARD_HAS_NRF24 )
+    {
+        return false;
+    }
+    /* The current audio-capture provider is the T-Embed PDM path. T-Deck Plus audio will become
+       eligible when its ES7210 provider is added behind this same service capability. */
+    if( ( 0U != ( a_services & RFSCOUT_APP_SERVICE_AUDIO_CAPTURE ) ) && !RFSCOUT_BOARD_HAS_PDM_MIC )
+    {
+        return false;
+    }
+    return true;
+}
+
 static rfscout_app_availability_t probe_descriptor( const rfscout_app_descriptor_t *a_descriptor )
 {
     if( NULL == a_descriptor )
     {
         return RFSCOUT_APP_AVAILABILITY_UNAVAILABLE;
+    }
+    if( !profile_supports_services( a_descriptor->services ) )
+    {
+        retain_availability( a_descriptor->id, RFSCOUT_APP_AVAILABILITY_UNAVAILABLE );
+        return availability[ a_descriptor->id ];
     }
     if( NULL == a_descriptor->probe )
     {
@@ -111,6 +136,10 @@ static bool persistence_identity_valid( const rfscout_app_descriptor_t *a_descri
 
 esp_err_t app_framework_init( void )
 {
+    if( !board_profile_selected() )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     for( int app = 0; app < RFSCOUT_APP_COUNT; ++app )
     {
         const rfscout_app_descriptor_t *descriptor = rfscout_app_registry[ app ];
@@ -141,6 +170,11 @@ esp_err_t app_framework_init( void )
     for( int app = 0; app < RFSCOUT_APP_COUNT; ++app )
     {
         const rfscout_app_descriptor_t *descriptor = rfscout_app_registry[ app ];
+        if( !profile_supports_services( descriptor->services ) )
+        {
+            retain_availability( descriptor->id, RFSCOUT_APP_AVAILABILITY_UNAVAILABLE );
+            continue;
+        }
         if( RFSCOUT_APP_PROBE_NONE == descriptor->probe_policy )
         {
             availability[ app ] = RFSCOUT_APP_AVAILABILITY_AVAILABLE;
@@ -154,7 +188,7 @@ esp_err_t app_framework_init( void )
 bool app_framework_check_available( rfscout_app_id_t a_app )
 {
     const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
-    if( NULL == descriptor )
+    if( NULL == descriptor || !profile_supports_services( descriptor->services ) )
     {
         return false;
     }
@@ -168,7 +202,8 @@ bool app_framework_check_available( rfscout_app_id_t a_app )
 void app_framework_refresh_hotplug( rfscout_app_id_t a_app )
 {
     const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
-    if( ( NULL != descriptor ) && ( RFSCOUT_APP_PROBE_HOTPLUG == descriptor->probe_policy ) )
+    if( ( NULL != descriptor ) && profile_supports_services( descriptor->services ) &&
+        ( RFSCOUT_APP_PROBE_HOTPLUG == descriptor->probe_policy ) )
     {
         (void)probe_descriptor( descriptor );
     }
@@ -178,7 +213,8 @@ void app_framework_report_availability( rfscout_app_id_t a_app,
                                         rfscout_app_availability_t a_availability )
 {
     const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
-    if( ( NULL == descriptor ) || ( RFSCOUT_APP_PROBE_HOTPLUG != descriptor->probe_policy ) ||
+    if( ( NULL == descriptor ) || !profile_supports_services( descriptor->services ) ||
+        ( RFSCOUT_APP_PROBE_HOTPLUG != descriptor->probe_policy ) ||
         ( RFSCOUT_APP_AVAILABILITY_UNKNOWN == a_availability ) )
     {
         return;

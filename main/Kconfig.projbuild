@@ -1,16 +1,5 @@
 menu "RFScout hardware"
 
-choice RFSCOUT_BOARD
-    prompt "RFScout board target"
-    default RFSCOUT_BOARD_TEMBED_CC1101_PLUS
-    help
-        Select the physical board implementation compiled into this firmware image.
-        RFScout builds one board target at a time so support for additional hardware
-        does not add unused drivers or board code to existing firmware images.
-
-config RFSCOUT_BOARD_TEMBED_CC1101_PLUS
-    bool "LILYGO T-Embed CC1101 Plus"
-
-endchoice
+comment "Supported board profile is detected automatically at startup"
 
 endmenu

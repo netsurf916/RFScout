@@ -7,10 +7,12 @@
 
 #include "display_idle.h"
 
+#include "board.h"
 #include "device_config.h"
 #include "display.h"
 #include "input.h"
 #include "power.h"
+#include "touch.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -222,13 +224,25 @@ esp_err_t display_idle_request_attention( uint32_t a_duration_ms )
 void display_idle_poll( void )
 {
     const int64_t now_us = esp_timer_get_time();
-    if( input_activity_pending() )
+    const bool input_activity = input_activity_pending();
+    const bool touch_activity = touch_activity_pending();
+    if( input_activity || touch_activity )
     {
         cancel_attention_restore();
         if( DISPLAY_IDLE_ACTIVE != state )
         {
-            input_consume_wake();
-            power_consume_wake_input();
+            if( input_activity )
+            {
+                input_consume_wake();
+            }
+            if( touch_activity )
+            {
+                touch_consume_wake();
+            }
+            if( RFSCOUT_BOARD_USER_KEY_PIN >= 0 )
+            {
+                power_consume_wake_input();
+            }
             (void)wake_display( "user activity" );
         }
         last_activity_us = now_us;

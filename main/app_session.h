@@ -1,6 +1,6 @@
 /**
     app_session.h : RFScout application resource session
-    Description: Provides app-scoped memory and automatic platform-service teardown.
+    Description: Provides app-scoped resources, managed presentation view ownership, and teardown.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -21,12 +21,16 @@
 /**
  * @brief Ensure the platform has a resource session for the selected application.
  * @details The lifecycle coordinator owns session creation. Every active app has a session, even
- *          when it currently owns no managed memory or asynchronous platform services.
+ *          when it currently owns no managed memory or asynchronous platform services. Session
+ *          creation also acquires and initializes the canonical managed application view.
  */
 esp_err_t app_session_ensure( rfscout_app_id_t a_app );
 
 /** @brief Return the application that owns the current resource session. */
 rfscout_app_id_t app_session_app( void );
+
+/** @brief Return the immutable managed presentation view for the current session. */
+const rfscout_view_t *app_session_view( void );
 
 /** @brief Return a monotonically changing identifier for the current app-session lifetime. */
 uint32_t app_session_generation( void );
@@ -44,7 +48,8 @@ bool app_session_free( void *a_pointer );
  * @brief Stop every platform service belonging to the session and prove it safe to reclaim.
  * @details Platform service ownership is registered internally by the platform. Applications do
  *          not implement callback counters or lifecycle service hooks. A service stop succeeds only
- *          after callbacks/workers can no longer reach app memory.
+ *          after callbacks/workers can no longer reach app memory. Presentation cleanup occurs only
+ *          after the app LEAVE callback, when the prepared close is committed.
  */
 esp_err_t app_session_prepare_close( void );
 
@@ -57,7 +62,7 @@ esp_err_t app_session_abort_close( void );
 /** @brief Return whether every platform service has safely quiesced. */
 bool app_session_ready_to_reclaim( void );
 
-/** @brief Commit a successful close; app_lifecycle subsequently bulk-reclaims app memory. */
+/** @brief Commit a successful close, deinitialize its view, and release session ownership. */
 void app_session_commit_close( void );
 
 #endif // _RFSCOUT_APP_SESSION_H_

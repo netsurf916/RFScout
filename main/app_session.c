@@ -1,5 +1,5 @@
 /**
-    app_session.c : RFScout application resource session
+    app_session.c : RFScout application resource and presentation session
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -10,6 +10,7 @@
 #include "app_manager.h"
 #include "ble_monitor.h"
 #include "cc1101.h"
+#include "display.h"
 #include "memory_manager.h"
 #include "nrf24.h"
 #include "radio_monitor.h"
@@ -42,6 +43,7 @@ typedef struct
 
 static const char *TAG = "app_session";
 static rfscout_app_id_t session_app = RFSCOUT_APP_COUNT;
+static const rfscout_view_t *session_view;
 static uint32_t session_generation;
 static uint32_t session_services;
 static bool close_in_progress;
@@ -229,6 +231,34 @@ static void advance_generation( void )
     }
 }
 
+static esp_err_t acquire_view( void )
+{
+    session_view = display_app_view();
+    if( NULL == session_view )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if( NULL != session_view->init )
+    {
+        const esp_err_t result = session_view->init( session_view );
+        if( ESP_OK != result )
+        {
+            session_view = NULL;
+            return result;
+        }
+    }
+    return ESP_OK;
+}
+
+static void release_view( void )
+{
+    if( NULL != session_view && NULL != session_view->deinit )
+    {
+        session_view->deinit( session_view );
+    }
+    session_view = NULL;
+}
+
 esp_err_t app_session_ensure( rfscout_app_id_t a_app )
 {
     if( ( a_app < 0 ) || ( a_app >= RFSCOUT_APP_COUNT ) )
@@ -252,6 +282,7 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
         {
             return ESP_ERR_INVALID_STATE;
         }
+        release_view();
         reset_session_state();
         session_app = RFSCOUT_APP_COUNT;
     }
@@ -259,6 +290,13 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
     session_app = a_app;
     reset_session_state();
     session_services = descriptor->services;
+    const esp_err_t view_result = acquire_view();
+    if( ESP_OK != view_result )
+    {
+        reset_session_state();
+        session_app = RFSCOUT_APP_COUNT;
+        return view_result;
+    }
     advance_generation();
     return ESP_OK;
 }
@@ -266,6 +304,11 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
 rfscout_app_id_t app_session_app( void )
 {
     return session_app;
+}
+
+const rfscout_view_t *app_session_view( void )
+{
+    return session_active() ? session_view : NULL;
 }
 
 uint32_t app_session_generation( void )
@@ -404,6 +447,7 @@ void app_session_commit_close( void )
         return;
     }
 
+    release_view();
     reset_session_state();
     session_app = RFSCOUT_APP_COUNT;
 }

@@ -1,12 +1,13 @@
 /**
     ui_present.c : RFScout shared UI presentation layer
-    Description: Applies global overlays before flushing the application framebuffer.
+    Description: Applies system-owned navigation and global overlays before flushing the framebuffer.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
 
 #include "display.h"
 
+#include "navigation_bar.h"
 #include "power.h"
 #include "system_events.h"
 #include "ui_theme.h"
@@ -59,7 +60,6 @@ static void draw_overlay_frame( uint16_t a_border_color )
                        a_border_color );
 }
 
-/** @brief Draw the generic power-transition overlay into the active framebuffer. */
 static void draw_power_overlay( const power_status_t *a_status )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
@@ -124,6 +124,10 @@ esp_err_t display_present( void )
         return ESP_OK;
     }
 
+    /* System-owned chrome is repainted after app rendering so applications cannot
+       accidentally retain pixels outside their managed view. On T-Embed this is a no-op. */
+    navigation_bar_draw();
+
     power_status_t status;
     power_get_status( &status );
     rfscout_system_event_notification_t system_notification;
@@ -184,8 +188,6 @@ esp_err_t display_present( void )
         return restored;
     }
 
-    /* The LCD contains the intended composed frame while the framebuffer is restored to its
-     * overlay-free application state. That restoration is not a reason to send another frame. */
     display_mark_clean();
     return ESP_OK;
 }

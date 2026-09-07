@@ -1,6 +1,6 @@
 /**
     display_brightness.c : RFScout LCD backlight brightness control
-    Description: Reuses the display backlight GPIO through ESP32-S3 LEDC PWM after LCD initialization.
+    Description: Applies the runtime-selected board backlight control semantics.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -9,22 +9,30 @@
 
 #include "board.h"
 
+#include "driver/gpio.h"
 #include "driver/ledc.h"
 #include "esp_log.h"
+#include "esp_rom_sys.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #define DISPLAY_BACKLIGHT_MODE LEDC_LOW_SPEED_MODE
 #define DISPLAY_BACKLIGHT_TIMER LEDC_TIMER_1
 #define DISPLAY_BACKLIGHT_CHANNEL LEDC_CHANNEL_1
+#define DISPLAY_PULSE_STEPS 16U
+#define DISPLAY_PULSE_RESET_MS 3U
+#define DISPLAY_PULSE_WAKE_US 30U
 
 static const char *TAG = "display_brightness";
-static bool initialized;
+static bool pwm_initialized;
+static uint8_t pulse_level;
 
-/** @brief Lazily bind the board backlight pin to an 8-bit LEDC channel. */
-static bool ensure_initialized( void )
+static bool ensure_pwm_initialized( void )
 {
-    if( initialized )
+    if( pwm_initialized )
     {
         return true;
     }
@@ -57,23 +65,68 @@ static bool ensure_initialized( void )
         return false;
     }
 
-    initialized = true;
+    pwm_initialized = true;
     return true;
 }
 
-void display_set_brightness( uint8_t a_percent )
+static void set_pwm_brightness( uint8_t a_percent )
 {
-    if( !ensure_initialized() )
+    if( !ensure_pwm_initialized() )
     {
         return;
-    }
-    if( a_percent > 100U )
-    {
-        a_percent = 100U;
     }
     const uint32_t duty = ( (uint32_t)a_percent * 255U ) / 100U;
     if( ESP_OK == ledc_set_duty( DISPLAY_BACKLIGHT_MODE, DISPLAY_BACKLIGHT_CHANNEL, duty ) )
     {
         (void)ledc_update_duty( DISPLAY_BACKLIGHT_MODE, DISPLAY_BACKLIGHT_CHANNEL );
     }
+}
+
+static void set_pulse_brightness( uint8_t a_percent )
+{
+    uint8_t target_level = (uint8_t)( ( (uint32_t)a_percent * DISPLAY_PULSE_STEPS + 99U ) / 100U );
+    if( target_level > DISPLAY_PULSE_STEPS )
+    {
+        target_level = DISPLAY_PULSE_STEPS;
+    }
+
+    if( 0U == target_level )
+    {
+        gpio_set_level( RFSCOUT_BOARD_DISPLAY_BACKLIGHT_PIN, 0 );
+        vTaskDelay( pdMS_TO_TICKS( DISPLAY_PULSE_RESET_MS ) );
+        pulse_level = 0U;
+        return;
+    }
+
+    if( 0U == pulse_level )
+    {
+        gpio_set_level( RFSCOUT_BOARD_DISPLAY_BACKLIGHT_PIN, 1 );
+        pulse_level = DISPLAY_PULSE_STEPS;
+        esp_rom_delay_us( DISPLAY_PULSE_WAKE_US );
+    }
+
+    const uint8_t from = DISPLAY_PULSE_STEPS - pulse_level;
+    const uint8_t to = DISPLAY_PULSE_STEPS - target_level;
+    const uint8_t pulses = (uint8_t)( ( DISPLAY_PULSE_STEPS + to - from ) % DISPLAY_PULSE_STEPS );
+    for( uint8_t index = 0U; index < pulses; ++index )
+    {
+        gpio_set_level( RFSCOUT_BOARD_DISPLAY_BACKLIGHT_PIN, 0 );
+        gpio_set_level( RFSCOUT_BOARD_DISPLAY_BACKLIGHT_PIN, 1 );
+    }
+    pulse_level = target_level;
+}
+
+void display_set_brightness( uint8_t a_percent )
+{
+    if( a_percent > 100U )
+    {
+        a_percent = 100U;
+    }
+
+    if( RFSCOUT_BACKLIGHT_PULSE_16_STEP == RFSCOUT_BOARD_BACKLIGHT_TYPE )
+    {
+        set_pulse_brightness( a_percent );
+        return;
+    }
+    set_pwm_brightness( a_percent );
 }

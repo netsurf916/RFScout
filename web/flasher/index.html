@@ -65,9 +65,10 @@
         </div>
 
         <p>
-          Connect the LILYGO T-Embed CC1101 Plus over USB, then start the installer.
-          Chrome or Edge on a desktop operating system is recommended because Web Serial
-          support is required.
+          Connect a supported LILYGO T-Embed CC1101 Plus or T-Deck Plus over USB, then
+          start the installer. RFScout uses one universal ESP32-S3 image and detects the
+          supported hardware profile at startup. Chrome or Edge on a desktop operating
+          system is recommended because Web Serial support is required.
         </p>
 
         <div class="install-row">
@@ -86,8 +87,7 @@
           <strong>Clean-install behavior</strong>
           <p>
             The combined image is flashed from offset 0 and can replace internal NVS and
-            other internal-flash state. It does not erase the removable SD card or
-            <code>/sdcard/rfscout.json</code>.
+            other internal-flash state. It does not erase or modify the removable SD card.
           </p>
         </aside>
       </section>

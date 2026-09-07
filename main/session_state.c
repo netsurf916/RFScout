@@ -8,6 +8,7 @@
 #include "session_state.h"
 
 #include "esp_attr.h"
+#include "esp_bit_defs.h"
 #include "esp_sleep.h"
 
 #include <stddef.h>
@@ -45,7 +46,8 @@ void session_state_store( rfscout_app_id_t a_active_app, bool a_input_locked )
 
 bool session_state_restore( rfscout_session_state_t *a_state )
 {
-    if( NULL == a_state || ESP_SLEEP_WAKEUP_UNDEFINED == esp_sleep_get_wakeup_cause() )
+    const uint32_t wakeup_causes = esp_sleep_get_wakeup_causes();
+    if( NULL == a_state || 0U != ( wakeup_causes & BIT( ESP_SLEEP_WAKEUP_UNDEFINED ) ) )
     {
         return false;
     }

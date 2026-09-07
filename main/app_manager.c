@@ -9,6 +9,7 @@
 
 #include "app_framework.h"
 #include "app_lifecycle.h"
+#include "app_session.h"
 #include "device_config.h"
 #include "display.h"
 #include "event.h"
@@ -75,6 +76,7 @@ static rfscout_app_runtime_result_t dispatch_runtime( rfscout_app_id_t a_app,
         .type = a_type,
         .now_us = a_now_us,
         .activated = a_activated,
+        .view = ( RFSCOUT_APP_RUNTIME_ENTER == a_type ) ? app_session_view() : NULL,
         .input =
             {
                 .type = RFSCOUT_INPUT_NONE,
@@ -185,6 +187,30 @@ static bool transition_to_app( rfscout_app_id_t a_destination, bool a_report_abo
         return false;
     }
 
+    if( RFSCOUT_APP_TRANSITION_COMMITTED_DESTINATION_FAILED == diagnostics.outcome )
+    {
+        ESP_LOGE( TAG,
+                  "committed transition from=%d could not establish destination=%d; using Home",
+                  (int)previous,
+                  (int)a_destination );
+        const esp_err_t recovery = app_session_ensure( RFSCOUT_APP_DEVICE );
+        if( ESP_OK != recovery )
+        {
+            ESP_LOGE( TAG, "Home session recovery failed: %s", esp_err_to_name( recovery ) );
+            ESP_ERROR_CHECK( recovery );
+        }
+        active_app = RFSCOUT_APP_DEVICE;
+        enter_app( active_app );
+        log_lifecycle(
+            "transition-recover", previous, active_app, esp_timer_get_time() - transition_started );
+        if( a_report_abort )
+        {
+            rfscout_event_emit(
+                RFSCOUT_EVENT_ERROR, (uint8_t)previous, (int32_t)diagnostics.error );
+        }
+        return false;
+    }
+
     active_app = a_destination;
     enter_app( active_app );
     log_lifecycle( "transition", previous, active_app, esp_timer_get_time() - transition_started );
@@ -232,15 +258,7 @@ esp_err_t app_manager_init( void )
     app_entered_us = 0;
     app_activated = false;
 
-    esp_err_t result = app_lifecycle_init();
-    if( ESP_OK != result )
-    {
-        ESP_LOGE(
-            TAG, "application lifecycle initialization failed: %s", esp_err_to_name( result ) );
-        return result;
-    }
-
-    result = display_init();
+    esp_err_t result = display_init();
     if( ESP_OK != result )
     {
         return result;
@@ -251,6 +269,14 @@ esp_err_t app_manager_init( void )
         rfscout_event_emit( RFSCOUT_EVENT_DISPLAY_PROVIDER_SELECTED,
                             RFSCOUT_EVENT_SOURCE_SYSTEM,
                             (int32_t)display->provider );
+    }
+
+    result = app_lifecycle_init();
+    if( ESP_OK != result )
+    {
+        ESP_LOGE(
+            TAG, "application lifecycle initialization failed: %s", esp_err_to_name( result ) );
+        return result;
     }
 
     result = app_framework_init();
@@ -268,6 +294,14 @@ esp_err_t app_manager_init( void )
         ESP_LOGW( TAG, "configured or retained app unavailable; using Home" );
         active_app = RFSCOUT_APP_DEVICE;
     }
+    if( app_session_app() != active_app )
+    {
+        result = app_session_ensure( active_app );
+        if( ESP_OK != result )
+        {
+            return result;
+        }
+    }
     enter_app( active_app );
     return ESP_OK;
 }
@@ -275,6 +309,22 @@ esp_err_t app_manager_init( void )
 rfscout_app_id_t app_manager_current( void )
 {
     return active_app;
+}
+
+bool app_manager_select( rfscout_app_id_t a_app )
+{
+    if( ( a_app < 0 ) || ( a_app >= RFSCOUT_APP_COUNT ) || ( a_app == active_app ) ||
+        !app_available( a_app ) )
+    {
+        return false;
+    }
+
+    if( !transition_to_app( a_app, true ) )
+    {
+        return false;
+    }
+    rfscout_event_emit( RFSCOUT_EVENT_NAVIGATE, (uint8_t)active_app, 0 );
+    return true;
 }
 
 void app_manager_poll( void )

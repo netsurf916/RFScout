@@ -71,9 +71,16 @@ static void poll_low_battery( void )
         return;
     }
 
-    /* Once a protective countdown is active, force a fresh charger/fuel-gauge
-       sample on every policy pass. This gives newly connected external power a
-       chance to cancel the transition before power_poll() may execute it. */
+    /* Protective low-battery actions require authoritative external-power state.
+       Voltage-only profiles may expose estimated SOC to the UI, but must not
+       automatically sleep or power off when RFScout cannot know whether external
+       power is present. */
+    if( !battery_external_power_telemetry_expected() )
+    {
+        reset_low_battery( true );
+        return;
+    }
+
     if( low_battery_latched )
     {
         battery_refresh();
@@ -89,20 +96,11 @@ static void poll_low_battery( void )
         return;
     }
 
-    /* A low-battery transition is only safe to retain when the latest charger
-       refresh confirms that external power is absent. Cached charger state is
-       suitable for UI display, but not for deciding whether BATFET shutdown can
-       actually remove power. If charger telemetry is uncertain, cancel and
-       restart confirmation once fresh source-state evidence is available. */
     if( !battery.charger_fresh )
     {
         reset_low_battery( true );
         return;
     }
-
-    /* External power cancellation does not depend on a fresh percentage read.
-       A charger sample may remain usable even when the fuel-gauge transaction
-       failed during the same refresh. */
     if( battery.external_power || ( BATTERY_CHARGE_CHARGING == battery.charge_state ) ||
         ( BATTERY_CHARGE_COMPLETE == battery.charge_state ) )
     {
@@ -110,9 +108,6 @@ static void poll_low_battery( void )
         return;
     }
 
-    /* Cached percentage remains useful to the UI during transient I2C errors,
-       but protective confirmation must only advance on a percentage obtained by
-       the latest refresh. A missed sample breaks the consecutive-sample run. */
     if( !battery.available || !battery.percentage_fresh )
     {
         if( !low_battery_latched )
@@ -136,17 +131,12 @@ static void poll_low_battery( void )
         {
             return;
         }
-
-        /* The requested action returned without changing power state. Re-arm
-           confirmation so a still-unsafe battery condition can retry. */
         low_battery_latched = false;
         low_battery_samples = 0U;
     }
 
     if( battery.percentage > threshold )
     {
-        /* Confirmation is consecutive, not cumulative across samples that leave
-           the trigger range but remain inside the hysteresis band. */
         low_battery_samples = 0U;
         return;
     }
@@ -182,10 +172,6 @@ static power_action_t thermal_effective_action( power_action_t a_configured_acti
         return a_configured_action;
     }
 
-    /* BATFET disable cannot remove system power while external input remains.
-       Confirm a fresh charger state before relying on physical power-off. If the
-       charger cannot prove that external power is absent, deep sleep is the safe
-       conservative fallback because it stops active execution on supplied power. */
     battery_refresh();
     battery_status_t battery;
     if( !battery_get_status( &battery ) || !battery.charger_fresh || battery.external_power )
@@ -232,9 +218,6 @@ static void poll_high_temperature( void )
         {
             return;
         }
-
-        /* A failed sleep/shutdown request returns the power layer to idle. Re-arm
-           the thermal policy so a still-hot device can retry after confirmation. */
         high_temperature_latched = false;
         high_temperature_samples = 0U;
     }
@@ -254,9 +237,6 @@ static void poll_high_temperature( void )
         return;
     }
 
-    /* Thermal protection outranks a battery transition because it represents an
-       actively worsening condition rather than an energy-reserve condition. Reset
-       the battery latch as well so it may re-arm if the thermal condition clears. */
     reset_low_battery( true );
     const power_action_t effective_action = thermal_effective_action( action );
     if( power_request_transition( POWER_TRANSITION_HIGH_TEMPERATURE,
@@ -284,7 +264,11 @@ esp_err_t power_policy_init( void )
     temperature_sensor = NULL;
     temperature_available = false;
 
-#if RFSCOUT_BOARD_HAS_INTERNAL_TEMPERATURE
+    if( !RFSCOUT_BOARD_HAS_INTERNAL_TEMPERATURE )
+    {
+        return ESP_OK;
+    }
+
     const temperature_sensor_config_t sensor_config = TEMPERATURE_SENSOR_CONFIG_DEFAULT( 20, 100 );
     esp_err_t result = temperature_sensor_install( &sensor_config, &temperature_sensor );
     if( ESP_OK != result )
@@ -302,7 +286,6 @@ esp_err_t power_policy_init( void )
         return ESP_OK;
     }
     temperature_available = true;
-#endif
 
     return ESP_OK;
 }

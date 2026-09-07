@@ -10,8 +10,6 @@
 #include "board.h"
 #include "morse.h"
 
-#if RFSCOUT_BOARD_HAS_SPEAKER
-
 #include "driver/i2s_std.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -519,6 +517,10 @@ esp_err_t audio_output_init( void )
     {
         return ESP_OK;
     }
+    if( !RFSCOUT_BOARD_HAS_SPEAKER )
+    {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
 
     command_queue = xQueueCreate( AUDIO_OUTPUT_QUEUE_LENGTH, sizeof( audio_output_command_t ) );
     queue_mutex = xSemaphoreCreateMutex();
@@ -742,94 +744,3 @@ void audio_output_cancel_pending( void )
         (void)xSemaphoreGive( queue_mutex );
     }
 }
-
-#else /* RFSCOUT_BOARD_HAS_SPEAKER */
-
-esp_err_t audio_output_init( void )
-{
-    return ESP_ERR_NOT_SUPPORTED;
-}
-
-bool audio_output_available( void )
-{
-    return false;
-}
-
-bool audio_output_play_tone( uint16_t a_frequency_hz,
-                             uint32_t a_duration_ms,
-                             uint8_t a_volume_percent )
-{
-    (void)a_frequency_hz;
-    (void)a_duration_ms;
-    (void)a_volume_percent;
-    return false;
-}
-
-bool audio_output_play_morse( char a_character,
-                              uint16_t a_frequency_hz,
-                              uint32_t a_unit_ms,
-                              uint8_t a_volume_percent )
-{
-    (void)a_character;
-    (void)a_frequency_hz;
-    (void)a_unit_ms;
-    (void)a_volume_percent;
-    return false;
-}
-
-bool audio_output_play_feedback_tone( uint16_t a_frequency_hz,
-                                      uint32_t a_duration_ms,
-                                      uint8_t a_volume_percent )
-{
-    return audio_output_play_tone( a_frequency_hz, a_duration_ms, a_volume_percent );
-}
-
-bool audio_output_play_notification_tone( uint16_t a_frequency_hz,
-                                          uint32_t a_duration_ms,
-                                          uint8_t a_volume_percent )
-{
-    return audio_output_play_tone( a_frequency_hz, a_duration_ms, a_volume_percent );
-}
-
-bool audio_output_play_notification_morse( char a_character,
-                                           uint16_t a_frequency_hz,
-                                           uint32_t a_unit_ms,
-                                           uint8_t a_volume_percent )
-{
-    return audio_output_play_morse( a_character, a_frequency_hz, a_unit_ms, a_volume_percent );
-}
-
-bool audio_output_play_wav( const char *a_path, uint8_t a_volume_percent )
-{
-    (void)a_path;
-    (void)a_volume_percent;
-    return false;
-}
-
-void audio_output_set_playback_volume( uint8_t a_volume_percent )
-{
-    (void)a_volume_percent;
-}
-
-bool audio_output_playback_active( void )
-{
-    return false;
-}
-
-void audio_output_stop_playback( void )
-{
-}
-
-void audio_output_cancel_feedback_pending( void )
-{
-}
-
-void audio_output_cancel_notifications_pending( void )
-{
-}
-
-void audio_output_cancel_pending( void )
-{
-}
-
-#endif /* RFSCOUT_BOARD_HAS_SPEAKER */

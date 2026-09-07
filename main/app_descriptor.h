@@ -10,6 +10,7 @@
 #ifndef _RFSCOUT_APP_DESCRIPTOR_H_
 #define _RFSCOUT_APP_DESCRIPTOR_H_
 
+#include "app_view.h"
 #include "input.h"
 
 #include "esp_err.h"
@@ -17,7 +18,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/** @brief Full-screen applications in encoder navigation order. */
+/** @brief Applications in global navigation order. */
 typedef enum
 {
     RFSCOUT_APP_SYSTEM_EVENTS = 0,
@@ -66,6 +67,8 @@ typedef struct
     rfscout_app_runtime_event_type_t type;
     int64_t now_us;
     bool activated;
+    /** Managed presentation view assigned to this session; supplied on ENTER only. */
+    const rfscout_view_t *view;
     rfscout_input_event_t input;
 } rfscout_app_runtime_event_t;
 
@@ -88,8 +91,10 @@ typedef rfscout_app_runtime_result_t ( *rfscout_app_runtime_handler_t )(
  * @details Probe implementations may use platform/service APIs but must leave hardware inactive.
  *          Service lifetime is declared as capability bits and remains implemented by the platform.
  *          Runtime handlers own app-local UI/state but not driver teardown or memory reachability.
- *          The optional leave-prepare hook is reserved for app-specific transition vetoes; ordinary
- *          apps should leave it NULL.
+ *          On ENTER, event.view identifies the managed content surface for the session; applications
+ *          may retain that immutable pointer for the session lifetime and must not assume physical
+ *          LCD dimensions. The optional leave-prepare hook is reserved for app-specific transition
+ *          vetoes; ordinary apps should leave it NULL.
  */
 typedef struct
 {

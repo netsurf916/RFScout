@@ -9,6 +9,7 @@
 
 #include "audio_output.h"
 #include "audio_policy.h"
+#include "board.h"
 #include "device_config.h"
 #include "event.h"
 #include "morse.h"
@@ -171,10 +172,13 @@ esp_err_t alert_init( void )
     morse_character = ALERT_MORSE_DEFAULT_CHARACTER;
     (void)xSemaphoreGive( alert_mutex );
 
-    const esp_err_t audio_result = audio_output_init();
-    if( ( ESP_OK != audio_result ) && ( ESP_ERR_NOT_SUPPORTED != audio_result ) )
+    if( board_profile_has( RFSCOUT_BOARD_CAP_SPEAKER ) )
     {
-        return audio_result;
+        const esp_err_t audio_result = audio_output_init();
+        if( ( ESP_OK != audio_result ) && ( ESP_ERR_NOT_SUPPORTED != audio_result ) )
+        {
+            return audio_result;
+        }
     }
 
     return rfscout_event_subscribe( on_event, NULL ) ? ESP_OK : ESP_ERR_NO_MEM;

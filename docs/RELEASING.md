@@ -10,9 +10,9 @@ The release packager validates ESP-IDF build metadata before producing files. RF
 | --- | ---: | --- |
 | Bootloader | `0x0` | ESP32-S3 second-stage bootloader |
 | Partition table | `0x8000` | RFScout 16 MB flash layout |
-| Application | `0x10000` | RFScout firmware |
+| Application | `0x10000` | Universal RFScout firmware |
 
-The bundle contains a combined image for ordinary installation, the component images for development/recovery, SHA-256 checksums, installation instructions, structured build metadata, and an ESP Web Tools manifest. It does not contain the ESP-IDF build tree.
+The bundle contains a combined image for ordinary installation, the component images for development/recovery, SHA-256 checksums, installation instructions, structured build metadata, and an ESP Web Tools manifest. It does not contain the ESP-IDF build tree. The same ESP32-S3 firmware image selects a supported RFScout board profile at runtime.
 
 `manifest.web.json` is consumed by the browser flasher. The Pages deployment mirrors the manifest and referenced combined image onto the same HTTPS origin so flashing does not depend on cross-origin access to GitHub release or Actions URLs.
 
@@ -80,7 +80,7 @@ From the repository **Actions** page, select **Prepare firmware release**, choos
 
 The workflow resolves the source ref to an immutable commit and rejects requests when the version is malformed/duplicate, the source is not part of `main`, or the source contains no commits after the latest published release.
 
-It repeats formatting, packaging tests, the ESP-IDF build, and bundle generation at that exact commit. Only after those jobs pass does it create the semantic version tag at the validated commit and then create the **draft** GitHub Release against that existing tag. This explicit ordering prevents GitHub from assigning a temporary `untagged-*` release identity while a release is under review.
+It repeats formatting, packaging tests, the ESP-IDF 6.1 build, and bundle generation at that exact commit. Only after those jobs pass does it create the semantic version tag at the validated commit and then create the **draft** GitHub Release against that existing tag. This explicit ordering prevents GitHub from assigning a temporary `untagged-*` release identity while a release is under review.
 
 If draft creation itself fails after the workflow has pushed the tag, the workflow removes that newly-created tag before exiting. A successfully prepared draft intentionally retains its semantic tag while release notes and hardware validation are completed. The workflow never publishes the GitHub Release automatically.
 
@@ -90,10 +90,10 @@ A successfully prepared draft is nevertheless **publicly exposed through the bro
 
 Before publishing a draft:
 
-1. confirm that the firmware and release assets are suitable for public exposure (they may already be downloadable from the browser flasher while the GitHub Release is still a draft);
+1. confirm that the firmware and release assets are suitable for public exposure;
 2. review the generated release notes/version;
 3. verify the archive/checksums;
-4. perform applicable target-hardware installation and smoke tests using the draft-labeled browser-flasher entry where appropriate;
+4. perform applicable hardware installation and smoke tests using the same universal image on each supported profile;
 5. record hardware validation in the release notes; and
 6. publish the release deliberately through GitHub.
 
@@ -110,7 +110,7 @@ Because GitHub does not generate draft-release deletion workflow events, deletin
 
 ## Installation behavior
 
-The combined image is a clean installation/recovery image flashed at `0x0`. It can replace internal-flash state. Removable SD contents, including `/sdcard/rfscout.json` and recordings, are not part of the image and are not erased by flashing internal storage.
+The combined image is a clean installation/recovery image flashed at `0x0`. It can replace internal NVS and LittleFS state, including RFScout configuration, calibration, and other persistent system/app records. Removable SD contents such as logs and recordings are not part of the image and are not erased by flashing internal storage.
 
 Separate component images are included for development/recovery. RFScout does not guarantee that application-image-only flashing is compatible across arbitrary releases.
 

@@ -1,8 +1,8 @@
 # RFScout
 
-RFScout is a handheld **RF situational-awareness** instrument. The currently supported board is the **LILYGO T-Embed CC1101 Plus / ESP32-S3**. The firmware uses board-target and capability boundaries so additional hardware can be supported without compiling every board implementation into one universal image.
+RFScout is a handheld **RF situational-awareness** instrument for ESP32-S3. A single universal firmware image currently supports runtime profiles for the **LILYGO T-Embed CC1101 Plus** and **LILYGO T-Deck Plus**. The T-Embed remains the hardware-validated baseline; T-Deck initial support is being validated incrementally on hardware.
 
-RFScout combines passive Wi-Fi/BLE observation, sub-GHz spectrum awareness, 2.4 GHz nRF24 activity analysis, SD-backed audio recording/playback, live microphone spectrum monitoring, optional thermal imaging, battery/power telemetry, SD logging, device-wide configuration, semantic event feedback, and application-scoped notifications.
+RFScout combines passive Wi-Fi/BLE observation, board-appropriate RF capabilities, SD logging/storage, semantic input and notifications, persistent device configuration, battery telemetry, and optional hardware-specific applications exposed only when the active runtime profile has a safe provider.
 
 <p align="center">
   <img src="assets/device.jpg" alt="RFScout running on a LILYGO T-Embed CC1101 Plus" width="800">
@@ -12,18 +12,18 @@ RFScout is intentionally passive wherever the underlying radio APIs allow it. It
 
 ## Applications
 
-Top-level rotary order is:
+Top-level application order is:
 
 0. **System Events** — optional and disabled by default
 1. **Home / Device Settings**
 2. **WiFi / BT**
-3. **CC1101**
-4. **nRF24**
-5. **Recorder**
+3. **CC1101** — only when the active board provides the current CC1101 service
+4. **nRF24** — only when the active board provides the current nRF24 service
+5. **Recorder** — only when the current audio-capture/storage providers are available
 6. **Thermal** — only when enabled and an MLX90640 is detected
-7. **Audio Spectrum** — when enabled and the microphone is available
+7. **Audio Spectrum** — when enabled and the microphone provider is available
 
-Disabled or unavailable apps are skipped. Home is always available and is the default/fallback startup target. The application layer consumes board-neutral semantic input rather than directly depending on a rotary encoder.
+Disabled or unavailable apps are skipped. Home is always available and is the default/fallback startup target. Applications consume board-neutral semantic input, service availability, and a managed application view rather than board names or physical controls.
 
 ### WiFi / BT
 
@@ -41,11 +41,11 @@ nRF24 performs receive-only 2.4 GHz RPD scanning with configurable channel bound
 
 ### Recorder
 
-Recorder uses the internal PDM microphone and SD storage for 16-bit mono WAV capture and playback. It measures effective PDM/PCM timing at runtime, applies asynchronous trim/DC-removal/normalization, supports recording browse/delete, and has independent playback volume. Active recording or finalization blocks app transitions until the file is safely complete; RFScout does not stop a recording and later attempt to reconstruct or restart it after an aborted transition.
+Recorder uses the available audio-capture provider and SD storage for 16-bit mono WAV capture and playback. The currently validated capture path is the T-Embed PDM microphone; T-Deck ES7210 capture is not part of the initial T-Deck support. Active recording or finalization blocks app transitions until the file is safely complete.
 
 ### Audio Spectrum
 
-Audio Spectrum is the separate live microphone FFT/spectrum app and does not require an SD card. On its main view, rotary input remains normal global app navigation. The spectrum uses raw microphone PCM with continuous high-pass/DC-block filtering and a smoothed automatic dB display range, avoiding pre-FFT digital amplification and clipping. The `AUTO N dB` readout is the current display-window span, not microphone gain.
+Audio Spectrum is the separate live microphone FFT/spectrum app and does not require an SD card. It is exposed only when the active profile has a compatible audio-capture provider.
 
 ### Thermal
 
@@ -53,25 +53,29 @@ Thermal uses an optional MLX90640 on the external I2C/Qwiic interface. Native 32
 
 ## Home / Device Settings
 
-Current global settings include brightness/display idle, visual theme, independent **Normal / Quiet** Audio policy, UI/Event/Alert presentation levels, short/long power-button actions, low-battery/high-temperature protective policy, clock/timezone/manual time, startup/app enablement, SD logging, and explicit configuration save.
+Current global settings include brightness/display idle, visual theme, independent **Normal / Quiet** audio policy, UI/Event/Alert presentation levels, supported power-button/protective actions, time source/timezone/manual time, startup/app enablement, SD logging, and touch recalibration when a touch provider is available.
 
-Small finite choices use direct center-to-cycle behavior. App-owned notification settings and WiFi / BT retention remain in their respective app menus.
+Setting changes are persisted automatically through RFScout's internal persistent-record service; there is no user-facing Save step. App-owned notification settings and WiFi / BT retention remain in their respective app menus.
 
-Visual themes are **Indoor**, **Outdoor**, and **Night** and affect presentation only. Quiet suppresses incidental UI/Event/Alert presentation without mutating saved notification preferences. Explicit application content audio such as Recorder playback remains available.
+The Time submenu separates source policy from timezone presentation. **Auto** accepts valid GPS UTC time when the GPS service is available and locked; **Manual** exposes explicit date/time fields. Consumers can distinguish invalid, retained, manual, and GPS-synchronized wall-clock state.
 
 ## Power, display, and persistence
 
-Automatic screen-off affects LCD presentation only. Applications, logging, acquisition, framebuffer updates, and audio continue while the ST7789 is asleep. The whole first physical wake gesture is consumed before ordinary app, lock, or power-button handling.
+Display and power actions are capability-gated by the selected runtime profile. T-Embed retains its validated dedicated power-button, deep-sleep, and physical power-off semantics. The device-wide input lock suppresses navigation, touch, and future keyboard input, but intentionally does not disable T-Embed's dedicated power button.
 
-Short power-button presses can be configured as None, Screen off, Sleep, or Power off; long press supports None or Power off. Protective policy can request sleep/power-off after confirmed low battery or sustained high SoC temperature, using fresh telemetry and conservative external-power checks.
+T-Deck Plus currently exposes a voltage-only battery estimate but no authoritative charger/external-power state, so automatic low-battery power actions are intentionally disabled there. T-Deck also does not currently advertise sleep or physical power-off capabilities.
 
-Persistent preferences are firmware-managed internal records split between device-wide `system/config` policy and descriptor-owned `app/<persistence_key>/config` records. SD is reserved for removable/bulk data and is not a configuration authority. See `docs/CONFIGURATION.md`.
+Persistent preferences are firmware-managed internal records split between device-wide system records and descriptor-owned app records. Touch calibration and time policy are also system-owned bounded records. SD is reserved for removable/bulk data and logging, not configuration authority. See `docs/CONFIGURATION.md`.
 
-See [Device configuration and persistence](docs/CONFIGURATION.md) for the detailed configuration, display-idle, power, internal-flash, SD, logging, and schema contracts.
+## T-Deck Plus baseline
+
+Initial T-Deck Plus support includes runtime board detection, the 320x240 ST7789 display, a managed 320x170 app view plus system-owned navigation region, trackball/center fallback input, calibrated GT911 touch tab navigation, GPS location/time service, SD support, voltage-derived battery percentage, and standard-I2S speaker output. Hardware capabilities without a validated RFScout provider, including SX1262, keyboard, and ES7210 microphone capture, are not advertised to applications yet.
+
+GPS fixes are exposed with explicit validity/freshness and are opportunistically attached to SD log records. A system status indicator shows GPS receiver detection and fix state.
 
 ## Hardware and memory
 
-The current target's LCD, microSD, CC1101, and nRF24 share SPI; battery/power telemetry and external sensors share I2C; shared microphone/audio capture uses I2S0 and the speaker service uses I2S1.
+The runtime board profile owns physical pin mappings, buses, display transforms, capabilities, and power semantics. Provider code is compiled into the universal image but initializes only when the selected profile permits it. Unknown hardware remains awake and inert without initializing board GPIO/peripherals so it can be recovered by reflashing.
 
 RFScout requires usable external **PSRAM**. Large app-owned collections can grow dynamically during an app resource session and are reclaimed only after the platform proves workers/callbacks no longer reference them. Internal SRAM remains reserved for system, stack, DMA/hardware-constrained, and latency-sensitive allocations.
 
@@ -79,7 +83,7 @@ See [Board targets and porting](docs/BOARD_PORTING.md).
 
 ## Build and flashing
 
-RFScout targets ESP32-S3 with ESP-IDF 6.x; CI currently builds with ESP-IDF 6.1 and enforces clang-format 18.
+RFScout targets ESP32-S3 with **ESP-IDF 6.1** and enforces clang-format 18.
 
 ```sh
 idf.py set-target esp32s3
@@ -87,7 +91,7 @@ idf.py build
 idf.py flash monitor
 ```
 
-Ready-for-review pull requests can produce short-lived candidate bundles. Published releases are prepared deliberately through the release workflow and mirrored to the browser flasher.
+The same firmware image selects T-Embed CC1101 Plus or T-Deck Plus at runtime. Ready-for-review pull requests can produce short-lived candidate bundles. Published releases are prepared deliberately through the release workflow and mirrored to the browser flasher.
 
 ## Documentation
 

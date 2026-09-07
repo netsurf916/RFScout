@@ -21,6 +21,8 @@ typedef struct
     bool sd_available;
     bool storage_error;
     bool thermal_available;
+    bool gps_available;
+    bool gps_fix_valid;
     char clock[ RFSCOUT_STATUS_CLOCK_MAX ];
 } rfscout_status_bar_state_t;
 

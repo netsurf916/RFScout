@@ -131,6 +131,7 @@ jobs:
           COMMIT: ${{ needs.validate.outputs.commit }}
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           . "$IDF_PATH/export.sh"
           idf_version=$(idf.py --version)
           idf.py -DRFSCOUT_FORMAT_CHECK=OFF set-target esp32s3

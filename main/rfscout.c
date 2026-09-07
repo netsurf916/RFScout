@@ -11,14 +11,17 @@
 #include "battery.h"
 #include "battery_indicator.h"
 #include "ble_monitor.h"
+#include "board.h"
 #include "device_config.h"
 #include "device_time.h"
 #include "display.h"
 #include "display_idle.h"
 #include "event.h"
 #include "feedback.h"
+#include "gps.h"
 #include "input.h"
 #include "log_writer.h"
+#include "navigation_bar.h"
 #include "notification.h"
 #include "notification_preferences.h"
 #include "observation_store.h"
@@ -31,16 +34,24 @@
 #include "storage.h"
 #include "surveillance.h"
 #include "system_events.h"
+#include "touch.h"
 #include "ui_theme.h"
 
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
 
+#include <stdio.h>
 #include <string.h>
 
+#define CONFIG_SAVE_RETRY_US 1000000LL
+
 static const char *TAG = "rfscout";
+static bool gps_fix_state_known;
+static bool gps_fix_active;
+static int64_t config_save_retry_after_us;
 
 static rfscout_notification_type_t
 notification_for_surveillance( surveillance_class_t a_classification )
@@ -64,6 +75,94 @@ notification_for_surveillance( surveillance_class_t a_classification )
         default:
             return RFSCOUT_NOTIFICATION_SURVEILLANCE_OTHER;
     }
+}
+
+static void gps_state_poll( void )
+{
+    rfscout_gps_snapshot_t gps;
+    if( !gps_snapshot_get( &gps ) )
+    {
+        return;
+    }
+
+    const bool fix_active = gps.location_valid;
+    if( !gps_fix_state_known )
+    {
+        gps_fix_state_known = true;
+        gps_fix_active = fix_active;
+        if( fix_active )
+        {
+            ESP_LOGI( TAG,
+                      "GPS detected; fix acquired lat=%.6f lon=%.6f sats=%u",
+                      gps.latitude_deg,
+                      gps.longitude_deg,
+                      (unsigned)gps.satellites );
+            char detail[ 64 ];
+            snprintf( detail, sizeof( detail ), "fix=acquired sats=%u", (unsigned)gps.satellites );
+            (void)log_writer_app_record( "GPS", detail );
+        }
+        else
+        {
+            ESP_LOGI( TAG, "GPS detected; waiting for location fix" );
+            (void)log_writer_app_record( "GPS", "receiver=detected fix=none" );
+        }
+        return;
+    }
+
+    if( fix_active == gps_fix_active )
+    {
+        return;
+    }
+
+    gps_fix_active = fix_active;
+    char detail[ 160 ];
+    if( fix_active )
+    {
+        ESP_LOGI( TAG,
+                  "GPS fix acquired lat=%.6f lon=%.6f sats=%u",
+                  gps.latitude_deg,
+                  gps.longitude_deg,
+                  (unsigned)gps.satellites );
+        snprintf( detail, sizeof( detail ), "fix=acquired sats=%u", (unsigned)gps.satellites );
+    }
+    else
+    {
+        ESP_LOGW( TAG,
+                  "GPS fix lost last_lat=%.6f last_lon=%.6f age_ms=%lu sats=%u",
+                  gps.latitude_deg,
+                  gps.longitude_deg,
+                  (unsigned long)gps.location_age_ms,
+                  (unsigned)gps.satellites );
+        snprintf( detail,
+                  sizeof( detail ),
+                  "fix=lost last_lat=%.6f last_lon=%.6f age_ms=%lu sats=%u",
+                  gps.latitude_deg,
+                  gps.longitude_deg,
+                  (unsigned long)gps.location_age_ms,
+                  (unsigned)gps.satellites );
+    }
+    (void)log_writer_app_record( "GPS", detail );
+}
+
+static void persist_config_if_due( void )
+{
+    const int64_t now_us = esp_timer_get_time();
+    if( now_us < config_save_retry_after_us )
+    {
+        return;
+    }
+
+    const esp_err_t result = device_config_save_if_dirty();
+    if( ESP_OK == result )
+    {
+        config_save_retry_after_us = 0;
+        return;
+    }
+
+    config_save_retry_after_us = now_us + CONFIG_SAVE_RETRY_US;
+    ESP_LOGW( TAG,
+              "configuration persistence failed; retrying in 1 second: %s",
+              esp_err_to_name( result ) );
 }
 
 static void on_observation( rf_device_t *a_observation )
@@ -160,11 +259,25 @@ void app_main( void )
     }
     ESP_ERROR_CHECK( result );
 
+    result = platform_init();
+    if( ESP_OK != result )
+    {
+        ESP_LOGE(
+            TAG,
+            "unsupported hardware profile; leaving ESP32-S3 awake and idle for recovery flashing" );
+        while( true )
+        {
+            vTaskDelay( pdMS_TO_TICKS( 1000U ) );
+        }
+    }
+
     ESP_ERROR_CHECK( observation_store_init() );
-    ESP_ERROR_CHECK( platform_init() );
     ESP_ERROR_CHECK( system_events_init() );
     ESP_ERROR_CHECK( input_init() );
-    ESP_ERROR_CHECK( power_init() );
+    if( RFSCOUT_BOARD_USER_KEY_PIN >= 0 )
+    {
+        ESP_ERROR_CHECK( power_init() );
+    }
 
     result = notification_preferences_init();
     if( ESP_OK != result )
@@ -230,10 +343,24 @@ void app_main( void )
     }
 
     ESP_ERROR_CHECK( device_time_init() );
+    result = gps_init();
+    if( ( ESP_OK != result ) && ( ESP_ERR_NOT_SUPPORTED != result ) )
+    {
+        ESP_LOGW( TAG, "GPS service unavailable: %s", esp_err_to_name( result ) );
+    }
     ESP_ERROR_CHECK( radio_monitor_init( on_observation ) );
     ESP_ERROR_CHECK( ble_monitor_init( on_observation ) );
 
     ESP_ERROR_CHECK( app_manager_init() );
+    result = touch_init();
+    if( ( ESP_OK != result ) && ( ESP_ERR_NOT_SUPPORTED != result ) )
+    {
+        ESP_LOGW( TAG, "touch diagnostics unavailable: %s", esp_err_to_name( result ) );
+    }
+    else if( ESP_OK == result && touch_calibration_active() )
+    {
+        display_invalidate();
+    }
     system_events_poll();
     display_set_brightness( device_config_get()->brightness_percent );
     ESP_ERROR_CHECK( display_idle_init() );
@@ -253,25 +380,39 @@ void app_main( void )
         }
     }
 
+    config_save_retry_after_us = 0;
     ESP_LOGI( TAG,
               "RFScout started: app-managed radio lifecycle, Wi-Fi region=%s",
               radio_monitor_region_name( radio_monitor_get_region() ) );
 
     while( true )
     {
-        /* Display wake interception runs before semantic input dispatch. */
-        display_idle_poll();
         input_poll();
+        if( touch_poll() )
+        {
+            display_invalidate();
+        }
+        display_idle_poll();
+        navigation_bar_poll();
+        gps_poll();
+        gps_state_poll();
 
         battery_poll();
         power_policy_poll();
-        power_poll();
+        if( RFSCOUT_BOARD_USER_KEY_PIN >= 0 )
+        {
+            power_poll();
+        }
 
         observation_store_housekeeping();
         app_manager_poll();
         system_events_poll();
         status_bar_poll();
         battery_indicator_poll();
+
+        /* Setting changes are persisted immediately in the normal case. If persistence fails,
+           retain the dirty record but retry at a bounded cadence rather than hammering flash. */
+        persist_config_if_due();
 
         (void)display_present();
 

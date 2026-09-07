@@ -25,7 +25,8 @@ typedef enum
     RFSCOUT_APP_TRANSITION_COMMITTED,
     RFSCOUT_APP_TRANSITION_ABORTED_PREPARE,
     RFSCOUT_APP_TRANSITION_ABORTED_SERVICE_RESTORE,
-    RFSCOUT_APP_TRANSITION_COMMITTED_MEMORY_INVARIANT
+    RFSCOUT_APP_TRANSITION_COMMITTED_MEMORY_INVARIANT,
+    RFSCOUT_APP_TRANSITION_COMMITTED_DESTINATION_FAILED
 } rfscout_app_transition_outcome_t;
 
 /**
@@ -61,12 +62,12 @@ esp_err_t app_lifecycle_init( void );
  * @details Semantic Prepare runs first, then the platform resource session quiesces its services.
  *          Any service-close failure invokes session-owned service restoration while app-owned
  *          memory remains intact. After commit, all remaining managed allocations for the source
- *          app are reclaimed and verified.
+ *          app are reclaimed and verified before the destination session is established.
  */
 rfscout_app_transition_diagnostics_t app_lifecycle_transition(
     rfscout_app_id_t a_from, rfscout_app_id_t a_to, const rfscout_app_lifecycle_hooks_t *a_hooks );
 
-/** @brief Return true when the transition crossed the irreversible commit boundary. */
+/** @brief Return true when the transition crossed the irreversible source commit boundary. */
 bool app_lifecycle_transition_committed(
     const rfscout_app_transition_diagnostics_t *a_diagnostics );
 
