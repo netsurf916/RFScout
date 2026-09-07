@@ -187,6 +187,34 @@ static bool transition_to_app( rfscout_app_id_t a_destination, bool a_report_abo
         return false;
     }
 
+    if( RFSCOUT_APP_TRANSITION_COMMITTED_DESTINATION_FAILED == diagnostics.outcome )
+    {
+        ESP_LOGE( TAG,
+                  "committed transition from=%d could not establish destination=%d; using Home",
+                  (int)previous,
+                  (int)a_destination );
+        const esp_err_t recovery = app_session_ensure( RFSCOUT_APP_DEVICE );
+        if( ESP_OK != recovery )
+        {
+            ESP_LOGE( TAG, "Home session recovery failed: %s", esp_err_to_name( recovery ) );
+            if( a_report_abort )
+            {
+                rfscout_event_emit( RFSCOUT_EVENT_ERROR, (uint8_t)previous, (int32_t)recovery );
+            }
+            return false;
+        }
+        active_app = RFSCOUT_APP_DEVICE;
+        enter_app( active_app );
+        log_lifecycle(
+            "transition-recover", previous, active_app, esp_timer_get_time() - transition_started );
+        if( a_report_abort )
+        {
+            rfscout_event_emit(
+                RFSCOUT_EVENT_ERROR, (uint8_t)previous, (int32_t)diagnostics.error );
+        }
+        return false;
+    }
+
     active_app = a_destination;
     enter_app( active_app );
     log_lifecycle( "transition", previous, active_app, esp_timer_get_time() - transition_started );
