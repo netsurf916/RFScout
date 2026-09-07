@@ -313,6 +313,10 @@ void app_main( void )
         status_bar_poll();
         battery_indicator_poll();
 
+        /* Configuration setters mark the owned record dirty. Persist in the same UI/service
+           iteration so callers never need an explicit user-facing Save action. */
+        (void)device_config_save_if_dirty();
+
         (void)display_present();
 
         app_logging_poll();
