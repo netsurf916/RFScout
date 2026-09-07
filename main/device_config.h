@@ -21,7 +21,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define RFSCOUT_CONFIG_SCHEMA_VERSION 3U
+#define RFSCOUT_CONFIG_SCHEMA_VERSION 1U
 #define RFSCOUT_TIMEZONE_MAX 8U
 #define RFSCOUT_TIMEZONE_NAME_MAX 32U
 #define RFSCOUT_TIMEZONE_LABEL_MAX 24U
@@ -72,8 +72,6 @@ typedef struct
     rfscout_alert_mode_t alert_mode;
     uint8_t alert_volume_percent;
     uint8_t recorder_volume_percent;
-    /* Legacy schema-v3 compatibility only; Recorder no longer applies digital capture gain. */
-    uint8_t recorder_input_gain_db;
     bool notification_app_enabled[ RFSCOUT_APP_COUNT ];
     bool wifi_device_feedback_enabled;
     bool ble_device_feedback_enabled;
@@ -86,7 +84,6 @@ typedef struct
     size_t timezone_count;
 } device_config_t;
 
-/** @brief Initialize compiled defaults and load/repair the authoritative internal configuration. */
 esp_err_t device_config_init( void );
 const device_config_t *device_config_get( void );
 bool device_config_app_enabled( rfscout_app_id_t a_app );
@@ -113,8 +110,6 @@ esp_err_t device_config_set_audio_gains( uint8_t a_interaction_percent,
 esp_err_t device_config_set_alert_mode( rfscout_alert_mode_t a_mode );
 esp_err_t device_config_set_alert_volume( uint8_t a_percent );
 esp_err_t device_config_set_recorder_volume( uint8_t a_percent );
-/** @brief Legacy schema-v3 compatibility setter; Recorder does not apply this value. */
-esp_err_t device_config_set_recorder_input_gain( uint8_t a_gain_db );
 bool device_config_notification_app_enabled( rfscout_app_id_t a_app );
 esp_err_t device_config_set_notification_app_enabled( rfscout_app_id_t a_app, bool a_enabled );
 bool device_config_wifi_device_feedback_enabled( void );
@@ -133,13 +128,12 @@ esp_err_t device_config_set_notification_character( rfscout_notification_type_t 
                                                     char a_character );
 esp_err_t device_config_set_timezone( const char *a_name );
 const device_timezone_t *device_config_timezone( void );
-
-/**
- * @brief Persist current firmware-managed user preferences internally.
- * @details The time arguments are legacy source-compatibility parameters and are ignored; wall time
- *          is runtime RTC state and is never persisted by this API.
- */
-esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a_time_source );
+esp_err_t device_config_save( void );
 esp_err_t device_config_save_if_dirty( void );
+
+#ifndef RFSCOUT_DEVICE_CONFIG_IMPLEMENTATION
+/* Transitional source compatibility: old callers' ignored time arguments collapse to the v1 API. */
+#define device_config_save( ... ) device_config_save()
+#endif
 
 #endif // _RFSCOUT_DEVICE_CONFIG_H_

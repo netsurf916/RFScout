@@ -16,19 +16,17 @@ These names are an API model, not literal filenames. The persistent-store servic
 
 The persistent-store service owns LittleFS mounting, physical path construction, record availability, and synchronization. Filesystem operations are serialized internally by the service, so callers do not manage storage mutexes. Records are bounded to 16 KiB and each write atomically replaces one record through a same-directory temporary, flush/fsync, and rename. Atomicity is per record rather than a transaction across multiple records. Interrupted-write `.tmp` files are ignored as authority and removed by one startup cleanup pass; no periodic cleanup task runs. Reads and existence checks do not create app directories.
 
-The existing `device_config` API remains the in-memory compatibility surface so UI and policy callers do not need to know which record owns a setting. App enablement remains system policy even when that app owns its own preferences.
+The existing `device_config` API remains the in-memory settings surface so UI and policy callers do not need to know which record owns a setting. App enablement remains system policy even when that app owns its own preferences.
 
-## Defaults, schemas, and migration
+## Defaults and record versions
 
-System configuration currently uses schema version 3. App configuration records have their own record version and may evolve independently.
+Current system and application configuration records both use version **1**. These versions are internal validation markers, not compatibility contracts or user-facing interchange schemas.
 
-App records are **override-only**. If an app has no persisted user changes, it has no `config` record and uses its compiled defaults directly. Only values that differ from the compiled defaults are serialized. Returning all app preferences to their defaults removes the app record again. This lets later firmware change defaults without a newly materialized default record becoming a permanent user preference.
+RFScout does not attempt long-lived migration between internal record layouts. A missing record means compiled defaults. A malformed record, unsupported version, or structurally invalid value is discarded for that owner and the corresponding compiled defaults apply. This intentionally favors a simple known-good baseline over preserving stale internal representations.
 
-Missing app records therefore mean defaults. Malformed, incompatible, or invalid data is not trusted; RFScout may fall back to sane compiled defaults and rewrite canonical configuration. Configuration recovery deliberately favors a known-good baseline over elaborate partial-state salvage.
+App records are **override-only**. If an app has no persisted user changes, it has no `config` record and uses its compiled defaults directly. Only values that differ from the compiled defaults are serialized. Returning all app preferences to their defaults removes the app record again.
 
-The first firmware using this model may read the former `/internal/rfscout.json` once. A successful canonical save splits that legacy document into system and app-owned records, then removes the old file and stale sidecars. Because the old monolithic schema did not distinguish an explicit user choice from a value that happened to equal an old default, migration preserves valid legacy values according to the compatibility logic available in that firmware rather than promising to infer historical user intent.
-
-If settings portability is added later, it should be an explicit firmware-managed Export/Import operation that validates owned records rather than exposing the internal persistence representation as an editable interchange format.
+The former monolithic `/internal/rfscout.json` and its sidecars are no longer authoritative and are removed rather than migrated into the owned-record representation. Likewise, old owned records whose version/layout no longer matches current firmware are disposable. If settings portability is added later, it should be an explicit firmware-managed Export/Import operation that validates and maps current owned records rather than exposing internal files as an editable interchange format.
 
 ## Display and theme
 
@@ -44,9 +42,7 @@ RFScout distinguishes **UI/device**, **Event**, **Alert**, and **Content** audio
 
 `normal` permits UI, Event, Alert, and requested Content subject to their normal controls. `quiet` suppresses UI, Event, and Alert presentation without rewriting saved levels or semantic events; requested Content such as Recorder playback remains available.
 
-Global Alert presentation is `OFF`, `TONE`, or `MORSE`. Recorder capture no longer has a user-visible digital input-gain policy: it records the microphone stream without software pre-amplification, then post-processes the completed WAV through trim, DC/low-frequency high-pass filtering, and bounded normalization. Audio Spectrum uses the same shared one-pole high-pass primitive before its FFT and then applies automatic display ranging; `AUTO N dB` is the current display-window span, not signal gain.
-
-The schema-v3 in-memory compatibility structure may still recognize the former Recorder input-gain member while old call surfaces are retired, but Recorder does not apply that value to capture and new behavior must not depend on it.
+Global Alert presentation is `OFF`, `TONE`, or `MORSE`. Recorder has no persistent capture-gain setting: it records the microphone stream without software pre-amplification, then post-processes the completed WAV through trim, DC/low-frequency high-pass filtering, and bounded normalization. Audio Spectrum uses the same shared one-pole high-pass primitive before its FFT and then applies automatic display ranging; `AUTO N dB` is the current display-window span, not signal gain.
 
 ## Power button and protective policy
 
@@ -90,4 +86,4 @@ Timezone selection and 12/24-hour presentation remain persistent user preference
 
 A full-device erase destroys system and app internal records, including device/app configuration and future calibration/history records. It does not erase removable SD contents.
 
-Ordinary firmware updates with an unchanged partition layout are expected to preserve internal records. Partition-layout migrations may require a destructive installation and must make that explicit to the user; the web-flasher/OTA planning in PR #75 owns that user-facing distinction.
+Ordinary firmware updates with an unchanged partition layout preserve internal files physically, but RFScout intentionally makes no promise that an older internal record layout will remain semantically compatible. An unsupported record simply falls back to defaults. Partition-layout migrations may require a destructive installation and must make that explicit to the user; the web-flasher/OTA planning in PR #75 owns that user-facing distinction.
