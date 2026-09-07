@@ -117,7 +117,7 @@ jobs:
     name: Build release bundle
     needs: validate
     runs-on: ubuntu-latest
-    container: espressif/idf:release-v6.2
+    container: espressif/idf:release-v6.1
 
     steps:
       - uses: actions/checkout@v6
