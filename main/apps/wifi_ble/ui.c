@@ -112,7 +112,9 @@ static void render_summary( void )
         210, 25, line, ( 0U == surveillance_count ) ? theme->info : theme->warning, 1 );
 
     display_fill_rect( 5, 36, 310, 1, theme->divider );
-    display_fill_rect( UI_COLUMN_DIVIDER_X, 36, 1, RFSCOUT_DISPLAY_HEIGHT - 36, theme->divider );
+    const rfscout_view_t *view = display_app_view();
+    const int view_height = ( NULL != view ) ? (int)view->height : UI_RANDOM_ROW_Y + 12;
+    display_fill_rect( UI_COLUMN_DIVIDER_X, 36, 1, view_height - 36, theme->divider );
 
     int y = UI_LIST_START_Y;
     for( size_t i = 0U; i < vendor_count; ++i )
