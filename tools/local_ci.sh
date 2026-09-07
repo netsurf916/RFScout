@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 MODE=${1:-all}
-IDF_IMAGE=${RFSCOUT_IDF_IMAGE:-espressif/idf:release-v6.1}
+IDF_IMAGE=${RFSCOUT_IDF_IMAGE:-espressif/idf:release-v6.2}
 
 run_fast() {
     cd "$ROOT"
