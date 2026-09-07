@@ -39,7 +39,7 @@ static const rfscout_board_profile_t unknown_profile = {
     .display_mirror_x = false,
     .display_mirror_y = false,
     .display_invert_color = false,
-    .backlight_type = RFSCOUT_BACKLIGHT_NONE,
+    .backlight_type = RFSCOUT_BACKLIGHT_PWM,
     .sd_cs_pin = -1,
     .cc1101_cs_pin = -1,
     .cc1101_gdo2_pin = -1,
@@ -97,8 +97,7 @@ static const rfscout_board_profile_t tembed_profile = {
                     RFSCOUT_BOARD_CAP_ROTARY_ENCODER | RFSCOUT_BOARD_CAP_PDM_MIC |
                     RFSCOUT_BOARD_CAP_SPEAKER | RFSCOUT_BOARD_CAP_SD |
                     RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE | RFSCOUT_BOARD_CAP_SCREEN_OFF |
-                    RFSCOUT_BOARD_CAP_DEEP_SLEEP | RFSCOUT_BOARD_CAP_PHYSICAL_POWER_OFF |
-                    RFSCOUT_BOARD_CAP_AUTHORITATIVE_EXTERNAL_POWER,
+                    RFSCOUT_BOARD_CAP_DEEP_SLEEP | RFSCOUT_BOARD_CAP_POWER_OFF,
     .power_enable_pin = 15,
     .user_key_pin = 0,
     .spi_mosi_pin = 9,
