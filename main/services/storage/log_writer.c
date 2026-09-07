@@ -32,7 +32,7 @@
 #define LOG_APP_NAME_MAX 16U
 #define LOG_APP_DETAIL_MAX 160U
 #define LOG_TIMESTAMP_MAX 32U
-#define LOG_LOCATION_MAX 96U
+#define LOG_LOCATION_MAX 72U
 #define LOG_TASK_STACK_SIZE 4096U
 #define LOG_TASK_PRIORITY 2U
 #define LOG_FLUSH_INTERVAL_US 1000000LL
@@ -53,7 +53,6 @@ typedef struct
     bool location_valid;
     double latitude_deg;
     double longitude_deg;
-    float altitude_m;
     log_record_type_t type;
     observation_store_event_t event;
     rf_source_t source;
@@ -326,7 +325,6 @@ static void stamp_record( log_record_t *a_record )
         a_record->location_valid = true;
         a_record->latitude_deg = gps.latitude_deg;
         a_record->longitude_deg = gps.longitude_deg;
-        a_record->altitude_m = gps.altitude_m;
     }
 }
 
@@ -351,10 +349,9 @@ static void format_location( const log_record_t *a_record, char *a_output, size_
     }
     snprintf( a_output,
               a_capacity,
-              " lat=%.6f lon=%.6f alt_m=%.1f",
+              " lat=%.6f lon=%.6f",
               a_record->latitude_deg,
-              a_record->longitude_deg,
-              (double)a_record->altitude_m );
+              a_record->longitude_deg );
 }
 
 /** @brief Serialize one queued record to the active log segment. */
