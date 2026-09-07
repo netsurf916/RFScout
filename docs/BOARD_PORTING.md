@@ -38,15 +38,15 @@ The T-Embed profile is the hardware-validated baseline. Existing display geometr
 
 ### LILYGO T-Deck Plus
 
-The T-Deck profile has received initial hardware validation for runtime detection, the 320x240 ST7789 orientation/transform, the 320x170 managed app view plus 320x70 system region, trackball/center input, GT911 coordinate orientation, and persistent touch calibration.
+The T-Deck profile has received initial hardware validation for runtime detection, the 320x240 ST7789 orientation/transform, the 320x170 managed app view plus 320x70 system region, trackball/center input, GT911 coordinate orientation, persistent touch calibration, GPS, SD mounting/logging, and standard-I2S speaker output.
 
 The early discriminator uses SDA GPIO18 / SCL GPIO8 and probes the GT911 at `0x5D` or `0x14`.
 
-Current T-Deck providers include trackball/center input, calibrated GT911 touch, SD, GPS/NMEA, internal-temperature telemetry, and voltage-only battery telemetry. Battery percentage is estimated from the GPIO4 ADC and a profile-owned 2:1 divider; external-power/charging state is intentionally unavailable because RFScout has no authoritative digital source for it.
+Current T-Deck providers include trackball/center input, calibrated GT911 touch, SD, GPS/NMEA, internal-temperature telemetry, voltage-only battery telemetry, and standard-I2S speaker output. Battery percentage is estimated from the GPIO4 ADC and a profile-owned 2:1 divider; external-power/charging state is intentionally unavailable because RFScout has no authoritative digital source for it.
 
-T-Deck GPIO0 is reserved for trackball-center/BOOT input and is not treated as an RFScout power key. The board exposes no RFScout sleep, deep-sleep, or physical power-off capability yet. Speaker/audio and other unvalidated active peripherals likewise remain disabled even where reference pin metadata is known.
+T-Deck GPIO0 is reserved for trackball-center/BOOT input and is not treated as an RFScout power key. The board exposes no RFScout sleep, deep-sleep, or physical power-off capability yet. Keyboard, SX1262, and ES7210 microphone capture remain disabled even where reference pin metadata is known.
 
-Battery ADC, SD/shared-SPI behavior, GPS acquisition/time synchronization, and the final cross-board regression pass still require hardware validation before this profile should be treated as release-validated.
+Extended SD/shared-SPI stress behavior, GPS fix-loss behavior, and the final cross-board regression pass still require hardware validation before this profile should be treated as release-validated.
 
 ## Input boundary
 
@@ -85,7 +85,7 @@ A missing or incompatible record enters startup calibration before touch becomes
 
 The T-Deck GPS provider exposes checksum-validated NMEA state through a board-neutral snapshot with independent location and UTC-time validity. Provider initialization is distinct from receiver detection: the UI does not advertise a GPS receiver until a supported checksum-valid sentence has been observed.
 
-The `device_time` service owns wall-clock validity/source, Auto/Manual synchronization policy, and timezone conversion. In Auto mode a fix-valid GPS UTC timestamp may synchronize the system clock; GPS itself does not own timezone policy.
+The `device_time` service owns wall-clock validity/source, Auto/Manual synchronization policy, and timezone conversion. In Auto mode a fix-valid GPS UTC timestamp may synchronize the system clock; GPS itself does not own timezone policy. Time-policy changes are persisted before the new mode is published to runtime state, so a failed policy write cannot silently create a different reboot behavior.
 
 ## Battery and power boundary
 
@@ -95,17 +95,21 @@ T-Embed uses its hardware fuel-gauge/charger path and can establish external-pow
 
 Board profiles advertise semantic power actions only when RFScout is prepared to perform them safely. A schematic showing a possible sleep or shutdown path is not sufficient reason to expose the capability.
 
+Before a terminal T-Embed sleep/power-off transition, RFScout persists dirty internal state and quiesces removable-storage users. Active Recorder recording/finalization vetoes the transition using the same semantic rule as app navigation. The SD volume itself remains mounted for the lifetime of the running firmware; terminal power states do not add an unmount/remount recovery state machine.
+
 ## Audio boundary
 
-Speaker and microphone behavior are semantic services rather than application-visible board features. The validated T-Embed I2S speaker and PDM microphone paths remain intact.
+Speaker output and microphone capture are separate semantic capabilities. The validated T-Embed I2S speaker and PDM microphone paths remain intact.
 
-T-Deck ES7210 microphone and speaker support should be introduced separately behind the same semantic services. Reference-derived pins may be retained as implementation metadata, but an unvalidated provider must not be initialized simply because the hardware appears to contain it.
+T-Deck standard-I2S speaker output is an enabled, hardware-validated provider behind the same semantic audio-output service. T-Deck ES7210 microphone capture remains disabled, so Recorder and Audio Spectrum remain unavailable on that profile. Reference-derived ES7210 pins may be retained as implementation metadata without advertising audio capture.
 
 ## Shared buses
 
 SPI and I2C buses are initialized from the active runtime profile. Providers must respect profile capability checks before adding devices or configuring active peripheral control pins.
 
 T-Deck display, SD, and SX1262 share the SPI bus. Known chip-select pins are driven inactive during platform setup, but SX1262 remains unadvertised until its provider and shared-bus behavior are implemented and hardware-validated.
+
+The SD service owns its mount and raw-card arbitration for the running firmware lifetime. Filesystem users do not manage the raw `sdmmc_get_status()` synchronization contract; that remains private to the storage service and its logger implementation.
 
 The shared board I2C service is used by ordinary post-detection peripheral providers; the temporary fingerprint bus is always torn down first.
 
