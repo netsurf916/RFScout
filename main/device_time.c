@@ -1,6 +1,6 @@
 /**
     device_time.c : RFScout authoritative wall-clock service implementation
-    Description: Uses the RTC-backed system clock directly and formats UTC/local timestamps.
+    Description: Owns UTC wall-clock validity/source and local timezone presentation.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -11,6 +11,30 @@
 
 #include <stdlib.h>
 #include <sys/time.h>
+
+#define DEVICE_TIME_PLAUSIBLE_EPOCH 1577836800LL
+
+static bool time_valid;
+static rfscout_time_source_t time_source;
+
+static esp_err_t set_epoch( time_t a_epoch, rfscout_time_source_t a_source )
+{
+    if( a_epoch < (time_t)DEVICE_TIME_PLAUSIBLE_EPOCH )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const struct timeval value = {
+        .tv_sec = a_epoch,
+        .tv_usec = 0,
+    };
+    if( 0 != settimeofday( &value, NULL ) )
+    {
+        return ESP_FAIL;
+    }
+    time_valid = true;
+    time_source = a_source;
+    return ESP_OK;
+}
 
 esp_err_t device_time_apply_timezone( void )
 {
@@ -29,16 +53,20 @@ esp_err_t device_time_apply_timezone( void )
 
 esp_err_t device_time_init( void )
 {
+    const time_t now = time( NULL );
+    time_valid = now >= (time_t)DEVICE_TIME_PLAUSIBLE_EPOCH;
+    time_source = time_valid ? RFSCOUT_TIME_SOURCE_RETAINED : RFSCOUT_TIME_SOURCE_INVALID;
     return device_time_apply_timezone();
 }
 
 esp_err_t device_time_set_epoch( time_t a_epoch )
 {
-    const struct timeval value = {
-        .tv_sec = a_epoch,
-        .tv_usec = 0,
-    };
-    return 0 == settimeofday( &value, NULL ) ? ESP_OK : ESP_FAIL;
+    return set_epoch( a_epoch, RFSCOUT_TIME_SOURCE_MANUAL );
+}
+
+esp_err_t device_time_offer_gps( time_t a_epoch )
+{
+    return set_epoch( a_epoch, RFSCOUT_TIME_SOURCE_GPS );
 }
 
 bool device_time_now( time_t *a_epoch )
@@ -47,12 +75,23 @@ bool device_time_now( time_t *a_epoch )
     {
         *a_epoch = time( NULL );
     }
-    return true;
+    return time_valid;
+}
+
+void device_time_status( rfscout_time_status_t *a_status )
+{
+    if( NULL == a_status )
+    {
+        return;
+    }
+    a_status->valid = time_valid;
+    a_status->source = time_source;
+    a_status->epoch = time( NULL );
 }
 
 bool device_time_format_clock( char *a_buffer, size_t a_capacity )
 {
-    if( ( NULL == a_buffer ) || ( 0U == a_capacity ) )
+    if( ( NULL == a_buffer ) || ( 0U == a_capacity ) || !time_valid )
     {
         return false;
     }
