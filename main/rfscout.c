@@ -42,9 +42,12 @@
 #include "freertos/task.h"
 #include "nvs_flash.h"
 
+#include <stdio.h>
 #include <string.h>
 
 static const char *TAG = "rfscout";
+static bool gps_fix_state_known;
+static bool gps_fix_active;
 
 static rfscout_notification_type_t
 notification_for_surveillance( surveillance_class_t a_classification )
@@ -68,6 +71,83 @@ notification_for_surveillance( surveillance_class_t a_classification )
         default:
             return RFSCOUT_NOTIFICATION_SURVEILLANCE_OTHER;
     }
+}
+
+static void gps_state_poll( void )
+{
+    rfscout_gps_snapshot_t gps;
+    if( !gps_snapshot_get( &gps ) )
+    {
+        return;
+    }
+
+    const bool fix_active = gps.location_valid;
+    if( !gps_fix_state_known )
+    {
+        gps_fix_state_known = true;
+        gps_fix_active = fix_active;
+        if( fix_active )
+        {
+            ESP_LOGI( TAG,
+                      "GPS detected; fix acquired lat=%.6f lon=%.6f sats=%u",
+                      gps.latitude_deg,
+                      gps.longitude_deg,
+                      (unsigned)gps.satellites );
+            char detail[ 128 ];
+            snprintf( detail,
+                      sizeof( detail ),
+                      "fix=acquired lat=%.6f lon=%.6f sats=%u",
+                      gps.latitude_deg,
+                      gps.longitude_deg,
+                      (unsigned)gps.satellites );
+            (void)log_writer_app_record( "GPS", detail );
+        }
+        else
+        {
+            ESP_LOGI( TAG, "GPS detected; waiting for location fix" );
+            (void)log_writer_app_record( "GPS", "provider=available fix=none" );
+        }
+        return;
+    }
+
+    if( fix_active == gps_fix_active )
+    {
+        return;
+    }
+
+    gps_fix_active = fix_active;
+    char detail[ 160 ];
+    if( fix_active )
+    {
+        ESP_LOGI( TAG,
+                  "GPS fix acquired lat=%.6f lon=%.6f sats=%u",
+                  gps.latitude_deg,
+                  gps.longitude_deg,
+                  (unsigned)gps.satellites );
+        snprintf( detail,
+                  sizeof( detail ),
+                  "fix=acquired lat=%.6f lon=%.6f sats=%u",
+                  gps.latitude_deg,
+                  gps.longitude_deg,
+                  (unsigned)gps.satellites );
+    }
+    else
+    {
+        ESP_LOGW( TAG,
+                  "GPS fix lost last_lat=%.6f last_lon=%.6f age_ms=%lu sats=%u",
+                  gps.latitude_deg,
+                  gps.longitude_deg,
+                  (unsigned long)gps.location_age_ms,
+                  (unsigned)gps.satellites );
+        snprintf( detail,
+                  sizeof( detail ),
+                  "fix=lost last_lat=%.6f last_lon=%.6f age_ms=%lu sats=%u",
+                  gps.latitude_deg,
+                  gps.longitude_deg,
+                  (unsigned long)gps.location_age_ms,
+                  (unsigned)gps.satellites );
+    }
+    (void)log_writer_app_record( "GPS", detail );
 }
 
 static void on_observation( rf_device_t *a_observation )
@@ -299,6 +379,7 @@ void app_main( void )
         }
         navigation_bar_poll();
         gps_poll();
+        gps_state_poll();
 
         battery_poll();
         power_policy_poll();
