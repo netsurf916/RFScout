@@ -8,6 +8,7 @@
 #include "log_writer.h"
 
 #include "device_time.h"
+#include "gps.h"
 #include "storage.h"
 #include "surveillance.h"
 
@@ -26,11 +27,12 @@
 #include <unistd.h>
 
 #define LOG_QUEUE_DEPTH 128U
-#define LOG_LINE_MAX 384U
+#define LOG_LINE_MAX 448U
 #define LOG_IDENTITY_MAX 96U
 #define LOG_APP_NAME_MAX 16U
 #define LOG_APP_DETAIL_MAX 160U
 #define LOG_TIMESTAMP_MAX 32U
+#define LOG_LOCATION_MAX 96U
 #define LOG_TASK_STACK_SIZE 4096U
 #define LOG_TASK_PRIORITY 2U
 #define LOG_FLUSH_INTERVAL_US 1000000LL
@@ -48,6 +50,10 @@ typedef struct
     time_t wall_time;
     uint32_t uptime_ms;
     bool wall_time_valid;
+    bool location_valid;
+    double latitude_deg;
+    double longitude_deg;
+    float altitude_m;
     log_record_type_t type;
     observation_store_event_t event;
     rf_source_t source;
@@ -220,7 +226,7 @@ static void close_segment( void )
         return;
     if( 0 != fflush( active_file ) )
         mark_io_error( "log flush" );
-    if( 0 != fsync( fileno( active_file ) ) )
+    if( 0 != fsync( fileno( active_file ) )
         mark_io_error( "log sync" );
     if( 0 != fclose( active_file ) )
         mark_io_error( "log close" );
@@ -308,11 +314,20 @@ static void format_text( const char *a_input, char *a_output, size_t a_capacity 
     a_output[ output ] = '\0';
 }
 
-/** @brief Capture wall time and monotonic fallback at event creation. */
+/** @brief Capture wall time, monotonic fallback, and any fresh GPS fix at event creation. */
 static void stamp_record( log_record_t *a_record )
 {
     a_record->uptime_ms = (uint32_t)( esp_timer_get_time() / 1000ULL );
     a_record->wall_time_valid = device_time_now( &a_record->wall_time );
+
+    rfscout_gps_snapshot_t gps;
+    if( gps_snapshot_get( &gps ) && gps.location_valid )
+    {
+        a_record->location_valid = true;
+        a_record->latitude_deg = gps.latitude_deg;
+        a_record->longitude_deg = gps.longitude_deg;
+        a_record->altitude_m = gps.altitude_m;
+    }
 }
 
 /** @brief Format a UTC wall-clock timestamp or explicit monotonic fallback. */
@@ -326,6 +341,22 @@ static void format_timestamp( const log_record_t *a_record, char *a_output, size
     snprintf( a_output, a_capacity, "UP+%lu", (unsigned long)a_record->uptime_ms );
 }
 
+/** @brief Format an optional event-time GPS fix as stable log key/value fields. */
+static void format_location( const log_record_t *a_record, char *a_output, size_t a_capacity )
+{
+    if( !a_record->location_valid )
+    {
+        a_output[ 0 ] = '\0';
+        return;
+    }
+    snprintf( a_output,
+              a_capacity,
+              " lat=%.6f lon=%.6f alt_m=%.1f",
+              a_record->latitude_deg,
+              a_record->longitude_deg,
+              (double)a_record->altitude_m );
+}
+
 /** @brief Serialize one queued record to the active log segment. */
 static bool write_record( const log_record_t *a_record )
 {
@@ -334,15 +365,17 @@ static bool write_record( const log_record_t *a_record )
 
     char line[ LOG_LINE_MAX ];
     char timestamp[ LOG_TIMESTAMP_MAX ];
+    char location[ LOG_LOCATION_MAX ];
     format_timestamp( a_record, timestamp, sizeof( timestamp ) );
+    format_location( a_record, location, sizeof( location ) );
     int length;
 
     if( LOG_RECORD_APP == a_record->type )
     {
         char detail[ LOG_APP_DETAIL_MAX * 2U ];
         format_text( a_record->detail, detail, sizeof( detail ) );
-        length =
-            snprintf( line, sizeof( line ), "%s APP %s %s\n", timestamp, a_record->app, detail );
+        length = snprintf(
+            line, sizeof( line ), "%s APP %s %s%s\n", timestamp, a_record->app, detail, location );
     }
     else
     {
@@ -366,7 +399,7 @@ static bool write_record( const log_record_t *a_record )
                 line,
                 sizeof( line ),
                 "%s %s %s rssi=%d ch=%u mac=%02X:%02X:%02X:%02X:%02X:%02X "
-                "identity=\"%s\" surveillance=%s evidence=%s\n",
+                "identity=\"%s\" surveillance=%s evidence=%s%s\n",
                 timestamp,
                 ( OBSERVATION_STORE_EVENT_ADDED == a_record->event ) ? "ADDED" : "SURVEILLANCE",
                 source,
@@ -380,7 +413,8 @@ static bool write_record( const log_record_t *a_record )
                 a_record->address[ 5 ],
                 identity,
                 signature,
-                evidence );
+                evidence,
+                location );
         }
         else
         {
@@ -390,7 +424,7 @@ static bool write_record( const log_record_t *a_record )
             length = snprintf(
                 line,
                 sizeof( line ),
-                "%s DROPPED %s mac=%02X:%02X:%02X:%02X:%02X:%02X identity=\"%s\" reason=%s\n",
+                "%s DROPPED %s mac=%02X:%02X:%02X:%02X:%02X:%02X identity=\"%s\" reason=%s%s\n",
                 timestamp,
                 source,
                 a_record->address[ 0 ],
@@ -400,7 +434,8 @@ static bool write_record( const log_record_t *a_record )
                 a_record->address[ 4 ],
                 a_record->address[ 5 ],
                 identity,
-                reason );
+                reason,
+                location );
         }
     }
 
