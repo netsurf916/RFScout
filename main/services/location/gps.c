@@ -15,7 +15,6 @@
 #include "esp_timer.h"
 
 #include <math.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -76,17 +75,34 @@ static int64_t days_from_civil( int a_year, unsigned a_month, unsigned a_day )
     a_year -= a_month <= 2U;
     const int era = ( a_year >= 0 ? a_year : a_year - 399 ) / 400;
     const unsigned year_of_era = (unsigned)( a_year - era * 400 );
+    const int adjusted_month = (int)a_month + ( a_month > 2U ? -3 : 9 );
     const unsigned day_of_year =
-        ( 153U * ( a_month + ( a_month > 2U ? (unsigned)-3 : 9U ) ) + 2U ) / 5U + a_day - 1U;
+        ( 153U * (unsigned)adjusted_month + 2U ) / 5U + a_day - 1U;
     const unsigned day_of_era =
         year_of_era * 365U + year_of_era / 4U - year_of_era / 100U + day_of_year;
     return (int64_t)era * 146097LL + (int64_t)day_of_era - 719468LL;
 }
 
+static bool all_digits( const char *a_text, size_t a_count )
+{
+    if( NULL == a_text )
+    {
+        return false;
+    }
+    for( size_t index = 0U; index < a_count; ++index )
+    {
+        if( a_text[ index ] < '0' || a_text[ index ] > '9' )
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool parse_utc_epoch( const char *a_time, const char *a_date, time_t *a_epoch )
 {
     if( NULL == a_time || NULL == a_date || NULL == a_epoch || strlen( a_time ) < 6U ||
-        strlen( a_date ) != 6U )
+        strlen( a_date ) != 6U || !all_digits( a_time, 6U ) || !all_digits( a_date, 6U ) )
     {
         return false;
     }
@@ -129,38 +145,7 @@ static void parse_rmc( char *a_payload )
 {
     char *fields[ 16 ];
     const size_t count = split_fields( a_payload, fields, 16U );
-    if( count < 10U || 'A' != fields[ 2 ][ 0 ] )
-    {
-        return;
-    }
-    const double latitude = nmea_coordinate( fields[ 3 ], fields[ 4 ][ 0 ] );
-    const double longitude = nmea_coordinate( fields[ 5 ], fields[ 6 ][ 0 ] );
-    if( isfinite( latitude ) && isfinite( longitude ) )
-    {
-        snapshot.latitude_deg = latitude;
-        snapshot.longitude_deg = longitude;
-        snapshot.location_valid = true;
-        location_updated_us = esp_timer_get_time();
-    }
-    if( '\0' != fields[ 7 ][ 0 ] )
-    {
-        snapshot.speed_mps = (float)( strtod( fields[ 7 ], NULL ) * 0.514444 );
-    }
-    time_t epoch;
-    if( parse_utc_epoch( fields[ 1 ], fields[ 9 ], &epoch ) )
-    {
-        snapshot.utc_epoch = epoch;
-        snapshot.time_valid = true;
-        time_updated_us = esp_timer_get_time();
-        (void)device_time_offer_gps( epoch );
-    }
-}
-
-static void parse_gga( char *a_payload )
-{
-    char *fields[ 16 ];
-    const size_t count = split_fields( a_payload, fields, 16U );
-    if( count < 10U || atoi( fields[ 6 ] ) <= 0 )
+    if( count < 9U || 'A' != fields[ 1 ][ 0 ] )
     {
         return;
     }
@@ -173,11 +158,42 @@ static void parse_gga( char *a_payload )
         snapshot.location_valid = true;
         location_updated_us = esp_timer_get_time();
     }
-    const int satellites = atoi( fields[ 7 ] );
-    snapshot.satellites = (uint8_t)( satellites < 0 ? 0 : ( satellites > 255 ? 255 : satellites ) );
-    if( '\0' != fields[ 9 ][ 0 ] )
+    if( '\0' != fields[ 6 ][ 0 ] )
     {
-        snapshot.altitude_m = strtof( fields[ 9 ], NULL );
+        snapshot.speed_mps = (float)( strtod( fields[ 6 ], NULL ) * 0.514444 );
+    }
+    time_t epoch;
+    if( parse_utc_epoch( fields[ 0 ], fields[ 8 ], &epoch ) )
+    {
+        snapshot.utc_epoch = epoch;
+        snapshot.time_valid = true;
+        time_updated_us = esp_timer_get_time();
+        (void)device_time_offer_gps( epoch );
+    }
+}
+
+static void parse_gga( char *a_payload )
+{
+    char *fields[ 16 ];
+    const size_t count = split_fields( a_payload, fields, 16U );
+    if( count < 9U || atoi( fields[ 5 ] ) <= 0 )
+    {
+        return;
+    }
+    const double latitude = nmea_coordinate( fields[ 1 ], fields[ 2 ][ 0 ] );
+    const double longitude = nmea_coordinate( fields[ 3 ], fields[ 4 ][ 0 ] );
+    if( isfinite( latitude ) && isfinite( longitude ) )
+    {
+        snapshot.latitude_deg = latitude;
+        snapshot.longitude_deg = longitude;
+        snapshot.location_valid = true;
+        location_updated_us = esp_timer_get_time();
+    }
+    const int satellites = atoi( fields[ 6 ] );
+    snapshot.satellites = (uint8_t)( satellites < 0 ? 0 : ( satellites > 255 ? 255 : satellites ) );
+    if( '\0' != fields[ 8 ][ 0 ] )
+    {
+        snapshot.altitude_m = strtof( fields[ 8 ], NULL );
     }
 }
 
@@ -196,11 +212,12 @@ static void parse_line( char *a_line )
         return;
     }
     *comma = '\0';
-    if( strlen( payload ) >= 3U && 0 == strcmp( payload + strlen( payload ) - 3U, "RMC" ) )
+    const size_t type_length = strlen( payload );
+    if( type_length >= 3U && 0 == strcmp( payload + type_length - 3U, "RMC" ) )
     {
         parse_rmc( comma + 1 );
     }
-    else if( strlen( payload ) >= 3U && 0 == strcmp( payload + strlen( payload ) - 3U, "GGA" ) )
+    else if( type_length >= 3U && 0 == strcmp( payload + type_length - 3U, "GGA" ) )
     {
         parse_gga( comma + 1 );
     }
