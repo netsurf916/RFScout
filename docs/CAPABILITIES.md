@@ -1,35 +1,65 @@
 # RFScout capabilities
 
-This document summarizes behavior implemented on current `main`. Architecture/invariants live in [ARCHITECTURE.md](ARCHITECTURE.md); planned work and release status live only in [ROADMAP.md](ROADMAP.md).
+This document summarizes behavior implemented on the current development line. Architecture/invariants live in [ARCHITECTURE.md](ARCHITECTURE.md); planned work and release status live only in [ROADMAP.md](ROADMAP.md).
 
-## Supported target and application order
+## Supported hardware and application availability
 
-The current supported target is **LILYGO T-Embed CC1101 Plus / ESP32-S3**. RFScout exposes board-neutral input/display services; applications consume semantic input and capabilities rather than board or controller identities.
+RFScout builds one ESP32-S3 firmware image for **LILYGO T-Embed CC1101 Plus** and **LILYGO T-Deck Plus**. A minimal early I2C fingerprint selects an immutable runtime profile before ordinary board GPIO/peripheral initialization. Unknown hardware remains awake and inert for recovery flashing.
 
-Canonical rotary order:
+The T-Embed remains the fully hardware-validated baseline. Initial T-Deck hardware validation covers runtime profile detection, 320x240 display orientation, the managed 320x170 app view and 320x70 system region, trackball/center input, GT911 coordinate orientation, and persistent touch calibration. Battery ADC, SD/shared-SPI behavior, GPS acquisition/time synchronization, and the final T-Embed regression pass remain validation items for PR #76.
+
+Applications consume semantic service availability rather than board identity. Current T-Deck capability filtering therefore leaves the existing CC1101, nRF24, and T-Embed PDM-audio apps unavailable rather than probing illegal providers. Home is always available and remains the fallback when a preferred startup app cannot run.
+
+The canonical application registry order remains:
 
 0. System Events — optional, disabled by default
 1. Home / Device Settings
-2. WiFi / BT
-3. CC1101
-4. nRF24
-5. Recorder
+2. WiFi / BLE
+3. CC1101 — when the active profile/provider supports it
+4. nRF24 — when the active profile/provider supports it
+5. Recorder — when the current audio-capture provider is available
 6. Thermal — when enabled/detected
-7. Audio Spectrum — when the microphone is available
+7. Audio Spectrum — when the current audio-capture provider is available
 
-Disabled or unavailable apps are skipped. Home is always available and is the fallback when a preferred startup app cannot run.
+Disabled or unavailable applications are skipped by global navigation and by the T-Deck tab strip.
 
-System Events is a read-only view of the RAM-only structured event ring. Center enters/exits a stable Browse snapshot; rotary input scrolls only while Browse is active.
+System Events is a read-only view of the RAM-only structured event ring. Center enters/exits a stable Browse snapshot; semantic navigation scrolls only while Browse is active.
 
-## WiFi / BT
+## Managed application view and T-Deck navigation
 
-WiFi / BT passively observes Wi-Fi and BLE activity, performs longest-prefix IEEE vendor attribution, distinguishes randomized/private addresses from unresolved public addresses, and applies conservative surveillance-oriented classification.
+Each app session owns one managed `rfscout_view_t`. The current app view is deliberately **320x170 on both supported boards** so existing application layouts retain the T-Embed geometry while the abstraction is established.
+
+On T-Embed that view is the full LCD. On T-Deck it occupies the upper 320x170 portion of the physical 320x240 LCD; the lower 320x70 region is system-owned. The system region renders available application tabs and touch/calibration status and is repainted after app rendering.
+
+Calibrated GT911 finger-down events inside the tab strip are consumed by global navigation and switch applications through the normal transactional app lifecycle. Trackball/center remains a complete non-touch fallback. Touches outside global chrome are not yet dispatched as an app-level pointer API.
+
+## GPS, location, and time
+
+T-Deck exposes a board-neutral GPS service over UART1/NMEA. The service distinguishes provider initialization from receiver detection and exposes independent validity for location and GPS UTC time. A receiver snapshot is not available until RFScout has observed a checksum-valid supported RMC/GGA sentence.
+
+A fresh location fix exposes latitude/longitude, speed, satellite count, altitude data when supplied, UTC epoch, and age metadata. Location/time validity expires when the corresponding fix data becomes stale; consumers must check the validity flags rather than treating cached values as current.
+
+The global status bar shows a GPS indicator only after receiver detection. The indicator uses the semantic warning color while the receiver has no fresh location fix and success color while a fresh fix is present. Fix acquisition/loss is logged diagnostically and, when SD logging is active, to the normal durable log stream.
+
+`device_time` owns clock validity/source, **Auto / Manual** synchronization policy, and timezone conversion. In Auto mode, a fix-valid GPS UTC timestamp synchronizes the RTC-backed system wall clock; Manual mode ignores GPS clock offers. Once synchronized, the wall clock remains valid even if the current GPS fix later disappears. Timezone remains a presentation policy applied by `device_time`, not by GPS.
+
+## Battery status
+
+T-Embed retains its validated fuel-gauge/charger path, including authoritative external-power state.
+
+T-Deck uses the board battery ADC on GPIO4 with the profile-owned 2:1 divider. RFScout filters measured voltage and estimates LiPo state of charge for the battery indicator. The estimate is useful telemetry, not a fuel-gauge measurement. T-Deck does not fabricate charging, charge-complete, or USB/external-power state because no authoritative digital source has been established.
+
+Automatic low-battery sleep/power-off requires authoritative external-power telemetry and is therefore disabled on the current voltage-only T-Deck profile. Battery percentage remains visible.
+
+## WiFi / BLE
+
+WiFi / BLE passively observes Wi-Fi and BLE activity, performs longest-prefix IEEE vendor attribution, distinguishes randomized/private addresses from unresolved public addresses, and applies conservative surveillance-oriented classification.
 
 The normalized live observation store grows in app-session PSRAM rather than reserving or enforcing a fixed item capacity. Collector ingestion uses an address/type identity index rather than rescanning the full collection per callback. Both the general summary and surveillance view are projections of this one canonical active-device collection.
 
 Wi-Fi and BLE source membership age independently using their respective 10–300 second retention controls, defaulting to 60 seconds. Surveillance classification is an attribute of the canonical device record and expires with that record; there is no separate surveillance retention list or timeout.
 
-Curated surveillance signatures detect from the first observation that meets the configured **High / Medium / Low** sensitivity threshold, defaulting to High. Repeats for the same active device refresh its canonical observation rather than building confidence. Only currently active surveillance signatures are shown, ordered by recent activity with overflow compacted when necessary. Alerts are configured by semantic category such as ALPR, body camera, drone, camera, smart glasses, and acoustic sensor. Smart-glasses matching includes Meta/Ray-Ban/Oakley naming plus curated Brilliant Frame and Rokid BLE services, Even G1 naming, and Solos AirGo naming.
+Curated surveillance signatures detect from the first observation that meets the configured **High / Medium / Low** sensitivity threshold, defaulting to High. Repeats for the same active device refresh its canonical observation rather than building confidence. Only currently active surveillance signatures are shown, ordered by recent activity with overflow compacted when necessary. Alerts are configured by semantic category such as ALPR, body camera, drone, camera, smart glasses, and acoustic sensor.
 
 Ordinary Wi-Fi/BLE discovery cues can be enabled independently. Leaving the app transactionally drains/stops both collectors before its app-owned PSRAM is released.
 
@@ -37,7 +67,7 @@ Ordinary Wi-Fi/BLE discovery cues can be enabled independently. Leaving the app 
 
 CC1101 performs receive-only RSSI sweeps with configurable profile/range/step, live activity histogram, bounded sweep samples, conservative RF-behavior categories, notifications, and count reset. Labels are heuristics about observed RF behavior, not decoded product identity.
 
-Its worker is session-managed and must quiesce before app-owned memory can be reclaimed.
+Its worker is session-managed and must quiesce before app-owned memory can be reclaimed. The provider is currently advertised only by the T-Embed profile.
 
 ## nRF24
 
@@ -45,29 +75,27 @@ nRF24 performs receive-only 2.4 GHz RPD scanning with configurable channel bound
 
 RPD is threshold energy evidence, not RSSI and not packet proof. The production scanner currently produces RPD observations only. Packet list/detail surfaces consume separately validated observations and preserve channel, air rate, address, PID/ACK state, CRC state, timestamp, and full payload when such observations are provided. The browser keeps the displayed bounded snapshot stable while a row is selected.
 
-RFScout does **not** enable auto-ACK, inject, replay, pair, probe, or actively discover nRF24 devices. Future receive-only ESB discovery/CRC validation remains roadmap work.
-
-Acquisition and presentation use separate cadences: sweep data continues feeding classification while display snapshots are coalesced. Center-button edge capture is designed so a completed click survives temporary synchronous LCD/main-loop stalls.
+RFScout does **not** enable auto-ACK, inject, replay, pair, probe, or actively discover nRF24 devices. Future receive-only ESB discovery/CRC validation remains roadmap work. The provider is currently advertised only by the T-Embed profile.
 
 ## Recorder
 
-Recorder provides SD-backed 16-bit mono PCM WAV capture/playback, runtime PDM/effective-rate measurement, measured-rate WAV metadata, asynchronous post-processing, recording browse/delete, and independent playback volume.
+Recorder provides SD-backed 16-bit mono PCM WAV capture/playback, runtime PDM/effective-rate measurement, measured-rate WAV metadata, asynchronous post-processing, recording browse/delete, and independent playback volume on the current T-Embed audio provider.
 
-Capture is not software pre-amplified. After capture completes, Recorder trims startup/tail artifacts, removes DC/very-low-frequency energy with the same shared one-pole high-pass primitive used by Audio Spectrum, then applies bounded normalization before finalizing the WAV. This keeps the saved signal treatment consistent with the spectrum path without risking pre-normalization clipping during capture.
+Capture is not software pre-amplified. After capture completes, Recorder trims startup/tail artifacts, removes DC/very-low-frequency energy with the same shared one-pole high-pass primitive used by Audio Spectrum, then applies bounded normalization before finalizing the WAV.
 
-Live microphone spectrum monitoring is no longer a Recorder mode; it is the separate **Audio Spectrum** app. While Recorder is actively recording or finalizing a recording, app transitions are intentionally blocked. The user stops recording with center, saving completes, and normal navigation then resumes. RFScout does not attempt to reconstruct or restart an interrupted recording after a failed transition. Playback may be stopped normally when Recorder is left.
+While Recorder is actively recording or finalizing a recording, app transitions are intentionally blocked. The user stops recording with center, saving completes, and normal navigation then resumes. Playback may be stopped normally when Recorder is left.
 
-Recorder content audio remains available under device Quiet policy; incidental feedback can be suppressed by the app's native policy. Worker/channel shutdown remains session-managed.
+T-Deck ES7210 audio input and speaker support are not yet enabled and Recorder is therefore unavailable on that profile.
 
 ## Audio Spectrum
 
-Audio Spectrum is a microphone-only live FFT/spectrum app and does not require an SD card. The live view leaves rotary input available for global app navigation.
+Audio Spectrum is a microphone-only live FFT/spectrum app on the current T-Embed PDM provider and does not require an SD card. The live view leaves navigation available for global app switching.
 
-The spectrum uses raw microphone PCM with the shared continuous high-pass/DC-block filter and a smoothed automatic dB display range, avoiding pre-FFT digital amplification and clipping. The live `AUTO N dB` readout reports the current display-window span rather than microphone gain. The shared audio-capture service owns microphone/channel lifetime so Audio Spectrum uses the same ordinary app/session contract as the radio and sensor apps rather than Recorder-specific rollback semantics.
+The spectrum uses raw microphone PCM with the shared continuous high-pass/DC-block filter and a smoothed automatic dB display range, avoiding pre-FFT digital amplification and clipping. The live `AUTO N dB` readout reports the current display-window span rather than microphone gain.
 
 ## Thermal
 
-Thermal is available when an enabled MLX90640 is detected on the external I2C/Qwiic interface. Native 32x24 data is interpolated for the LCD; literal thermal imagery bypasses semantic theme translation while chrome/labels remain theme-aware.
+Thermal is available when an enabled MLX90640 is detected on the shared external I2C interface. Native 32x24 data is interpolated for the LCD; literal thermal imagery bypasses semantic theme translation while chrome/labels remain theme-aware.
 
 Absolute-temperature calibration improvements remain roadmap work.
 
@@ -76,56 +104,57 @@ Absolute-temperature calibration improvements remain roadmap work.
 Implemented global settings include:
 
 - brightness, display dim timeout, screen-off timeout, and visual theme;
-- independent Normal / Quiet Audio policy;
+- independent Normal / Quiet audio policy;
 - UI, Event, and Alert presentation levels/policy;
-- configurable short/long power-button actions;
-- low-battery and high-internal-temperature protective power policy;
-- persistent 12/24-hour clock presentation and timezone;
-- manual date/time controls that update the running RTC-backed system clock only;
-- startup application and per-app enablement, including Audio Spectrum independently from Recorder;
-- SD logging;
-- explicit internal configuration save.
+- configurable semantic power-button and protective-power policy where supported;
+- a Time submenu with Auto/Manual synchronization policy, timezone, and 12/24-hour presentation;
+- manual date/time fields shown only while Manual mode is selected;
+- startup application and per-app enablement;
+- SD logging; and
+- Touch calibration when a touch provider is available.
 
-Small finite choices use direct center-to-cycle behavior; numeric ranges use edit/rotate. Per-app alert mappings, surveillance sensitivity, and WiFi / BT retention remain in their owning app menus.
+Ordinary configuration changes are persisted automatically; there is no user-facing **Save config** action. The time synchronization policy and touch calibration are bounded system records separate from normal app configuration.
 
-Visual themes are **Indoor**, **Outdoor**, and **Night** and affect colors only. **Quiet** suppresses incidental UI/Event/Alert presentation without rewriting saved app notification gates, mappings, mode, or volume. Explicit application Content audio such as Recorder playback remains available.
+Visual themes are **Indoor**, **Outdoor**, and **Night** and affect colors only. **Quiet** suppresses incidental UI/Event/Alert presentation without rewriting saved app notification gates, mappings, mode, or volume. Explicit application Content audio such as Recorder playback remains available where supported.
 
 ## Power, display, and sleep
 
-Short power-button actions may be None, Screen off, Sleep, or Power off; long press may be None or Power off, subject to board capabilities. A dim/off display consumes the entire first wake gesture before ordinary input or power semantics.
+Semantic power actions are filtered by runtime board capability. T-Embed retains Screen off, Sleep, and Power off behavior. T-Deck currently exposes no RFScout user/power key and no semantic deep-sleep or physical-power-off capability; its GPIO0 center/BOOT control belongs to the input service.
 
-Automatic screen-off affects presentation only. The display service enters the selected provider's low-power state and suppresses framebuffer transfers while apps, logging, RF acquisition, and audio continue. The current provider is ST7789.
+Automatic display dim/off is presentation policy rather than ESP32 sleep. The ST7789 provider may enter controller low power while apps, logging, RF acquisition, and other services continue. Physical input wakes the display and the wake gesture is consumed before ordinary app semantics.
 
-Protective policy can act on sustained low battery or high ESP32 internal temperature. Low-battery action requires fresh gauge and charger evidence; high-temperature Power off falls back to Sleep when external-power absence cannot be freshly established. Detailed persisted values/semantics are in [CONFIGURATION.md](CONFIGURATION.md).
+Protective low-battery action requires fresh battery percentage **and** authoritative evidence that external power is absent. This retains the T-Embed behavior while intentionally preventing voltage-only T-Deck battery estimates from causing shutdown loops when the device is actually plugged in. High-temperature policy is likewise constrained by the power actions advertised by the active profile.
 
-Deep sleep retains only a small RTC-backed session record (active app and input lock). Menus/edit state/queued audio/active Recorder work are not resumed.
+Deep sleep, when supported, retains only a small RTC-backed session record (active app and input lock). Menus/edit state/queued audio/active Recorder work are not reconstructed.
 
 ## Feedback and notifications
 
 RFScout distinguishes semantic interaction feedback, app-owned detection alerts, and requested Content audio. Global alert presentation is OFF, TONE, or MORSE plus volume; each detecting app owns its alert gate/mappings.
 
-The device-wide Normal/Quiet policy is independent of visual theme. Speaker output is asynchronous; disposable feedback/alerts are not queued behind active Content audio.
+The device-wide Normal/Quiet policy is independent of visual theme. Speaker output is asynchronous; disposable feedback/alerts are not queued behind active Content audio. Profiles without an advertised speaker never enter the current I2S output provider.
 
 ## Configuration, storage, and logging
 
-Persistent preferences use firmware-managed internal records. `system/config` and `app/<persistence_key>/config` are logical ownership names, not literal filenames. The persistence service hashes opaque logical keys to fixed filesystem-safe names, serializes filesystem operations internally, limits each record to 16 KiB, and atomically replaces individual records through a same-directory temporary. Callers do not manage persistence locks or construct LittleFS paths.
+Persistent preferences use firmware-managed internal records. `system/config` and `app/<persistence_key>/config` are logical ownership names, not literal filenames. The persistence service hashes opaque logical keys to fixed filesystem-safe names, serializes filesystem operations internally, limits each record to 16 KiB, and atomically replaces individual records through a same-directory temporary.
 
-Application configuration records exist only for overrides from compiled defaults; returning all app settings to defaults removes the app record. Interrupted-write temporaries are discarded during the persistence service's startup cleanup pass. Reads do not create app storage directories.
+Application configuration records exist only for overrides from compiled defaults; returning all app settings to defaults removes the app record. SD is not required for device/app configuration.
 
-An SD card is not required to retain or save device/app settings and is not consulted for configuration. SD remains removable bulk storage for Recorder WAVs and asynchronous logs. Future settings transfer should use an explicit firmware-managed import/export operation rather than exposing internal record files.
+SD remains removable bulk storage for Recorder WAVs and asynchronous logs. Log records snapshot a fresh GPS latitude/longitude fix at event creation when one is available, so later movement cannot retroactively change an already queued event. Logs without a valid location simply omit the location fields.
 
-Wall-clock epoch/source state is not configuration. RFScout uses the RTC-backed system clock directly for display, log timestamps, and filesystem calendar metadata. Manual date/time and future GPS/NTP adjustments change runtime clock state; timezone and clock presentation remain persistent preferences.
+Wall-clock epoch/source state is not ordinary configuration. RFScout uses the RTC-backed system clock for display, log timestamps, and filesystem calendar metadata. `device_time` separately persists the small Auto/Manual policy record; timezone and clock-presentation preferences remain normal durable configuration.
 
-System Events/dmesg records internal-storage mount/recovery status and configuration-default recovery separately from SD-card mount state. RFScout can operate without SD for configuration, radio/sensor use, and Audio Spectrum. The conservative board-tested SD baseline is a FAT-compatible SanDisk card of 32 GB or less. Logs rotate through 100 files of up to 4 MiB each while preserving a free-space reserve.
+System Events/dmesg records internal-storage, SD, provider, and other platform diagnostics independently from removable log storage.
 
 ## Hardware and memory boundaries
 
-LCD/microSD/CC1101/nRF24 share SPI resources; power telemetry/external sensors share I2C; the shared audio-capture service uses I2S0 for the microphone; speaker output uses I2S1.
+Both supported profiles require usable external PSRAM. App-scoped memory/session infrastructure allows growable app-owned state to consume PSRAM during a session and reclaims it after platform services prove they no longer reference it.
 
-Usable external **PSRAM is required**. App-scoped memory/session infrastructure is implemented: growable app-owned state can consume PSRAM during the session and is reclaimed after platform services prove they no longer reference it.
+T-Embed LCD/microSD/CC1101/nRF24 share SPI; battery/power devices and external sensors share I2C; PDM capture uses I2S0; speaker output uses I2S1.
 
-The current 16 MiB mainline flash layout uses an 8 MiB factory application partition and approximately 8 MiB of LittleFS internal persistence. Persistent state is stored as bounded owned records rather than direct app filesystem content; planned A/B OTA partitioning will reduce that durable budget, so consumers must remain size-independent.
+T-Deck LCD, microSD, and the currently disabled SX1262 share SPI. Touch/keyboard/other compatible devices use the profile's shared I2C bus. Known but unimplemented hardware metadata does not by itself make a capability available.
 
 ## Not currently implemented
 
-Major v0.4.0 work still outstanding includes Instant/Timed/Never WiFi/BLE retention semantics, semantic Wi-Fi/BLE entity/correlation views, broader app-by-app PSRAM/history improvements, the planned further calibration/generalization of the Audio Input service, thermal calibration, and release-level stress/fault-injection validation. The canonical checklist and status are in [ROADMAP.md](ROADMAP.md).
+For T-Deck, initial support intentionally stops short of keyboard input, SX1262 radio plumbing, ES7210 audio capture, speaker output, and semantic sleep/power-off behavior. Those should land as separately testable provider slices.
+
+Broader v0.4.0 work still outstanding includes Instant/Timed/Never WiFi/BLE retention semantics, semantic Wi-Fi/BLE entity/correlation views, broader app-by-app PSRAM/history improvements, further Audio Input calibration/generalization, thermal calibration, and release-level stress/fault-injection validation. The canonical checklist and status are in [ROADMAP.md](ROADMAP.md).
