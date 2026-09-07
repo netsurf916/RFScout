@@ -57,4 +57,8 @@ esp_err_t storage_get_capacity( uint64_t *a_total_bytes, uint64_t *a_free_bytes 
    implementation units. */
 #include "storage_internal.h"
 
+/* Transitional source compatibility for the existing power caller: terminal power states no
+   longer tear down the mounted volume. This macro disappears when power.c is next touched. */
+#define storage_shutdown() ( (void)0 )
+
 #endif // _RFSCOUT_STORAGE_H_
