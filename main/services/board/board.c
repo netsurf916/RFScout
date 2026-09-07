@@ -146,8 +146,8 @@ static const rfscout_board_profile_t tembed_profile = {
     .ir_rx_pin = 1,
     .mic_data_pin = 42,
     .mic_clock_pin = 39,
-    .gps_tx_pin = 43,
-    .gps_rx_pin = 44,
+    .gps_tx_pin = -1,
+    .gps_rx_pin = -1,
 };
 
 static const rfscout_board_profile_t tdeck_plus_profile = {
@@ -222,8 +222,8 @@ static const rfscout_board_profile_t tdeck_plus_profile = {
     .ir_rx_pin = -1,
     .mic_data_pin = -1,
     .mic_clock_pin = -1,
-    .gps_tx_pin = 43,
-    .gps_rx_pin = 44,
+    .gps_tx_pin = 44,
+    .gps_rx_pin = 43,
 };
 
 static const rfscout_board_profile_t *active_profile = &unknown_profile;
@@ -260,24 +260,31 @@ esp_err_t board_profile_detect( void )
         return ESP_OK;
     }
 
-    static const uint8_t tdeck_addresses[] = { 0x5D, 0x14 };
-    if( probe_fingerprint( 18, 8, tdeck_addresses, sizeof( tdeck_addresses ) ) )
+    static const uint8_t TDECK_SIGNATURES[] = { 0x5D, 0x14 };
+    static const uint8_t TEMBED_SIGNATURES[] = { 0x6B, 0x55 };
+
+    const bool tdeck = probe_fingerprint( 18, 8, TDECK_SIGNATURES, sizeof( TDECK_SIGNATURES ) );
+    const bool tembed = probe_fingerprint( 8, 18, TEMBED_SIGNATURES, sizeof( TEMBED_SIGNATURES ) );
+
+    if( tdeck && !tembed )
     {
         active_profile = &tdeck_plus_profile;
-        ESP_LOGI( TAG, "hardware profile selected: %s", active_profile->name );
-        return ESP_OK;
     }
-
-    static const uint8_t tembed_addresses[] = { 0x6B, 0x55 };
-    if( probe_fingerprint( 8, 18, tembed_addresses, sizeof( tembed_addresses ) ) )
+    else if( tembed && !tdeck )
     {
         active_profile = &tembed_profile;
-        ESP_LOGI( TAG, "hardware profile selected: %s", active_profile->name );
-        return ESP_OK;
+    }
+    else
+    {
+        ESP_LOGE( TAG,
+                  "hardware profile detection failed or ambiguous (T-Deck=%d T-Embed=%d)",
+                  tdeck,
+                  tembed );
+        return ESP_ERR_NOT_FOUND;
     }
 
-    ESP_LOGE( TAG, "no supported hardware profile detected" );
-    return ESP_ERR_NOT_FOUND;
+    ESP_LOGI( TAG, "selected hardware profile: %s", active_profile->name );
+    return ESP_OK;
 }
 
 const rfscout_board_profile_t *board_profile( void )
@@ -292,5 +299,5 @@ bool board_profile_selected( void )
 
 bool board_profile_has( rfscout_board_capability_t a_capability )
 {
-    return 0U != ( active_profile->capabilities & (uint32_t)a_capability );
+    return board_profile_selected() && 0U != ( active_profile->capabilities & (uint32_t)a_capability );
 }
