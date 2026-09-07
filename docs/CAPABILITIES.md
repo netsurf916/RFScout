@@ -6,7 +6,7 @@ This document summarizes behavior implemented on the current development line. A
 
 RFScout builds one ESP32-S3 firmware image for **LILYGO T-Embed CC1101 Plus** and **LILYGO T-Deck Plus**. A minimal early I2C fingerprint selects an immutable runtime profile before ordinary board GPIO/peripheral initialization. Unknown hardware remains awake and inert for recovery flashing.
 
-The T-Embed remains the fully hardware-validated baseline. Initial T-Deck hardware validation covers runtime profile detection, 320x240 display orientation, the managed 320x170 app view and 320x70 system region, trackball/center input, GT911 coordinate orientation, and persistent touch calibration. Battery ADC, SD/shared-SPI behavior, GPS acquisition/time synchronization, and the final T-Embed regression pass remain validation items for PR #76.
+The T-Embed remains the fully hardware-validated baseline. Initial T-Deck hardware validation covers runtime profile detection, 320x240 display orientation, the managed 320x170 app view and 320x70 system region, trackball/center input, GT911 coordinate orientation, persistent touch calibration, GPS acquisition/time synchronization, SD mounting/logging, voltage-only battery telemetry, and standard-I2S speaker output. Extended shared-SPI stress behavior and the final T-Embed regression pass remain validation items for PR #76.
 
 Applications consume semantic service availability rather than board identity. Current T-Deck capability filtering therefore leaves the existing CC1101, nRF24, and T-Embed PDM-audio apps unavailable rather than probing illegal providers. Home is always available and remains the fallback when a preferred startup app cannot run.
 
@@ -41,7 +41,7 @@ A fresh location fix exposes latitude/longitude, speed, satellite count, altitud
 
 The global status bar shows a GPS indicator only after receiver detection. The indicator uses the semantic warning color while the receiver has no fresh location fix and success color while a fresh fix is present. Fix acquisition/loss is logged diagnostically and, when SD logging is active, to the normal durable log stream.
 
-`device_time` owns clock validity/source, **Auto / Manual** synchronization policy, and timezone conversion. In Auto mode, a fix-valid GPS UTC timestamp synchronizes the RTC-backed system wall clock; Manual mode ignores GPS clock offers. Once synchronized, the wall clock remains valid even if the current GPS fix later disappears. Timezone remains a presentation policy applied by `device_time`, not by GPS.
+`device_time` owns clock validity/source, **Auto / Manual** synchronization policy, and timezone conversion. In Auto mode, a fix-valid GPS UTC timestamp synchronizes the RTC-backed system wall clock; Manual mode ignores GPS clock offers. Once synchronized, the wall clock remains valid even if the current GPS fix later disappears. Timezone remains a presentation policy applied by `device_time`, not by GPS. Time-policy changes are persisted before the new mode is published, so a failed policy write cannot silently create different runtime and reboot semantics.
 
 ## Battery status
 
@@ -79,13 +79,13 @@ RFScout does **not** enable auto-ACK, inject, replay, pair, probe, or actively d
 
 ## Recorder
 
-Recorder provides SD-backed 16-bit mono PCM WAV capture/playback, runtime PDM/effective-rate measurement, measured-rate WAV metadata, asynchronous post-processing, recording browse/delete, and independent playback volume on the current T-Embed audio provider.
+Recorder provides SD-backed 16-bit mono PCM WAV capture/playback, runtime PDM/effective-rate measurement, measured-rate WAV metadata, asynchronous post-processing, recording browse/delete, and independent playback volume on the current T-Embed audio-capture provider.
 
 Capture is not software pre-amplified. After capture completes, Recorder trims startup/tail artifacts, removes DC/very-low-frequency energy with the same shared one-pole high-pass primitive used by Audio Spectrum, then applies bounded normalization before finalizing the WAV.
 
-While Recorder is actively recording or finalizing a recording, app transitions are intentionally blocked. The user stops recording with center, saving completes, and normal navigation then resumes. Playback may be stopped normally when Recorder is left.
+While Recorder is actively recording or finalizing a recording, app transitions and terminal sleep/power-off transitions are intentionally blocked. The user stops recording with center, saving completes, and normal navigation/power transitions then resume. Playback may be stopped normally when Recorder is left or a terminal power transition is prepared.
 
-T-Deck ES7210 audio input and speaker support are not yet enabled and Recorder is therefore unavailable on that profile.
+T-Deck ES7210 audio input is not yet enabled, so Recorder remains unavailable on that profile. T-Deck speaker output is independently supported for semantic UI/event/alert audio.
 
 ## Audio Spectrum
 
@@ -125,7 +125,7 @@ Automatic display dim/off is presentation policy rather than ESP32 sleep. The ST
 
 Protective low-battery action requires fresh battery percentage **and** authoritative evidence that external power is absent. This retains the T-Embed behavior while intentionally preventing voltage-only T-Deck battery estimates from causing shutdown loops when the device is actually plugged in. High-temperature policy is likewise constrained by the power actions advertised by the active profile.
 
-Deep sleep, when supported, retains only a small RTC-backed session record (active app and input lock). Menus/edit state/queued audio/active Recorder work are not reconstructed.
+Deep sleep, when supported, retains only a small RTC-backed session record (active app and input lock). Menus/edit state/queued audio/active Recorder work are not reconstructed. Terminal T-Embed sleep/power-off quiesces Recorder/logging but leaves the SD volume mounted; the mount is platform-owned for the running firmware lifetime rather than participating in a shutdown/remount rollback state machine.
 
 ## Feedback and notifications
 
@@ -133,13 +133,17 @@ RFScout distinguishes semantic interaction feedback, app-owned detection alerts,
 
 The device-wide Normal/Quiet policy is independent of visual theme. Speaker output is asynchronous; disposable feedback/alerts are not queued behind active Content audio. Profiles without an advertised speaker never enter the current I2S output provider.
 
+T-Embed and T-Deck both advertise the current semantic speaker provider. T-Deck uses its hardware-validated standard-I2S speaker path while remaining without an audio-capture provider.
+
 ## Configuration, storage, and logging
 
 Persistent preferences use firmware-managed internal records. `system/config` and `app/<persistence_key>/config` are logical ownership names, not literal filenames. The persistence service hashes opaque logical keys to fixed filesystem-safe names, serializes filesystem operations internally, limits each record to 16 KiB, and atomically replaces individual records through a same-directory temporary.
 
 Application configuration records exist only for overrides from compiled defaults; returning all app settings to defaults removes the app record. SD is not required for device/app configuration.
 
-SD remains removable bulk storage for Recorder WAVs and asynchronous logs. Log records snapshot a fresh GPS latitude/longitude fix at event creation when one is available, so later movement cannot retroactively change an already queued event. Logs without a valid location simply omit the location fields.
+SD remains removable bulk storage for Recorder WAVs and asynchronous logs. The storage service owns mounting and raw-card presence-probe arbitration for the life of the running firmware. Ordinary consumers do not acquire/release the raw SD arbitration lock; that detail remains inside the storage service and its logger implementation. Physical media loss is latched unavailable rather than triggering an automatic unmount/remount recovery path.
+
+Log records snapshot a fresh GPS latitude/longitude fix at event creation when one is available, so later movement cannot retroactively change an already queued event. Logs without a valid location simply omit the location fields.
 
 Wall-clock epoch/source state is not ordinary configuration. RFScout uses the RTC-backed system clock for display, log timestamps, and filesystem calendar metadata. `device_time` separately persists the small Auto/Manual policy record; timezone and clock-presentation preferences remain normal durable configuration.
 
@@ -151,10 +155,10 @@ Both supported profiles require usable external PSRAM. App-scoped memory/session
 
 T-Embed LCD/microSD/CC1101/nRF24 share SPI; battery/power devices and external sensors share I2C; PDM capture uses I2S0; speaker output uses I2S1.
 
-T-Deck LCD, microSD, and the currently disabled SX1262 share SPI. Touch/keyboard/other compatible devices use the profile's shared I2C bus. Known but unimplemented hardware metadata does not by itself make a capability available.
+T-Deck LCD, microSD, and the currently disabled SX1262 share SPI. Touch/keyboard/other compatible devices use the profile's shared I2C bus. Standard-I2S speaker output is enabled; known but unimplemented keyboard, SX1262, and ES7210 metadata does not by itself make those capabilities available.
 
 ## Not currently implemented
 
-For T-Deck, initial support intentionally stops short of keyboard input, SX1262 radio plumbing, ES7210 audio capture, speaker output, and semantic sleep/power-off behavior. Those should land as separately testable provider slices.
+For T-Deck, initial support intentionally stops short of keyboard input, SX1262 radio plumbing, ES7210 audio capture, and semantic sleep/power-off behavior. Those should land as separately testable provider slices.
 
 Broader v0.4.0 work still outstanding includes Instant/Timed/Never WiFi/BLE retention semantics, semantic Wi-Fi/BLE entity/correlation views, broader app-by-app PSRAM/history improvements, further Audio Input calibration/generalization, thermal calibration, and release-level stress/fault-injection validation. The canonical checklist and status are in [ROADMAP.md](ROADMAP.md).
