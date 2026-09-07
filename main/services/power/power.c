@@ -145,8 +145,8 @@ static void set_idle_status( void )
     set_power_status( POWER_HOLD_IDLE, POWER_ACTION_NONE, POWER_TRANSITION_NONE, 0U, "", "" );
 }
 
-/** @brief Flush internal state, then stop removable-storage users when SD is present. */
-static bool prepare_storage_for_power_state( void )
+/** @brief Flush internal state, then quiesce removable-storage users when SD is present. */
+static bool prepare_for_power_state( void )
 {
     const esp_err_t save_result = device_config_save_if_dirty();
     if( ESP_OK != save_result )
@@ -164,17 +164,16 @@ static bool prepare_storage_for_power_state( void )
 
     if( !recorder_prepare_storage_shutdown( POWER_RECORDER_STOP_TIMEOUT_MS ) )
     {
-        ESP_LOGW( TAG, "storage remains mounted because Recorder did not stop" );
+        ESP_LOGW( TAG, "power transition cancelled because Recorder did not stop" );
         return false;
     }
 
     if( !log_writer_shutdown( POWER_LOG_FLUSH_TIMEOUT_MS ) )
     {
-        ESP_LOGW( TAG, "storage remains mounted because logger did not stop" );
+        ESP_LOGW( TAG, "power transition cancelled because logger did not stop" );
         return false;
     }
 
-    storage_shutdown();
     return true;
 }
 
@@ -210,16 +209,10 @@ static void restore_display_after_failed_power_off( void )
     display_set_brightness( device_config_get()->brightness_percent );
 }
 
-/** @brief Restore SD state after a failed physical power-off request. */
-static void restore_storage_after_failed_power_off( void )
+/** @brief Restart logging after a failed physical power-off request. */
+static void restore_logging_after_failed_power_off( void )
 {
-    if( ESP_OK != storage_init() )
-    {
-        ESP_LOGE( TAG, "could not remount SD after failed power off" );
-        return;
-    }
-
-    if( !device_config_get()->logging_enabled )
+    if( !storage_is_available() || !device_config_get()->logging_enabled )
     {
         return;
     }
@@ -233,7 +226,7 @@ static void restore_storage_after_failed_power_off( void )
 static void enter_sleep( void )
 {
     ESP_LOGI( TAG, "entering deep sleep; user key wakes device" );
-    if( !prepare_storage_for_power_state() )
+    if( !prepare_for_power_state() )
     {
         ESP_LOGW( TAG, "sleep cancelled because persistent state could not be prepared" );
         set_idle_status();
@@ -251,7 +244,7 @@ static void enter_sleep( void )
 /** @brief Perform an orderly physical power-off request. */
 static void power_off( void )
 {
-    if( !prepare_storage_for_power_state() )
+    if( !prepare_for_power_state() )
     {
         set_idle_status();
         return;
@@ -262,7 +255,7 @@ static void power_off( void )
     if( ESP_OK != result )
     {
         ESP_LOGE( TAG, "power off failed: %s", esp_err_to_name( result ) );
-        restore_storage_after_failed_power_off();
+        restore_logging_after_failed_power_off();
         restore_display_after_failed_power_off();
         set_idle_status();
     }
