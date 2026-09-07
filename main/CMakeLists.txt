@@ -21,6 +21,13 @@ if(NOT HOME_LOGO_RESULT EQUAL 0)
     message(FATAL_ERROR "Failed to generate RFScout Home logo bitmap")
 endif()
 
+if(NOT CMAKE_SCRIPT_MODE_FILE)
+    set_source_files_properties(
+        "apps/home/device_view.c"
+        PROPERTIES COMPILE_DEFINITIONS "device_view_landing=device_view_landing_procedural"
+    )
+endif()
+
 set(RFSCOUT_INCLUDE_DIRS
     "."
     "apps"
