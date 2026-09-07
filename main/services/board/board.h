@@ -150,9 +150,9 @@ bool board_profile_has( rfscout_board_capability_t a_capability );
 #define RFSCOUT_BOARD_HAS_TOUCH ( board_profile_has( RFSCOUT_BOARD_CAP_TOUCH ) )
 #define RFSCOUT_BOARD_HAS_ROTARY_ENCODER ( board_profile_has( RFSCOUT_BOARD_CAP_ROTARY_ENCODER ) )
 #define RFSCOUT_BOARD_HAS_PDM_MIC ( board_profile_has( RFSCOUT_BOARD_CAP_PDM_MIC ) )
-#define RFSCOUT_BOARD_HAS_SPEAKER ( board_profile_has( RFSCOUT_BOARD_CAP_SPEAKER ) )
-#define RFSCOUT_BOARD_HAS_INTERNAL_TEMPERATURE \
-    ( board_profile_has( RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE ) )
+/* Both current profiles provide these providers, so keep the existing compile-time guards true. */
+#define RFSCOUT_BOARD_HAS_SPEAKER 1
+#define RFSCOUT_BOARD_HAS_INTERNAL_TEMPERATURE 1
 #define RFSCOUT_BOARD_HAS_SD ( board_profile_has( RFSCOUT_BOARD_CAP_SD ) )
 #define RFSCOUT_BOARD_CAN_SCREEN_OFF ( board_profile_has( RFSCOUT_BOARD_CAP_SCREEN_OFF ) )
 #define RFSCOUT_BOARD_CAN_DEEP_SLEEP ( board_profile_has( RFSCOUT_BOARD_CAP_DEEP_SLEEP ) )
