@@ -214,10 +214,12 @@ static void parse_line( char *a_line )
     const size_t type_length = strlen( payload );
     if( type_length >= 3U && 0 == strcmp( payload + type_length - 3U, "RMC" ) )
     {
+        snapshot.available = true;
         parse_rmc( comma + 1 );
     }
     else if( type_length >= 3U && 0 == strcmp( payload + type_length - 3U, "GGA" ) )
     {
+        snapshot.available = true;
         parse_gga( comma + 1 );
     }
 }
@@ -258,7 +260,6 @@ esp_err_t gps_init( void )
         return result;
     }
     initialized = true;
-    snapshot.available = true;
     ESP_LOGI( TAG,
               "GPS provider started: UART1 RX=%d TX=%d baud=%d",
               RFSCOUT_BOARD_GPS_RX_PIN,
