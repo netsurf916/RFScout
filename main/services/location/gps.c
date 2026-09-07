@@ -315,7 +315,7 @@ void gps_poll( void )
 
 bool gps_snapshot_get( rfscout_gps_snapshot_t *a_snapshot )
 {
-    if( NULL == a_snapshot || !initialized )
+    if( NULL == a_snapshot || !initialized || !snapshot.available )
     {
         return false;
     }
