@@ -1,27 +1,46 @@
-# Board targets and porting
+# Board profiles and porting
 
-RFScout uses one source tree to produce board-specific firmware images. Shared application/service logic should not require every image to contain every board driver.
+RFScout uses one ESP32-S3 firmware image for the supported LILYGO T-Embed CC1101 Plus and T-Deck Plus hardware family. A minimal hardware fingerprint runs before ordinary board GPIO or peripheral initialization, selects one immutable runtime profile, and then normal services probe only hardware that is legal for that profile.
 
-## Current status
+## Runtime profile model
 
-The only supported target is currently **LILYGO T-Embed CC1101 Plus**. `RFSCOUT_BOARD` selects the target; board definitions live under `main/boards/<target>/` and CMake includes only the selected board directory.
-
-## Board contract
-
-A board target owns physical facts and capabilities, including:
+Board definitions live in `main/services/board/board.{h,c}`. The selected profile owns physical facts and expected capabilities, including:
 
 - GPIO assignments and shared-bus wiring;
-- display geometry and peripheral addresses;
-- `RFSCOUT_BOARD_NAME`;
-- compile-time `RFSCOUT_BOARD_HAS_*`/`RFSCOUT_BOARD_CAN_*` capability constants;
-- power/display actions and policy sensors available on that target;
-- PSRAM/flash assumptions needed by the platform.
+- display geometry, transform metadata, and panel offsets;
+- peripheral addresses and interrupt pins;
+- storage, radio, audio, input, and navigation expectations;
+- semantic power capabilities;
+- the board/profile name and ID.
 
-Application code should depend on services/capabilities, not board model names. Board-specific conditionals belong in board/service/driver integration code.
+Applications must not branch on board IDs or names. They consume semantic services, availability, input events, and the managed application view.
 
-### PSRAM requirement
+## Detection versus capability probing
 
-Supported targets require usable external PSRAM. Internal SRAM remains reserved for RTOS/system state, task stacks, DMA/peripheral-constrained buffers, and latency-sensitive allocations; RFScout does not promise a reduced-capacity internal-SRAM fallback.
+Board-profile detection and ordinary device probing are intentionally separate stages:
+
+1. perform one minimal, passive I2C fingerprint using only the candidate profile wiring;
+2. select exactly one immutable runtime board profile;
+3. initialize only buses and pins legal for that profile;
+4. let normal service probes determine whether expected devices are actually responding.
+
+The temporary detection I2C bus is deleted before normal shared-I2C initialization.
+
+If no supported profile is detected, RFScout must not initialize normal board GPIO, display, SD, radio, input, audio, or power providers. The ESP32-S3 remains awake in an inert FreeRTOS delay loop so recovery flashing remains possible.
+
+## Current supported profiles
+
+### LILYGO T-Embed CC1101 Plus
+
+The T-Embed profile is the hardware-validated baseline. Existing display geometry, rotary/button input, CC1101, nRF24, PDM microphone, speaker, SD, and power semantics should be preserved unless a hardware-verified change requires otherwise.
+
+### LILYGO T-Deck Plus
+
+The T-Deck profile is currently reference-derived and has not yet been hardware validated. New provider capabilities should be enabled conservatively and only when RFScout is prepared to initialize those paths safely.
+
+The early discriminator uses SDA GPIO18 / SCL GPIO8 and probes the GT911 at `0x5D` or `0x14`.
+
+The current bring-up profile exposes the known-safe architectural expectations needed for development, but intentionally withholds unvalidated active power and speaker capabilities. GPIO0 is presently reserved for the trackball/center input path rather than also acting as a semantic power key. T-Deck sleep/power behavior and speaker output should be enabled only after hardware validation.
 
 ## Input boundary
 
@@ -30,49 +49,55 @@ The `input` service exposes board-neutral semantic input:
 - navigation with signed steps;
 - select and long-select;
 - back;
-- character input.
+- character input;
+- future calibrated pointer/touch events.
 
-The current T-Embed provider adapts its rotary encoder and buttons to this interface. Applications receive semantic input through the active-app runtime and do not depend on GPIOs or physical control layout. Unhandled navigation/Back may fall through to global policy.
+T-Embed uses the validated rotary/button provider. T-Deck currently uses a basic trackball/center provider as a non-touch fallback. GT911 touch and keyboard input should be added as semantic providers without exposing T-Deck-specific logic to applications.
 
-Display-wake activity is separate from dispatchable input: a gesture used to wake the display is consumed before app, lock, or power handling. Future targets may compose compatible providers without changing the application contract.
+## Display and view boundary
 
-## Display boundary
+The display service owns the physical LCD and framebuffer. Runtime display metadata comes from the selected board profile.
 
-The `display` service owns framebuffer/presentation behavior and exposes runtime provider metadata through `display_info()`, including selected provider, geometry, and supported capabilities. The current T-Embed image selects the ST7789 provider and retains its existing RGB565 framebuffer implementation.
+Applications receive one managed `rfscout_view_t` presentation surface through their app session. The current canonical app view is 320x170 on both supported profiles:
 
-Board builds still provide compile-time geometry for legacy/static layout code. New adaptive layout code should prefer runtime display metadata so provider selection can evolve without exposing controller identity to applications. Controller-specific low-power/output behavior stays behind the display service.
+- on T-Embed it maps to the full physical 320x170 display;
+- on T-Deck it occupies the first 320x170 pixels of the 320x240 display;
+- the remaining T-Deck 320x70 region is system-owned and reserved for future tabs/navigation chrome.
+
+The view carries standardized session `init`/`deinit` traits so application transitions can prepare and sanitize presentation state consistently. Applications should use their assigned view rather than physical display dimensions.
 
 ## Power boundary
 
-Board targets advertise semantic power capabilities such as screen-off, deep sleep, and physical power-off. Device policy chooses among those semantic actions; target code owns PMU/GPIO/wake-source mechanics.
+Board profiles advertise semantic power capabilities only when RFScout is prepared to perform them safely on that profile. Device policy chooses among those semantic actions; provider code owns PMU/GPIO/wake-source mechanics.
 
-Optional protective inputs are capabilities too. The current target advertises ESP32 internal-temperature support for high-temperature policy. Battery/fuel-gauge/charger availability remains a hardware/service concern rather than being assumed by application code.
-
-A board may support an action without every gesture exposing it. For example, deep sleep is supported by the current board, but long-hold `Sleep` is intentionally excluded because the physical power button is also the deep-sleep wake source.
+A reference schematic showing a possible sleep or power path is not sufficient reason to advertise the capability. T-Deck power behavior remains disabled during initial bring-up until verified on hardware.
 
 ## Audio boundary
 
-Speaker and microphone behavior should be exposed through services/capabilities rather than board checks in application code. A target without speaker output can retain semantic event behavior while making audible presentation unavailable. Application content audio should not imply that every board uses the current T-Embed I2S topology.
+Speaker and microphone behavior are semantic services rather than application-visible board features. The validated T-Embed I2S speaker and PDM microphone paths must remain intact.
 
-## Hardware availability versus enablement
+T-Deck ES7210 microphone and speaker support should be introduced as separate providers behind the same semantic services. Reference-derived pins may be retained as implementation notes, but an unvalidated provider must not be initialized simply because the reference hardware appears to contain it.
 
-Compile-time capability means the target can support a device; it does not guarantee every product variant populates it. Fixed optional devices such as CC1101, nRF24, and the board microphone may be probed once at startup. Hot-plug peripherals such as external I2C devices should use dynamic probing.
+## Shared buses
 
-Probe state is retained centrally as **available** or **unavailable**. The first known result is recorded silently in System Events; later records are emitted only when availability changes. Detailed probe failures stay in diagnostic logs rather than becoming a third availability state.
+SPI and I2C buses are initialized from the active runtime profile. Providers must respect profile capability checks before adding devices or configuring chip-select/control pins.
 
-## Adding a board
+T-Deck display, SD, and SX1262 share the SPI bus. Chip-select behavior must be validated before the SX1262 provider is enabled.
 
-A new board port should:
+## PSRAM requirement
 
-1. add a Kconfig board choice and `main/boards/<target>/board.h`;
-2. provide target-specific defaults/source selection;
-3. satisfy platform prerequisites including display, input, power, storage, and usable PSRAM;
-4. expose only capabilities actually implemented;
-5. keep applications dependent on semantic services/capabilities;
-6. add a distinct CI/package target and hardware identity.
+Supported profiles require usable external PSRAM. Internal SRAM remains reserved for RTOS/system state, task stacks, DMA/peripheral-constrained buffers, and latency-sensitive allocations; RFScout does not promise a reduced-capacity internal-SRAM fallback.
 
-Do not add runtime board detection or compile unrelated board implementations into every image unless a future hardware family creates a concrete need. Provider selection should remain constrained to implementations plausible for the selected board image.
+## Adding another profile
 
-## Configuration overlays
+A new compatible ESP32-S3 profile should:
 
-The repository-level `sdkconfig.defaults` remains active while only one target exists. With multiple targets, board-specific defaults should move to selected overlays so flash, PSRAM, partitions, and peripheral configuration can differ without leaking one board's assumptions into another image.
+1. add an immutable runtime profile in `services/board`;
+2. add the smallest safe early fingerprint needed to distinguish it from existing profiles;
+3. leave unknown hardware inert if the fingerprint is ambiguous or fails;
+4. expose only hardware/service capabilities that RFScout can initialize safely;
+5. keep applications dependent on semantic services and managed views rather than board identity;
+6. add provider implementations behind the existing service boundaries where possible;
+7. validate power, shared buses, and destructive/low-power behavior on real hardware before advertising those capabilities.
+
+Do not reintroduce per-target Kconfig/CMake firmware images for this hardware family unless a future incompatibility makes one universal image technically unsafe or impractical.

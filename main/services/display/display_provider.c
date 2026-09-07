@@ -18,11 +18,8 @@ static esp_err_t app_view_init( const rfscout_view_t *a_view )
     {
         return ESP_ERR_INVALID_ARG;
     }
-    display_fill_rect( a_view->x,
-                       a_view->y,
-                       a_view->width,
-                       a_view->height,
-                       ui_theme_get()->background );
+    display_fill_rect(
+        a_view->x, a_view->y, a_view->width, a_view->height, ui_theme_get()->background );
     return ESP_OK;
 }
 
@@ -32,11 +29,8 @@ static void app_view_deinit( const rfscout_view_t *a_view )
     {
         return;
     }
-    display_fill_rect( a_view->x,
-                       a_view->y,
-                       a_view->width,
-                       a_view->height,
-                       ui_theme_get()->background );
+    display_fill_rect(
+        a_view->x, a_view->y, a_view->width, a_view->height, ui_theme_get()->background );
 }
 
 const rfscout_display_info_t *display_info( void )
