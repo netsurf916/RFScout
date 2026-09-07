@@ -135,7 +135,7 @@ def validate_build(a_build_dir: Path) -> dict:
 def flashing_guide(a_version: str, a_full_image: str) -> str:
     return f"""# Flash RFScout {a_version}
 
-This bundle targets the LILYGO T-Embed CC1101 Plus with an ESP32-S3 and 16 MB of flash.
+This is the universal ESP32-S3 RFScout image for the supported LILYGO T-Embed CC1101 Plus and T-Deck Plus, both with 16 MB of flash. RFScout detects the supported hardware profile at startup; unsupported hardware remains awake and inert for recovery flashing.
 
 ## Clean installation
 
@@ -149,9 +149,14 @@ python -m esptool --chip esp32s3 --port PORT --baud 460800 \\
     0x0 {a_full_image}
 ```
 
-The combined image contains the RFScout bootloader, partition table, and application. Treat it as a clean installation: it can replace internal NVS and other internal-flash state. It does not erase or modify the removable SD card or `/sdcard/rfscout.json`.
+The combined image contains the RFScout bootloader, partition table, and application. Treat it as a clean installation: it can replace internal NVS and other internal-flash state. It does not erase or modify the removable SD card.
 
-If automatic reset does not enter the ROM bootloader, hold the encoder center button, press and release the rear reset button, and then release the encoder button. Press reset once after flashing if the device does not restart automatically.
+If automatic reset does not enter the ROM bootloader:
+
+- **T-Embed CC1101 Plus:** hold the encoder center button, press and release reset, then release the encoder button.
+- **T-Deck Plus:** disconnect USB, hold the trackball center/BOOT button while reconnecting USB, then release it after the ROM bootloader enumerates.
+
+Press reset after flashing if the device does not restart automatically.
 
 ## Advanced images
 
