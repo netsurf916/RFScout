@@ -76,8 +76,7 @@ static int64_t days_from_civil( int a_year, unsigned a_month, unsigned a_day )
     const int era = ( a_year >= 0 ? a_year : a_year - 399 ) / 400;
     const unsigned year_of_era = (unsigned)( a_year - era * 400 );
     const int adjusted_month = (int)a_month + ( a_month > 2U ? -3 : 9 );
-    const unsigned day_of_year =
-        ( 153U * (unsigned)adjusted_month + 2U ) / 5U + a_day - 1U;
+    const unsigned day_of_year = ( 153U * (unsigned)adjusted_month + 2U ) / 5U + a_day - 1U;
     const unsigned day_of_era =
         year_of_era * 365U + year_of_era / 4U - year_of_era / 100U + day_of_year;
     return (int64_t)era * 146097LL + (int64_t)day_of_era - 719468LL;
@@ -321,9 +320,8 @@ bool gps_snapshot_get( rfscout_gps_snapshot_t *a_snapshot )
     }
     *a_snapshot = snapshot;
     const int64_t now = esp_timer_get_time();
-    a_snapshot->location_age_ms = location_updated_us > 0
-                                      ? (uint32_t)( ( now - location_updated_us ) / 1000LL )
-                                      : UINT32_MAX;
+    a_snapshot->location_age_ms =
+        location_updated_us > 0 ? (uint32_t)( ( now - location_updated_us ) / 1000LL ) : UINT32_MAX;
     a_snapshot->time_age_ms =
         time_updated_us > 0 ? (uint32_t)( ( now - time_updated_us ) / 1000LL ) : UINT32_MAX;
     return true;
