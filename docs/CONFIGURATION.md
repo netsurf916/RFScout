@@ -26,7 +26,7 @@ Ordinary configuration changes are persisted automatically; the Home UI no longe
 
 A successful save clears the dirty state only after all current app override records and the system record have been written successfully. A failed save leaves the state dirty so the change is not falsely considered durable. Persistence failures must remain diagnosable; callers should not assume an in-memory change has reached flash merely because the setter accepted the value.
 
-The small `time.policy` record and touch calibration record are written directly by their owning services because they are system state outside ordinary `system/config`.
+The small `time.policy` record and touch calibration record are written directly by their owning services because they are system state outside ordinary `system/config`. Time-mode changes use persist-before-publish semantics: if the policy write fails, the new mode is not exposed as accepted runtime state. Manual-time commit also validates and persists Manual policy before changing the wall clock.
 
 ## Defaults and record versions
 
@@ -70,6 +70,8 @@ T-Deck currently exposes only voltage-derived battery percentage. Because no aut
 
 High-temperature protection uses the ESP32-S3 internal temperature sensor, requires five consecutive one-second samples, and rearms 5 C below threshold. High temperature has priority over low battery, but any requested action is still constrained by the semantic power capabilities of the active profile.
 
+On T-Embed, terminal sleep/power-off preparation first persists dirty configuration and quiesces removable-storage users. Active Recorder recording/finalization vetoes the transition rather than being interrupted and reconstructed. The SD volume itself remains mounted for the running firmware lifetime; terminal transitions do not add a separate unmount/remount recovery state machine.
+
 ## Applications and app-owned preferences
 
 App `enabled` state and the preferred startup app are system-owned policy, not hardware availability proof. Home/Device remains enabled. If the preferred startup app is disabled or unavailable on the active board, RFScout falls back for that boot without erasing the preference.
@@ -90,6 +92,8 @@ Internal LittleFS is for bounded records that must survive app exit and reboot. 
 
 SD remains for removable/bulk content such as logs, WAV recordings, captures, and future explicit transfer packages. SD absence is nonfatal to internal configuration, radio/sensor apps that do not require it, and Audio Spectrum. It prevents SD-backed operations such as Recorder file creation/playback and SD logging. Saving device/app configuration never depends on SD availability.
 
+The SD service owns mounting for the lifetime of the running firmware and latches physical media loss unavailable rather than trying to recover a removed card in place. Raw card-status arbitration is an implementation detail of the storage service/logger; ordinary storage consumers do not manage that lock.
+
 Recorder uses `/sdcard/audio/` for 16-bit mono PCM WAV files. Logs remain SD-only. When the GPS service has a fresh valid position at event creation, the log writer snapshots latitude/longitude into that queued record; otherwise location fields are omitted.
 
 ## Time, GPS synchronization, and timezones
@@ -98,7 +102,7 @@ The ESP32 RTC-backed system wall clock is authoritative for displayed time, log 
 
 `device_time` exposes explicit clock validity and source (`invalid`, retained RTC value, manual, or GPS) plus an **Auto / Manual** synchronization policy. The policy is stored separately in the bounded `system/time.policy` record.
 
-In **Manual** mode, the Home Time submenu exposes local Year/Month/Day/Hour/Minute controls. Committing a manual time updates the running system clock and makes Manual the synchronization policy.
+In **Manual** mode, the Home Time submenu exposes local Year/Month/Day/Hour/Minute controls. Committing a manual time validates the requested epoch, persists Manual policy, and only then updates the running system clock. A persistence failure therefore leaves the existing runtime mode/clock unchanged.
 
 In **Auto** mode, manual date/time fields are hidden. A checksum-valid, fix-valid GPS UTC timestamp may update the system clock. The GPS service supplies UTC only; `device_time` continues to own timezone conversion. The current clock remains valid after a successful synchronization even if the live GPS fix later becomes stale; consumers needing current GPS validity must query the GPS service separately.
 
@@ -106,7 +110,7 @@ Timezone selection and 12/24-hour presentation remain ordinary persistent config
 
 ## Deep sleep and session state
 
-Deep sleep loses ordinary RAM, so profiles that support it keep a small RTC-backed session envelope separate from persistent configuration. It currently preserves active-app/input-lock session state; menus, edit state, queued sounds, and active Recorder operations are not reconstructed.
+Deep sleep loses ordinary RAM, so profiles that support it keep a small RTC-backed session envelope separate from persistent configuration. It currently preserves active-app/input-lock session state; menus, edit state, queued sounds, and active Recorder operations are not reconstructed. Because active recording/finalization vetoes terminal sleep, RFScout never relies on reconstructing an interrupted recording after wake.
 
 T-Deck currently advertises no RFScout deep-sleep or physical-power-off capability. Its center/BOOT GPIO is an input provider control, not a semantic power button.
 
