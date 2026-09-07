@@ -9,6 +9,7 @@
 
 #include "app_framework.h"
 #include "app_lifecycle.h"
+#include "app_session.h"
 #include "device_config.h"
 #include "display.h"
 #include "event.h"
@@ -75,7 +76,7 @@ static rfscout_app_runtime_result_t dispatch_runtime( rfscout_app_id_t a_app,
         .type = a_type,
         .now_us = a_now_us,
         .activated = a_activated,
-        .view = display_view(),
+        .view = ( RFSCOUT_APP_RUNTIME_ENTER == a_type ) ? app_session_view() : NULL,
         .input =
             {
                 .type = RFSCOUT_INPUT_NONE,
@@ -233,15 +234,7 @@ esp_err_t app_manager_init( void )
     app_entered_us = 0;
     app_activated = false;
 
-    esp_err_t result = app_lifecycle_init();
-    if( ESP_OK != result )
-    {
-        ESP_LOGE(
-            TAG, "application lifecycle initialization failed: %s", esp_err_to_name( result ) );
-        return result;
-    }
-
-    result = display_init();
+    esp_err_t result = display_init();
     if( ESP_OK != result )
     {
         return result;
@@ -252,6 +245,14 @@ esp_err_t app_manager_init( void )
         rfscout_event_emit( RFSCOUT_EVENT_DISPLAY_PROVIDER_SELECTED,
                             RFSCOUT_EVENT_SOURCE_SYSTEM,
                             (int32_t)display->provider );
+    }
+
+    result = app_lifecycle_init();
+    if( ESP_OK != result )
+    {
+        ESP_LOGE(
+            TAG, "application lifecycle initialization failed: %s", esp_err_to_name( result ) );
+        return result;
     }
 
     result = app_framework_init();
@@ -268,6 +269,14 @@ esp_err_t app_manager_init( void )
     {
         ESP_LOGW( TAG, "configured or retained app unavailable; using Home" );
         active_app = RFSCOUT_APP_DEVICE;
+    }
+    if( app_session_app() != active_app )
+    {
+        result = app_session_ensure( active_app );
+        if( ESP_OK != result )
+        {
+            return result;
+        }
     }
     enter_app( active_app );
     return ESP_OK;
