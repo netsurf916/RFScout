@@ -6,6 +6,7 @@
 */
 
 #include "storage.h"
+#include "storage_internal.h"
 
 #include "board.h"
 #include "board_spi.h"
