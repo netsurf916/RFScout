@@ -1,6 +1,6 @@
 /**
     device_view.c : RFScout Home and Device settings implementation
-    Description: Provides global settings, notification mappings, timezone selection, and semantic feedback.
+    Description: Provides global settings, notification mappings, time policy, timezone selection, and semantic feedback.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -41,32 +41,38 @@
 #define DEVICE_ITEM_ALERT_MODE 8U
 #define DEVICE_ITEM_ALERT_VOLUME 9U
 #define DEVICE_ITEM_CLOCK_FORMAT 10U
-#define DEVICE_ITEM_TIMEZONE 11U
+#define DEVICE_ITEM_TIME 11U
 #define DEVICE_ITEM_STARTUP 12U
-#define DEVICE_ITEM_YEAR 13U
-#define DEVICE_ITEM_MONTH 14U
-#define DEVICE_ITEM_DAY 15U
-#define DEVICE_ITEM_HOUR 16U
-#define DEVICE_ITEM_MINUTE 17U
-#define DEVICE_ITEM_SYSTEM_EVENTS 18U
-#define DEVICE_ITEM_WIFI 19U
-#define DEVICE_ITEM_CC1101 20U
-#define DEVICE_ITEM_NRF24 21U
-#define DEVICE_ITEM_AUDIO 22U
-#define DEVICE_ITEM_THERMAL 23U
-#define DEVICE_ITEM_AUDIO_SPECTRUM 24U
-#define DEVICE_ITEM_LOGGING 25U
-#define DEVICE_ITEM_POWER_BUTTON 26U
-#define DEVICE_ITEM_POWER_POLICY 27U
-#define DEVICE_ITEM_SAVE 28U
-#define DEVICE_ITEM_TOUCH_CALIBRATION 29U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 30U
+#define DEVICE_ITEM_SYSTEM_EVENTS 13U
+#define DEVICE_ITEM_WIFI 14U
+#define DEVICE_ITEM_CC1101 15U
+#define DEVICE_ITEM_NRF24 16U
+#define DEVICE_ITEM_AUDIO 17U
+#define DEVICE_ITEM_THERMAL 18U
+#define DEVICE_ITEM_AUDIO_SPECTRUM 19U
+#define DEVICE_ITEM_LOGGING 20U
+#define DEVICE_ITEM_POWER_BUTTON 21U
+#define DEVICE_ITEM_POWER_POLICY 22U
+#define DEVICE_ITEM_SAVE 23U
+#define DEVICE_ITEM_TOUCH_CALIBRATION 24U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 25U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
 #define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_SAVE + 1U )
 #define DEVICE_ROWS_PER_PAGE 6U
 #define DEVICE_LOG_SHUTDOWN_TIMEOUT_MS 3000U
 #define DEVICE_AUDIO_VOLUME_STEP 10
+
+#define TIME_MENU_BACK 0U
+#define TIME_MENU_MODE 1U
+#define TIME_MENU_TIMEZONE 2U
+#define TIME_MENU_YEAR 3U
+#define TIME_MENU_MONTH 4U
+#define TIME_MENU_DAY 5U
+#define TIME_MENU_HOUR 6U
+#define TIME_MENU_MINUTE 7U
+#define TIME_MENU_AUTO_COUNT 3U
+#define TIME_MENU_MANUAL_COUNT 8U
 
 #define POWER_MENU_BACK 0U
 #define POWER_MENU_SHORT_PRESS 1U
@@ -90,10 +96,19 @@ static bool save_error;
 static bool power_menu_open;
 static unsigned power_selected_item;
 static bool power_policy_menu_open;
+static bool time_menu_open;
+static unsigned time_selected_item;
+static bool time_editing;
 
 static unsigned device_item_count( void )
 {
     return touch_available() ? DEVICE_ITEM_TOUCH_CALIBRATION + 1U : DEVICE_ITEM_BASE_COUNT;
+}
+
+static unsigned time_menu_item_count( void )
+{
+    return RFSCOUT_TIME_MODE_MANUAL == device_time_mode() ? TIME_MENU_MANUAL_COUNT
+                                                          : TIME_MENU_AUTO_COUNT;
 }
 
 static void emit_device_event( rfscout_event_type_t a_type, int32_t a_value )
@@ -123,9 +138,8 @@ static void format_epoch( time_t a_epoch, char *a_output, size_t a_capacity )
 
 static void refresh_edited_time( void )
 {
-    time_t now;
-    (void)device_time_now( &now );
-    if( NULL != localtime_r( &now, &edited_time ) )
+    time_t now = 0;
+    if( device_time_now( &now ) && NULL != localtime_r( &now, &edited_time ) )
     {
         return;
     }
@@ -225,9 +239,9 @@ static bool item_direct_toggle( unsigned a_item )
 
 static bool item_editable( unsigned a_item )
 {
-    return ( DEVICE_ITEM_BACK != a_item ) && ( DEVICE_ITEM_POWER_BUTTON != a_item ) &&
-           ( DEVICE_ITEM_POWER_POLICY != a_item ) && ( DEVICE_ITEM_SAVE != a_item ) &&
-           ( DEVICE_ITEM_TOUCH_CALIBRATION != a_item );
+    return ( DEVICE_ITEM_BACK != a_item ) && ( DEVICE_ITEM_TIME != a_item ) &&
+           ( DEVICE_ITEM_POWER_BUTTON != a_item ) && ( DEVICE_ITEM_POWER_POLICY != a_item ) &&
+           ( DEVICE_ITEM_SAVE != a_item ) && ( DEVICE_ITEM_TOUCH_CALIBRATION != a_item );
 }
 
 static const char *item_label( unsigned a_item )
@@ -256,20 +270,10 @@ static const char *item_label( unsigned a_item )
             return "Alert volume";
         case DEVICE_ITEM_CLOCK_FORMAT:
             return "Clock format";
-        case DEVICE_ITEM_TIMEZONE:
-            return "Timezone";
+        case DEVICE_ITEM_TIME:
+            return "Time";
         case DEVICE_ITEM_STARTUP:
             return "Startup app";
-        case DEVICE_ITEM_YEAR:
-            return "Year";
-        case DEVICE_ITEM_MONTH:
-            return "Month";
-        case DEVICE_ITEM_DAY:
-            return "Day";
-        case DEVICE_ITEM_HOUR:
-            return "Hour";
-        case DEVICE_ITEM_MINUTE:
-            return "Minute";
         case DEVICE_ITEM_SYSTEM_EVENTS:
             return "System Events";
         case DEVICE_ITEM_WIFI:
@@ -343,32 +347,14 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
         case DEVICE_ITEM_CLOCK_FORMAT:
             snprintf( a_value, a_capacity, "%s", config->clock_24h ? "24h" : "12h" );
             break;
-        case DEVICE_ITEM_TIMEZONE:
-        {
-            const device_timezone_t *zone = device_config_timezone();
+        case DEVICE_ITEM_TIME:
             snprintf( a_value,
                       a_capacity,
                       "%s",
-                      ( NULL != zone ) ? zone->label : config->timezone_selected );
+                      RFSCOUT_TIME_MODE_AUTO == device_time_mode() ? "Auto" : "Manual" );
             break;
-        }
         case DEVICE_ITEM_STARTUP:
             snprintf( a_value, a_capacity, "%s", startup_app_name( config->startup_app ) );
-            break;
-        case DEVICE_ITEM_YEAR:
-            snprintf( a_value, a_capacity, "%04d", edited_time.tm_year + 1900 );
-            break;
-        case DEVICE_ITEM_MONTH:
-            snprintf( a_value, a_capacity, "%02d", edited_time.tm_mon + 1 );
-            break;
-        case DEVICE_ITEM_DAY:
-            snprintf( a_value, a_capacity, "%02d", edited_time.tm_mday );
-            break;
-        case DEVICE_ITEM_HOUR:
-            snprintf( a_value, a_capacity, "%02d", edited_time.tm_hour );
-            break;
-        case DEVICE_ITEM_MINUTE:
-            snprintf( a_value, a_capacity, "%02d", edited_time.tm_min );
             break;
         case DEVICE_ITEM_SYSTEM_EVENTS:
             snprintf( a_value,
@@ -456,6 +442,123 @@ static void draw_row( int a_y, unsigned a_item )
     {
         display_draw_text( 232, a_y, value, active ? COLOR_ACCENT : COLOR_DIM, 1U );
     }
+}
+
+static void draw_time_row( int a_y, unsigned a_item )
+{
+    const bool active = time_selected_item == a_item;
+    const uint16_t color = active ? COLOR_SELECTED : COLOR_TEXT;
+    const char *label = "";
+    char value[ 48 ] = "";
+    switch( a_item )
+    {
+        case TIME_MENU_BACK:
+            label = "Back";
+            break;
+        case TIME_MENU_MODE:
+        {
+            label = "Mode";
+            rfscout_time_status_t status;
+            device_time_status( &status );
+            if( RFSCOUT_TIME_MODE_MANUAL == status.mode )
+            {
+                snprintf( value, sizeof( value ), "Manual" );
+            }
+            else if( status.valid && RFSCOUT_TIME_SOURCE_GPS == status.source )
+            {
+                snprintf( value, sizeof( value ), "Auto / GPS" );
+            }
+            else
+            {
+                snprintf( value, sizeof( value ), "Auto / Waiting" );
+            }
+            break;
+        }
+        case TIME_MENU_TIMEZONE:
+        {
+            label = "Timezone";
+            const device_timezone_t *zone = device_config_timezone();
+            snprintf( value,
+                      sizeof( value ),
+                      "%s",
+                      NULL != zone ? zone->label : device_config_get()->timezone_selected );
+            break;
+        }
+        case TIME_MENU_YEAR:
+            label = "Year";
+            snprintf( value, sizeof( value ), "%04d", edited_time.tm_year + 1900 );
+            break;
+        case TIME_MENU_MONTH:
+            label = "Month";
+            snprintf( value, sizeof( value ), "%02d", edited_time.tm_mon + 1 );
+            break;
+        case TIME_MENU_DAY:
+            label = "Day";
+            snprintf( value, sizeof( value ), "%02d", edited_time.tm_mday );
+            break;
+        case TIME_MENU_HOUR:
+            label = "Hour";
+            snprintf( value, sizeof( value ), "%02d", edited_time.tm_hour );
+            break;
+        case TIME_MENU_MINUTE:
+            label = "Minute";
+            snprintf( value, sizeof( value ), "%02d", edited_time.tm_min );
+            break;
+        default:
+            break;
+    }
+
+    if( active )
+    {
+        display_draw_text( UI_LAYOUT_LEFT_X,
+                           a_y,
+                           time_editing && a_item >= TIME_MENU_TIMEZONE ? ">*" : ">",
+                           color,
+                           1U );
+    }
+    display_draw_text( UI_LAYOUT_LABEL_X, a_y, label, color, 1U );
+    if( '\0' != value[ 0 ] )
+    {
+        display_draw_text( 214, a_y, value, active ? COLOR_ACCENT : COLOR_DIM, 1U );
+    }
+}
+
+static void render_time_menu( void )
+{
+    const unsigned item_count = time_menu_item_count();
+    if( time_selected_item >= item_count )
+    {
+        time_selected_item = item_count - 1U;
+        time_editing = false;
+    }
+    display_clear( COLOR_BACKGROUND );
+    ui_chrome_draw( "TIME", COLOR_DIM );
+    const unsigned page_start = ( time_selected_item / DEVICE_ROWS_PER_PAGE ) * DEVICE_ROWS_PER_PAGE;
+    for( unsigned row = 0U; row < DEVICE_ROWS_PER_PAGE; ++row )
+    {
+        const unsigned item = page_start + row;
+        if( item >= item_count )
+        {
+            break;
+        }
+        draw_time_row( UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT, item );
+    }
+    char footer[ 64 ];
+    snprintf( footer,
+              sizeof( footer ),
+              "%u/%u  %s",
+              (unsigned)( time_selected_item + 1U ),
+              item_count,
+              time_editing ? "TURN CHANGE / CENTER DONE"
+                           : ( TIME_MENU_MODE == time_selected_item ? "CENTER CYCLE"
+                                                                   : "TURN SELECT / CENTER ENTER" ) );
+    display_draw_text(
+        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, footer, time_editing ? COLOR_ACCENT : COLOR_DIM, 1U );
+    if( save_error )
+    {
+        display_draw_text( 246, UI_LAYOUT_FOOTER_Y, "SAVE ERROR", COLOR_ERROR, 1U );
+    }
+    (void)display_present();
 }
 
 static power_action_t next_power_action( power_action_t a_current, bool a_long_press )
@@ -564,6 +667,11 @@ void device_view_landing( void )
 
 void device_view_render( void )
 {
+    if( time_menu_open )
+    {
+        render_time_menu();
+        return;
+    }
     if( power_policy_menu_open )
     {
         power_policy_view_render();
@@ -615,6 +723,9 @@ void device_view_enter( void )
     power_menu_open = false;
     power_selected_item = POWER_MENU_BACK;
     power_policy_menu_open = false;
+    time_menu_open = false;
+    time_selected_item = TIME_MENU_BACK;
+    time_editing = false;
     refresh_edited_time();
     device_view_render();
 }
@@ -636,6 +747,22 @@ static void move_selection( int a_delta )
         selected_item = (unsigned)item;
         emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
     }
+}
+
+static void move_time_selection( int a_delta )
+{
+    const int item_count = (int)time_menu_item_count();
+    int item = (int)time_selected_item + ( ( a_delta > 0 ) ? 1 : -1 );
+    if( item < 0 )
+    {
+        item = item_count - 1;
+    }
+    if( item >= item_count )
+    {
+        item = 0;
+    }
+    time_selected_item = (unsigned)item;
+    emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
 }
 
 static void move_power_selection( int a_delta )
@@ -922,7 +1049,7 @@ static void adjust_time_field( unsigned a_item, int a_delta )
     const struct tm before = edited_time;
     switch( a_item )
     {
-        case DEVICE_ITEM_YEAR:
+        case TIME_MENU_YEAR:
             edited_time.tm_year += direction;
             if( edited_time.tm_year < 120 )
             {
@@ -933,10 +1060,10 @@ static void adjust_time_field( unsigned a_item, int a_delta )
                 edited_time.tm_year = 200;
             }
             break;
-        case DEVICE_ITEM_MONTH:
+        case TIME_MENU_MONTH:
             edited_time.tm_mon = ( edited_time.tm_mon + direction + 12 ) % 12;
             break;
-        case DEVICE_ITEM_DAY:
+        case TIME_MENU_DAY:
             edited_time.tm_mday += direction;
             if( edited_time.tm_mday < 1 )
             {
@@ -947,10 +1074,10 @@ static void adjust_time_field( unsigned a_item, int a_delta )
                 edited_time.tm_mday = 1;
             }
             break;
-        case DEVICE_ITEM_HOUR:
+        case TIME_MENU_HOUR:
             edited_time.tm_hour = ( edited_time.tm_hour + direction + 24 ) % 24;
             break;
-        case DEVICE_ITEM_MINUTE:
+        case TIME_MENU_MINUTE:
             edited_time.tm_min = ( edited_time.tm_min + direction + 60 ) % 60;
             break;
         default:
@@ -979,7 +1106,7 @@ static bool manual_time_round_trip_valid( const struct tm *a_requested, time_t a
 static bool commit_manual_time( void )
 {
     time_t old_epoch = 0;
-    (void)device_time_now( &old_epoch );
+    const bool old_valid = device_time_now( &old_epoch );
     struct tm requested = edited_time;
     requested.tm_sec = 0;
     requested.tm_isdst = -1;
@@ -996,13 +1123,108 @@ static bool commit_manual_time( void )
     edited_time = conversion;
     char old_text[ 32 ];
     char new_text[ 32 ];
-    format_epoch( old_epoch, old_text, sizeof( old_text ) );
+    if( old_valid )
+    {
+        format_epoch( old_epoch, old_text, sizeof( old_text ) );
+    }
+    else
+    {
+        snprintf( old_text, sizeof( old_text ), "invalid" );
+    }
     format_epoch( new_epoch, new_text, sizeof( new_text ) );
     char detail[ 128 ];
     snprintf( detail, sizeof( detail ), "old=%s new=%s source=manual", old_text, new_text );
     (void)log_writer_app_record( "TIME", detail );
     save_error = false;
     return true;
+}
+
+static void toggle_time_mode( void )
+{
+    const rfscout_time_mode_t old_mode = device_time_mode();
+    const rfscout_time_mode_t new_mode =
+        RFSCOUT_TIME_MODE_AUTO == old_mode ? RFSCOUT_TIME_MODE_MANUAL : RFSCOUT_TIME_MODE_AUTO;
+    const esp_err_t result = device_time_set_mode( new_mode );
+    if( ESP_OK != result )
+    {
+        save_error = true;
+        emit_device_event( RFSCOUT_EVENT_ERROR, (int32_t)result );
+        return;
+    }
+    save_error = false;
+    if( RFSCOUT_TIME_MODE_MANUAL == new_mode )
+    {
+        refresh_edited_time();
+    }
+    log_config_change( "time.mode",
+                       RFSCOUT_TIME_MODE_AUTO == old_mode ? "auto" : "manual",
+                       RFSCOUT_TIME_MODE_AUTO == new_mode ? "auto" : "manual" );
+    emit_device_event( RFSCOUT_EVENT_NAVIGATE, 1 );
+}
+
+static bool time_menu_input( bool a_pressed, int a_delta )
+{
+    if( a_pressed )
+    {
+        if( TIME_MENU_BACK == time_selected_item && !time_editing )
+        {
+            time_menu_open = false;
+            time_selected_item = TIME_MENU_BACK;
+            emit_device_event( RFSCOUT_EVENT_BACK, 0 );
+            device_view_render();
+            return true;
+        }
+        if( TIME_MENU_MODE == time_selected_item && !time_editing )
+        {
+            toggle_time_mode();
+            if( time_selected_item >= time_menu_item_count() )
+            {
+                time_selected_item = time_menu_item_count() - 1U;
+            }
+            render_time_menu();
+            return false;
+        }
+
+        bool accepted = true;
+        if( time_editing && time_selected_item >= TIME_MENU_YEAR )
+        {
+            accepted = commit_manual_time();
+        }
+        if( TIME_MENU_TIMEZONE == time_selected_item ||
+            ( RFSCOUT_TIME_MODE_MANUAL == device_time_mode() && time_selected_item >= TIME_MENU_YEAR ) )
+        {
+            time_editing = !time_editing;
+            if( accepted )
+            {
+                emit_device_event( time_editing ? RFSCOUT_EVENT_ENTER : RFSCOUT_EVENT_ACTIVATE,
+                                   time_editing ? 1 : 0 );
+            }
+        }
+        render_time_menu();
+        return false;
+    }
+
+    if( 0 == a_delta )
+    {
+        return false;
+    }
+    if( time_editing )
+    {
+        if( TIME_MENU_TIMEZONE == time_selected_item )
+        {
+            adjust_timezone( a_delta );
+        }
+        else if( time_selected_item >= TIME_MENU_YEAR )
+        {
+            adjust_time_field( time_selected_item, a_delta );
+        }
+    }
+    else
+    {
+        move_time_selection( a_delta );
+    }
+    render_time_menu();
+    return false;
 }
 
 static void toggle_logging( void )
@@ -1151,17 +1373,9 @@ static void adjust_selected( int a_delta )
                                !old_value ? 1 : 0 );
         }
     }
-    else if( DEVICE_ITEM_TIMEZONE == selected_item )
-    {
-        adjust_timezone( a_delta );
-    }
     else if( DEVICE_ITEM_STARTUP == selected_item )
     {
         adjust_startup_app( a_delta );
-    }
-    else if( ( selected_item >= DEVICE_ITEM_YEAR ) && ( selected_item <= DEVICE_ITEM_MINUTE ) )
-    {
-        adjust_time_field( selected_item, a_delta );
     }
     else if( DEVICE_ITEM_SYSTEM_EVENTS == selected_item )
     {
@@ -1204,6 +1418,14 @@ static void adjust_selected( int a_delta )
 
 bool device_view_back( void )
 {
+    if( time_menu_open )
+    {
+        time_menu_open = false;
+        time_selected_item = TIME_MENU_BACK;
+        time_editing = false;
+        device_view_render();
+        return true;
+    }
     if( power_policy_menu_open )
     {
         power_policy_menu_open = false;
@@ -1223,6 +1445,11 @@ bool device_view_back( void )
 
 bool device_view_input( bool a_pressed, int a_delta )
 {
+    if( time_menu_open )
+    {
+        (void)time_menu_input( a_pressed, a_delta );
+        return false;
+    }
     if( power_policy_menu_open )
     {
         if( power_policy_view_input( a_pressed, a_delta ) )
@@ -1264,6 +1491,16 @@ bool device_view_input( bool a_pressed, int a_delta )
             emit_device_event( RFSCOUT_EVENT_BACK, 0 );
             return true;
         }
+        if( ( DEVICE_ITEM_TIME == selected_item ) && !editing )
+        {
+            time_menu_open = true;
+            time_selected_item = TIME_MENU_BACK;
+            time_editing = false;
+            refresh_edited_time();
+            emit_device_event( RFSCOUT_EVENT_ENTER, 1 );
+            render_time_menu();
+            return false;
+        }
         if( ( DEVICE_ITEM_POWER_BUTTON == selected_item ) && !editing )
         {
             power_menu_open = true;
@@ -1302,20 +1539,11 @@ bool device_view_input( bool a_pressed, int a_delta )
             return false;
         }
 
-        bool accepted = true;
-        if( editing && ( selected_item >= DEVICE_ITEM_YEAR ) &&
-            ( selected_item <= DEVICE_ITEM_MINUTE ) )
-        {
-            accepted = commit_manual_time();
-        }
         if( item_editable( selected_item ) )
         {
             editing = !editing;
-            if( accepted )
-            {
-                emit_device_event( editing ? RFSCOUT_EVENT_ENTER : RFSCOUT_EVENT_ACTIVATE,
-                                   editing ? 1 : 0 );
-            }
+            emit_device_event( editing ? RFSCOUT_EVENT_ENTER : RFSCOUT_EVENT_ACTIVATE,
+                               editing ? 1 : 0 );
         }
         device_view_render();
         return false;
