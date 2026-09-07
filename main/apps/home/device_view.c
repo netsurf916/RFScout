@@ -533,7 +533,8 @@ static void render_time_menu( void )
     }
     display_clear( COLOR_BACKGROUND );
     ui_chrome_draw( "TIME", COLOR_DIM );
-    const unsigned page_start = ( time_selected_item / DEVICE_ROWS_PER_PAGE ) * DEVICE_ROWS_PER_PAGE;
+    const unsigned page_start =
+        ( time_selected_item / DEVICE_ROWS_PER_PAGE ) * DEVICE_ROWS_PER_PAGE;
     for( unsigned row = 0U; row < DEVICE_ROWS_PER_PAGE; ++row )
     {
         const unsigned item = page_start + row;
@@ -549,9 +550,10 @@ static void render_time_menu( void )
               "%u/%u  %s",
               (unsigned)( time_selected_item + 1U ),
               item_count,
-              time_editing ? "TURN CHANGE / CENTER DONE"
-                           : ( TIME_MENU_MODE == time_selected_item ? "CENTER CYCLE"
-                                                                   : "TURN SELECT / CENTER ENTER" ) );
+              time_editing
+                  ? "TURN CHANGE / CENTER DONE"
+                  : ( TIME_MENU_MODE == time_selected_item ? "CENTER CYCLE"
+                                                           : "TURN SELECT / CENTER ENTER" ) );
     display_draw_text(
         UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, footer, time_editing ? COLOR_ACCENT : COLOR_DIM, 1U );
     if( save_error )
@@ -1191,7 +1193,8 @@ static bool time_menu_input( bool a_pressed, int a_delta )
             accepted = commit_manual_time();
         }
         if( TIME_MENU_TIMEZONE == time_selected_item ||
-            ( RFSCOUT_TIME_MODE_MANUAL == device_time_mode() && time_selected_item >= TIME_MENU_YEAR ) )
+            ( RFSCOUT_TIME_MODE_MANUAL == device_time_mode() &&
+              time_selected_item >= TIME_MENU_YEAR ) )
         {
             time_editing = !time_editing;
             if( accepted )
