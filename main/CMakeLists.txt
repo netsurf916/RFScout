@@ -2,21 +2,6 @@ set(HOME_LOGO_SOURCE "${CMAKE_CURRENT_LIST_DIR}/../assets/logo.png")
 set(HOME_LOGO_GENERATOR "${CMAKE_CURRENT_LIST_DIR}/../tools/generate_home_logo.py")
 set(HOME_LOGO_HEADER "${CMAKE_CURRENT_BINARY_DIR}/home_logo_bitmap.h")
 
-# Board targets are selected during the normal configure pass. ESP-IDF also
-# evaluates component CMake files in script mode while discovering component
-# requirements; project Kconfig values are not available during that pass, so
-# use the established T-Embed target as a discovery placeholder and validate the
-# actual selection once normal configuration is active.
-if(CMAKE_SCRIPT_MODE_FILE)
-    set(RFSCOUT_BOARD_DIR "${CMAKE_CURRENT_LIST_DIR}/boards/tembed_cc1101_plus")
-elseif(CONFIG_RFSCOUT_BOARD_TEMBED_CC1101_PLUS)
-    set(RFSCOUT_BOARD_DIR "${CMAKE_CURRENT_LIST_DIR}/boards/tembed_cc1101_plus")
-elseif(CONFIG_RFSCOUT_BOARD_TDECK)
-    set(RFSCOUT_BOARD_DIR "${CMAKE_CURRENT_LIST_DIR}/boards/tdeck")
-else()
-    message(FATAL_ERROR "No supported RFScout board target selected")
-endif()
-
 if(NOT CMAKE_SCRIPT_MODE_FILE)
     set_property(
         DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
@@ -113,6 +98,7 @@ idf_component_register(
         "device_time.c"
         "platform.c"
         "session_state.c"
+        "services/board/board.c"
         "services/board/board_spi.c"
         "services/board/board_i2c.c"
         "services/input/input.c"
@@ -141,7 +127,7 @@ idf_component_register(
         "services/display/display_brightness.c"
         "services/display/display_idle.c"
         "services/display/ui_present.c"
-    INCLUDE_DIRS ${RFSCOUT_INCLUDE_DIRS} "${RFSCOUT_BOARD_DIR}" "${CMAKE_CURRENT_BINARY_DIR}"
+    INCLUDE_DIRS ${RFSCOUT_INCLUDE_DIRS} "${CMAKE_CURRENT_BINARY_DIR}"
     PRIV_REQUIRES bt cjson esp_driver_ledc esp_driver_tsens mbedtls
     REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_timer driver esp_driver_i2c esp_driver_i2s esp_driver_pcnt esp_lcd fatfs sdmmc
 )

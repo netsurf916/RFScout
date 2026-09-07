@@ -160,8 +160,18 @@ void app_main( void )
     }
     ESP_ERROR_CHECK( result );
 
+    result = platform_init();
+    if( ESP_OK != result )
+    {
+        ESP_LOGE( TAG,
+                  "unsupported hardware profile; leaving ESP32-S3 awake and idle for recovery flashing" );
+        while( true )
+        {
+            vTaskDelay( pdMS_TO_TICKS( 1000U ) );
+        }
+    }
+
     ESP_ERROR_CHECK( observation_store_init() );
-    ESP_ERROR_CHECK( platform_init() );
     ESP_ERROR_CHECK( system_events_init() );
     ESP_ERROR_CHECK( input_init() );
     ESP_ERROR_CHECK( power_init() );
@@ -259,7 +269,6 @@ void app_main( void )
 
     while( true )
     {
-        /* Display wake interception runs before semantic input dispatch. */
         display_idle_poll();
         input_poll();
 
