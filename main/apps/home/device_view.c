@@ -21,6 +21,7 @@
 #include "power.h"
 #include "power_policy_view.h"
 #include "storage.h"
+#include "touch.h"
 #include "ui_chrome.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
@@ -58,10 +59,11 @@
 #define DEVICE_ITEM_POWER_BUTTON 26U
 #define DEVICE_ITEM_POWER_POLICY 27U
 #define DEVICE_ITEM_SAVE 28U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 29U
+#define DEVICE_ITEM_TOUCH_CALIBRATION 29U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 30U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
-#define DEVICE_ITEM_COUNT ( DEVICE_ITEM_SAVE + 1U )
+#define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_SAVE + 1U )
 #define DEVICE_ROWS_PER_PAGE 6U
 #define DEVICE_LOG_SHUTDOWN_TIMEOUT_MS 3000U
 #define DEVICE_AUDIO_VOLUME_STEP 10
@@ -88,6 +90,11 @@ static bool save_error;
 static bool power_menu_open;
 static unsigned power_selected_item;
 static bool power_policy_menu_open;
+
+static unsigned device_item_count( void )
+{
+    return touch_available() ? DEVICE_ITEM_TOUCH_CALIBRATION + 1U : DEVICE_ITEM_BASE_COUNT;
+}
 
 static void emit_device_event( rfscout_event_type_t a_type, int32_t a_value )
 {
@@ -219,7 +226,8 @@ static bool item_direct_toggle( unsigned a_item )
 static bool item_editable( unsigned a_item )
 {
     return ( DEVICE_ITEM_BACK != a_item ) && ( DEVICE_ITEM_POWER_BUTTON != a_item ) &&
-           ( DEVICE_ITEM_POWER_POLICY != a_item ) && ( DEVICE_ITEM_SAVE != a_item );
+           ( DEVICE_ITEM_POWER_POLICY != a_item ) && ( DEVICE_ITEM_SAVE != a_item ) &&
+           ( DEVICE_ITEM_TOUCH_CALIBRATION != a_item );
 }
 
 static const char *item_label( unsigned a_item )
@@ -284,6 +292,8 @@ static const char *item_label( unsigned a_item )
             return "Power policy";
         case DEVICE_ITEM_SAVE:
             return "Save config";
+        case DEVICE_ITEM_TOUCH_CALIBRATION:
+            return "Touch calibration";
         default:
             if( ( a_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
                 ( a_item <= DEVICE_ITEM_NOTIFICATION_LAST ) )
@@ -397,6 +407,14 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             break;
         case DEVICE_ITEM_SAVE:
             snprintf( a_value, a_capacity, "Internal" );
+            break;
+        case DEVICE_ITEM_TOUCH_CALIBRATION:
+            snprintf( a_value,
+                      a_capacity,
+                      "%s",
+                      touch_calibration_active()
+                          ? "Running"
+                          : ( touch_calibration_valid() ? "Ready" : "Required" ) );
             break;
         default:
             if( ( a_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
@@ -557,13 +575,14 @@ void device_view_render( void )
         return;
     }
 
+    const unsigned item_count = device_item_count();
     display_clear( COLOR_BACKGROUND );
     ui_chrome_draw( "DEVICE SETTINGS", COLOR_DIM );
     const unsigned page_start = ( selected_item / DEVICE_ROWS_PER_PAGE ) * DEVICE_ROWS_PER_PAGE;
     for( unsigned row = 0U; row < DEVICE_ROWS_PER_PAGE; ++row )
     {
         const unsigned item = page_start + row;
-        if( item >= DEVICE_ITEM_COUNT )
+        if( item >= item_count )
         {
             break;
         }
@@ -575,7 +594,7 @@ void device_view_render( void )
               sizeof( footer ),
               "%u/%u  %s",
               (unsigned)( selected_item + 1U ),
-              (unsigned)DEVICE_ITEM_COUNT,
+              item_count,
               editing ? "TURN CHANGE / CENTER DONE"
                       : ( item_direct_toggle( selected_item ) ? "CENTER CYCLE"
                                                               : "TURN SELECT / CENTER ENTER" ) );
@@ -602,12 +621,13 @@ void device_view_enter( void )
 
 static void move_selection( int a_delta )
 {
+    const int item_count = (int)device_item_count();
     int item = (int)selected_item + ( ( a_delta > 0 ) ? 1 : -1 );
     if( item < 0 )
     {
-        item = (int)DEVICE_ITEM_COUNT - 1;
+        item = item_count - 1;
     }
-    if( item >= (int)DEVICE_ITEM_COUNT )
+    if( item >= item_count )
     {
         item = 0;
     }
@@ -1257,6 +1277,14 @@ bool device_view_input( bool a_pressed, int a_delta )
             power_policy_menu_open = true;
             emit_device_event( RFSCOUT_EVENT_ENTER, 1 );
             power_policy_view_enter();
+            return false;
+        }
+        if( ( DEVICE_ITEM_TOUCH_CALIBRATION == selected_item ) && !editing )
+        {
+            const esp_err_t result = touch_calibration_begin();
+            emit_device_event( ESP_OK == result ? RFSCOUT_EVENT_ACTIVATE : RFSCOUT_EVENT_ERROR,
+                               ESP_OK == result ? 0 : (int32_t)result );
+            device_view_render();
             return false;
         }
         if( ( DEVICE_ITEM_SAVE == selected_item ) && !editing )

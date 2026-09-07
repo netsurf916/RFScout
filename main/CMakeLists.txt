@@ -21,14 +21,6 @@ if(NOT HOME_LOGO_RESULT EQUAL 0)
     message(FATAL_ERROR "Failed to generate RFScout Home logo bitmap")
 endif()
 
-if(NOT CMAKE_SCRIPT_MODE_FILE)
-    set_source_files_properties(
-        "apps/home/device_view.c"
-        PROPERTIES COMPILE_DEFINITIONS
-            "device_view_landing=device_view_landing_procedural;device_view_enter=device_view_enter_original;device_view_render=device_view_render_original;device_view_back=device_view_back_original;device_view_input=device_view_input_original"
-    )
-endif()
-
 set(RFSCOUT_INCLUDE_DIRS
     "."
     "apps"
@@ -65,7 +57,6 @@ idf_component_register(
         "apps/system_events/system_events_view.c"
         "apps/home/app.c"
         "apps/home/device_view.c"
-        "apps/home/device_view_touch.c"
         "apps/home/home_landing.c"
         "apps/wifi_ble/app.c"
         "apps/wifi_ble/ui.c"
