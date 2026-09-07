@@ -21,12 +21,12 @@ clang-format-18 --version
 
 ## ESP-IDF
 
-CI tracks ESP-IDF 6.1. A typical local installation is:
+CI tracks ESP-IDF 6.2. A typical local installation is:
 
 ```sh
 mkdir -p ~/esp
 cd ~/esp
-git clone --recursive --branch release/v6.1 https://github.com/espressif/esp-idf.git
+git clone --recursive --branch release/v6.2 https://github.com/espressif/esp-idf.git
 cd esp-idf
 ./install.sh esp32s3
 ```
