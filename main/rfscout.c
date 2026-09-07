@@ -18,6 +18,7 @@
 #include "display_idle.h"
 #include "event.h"
 #include "feedback.h"
+#include "gps.h"
 #include "input.h"
 #include "log_writer.h"
 #include "navigation_bar.h"
@@ -247,6 +248,11 @@ void app_main( void )
     }
 
     ESP_ERROR_CHECK( device_time_init() );
+    result = gps_init();
+    if( ( ESP_OK != result ) && ( ESP_ERR_NOT_SUPPORTED != result ) )
+    {
+        ESP_LOGW( TAG, "GPS service unavailable: %s", esp_err_to_name( result ) );
+    }
     ESP_ERROR_CHECK( radio_monitor_init( on_observation ) );
     ESP_ERROR_CHECK( ble_monitor_init( on_observation ) );
 
@@ -292,6 +298,7 @@ void app_main( void )
             display_invalidate();
         }
         navigation_bar_poll();
+        gps_poll();
 
         battery_poll();
         power_policy_poll();
