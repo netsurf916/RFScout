@@ -55,8 +55,15 @@ typedef struct
 } battery_soc_point_t;
 
 static const battery_soc_point_t LIPO_SOC_CURVE[] = {
-    { 3300U, 0U },  { 3500U, 5U },  { 3600U, 12U }, { 3700U, 30U }, { 3800U, 50U },
-    { 3900U, 65U }, { 4000U, 80U }, { 4100U, 90U }, { 4200U, 100U },
+    { 3300U, 0U },
+    { 3500U, 5U },
+    { 3600U, 12U },
+    { 3700U, 30U },
+    { 3800U, 50U },
+    { 3900U, 65U },
+    { 4000U, 80U },
+    { 4100U, 90U },
+    { 4200U, 100U },
 };
 
 static const char *TAG = "battery";
@@ -277,13 +284,12 @@ static esp_err_t sample_adc_battery( battery_status_t *a_status )
     }
     else
     {
-        filtered_voltage_mv =
-            ( filtered_voltage_mv * BATTERY_ADC_FILTER_NUMERATOR + battery_mv ) /
-            BATTERY_ADC_FILTER_DENOMINATOR;
+        filtered_voltage_mv = ( filtered_voltage_mv * BATTERY_ADC_FILTER_NUMERATOR + battery_mv ) /
+                              BATTERY_ADC_FILTER_DENOMINATOR;
     }
 
-    a_status->voltage_mv = (uint16_t)( filtered_voltage_mv > UINT16_MAX ? UINT16_MAX
-                                                                            : filtered_voltage_mv );
+    a_status->voltage_mv =
+        (uint16_t)( filtered_voltage_mv > UINT16_MAX ? UINT16_MAX : filtered_voltage_mv );
     a_status->percentage = estimate_soc( a_status->voltage_mv );
     a_status->available = true;
     a_status->percentage_fresh = true;
@@ -346,7 +352,8 @@ static void refresh_i2c_battery( battery_status_t *a_status )
                 ( BQ25896_BUS_NO_INPUT != bus_status ) && ( BQ25896_BUS_OTG != bus_status );
             a_status->external_power =
                 valid_input || ( 0U != ( charger_status & BQ25896_POWER_GOOD_BIT ) );
-            a_status->charge_state = charger_charge_state( charger_status, a_status->external_power );
+            a_status->charge_state =
+                charger_charge_state( charger_status, a_status->external_power );
             a_status->charger_available = true;
             a_status->charger_fresh = true;
             charger_sampled = true;
