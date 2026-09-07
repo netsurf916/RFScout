@@ -34,7 +34,8 @@ static bool app_visible( rfscout_app_id_t a_app )
     {
         return true;
     }
-    return device_config_app_enabled( a_app ) && app_framework_check_available( a_app );
+    return device_config_app_enabled( a_app ) &&
+           ( RFSCOUT_APP_AVAILABILITY_AVAILABLE == app_framework_availability( a_app ) );
 }
 
 static void make_label( const char *a_name, char a_label[ NAV_LABEL_MAX + 1U ] )
@@ -108,9 +109,8 @@ void navigation_bar_draw( void )
     {
         const rfscout_app_id_t app = visible[ index ];
         const int x = view.x + (int)index * tab_width;
-        const int width = ( index + 1U == visible_count )
-                              ? ( view.x + (int)view.width - x )
-                              : tab_width;
+        const int width =
+            ( index + 1U == visible_count ) ? ( view.x + (int)view.width - x ) : tab_width;
         const bool active = app == app_manager_current();
         if( active )
         {
@@ -127,11 +127,8 @@ void navigation_bar_draw( void )
         const int text_width = (int)strlen( label ) * NAV_TEXT_CELL_WIDTH;
         const int text_x = x + ( width - text_width ) / 2;
         const int text_y = view.y + ( tab_height - 7 ) / 2;
-        display_draw_text( text_x,
-                           text_y,
-                           label,
-                           active ? theme->text : theme->secondary,
-                           NAV_TEXT_SCALE );
+        display_draw_text(
+            text_x, text_y, label, active ? theme->text : theme->secondary, NAV_TEXT_SCALE );
     }
 
     if( view.height > (uint16_t)tab_height )

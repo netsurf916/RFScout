@@ -14,6 +14,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
 #include "freertos/task.h"
 
 #include <stddef.h>
@@ -37,6 +38,7 @@ static i2c_master_dev_handle_t gt911;
 static bool available;
 static rfscout_touch_sample_t latest;
 static bool have_sample;
+static portMUX_TYPE sample_lock = portMUX_INITIALIZER_UNLOCKED;
 static TaskHandle_t touch_task_handle;
 static int64_t last_diagnostic_log_us;
 
@@ -49,15 +51,15 @@ static esp_err_t read_register( uint16_t a_register, uint8_t *a_data, size_t a_l
 static esp_err_t write_u8( uint16_t a_register, uint8_t a_value )
 {
     const uint8_t data[ 3 ] = {
-        (uint8_t)( a_register >> 8U ), (uint8_t)a_register, a_value,
+        (uint8_t)( a_register >> 8U ),
+        (uint8_t)a_register,
+        a_value,
     };
     return board_i2c_transmit( gt911, data, sizeof( data ) );
 }
 
-static void apply_reference_transform( uint16_t a_raw_x,
-                                       uint16_t a_raw_y,
-                                       uint16_t *a_x,
-                                       uint16_t *a_y )
+static void
+apply_reference_transform( uint16_t a_raw_x, uint16_t a_raw_y, uint16_t *a_x, uint16_t *a_y )
 {
     /* LILYGO's T-Deck reference uses a 240x320 GT911 coordinate space, then
        swaps X/Y and mirrors Y to match the 320x240 landscape display. This is
@@ -76,6 +78,14 @@ static void apply_reference_transform( uint16_t a_raw_x,
     *a_y = y;
 }
 
+static void publish_sample( const rfscout_touch_sample_t *a_sample )
+{
+    portENTER_CRITICAL( &sample_lock );
+    latest = *a_sample;
+    have_sample = true;
+    portEXIT_CRITICAL( &sample_lock );
+}
+
 void touch_poll( void )
 {
     if( !available || ( NULL == gt911 ) )
@@ -90,8 +100,12 @@ void touch_poll( void )
         return;
     }
 
+    rfscout_touch_sample_t sample;
+    portENTER_CRITICAL( &sample_lock );
+    sample = latest;
+    portEXIT_CRITICAL( &sample_lock );
+
     const uint8_t count = status & GT911_STATUS_COUNT_MASK;
-    rfscout_touch_sample_t sample = latest;
     sample.point_count = count <= GT911_MAX_POINTS ? count : GT911_MAX_POINTS;
     sample.pressed = sample.point_count > 0U;
     ++sample.sequence;
@@ -105,8 +119,7 @@ void touch_poll( void )
             sample.raw_y = (uint16_t)point[ 3 ] | ( (uint16_t)point[ 4 ] << 8U );
             apply_reference_transform(
                 sample.raw_x, sample.raw_y, &sample.reference_x, &sample.reference_y );
-            latest = sample;
-            have_sample = true;
+            publish_sample( &sample );
 
             const int64_t now_us = esp_timer_get_time();
             if( now_us - last_diagnostic_log_us >= TOUCH_DIAGNOSTIC_LOG_US )
@@ -124,8 +137,7 @@ void touch_poll( void )
     }
     else
     {
-        latest = sample;
-        have_sample = true;
+        publish_sample( &sample );
     }
 
     (void)write_u8( GT911_REG_STATUS, 0U );
@@ -153,8 +165,10 @@ esp_err_t touch_init( void )
     }
 
     gt911 = NULL;
+    portENTER_CRITICAL( &sample_lock );
     have_sample = false;
     memset( &latest, 0, sizeof( latest ) );
+    portEXIT_CRITICAL( &sample_lock );
 
     uint16_t address = GT911_ADDRESS_PRIMARY;
     esp_err_t result = board_i2c_probe( address );
@@ -198,8 +212,9 @@ esp_err_t touch_init( void )
     }
 
     ESP_LOGI( TAG,
-              "GT911 ready at 0x%02X product=%.4s irq=GPIO%d; raw touch is diagnostic only until calibrated",
-              address,
+              "GT911 ready at 0x%02X product=%.4s irq=GPIO%d; raw touch is diagnostic only until "
+              "calibrated",
+              (unsigned)address,
               (const char *)product_id,
               RFSCOUT_BOARD_TOUCH_IRQ_PIN );
     return ESP_OK;
@@ -212,10 +227,17 @@ bool touch_available( void )
 
 bool touch_sample_get( rfscout_touch_sample_t *a_sample )
 {
-    if( ( NULL == a_sample ) || !have_sample )
+    if( NULL == a_sample )
     {
         return false;
     }
-    *a_sample = latest;
-    return true;
+
+    portENTER_CRITICAL( &sample_lock );
+    const bool result = have_sample;
+    if( result )
+    {
+        *a_sample = latest;
+    }
+    portEXIT_CRITICAL( &sample_lock );
+    return result;
 }
