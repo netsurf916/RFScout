@@ -22,10 +22,17 @@
  * @brief Mount the SD card on the board's already initialized shared SPI bus.
  * @return ESP_OK on success or the underlying ESP-IDF storage error.
  * @note Failure is nonfatal to the rest of RFScout. A successful mount remains owned by the
- *       platform for the lifetime of the running firmware; power transitions quiesce filesystem
- *       users rather than unmounting/remounting the volume.
+ *       platform for the lifetime of the running firmware.
  */
 esp_err_t storage_init( void );
+
+/**
+ * @brief Prepare platform-owned SD storage for a terminal power transition.
+ * @note Filesystem users must already be quiesced. The mounted VFS/card registration is retained;
+ *       deep sleep or physical power loss will discard it with the rest of the running platform,
+ *       while a failed physical power-off can continue using the existing mount without recovery.
+ */
+void storage_shutdown( void );
 
 /**
  * @brief Determine whether mounted SD media is currently considered healthy and usable.
@@ -56,9 +63,5 @@ esp_err_t storage_get_capacity( uint64_t *a_total_bytes, uint64_t *a_free_bytes 
    arbitration contract out of the public API documentation while sharing it between the service's
    implementation units. */
 #include "storage_internal.h"
-
-/* Transitional source compatibility for the existing power caller: terminal power states no
-   longer tear down the mounted volume. This macro disappears when power.c is next touched. */
-#define storage_shutdown() ( (void)0 )
 
 #endif // _RFSCOUT_STORAGE_H_
