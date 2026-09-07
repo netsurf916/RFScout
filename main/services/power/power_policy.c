@@ -264,7 +264,11 @@ esp_err_t power_policy_init( void )
     temperature_sensor = NULL;
     temperature_available = false;
 
-#if RFSCOUT_BOARD_HAS_INTERNAL_TEMPERATURE
+    if( !RFSCOUT_BOARD_HAS_INTERNAL_TEMPERATURE )
+    {
+        return ESP_OK;
+    }
+
     const temperature_sensor_config_t sensor_config = TEMPERATURE_SENSOR_CONFIG_DEFAULT( 20, 100 );
     esp_err_t result = temperature_sensor_install( &sensor_config, &temperature_sensor );
     if( ESP_OK != result )
@@ -282,7 +286,6 @@ esp_err_t power_policy_init( void )
         return ESP_OK;
     }
     temperature_available = true;
-#endif
 
     return ESP_OK;
 }
