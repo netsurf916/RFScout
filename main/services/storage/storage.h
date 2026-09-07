@@ -51,9 +51,4 @@ esp_err_t storage_probe_card( void );
  */
 esp_err_t storage_get_capacity( uint64_t *a_total_bytes, uint64_t *a_free_bytes );
 
-/* log_writer.c is part of this storage service rather than a storage consumer. Keep the raw
-   arbitration contract out of the public API documentation while sharing it between the service's
-   implementation units. */
-#include "storage_internal.h"
-
 #endif // _RFSCOUT_STORAGE_H_
