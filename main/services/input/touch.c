@@ -15,7 +15,6 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
-#include "freertos/task.h"
 
 #include <stddef.h>
 #include <string.h>
@@ -28,9 +27,6 @@
 #define GT911_STATUS_READY 0x80U
 #define GT911_STATUS_COUNT_MASK 0x0FU
 #define GT911_MAX_POINTS 5U
-#define TOUCH_TASK_STACK 3072U
-#define TOUCH_TASK_PRIORITY 2U
-#define TOUCH_POLL_MS 20U
 #define TOUCH_DIAGNOSTIC_LOG_US 250000LL
 
 static const char *TAG = "touch";
@@ -39,7 +35,6 @@ static bool available;
 static rfscout_touch_sample_t latest;
 static bool have_sample;
 static portMUX_TYPE sample_lock = portMUX_INITIALIZER_UNLOCKED;
-static TaskHandle_t touch_task_handle;
 static int64_t last_diagnostic_log_us;
 
 static esp_err_t read_register( uint16_t a_register, uint8_t *a_data, size_t a_length )
@@ -84,6 +79,61 @@ static void publish_sample( const rfscout_touch_sample_t *a_sample )
     latest = *a_sample;
     have_sample = true;
     portEXIT_CRITICAL( &sample_lock );
+}
+
+esp_err_t touch_init( void )
+{
+    if( available )
+    {
+        return ESP_OK;
+    }
+    if( !RFSCOUT_BOARD_HAS_TOUCH )
+    {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    gt911 = NULL;
+    portENTER_CRITICAL( &sample_lock );
+    have_sample = false;
+    memset( &latest, 0, sizeof( latest ) );
+    portEXIT_CRITICAL( &sample_lock );
+
+    uint16_t address = GT911_ADDRESS_PRIMARY;
+    esp_err_t result = board_i2c_probe( address );
+    if( ESP_OK != result )
+    {
+        address = GT911_ADDRESS_SECONDARY;
+        result = board_i2c_probe( address );
+    }
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG, "GT911 not found at 0x5D or 0x14" );
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    result = board_i2c_add_device( address, &gt911 );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
+    uint8_t product_id[ 4 ] = { 0 };
+    result = read_register( GT911_REG_PRODUCT_ID, product_id, sizeof( product_id ) );
+    if( ESP_OK != result )
+    {
+        gt911 = NULL;
+        return result;
+    }
+
+    available = true;
+    last_diagnostic_log_us = 0;
+    ESP_LOGI( TAG,
+              "GT911 ready at 0x%02X product=%.4s irq=GPIO%d; raw touch is diagnostic only until "
+              "calibrated",
+              (unsigned)address,
+              (const char *)product_id,
+              RFSCOUT_BOARD_TOUCH_IRQ_PIN );
+    return ESP_OK;
 }
 
 void touch_poll( void )
@@ -141,83 +191,6 @@ void touch_poll( void )
     }
 
     (void)write_u8( GT911_REG_STATUS, 0U );
-}
-
-static void touch_worker( void *a_context )
-{
-    (void)a_context;
-    while( true )
-    {
-        touch_poll();
-        vTaskDelay( pdMS_TO_TICKS( TOUCH_POLL_MS ) );
-    }
-}
-
-esp_err_t touch_init( void )
-{
-    if( available )
-    {
-        return ESP_OK;
-    }
-    if( !RFSCOUT_BOARD_HAS_TOUCH )
-    {
-        return ESP_ERR_NOT_SUPPORTED;
-    }
-
-    gt911 = NULL;
-    portENTER_CRITICAL( &sample_lock );
-    have_sample = false;
-    memset( &latest, 0, sizeof( latest ) );
-    portEXIT_CRITICAL( &sample_lock );
-
-    uint16_t address = GT911_ADDRESS_PRIMARY;
-    esp_err_t result = board_i2c_probe( address );
-    if( ESP_OK != result )
-    {
-        address = GT911_ADDRESS_SECONDARY;
-        result = board_i2c_probe( address );
-    }
-    if( ESP_OK != result )
-    {
-        ESP_LOGW( TAG, "GT911 not found at 0x5D or 0x14" );
-        return ESP_ERR_NOT_FOUND;
-    }
-
-    result = board_i2c_add_device( address, &gt911 );
-    if( ESP_OK != result )
-    {
-        return result;
-    }
-
-    uint8_t product_id[ 4 ] = { 0 };
-    result = read_register( GT911_REG_PRODUCT_ID, product_id, sizeof( product_id ) );
-    if( ESP_OK != result )
-    {
-        gt911 = NULL;
-        return result;
-    }
-
-    available = true;
-    last_diagnostic_log_us = 0;
-    if( pdPASS != xTaskCreate( touch_worker,
-                               "touch",
-                               TOUCH_TASK_STACK,
-                               NULL,
-                               TOUCH_TASK_PRIORITY,
-                               &touch_task_handle ) )
-    {
-        available = false;
-        gt911 = NULL;
-        return ESP_ERR_NO_MEM;
-    }
-
-    ESP_LOGI( TAG,
-              "GT911 ready at 0x%02X product=%.4s irq=GPIO%d; raw touch is diagnostic only until "
-              "calibrated",
-              (unsigned)address,
-              (const char *)product_id,
-              RFSCOUT_BOARD_TOUCH_IRQ_PIN );
-    return ESP_OK;
 }
 
 bool touch_available( void )

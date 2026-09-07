@@ -32,6 +32,7 @@
 #include "storage.h"
 #include "surveillance.h"
 #include "system_events.h"
+#include "touch.h"
 #include "ui_theme.h"
 
 #include "esp_log.h"
@@ -249,6 +250,11 @@ void app_main( void )
     ESP_ERROR_CHECK( ble_monitor_init( on_observation ) );
 
     ESP_ERROR_CHECK( app_manager_init() );
+    result = touch_init();
+    if( ( ESP_OK != result ) && ( ESP_ERR_NOT_SUPPORTED != result ) )
+    {
+        ESP_LOGW( TAG, "touch diagnostics unavailable: %s", esp_err_to_name( result ) );
+    }
     system_events_poll();
     display_set_brightness( device_config_get()->brightness_percent );
     ESP_ERROR_CHECK( display_idle_init() );
@@ -276,6 +282,7 @@ void app_main( void )
     {
         display_idle_poll();
         input_poll();
+        touch_poll();
 
         battery_poll();
         power_policy_poll();

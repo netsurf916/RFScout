@@ -14,8 +14,6 @@
 #include "touch.h"
 #include "ui_theme.h"
 
-#include "esp_log.h"
-
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
@@ -24,9 +22,6 @@
 #define NAV_TEXT_CELL_WIDTH 6
 #define NAV_TEXT_SCALE 1U
 #define NAV_TAB_HEIGHT 38
-
-static const char *TAG = "navigation_bar";
-static bool touch_init_attempted;
 
 static bool app_visible( rfscout_app_id_t a_app )
 {
@@ -60,20 +55,6 @@ static void make_label( const char *a_name, char a_label[ NAV_LABEL_MAX + 1U ] )
     a_label[ out ] = '\0';
 }
 
-static void initialize_touch_once( void )
-{
-    if( touch_init_attempted )
-    {
-        return;
-    }
-    touch_init_attempted = true;
-    const esp_err_t result = touch_init();
-    if( ( ESP_OK != result ) && ( ESP_ERR_NOT_SUPPORTED != result ) )
-    {
-        ESP_LOGW( TAG, "touch diagnostics unavailable: %s", esp_err_to_name( result ) );
-    }
-}
-
 void navigation_bar_draw( void )
 {
     const rfscout_view_t view = display_navigation_view();
@@ -81,8 +62,6 @@ void navigation_bar_draw( void )
     {
         return;
     }
-
-    initialize_touch_once();
 
     rfscout_app_id_t visible[ RFSCOUT_APP_COUNT ];
     size_t visible_count = 0U;
