@@ -53,6 +53,7 @@ jobs:
       - name: Build ESP32-S3 firmware
         shell: bash
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           . "$IDF_PATH/export.sh"
           idf.py --version
           idf.py -DRFSCOUT_FORMAT_CHECK=OFF set-target esp32s3
