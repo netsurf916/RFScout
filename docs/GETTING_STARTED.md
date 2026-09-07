@@ -1,6 +1,6 @@
 # Getting started on Fedora Linux
 
-This guide describes the current RFScout development workflow for ESP32-S3 with ESP-IDF 6.x.
+This guide describes the current RFScout development workflow for ESP32-S3 with ESP-IDF 6.2.
 
 ## Host packages
 
@@ -46,7 +46,7 @@ idf.py set-target esp32s3
 idf.py build
 ```
 
-The first build resolves managed components declared in `main/idf_component.yml`. The generated `managed_components/` directory is ignored. The repository intentionally tracks `dependencies.lock`; do not add it to `.gitignore`. It pins resolved component versions so local, CI, and historical release builds are less likely to drift.
+RFScout builds one universal ESP32-S3 image and selects the supported board profile at runtime. The first build resolves managed components declared in `main/idf_component.yml`. The generated `managed_components/` directory is ignored. The repository intentionally tracks `dependencies.lock`; do not add it to `.gitignore`. It pins resolved component versions so local, CI, and historical release builds are less likely to drift.
 
 If major build configuration changes, regenerate the local build tree:
 
@@ -89,7 +89,7 @@ That bypass does not change CI policy.
 
 ## Flash and monitor locally
 
-Connect the T-Embed CC1101 Plus over USB. ESP-IDF can usually discover the serial port automatically:
+Connect a supported RFScout ESP32-S3 board over USB. ESP-IDF can usually discover the serial port automatically:
 
 ```sh
 idf.py flash
@@ -109,6 +109,8 @@ idf.py -p /dev/ttyACM0 flash monitor
 ```
 
 Exit the monitor with **Ctrl+]**.
+
+The same firmware image supports both the LILYGO T-Embed CC1101 Plus and T-Deck Plus. If automatic flashing does not enter the ESP32-S3 ROM bootloader, use the board's BOOT mechanism while connecting/resetting it; on T-Deck Plus the trackball center button is GPIO0/BOOT.
 
 ## Browser flashing development builds and releases
 

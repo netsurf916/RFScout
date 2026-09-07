@@ -2,7 +2,7 @@
 #
 # RFScout uses the ESP32-S3 Bluetooth LE controller with the NimBLE host for
 # passive advertisement scanning. Keep these defaults in source control so a
-# fresh `idf.py set-target esp32s3` produces a usable configuration.
+# fresh `idf.py set-target esp32s3` produces a usable universal image.
 
 CONFIG_BT_ENABLED=y
 CONFIG_BT_NIMBLE_ENABLED=y
@@ -11,17 +11,17 @@ CONFIG_BT_NIMBLE_ROLE_BROADCASTER=n
 CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
 CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=n
 
-# The T-Embed CC1101 Plus includes 8 MB of external OPI PSRAM. Large RFScout
-# working sets such as the 1,000-device observation history live there rather
-# than consuming the ESP32-S3's limited internal DRAM.
+# Supported RFScout ESP32-S3 boards provide external OPI PSRAM. Large working
+# sets such as observation history live there rather than consuming the SoC's
+# limited internal DRAM.
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_USE_MALLOC=y
 
-# The board has 16 MB of flash. RFScout's complete IEEE OUI registry makes the
-# firmware larger than ESP-IDF's default 1 MB factory application partition, so
-# use the project partition table with a 4 MB factory slot.
+# Supported RFScout profiles use 16 MB flash. The complete IEEE OUI registry
+# makes the firmware larger than ESP-IDF's default 1 MB factory application
+# partition, so use the project partition table with an 8 MB factory slot.
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
