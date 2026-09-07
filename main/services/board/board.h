@@ -41,6 +41,12 @@ typedef enum
     RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE = 1U << 14,
 } rfscout_board_capability_t;
 
+typedef enum
+{
+    RFSCOUT_BACKLIGHT_PWM = 0,
+    RFSCOUT_BACKLIGHT_PULSE_16_STEP,
+} rfscout_backlight_type_t;
+
 typedef struct
 {
     rfscout_board_id_t id;
@@ -68,6 +74,7 @@ typedef struct
     bool display_mirror_x;
     bool display_mirror_y;
     bool display_invert_color;
+    rfscout_backlight_type_t backlight_type;
 
     int sd_cs_pin;
 
@@ -88,6 +95,7 @@ typedef struct
     int i2c_scl_pin;
     uint16_t keyboard_i2c_address;
     int keyboard_irq_pin;
+    int touch_irq_pin;
 
     int encoder_a_pin;
     int encoder_b_pin;
@@ -142,10 +150,9 @@ bool board_profile_has( rfscout_board_capability_t a_capability );
 #define RFSCOUT_BOARD_HAS_TOUCH ( board_profile_has( RFSCOUT_BOARD_CAP_TOUCH ) )
 #define RFSCOUT_BOARD_HAS_ROTARY_ENCODER ( board_profile_has( RFSCOUT_BOARD_CAP_ROTARY_ENCODER ) )
 #define RFSCOUT_BOARD_HAS_PDM_MIC ( board_profile_has( RFSCOUT_BOARD_CAP_PDM_MIC ) )
-/* Both currently supported profiles provide a speaker and ESP32-S3 internal temperature sensor;
-   these two remain compile-time true because their existing providers are conditionally compiled. */
-#define RFSCOUT_BOARD_HAS_SPEAKER 1
-#define RFSCOUT_BOARD_HAS_INTERNAL_TEMPERATURE 1
+#define RFSCOUT_BOARD_HAS_SPEAKER ( board_profile_has( RFSCOUT_BOARD_CAP_SPEAKER ) )
+#define RFSCOUT_BOARD_HAS_INTERNAL_TEMPERATURE \
+    ( board_profile_has( RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE ) )
 #define RFSCOUT_BOARD_HAS_SD ( board_profile_has( RFSCOUT_BOARD_CAP_SD ) )
 #define RFSCOUT_BOARD_CAN_SCREEN_OFF ( board_profile_has( RFSCOUT_BOARD_CAP_SCREEN_OFF ) )
 #define RFSCOUT_BOARD_CAN_DEEP_SLEEP ( board_profile_has( RFSCOUT_BOARD_CAP_DEEP_SLEEP ) )
@@ -170,6 +177,7 @@ bool board_profile_has( rfscout_board_capability_t a_capability );
 #define RFSCOUT_BOARD_DISPLAY_MIRROR_X ( board_profile()->display_mirror_x )
 #define RFSCOUT_BOARD_DISPLAY_MIRROR_Y ( board_profile()->display_mirror_y )
 #define RFSCOUT_BOARD_DISPLAY_INVERT_COLOR ( board_profile()->display_invert_color )
+#define RFSCOUT_BOARD_BACKLIGHT_TYPE ( board_profile()->backlight_type )
 #define RFSCOUT_BOARD_SD_CS_PIN ( board_profile()->sd_cs_pin )
 #define RFSCOUT_BOARD_CC1101_CS_PIN ( board_profile()->cc1101_cs_pin )
 #define RFSCOUT_BOARD_CC1101_GDO2_PIN ( board_profile()->cc1101_gdo2_pin )
@@ -186,6 +194,7 @@ bool board_profile_has( rfscout_board_capability_t a_capability );
 #define RFSCOUT_BOARD_I2C_SCL_PIN ( board_profile()->i2c_scl_pin )
 #define RFSCOUT_BOARD_KEYBOARD_I2C_ADDRESS ( board_profile()->keyboard_i2c_address )
 #define RFSCOUT_BOARD_KEYBOARD_IRQ_PIN ( board_profile()->keyboard_irq_pin )
+#define RFSCOUT_BOARD_TOUCH_IRQ_PIN ( board_profile()->touch_irq_pin )
 #define RFSCOUT_BOARD_ENCODER_A_PIN ( board_profile()->encoder_a_pin )
 #define RFSCOUT_BOARD_ENCODER_B_PIN ( board_profile()->encoder_b_pin )
 #define RFSCOUT_BOARD_ENCODER_KEY_PIN ( board_profile()->encoder_key_pin )

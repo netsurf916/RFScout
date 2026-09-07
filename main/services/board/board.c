@@ -26,6 +26,7 @@ static const rfscout_board_profile_t unknown_profile = {
     .display_dc_pin = -1,
     .display_reset_pin = -1,
     .display_backlight_pin = -1,
+    .backlight_type = RFSCOUT_BACKLIGHT_PWM,
     .sd_cs_pin = -1,
     .cc1101_cs_pin = -1,
     .cc1101_gdo2_pin = -1,
@@ -41,6 +42,7 @@ static const rfscout_board_profile_t unknown_profile = {
     .i2c_sda_pin = -1,
     .i2c_scl_pin = -1,
     .keyboard_irq_pin = -1,
+    .touch_irq_pin = -1,
     .encoder_a_pin = -1,
     .encoder_b_pin = -1,
     .encoder_key_pin = -1,
@@ -93,6 +95,7 @@ static const rfscout_board_profile_t tembed_profile = {
     .display_mirror_x = false,
     .display_mirror_y = true,
     .display_invert_color = true,
+    .backlight_type = RFSCOUT_BACKLIGHT_PWM,
     .sd_cs_pin = 13,
     .cc1101_cs_pin = 12,
     .cc1101_gdo2_pin = 38,
@@ -109,6 +112,7 @@ static const rfscout_board_profile_t tembed_profile = {
     .i2c_scl_pin = 18,
     .keyboard_i2c_address = 0,
     .keyboard_irq_pin = -1,
+    .touch_irq_pin = -1,
     .encoder_a_pin = 4,
     .encoder_b_pin = 5,
     .encoder_key_pin = 0,
@@ -141,11 +145,11 @@ static const rfscout_board_profile_t tembed_profile = {
 static const rfscout_board_profile_t tdeck_plus_profile = {
     .id = RFSCOUT_BOARD_TDECK_PLUS,
     .name = "LILYGO T-Deck Plus",
-    .capabilities = RFSCOUT_BOARD_CAP_SX1262 | RFSCOUT_BOARD_CAP_KEYBOARD |
-                    RFSCOUT_BOARD_CAP_TRACKBALL | RFSCOUT_BOARD_CAP_TOUCH |
-                    RFSCOUT_BOARD_CAP_SPEAKER | RFSCOUT_BOARD_CAP_SD |
-                    RFSCOUT_BOARD_CAP_SCREEN_OFF | RFSCOUT_BOARD_CAP_DEEP_SLEEP |
-                    RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE,
+    .capabilities = RFSCOUT_BOARD_CAP_SX1262 | RFSCOUT_BOARD_CAP_GPS |
+                    RFSCOUT_BOARD_CAP_KEYBOARD | RFSCOUT_BOARD_CAP_TRACKBALL |
+                    RFSCOUT_BOARD_CAP_TOUCH | RFSCOUT_BOARD_CAP_SPEAKER |
+                    RFSCOUT_BOARD_CAP_SD | RFSCOUT_BOARD_CAP_SCREEN_OFF |
+                    RFSCOUT_BOARD_CAP_DEEP_SLEEP | RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE,
     .power_enable_pin = 10,
     .user_key_pin = 0,
     .spi_mosi_pin = 41,
@@ -157,14 +161,15 @@ static const rfscout_board_profile_t tdeck_plus_profile = {
     .display_backlight_pin = 42,
     .display_width = 320,
     .display_height = 240,
-    .display_native_width = 320,
-    .display_native_height = 240,
+    .display_native_width = 240,
+    .display_native_height = 320,
     .display_x_gap = 0,
     .display_y_gap = 0,
-    .display_swap_xy = false,
+    .display_swap_xy = true,
     .display_mirror_x = false,
-    .display_mirror_y = false,
+    .display_mirror_y = true,
     .display_invert_color = true,
+    .backlight_type = RFSCOUT_BACKLIGHT_PULSE_16_STEP,
     .sd_cs_pin = 39,
     .cc1101_cs_pin = -1,
     .cc1101_gdo2_pin = -1,
@@ -181,6 +186,7 @@ static const rfscout_board_profile_t tdeck_plus_profile = {
     .i2c_scl_pin = 8,
     .keyboard_i2c_address = 0x55,
     .keyboard_irq_pin = 46,
+    .touch_irq_pin = 16,
     .encoder_a_pin = -1,
     .encoder_b_pin = -1,
     .encoder_key_pin = -1,
