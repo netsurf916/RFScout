@@ -1,6 +1,6 @@
 /**
     device_time.h : RFScout authoritative wall-clock service
-    Description: Owns runtime UTC wall time, source validity, timezone application, and formatting.
+    Description: Owns runtime UTC wall time, source validity, synchronization policy, and timezone formatting.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -24,22 +24,33 @@ typedef enum
     RFSCOUT_TIME_SOURCE_GPS,
 } rfscout_time_source_t;
 
+typedef enum
+{
+    RFSCOUT_TIME_MODE_AUTO = 0,
+    RFSCOUT_TIME_MODE_MANUAL,
+} rfscout_time_mode_t;
+
 typedef struct
 {
     bool valid;
     rfscout_time_source_t source;
+    rfscout_time_mode_t mode;
     time_t epoch;
 } rfscout_time_status_t;
 
-/** @brief Initialize timezone and determine whether the RTC-backed wall clock is already plausible. */
+/** @brief Initialize timezone, synchronization policy, and wall-clock validity. */
 esp_err_t device_time_init( void );
-/** @brief Set the wall clock manually and mark Manual as its authoritative source. */
+/** @brief Set the wall clock manually; this also selects and persists Manual mode. */
 esp_err_t device_time_set_epoch( time_t a_epoch );
-/** @brief Offer a fix-valid GPS UTC epoch to the wall-clock service. */
+/** @brief Offer a fix-valid GPS UTC epoch; accepted only while Auto mode is selected. */
 esp_err_t device_time_offer_gps( time_t a_epoch );
+/** @brief Change and persist the automatic/manual synchronization policy. */
+esp_err_t device_time_set_mode( rfscout_time_mode_t a_mode );
+/** @brief Return the current synchronization policy. */
+rfscout_time_mode_t device_time_mode( void );
 /** @brief Return the current epoch only when RFScout considers wall time valid. */
 bool device_time_now( time_t *a_epoch );
-/** @brief Copy current wall-clock validity/source state. */
+/** @brief Copy current wall-clock validity/source/policy state. */
 void device_time_status( rfscout_time_status_t *a_status );
 /** @brief Apply the timezone currently selected in device configuration. */
 esp_err_t device_time_apply_timezone( void );
