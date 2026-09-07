@@ -38,6 +38,7 @@
 #include "ui_theme.h"
 
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
@@ -45,9 +46,12 @@
 #include <stdio.h>
 #include <string.h>
 
+#define CONFIG_SAVE_RETRY_US 1000000LL
+
 static const char *TAG = "rfscout";
 static bool gps_fix_state_known;
 static bool gps_fix_active;
+static int64_t config_save_retry_after_us;
 
 static rfscout_notification_type_t
 notification_for_surveillance( surveillance_class_t a_classification )
@@ -93,19 +97,14 @@ static void gps_state_poll( void )
                       gps.latitude_deg,
                       gps.longitude_deg,
                       (unsigned)gps.satellites );
-            char detail[ 128 ];
-            snprintf( detail,
-                      sizeof( detail ),
-                      "fix=acquired lat=%.6f lon=%.6f sats=%u",
-                      gps.latitude_deg,
-                      gps.longitude_deg,
-                      (unsigned)gps.satellites );
+            char detail[ 64 ];
+            snprintf( detail, sizeof( detail ), "fix=acquired sats=%u", (unsigned)gps.satellites );
             (void)log_writer_app_record( "GPS", detail );
         }
         else
         {
             ESP_LOGI( TAG, "GPS detected; waiting for location fix" );
-            (void)log_writer_app_record( "GPS", "provider=available fix=none" );
+            (void)log_writer_app_record( "GPS", "receiver=detected fix=none" );
         }
         return;
     }
@@ -124,12 +123,7 @@ static void gps_state_poll( void )
                   gps.latitude_deg,
                   gps.longitude_deg,
                   (unsigned)gps.satellites );
-        snprintf( detail,
-                  sizeof( detail ),
-                  "fix=acquired lat=%.6f lon=%.6f sats=%u",
-                  gps.latitude_deg,
-                  gps.longitude_deg,
-                  (unsigned)gps.satellites );
+        snprintf( detail, sizeof( detail ), "fix=acquired sats=%u", (unsigned)gps.satellites );
     }
     else
     {
@@ -148,6 +142,27 @@ static void gps_state_poll( void )
                   (unsigned)gps.satellites );
     }
     (void)log_writer_app_record( "GPS", detail );
+}
+
+static void persist_config_if_due( void )
+{
+    const int64_t now_us = esp_timer_get_time();
+    if( now_us < config_save_retry_after_us )
+    {
+        return;
+    }
+
+    const esp_err_t result = device_config_save_if_dirty();
+    if( ESP_OK == result )
+    {
+        config_save_retry_after_us = 0;
+        return;
+    }
+
+    config_save_retry_after_us = now_us + CONFIG_SAVE_RETRY_US;
+    ESP_LOGW( TAG,
+              "configuration persistence failed; retrying in 1 second: %s",
+              esp_err_to_name( result ) );
 }
 
 static void on_observation( rf_device_t *a_observation )
@@ -365,6 +380,7 @@ void app_main( void )
         }
     }
 
+    config_save_retry_after_us = 0;
     ESP_LOGI( TAG,
               "RFScout started: app-managed radio lifecycle, Wi-Fi region=%s",
               radio_monitor_region_name( radio_monitor_get_region() ) );
@@ -394,9 +410,9 @@ void app_main( void )
         status_bar_poll();
         battery_indicator_poll();
 
-        /* Configuration setters mark the owned record dirty. Persist in the same UI/service
-           iteration so callers never need an explicit user-facing Save action. */
-        (void)device_config_save_if_dirty();
+        /* Setting changes are persisted immediately in the normal case. If persistence fails,
+           retain the dirty record but retry at a bounded cadence rather than hammering flash. */
+        persist_config_if_due();
 
         (void)display_present();
 
