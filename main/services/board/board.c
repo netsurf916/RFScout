@@ -1,6 +1,6 @@
 /**
-    board.c : RFScout runtime board profile selection
-    Description: Selects one immutable hardware profile using an early passive I2C fingerprint.
+    board.c : RFScout runtime board profile
+    Description: Detects supported ESP32-S3 hardware and exposes immutable runtime wiring/capabilities.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -10,13 +10,16 @@
 #include "driver/i2c_master.h"
 #include "esp_log.h"
 
+#include <stddef.h>
+
 #define BOARD_DETECT_TIMEOUT_MS 20
 
 static const char *TAG = "board";
 
 static const rfscout_board_profile_t unknown_profile = {
     .id = RFSCOUT_BOARD_UNKNOWN,
-    .name = "Unknown ESP32-S3 hardware",
+    .name = "Unknown hardware",
+    .capabilities = 0,
     .power_enable_pin = -1,
     .user_key_pin = -1,
     .spi_mosi_pin = -1,
@@ -26,7 +29,17 @@ static const rfscout_board_profile_t unknown_profile = {
     .display_dc_pin = -1,
     .display_reset_pin = -1,
     .display_backlight_pin = -1,
-    .backlight_type = RFSCOUT_BACKLIGHT_PWM,
+    .display_width = 0,
+    .display_height = 0,
+    .display_native_width = 0,
+    .display_native_height = 0,
+    .display_x_gap = 0,
+    .display_y_gap = 0,
+    .display_swap_xy = false,
+    .display_mirror_x = false,
+    .display_mirror_y = false,
+    .display_invert_color = false,
+    .backlight_type = RFSCOUT_BACKLIGHT_NONE,
     .sd_cs_pin = -1,
     .cc1101_cs_pin = -1,
     .cc1101_gdo2_pin = -1,
@@ -41,6 +54,7 @@ static const rfscout_board_profile_t unknown_profile = {
     .sx1262_dio1_pin = -1,
     .i2c_sda_pin = -1,
     .i2c_scl_pin = -1,
+    .keyboard_i2c_address = 0,
     .keyboard_irq_pin = -1,
     .touch_irq_pin = -1,
     .encoder_a_pin = -1,
@@ -62,6 +76,10 @@ static const rfscout_board_profile_t unknown_profile = {
     .battery_adc_pin = -1,
     .battery_divider_numerator = 0,
     .battery_divider_denominator = 0,
+    .pn532_i2c_address = 0,
+    .mlx90640_i2c_address = 0,
+    .bq27220_i2c_address = 0,
+    .bq25896_i2c_address = 0,
     .pn532_reset_pin = -1,
     .pn532_irq_pin = -1,
     .ir_enable_pin = -1,
@@ -78,16 +96,17 @@ static const rfscout_board_profile_t tembed_profile = {
     .capabilities = RFSCOUT_BOARD_CAP_CC1101 | RFSCOUT_BOARD_CAP_NRF24 |
                     RFSCOUT_BOARD_CAP_ROTARY_ENCODER | RFSCOUT_BOARD_CAP_PDM_MIC |
                     RFSCOUT_BOARD_CAP_SPEAKER | RFSCOUT_BOARD_CAP_SD |
-                    RFSCOUT_BOARD_CAP_SCREEN_OFF | RFSCOUT_BOARD_CAP_DEEP_SLEEP |
-                    RFSCOUT_BOARD_CAP_POWER_OFF | RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE,
+                    RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE | RFSCOUT_BOARD_CAP_SCREEN_OFF |
+                    RFSCOUT_BOARD_CAP_DEEP_SLEEP | RFSCOUT_BOARD_CAP_PHYSICAL_POWER_OFF |
+                    RFSCOUT_BOARD_CAP_AUTHORITATIVE_EXTERNAL_POWER,
     .power_enable_pin = 15,
-    .user_key_pin = 6,
+    .user_key_pin = 0,
     .spi_mosi_pin = 9,
-    .spi_miso_pin = 10,
-    .spi_sclk_pin = 11,
-    .display_cs_pin = 41,
-    .display_dc_pin = 16,
-    .display_reset_pin = -1,
+    .spi_miso_pin = 11,
+    .spi_sclk_pin = 10,
+    .display_cs_pin = 12,
+    .display_dc_pin = 13,
+    .display_reset_pin = 14,
     .display_backlight_pin = 21,
     .display_width = 320,
     .display_height = 170,
@@ -100,14 +119,14 @@ static const rfscout_board_profile_t tembed_profile = {
     .display_mirror_y = true,
     .display_invert_color = true,
     .backlight_type = RFSCOUT_BACKLIGHT_PWM,
-    .sd_cs_pin = 13,
-    .cc1101_cs_pin = 12,
-    .cc1101_gdo2_pin = 38,
-    .cc1101_gdo0_pin = 3,
-    .cc1101_switch_1_pin = 47,
-    .cc1101_switch_0_pin = 48,
-    .nrf24_cs_pin = 44,
-    .nrf24_ce_pin = 43,
+    .sd_cs_pin = 4,
+    .cc1101_cs_pin = 5,
+    .cc1101_gdo2_pin = 6,
+    .cc1101_gdo0_pin = 8,
+    .cc1101_switch_1_pin = 16,
+    .cc1101_switch_0_pin = 17,
+    .nrf24_cs_pin = 18,
+    .nrf24_ce_pin = 3,
     .sx1262_cs_pin = -1,
     .sx1262_busy_pin = -1,
     .sx1262_reset_pin = -1,
@@ -117,8 +136,8 @@ static const rfscout_board_profile_t tembed_profile = {
     .keyboard_i2c_address = 0,
     .keyboard_irq_pin = -1,
     .touch_irq_pin = -1,
-    .encoder_a_pin = 4,
-    .encoder_b_pin = 5,
+    .encoder_a_pin = 37,
+    .encoder_b_pin = 38,
     .encoder_key_pin = 0,
     .trackball_up_pin = -1,
     .trackball_down_pin = -1,
@@ -222,8 +241,8 @@ static const rfscout_board_profile_t tdeck_plus_profile = {
     .ir_rx_pin = -1,
     .mic_data_pin = -1,
     .mic_clock_pin = -1,
-    .gps_tx_pin = 44,
-    .gps_rx_pin = 43,
+    .gps_tx_pin = 43,
+    .gps_rx_pin = 44,
 };
 
 static const rfscout_board_profile_t *active_profile = &unknown_profile;
