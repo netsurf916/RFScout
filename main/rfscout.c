@@ -163,8 +163,9 @@ void app_main( void )
     result = platform_init();
     if( ESP_OK != result )
     {
-        ESP_LOGE( TAG,
-                  "unsupported hardware profile; leaving ESP32-S3 awake and idle for recovery flashing" );
+        ESP_LOGE(
+            TAG,
+            "unsupported hardware profile; leaving ESP32-S3 awake and idle for recovery flashing" );
         while( true )
         {
             vTaskDelay( pdMS_TO_TICKS( 1000U ) );

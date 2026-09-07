@@ -53,8 +53,7 @@ static rfscout_input_provider_t provider;
 static void IRAM_ATTR encoder_isr( void *a_argument )
 {
     (void)a_argument;
-    static const int8_t transitions[ 16 ] = { 0, -1, 1, 0, 1, 0, 0, -1,
-                                             -1, 0, 0, 1, 0, 1, -1, 0 };
+    static const int8_t transitions[ 16 ] = { 0, -1, 1, 0, 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, -1, 0 };
 
     const uint8_t current = (uint8_t)( ( gpio_get_level( RFSCOUT_BOARD_ENCODER_A_PIN ) << 1 ) |
                                        gpio_get_level( RFSCOUT_BOARD_ENCODER_B_PIN ) );
@@ -89,7 +88,8 @@ static void IRAM_ATTR trackball_isr( void *a_argument )
 static void IRAM_ATTR primary_button_isr( void *a_argument )
 {
     (void)a_argument;
-    const bool pressed = ( primary_button_pin >= 0 ) && ( 0 == gpio_get_level( primary_button_pin ) );
+    const bool pressed =
+        ( primary_button_pin >= 0 ) && ( 0 == gpio_get_level( primary_button_pin ) );
     const int64_t now_us = esp_timer_get_time();
 
     portENTER_CRITICAL_ISR( &button_lock );
@@ -253,14 +253,15 @@ static esp_err_t install_trackball_provider( void )
     for( size_t index = 0U; index < sizeof( pins ) / sizeof( pins[ 0 ] ); ++index )
     {
         if( ESP_OK != ( result = gpio_set_intr_type( pins[ index ], GPIO_INTR_NEGEDGE ) ) ||
-            ESP_OK != ( result = gpio_isr_handler_add(
-                            pins[ index ], trackball_isr, (void *)(intptr_t)directions[ index ] ) ) )
+            ESP_OK != ( result = gpio_isr_handler_add( pins[ index ],
+                                                       trackball_isr,
+                                                       (void *)(intptr_t)directions[ index ] ) ) )
         {
             return result;
         }
     }
-    if( ESP_OK !=
-            ( result = gpio_set_intr_type( RFSCOUT_BOARD_TRACKBALL_SELECT_PIN, GPIO_INTR_ANYEDGE ) ) ||
+    if( ESP_OK != ( result = gpio_set_intr_type( RFSCOUT_BOARD_TRACKBALL_SELECT_PIN,
+                                                 GPIO_INTR_ANYEDGE ) ) ||
         ESP_OK != ( result = gpio_isr_handler_add(
                         RFSCOUT_BOARD_TRACKBALL_SELECT_PIN, primary_button_isr, NULL ) ) )
     {
@@ -369,8 +370,8 @@ bool input_activity_pending( void )
     button_activity = button_down || ( button_pending_duration_us > 0 );
     portEXIT_CRITICAL( &button_lock );
 
-    const bool user_key = RFSCOUT_BOARD_USER_KEY_PIN >= 0 &&
-                          0 == gpio_get_level( RFSCOUT_BOARD_USER_KEY_PIN );
+    const bool user_key =
+        RFSCOUT_BOARD_USER_KEY_PIN >= 0 && 0 == gpio_get_level( RFSCOUT_BOARD_USER_KEY_PIN );
     return movement || button_activity || button_event || button_long_event || button_back_event ||
            user_key;
 }
