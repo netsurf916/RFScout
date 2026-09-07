@@ -5,7 +5,6 @@
     SPDX-License-Identifier: MIT
 */
 
-#define RFSCOUT_DEVICE_CONFIG_IMPLEMENTATION 1
 #include "device_config.h"
 
 #include "event.h"
@@ -477,52 +476,13 @@ static void load_global_notifications( const cJSON *a_root )
     }
 }
 
-static void load_timezones( const cJSON *a_root )
+static void load_timezone_selection( const cJSON *a_root )
 {
     const cJSON *timezone = cJSON_GetObjectItemCaseSensitive( a_root, "timezone" );
     if( !cJSON_IsObject( timezone ) )
     {
         return;
     }
-
-    const cJSON *options = cJSON_GetObjectItemCaseSensitive( timezone, "options" );
-    if( cJSON_IsArray( options ) )
-    {
-        size_t count = 0U;
-        const cJSON *entry = NULL;
-        cJSON_ArrayForEach( entry, options )
-        {
-            if( count >= RFSCOUT_TIMEZONE_MAX )
-            {
-                break;
-            }
-            const cJSON *name = cJSON_GetObjectItemCaseSensitive( entry, "name" );
-            const cJSON *label = cJSON_GetObjectItemCaseSensitive( entry, "label" );
-            const cJSON *posix = cJSON_GetObjectItemCaseSensitive( entry, "posix" );
-            if( !cJSON_IsString( name ) || !cJSON_IsString( label ) || !cJSON_IsString( posix ) ||
-                NULL == name->valuestring || NULL == label->valuestring ||
-                NULL == posix->valuestring || '\0' == name->valuestring[ 0 ] ||
-                '\0' == posix->valuestring[ 0 ] )
-            {
-                continue;
-            }
-            copy_string( config.timezones[ count ].name,
-                         sizeof( config.timezones[ count ].name ),
-                         name->valuestring );
-            copy_string( config.timezones[ count ].label,
-                         sizeof( config.timezones[ count ].label ),
-                         label->valuestring );
-            copy_string( config.timezones[ count ].posix,
-                         sizeof( config.timezones[ count ].posix ),
-                         posix->valuestring );
-            ++count;
-        }
-        if( count > 0U )
-        {
-            config.timezone_count = count;
-        }
-    }
-
     const cJSON *selected = cJSON_GetObjectItemCaseSensitive( timezone, "selected" );
     if( cJSON_IsString( selected ) && NULL != selected->valuestring )
     {
@@ -726,7 +686,7 @@ static esp_err_t load_system_record( void )
     load_system_apps( root );
     load_logging( root );
     load_global_notifications( root );
-    load_timezones( root );
+    load_timezone_selection( root );
     cJSON_Delete( root );
 
     if( !timezone_selected_valid() )
@@ -952,15 +912,6 @@ static cJSON *build_system_record( void )
 
     cJSON *timezone = cJSON_AddObjectToObject( root, "timezone" );
     cJSON_AddStringToObject( timezone, "selected", config.timezone_selected );
-    cJSON *options = cJSON_AddArrayToObject( timezone, "options" );
-    for( size_t index = 0U; index < config.timezone_count; ++index )
-    {
-        cJSON *entry = cJSON_CreateObject();
-        cJSON_AddStringToObject( entry, "name", config.timezones[ index ].name );
-        cJSON_AddStringToObject( entry, "label", config.timezones[ index ].label );
-        cJSON_AddStringToObject( entry, "posix", config.timezones[ index ].posix );
-        cJSON_AddItemToArray( options, entry );
-    }
     return root;
 }
 

@@ -163,7 +163,7 @@ bool ui_theme_from_config_name( const char *a_name, rfscout_theme_id_t *a_theme 
 
     for( unsigned index = 0U; index < RFSCOUT_THEME_COUNT; ++index )
     {
-        if( 0 == strcasecmp( a_name, ui_theme_config_name( (rfscout_theme_id_t)index ) )
+        if( 0 == strcasecmp( a_name, ui_theme_config_name( (rfscout_theme_id_t)index ) ) )
         {
             *a_theme = (rfscout_theme_id_t)index;
             return true;

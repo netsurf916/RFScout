@@ -11,7 +11,6 @@
 #include "battery.h"
 #include "board.h"
 #include "device_config.h"
-#include "device_time.h"
 #include "display.h"
 #include "display_idle.h"
 #include "log_writer.h"
@@ -147,27 +146,15 @@ static void set_idle_status( void )
 }
 
 /** @brief Flush internal state, then stop removable-storage users when SD is present. */
-static bool prepare_storage_for_power_state( bool a_checkpoint_time )
+static bool prepare_storage_for_power_state( void )
 {
-    if( a_checkpoint_time )
+    const esp_err_t save_result = device_config_save_if_dirty();
+    if( ESP_OK != save_result )
     {
-        const esp_err_t checkpoint = device_time_checkpoint();
-        if( ESP_OK != checkpoint )
-        {
-            ESP_LOGW( TAG, "wall-clock checkpoint failed: %s", esp_err_to_name( checkpoint ) );
-        }
-    }
-    else
-    {
-        /* Deep sleep is allowed directly from an open settings page. Internal persistence is
-           independent of removable media, so flush dirty configuration before considering SD. */
-        const esp_err_t save_result = device_config_save_if_dirty();
-        if( ESP_OK != save_result )
-        {
-            ESP_LOGW(
-                TAG, "configuration save before sleep failed: %s", esp_err_to_name( save_result ) );
-            return false;
-        }
+        ESP_LOGW( TAG,
+                  "configuration save before power transition failed: %s",
+                  esp_err_to_name( save_result ) );
+        return false;
     }
 
     if( !storage_is_available() )
@@ -246,7 +233,7 @@ static void restore_storage_after_failed_power_off( void )
 static void enter_sleep( void )
 {
     ESP_LOGI( TAG, "entering deep sleep; user key wakes device" );
-    if( !prepare_storage_for_power_state( false ) )
+    if( !prepare_storage_for_power_state() )
     {
         ESP_LOGW( TAG, "sleep cancelled because persistent state could not be prepared" );
         set_idle_status();
@@ -264,7 +251,7 @@ static void enter_sleep( void )
 /** @brief Perform an orderly physical power-off request. */
 static void power_off( void )
 {
-    if( !prepare_storage_for_power_state( true ) )
+    if( !prepare_storage_for_power_state() )
     {
         set_idle_status();
         return;

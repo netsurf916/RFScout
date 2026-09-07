@@ -8,7 +8,7 @@ RFScout starts from compiled defaults and overlays firmware-managed records from
 
 Durable state is addressed by logical owner and key rather than caller-visible filesystem paths:
 
-- logical `system/config` owns device-wide policy: display/power behavior, theme, timezone/clock presentation, logging, app enablement/startup choice, global audio policy/gains, and global alert policy;
+- logical `system/config` owns device-wide policy: display/power behavior, theme, timezone selection/clock presentation, logging, app enablement/startup choice, global audio policy/gains, and global alert policy;
 - logical `app/<persistence_key>/config` owns application-specific preference overrides. The compiled app descriptor supplies the stable persistence identity; app-facing store calls derive ownership from the active app session and cannot select another app namespace;
 - other logical `system/*` or `app/<persistence_key>/*` records are reserved for durable state that is not configuration, such as future T-Deck Plus touch calibration or browsable app history.
 
@@ -22,7 +22,7 @@ The existing `device_config` API remains the in-memory settings surface so UI an
 
 Current system and application configuration records both use version **1**. These versions are internal validation markers, not compatibility contracts or user-facing interchange schemas.
 
-RFScout does not attempt long-lived migration between internal record layouts. A missing record means compiled defaults. A malformed record, unsupported version, or structurally invalid value is discarded for that owner and the corresponding compiled defaults apply. This intentionally favors a simple known-good baseline over preserving stale internal representations.
+RFScout does not attempt long-lived migration between internal record layouts. A missing record means compiled defaults. A malformed record or unsupported record version is discarded for that owner. Within an otherwise valid current-version record, malformed or unsupported individual fields are ignored and their compiled defaults remain in effect. This intentionally favors a simple known-good baseline over preserving stale internal representations.
 
 App records are **override-only**. If an app has no persisted user changes, it has no `config` record and uses its compiled defaults directly. Only values that differ from the compiled defaults are serialized. Returning all app preferences to their defaults removes the app record again.
 
@@ -80,7 +80,7 @@ Deep sleep loses ordinary RAM, so RFScout keeps a small RTC-backed session envel
 
 The ESP32 RTC-backed system wall clock is authoritative for displayed time, log timestamps, and filesystem calendar metadata. RFScout does not persist an epoch, saved-time validity flag, or clock-source token in configuration. Manual date/time controls update the running system clock only; future GPS/NTP updates use the same runtime clock API. On startup RFScout simply uses the clock value supplied by the RTC domain. Source identity is not durable clock state.
 
-Timezone selection and 12/24-hour presentation remain persistent user preferences. Monotonic time remains authoritative for debounce, dwell, retries, housekeeping, and intervals.
+Only the selected timezone and 12/24-hour presentation are persistent user preferences. The available timezone names, labels, and POSIX rules are compiled firmware metadata, so firmware updates can correct those definitions without stale stored copies overriding them. Monotonic time remains authoritative for debounce, dwell, retries, housekeeping, and intervals.
 
 ## Erase and update semantics
 
