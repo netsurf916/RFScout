@@ -54,20 +54,72 @@ static bool checksum_valid( const char *a_line )
     return end == star + 3 && checksum == expected;
 }
 
-static double nmea_coordinate( const char *a_value, char a_hemisphere )
+static bool parse_double_field( const char *a_text, double *a_value )
 {
-    if( NULL == a_value || '\0' == a_value[ 0 ] )
+    if( NULL == a_text || NULL == a_value || '\0' == a_text[ 0 ] )
     {
-        return NAN;
+        return false;
     }
-    const double raw = strtod( a_value, NULL );
+    char *end = NULL;
+    const double value = strtod( a_text, &end );
+    if( end == a_text || '\0' != *end || !isfinite( value ) )
+    {
+        return false;
+    }
+    *a_value = value;
+    return true;
+}
+
+static bool parse_int_field( const char *a_text, long *a_value )
+{
+    if( NULL == a_text || NULL == a_value || '\0' == a_text[ 0 ] )
+    {
+        return false;
+    }
+    char *end = NULL;
+    const long value = strtol( a_text, &end, 10 );
+    if( end == a_text || '\0' != *end )
+    {
+        return false;
+    }
+    *a_value = value;
+    return true;
+}
+
+static bool nmea_coordinate( const char *a_value,
+                             char a_hemisphere,
+                             bool a_latitude,
+                             double *a_result )
+{
+    if( NULL == a_result ||
+        ( a_latitude && 'N' != a_hemisphere && 'S' != a_hemisphere ) ||
+        ( !a_latitude && 'E' != a_hemisphere && 'W' != a_hemisphere ) )
+    {
+        return false;
+    }
+
+    double raw;
+    if( !parse_double_field( a_value, &raw ) || raw < 0.0 )
+    {
+        return false;
+    }
+
     const double degrees = floor( raw / 100.0 );
-    double result = degrees + ( raw - degrees * 100.0 ) / 60.0;
+    const double minutes = raw - degrees * 100.0;
+    const double maximum_degrees = a_latitude ? 90.0 : 180.0;
+    if( minutes < 0.0 || minutes >= 60.0 || degrees > maximum_degrees ||
+        ( degrees == maximum_degrees && minutes > 0.0 ) )
+    {
+        return false;
+    }
+
+    double result = degrees + minutes / 60.0;
     if( 'S' == a_hemisphere || 'W' == a_hemisphere )
     {
         result = -result;
     }
-    return result;
+    *a_result = result;
+    return true;
 }
 
 static int64_t days_from_civil( int a_year, unsigned a_month, unsigned a_day )
@@ -98,6 +150,26 @@ static bool all_digits( const char *a_text, size_t a_count )
     return true;
 }
 
+static bool leap_year( int a_year )
+{
+    return ( 0 == ( a_year % 4 ) ) && ( ( 0 != ( a_year % 100 ) ) || ( 0 == ( a_year % 400 ) ) );
+}
+
+static unsigned days_in_month( int a_year, unsigned a_month )
+{
+    static const uint8_t DAYS[] = { 31U, 28U, 31U, 30U, 31U, 30U,
+                                    31U, 31U, 30U, 31U, 30U, 31U };
+    if( a_month < 1U || a_month > 12U )
+    {
+        return 0U;
+    }
+    if( 2U == a_month && leap_year( a_year ) )
+    {
+        return 29U;
+    }
+    return DAYS[ a_month - 1U ];
+}
+
 static bool parse_utc_epoch( const char *a_time, const char *a_date, time_t *a_epoch )
 {
     if( NULL == a_time || NULL == a_date || NULL == a_epoch || strlen( a_time ) < 6U ||
@@ -112,8 +184,8 @@ static bool parse_utc_epoch( const char *a_time, const char *a_date, time_t *a_e
     const unsigned month = (unsigned)( ( a_date[ 2 ] - '0' ) * 10 + ( a_date[ 3 ] - '0' ) );
     const int yy = ( a_date[ 4 ] - '0' ) * 10 + ( a_date[ 5 ] - '0' );
     const int year = yy >= 80 ? 1900 + yy : 2000 + yy;
-    if( hour > 23 || minute > 59 || second > 60 || day < 1U || day > 31U || month < 1U ||
-        month > 12U || year < 2020 || year > 2099 )
+    if( hour > 23 || minute > 59 || second > 60 || month < 1U || month > 12U || year < 2020 ||
+        year > 2099 || day < 1U || day > days_in_month( year, month ) )
     {
         return false;
     }
@@ -148,19 +220,24 @@ static void parse_rmc( char *a_payload )
     {
         return;
     }
-    const double latitude = nmea_coordinate( fields[ 2 ], fields[ 3 ][ 0 ] );
-    const double longitude = nmea_coordinate( fields[ 4 ], fields[ 5 ][ 0 ] );
-    if( isfinite( latitude ) && isfinite( longitude ) )
+
+    double latitude;
+    double longitude;
+    if( nmea_coordinate( fields[ 2 ], fields[ 3 ][ 0 ], true, &latitude ) &&
+        nmea_coordinate( fields[ 4 ], fields[ 5 ][ 0 ], false, &longitude ) )
     {
         snapshot.latitude_deg = latitude;
         snapshot.longitude_deg = longitude;
         snapshot.location_valid = true;
         location_updated_us = esp_timer_get_time();
     }
-    if( '\0' != fields[ 6 ][ 0 ] )
+
+    double speed_knots;
+    if( parse_double_field( fields[ 6 ], &speed_knots ) && speed_knots >= 0.0 )
     {
-        snapshot.speed_mps = (float)( strtod( fields[ 6 ], NULL ) * 0.514444 );
+        snapshot.speed_mps = (float)( speed_knots * 0.514444 );
     }
+
     time_t epoch;
     if( parse_utc_epoch( fields[ 0 ], fields[ 8 ], &epoch ) )
     {
@@ -175,24 +252,34 @@ static void parse_gga( char *a_payload )
 {
     char *fields[ 16 ];
     const size_t count = split_fields( a_payload, fields, 16U );
-    if( count < 9U || atoi( fields[ 5 ] ) <= 0 )
+    long fix_quality;
+    if( count < 9U || !parse_int_field( fields[ 5 ], &fix_quality ) || fix_quality <= 0 )
     {
         return;
     }
-    const double latitude = nmea_coordinate( fields[ 1 ], fields[ 2 ][ 0 ] );
-    const double longitude = nmea_coordinate( fields[ 3 ], fields[ 4 ][ 0 ] );
-    if( isfinite( latitude ) && isfinite( longitude ) )
+
+    double latitude;
+    double longitude;
+    if( nmea_coordinate( fields[ 1 ], fields[ 2 ][ 0 ], true, &latitude ) &&
+        nmea_coordinate( fields[ 3 ], fields[ 4 ][ 0 ], false, &longitude ) )
     {
         snapshot.latitude_deg = latitude;
         snapshot.longitude_deg = longitude;
         snapshot.location_valid = true;
         location_updated_us = esp_timer_get_time();
     }
-    const int satellites = atoi( fields[ 6 ] );
-    snapshot.satellites = (uint8_t)( satellites < 0 ? 0 : ( satellites > 255 ? 255 : satellites ) );
-    if( '\0' != fields[ 8 ][ 0 ] )
+
+    long satellites;
+    if( parse_int_field( fields[ 6 ], &satellites ) )
     {
-        snapshot.altitude_m = strtof( fields[ 8 ], NULL );
+        snapshot.satellites =
+            (uint8_t)( satellites < 0 ? 0 : ( satellites > 255 ? 255 : satellites ) );
+    }
+
+    double altitude;
+    if( parse_double_field( fields[ 8 ], &altitude ) )
+    {
+        snapshot.altitude_m = (float)altitude;
     }
 }
 
