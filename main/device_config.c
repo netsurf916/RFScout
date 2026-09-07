@@ -334,7 +334,8 @@ static void load_audio_policy( const cJSON *a_root )
 
     const cJSON *interaction =
         cJSON_GetObjectItemCaseSensitive( audio, "interaction_gain_percent" );
-    if( cJSON_IsNumber( interaction ) && interaction->valueint >= 0 && interaction->valueint <= 100 )
+    if( cJSON_IsNumber( interaction ) && interaction->valueint >= 0 &&
+        interaction->valueint <= 100 )
     {
         config.audio_interaction_gain_percent = (uint8_t)interaction->valueint;
     }
@@ -499,8 +500,9 @@ static void load_timezones( const cJSON *a_root )
             const cJSON *label = cJSON_GetObjectItemCaseSensitive( entry, "label" );
             const cJSON *posix = cJSON_GetObjectItemCaseSensitive( entry, "posix" );
             if( !cJSON_IsString( name ) || !cJSON_IsString( label ) || !cJSON_IsString( posix ) ||
-                NULL == name->valuestring || NULL == label->valuestring || NULL == posix->valuestring ||
-                '\0' == name->valuestring[ 0 ] || '\0' == posix->valuestring[ 0 ] )
+                NULL == name->valuestring || NULL == label->valuestring ||
+                NULL == posix->valuestring || '\0' == name->valuestring[ 0 ] ||
+                '\0' == posix->valuestring[ 0 ] )
             {
                 continue;
             }
@@ -616,10 +618,9 @@ static void load_app_notifications( rfscout_app_id_t a_app, const cJSON *a_root 
         {
             continue;
         }
-        const cJSON *value =
-            cJSON_GetObjectItemCaseSensitive( characters, descriptor->config_key );
-        if( !cJSON_IsString( value ) || NULL == value->valuestring || '\0' == value->valuestring[ 0 ] ||
-            '\0' != value->valuestring[ 1 ] )
+        const cJSON *value = cJSON_GetObjectItemCaseSensitive( characters, descriptor->config_key );
+        if( !cJSON_IsString( value ) || NULL == value->valuestring ||
+            '\0' == value->valuestring[ 0 ] || '\0' != value->valuestring[ 1 ] )
         {
             continue;
         }
@@ -640,8 +641,8 @@ static void load_app_record( rfscout_app_id_t a_app, const cJSON *a_root )
         {
             config.wifi_timeout_seconds =
                 json_timeout_seconds( retention, "wifi_seconds", config.wifi_timeout_seconds );
-            config.ble_timeout_seconds = json_timeout_seconds(
-                retention, "bluetooth_seconds", config.ble_timeout_seconds );
+            config.ble_timeout_seconds =
+                json_timeout_seconds( retention, "bluetooth_seconds", config.ble_timeout_seconds );
         }
         const cJSON *sensitivity =
             cJSON_GetObjectItemCaseSensitive( a_root, "surveillance_sensitivity" );
@@ -766,9 +767,9 @@ static void add_notification_overrides( cJSON *a_root, rfscout_app_id_t a_app )
     }
     const bool enabled_override =
         config.notification_app_enabled[ a_app ] != policy->notifications_enabled_default;
-    const bool event_override = RFSCOUT_APP_WIFI_BT == a_app &&
-                                ( !config.wifi_device_feedback_enabled ||
-                                  !config.ble_device_feedback_enabled );
+    const bool event_override =
+        RFSCOUT_APP_WIFI_BT == a_app &&
+        ( !config.wifi_device_feedback_enabled || !config.ble_device_feedback_enabled );
     const bool character_override = notification_character_overrides_default( a_app );
     if( !enabled_override && !event_override && !character_override )
     {
