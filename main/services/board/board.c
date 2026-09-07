@@ -149,7 +149,8 @@ static const rfscout_board_profile_t tdeck_plus_profile = {
                     RFSCOUT_BOARD_CAP_KEYBOARD | RFSCOUT_BOARD_CAP_TRACKBALL |
                     RFSCOUT_BOARD_CAP_TOUCH | RFSCOUT_BOARD_CAP_SPEAKER |
                     RFSCOUT_BOARD_CAP_SD | RFSCOUT_BOARD_CAP_SCREEN_OFF |
-                    RFSCOUT_BOARD_CAP_DEEP_SLEEP | RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE,
+                    RFSCOUT_BOARD_CAP_DEEP_SLEEP | RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE |
+                    RFSCOUT_BOARD_CAP_GLOBAL_TABS,
     .power_enable_pin = 10,
     .user_key_pin = 0,
     .spi_mosi_pin = 41,

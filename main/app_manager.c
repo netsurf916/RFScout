@@ -75,6 +75,7 @@ static rfscout_app_runtime_result_t dispatch_runtime( rfscout_app_id_t a_app,
         .type = a_type,
         .now_us = a_now_us,
         .activated = a_activated,
+        .view = display_view(),
         .input =
             {
                 .type = RFSCOUT_INPUT_NONE,

@@ -39,6 +39,7 @@ typedef enum
     RFSCOUT_BOARD_CAP_DEEP_SLEEP = 1U << 12,
     RFSCOUT_BOARD_CAP_POWER_OFF = 1U << 13,
     RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE = 1U << 14,
+    RFSCOUT_BOARD_CAP_GLOBAL_TABS = 1U << 15,
 } rfscout_board_capability_t;
 
 typedef enum
@@ -150,6 +151,7 @@ bool board_profile_has( rfscout_board_capability_t a_capability );
 #define RFSCOUT_BOARD_HAS_TOUCH ( board_profile_has( RFSCOUT_BOARD_CAP_TOUCH ) )
 #define RFSCOUT_BOARD_HAS_ROTARY_ENCODER ( board_profile_has( RFSCOUT_BOARD_CAP_ROTARY_ENCODER ) )
 #define RFSCOUT_BOARD_HAS_PDM_MIC ( board_profile_has( RFSCOUT_BOARD_CAP_PDM_MIC ) )
+#define RFSCOUT_BOARD_HAS_GLOBAL_TABS ( board_profile_has( RFSCOUT_BOARD_CAP_GLOBAL_TABS ) )
 /* Both current profiles provide these providers, so keep the existing compile-time guards true. */
 #define RFSCOUT_BOARD_HAS_SPEAKER 1
 #define RFSCOUT_BOARD_HAS_INTERNAL_TEMPERATURE 1

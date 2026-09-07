@@ -11,6 +11,7 @@
 #define _RFSCOUT_DISPLAY_H_
 
 #include "board.h"
+#include "view.h"
 #include "esp_err.h"
 
 #include <stdbool.h>
@@ -41,18 +42,12 @@ typedef struct
     uint32_t capabilities;
 } rfscout_display_info_t;
 
-typedef struct
-{
-    int16_t x;
-    int16_t y;
-    uint16_t width;
-    uint16_t height;
-} rfscout_view_t;
-
 /** @brief Return runtime metadata for the display provider selected by the board profile. */
 const rfscout_display_info_t *display_info( void );
 /** @brief Return the rectangle available to the active application after global chrome reservations. */
 rfscout_view_t display_view( void );
+/** @brief Return the system-owned global navigation rectangle, or an empty view when not reserved. */
+rfscout_view_t display_navigation_view( void );
 
 /** @brief Initialize the board-selected display provider and framebuffer. */
 esp_err_t display_init( void );
