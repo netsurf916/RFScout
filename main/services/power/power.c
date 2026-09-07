@@ -533,6 +533,13 @@ static void update_requested_transition( int64_t a_now_us )
 
 void power_consume_wake_input( void )
 {
+    /* The dedicated power key is intentionally outside the global user-input lock. The lock
+       suppresses semantic navigation/selection sources, not physical device power control. */
+    if( RFSCOUT_BOARD_USER_KEY_PIN < 0 )
+    {
+        return;
+    }
+
     if( 0 == gpio_get_level( RFSCOUT_BOARD_USER_KEY_PIN ) )
     {
         suppress_current_press = true;
