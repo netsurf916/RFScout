@@ -55,11 +55,39 @@ static void make_label( const char *a_name, char a_label[ NAV_LABEL_MAX + 1U ] )
     a_label[ out ] = '\0';
 }
 
+static void draw_calibration( const rfscout_view_t *a_view )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    display_fill_rect( a_view->x, a_view->y, a_view->width, a_view->height, theme->background );
+    display_fill_rect( a_view->x, a_view->y, a_view->width, 2, theme->divider );
+    display_draw_text( a_view->x + 8, a_view->y + 10, "TOUCH CALIBRATION", theme->accent, 1U );
+
+    unsigned step = 0U;
+    unsigned total = 0U;
+    touch_calibration_progress( &step, &total );
+    const char *prompt = touch_calibration_prompt();
+    char instruction[ 64 ];
+    snprintf( instruction,
+              sizeof( instruction ),
+              "%u/%u TOUCH %s",
+              step,
+              total,
+              NULL != prompt ? prompt : "SCREEN" );
+    display_draw_text( a_view->x + 8, a_view->y + 34, instruction, theme->text, 1U );
+    display_draw_text( a_view->x + 8, a_view->y + 52, "LIFT FINGER BETWEEN POINTS", theme->secondary, 1U );
+}
+
 void navigation_bar_draw( void )
 {
     const rfscout_view_t view = display_navigation_view();
     if( ( 0U == view.width ) || ( 0U == view.height ) )
     {
+        return;
+    }
+
+    if( touch_calibration_active() )
+    {
+        draw_calibration( &view );
         return;
     }
 
@@ -120,16 +148,16 @@ void navigation_bar_draw( void )
             snprintf( coordinates,
                       sizeof( coordinates ),
                       "TOUCH %u,%u",
-                      (unsigned)sample.reference_x,
-                      (unsigned)sample.reference_y );
+                      (unsigned)( sample.calibrated ? sample.x : sample.reference_x ),
+                      (unsigned)( sample.calibrated ? sample.y : sample.reference_y ) );
             display_draw_text( view.x + 8, diagnostic_y, coordinates, theme->info, 1U );
         }
         else
         {
             display_draw_text( view.x + 8,
                                diagnostic_y,
-                               touch_available() ? "TOUCH READY (UNCAL)" : "TOUCH unavailable",
-                               touch_available() ? theme->secondary : theme->warning,
+                               touch_calibration_valid() ? "TOUCH READY" : "TOUCH UNCALIBRATED",
+                               touch_calibration_valid() ? theme->secondary : theme->warning,
                                1U );
         }
     }
