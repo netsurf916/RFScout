@@ -11,6 +11,7 @@
 #include "battery.h"
 #include "battery_indicator.h"
 #include "ble_monitor.h"
+#include "board.h"
 #include "device_config.h"
 #include "device_time.h"
 #include "display.h"
@@ -175,7 +176,10 @@ void app_main( void )
     ESP_ERROR_CHECK( observation_store_init() );
     ESP_ERROR_CHECK( system_events_init() );
     ESP_ERROR_CHECK( input_init() );
-    ESP_ERROR_CHECK( power_init() );
+    if( RFSCOUT_BOARD_USER_KEY_PIN >= 0 )
+    {
+        ESP_ERROR_CHECK( power_init() );
+    }
 
     result = notification_preferences_init();
     if( ESP_OK != result )
@@ -275,7 +279,10 @@ void app_main( void )
 
         battery_poll();
         power_policy_poll();
-        power_poll();
+        if( RFSCOUT_BOARD_USER_KEY_PIN >= 0 )
+        {
+            power_poll();
+        }
 
         observation_store_housekeeping();
         app_manager_poll();
