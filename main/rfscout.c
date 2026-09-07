@@ -12,6 +12,7 @@
 #include "battery_indicator.h"
 #include "ble_monitor.h"
 #include "board.h"
+#include "breadcrumbs.h"
 #include "device_config.h"
 #include "device_time.h"
 #include "display.h"
@@ -348,6 +349,12 @@ void app_main( void )
     {
         ESP_LOGW( TAG, "GPS service unavailable: %s", esp_err_to_name( result ) );
     }
+    result = breadcrumbs_init();
+    if( ( ESP_OK != result ) && ( ESP_ERR_NOT_SUPPORTED != result ) &&
+        ( ESP_ERR_INVALID_STATE != result ) )
+    {
+        ESP_LOGW( TAG, "breadcrumb recorder unavailable: %s", esp_err_to_name( result ) );
+    }
     ESP_ERROR_CHECK( radio_monitor_init( on_observation ) );
     ESP_ERROR_CHECK( ble_monitor_init( on_observation ) );
 
@@ -396,6 +403,7 @@ void app_main( void )
         navigation_bar_poll();
         gps_poll();
         gps_state_poll();
+        breadcrumbs_poll();
 
         battery_poll();
         power_policy_poll();

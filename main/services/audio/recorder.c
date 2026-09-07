@@ -60,7 +60,7 @@
 #define RECORDER_MONITOR_TASK_STACK 6144U
 #define RECORDER_MONITOR_TASK_PRIORITY 3U
 #define RECORDER_MONITOR_FIRST_FFT_BIN 1U
-#define RECORDER_MONITOR_MIN_RANGE_DB 24.0f
+#define RECORDER_MONITOR_MIN_RANGE_DB 18.0f
 #define RECORDER_MONITOR_HEADROOM_DB 3.0f
 #define RECORDER_MONITOR_RANGE_SMOOTH 0.05f
 #define RECORDER_EXPECTED_BYTES_PER_SECOND                                                         \
@@ -1244,6 +1244,16 @@ size_t recorder_monitor_bins( uint8_t *a_bins, size_t a_capacity )
         a_capacity < RFSCOUT_RECORDER_MONITOR_BINS ? a_capacity : RFSCOUT_RECORDER_MONITOR_BINS;
     memcpy( a_bins, monitor_spectrum, count );
     return count;
+}
+
+uint32_t recorder_monitor_bin_frequency_hz( size_t a_bin )
+{
+    if( a_bin >= RFSCOUT_RECORDER_MONITOR_BINS )
+    {
+        return 0U;
+    }
+    return (uint32_t)( ( RECORDER_MONITOR_FIRST_FFT_BIN + a_bin ) *
+                       (uint64_t)RFSCOUT_RECORDER_SAMPLE_RATE / RECORDER_MONITOR_FFT_SIZE );
 }
 
 uint8_t recorder_monitor_range_db( void )
