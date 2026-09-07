@@ -134,7 +134,12 @@ void navigation_bar_poll( void )
         return;
     }
 
-    size_t index = ( (size_t)( sample.x - (uint16_t)view.x ) * visible_count ) / view.width;
+    const size_t tab_width = view.width / visible_count;
+    if( 0U == tab_width )
+    {
+        return;
+    }
+    size_t index = (size_t)( sample.x - (uint16_t)view.x ) / tab_width;
     if( index >= visible_count )
     {
         index = visible_count - 1U;
