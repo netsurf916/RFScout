@@ -83,7 +83,7 @@ See [Board targets and porting](docs/BOARD_PORTING.md).
 
 ## Build and flashing
 
-RFScout targets ESP32-S3 with **ESP-IDF 6.2** and enforces clang-format 18.
+RFScout targets ESP32-S3 with **ESP-IDF 6.1** and enforces clang-format 18.
 
 ```sh
 idf.py set-target esp32s3
