@@ -31,6 +31,10 @@ esp_err_t touch_init( void );
 bool touch_poll( void );
 bool touch_available( void );
 bool touch_sample_get( rfscout_touch_sample_t *a_sample );
+/** @brief Return whether physical touch activity is currently present for display-idle policy. */
+bool touch_activity_pending( void );
+/** @brief Consume the current touch gesture after it has been used only to wake the display. */
+void touch_consume_wake( void );
 
 /** @brief Return whether a compatible calibration record is loaded and authoritative. */
 bool touch_calibration_valid( void );

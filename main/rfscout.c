@@ -387,12 +387,12 @@ void app_main( void )
 
     while( true )
     {
-        display_idle_poll();
         input_poll();
         if( touch_poll() )
         {
             display_invalidate();
         }
+        display_idle_poll();
         navigation_bar_poll();
         gps_poll();
         gps_state_poll();

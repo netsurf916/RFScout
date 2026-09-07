@@ -72,6 +72,8 @@ static i2c_master_dev_handle_t gt911;
 static bool available;
 static rfscout_touch_sample_t latest;
 static bool have_sample;
+static bool physical_pressed;
+static bool wake_suppressed;
 static portMUX_TYPE sample_lock = portMUX_INITIALIZER_UNLOCKED;
 static int64_t last_diagnostic_log_us;
 
@@ -386,6 +388,8 @@ esp_err_t touch_init( void )
     gt911 = NULL;
     portENTER_CRITICAL( &sample_lock );
     have_sample = false;
+    physical_pressed = false;
+    wake_suppressed = false;
     memset( &latest, 0, sizeof( latest ) );
     portEXIT_CRITICAL( &sample_lock );
 
@@ -455,10 +459,21 @@ bool touch_poll( void )
 
     const uint8_t count = status & GT911_STATUS_COUNT_MASK;
     sample.point_count = count <= GT911_MAX_POINTS ? count : GT911_MAX_POINTS;
-    sample.pressed = sample.point_count > 0U;
+    const bool pressed = sample.point_count > 0U;
+    bool suppress;
+    portENTER_CRITICAL( &sample_lock );
+    physical_pressed = pressed;
+    if( !pressed )
+    {
+        wake_suppressed = false;
+    }
+    suppress = wake_suppressed;
+    portEXIT_CRITICAL( &sample_lock );
+
+    sample.pressed = pressed && !suppress;
     ++sample.sequence;
 
-    if( sample.pressed )
+    if( pressed )
     {
         uint8_t point[ 8 ] = { 0 };
         if( ESP_OK == read_register( GT911_REG_POINT1, point, sizeof( point ) ) )
@@ -520,4 +535,23 @@ bool touch_sample_get( rfscout_touch_sample_t *a_sample )
     }
     portEXIT_CRITICAL( &sample_lock );
     return result;
+}
+
+bool touch_activity_pending( void )
+{
+    portENTER_CRITICAL( &sample_lock );
+    const bool result = available && physical_pressed;
+    portEXIT_CRITICAL( &sample_lock );
+    return result;
+}
+
+void touch_consume_wake( void )
+{
+    portENTER_CRITICAL( &sample_lock );
+    if( physical_pressed )
+    {
+        wake_suppressed = true;
+        latest.pressed = false;
+    }
+    portEXIT_CRITICAL( &sample_lock );
 }
