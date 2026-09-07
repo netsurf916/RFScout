@@ -74,7 +74,8 @@ static void draw_calibration( const rfscout_view_t *a_view )
               total,
               NULL != prompt ? prompt : "SCREEN" );
     display_draw_text( a_view->x + 8, a_view->y + 34, instruction, theme->text, 1U );
-    display_draw_text( a_view->x + 8, a_view->y + 52, "LIFT FINGER BETWEEN POINTS", theme->secondary, 1U );
+    display_draw_text(
+        a_view->x + 8, a_view->y + 52, "LIFT FINGER BETWEEN POINTS", theme->secondary, 1U );
 }
 
 void navigation_bar_draw( void )

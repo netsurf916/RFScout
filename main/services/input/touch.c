@@ -40,8 +40,7 @@
 
 static const char *TAG = "touch";
 static const char *CALIBRATION_PROMPTS[ TOUCH_CALIBRATION_POINTS ] = {
-    "TOP LEFT", "TOP RIGHT", "BOTTOM LEFT", "BOTTOM RIGHT", "CENTER"
-};
+    "TOP LEFT", "TOP RIGHT", "BOTTOM LEFT", "BOTTOM RIGHT", "CENTER" };
 
 typedef struct
 {
@@ -66,7 +65,8 @@ typedef struct
     uint16_t y;
 } calibration_point_t;
 
-_Static_assert( sizeof( touch_calibration_record_t ) <= 64U, "touch calibration record must stay bounded" );
+_Static_assert( sizeof( touch_calibration_record_t ) <= 64U,
+                "touch calibration record must stay bounded" );
 
 static i2c_master_dev_handle_t gt911;
 static bool available;
@@ -137,10 +137,8 @@ static bool calibration_record_compatible( const touch_calibration_record_t *a_r
              (uint32_t)RFSCOUT_BOARD_DISPLAY_HEIGHT / 2U );
 }
 
-static void apply_reference_transform( uint16_t a_raw_x,
-                                       uint16_t a_raw_y,
-                                       uint16_t *a_x,
-                                       uint16_t *a_y )
+static void
+apply_reference_transform( uint16_t a_raw_x, uint16_t a_raw_y, uint16_t *a_x, uint16_t *a_y )
 {
     /* Hardware-validated on T-Deck Plus: GT911 reports a 240x320 coordinate space.
        RFScout maps it to the 320x240 landscape display by swapping X/Y and mirroring Y. */
@@ -158,10 +156,8 @@ static void apply_reference_transform( uint16_t a_raw_x,
     *a_y = y;
 }
 
-static uint16_t normalize_axis( uint16_t a_value,
-                                uint16_t a_min,
-                                uint16_t a_max,
-                                uint16_t a_extent )
+static uint16_t
+normalize_axis( uint16_t a_value, uint16_t a_min, uint16_t a_max, uint16_t a_extent )
 {
     if( a_extent <= 1U || a_max <= a_min || a_value <= a_min )
     {
@@ -185,14 +181,10 @@ static void apply_calibration( rfscout_touch_sample_t *a_sample )
         return;
     }
 
-    a_sample->x = normalize_axis( a_sample->reference_x,
-                                  calibration.x_min,
-                                  calibration.x_max,
-                                  RFSCOUT_BOARD_DISPLAY_WIDTH );
-    a_sample->y = normalize_axis( a_sample->reference_y,
-                                  calibration.y_min,
-                                  calibration.y_max,
-                                  RFSCOUT_BOARD_DISPLAY_HEIGHT );
+    a_sample->x = normalize_axis(
+        a_sample->reference_x, calibration.x_min, calibration.x_max, RFSCOUT_BOARD_DISPLAY_WIDTH );
+    a_sample->y = normalize_axis(
+        a_sample->reference_y, calibration.y_min, calibration.y_max, RFSCOUT_BOARD_DISPLAY_HEIGHT );
 }
 
 static void publish_sample( const rfscout_touch_sample_t *a_sample )
