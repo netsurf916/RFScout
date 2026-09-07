@@ -21,7 +21,7 @@ The bundle contains a combined image for ordinary installation, the component im
 The normal **Build and formatting** workflow:
 
 1. runs the complete clang-format 18 audit and release-packager tests;
-2. builds RFScout with ESP-IDF 6.2 for eligible non-draft PR/main runs;
+2. builds RFScout with ESP-IDF 6.1 for eligible non-draft PR/main runs;
 3. creates a combined raw image with `idf.py merge-bin`;
 4. validates/packages the flash layout; and
 5. retains the candidate bundle as a short-lived GitHub Actions artifact.
@@ -80,7 +80,7 @@ From the repository **Actions** page, select **Prepare firmware release**, choos
 
 The workflow resolves the source ref to an immutable commit and rejects requests when the version is malformed/duplicate, the source is not part of `main`, or the source contains no commits after the latest published release.
 
-It repeats formatting, packaging tests, the ESP-IDF 6.2 build, and bundle generation at that exact commit. Only after those jobs pass does it create the semantic version tag at the validated commit and then create the **draft** GitHub Release against that existing tag. This explicit ordering prevents GitHub from assigning a temporary `untagged-*` release identity while a release is under review.
+It repeats formatting, packaging tests, the ESP-IDF 6.1 build, and bundle generation at that exact commit. Only after those jobs pass does it create the semantic version tag at the validated commit and then create the **draft** GitHub Release against that existing tag. This explicit ordering prevents GitHub from assigning a temporary `untagged-*` release identity while a release is under review.
 
 If draft creation itself fails after the workflow has pushed the tag, the workflow removes that newly-created tag before exiting. A successfully prepared draft intentionally retains its semantic tag while release notes and hardware validation are completed. The workflow never publishes the GitHub Release automatically.
 
