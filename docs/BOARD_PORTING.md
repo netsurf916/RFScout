@@ -9,11 +9,13 @@ Board definitions live in `main/services/board/board.{h,c}`. The selected profil
 - GPIO assignments and shared-bus wiring;
 - display geometry, transform metadata, and panel offsets;
 - peripheral addresses and interrupt pins;
-- storage, radio, audio, input, and navigation expectations;
-- semantic power capabilities;
+- storage, radio, audio, input, location, and navigation expectations;
+- battery-provider metadata and semantic power capabilities;
 - the board/profile name and ID.
 
-Applications must not branch on board IDs or names. They consume semantic services, availability, input events, and the managed application view.
+Applications must not branch on board IDs or names. They consume semantic services, provider availability, input events, and the managed application view.
+
+A profile capability means RFScout has a provider it is prepared to use safely on that profile. Merely knowing pins or addresses for hardware is not enough to advertise a capability. Reference-derived metadata may therefore exist for a peripheral whose provider remains disabled.
 
 ## Detection versus capability probing
 
@@ -26,21 +28,25 @@ Board-profile detection and ordinary device probing are intentionally separate s
 
 The temporary detection I2C bus is deleted before normal shared-I2C initialization.
 
-If no supported profile is detected, RFScout must not initialize normal board GPIO, display, SD, radio, input, audio, or power providers. The ESP32-S3 remains awake in an inert FreeRTOS delay loop so recovery flashing remains possible.
+If no supported profile is detected, RFScout does not initialize normal board GPIO, display, SD, radio, input, audio, location, or power providers. The ESP32-S3 remains awake in an inert FreeRTOS delay loop so recovery flashing remains possible.
 
 ## Current supported profiles
 
 ### LILYGO T-Embed CC1101 Plus
 
-The T-Embed profile is the hardware-validated baseline. Existing display geometry, rotary/button input, CC1101, nRF24, PDM microphone, speaker, SD, and power semantics should be preserved unless a hardware-verified change requires otherwise.
+The T-Embed profile is the hardware-validated baseline. Existing display geometry, rotary/button input, CC1101, nRF24, PDM microphone, speaker, SD, battery/charger telemetry, and power semantics are intentionally preserved by the universal-image conversion.
 
 ### LILYGO T-Deck Plus
 
-The T-Deck profile is currently reference-derived and has not yet been hardware validated. New provider capabilities should be enabled conservatively and only when RFScout is prepared to initialize those paths safely.
+The T-Deck profile has received initial hardware validation for runtime detection, the 320x240 ST7789 orientation/transform, the 320x170 managed app view plus 320x70 system region, trackball/center input, GT911 coordinate orientation, and persistent touch calibration.
 
 The early discriminator uses SDA GPIO18 / SCL GPIO8 and probes the GT911 at `0x5D` or `0x14`.
 
-The current bring-up profile exposes the known-safe architectural expectations needed for development, but intentionally withholds unvalidated active power and speaker capabilities. GPIO0 is presently reserved for the trackball/center input path rather than also acting as a semantic power key. T-Deck sleep/power behavior and speaker output should be enabled only after hardware validation.
+Current T-Deck providers include trackball/center input, calibrated GT911 touch, SD, GPS/NMEA, internal-temperature telemetry, and voltage-only battery telemetry. Battery percentage is estimated from the GPIO4 ADC and a profile-owned 2:1 divider; external-power/charging state is intentionally unavailable because RFScout has no authoritative digital source for it.
+
+T-Deck GPIO0 is reserved for trackball-center/BOOT input and is not treated as an RFScout power key. The board exposes no RFScout sleep, deep-sleep, or physical power-off capability yet. Speaker/audio and other unvalidated active peripherals likewise remain disabled even where reference pin metadata is known.
+
+Battery ADC, SD/shared-SPI behavior, GPS acquisition/time synchronization, and the final cross-board regression pass still require hardware validation before this profile should be treated as release-validated.
 
 ## Input boundary
 
@@ -49,40 +55,59 @@ The `input` service exposes board-neutral semantic input:
 - navigation with signed steps;
 - select and long-select;
 - back;
-- character input;
-- future calibrated pointer/touch events.
+- character input for future keyboard-capable providers.
 
-T-Embed uses the validated rotary/button provider. T-Deck currently uses a basic trackball/center provider as a non-touch fallback. GT911 touch and keyboard input should be added as semantic providers without exposing T-Deck-specific logic to applications.
+T-Embed uses the validated rotary/button provider. T-Deck uses trackball/center as its non-touch fallback. GT911 is a separate touch service: raw controller coordinates are transformed and calibrated into logical display coordinates, then the system navigation layer consumes calibrated touches in the global tab region before any future app-level pointer dispatch.
+
+Keyboard support is not yet advertised as a T-Deck capability even though its reference I2C address/IRQ metadata is retained in the profile.
 
 ## Display and view boundary
 
-The display service owns the physical LCD and framebuffer. Runtime display metadata comes from the selected board profile.
+The display service owns the physical LCD and framebuffer. Runtime physical-display metadata comes from the selected board profile.
 
 Applications receive one managed `rfscout_view_t` presentation surface through their app session. The current canonical app view is 320x170 on both supported profiles:
 
 - on T-Embed it maps to the full physical 320x170 display;
 - on T-Deck it occupies the first 320x170 pixels of the 320x240 display;
-- the remaining T-Deck 320x70 region is system-owned and reserved for future tabs/navigation chrome.
+- the remaining T-Deck 320x70 region is system-owned and contains global application tabs plus touch/calibration status.
 
-The view carries standardized session `init`/`deinit` traits so application transitions can prepare and sanitize presentation state consistently. Applications should use their assigned view rather than physical display dimensions.
+The view carries standardized session `init`/`deinit` traits so application transitions prepare and sanitize presentation state consistently. Applications should size app-owned drawing against their assigned view rather than physical panel dimensions. The presentation layer redraws system chrome after app rendering as a defensive compatibility measure, not as permission for apps to draw outside their view.
 
-## Power boundary
+ST7789 initialization consumes profile-owned physical width/height, native geometry, swap-XY, mirror, inversion, panel-gap, pin, and backlight metadata. T-Embed uses PWM backlight control; T-Deck uses the panel's pulse-stepped backlight semantics.
 
-Board profiles advertise semantic power capabilities only when RFScout is prepared to perform them safely on that profile. Device policy chooses among those semantic actions; provider code owns PMU/GPIO/wake-source mechanics.
+## Touch calibration
 
-A reference schematic showing a possible sleep or power path is not sufficient reason to advertise the capability. T-Deck power behavior remains disabled during initial bring-up until verified on hardware.
+Touch calibration is system/board state, not app configuration and not SD content. It is stored through the bounded internal persistent-record service under one system-owned record.
+
+A missing or incompatible record enters startup calibration before touch becomes authoritative. Compatibility includes board identity and display/native geometry/transform metadata. Explicit recalibration replaces the same record atomically; a failed replacement does not erase the previously persisted record.
+
+## Location and time
+
+The T-Deck GPS provider exposes checksum-validated NMEA state through a board-neutral snapshot with independent location and UTC-time validity. Provider initialization is distinct from receiver detection: the UI does not advertise a GPS receiver until a supported checksum-valid sentence has been observed.
+
+The `device_time` service owns wall-clock validity/source, Auto/Manual synchronization policy, and timezone conversion. In Auto mode a fix-valid GPS UTC timestamp may synchronize the system clock; GPS itself does not own timezone policy.
+
+## Battery and power boundary
+
+Battery telemetry and destructive power behavior are intentionally separate capabilities.
+
+T-Embed uses its hardware fuel-gauge/charger path and can establish external-power state for protective policy. T-Deck currently exposes only filtered battery voltage and estimated state-of-charge from its ADC. RFScout does not infer charging or USB state from voltage, and automatic low-battery power action is therefore disabled on a voltage-only profile because destructive/protective action requires authoritative external-power telemetry.
+
+Board profiles advertise semantic power actions only when RFScout is prepared to perform them safely. A schematic showing a possible sleep or shutdown path is not sufficient reason to expose the capability.
 
 ## Audio boundary
 
-Speaker and microphone behavior are semantic services rather than application-visible board features. The validated T-Embed I2S speaker and PDM microphone paths must remain intact.
+Speaker and microphone behavior are semantic services rather than application-visible board features. The validated T-Embed I2S speaker and PDM microphone paths remain intact.
 
-T-Deck ES7210 microphone and speaker support should be introduced as separate providers behind the same semantic services. Reference-derived pins may be retained as implementation notes, but an unvalidated provider must not be initialized simply because the reference hardware appears to contain it.
+T-Deck ES7210 microphone and speaker support should be introduced separately behind the same semantic services. Reference-derived pins may be retained as implementation metadata, but an unvalidated provider must not be initialized simply because the hardware appears to contain it.
 
 ## Shared buses
 
-SPI and I2C buses are initialized from the active runtime profile. Providers must respect profile capability checks before adding devices or configuring chip-select/control pins.
+SPI and I2C buses are initialized from the active runtime profile. Providers must respect profile capability checks before adding devices or configuring active peripheral control pins.
 
-T-Deck display, SD, and SX1262 share the SPI bus. Chip-select behavior must be validated before the SX1262 provider is enabled.
+T-Deck display, SD, and SX1262 share the SPI bus. Known chip-select pins are driven inactive during platform setup, but SX1262 remains unadvertised until its provider and shared-bus behavior are implemented and hardware-validated.
+
+The shared board I2C service is used by ordinary post-detection peripheral providers; the temporary fingerprint bus is always torn down first.
 
 ## PSRAM requirement
 
