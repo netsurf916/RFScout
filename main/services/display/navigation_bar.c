@@ -1,0 +1,160 @@
+/**
+    navigation_bar.c : RFScout system-owned global app navigation chrome
+    Description: Renders available app tabs into display space outside the managed app view.
+    Copyright 2026 Daniel Wilson
+    SPDX-License-Identifier: MIT
+*/
+
+#include "navigation_bar.h"
+
+#include "app_framework.h"
+#include "app_manager.h"
+#include "device_config.h"
+#include "display.h"
+#include "touch.h"
+#include "ui_theme.h"
+
+#include "esp_log.h"
+
+#include <stddef.h>
+#include <stdio.h>
+#include <string.h>
+
+#define NAV_LABEL_MAX 5U
+#define NAV_TEXT_CELL_WIDTH 6
+#define NAV_TEXT_SCALE 1U
+#define NAV_TAB_HEIGHT 38
+
+static const char *TAG = "navigation_bar";
+static bool touch_init_attempted;
+
+static bool app_visible( rfscout_app_id_t a_app )
+{
+    if( RFSCOUT_APP_DEVICE == a_app )
+    {
+        return true;
+    }
+    return device_config_app_enabled( a_app ) && app_framework_check_available( a_app );
+}
+
+static void make_label( const char *a_name, char a_label[ NAV_LABEL_MAX + 1U ] )
+{
+    size_t out = 0U;
+    if( NULL != a_name )
+    {
+        for( size_t index = 0U; a_name[ index ] != '\0' && out < NAV_LABEL_MAX; ++index )
+        {
+            const char value = a_name[ index ];
+            if( ( value >= 'A' && value <= 'Z' ) || ( value >= 'a' && value <= 'z' ) ||
+                ( value >= '0' && value <= '9' ) )
+            {
+                a_label[ out++ ] = value;
+            }
+        }
+    }
+    if( 0U == out )
+    {
+        a_label[ out++ ] = '?';
+    }
+    a_label[ out ] = '\0';
+}
+
+static void initialize_touch_once( void )
+{
+    if( touch_init_attempted )
+    {
+        return;
+    }
+    touch_init_attempted = true;
+    const esp_err_t result = touch_init();
+    if( ( ESP_OK != result ) && ( ESP_ERR_NOT_SUPPORTED != result ) )
+    {
+        ESP_LOGW( TAG, "touch diagnostics unavailable: %s", esp_err_to_name( result ) );
+    }
+}
+
+void navigation_bar_draw( void )
+{
+    const rfscout_view_t view = display_navigation_view();
+    if( ( 0U == view.width ) || ( 0U == view.height ) )
+    {
+        return;
+    }
+
+    initialize_touch_once();
+
+    rfscout_app_id_t visible[ RFSCOUT_APP_COUNT ];
+    size_t visible_count = 0U;
+    for( int app = 0; app < RFSCOUT_APP_COUNT; ++app )
+    {
+        const rfscout_app_id_t candidate = (rfscout_app_id_t)app;
+        if( app_visible( candidate ) )
+        {
+            visible[ visible_count++ ] = candidate;
+        }
+    }
+    if( 0U == visible_count )
+    {
+        return;
+    }
+
+    const ui_theme_palette_t *theme = ui_theme_get();
+    display_fill_rect( view.x, view.y, view.width, view.height, theme->background );
+    display_fill_rect( view.x, view.y, view.width, 2, theme->divider );
+
+    const int tab_height = view.height < NAV_TAB_HEIGHT ? view.height : NAV_TAB_HEIGHT;
+    const int tab_width = (int)view.width / (int)visible_count;
+    for( size_t index = 0U; index < visible_count; ++index )
+    {
+        const rfscout_app_id_t app = visible[ index ];
+        const int x = view.x + (int)index * tab_width;
+        const int width = ( index + 1U == visible_count )
+                              ? ( view.x + (int)view.width - x )
+                              : tab_width;
+        const bool active = app == app_manager_current();
+        if( active )
+        {
+            display_fill_rect( x, view.y + 2, width, tab_height - 2, theme->selected );
+        }
+        if( index > 0U )
+        {
+            display_fill_rect( x, view.y + 6, 1, tab_height - 12, theme->divider );
+        }
+
+        const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( app );
+        char label[ NAV_LABEL_MAX + 1U ];
+        make_label( NULL != descriptor ? descriptor->name : NULL, label );
+        const int text_width = (int)strlen( label ) * NAV_TEXT_CELL_WIDTH;
+        const int text_x = x + ( width - text_width ) / 2;
+        const int text_y = view.y + ( tab_height - 7 ) / 2;
+        display_draw_text( text_x,
+                           text_y,
+                           label,
+                           active ? theme->text : theme->secondary,
+                           NAV_TEXT_SCALE );
+    }
+
+    if( view.height > (uint16_t)tab_height )
+    {
+        const int diagnostic_y = view.y + tab_height + 8;
+        rfscout_touch_sample_t sample;
+        if( touch_sample_get( &sample ) && sample.pressed )
+        {
+            char coordinates[ 24 ];
+            snprintf( coordinates,
+                      sizeof( coordinates ),
+                      "TOUCH %u,%u",
+                      (unsigned)sample.reference_x,
+                      (unsigned)sample.reference_y );
+            display_draw_text( view.x + 8, diagnostic_y, coordinates, theme->info, 1U );
+        }
+        else
+        {
+            display_draw_text( view.x + 8,
+                               diagnostic_y,
+                               touch_available() ? "TOUCH READY (UNCAL)" : "TOUCH unavailable",
+                               touch_available() ? theme->secondary : theme->warning,
+                               1U );
+        }
+    }
+}

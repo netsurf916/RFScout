@@ -102,6 +102,7 @@ idf_component_register(
         "services/board/board_spi.c"
         "services/board/board_i2c.c"
         "services/input/input.c"
+        "services/input/touch.c"
         "services/wireless/radio_monitor.c"
         "services/wireless/ble_monitor.c"
         "services/wireless/oui_database.c"
@@ -126,6 +127,7 @@ idf_component_register(
         "services/display/display_mask.c"
         "services/display/display_brightness.c"
         "services/display/display_idle.c"
+        "services/display/navigation_bar.c"
         "services/display/ui_present.c"
     INCLUDE_DIRS ${RFSCOUT_INCLUDE_DIRS} "${CMAKE_CURRENT_BINARY_DIR}"
     PRIV_REQUIRES bt cjson esp_driver_ledc esp_driver_tsens mbedtls
