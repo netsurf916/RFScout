@@ -226,14 +226,18 @@ static bool open_segment( void )
     if( active_size > 0U )
     {
         struct stat state;
-        if( 0 == stat( path, &state ) && state.st_size >= 0 )
+        if( 0 != stat( path, &state ) )
         {
-            active_size = (size_t)state.st_size;
+            mark_io_error( "log size query" );
+            return false;
         }
-        else
+        if( state.st_size < 0 )
         {
-            active_size = 0U;
+            io_error = true;
+            ESP_LOGE( TAG, "log size query returned a negative file size" );
+            return false;
         }
+        active_size = (size_t)state.st_size;
     }
 
     if( active_size >= RFSCOUT_LOG_SEGMENT_SIZE )
@@ -568,10 +572,16 @@ static bool queue_record( const log_record_t *a_record )
     return false;
 }
 
-/** @brief Durably write all records currently queued as one SD burst. */
+/** @brief Durably write the records that were queued when this SD burst began. */
 static void flush_queued_batch( void )
 {
-    if( NULL == queue || 0U == uxQueueMessagesWaiting( queue ) )
+    if( NULL == queue )
+    {
+        return;
+    }
+
+    const UBaseType_t batch_count = uxQueueMessagesWaiting( queue );
+    if( 0U == batch_count )
     {
         return;
     }
@@ -583,8 +593,12 @@ static void flush_queued_batch( void )
     }
 
     log_record_t record;
-    while( pdTRUE == xQueueReceive( queue, &record, 0 ) )
+    for( UBaseType_t index = 0U; index < batch_count; ++index )
     {
+        if( pdTRUE != xQueueReceive( queue, &record, 0 ) )
+        {
+            break;
+        }
         if( !write_record( &record ) )
         {
             ++dropped_records;
