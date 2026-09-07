@@ -163,7 +163,7 @@ rfscout_app_transition_diagnostics_t app_lifecycle_transition(
     result = app_session_ensure( a_to );
     if( ESP_OK != result )
     {
-        diagnostics.outcome = RFSCOUT_APP_TRANSITION_COMMITTED_MEMORY_INVARIANT;
+        diagnostics.outcome = RFSCOUT_APP_TRANSITION_COMMITTED_DESTINATION_FAILED;
         diagnostics.error = result;
         ESP_LOGE( TAG,
                   "destination app session creation failed from=%d to=%d: %s",
@@ -182,7 +182,8 @@ bool app_lifecycle_transition_committed( const rfscout_app_transition_diagnostic
         return false;
     }
     return ( RFSCOUT_APP_TRANSITION_COMMITTED == a_diagnostics->outcome ) ||
-           ( RFSCOUT_APP_TRANSITION_COMMITTED_MEMORY_INVARIANT == a_diagnostics->outcome );
+           ( RFSCOUT_APP_TRANSITION_COMMITTED_MEMORY_INVARIANT == a_diagnostics->outcome ) ||
+           ( RFSCOUT_APP_TRANSITION_COMMITTED_DESTINATION_FAILED == a_diagnostics->outcome );
 }
 
 rfscout_app_transition_diagnostics_t app_lifecycle_last_transition( void )
