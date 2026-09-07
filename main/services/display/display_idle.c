@@ -7,6 +7,7 @@
 
 #include "display_idle.h"
 
+#include "board.h"
 #include "device_config.h"
 #include "display.h"
 #include "input.h"
@@ -228,7 +229,10 @@ void display_idle_poll( void )
         if( DISPLAY_IDLE_ACTIVE != state )
         {
             input_consume_wake();
-            power_consume_wake_input();
+            if( RFSCOUT_BOARD_USER_KEY_PIN >= 0 )
+            {
+                power_consume_wake_input();
+            }
             (void)wake_display( "user activity" );
         }
         last_activity_us = now_us;
