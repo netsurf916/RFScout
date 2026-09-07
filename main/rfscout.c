@@ -255,6 +255,10 @@ void app_main( void )
     {
         ESP_LOGW( TAG, "touch diagnostics unavailable: %s", esp_err_to_name( result ) );
     }
+    else if( ESP_OK == result && touch_calibration_active() )
+    {
+        display_invalidate();
+    }
     system_events_poll();
     display_set_brightness( device_config_get()->brightness_percent );
     ESP_ERROR_CHECK( display_idle_init() );
@@ -282,7 +286,10 @@ void app_main( void )
     {
         display_idle_poll();
         input_poll();
-        touch_poll();
+        if( touch_poll() )
+        {
+            display_invalidate();
+        }
 
         battery_poll();
         power_policy_poll();

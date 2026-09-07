@@ -433,20 +433,21 @@ esp_err_t touch_init( void )
     return ESP_OK;
 }
 
-void touch_poll( void )
+bool touch_poll( void )
 {
     if( !available || ( NULL == gt911 ) )
     {
-        return;
+        return false;
     }
 
     uint8_t status = 0U;
     if( ESP_OK != read_register( GT911_REG_STATUS, &status, sizeof( status ) ) ||
         0U == ( status & GT911_STATUS_READY ) )
     {
-        return;
+        return false;
     }
 
+    bool changed = false;
     rfscout_touch_sample_t sample;
     portENTER_CRITICAL( &sample_lock );
     sample = latest;
@@ -469,6 +470,7 @@ void touch_poll( void )
             apply_calibration( &sample );
             calibration_capture( &sample );
             publish_sample( &sample );
+            changed = true;
 
             const int64_t now_us = esp_timer_get_time();
             if( now_us - last_diagnostic_log_us >= TOUCH_DIAGNOSTIC_LOG_US )
@@ -491,9 +493,11 @@ void touch_poll( void )
         calibration_press_latched = false;
         apply_calibration( &sample );
         publish_sample( &sample );
+        changed = true;
     }
 
     (void)write_u8( GT911_REG_STATUS, 0U );
+    return changed;
 }
 
 bool touch_available( void )

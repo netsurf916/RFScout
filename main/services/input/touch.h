@@ -27,7 +27,8 @@ typedef struct
 } rfscout_touch_sample_t;
 
 esp_err_t touch_init( void );
-void touch_poll( void );
+/** @brief Poll touch state and return true when presentation-visible touch state changed. */
+bool touch_poll( void );
 bool touch_available( void );
 bool touch_sample_get( rfscout_touch_sample_t *a_sample );
 
