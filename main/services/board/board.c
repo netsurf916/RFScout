@@ -154,8 +154,8 @@ static const rfscout_board_profile_t tdeck_plus_profile = {
     .id = RFSCOUT_BOARD_TDECK_PLUS,
     .name = "LILYGO T-Deck Plus",
     .capabilities = RFSCOUT_BOARD_CAP_GPS | RFSCOUT_BOARD_CAP_TRACKBALL | RFSCOUT_BOARD_CAP_TOUCH |
-                    RFSCOUT_BOARD_CAP_SD | RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE |
-                    RFSCOUT_BOARD_CAP_GLOBAL_TABS,
+                    RFSCOUT_BOARD_CAP_SPEAKER | RFSCOUT_BOARD_CAP_SD |
+                    RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE | RFSCOUT_BOARD_CAP_GLOBAL_TABS,
     .power_enable_pin = 10,
     .user_key_pin = -1,
     .spi_mosi_pin = 41,
@@ -205,9 +205,9 @@ static const rfscout_board_profile_t tdeck_plus_profile = {
     .es7210_lrclk_pin = 21,
     .es7210_sclk_pin = 47,
     .es7210_data_pin = 14,
-    .speaker_lrclk_pin = -1,
-    .speaker_bclk_pin = -1,
-    .speaker_data_pin = -1,
+    .speaker_lrclk_pin = 5,
+    .speaker_bclk_pin = 7,
+    .speaker_data_pin = 6,
     .battery_type = RFSCOUT_BATTERY_ADC_VOLTAGE_ONLY,
     .battery_adc_pin = 4,
     .battery_divider_numerator = 2,
