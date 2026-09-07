@@ -1260,7 +1260,7 @@ bool device_view_input( bool a_pressed, int a_delta )
         }
         if( ( DEVICE_ITEM_SAVE == selected_item ) && !editing )
         {
-            save_error = ( ESP_OK != device_config_save( false, 0, NULL ) );
+            save_error = ( ESP_OK != device_config_save() );
             emit_device_event( save_error ? RFSCOUT_EVENT_ERROR : RFSCOUT_EVENT_ACTIVATE,
                                save_error ? -1 : 0 );
             device_view_render();

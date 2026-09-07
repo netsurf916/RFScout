@@ -131,9 +131,4 @@ const device_timezone_t *device_config_timezone( void );
 esp_err_t device_config_save( void );
 esp_err_t device_config_save_if_dirty( void );
 
-#ifndef RFSCOUT_DEVICE_CONFIG_IMPLEMENTATION
-/* Transitional source compatibility: old callers' ignored time arguments collapse to the v1 API. */
-#define device_config_save( ... ) device_config_save()
-#endif
-
 #endif // _RFSCOUT_DEVICE_CONFIG_H_
