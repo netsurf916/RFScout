@@ -43,7 +43,7 @@ jobs:
     if: github.event_name == 'push' || github.event.pull_request.draft == false
     name: ESP-IDF Build and candidate bundle
     runs-on: ubuntu-latest
-    container: espressif/idf:release-v6.1
+    container: espressif/idf:release-v6.2
 
     steps:
       - uses: actions/checkout@v6
