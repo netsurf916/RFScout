@@ -114,6 +114,14 @@ esp_err_t storage_init( void )
     return ESP_OK;
 }
 
+void storage_shutdown( void )
+{
+    /* The platform owns the mount for the lifetime of this firmware instance. Recorder and logger
+       are quiesced before terminal power transitions, so there is no filesystem state left to
+       flush here. Keeping the mount intact also makes a failed physical power-off immediately
+       recoverable without an unmount/remount state machine. */
+}
+
 bool storage_is_available( void )
 {
     return mounted && !media_lost;
