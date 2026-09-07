@@ -10,8 +10,8 @@
 #include "device_config.h"
 #include "persistent_store.h"
 
+#include <stdint.h>
 #include <stdlib.h>
-#include <string.h>
 #include <sys/time.h>
 
 #define DEVICE_TIME_PLAUSIBLE_EPOCH 1577836800LL
@@ -31,7 +31,7 @@ _Static_assert( sizeof( device_time_policy_record_t ) <= 16U, "time policy recor
 
 static bool time_valid;
 static rfscout_time_source_t time_source;
-static rfscout_time_mode_t time_mode = RFSCOUT_TIME_MODE_AUTO;
+static rfscout_time_mode_t time_mode = RFSCOUT_TIME_MODE_MANUAL;
 
 static esp_err_t persist_mode( void )
 {
@@ -56,7 +56,7 @@ static void load_mode( void )
         time_mode = (rfscout_time_mode_t)record.mode;
         return;
     }
-    time_mode = RFSCOUT_TIME_MODE_AUTO;
+    time_mode = RFSCOUT_TIME_MODE_MANUAL;
 }
 
 static esp_err_t set_epoch( time_t a_epoch, rfscout_time_source_t a_source )
@@ -110,7 +110,8 @@ esp_err_t device_time_set_epoch( time_t a_epoch )
         return result;
     }
     time_mode = RFSCOUT_TIME_MODE_MANUAL;
-    return persist_mode();
+    (void)persist_mode();
+    return ESP_OK;
 }
 
 esp_err_t device_time_offer_gps( time_t a_epoch )
@@ -132,8 +133,14 @@ esp_err_t device_time_set_mode( rfscout_time_mode_t a_mode )
     {
         return ESP_OK;
     }
+    const rfscout_time_mode_t previous = time_mode;
     time_mode = a_mode;
-    return persist_mode();
+    const esp_err_t result = persist_mode();
+    if( ESP_OK != result )
+    {
+        time_mode = previous;
+    }
+    return result;
 }
 
 rfscout_time_mode_t device_time_mode( void )
