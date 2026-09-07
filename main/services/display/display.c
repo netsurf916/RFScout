@@ -1,6 +1,6 @@
 /**
     display.c : RFScout ST7789 LCD implementation
-    Description: Native ESP-IDF framebuffer driver for the T-Embed display.
+    Description: Native ESP-IDF framebuffer driver for the runtime-selected ST7789 profile.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -47,7 +47,6 @@ static const uint8_t font[ 95 ][ 5 ] =
 };
 // clang-format on
 
-/** @brief Signal completion of a DMA-backed color transfer. */
 static bool transfer_complete( esp_lcd_panel_io_handle_t a_io,
                                esp_lcd_panel_io_event_data_t *a_event,
                                void *a_context )
@@ -58,7 +57,6 @@ static bool transfer_complete( esp_lcd_panel_io_handle_t a_io,
     return false;
 }
 
-/** @brief Wait for the active LCD DMA transfer to complete. */
 static void wait_for_transfer( void )
 {
     while( !transfer_done )
@@ -66,7 +64,6 @@ static void wait_for_transfer( void )
     }
 }
 
-/** @brief Validate a framebuffer rectangle that must lie fully on-screen. */
 static bool valid_rect( int a_x, int a_y, int a_width, int a_height )
 {
     return ( a_x >= 0 ) && ( a_y >= 0 ) && ( a_width > 0 ) && ( a_height > 0 ) &&
@@ -217,7 +214,6 @@ void display_fill_rect_raw( int a_x, int a_y, int a_width, int a_height, uint16_
     display_invalidate();
 }
 
-/** @brief Write one scaled glyph to the local framebuffer using an already-resolved color. */
 static void draw_character( int a_x, int a_y, char a_character, uint16_t a_color, unsigned a_scale )
 {
     if( ( a_character < 32 ) || ( a_character > 126 ) )
@@ -302,19 +298,24 @@ esp_err_t display_init( void )
     ESP_ERROR_CHECK( esp_lcd_new_panel_st7789( io, &panel_config, &panel ) );
     ESP_ERROR_CHECK( esp_lcd_panel_reset( panel ) );
     ESP_ERROR_CHECK( esp_lcd_panel_init( panel ) );
-    ESP_ERROR_CHECK( esp_lcd_panel_swap_xy( panel, true ) );
-    ESP_ERROR_CHECK( esp_lcd_panel_mirror( panel, false, true ) );
+    ESP_ERROR_CHECK( esp_lcd_panel_swap_xy( panel, RFSCOUT_BOARD_DISPLAY_SWAP_XY ) );
+    ESP_ERROR_CHECK( esp_lcd_panel_mirror(
+        panel, RFSCOUT_BOARD_DISPLAY_MIRROR_X, RFSCOUT_BOARD_DISPLAY_MIRROR_Y ) );
     ESP_ERROR_CHECK(
         esp_lcd_panel_set_gap( panel, RFSCOUT_BOARD_DISPLAY_X_GAP, RFSCOUT_BOARD_DISPLAY_Y_GAP ) );
-    ESP_ERROR_CHECK( esp_lcd_panel_invert_color( panel, true ) );
+    ESP_ERROR_CHECK( esp_lcd_panel_invert_color( panel, RFSCOUT_BOARD_DISPLAY_INVERT_COLOR ) );
     ESP_ERROR_CHECK( esp_lcd_panel_disp_on_off( panel, true ) );
     output_enabled = true;
 
     display_clear( 0x0000U );
     ESP_ERROR_CHECK( display_flush() );
-    gpio_set_level( RFSCOUT_BOARD_DISPLAY_BACKLIGHT_PIN, 1 );
-    ESP_LOGI(
-        TAG, "ST7789 LCD initialized at %dx%d", RFSCOUT_DISPLAY_WIDTH, RFSCOUT_DISPLAY_HEIGHT );
+    display_set_brightness( 100U );
+    ESP_LOGI( TAG,
+              "ST7789 LCD initialized at %dx%d (native %dx%d)",
+              RFSCOUT_DISPLAY_WIDTH,
+              RFSCOUT_DISPLAY_HEIGHT,
+              RFSCOUT_BOARD_DISPLAY_NATIVE_WIDTH,
+              RFSCOUT_BOARD_DISPLAY_NATIVE_HEIGHT );
     return ESP_OK;
 }
 
