@@ -36,13 +36,27 @@ static void ensure_io_mutex( void )
     }
 }
 
-static bool storage_io_acquire( TickType_t a_timeout )
+bool storage_io_acquire( uint32_t a_timeout_ms )
 {
     ensure_io_mutex();
-    return ( NULL != io_mutex ) && ( pdTRUE == xSemaphoreTakeRecursive( io_mutex, a_timeout ) );
+    if( NULL == io_mutex )
+    {
+        return false;
+    }
+
+    TickType_t timeout = portMAX_DELAY;
+    if( RFSCOUT_STORAGE_WAIT_FOREVER != a_timeout_ms )
+    {
+        timeout = pdMS_TO_TICKS( a_timeout_ms );
+        if( ( a_timeout_ms > 0U ) && ( 0U == timeout ) )
+        {
+            timeout = 1U;
+        }
+    }
+    return pdTRUE == xSemaphoreTakeRecursive( io_mutex, timeout );
 }
 
-static void storage_io_release( void )
+void storage_io_release( void )
 {
     if( NULL != io_mutex )
     {
@@ -105,30 +119,6 @@ bool storage_is_available( void )
     return mounted && !media_lost;
 }
 
-esp_err_t storage_transaction( storage_transaction_fn_t a_operation, void *a_context )
-{
-    if( NULL == a_operation )
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-    if( !storage_is_available() )
-    {
-        return ESP_ERR_INVALID_STATE;
-    }
-    if( !storage_io_acquire( portMAX_DELAY ) )
-    {
-        return ESP_ERR_NO_MEM;
-    }
-
-    esp_err_t result = ESP_ERR_INVALID_STATE;
-    if( storage_is_available() )
-    {
-        result = a_operation( a_context );
-    }
-    storage_io_release();
-    return result;
-}
-
 esp_err_t storage_probe_card( void )
 {
     if( !mounted || NULL == card || media_lost )
@@ -138,12 +128,7 @@ esp_err_t storage_probe_card( void )
 
     /* sdmmc_get_status() bypasses FatFs. Serialize the raw command with bounded filesystem
        transactions so it cannot land in the middle of a multi-command filesystem operation. */
-    TickType_t timeout = pdMS_TO_TICKS( STORAGE_PROBE_IO_TIMEOUT_MS );
-    if( 0U == timeout )
-    {
-        timeout = 1U;
-    }
-    if( !storage_io_acquire( timeout ) )
+    if( !storage_io_acquire( STORAGE_PROBE_IO_TIMEOUT_MS ) )
     {
         return ESP_OK;
     }
@@ -172,7 +157,7 @@ esp_err_t storage_get_capacity( uint64_t *a_total_bytes, uint64_t *a_free_bytes 
     {
         return ESP_ERR_INVALID_STATE;
     }
-    if( !storage_io_acquire( portMAX_DELAY ) )
+    if( !storage_io_acquire( RFSCOUT_STORAGE_WAIT_FOREVER ) )
     {
         return ESP_ERR_NO_MEM;
     }
