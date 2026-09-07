@@ -71,6 +71,16 @@ static void poll_low_battery( void )
         return;
     }
 
+    /* Protective low-battery actions require authoritative external-power state.
+       Voltage-only profiles may expose estimated SOC to the UI, but must not
+       automatically sleep or power off when RFScout cannot know whether external
+       power is present. */
+    if( !battery_external_power_telemetry_expected() )
+    {
+        reset_low_battery( true );
+        return;
+    }
+
     if( low_battery_latched )
     {
         battery_refresh();
@@ -86,23 +96,16 @@ static void poll_low_battery( void )
         return;
     }
 
-    /* Boards with authoritative charger telemetry retain the conservative T-Embed
-       requirement: external power must be freshly known absent before a protective
-       transition remains armed. Voltage-only boards such as T-Deck intentionally
-       have no such signal, so they may act on fresh SOC without inventing one. */
-    if( battery_external_power_telemetry_expected() )
+    if( !battery.charger_fresh )
     {
-        if( !battery.charger_fresh )
-        {
-            reset_low_battery( true );
-            return;
-        }
-        if( battery.external_power || ( BATTERY_CHARGE_CHARGING == battery.charge_state ) ||
-            ( BATTERY_CHARGE_COMPLETE == battery.charge_state ) )
-        {
-            reset_low_battery( true );
-            return;
-        }
+        reset_low_battery( true );
+        return;
+    }
+    if( battery.external_power || ( BATTERY_CHARGE_CHARGING == battery.charge_state ) ||
+        ( BATTERY_CHARGE_COMPLETE == battery.charge_state ) )
+    {
+        reset_low_battery( true );
+        return;
     }
 
     if( !battery.available || !battery.percentage_fresh )
