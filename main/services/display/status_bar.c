@@ -9,6 +9,7 @@
 
 #include "device_time.h"
 #include "display.h"
+#include "gps.h"
 #include "input.h"
 #include "log_writer.h"
 #include "mlx90640.h"
@@ -72,6 +73,19 @@ static void draw_thermal_icon( int a_x )
     display_fill_rect( a_x + 5, y + 5, 3, 4, theme->info );
 }
 
+static void draw_gps_icon( int a_x, bool a_fix_valid )
+{
+    const int y = STATUS_BAR_ICON_Y;
+    const ui_theme_palette_t *theme = ui_theme_get();
+    const uint16_t color = a_fix_valid ? theme->success : theme->warning;
+
+    display_draw_text( a_x + 3, y + 3, "G", color, 1U );
+    display_fill_rect( a_x + 1, y + 7, 2, 1, color );
+    display_fill_rect( a_x + 9, y + 7, 2, 1, color );
+    display_fill_rect( a_x + 5, y + 1, 1, 2, color );
+    display_fill_rect( a_x + 5, y + 12, 1, 2, color );
+}
+
 static bool status_equal( const rfscout_status_bar_state_t *a_left,
                           const rfscout_status_bar_state_t *a_right )
 {
@@ -79,6 +93,8 @@ static bool status_equal( const rfscout_status_bar_state_t *a_left,
            ( a_left->sd_available == a_right->sd_available ) &&
            ( a_left->storage_error == a_right->storage_error ) &&
            ( a_left->thermal_available == a_right->thermal_available ) &&
+           ( a_left->gps_available == a_right->gps_available ) &&
+           ( a_left->gps_fix_valid == a_right->gps_fix_valid ) &&
            ( 0 == strcmp( a_left->clock, a_right->clock ) );
 }
 
@@ -94,6 +110,14 @@ bool status_bar_snapshot( rfscout_status_bar_state_t *a_state )
     a_state->sd_available = storage_is_available();
     a_state->storage_error = log_writer_has_error();
     a_state->thermal_available = mlx90640_is_detected();
+
+    rfscout_gps_snapshot_t gps;
+    if( gps_snapshot_get( &gps ) )
+    {
+        a_state->gps_available = gps.available;
+        a_state->gps_fix_valid = gps.location_valid;
+    }
+
     (void)device_time_format_clock( a_state->clock, sizeof( a_state->clock ) );
     return true;
 }
@@ -130,6 +154,12 @@ void status_bar_draw_state( const rfscout_status_bar_state_t *a_state )
     {
         x -= STATUS_BAR_ICON_WIDTH;
         draw_thermal_icon( x );
+        x -= STATUS_BAR_ICON_GAP;
+    }
+    if( a_state->gps_available )
+    {
+        x -= STATUS_BAR_ICON_WIDTH;
+        draw_gps_icon( x, a_state->gps_fix_valid );
         x -= STATUS_BAR_ICON_GAP;
     }
 
