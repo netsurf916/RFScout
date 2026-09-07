@@ -1,6 +1,6 @@
 /**
     storage.c : RFScout SD-card storage implementation
-    Description: Mounts the T-Embed CC1101 Plus SD card on the shared SPI bus.
+    Description: Mounts and owns the runtime board SD card on the shared SPI bus.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -32,35 +32,21 @@ static void ensure_io_mutex( void )
 {
     if( NULL == io_mutex )
     {
-        io_mutex = xSemaphoreCreateMutexStatic( &io_mutex_control );
+        io_mutex = xSemaphoreCreateRecursiveMutexStatic( &io_mutex_control );
     }
 }
 
-bool storage_io_acquire( uint32_t a_timeout_ms )
+static bool storage_io_acquire( TickType_t a_timeout )
 {
     ensure_io_mutex();
-    if( NULL == io_mutex )
-    {
-        return false;
-    }
-
-    TickType_t timeout = portMAX_DELAY;
-    if( RFSCOUT_STORAGE_WAIT_FOREVER != a_timeout_ms )
-    {
-        timeout = pdMS_TO_TICKS( a_timeout_ms );
-        if( ( a_timeout_ms > 0U ) && ( 0U == timeout ) )
-        {
-            timeout = 1U;
-        }
-    }
-    return pdTRUE == xSemaphoreTake( io_mutex, timeout );
+    return ( NULL != io_mutex ) && ( pdTRUE == xSemaphoreTakeRecursive( io_mutex, a_timeout ) );
 }
 
-void storage_io_release( void )
+static void storage_io_release( void )
 {
     if( NULL != io_mutex )
     {
-        (void)xSemaphoreGive( io_mutex );
+        (void)xSemaphoreGiveRecursive( io_mutex );
     }
 }
 
@@ -114,36 +100,33 @@ esp_err_t storage_init( void )
     return ESP_OK;
 }
 
-void storage_shutdown( void )
-{
-    if( !mounted )
-    {
-        return;
-    }
-
-    /* A detected physical removal may leave platform services holding VFS file objects. Do not
-       tear down that mount from an application-level dependency failure; the next reset/deep-sleep
-       will discard it, while ordinary orderly shutdown still unmounts healthy media. */
-    if( media_lost )
-    {
-        ESP_LOGW( TAG, "SD media was removed; keeping stale VFS mount until platform reset" );
-        return;
-    }
-
-    const esp_err_t result = esp_vfs_fat_sdcard_unmount( RFSCOUT_STORAGE_MOUNT_POINT, card );
-    if( ESP_OK != result )
-    {
-        ESP_LOGW( TAG, "SD unmount failed: %s", esp_err_to_name( result ) );
-    }
-
-    card = NULL;
-    mounted = false;
-    media_lost = false;
-}
-
 bool storage_is_available( void )
 {
     return mounted && !media_lost;
+}
+
+esp_err_t storage_transaction( storage_transaction_fn_t a_operation, void *a_context )
+{
+    if( NULL == a_operation )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( !storage_is_available() )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if( !storage_io_acquire( portMAX_DELAY ) )
+    {
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_err_t result = ESP_ERR_INVALID_STATE;
+    if( storage_is_available() )
+    {
+        result = a_operation( a_context );
+    }
+    storage_io_release();
+    return result;
 }
 
 esp_err_t storage_probe_card( void )
@@ -153,9 +136,14 @@ esp_err_t storage_probe_card( void )
         return ESP_ERR_INVALID_STATE;
     }
 
-    /* sdmmc_get_status() bypasses the filesystem layer. Serialize it with asynchronous filesystem
-       writers so its raw command cannot land in the middle of a multi-command FAT transaction. */
-    if( !storage_io_acquire( STORAGE_PROBE_IO_TIMEOUT_MS ) )
+    /* sdmmc_get_status() bypasses FatFs. Serialize the raw command with bounded filesystem
+       transactions so it cannot land in the middle of a multi-command filesystem operation. */
+    TickType_t timeout = pdMS_TO_TICKS( STORAGE_PROBE_IO_TIMEOUT_MS );
+    if( 0U == timeout )
+    {
+        timeout = 1U;
+    }
+    if( !storage_io_acquire( timeout ) )
     {
         return ESP_OK;
     }
@@ -184,11 +172,16 @@ esp_err_t storage_get_capacity( uint64_t *a_total_bytes, uint64_t *a_free_bytes 
     {
         return ESP_ERR_INVALID_STATE;
     }
+    if( !storage_io_acquire( portMAX_DELAY ) )
+    {
+        return ESP_ERR_NO_MEM;
+    }
 
     uint64_t total_bytes = 0U;
     uint64_t free_bytes = 0U;
     const esp_err_t result =
         esp_vfs_fat_info( RFSCOUT_STORAGE_MOUNT_POINT, &total_bytes, &free_bytes );
+    storage_io_release();
     if( ESP_OK != result )
     {
         return result;
