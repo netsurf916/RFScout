@@ -27,14 +27,6 @@
 esp_err_t storage_init( void );
 
 /**
- * @brief Prepare platform-owned SD storage for a terminal power transition.
- * @note Filesystem users must already be quiesced. The mounted VFS/card registration is retained;
- *       deep sleep or physical power loss will discard it with the rest of the running platform,
- *       while a failed physical power-off can continue using the existing mount without recovery.
- */
-void storage_shutdown( void );
-
-/**
  * @brief Determine whether mounted SD media is currently considered healthy and usable.
  * @return True only while storage is mounted and no physical-media loss has been latched.
  */
