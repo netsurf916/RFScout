@@ -24,7 +24,8 @@ endif()
 if(NOT CMAKE_SCRIPT_MODE_FILE)
     set_source_files_properties(
         "apps/home/device_view.c"
-        PROPERTIES COMPILE_DEFINITIONS "device_view_landing=device_view_landing_procedural"
+        PROPERTIES COMPILE_DEFINITIONS
+            "device_view_landing=device_view_landing_procedural"
     )
 endif()
 
@@ -42,6 +43,7 @@ set(RFSCOUT_INCLUDE_DIRS
     "apps/thermal"
     "services/board"
     "services/input"
+    "services/location"
     "services/wireless"
     "services/radio"
     "services/audio"
@@ -103,6 +105,7 @@ idf_component_register(
         "services/board/board_i2c.c"
         "services/input/input.c"
         "services/input/touch.c"
+        "services/location/gps.c"
         "services/wireless/radio_monitor.c"
         "services/wireless/ble_monitor.c"
         "services/wireless/oui_database.c"
