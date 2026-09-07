@@ -112,8 +112,7 @@ esp_err_t device_time_set_epoch( time_t a_epoch )
         return result;
     }
     time_mode = RFSCOUT_TIME_MODE_MANUAL;
-    (void)persist_mode();
-    return ESP_OK;
+    return persist_mode();
 }
 
 esp_err_t device_time_offer_gps( time_t a_epoch )
