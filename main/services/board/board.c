@@ -317,5 +317,6 @@ bool board_profile_selected( void )
 
 bool board_profile_has( rfscout_board_capability_t a_capability )
 {
-    return board_profile_selected() && 0U != ( active_profile->capabilities & (uint32_t)a_capability );
+    return board_profile_selected() &&
+           0U != ( active_profile->capabilities & (uint32_t)a_capability );
 }
