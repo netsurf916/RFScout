@@ -34,12 +34,12 @@ static bool time_valid;
 static rfscout_time_source_t time_source;
 static rfscout_time_mode_t time_mode = RFSCOUT_TIME_MODE_MANUAL;
 
-static esp_err_t persist_mode( void )
+static esp_err_t persist_mode( rfscout_time_mode_t a_mode )
 {
     const device_time_policy_record_t record = {
         .magic = DEVICE_TIME_POLICY_MAGIC,
         .version = DEVICE_TIME_POLICY_VERSION,
-        .mode = (uint8_t)time_mode,
+        .mode = (uint8_t)a_mode,
         .reserved = 0U,
     };
     return system_store_write( DEVICE_TIME_POLICY_KEY, &record, sizeof( record ) );
@@ -106,13 +106,20 @@ esp_err_t device_time_init( void )
 
 esp_err_t device_time_set_epoch( time_t a_epoch )
 {
-    const esp_err_t result = set_epoch( a_epoch, RFSCOUT_TIME_SOURCE_MANUAL );
+    if( a_epoch < (time_t)DEVICE_TIME_PLAUSIBLE_EPOCH )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t result = persist_mode( RFSCOUT_TIME_MODE_MANUAL );
     if( ESP_OK != result )
     {
         return result;
     }
+
+    result = set_epoch( a_epoch, RFSCOUT_TIME_SOURCE_MANUAL );
     time_mode = RFSCOUT_TIME_MODE_MANUAL;
-    return persist_mode();
+    return result;
 }
 
 esp_err_t device_time_offer_gps( time_t a_epoch )
@@ -134,14 +141,14 @@ esp_err_t device_time_set_mode( rfscout_time_mode_t a_mode )
     {
         return ESP_OK;
     }
-    const rfscout_time_mode_t previous = time_mode;
-    time_mode = a_mode;
-    const esp_err_t result = persist_mode();
+
+    const esp_err_t result = persist_mode( a_mode );
     if( ESP_OK != result )
     {
-        time_mode = previous;
+        return result;
     }
-    return result;
+    time_mode = a_mode;
+    return ESP_OK;
 }
 
 rfscout_time_mode_t device_time_mode( void )
