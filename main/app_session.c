@@ -263,6 +263,11 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
     return ESP_OK;
 }
 
+rfscout_app_id_t app_session_app( void )
+{
+    return session_app;
+}
+
 uint32_t app_session_generation( void )
 {
     return session_generation;

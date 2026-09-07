@@ -9,10 +9,12 @@
 
 #include "apps/app_registry.h"
 #include "event.h"
+#include "persistent_store.h"
 
 #include "esp_log.h"
 
 #include <stddef.h>
+#include <string.h>
 
 static const char *TAG = "app_framework";
 static rfscout_app_availability_t availability[ RFSCOUT_APP_COUNT ];
@@ -95,6 +97,18 @@ static rfscout_app_availability_t probe_descriptor( const rfscout_app_descriptor
     return availability[ a_descriptor->id ];
 }
 
+static bool persistence_identity_valid( const rfscout_app_descriptor_t *a_descriptor )
+{
+    if( NULL == a_descriptor || NULL == a_descriptor->persistence_key ||
+        '\0' == a_descriptor->persistence_key[ 0 ] )
+    {
+        return false;
+    }
+    const size_t length =
+        strnlen( a_descriptor->persistence_key, RFSCOUT_PERSISTENT_KEY_MAX_BYTES + 1U );
+    return length > 0U && length <= RFSCOUT_PERSISTENT_KEY_MAX_BYTES;
+}
+
 esp_err_t app_framework_init( void )
 {
     for( int app = 0; app < RFSCOUT_APP_COUNT; ++app )
@@ -102,10 +116,25 @@ esp_err_t app_framework_init( void )
         const rfscout_app_descriptor_t *descriptor = rfscout_app_registry[ app ];
         availability[ app ] = RFSCOUT_APP_AVAILABILITY_UNKNOWN;
         if( ( NULL == descriptor ) || ( descriptor->id != (rfscout_app_id_t)app ) ||
-            ( NULL == descriptor->name ) || ( NULL == descriptor->runtime ) )
+            ( NULL == descriptor->name ) || ( NULL == descriptor->runtime ) ||
+            !persistence_identity_valid( descriptor ) )
         {
             ESP_LOGE( TAG, "invalid compiled-in app descriptor id=%d", app );
             return ESP_ERR_INVALID_STATE;
+        }
+        for( int previous = 0; previous < app; ++previous )
+        {
+            const rfscout_app_descriptor_t *other = rfscout_app_registry[ previous ];
+            if( NULL != other && NULL != other->persistence_key &&
+                0 == strcmp( descriptor->persistence_key, other->persistence_key ) )
+            {
+                ESP_LOGE( TAG,
+                          "duplicate app persistence key '%s' ids=%d,%d",
+                          descriptor->persistence_key,
+                          previous,
+                          app );
+                return ESP_ERR_INVALID_STATE;
+            }
         }
     }
 

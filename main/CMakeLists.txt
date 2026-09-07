@@ -105,7 +105,6 @@ idf_component_register(
         "notification_preferences.c"
         "notification_settings_view.c"
         "alert.c"
-        "config_store.c"
         "device_config.c"
         "device_time.c"
         "platform.c"
@@ -122,6 +121,7 @@ idf_component_register(
         "services/audio/morse.c"
         "services/thermal/mlx90640.c"
         "services/storage/storage.c"
+        "services/storage/persistent_store.c"
         "services/storage/log_writer.c"
         "services/power/battery.c"
         "services/power/power.c"
@@ -138,6 +138,6 @@ idf_component_register(
         "services/display/display_idle.c"
         "services/display/ui_present.c"
     INCLUDE_DIRS ${RFSCOUT_INCLUDE_DIRS} "${RFSCOUT_BOARD_DIR}" "${CMAKE_CURRENT_BINARY_DIR}"
-    PRIV_REQUIRES bt cjson esp_driver_ledc esp_driver_tsens
+    PRIV_REQUIRES bt cjson esp_driver_ledc esp_driver_tsens mbedtls
     REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_timer driver esp_driver_i2c esp_driver_i2s esp_driver_pcnt esp_lcd fatfs sdmmc
 )

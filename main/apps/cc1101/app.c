@@ -335,6 +335,7 @@ static rfscout_app_runtime_result_t cc1101_runtime( const rfscout_app_runtime_ev
 const rfscout_app_descriptor_t rfscout_cc1101_app = {
     .id = RFSCOUT_APP_CC1101,
     .name = "CC1101",
+    .persistence_key = "cc1101",
     .probe_policy = RFSCOUT_APP_PROBE_STARTUP,
     .probe = cc1101_init,
     .requires_activation = true,

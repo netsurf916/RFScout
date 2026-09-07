@@ -1,6 +1,6 @@
 /**
     device_config.c : RFScout persistent device configuration implementation
-    Description: Loads validated internal JSON preferences over compiled defaults and writes them atomically.
+    Description: Loads validated owned records over compiled defaults and persists current preferences.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -10,22 +10,21 @@
 #include "event.h"
 
 #include "app_audio_policy.h"
-#include "config_store.h"
 #include "notification.h"
+#include "persistent_store.h"
 #include "ui_theme.h"
 
 #include "cJSON.h"
 #include "esp_log.h"
 
 #include <ctype.h>
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <unistd.h>
 
-#define CONFIG_TEMP_PATH RFSCOUT_INTERNAL_CONFIG_PATH ".tmp"
+#define APP_CONFIG_RECORD_VERSION 1U
 #define CONFIG_BRIGHTNESS_DEFAULT 70U
 #define CONFIG_DISPLAY_DIM_TIMEOUT_DEFAULT_SECONDS 120U
 #define CONFIG_DISPLAY_OFF_TIMEOUT_DEFAULT_SECONDS 300U
@@ -33,15 +32,9 @@
 #define CONFIG_AUDIO_INTERACTION_GAIN_DEFAULT_PERCENT 35U
 #define CONFIG_AUDIO_NOTIFICATION_GAIN_DEFAULT_PERCENT 100U
 #define CONFIG_RECORDER_VOLUME_DEFAULT 50U
-#define CONFIG_RECORDER_INPUT_GAIN_DEFAULT_DB 12U
-#define CONFIG_MIN_VALID_EPOCH 1577836800LL
-#define CONFIG_MAX_VALID_EPOCH 4133980799LL
 
 static const char *TAG = "device_config";
 static device_config_t config;
-static bool saved_time_valid;
-static int64_t saved_time_epoch;
-static char saved_time_source[ 24 ];
 static bool config_dirty;
 
 static const char *app_config_name( rfscout_app_id_t a_app )
@@ -65,7 +58,7 @@ static bool app_from_config_name( const char *a_name, rfscout_app_id_t *a_app )
     {
         return false;
     }
-    for( size_t index = 0; index < RFSCOUT_APP_COUNT; ++index )
+    for( size_t index = 0U; index < RFSCOUT_APP_COUNT; ++index )
     {
         if( 0 == strcasecmp( a_name, app_config_name( (rfscout_app_id_t)index ) ) )
         {
@@ -105,7 +98,7 @@ static bool
 surveillance_sensitivity_from_config_name( const char *a_name,
                                            rfscout_surveillance_sensitivity_t *a_sensitivity )
 {
-    if( ( NULL == a_name ) || ( NULL == a_sensitivity ) )
+    if( NULL == a_name || NULL == a_sensitivity )
     {
         return false;
     }
@@ -166,29 +159,27 @@ static bool power_action_valid_for_gesture( power_action_t a_action, bool a_long
 {
     if( a_long_press )
     {
-        return ( POWER_ACTION_NONE == a_action ) || ( POWER_ACTION_POWER_OFF == a_action );
+        return POWER_ACTION_NONE == a_action || POWER_ACTION_POWER_OFF == a_action;
     }
-    return ( POWER_ACTION_NONE == a_action ) || ( POWER_ACTION_SCREEN_OFF == a_action ) ||
-           ( POWER_ACTION_SLEEP == a_action ) || ( POWER_ACTION_POWER_OFF == a_action );
+    return POWER_ACTION_NONE == a_action || POWER_ACTION_SCREEN_OFF == a_action ||
+           POWER_ACTION_SLEEP == a_action || POWER_ACTION_POWER_OFF == a_action;
 }
 
 static bool power_action_valid_for_policy( power_action_t a_action )
 {
-    return ( POWER_ACTION_NONE == a_action ) || ( POWER_ACTION_SLEEP == a_action ) ||
-           ( POWER_ACTION_POWER_OFF == a_action );
+    return POWER_ACTION_NONE == a_action || POWER_ACTION_SLEEP == a_action ||
+           POWER_ACTION_POWER_OFF == a_action;
 }
 
-/** @brief Copy a bounded configuration string. */
 static void copy_string( char *a_destination, size_t a_capacity, const char *a_source )
 {
-    if( ( NULL == a_destination ) || ( 0U == a_capacity ) )
+    if( NULL == a_destination || 0U == a_capacity )
     {
         return;
     }
-    snprintf( a_destination, a_capacity, "%s", ( NULL != a_source ) ? a_source : "" );
+    snprintf( a_destination, a_capacity, "%s", NULL != a_source ? a_source : "" );
 }
 
-/** @brief Populate one compiled timezone option. */
 static void
 timezone_default( size_t a_index, const char *a_name, const char *a_label, const char *a_posix )
 {
@@ -198,7 +189,6 @@ timezone_default( size_t a_index, const char *a_name, const char *a_label, const
     copy_string( zone->posix, sizeof( zone->posix ), a_posix );
 }
 
-/** @brief Restore all compiled configuration defaults. */
 static void set_defaults( void )
 {
     memset( &config, 0, sizeof( config ) );
@@ -221,14 +211,13 @@ static void set_defaults( void )
     config.alert_mode = RFSCOUT_ALERT_OFF;
     config.alert_volume_percent = RFSCOUT_ALERT_VOLUME_DEFAULT_PERCENT;
     config.recorder_volume_percent = CONFIG_RECORDER_VOLUME_DEFAULT;
-    config.recorder_input_gain_db = CONFIG_RECORDER_INPUT_GAIN_DEFAULT_DB;
     config.wifi_device_feedback_enabled = true;
     config.ble_device_feedback_enabled = true;
     config.wifi_timeout_seconds = RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS;
     config.ble_timeout_seconds = RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS;
     config.surveillance_sensitivity = RFSCOUT_SURVEILLANCE_SENSITIVITY_HIGH;
 
-    for( size_t index = 0; index < RFSCOUT_APP_COUNT; ++index )
+    for( size_t index = 0U; index < RFSCOUT_APP_COUNT; ++index )
     {
         config.apps_enabled[ index ] = true;
         const rfscout_app_audio_policy_t *policy = app_audio_policy_get( (rfscout_app_id_t)index );
@@ -238,7 +227,7 @@ static void set_defaults( void )
     config.apps_enabled[ RFSCOUT_APP_SYSTEM_EVENTS ] = false;
     config.apps_enabled[ RFSCOUT_APP_DEVICE ] = true;
 
-    for( size_t index = 0; index < RFSCOUT_NOTIFICATION_TYPE_COUNT; ++index )
+    for( size_t index = 0U; index < RFSCOUT_NOTIFICATION_TYPE_COUNT; ++index )
     {
         config.notification_characters[ index ] =
             alert_notification_default_character( (rfscout_notification_type_t)index );
@@ -248,14 +237,9 @@ static void set_defaults( void )
     timezone_default( 0U, "America/Chicago", "US Central", "CST6CDT,M3.2.0,M11.1.0" );
     timezone_default( 1U, "UTC", "UTC", "UTC0" );
     copy_string( config.timezone_selected, sizeof( config.timezone_selected ), "America/Chicago" );
-
-    saved_time_valid = false;
-    saved_time_epoch = 0;
-    saved_time_source[ 0 ] = '\0';
     config_dirty = false;
 }
 
-/** @brief Read one optional JSON boolean, retaining a default on type mismatch. */
 static bool json_bool( const cJSON *a_parent, const char *a_name, bool a_default )
 {
     const cJSON *item = cJSON_GetObjectItemCaseSensitive( a_parent, a_name );
@@ -264,138 +248,22 @@ static bool json_bool( const cJSON *a_parent, const char *a_name, bool a_default
 
 static bool timeout_seconds_valid( uint16_t a_seconds )
 {
-    return ( a_seconds >= RFSCOUT_OBSERVATION_TIMEOUT_MIN_SECONDS ) &&
-           ( a_seconds <= RFSCOUT_OBSERVATION_TIMEOUT_MAX_SECONDS ) &&
-           ( 0U == ( a_seconds % RFSCOUT_OBSERVATION_TIMEOUT_STEP_SECONDS ) );
+    return a_seconds >= RFSCOUT_OBSERVATION_TIMEOUT_MIN_SECONDS &&
+           a_seconds <= RFSCOUT_OBSERVATION_TIMEOUT_MAX_SECONDS &&
+           0U == ( a_seconds % RFSCOUT_OBSERVATION_TIMEOUT_STEP_SECONDS );
 }
 
-/** @brief Read one optional bounded observation timeout, retaining a default when invalid. */
 static uint16_t
 json_timeout_seconds( const cJSON *a_parent, const char *a_name, uint16_t a_default )
 {
     const cJSON *item = cJSON_GetObjectItemCaseSensitive( a_parent, a_name );
-    if( !cJSON_IsNumber( item ) ||
-        ( item->valueint < (int)RFSCOUT_OBSERVATION_TIMEOUT_MIN_SECONDS ) ||
-        ( item->valueint > (int)RFSCOUT_OBSERVATION_TIMEOUT_MAX_SECONDS ) ||
-        ( 0 != ( item->valueint % (int)RFSCOUT_OBSERVATION_TIMEOUT_STEP_SECONDS ) ) )
+    if( !cJSON_IsNumber( item ) || item->valueint < (int)RFSCOUT_OBSERVATION_TIMEOUT_MIN_SECONDS ||
+        item->valueint > (int)RFSCOUT_OBSERVATION_TIMEOUT_MAX_SECONDS ||
+        0 != ( item->valueint % (int)RFSCOUT_OBSERVATION_TIMEOUT_STEP_SECONDS ) )
     {
         return a_default;
     }
     return (uint16_t)item->valueint;
-}
-
-/** @brief Apply validated application enablement and app-owned preference overrides. */
-static void load_apps( const cJSON *a_root )
-{
-    const cJSON *apps = cJSON_GetObjectItemCaseSensitive( a_root, "apps" );
-    if( !cJSON_IsObject( apps ) )
-    {
-        return;
-    }
-
-    for( size_t index = 0; index < RFSCOUT_APP_COUNT; ++index )
-    {
-        const rfscout_app_id_t app = (rfscout_app_id_t)index;
-        const cJSON *app_item = cJSON_GetObjectItemCaseSensitive( apps, app_config_name( app ) );
-        if( cJSON_IsBool( app_item ) )
-        {
-            config.apps_enabled[ index ] = cJSON_IsTrue( app_item );
-            continue;
-        }
-        if( !cJSON_IsObject( app_item ) )
-        {
-            continue;
-        }
-
-        config.apps_enabled[ index ] =
-            json_bool( app_item, "enabled", config.apps_enabled[ index ] );
-
-        if( RFSCOUT_APP_WIFI_BT == app )
-        {
-            const cJSON *retention = cJSON_GetObjectItemCaseSensitive( app_item, "retention" );
-            if( cJSON_IsObject( retention ) )
-            {
-                config.wifi_timeout_seconds =
-                    json_timeout_seconds( retention, "wifi_seconds", config.wifi_timeout_seconds );
-                config.ble_timeout_seconds = json_timeout_seconds(
-                    retention, "bluetooth_seconds", config.ble_timeout_seconds );
-            }
-            const cJSON *sensitivity =
-                cJSON_GetObjectItemCaseSensitive( app_item, "surveillance_sensitivity" );
-            if( cJSON_IsString( sensitivity ) && ( NULL != sensitivity->valuestring ) )
-            {
-                rfscout_surveillance_sensitivity_t parsed;
-                if( surveillance_sensitivity_from_config_name( sensitivity->valuestring, &parsed ) )
-                {
-                    config.surveillance_sensitivity = parsed;
-                }
-                else
-                {
-                    ESP_LOGE( TAG,
-                              "invalid surveillance sensitivity '%s'; using default",
-                              sensitivity->valuestring );
-                }
-            }
-        }
-
-        const rfscout_app_audio_policy_t *policy = app_audio_policy_get( app );
-        const cJSON *notifications = cJSON_GetObjectItemCaseSensitive( app_item, "notifications" );
-        if( !policy->notifications_supported || !cJSON_IsObject( notifications ) )
-        {
-            continue;
-        }
-        config.notification_app_enabled[ index ] =
-            json_bool( notifications, "enabled", config.notification_app_enabled[ index ] );
-        if( RFSCOUT_APP_WIFI_BT == app )
-        {
-            const cJSON *events = cJSON_GetObjectItemCaseSensitive( notifications, "events" );
-            if( cJSON_IsObject( events ) )
-            {
-                config.wifi_device_feedback_enabled =
-                    json_bool( events, "wifi_device", config.wifi_device_feedback_enabled );
-                config.ble_device_feedback_enabled =
-                    json_bool( events, "ble_device", config.ble_device_feedback_enabled );
-            }
-        }
-        const cJSON *characters = cJSON_GetObjectItemCaseSensitive( notifications, "characters" );
-        if( !cJSON_IsObject( characters ) )
-        {
-            continue;
-        }
-        const size_t count = notification_count_for_app( app );
-        for( size_t item = 0U; item < count; ++item )
-        {
-            const rfscout_notification_descriptor_t *descriptor =
-                notification_descriptor_for_app( app, item );
-            if( NULL == descriptor || NULL == descriptor->config_key )
-            {
-                continue;
-            }
-            const cJSON *value =
-                cJSON_GetObjectItemCaseSensitive( characters, descriptor->config_key );
-            if( !cJSON_IsString( value ) || NULL == value->valuestring ||
-                '\0' == value->valuestring[ 0 ] || '\0' != value->valuestring[ 1 ] )
-            {
-                continue;
-            }
-            const char character = (char)toupper( (unsigned char)value->valuestring[ 0 ] );
-            if( alert_morse_character_supported( character ) )
-            {
-                config.notification_characters[ descriptor->type ] = character;
-            }
-        }
-    }
-    config.apps_enabled[ RFSCOUT_APP_DEVICE ] = true;
-
-    const cJSON *startup = cJSON_GetObjectItemCaseSensitive( apps, "startup" );
-    if( cJSON_IsString( startup ) && NULL != startup->valuestring )
-    {
-        rfscout_app_id_t parsed;
-        if( app_from_config_name( startup->valuestring, &parsed ) )
-        {
-            config.startup_app = parsed;
-        }
-    }
 }
 
 static uint16_t
@@ -410,7 +278,6 @@ json_display_timeout_seconds( const cJSON *a_parent, const char *a_name, uint16_
     return (uint16_t)item->valueint;
 }
 
-/** @brief Apply validated display preference overrides. */
 static void load_display( const cJSON *a_root )
 {
     const cJSON *display = cJSON_GetObjectItemCaseSensitive( a_root, "display" );
@@ -420,8 +287,7 @@ static void load_display( const cJSON *a_root )
     }
 
     const cJSON *brightness = cJSON_GetObjectItemCaseSensitive( display, "brightness" );
-    if( cJSON_IsNumber( brightness ) && ( brightness->valueint >= 10 ) &&
-        ( brightness->valueint <= 100 ) )
+    if( cJSON_IsNumber( brightness ) && brightness->valueint >= 10 && brightness->valueint <= 100 )
     {
         config.brightness_percent = (uint8_t)brightness->valueint;
     }
@@ -429,9 +295,8 @@ static void load_display( const cJSON *a_root )
         display, "dim_timeout_seconds", config.display_dim_timeout_seconds );
     config.display_off_timeout_seconds = json_display_timeout_seconds(
         display, "off_timeout_seconds", config.display_off_timeout_seconds );
-    if( ( 0U != config.display_dim_timeout_seconds ) &&
-        ( 0U != config.display_off_timeout_seconds ) &&
-        ( config.display_off_timeout_seconds <= config.display_dim_timeout_seconds ) )
+    if( 0U != config.display_dim_timeout_seconds && 0U != config.display_off_timeout_seconds &&
+        config.display_off_timeout_seconds <= config.display_dim_timeout_seconds )
     {
         config.display_off_timeout_seconds = 0U;
     }
@@ -440,19 +305,14 @@ static void load_display( const cJSON *a_root )
     const cJSON *theme = cJSON_GetObjectItemCaseSensitive( display, "theme" );
     if( cJSON_IsString( theme ) && NULL != theme->valuestring )
     {
-        rfscout_theme_id_t parsed_theme;
-        if( ui_theme_from_config_name( theme->valuestring, &parsed_theme ) )
+        rfscout_theme_id_t parsed;
+        if( ui_theme_from_config_name( theme->valuestring, &parsed ) )
         {
-            config.theme = parsed_theme;
-        }
-        else
-        {
-            ESP_LOGE( TAG, "invalid theme '%s'; using default", theme->valuestring );
+            config.theme = parsed;
         }
     }
 }
 
-/** @brief Apply independent device-wide audio presentation policy and gain state. */
 static void load_audio_policy( const cJSON *a_root )
 {
     const cJSON *audio = cJSON_GetObjectItemCaseSensitive( a_root, "audio" );
@@ -471,24 +331,22 @@ static void load_audio_policy( const cJSON *a_root )
         }
     }
 
-    const cJSON *interaction_gain =
+    const cJSON *interaction =
         cJSON_GetObjectItemCaseSensitive( audio, "interaction_gain_percent" );
-    if( cJSON_IsNumber( interaction_gain ) && interaction_gain->valueint >= 0 &&
-        interaction_gain->valueint <= 100 )
+    if( cJSON_IsNumber( interaction ) && interaction->valueint >= 0 &&
+        interaction->valueint <= 100 )
     {
-        config.audio_interaction_gain_percent = (uint8_t)interaction_gain->valueint;
+        config.audio_interaction_gain_percent = (uint8_t)interaction->valueint;
     }
-
-    const cJSON *notification_gain =
+    const cJSON *notification =
         cJSON_GetObjectItemCaseSensitive( audio, "notification_gain_percent" );
-    if( cJSON_IsNumber( notification_gain ) && notification_gain->valueint >= 0 &&
-        notification_gain->valueint <= 100 )
+    if( cJSON_IsNumber( notification ) && notification->valueint >= 0 &&
+        notification->valueint <= 100 )
     {
-        config.audio_notification_gain_percent = (uint8_t)notification_gain->valueint;
+        config.audio_notification_gain_percent = (uint8_t)notification->valueint;
     }
 }
 
-/** @brief Apply validated power-button preference overrides. */
 static void load_power( const cJSON *a_root )
 {
     const cJSON *power = cJSON_GetObjectItemCaseSensitive( a_root, "power" );
@@ -505,7 +363,6 @@ static void load_power( const cJSON *a_root )
     {
         config.power_button_short_action = parsed;
     }
-
     const cJSON *long_press = cJSON_GetObjectItemCaseSensitive( power, "long_press" );
     if( cJSON_IsString( long_press ) && NULL != long_press->valuestring &&
         power_action_from_config_name( long_press->valuestring, &parsed ) &&
@@ -548,7 +405,36 @@ static void load_power( const cJSON *a_root )
     }
 }
 
-/** @brief Apply validated logging preference overrides. */
+static void load_system_apps( const cJSON *a_root )
+{
+    const cJSON *apps = cJSON_GetObjectItemCaseSensitive( a_root, "apps" );
+    if( !cJSON_IsObject( apps ) )
+    {
+        return;
+    }
+
+    for( size_t index = 0U; index < RFSCOUT_APP_COUNT; ++index )
+    {
+        const cJSON *item =
+            cJSON_GetObjectItemCaseSensitive( apps, app_config_name( (rfscout_app_id_t)index ) );
+        if( cJSON_IsBool( item ) )
+        {
+            config.apps_enabled[ index ] = cJSON_IsTrue( item );
+        }
+    }
+    config.apps_enabled[ RFSCOUT_APP_DEVICE ] = true;
+
+    const cJSON *startup = cJSON_GetObjectItemCaseSensitive( apps, "startup" );
+    if( cJSON_IsString( startup ) && NULL != startup->valuestring )
+    {
+        rfscout_app_id_t parsed;
+        if( app_from_config_name( startup->valuestring, &parsed ) )
+        {
+            config.startup_app = parsed;
+        }
+    }
+}
+
 static void load_logging( const cJSON *a_root )
 {
     const cJSON *logging = cJSON_GetObjectItemCaseSensitive( a_root, "logging" );
@@ -558,8 +444,7 @@ static void load_logging( const cJSON *a_root )
     }
 }
 
-/** @brief Apply global notification mode/volume and one Morse character per canonical alert item. */
-static void load_notifications( const cJSON *a_root )
+static void load_global_notifications( const cJSON *a_root )
 {
     const cJSON *notifications = cJSON_GetObjectItemCaseSensitive( a_root, "notifications" );
     if( !cJSON_IsObject( notifications ) )
@@ -568,7 +453,7 @@ static void load_notifications( const cJSON *a_root )
     }
 
     const cJSON *mode = cJSON_GetObjectItemCaseSensitive( notifications, "mode" );
-    if( cJSON_IsString( mode ) && ( NULL != mode->valuestring ) )
+    if( cJSON_IsString( mode ) && NULL != mode->valuestring )
     {
         if( 0 == strcasecmp( mode->valuestring, "OFF" ) )
         {
@@ -583,150 +468,32 @@ static void load_notifications( const cJSON *a_root )
             config.alert_mode = RFSCOUT_ALERT_MORSE;
         }
     }
-
     const cJSON *volume = cJSON_GetObjectItemCaseSensitive( notifications, "volume" );
-    if( cJSON_IsNumber( volume ) && ( volume->valueint >= 0 ) &&
-        ( volume->valueint <= RFSCOUT_ALERT_VOLUME_MAX_PERCENT ) )
+    if( cJSON_IsNumber( volume ) && volume->valueint >= 0 &&
+        volume->valueint <= RFSCOUT_ALERT_VOLUME_MAX_PERCENT )
     {
         config.alert_volume_percent = (uint8_t)volume->valueint;
     }
-
-    const cJSON *characters = cJSON_GetObjectItemCaseSensitive( notifications, "characters" );
-    if( !cJSON_IsObject( characters ) )
-    {
-        return;
-    }
-
-    for( size_t index = 0; index < RFSCOUT_NOTIFICATION_TYPE_COUNT; ++index )
-    {
-        const rfscout_notification_type_t type = (rfscout_notification_type_t)index;
-        const char *key = alert_notification_config_key( type );
-        if( NULL == key )
-        {
-            continue;
-        }
-        const cJSON *value = cJSON_GetObjectItemCaseSensitive( characters, key );
-        if( !cJSON_IsString( value ) || ( NULL == value->valuestring ) ||
-            ( '\0' == value->valuestring[ 0 ] ) || ( '\0' != value->valuestring[ 1 ] ) )
-        {
-            continue;
-        }
-
-        const char character = (char)toupper( (unsigned char)value->valuestring[ 0 ] );
-        if( alert_morse_character_supported( character ) )
-        {
-            config.notification_characters[ index ] = character;
-        }
-    }
 }
 
-/** @brief Apply Recorder-specific persistent preferences. */
-static void load_recorder( const cJSON *a_root )
-{
-    const cJSON *recorder = cJSON_GetObjectItemCaseSensitive( a_root, "recorder" );
-    if( !cJSON_IsObject( recorder ) )
-    {
-        return;
-    }
-
-    const cJSON *volume = cJSON_GetObjectItemCaseSensitive( recorder, "volume" );
-    if( cJSON_IsNumber( volume ) && ( volume->valueint >= 0 ) && ( volume->valueint <= 100 ) )
-    {
-        config.recorder_volume_percent = (uint8_t)volume->valueint;
-    }
-    const cJSON *input_gain = cJSON_GetObjectItemCaseSensitive( recorder, "input_gain_db" );
-    if( cJSON_IsNumber( input_gain ) && ( input_gain->valueint >= 0 ) &&
-        ( input_gain->valueint <= 48 ) && ( 0 == ( input_gain->valueint % 3 ) ) )
-    {
-        config.recorder_input_gain_db = (uint8_t)input_gain->valueint;
-    }
-}
-
-/** @brief Apply validated timezone options and selection. */
-static void load_timezones( const cJSON *a_root )
+static void load_timezone_selection( const cJSON *a_root )
 {
     const cJSON *timezone = cJSON_GetObjectItemCaseSensitive( a_root, "timezone" );
     if( !cJSON_IsObject( timezone ) )
     {
         return;
     }
-
-    const cJSON *options = cJSON_GetObjectItemCaseSensitive( timezone, "options" );
-    if( cJSON_IsArray( options ) )
-    {
-        size_t count = 0U;
-        const cJSON *entry = NULL;
-        cJSON_ArrayForEach( entry, options )
-        {
-            if( count >= RFSCOUT_TIMEZONE_MAX )
-            {
-                break;
-            }
-            const cJSON *name = cJSON_GetObjectItemCaseSensitive( entry, "name" );
-            const cJSON *label = cJSON_GetObjectItemCaseSensitive( entry, "label" );
-            const cJSON *posix = cJSON_GetObjectItemCaseSensitive( entry, "posix" );
-            if( !cJSON_IsString( name ) || !cJSON_IsString( label ) || !cJSON_IsString( posix ) ||
-                ( NULL == name->valuestring ) || ( NULL == label->valuestring ) ||
-                ( NULL == posix->valuestring ) || ( '\0' == name->valuestring[ 0 ] ) ||
-                ( '\0' == posix->valuestring[ 0 ] ) )
-            {
-                continue;
-            }
-
-            copy_string( config.timezones[ count ].name,
-                         sizeof( config.timezones[ count ].name ),
-                         name->valuestring );
-            copy_string( config.timezones[ count ].label,
-                         sizeof( config.timezones[ count ].label ),
-                         label->valuestring );
-            copy_string( config.timezones[ count ].posix,
-                         sizeof( config.timezones[ count ].posix ),
-                         posix->valuestring );
-            ++count;
-        }
-        if( count > 0U )
-        {
-            config.timezone_count = count;
-        }
-    }
-
     const cJSON *selected = cJSON_GetObjectItemCaseSensitive( timezone, "selected" );
-    if( cJSON_IsString( selected ) && ( NULL != selected->valuestring ) )
+    if( cJSON_IsString( selected ) && NULL != selected->valuestring )
     {
         copy_string(
             config.timezone_selected, sizeof( config.timezone_selected ), selected->valuestring );
     }
 }
 
-/** @brief Read an optional saved hard-power wall-clock checkpoint. */
-static void load_saved_time( const cJSON *a_root )
-{
-    const cJSON *time = cJSON_GetObjectItemCaseSensitive( a_root, "time" );
-    if( !cJSON_IsObject( time ) )
-    {
-        return;
-    }
-
-    const cJSON *epoch = cJSON_GetObjectItemCaseSensitive( time, "epoch" );
-    if( !cJSON_IsNumber( epoch ) || ( epoch->valuedouble < (double)CONFIG_MIN_VALID_EPOCH ) ||
-        ( epoch->valuedouble > (double)CONFIG_MAX_VALID_EPOCH ) )
-    {
-        return;
-    }
-
-    saved_time_epoch = (int64_t)epoch->valuedouble;
-    saved_time_valid = true;
-    const cJSON *source = cJSON_GetObjectItemCaseSensitive( time, "source" );
-    if( cJSON_IsString( source ) && ( NULL != source->valuestring ) )
-    {
-        copy_string( saved_time_source, sizeof( saved_time_source ), source->valuestring );
-    }
-}
-
-/** @brief Ensure the selected timezone names a usable configured option. */
 static bool timezone_selected_valid( void )
 {
-    for( size_t index = 0; index < config.timezone_count; ++index )
+    for( size_t index = 0U; index < config.timezone_count; ++index )
     {
         if( 0 == strcmp( config.timezones[ index ].name, config.timezone_selected ) )
         {
@@ -736,70 +503,190 @@ static bool timezone_selected_valid( void )
     return false;
 }
 
-/** @brief Discard an internal configuration document that cannot safely be loaded. */
-static void discard_invalid_config( void )
+static esp_err_t
+read_store_text( bool a_system, rfscout_app_id_t a_app, const char *a_key, char **a_text )
 {
-    (void)unlink( RFSCOUT_INTERNAL_CONFIG_PATH );
-}
-
-/** @brief Parse and apply the authoritative configuration file from internal flash. */
-static esp_err_t load_file( void )
-{
-    FILE *file = fopen( RFSCOUT_INTERNAL_CONFIG_PATH, "rb" );
-    if( NULL == file )
+    if( NULL == a_text )
     {
-        return ( ENOENT == errno ) ? ESP_ERR_NOT_FOUND : ESP_FAIL;
+        return ESP_ERR_INVALID_ARG;
     }
-    if( 0 != fseek( file, 0, SEEK_END ) )
+    *a_text = NULL;
+    size_t length = 0U;
+    esp_err_t result = a_system ? system_store_read( a_key, NULL, 0U, &length )
+                                : persistent_store_app_read( a_app, a_key, NULL, 0U, &length );
+    if( ESP_OK != result )
     {
-        fclose( file );
-        return ESP_FAIL;
+        return result;
     }
-    const long length = ftell( file );
-    if( ( length <= 0L ) || ( length > 16384L ) || ( 0 != fseek( file, 0, SEEK_SET ) ) )
+    char *text = calloc( length + 1U, 1U );
+    if( NULL == text )
     {
-        fclose( file );
-        return ESP_ERR_INVALID_SIZE;
-    }
-
-    char *buffer = calloc( (size_t)length + 1U, 1U );
-    if( NULL == buffer )
-    {
-        fclose( file );
         return ESP_ERR_NO_MEM;
     }
-    const size_t read_count = fread( buffer, 1U, (size_t)length, file );
-    fclose( file );
-    if( read_count != (size_t)length )
+    result = a_system ? system_store_read( a_key, text, length, &length )
+                      : persistent_store_app_read( a_app, a_key, text, length, &length );
+    if( ESP_OK != result )
     {
-        free( buffer );
-        return ESP_FAIL;
+        free( text );
+        return result;
+    }
+    text[ length ] = '\0';
+    *a_text = text;
+    return ESP_OK;
+}
+
+static bool record_version_valid( const cJSON *a_root, unsigned a_version )
+{
+    const cJSON *version = cJSON_GetObjectItemCaseSensitive( a_root, "version" );
+    return cJSON_IsNumber( version ) && version->valueint == (int)a_version;
+}
+
+static void load_app_notifications( rfscout_app_id_t a_app, const cJSON *a_root )
+{
+    const rfscout_app_audio_policy_t *policy = app_audio_policy_get( a_app );
+    const cJSON *notifications = cJSON_GetObjectItemCaseSensitive( a_root, "notifications" );
+    if( !policy->notifications_supported || !cJSON_IsObject( notifications ) )
+    {
+        return;
     }
 
-    cJSON *root = cJSON_Parse( buffer );
-    free( buffer );
-    if( NULL == root )
+    config.notification_app_enabled[ a_app ] =
+        json_bool( notifications, "enabled", config.notification_app_enabled[ a_app ] );
+    if( RFSCOUT_APP_WIFI_BT == a_app )
     {
-        discard_invalid_config();
-        return ESP_ERR_INVALID_RESPONSE;
+        const cJSON *events = cJSON_GetObjectItemCaseSensitive( notifications, "events" );
+        if( cJSON_IsObject( events ) )
+        {
+            config.wifi_device_feedback_enabled =
+                json_bool( events, "wifi_device", config.wifi_device_feedback_enabled );
+            config.ble_device_feedback_enabled =
+                json_bool( events, "ble_device", config.ble_device_feedback_enabled );
+        }
     }
 
-    const cJSON *version = cJSON_GetObjectItemCaseSensitive( root, "version" );
-    if( !cJSON_IsNumber( version ) || version->valueint != (int)RFSCOUT_CONFIG_SCHEMA_VERSION )
+    const cJSON *characters = cJSON_GetObjectItemCaseSensitive( notifications, "characters" );
+    if( !cJSON_IsObject( characters ) )
+    {
+        return;
+    }
+    const size_t count = notification_count_for_app( a_app );
+    for( size_t item = 0U; item < count; ++item )
+    {
+        const rfscout_notification_descriptor_t *descriptor =
+            notification_descriptor_for_app( a_app, item );
+        if( NULL == descriptor || NULL == descriptor->config_key )
+        {
+            continue;
+        }
+        const cJSON *value = cJSON_GetObjectItemCaseSensitive( characters, descriptor->config_key );
+        if( !cJSON_IsString( value ) || NULL == value->valuestring ||
+            '\0' == value->valuestring[ 0 ] || '\0' != value->valuestring[ 1 ] )
+        {
+            continue;
+        }
+        const char character = (char)toupper( (unsigned char)value->valuestring[ 0 ] );
+        if( alert_morse_character_supported( character ) )
+        {
+            config.notification_characters[ descriptor->type ] = character;
+        }
+    }
+}
+
+static void load_app_record( rfscout_app_id_t a_app, const cJSON *a_root )
+{
+    if( RFSCOUT_APP_WIFI_BT == a_app )
+    {
+        const cJSON *retention = cJSON_GetObjectItemCaseSensitive( a_root, "retention" );
+        if( cJSON_IsObject( retention ) )
+        {
+            config.wifi_timeout_seconds =
+                json_timeout_seconds( retention, "wifi_seconds", config.wifi_timeout_seconds );
+            config.ble_timeout_seconds =
+                json_timeout_seconds( retention, "bluetooth_seconds", config.ble_timeout_seconds );
+        }
+        const cJSON *sensitivity =
+            cJSON_GetObjectItemCaseSensitive( a_root, "surveillance_sensitivity" );
+        if( cJSON_IsString( sensitivity ) && NULL != sensitivity->valuestring )
+        {
+            rfscout_surveillance_sensitivity_t parsed;
+            if( surveillance_sensitivity_from_config_name( sensitivity->valuestring, &parsed ) )
+            {
+                config.surveillance_sensitivity = parsed;
+            }
+        }
+    }
+    else if( RFSCOUT_APP_AUDIO == a_app )
+    {
+        const cJSON *recorder = cJSON_GetObjectItemCaseSensitive( a_root, "recorder" );
+        if( cJSON_IsObject( recorder ) )
+        {
+            const cJSON *volume = cJSON_GetObjectItemCaseSensitive( recorder, "volume" );
+            if( cJSON_IsNumber( volume ) && volume->valueint >= 0 && volume->valueint <= 100 )
+            {
+                config.recorder_volume_percent = (uint8_t)volume->valueint;
+            }
+        }
+    }
+    load_app_notifications( a_app, a_root );
+}
+
+static void load_app_records( void )
+{
+    for( size_t index = 0U; index < RFSCOUT_APP_COUNT; ++index )
+    {
+        const rfscout_app_id_t app = (rfscout_app_id_t)index;
+        char *text = NULL;
+        const esp_err_t result = read_store_text( false, app, "config", &text );
+        if( ESP_ERR_NOT_FOUND == result )
+        {
+            continue;
+        }
+        if( ESP_OK != result )
+        {
+            ESP_LOGW( TAG,
+                      "could not read %s app configuration: %s",
+                      app_config_name( app ),
+                      esp_err_to_name( result ) );
+            continue;
+        }
+        cJSON *root = cJSON_Parse( text );
+        free( text );
+        if( !cJSON_IsObject( root ) || !record_version_valid( root, APP_CONFIG_RECORD_VERSION ) )
+        {
+            ESP_LOGW( TAG, "discarding incompatible %s app configuration", app_config_name( app ) );
+            cJSON_Delete( root );
+            (void)persistent_store_app_remove( app, "config" );
+            continue;
+        }
+        load_app_record( app, root );
+        cJSON_Delete( root );
+    }
+}
+
+static esp_err_t load_system_record( void )
+{
+    char *text = NULL;
+    const esp_err_t result = read_store_text( true, RFSCOUT_APP_DEVICE, "config", &text );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+    cJSON *root = cJSON_Parse( text );
+    free( text );
+    if( !cJSON_IsObject( root ) || !record_version_valid( root, RFSCOUT_CONFIG_SCHEMA_VERSION ) )
     {
         cJSON_Delete( root );
-        discard_invalid_config();
+        (void)system_store_remove( "config" );
         return ESP_ERR_INVALID_VERSION;
     }
+
     load_display( root );
     load_audio_policy( root );
     load_power( root );
-    load_apps( root );
+    load_system_apps( root );
     load_logging( root );
-    load_notifications( root );
-    load_recorder( root );
-    load_timezones( root );
-    load_saved_time( root );
+    load_global_notifications( root );
+    load_timezone_selection( root );
     cJSON_Delete( root );
 
     if( !timezone_selected_valid() )
@@ -815,19 +702,159 @@ static esp_err_t load_file( void )
     return ESP_OK;
 }
 
-/** @brief Build the canonical JSON representation for the current configuration. */
-static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_time_source )
+static bool notification_character_overrides_default( rfscout_app_id_t a_app )
 {
-    if( a_update_time )
+    const size_t count = notification_count_for_app( a_app );
+    for( size_t item = 0U; item < count; ++item )
     {
-        saved_time_valid =
-            ( a_epoch >= CONFIG_MIN_VALID_EPOCH ) && ( a_epoch <= CONFIG_MAX_VALID_EPOCH );
-        saved_time_epoch = saved_time_valid ? a_epoch : 0;
-        copy_string( saved_time_source,
-                     sizeof( saved_time_source ),
-                     saved_time_valid && ( NULL != a_time_source ) ? a_time_source : "" );
+        const rfscout_notification_descriptor_t *descriptor =
+            notification_descriptor_for_app( a_app, item );
+        if( NULL != descriptor && config.notification_characters[ descriptor->type ] !=
+                                      alert_notification_default_character( descriptor->type ) )
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void add_notification_overrides( cJSON *a_root, rfscout_app_id_t a_app )
+{
+    const rfscout_app_audio_policy_t *policy = app_audio_policy_get( a_app );
+    if( !policy->notifications_supported )
+    {
+        return;
+    }
+    const bool enabled_override =
+        config.notification_app_enabled[ a_app ] != policy->notifications_enabled_default;
+    const bool event_override =
+        RFSCOUT_APP_WIFI_BT == a_app &&
+        ( !config.wifi_device_feedback_enabled || !config.ble_device_feedback_enabled );
+    const bool character_override = notification_character_overrides_default( a_app );
+    if( !enabled_override && !event_override && !character_override )
+    {
+        return;
     }
 
+    cJSON *notifications = cJSON_AddObjectToObject( a_root, "notifications" );
+    if( enabled_override )
+    {
+        cJSON_AddBoolToObject( notifications, "enabled", config.notification_app_enabled[ a_app ] );
+    }
+    if( event_override )
+    {
+        cJSON *events = cJSON_AddObjectToObject( notifications, "events" );
+        if( !config.wifi_device_feedback_enabled )
+        {
+            cJSON_AddBoolToObject( events, "wifi_device", false );
+        }
+        if( !config.ble_device_feedback_enabled )
+        {
+            cJSON_AddBoolToObject( events, "ble_device", false );
+        }
+    }
+    if( character_override )
+    {
+        cJSON *characters = cJSON_AddObjectToObject( notifications, "characters" );
+        const size_t count = notification_count_for_app( a_app );
+        for( size_t item = 0U; item < count; ++item )
+        {
+            const rfscout_notification_descriptor_t *descriptor =
+                notification_descriptor_for_app( a_app, item );
+            if( NULL == descriptor || NULL == descriptor->config_key ||
+                config.notification_characters[ descriptor->type ] ==
+                    alert_notification_default_character( descriptor->type ) )
+            {
+                continue;
+            }
+            char value[ 2 ] = { config.notification_characters[ descriptor->type ], '\0' };
+            cJSON_AddStringToObject( characters, descriptor->config_key, value );
+        }
+    }
+}
+
+static cJSON *build_app_record( rfscout_app_id_t a_app )
+{
+    cJSON *root = cJSON_CreateObject();
+    if( NULL == root )
+    {
+        return NULL;
+    }
+    cJSON_AddNumberToObject( root, "version", APP_CONFIG_RECORD_VERSION );
+
+    if( RFSCOUT_APP_WIFI_BT == a_app )
+    {
+        if( config.wifi_timeout_seconds != RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS ||
+            config.ble_timeout_seconds != RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS )
+        {
+            cJSON *retention = cJSON_AddObjectToObject( root, "retention" );
+            if( config.wifi_timeout_seconds != RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS )
+            {
+                cJSON_AddNumberToObject( retention, "wifi_seconds", config.wifi_timeout_seconds );
+            }
+            if( config.ble_timeout_seconds != RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS )
+            {
+                cJSON_AddNumberToObject(
+                    retention, "bluetooth_seconds", config.ble_timeout_seconds );
+            }
+        }
+        if( RFSCOUT_SURVEILLANCE_SENSITIVITY_HIGH != config.surveillance_sensitivity )
+        {
+            cJSON_AddStringToObject(
+                root,
+                "surveillance_sensitivity",
+                surveillance_sensitivity_config_name( config.surveillance_sensitivity ) );
+        }
+    }
+    else if( RFSCOUT_APP_AUDIO == a_app &&
+             CONFIG_RECORDER_VOLUME_DEFAULT != config.recorder_volume_percent )
+    {
+        cJSON *recorder = cJSON_AddObjectToObject( root, "recorder" );
+        cJSON_AddNumberToObject( recorder, "volume", config.recorder_volume_percent );
+    }
+
+    add_notification_overrides( root, a_app );
+    return root;
+}
+
+static esp_err_t persist_app_records( void )
+{
+    for( size_t index = 0U; index < RFSCOUT_APP_COUNT; ++index )
+    {
+        const rfscout_app_id_t app = (rfscout_app_id_t)index;
+        cJSON *root = build_app_record( app );
+        if( NULL == root )
+        {
+            return ESP_ERR_NO_MEM;
+        }
+        if( 1 == cJSON_GetArraySize( root ) )
+        {
+            cJSON_Delete( root );
+            const esp_err_t remove_result = persistent_store_app_remove( app, "config" );
+            if( ESP_OK != remove_result && ESP_ERR_NOT_FOUND != remove_result )
+            {
+                return remove_result;
+            }
+            continue;
+        }
+        char *text = cJSON_PrintUnformatted( root );
+        cJSON_Delete( root );
+        if( NULL == text )
+        {
+            return ESP_ERR_NO_MEM;
+        }
+        const esp_err_t result = persistent_store_app_write( app, "config", text, strlen( text ) );
+        free( text );
+        if( ESP_OK != result )
+        {
+            return result;
+        }
+    }
+    return ESP_OK;
+}
+
+static cJSON *build_system_record( void )
+{
     cJSON *root = cJSON_CreateObject();
     if( NULL == root )
     {
@@ -863,47 +890,10 @@ static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_tim
                              power_action_config_name( config.high_temperature_action ) );
 
     cJSON *apps = cJSON_AddObjectToObject( root, "apps" );
-    for( size_t index = 0; index < RFSCOUT_APP_COUNT; ++index )
+    for( size_t index = 0U; index < RFSCOUT_APP_COUNT; ++index )
     {
-        const rfscout_app_id_t app = (rfscout_app_id_t)index;
-        cJSON *app_item = cJSON_AddObjectToObject( apps, app_config_name( app ) );
-        cJSON_AddBoolToObject( app_item, "enabled", config.apps_enabled[ index ] );
-        if( RFSCOUT_APP_WIFI_BT == app )
-        {
-            cJSON *retention = cJSON_AddObjectToObject( app_item, "retention" );
-            cJSON_AddNumberToObject( retention, "wifi_seconds", config.wifi_timeout_seconds );
-            cJSON_AddNumberToObject( retention, "bluetooth_seconds", config.ble_timeout_seconds );
-            cJSON_AddStringToObject(
-                app_item,
-                "surveillance_sensitivity",
-                surveillance_sensitivity_config_name( config.surveillance_sensitivity ) );
-        }
-        const rfscout_app_audio_policy_t *policy = app_audio_policy_get( app );
-        if( policy->notifications_supported )
-        {
-            cJSON *notifications = cJSON_AddObjectToObject( app_item, "notifications" );
-            cJSON_AddBoolToObject(
-                notifications, "enabled", config.notification_app_enabled[ index ] );
-            if( RFSCOUT_APP_WIFI_BT == app )
-            {
-                cJSON *events = cJSON_AddObjectToObject( notifications, "events" );
-                cJSON_AddBoolToObject( events, "wifi_device", config.wifi_device_feedback_enabled );
-                cJSON_AddBoolToObject( events, "ble_device", config.ble_device_feedback_enabled );
-            }
-            cJSON *characters = cJSON_AddObjectToObject( notifications, "characters" );
-            const size_t count = notification_count_for_app( app );
-            for( size_t item = 0U; item < count; ++item )
-            {
-                const rfscout_notification_descriptor_t *descriptor =
-                    notification_descriptor_for_app( app, item );
-                if( NULL == descriptor || NULL == descriptor->config_key )
-                {
-                    continue;
-                }
-                char value[ 2 ] = { config.notification_characters[ descriptor->type ], '\0' };
-                cJSON_AddStringToObject( characters, descriptor->config_key, value );
-            }
-        }
+        cJSON_AddBoolToObject(
+            apps, app_config_name( (rfscout_app_id_t)index ), config.apps_enabled[ index ] );
     }
     cJSON_AddStringToObject( apps,
                              "startup",
@@ -916,190 +906,55 @@ static cJSON *build_json( bool a_update_time, int64_t a_epoch, const char *a_tim
     cJSON *logging = cJSON_AddObjectToObject( root, "logging" );
     cJSON_AddBoolToObject( logging, "enabled", config.logging_enabled );
 
-    cJSON *recorder = cJSON_AddObjectToObject( root, "recorder" );
-    cJSON_AddNumberToObject( recorder, "volume", config.recorder_volume_percent );
-    cJSON_AddNumberToObject( recorder, "input_gain_db", config.recorder_input_gain_db );
-
     cJSON *notifications = cJSON_AddObjectToObject( root, "notifications" );
     cJSON_AddStringToObject( notifications, "mode", alert_mode_name( config.alert_mode ) );
     cJSON_AddNumberToObject( notifications, "volume", config.alert_volume_percent );
 
     cJSON *timezone = cJSON_AddObjectToObject( root, "timezone" );
     cJSON_AddStringToObject( timezone, "selected", config.timezone_selected );
-    cJSON *options = cJSON_AddArrayToObject( timezone, "options" );
-    for( size_t index = 0; index < config.timezone_count; ++index )
-    {
-        cJSON *entry = cJSON_CreateObject();
-        cJSON_AddStringToObject( entry, "name", config.timezones[ index ].name );
-        cJSON_AddStringToObject( entry, "label", config.timezones[ index ].label );
-        cJSON_AddStringToObject( entry, "posix", config.timezones[ index ].posix );
-        cJSON_AddItemToArray( options, entry );
-    }
-
-    if( saved_time_valid )
-    {
-        cJSON *time = cJSON_AddObjectToObject( root, "time" );
-        cJSON_AddNumberToObject( time, "epoch", (double)saved_time_epoch );
-        cJSON_AddStringToObject(
-            time, "source", saved_time_source[ 0 ] ? saved_time_source : "config" );
-    }
     return root;
 }
 
-/** @brief Check whether the stored document already matches RFScout's canonical serialization. */
-static esp_err_t config_file_is_canonical( bool *a_canonical )
+static void remove_legacy_config_files( void )
 {
-    if( NULL == a_canonical )
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-    *a_canonical = false;
-
-    cJSON *root = build_json( false, 0, NULL );
-    if( NULL == root )
-    {
-        return ESP_ERR_NO_MEM;
-    }
-    char *text = cJSON_Print( root );
-    cJSON_Delete( root );
-    if( NULL == text )
-    {
-        return ESP_ERR_NO_MEM;
-    }
-
-    FILE *file = fopen( RFSCOUT_INTERNAL_CONFIG_PATH, "rb" );
-    if( NULL == file )
-    {
-        free( text );
-        return ( ENOENT == errno ) ? ESP_ERR_NOT_FOUND : ESP_FAIL;
-    }
-
-    const size_t text_length = strlen( text );
-    bool matches = true;
-    for( size_t offset = 0U; offset < text_length; )
-    {
-        char buffer[ 256 ];
-        const size_t remaining = text_length - offset;
-        const size_t wanted = remaining < sizeof( buffer ) ? remaining : sizeof( buffer );
-        const size_t count = fread( buffer, 1U, wanted, file );
-        if( count != wanted || 0 != memcmp( buffer, text + offset, wanted ) )
-        {
-            matches = false;
-            break;
-        }
-        offset += wanted;
-    }
-    if( matches )
-    {
-        matches = ( '\n' == fgetc( file ) ) && ( EOF == fgetc( file ) ) && !ferror( file );
-    }
-
-    fclose( file );
-    free( text );
-    *a_canonical = matches;
-    return ESP_OK;
-}
-
-/** @brief Atomically replace the sole authoritative internal configuration. */
-static esp_err_t replace_config_file( void )
-{
-    if( 0 != rename( CONFIG_TEMP_PATH, RFSCOUT_INTERNAL_CONFIG_PATH ) )
-    {
-        (void)unlink( CONFIG_TEMP_PATH );
-        return ESP_FAIL;
-    }
-    return ESP_OK;
+    (void)unlink( RFSCOUT_INTERNAL_ROOT "/rfscout.json" );
+    (void)unlink( RFSCOUT_INTERNAL_ROOT "/rfscout.json.tmp" );
+    (void)unlink( RFSCOUT_INTERNAL_ROOT "/rfscout.json.bak" );
+    (void)unlink( RFSCOUT_INTERNAL_ROOT "/rfscout.json.bad" );
 }
 
 esp_err_t device_config_init( void )
 {
     set_defaults();
-
-    const esp_err_t store_result = config_store_init();
+    const esp_err_t store_result = persistent_store_init();
     if( ESP_OK != store_result )
     {
         return store_result;
     }
+    remove_legacy_config_files();
 
-    (void)unlink( CONFIG_TEMP_PATH );
-    const esp_err_t result = load_file();
-    if( ESP_OK == result )
+    const esp_err_t system_result = load_system_record();
+    if( ESP_OK != system_result && ESP_ERR_NOT_FOUND != system_result )
     {
-        bool canonical = false;
-        const esp_err_t canonical_result = config_file_is_canonical( &canonical );
-        if( ESP_OK != canonical_result )
-        {
-            ESP_LOGW( TAG,
-                      "configuration canonical comparison failed: %s",
-                      esp_err_to_name( canonical_result ) );
-        }
+        ESP_LOGW( TAG,
+                  "system configuration incompatible; using defaults: %s",
+                  esp_err_to_name( system_result ) );
+    }
+    load_app_records();
 
-        bool canonical_ready = canonical;
-        if( !canonical )
-        {
-            const esp_err_t save_result = device_config_save( false, 0, NULL );
-            if( ESP_OK != save_result )
-            {
-                config_dirty = true;
-                ESP_LOGW( TAG,
-                          "configuration canonical save failed: %s",
-                          esp_err_to_name( save_result ) );
-            }
-            else
-            {
-                canonical_ready = true;
-            }
-        }
-        else
-        {
-            config_dirty = false;
-        }
-
-        if( canonical_ready && config_store_import_pending() )
-        {
-            const esp_err_t finalize_result = config_store_finalize_import();
-            if( ESP_OK == finalize_result )
-            {
-                rfscout_event_emit( RFSCOUT_EVENT_CONFIG_IMPORTED,
-                                    RFSCOUT_EVENT_SOURCE_SYSTEM,
-                                    (int32_t)RFSCOUT_CONFIG_SCHEMA_VERSION );
-            }
-            else
-            {
-                ESP_LOGW( TAG,
-                          "configuration import finalization failed: %s",
-                          esp_err_to_name( finalize_result ) );
-            }
-        }
-
-        const esp_err_t sync_result = config_store_sync_example();
-        if( ESP_OK != sync_result )
-        {
-            ESP_LOGW(
-                TAG, "configuration example sync failed: %s", esp_err_to_name( sync_result ) );
-        }
-        ESP_LOGI( TAG, "loaded %s", RFSCOUT_INTERNAL_CONFIG_PATH );
+    if( ESP_OK == system_result )
+    {
+        config_dirty = false;
+        ESP_LOGI( TAG, "loaded persistent configuration" );
         return ESP_OK;
     }
 
-    if( ESP_ERR_NOT_FOUND != result )
-    {
-        ESP_LOGW( TAG,
-                  "internal configuration invalid; replacing with defaults: %s",
-                  esp_err_to_name( result ) );
-    }
-    const esp_err_t save_result = device_config_save( false, 0, NULL );
+    const esp_err_t save_result = device_config_save();
     if( ESP_OK == save_result )
     {
         rfscout_event_emit( RFSCOUT_EVENT_CONFIG_DEFAULTED,
                             RFSCOUT_EVENT_SOURCE_SYSTEM,
                             (int32_t)RFSCOUT_CONFIG_SCHEMA_VERSION );
-        const esp_err_t sync_result = config_store_sync_example();
-        if( ESP_OK != sync_result )
-        {
-            ESP_LOGW(
-                TAG, "configuration example sync failed: %s", esp_err_to_name( sync_result ) );
-        }
     }
     return save_result;
 }
@@ -1111,12 +966,12 @@ const device_config_t *device_config_get( void )
 
 bool device_config_app_enabled( rfscout_app_id_t a_app )
 {
-    return ( a_app < RFSCOUT_APP_COUNT ) && config.apps_enabled[ a_app ];
+    return a_app < RFSCOUT_APP_COUNT && config.apps_enabled[ a_app ];
 }
 
 esp_err_t device_config_set_app_enabled( rfscout_app_id_t a_app, bool a_enabled )
 {
-    if( ( a_app >= RFSCOUT_APP_COUNT ) || ( RFSCOUT_APP_DEVICE == a_app ) )
+    if( a_app >= RFSCOUT_APP_COUNT || RFSCOUT_APP_DEVICE == a_app )
     {
         return ESP_ERR_INVALID_ARG;
     }
@@ -1305,7 +1160,7 @@ esp_err_t device_config_set_ble_timeout_seconds( uint16_t a_seconds )
 
 rfscout_surveillance_sensitivity_t device_config_surveillance_sensitivity( void )
 {
-    return ( config.surveillance_sensitivity < RFSCOUT_SURVEILLANCE_SENSITIVITY_COUNT )
+    return config.surveillance_sensitivity < RFSCOUT_SURVEILLANCE_SENSITIVITY_COUNT
                ? config.surveillance_sensitivity
                : RFSCOUT_SURVEILLANCE_SENSITIVITY_HIGH;
 }
@@ -1337,7 +1192,7 @@ esp_err_t device_config_set_logging_enabled( bool a_enabled )
 
 esp_err_t device_config_set_brightness( uint8_t a_percent )
 {
-    if( ( a_percent < 10U ) || ( a_percent > 100U ) )
+    if( a_percent < 10U || a_percent > 100U )
     {
         return ESP_ERR_INVALID_ARG;
     }
@@ -1352,8 +1207,8 @@ esp_err_t device_config_set_brightness( uint8_t a_percent )
 esp_err_t device_config_set_display_dim_timeout( uint16_t a_seconds )
 {
     if( a_seconds > CONFIG_DISPLAY_TIMEOUT_MAX_SECONDS ||
-        ( ( 0U != a_seconds ) && ( 0U != config.display_off_timeout_seconds ) &&
-          ( a_seconds >= config.display_off_timeout_seconds ) ) )
+        ( 0U != a_seconds && 0U != config.display_off_timeout_seconds &&
+          a_seconds >= config.display_off_timeout_seconds ) )
     {
         return ESP_ERR_INVALID_ARG;
     }
@@ -1368,8 +1223,8 @@ esp_err_t device_config_set_display_dim_timeout( uint16_t a_seconds )
 esp_err_t device_config_set_display_off_timeout( uint16_t a_seconds )
 {
     if( a_seconds > CONFIG_DISPLAY_TIMEOUT_MAX_SECONDS ||
-        ( ( 0U != a_seconds ) && ( 0U != config.display_dim_timeout_seconds ) &&
-          ( a_seconds <= config.display_dim_timeout_seconds ) ) )
+        ( 0U != a_seconds && 0U != config.display_dim_timeout_seconds &&
+          a_seconds <= config.display_dim_timeout_seconds ) )
     {
         return ESP_ERR_INVALID_ARG;
     }
@@ -1526,20 +1381,6 @@ esp_err_t device_config_set_recorder_volume( uint8_t a_percent )
     return ESP_OK;
 }
 
-esp_err_t device_config_set_recorder_input_gain( uint8_t a_gain_db )
-{
-    if( a_gain_db > 24U || 0U != ( a_gain_db % 3U ) )
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-    if( config.recorder_input_gain_db != a_gain_db )
-    {
-        config.recorder_input_gain_db = a_gain_db;
-        config_dirty = true;
-    }
-    return ESP_OK;
-}
-
 char device_config_notification_character( rfscout_notification_type_t a_type )
 {
     if( a_type >= RFSCOUT_NOTIFICATION_TYPE_COUNT )
@@ -1556,13 +1397,11 @@ esp_err_t device_config_set_notification_character( rfscout_notification_type_t 
     {
         return ESP_ERR_INVALID_ARG;
     }
-
     const char character = (char)toupper( (unsigned char)a_character );
     if( !alert_morse_character_supported( character ) )
     {
         return ESP_ERR_INVALID_ARG;
     }
-
     if( config.notification_characters[ a_type ] != character )
     {
         config.notification_characters[ a_type ] = character;
@@ -1577,7 +1416,7 @@ esp_err_t device_config_set_timezone( const char *a_name )
     {
         return ESP_ERR_INVALID_ARG;
     }
-    for( size_t index = 0; index < config.timezone_count; ++index )
+    for( size_t index = 0U; index < config.timezone_count; ++index )
     {
         if( 0 == strcmp( config.timezones[ index ].name, a_name ) )
         {
@@ -1594,7 +1433,7 @@ esp_err_t device_config_set_timezone( const char *a_name )
 
 const device_timezone_t *device_config_timezone( void )
 {
-    for( size_t index = 0; index < config.timezone_count; ++index )
+    for( size_t index = 0U; index < config.timezone_count; ++index )
     {
         if( 0 == strcmp( config.timezones[ index ].name, config.timezone_selected ) )
         {
@@ -1604,65 +1443,32 @@ const device_timezone_t *device_config_timezone( void )
     return NULL;
 }
 
-bool device_config_saved_time( int64_t *a_epoch, const char **a_source )
+esp_err_t device_config_save( void )
 {
-    if( !saved_time_valid )
-    {
-        return false;
-    }
-    if( NULL != a_epoch )
-    {
-        *a_epoch = saved_time_epoch;
-    }
-    if( NULL != a_source )
-    {
-        *a_source = saved_time_source;
-    }
-    return true;
-}
-
-esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a_time_source )
-{
-    if( !config_store_is_available() )
+    if( !persistent_store_is_available() )
     {
         return ESP_ERR_INVALID_STATE;
     }
 
-    cJSON *root = build_json( a_update_time, a_epoch, a_time_source );
+    cJSON *root = build_system_record();
     if( NULL == root )
     {
         return ESP_ERR_NO_MEM;
     }
-    char *text = cJSON_Print( root );
+    const esp_err_t app_result = persist_app_records();
+    if( ESP_OK != app_result )
+    {
+        cJSON_Delete( root );
+        return app_result;
+    }
+    char *text = cJSON_PrintUnformatted( root );
     cJSON_Delete( root );
     if( NULL == text )
     {
         return ESP_ERR_NO_MEM;
     }
-
-    FILE *file = fopen( CONFIG_TEMP_PATH, "wb" );
-    if( NULL == file )
-    {
-        free( text );
-        return ESP_FAIL;
-    }
-    const size_t length = strlen( text );
-    bool ok = ( length == fwrite( text, 1U, length, file ) );
-    ok = ok && ( EOF != fputc( '\n', file ) );
-    ok = ok && ( 0 == fflush( file ) );
-    ok = ok && ( 0 == fsync( fileno( file ) ) );
-    if( 0 != fclose( file ) )
-    {
-        ok = false;
-    }
+    const esp_err_t result = system_store_write( "config", text, strlen( text ) );
     free( text );
-
-    if( !ok )
-    {
-        (void)unlink( CONFIG_TEMP_PATH );
-        return ESP_FAIL;
-    }
-    const esp_err_t result = replace_config_file();
     if( ESP_OK == result )
     {
         config_dirty = false;
@@ -1672,5 +1478,5 @@ esp_err_t device_config_save( bool a_update_time, int64_t a_epoch, const char *a
 
 esp_err_t device_config_save_if_dirty( void )
 {
-    return config_dirty ? device_config_save( false, 0, NULL ) : ESP_OK;
+    return config_dirty ? device_config_save() : ESP_OK;
 }

@@ -10,7 +10,7 @@ Canonical rotary order:
 
 0. System Events — optional, disabled by default
 1. Home / Device Settings
-2. WiFi / BLE
+2. WiFi / BT
 3. CC1101
 4. nRF24
 5. Recorder
@@ -21,9 +21,9 @@ Disabled or unavailable apps are skipped. Home is always available and is the fa
 
 System Events is a read-only view of the RAM-only structured event ring. Center enters/exits a stable Browse snapshot; rotary input scrolls only while Browse is active.
 
-## WiFi / BLE
+## WiFi / BT
 
-WiFi / BLE passively observes Wi-Fi and BLE activity, performs longest-prefix IEEE vendor attribution, distinguishes randomized/private addresses from unresolved public addresses, and applies conservative surveillance-oriented classification.
+WiFi / BT passively observes Wi-Fi and BLE activity, performs longest-prefix IEEE vendor attribution, distinguishes randomized/private addresses from unresolved public addresses, and applies conservative surveillance-oriented classification.
 
 The normalized live observation store grows in app-session PSRAM rather than reserving or enforcing a fixed item capacity. Collector ingestion uses an address/type identity index rather than rescanning the full collection per callback. Both the general summary and surveillance view are projections of this one canonical active-device collection.
 
@@ -51,7 +51,9 @@ Acquisition and presentation use separate cadences: sweep data continues feeding
 
 ## Recorder
 
-Recorder provides SD-backed 16-bit mono PCM WAV capture/playback, runtime PDM/effective-rate measurement, measured-rate WAV metadata, asynchronous trim/DC-removal/normalization, recording browse/delete, and independent playback volume.
+Recorder provides SD-backed 16-bit mono PCM WAV capture/playback, runtime PDM/effective-rate measurement, measured-rate WAV metadata, asynchronous post-processing, recording browse/delete, and independent playback volume.
+
+Capture is not software pre-amplified. After capture completes, Recorder trims startup/tail artifacts, removes DC/very-low-frequency energy with the same shared one-pole high-pass primitive used by Audio Spectrum, then applies bounded normalization before finalizing the WAV. This keeps the saved signal treatment consistent with the spectrum path without risking pre-normalization clipping during capture.
 
 Live microphone spectrum monitoring is no longer a Recorder mode; it is the separate **Audio Spectrum** app. While Recorder is actively recording or finalizing a recording, app transitions are intentionally blocked. The user stops recording with center, saving completes, and normal navigation then resumes. RFScout does not attempt to reconstruct or restart an interrupted recording after a failed transition. Playback may be stopped normally when Recorder is left.
 
@@ -61,7 +63,7 @@ Recorder content audio remains available under device Quiet policy; incidental f
 
 Audio Spectrum is a microphone-only live FFT/spectrum app and does not require an SD card. The live view leaves rotary input available for global app navigation.
 
-The spectrum uses raw microphone PCM with continuous high-pass/DC-block filtering and a smoothed automatic dB display range, avoiding pre-FFT digital amplification and clipping. The live `AUTO N dB` readout reports the current display-window span rather than microphone gain. The shared audio-capture service owns microphone/channel lifetime so Audio Spectrum uses the same ordinary app/session contract as the radio and sensor apps rather than Recorder-specific rollback semantics.
+The spectrum uses raw microphone PCM with the shared continuous high-pass/DC-block filter and a smoothed automatic dB display range, avoiding pre-FFT digital amplification and clipping. The live `AUTO N dB` readout reports the current display-window span rather than microphone gain. The shared audio-capture service owns microphone/channel lifetime so Audio Spectrum uses the same ordinary app/session contract as the radio and sensor apps rather than Recorder-specific rollback semantics.
 
 ## Thermal
 
@@ -78,12 +80,13 @@ Implemented global settings include:
 - UI, Event, and Alert presentation levels/policy;
 - configurable short/long power-button actions;
 - low-battery and high-internal-temperature protective power policy;
-- 12/24-hour clock, timezone, and manual date/time;
+- persistent 12/24-hour clock presentation and timezone;
+- manual date/time controls that update the running RTC-backed system clock only;
 - startup application and per-app enablement, including Audio Spectrum independently from Recorder;
 - SD logging;
-- explicit configuration save.
+- explicit internal configuration save.
 
-Small finite choices use direct center-to-cycle behavior; numeric ranges use edit/rotate. Per-app alert mappings, surveillance sensitivity, and WiFi / BLE retention remain in their owning app menus.
+Small finite choices use direct center-to-cycle behavior; numeric ranges use edit/rotate. Per-app alert mappings, surveillance sensitivity, and WiFi / BT retention remain in their owning app menus.
 
 Visual themes are **Indoor**, **Outdoor**, and **Night** and affect colors only. **Quiet** suppresses incidental UI/Event/Alert presentation without rewriting saved app notification gates, mappings, mode, or volume. Explicit application Content audio such as Recorder playback remains available.
 
@@ -105,11 +108,15 @@ The device-wide Normal/Quiet policy is independent of visual theme. Speaker outp
 
 ## Configuration, storage, and logging
 
-Persistent preferences use the authoritative internal `/internal/rfscout.json` schema version **3**. Loading begins with defaults and overlays recognized valid fields from a current-schema internal document. A missing, corrupt, or incompatible internal configuration is replaced with current compiled defaults. Internal saves write a complete temporary file and atomically rename it over the live file; persistent internal backup/quarantine copies are not retained. See [CONFIGURATION.md](CONFIGURATION.md).
+Persistent preferences use firmware-managed internal records. `system/config` and `app/<persistence_key>/config` are logical ownership names, not literal filenames. The persistence service hashes opaque logical keys to fixed filesystem-safe names, serializes filesystem operations internally, limits each record to 16 KiB, and atomically replaces individual records through a same-directory temporary. Callers do not manage persistence locks or construct LittleFS paths.
 
-An SD card is no longer required to retain device settings. `/sdcard/rfscout.json` is an explicit one-shot import; a valid current-schema import is committed internally before deletion, while an invalid import is preserved as `/sdcard/rfscout.json.bad`. `/sdcard/rfscout-example.json` is synchronized from the authoritative internal configuration at startup when SD is available and is rewritten only when its contents differ.
+Application configuration records exist only for overrides from compiled defaults; returning all app settings to defaults removes the app record. Interrupted-write temporaries are discarded during the persistence service's startup cleanup pass. Reads do not create app storage directories.
 
-System Events/dmesg records internal-storage mount/recovery status and accepted configuration import/default recovery separately from SD-card mount state. RFScout can operate without SD for configuration, radio/sensor use, and Audio Spectrum. SD remains the home for Recorder files under `/sdcard/audio/` and asynchronous rotating logs. The conservative board-tested baseline is a FAT-compatible SanDisk card of 32 GB or less. Logs rotate through 100 files of up to 4 MiB each while preserving a free-space reserve.
+An SD card is not required to retain or save device/app settings and is not consulted for configuration. SD remains removable bulk storage for Recorder WAVs and asynchronous logs. Future settings transfer should use an explicit firmware-managed import/export operation rather than exposing internal record files.
+
+Wall-clock epoch/source state is not configuration. RFScout uses the RTC-backed system clock directly for display, log timestamps, and filesystem calendar metadata. Manual date/time and future GPS/NTP adjustments change runtime clock state; timezone and clock presentation remain persistent preferences.
+
+System Events/dmesg records internal-storage mount/recovery status and configuration-default recovery separately from SD-card mount state. RFScout can operate without SD for configuration, radio/sensor use, and Audio Spectrum. The conservative board-tested SD baseline is a FAT-compatible SanDisk card of 32 GB or less. Logs rotate through 100 files of up to 4 MiB each while preserving a free-space reserve.
 
 ## Hardware and memory boundaries
 
@@ -117,8 +124,8 @@ LCD/microSD/CC1101/nRF24 share SPI resources; power telemetry/external sensors s
 
 Usable external **PSRAM is required**. App-scoped memory/session infrastructure is implemented: growable app-owned state can consume PSRAM during the session and is reclaimed after platform services prove they no longer reference it.
 
-The 16 MiB internal flash is split into an 8 MiB factory application partition and approximately 8 MiB of LittleFS internal persistence. Configuration currently uses only one durable internal file plus its short-lived write temporary; the remaining capacity is reserved for future system-owned persistent records rather than direct app filesystem ownership.
+The current 16 MiB mainline flash layout uses an 8 MiB factory application partition and approximately 8 MiB of LittleFS internal persistence. Persistent state is stored as bounded owned records rather than direct app filesystem content; planned A/B OTA partitioning will reduce that durable budget, so consumers must remain size-independent.
 
 ## Not currently implemented
 
-Major v0.4.0 work still outstanding includes Instant/Timed/Never WiFi/BLE retention semantics, semantic Wi-Fi/BLE entity/correlation views, broader app-by-app PSRAM/history improvements, the planned further calibration/generalization of the Audio Input service, thermal calibration, a generic app-facing persistent record/database service, and release-level stress/fault-injection validation. The canonical checklist and status are in [ROADMAP.md](ROADMAP.md).
+Major v0.4.0 work still outstanding includes Instant/Timed/Never WiFi/BLE retention semantics, semantic Wi-Fi/BLE entity/correlation views, broader app-by-app PSRAM/history improvements, the planned further calibration/generalization of the Audio Input service, thermal calibration, and release-level stress/fault-injection validation. The canonical checklist and status are in [ROADMAP.md](ROADMAP.md).

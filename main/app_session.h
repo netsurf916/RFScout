@@ -25,6 +25,9 @@
  */
 esp_err_t app_session_ensure( rfscout_app_id_t a_app );
 
+/** @brief Return the application that owns the current resource session. */
+rfscout_app_id_t app_session_app( void );
+
 /** @brief Return a monotonically changing identifier for the current app-session lifetime. */
 uint32_t app_session_generation( void );
 

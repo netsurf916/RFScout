@@ -54,7 +54,6 @@ rfscout_audio_category_t rfscout_event_audio_category( rfscout_event_type_t a_ty
         case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNTED:
         case RFSCOUT_EVENT_INTERNAL_STORAGE_FORMATTED:
         case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED:
-        case RFSCOUT_EVENT_CONFIG_IMPORTED:
         case RFSCOUT_EVENT_CONFIG_DEFAULTED:
         case RFSCOUT_EVENT_APP_DISCOVERED:
         case RFSCOUT_EVENT_DISPLAY_PROVIDER_SELECTED:

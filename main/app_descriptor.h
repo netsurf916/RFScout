@@ -95,6 +95,7 @@ typedef struct
 {
     rfscout_app_id_t id;
     const char *name;
+    const char *persistence_key;
     rfscout_app_probe_policy_t probe_policy;
     esp_err_t ( *probe )( void );
     bool requires_activation;

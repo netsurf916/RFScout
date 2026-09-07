@@ -79,6 +79,7 @@ system_events_runtime( const rfscout_app_runtime_event_t *a_event )
 const rfscout_app_descriptor_t rfscout_system_events_app = {
     .id = RFSCOUT_APP_SYSTEM_EVENTS,
     .name = "System Events",
+    .persistence_key = "system_events",
     .probe_policy = RFSCOUT_APP_PROBE_NONE,
     .probe = NULL,
     .requires_activation = false,

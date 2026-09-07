@@ -106,18 +106,19 @@ static void log_config_change( const char *a_key, const char *a_old, const char 
     (void)log_writer_app_record( "CONFIG", detail );
 }
 
-static void format_epoch( bool a_valid, time_t a_epoch, char *a_output, size_t a_capacity )
+static void format_epoch( time_t a_epoch, char *a_output, size_t a_capacity )
 {
-    if( !a_valid || !device_time_format_iso8601_utc( a_epoch, a_output, a_capacity ) )
+    if( !device_time_format_iso8601_utc( a_epoch, a_output, a_capacity ) )
     {
-        snprintf( a_output, a_capacity, "unset" );
+        snprintf( a_output, a_capacity, "invalid" );
     }
 }
 
 static void refresh_edited_time( void )
 {
     time_t now;
-    if( device_time_now( &now ) && ( NULL != localtime_r( &now, &edited_time ) ) )
+    (void)device_time_now( &now );
+    if( NULL != localtime_r( &now, &edited_time ) )
     {
         return;
     }
@@ -395,7 +396,7 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             snprintf( a_value, a_capacity, "%s", on_off( config->logging_enabled ) );
             break;
         case DEVICE_ITEM_SAVE:
-            snprintf( a_value, a_capacity, "%s", storage_is_available() ? "SD" : "No SD" );
+            snprintf( a_value, a_capacity, "Internal" );
             break;
         default:
             if( ( a_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
@@ -958,7 +959,7 @@ static bool manual_time_round_trip_valid( const struct tm *a_requested, time_t a
 static bool commit_manual_time( void )
 {
     time_t old_epoch = 0;
-    const bool had_old = device_time_now( &old_epoch );
+    (void)device_time_now( &old_epoch );
     struct tm requested = edited_time;
     requested.tm_sec = 0;
     requested.tm_isdst = -1;
@@ -966,7 +967,7 @@ static bool commit_manual_time( void )
     const time_t new_epoch = mktime( &conversion );
     if( ( new_epoch < (time_t)1577836800 ) ||
         !manual_time_round_trip_valid( &requested, new_epoch ) ||
-        ( ESP_OK != device_time_set_epoch( new_epoch, RFSCOUT_TIME_SOURCE_MANUAL, "manual" ) ) )
+        ( ESP_OK != device_time_set_epoch( new_epoch ) ) )
     {
         save_error = true;
         return false;
@@ -975,8 +976,8 @@ static bool commit_manual_time( void )
     edited_time = conversion;
     char old_text[ 32 ];
     char new_text[ 32 ];
-    format_epoch( had_old, old_epoch, old_text, sizeof( old_text ) );
-    format_epoch( true, new_epoch, new_text, sizeof( new_text ) );
+    format_epoch( old_epoch, old_text, sizeof( old_text ) );
+    format_epoch( new_epoch, new_text, sizeof( new_text ) );
     char detail[ 128 ];
     snprintf( detail, sizeof( detail ), "old=%s new=%s source=manual", old_text, new_text );
     (void)log_writer_app_record( "TIME", detail );
@@ -1260,7 +1261,7 @@ bool device_view_input( bool a_pressed, int a_delta )
         }
         if( ( DEVICE_ITEM_SAVE == selected_item ) && !editing )
         {
-            save_error = ( ESP_OK != device_config_save( false, 0, NULL ) );
+            save_error = ( ESP_OK != device_config_save() );
             emit_device_event( save_error ? RFSCOUT_EVENT_ERROR : RFSCOUT_EVENT_ACTIVATE,
                                save_error ? -1 : 0 );
             device_view_render();

@@ -72,7 +72,7 @@ static void render( void )
 
 static void save_volume( void )
 {
-    const esp_err_t result = device_config_save( false, 0, NULL );
+    const esp_err_t result = device_config_save();
     if( ESP_OK != result )
     {
         ESP_LOGW( TAG, "could not save Recorder volume: %s", esp_err_to_name( result ) );
@@ -223,8 +223,6 @@ static void handle_browser_input( const rfscout_input_event_t *a_input )
         }
         if( RECORDER_BROWSER_NEW == browser_item )
         {
-            const device_config_t *config = device_config_get();
-            recorder_set_input_gain_db( NULL != config ? config->recorder_input_gain_db : 12U );
             if( ESP_OK != recorder_start_recording() )
             {
                 ESP_LOGW( TAG, "could not start recording" );
@@ -405,6 +403,7 @@ static rfscout_app_runtime_result_t recorder_runtime( const rfscout_app_runtime_
 const rfscout_app_descriptor_t rfscout_recorder_app = {
     .id = RFSCOUT_APP_AUDIO,
     .name = "Recorder",
+    .persistence_key = "audio",
     .probe_policy = RFSCOUT_APP_PROBE_HOTPLUG,
     .probe = probe_recorder,
     .requires_activation = false,

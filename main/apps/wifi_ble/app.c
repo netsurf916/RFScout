@@ -319,6 +319,7 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
 const rfscout_app_descriptor_t rfscout_wifi_ble_app = {
     .id = RFSCOUT_APP_WIFI_BT,
     .name = "WiFi / BT",
+    .persistence_key = "wifi_ble",
     .probe_policy = RFSCOUT_APP_PROBE_NONE,
     .probe = NULL,
     .requires_activation = true,
