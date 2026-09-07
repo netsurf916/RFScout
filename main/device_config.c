@@ -29,8 +29,8 @@
 #define CONFIG_DISPLAY_DIM_TIMEOUT_DEFAULT_SECONDS 120U
 #define CONFIG_DISPLAY_OFF_TIMEOUT_DEFAULT_SECONDS 300U
 #define CONFIG_DISPLAY_TIMEOUT_MAX_SECONDS 3600U
-#define CONFIG_AUDIO_INTERACTION_GAIN_DEFAULT_PERCENT 35U
-#define CONFIG_AUDIO_NOTIFICATION_GAIN_DEFAULT_PERCENT 100U
+#define CONFIG_AUDIO_INTERACTION_GAIN_DEFAULT_PERCENT 20U
+#define CONFIG_AUDIO_NOTIFICATION_GAIN_DEFAULT_PERCENT 20U
 #define CONFIG_RECORDER_VOLUME_DEFAULT 50U
 
 static const char *TAG = "device_config";
@@ -146,7 +146,7 @@ static bool power_action_from_config_name( const char *a_name, power_action_t *a
     }
     for( int action = (int)POWER_ACTION_NONE; action < (int)POWER_ACTION_COUNT; ++action )
     {
-        if( 0 == strcasecmp( a_name, power_action_config_name( (power_action_t)action ) ) )
+        if( 0 == strcasecmp( a_name, power_action_config_name( (power_action_t)action ) )
         {
             *a_action = (power_action_t)action;
             return true;
