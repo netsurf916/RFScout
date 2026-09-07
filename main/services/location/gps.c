@@ -1,0 +1,318 @@
+/**
+    gps.c : RFScout GNSS location/time service
+    Description: Parses checksum-validated NMEA RMC/GGA data from the runtime board GPS UART.
+    Copyright 2026 Daniel Wilson
+    SPDX-License-Identifier: MIT
+*/
+
+#include "gps.h"
+
+#include "board.h"
+#include "device_time.h"
+
+#include "driver/uart.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define GPS_UART UART_NUM_1
+#define GPS_BAUD 9600
+#define GPS_RX_BUFFER 1024
+#define GPS_LINE_MAX 128
+#define GPS_FIX_STALE_MS 5000U
+#define GPS_TIME_STALE_MS 5000U
+
+static const char *TAG = "gps";
+static bool initialized;
+static char line[ GPS_LINE_MAX ];
+static size_t line_length;
+static rfscout_gps_snapshot_t snapshot;
+static int64_t location_updated_us;
+static int64_t time_updated_us;
+
+static bool checksum_valid( const char *a_line )
+{
+    if( NULL == a_line || '$' != a_line[ 0 ] )
+    {
+        return false;
+    }
+    const char *star = strchr( a_line, '*' );
+    if( NULL == star || strlen( star ) < 3U )
+    {
+        return false;
+    }
+    unsigned checksum = 0U;
+    for( const char *cursor = a_line + 1; cursor < star; ++cursor )
+    {
+        checksum ^= (unsigned char)*cursor;
+    }
+    char *end = NULL;
+    const unsigned expected = (unsigned)strtoul( star + 1, &end, 16 );
+    return end == star + 3 && checksum == expected;
+}
+
+static double nmea_coordinate( const char *a_value, char a_hemisphere )
+{
+    if( NULL == a_value || '\0' == a_value[ 0 ] )
+    {
+        return NAN;
+    }
+    const double raw = strtod( a_value, NULL );
+    const double degrees = floor( raw / 100.0 );
+    double result = degrees + ( raw - degrees * 100.0 ) / 60.0;
+    if( 'S' == a_hemisphere || 'W' == a_hemisphere )
+    {
+        result = -result;
+    }
+    return result;
+}
+
+static int64_t days_from_civil( int a_year, unsigned a_month, unsigned a_day )
+{
+    a_year -= a_month <= 2U;
+    const int era = ( a_year >= 0 ? a_year : a_year - 399 ) / 400;
+    const unsigned year_of_era = (unsigned)( a_year - era * 400 );
+    const unsigned day_of_year =
+        ( 153U * ( a_month + ( a_month > 2U ? (unsigned)-3 : 9U ) ) + 2U ) / 5U + a_day - 1U;
+    const unsigned day_of_era =
+        year_of_era * 365U + year_of_era / 4U - year_of_era / 100U + day_of_year;
+    return (int64_t)era * 146097LL + (int64_t)day_of_era - 719468LL;
+}
+
+static bool parse_utc_epoch( const char *a_time, const char *a_date, time_t *a_epoch )
+{
+    if( NULL == a_time || NULL == a_date || NULL == a_epoch || strlen( a_time ) < 6U ||
+        strlen( a_date ) != 6U )
+    {
+        return false;
+    }
+    const int hour = ( a_time[ 0 ] - '0' ) * 10 + ( a_time[ 1 ] - '0' );
+    const int minute = ( a_time[ 2 ] - '0' ) * 10 + ( a_time[ 3 ] - '0' );
+    const int second = ( a_time[ 4 ] - '0' ) * 10 + ( a_time[ 5 ] - '0' );
+    const unsigned day = (unsigned)( ( a_date[ 0 ] - '0' ) * 10 + ( a_date[ 1 ] - '0' ) );
+    const unsigned month = (unsigned)( ( a_date[ 2 ] - '0' ) * 10 + ( a_date[ 3 ] - '0' ) );
+    const int yy = ( a_date[ 4 ] - '0' ) * 10 + ( a_date[ 5 ] - '0' );
+    const int year = yy >= 80 ? 1900 + yy : 2000 + yy;
+    if( hour > 23 || minute > 59 || second > 60 || day < 1U || day > 31U || month < 1U ||
+        month > 12U || year < 2020 || year > 2099 )
+    {
+        return false;
+    }
+    *a_epoch = (time_t)( days_from_civil( year, month, day ) * 86400LL + hour * 3600LL +
+                         minute * 60LL + second );
+    return true;
+}
+
+static size_t split_fields( char *a_payload, char *a_fields[], size_t a_capacity )
+{
+    size_t count = 0U;
+    char *cursor = a_payload;
+    while( NULL != cursor && count < a_capacity )
+    {
+        a_fields[ count++ ] = cursor;
+        char *comma = strchr( cursor, ',' );
+        if( NULL == comma )
+        {
+            break;
+        }
+        *comma = '\0';
+        cursor = comma + 1;
+    }
+    return count;
+}
+
+static void parse_rmc( char *a_payload )
+{
+    char *fields[ 16 ];
+    const size_t count = split_fields( a_payload, fields, 16U );
+    if( count < 10U || 'A' != fields[ 2 ][ 0 ] )
+    {
+        return;
+    }
+    const double latitude = nmea_coordinate( fields[ 3 ], fields[ 4 ][ 0 ] );
+    const double longitude = nmea_coordinate( fields[ 5 ], fields[ 6 ][ 0 ] );
+    if( isfinite( latitude ) && isfinite( longitude ) )
+    {
+        snapshot.latitude_deg = latitude;
+        snapshot.longitude_deg = longitude;
+        snapshot.location_valid = true;
+        location_updated_us = esp_timer_get_time();
+    }
+    if( '\0' != fields[ 7 ][ 0 ] )
+    {
+        snapshot.speed_mps = (float)( strtod( fields[ 7 ], NULL ) * 0.514444 );
+    }
+    time_t epoch;
+    if( parse_utc_epoch( fields[ 1 ], fields[ 9 ], &epoch ) )
+    {
+        snapshot.utc_epoch = epoch;
+        snapshot.time_valid = true;
+        time_updated_us = esp_timer_get_time();
+        (void)device_time_offer_gps( epoch );
+    }
+}
+
+static void parse_gga( char *a_payload )
+{
+    char *fields[ 16 ];
+    const size_t count = split_fields( a_payload, fields, 16U );
+    if( count < 10U || atoi( fields[ 6 ] ) <= 0 )
+    {
+        return;
+    }
+    const double latitude = nmea_coordinate( fields[ 2 ], fields[ 3 ][ 0 ] );
+    const double longitude = nmea_coordinate( fields[ 4 ], fields[ 5 ][ 0 ] );
+    if( isfinite( latitude ) && isfinite( longitude ) )
+    {
+        snapshot.latitude_deg = latitude;
+        snapshot.longitude_deg = longitude;
+        snapshot.location_valid = true;
+        location_updated_us = esp_timer_get_time();
+    }
+    const int satellites = atoi( fields[ 7 ] );
+    snapshot.satellites = (uint8_t)( satellites < 0 ? 0 : ( satellites > 255 ? 255 : satellites ) );
+    if( '\0' != fields[ 9 ][ 0 ] )
+    {
+        snapshot.altitude_m = strtof( fields[ 9 ], NULL );
+    }
+}
+
+static void parse_line( char *a_line )
+{
+    if( !checksum_valid( a_line ) )
+    {
+        return;
+    }
+    char *star = strchr( a_line, '*' );
+    *star = '\0';
+    char *payload = a_line + 1;
+    char *comma = strchr( payload, ',' );
+    if( NULL == comma )
+    {
+        return;
+    }
+    *comma = '\0';
+    if( strlen( payload ) >= 3U && 0 == strcmp( payload + strlen( payload ) - 3U, "RMC" ) )
+    {
+        parse_rmc( comma + 1 );
+    }
+    else if( strlen( payload ) >= 3U && 0 == strcmp( payload + strlen( payload ) - 3U, "GGA" ) )
+    {
+        parse_gga( comma + 1 );
+    }
+}
+
+esp_err_t gps_init( void )
+{
+    memset( &snapshot, 0, sizeof( snapshot ) );
+    line_length = 0U;
+    location_updated_us = 0;
+    time_updated_us = 0;
+    initialized = false;
+    if( !RFSCOUT_BOARD_HAS_GPS )
+    {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    const uart_config_t config = {
+        .baud_rate = GPS_BAUD,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_DEFAULT,
+    };
+    esp_err_t result = uart_driver_install( GPS_UART, GPS_RX_BUFFER, 0, 0, NULL, 0 );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+    if( ESP_OK != ( result = uart_param_config( GPS_UART, &config ) ) ||
+        ESP_OK != ( result = uart_set_pin( GPS_UART,
+                                           RFSCOUT_BOARD_GPS_TX_PIN,
+                                           RFSCOUT_BOARD_GPS_RX_PIN,
+                                           UART_PIN_NO_CHANGE,
+                                           UART_PIN_NO_CHANGE ) ) )
+    {
+        (void)uart_driver_delete( GPS_UART );
+        return result;
+    }
+    initialized = true;
+    snapshot.available = true;
+    ESP_LOGI( TAG,
+              "GPS provider started: UART1 RX=%d TX=%d baud=%d",
+              RFSCOUT_BOARD_GPS_RX_PIN,
+              RFSCOUT_BOARD_GPS_TX_PIN,
+              GPS_BAUD );
+    return ESP_OK;
+}
+
+void gps_poll( void )
+{
+    if( !initialized )
+    {
+        return;
+    }
+    uint8_t buffer[ 128 ];
+    const int received = uart_read_bytes( GPS_UART, buffer, sizeof( buffer ), 0 );
+    for( int index = 0; index < received; ++index )
+    {
+        const char value = (char)buffer[ index ];
+        if( '\n' == value )
+        {
+            line[ line_length ] = '\0';
+            if( line_length > 0U )
+            {
+                parse_line( line );
+            }
+            line_length = 0U;
+        }
+        else if( '\r' != value )
+        {
+            if( line_length + 1U < sizeof( line ) )
+            {
+                line[ line_length++ ] = value;
+            }
+            else
+            {
+                line_length = 0U;
+            }
+        }
+    }
+
+    const int64_t now = esp_timer_get_time();
+    if( snapshot.location_valid &&
+        ( now - location_updated_us ) / 1000LL > (int64_t)GPS_FIX_STALE_MS )
+    {
+        snapshot.location_valid = false;
+    }
+    if( snapshot.time_valid && ( now - time_updated_us ) / 1000LL > (int64_t)GPS_TIME_STALE_MS )
+    {
+        snapshot.time_valid = false;
+    }
+}
+
+bool gps_snapshot_get( rfscout_gps_snapshot_t *a_snapshot )
+{
+    if( NULL == a_snapshot || !initialized )
+    {
+        return false;
+    }
+    *a_snapshot = snapshot;
+    const int64_t now = esp_timer_get_time();
+    a_snapshot->location_age_ms = location_updated_us > 0
+                                      ? (uint32_t)( ( now - location_updated_us ) / 1000LL )
+                                      : UINT32_MAX;
+    a_snapshot->time_age_ms =
+        time_updated_us > 0 ? (uint32_t)( ( now - time_updated_us ) / 1000LL ) : UINT32_MAX;
+    return true;
+}
+
+bool gps_available( void )
+{
+    return initialized;
+}
