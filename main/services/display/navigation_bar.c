@@ -1,6 +1,6 @@
 /**
     navigation_bar.c : RFScout system-owned global app navigation chrome
-    Description: Renders available app tabs into display space outside the managed app view.
+    Description: Renders available app tabs and consumes authoritative touch in system-owned display space.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -23,6 +23,8 @@
 #define NAV_TEXT_SCALE 1U
 #define NAV_TAB_HEIGHT 38
 
+static bool touch_pressed;
+
 static bool app_visible( rfscout_app_id_t a_app )
 {
     if( RFSCOUT_APP_DEVICE == a_app )
@@ -31,6 +33,20 @@ static bool app_visible( rfscout_app_id_t a_app )
     }
     return device_config_app_enabled( a_app ) &&
            ( RFSCOUT_APP_AVAILABILITY_AVAILABLE == app_framework_availability( a_app ) );
+}
+
+static size_t collect_visible_apps( rfscout_app_id_t a_visible[ RFSCOUT_APP_COUNT ] )
+{
+    size_t count = 0U;
+    for( int app = 0; app < RFSCOUT_APP_COUNT; ++app )
+    {
+        const rfscout_app_id_t candidate = (rfscout_app_id_t)app;
+        if( app_visible( candidate ) )
+        {
+            a_visible[ count++ ] = candidate;
+        }
+    }
+    return count;
 }
 
 static void make_label( const char *a_name, char a_label[ NAV_LABEL_MAX + 1U ] )
@@ -78,6 +94,56 @@ static void draw_calibration( const rfscout_view_t *a_view )
         a_view->x + 8, a_view->y + 52, "LIFT FINGER BETWEEN POINTS", theme->secondary, 1U );
 }
 
+void navigation_bar_poll( void )
+{
+    rfscout_touch_sample_t sample;
+    if( !touch_sample_get( &sample ) || !sample.calibrated || touch_calibration_active() )
+    {
+        touch_pressed = false;
+        return;
+    }
+
+    if( !sample.pressed )
+    {
+        touch_pressed = false;
+        return;
+    }
+    if( touch_pressed )
+    {
+        return;
+    }
+    touch_pressed = true;
+
+    const rfscout_view_t view = display_navigation_view();
+    if( ( 0U == view.width ) || ( 0U == view.height ) )
+    {
+        return;
+    }
+
+    const int tab_height = view.height < NAV_TAB_HEIGHT ? view.height : NAV_TAB_HEIGHT;
+    if( ( sample.x < (uint16_t)view.x ) ||
+        ( sample.x >= (uint16_t)( view.x + (int)view.width ) ) ||
+        ( sample.y < (uint16_t)view.y ) ||
+        ( sample.y >= (uint16_t)( view.y + tab_height ) ) )
+    {
+        return;
+    }
+
+    rfscout_app_id_t visible[ RFSCOUT_APP_COUNT ];
+    const size_t visible_count = collect_visible_apps( visible );
+    if( 0U == visible_count )
+    {
+        return;
+    }
+
+    size_t index = ( (size_t)( sample.x - (uint16_t)view.x ) * visible_count ) / view.width;
+    if( index >= visible_count )
+    {
+        index = visible_count - 1U;
+    }
+    (void)app_manager_select( visible[ index ] );
+}
+
 void navigation_bar_draw( void )
 {
     const rfscout_view_t view = display_navigation_view();
@@ -93,15 +159,7 @@ void navigation_bar_draw( void )
     }
 
     rfscout_app_id_t visible[ RFSCOUT_APP_COUNT ];
-    size_t visible_count = 0U;
-    for( int app = 0; app < RFSCOUT_APP_COUNT; ++app )
-    {
-        const rfscout_app_id_t candidate = (rfscout_app_id_t)app;
-        if( app_visible( candidate ) )
-        {
-            visible[ visible_count++ ] = candidate;
-        }
-    }
+    const size_t visible_count = collect_visible_apps( visible );
     if( 0U == visible_count )
     {
         return;

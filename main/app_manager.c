@@ -287,6 +287,22 @@ rfscout_app_id_t app_manager_current( void )
     return active_app;
 }
 
+bool app_manager_select( rfscout_app_id_t a_app )
+{
+    if( ( a_app < 0 ) || ( a_app >= RFSCOUT_APP_COUNT ) || ( a_app == active_app ) ||
+        !app_available( a_app ) )
+    {
+        return false;
+    }
+
+    if( !transition_to_app( a_app, true ) )
+    {
+        return false;
+    }
+    rfscout_event_emit( RFSCOUT_EVENT_NAVIGATE, (uint8_t)active_app, 0 );
+    return true;
+}
+
 void app_manager_poll( void )
 {
     const int64_t now_us = esp_timer_get_time();

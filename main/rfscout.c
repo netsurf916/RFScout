@@ -20,6 +20,7 @@
 #include "feedback.h"
 #include "input.h"
 #include "log_writer.h"
+#include "navigation_bar.h"
 #include "notification.h"
 #include "notification_preferences.h"
 #include "observation_store.h"
@@ -290,6 +291,7 @@ void app_main( void )
         {
             display_invalidate();
         }
+        navigation_bar_poll();
 
         battery_poll();
         power_policy_poll();
