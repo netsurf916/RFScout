@@ -19,7 +19,9 @@
 #include <string.h>
 
 #define GPS_UART UART_NUM_1
-#define GPS_BAUD 9600
+#define GPS_BAUD_PRIMARY 38400
+#define GPS_BAUD_FALLBACK 9600
+#define GPS_BAUD_PROBE_MS 1500U
 #define GPS_RX_BUFFER 1024
 #define GPS_LINE_MAX 128
 #define GPS_FIX_STALE_MS 5000U
@@ -27,6 +29,9 @@
 
 static const char *TAG = "gps";
 static bool initialized;
+static bool baud_locked;
+static int active_baud;
+static int64_t baud_probe_started_us;
 static char line[ GPS_LINE_MAX ];
 static size_t line_length;
 static rfscout_gps_snapshot_t snapshot;
@@ -283,6 +288,16 @@ static void parse_gga( char *a_payload )
     }
 }
 
+static void lock_active_baud( void )
+{
+    if( baud_locked )
+    {
+        return;
+    }
+    baud_locked = true;
+    ESP_LOGI( TAG, "GPS NMEA detected at %d baud", active_baud );
+}
+
 static void parse_line( char *a_line )
 {
     if( !checksum_valid( a_line ) )
@@ -301,14 +316,38 @@ static void parse_line( char *a_line )
     const size_t type_length = strlen( payload );
     if( type_length >= 3U && 0 == strcmp( payload + type_length - 3U, "RMC" ) )
     {
+        lock_active_baud();
         snapshot.available = true;
         parse_rmc( comma + 1 );
     }
     else if( type_length >= 3U && 0 == strcmp( payload + type_length - 3U, "GGA" ) )
     {
+        lock_active_baud();
         snapshot.available = true;
         parse_gga( comma + 1 );
     }
+}
+
+static void probe_next_baud( int64_t a_now )
+{
+    if( baud_locked ||
+        ( a_now - baud_probe_started_us ) / 1000LL < (int64_t)GPS_BAUD_PROBE_MS )
+    {
+        return;
+    }
+
+    const int next_baud =
+        ( GPS_BAUD_PRIMARY == active_baud ) ? GPS_BAUD_FALLBACK : GPS_BAUD_PRIMARY;
+    if( ESP_OK != uart_set_baudrate( GPS_UART, next_baud ) )
+    {
+        baud_probe_started_us = a_now;
+        return;
+    }
+    (void)uart_flush_input( GPS_UART );
+    line_length = 0U;
+    active_baud = next_baud;
+    baud_probe_started_us = a_now;
+    ESP_LOGI( TAG, "probing GPS UART at %d baud", active_baud );
 }
 
 esp_err_t gps_init( void )
@@ -317,6 +356,9 @@ esp_err_t gps_init( void )
     line_length = 0U;
     location_updated_us = 0;
     time_updated_us = 0;
+    baud_locked = false;
+    active_baud = GPS_BAUD_PRIMARY;
+    baud_probe_started_us = 0;
     initialized = false;
     if( !RFSCOUT_BOARD_HAS_GPS )
     {
@@ -324,7 +366,7 @@ esp_err_t gps_init( void )
     }
 
     const uart_config_t config = {
-        .baud_rate = GPS_BAUD,
+        .baud_rate = GPS_BAUD_PRIMARY,
         .data_bits = UART_DATA_8_BITS,
         .parity = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1,
@@ -346,12 +388,14 @@ esp_err_t gps_init( void )
         (void)uart_driver_delete( GPS_UART );
         return result;
     }
+    baud_probe_started_us = esp_timer_get_time();
     initialized = true;
     ESP_LOGI( TAG,
-              "GPS provider started: UART1 RX=%d TX=%d baud=%d",
+              "GPS provider started: UART1 RX=%d TX=%d probing baud=%d/%d",
               RFSCOUT_BOARD_GPS_RX_PIN,
               RFSCOUT_BOARD_GPS_TX_PIN,
-              GPS_BAUD );
+              GPS_BAUD_PRIMARY,
+              GPS_BAUD_FALLBACK );
     return ESP_OK;
 }
 
@@ -389,6 +433,7 @@ void gps_poll( void )
     }
 
     const int64_t now = esp_timer_get_time();
+    probe_next_baud( now );
     if( snapshot.location_valid &&
         ( now - location_updated_us ) / 1000LL > (int64_t)GPS_FIX_STALE_MS )
     {
