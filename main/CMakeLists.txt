@@ -79,6 +79,7 @@ idf_component_register(
         "apps/nrf24/nrf24_packet_view.c"
         "apps/radio_common/radio_app_view.c"
         "apps/recorder/app.c"
+        "services/audio/audio_capture.c"
         "services/audio/recorder.c"
         "services/audio/es7210_input.c"
         "apps/recorder/recorder_view.c"
