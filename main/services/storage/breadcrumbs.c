@@ -42,6 +42,7 @@
 #define BREADCRUMB_FILENAME_CAPACITY ( BREADCRUMB_FILENAME_LENGTH + 1U )
 #define BREADCRUMB_PATH_CAPACITY                                                                   \
     ( sizeof( BREADCRUMB_DIRECTORY ) + BREADCRUMB_FILENAME_LENGTH + 1U )
+#define BREADCRUMB_CSV_HEADER "timestamp_utc,latitude_deg,longitude_deg\n"
 
 typedef struct
 {
@@ -316,11 +317,26 @@ static bool format_timestamp( time_t a_utc_epoch, char *a_output, size_t a_capac
     return 0U != strftime( a_output, a_capacity, "%Y-%m-%dT%H:%M:%SZ", &utc );
 }
 
+static bool existing_header_valid( const char *a_path )
+{
+    FILE *file = fopen( a_path, "r" );
+    if( NULL == file )
+    {
+        return false;
+    }
+
+    char header[ sizeof( BREADCRUMB_CSV_HEADER ) ];
+    const bool valid = NULL != fgets( header, sizeof( header ), file ) &&
+                       0 == strcmp( header, BREADCRUMB_CSV_HEADER );
+    fclose( file );
+    return valid;
+}
+
 static bool prepare_append( FILE *a_file, bool a_new_file, off_t a_size )
 {
     if( a_new_file || 0 == a_size )
     {
-        return 0 <= fprintf( a_file, "timestamp_utc,latitude_deg,longitude_deg\n" );
+        return 0 <= fprintf( a_file, BREADCRUMB_CSV_HEADER );
     }
 
     if( 0 != fseek( a_file, -1L, SEEK_END ) )
@@ -371,7 +387,13 @@ static void write_record( const breadcrumb_record_t *a_record )
         return;
     }
 
-    FILE *file = fopen( path, "a+" );
+    const bool recreate_file = !new_file && !existing_header_valid( path );
+    if( recreate_file )
+    {
+        ESP_LOGW( TAG, "recreating breadcrumb bucket with incomplete header" );
+    }
+
+    FILE *file = fopen( path, recreate_file ? "w+" : "a+" );
     if( NULL == file )
     {
         ESP_LOGE( TAG, "breadcrumb append open failed: errno=%d", errno );
@@ -379,7 +401,8 @@ static void write_record( const breadcrumb_record_t *a_record )
         return;
     }
 
-    bool success = prepare_append( file, new_file, new_file ? 0 : state.st_size );
+    const bool empty_file = new_file || recreate_file;
+    bool success = prepare_append( file, empty_file, empty_file ? 0 : state.st_size );
     if( success && 0 > fprintf( file,
                                 "%s,%.7f,%.7f\n",
                                 timestamp,
@@ -392,7 +415,7 @@ static void write_record( const breadcrumb_record_t *a_record )
     {
         success = false;
     }
-    if( success && 0 != fsync( fileno( file ) ) )
+    if( success && 0 != fsync( fileno( file ) )
     {
         success = false;
     }
@@ -448,10 +471,6 @@ esp_err_t breadcrumbs_init( void )
     {
         return ESP_OK;
     }
-    if( !gps_available() )
-    {
-        return ESP_ERR_NOT_SUPPORTED;
-    }
     if( !storage_is_available() )
     {
         return ESP_ERR_INVALID_STATE;
@@ -485,7 +504,8 @@ esp_err_t breadcrumbs_init( void )
 
 void breadcrumbs_poll( void )
 {
-    if( NULL == queue || shutdown_requested || !enabled || !storage_is_available() )
+    if( NULL == queue || shutdown_requested || !enabled || !gps_available() ||
+        !storage_is_available() )
     {
         return;
     }
