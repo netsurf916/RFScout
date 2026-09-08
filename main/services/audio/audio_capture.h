@@ -46,6 +46,13 @@ bool audio_capture_supported( void );
 esp_err_t audio_capture_probe( void );
 
 /**
+ * @brief Return whether opening the selected provider temporarily consumes physical Select.
+ * @note Consumers that require Select while capture is active must provide another semantic input
+ *       path before starting capture.
+ */
+bool audio_capture_primary_select_conflict( void );
+
+/**
  * @brief Open the profile-selected provider and make normalized mono PCM available for reads.
  * @param a_format Optional output receiving the nominal software PCM format.
  * @return ESP_OK only after the provider transport is fully configured and running.
