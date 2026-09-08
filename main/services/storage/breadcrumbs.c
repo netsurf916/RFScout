@@ -37,6 +37,7 @@
 #define BREADCRUMB_TASK_STACK 4096U
 #define BREADCRUMB_TASK_PRIORITY 2U
 #define BREADCRUMB_WORKER_POLL_MS 500U
+#define BREADCRUMB_SHUTDOWN_POLL_MS 20U
 #define BREADCRUMB_FILENAME_LENGTH 15U
 #define BREADCRUMB_FILENAME_CAPACITY ( BREADCRUMB_FILENAME_LENGTH + 1U )
 #define BREADCRUMB_PATH_CAPACITY                                                                   \
@@ -57,6 +58,8 @@ static TaskHandle_t worker_task;
 static int64_t last_capture_us;
 static time_t last_queued_utc;
 static volatile bool trim_requested;
+static volatile bool shutdown_requested;
+static volatile bool worker_stopped = true;
 static bool settings_loaded;
 static volatile bool enabled;
 static volatile uint16_t file_limit = RFSCOUT_BREADCRUMB_FILE_LIMIT_DEFAULT;
@@ -415,6 +418,11 @@ static void worker( void *a_argument )
     trim_files();
     while( true )
     {
+        if( shutdown_requested && 0U == uxQueueMessagesWaiting( queue ) && !trim_requested )
+        {
+            break;
+        }
+
         breadcrumb_record_t record;
         if( pdTRUE == xQueueReceive( queue, &record, pdMS_TO_TICKS( BREADCRUMB_WORKER_POLL_MS ) ) &&
             enabled )
@@ -427,6 +435,10 @@ static void worker( void *a_argument )
             trim_files();
         }
     }
+
+    worker_stopped = true;
+    worker_task = NULL;
+    vTaskDelete( NULL );
 }
 
 esp_err_t breadcrumbs_init( void )
@@ -455,6 +467,8 @@ esp_err_t breadcrumbs_init( void )
     last_capture_us = 0;
     last_queued_utc = 0;
     trim_requested = false;
+    shutdown_requested = false;
+    worker_stopped = false;
     if( pdPASS != xTaskCreate( worker,
                                "breadcrumbs",
                                BREADCRUMB_TASK_STACK,
@@ -463,6 +477,7 @@ esp_err_t breadcrumbs_init( void )
                                &worker_task ) )
     {
         queue = NULL;
+        worker_stopped = true;
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
@@ -470,7 +485,7 @@ esp_err_t breadcrumbs_init( void )
 
 void breadcrumbs_poll( void )
 {
-    if( NULL == queue || !enabled || !storage_is_available() )
+    if( NULL == queue || shutdown_requested || !enabled || !storage_is_available() )
     {
         return;
     }
@@ -556,4 +571,29 @@ esp_err_t breadcrumbs_set_file_limit( uint16_t a_file_limit )
         request_trim();
     }
     return result;
+}
+
+bool breadcrumbs_shutdown( uint32_t a_timeout_ms )
+{
+    if( worker_stopped || NULL == worker_task )
+    {
+        return true;
+    }
+
+    shutdown_requested = true;
+    const TickType_t delay = pdMS_TO_TICKS( BREADCRUMB_SHUTDOWN_POLL_MS );
+    uint32_t waited_ms = 0U;
+    while( !worker_stopped && waited_ms < a_timeout_ms )
+    {
+        vTaskDelay( delay );
+        waited_ms += BREADCRUMB_SHUTDOWN_POLL_MS;
+    }
+    if( worker_stopped )
+    {
+        return true;
+    }
+
+    shutdown_requested = false;
+    ESP_LOGW( TAG, "breadcrumb shutdown timed out; recording resumes" );
+    return false;
 }
