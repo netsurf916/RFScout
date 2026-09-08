@@ -490,8 +490,7 @@ static void worker( void *a_argument )
         }
 
         breadcrumb_record_t record;
-        if( pdTRUE == xQueueReceive( queue, &record, pdMS_TO_TICKS( BREADCRUMB_WORKER_POLL_MS ) ) &&
-            enabled )
+        if( pdTRUE == xQueueReceive( queue, &record, pdMS_TO_TICKS( BREADCRUMB_WORKER_POLL_MS ) ) )
         {
             write_record( &record );
         }
@@ -574,11 +573,6 @@ void breadcrumbs_poll( void )
     }
 }
 
-bool breadcrumbs_available( void )
-{
-    return NULL != worker_task && gps_available() && storage_is_available();
-}
-
 bool breadcrumbs_enabled( void )
 {
     load_settings();
@@ -592,6 +586,12 @@ esp_err_t breadcrumbs_set_enabled( bool a_enabled )
     {
         return ESP_OK;
     }
+
+    if( !a_enabled && !storage_io_acquire( RFSCOUT_STORAGE_WAIT_FOREVER ) )
+    {
+        return ESP_ERR_NO_MEM;
+    }
+
     const esp_err_t result = persist_settings( a_enabled, file_limit );
     if( ESP_OK == result )
     {
@@ -602,6 +602,11 @@ esp_err_t breadcrumbs_set_enabled( bool a_enabled )
         {
             (void)xQueueReset( queue );
         }
+    }
+
+    if( !a_enabled )
+    {
+        storage_io_release();
     }
     return result;
 }

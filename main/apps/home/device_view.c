@@ -230,12 +230,6 @@ static char next_morse_character( char a_current, int a_direction )
     return characters[ index ];
 }
 
-static bool item_available( unsigned a_item )
-{
-    (void)a_item;
-    return true;
-}
-
 static bool item_direct_toggle( unsigned a_item )
 {
     return ( DEVICE_ITEM_BREADCRUMBS == a_item ) || ( DEVICE_ITEM_AUDIO_POLICY == a_item ) ||
@@ -1277,9 +1271,11 @@ static void toggle_logging( void )
 static void toggle_breadcrumbs( void )
 {
     const bool old_value = breadcrumbs_enabled();
-    if( ESP_OK != breadcrumbs_set_enabled( !old_value ) )
+    const esp_err_t result = breadcrumbs_set_enabled( !old_value );
+    if( ESP_OK != result )
     {
         save_error = true;
+        emit_device_event( RFSCOUT_EVENT_ERROR, (int32_t)result );
         return;
     }
     log_config_change( "breadcrumbs.enabled", on_off( old_value ), on_off( !old_value ) );
@@ -1296,8 +1292,16 @@ static void adjust_breadcrumb_file_limit( int a_delta )
         sizeof( BREADCRUMB_FILE_LIMIT_OPTIONS ) / sizeof( BREADCRUMB_FILE_LIMIT_OPTIONS[ 0 ] ),
         old_limit,
         a_delta );
-    if( new_limit == old_limit || ESP_OK != breadcrumbs_set_file_limit( new_limit ) )
+    if( new_limit == old_limit )
     {
+        return;
+    }
+
+    const esp_err_t result = breadcrumbs_set_file_limit( new_limit );
+    if( ESP_OK != result )
+    {
+        save_error = true;
+        emit_device_event( RFSCOUT_EVENT_ERROR, (int32_t)result );
         return;
     }
 
@@ -1306,6 +1310,7 @@ static void adjust_breadcrumb_file_limit( int a_delta )
     snprintf( old_text, sizeof( old_text ), "%u", (unsigned)old_limit );
     snprintf( new_text, sizeof( new_text ), "%u", (unsigned)new_limit );
     log_config_change( "breadcrumbs.file_limit", old_text, new_text );
+    save_error = false;
     emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
 }
 
