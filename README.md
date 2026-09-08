@@ -41,11 +41,11 @@ nRF24 performs receive-only 2.4 GHz RPD scanning with configurable channel bound
 
 ### Recorder
 
-Recorder uses the available audio-capture provider and SD storage for 16-bit mono WAV capture and playback. The currently validated capture path is the T-Embed PDM microphone; T-Deck ES7210 capture is not part of the initial T-Deck support. Active recording or finalization blocks app transitions until the file is safely complete.
+Recorder uses the available audio-capture provider and SD storage for 16-bit mono WAV capture and playback. T-Embed uses its existing PDM microphone provider; T-Deck uses the onboard ES7210 through the shared board I2C service and an I2S0 four-slot TDM receive path while exposing the selected MIC1 stream to Recorder as ordinary mono PCM. Active recording or finalization blocks app transitions until the file is safely complete.
 
 ### Audio Spectrum
 
-Audio Spectrum is the separate live microphone FFT/spectrum app and does not require an SD card. It is exposed only when the active profile has a compatible audio-capture provider.
+Audio Spectrum is the separate live microphone FFT/spectrum app and does not require an SD card. It is exposed only when the active profile has a compatible audio-capture provider. Live frequency labels use measured PCM throughput once available rather than assuming the configured request rate.
 
 ### Thermal
 
@@ -69,7 +69,7 @@ Persistent preferences are firmware-managed internal records split between devic
 
 ## T-Deck Plus baseline
 
-Initial T-Deck Plus support includes runtime board detection, the 320x240 ST7789 display, a managed 320x170 app view plus system-owned navigation region, trackball/center fallback input, calibrated GT911 touch tab navigation, GPS location/time service, SD support, voltage-derived battery percentage, and standard-I2S speaker output. Hardware capabilities without a validated RFScout provider, including SX1262, keyboard, and ES7210 microphone capture, are not advertised to applications yet.
+Initial T-Deck Plus support includes runtime board detection, the 320x240 ST7789 display, a managed 320x170 app view plus system-owned navigation region, trackball/center input, calibrated GT911 touch navigation plus semantic app-view Select, GPS location/time service, SD support, voltage-derived battery percentage, standard-I2S speaker output, and ES7210 microphone capture for Recorder/Audio Spectrum. GPIO0/trackball-center is suspended while the ES7210 capture interface owns the conflicting hardware path; app-view touch continues to provide semantic Select during that interval. Hardware capabilities without a validated RFScout provider, including SX1262 and keyboard input, are not advertised to applications yet.
 
 GPS fixes are exposed with explicit validity/freshness and are opportunistically attached to SD log records. A system status indicator shows GPS receiver detection and fix state.
 
