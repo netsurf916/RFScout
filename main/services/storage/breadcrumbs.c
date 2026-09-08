@@ -336,7 +336,7 @@ static bool prepare_append( FILE *a_file, bool a_new_file, off_t a_size )
 {
     if( a_new_file || 0 == a_size )
     {
-        return 0 <= fprintf( a_file, BREADCRUMB_CSV_HEADER );
+        return EOF != fputs( BREADCRUMB_CSV_HEADER, a_file );
     }
 
     if( 0 != fseek( a_file, -1L, SEEK_END ) )
@@ -415,7 +415,7 @@ static void write_record( const breadcrumb_record_t *a_record )
     {
         success = false;
     }
-    if( success && 0 != fsync( fileno( file ) )
+    if( success && 0 != fsync( fileno( file ) ) )
     {
         success = false;
     }
