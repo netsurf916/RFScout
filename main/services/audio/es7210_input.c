@@ -1,44 +1,48 @@
 /**
     es7210_input.c : RFScout T-Deck ES7210 microphone provider
-    Description: Configures the onboard ES7210 through the shared I2C bus and I2S0.
+    Description: Owns the onboard codec control and I2S0 capture transport behind audio_capture.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
 
 #include "es7210_input.h"
 
+#include "audio_capture.h"
 #include "board.h"
 #include "board_i2c.h"
 #include "input.h"
-#include "recorder.h"
 
-#include "driver/i2s_tdm.h"
-#include "esp_codec_dev.h"
+#include "driver/i2s_std.h"
 #include "esp_codec_dev_defaults.h"
 #include "es7210_adc.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
 
 #define ES7210_INPUT_GAIN_DB 6.0f
 #define ES7210_INPUT_MIC_SELECTION ( ES7210_SEL_MIC1 )
-#define ES7210_INPUT_TDM_SLOTS 4U
+#define ES7210_INPUT_I2C_ADDRESS_7BIT ( ES7210_CODEC_DEFAULT_ADDR >> 1U )
 
 static const char *TAG = "es7210_input";
 static i2s_chan_handle_t rx_channel;
-static const audio_codec_data_if_t *data_if;
 static const audio_codec_ctrl_if_t *ctrl_if;
 static const audio_codec_if_t *codec_if;
-static esp_codec_dev_handle_t codec_dev;
+static bool codec_open;
+static bool codec_enabled;
 
 static void release_codec( void )
 {
-    if( NULL != codec_dev )
-    {
-        (void)esp_codec_dev_close( codec_dev );
-        esp_codec_dev_delete( codec_dev );
-        codec_dev = NULL;
-    }
     if( NULL != codec_if )
     {
+        if( codec_enabled && NULL != codec_if->enable )
+        {
+            (void)codec_if->enable( codec_if, false );
+        }
+        codec_enabled = false;
+        if( codec_open && NULL != codec_if->close )
+        {
+            (void)codec_if->close( codec_if );
+        }
+        codec_open = false;
         (void)audio_codec_delete_codec_if( codec_if );
         codec_if = NULL;
     }
@@ -47,11 +51,19 @@ static void release_codec( void )
         (void)audio_codec_delete_ctrl_if( ctrl_if );
         ctrl_if = NULL;
     }
-    if( NULL != data_if )
+}
+
+esp_err_t es7210_input_probe( void )
+{
+    if( !RFSCOUT_BOARD_HAS_ES7210_MIC )
     {
-        (void)audio_codec_delete_data_if( data_if );
-        data_if = NULL;
+        return ESP_ERR_NOT_SUPPORTED;
     }
+    if( es7210_input_is_open() )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return board_i2c_probe( ES7210_INPUT_I2C_ADDRESS_7BIT );
 }
 
 void es7210_input_close( void )
@@ -66,16 +78,17 @@ void es7210_input_close( void )
     input_primary_select_resume();
 }
 
-esp_err_t es7210_input_open( i2s_chan_handle_t *a_channel )
+esp_err_t es7210_input_open( void )
 {
-    if( NULL == a_channel )
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-    *a_channel = NULL;
-    if( !RFSCOUT_BOARD_HAS_ES7210_MIC || NULL != rx_channel || NULL != codec_dev )
+    if( !RFSCOUT_BOARD_HAS_ES7210_MIC || es7210_input_is_open() )
     {
         return ESP_ERR_INVALID_STATE;
+    }
+
+    const esp_err_t probe_result = es7210_input_probe();
+    if( ESP_OK != probe_result )
+    {
+        return probe_result;
     }
 
     i2c_master_bus_handle_t i2c_bus = board_i2c_handle();
@@ -92,14 +105,13 @@ esp_err_t es7210_input_open( i2s_chan_handle_t *a_channel )
         return result;
     }
 
-    /* ES7210 emits Philips-format TDM frames even when only one microphone is enabled. Keep the
-       physical four-slot frame so BCLK/LRCK match the codec, select only slot 0 (MIC1), and ask
-       I2S RX to compact masked slots out of DMA. Recorder therefore receives a contiguous mono
-       int16_t stream rather than MIC1 samples interleaved with three unused physical slot words. */
-    i2s_tdm_config_t i2s_config = {
-        .clk_cfg = I2S_TDM_CLK_DEFAULT_CONFIG( RFSCOUT_RECORDER_SAMPLE_RATE ),
-        .slot_cfg = I2S_TDM_PHILIPS_SLOT_DEFAULT_CONFIG(
-            I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO, I2S_TDM_SLOT0 ),
+    /* The T-Deck populates one ES7210 microphone. Keep the codec in its ordinary Philips-I2S
+       slave mode and let the ESP32-S3 own the wire clocks/DMA. MIC1 is normalized to a mono LEFT
+       software stream here so callers never need to know the physical stereo frame layout. */
+    i2s_std_config_t i2s_config = {
+        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG( RFSCOUT_AUDIO_CAPTURE_SAMPLE_RATE ),
+        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(
+            I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO ),
         .gpio_cfg =
             {
                 .mclk = (gpio_num_t)RFSCOUT_BOARD_ES7210_MCLK_PIN,
@@ -111,9 +123,8 @@ esp_err_t es7210_input_open( i2s_chan_handle_t *a_channel )
             },
     };
     i2s_config.clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_256;
-    i2s_config.slot_cfg.total_slot = ES7210_INPUT_TDM_SLOTS;
-    i2s_config.slot_cfg.skip_mask = true;
-    result = i2s_channel_init_tdm_mode( rx_channel, &i2s_config );
+    i2s_config.slot_cfg.slot_mask = I2S_STD_SLOT_LEFT;
+    result = i2s_channel_init_std_mode( rx_channel, &i2s_config );
     if( ESP_OK != result )
     {
         es7210_input_close();
@@ -132,18 +143,6 @@ esp_err_t es7210_input_open( i2s_chan_handle_t *a_channel )
         return ESP_FAIL;
     }
 
-    audio_codec_i2s_cfg_t data_config = {
-        .port = I2S_NUM_0,
-        .rx_handle = rx_channel,
-        .tx_handle = NULL,
-    };
-    data_if = audio_codec_new_i2s_data( &data_config );
-    if( NULL == data_if )
-    {
-        es7210_input_close();
-        return ESP_FAIL;
-    }
-
     es7210_codec_cfg_t codec_config = {
         .ctrl_if = ctrl_if,
         .master_mode = false,
@@ -152,57 +151,81 @@ esp_err_t es7210_input_open( i2s_chan_handle_t *a_channel )
         .mclk_div = I2S_MCLK_MULTIPLE_256,
     };
     codec_if = es7210_codec_new( &codec_config );
-    if( NULL == codec_if )
+    if( NULL == codec_if || NULL == codec_if->open || NULL == codec_if->set_fs ||
+        NULL == codec_if->set_mic_gain || NULL == codec_if->enable )
+    {
+        es7210_input_close();
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    if( ESP_CODEC_DEV_OK != codec_if->open( codec_if, &codec_config, sizeof( codec_config ) ) )
     {
         es7210_input_close();
         return ESP_FAIL;
     }
+    codec_open = true;
 
-    esp_codec_dev_cfg_t device_config = {
-        .dev_type = ESP_CODEC_DEV_TYPE_IN,
-        .codec_if = codec_if,
-        .data_if = data_if,
-    };
-    codec_dev = esp_codec_dev_new( &device_config );
-    if( NULL == codec_dev )
-    {
-        es7210_input_close();
-        return ESP_FAIL;
-    }
-
+    /* ES7210 register formatting remains stereo-I2S even though RFScout exposes one selected slot
+       to software. The provider, not esp_codec_dev's I2S data wrapper, owns the transport format. */
     esp_codec_dev_sample_info_t sample_config = {
-        .bits_per_sample = 16,
-        .channel = 1,
-        .channel_mask = ES7210_INPUT_MIC_SELECTION,
-        .sample_rate = RFSCOUT_RECORDER_SAMPLE_RATE,
+        .bits_per_sample = RFSCOUT_AUDIO_CAPTURE_BITS_PER_SAMPLE,
+        .channel = 2,
+        .channel_mask = 0,
+        .sample_rate = RFSCOUT_AUDIO_CAPTURE_SAMPLE_RATE,
     };
+    if( ESP_CODEC_DEV_OK != codec_if->set_fs( codec_if, &sample_config ) ||
+        ESP_CODEC_DEV_OK != codec_if->set_mic_gain( codec_if, ES7210_INPUT_GAIN_DB ) )
+    {
+        es7210_input_close();
+        return ESP_FAIL;
+    }
 
     /* LILYGO documents GPIO0/trackball-center as unavailable while microphone capture is active.
-       Stop observing that GPIO before codec activation can begin driving the capture interface;
-       every failure path below closes the provider and restores Select. */
+       Suspend that physical source before clocks/ADC are started; all cleanup paths restore it. */
     input_primary_select_suspend();
-    if( ESP_CODEC_DEV_OK != esp_codec_dev_open( codec_dev, &sample_config ) ||
-        ESP_CODEC_DEV_OK != esp_codec_dev_set_in_gain( codec_dev, ES7210_INPUT_GAIN_DB ) )
-    {
-        es7210_input_close();
-        return ESP_FAIL;
-    }
-
     result = i2s_channel_enable( rx_channel );
     if( ESP_OK != result )
     {
         es7210_input_close();
         return result;
     }
+    if( ESP_CODEC_DEV_OK != codec_if->enable( codec_if, true ) )
+    {
+        es7210_input_close();
+        return ESP_FAIL;
+    }
+    codec_enabled = true;
 
-    *a_channel = rx_channel;
     ESP_LOGI( TAG,
-              "ES7210 configured: I2S0 TDM4 MIC1 mclk=GPIO%d bclk=GPIO%d lrclk=GPIO%d data=GPIO%d "
-              "rate=%u",
+              "ES7210 configured: I2S0 Philips MIC1/LEFT mclk=GPIO%d bclk=GPIO%d lrclk=GPIO%d "
+              "data=GPIO%d rate=%u",
               RFSCOUT_BOARD_ES7210_MCLK_PIN,
               RFSCOUT_BOARD_ES7210_SCLK_PIN,
               RFSCOUT_BOARD_ES7210_LRCLK_PIN,
               RFSCOUT_BOARD_ES7210_DATA_PIN,
-              (unsigned)RFSCOUT_RECORDER_SAMPLE_RATE );
+              (unsigned)RFSCOUT_AUDIO_CAPTURE_SAMPLE_RATE );
     return ESP_OK;
+}
+
+esp_err_t es7210_input_read( void *a_buffer,
+                             size_t a_capacity,
+                             size_t *a_bytes_read,
+                             uint32_t a_timeout_ms )
+{
+    if( NULL == a_buffer || NULL == a_bytes_read || 0U == a_capacity )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( NULL == rx_channel || !codec_enabled )
+    {
+        *a_bytes_read = 0U;
+        return ESP_ERR_INVALID_STATE;
+    }
+    return i2s_channel_read(
+        rx_channel, a_buffer, a_capacity, a_bytes_read, pdMS_TO_TICKS( a_timeout_ms ) );
+}
+
+bool es7210_input_is_open( void )
+{
+    return NULL != rx_channel || NULL != codec_if || NULL != ctrl_if;
 }
