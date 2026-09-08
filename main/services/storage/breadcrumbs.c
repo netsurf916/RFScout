@@ -386,7 +386,7 @@ static void write_record( const breadcrumb_record_t *a_record )
     {
         success = false;
     }
-    if( success && 0 != fsync( fileno( file ) )
+    if( success && 0 != fsync( fileno( file ) ) )
     {
         success = false;
     }
