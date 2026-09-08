@@ -55,6 +55,12 @@ void input_primary_select_suspend( void );
 void input_primary_select_resume( void );
 
 /**
+ * @brief Submit a semantic Select from another authoritative input provider.
+ * @details This follows the same device-wide input-lock policy as the physical Select source.
+ */
+void input_inject_select( void );
+
+/**
  * @brief Return whether device-wide user input is locked.
  * @details This is semantic policy, not provider state. All authoritative user-input paths must
  *          honor it, including rotary/trackball events, touch/pointer dispatch, and future
