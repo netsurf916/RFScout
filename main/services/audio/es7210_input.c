@@ -135,6 +135,12 @@ esp_err_t es7210_input_open( void )
         return ESP_FAIL;
     }
 
+    /* LILYGO documents GPIO0/trackball-center as unavailable while microphone capture is active.
+       es7210_codec_new() immediately opens/configures the selected microphone path, so claim this
+       conflict before codec creation rather than waiting for I2S/ADC enable. Every failure path
+       below closes the provider and restores Select. */
+    input_primary_select_suspend();
+
     es7210_codec_cfg_t codec_config = {
         .ctrl_if = ctrl_if,
         .master_mode = false,
@@ -167,9 +173,6 @@ esp_err_t es7210_input_open( void )
         return ESP_FAIL;
     }
 
-    /* LILYGO documents GPIO0/trackball-center as unavailable while microphone capture is active.
-       Suspend that physical source before clocks/ADC are started; all cleanup paths restore it. */
-    input_primary_select_suspend();
     result = i2s_channel_enable( rx_channel );
     if( ESP_OK != result )
     {
