@@ -38,15 +38,15 @@ The T-Embed profile is the hardware-validated baseline. Existing display geometr
 
 ### LILYGO T-Deck Plus
 
-The T-Deck profile has received initial hardware validation for runtime detection, the 320x240 ST7789 orientation/transform, the 320x170 managed app view plus 320x70 system region, trackball/center input, GT911 coordinate orientation, persistent touch calibration, GPS, SD mounting/logging, and standard-I2S speaker output.
+The T-Deck profile has received initial hardware validation for runtime detection, the 320x240 ST7789 orientation/transform, the 320x170 managed app view plus 320x70 system region, trackball/center input, GT911 coordinate orientation, persistent touch calibration, GPS, SD mounting/logging, and standard-I2S speaker output. The ES7210 capture provider is implemented on the development line and remains a field-validation item.
 
 The early discriminator uses SDA GPIO18 / SCL GPIO8 and probes the GT911 at `0x5D` or `0x14`.
 
-Current T-Deck providers include trackball/center input, calibrated GT911 touch, SD, GPS/NMEA, internal-temperature telemetry, voltage-only battery telemetry, and standard-I2S speaker output. Battery percentage is estimated from the GPIO4 ADC and a profile-owned 2:1 divider; external-power/charging state is intentionally unavailable because RFScout has no authoritative digital source for it.
+Current T-Deck providers include trackball/center input, calibrated GT911 touch, SD, GPS/NMEA, internal-temperature telemetry, voltage-only battery telemetry, standard-I2S speaker output, and ES7210 microphone capture. Battery percentage is estimated from the GPIO4 ADC and a profile-owned 2:1 divider; external-power/charging state is intentionally unavailable because RFScout has no authoritative digital source for it.
 
-T-Deck GPIO0 is reserved for trackball-center/BOOT input and is not treated as an RFScout power key. The board exposes no RFScout sleep, deep-sleep, or physical power-off capability yet. Keyboard, SX1262, and ES7210 microphone capture remain disabled even where reference pin metadata is known.
+T-Deck GPIO0 is normally reserved for trackball-center/BOOT input and is not treated as an RFScout power key. The ES7210 capture path conflicts with that physical center source while the codec is active, so the input service suspends the GPIO0 Select source before codec activation and restores it when the provider closes. Calibrated touch in the managed app view feeds the same semantic Select event during that interval. The board exposes no RFScout sleep, deep-sleep, or physical power-off capability yet. Keyboard and SX1262 remain disabled even where reference pin metadata is known.
 
-Extended SD/shared-SPI stress behavior, GPS fix-loss behavior, and the final cross-board regression pass still require hardware validation before this profile should be treated as release-validated.
+Extended SD/shared-SPI stress behavior, GPS fix-loss behavior, ES7210 microphone/slot and sustained-capture behavior, GPIO0 handoff, and the final cross-board regression pass still require hardware validation before this profile should be treated as release-validated.
 
 ## Input boundary
 
@@ -57,9 +57,9 @@ The `input` service exposes board-neutral semantic input:
 - back;
 - character input for future keyboard-capable providers.
 
-T-Embed uses the validated rotary/button provider. T-Deck uses trackball/center as its non-touch fallback. GT911 is a separate touch service: raw controller coordinates are transformed and calibrated into logical display coordinates, then the system navigation layer consumes calibrated touches in the global tab region before any future app-level pointer dispatch.
+T-Embed uses the validated rotary/button provider. T-Deck normally uses trackball/center as its physical fallback. GT911 is a separate touch service: raw controller coordinates are transformed and calibrated into logical display coordinates. The system navigation layer consumes calibrated touches in the global tab region; a calibrated press in the managed application view is translated into the existing semantic Select event rather than exposing a pointer-specific application API. This keeps app behavior independent of whether Select originated from a button or touch and provides a usable Select while ES7210 temporarily conflicts with the physical center source.
 
-Keyboard support is not yet advertised as a T-Deck capability even though its reference I2C address/IRQ metadata is retained in the profile.
+Keyboard support is not yet advertised as a T-Deck capability even though its reference I2C address/IRQ metadata is retained in the profile. A future keyboard provider should feed the same semantic input service rather than bypassing application input policy.
 
 ## Display and view boundary
 
@@ -101,7 +101,9 @@ Before a terminal T-Embed sleep/power-off transition, RFScout persists dirty int
 
 Speaker output and microphone capture are separate semantic capabilities. The validated T-Embed I2S speaker and PDM microphone paths remain intact.
 
-T-Deck standard-I2S speaker output is an enabled, hardware-validated provider behind the same semantic audio-output service. T-Deck ES7210 microphone capture remains disabled, so Recorder and Audio Spectrum remain unavailable on that profile. Reference-derived ES7210 pins may be retained as implementation metadata without advertising audio capture.
+T-Deck standard-I2S speaker output is an enabled, hardware-validated provider behind the semantic audio-output service. T-Deck ES7210 capture is an enabled audio-capture provider behind the same Recorder/Audio Spectrum service boundary used by T-Embed. Codec control uses the shared board I2C bus; I2S0 RX uses a four-slot Philips-format TDM frame and exposes the selected MIC1/slot-0 stream to the rest of RFScout as ordinary mono 16-bit PCM. The exact microphone/slot behavior remains subject to final hardware validation rather than being exposed as application-specific codec semantics.
+
+The provider owns codec/I2S setup and teardown and the temporary GPIO0 Select conflict. Applications continue to depend only on semantic audio capture. Broader calibrated Audio Input generalization remains roadmap work and is not implied complete by adding this provider.
 
 ## Shared buses
 
@@ -111,7 +113,7 @@ T-Deck display, SD, and SX1262 share the SPI bus. Known chip-select pins are dri
 
 The SD service owns its mount and raw-card arbitration for the running firmware lifetime. Filesystem users do not manage the raw `sdmmc_get_status()` synchronization contract; that remains private to the storage service and its logger implementation.
 
-The shared board I2C service is used by ordinary post-detection peripheral providers; the temporary fingerprint bus is always torn down first.
+The shared board I2C service is used by ordinary post-detection peripheral providers, including ES7210 codec control; the temporary fingerprint bus is always torn down first.
 
 ## PSRAM requirement
 
