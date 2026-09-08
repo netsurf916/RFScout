@@ -15,7 +15,6 @@
 #include "mlx90640.h"
 #include "nrf24.h"
 #include "nrf24_activity.h"
-#include "observation_store.h"
 #include "system_events.h"
 
 #include "esp_timer.h"
@@ -58,12 +57,8 @@ static void write_periodic_record( rfscout_app_id_t a_app )
             break;
 
         case RFSCOUT_APP_WIFI_BT:
-            snprintf( detail,
-                      sizeof( detail ),
-                      "active=%u surveillance=%u",
-                      (unsigned)observation_store_count(),
-                      (unsigned)observation_store_surveillance_count() );
-            break;
+            /* ADDED/DROPPED/SURVEILLANCE records already capture meaningful WiFi/BLE changes. */
+            return;
 
         case RFSCOUT_APP_CC1101:
         {

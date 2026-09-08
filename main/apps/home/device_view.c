@@ -11,6 +11,7 @@
 #include "app_logging.h"
 #include "app_manager.h"
 #include "audio_policy.h"
+#include "breadcrumbs.h"
 #include "device_config.h"
 #include "device_time.h"
 #include "display.h"
@@ -53,11 +54,13 @@
 #define DEVICE_ITEM_LOGGING 20U
 #define DEVICE_ITEM_POWER_BUTTON 21U
 #define DEVICE_ITEM_POWER_POLICY 22U
-#define DEVICE_ITEM_TOUCH_CALIBRATION 23U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 24U
+#define DEVICE_ITEM_BREADCRUMBS 23U
+#define DEVICE_ITEM_BREADCRUMB_FILES 24U
+#define DEVICE_ITEM_TOUCH_CALIBRATION 25U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 26U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
-#define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_POWER_POLICY + 1U )
+#define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_BREADCRUMB_FILES + 1U )
 #define DEVICE_ROWS_PER_PAGE 6U
 #define DEVICE_LOG_SHUTDOWN_TIMEOUT_MS 3000U
 #define DEVICE_AUDIO_VOLUME_STEP 10
@@ -80,6 +83,7 @@
 
 static const uint16_t DIM_TIMEOUT_OPTIONS[] = { 0U, 30U, 60U, 120U, 300U };
 static const uint16_t OFF_TIMEOUT_OPTIONS[] = { 0U, 60U, 120U, 300U, 600U, 1800U };
+static const uint16_t BREADCRUMB_FILE_LIMIT_OPTIONS[] = { 24U, 72U, 144U, 288U, 1008U };
 
 #define COLOR_BACKGROUND ( ui_theme_get()->background )
 #define COLOR_TEXT ( ui_theme_get()->text )
@@ -158,7 +162,7 @@ static void format_timeout( uint16_t a_seconds, char *a_value, size_t a_capacity
 {
     if( 0U == a_seconds )
     {
-        snprintf( a_value, a_capacity, "Off" );
+        snprintf( a_value, a_capacity, "Disabled" );
     }
     else if( 0U == ( a_seconds % 60U ) )
     {
@@ -228,19 +232,19 @@ static char next_morse_character( char a_current, int a_direction )
 
 static bool item_direct_toggle( unsigned a_item )
 {
-    return ( DEVICE_ITEM_AUDIO_POLICY == a_item ) || ( DEVICE_ITEM_ALERT_MODE == a_item ) ||
-           ( DEVICE_ITEM_CLOCK_FORMAT == a_item ) || ( DEVICE_ITEM_SYSTEM_EVENTS == a_item ) ||
-           ( DEVICE_ITEM_WIFI == a_item ) || ( DEVICE_ITEM_CC1101 == a_item ) ||
-           ( DEVICE_ITEM_NRF24 == a_item ) || ( DEVICE_ITEM_AUDIO == a_item ) ||
-           ( DEVICE_ITEM_THERMAL == a_item ) || ( DEVICE_ITEM_AUDIO_SPECTRUM == a_item ) ||
-           ( DEVICE_ITEM_LOGGING == a_item );
+    return ( DEVICE_ITEM_BREADCRUMBS == a_item ) || ( DEVICE_ITEM_AUDIO_POLICY == a_item ) ||
+           ( DEVICE_ITEM_ALERT_MODE == a_item ) || ( DEVICE_ITEM_CLOCK_FORMAT == a_item ) ||
+           ( DEVICE_ITEM_SYSTEM_EVENTS == a_item ) || ( DEVICE_ITEM_WIFI == a_item ) ||
+           ( DEVICE_ITEM_CC1101 == a_item ) || ( DEVICE_ITEM_NRF24 == a_item ) ||
+           ( DEVICE_ITEM_AUDIO == a_item ) || ( DEVICE_ITEM_THERMAL == a_item ) ||
+           ( DEVICE_ITEM_AUDIO_SPECTRUM == a_item ) || ( DEVICE_ITEM_LOGGING == a_item );
 }
 
 static bool item_editable( unsigned a_item )
 {
     return ( DEVICE_ITEM_BACK != a_item ) && ( DEVICE_ITEM_TIME != a_item ) &&
            ( DEVICE_ITEM_POWER_BUTTON != a_item ) && ( DEVICE_ITEM_POWER_POLICY != a_item ) &&
-           ( DEVICE_ITEM_TOUCH_CALIBRATION != a_item );
+           ( DEVICE_ITEM_BREADCRUMBS != a_item ) && ( DEVICE_ITEM_TOUCH_CALIBRATION != a_item );
 }
 
 static const char *item_label( unsigned a_item )
@@ -293,6 +297,10 @@ static const char *item_label( unsigned a_item )
             return "Power button";
         case DEVICE_ITEM_POWER_POLICY:
             return "Power policy";
+        case DEVICE_ITEM_BREADCRUMBS:
+            return "Breadcrumbs";
+        case DEVICE_ITEM_BREADCRUMB_FILES:
+            return "Breadcrumb files";
         case DEVICE_ITEM_TOUCH_CALIBRATION:
             return "Touch calibration";
         default:
@@ -387,6 +395,12 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             break;
         case DEVICE_ITEM_LOGGING:
             snprintf( a_value, a_capacity, "%s", on_off( config->logging_enabled ) );
+            break;
+        case DEVICE_ITEM_BREADCRUMBS:
+            snprintf( a_value, a_capacity, "%s", on_off( breadcrumbs_enabled() ) );
+            break;
+        case DEVICE_ITEM_BREADCRUMB_FILES:
+            snprintf( a_value, a_capacity, "%u", (unsigned)breadcrumbs_file_limit() );
             break;
         case DEVICE_ITEM_TOUCH_CALIBRATION:
             snprintf( a_value,
@@ -693,15 +707,13 @@ void device_view_render( void )
         draw_row( UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT, item );
     }
 
+    const char *hint = editing
+                           ? "TURN CHANGE / CENTER DONE"
+                           : ( item_direct_toggle( selected_item ) ? "CENTER CYCLE"
+                                                                   : "TURN SELECT / CENTER ENTER" );
     char footer[ 64 ];
-    snprintf( footer,
-              sizeof( footer ),
-              "%u/%u  %s",
-              (unsigned)( selected_item + 1U ),
-              item_count,
-              editing ? "TURN CHANGE / CENTER DONE"
-                      : ( item_direct_toggle( selected_item ) ? "CENTER CYCLE"
-                                                              : "TURN SELECT / CENTER ENTER" ) );
+    snprintf(
+        footer, sizeof( footer ), "%u/%u  %s", (unsigned)( selected_item + 1U ), item_count, hint );
     display_draw_text(
         UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, footer, editing ? COLOR_ACCENT : COLOR_DIM, 1U );
     if( save_error )
@@ -1256,6 +1268,52 @@ static void toggle_logging( void )
     emit_device_event( RFSCOUT_EVENT_ENABLE, 1 );
 }
 
+static void toggle_breadcrumbs( void )
+{
+    const bool old_value = breadcrumbs_enabled();
+    const esp_err_t result = breadcrumbs_set_enabled( !old_value );
+    if( ESP_OK != result )
+    {
+        save_error = true;
+        emit_device_event( RFSCOUT_EVENT_ERROR, (int32_t)result );
+        return;
+    }
+    log_config_change( "breadcrumbs.enabled", on_off( old_value ), on_off( !old_value ) );
+    save_error = false;
+    emit_device_event( !old_value ? RFSCOUT_EVENT_ENABLE : RFSCOUT_EVENT_DISABLE,
+                       !old_value ? 1 : 0 );
+}
+
+static void adjust_breadcrumb_file_limit( int a_delta )
+{
+    const uint16_t old_limit = breadcrumbs_file_limit();
+    const uint16_t new_limit = next_timeout_option(
+        BREADCRUMB_FILE_LIMIT_OPTIONS,
+        sizeof( BREADCRUMB_FILE_LIMIT_OPTIONS ) / sizeof( BREADCRUMB_FILE_LIMIT_OPTIONS[ 0 ] ),
+        old_limit,
+        a_delta );
+    if( new_limit == old_limit )
+    {
+        return;
+    }
+
+    const esp_err_t result = breadcrumbs_set_file_limit( new_limit );
+    if( ESP_OK != result )
+    {
+        save_error = true;
+        emit_device_event( RFSCOUT_EVENT_ERROR, (int32_t)result );
+        return;
+    }
+
+    char old_text[ 8 ];
+    char new_text[ 8 ];
+    snprintf( old_text, sizeof( old_text ), "%u", (unsigned)old_limit );
+    snprintf( new_text, sizeof( new_text ), "%u", (unsigned)new_limit );
+    log_config_change( "breadcrumbs.file_limit", old_text, new_text );
+    save_error = false;
+    emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
+}
+
 static void adjust_alert_mode( int a_delta )
 {
     const rfscout_alert_mode_t old_mode = device_config_get()->alert_mode;
@@ -1405,6 +1463,14 @@ static void adjust_selected( int a_delta )
     else if( DEVICE_ITEM_LOGGING == selected_item )
     {
         toggle_logging();
+    }
+    else if( DEVICE_ITEM_BREADCRUMBS == selected_item )
+    {
+        toggle_breadcrumbs();
+    }
+    else if( DEVICE_ITEM_BREADCRUMB_FILES == selected_item )
+    {
+        adjust_breadcrumb_file_limit( a_delta );
     }
     else if( ( selected_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
              ( selected_item <= DEVICE_ITEM_NOTIFICATION_LAST ) )

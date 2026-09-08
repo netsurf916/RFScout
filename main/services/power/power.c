@@ -10,6 +10,7 @@
 #include "app_manager.h"
 #include "battery.h"
 #include "board.h"
+#include "breadcrumbs.h"
 #include "device_config.h"
 #include "display.h"
 #include "display_idle.h"
@@ -32,6 +33,7 @@
 #define POWER_SHORT_PRESS_MAX_US 500000LL
 #define POWER_LONG_PRESS_HOLD_US 3000000LL
 #define POWER_LOG_FLUSH_TIMEOUT_MS 3000U
+#define POWER_BREADCRUMB_SHUTDOWN_TIMEOUT_MS 3000U
 #define POWER_RECORDER_STOP_TIMEOUT_MS 5000U
 
 static const char *TAG = "power";
@@ -175,9 +177,16 @@ static bool prepare_for_power_state( void )
         return false;
     }
 
+    if( !breadcrumbs_shutdown( POWER_BREADCRUMB_SHUTDOWN_TIMEOUT_MS ) )
+    {
+        ESP_LOGW( TAG, "power transition cancelled because breadcrumbs did not stop" );
+        return false;
+    }
+
     if( !log_writer_shutdown( POWER_LOG_FLUSH_TIMEOUT_MS ) )
     {
         ESP_LOGW( TAG, "power transition cancelled because logger did not stop" );
+        (void)breadcrumbs_init();
         return false;
     }
 
@@ -216,14 +225,21 @@ static void restore_display_after_failed_power_off( void )
     display_set_brightness( device_config_get()->brightness_percent );
 }
 
-/** @brief Restart logging after a failed physical power-off request. */
-static void restore_logging_after_failed_power_off( void )
+/** @brief Restart SD background writers after a failed physical power-off request. */
+static void restore_storage_writers_after_failed_power_off( void )
 {
-    if( !storage_is_available() || !device_config_get()->logging_enabled )
+    if( !storage_is_available() )
     {
         return;
     }
-    if( ESP_OK != log_writer_init() )
+
+    const esp_err_t breadcrumb_result = breadcrumbs_init();
+    if( ESP_OK != breadcrumb_result && ESP_ERR_NOT_SUPPORTED != breadcrumb_result )
+    {
+        ESP_LOGE( TAG, "could not restart breadcrumbs after failed power off" );
+    }
+
+    if( device_config_get()->logging_enabled && ESP_OK != log_writer_init() )
     {
         ESP_LOGE( TAG, "could not restart logging after failed power off" );
     }
@@ -262,7 +278,7 @@ static void power_off( void )
     if( ESP_OK != result )
     {
         ESP_LOGE( TAG, "power off failed: %s", esp_err_to_name( result ) );
-        restore_logging_after_failed_power_off();
+        restore_storage_writers_after_failed_power_off();
         restore_display_after_failed_power_off();
         set_idle_status();
     }

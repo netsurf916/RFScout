@@ -77,6 +77,9 @@ void recorder_stop_monitor( void );
 /** @brief Copy the latest live spectrum bins and return the copied count. */
 size_t recorder_monitor_bins( uint8_t *a_bins, size_t a_capacity );
 
+/** @brief Return the center frequency of a displayed spectrum bin using measured PCM throughput. */
+uint32_t recorder_monitor_bin_frequency_hz( size_t a_bin );
+
 /** @brief Return the current automatic spectrum display span in dB. */
 uint8_t recorder_monitor_range_db( void );
 

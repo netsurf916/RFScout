@@ -117,6 +117,7 @@ idf_component_register(
         "services/storage/storage.c"
         "services/storage/persistent_store.c"
         "services/storage/log_writer.c"
+        "services/storage/breadcrumbs.c"
         "services/power/battery.c"
         "services/power/power.c"
         "services/power/power_policy.c"
