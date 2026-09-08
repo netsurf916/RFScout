@@ -232,30 +232,22 @@ static char next_morse_character( char a_current, int a_direction )
 
 static bool item_available( unsigned a_item )
 {
-    if( DEVICE_ITEM_BREADCRUMBS == a_item || DEVICE_ITEM_BREADCRUMB_FILES == a_item )
-    {
-        return breadcrumbs_available();
-    }
+    (void)a_item;
     return true;
 }
 
 static bool item_direct_toggle( unsigned a_item )
 {
-    return ( item_available( a_item ) && DEVICE_ITEM_BREADCRUMBS == a_item ) ||
-           ( DEVICE_ITEM_AUDIO_POLICY == a_item ) || ( DEVICE_ITEM_ALERT_MODE == a_item ) ||
-           ( DEVICE_ITEM_CLOCK_FORMAT == a_item ) || ( DEVICE_ITEM_SYSTEM_EVENTS == a_item ) ||
-           ( DEVICE_ITEM_WIFI == a_item ) || ( DEVICE_ITEM_CC1101 == a_item ) ||
-           ( DEVICE_ITEM_NRF24 == a_item ) || ( DEVICE_ITEM_AUDIO == a_item ) ||
-           ( DEVICE_ITEM_THERMAL == a_item ) || ( DEVICE_ITEM_AUDIO_SPECTRUM == a_item ) ||
-           ( DEVICE_ITEM_LOGGING == a_item );
+    return ( DEVICE_ITEM_BREADCRUMBS == a_item ) || ( DEVICE_ITEM_AUDIO_POLICY == a_item ) ||
+           ( DEVICE_ITEM_ALERT_MODE == a_item ) || ( DEVICE_ITEM_CLOCK_FORMAT == a_item ) ||
+           ( DEVICE_ITEM_SYSTEM_EVENTS == a_item ) || ( DEVICE_ITEM_WIFI == a_item ) ||
+           ( DEVICE_ITEM_CC1101 == a_item ) || ( DEVICE_ITEM_NRF24 == a_item ) ||
+           ( DEVICE_ITEM_AUDIO == a_item ) || ( DEVICE_ITEM_THERMAL == a_item ) ||
+           ( DEVICE_ITEM_AUDIO_SPECTRUM == a_item ) || ( DEVICE_ITEM_LOGGING == a_item );
 }
 
 static bool item_editable( unsigned a_item )
 {
-    if( !item_available( a_item ) )
-    {
-        return false;
-    }
     return ( DEVICE_ITEM_BACK != a_item ) && ( DEVICE_ITEM_TIME != a_item ) &&
            ( DEVICE_ITEM_POWER_BUTTON != a_item ) && ( DEVICE_ITEM_POWER_POLICY != a_item ) &&
            ( DEVICE_ITEM_BREADCRUMBS != a_item ) && ( DEVICE_ITEM_TOUCH_CALIBRATION != a_item );
@@ -411,20 +403,10 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             snprintf( a_value, a_capacity, "%s", on_off( config->logging_enabled ) );
             break;
         case DEVICE_ITEM_BREADCRUMBS:
-            snprintf( a_value,
-                      a_capacity,
-                      "%s",
-                      breadcrumbs_available() ? on_off( breadcrumbs_enabled() ) : "Unavailable" );
+            snprintf( a_value, a_capacity, "%s", on_off( breadcrumbs_enabled() ) );
             break;
         case DEVICE_ITEM_BREADCRUMB_FILES:
-            if( breadcrumbs_available() )
-            {
-                snprintf( a_value, a_capacity, "%u", (unsigned)breadcrumbs_file_limit() );
-            }
-            else
-            {
-                snprintf( a_value, a_capacity, "Unavailable" );
-            }
+            snprintf( a_value, a_capacity, "%u", (unsigned)breadcrumbs_file_limit() );
             break;
         case DEVICE_ITEM_TOUCH_CALIBRATION:
             snprintf( a_value,
@@ -731,12 +713,9 @@ void device_view_render( void )
         draw_row( UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT, item );
     }
 
-    const char *hint =
-        !item_available( selected_item )
-            ? "UNAVAILABLE"
-            : ( editing ? "TURN CHANGE / CENTER DONE"
-                        : ( item_direct_toggle( selected_item ) ? "CENTER CYCLE"
-                                                                : "TURN SELECT / CENTER ENTER" ) );
+    const char *hint = editing ? "TURN CHANGE / CENTER DONE"
+                               : ( item_direct_toggle( selected_item ) ? "CENTER CYCLE"
+                                                                       : "TURN SELECT / CENTER ENTER" );
     char footer[ 64 ];
     snprintf(
         footer, sizeof( footer ), "%u/%u  %s", (unsigned)( selected_item + 1U ), item_count, hint );
@@ -1296,11 +1275,6 @@ static void toggle_logging( void )
 
 static void toggle_breadcrumbs( void )
 {
-    if( !breadcrumbs_available() )
-    {
-        save_error = true;
-        return;
-    }
     const bool old_value = breadcrumbs_enabled();
     if( ESP_OK != breadcrumbs_set_enabled( !old_value ) )
     {
@@ -1315,10 +1289,6 @@ static void toggle_breadcrumbs( void )
 
 static void adjust_breadcrumb_file_limit( int a_delta )
 {
-    if( !breadcrumbs_available() )
-    {
-        return;
-    }
     const uint16_t old_limit = breadcrumbs_file_limit();
     const uint16_t new_limit = next_timeout_option(
         BREADCRUMB_FILE_LIMIT_OPTIONS,
