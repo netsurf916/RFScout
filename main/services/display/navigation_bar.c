@@ -133,13 +133,11 @@ void navigation_bar_poll( void )
     }
     touch_pressed = true;
 
-    /* App-content touch is translated into the existing semantic Select action rather than
-       giving applications a second pointer-specific control model. This also preserves an
-       authoritative Select path on boards whose physical Select GPIO is temporarily owned by a
-       peripheral, such as T-Deck ES7210 capture. Future keyboard providers can feed the same
-       semantic input service independently. */
+    /* App-view touch is normally not an application input model. It substitutes the existing
+       semantic Select action only while a peripheral has made the physical primary Select source
+       unavailable, such as T-Deck ES7210 capture owning the GPIO0 conflict. */
     const rfscout_view_t *app_view = display_app_view();
-    if( point_in_view( &sample, app_view ) )
+    if( !input_primary_select_available() && point_in_view( &sample, app_view ) )
     {
         input_inject_select();
         return;
