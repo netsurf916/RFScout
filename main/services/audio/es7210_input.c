@@ -188,6 +188,13 @@ esp_err_t es7210_input_open( i2s_chan_handle_t *a_channel )
         return ESP_FAIL;
     }
 
+    result = i2s_channel_enable( rx_channel );
+    if( ESP_OK != result )
+    {
+        es7210_input_close();
+        return result;
+    }
+
     *a_channel = rx_channel;
     ESP_LOGI( TAG,
               "ES7210 configured: I2S0 TDM4 MIC1 mclk=GPIO%d bclk=GPIO%d lrclk=GPIO%d data=GPIO%d "
