@@ -20,13 +20,6 @@
 #define RFSCOUT_AUDIO_CAPTURE_CHANNELS 1U
 #define RFSCOUT_AUDIO_CAPTURE_BITS_PER_SAMPLE 16U
 
-typedef enum
-{
-    RFSCOUT_AUDIO_CAPTURE_PROVIDER_NONE = 0,
-    RFSCOUT_AUDIO_CAPTURE_PROVIDER_PDM,
-    RFSCOUT_AUDIO_CAPTURE_PROVIDER_ES7210,
-} rfscout_audio_capture_provider_t;
-
 typedef struct
 {
     uint32_t sample_rate_hz;
@@ -70,13 +63,7 @@ void audio_capture_close( void );
 /** @brief Return whether a capture provider is currently open. */
 bool audio_capture_is_open( void );
 
-/** @brief Return the active provider, or NONE while capture is closed. */
-rfscout_audio_capture_provider_t audio_capture_provider( void );
-
-/** @brief Return a short provider channel label for diagnostics. */
+/** @brief Return a short normalized input-channel label for diagnostics. */
 const char *audio_capture_input_name( void );
-
-/** @brief Return the last measured PDM clock frequency, or zero for non-PDM/unknown. */
-uint32_t audio_capture_pdm_clock_hz( void );
 
 #endif // _RFSCOUT_AUDIO_CAPTURE_H_
