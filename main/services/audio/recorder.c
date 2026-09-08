@@ -100,6 +100,7 @@ static bool monitor_range_initialized;
 static float monitor_floor_db;
 static float monitor_ceiling_db;
 static volatile uint8_t monitor_range_db;
+static volatile uint32_t monitor_sample_rate_hz = RFSCOUT_RECORDER_SAMPLE_RATE;
 static rfscout_audio_highpass_t monitor_highpass;
 static float monitor_fft_frame[ RECORDER_MONITOR_FFT_SIZE ];
 static size_t monitor_fft_frame_count;
@@ -1162,6 +1163,9 @@ static void monitor_worker( void *a_argument )
         (void)i2s_channel_read(
             rx_channel, samples, sizeof( samples ), &discarded, pdMS_TO_TICKS( 20 ) );
     }
+
+    int64_t rate_started_us = esp_timer_get_time();
+    uint32_t rate_bytes = 0U;
     unsigned timeout_streak = 0U;
     while( monitor_running )
     {
@@ -1183,6 +1187,24 @@ static void monitor_worker( void *a_argument )
             break;
         }
         timeout_streak = 0U;
+        rate_bytes += (uint32_t)bytes;
+        const int64_t now_us = esp_timer_get_time();
+        const int64_t rate_elapsed_us = now_us - rate_started_us;
+        if( rate_elapsed_us >= RECORDER_DIAGNOSTIC_INTERVAL_US )
+        {
+            const uint32_t effective_rate =
+                rate_elapsed_us > 0
+                    ? (uint32_t)( (uint64_t)rate_bytes * 1000000ULL /
+                                  (uint64_t)rate_elapsed_us / sizeof( int16_t ) )
+                    : 0U;
+            if( effective_rate >= RFSCOUT_RECORDER_WAV_RATE_MIN &&
+                effective_rate <= RFSCOUT_RECORDER_WAV_RATE_MAX )
+            {
+                monitor_sample_rate_hz = effective_rate;
+            }
+            rate_started_us = now_us;
+            rate_bytes = 0U;
+        }
         const size_t count = bytes / sizeof( samples[ 0 ] );
         monitor_process_samples( samples, count );
     }
@@ -1204,6 +1226,7 @@ esp_err_t recorder_start_monitor( void )
     monitor_floor_db = 0.0f;
     monitor_ceiling_db = 0.0f;
     monitor_range_db = (uint8_t)RECORDER_MONITOR_MIN_RANGE_DB;
+    monitor_sample_rate_hz = RFSCOUT_RECORDER_SAMPLE_RATE;
     audio_highpass_reset( &monitor_highpass );
     monitor_fft_frame_count = 0U;
     esp_err_t result = open_microphone();
@@ -1253,7 +1276,7 @@ uint32_t recorder_monitor_bin_frequency_hz( size_t a_bin )
         return 0U;
     }
     return (uint32_t)( ( RECORDER_MONITOR_FIRST_FFT_BIN + a_bin ) *
-                       (uint64_t)RFSCOUT_RECORDER_SAMPLE_RATE / RECORDER_MONITOR_FFT_SIZE );
+                       (uint64_t)monitor_sample_rate_hz / RECORDER_MONITOR_FFT_SIZE );
 }
 
 uint8_t recorder_monitor_range_db( void )
