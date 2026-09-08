@@ -1,6 +1,6 @@
 /**
-    services/audio/recorder.h : RFScout shared microphone, recorder, and playback service
-    Description: Exposes microphone monitoring plus SD-backed WAV recording and playback.
+    services/audio/recorder.h : RFScout shared recorder, spectrum, and playback service
+    Description: Exposes live PCM processing plus SD-backed WAV recording and playback.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -10,6 +10,7 @@
 #ifndef _RFSCOUT_RECORDER_H_
 #define _RFSCOUT_RECORDER_H_
 
+#include "audio_capture.h"
 #include "esp_err.h"
 
 #include <stdbool.h>
@@ -17,7 +18,7 @@
 #include <stdint.h>
 
 #define RFSCOUT_RECORDER_DIRECTORY "/sdcard/audio"
-#define RFSCOUT_RECORDER_SAMPLE_RATE 48000U
+#define RFSCOUT_RECORDER_SAMPLE_RATE RFSCOUT_AUDIO_CAPTURE_SAMPLE_RATE
 #define RFSCOUT_RECORDER_TARGET_PDM_CLOCK_HZ 2048000U
 #define RFSCOUT_RECORDER_WAV_RATE_MIN 8000U
 #define RFSCOUT_RECORDER_WAV_RATE_MAX 48000U
@@ -44,7 +45,7 @@ typedef struct
     int64_t modified_time;
 } rfscout_recording_t;
 
-/** @brief Briefly initialize the active board audio-capture provider and verify availability. */
+/** @brief Probe the active board audio-capture provider through the shared capture service. */
 esp_err_t recorder_probe_microphone( void );
 
 /** @brief Initialize recorder state and enumerate valid WAV files when storage is mounted. */
