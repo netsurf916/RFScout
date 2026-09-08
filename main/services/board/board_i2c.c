@@ -42,6 +42,11 @@ esp_err_t board_i2c_init( void )
     return result;
 }
 
+i2c_master_bus_handle_t board_i2c_handle( void )
+{
+    return ESP_OK == board_i2c_init() ? bus_handle : NULL;
+}
+
 esp_err_t board_i2c_probe( uint16_t a_address )
 {
     const esp_err_t result = board_i2c_init();

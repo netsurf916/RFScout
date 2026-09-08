@@ -80,6 +80,7 @@ idf_component_register(
         "apps/radio_common/radio_app_view.c"
         "apps/recorder/app.c"
         "services/audio/recorder.c"
+        "services/audio/es7210_input.c"
         "apps/recorder/recorder_view.c"
         "apps/audio_spectrum/app.c"
         "apps/audio_spectrum/view.c"

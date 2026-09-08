@@ -15,6 +15,8 @@
 #include "touch.h"
 #include "ui_theme.h"
 
+#include "esp_timer.h"
+
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
@@ -25,6 +27,9 @@
 #define NAV_TAB_HEIGHT 38
 
 static bool touch_pressed;
+static bool app_touch_active;
+static bool app_touch_lock_fired;
+static int64_t app_touch_started_us;
 
 static bool app_visible( rfscout_app_id_t a_app )
 {
@@ -72,6 +77,22 @@ static void make_label( const char *a_name, char a_label[ NAV_LABEL_MAX + 1U ] )
     a_label[ out ] = '\0';
 }
 
+static bool touch_in_view( const rfscout_touch_sample_t *a_sample, const rfscout_view_t *a_view )
+{
+    return NULL != a_sample && NULL != a_view && a_view->width > 0U && a_view->height > 0U &&
+           a_sample->x >= (uint16_t)a_view->x &&
+           a_sample->x < (uint16_t)( a_view->x + (int)a_view->width ) &&
+           a_sample->y >= (uint16_t)a_view->y &&
+           a_sample->y < (uint16_t)( a_view->y + (int)a_view->height );
+}
+
+static void reset_app_touch( void )
+{
+    app_touch_active = false;
+    app_touch_lock_fired = false;
+    app_touch_started_us = 0;
+}
+
 static void draw_calibration( const rfscout_view_t *a_view )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
@@ -101,29 +122,65 @@ void navigation_bar_poll( void )
     if( !touch_sample_get( &sample ) || !sample.calibrated || touch_calibration_active() )
     {
         touch_pressed = false;
-        return;
-    }
-
-    /* Input lock is a device-wide user-input policy, not a property of the trackball/rotary
-       provider. Latch the current finger state while locked so unlocking cannot turn a held
-       touch into an app-switch action. Future app-level pointer dispatch must honor the same
-       policy before delivering touch to an application. */
-    if( input_locked() )
-    {
-        touch_pressed = sample.pressed;
+        reset_app_touch();
         return;
     }
 
     if( !sample.pressed )
     {
+        if( app_touch_active && !app_touch_lock_fired && !input_locked() )
+        {
+            input_inject_select();
+        }
         touch_pressed = false;
+        reset_app_touch();
         return;
     }
+
+    if( app_touch_active )
+    {
+        if( input_primary_select_available() )
+        {
+            reset_app_touch();
+            return;
+        }
+        if( !app_touch_lock_fired && app_touch_started_us > 0 &&
+            ( esp_timer_get_time() - app_touch_started_us ) >= RFSCOUT_INPUT_LOCK_HOLD_US )
+        {
+            input_toggle_lock();
+            app_touch_lock_fired = true;
+        }
+        return;
+    }
+
     if( touch_pressed )
     {
         return;
     }
     touch_pressed = true;
+
+    /* Some capture hardware temporarily owns the physical Select GPIO. Keep touch system-owned,
+       but translate a fresh touch in the managed app view through the existing semantic input
+       path while that physical source is unavailable. Applications still receive no coordinates. */
+    if( !input_primary_select_available() )
+    {
+        const rfscout_view_t app_view = display_app_view();
+        if( touch_in_view( &sample, &app_view ) )
+        {
+            app_touch_active = true;
+            app_touch_started_us = esp_timer_get_time();
+            app_touch_lock_fired = false;
+            return;
+        }
+    }
+
+    /* Input lock is device-wide. Touch remains observable so a held app-view touch can use the
+       normal unlock gesture when the primary Select source is suspended, but locked input never
+       drives global tab selection. */
+    if( input_locked() )
+    {
+        return;
+    }
 
     const rfscout_view_t view = display_navigation_view();
     if( ( 0U == view.width ) || ( 0U == view.height ) )

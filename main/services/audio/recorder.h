@@ -44,7 +44,7 @@ typedef struct
     int64_t modified_time;
 } rfscout_recording_t;
 
-/** @brief Briefly clock the board PDM input and detect microphone data activity. */
+/** @brief Briefly initialize the active board audio-capture provider and verify availability. */
 esp_err_t recorder_probe_microphone( void );
 
 /** @brief Initialize recorder state and enumerate valid WAV files when storage is mounted. */
@@ -53,7 +53,7 @@ esp_err_t recorder_init( void );
 /** @brief Refresh storage state and the playable recording list. */
 esp_err_t recorder_refresh( void );
 
-/** @brief Start a calibrated diagnostic 16-bit mono PCM WAV recording from the PDM input. */
+/** @brief Start a 16-bit mono PCM WAV recording from the active board audio-capture provider. */
 esp_err_t recorder_start_recording( void );
 
 /** @brief Request capture stop and enter asynchronous save/post-processing state. */
@@ -62,7 +62,7 @@ void recorder_request_stop_recording( void );
 /** @brief Stop capture, wait for save/post-processing, and refresh the recording list. */
 void recorder_stop_recording( void );
 
-/** @brief Stop SD-backed recorder activity before storage is unmounted. */
+/** @brief Stop SD-backed recorder activity before storage becomes unavailable. */
 bool recorder_prepare_storage_shutdown( uint32_t a_timeout_ms );
 
 /** @brief Delete one enumerated recording and refresh the list. */
@@ -107,7 +107,7 @@ uint8_t recorder_level_percent( void );
 /** @brief Return recent microphone peak level from 0 through 100 while recording. */
 uint8_t recorder_peak_percent( void );
 
-/** @brief Return the automatically selected ESP32-S3 PDM slot name. */
+/** @brief Return the active input channel/slot name for diagnostics. */
 const char *recorder_input_slot_name( void );
 
 /** @brief Change volume of active WAV playback without restarting it. */

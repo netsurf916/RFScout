@@ -24,7 +24,6 @@
 #define INPUT_BUTTON_DEBOUNCE_US 30000LL
 #define INPUT_BUTTON_LONG_PRESS_US 800000LL
 #define INPUT_BUTTON_BACK_HOLD_US 1500000LL
-#define INPUT_BUTTON_LOCK_HOLD_US 2000000LL
 #define ENCODER_LATCH_STATE_0 0U
 #define ENCODER_LATCH_STATE_3 3U
 #define ENCODER_TRANSITIONS_PER_DETENT 2
@@ -47,6 +46,7 @@ static bool button_long_event;
 static bool button_back_event;
 static bool button_lock_fired;
 static bool locked;
+static volatile bool primary_button_suspended;
 static int primary_button_pin = -1;
 static rfscout_input_provider_t provider;
 
@@ -88,6 +88,11 @@ static void IRAM_ATTR trackball_isr( void *a_argument )
 static void IRAM_ATTR primary_button_isr( void *a_argument )
 {
     (void)a_argument;
+    if( primary_button_suspended )
+    {
+        return;
+    }
+
     const bool pressed =
         ( primary_button_pin >= 0 ) && ( 0 == gpio_get_level( primary_button_pin ) );
     const int64_t now_us = esp_timer_get_time();
@@ -168,8 +173,25 @@ static void initialize_button_state( void )
     button_long_event = false;
     button_back_event = false;
     button_lock_fired = false;
+    primary_button_suspended = false;
     rfscout_session_state_t restored_session;
     locked = session_state_restore( &restored_session ) && restored_session.input_locked;
+}
+
+static void clear_primary_button_state( void )
+{
+    portENTER_CRITICAL( &button_lock );
+    button_down = false;
+    button_pressed_us = 0;
+    button_pending_duration_us = 0;
+    button_pending_sequence = 0U;
+    button_seen_sequence = button_press_sequence;
+    button_lock_sequence = button_press_sequence;
+    button_lock_fired = false;
+    button_event = false;
+    button_long_event = false;
+    button_back_event = false;
+    portEXIT_CRITICAL( &button_lock );
 }
 
 static esp_err_t install_rotary_provider( void )
@@ -299,6 +321,11 @@ esp_err_t input_init( void )
 
 void input_poll( void )
 {
+    if( primary_button_suspended )
+    {
+        return;
+    }
+
     const int64_t now_us = esp_timer_get_time();
     bool current_button_down;
     int64_t pressed_us;
@@ -323,7 +350,7 @@ void input_poll( void )
     }
 
     if( current_button_down && !button_lock_fired && ( pressed_us > 0 ) &&
-        ( now_us - pressed_us ) >= INPUT_BUTTON_LOCK_HOLD_US )
+        ( now_us - pressed_us ) >= RFSCOUT_INPUT_LOCK_HOLD_US )
     {
         toggle_input_lock( press_sequence );
     }
@@ -333,7 +360,7 @@ void input_poll( void )
     {
         return;
     }
-    if( completed_duration_us >= INPUT_BUTTON_LOCK_HOLD_US )
+    if( completed_duration_us >= RFSCOUT_INPUT_LOCK_HOLD_US )
     {
         toggle_input_lock( completed_sequence );
         return;
@@ -367,7 +394,8 @@ bool input_activity_pending( void )
     portEXIT_CRITICAL( &navigation_lock );
 
     portENTER_CRITICAL( &button_lock );
-    button_activity = button_down || ( button_pending_duration_us > 0 );
+    button_activity =
+        !primary_button_suspended && ( button_down || ( button_pending_duration_us > 0 ) );
     portEXIT_CRITICAL( &button_lock );
 
     const bool user_key =
@@ -389,7 +417,7 @@ void input_consume_wake( void )
     button_pending_duration_us = 0;
     button_pending_sequence = 0U;
     press_sequence = button_press_sequence;
-    current_button_down = button_down;
+    current_button_down = !primary_button_suspended && button_down;
     portEXIT_CRITICAL( &button_lock );
 
     button_seen_sequence = press_sequence;
@@ -431,6 +459,48 @@ bool input_get( rfscout_input_event_t *a_event )
         return true;
     }
     return false;
+}
+
+void input_primary_select_suspend( void )
+{
+    if( primary_button_suspended || primary_button_pin < 0 )
+    {
+        return;
+    }
+
+    primary_button_suspended = true;
+    (void)gpio_intr_disable( primary_button_pin );
+    clear_primary_button_state();
+}
+
+void input_primary_select_resume( void )
+{
+    if( !primary_button_suspended || primary_button_pin < 0 )
+    {
+        return;
+    }
+
+    clear_primary_button_state();
+    primary_button_suspended = false;
+    (void)gpio_intr_enable( primary_button_pin );
+}
+
+bool input_primary_select_available( void )
+{
+    return primary_button_pin >= 0 && !primary_button_suspended;
+}
+
+void input_inject_select( void )
+{
+    if( !locked )
+    {
+        button_event = true;
+    }
+}
+
+void input_toggle_lock( void )
+{
+    toggle_input_lock( button_press_sequence );
 }
 
 bool input_locked( void )
