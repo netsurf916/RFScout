@@ -172,6 +172,7 @@ static void close_pdm( void )
 
 static esp_err_t open_pdm( void )
 {
+    measured_pdm_clock_hz = 0U;
     i2s_chan_config_t channel_config = I2S_CHANNEL_DEFAULT_CONFIG( I2S_NUM_0, I2S_ROLE_MASTER );
     channel_config.dma_desc_num = AUDIO_CAPTURE_DMA_BUFFER_COUNT;
     channel_config.dma_frame_num = AUDIO_CAPTURE_DMA_BUFFER_LENGTH;
@@ -274,7 +275,7 @@ esp_err_t audio_capture_probe( void )
     (void)gpio_set_pull_mode( RFSCOUT_BOARD_MIC_DATA_PIN, GPIO_PULLDOWN_ONLY );
     vTaskDelay( pdMS_TO_TICKS( AUDIO_CAPTURE_MIC_WAKEUP_MS ) );
     const uint32_t edges = measure_pdm_data_edges();
-    audio_capture_close();
+    close_pdm();
     (void)gpio_set_pull_mode( RFSCOUT_BOARD_MIC_DATA_PIN, GPIO_FLOATING );
     if( edges < AUDIO_CAPTURE_PDM_PROBE_MIN_EDGES )
     {
@@ -322,7 +323,7 @@ esp_err_t audio_capture_open( rfscout_audio_capture_format_t *a_format )
 
     if( ESP_OK != result )
     {
-        active_provider = RFSCOUT_AUDIO_CAPTURE_PROVIDER_NONE;
+        audio_capture_close();
         return result;
     }
     if( NULL != a_format )
@@ -358,11 +359,11 @@ esp_err_t audio_capture_read( void *a_buffer,
 
 void audio_capture_close( void )
 {
-    if( RFSCOUT_AUDIO_CAPTURE_PROVIDER_ES7210 == active_provider )
+    if( es7210_input_is_open() )
     {
         es7210_input_close();
     }
-    else if( RFSCOUT_AUDIO_CAPTURE_PROVIDER_PDM == active_provider )
+    if( NULL != pdm_channel )
     {
         close_pdm();
     }
