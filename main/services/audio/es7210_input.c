@@ -151,7 +151,7 @@ esp_err_t es7210_input_open( i2s_chan_handle_t *a_channel )
         return ESP_FAIL;
     }
 
-    const esp_codec_dev_cfg_t device_config = {
+    esp_codec_dev_cfg_t device_config = {
         .dev_type = ESP_CODEC_DEV_TYPE_IN,
         .codec_if = codec_if,
         .data_if = data_if,
