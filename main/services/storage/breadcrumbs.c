@@ -363,6 +363,12 @@ static void write_record( const breadcrumb_record_t *a_record )
         return;
     }
 
+    if( !enabled )
+    {
+        storage_io_release();
+        return;
+    }
+
     if( !ensure_directory_locked() )
     {
         storage_io_release();
