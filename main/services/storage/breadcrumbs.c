@@ -39,7 +39,7 @@
 #define BREADCRUMB_WORKER_POLL_MS 500U
 #define BREADCRUMB_FILENAME_LENGTH 15U
 #define BREADCRUMB_FILENAME_CAPACITY ( BREADCRUMB_FILENAME_LENGTH + 1U )
-#define BREADCRUMB_PATH_CAPACITY \
+#define BREADCRUMB_PATH_CAPACITY                                                                   \
     ( sizeof( BREADCRUMB_DIRECTORY ) + BREADCRUMB_FILENAME_LENGTH + 1U )
 
 typedef struct
@@ -147,9 +147,7 @@ static void copy_breadcrumb_filename( char *a_destination, const char *a_source 
     memcpy( a_destination, a_source, BREADCRUMB_FILENAME_CAPACITY );
 }
 
-static bool breadcrumb_path_from_filename( const char *a_filename,
-                                           char *a_path,
-                                           size_t a_capacity )
+static bool breadcrumb_path_from_filename( const char *a_filename, char *a_path, size_t a_capacity )
 {
     const size_t directory_length = sizeof( BREADCRUMB_DIRECTORY ) - 1U;
     const size_t required = directory_length + 1U + BREADCRUMB_FILENAME_CAPACITY;
