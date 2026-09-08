@@ -713,9 +713,10 @@ void device_view_render( void )
         draw_row( UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT, item );
     }
 
-    const char *hint = editing ? "TURN CHANGE / CENTER DONE"
-                               : ( item_direct_toggle( selected_item ) ? "CENTER CYCLE"
-                                                                       : "TURN SELECT / CENTER ENTER" );
+    const char *hint = editing
+                           ? "TURN CHANGE / CENTER DONE"
+                           : ( item_direct_toggle( selected_item ) ? "CENTER CYCLE"
+                                                                   : "TURN SELECT / CENTER ENTER" );
     char footer[ 64 ];
     snprintf(
         footer, sizeof( footer ), "%u/%u  %s", (unsigned)( selected_item + 1U ), item_count, hint );
