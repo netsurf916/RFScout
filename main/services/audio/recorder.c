@@ -11,6 +11,7 @@
 #include "audio_output.h"
 #include "board.h"
 #include "device_time.h"
+#include "es7210_input.h"
 #include "storage.h"
 
 #include "driver/gpio.h"
@@ -66,8 +67,16 @@
 #define RECORDER_EXPECTED_BYTES_PER_SECOND                                                         \
     ( RFSCOUT_RECORDER_SAMPLE_RATE * RECORDER_CHANNELS * ( RECORDER_BITS_PER_SAMPLE / 8U ) )
 
+typedef enum
+{
+    RECORDER_INPUT_NONE = 0,
+    RECORDER_INPUT_PDM,
+    RECORDER_INPUT_ES7210,
+} recorder_input_t;
+
 static const char *TAG = "recorder";
 static i2s_chan_handle_t rx_channel;
+static recorder_input_t active_input;
 static TaskHandle_t record_task;
 static SemaphoreHandle_t record_done;
 static volatile bool record_running;
@@ -222,14 +231,20 @@ static esp_err_t ensure_directory( void )
 
 static void release_channel( void )
 {
-    if( NULL == rx_channel )
+    if( RECORDER_INPUT_ES7210 == active_input )
     {
+        es7210_input_close();
+        rx_channel = NULL;
+        active_input = RECORDER_INPUT_NONE;
         return;
     }
-
-    (void)i2s_channel_disable( rx_channel );
-    (void)i2s_del_channel( rx_channel );
-    rx_channel = NULL;
+    if( NULL != rx_channel )
+    {
+        (void)i2s_channel_disable( rx_channel );
+        (void)i2s_del_channel( rx_channel );
+        rx_channel = NULL;
+    }
+    active_input = RECORDER_INPUT_NONE;
 }
 
 static uint32_t measure_pdm_clock_hz( void )
@@ -385,7 +400,7 @@ static void log_pcm_snapshot( const char *a_label, const int16_t *a_samples, siz
     ESP_LOGI( TAG, "%s", line );
 }
 
-static esp_err_t open_microphone( void )
+static esp_err_t open_pdm_microphone( void )
 {
     i2s_chan_config_t channel_config = I2S_CHANNEL_DEFAULT_CONFIG( I2S_NUM_0, I2S_ROLE_MASTER );
     channel_config.dma_desc_num = RECORDER_DMA_BUFFER_COUNT;
@@ -439,6 +454,7 @@ static esp_err_t open_microphone( void )
     }
     else
     {
+        active_input = RECORDER_INPUT_PDM;
         ESP_LOGI( TAG,
                   "PDM configured: I2S0 clk=GPIO%d data=GPIO%d rate=%u bits=%u channels=%u "
                   "slot=LEFT HPF=on expected_pcm=%u B/s",
@@ -487,6 +503,24 @@ static esp_err_t open_microphone( void )
     return result;
 }
 
+static esp_err_t open_microphone( void )
+{
+    if( RFSCOUT_BOARD_HAS_PDM_MIC )
+    {
+        return open_pdm_microphone();
+    }
+    if( RFSCOUT_BOARD_HAS_ES7210_MIC )
+    {
+        const esp_err_t result = es7210_input_open( &rx_channel );
+        if( ESP_OK == result )
+        {
+            active_input = RECORDER_INPUT_ES7210;
+        }
+        return result;
+    }
+    return ESP_ERR_NOT_SUPPORTED;
+}
+
 esp_err_t recorder_probe_microphone( void )
 {
     if( NULL != rx_channel || NULL != record_task || NULL != monitor_task )
@@ -495,21 +529,26 @@ esp_err_t recorder_probe_microphone( void )
     }
 
     esp_err_t result = open_microphone();
-    uint32_t edges = 0U;
-    if( ESP_OK == result )
-    {
-        (void)gpio_set_pull_mode( RFSCOUT_BOARD_MIC_DATA_PIN, GPIO_PULLDOWN_ONLY );
-        vTaskDelay( pdMS_TO_TICKS( RECORDER_MIC_WAKEUP_MS ) );
-        edges = measure_pdm_data_edges();
-        release_channel();
-    }
-    (void)gpio_set_pull_mode( RFSCOUT_BOARD_MIC_DATA_PIN, GPIO_FLOATING );
-
     if( ESP_OK != result )
     {
         ESP_LOGW( TAG, "microphone probe setup failed: %s", esp_err_to_name( result ) );
         return result;
     }
+
+    if( RECORDER_INPUT_ES7210 == active_input )
+    {
+        release_channel();
+        ESP_LOGI( TAG, "ES7210 microphone detected" );
+        return ESP_OK;
+    }
+
+    uint32_t edges = 0U;
+    (void)gpio_set_pull_mode( RFSCOUT_BOARD_MIC_DATA_PIN, GPIO_PULLDOWN_ONLY );
+    vTaskDelay( pdMS_TO_TICKS( RECORDER_MIC_WAKEUP_MS ) );
+    edges = measure_pdm_data_edges();
+    release_channel();
+    (void)gpio_set_pull_mode( RFSCOUT_BOARD_MIC_DATA_PIN, GPIO_FLOATING );
+
     if( edges < RECORDER_MIC_PROBE_MIN_EDGES )
     {
         ESP_LOGI( TAG,
@@ -773,7 +812,7 @@ static void record_worker( void *a_argument )
     unsigned timeout_streak = 0U;
 
     ESP_LOGI( TAG,
-              "microphone wake-up: discarding first %u ms after PDM clock start",
+              "microphone wake-up: discarding first %u ms after capture start",
               RECORDER_MIC_WAKEUP_MS );
     const int64_t wakeup_until_us = esp_timer_get_time() + (int64_t)RECORDER_MIC_WAKEUP_MS * 1000LL;
     while( record_running && esp_timer_get_time() < wakeup_until_us )
@@ -808,7 +847,7 @@ static void record_worker( void *a_argument )
             ++timeout_streak;
             if( 10U == timeout_streak )
             {
-                ESP_LOGW( TAG, "PDM input timed out 10 consecutive reads" );
+                ESP_LOGW( TAG, "microphone input timed out 10 consecutive reads" );
             }
             continue;
         }
@@ -915,7 +954,7 @@ static void record_worker( void *a_argument )
                                                             100ULL / diagnostic_sample_count )
                                               : 0U;
             ESP_LOGI( TAG,
-                      "PDM diag: elapsed=%ums reads=%uB/s pcm=%uB/s expected=%uB/s samples=%u "
+                      "input diag: elapsed=%ums reads=%uB/s pcm=%uB/s expected=%uB/s samples=%u "
                       "zero=%u%% min=%d max=%d level=%u%% peak=%u%%",
                       (unsigned)elapsed_ms,
                       (unsigned)input_rate,
@@ -937,7 +976,7 @@ static void record_worker( void *a_argument )
         }
     }
 
-    if( recording_started_us > 0 )
+    if( RECORDER_INPUT_PDM == active_input && recording_started_us > 0 )
     {
         const int64_t total_us = esp_timer_get_time() - recording_started_us;
         if( total_us > 0 )
@@ -1609,6 +1648,10 @@ uint8_t recorder_peak_percent( void )
 
 const char *recorder_input_slot_name( void )
 {
+    if( RECORDER_INPUT_ES7210 == active_input )
+    {
+        return "MIC1";
+    }
     if( active_pdm_slot < 0 )
     {
         return "AUTO";

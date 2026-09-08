@@ -78,9 +78,8 @@ static bool profile_supports_services( uint32_t a_services )
     {
         return false;
     }
-    /* The current audio-capture provider is the T-Embed PDM path. T-Deck Plus audio will become
-       eligible when its ES7210 provider is added behind this same service capability. */
-    if( ( 0U != ( a_services & RFSCOUT_APP_SERVICE_AUDIO_CAPTURE ) ) && !RFSCOUT_BOARD_HAS_PDM_MIC )
+    if( ( 0U != ( a_services & RFSCOUT_APP_SERVICE_AUDIO_CAPTURE ) ) &&
+        !RFSCOUT_BOARD_HAS_PDM_MIC && !RFSCOUT_BOARD_HAS_ES7210_MIC )
     {
         return false;
     }

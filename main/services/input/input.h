@@ -15,6 +15,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define RFSCOUT_INPUT_LOCK_HOLD_US 2000000LL
+
 typedef enum
 {
     RFSCOUT_INPUT_NONE = 0,
@@ -43,6 +45,26 @@ void input_poll( void );
 bool input_activity_pending( void );
 void input_consume_wake( void );
 bool input_get( rfscout_input_event_t *a_event );
+
+/**
+ * @brief Temporarily suspend the physical primary Select source while hardware reuses its GPIO.
+ * @note Navigation inputs remain active. The matching resume call discards any button transition
+ *       that occurred while the GPIO was unavailable.
+ */
+void input_primary_select_suspend( void );
+
+/** @brief Restore the physical primary Select source after a temporary hardware conflict. */
+void input_primary_select_resume( void );
+
+/** @brief Return whether the physical primary Select source is currently usable. */
+bool input_primary_select_available( void );
+
+/** @brief Inject the normal semantic Select action through the existing input event path. */
+void input_inject_select( void );
+
+/** @brief Toggle the existing device-wide input lock from another authoritative input path. */
+void input_toggle_lock( void );
+
 /**
  * @brief Return whether device-wide user input is locked.
  * @details This is semantic policy, not provider state. All authoritative user-input paths must
