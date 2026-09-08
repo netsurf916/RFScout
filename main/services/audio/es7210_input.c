@@ -175,6 +175,11 @@ esp_err_t es7210_input_open( i2s_chan_handle_t *a_channel )
         .channel_mask = ES7210_INPUT_MIC_SELECTION,
         .sample_rate = RFSCOUT_RECORDER_SAMPLE_RATE,
     };
+
+    /* LILYGO documents GPIO0/trackball-center as unavailable while microphone capture is active.
+       Stop observing that GPIO before codec activation can begin driving the capture interface;
+       every failure path below closes the provider and restores Select. */
+    input_primary_select_suspend();
     if( ESP_CODEC_DEV_OK != esp_codec_dev_open( codec_dev, &sample_config ) ||
         ESP_CODEC_DEV_OK != esp_codec_dev_set_in_gain( codec_dev, ES7210_INPUT_GAIN_DB ) )
     {
@@ -182,7 +187,6 @@ esp_err_t es7210_input_open( i2s_chan_handle_t *a_channel )
         return ESP_FAIL;
     }
 
-    input_primary_select_suspend();
     *a_channel = rx_channel;
     ESP_LOGI( TAG,
               "ES7210 configured: I2S0 TDM4 MIC1 mclk=GPIO%d bclk=GPIO%d lrclk=GPIO%d data=GPIO%d "
