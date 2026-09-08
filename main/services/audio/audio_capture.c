@@ -33,6 +33,19 @@ static i2s_chan_handle_t pdm_channel;
 static rfscout_audio_capture_provider_t active_provider;
 static uint32_t measured_pdm_clock_hz;
 
+static rfscout_audio_capture_provider_t selected_provider( void )
+{
+    if( RFSCOUT_BOARD_HAS_PDM_MIC )
+    {
+        return RFSCOUT_AUDIO_CAPTURE_PROVIDER_PDM;
+    }
+    if( RFSCOUT_BOARD_HAS_ES7210_MIC )
+    {
+        return RFSCOUT_AUDIO_CAPTURE_PROVIDER_ES7210;
+    }
+    return RFSCOUT_AUDIO_CAPTURE_PROVIDER_NONE;
+}
+
 static uint32_t measure_pdm_clock_hz( void )
 {
     pcnt_unit_handle_t unit = NULL;
@@ -248,7 +261,7 @@ static esp_err_t open_pdm( void )
 
 bool audio_capture_supported( void )
 {
-    return RFSCOUT_BOARD_HAS_PDM_MIC || RFSCOUT_BOARD_HAS_ES7210_MIC;
+    return RFSCOUT_AUDIO_CAPTURE_PROVIDER_NONE != selected_provider();
 }
 
 esp_err_t audio_capture_probe( void )
@@ -257,11 +270,13 @@ esp_err_t audio_capture_probe( void )
     {
         return ESP_ERR_INVALID_STATE;
     }
-    if( RFSCOUT_BOARD_HAS_ES7210_MIC )
+
+    const rfscout_audio_capture_provider_t provider = selected_provider();
+    if( RFSCOUT_AUDIO_CAPTURE_PROVIDER_ES7210 == provider )
     {
         return es7210_input_probe();
     }
-    if( !RFSCOUT_BOARD_HAS_PDM_MIC )
+    if( RFSCOUT_AUDIO_CAPTURE_PROVIDER_PDM != provider )
     {
         return ESP_ERR_NOT_SUPPORTED;
     }
@@ -298,22 +313,15 @@ esp_err_t audio_capture_open( rfscout_audio_capture_format_t *a_format )
         return ESP_ERR_INVALID_STATE;
     }
 
+    const rfscout_audio_capture_provider_t provider = selected_provider();
     esp_err_t result;
-    if( RFSCOUT_BOARD_HAS_PDM_MIC )
+    if( RFSCOUT_AUDIO_CAPTURE_PROVIDER_PDM == provider )
     {
         result = open_pdm();
-        if( ESP_OK == result )
-        {
-            active_provider = RFSCOUT_AUDIO_CAPTURE_PROVIDER_PDM;
-        }
     }
-    else if( RFSCOUT_BOARD_HAS_ES7210_MIC )
+    else if( RFSCOUT_AUDIO_CAPTURE_PROVIDER_ES7210 == provider )
     {
         result = es7210_input_open();
-        if( ESP_OK == result )
-        {
-            active_provider = RFSCOUT_AUDIO_CAPTURE_PROVIDER_ES7210;
-        }
     }
     else
     {
@@ -325,6 +333,7 @@ esp_err_t audio_capture_open( rfscout_audio_capture_format_t *a_format )
         audio_capture_close();
         return result;
     }
+    active_provider = provider;
     if( NULL != a_format )
     {
         a_format->sample_rate_hz = RFSCOUT_AUDIO_CAPTURE_SAMPLE_RATE;
