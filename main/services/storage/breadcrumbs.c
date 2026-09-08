@@ -112,6 +112,11 @@ static void load_settings( void )
 
 static bool ensure_directory_locked( void )
 {
+    if( 0 != mkdir( RFSCOUT_STORAGE_LOG_DIRECTORY, 0775 ) && EEXIST != errno )
+    {
+        ESP_LOGE( TAG, "log directory creation failed: errno=%d", errno );
+        return false;
+    }
     if( 0 == mkdir( BREADCRUMB_DIRECTORY, 0775 ) || EEXIST == errno )
     {
         return true;
