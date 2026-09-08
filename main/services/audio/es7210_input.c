@@ -112,7 +112,7 @@ esp_err_t es7210_input_open( i2s_chan_handle_t *a_channel )
     };
     i2s_config.clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_256;
     i2s_config.slot_cfg.total_slot = ES7210_INPUT_TDM_SLOTS;
-    i2s_config.slot_cfg.skip_msk = true;
+    i2s_config.slot_cfg.skip_mask = true;
     result = i2s_channel_init_tdm_mode( rx_channel, &i2s_config );
     if( ESP_OK != result )
     {
