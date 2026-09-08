@@ -30,19 +30,16 @@ static bool codec_enabled;
 
 static void release_codec( void )
 {
+    codec_enabled = false;
     if( NULL != codec_if )
     {
-        if( NULL != codec_if->close )
-        {
-            /* The ES7210 close operation disables an enabled codec before marking it closed. */
-            (void)codec_if->close( codec_if );
-        }
-        codec_enabled = false;
+        /* The Espressif delete helper closes the codec, including ADC disable, before freeing it. */
         (void)audio_codec_delete_codec_if( codec_if );
         codec_if = NULL;
     }
     if( NULL != ctrl_if )
     {
+        /* Deleting the control interface closes/removes its device from the shared I2C bus. */
         (void)audio_codec_delete_ctrl_if( ctrl_if );
         ctrl_if = NULL;
     }
@@ -146,7 +143,7 @@ esp_err_t es7210_input_open( void )
         .mclk_div = I2S_MCLK_MULTIPLE_256,
     };
     /* es7210_codec_new() opens the codec before returning; RFScout owns only subsequent format,
-       gain, enable, and close transitions. */
+       gain, enable, and delete/close transitions. */
     codec_if = es7210_codec_new( &codec_config );
     if( NULL == codec_if || NULL == codec_if->set_fs || NULL == codec_if->set_mic_gain ||
         NULL == codec_if->enable || NULL == codec_if->close )
