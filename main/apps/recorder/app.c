@@ -7,7 +7,6 @@
 #include "app_descriptor.h"
 
 #include "app_framework.h"
-#include "board.h"
 #include "device_config.h"
 #include "event.h"
 #include "recorder.h"
@@ -49,13 +48,6 @@ static esp_err_t probe_recorder( void )
     if( !storage_is_available() || ( ESP_OK != storage_probe_card() ) )
     {
         return ESP_ERR_NOT_FOUND;
-    }
-    /* ES7210 is fixed onboard hardware selected by the immutable T-Deck profile. Avoid opening
-       the codec merely for periodic availability checks because doing so temporarily claims the
-       GPIO0/center-button conflict. Real capture open still validates the codec at operation time. */
-    if( RFSCOUT_BOARD_HAS_ES7210_MIC )
-    {
-        return ESP_OK;
     }
     if( !microphone_probed )
     {
