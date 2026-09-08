@@ -26,6 +26,15 @@
 
 static bool touch_pressed;
 
+static bool point_in_view( const rfscout_touch_sample_t *a_sample, const rfscout_view_t *a_view )
+{
+    return NULL != a_sample && NULL != a_view && 0U != a_view->width && 0U != a_view->height &&
+           a_sample->x >= (uint16_t)a_view->x &&
+           a_sample->x < (uint16_t)( a_view->x + (int)a_view->width ) &&
+           a_sample->y >= (uint16_t)a_view->y &&
+           a_sample->y < (uint16_t)( a_view->y + (int)a_view->height );
+}
+
 static bool app_visible( rfscout_app_id_t a_app )
 {
     if( RFSCOUT_APP_DEVICE == a_app )
@@ -106,8 +115,7 @@ void navigation_bar_poll( void )
 
     /* Input lock is a device-wide user-input policy, not a property of the trackball/rotary
        provider. Latch the current finger state while locked so unlocking cannot turn a held
-       touch into an app-switch action. Future app-level pointer dispatch must honor the same
-       policy before delivering touch to an application. */
+       touch into an action. */
     if( input_locked() )
     {
         touch_pressed = sample.pressed;
@@ -124,6 +132,18 @@ void navigation_bar_poll( void )
         return;
     }
     touch_pressed = true;
+
+    /* App-content touch is translated into the existing semantic Select action rather than
+       giving applications a second pointer-specific control model. This also preserves an
+       authoritative Select path on boards whose physical Select GPIO is temporarily owned by a
+       peripheral, such as T-Deck ES7210 capture. Future keyboard providers can feed the same
+       semantic input service independently. */
+    const rfscout_view_t *app_view = display_app_view();
+    if( point_in_view( &sample, app_view ) )
+    {
+        input_inject_select();
+        return;
+    }
 
     const rfscout_view_t view = display_navigation_view();
     if( ( 0U == view.width ) || ( 0U == view.height ) )
