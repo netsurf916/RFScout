@@ -7,16 +7,12 @@
 
 #include "recorder.h"
 
+#include "audio_capture.h"
 #include "audio_filter.h"
 #include "audio_output.h"
-#include "board.h"
 #include "device_time.h"
-#include "es7210_input.h"
 #include "storage.h"
 
-#include "driver/gpio.h"
-#include "driver/i2s_pdm.h"
-#include "driver/pulse_cnt.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -33,25 +29,17 @@
 #include <time.h>
 #include <unistd.h>
 
-#define RECORDER_DMA_BUFFER_COUNT 8U
-#define RECORDER_DMA_BUFFER_LENGTH 256U
 #define RECORDER_DMA_READ_SAMPLES 512U
 #define RECORDER_TASK_STACK 6144U
 #define RECORDER_TASK_PRIORITY 4U
 #define RECORDER_WAV_HEADER_SIZE 44U
-#define RECORDER_CHANNELS 1U
-#define RECORDER_BITS_PER_SAMPLE 16U
+#define RECORDER_CHANNELS RFSCOUT_AUDIO_CAPTURE_CHANNELS
+#define RECORDER_BITS_PER_SAMPLE RFSCOUT_AUDIO_CAPTURE_BITS_PER_SAMPLE
 #define RECORDER_STOP_TIMEOUT_MS 3000U
 #define RECORDER_UNIQUE_SUFFIX_LIMIT 100U
 #define RECORDER_MIC_WAKEUP_MS 20U
 #define RECORDER_DIAGNOSTIC_INTERVAL_US 1000000LL
-#define RECORDER_CLOCK_MEASURE_MS 10U
-#define RECORDER_MIC_PROBE_MS 5U
-#define RECORDER_MIC_PROBE_MIN_EDGES 32U
 #define RECORDER_SIGNAL_SNAPSHOT_THRESHOLD 4000U
-#define RECORDER_MIC_PDM_CLOCK_MIN_HZ 1000000U
-#define RECORDER_MIC_PDM_CLOCK_MAX_HZ 3250000U
-#define RECORDER_CLOCK_DERIVATION_MAX_REQUEST_HZ 96000U
 #define RECORDER_NORMALIZE_TARGET_AVERAGE 5000U
 #define RECORDER_NORMALIZE_MAX_GAIN_Q10 ( 16U * 1024U )
 #define RECORDER_NORMALIZE_MIN_SIGNAL 32U
@@ -67,16 +55,7 @@
 #define RECORDER_EXPECTED_BYTES_PER_SECOND                                                         \
     ( RFSCOUT_RECORDER_SAMPLE_RATE * RECORDER_CHANNELS * ( RECORDER_BITS_PER_SAMPLE / 8U ) )
 
-typedef enum
-{
-    RECORDER_INPUT_NONE = 0,
-    RECORDER_INPUT_PDM,
-    RECORDER_INPUT_ES7210,
-} recorder_input_t;
-
 static const char *TAG = "recorder";
-static i2s_chan_handle_t rx_channel;
-static recorder_input_t active_input;
 static TaskHandle_t record_task;
 static SemaphoreHandle_t record_done;
 static volatile bool record_running;
@@ -88,7 +67,6 @@ static rfscout_recording_t recordings[ RFSCOUT_RECORDER_MAX_FILES ];
 static size_t recording_count;
 static volatile uint8_t live_level_percent;
 static volatile uint8_t live_peak_percent;
-static volatile int active_pdm_slot = 1;
 static int64_t recording_started_us;
 static int64_t diagnostic_started_us;
 static uint32_t diagnostic_input_bytes;
@@ -100,7 +78,6 @@ static int16_t diagnostic_max_sample;
 static int64_t playback_started_us;
 static bool diagnostic_initial_snapshot_logged;
 static bool diagnostic_signal_snapshot_logged;
-static uint32_t measured_pdm_clock_hz;
 static uint32_t recording_wav_sample_rate = 12800U;
 static TaskHandle_t monitor_task;
 static volatile bool monitor_running;
@@ -232,150 +209,7 @@ static esp_err_t ensure_directory( void )
 
 static void release_channel( void )
 {
-    if( RECORDER_INPUT_ES7210 == active_input )
-    {
-        es7210_input_close();
-        rx_channel = NULL;
-        active_input = RECORDER_INPUT_NONE;
-        return;
-    }
-    if( NULL != rx_channel )
-    {
-        (void)i2s_channel_disable( rx_channel );
-        (void)i2s_del_channel( rx_channel );
-        rx_channel = NULL;
-    }
-    active_input = RECORDER_INPUT_NONE;
-}
-
-static uint32_t measure_pdm_clock_hz( void )
-{
-    pcnt_unit_handle_t unit = NULL;
-    pcnt_channel_handle_t channel = NULL;
-    const pcnt_unit_config_t unit_config = { .low_limit = -1, .high_limit = 30000 };
-    esp_err_t result = pcnt_new_unit( &unit_config, &unit );
-    if( ESP_OK != result )
-    {
-        ESP_LOGW(
-            TAG, "PDM clock measurement unavailable: pcnt unit: %s", esp_err_to_name( result ) );
-        return 0U;
-    }
-
-    const pcnt_chan_config_t channel_config = {
-        .edge_gpio_num = RFSCOUT_BOARD_MIC_CLOCK_PIN,
-        .level_gpio_num = -1,
-        .flags = { .virt_level_io_level = 1 },
-    };
-    result = pcnt_new_channel( unit, &channel_config, &channel );
-    if( ESP_OK == result )
-    {
-        result = pcnt_channel_set_edge_action(
-            channel, PCNT_CHANNEL_EDGE_ACTION_INCREASE, PCNT_CHANNEL_EDGE_ACTION_HOLD );
-    }
-    if( ESP_OK == result )
-    {
-        result = pcnt_unit_enable( unit );
-    }
-    if( ESP_OK == result )
-    {
-        (void)pcnt_unit_clear_count( unit );
-        result = pcnt_unit_start( unit );
-    }
-
-    int count = 0;
-    if( ESP_OK == result )
-    {
-        vTaskDelay( pdMS_TO_TICKS( RECORDER_CLOCK_MEASURE_MS ) );
-        (void)pcnt_unit_stop( unit );
-        result = pcnt_unit_get_count( unit, &count );
-    }
-
-    if( ESP_OK == result )
-    {
-        const uint32_t measured_hz =
-            (uint32_t)( (uint64_t)( count > 0 ? count : 0 ) * 1000ULL / RECORDER_CLOCK_MEASURE_MS );
-        ESP_LOGI( TAG,
-                  "PDM clock measured: gpio=%d edges=%d window=%ums frequency=%u Hz",
-                  RFSCOUT_BOARD_MIC_CLOCK_PIN,
-                  count,
-                  RECORDER_CLOCK_MEASURE_MS,
-                  (unsigned)measured_hz );
-        measured_pdm_clock_hz = measured_hz;
-    }
-    else
-    {
-        ESP_LOGW( TAG, "PDM clock measurement failed: %s", esp_err_to_name( result ) );
-    }
-
-    if( NULL != unit )
-    {
-        (void)pcnt_unit_disable( unit );
-    }
-    if( NULL != channel )
-    {
-        (void)pcnt_del_channel( channel );
-    }
-    if( NULL != unit )
-    {
-        (void)pcnt_del_unit( unit );
-    }
-    return ESP_OK == result ? measured_pdm_clock_hz : 0U;
-}
-
-static uint32_t measure_pdm_data_edges( void )
-{
-    pcnt_unit_handle_t unit = NULL;
-    pcnt_channel_handle_t channel = NULL;
-    const pcnt_unit_config_t unit_config = { .low_limit = -1, .high_limit = 30000 };
-    esp_err_t result = pcnt_new_unit( &unit_config, &unit );
-    if( ESP_OK != result )
-    {
-        return 0U;
-    }
-
-    const pcnt_chan_config_t channel_config = {
-        .edge_gpio_num = RFSCOUT_BOARD_MIC_DATA_PIN,
-        .level_gpio_num = -1,
-        .flags = { .virt_level_io_level = 1 },
-    };
-    result = pcnt_new_channel( unit, &channel_config, &channel );
-    if( ESP_OK == result )
-    {
-        result = pcnt_channel_set_edge_action(
-            channel, PCNT_CHANNEL_EDGE_ACTION_INCREASE, PCNT_CHANNEL_EDGE_ACTION_HOLD );
-    }
-    if( ESP_OK == result )
-    {
-        result = pcnt_unit_enable( unit );
-    }
-    if( ESP_OK == result )
-    {
-        (void)pcnt_unit_clear_count( unit );
-        result = pcnt_unit_start( unit );
-    }
-
-    int count = 0;
-    if( ESP_OK == result )
-    {
-        const TickType_t requested_ticks = pdMS_TO_TICKS( RECORDER_MIC_PROBE_MS );
-        vTaskDelay( requested_ticks > 0U ? requested_ticks : 1U );
-        (void)pcnt_unit_stop( unit );
-        result = pcnt_unit_get_count( unit, &count );
-    }
-
-    if( NULL != unit )
-    {
-        (void)pcnt_unit_disable( unit );
-    }
-    if( NULL != channel )
-    {
-        (void)pcnt_del_channel( channel );
-    }
-    if( NULL != unit )
-    {
-        (void)pcnt_del_unit( unit );
-    }
-    return ESP_OK == result && count > 0 ? (uint32_t)count : 0U;
+    audio_capture_close();
 }
 
 static void log_pcm_snapshot( const char *a_label, const int16_t *a_samples, size_t a_count )
@@ -401,169 +235,18 @@ static void log_pcm_snapshot( const char *a_label, const int16_t *a_samples, siz
     ESP_LOGI( TAG, "%s", line );
 }
 
-static esp_err_t open_pdm_microphone( void )
-{
-    i2s_chan_config_t channel_config = I2S_CHANNEL_DEFAULT_CONFIG( I2S_NUM_0, I2S_ROLE_MASTER );
-    channel_config.dma_desc_num = RECORDER_DMA_BUFFER_COUNT;
-    channel_config.dma_frame_num = RECORDER_DMA_BUFFER_LENGTH;
-
-    esp_err_t result = i2s_new_channel( &channel_config, NULL, &rx_channel );
-    if( ESP_OK != result )
-    {
-        rx_channel = NULL;
-        return result;
-    }
-
-    i2s_pdm_rx_config_t pdm_config = {
-        .clk_cfg = I2S_PDM_RX_CLK_DEFAULT_CONFIG( RFSCOUT_RECORDER_SAMPLE_RATE ),
-        .slot_cfg =
-            I2S_PDM_RX_SLOT_PCM_FMT_DEFAULT_CONFIG( I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO ),
-        .gpio_cfg = { .clk = (gpio_num_t)RFSCOUT_BOARD_MIC_CLOCK_PIN,
-                      .din = (gpio_num_t)RFSCOUT_BOARD_MIC_DATA_PIN,
-                      .invert_flags = { .clk_inv = false } } };
-
-#if CONFIG_IDF_TARGET_ESP32S3
-    /* The board microphone SELECT input is pulled low, so capture its LEFT PDM slot directly. */
-    pdm_config.slot_cfg.slot_mode = I2S_SLOT_MODE_MONO;
-    pdm_config.slot_cfg.slot_mask = I2S_PDM_SLOT_LEFT;
-#endif
-
-#if SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER
-    pdm_config.slot_cfg.hp_en = true;
-#endif
-
-    ESP_LOGI( TAG,
-              "PDM request: pcm=%u Hz clk_src=%d mclk_multiple=%d dn_sample=%d bclk_div=%u "
-              "target_pdm=%u Hz dma_desc=%u dma_frames=%u",
-              (unsigned)pdm_config.clk_cfg.sample_rate_hz,
-              (int)pdm_config.clk_cfg.clk_src,
-              (int)pdm_config.clk_cfg.mclk_multiple,
-              (int)pdm_config.clk_cfg.dn_sample_mode,
-              (unsigned)pdm_config.clk_cfg.bclk_div,
-              (unsigned)( pdm_config.clk_cfg.sample_rate_hz * 64U ),
-              (unsigned)channel_config.dma_desc_num,
-              (unsigned)channel_config.dma_frame_num );
-
-    result = i2s_channel_init_pdm_rx_mode( rx_channel, &pdm_config );
-    if( ESP_OK == result )
-    {
-        result = i2s_channel_enable( rx_channel );
-    }
-    if( ESP_OK != result )
-    {
-        release_channel();
-    }
-    else
-    {
-        active_input = RECORDER_INPUT_PDM;
-        ESP_LOGI( TAG,
-                  "PDM configured: I2S0 clk=GPIO%d data=GPIO%d rate=%u bits=%u channels=%u "
-                  "slot=LEFT HPF=on expected_pcm=%u B/s",
-                  RFSCOUT_BOARD_MIC_CLOCK_PIN,
-                  RFSCOUT_BOARD_MIC_DATA_PIN,
-                  RFSCOUT_RECORDER_SAMPLE_RATE,
-                  RECORDER_BITS_PER_SAMPLE,
-                  RECORDER_CHANNELS,
-                  (unsigned)RECORDER_EXPECTED_BYTES_PER_SECOND );
-        measured_pdm_clock_hz = measure_pdm_clock_hz();
-        if( measured_pdm_clock_hz > 0U )
-        {
-            const uint32_t expected_pdm_hz = pdm_config.clk_cfg.sample_rate_hz * 64U;
-            const uint32_t clock_ratio_permille =
-                expected_pdm_hz > 0U
-                    ? (uint32_t)( (uint64_t)measured_pdm_clock_hz * 1000ULL / expected_pdm_hz )
-                    : 0U;
-            uint32_t derived_request_hz =
-                (uint32_t)( (uint64_t)pdm_config.clk_cfg.sample_rate_hz *
-                            RFSCOUT_RECORDER_TARGET_PDM_CLOCK_HZ / measured_pdm_clock_hz );
-            if( derived_request_hz > RECORDER_CLOCK_DERIVATION_MAX_REQUEST_HZ )
-            {
-                derived_request_hz = RECORDER_CLOCK_DERIVATION_MAX_REQUEST_HZ;
-            }
-            ESP_LOGI( TAG,
-                      "PDM calibration: requested_pcm=%u expected_clk=%u measured_clk=%u "
-                      "clock_ratio=%u.%u%% target_clk=%u derived_request=%u",
-                      (unsigned)pdm_config.clk_cfg.sample_rate_hz,
-                      (unsigned)expected_pdm_hz,
-                      (unsigned)measured_pdm_clock_hz,
-                      (unsigned)( clock_ratio_permille / 10U ),
-                      (unsigned)( clock_ratio_permille % 10U ),
-                      (unsigned)RFSCOUT_RECORDER_TARGET_PDM_CLOCK_HZ,
-                      (unsigned)derived_request_hz );
-            if( measured_pdm_clock_hz < RECORDER_MIC_PDM_CLOCK_MIN_HZ ||
-                measured_pdm_clock_hz > RECORDER_MIC_PDM_CLOCK_MAX_HZ )
-            {
-                ESP_LOGW( TAG,
-                          "PDM clock outside microphone range: measured=%u valid=%u..%u Hz",
-                          (unsigned)measured_pdm_clock_hz,
-                          (unsigned)RECORDER_MIC_PDM_CLOCK_MIN_HZ,
-                          (unsigned)RECORDER_MIC_PDM_CLOCK_MAX_HZ );
-            }
-        }
-    }
-    return result;
-}
-
 static esp_err_t open_microphone( void )
 {
-    if( RFSCOUT_BOARD_HAS_PDM_MIC )
-    {
-        return open_pdm_microphone();
-    }
-    if( RFSCOUT_BOARD_HAS_ES7210_MIC )
-    {
-        const esp_err_t result = es7210_input_open( &rx_channel );
-        if( ESP_OK == result )
-        {
-            active_input = RECORDER_INPUT_ES7210;
-        }
-        return result;
-    }
-    return ESP_ERR_NOT_SUPPORTED;
+    return audio_capture_open( NULL );
 }
 
 esp_err_t recorder_probe_microphone( void )
 {
-    if( NULL != rx_channel || NULL != record_task || NULL != monitor_task )
+    if( NULL != record_task || NULL != monitor_task || audio_capture_is_open() )
     {
         return ESP_ERR_INVALID_STATE;
     }
-
-    esp_err_t result = open_microphone();
-    if( ESP_OK != result )
-    {
-        ESP_LOGW( TAG, "microphone probe setup failed: %s", esp_err_to_name( result ) );
-        return result;
-    }
-
-    if( RECORDER_INPUT_ES7210 == active_input )
-    {
-        release_channel();
-        ESP_LOGI( TAG, "ES7210 microphone detected" );
-        return ESP_OK;
-    }
-
-    uint32_t edges = 0U;
-    (void)gpio_set_pull_mode( RFSCOUT_BOARD_MIC_DATA_PIN, GPIO_PULLDOWN_ONLY );
-    vTaskDelay( pdMS_TO_TICKS( RECORDER_MIC_WAKEUP_MS ) );
-    edges = measure_pdm_data_edges();
-    release_channel();
-    (void)gpio_set_pull_mode( RFSCOUT_BOARD_MIC_DATA_PIN, GPIO_FLOATING );
-
-    if( edges < RECORDER_MIC_PROBE_MIN_EDGES )
-    {
-        ESP_LOGI( TAG,
-                  "microphone probe: data_edges=%u/%ums; not detected",
-                  (unsigned)edges,
-                  (unsigned)RECORDER_MIC_PROBE_MS );
-        return ESP_ERR_NOT_FOUND;
-    }
-
-    ESP_LOGI( TAG,
-              "microphone probe: data_edges=%u/%ums; detected",
-              (unsigned)edges,
-              (unsigned)RECORDER_MIC_PROBE_MS );
-    return ESP_OK;
+    return audio_capture_probe();
 }
 
 static void make_recording_name( char *a_name, size_t a_capacity )
@@ -819,8 +502,8 @@ static void record_worker( void *a_argument )
     while( record_running && esp_timer_get_time() < wakeup_until_us )
     {
         size_t discarded = 0U;
-        const esp_err_t result = i2s_channel_read(
-            rx_channel, dma_samples, sizeof( dma_samples ), &discarded, pdMS_TO_TICKS( 20 ) );
+        const esp_err_t result =
+            audio_capture_read( dma_samples, sizeof( dma_samples ), &discarded, 20U );
         if( ESP_OK != result && ESP_ERR_TIMEOUT != result )
         {
             ESP_LOGW( TAG, "microphone wake-up read failed: %s", esp_err_to_name( result ) );
@@ -841,8 +524,8 @@ static void record_worker( void *a_argument )
     while( record_running && !failed )
     {
         size_t bytes = 0U;
-        const esp_err_t result = i2s_channel_read(
-            rx_channel, dma_samples, sizeof( dma_samples ), &bytes, pdMS_TO_TICKS( 100 ) );
+        const esp_err_t result =
+            audio_capture_read( dma_samples, sizeof( dma_samples ), &bytes, 100U );
         if( ESP_ERR_TIMEOUT == result )
         {
             ++timeout_streak;
@@ -977,7 +660,7 @@ static void record_worker( void *a_argument )
         }
     }
 
-    if( RECORDER_INPUT_PDM == active_input && recording_started_us > 0 )
+    if( RFSCOUT_AUDIO_CAPTURE_PROVIDER_PDM == audio_capture_provider() && recording_started_us > 0 )
     {
         const int64_t total_us = esp_timer_get_time() - recording_started_us;
         if( total_us > 0 )
@@ -1005,7 +688,7 @@ static void record_worker( void *a_argument )
                       "PDM calibration result: request=%u measured_clk=%u effective_pcm=%u "
                       "pcm_ratio=%u.%u%% derived_request_for_16k=%u",
                       (unsigned)RFSCOUT_RECORDER_SAMPLE_RATE,
-                      (unsigned)measured_pdm_clock_hz,
+                      (unsigned)audio_capture_pdm_clock_hz(),
                       (unsigned)effective_rate,
                       (unsigned)( pcm_ratio_permille / 10U ),
                       (unsigned)( pcm_ratio_permille % 10U ),
@@ -1199,8 +882,7 @@ static void monitor_worker( void *a_argument )
     while( monitor_running && esp_timer_get_time() < wakeup_until )
     {
         size_t discarded = 0U;
-        (void)i2s_channel_read(
-            rx_channel, samples, sizeof( samples ), &discarded, pdMS_TO_TICKS( 20 ) );
+        (void)audio_capture_read( samples, sizeof( samples ), &discarded, 20U );
     }
 
     int64_t rate_started_us = esp_timer_get_time();
@@ -1209,8 +891,7 @@ static void monitor_worker( void *a_argument )
     while( monitor_running )
     {
         size_t bytes = 0U;
-        const esp_err_t result = i2s_channel_read(
-            rx_channel, samples, sizeof( samples ), &bytes, pdMS_TO_TICKS( 100 ) );
+        const esp_err_t result = audio_capture_read( samples, sizeof( samples ), &bytes, 100U );
         if( ESP_ERR_TIMEOUT == result )
         {
             ++timeout_streak;
@@ -1472,11 +1153,9 @@ esp_err_t recorder_start_recording( void )
     data_bytes = 0U;
     live_level_percent = 0U;
     live_peak_percent = 0U;
-    active_pdm_slot = 1;
     recording_started_us = 0;
     diagnostic_initial_snapshot_logged = false;
     diagnostic_signal_snapshot_logged = false;
-    measured_pdm_clock_hz = 0U;
     recording_wav_sample_rate = RFSCOUT_RECORDER_SAMPLE_RATE;
     record_running = true;
     state = RFSCOUT_RECORDER_RECORDING;
@@ -1680,15 +1359,7 @@ uint8_t recorder_peak_percent( void )
 
 const char *recorder_input_slot_name( void )
 {
-    if( RECORDER_INPUT_ES7210 == active_input )
-    {
-        return "MIC1";
-    }
-    if( active_pdm_slot < 0 )
-    {
-        return "AUTO";
-    }
-    return ( 0 == active_pdm_slot ) ? "RIGHT" : "LEFT";
+    return audio_capture_input_name();
 }
 
 void recorder_set_playback_volume( uint8_t a_volume_percent )
