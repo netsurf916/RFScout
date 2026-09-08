@@ -24,9 +24,10 @@ Board-profile detection and ordinary device probing are intentionally separate s
 1. perform one minimal, passive I2C fingerprint using only the candidate profile wiring;
 2. select exactly one immutable runtime board profile;
 3. initialize only buses and pins legal for that profile;
-4. let normal service probes determine whether expected devices are actually responding.
+4. let normal service probes determine whether expected devices are actually responding; and
+5. let the provider's operational open validate that the advertised/present hardware can actually run.
 
-The temporary detection I2C bus is deleted before normal shared-I2C initialization.
+The temporary detection I2C bus is deleted before normal shared-I2C initialization. A provider probe never overrides the selected board profile: the profile decides what RFScout is allowed to touch, while the probe reports whether that legal hardware is present/healthy.
 
 If no supported profile is detected, RFScout does not initialize normal board GPIO, display, SD, radio, input, audio, location, or power providers. The ESP32-S3 remains awake in an inert FreeRTOS delay loop so recovery flashing remains possible.
 
@@ -44,7 +45,9 @@ The early discriminator uses SDA GPIO18 / SCL GPIO8 and probes the GT911 at `0x5
 
 Current T-Deck providers include trackball/center input, calibrated GT911 touch, SD, GPS/NMEA, internal-temperature telemetry, voltage-only battery telemetry, standard-I2S speaker output, and ES7210 microphone capture. Battery percentage is estimated from the GPIO4 ADC and a profile-owned 2:1 divider; external-power/charging state is intentionally unavailable because RFScout has no authoritative digital source for it.
 
-T-Deck GPIO0 is normally reserved for trackball-center/BOOT input and is not treated as an RFScout power key. The ES7210 capture path conflicts with that physical center source while the codec is active, so the input service suspends the GPIO0 Select source before codec activation and restores it when the provider closes. Calibrated touch in the managed app view feeds the same semantic Select event during that interval. The board exposes no RFScout sleep, deep-sleep, or physical power-off capability yet. Keyboard and SX1262 remain disabled even where reference pin metadata is known.
+ES7210 presence is probed non-invasively at its legal shared-I2C address; this presence check does not initialize I2S, start the ADC, or alter GPIO0. Operational capture setup is deferred until Recorder or Audio Spectrum actually opens `audio_capture`.
+
+T-Deck GPIO0 is normally reserved for trackball-center/BOOT input and is not treated as an RFScout power key. The ES7210 capture path conflicts with that physical center source while the codec is active, so the input service suspends the GPIO0 Select source before capture activation and restores it when the provider closes. Calibrated touch in the managed app view feeds the same semantic Select event only during that interval. The board exposes no RFScout sleep, deep-sleep, or physical power-off capability yet. Keyboard and SX1262 remain disabled even where reference pin metadata is known.
 
 Extended SD/shared-SPI stress behavior, GPS fix-loss behavior, ES7210 microphone/slot and sustained-capture behavior, GPIO0 handoff, and the final cross-board regression pass still require hardware validation before this profile should be treated as release-validated.
 
@@ -57,7 +60,7 @@ The `input` service exposes board-neutral semantic input:
 - back;
 - character input for future keyboard-capable providers.
 
-T-Embed uses the validated rotary/button provider. T-Deck normally uses trackball/center as its physical fallback. GT911 is a separate touch service: raw controller coordinates are transformed and calibrated into logical display coordinates. The system navigation layer consumes calibrated touches in the global tab region; a calibrated press in the managed application view is translated into the existing semantic Select event rather than exposing a pointer-specific application API. This keeps app behavior independent of whether Select originated from a button or touch and provides a usable Select while ES7210 temporarily conflicts with the physical center source.
+T-Embed uses the validated rotary/button provider. T-Deck normally uses trackball/center as its physical fallback. GT911 is a separate touch service: raw controller coordinates are transformed and calibrated into logical display coordinates. The system navigation layer consumes calibrated touches in the global tab region. Ordinary app-view touch is ignored; while another legal provider has suspended the physical primary Select source, a calibrated app-view press is translated into the existing semantic Select event. This keeps #79's GPIO0 workaround narrow and leaves full touch/keyboard application input for a separate abstraction.
 
 Keyboard support is not yet advertised as a T-Deck capability even though its reference I2C address/IRQ metadata is retained in the profile. A future keyboard provider should feed the same semantic input service rather than bypassing application input policy.
 
@@ -101,9 +104,15 @@ Before a terminal T-Embed sleep/power-off transition, RFScout persists dirty int
 
 Speaker output and microphone capture are separate semantic capabilities. The validated T-Embed I2S speaker and PDM microphone paths remain intact.
 
-T-Deck standard-I2S speaker output is an enabled, hardware-validated provider behind the semantic audio-output service. T-Deck ES7210 capture is an enabled audio-capture provider behind the same Recorder/Audio Spectrum service boundary used by T-Embed. Codec control uses the shared board I2C bus; I2S0 RX uses a four-slot Philips-format TDM frame and exposes the selected MIC1/slot-0 stream to the rest of RFScout as ordinary mono 16-bit PCM. The exact microphone/slot behavior remains subject to final hardware validation rather than being exposed as application-specific codec semantics.
+The board-neutral `audio_capture` service owns capture-provider selection, profile-legality checking, provider probing, operational open/read/close, and capture-transport lifetime. Recorder and Audio Spectrum consume normalized PCM through this service and never receive an `i2s_chan_handle_t`.
 
-The provider owns codec/I2S setup and teardown and the temporary GPIO0 Select conflict. Applications continue to depend only on semantic audio capture. Broader calibrated Audio Input generalization remains roadmap work and is not implied complete by adding this provider.
+T-Embed retains its existing PDM provider behind `audio_capture`; that provider owns I2S0/PDM setup, DMA, clock/data probing, reads, and teardown. The PDM probe is necessarily active because the microphone has no separate control-plane identity.
+
+T-Deck standard-I2S speaker output is an enabled, hardware-validated provider behind the separate semantic audio-output service. T-Deck ES7210 capture is an enabled provider behind `audio_capture`. The ES7210 provider uses the shared board I2C service for codec control and Espressif's maintained codec interface for register configuration, gain, ADC enable/disable, and close. RFScout alone owns I2S0/DMA: with MIC1 selected, the codec stays in ordinary Philips-I2S slave mode while the ESP32-S3 supplies MCLK/BCLK/LRCK and normalizes the selected LEFT slot to mono 16-bit PCM. The exact MIC1/LEFT hardware mapping remains subject to final validation.
+
+No other layer is allowed to reconfigure, enable, read, or close a provider's capture transport. This single-owner invariant prevents codec-control helpers and Recorder from competing over I2S state. The provider also owns the temporary GPIO0 Select conflict and restores the physical input source during every close/failure path.
+
+Broader calibrated Audio Input generalization remains roadmap work and is not implied complete by adding this provider.
 
 ## Shared buses
 
