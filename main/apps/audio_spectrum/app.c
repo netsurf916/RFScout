@@ -6,6 +6,7 @@
 
 #include "app_descriptor.h"
 
+#include "board.h"
 #include "recorder.h"
 #include "view.h"
 
@@ -21,7 +22,10 @@ static int64_t last_refresh_us;
 
 static esp_err_t probe_audio_spectrum( void )
 {
-    return recorder_probe_microphone();
+    /* ES7210 is fixed onboard hardware selected by the T-Deck profile. Avoid opening the codec
+       merely for availability probing because capture temporarily owns the GPIO0 Select conflict.
+       The actual monitor start still validates codec/I2S operation. */
+    return RFSCOUT_BOARD_HAS_ES7210_MIC ? ESP_OK : recorder_probe_microphone();
 }
 
 static void render( void )
