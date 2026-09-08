@@ -24,7 +24,7 @@ esp_err_t breadcrumbs_init( void );
 /** @brief Snapshot a fresh GPS fix for asynchronous breadcrumb recording when due. */
 void breadcrumbs_poll( void );
 
-/** @brief Return whether breadcrumb configuration is available to the user. */
+/** @brief Return whether the active runtime has usable GPS and SD providers for recording. */
 bool breadcrumbs_available( void );
 
 /** @brief Return whether breadcrumb recording is enabled. */
