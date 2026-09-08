@@ -389,6 +389,19 @@ bool audio_capture_is_open( void )
            es7210_input_is_open();
 }
 
+rfscout_audio_capture_provider_t audio_capture_provider( void )
+{
+    if( AUDIO_CAPTURE_PROVIDER_PDM == active_provider )
+    {
+        return RFSCOUT_AUDIO_CAPTURE_PROVIDER_PDM;
+    }
+    if( AUDIO_CAPTURE_PROVIDER_ES7210 == active_provider )
+    {
+        return RFSCOUT_AUDIO_CAPTURE_PROVIDER_ES7210;
+    }
+    return RFSCOUT_AUDIO_CAPTURE_PROVIDER_NONE;
+}
+
 const char *audio_capture_input_name( void )
 {
     if( AUDIO_CAPTURE_PROVIDER_ES7210 == active_provider )
@@ -400,4 +413,9 @@ const char *audio_capture_input_name( void )
         return "LEFT";
     }
     return "AUTO";
+}
+
+uint32_t audio_capture_pdm_clock_hz( void )
+{
+    return AUDIO_CAPTURE_PROVIDER_PDM == active_provider ? measured_pdm_clock_hz : 0U;
 }
