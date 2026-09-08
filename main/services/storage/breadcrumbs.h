@@ -24,7 +24,7 @@ esp_err_t breadcrumbs_init( void );
 /** @brief Snapshot a fresh GPS fix for asynchronous breadcrumb recording when due. */
 void breadcrumbs_poll( void );
 
-/** @brief Return whether the active runtime has usable GPS and SD providers for breadcrumbs. */
+/** @brief Return whether the active runtime has usable GPS and SD providers for recording. */
 bool breadcrumbs_available( void );
 
 /** @brief Return whether breadcrumb recording is enabled. */
@@ -38,5 +38,8 @@ uint16_t breadcrumbs_file_limit( void );
 
 /** @brief Persist a new retained breadcrumb file count and request asynchronous pruning. */
 esp_err_t breadcrumbs_set_file_limit( uint16_t a_file_limit );
+
+/** @brief Drain queued writes and stop the breadcrumb worker before terminal storage shutdown. */
+bool breadcrumbs_shutdown( uint32_t a_timeout_ms );
 
 #endif // _RFSCOUT_BREADCRUMBS_H_
