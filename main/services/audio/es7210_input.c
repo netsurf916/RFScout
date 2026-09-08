@@ -93,9 +93,9 @@ esp_err_t es7210_input_open( i2s_chan_handle_t *a_channel )
     }
 
     /* ES7210 emits Philips-format TDM frames even when only one microphone is enabled. Keep the
-       physical four-slot frame so BCLK/LRCK match the codec, but ask I2S RX to retain only slot 0
-       (MIC1). Recorder therefore continues to receive the same mono int16_t stream as the PDM
-       provider without acquiring codec-specific channel semantics. */
+       physical four-slot frame so BCLK/LRCK match the codec, select only slot 0 (MIC1), and ask
+       I2S RX to compact masked slots out of DMA. Recorder therefore receives a contiguous mono
+       int16_t stream rather than MIC1 samples interleaved with three unused physical slot words. */
     i2s_tdm_config_t i2s_config = {
         .clk_cfg = I2S_TDM_CLK_DEFAULT_CONFIG( RFSCOUT_RECORDER_SAMPLE_RATE ),
         .slot_cfg = I2S_TDM_PHILIPS_SLOT_DEFAULT_CONFIG(
@@ -112,6 +112,7 @@ esp_err_t es7210_input_open( i2s_chan_handle_t *a_channel )
     };
     i2s_config.clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_256;
     i2s_config.slot_cfg.total_slot = ES7210_INPUT_TDM_SLOTS;
+    i2s_config.slot_cfg.skip_msk = true;
     result = i2s_channel_init_tdm_mode( rx_channel, &i2s_config );
     if( ESP_OK != result )
     {
