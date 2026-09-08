@@ -313,6 +313,11 @@ esp_err_t audio_capture_probe( void )
     return ESP_OK;
 }
 
+bool audio_capture_primary_select_conflict( void )
+{
+    return AUDIO_CAPTURE_PROVIDER_ES7210 == selected_provider();
+}
+
 esp_err_t audio_capture_open( rfscout_audio_capture_format_t *a_format )
 {
     if( audio_capture_is_open() )
