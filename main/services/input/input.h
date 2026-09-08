@@ -56,6 +56,9 @@ void input_primary_select_suspend( void );
 /** @brief Restore the physical primary Select source after a temporary hardware conflict. */
 void input_primary_select_resume( void );
 
+/** @brief Return whether the physical primary Select source is currently usable. */
+bool input_primary_select_available( void );
+
 /**
  * @brief Submit a semantic Select from another authoritative input provider.
  * @details This follows the same device-wide input-lock policy as the physical Select source.
