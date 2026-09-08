@@ -110,8 +110,8 @@ esp_err_t es7210_input_open( void )
        software stream here so callers never need to know the physical stereo frame layout. */
     i2s_std_config_t i2s_config = {
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG( RFSCOUT_AUDIO_CAPTURE_SAMPLE_RATE ),
-        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(
-            I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO ),
+        .slot_cfg =
+            I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG( I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO ),
         .gpio_cfg =
             {
                 .mclk = (gpio_num_t)RFSCOUT_BOARD_ES7210_MCLK_PIN,
@@ -207,10 +207,8 @@ esp_err_t es7210_input_open( void )
     return ESP_OK;
 }
 
-esp_err_t es7210_input_read( void *a_buffer,
-                             size_t a_capacity,
-                             size_t *a_bytes_read,
-                             uint32_t a_timeout_ms )
+esp_err_t
+es7210_input_read( void *a_buffer, size_t a_capacity, size_t *a_bytes_read, uint32_t a_timeout_ms )
 {
     if( NULL == a_buffer || NULL == a_bytes_read || 0U == a_capacity )
     {
