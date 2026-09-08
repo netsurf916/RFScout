@@ -97,6 +97,19 @@ static rfscout_app_availability_t probe_descriptor( const rfscout_app_descriptor
         retain_availability( a_descriptor->id, RFSCOUT_APP_AVAILABILITY_UNAVAILABLE );
         return availability[ a_descriptor->id ];
     }
+
+    /* The ES7210 is fixed onboard hardware selected by the immutable T-Deck profile, not a
+       hot-pluggable peripheral. Opening it merely to refresh app availability would temporarily
+       claim the GPIO0/center-button conflict every polling interval. Treat profile support as
+       availability and let the real capture open report a runtime failure if the codec is not
+       usable. This keeps background availability checks side-effect free. */
+    if( ( 0U != ( a_descriptor->services & RFSCOUT_APP_SERVICE_AUDIO_CAPTURE ) ) &&
+        RFSCOUT_BOARD_HAS_ES7210_MIC )
+    {
+        retain_availability( a_descriptor->id, RFSCOUT_APP_AVAILABILITY_AVAILABLE );
+        return availability[ a_descriptor->id ];
+    }
+
     if( NULL == a_descriptor->probe )
     {
         retain_availability( a_descriptor->id, RFSCOUT_APP_AVAILABILITY_AVAILABLE );
