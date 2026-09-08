@@ -8,7 +8,7 @@ RFScout builds one ESP32-S3 firmware image for **LILYGO T-Embed CC1101 Plus** an
 
 The T-Embed remains the fully hardware-validated baseline. Initial T-Deck hardware validation covers runtime profile detection, 320x240 display orientation, the managed 320x170 app view and 320x70 system region, trackball/center input, GT911 coordinate orientation, persistent touch calibration, GPS acquisition/time synchronization, SD mounting/logging, voltage-only battery telemetry, standard-I2S speaker output, and the ES7210 audio-capture provider. Extended shared-SPI stress behavior, ES7210 field validation, and the final T-Embed regression pass remain validation items.
 
-Applications consume semantic service availability rather than board identity. Current T-Deck capability filtering therefore leaves the existing CC1101 and nRF24 apps unavailable rather than probing illegal providers, while Recorder and Audio Spectrum are admitted through the ES7210 capture provider. Home is always available and remains the fallback when a preferred startup app cannot run.
+Applications consume semantic service availability rather than board identity. Current T-Deck capability filtering therefore leaves the existing CC1101 and nRF24 apps unavailable rather than probing illegal providers, while Recorder and Audio Spectrum are admitted through the audio-capture service. Profile capability is the legality gate; provider probes independently verify expected hardware before an app is advertised.
 
 The canonical application registry order remains:
 
@@ -31,7 +31,7 @@ Each app session owns one managed `rfscout_view_t`. The current app view is deli
 
 On T-Embed that view is the full LCD. On T-Deck it occupies the upper 320x170 portion of the physical 320x240 LCD; the lower 320x70 region is system-owned. The system region renders available application tabs and touch/calibration status and is repainted after app rendering.
 
-Calibrated GT911 finger-down events inside the tab strip are consumed by global navigation and switch applications through the normal transactional app lifecycle. A calibrated finger-down in the managed application view is translated into the existing semantic Select event rather than exposing a second pointer-specific application API. Trackball/center remains the ordinary physical Select source when available. During ES7210 capture the conflicting physical center source is suspended, so app-view touch remains the authoritative semantic Select path needed to stop Recorder capture; the physical source is restored when the codec provider closes.
+Calibrated GT911 finger-down events inside the tab strip are consumed by global navigation and switch applications through the normal transactional app lifecycle. Ordinary touch inside the managed application view is ignored. When a peripheral temporarily makes the physical primary Select source unavailable—currently T-Deck ES7210 capture—the system translates an app-view touch into the existing semantic Select event. This preserves Recorder stop control during the GPIO0 conflict without establishing a general pointer-specific application API. Trackball/center remains the ordinary physical Select source whenever it is available.
 
 ## GPS, location, and time
 
@@ -67,7 +67,7 @@ Ordinary Wi-Fi/BLE discovery cues can be enabled independently. Leaving the app 
 
 CC1101 performs receive-only RSSI sweeps with configurable profile/range/step, live activity histogram, bounded sweep samples, conservative RF-behavior categories, notifications, and count reset. Labels are heuristics about observed RF behavior, not decoded product identity.
 
-Its worker is session-managed and must quiesce before app-owned memory can be reclaimed. The provider is currently advertised only by the T-Embed profile.
+Its worker is session-managed and must quiesce before app memory can be reclaimed. The provider is currently advertised only by the T-Embed profile.
 
 ## nRF24
 
@@ -79,11 +79,13 @@ RFScout does **not** enable auto-ACK, inject, replay, pair, probe, or actively d
 
 ## Recorder
 
-Recorder provides SD-backed 16-bit mono PCM WAV capture/playback, provider-specific input bring-up, asynchronous post-processing, recording browse/delete, and independent playback volume. T-Embed retains its PDM capture path with runtime PDM/effective-rate measurement and measured-rate WAV metadata. T-Deck uses the onboard ES7210 through the shared board I2C service and an I2S0 four-slot Philips-format TDM receive frame; MIC1/slot 0 is exposed to Recorder as ordinary mono `int16_t` PCM.
+Recorder provides SD-backed 16-bit mono PCM WAV capture/playback, asynchronous post-processing, recording browse/delete, and independent playback volume. It consumes the board-neutral `audio_capture` service rather than an I2S channel. That service owns provider selection, profile-gated probing, open/read/close, and capture transport lifetime. T-Embed retains its PDM provider with runtime PDM/effective-rate measurement and measured-rate WAV metadata. T-Deck uses the onboard ES7210 codec through the shared board I2C service while the ES7210 provider exclusively owns I2S0/DMA; the selected MIC1/LEFT stream is normalized to ordinary mono `int16_t` PCM.
+
+T-Deck ES7210 presence probing is a non-invasive I2C transaction and does not start capture, claim I2S0, or suspend GPIO0. T-Embed PDM retains its active clock/data-edge probe because it has no separate control-plane identity. In both cases, `audio_capture_open()` is the final operational validation before PCM is read.
 
 Capture is not software pre-amplified. After capture completes, Recorder trims startup/tail artifacts, removes DC/very-low-frequency energy with the same shared one-pole high-pass primitive used by Audio Spectrum, then applies bounded normalization before finalizing the WAV.
 
-While Recorder is actively recording or finalizing a recording, app transitions and terminal sleep/power-off transitions are intentionally blocked. On T-Embed the user stops recording with the physical center control. On T-Deck, ES7210 activation temporarily owns the hardware path that conflicts with GPIO0/trackball-center, so the input service suspends that physical Select source and calibrated app-view touch supplies the same semantic Select action until capture closes. Saving completes before ordinary navigation/power transitions resume. Playback may be stopped normally when Recorder is left or a terminal power transition is prepared.
+While Recorder is actively recording or finalizing a recording, app transitions and terminal sleep/power-off transitions are intentionally blocked. On T-Embed the user stops recording with the physical center control. On T-Deck, ES7210 activation temporarily owns the hardware path that conflicts with GPIO0/trackball-center, so the input service suspends that physical Select source and calibrated app-view touch supplies the same semantic Select action only for that interval. Saving completes before ordinary navigation/power transitions resume. Playback may be stopped normally when Recorder is left or a terminal power transition is prepared.
 
 T-Deck speaker output remains independently supported for semantic UI/event/alert audio and Recorder playback through the existing audio-output provider.
 
@@ -153,9 +155,9 @@ System Events/dmesg records internal-storage, SD, provider, and other platform d
 
 Both supported profiles require usable external PSRAM. App-scoped memory/session infrastructure allows growable app-owned state to consume PSRAM during a session and reclaims it after platform services prove they no longer reference it.
 
-T-Embed LCD/microSD/CC1101/nRF24 share SPI; battery/power devices and external sensors share I2C; PDM capture uses I2S0; speaker output uses I2S1.
+T-Embed LCD/microSD/CC1101/nRF24 share SPI; battery/power devices and external sensors share I2C; PDM capture uses I2S0 behind the audio-capture service; speaker output uses I2S1.
 
-T-Deck LCD, microSD, and the currently disabled SX1262 share SPI. Touch, ES7210 control, and other compatible board devices use the profile's shared I2C bus. Standard-I2S speaker output is enabled independently. ES7210 capture uses I2S0 RX in four-slot TDM mode while exposing MIC1 as mono PCM. Known but unimplemented keyboard and SX1262 metadata does not by itself make those capabilities available.
+T-Deck LCD, microSD, and the currently disabled SX1262 share SPI. Touch, ES7210 control, and other compatible board devices use the profile's shared I2C bus. Standard-I2S speaker output is enabled independently. ES7210 capture uses provider-owned I2S0 RX/DMA in ordinary Philips-I2S mode and exposes MIC1/LEFT as normalized mono PCM. Known but unimplemented keyboard and SX1262 metadata does not by itself make those capabilities available.
 
 ## Not currently implemented
 
