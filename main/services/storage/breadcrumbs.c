@@ -517,7 +517,7 @@ void breadcrumbs_poll( void )
 
 bool breadcrumbs_available( void )
 {
-    return NULL != worker_task && gps_available() && storage_is_available();
+    return true;
 }
 
 bool breadcrumbs_enabled( void )
