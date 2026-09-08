@@ -15,8 +15,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define RFSCOUT_INPUT_LOCK_HOLD_US 2000000LL
-
 typedef enum
 {
     RFSCOUT_INPUT_NONE = 0,
@@ -55,15 +53,6 @@ void input_primary_select_suspend( void );
 
 /** @brief Restore the physical primary Select source after a temporary hardware conflict. */
 void input_primary_select_resume( void );
-
-/** @brief Return whether the physical primary Select source is currently usable. */
-bool input_primary_select_available( void );
-
-/** @brief Inject the normal semantic Select action through the existing input event path. */
-void input_inject_select( void );
-
-/** @brief Toggle the existing device-wide input lock from another authoritative input path. */
-void input_toggle_lock( void );
 
 /**
  * @brief Return whether device-wide user input is locked.
