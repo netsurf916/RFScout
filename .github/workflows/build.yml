@@ -57,9 +57,6 @@ jobs:
           . "$IDF_PATH/export.sh"
           idf.py --version
           idf.py -DRFSCOUT_FORMAT_CHECK=OFF set-target esp32s3
-          echo '--- RFSCOUT_RESOLVED_DEPENDENCIES_LOCK ---'
-          cat dependencies.lock
-          echo '--- RFSCOUT_RESOLVED_DEPENDENCIES_LOCK_END ---'
           idf.py -DRFSCOUT_FORMAT_CHECK=OFF build
 
       - name: Package candidate firmware
