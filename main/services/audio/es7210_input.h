@@ -23,10 +23,8 @@ esp_err_t es7210_input_probe( void );
 esp_err_t es7210_input_open( void );
 
 /** @brief Read normalized mono PCM from the active ES7210 provider. */
-esp_err_t es7210_input_read( void *a_buffer,
-                             size_t a_capacity,
-                             size_t *a_bytes_read,
-                             uint32_t a_timeout_ms );
+esp_err_t
+es7210_input_read( void *a_buffer, size_t a_capacity, size_t *a_bytes_read, uint32_t a_timeout_ms );
 
 /** @brief Stop and release codec/I2S resources and restore the primary Select input. */
 void es7210_input_close( void );
