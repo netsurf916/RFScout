@@ -77,9 +77,8 @@ static uint32_t measure_pdm_clock_hz( void )
     uint32_t measured_hz = 0U;
     if( ESP_OK == result )
     {
-        measured_hz =
-            (uint32_t)( (uint64_t)( count > 0 ? count : 0 ) * 1000ULL /
-                        AUDIO_CAPTURE_CLOCK_MEASURE_MS );
+        measured_hz = (uint32_t)( (uint64_t)( count > 0 ? count : 0 ) * 1000ULL /
+                                  AUDIO_CAPTURE_CLOCK_MEASURE_MS );
         measured_pdm_clock_hz = measured_hz;
         ESP_LOGI( TAG,
                   "PDM clock measured: gpio=%d edges=%d window=%ums frequency=%u Hz",
@@ -335,10 +334,8 @@ esp_err_t audio_capture_open( rfscout_audio_capture_format_t *a_format )
     return ESP_OK;
 }
 
-esp_err_t audio_capture_read( void *a_buffer,
-                              size_t a_capacity,
-                              size_t *a_bytes_read,
-                              uint32_t a_timeout_ms )
+esp_err_t
+audio_capture_read( void *a_buffer, size_t a_capacity, size_t *a_bytes_read, uint32_t a_timeout_ms )
 {
     if( NULL == a_buffer || NULL == a_bytes_read || 0U == a_capacity )
     {
