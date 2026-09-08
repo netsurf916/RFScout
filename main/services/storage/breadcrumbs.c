@@ -51,6 +51,13 @@ typedef struct
     double longitude_deg;
 } breadcrumb_record_t;
 
+typedef enum
+{
+    BREADCRUMB_HEADER_VALID = 0,
+    BREADCRUMB_HEADER_INVALID,
+    BREADCRUMB_HEADER_IO_ERROR,
+} breadcrumb_header_status_t;
+
 static const char *TAG = "breadcrumbs";
 static StaticQueue_t queue_control;
 static uint8_t queue_storage[ BREADCRUMB_QUEUE_DEPTH * sizeof( breadcrumb_record_t ) ];
@@ -60,7 +67,7 @@ static int64_t last_capture_us;
 static time_t last_queued_utc;
 static volatile bool trim_requested;
 static volatile bool shutdown_requested;
-static volatile bool worker_stopped = true;
+static volatile bool worker_quiesced;
 static bool settings_loaded;
 static volatile bool enabled;
 static volatile uint16_t file_limit = RFSCOUT_BREADCRUMB_FILE_LIMIT_DEFAULT;
@@ -317,19 +324,31 @@ static bool format_timestamp( time_t a_utc_epoch, char *a_output, size_t a_capac
     return 0U != strftime( a_output, a_capacity, "%Y-%m-%dT%H:%M:%SZ", &utc );
 }
 
-static bool existing_header_valid( const char *a_path )
+static breadcrumb_header_status_t existing_header_status( const char *a_path )
 {
     FILE *file = fopen( a_path, "r" );
     if( NULL == file )
     {
-        return false;
+        return BREADCRUMB_HEADER_IO_ERROR;
     }
 
     char header[ sizeof( BREADCRUMB_CSV_HEADER ) ];
-    const bool valid = NULL != fgets( header, sizeof( header ), file ) &&
-                       0 == strcmp( header, BREADCRUMB_CSV_HEADER );
-    fclose( file );
-    return valid;
+    if( NULL == fgets( header, sizeof( header ), file ) )
+    {
+        const bool io_error = 0 != ferror( file );
+        if( 0 != fclose( file ) )
+        {
+            return BREADCRUMB_HEADER_IO_ERROR;
+        }
+        return io_error ? BREADCRUMB_HEADER_IO_ERROR : BREADCRUMB_HEADER_INVALID;
+    }
+
+    const bool valid = 0 == strcmp( header, BREADCRUMB_CSV_HEADER );
+    if( 0 != fclose( file ) )
+    {
+        return BREADCRUMB_HEADER_IO_ERROR;
+    }
+    return valid ? BREADCRUMB_HEADER_VALID : BREADCRUMB_HEADER_INVALID;
 }
 
 static bool prepare_append( FILE *a_file, bool a_new_file, off_t a_size )
@@ -393,7 +412,19 @@ static void write_record( const breadcrumb_record_t *a_record )
         return;
     }
 
-    const bool recreate_file = !new_file && !existing_header_valid( path );
+    breadcrumb_header_status_t header_status = BREADCRUMB_HEADER_VALID;
+    if( !new_file )
+    {
+        header_status = existing_header_status( path );
+        if( BREADCRUMB_HEADER_IO_ERROR == header_status )
+        {
+            ESP_LOGE( TAG, "breadcrumb header read failed: errno=%d", errno );
+            storage_io_release();
+            return;
+        }
+    }
+
+    const bool recreate_file = BREADCRUMB_HEADER_INVALID == header_status;
     if( recreate_file )
     {
         ESP_LOGW( TAG, "recreating breadcrumb bucket with incomplete header" );
@@ -449,7 +480,13 @@ static void worker( void *a_argument )
     {
         if( shutdown_requested && 0U == uxQueueMessagesWaiting( queue ) && !trim_requested )
         {
-            break;
+            worker_quiesced = true;
+            while( shutdown_requested )
+            {
+                vTaskDelay( pdMS_TO_TICKS( BREADCRUMB_SHUTDOWN_POLL_MS ) );
+            }
+            worker_quiesced = false;
+            continue;
         }
 
         breadcrumb_record_t record;
@@ -464,10 +501,6 @@ static void worker( void *a_argument )
             trim_files();
         }
     }
-
-    worker_stopped = true;
-    worker_task = NULL;
-    vTaskDelete( NULL );
 }
 
 esp_err_t breadcrumbs_init( void )
@@ -475,6 +508,7 @@ esp_err_t breadcrumbs_init( void )
     load_settings();
     if( NULL != worker_task )
     {
+        shutdown_requested = false;
         return ESP_OK;
     }
     if( !storage_is_available() )
@@ -493,7 +527,7 @@ esp_err_t breadcrumbs_init( void )
     last_queued_utc = 0;
     trim_requested = false;
     shutdown_requested = false;
-    worker_stopped = false;
+    worker_quiesced = false;
     if( pdPASS != xTaskCreate( worker,
                                "breadcrumbs",
                                BREADCRUMB_TASK_STACK,
@@ -502,7 +536,6 @@ esp_err_t breadcrumbs_init( void )
                                &worker_task ) )
     {
         queue = NULL;
-        worker_stopped = true;
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
@@ -601,7 +634,7 @@ esp_err_t breadcrumbs_set_file_limit( uint16_t a_file_limit )
 
 bool breadcrumbs_shutdown( uint32_t a_timeout_ms )
 {
-    if( worker_stopped || NULL == worker_task )
+    if( NULL == worker_task )
     {
         return true;
     }
@@ -609,12 +642,12 @@ bool breadcrumbs_shutdown( uint32_t a_timeout_ms )
     shutdown_requested = true;
     const TickType_t delay = pdMS_TO_TICKS( BREADCRUMB_SHUTDOWN_POLL_MS );
     uint32_t waited_ms = 0U;
-    while( !worker_stopped && waited_ms < a_timeout_ms )
+    while( !worker_quiesced && waited_ms < a_timeout_ms )
     {
         vTaskDelay( delay );
         waited_ms += BREADCRUMB_SHUTDOWN_POLL_MS;
     }
-    if( worker_stopped )
+    if( worker_quiesced )
     {
         return true;
     }
