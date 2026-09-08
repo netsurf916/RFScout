@@ -39,6 +39,8 @@
 #define BREADCRUMB_WORKER_POLL_MS 500U
 #define BREADCRUMB_FILENAME_LENGTH 15U
 #define BREADCRUMB_FILENAME_CAPACITY ( BREADCRUMB_FILENAME_LENGTH + 1U )
+#define BREADCRUMB_PATH_CAPACITY \
+    ( sizeof( BREADCRUMB_DIRECTORY ) + BREADCRUMB_FILENAME_LENGTH + 1U )
 
 typedef struct
 {
@@ -135,6 +137,29 @@ static bool breadcrumb_filename_valid( const char *a_name )
     return true;
 }
 
+static void copy_breadcrumb_filename( char *a_destination, const char *a_source )
+{
+    memcpy( a_destination, a_source, BREADCRUMB_FILENAME_CAPACITY );
+}
+
+static bool breadcrumb_path_from_filename( const char *a_filename,
+                                           char *a_path,
+                                           size_t a_capacity )
+{
+    const size_t directory_length = sizeof( BREADCRUMB_DIRECTORY ) - 1U;
+    const size_t required = directory_length + 1U + BREADCRUMB_FILENAME_CAPACITY;
+    if( NULL == a_filename || NULL == a_path || a_capacity < required ||
+        !breadcrumb_filename_valid( a_filename ) )
+    {
+        return false;
+    }
+
+    memcpy( a_path, BREADCRUMB_DIRECTORY, directory_length );
+    a_path[ directory_length ] = '/';
+    memcpy( &a_path[ directory_length + 1U ], a_filename, BREADCRUMB_FILENAME_CAPACITY );
+    return true;
+}
+
 static char *retained_slot( char *a_retained, size_t a_index )
 {
     return &a_retained[ a_index * BREADCRUMB_FILENAME_CAPACITY ];
@@ -188,10 +213,7 @@ static void trim_files_locked( void )
         ++count;
         if( retained_count < limit )
         {
-            snprintf( retained_slot( retained, retained_count ),
-                      BREADCRUMB_FILENAME_CAPACITY,
-                      "%s",
-                      entry->d_name );
+            copy_breadcrumb_filename( retained_slot( retained, retained_count ), entry->d_name );
             ++retained_count;
             continue;
         }
@@ -199,10 +221,7 @@ static void trim_files_locked( void )
         const size_t oldest = oldest_retained_index( retained, retained_count );
         if( strcmp( entry->d_name, retained_slot( retained, oldest ) ) > 0 )
         {
-            snprintf( retained_slot( retained, oldest ),
-                      BREADCRUMB_FILENAME_CAPACITY,
-                      "%s",
-                      entry->d_name );
+            copy_breadcrumb_filename( retained_slot( retained, oldest ), entry->d_name );
         }
     }
     closedir( directory );
@@ -215,7 +234,7 @@ static void trim_files_locked( void )
 
     const size_t threshold_index = oldest_retained_index( retained, retained_count );
     char threshold[ BREADCRUMB_FILENAME_CAPACITY ];
-    snprintf( threshold, sizeof( threshold ), "%s", retained_slot( retained, threshold_index ) );
+    copy_breadcrumb_filename( threshold, retained_slot( retained, threshold_index ) );
     heap_caps_free( retained );
 
     directory = opendir( BREADCRUMB_DIRECTORY );
@@ -229,8 +248,11 @@ static void trim_files_locked( void )
         {
             continue;
         }
-        char path[ 80 ];
-        snprintf( path, sizeof( path ), BREADCRUMB_DIRECTORY "/%s", entry->d_name );
+        char path[ BREADCRUMB_PATH_CAPACITY ];
+        if( !breadcrumb_path_from_filename( entry->d_name, path, sizeof( path ) ) )
+        {
+            continue;
+        }
         if( 0 != unlink( path ) )
         {
             ESP_LOGE( TAG, "breadcrumb retention delete failed: errno=%d", errno );
@@ -267,15 +289,15 @@ static bool format_bucket_path( time_t a_utc_epoch, char *a_path, size_t a_capac
     {
         return false;
     }
-    const int written = snprintf( a_path,
-                                  a_capacity,
-                                  BREADCRUMB_DIRECTORY "/%04d%02d%02d%02d%u.csv",
-                                  utc.tm_year + 1900,
-                                  utc.tm_mon + 1,
-                                  utc.tm_mday,
-                                  utc.tm_hour,
-                                  (unsigned)( utc.tm_min / 10 ) );
-    return written > 0 && (size_t)written < a_capacity;
+
+    char filename[ BREADCRUMB_FILENAME_CAPACITY ];
+    if( 10U != strftime( filename, sizeof( filename ), "%Y%m%d%H", &utc ) )
+    {
+        return false;
+    }
+    filename[ 10 ] = (char)( '0' + ( utc.tm_min / 10 ) );
+    memcpy( &filename[ 11 ], ".csv", 5U );
+    return breadcrumb_path_from_filename( filename, a_path, a_capacity );
 }
 
 static bool format_timestamp( time_t a_utc_epoch, char *a_output, size_t a_capacity )
@@ -325,7 +347,7 @@ static void write_record( const breadcrumb_record_t *a_record )
         return;
     }
 
-    char path[ 80 ];
+    char path[ BREADCRUMB_PATH_CAPACITY ];
     char timestamp[ 32 ];
     if( !format_bucket_path( a_record->utc_epoch, path, sizeof( path ) ) ||
         !format_timestamp( a_record->utc_epoch, timestamp, sizeof( timestamp ) ) )
@@ -364,7 +386,7 @@ static void write_record( const breadcrumb_record_t *a_record )
     {
         success = false;
     }
-    if( success && 0 != fsync( fileno( file ) ) )
+    if( success && 0 != fsync( fileno( file ) )
     {
         success = false;
     }
