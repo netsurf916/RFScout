@@ -12,6 +12,7 @@
 #include "input.h"
 #include "recorder.h"
 
+#include "driver/i2s_tdm.h"
 #include "esp_codec_dev.h"
 #include "esp_codec_dev_defaults.h"
 #include "es7210_adc.h"
@@ -19,6 +20,7 @@
 
 #define ES7210_INPUT_GAIN_DB 6.0f
 #define ES7210_INPUT_MIC_SELECTION ( ES7210_SEL_MIC1 )
+#define ES7210_INPUT_TDM_SLOTS 4U
 
 static const char *TAG = "es7210_input";
 static i2s_chan_handle_t rx_channel;
@@ -90,10 +92,14 @@ esp_err_t es7210_input_open( i2s_chan_handle_t *a_channel )
         return result;
     }
 
-    i2s_std_config_t i2s_config = {
-        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG( RFSCOUT_RECORDER_SAMPLE_RATE ),
-        .slot_cfg =
-            I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG( I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO ),
+    /* ES7210 emits Philips-format TDM frames even when only one microphone is enabled. Keep the
+       physical four-slot frame so BCLK/LRCK match the codec, but ask I2S RX to retain only slot 0
+       (MIC1). Recorder therefore continues to receive the same mono int16_t stream as the PDM
+       provider without acquiring codec-specific channel semantics. */
+    i2s_tdm_config_t i2s_config = {
+        .clk_cfg = I2S_TDM_CLK_DEFAULT_CONFIG( RFSCOUT_RECORDER_SAMPLE_RATE ),
+        .slot_cfg = I2S_TDM_PHILIPS_SLOT_DEFAULT_CONFIG(
+            I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO, I2S_TDM_SLOT0 ),
         .gpio_cfg =
             {
                 .mclk = (gpio_num_t)RFSCOUT_BOARD_ES7210_MCLK_PIN,
@@ -105,8 +111,8 @@ esp_err_t es7210_input_open( i2s_chan_handle_t *a_channel )
             },
     };
     i2s_config.clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_256;
-    i2s_config.slot_cfg.slot_mask = I2S_STD_SLOT_LEFT;
-    result = i2s_channel_init_std_mode( rx_channel, &i2s_config );
+    i2s_config.slot_cfg.total_slot = ES7210_INPUT_TDM_SLOTS;
+    result = i2s_channel_init_tdm_mode( rx_channel, &i2s_config );
     if( ESP_OK != result )
     {
         es7210_input_close();
@@ -179,7 +185,8 @@ esp_err_t es7210_input_open( i2s_chan_handle_t *a_channel )
     input_primary_select_suspend();
     *a_channel = rx_channel;
     ESP_LOGI( TAG,
-              "ES7210 configured: I2S0 mclk=GPIO%d bclk=GPIO%d lrclk=GPIO%d data=GPIO%d rate=%u",
+              "ES7210 configured: I2S0 TDM4 MIC1 mclk=GPIO%d bclk=GPIO%d lrclk=GPIO%d data=GPIO%d "
+              "rate=%u",
               RFSCOUT_BOARD_ES7210_MCLK_PIN,
               RFSCOUT_BOARD_ES7210_SCLK_PIN,
               RFSCOUT_BOARD_ES7210_LRCLK_PIN,
