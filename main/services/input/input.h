@@ -15,6 +15,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define RFSCOUT_INPUT_LOCK_HOLD_US 2000000LL
+
 typedef enum
 {
     RFSCOUT_INPUT_NONE = 0,
