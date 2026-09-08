@@ -26,23 +26,18 @@ static const char *TAG = "es7210_input";
 static i2s_chan_handle_t rx_channel;
 static const audio_codec_ctrl_if_t *ctrl_if;
 static const audio_codec_if_t *codec_if;
-static bool codec_open;
 static bool codec_enabled;
 
 static void release_codec( void )
 {
     if( NULL != codec_if )
     {
-        if( codec_enabled && NULL != codec_if->enable )
+        if( NULL != codec_if->close )
         {
-            (void)codec_if->enable( codec_if, false );
-        }
-        codec_enabled = false;
-        if( codec_open && NULL != codec_if->close )
-        {
+            /* The ES7210 close operation disables an enabled codec before marking it closed. */
             (void)codec_if->close( codec_if );
         }
-        codec_open = false;
+        codec_enabled = false;
         (void)audio_codec_delete_codec_if( codec_if );
         codec_if = NULL;
     }
@@ -150,20 +145,15 @@ esp_err_t es7210_input_open( void )
         .mclk_src = ES7210_MCLK_FROM_PAD,
         .mclk_div = I2S_MCLK_MULTIPLE_256,
     };
+    /* es7210_codec_new() opens the codec before returning; RFScout owns only subsequent format,
+       gain, enable, and close transitions. */
     codec_if = es7210_codec_new( &codec_config );
-    if( NULL == codec_if || NULL == codec_if->open || NULL == codec_if->set_fs ||
-        NULL == codec_if->set_mic_gain || NULL == codec_if->enable )
+    if( NULL == codec_if || NULL == codec_if->set_fs || NULL == codec_if->set_mic_gain ||
+        NULL == codec_if->enable || NULL == codec_if->close )
     {
         es7210_input_close();
         return ESP_ERR_NOT_SUPPORTED;
     }
-
-    if( ESP_CODEC_DEV_OK != codec_if->open( codec_if, &codec_config, sizeof( codec_config ) ) )
-    {
-        es7210_input_close();
-        return ESP_FAIL;
-    }
-    codec_open = true;
 
     /* ES7210 register formatting remains stereo-I2S even though RFScout exposes one selected slot
        to software. The provider, not esp_codec_dev's I2S data wrapper, owns the transport format. */
