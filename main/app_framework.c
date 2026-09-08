@@ -79,8 +79,7 @@ static bool profile_supports_services( uint32_t a_services )
     {
         return false;
     }
-    if( ( 0U != ( a_services & RFSCOUT_APP_SERVICE_AUDIO_CAPTURE ) ) &&
-        !audio_capture_supported() )
+    if( ( 0U != ( a_services & RFSCOUT_APP_SERVICE_AUDIO_CAPTURE ) ) && !audio_capture_supported() )
     {
         return false;
     }
