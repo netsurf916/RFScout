@@ -8,6 +8,7 @@
 #include "app_framework.h"
 
 #include "apps/app_registry.h"
+#include "audio_capture.h"
 #include "board.h"
 #include "event.h"
 #include "persistent_store.h"
@@ -79,7 +80,7 @@ static bool profile_supports_services( uint32_t a_services )
         return false;
     }
     if( ( 0U != ( a_services & RFSCOUT_APP_SERVICE_AUDIO_CAPTURE ) ) &&
-        !RFSCOUT_BOARD_HAS_PDM_MIC && !RFSCOUT_BOARD_HAS_ES7210_MIC )
+        !audio_capture_supported() )
     {
         return false;
     }
