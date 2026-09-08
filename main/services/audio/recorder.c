@@ -1193,10 +1193,9 @@ static void monitor_worker( void *a_argument )
         if( rate_elapsed_us >= RECORDER_DIAGNOSTIC_INTERVAL_US )
         {
             const uint32_t effective_rate =
-                rate_elapsed_us > 0
-                    ? (uint32_t)( (uint64_t)rate_bytes * 1000000ULL /
-                                  (uint64_t)rate_elapsed_us / sizeof( int16_t ) )
-                    : 0U;
+                rate_elapsed_us > 0 ? (uint32_t)( (uint64_t)rate_bytes * 1000000ULL /
+                                                  (uint64_t)rate_elapsed_us / sizeof( int16_t ) )
+                                    : 0U;
             if( effective_rate >= RFSCOUT_RECORDER_WAV_RATE_MIN &&
                 effective_rate <= RFSCOUT_RECORDER_WAV_RATE_MAX )
             {
