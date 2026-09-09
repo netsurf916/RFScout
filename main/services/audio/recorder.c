@@ -241,7 +241,8 @@ static esp_err_t open_microphone( rfscout_audio_capture_format_t *a_format )
     {
         return result;
     }
-    if( RECORDER_CHANNELS != format.channels || RECORDER_BITS_PER_SAMPLE != format.bits_per_sample ||
+    if( RECORDER_CHANNELS != format.channels ||
+        RECORDER_BITS_PER_SAMPLE != format.bits_per_sample ||
         format.sample_rate_hz < RFSCOUT_RECORDER_WAV_RATE_MIN ||
         format.sample_rate_hz > RFSCOUT_RECORDER_WAV_RATE_MAX )
     {
