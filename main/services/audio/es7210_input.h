@@ -16,6 +16,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define RFSCOUT_ES7210_INPUT_SAMPLE_RATE 16000U
+
 /** @brief Non-invasively probe the fixed onboard ES7210 on the shared board I2C bus. */
 esp_err_t es7210_input_probe( void );
 
