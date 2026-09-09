@@ -19,7 +19,6 @@
 #include "freertos/FreeRTOS.h"
 
 #define ES7210_INPUT_GAIN_DB 6.0f
-#define ES7210_INPUT_SAMPLE_RATE 16000U
 #define ES7210_INPUT_MIC_SELECTION                                                                 \
     ( ES7210_SEL_MIC1 | ES7210_SEL_MIC2 | ES7210_SEL_MIC3 | ES7210_SEL_MIC4 )
 #define ES7210_INPUT_I2C_ADDRESS_7BIT ( ES7210_CODEC_DEFAULT_ADDR >> 1U )
@@ -109,7 +108,7 @@ esp_err_t es7210_input_open( void )
        es7210_input_read(). This preserves the codec's wire framing instead of asking IDF to present
        the device as ordinary two-slot I2S. */
     i2s_tdm_config_t i2s_config = {
-        .clk_cfg = I2S_TDM_CLK_DEFAULT_CONFIG( ES7210_INPUT_SAMPLE_RATE ),
+        .clk_cfg = I2S_TDM_CLK_DEFAULT_CONFIG( RFSCOUT_ES7210_INPUT_SAMPLE_RATE ),
         .slot_cfg = I2S_TDM_PHILIPS_SLOT_DEFAULT_CONFIG( I2S_DATA_BIT_WIDTH_16BIT,
                                                          I2S_SLOT_MODE_STEREO,
                                                          I2S_TDM_SLOT0 | I2S_TDM_SLOT1 |
@@ -174,7 +173,7 @@ esp_err_t es7210_input_open( void )
         .bits_per_sample = RFSCOUT_AUDIO_CAPTURE_BITS_PER_SAMPLE,
         .channel = ES7210_INPUT_TDM_SLOTS,
         .channel_mask = 0,
-        .sample_rate = ES7210_INPUT_SAMPLE_RATE,
+        .sample_rate = RFSCOUT_ES7210_INPUT_SAMPLE_RATE,
     };
     if( ESP_CODEC_DEV_OK != codec_if->set_fs( codec_if, &sample_config ) ||
         ESP_CODEC_DEV_OK != codec_if->set_mic_gain( codec_if, ES7210_INPUT_GAIN_DB ) )
@@ -204,7 +203,7 @@ esp_err_t es7210_input_open( void )
               RFSCOUT_BOARD_ES7210_SCLK_PIN,
               RFSCOUT_BOARD_ES7210_LRCLK_PIN,
               RFSCOUT_BOARD_ES7210_DATA_PIN,
-              (unsigned)ES7210_INPUT_SAMPLE_RATE );
+              (unsigned)RFSCOUT_ES7210_INPUT_SAMPLE_RATE );
     return ESP_OK;
 }
 
