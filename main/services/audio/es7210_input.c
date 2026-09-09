@@ -235,8 +235,9 @@ es7210_input_read( void *a_buffer, size_t a_capacity, size_t *a_bytes_read, uint
         }
         const size_t raw_capacity = frames * ES7210_INPUT_TDM_SLOTS * sizeof( raw_frames[ 0 ] );
         size_t raw_bytes = 0U;
-        const esp_err_t result = i2s_channel_read(
-            rx_channel, raw_frames, raw_capacity, &raw_bytes, pdMS_TO_TICKS( a_timeout_ms ) );
+        /* i2s_channel_read() takes milliseconds, matching the audio_capture service contract. */
+        const esp_err_t result =
+            i2s_channel_read( rx_channel, raw_frames, raw_capacity, &raw_bytes, a_timeout_ms );
         if( ESP_OK != result )
         {
             return result;
