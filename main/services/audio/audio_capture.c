@@ -348,7 +348,9 @@ esp_err_t audio_capture_open( rfscout_audio_capture_format_t *a_format )
     active_provider = provider;
     if( NULL != a_format )
     {
-        a_format->sample_rate_hz = RFSCOUT_AUDIO_CAPTURE_SAMPLE_RATE;
+        a_format->sample_rate_hz = AUDIO_CAPTURE_PROVIDER_ES7210 == provider
+                                       ? RFSCOUT_ES7210_INPUT_SAMPLE_RATE
+                                       : RFSCOUT_AUDIO_CAPTURE_SAMPLE_RATE;
         a_format->channels = RFSCOUT_AUDIO_CAPTURE_CHANNELS;
         a_format->bits_per_sample = RFSCOUT_AUDIO_CAPTURE_BITS_PER_SAMPLE;
     }
