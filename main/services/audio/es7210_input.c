@@ -20,7 +20,7 @@
 
 #define ES7210_INPUT_GAIN_DB 6.0f
 #define ES7210_INPUT_SAMPLE_RATE 16000U
-#define ES7210_INPUT_MIC_SELECTION                                                           \
+#define ES7210_INPUT_MIC_SELECTION                                                                 \
     ( ES7210_SEL_MIC1 | ES7210_SEL_MIC2 | ES7210_SEL_MIC3 | ES7210_SEL_MIC4 )
 #define ES7210_INPUT_I2C_ADDRESS_7BIT ( ES7210_CODEC_DEFAULT_ADDR >> 1U )
 #define ES7210_INPUT_TDM_SLOTS 4U
@@ -110,10 +110,10 @@ esp_err_t es7210_input_open( void )
        the device as ordinary two-slot I2S. */
     i2s_tdm_config_t i2s_config = {
         .clk_cfg = I2S_TDM_CLK_DEFAULT_CONFIG( ES7210_INPUT_SAMPLE_RATE ),
-        .slot_cfg = I2S_TDM_PHILIPS_SLOT_DEFAULT_CONFIG(
-            I2S_DATA_BIT_WIDTH_16BIT,
-            I2S_SLOT_MODE_STEREO,
-            I2S_TDM_SLOT0 | I2S_TDM_SLOT1 | I2S_TDM_SLOT2 | I2S_TDM_SLOT3 ),
+        .slot_cfg = I2S_TDM_PHILIPS_SLOT_DEFAULT_CONFIG( I2S_DATA_BIT_WIDTH_16BIT,
+                                                         I2S_SLOT_MODE_STEREO,
+                                                         I2S_TDM_SLOT0 | I2S_TDM_SLOT1 |
+                                                             I2S_TDM_SLOT2 | I2S_TDM_SLOT3 ),
         .gpio_cfg =
             {
                 .mclk = (gpio_num_t)RFSCOUT_BOARD_ES7210_MCLK_PIN,
@@ -233,8 +233,7 @@ es7210_input_read( void *a_buffer, size_t a_capacity, size_t *a_bytes_read, uint
         {
             frames = ES7210_INPUT_RAW_FRAMES;
         }
-        const size_t raw_capacity =
-            frames * ES7210_INPUT_TDM_SLOTS * sizeof( raw_frames[ 0 ] );
+        const size_t raw_capacity = frames * ES7210_INPUT_TDM_SLOTS * sizeof( raw_frames[ 0 ] );
         size_t raw_bytes = 0U;
         const esp_err_t result = i2s_channel_read(
             rx_channel, raw_frames, raw_capacity, &raw_bytes, pdMS_TO_TICKS( a_timeout_ms ) );
