@@ -365,8 +365,8 @@ audio_capture_read( void *a_buffer, size_t a_capacity, size_t *a_bytes_read, uin
     *a_bytes_read = 0U;
     if( AUDIO_CAPTURE_PROVIDER_PDM == active_provider )
     {
-        return i2s_channel_read(
-            pdm_channel, a_buffer, a_capacity, a_bytes_read, pdMS_TO_TICKS( a_timeout_ms ) );
+        /* i2s_channel_read() takes milliseconds, matching the audio_capture service contract. */
+        return i2s_channel_read( pdm_channel, a_buffer, a_capacity, a_bytes_read, a_timeout_ms );
     }
     if( AUDIO_CAPTURE_PROVIDER_ES7210 == active_provider )
     {
