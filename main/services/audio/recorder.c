@@ -52,8 +52,6 @@
 #define RECORDER_MONITOR_MIN_RANGE_DB 18.0f
 #define RECORDER_MONITOR_HEADROOM_DB 3.0f
 #define RECORDER_MONITOR_RANGE_SMOOTH 0.05f
-#define RECORDER_EXPECTED_BYTES_PER_SECOND                                                         \
-    ( RFSCOUT_RECORDER_SAMPLE_RATE * RECORDER_CHANNELS * ( RECORDER_BITS_PER_SAMPLE / 8U ) )
 
 static const char *TAG = "recorder";
 static TaskHandle_t record_task;
@@ -235,9 +233,26 @@ static void log_pcm_snapshot( const char *a_label, const int16_t *a_samples, siz
     ESP_LOGI( TAG, "%s", line );
 }
 
-static esp_err_t open_microphone( void )
+static esp_err_t open_microphone( rfscout_audio_capture_format_t *a_format )
 {
-    return audio_capture_open( NULL );
+    rfscout_audio_capture_format_t format = { 0 };
+    esp_err_t result = audio_capture_open( &format );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+    if( RECORDER_CHANNELS != format.channels || RECORDER_BITS_PER_SAMPLE != format.bits_per_sample ||
+        format.sample_rate_hz < RFSCOUT_RECORDER_WAV_RATE_MIN ||
+        format.sample_rate_hz > RFSCOUT_RECORDER_WAV_RATE_MAX )
+    {
+        audio_capture_close();
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    if( NULL != a_format )
+    {
+        *a_format = format;
+    }
+    return ESP_OK;
 }
 
 esp_err_t recorder_probe_microphone( void )
@@ -637,13 +652,15 @@ static void record_worker( void *a_argument )
                                               ? (unsigned)( (uint64_t)diagnostic_zero_samples *
                                                             100ULL / diagnostic_sample_count )
                                               : 0U;
+            const uint32_t expected_rate =
+                recording_wav_sample_rate * RECORDER_CHANNELS * ( RECORDER_BITS_PER_SAMPLE / 8U );
             ESP_LOGI( TAG,
                       "input diag: elapsed=%ums reads=%uB/s pcm=%uB/s expected=%uB/s samples=%u "
                       "zero=%u%% min=%d max=%d level=%u%% peak=%u%%",
                       (unsigned)elapsed_ms,
                       (unsigned)input_rate,
                       (unsigned)output_rate,
-                      (unsigned)RECORDER_EXPECTED_BYTES_PER_SECOND,
+                      (unsigned)expected_rate,
                       (unsigned)diagnostic_sample_count,
                       zero_percent,
                       (int)diagnostic_min_sample,
@@ -660,7 +677,7 @@ static void record_worker( void *a_argument )
         }
     }
 
-    if( RFSCOUT_AUDIO_CAPTURE_PROVIDER_PDM == audio_capture_provider() && recording_started_us > 0 )
+    if( recording_started_us > 0 )
     {
         const int64_t total_us = esp_timer_get_time() - recording_started_us;
         if( total_us > 0 )
@@ -672,27 +689,31 @@ static void record_worker( void *a_argument )
             {
                 recording_wav_sample_rate = effective_rate;
             }
-            const uint32_t pcm_ratio_permille =
-                (uint32_t)( (uint64_t)effective_rate * 1000ULL / RFSCOUT_RECORDER_SAMPLE_RATE );
-            const uint32_t derived_request_for_16k =
-                effective_rate > 0U ? (uint32_t)( (uint64_t)RFSCOUT_RECORDER_SAMPLE_RATE *
-                                                  16000ULL / effective_rate )
-                                    : 0U;
-            ESP_LOGI( TAG,
-                      "PDM final: wall=%lldms pcm_bytes=%u effective_pcm=%u samples/s wav_rate=%u",
-                      (long long)( total_us / 1000LL ),
-                      (unsigned)data_bytes,
-                      (unsigned)effective_rate,
-                      (unsigned)recording_wav_sample_rate );
-            ESP_LOGI( TAG,
-                      "PDM calibration result: request=%u measured_clk=%u effective_pcm=%u "
-                      "pcm_ratio=%u.%u%% derived_request_for_16k=%u",
-                      (unsigned)RFSCOUT_RECORDER_SAMPLE_RATE,
-                      (unsigned)audio_capture_pdm_clock_hz(),
-                      (unsigned)effective_rate,
-                      (unsigned)( pcm_ratio_permille / 10U ),
-                      (unsigned)( pcm_ratio_permille % 10U ),
-                      (unsigned)derived_request_for_16k );
+            if( RFSCOUT_AUDIO_CAPTURE_PROVIDER_PDM == audio_capture_provider() )
+            {
+                const uint32_t pcm_ratio_permille =
+                    (uint32_t)( (uint64_t)effective_rate * 1000ULL / RFSCOUT_RECORDER_SAMPLE_RATE );
+                const uint32_t derived_request_for_16k =
+                    effective_rate > 0U ? (uint32_t)( (uint64_t)RFSCOUT_RECORDER_SAMPLE_RATE *
+                                                      16000ULL / effective_rate )
+                                        : 0U;
+                ESP_LOGI(
+                    TAG,
+                    "PDM final: wall=%lldms pcm_bytes=%u effective_pcm=%u samples/s wav_rate=%u",
+                    (long long)( total_us / 1000LL ),
+                    (unsigned)data_bytes,
+                    (unsigned)effective_rate,
+                    (unsigned)recording_wav_sample_rate );
+                ESP_LOGI( TAG,
+                          "PDM calibration result: request=%u measured_clk=%u effective_pcm=%u "
+                          "pcm_ratio=%u.%u%% derived_request_for_16k=%u",
+                          (unsigned)RFSCOUT_RECORDER_SAMPLE_RATE,
+                          (unsigned)audio_capture_pdm_clock_hz(),
+                          (unsigned)effective_rate,
+                          (unsigned)( pcm_ratio_permille / 10U ),
+                          (unsigned)( pcm_ratio_permille % 10U ),
+                          (unsigned)derived_request_for_16k );
+            }
         }
     }
 
@@ -742,7 +763,7 @@ static void compute_monitor_fft( const float *a_samples )
 {
     float re[ RECORDER_MONITOR_FFT_SIZE ];
     float im[ RECORDER_MONITOR_FFT_SIZE ];
-    for( size_t i = 0; i < RECORDER_MONITOR_FFT_SIZE; ++i )
+    for( size_t i = 0U; i < RECORDER_MONITOR_FFT_SIZE; ++i )
     {
         const float window = 0.5f - 0.5f * cosf( 2.0f * (float)M_PI * (float)i /
                                                  (float)( RECORDER_MONITOR_FFT_SIZE - 1U ) );
@@ -948,9 +969,11 @@ esp_err_t recorder_start_monitor( void )
     monitor_sample_rate_hz = RFSCOUT_RECORDER_SAMPLE_RATE;
     audio_highpass_reset( &monitor_highpass );
     monitor_fft_frame_count = 0U;
-    esp_err_t result = open_microphone();
+    rfscout_audio_capture_format_t format;
+    esp_err_t result = open_microphone( &format );
     if( ESP_OK != result )
         return result;
+    monitor_sample_rate_hz = format.sample_rate_hz;
     monitor_running = true;
     state = RFSCOUT_RECORDER_MONITORING;
     if( pdPASS != xTaskCreate( monitor_worker,
@@ -1130,17 +1153,8 @@ esp_err_t recorder_start_recording( void )
         return ESP_FAIL;
     }
 
-    uint8_t header[ RECORDER_WAV_HEADER_SIZE ];
-    build_wav_header( header, 0U, RFSCOUT_RECORDER_SAMPLE_RATE );
-    if( sizeof( header ) != fwrite( header, 1U, sizeof( header ), record_file ) )
-    {
-        fclose( record_file );
-        record_file = NULL;
-        state = RFSCOUT_RECORDER_ERROR;
-        return ESP_FAIL;
-    }
-
-    result = open_microphone();
+    rfscout_audio_capture_format_t format;
+    result = open_microphone( &format );
     if( ESP_OK != result )
     {
         fclose( record_file );
@@ -1149,6 +1163,19 @@ esp_err_t recorder_start_recording( void )
         state = RFSCOUT_RECORDER_ERROR;
         return result;
     }
+    recording_wav_sample_rate = format.sample_rate_hz;
+
+    uint8_t header[ RECORDER_WAV_HEADER_SIZE ];
+    build_wav_header( header, 0U, recording_wav_sample_rate );
+    if( sizeof( header ) != fwrite( header, 1U, sizeof( header ), record_file ) )
+    {
+        release_channel();
+        fclose( record_file );
+        record_file = NULL;
+        (void)remove( path );
+        state = RFSCOUT_RECORDER_ERROR;
+        return ESP_FAIL;
+    }
 
     data_bytes = 0U;
     live_level_percent = 0U;
@@ -1156,7 +1183,6 @@ esp_err_t recorder_start_recording( void )
     recording_started_us = 0;
     diagnostic_initial_snapshot_logged = false;
     diagnostic_signal_snapshot_logged = false;
-    recording_wav_sample_rate = RFSCOUT_RECORDER_SAMPLE_RATE;
     record_running = true;
     state = RFSCOUT_RECORDER_RECORDING;
     if( pdPASS != xTaskCreate( record_worker,
