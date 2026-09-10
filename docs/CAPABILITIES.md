@@ -6,7 +6,7 @@ This document summarizes behavior implemented on the current development line. A
 
 RFScout builds one ESP32-S3 firmware image for **LILYGO T-Embed CC1101 Plus** and **LILYGO T-Deck Plus**. A minimal early I2C fingerprint selects an immutable runtime profile before ordinary board GPIO/peripheral initialization. Unknown hardware remains awake and inert for recovery flashing.
 
-The T-Embed remains the fully hardware-validated baseline. Initial T-Deck hardware validation covers runtime profile detection, 320x240 display orientation, the managed 320x170 app view and 320x70 system region, trackball/center input, GT911 coordinate orientation, persistent touch calibration, GPS acquisition/time synchronization, SD mounting/logging, voltage-only battery telemetry, standard-I2S speaker output, and the ES7210 audio-capture provider. Extended shared-SPI stress behavior, ES7210 field validation, and the final T-Embed regression pass remain validation items.
+The T-Embed remains the fully hardware-validated baseline. T-Deck hardware validation covers runtime profile detection, 320x240 display orientation, the managed 320x170 app view and 320x70 system region, trackball/center input, GT911 coordinate orientation, persistent touch calibration, GPS acquisition/time synchronization, SD mounting/logging, voltage-only battery telemetry, standard-I2S speaker output, and the ES7210 audio-capture provider including Spectrum, Recorder, WAV finalization/playback, and the GPIO0-to-touch Select handoff. Extended shared-SPI stress behavior and broader release-level stress/fault-injection remain validation items.
 
 Applications consume semantic service availability rather than board identity. Current T-Deck capability filtering therefore leaves the existing CC1101 and nRF24 apps unavailable rather than probing illegal providers, while Recorder and Audio Spectrum are admitted through the audio-capture service. Profile capability is the legality gate; provider probes independently verify expected hardware before an app is advertised.
 
@@ -79,11 +79,11 @@ RFScout does **not** enable auto-ACK, inject, replay, pair, probe, or actively d
 
 ## Recorder
 
-Recorder provides SD-backed 16-bit mono PCM WAV capture/playback, asynchronous post-processing, recording browse/delete, and independent playback volume. It consumes the board-neutral `audio_capture` service rather than an I2S channel. That service owns provider selection, profile-gated probing, open/read/close, and capture transport lifetime. T-Embed retains its PDM provider with runtime PDM/effective-rate measurement and measured-rate WAV metadata. T-Deck uses the onboard ES7210 codec through the shared board I2C service while the ES7210 provider exclusively owns I2S0/DMA; the selected MIC1/LEFT stream is normalized to ordinary mono `int16_t` PCM.
+Recorder provides SD-backed 16-bit mono PCM WAV capture/playback, asynchronous post-processing, recording browse/delete, and independent playback volume. It consumes the board-neutral `audio_capture` service rather than an I2S channel. That service owns provider selection, profile-gated probing, open/read/close, and capture transport lifetime. T-Embed retains its PDM provider with runtime PDM/effective-rate measurement and measured-rate WAV metadata. T-Deck uses the onboard ES7210 codec through the shared board I2C service while the ES7210 provider exclusively owns I2S0/DMA; the codec runs in four-slot Philips-format TDM and the provider compacts MIC1/slot 0 to ordinary mono `int16_t` PCM.
 
 T-Deck ES7210 presence probing is a non-invasive I2C transaction and does not start capture, claim I2S0, or suspend GPIO0. T-Embed PDM retains its active clock/data-edge probe because it has no separate control-plane identity. In both cases, `audio_capture_open()` is the final operational validation before PCM is read.
 
-Capture is not software pre-amplified. After capture completes, Recorder trims startup/tail artifacts, removes DC/very-low-frequency energy with the same shared one-pole high-pass primitive used by Audio Spectrum, then applies bounded normalization before finalizing the WAV.
+Capture is not software pre-amplified. After capture completes, Recorder trims startup/tail artifacts, removes DC/very-low-frequency energy with the same shared one-pole high-pass primitive used by Audio Spectrum, then applies bounded normalization before finalizing the WAV. The provider-reported nominal rate seeds WAV metadata and a valid measured delivered rate may replace it at finalization.
 
 While Recorder is actively recording or finalizing a recording, app transitions and terminal sleep/power-off transitions are intentionally blocked. On T-Embed the user stops recording with the physical center control. On T-Deck, ES7210 activation temporarily owns the hardware path that conflicts with GPIO0/trackball-center, so the input service suspends that physical Select source and calibrated app-view touch supplies the same semantic Select action only for that interval. Saving completes before ordinary navigation/power transitions resume. Playback may be stopped normally when Recorder is left or a terminal power transition is prepared.
 
@@ -93,7 +93,7 @@ T-Deck speaker output remains independently supported for semantic UI/event/aler
 
 Audio Spectrum is a microphone-only live FFT/spectrum app and does not require an SD card. It uses whichever compatible audio-capture provider the active board advertises: T-Embed PDM or T-Deck ES7210.
 
-The spectrum uses raw microphone PCM with the shared continuous high-pass/DC-block filter and a smoothed automatic dB display range, avoiding pre-FFT digital amplification and clipping. The live `AUTO N dB` readout reports the current display-window span rather than microphone gain. The automatic minimum span is 18 dB, and frequency labels use measured delivered PCM throughput after the monitor has accumulated a rate measurement, falling back to the configured request rate only at startup.
+The spectrum uses raw microphone PCM with the shared continuous high-pass/DC-block filter and a smoothed automatic dB display range, avoiding pre-FFT digital amplification and clipping. The live `AUTO N dB` readout reports the current display-window span rather than microphone gain. The automatic minimum span is 18 dB, and frequency labels use measured delivered PCM throughput after the monitor has accumulated a rate measurement, falling back to the provider-reported nominal rate only at startup.
 
 ## Thermal
 
@@ -157,10 +157,10 @@ Both supported profiles require usable external PSRAM. App-scoped memory/session
 
 T-Embed LCD/microSD/CC1101/nRF24 share SPI; battery/power devices and external sensors share I2C; PDM capture uses I2S0 behind the audio-capture service; speaker output uses I2S1.
 
-T-Deck LCD, microSD, and the currently disabled SX1262 share SPI. Touch, ES7210 control, and other compatible board devices use the profile's shared I2C bus. Standard-I2S speaker output is enabled independently. ES7210 capture uses provider-owned I2S0 RX/DMA in ordinary Philips-I2S mode and exposes MIC1/LEFT as normalized mono PCM. Known but unimplemented keyboard and SX1262 metadata does not by itself make those capabilities available.
+T-Deck LCD, microSD, and the currently disabled SX1262 share SPI. Touch, ES7210 control, and other compatible board devices use the profile's shared I2C bus. Standard-I2S speaker output is enabled independently. ES7210 capture uses provider-owned I2S0 RX/DMA in four-slot Philips-format TDM mode and exposes compacted MIC1/slot-0 mono PCM. Known but unimplemented keyboard and SX1262 metadata does not by itself make those capabilities available.
 
 ## Not currently implemented
 
-For T-Deck, keyboard input, SX1262 radio plumbing, and semantic sleep/power-off behavior remain unimplemented provider slices. ES7210 capture is implemented but still requires final hardware validation of microphone/slot selection, sustained Recorder/Spectrum operation, and GPIO0 handoff behavior before the PR is considered field-validated.
+For T-Deck, keyboard input, SX1262 radio plumbing, and semantic sleep/power-off behavior remain unimplemented provider slices. ES7210 capture is implemented and hardware-validated for Audio Spectrum, Recorder, WAV playback, and GPIO0/touch stop-control behavior on T-Deck Plus.
 
 Broader v0.4.0 work still outstanding includes Instant/Timed/Never WiFi/BLE retention semantics, semantic Wi-Fi/BLE entity/correlation views, broader app-by-app PSRAM/history improvements, further Audio Input calibration/generalization, thermal calibration, and release-level stress/fault-injection validation. The canonical checklist and status are in [ROADMAP.md](ROADMAP.md).
