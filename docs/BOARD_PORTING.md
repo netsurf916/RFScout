@@ -39,7 +39,7 @@ The T-Embed profile is the hardware-validated baseline. Existing display geometr
 
 ### LILYGO T-Deck Plus
 
-The T-Deck profile has received initial hardware validation for runtime detection, the 320x240 ST7789 orientation/transform, the 320x170 managed app view plus 320x70 system region, trackball/center input, GT911 coordinate orientation, persistent touch calibration, GPS, SD mounting/logging, and standard-I2S speaker output. The ES7210 capture provider is implemented on the development line and remains a field-validation item.
+The T-Deck profile has received hardware validation for runtime detection, the 320x240 ST7789 orientation/transform, the 320x170 managed app view plus 320x70 system region, trackball/center input, GT911 coordinate orientation, persistent touch calibration, GPS, SD mounting/logging, standard-I2S speaker output, and ES7210 Recorder/Audio Spectrum capture.
 
 The early discriminator uses SDA GPIO18 / SCL GPIO8 and probes the GT911 at `0x5D` or `0x14`.
 
@@ -49,7 +49,7 @@ ES7210 presence is probed non-invasively at its legal shared-I2C address; this p
 
 T-Deck GPIO0 is normally reserved for trackball-center/BOOT input and is not treated as an RFScout power key. The ES7210 capture path conflicts with that physical center source while the codec is active, so the input service suspends the GPIO0 Select source before capture activation and restores it when the provider closes. Calibrated touch in the managed app view feeds the same semantic Select event only during that interval. The board exposes no RFScout sleep, deep-sleep, or physical power-off capability yet. Keyboard and SX1262 remain disabled even where reference pin metadata is known.
 
-Extended SD/shared-SPI stress behavior, GPS fix-loss behavior, ES7210 microphone/slot and sustained-capture behavior, GPIO0 handoff, and the final cross-board regression pass still require hardware validation before this profile should be treated as release-validated.
+Extended SD/shared-SPI stress behavior, GPS fix-loss behavior, and broader cross-board stress/fault-injection coverage remain release-validation work. The ES7210 microphone path, four-slot TDM MIC1/slot-0 mapping, sustained Recorder/Spectrum capture, tap-to-stop handoff, and T-Embed audio regression have been validated on hardware.
 
 ## Input boundary
 
@@ -108,7 +108,7 @@ The board-neutral `audio_capture` service owns capture-provider selection, profi
 
 T-Embed retains its existing PDM provider behind `audio_capture`; that provider owns I2S0/PDM setup, DMA, clock/data probing, reads, and teardown. The PDM probe is necessarily active because the microphone has no separate control-plane identity.
 
-T-Deck standard-I2S speaker output is an enabled, hardware-validated provider behind the separate semantic audio-output service. T-Deck ES7210 capture is an enabled provider behind `audio_capture`. The ES7210 provider uses the shared board I2C service for codec control and Espressif's maintained codec interface for register configuration, gain, ADC enable/disable, and close. RFScout alone owns I2S0/DMA: with MIC1 selected, the codec stays in ordinary Philips-I2S slave mode while the ESP32-S3 supplies MCLK/BCLK/LRCK and normalizes the selected LEFT slot to mono 16-bit PCM. The exact MIC1/LEFT hardware mapping remains subject to final validation.
+T-Deck standard-I2S speaker output is an enabled, hardware-validated provider behind the separate semantic audio-output service. T-Deck ES7210 capture is an enabled, hardware-validated provider behind `audio_capture`. The ES7210 provider uses the shared board I2C service for codec control and Espressif's maintained codec interface for register configuration, gain, ADC enable/disable, and close. RFScout alone owns I2S0/DMA: the codec runs as a four-slot Philips-format TDM slave with all ADC slots enabled for stable framing, while the ESP32-S3 supplies MCLK/BCLK/LRCK and the provider compacts MIC1/slot 0 to mono 16-bit PCM.
 
 No other layer is allowed to reconfigure, enable, read, or close a provider's capture transport. This single-owner invariant prevents codec-control helpers and Recorder from competing over I2S state. The provider also owns the temporary GPIO0 Select conflict and restores the physical input source during every close/failure path.
 
