@@ -1,6 +1,6 @@
 /**
-    services/audio/recorder.h : RFScout shared microphone, recorder, and playback service
-    Description: Exposes microphone monitoring plus SD-backed WAV recording and playback.
+    services/audio/recorder.h : RFScout shared recorder, spectrum, and playback service
+    Description: Exposes live PCM processing plus SD-backed WAV recording and playback.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -10,6 +10,7 @@
 #ifndef _RFSCOUT_RECORDER_H_
 #define _RFSCOUT_RECORDER_H_
 
+#include "audio_capture.h"
 #include "esp_err.h"
 
 #include <stdbool.h>
@@ -17,8 +18,7 @@
 #include <stdint.h>
 
 #define RFSCOUT_RECORDER_DIRECTORY "/sdcard/audio"
-#define RFSCOUT_RECORDER_SAMPLE_RATE 48000U
-#define RFSCOUT_RECORDER_TARGET_PDM_CLOCK_HZ 2048000U
+#define RFSCOUT_RECORDER_SAMPLE_RATE RFSCOUT_AUDIO_CAPTURE_SAMPLE_RATE
 #define RFSCOUT_RECORDER_WAV_RATE_MIN 8000U
 #define RFSCOUT_RECORDER_WAV_RATE_MAX 48000U
 #define RFSCOUT_RECORDER_MAX_FILES 48U
@@ -44,7 +44,7 @@ typedef struct
     int64_t modified_time;
 } rfscout_recording_t;
 
-/** @brief Briefly clock the board PDM input and detect microphone data activity. */
+/** @brief Probe the active board audio-capture provider through the shared capture service. */
 esp_err_t recorder_probe_microphone( void );
 
 /** @brief Initialize recorder state and enumerate valid WAV files when storage is mounted. */
@@ -53,7 +53,7 @@ esp_err_t recorder_init( void );
 /** @brief Refresh storage state and the playable recording list. */
 esp_err_t recorder_refresh( void );
 
-/** @brief Start a calibrated diagnostic 16-bit mono PCM WAV recording from the PDM input. */
+/** @brief Start a 16-bit mono PCM WAV recording from the active board audio-capture provider. */
 esp_err_t recorder_start_recording( void );
 
 /** @brief Request capture stop and enter asynchronous save/post-processing state. */
@@ -62,7 +62,7 @@ void recorder_request_stop_recording( void );
 /** @brief Stop capture, wait for save/post-processing, and refresh the recording list. */
 void recorder_stop_recording( void );
 
-/** @brief Stop SD-backed recorder activity before storage is unmounted. */
+/** @brief Stop SD-backed recorder activity before storage becomes unavailable. */
 bool recorder_prepare_storage_shutdown( uint32_t a_timeout_ms );
 
 /** @brief Delete one enumerated recording and refresh the list. */
@@ -107,7 +107,7 @@ uint8_t recorder_level_percent( void );
 /** @brief Return recent microphone peak level from 0 through 100 while recording. */
 uint8_t recorder_peak_percent( void );
 
-/** @brief Return the automatically selected ESP32-S3 PDM slot name. */
+/** @brief Return the active input channel/slot name for diagnostics. */
 const char *recorder_input_slot_name( void );
 
 /** @brief Change volume of active WAV playback without restarting it. */

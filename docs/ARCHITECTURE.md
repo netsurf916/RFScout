@@ -18,7 +18,7 @@ main/
 
 Unknown hardware is a deliberate recovery state. If no supported profile is detected, RFScout does not initialize normal board GPIO, display, SD, radio, input, audio, location, or power providers and remains awake in a simple FreeRTOS delay loop for recovery flashing.
 
-A runtime profile owns physical facts and advertises a capability only when RFScout has a provider it is prepared to initialize safely on that profile. Known reference pins/addresses may remain metadata without making a capability available. Board-profile detection is distinct from ordinary service probing: detection selects which hardware model is legal; service probes determine whether expected hardware is actually responding.
+A runtime profile owns physical facts and advertises a capability only when RFScout has a provider it is prepared to initialize safely on that profile. Known reference pins/addresses may remain metadata without making a capability available. Board-profile detection is distinct from ordinary service probing: detection selects which hardware model is legal; service probes determine whether expected hardware is actually responding. Operational provider open is a third boundary and validates that present/advertised hardware can actually run without changing the immutable board identity.
 
 Each compiled-in application exports one `rfscout_app_descriptor_t`. The descriptor owns identity/name, a stable persistence key, availability probing, delayed activation, service dependencies, and runtime handling. `app_framework` validates persistence identities as nonempty and unique, filters descriptors against active-profile service capability before probing, and retains probed capability state as unknown, available, or unavailable. Probe error detail remains diagnostic logging rather than application state.
 
@@ -36,7 +36,7 @@ The manager dispatches a deliberately small set of events to the active descript
 - **POLL** — periodic app work/render opportunity; and
 - **LEAVE** — committed app-local cleanup after platform services have safely quiesced.
 
-An app reports whether INPUT was consumed. Unconsumed navigation remains global next/previous-app switching; unconsumed Back returns to Home. This keeps global navigation policy centralized without teaching the manager how an individual app's menu works. Rapid navigation through a delayed app can therefore leave it before activation, preserving the settle behavior that avoids starting hardware merely because the user navigated past an app.
+An app reports whether INPUT was consumed. Unconsumed navigation remains global next/previous-app switching; unconsumed Back returns to Home. This keeps global navigation policy centralized without teaching the manager how an individual app's menu works. Rapid navigation through a delayed app can therefore leave it before activation, preserving the settle behavior that avoids starting hardware merely because the user navigates past an app.
 
 Normal apps need only their module/descriptor, build/registry entry, and whatever semantic services they consume. Adding a normal app should not require modifying `app_manager.c`, `app_session.c`, or driver-specific teardown logic. Shared controls such as per-app notification editing are reusable helpers invoked by app modules rather than state embedded in the manager.
 
@@ -85,13 +85,13 @@ Usable external PSRAM is a supported-platform requirement. RFScout does not sile
 
 ## Semantic input, touch, and UI behavior
 
-The `input` service translates discrete board controls into focused semantic input before app handling. T-Embed uses the rotary/button provider; T-Deck uses trackball/center as its non-touch fallback. Physical activity used to wake the display is a separate path and the complete wake gesture is consumed before app, lock, or power semantics. Boards without an RFScout user/power key do not enter power-key sampling during that wake path.
+The `input` service translates discrete board controls into focused semantic input before app handling. T-Embed uses the rotary/button provider; T-Deck normally uses trackball/center as its physical Select/navigation source. Physical activity used to wake the display is a separate path and the complete wake gesture is consumed before app, lock, or power semantics. Boards without an RFScout user/power key do not enter power-key sampling during that wake path.
 
-GT911 touch is a separate board-neutral touch service. On T-Deck, hardware-validated raw/native coordinates are transformed into landscape reference coordinates and then normalized by a persisted calibration record. Touch is not authoritative without compatible calibration. Calibrated finger-downs inside the system-owned tab strip are consumed by global chrome and invoke the same transactional app-selection path as semantic navigation. App-level pointer dispatch is not implemented yet.
+GT911 touch is a separate board-neutral touch service. On T-Deck, hardware-validated raw/native coordinates are transformed into landscape reference coordinates and then normalized by a persisted calibration record. Touch is not authoritative without compatible calibration. Calibrated finger-downs inside the system-owned tab strip are consumed by global chrome and invoke the same transactional app-selection path as semantic navigation. Ordinary calibrated app-view touch is ignored. Only while a peripheral has temporarily suspended the physical primary Select source does an app-view finger-down translate into the existing semantic Select event; #79 uses this narrowly while ES7210 capture owns the GPIO0 conflict. Full application pointer/keyboard semantics remain a separate abstraction.
 
 Touch calibration is system/board state rather than app config or SD content. A missing/incompatible bounded system record enters startup calibration. Explicit recalibration atomically replaces the same record after the captured geometry passes sanity checks.
 
-On the rotary/button provider, edge capture survives temporary main-loop/display stalls. Holds of roughly 0.8–1.5 seconds produce `LONG_SELECT`, 1.5–2 seconds produce `BACK`, and two seconds toggles the global input lock; the release that completes a lock toggle is consumed. T-Deck trackball/center maps into the same semantic navigation/select contract where applicable.
+On the rotary/button provider, edge capture survives temporary main-loop/display stalls. Holds of roughly 0.8–1.5 seconds produce `LONG_SELECT`, 1.5–2 seconds produce `BACK`, and two seconds toggles the global input lock; the release that completes a lock toggle is consumed. T-Deck trackball/center maps into the same semantic navigation/select contract when its physical Select source is available. The device-wide input lock is enforced before touch-derived semantic Select is admitted.
 
 Common settings use one interaction model:
 
@@ -118,7 +118,7 @@ RFScout separates semantic meaning from presentation. Four audio classes are use
 
 Normal permits all classes subject to app/user policy. Quiet suppresses UI, Event, and Alert presentation without rewriting saved volumes, app gates, alert enablement, or Morse mappings. Explicit Content remains available where a provider exists. Disposable feedback/alerts are dropped rather than queued behind active Content audio.
 
-Speaker output and audio capture are separate profile capabilities. T-Embed advertises its validated I2S speaker and PDM capture paths. T-Deck advertises its hardware-validated standard-I2S speaker output but does not advertise ES7210 capture, so UI/event/alert audio is legal there while Recorder and Audio Spectrum remain filtered out.
+Speaker output and audio capture are separate profile capabilities. T-Embed advertises its validated I2S speaker and PDM capture paths. T-Deck advertises its hardware-validated standard-I2S speaker output independently of its ES7210 audio-capture provider. Recorder and Audio Spectrum therefore remain board-neutral consumers of the audio-capture service while UI/event/alert and playback audio use the separate speaker provider.
 
 Visual themes are independent: Indoor, Outdoor, and Night alter presentation colors only.
 
@@ -150,13 +150,17 @@ RF acquisition and LCD presentation run at different cadences. nRF24 sweep work 
 
 ## Recorder and Audio Spectrum
 
-The current shared audio-capture service owns the T-Embed I2S0/PDM microphone path, runtime effective-rate measurement, the live FFT monitor worker, SD recording machinery, the common low-frequency filter primitive, and the microphone/channel teardown contract. App modules consume those semantic operations rather than owning I2S/DMA details.
+`audio_capture` is the board-neutral capture boundary. It owns provider selection, profile-legality checks, provider probing, operational open/read/close, and capture-transport lifetime. A successful open returns normalized mono PCM through `audio_capture_read()`; no application or Recorder code receives the provider's I2S handle. The active provider is the only layer permitted to configure, enable, read, or close its capture transport.
 
-**Recorder** is the storage-backed app. It provides recording, asynchronous save/post-processing, recording catalog/delete, and playback through the shared speaker service. Capture is written without software pre-amplification. The effective delivered sample rate is written to the 16-bit mono PCM WAV header; finalization then trims startup/tail artifacts, removes DC/very-low-frequency energy through the shared one-pole high-pass filter, and applies bounded normalization before the file is finalized. Recorder playback volume remains app-owned durable state. Recorder files are independent of runtime app-memory reclamation. Active recording/saving blocks both app transitions and terminal T-Embed sleep/power-off preparation until the operation is safely complete; playback may be stopped during normal app exit or terminal power preparation.
+T-Embed retains its established I2S0/PDM provider behind this service, including PDM clock/data probing and effective-rate measurement. T-Deck uses an ES7210 provider: the shared board I2C bus and Espressif codec-control interface own only ES7210 register/control operations, while RFScout's provider exclusively owns I2S0/DMA. The ES7210 runs in four-slot Philips-format TDM slave mode with all four ADC slots enabled so frame alignment remains stable; the ESP32-S3 supplies MCLK/BCLK/LRCK and the provider compacts MIC1/slot 0 into normalized mono 16-bit PCM. ES7210 presence probing is a lightweight I2C check and does not start I2S/ADC or claim GPIO0.
 
-**Audio Spectrum** is a separate microphone-only app. It can run without SD storage, starts monitoring after the common app settle point, renders the live FFT spectrum, and uses raw microphone PCM through the same continuous one-pole high-pass/DC-block primitive before a smoothed automatic dB display range. The live `AUTO N dB` value is the current display-window span rather than input gain. Semantic navigation remains available for global app switching. Audio Spectrum has no Recorder-specific semantic rollback path.
+Recorder remains above this transport boundary. It owns the live FFT monitor worker, SD recording machinery, WAV finalization, playback integration, and the common low-frequency filter primitive. This keeps DMA/provider lifecycle independent from recording/spectrum policy while preserving the established pull model: ESP-IDF owns DMA buffers, and Recorder/Spectrum own only their destination/processing buffers.
 
-T-Deck ES7210 capture is not yet a provider; Recorder/Audio Spectrum are therefore filtered out on that profile. T-Deck speaker output is independently available to semantic feedback/notification consumers. Further calibration/generalization of the shared Audio Input service remains roadmap work.
+**Recorder** is the storage-backed app. It provides recording, asynchronous save/post-processing, recording catalog/delete, and playback through the shared speaker service. Capture is written without software pre-amplification. The provider-reported nominal sample rate is used when capture opens, and final WAV metadata may be corrected from measured delivered PCM throughput when a valid effective rate is available. Finalization then trims startup/tail artifacts, removes DC/very-low-frequency energy through the shared one-pole high-pass filter, and applies bounded normalization before the file is finalized. Recorder playback volume remains app-owned durable state. Recorder files are independent of runtime app-memory reclamation. Active recording/saving blocks app transitions and terminal T-Embed sleep/power-off preparation until the operation is safely complete; playback may be stopped during normal app exit or terminal power preparation. While T-Deck ES7210 capture is active, its physical GPIO0 Select source is suspended before codec/I2S activation and restored when the provider closes; calibrated app-view touch supplies the same semantic Select event only for that conflict interval so Recorder can still be stopped without acquiring touch-specific behavior.
+
+**Audio Spectrum** is a separate microphone-only app. It can run without SD storage, starts monitoring after the common app settle point, renders the live FFT spectrum, and uses raw microphone PCM through the same continuous one-pole high-pass/DC-block primitive before a smoothed automatic dB display range. The live `AUTO N dB` value is the current display-window span rather than input gain, with an 18 dB minimum span. The monitor measures delivered PCM throughput over one-second windows and maps displayed FFT bins using that effective rate once available, using the provider-reported nominal rate only as the startup fallback. Semantic navigation remains available for global app switching. Audio Spectrum has no Recorder-specific semantic rollback path.
+
+T-Deck ES7210 capture is an enabled, hardware-validated provider behind this shared service boundary. Hardware testing has confirmed sustained Audio Spectrum and Recorder capture, MIC1/slot-0 compaction, recording finalization/playback, and the GPIO0-to-touch Select handoff; T-Embed PDM Recorder/Spectrum regression testing also passed on the same universal image. T-Deck speaker output remains independently available to semantic feedback/notification and Recorder playback consumers. Further calibration/generalization of the shared Audio Input service remains roadmap work.
 
 ## Thermal
 
@@ -172,7 +176,7 @@ Timezone is durable user presentation policy and remains independent of GPS, whi
 
 ## Power, battery, display idle, and sleep
 
-Power actions are semantic and runtime-board-capability aware. T-Embed retains its short/long user-key behavior plus screen-off, deep-sleep, and physical-power-off capabilities. T-Deck exposes no RFScout user/power key and currently advertises no semantic deep-sleep or physical-power-off capability; GPIO0 belongs to trackball-center/BOOT input.
+Power actions are semantic and runtime-board-capability aware. T-Embed retains its short/long user-key behavior plus screen-off, deep-sleep, and physical-power-off capabilities. T-Deck exposes no RFScout user/power key and currently advertises no semantic deep-sleep or physical-power-off capability; GPIO0 normally belongs to trackball-center/BOOT input and is temporarily unavailable as a physical Select source while ES7210 capture is active.
 
 The display service owns framebuffer presentation plus runtime physical provider metadata. Display dim/off is presentation policy, **not** application lifecycle or ESP32 sleep. The ST7789 provider disables output and enters controller low power while apps/acquisition/logging/audio continue; wake restores the provider, presents the latest framebuffer while dark, then restores brightness. T-Deck wake handling does not sample an absent power key.
 
@@ -204,7 +208,7 @@ The persistent-record abstraction is size-independent; consumers remain bounded 
 
 Internal-storage mount, recovery-format/mount-failure, and configuration-default recovery are recorded in the volatile System Events/dmesg history as distinct semantic events. GPS fix transitions are diagnostic console events and are also written through normal SD logging when logging is enabled. Startup discovery is retained without unrelated interactive notification.
 
-The conservative hardware-tested SD baseline remains a FAT-compatible SanDisk card of 32 GB or less on the T-Embed. T-Deck SD/shared-SPI behavior is an explicit PR #76 hardware-validation item. Logging rotates `rfscout-00.log` through `rfscout-99.log` at up to 4 MiB each and attempts to preserve at least 64 MiB free.
+The conservative hardware-tested SD baseline remains a FAT-compatible SanDisk card of 32 GB or less on the T-Embed. T-Deck SD/shared-SPI behavior remains a hardware-validation item. Logging rotates `rfscout-00.log` through `rfscout-99.log` at up to 4 MiB each and attempts to preserve at least 64 MiB free.
 
 ## Shared hardware/resource boundaries
 
@@ -212,17 +216,18 @@ T-Embed:
 
 - LCD, microSD, CC1101, and nRF24 share SPI resources;
 - battery/power devices and external sensors share board I2C;
-- shared microphone/audio capture uses I2S0;
+- PDM capture owns I2S0 through the audio-capture provider;
 - the asynchronous speaker service uses I2S1.
 
 T-Deck:
 
 - LCD, microSD, and the currently disabled SX1262 share SPI resources;
-- GT911 and other compatible board devices share runtime-profile I2C;
+- GT911, ES7210 control, and other compatible board devices share runtime-profile I2C;
 - GPS uses the profile UART;
 - battery telemetry uses the ESP32-S3 ADC;
 - standard-I2S speaker output is enabled and hardware-validated;
-- reference keyboard, SX1262, and ES7210 metadata does not imply an enabled provider.
+- ES7210 capture exclusively owns I2S0 RX/DMA in four-slot Philips-format TDM mode while active, compacts MIC1/slot 0 to mono PCM, and temporarily conflicts with the physical GPIO0 Select source;
+- reference keyboard and SX1262 metadata does not imply an enabled provider.
 
 Application views render only their assigned app content; the display/presentation layer owns physical-panel composition, common top chrome, T-Deck system tabs, and final global overlays. The RAM-only System Events ring is a platform service and its optional app is a read-only browse view.
 
@@ -230,7 +235,7 @@ Application views render only their assigned app content; the display/presentati
 
 Release testing should rapidly rotate every enabled app and exercise low memory, callback races, worker-stop timeouts, dependency loss, Recorder recording/save transition vetoes, Audio Spectrum entry/exit, and failed-close rollback. Successful app exit must leave zero managed allocations for the exited app; an aborted transition must preserve its memory/state and managed presentation. Baseline free PSRAM and largest-free-block behavior should not decline monotonically across repeated cycles. A post-commit destination-session failure must never dispatch ENTER without a valid view and should recover to Home when the shared presentation service remains available.
 
-Universal-image validation must additionally prove the same image selects both known profiles correctly, leaves unknown hardware inert, never enters a provider illegal for the selected profile, and preserves the hardware-validated T-Embed behavior. T-Deck validation includes display/app-view/chrome separation, touch calibration/persistence/tabs, trackball behavior, battery ADC plausibility, GPS receiver/fix/time behavior, SD/shared-SPI operation, supported speaker output, and absence of unintended audio-capture/sleep/power-off behavior.
+Universal-image validation must additionally prove the same image selects both known profiles correctly, leaves unknown hardware inert, never enters a provider illegal for the selected profile, and preserves the hardware-validated T-Embed behavior. T-Deck validation includes display/app-view/chrome separation, touch calibration/persistence/tabs and conflict-only semantic app-view Select, trackball behavior, battery ADC plausibility, GPS receiver/fix/time behavior, SD/shared-SPI operation, supported speaker output, ES7210 I2C presence probing, four-slot TDM MIC1/slot-0 mapping and sustained Recorder/Audio Spectrum capture, GPIO0 Select suspension/restoration, and absence of unintended sleep/power-off behavior.
 
 Persistence validation should additionally cover boot without SD, missing/app-default records, sparse app overrides and return-to-default record removal, removal/default recovery of retired monolithic configuration, internal corruption/default replacement, oversized-record rejection, concurrent store calls, arbitrary logical key text, interrupted temporary cleanup on reboot, reads of absent app records without directory creation, touch-calibration compatibility/replacement, time-policy persistence, and repeated automatic saves without accumulating authoritative sidecar/history files. RTC testing should verify Manual/Auto behavior, GPS synchronization, retained clock validity, and durable timezone/12–24-hour preferences.
 

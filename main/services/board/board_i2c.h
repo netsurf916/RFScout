@@ -1,6 +1,6 @@
 /**
     board_i2c.h : Shared RFScout board I2C bus
-    Description: Owns the T-Embed I2C controller used by board and expansion devices.
+    Description: Owns the shared board I2C controller used by onboard and expansion devices.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -18,6 +18,9 @@
 
 /** @brief Initialize the shared board I2C bus. */
 esp_err_t board_i2c_init( void );
+
+/** @brief Return the initialized shared I2C bus handle, or NULL when initialization fails. */
+i2c_master_bus_handle_t board_i2c_handle( void );
 
 /** @brief Probe one seven-bit address on the shared board I2C bus. */
 esp_err_t board_i2c_probe( uint16_t a_address );

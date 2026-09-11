@@ -8,6 +8,7 @@
 #include "recorder_view.h"
 
 #include "display.h"
+#include "input.h"
 #include "recorder.h"
 #include "ui_chrome.h"
 #include "ui_layout.h"
@@ -51,7 +52,8 @@ void recorder_view_landing( const char *a_playback_name, uint8_t a_playback_volu
         display_draw_text( UI_LAYOUT_LEFT_X, 91, recorder_active_name(), theme->divider, 1U );
         display_draw_text( UI_LAYOUT_LEFT_X,
                            UI_LAYOUT_FOOTER_Y,
-                           "CENTER: STOP  NAVIGATION LOCKED",
+                           input_primary_select_available() ? "CENTER: STOP  NAVIGATION LOCKED"
+                                                            : "TAP: STOP  NAVIGATION LOCKED",
                            theme->secondary,
                            1U );
     }

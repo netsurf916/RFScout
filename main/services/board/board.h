@@ -40,6 +40,7 @@ typedef enum
     RFSCOUT_BOARD_CAP_POWER_OFF = 1U << 13,
     RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE = 1U << 14,
     RFSCOUT_BOARD_CAP_GLOBAL_TABS = 1U << 15,
+    RFSCOUT_BOARD_CAP_ES7210_MIC = 1U << 16,
 } rfscout_board_capability_t;
 
 typedef enum
@@ -162,6 +163,7 @@ bool board_profile_has( rfscout_board_capability_t a_capability );
 #define RFSCOUT_BOARD_HAS_TOUCH ( board_profile_has( RFSCOUT_BOARD_CAP_TOUCH ) )
 #define RFSCOUT_BOARD_HAS_ROTARY_ENCODER ( board_profile_has( RFSCOUT_BOARD_CAP_ROTARY_ENCODER ) )
 #define RFSCOUT_BOARD_HAS_PDM_MIC ( board_profile_has( RFSCOUT_BOARD_CAP_PDM_MIC ) )
+#define RFSCOUT_BOARD_HAS_ES7210_MIC ( board_profile_has( RFSCOUT_BOARD_CAP_ES7210_MIC ) )
 #define RFSCOUT_BOARD_HAS_SPEAKER ( board_profile_has( RFSCOUT_BOARD_CAP_SPEAKER ) )
 #define RFSCOUT_BOARD_HAS_GLOBAL_TABS ( board_profile_has( RFSCOUT_BOARD_CAP_GLOBAL_TABS ) )
 #define RFSCOUT_BOARD_HAS_INTERNAL_TEMPERATURE                                                     \
