@@ -265,8 +265,7 @@ static bool close_segment( void )
         mark_io_error( "log flush" );
         success = false;
     }
-    if( 0 != fsync( fileno( active_file ) )
-    )
+    if( 0 != fsync( fileno( active_file ) ) )
     {
         mark_io_error( "log sync" );
         success = false;
@@ -777,8 +776,9 @@ bool log_writer_device_event( observation_store_event_t a_event, const rf_device
         return false;
     }
 
-    const char *source = ( RF_SOURCE_WIFI == a_device->last_source ) ? "wifi" :
-                         ( RF_SOURCE_BLE == a_device->last_source )  ? "ble" : "rf";
+    const char *source = ( RF_SOURCE_WIFI == a_device->last_source )  ? "wifi"
+                         : ( RF_SOURCE_BLE == a_device->last_source ) ? "ble"
+                                                                      : "rf";
     bool success = log_str( &record, "event", event ) && log_str( &record, "source", source ) &&
                    log_hex( &record, "mac", a_device->address, sizeof( a_device->address ) ) &&
                    log_bool( &record, "randomized", rf_device_address_is_randomized( a_device ) ) &&
