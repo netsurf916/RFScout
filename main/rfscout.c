@@ -377,6 +377,7 @@ void app_main( void )
     }
 
     ESP_ERROR_CHECK( observation_store_init() );
+    observation_store_set_event_callback( log_observation_event, NULL );
     ESP_ERROR_CHECK( system_events_init() );
     ESP_ERROR_CHECK( input_init() );
     if( RFSCOUT_BOARD_USER_KEY_PIN >= 0 )
@@ -486,7 +487,6 @@ void app_main( void )
         }
         else
         {
-            observation_store_set_event_callback( log_observation_event, NULL );
             app_logging_init();
         }
     }
