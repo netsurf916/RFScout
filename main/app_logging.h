@@ -1,6 +1,6 @@
 /**
     app_logging.h : RFScout per-application SD logging coordinator
-    Description: Declares lifecycle and periodic telemetry coordination for application-owned SD records.
+    Description: Declares lifecycle and periodic telemetry coordination for typed SD records.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
