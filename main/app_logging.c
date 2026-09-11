@@ -53,6 +53,12 @@ static void write_lifecycle_record( rfscout_app_id_t a_app, const char *a_event 
 
 static void write_periodic_record( rfscout_app_id_t a_app )
 {
+    if( ( RFSCOUT_APP_WIFI_BT == a_app ) || ( RFSCOUT_APP_DEVICE == a_app ) ||
+        ( a_app >= RFSCOUT_APP_COUNT ) )
+    {
+        return;
+    }
+
     rfscout_log_record_t record;
     if( !log_begin( &record, "telemetry" ) || !log_str( &record, "app", app_name( a_app ) ) )
     {
@@ -65,10 +71,6 @@ static void write_periodic_record( rfscout_app_id_t a_app )
         case RFSCOUT_APP_SYSTEM_EVENTS:
             success = log_uint( &record, "retained", system_events_history_count() );
             break;
-
-        case RFSCOUT_APP_WIFI_BT:
-        case RFSCOUT_APP_DEVICE:
-            return;
 
         case RFSCOUT_APP_CC1101:
         {
@@ -113,7 +115,8 @@ static void write_periodic_record( rfscout_app_id_t a_app )
             break;
 
         default:
-            return;
+            success = false;
+            break;
     }
 
     if( success )
