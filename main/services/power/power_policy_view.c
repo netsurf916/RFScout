@@ -38,9 +38,12 @@ static void emit_event( rfscout_event_type_t a_type, int32_t a_value )
 
 static void log_change( const char *a_key, const char *a_old, const char *a_new )
 {
-    char detail[ 128 ];
-    snprintf( detail, sizeof( detail ), "%s old=%s new=%s", a_key, a_old, a_new );
-    (void)log_writer_app_record( "CONFIG", detail );
+    rfscout_log_record_t record;
+    if( log_begin( &record, "config" ) && log_str( &record, "key", a_key ) &&
+        log_str( &record, "old", a_old ) && log_str( &record, "new", a_new ) )
+    {
+        (void)log_end( &record );
+    }
 }
 
 static uint8_t next_option( const uint8_t *a_options, size_t a_count, uint8_t a_current )
