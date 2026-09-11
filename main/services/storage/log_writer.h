@@ -10,8 +10,6 @@
 #ifndef _RFSCOUT_LOG_WRITER_H_
 #define _RFSCOUT_LOG_WRITER_H_
 
-#include "observation_store.h"
-
 #include "esp_err.h"
 
 #include <stdbool.h>
@@ -59,22 +57,8 @@ bool log_hex( rfscout_log_record_t *a_record,
 /** Finish the record and retain it in the current in-memory SD burst. */
 bool log_end( rfscout_log_record_t *a_record );
 
-/** Write a Wi-Fi/BLE live-list lifecycle event through the generic JSON logger. */
-bool log_writer_device_event( observation_store_event_t a_event, const rf_device_t *a_device );
-
-/** Observation-store callback forwarding lifecycle events to the logger. */
-void log_writer_store_event( observation_store_event_t a_event,
-                             const rf_device_t *a_device,
-                             void *a_context );
-
-/** Legacy application record adapter retained while older call sites migrate. */
-bool log_writer_app_record( const char *a_app, const char *a_detail );
-
 /** Flush buffered records, close the active file, and stop the writer task. */
 bool log_writer_shutdown( uint32_t a_timeout_ms );
-
-/** Return the number of records dropped because they could not be buffered/written. */
-uint32_t log_writer_dropped_count( void );
 
 /** Return sticky SD logging I/O-error state. */
 bool log_writer_has_error( void );
