@@ -45,6 +45,7 @@ static TaskHandle_t writer_task;
 static char *buffer;
 static size_t buffer_used;
 static size_t buffer_capacity;
+static size_t record_start;
 static int64_t buffer_started_us;
 static FILE *active_file;
 static uint32_t active_sequence;
@@ -130,7 +131,7 @@ static bool delete_oldest_segment( void )
     bool found = false;
     uint32_t oldest_sequence = 0;
     unsigned oldest_slot = 0;
-    for( unsigned slot = 0; slot < RFSCOUT_LOG_SEGMENT_COUNT; ++slot )
+    for( unsigned slot = 0U; slot < RFSCOUT_LOG_SEGMENT_COUNT; ++slot )
     {
         if( slot == active_slot )
         {
@@ -316,7 +317,7 @@ static bool ensure_capacity( size_t a_required )
 static bool append_bytes( rfscout_log_record_t *a_record, const char *a_data, size_t a_length )
 {
     if( ( NULL == a_record ) || !a_record->active ||
-        ( ( buffer_used - a_record->start ) + a_length > LOG_RECORD_MAX ) ||
+        ( ( buffer_used - record_start ) + a_length > LOG_RECORD_MAX ) ||
         !ensure_capacity( buffer_used + a_length ) )
     {
         return false;
@@ -425,7 +426,7 @@ static void abort_record( rfscout_log_record_t *a_record )
     {
         return;
     }
-    buffer_used = a_record->start;
+    buffer_used = record_start;
     a_record->active = false;
     flush_requested = true;
     xSemaphoreGive( buffer_lock );
@@ -446,8 +447,8 @@ bool log_begin( rfscout_log_record_t *a_record, const char *a_type )
         return false;
     }
 
+    record_start = buffer_used;
     *a_record = ( rfscout_log_record_t ){
-        .start = buffer_used,
         .first_field = true,
         .active = true,
     };
@@ -733,6 +734,7 @@ esp_err_t log_writer_init( void )
 
     find_next_segment();
     buffer_used = 0U;
+    record_start = 0U;
     buffer_started_us = 0;
     shutdown_requested = false;
     writer_stopped = false;
