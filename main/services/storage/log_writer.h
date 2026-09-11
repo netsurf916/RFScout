@@ -22,7 +22,6 @@
 
 typedef struct
 {
-    size_t start;
     bool first_field;
     bool active;
 } rfscout_log_record_t;
