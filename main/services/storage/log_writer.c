@@ -12,7 +12,6 @@
 #include "memory_manager.h"
 #include "storage.h"
 #include "storage_internal.h"
-#include "surveillance.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -21,6 +20,7 @@
 #include "freertos/task.h"
 
 #include <errno.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -55,7 +55,6 @@ static volatile bool shutdown_requested;
 static volatile bool writer_stopped;
 static volatile bool io_error;
 static volatile bool flush_requested;
-static uint32_t dropped_records;
 
 static const rfscout_memory_owner_t log_owner = {
     .owner_class = RFSCOUT_MEMORY_OWNER_PLATFORM,
@@ -84,6 +83,7 @@ static bool read_sequence( unsigned a_slot, uint32_t *a_sequence )
     {
         return false;
     }
+
     char line[ 64 ];
     const bool read_ok = ( NULL != fgets( line, sizeof( line ), file ) );
     fclose( file );
@@ -91,6 +91,7 @@ static bool read_sequence( unsigned a_slot, uint32_t *a_sequence )
     {
         return false;
     }
+
     unsigned long sequence = 0;
     if( 1 != sscanf( line, LOG_SEQUENCE_PREFIX "%lu}", &sequence ) )
     {
@@ -151,6 +152,7 @@ static bool delete_oldest_segment( void )
     {
         return false;
     }
+
     char path[ 64 ];
     segment_path( oldest_slot, path, sizeof( path ) );
     if( 0 != unlink( path ) )
@@ -265,7 +267,8 @@ static bool close_segment( void )
         mark_io_error( "log flush" );
         success = false;
     }
-    if( 0 != fsync( fileno( active_file ) ) )
+    if( 0 != fsync( fileno( active_file ) )
+    )
     {
         mark_io_error( "log sync" );
         success = false;
@@ -335,12 +338,13 @@ static bool append_json_string( rfscout_log_record_t *a_record, const char *a_va
     {
         return false;
     }
+
     for( size_t i = 0U; NULL != a_value && '\0' != a_value[ i ]; ++i )
     {
         const unsigned char value = (unsigned char)a_value[ i ];
         char escaped[ 7 ];
-        const char *text = NULL;
-        size_t length = 0U;
+        const char *text;
+        size_t length;
         if( '"' == value )
         {
             text = "\\\"";
@@ -376,7 +380,7 @@ static bool append_json_string( rfscout_log_record_t *a_record, const char *a_va
             text = "\\t";
             length = 2U;
         }
-        else if( ( value < 0x20U ) || ( value >= 0x80U ) )
+        else if( value < 0x20U )
         {
             snprintf( escaped, sizeof( escaped ), "\\u%04X", value );
             text = escaped;
@@ -424,7 +428,6 @@ static void abort_record( rfscout_log_record_t *a_record )
     }
     buffer_used = a_record->start;
     a_record->active = false;
-    ++dropped_records;
     flush_requested = true;
     xSemaphoreGive( buffer_lock );
 }
@@ -535,6 +538,12 @@ bool log_bool( rfscout_log_record_t *a_record, const char *a_key, bool a_value )
 
 bool log_double( rfscout_log_record_t *a_record, const char *a_key, double a_value )
 {
+    if( !isfinite( a_value ) )
+    {
+        abort_record( a_record );
+        return false;
+    }
+
     char value[ 32 ];
     const int length = snprintf( value, sizeof( value ), "%.6f", a_value );
     if( ( length <= 0 ) || ( (size_t)length >= sizeof( value ) ) ||
@@ -560,6 +569,7 @@ bool log_hex( rfscout_log_record_t *a_record,
         abort_record( a_record );
         return false;
     }
+
     static const char digits[] = "0123456789ABCDEF";
     const uint8_t *data = a_data;
     for( size_t i = 0U; i < a_length; ++i )
@@ -728,7 +738,6 @@ esp_err_t log_writer_init( void )
     shutdown_requested = false;
     writer_stopped = false;
     flush_requested = false;
-    dropped_records = 0U;
     accepting = true;
     if( pdPASS != xTaskCreate( writer_task_main,
                                "sd_log",
@@ -741,91 +750,6 @@ esp_err_t log_writer_init( void )
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
-}
-
-bool log_writer_device_event( observation_store_event_t a_event, const rf_device_t *a_device )
-{
-    if( NULL == a_device )
-    {
-        return false;
-    }
-
-    const char *event = NULL;
-    const char *reason = NULL;
-    switch( a_event )
-    {
-        case OBSERVATION_STORE_EVENT_ADDED:
-            event = "added";
-            break;
-        case OBSERVATION_STORE_EVENT_SURVEILLANCE_CHANGED:
-            event = "surveillance";
-            break;
-        case OBSERVATION_STORE_EVENT_DROPPED_CAPACITY:
-            event = "dropped";
-            reason = "capacity";
-            break;
-        default:
-            event = "dropped";
-            reason = "timeout";
-            break;
-    }
-
-    rfscout_log_record_t record;
-    if( !log_begin( &record, "device" ) )
-    {
-        return false;
-    }
-
-    const char *source = ( RF_SOURCE_WIFI == a_device->last_source )  ? "wifi"
-                         : ( RF_SOURCE_BLE == a_device->last_source ) ? "ble"
-                                                                      : "rf";
-    bool success = log_str( &record, "event", event ) && log_str( &record, "source", source ) &&
-                   log_hex( &record, "mac", a_device->address, sizeof( a_device->address ) ) &&
-                   log_bool( &record, "randomized", rf_device_address_is_randomized( a_device ) ) &&
-                   log_str( &record, "vendor", a_device->vendor ) &&
-                   ( !a_device->has_name || log_str( &record, "name", a_device->name ) );
-
-    if( success && ( OBSERVATION_STORE_EVENT_ADDED == a_event ||
-                     OBSERVATION_STORE_EVENT_SURVEILLANCE_CHANGED == a_event ) )
-    {
-        success = log_int( &record, "rssi", a_device->rssi ) &&
-                  log_uint( &record, "channel", a_device->channel );
-        if( success && ( SURVEILLANCE_SIGNATURE_NONE != a_device->surveillance_signature ) )
-        {
-            success = log_str( &record,
-                               "surveillance",
-                               surveillance_signature_label( a_device->surveillance_signature ) );
-        }
-        if( success && ( 0U != a_device->surveillance_evidence ) )
-        {
-            success = log_uint( &record, "evidence", a_device->surveillance_evidence );
-        }
-    }
-    else if( success )
-    {
-        success = log_str( &record, "reason", reason );
-    }
-
-    return success && log_end( &record );
-}
-
-void log_writer_store_event( observation_store_event_t a_event,
-                             const rf_device_t *a_device,
-                             void *a_context )
-{
-    (void)a_context;
-    (void)log_writer_device_event( a_event, a_device );
-}
-
-bool log_writer_app_record( const char *a_app, const char *a_detail )
-{
-    if( ( NULL == a_app ) || ( '\0' == a_app[ 0 ] ) || ( NULL == a_detail ) )
-    {
-        return false;
-    }
-    rfscout_log_record_t record;
-    return log_begin( &record, "app" ) && log_str( &record, "app", a_app ) &&
-           log_str( &record, "detail", a_detail ) && log_end( &record );
 }
 
 bool log_writer_shutdown( uint32_t a_timeout_ms )
@@ -853,11 +777,6 @@ bool log_writer_shutdown( uint32_t a_timeout_ms )
     accepting = true;
     ESP_LOGW( TAG, "log shutdown timed out; storage remains mounted and logging resumes" );
     return false;
-}
-
-uint32_t log_writer_dropped_count( void )
-{
-    return dropped_records;
 }
 
 bool log_writer_has_error( void )
