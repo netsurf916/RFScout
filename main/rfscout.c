@@ -78,6 +78,49 @@ notification_for_surveillance( surveillance_class_t a_classification )
     }
 }
 
+static void log_gps_fix( const rfscout_gps_snapshot_t *a_gps, const char *a_fix )
+{
+    if( NULL == a_gps )
+    {
+        return;
+    }
+
+    rfscout_log_record_t record;
+    if( log_begin( &record, "gps" ) && log_str( &record, "fix", a_fix ) &&
+        log_uint( &record, "satellites", a_gps->satellites ) )
+    {
+        (void)log_end( &record );
+    }
+}
+
+static void log_gps_fix_lost( const rfscout_gps_snapshot_t *a_gps )
+{
+    if( NULL == a_gps )
+    {
+        return;
+    }
+
+    rfscout_log_record_t record;
+    if( log_begin( &record, "gps" ) && log_str( &record, "fix", "lost" ) &&
+        log_double( &record, "last_lat", a_gps->latitude_deg ) &&
+        log_double( &record, "last_lon", a_gps->longitude_deg ) &&
+        log_uint( &record, "age_ms", a_gps->location_age_ms ) &&
+        log_uint( &record, "satellites", a_gps->satellites ) )
+    {
+        (void)log_end( &record );
+    }
+}
+
+static void log_gps_detected_without_fix( void )
+{
+    rfscout_log_record_t record;
+    if( log_begin( &record, "gps" ) && log_str( &record, "receiver", "detected" ) &&
+        log_str( &record, "fix", "none" ) )
+    {
+        (void)log_end( &record );
+    }
+}
+
 static void gps_state_poll( void )
 {
     rfscout_gps_snapshot_t gps;
@@ -98,14 +141,12 @@ static void gps_state_poll( void )
                       gps.latitude_deg,
                       gps.longitude_deg,
                       (unsigned)gps.satellites );
-            char detail[ 64 ];
-            snprintf( detail, sizeof( detail ), "fix=acquired sats=%u", (unsigned)gps.satellites );
-            (void)log_writer_app_record( "GPS", detail );
+            log_gps_fix( &gps, "acquired" );
         }
         else
         {
             ESP_LOGI( TAG, "GPS detected; waiting for location fix" );
-            (void)log_writer_app_record( "GPS", "receiver=detected fix=none" );
+            log_gps_detected_without_fix();
         }
         return;
     }
@@ -116,7 +157,6 @@ static void gps_state_poll( void )
     }
 
     gps_fix_active = fix_active;
-    char detail[ 160 ];
     if( fix_active )
     {
         ESP_LOGI( TAG,
@@ -124,7 +164,7 @@ static void gps_state_poll( void )
                   gps.latitude_deg,
                   gps.longitude_deg,
                   (unsigned)gps.satellites );
-        snprintf( detail, sizeof( detail ), "fix=acquired sats=%u", (unsigned)gps.satellites );
+        log_gps_fix( &gps, "acquired" );
     }
     else
     {
@@ -134,15 +174,8 @@ static void gps_state_poll( void )
                   gps.longitude_deg,
                   (unsigned long)gps.location_age_ms,
                   (unsigned)gps.satellites );
-        snprintf( detail,
-                  sizeof( detail ),
-                  "fix=lost last_lat=%.6f last_lon=%.6f age_ms=%lu sats=%u",
-                  gps.latitude_deg,
-                  gps.longitude_deg,
-                  (unsigned long)gps.location_age_ms,
-                  (unsigned)gps.satellites );
+        log_gps_fix_lost( &gps );
     }
-    (void)log_writer_app_record( "GPS", detail );
 }
 
 static void persist_config_if_due( void )
@@ -164,6 +197,78 @@ static void persist_config_if_due( void )
     ESP_LOGW( TAG,
               "configuration persistence failed; retrying in 1 second: %s",
               esp_err_to_name( result ) );
+}
+
+static void log_observation_event( observation_store_event_t a_event,
+                                   const rf_device_t *a_device,
+                                   void *a_context )
+{
+    (void)a_context;
+    if( NULL == a_device )
+    {
+        return;
+    }
+
+    const char *event;
+    const char *reason = NULL;
+    switch( a_event )
+    {
+        case OBSERVATION_STORE_EVENT_ADDED:
+            event = "added";
+            break;
+        case OBSERVATION_STORE_EVENT_SURVEILLANCE_CHANGED:
+            event = "surveillance";
+            break;
+        case OBSERVATION_STORE_EVENT_DROPPED_CAPACITY:
+            event = "dropped";
+            reason = "capacity";
+            break;
+        default:
+            event = "dropped";
+            reason = "timeout";
+            break;
+    }
+
+    const char *source = ( RF_SOURCE_WIFI == a_device->last_source )  ? "wifi"
+                         : ( RF_SOURCE_BLE == a_device->last_source ) ? "ble"
+                                                                      : "rf";
+    rfscout_log_record_t record;
+    if( !log_begin( &record, "device" ) )
+    {
+        return;
+    }
+
+    bool success = log_str( &record, "event", event ) && log_str( &record, "source", source ) &&
+                   log_hex( &record, "mac", a_device->address, sizeof( a_device->address ) ) &&
+                   log_bool( &record, "randomized", rf_device_address_is_randomized( a_device ) ) &&
+                   log_str( &record, "vendor", a_device->vendor ) &&
+                   ( !a_device->has_name || log_str( &record, "name", a_device->name ) );
+
+    if( success && ( OBSERVATION_STORE_EVENT_ADDED == a_event ||
+                     OBSERVATION_STORE_EVENT_SURVEILLANCE_CHANGED == a_event ) )
+    {
+        success = log_int( &record, "rssi", a_device->rssi ) &&
+                  log_uint( &record, "channel", a_device->channel );
+        if( success && ( SURVEILLANCE_SIGNATURE_NONE != a_device->surveillance_signature ) )
+        {
+            success = log_str( &record,
+                               "surveillance",
+                               surveillance_signature_label( a_device->surveillance_signature ) );
+        }
+        if( success && ( 0U != a_device->surveillance_evidence ) )
+        {
+            success = log_uint( &record, "evidence", a_device->surveillance_evidence );
+        }
+    }
+    else if( success )
+    {
+        success = log_str( &record, "reason", reason );
+    }
+
+    if( success )
+    {
+        (void)log_end( &record );
+    }
 }
 
 static void on_observation( rf_device_t *a_observation )
@@ -381,7 +486,7 @@ void app_main( void )
         }
         else
         {
-            observation_store_set_event_callback( log_writer_store_event, NULL );
+            observation_store_set_event_callback( log_observation_event, NULL );
             app_logging_init();
         }
     }
