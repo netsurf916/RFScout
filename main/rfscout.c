@@ -173,7 +173,8 @@ static void on_observation( rf_device_t *a_observation )
         return;
     }
 
-    if( !rf_device_address_is_randomized( a_observation ) )
+    const bool randomized = rf_device_address_is_randomized( a_observation );
+    if( !randomized )
     {
         const char *vendor = oui_database_lookup( a_observation->address );
         if( NULL != vendor )
@@ -218,25 +219,23 @@ static void on_observation( rf_device_t *a_observation )
         return;
     }
 
-    const char *source_name = ( RF_SOURCE_BLE == a_observation->last_source ) ? "BLE" : "WiFi";
-    const char *display_name = ( '\0' != a_observation->vendor[ 0 ] )
-                                   ? a_observation->vendor
-                                   : ( a_observation->has_name ? a_observation->name : "Unknown" );
-    const char *alert_suffix = ( SURVEILLANCE_NONE != match.classification ) ? " SURVEILLANCE" : "";
+    const char *source_name = ( RF_SOURCE_BLE == a_observation->last_source ) ? "BLE" : "WIFI";
 
     ESP_LOGI( TAG,
-              "%s %s %02X:%02X:%02X:%02X:%02X:%02X rssi=%d ch=%u%s",
+              "source=%s mac=%02X:%02X:%02X:%02X:%02X:%02X randomized=%u vendor=\"%s\" "
+              "rssi=%d ch=%u surveillance=%u",
               source_name,
-              display_name,
               a_observation->address[ 0 ],
               a_observation->address[ 1 ],
               a_observation->address[ 2 ],
               a_observation->address[ 3 ],
               a_observation->address[ 4 ],
               a_observation->address[ 5 ],
+              randomized ? 1U : 0U,
+              a_observation->vendor,
               a_observation->rssi,
               a_observation->channel,
-              alert_suffix );
+              ( SURVEILLANCE_NONE != match.classification ) ? 1U : 0U );
 
     const rfscout_wifi_detection_event_t detection_event =
         ( RF_SOURCE_BLE == a_observation->last_source ) ? RFSCOUT_WIFI_DETECTION_BLE_DEVICE

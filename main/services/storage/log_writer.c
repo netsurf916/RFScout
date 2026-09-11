@@ -31,7 +31,8 @@
 #define LOG_BATCH_THRESHOLD 32U
 #define LOG_BATCH_INTERVAL_US 10000000LL
 #define LOG_LINE_MAX 448U
-#define LOG_IDENTITY_MAX 96U
+#define LOG_VENDOR_TEXT_MAX ( RFSCOUT_VENDOR_NAME_MAX * 4U )
+#define LOG_NAME_TEXT_MAX ( RFSCOUT_DEVICE_NAME_MAX * 4U )
 #define LOG_APP_NAME_MAX 16U
 #define LOG_APP_DETAIL_MAX 160U
 #define LOG_TIMESTAMP_MAX 32U
@@ -60,6 +61,7 @@ typedef struct
     observation_store_event_t event;
     rf_source_t source;
     uint8_t address[ 6 ];
+    bool randomized;
     int8_t rssi;
     uint16_t channel;
     surveillance_signature_id_t signature;
@@ -473,11 +475,13 @@ static bool write_record( const log_record_t *a_record )
         const char *source = ( RF_SOURCE_WIFI == a_record->source )  ? "WIFI"
                              : ( RF_SOURCE_BLE == a_record->source ) ? "BLE"
                                                                      : "RF";
-        const char *raw_identity = ( '\0' != a_record->vendor[ 0 ] ) ? a_record->vendor
-                                   : ( '\0' != a_record->name[ 0 ] ) ? a_record->name
-                                                                     : "UNKNOWN";
-        char identity[ LOG_IDENTITY_MAX ];
-        format_text( raw_identity, identity, sizeof( identity ) );
+        char vendor[ LOG_VENDOR_TEXT_MAX ];
+        char name[ LOG_NAME_TEXT_MAX ];
+        format_text( a_record->vendor, vendor, sizeof( vendor ) );
+        format_text( a_record->name, name, sizeof( name ) );
+        const char *vendor_value = ( '\0' != vendor[ 0 ] ) ? vendor : NULL;
+        const char *name_value = ( '\0' != name[ 0 ] ) ? name : NULL;
+
         if( ( OBSERVATION_STORE_EVENT_ADDED == a_record->event ) ||
             ( OBSERVATION_STORE_EVENT_SURVEILLANCE_CHANGED == a_record->event ) )
         {
@@ -489,20 +493,26 @@ static bool write_record( const log_record_t *a_record )
             length = snprintf(
                 line,
                 sizeof( line ),
-                "%s %s %s rssi=%d ch=%u mac=%02X:%02X:%02X:%02X:%02X:%02X "
-                "identity=\"%s\" surveillance=%s evidence=%s%s\n",
+                "%s %s %s mac=%02X:%02X:%02X:%02X:%02X:%02X randomized=%u "
+                "vendor=%s%s%s name=%s%s%s rssi=%d ch=%u surveillance=%s evidence=%s%s\n",
                 timestamp,
                 ( OBSERVATION_STORE_EVENT_ADDED == a_record->event ) ? "ADDED" : "SURVEILLANCE",
                 source,
-                a_record->rssi,
-                (unsigned)a_record->channel,
                 a_record->address[ 0 ],
                 a_record->address[ 1 ],
                 a_record->address[ 2 ],
                 a_record->address[ 3 ],
                 a_record->address[ 4 ],
                 a_record->address[ 5 ],
-                identity,
+                a_record->randomized ? 1U : 0U,
+                ( NULL != vendor_value ) ? "\"" : "",
+                ( NULL != vendor_value ) ? vendor_value : "-",
+                ( NULL != vendor_value ) ? "\"" : "",
+                ( NULL != name_value ) ? "\"" : "",
+                ( NULL != name_value ) ? name_value : "-",
+                ( NULL != name_value ) ? "\"" : "",
+                a_record->rssi,
+                (unsigned)a_record->channel,
                 signature,
                 evidence,
                 location );
@@ -512,21 +522,27 @@ static bool write_record( const log_record_t *a_record )
             const char *reason = ( OBSERVATION_STORE_EVENT_DROPPED_CAPACITY == a_record->event )
                                      ? "capacity"
                                      : "timeout";
-            length = snprintf(
-                line,
-                sizeof( line ),
-                "%s DROPPED %s mac=%02X:%02X:%02X:%02X:%02X:%02X identity=\"%s\" reason=%s%s\n",
-                timestamp,
-                source,
-                a_record->address[ 0 ],
-                a_record->address[ 1 ],
-                a_record->address[ 2 ],
-                a_record->address[ 3 ],
-                a_record->address[ 4 ],
-                a_record->address[ 5 ],
-                identity,
-                reason,
-                location );
+            length = snprintf( line,
+                               sizeof( line ),
+                               "%s DROPPED %s mac=%02X:%02X:%02X:%02X:%02X:%02X randomized=%u "
+                               "vendor=%s%s%s name=%s%s%s reason=%s%s\n",
+                               timestamp,
+                               source,
+                               a_record->address[ 0 ],
+                               a_record->address[ 1 ],
+                               a_record->address[ 2 ],
+                               a_record->address[ 3 ],
+                               a_record->address[ 4 ],
+                               a_record->address[ 5 ],
+                               a_record->randomized ? 1U : 0U,
+                               ( NULL != vendor_value ) ? "\"" : "",
+                               ( NULL != vendor_value ) ? vendor_value : "-",
+                               ( NULL != vendor_value ) ? "\"" : "",
+                               ( NULL != name_value ) ? "\"" : "",
+                               ( NULL != name_value ) ? name_value : "-",
+                               ( NULL != name_value ) ? "\"" : "",
+                               reason,
+                               location );
         }
     }
 
@@ -692,6 +708,7 @@ bool log_writer_device_event( observation_store_event_t a_event, const rf_device
     log_record_t record = { .type = LOG_RECORD_DEVICE,
                             .event = a_event,
                             .source = a_device->last_source,
+                            .randomized = rf_device_address_is_randomized( a_device ),
                             .rssi = a_device->rssi,
                             .channel = a_device->channel,
                             .signature = a_device->surveillance_signature,
