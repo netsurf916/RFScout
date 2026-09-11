@@ -16,10 +16,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define RFSCOUT_LOG_SEGMENT_COUNT 100U
-#define RFSCOUT_LOG_SEGMENT_SIZE ( 4U * 1024U * 1024U )
-#define RFSCOUT_LOG_FREE_RESERVE ( 64ULL * 1024ULL * 1024ULL )
-
 typedef struct
 {
     size_t start;
