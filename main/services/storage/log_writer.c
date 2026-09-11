@@ -267,8 +267,7 @@ static bool close_segment( void )
         mark_io_error( "log flush" );
         success = false;
     }
-    if( 0 != fsync( fileno( active_file ) )
-    )
+    if( 0 != fsync( fileno( active_file ) ) )
     {
         mark_io_error( "log sync" );
         success = false;
