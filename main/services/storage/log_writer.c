@@ -31,6 +31,7 @@
 #define LOG_BUFFER_MAX 4096U
 #define LOG_FLUSH_THRESHOLD 3328U
 #define LOG_RECORD_MAX 768U
+#define LOG_WRITE_CHUNK 512U
 #define LOG_BATCH_INTERVAL_US 10000000LL
 #define LOG_TIMESTAMP_MAX 32U
 #define LOG_TASK_STACK_SIZE 4096U
@@ -332,6 +333,40 @@ static bool append_char( rfscout_log_record_t *a_record, char a_value )
     return append_bytes( a_record, &a_value, 1U );
 }
 
+static size_t valid_utf8_length( const unsigned char *a_text )
+{
+    const unsigned char first = a_text[ 0 ];
+    if( first < 0x80U )
+    {
+        return 1U;
+    }
+    if( ( first >= 0xC2U ) && ( first <= 0xDFU ) && ( a_text[ 1 ] >= 0x80U ) &&
+        ( a_text[ 1 ] <= 0xBFU ) )
+    {
+        return 2U;
+    }
+    if( ( first >= 0xE0U ) && ( first <= 0xEFU ) && ( 0U != a_text[ 1 ] ) &&
+        ( 0U != a_text[ 2 ] ) && ( a_text[ 2 ] >= 0x80U ) && ( a_text[ 2 ] <= 0xBFU ) )
+    {
+        const bool second_valid =
+            ( 0xE0U == first )   ? ( ( a_text[ 1 ] >= 0xA0U ) && ( a_text[ 1 ] <= 0xBFU ) )
+            : ( 0xEDU == first ) ? ( ( a_text[ 1 ] >= 0x80U ) && ( a_text[ 1 ] <= 0x9FU ) )
+                                 : ( ( a_text[ 1 ] >= 0x80U ) && ( a_text[ 1 ] <= 0xBFU ) );
+        return second_valid ? 3U : 0U;
+    }
+    if( ( first >= 0xF0U ) && ( first <= 0xF4U ) && ( 0U != a_text[ 1 ] ) &&
+        ( 0U != a_text[ 2 ] ) && ( 0U != a_text[ 3 ] ) && ( a_text[ 2 ] >= 0x80U ) &&
+        ( a_text[ 2 ] <= 0xBFU ) && ( a_text[ 3 ] >= 0x80U ) && ( a_text[ 3 ] <= 0xBFU ) )
+    {
+        const bool second_valid =
+            ( 0xF0U == first )   ? ( ( a_text[ 1 ] >= 0x90U ) && ( a_text[ 1 ] <= 0xBFU ) )
+            : ( 0xF4U == first ) ? ( ( a_text[ 1 ] >= 0x80U ) && ( a_text[ 1 ] <= 0x8FU ) )
+                                 : ( ( a_text[ 1 ] >= 0x80U ) && ( a_text[ 1 ] <= 0xBFU ) );
+        return second_valid ? 4U : 0U;
+    }
+    return 0U;
+}
+
 static bool append_json_string( rfscout_log_record_t *a_record, const char *a_value )
 {
     if( !append_char( a_record, '"' ) )
@@ -385,6 +420,20 @@ static bool append_json_string( rfscout_log_record_t *a_record, const char *a_va
             snprintf( escaped, sizeof( escaped ), "\\u%04X", value );
             text = escaped;
             length = 6U;
+        }
+        else if( value >= 0x80U )
+        {
+            length = valid_utf8_length( (const unsigned char *)&a_value[ i ] );
+            if( 0U == length )
+            {
+                text = "\\uFFFD";
+                length = 6U;
+            }
+            else
+            {
+                text = &a_value[ i ];
+                i += length - 1U;
+            }
         }
         else
         {
@@ -614,23 +663,45 @@ bool log_end( rfscout_log_record_t *a_record )
     return true;
 }
 
-static bool flush_buffer_locked( void )
+static void consume_buffer_prefix( size_t a_length )
 {
-    if( 0U == buffer_used )
+    xSemaphoreTake( buffer_lock, portMAX_DELAY );
+    if( a_length > buffer_used )
+    {
+        a_length = buffer_used;
+    }
+    buffer_used -= a_length;
+    if( buffer_used > 0U )
+    {
+        memmove( buffer, &buffer[ a_length ], buffer_used );
+    }
+    xSemaphoreGive( buffer_lock );
+}
+
+static bool flush_buffer( void )
+{
+    xSemaphoreTake( buffer_lock, portMAX_DELAY );
+    const size_t burst_size = buffer_used;
+    if( 0U == burst_size )
     {
         flush_requested = false;
         buffer_started_us = 0;
+        xSemaphoreGive( buffer_lock );
         return true;
     }
+    flush_requested = false;
+    xSemaphoreGive( buffer_lock );
+
     if( !storage_io_acquire( RFSCOUT_STORAGE_WAIT_FOREVER ) )
     {
         io_error = true;
+        flush_requested = true;
         ESP_LOGE( TAG, "could not acquire SD I/O lock for log burst" );
         return false;
     }
 
     bool success = open_segment();
-    if( success && ( active_size + buffer_used > RFSCOUT_LOG_SEGMENT_SIZE ) )
+    if( success && ( active_size + burst_size > RFSCOUT_LOG_SEGMENT_SIZE ) )
     {
         success = close_segment();
         if( success )
@@ -639,27 +710,67 @@ static bool flush_buffer_locked( void )
             success = open_segment();
         }
     }
-    if( success && ( buffer_used != fwrite( buffer, 1U, buffer_used, active_file ) ) )
+
+    size_t remaining = burst_size;
+    char chunk[ LOG_WRITE_CHUNK ];
+    while( success && ( remaining > 0U ) )
     {
-        mark_io_error( "SD log write" );
-        success = false;
+        xSemaphoreTake( buffer_lock, portMAX_DELAY );
+        size_t chunk_size = remaining;
+        if( chunk_size > sizeof( chunk ) )
+        {
+            chunk_size = sizeof( chunk );
+        }
+        if( chunk_size > buffer_used )
+        {
+            chunk_size = buffer_used;
+        }
+        memcpy( chunk, buffer, chunk_size );
+        xSemaphoreGive( buffer_lock );
+
+        size_t offset = 0U;
+        while( offset < chunk_size )
+        {
+            const size_t written = fwrite( &chunk[ offset ], 1U, chunk_size - offset, active_file );
+            if( 0U == written )
+            {
+                mark_io_error( "SD log write" );
+                success = false;
+                break;
+            }
+            active_size += written;
+            offset += written;
+            remaining -= written;
+            consume_buffer_prefix( written );
+        }
     }
-    if( success )
-    {
-        active_size += buffer_used;
-    }
+
     if( !close_segment() )
     {
         success = false;
     }
     storage_io_release();
 
-    if( success )
+    xSemaphoreTake( buffer_lock, portMAX_DELAY );
+    if( 0U == buffer_used )
     {
-        buffer_used = 0U;
         buffer_started_us = 0;
         flush_requested = false;
     }
+    else if( success )
+    {
+        buffer_started_us = esp_timer_get_time();
+        flush_requested = buffer_used >= LOG_FLUSH_THRESHOLD;
+    }
+    else
+    {
+        flush_requested = true;
+        if( 0 == buffer_started_us )
+        {
+            buffer_started_us = esp_timer_get_time();
+        }
+    }
+    xSemaphoreGive( buffer_lock );
     return success;
 }
 
@@ -679,8 +790,8 @@ static void writer_task_main( void *a_argument )
 
         if( should_flush )
         {
+            (void)flush_buffer();
             xSemaphoreTake( buffer_lock, portMAX_DELAY );
-            (void)flush_buffer_locked();
             const bool empty = 0U == buffer_used;
             xSemaphoreGive( buffer_lock );
             if( shutdown_requested && empty )
