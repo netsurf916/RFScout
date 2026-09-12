@@ -18,7 +18,6 @@
 #include "event.h"
 #include "log_writer.h"
 #include "morse.h"
-#include "observation_store.h"
 #include "power.h"
 #include "power_policy_view.h"
 #include "storage.h"
@@ -121,14 +120,12 @@ static void emit_device_event( rfscout_event_type_t a_type, int32_t a_value )
 
 static void log_config_change( const char *a_key, const char *a_old, const char *a_new )
 {
-    char detail[ 160 ];
-    snprintf( detail,
-              sizeof( detail ),
-              "%s old=%s new=%s",
-              a_key,
-              ( NULL != a_old ) ? a_old : "-",
-              ( NULL != a_new ) ? a_new : "-" );
-    (void)log_writer_app_record( "CONFIG", detail );
+    rfscout_log_record_t record;
+    if( log_begin( &record, "config" ) && log_str( &record, "key", a_key ) &&
+        log_str( &record, "old", a_old ) && log_str( &record, "new", a_new ) )
+    {
+        (void)log_end( &record );
+    }
 }
 
 static void format_epoch( time_t a_epoch, char *a_output, size_t a_capacity )
@@ -1140,9 +1137,13 @@ static bool commit_manual_time( void )
         snprintf( old_text, sizeof( old_text ), "invalid" );
     }
     format_epoch( new_epoch, new_text, sizeof( new_text ) );
-    char detail[ 128 ];
-    snprintf( detail, sizeof( detail ), "old=%s new=%s source=manual", old_text, new_text );
-    (void)log_writer_app_record( "TIME", detail );
+
+    rfscout_log_record_t record;
+    if( log_begin( &record, "time" ) && log_str( &record, "old", old_text ) &&
+        log_str( &record, "new", new_text ) && log_str( &record, "source", "manual" ) )
+    {
+        (void)log_end( &record );
+    }
     save_error = false;
     return true;
 }
@@ -1261,7 +1262,6 @@ static void toggle_logging( void )
         return;
     }
     (void)device_config_set_logging_enabled( true );
-    observation_store_set_event_callback( log_writer_store_event, NULL );
     app_logging_init();
     log_config_change( "logging.enabled", "Off", "On" );
     save_error = false;

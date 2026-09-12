@@ -1,6 +1,6 @@
 /**
     log_writer.c : RFScout asynchronous SD log writer
-    Description: Writes device and application records to a bounded circular text log.
+    Description: Builds JSON-line records and commits bounded bursts to SD.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -9,72 +9,45 @@
 
 #include "device_time.h"
 #include "gps.h"
+#include "memory_manager.h"
 #include "storage.h"
 #include "storage_internal.h"
-#include "surveillance.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
-#include <ctype.h>
 #include <errno.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
-#define LOG_QUEUE_DEPTH 128U
-#define LOG_BATCH_THRESHOLD 32U
+#define LOG_BUFFER_INITIAL 512U
+#define LOG_BUFFER_MAX 4096U
+#define LOG_FLUSH_THRESHOLD 3328U
+#define LOG_RECORD_MAX 768U
+#define LOG_WRITE_CHUNK 512U
 #define LOG_BATCH_INTERVAL_US 10000000LL
-#define LOG_LINE_MAX 448U
-#define LOG_IDENTITY_MAX 96U
-#define LOG_APP_NAME_MAX 16U
-#define LOG_APP_DETAIL_MAX 160U
 #define LOG_TIMESTAMP_MAX 32U
-#define LOG_LOCATION_MAX 72U
 #define LOG_TASK_STACK_SIZE 4096U
 #define LOG_TASK_PRIORITY 2U
 #define LOG_BATCH_POLL_MS 100U
 #define LOG_SHUTDOWN_POLL_MS 20U
-#define LOG_SEQUENCE_PREFIX "# RFSCOUT LOG SEQUENCE "
-
-typedef enum
-{
-    LOG_RECORD_DEVICE = 0,
-    LOG_RECORD_APP
-} log_record_type_t;
-
-typedef struct
-{
-    time_t wall_time;
-    uint32_t uptime_ms;
-    bool wall_time_valid;
-    bool location_valid;
-    double latitude_deg;
-    double longitude_deg;
-    log_record_type_t type;
-    observation_store_event_t event;
-    rf_source_t source;
-    uint8_t address[ 6 ];
-    int8_t rssi;
-    uint16_t channel;
-    surveillance_signature_id_t signature;
-    uint8_t evidence;
-    char vendor[ RFSCOUT_VENDOR_NAME_MAX ];
-    char name[ RFSCOUT_DEVICE_NAME_MAX ];
-    char app[ LOG_APP_NAME_MAX ];
-    char detail[ LOG_APP_DETAIL_MAX ];
-} log_record_t;
+#define LOG_SEQUENCE_PREFIX "{\"type\":\"sequence\",\"sequence\":"
 
 static const char *TAG = "log_writer";
-static StaticQueue_t queue_control;
-static uint8_t queue_storage[ LOG_QUEUE_DEPTH * sizeof( log_record_t ) ];
-static QueueHandle_t queue;
+static SemaphoreHandle_t buffer_lock;
 static TaskHandle_t writer_task;
+static char *buffer;
+static size_t buffer_used;
+static size_t buffer_capacity;
+static size_t record_start;
+static int64_t buffer_started_us;
 static FILE *active_file;
 static uint32_t active_sequence;
 static unsigned active_slot;
@@ -83,16 +56,18 @@ static volatile bool accepting;
 static volatile bool shutdown_requested;
 static volatile bool writer_stopped;
 static volatile bool io_error;
-static uint32_t dropped_records;
+static volatile bool flush_requested;
 
-/** @brief Mark the logging subsystem unhealthy after a filesystem operation fails. */
+static const rfscout_memory_owner_t log_owner = {
+    .owner_class = RFSCOUT_MEMORY_OWNER_PLATFORM,
+};
+
 static void mark_io_error( const char *a_operation )
 {
     io_error = true;
     ESP_LOGE( TAG, "%s failed: errno=%d", a_operation, errno );
 }
 
-/** @brief Construct the path for one bounded log-ring slot. */
 static void segment_path( unsigned a_slot, char *a_path, size_t a_capacity )
 {
     snprintf( a_path,
@@ -101,7 +76,6 @@ static void segment_path( unsigned a_slot, char *a_path, size_t a_capacity )
               a_slot % RFSCOUT_LOG_SEGMENT_COUNT );
 }
 
-/** @brief Read the sequence header from one existing ring slot. */
 static bool read_sequence( unsigned a_slot, uint32_t *a_sequence )
 {
     char path[ 64 ];
@@ -111,6 +85,7 @@ static bool read_sequence( unsigned a_slot, uint32_t *a_sequence )
     {
         return false;
     }
+
     char line[ 64 ];
     const bool read_ok = ( NULL != fgets( line, sizeof( line ), file ) );
     fclose( file );
@@ -118,8 +93,9 @@ static bool read_sequence( unsigned a_slot, uint32_t *a_sequence )
     {
         return false;
     }
+
     unsigned long sequence = 0;
-    if( 1 != sscanf( line, LOG_SEQUENCE_PREFIX "%lu", &sequence ) )
+    if( 1 != sscanf( line, LOG_SEQUENCE_PREFIX "%lu}", &sequence ) )
     {
         return false;
     }
@@ -127,7 +103,6 @@ static bool read_sequence( unsigned a_slot, uint32_t *a_sequence )
     return true;
 }
 
-/** @brief Find the newest ring segment and select its successor. */
 static void find_next_segment( void )
 {
     bool found = false;
@@ -152,13 +127,12 @@ static void find_next_segment( void )
     active_size = 0U;
 }
 
-/** @brief Delete the oldest inactive segment when free space is constrained. */
 static bool delete_oldest_segment( void )
 {
     bool found = false;
     uint32_t oldest_sequence = 0;
     unsigned oldest_slot = 0;
-    for( unsigned slot = 0; slot < RFSCOUT_LOG_SEGMENT_COUNT; ++slot )
+    for( unsigned slot = 0U; slot < RFSCOUT_LOG_SEGMENT_COUNT; ++slot )
     {
         if( slot == active_slot )
         {
@@ -180,6 +154,7 @@ static bool delete_oldest_segment( void )
     {
         return false;
     }
+
     char path[ 64 ];
     segment_path( oldest_slot, path, sizeof( path ) );
     if( 0 != unlink( path ) )
@@ -190,7 +165,6 @@ static bool delete_oldest_segment( void )
     return true;
 }
 
-/** @brief Preserve the configured filesystem reserve by deleting oldest segments. */
 static void enforce_free_space_reserve( void )
 {
     uint64_t free_bytes = 0;
@@ -205,7 +179,6 @@ static void enforce_free_space_reserve( void )
     }
 }
 
-/** @brief Advance to the next bounded ring slot without opening it yet. */
 static void advance_segment( void )
 {
     active_slot = ( active_slot + 1U ) % RFSCOUT_LOG_SEGMENT_COUNT;
@@ -213,7 +186,6 @@ static void advance_segment( void )
     active_size = 0U;
 }
 
-/** @brief Open the active segment for one write burst, creating its sequence header if necessary. */
 static bool open_segment( void )
 {
     if( NULL != active_file )
@@ -262,7 +234,7 @@ static bool open_segment( void )
             return false;
         }
         const int header_length =
-            fprintf( active_file, LOG_SEQUENCE_PREFIX "%lu\n", (unsigned long)active_sequence );
+            fprintf( active_file, LOG_SEQUENCE_PREFIX "%lu}\n", (unsigned long)active_sequence );
         if( header_length < 0 )
         {
             mark_io_error( "log header write" );
@@ -284,7 +256,6 @@ static bool open_segment( void )
     return true;
 }
 
-/** @brief Flush, sync, and close the current segment while preserving its logical size. */
 static bool close_segment( void )
 {
     if( NULL == active_file )
@@ -312,333 +283,530 @@ static bool close_segment( void )
     return success;
 }
 
-/** @brief Convert evidence bits to stable pipe-separated log tokens. */
-static void format_evidence( uint8_t a_evidence, char *a_output, size_t a_capacity )
+static bool ensure_capacity( size_t a_required )
 {
-    struct evidence_name
-    {
-        uint8_t bit;
-        const char *name;
-    };
-    static const struct evidence_name names[] = { { SURVEILLANCE_EVIDENCE_OUI, "OUI" },
-                                                  { SURVEILLANCE_EVIDENCE_NAME, "NAME" },
-                                                  { SURVEILLANCE_EVIDENCE_COMPANY_ID, "COMPANY" },
-                                                  { SURVEILLANCE_EVIDENCE_SERVICE_UUID, "SERVICE" },
-                                                  { SURVEILLANCE_EVIDENCE_REMOTE_ID, "REMOTEID" },
-                                                  { SURVEILLANCE_EVIDENCE_PAYLOAD, "PAYLOAD" } };
-    a_output[ 0 ] = '\0';
-    for( size_t i = 0U; i < sizeof( names ) / sizeof( names[ 0 ] ); ++i )
-    {
-        if( 0U == ( a_evidence & names[ i ].bit ) )
-        {
-            continue;
-        }
-        if( '\0' != a_output[ 0 ] )
-        {
-            strlcat( a_output, "|", a_capacity );
-        }
-        strlcat( a_output, names[ i ].name, a_capacity );
-    }
-    if( '\0' == a_output[ 0 ] )
-    {
-        strlcpy( a_output, "-", a_capacity );
-    }
-}
-
-/** @brief Escape arbitrary text for one-line log records. */
-static void format_text( const char *a_input, char *a_output, size_t a_capacity )
-{
-    size_t output = 0U;
-    if( 0U == a_capacity )
-    {
-        return;
-    }
-    for( size_t input = 0U; ( NULL != a_input ) && ( '\0' != a_input[ input ] ); ++input )
-    {
-        const unsigned char value = (unsigned char)a_input[ input ];
-        const char *escape = NULL;
-        char escaped[ 5 ];
-        if( '"' == value )
-        {
-            escape = "\\\"";
-        }
-        else if( '\\' == value )
-        {
-            escape = "\\\\";
-        }
-        else if( '\n' == value )
-        {
-            escape = "\\n";
-        }
-        else if( '\r' == value )
-        {
-            escape = "\\r";
-        }
-        else if( '\t' == value )
-        {
-            escape = "\\t";
-        }
-        else if( !isprint( value ) )
-        {
-            snprintf( escaped, sizeof( escaped ), "\\x%02X", value );
-            escape = escaped;
-        }
-        if( NULL != escape )
-        {
-            const size_t length = strlen( escape );
-            if( ( output + length ) >= a_capacity )
-            {
-                break;
-            }
-            memcpy( &a_output[ output ], escape, length );
-            output += length;
-        }
-        else
-        {
-            if( ( output + 1U ) >= a_capacity )
-            {
-                break;
-            }
-            a_output[ output++ ] = (char)value;
-        }
-    }
-    a_output[ output ] = '\0';
-}
-
-/** @brief Capture wall time, monotonic fallback, and any fresh GPS fix at event creation. */
-static void stamp_record( log_record_t *a_record )
-{
-    a_record->uptime_ms = (uint32_t)( esp_timer_get_time() / 1000ULL );
-    a_record->wall_time_valid = device_time_now( &a_record->wall_time );
-
-    rfscout_gps_snapshot_t gps;
-    if( gps_snapshot_get( &gps ) && gps.location_valid )
-    {
-        a_record->location_valid = true;
-        a_record->latitude_deg = gps.latitude_deg;
-        a_record->longitude_deg = gps.longitude_deg;
-    }
-}
-
-/** @brief Format a UTC wall-clock timestamp or explicit monotonic fallback. */
-static void format_timestamp( const log_record_t *a_record, char *a_output, size_t a_capacity )
-{
-    if( a_record->wall_time_valid &&
-        device_time_format_iso8601_utc( a_record->wall_time, a_output, a_capacity ) )
-    {
-        return;
-    }
-    snprintf( a_output, a_capacity, "UP+%lu", (unsigned long)a_record->uptime_ms );
-}
-
-/** @brief Format an optional event-time GPS fix as stable log key/value fields. */
-static void format_location( const log_record_t *a_record, char *a_output, size_t a_capacity )
-{
-    if( !a_record->location_valid )
-    {
-        a_output[ 0 ] = '\0';
-        return;
-    }
-    snprintf( a_output,
-              a_capacity,
-              " lat=%.6f lon=%.6f",
-              a_record->latitude_deg,
-              a_record->longitude_deg );
-}
-
-/** @brief Serialize one queued record to the currently open burst segment. */
-static bool write_record( const log_record_t *a_record )
-{
-    if( ( NULL == active_file ) && !open_segment() )
-    {
-        return false;
-    }
-
-    char line[ LOG_LINE_MAX ];
-    char timestamp[ LOG_TIMESTAMP_MAX ];
-    char location[ LOG_LOCATION_MAX ];
-    format_timestamp( a_record, timestamp, sizeof( timestamp ) );
-    format_location( a_record, location, sizeof( location ) );
-    int length;
-
-    if( LOG_RECORD_APP == a_record->type )
-    {
-        char detail[ LOG_APP_DETAIL_MAX * 2U ];
-        format_text( a_record->detail, detail, sizeof( detail ) );
-        length = snprintf(
-            line, sizeof( line ), "%s APP %s %s%s\n", timestamp, a_record->app, detail, location );
-    }
-    else
-    {
-        const char *source = ( RF_SOURCE_WIFI == a_record->source )  ? "WIFI"
-                             : ( RF_SOURCE_BLE == a_record->source ) ? "BLE"
-                                                                     : "RF";
-        const char *raw_identity = ( '\0' != a_record->vendor[ 0 ] ) ? a_record->vendor
-                                   : ( '\0' != a_record->name[ 0 ] ) ? a_record->name
-                                                                     : "UNKNOWN";
-        char identity[ LOG_IDENTITY_MAX ];
-        format_text( raw_identity, identity, sizeof( identity ) );
-        if( ( OBSERVATION_STORE_EVENT_ADDED == a_record->event ) ||
-            ( OBSERVATION_STORE_EVENT_SURVEILLANCE_CHANGED == a_record->event ) )
-        {
-            char evidence[ 64 ];
-            format_evidence( a_record->evidence, evidence, sizeof( evidence ) );
-            const char *signature = ( SURVEILLANCE_SIGNATURE_NONE != a_record->signature )
-                                        ? surveillance_signature_label( a_record->signature )
-                                        : "-";
-            length = snprintf(
-                line,
-                sizeof( line ),
-                "%s %s %s rssi=%d ch=%u mac=%02X:%02X:%02X:%02X:%02X:%02X "
-                "identity=\"%s\" surveillance=%s evidence=%s%s\n",
-                timestamp,
-                ( OBSERVATION_STORE_EVENT_ADDED == a_record->event ) ? "ADDED" : "SURVEILLANCE",
-                source,
-                a_record->rssi,
-                (unsigned)a_record->channel,
-                a_record->address[ 0 ],
-                a_record->address[ 1 ],
-                a_record->address[ 2 ],
-                a_record->address[ 3 ],
-                a_record->address[ 4 ],
-                a_record->address[ 5 ],
-                identity,
-                signature,
-                evidence,
-                location );
-        }
-        else
-        {
-            const char *reason = ( OBSERVATION_STORE_EVENT_DROPPED_CAPACITY == a_record->event )
-                                     ? "capacity"
-                                     : "timeout";
-            length = snprintf(
-                line,
-                sizeof( line ),
-                "%s DROPPED %s mac=%02X:%02X:%02X:%02X:%02X:%02X identity=\"%s\" reason=%s%s\n",
-                timestamp,
-                source,
-                a_record->address[ 0 ],
-                a_record->address[ 1 ],
-                a_record->address[ 2 ],
-                a_record->address[ 3 ],
-                a_record->address[ 4 ],
-                a_record->address[ 5 ],
-                identity,
-                reason,
-                location );
-        }
-    }
-
-    if( ( length <= 0 ) || ( (size_t)length >= sizeof( line ) ) )
-    {
-        io_error = true;
-        return false;
-    }
-
-    if( ( active_size + (size_t)length ) > RFSCOUT_LOG_SEGMENT_SIZE )
-    {
-        if( !close_segment() )
-        {
-            return false;
-        }
-        advance_segment();
-        if( !open_segment() )
-        {
-            return false;
-        }
-    }
-
-    if( (size_t)length != fwrite( line, 1U, (size_t)length, active_file ) )
-    {
-        mark_io_error( "SD log write" );
-        return false;
-    }
-    active_size += (size_t)length;
-    return true;
-}
-
-/** @brief Enqueue one immutable log record without blocking collectors. */
-static bool queue_record( const log_record_t *a_record )
-{
-    if( !accepting || ( NULL == queue ) || ( NULL == a_record ) )
-    {
-        return false;
-    }
-    if( pdTRUE == xQueueSend( queue, a_record, 0 ) )
+    if( a_required <= buffer_capacity )
     {
         return true;
     }
-    ++dropped_records;
-    return false;
+    if( a_required > LOG_BUFFER_MAX )
+    {
+        return false;
+    }
+
+    size_t capacity = ( 0U == buffer_capacity ) ? LOG_BUFFER_INITIAL : buffer_capacity;
+    while( ( capacity < a_required ) && ( capacity < LOG_BUFFER_MAX ) )
+    {
+        capacity *= 2U;
+    }
+    if( capacity > LOG_BUFFER_MAX )
+    {
+        capacity = LOG_BUFFER_MAX;
+    }
+
+    char *replacement = memory_manager_resize( log_owner, buffer, capacity, 1U );
+    if( NULL == replacement )
+    {
+        flush_requested = true;
+        return false;
+    }
+    buffer = replacement;
+    buffer_capacity = capacity;
+    return true;
 }
 
-/** @brief Durably write the records that were queued when this SD burst began. */
-static void flush_queued_batch( void )
+static bool append_bytes( rfscout_log_record_t *a_record, const char *a_data, size_t a_length )
 {
-    if( NULL == queue )
+    if( ( NULL == a_record ) || !a_record->active ||
+        ( ( buffer_used - record_start ) + a_length > LOG_RECORD_MAX ) ||
+        !ensure_capacity( buffer_used + a_length ) )
     {
-        return;
+        return false;
+    }
+    memcpy( &buffer[ buffer_used ], a_data, a_length );
+    buffer_used += a_length;
+    return true;
+}
+
+static bool append_char( rfscout_log_record_t *a_record, char a_value )
+{
+    return append_bytes( a_record, &a_value, 1U );
+}
+
+static size_t valid_utf8_length( const unsigned char *a_text )
+{
+    const unsigned char first = a_text[ 0 ];
+    if( first < 0x80U )
+    {
+        return 1U;
+    }
+    if( ( first >= 0xC2U ) && ( first <= 0xDFU ) && ( a_text[ 1 ] >= 0x80U ) &&
+        ( a_text[ 1 ] <= 0xBFU ) )
+    {
+        return 2U;
+    }
+    if( ( first >= 0xE0U ) && ( first <= 0xEFU ) && ( 0U != a_text[ 1 ] ) &&
+        ( 0U != a_text[ 2 ] ) && ( a_text[ 2 ] >= 0x80U ) && ( a_text[ 2 ] <= 0xBFU ) )
+    {
+        const bool second_valid =
+            ( 0xE0U == first )   ? ( ( a_text[ 1 ] >= 0xA0U ) && ( a_text[ 1 ] <= 0xBFU ) )
+            : ( 0xEDU == first ) ? ( ( a_text[ 1 ] >= 0x80U ) && ( a_text[ 1 ] <= 0x9FU ) )
+                                 : ( ( a_text[ 1 ] >= 0x80U ) && ( a_text[ 1 ] <= 0xBFU ) );
+        return second_valid ? 3U : 0U;
+    }
+    if( ( first >= 0xF0U ) && ( first <= 0xF4U ) && ( 0U != a_text[ 1 ] ) &&
+        ( 0U != a_text[ 2 ] ) && ( 0U != a_text[ 3 ] ) && ( a_text[ 2 ] >= 0x80U ) &&
+        ( a_text[ 2 ] <= 0xBFU ) && ( a_text[ 3 ] >= 0x80U ) && ( a_text[ 3 ] <= 0xBFU ) )
+    {
+        const bool second_valid =
+            ( 0xF0U == first )   ? ( ( a_text[ 1 ] >= 0x90U ) && ( a_text[ 1 ] <= 0xBFU ) )
+            : ( 0xF4U == first ) ? ( ( a_text[ 1 ] >= 0x80U ) && ( a_text[ 1 ] <= 0x8FU ) )
+                                 : ( ( a_text[ 1 ] >= 0x80U ) && ( a_text[ 1 ] <= 0xBFU ) );
+        return second_valid ? 4U : 0U;
+    }
+    return 0U;
+}
+
+static bool append_json_string( rfscout_log_record_t *a_record, const char *a_value )
+{
+    if( !append_char( a_record, '"' ) )
+    {
+        return false;
     }
 
-    const UBaseType_t batch_count = uxQueueMessagesWaiting( queue );
-    if( 0U == batch_count )
+    for( size_t i = 0U; NULL != a_value && '\0' != a_value[ i ]; ++i )
+    {
+        const unsigned char value = (unsigned char)a_value[ i ];
+        char escaped[ 7 ];
+        const char *text;
+        size_t length;
+        if( '"' == value )
+        {
+            text = "\\\"";
+            length = 2U;
+        }
+        else if( '\\' == value )
+        {
+            text = "\\\\";
+            length = 2U;
+        }
+        else if( '\b' == value )
+        {
+            text = "\\b";
+            length = 2U;
+        }
+        else if( '\f' == value )
+        {
+            text = "\\f";
+            length = 2U;
+        }
+        else if( '\n' == value )
+        {
+            text = "\\n";
+            length = 2U;
+        }
+        else if( '\r' == value )
+        {
+            text = "\\r";
+            length = 2U;
+        }
+        else if( '\t' == value )
+        {
+            text = "\\t";
+            length = 2U;
+        }
+        else if( value < 0x20U )
+        {
+            snprintf( escaped, sizeof( escaped ), "\\u%04X", value );
+            text = escaped;
+            length = 6U;
+        }
+        else if( value >= 0x80U )
+        {
+            length = valid_utf8_length( (const unsigned char *)&a_value[ i ] );
+            if( 0U == length )
+            {
+                text = "\\uFFFD";
+                length = 6U;
+            }
+            else
+            {
+                text = &a_value[ i ];
+                i += length - 1U;
+            }
+        }
+        else
+        {
+            escaped[ 0 ] = (char)value;
+            text = escaped;
+            length = 1U;
+        }
+        if( !append_bytes( a_record, text, length ) )
+        {
+            return false;
+        }
+    }
+    return append_char( a_record, '"' );
+}
+
+static bool append_field_name( rfscout_log_record_t *a_record, const char *a_key )
+{
+    if( ( NULL == a_key ) || ( '\0' == a_key[ 0 ] ) )
+    {
+        return false;
+    }
+    if( !a_record->first_field && !append_char( a_record, ',' ) )
+    {
+        return false;
+    }
+    a_record->first_field = false;
+    return append_json_string( a_record, a_key ) && append_char( a_record, ':' );
+}
+
+static bool append_number( rfscout_log_record_t *a_record, const char *a_key, const char *a_value )
+{
+    return append_field_name( a_record, a_key ) &&
+           append_bytes( a_record, a_value, strlen( a_value ) );
+}
+
+static void abort_record( rfscout_log_record_t *a_record )
+{
+    if( ( NULL == a_record ) || !a_record->active )
     {
         return;
     }
+    buffer_used = record_start;
+    a_record->active = false;
+    flush_requested = true;
+    xSemaphoreGive( buffer_lock );
+}
+
+bool log_begin( rfscout_log_record_t *a_record, const char *a_type )
+{
+    if( ( NULL == a_record ) || ( NULL == a_type ) || ( '\0' == a_type[ 0 ] ) || !accepting ||
+        ( NULL == buffer_lock ) )
+    {
+        return false;
+    }
+
+    xSemaphoreTake( buffer_lock, portMAX_DELAY );
+    if( !accepting )
+    {
+        xSemaphoreGive( buffer_lock );
+        return false;
+    }
+
+    record_start = buffer_used;
+    *a_record = ( rfscout_log_record_t ){
+        .first_field = true,
+        .active = true,
+    };
+
+    if( !append_char( a_record, '{' ) || !log_str( a_record, "type", a_type ) )
+    {
+        abort_record( a_record );
+        return false;
+    }
+
+    time_t wall_time = 0;
+    char timestamp[ LOG_TIMESTAMP_MAX ];
+    if( device_time_now( &wall_time ) &&
+        device_time_format_iso8601_utc( wall_time, timestamp, sizeof( timestamp ) ) )
+    {
+        if( !log_str( a_record, "time", timestamp ) )
+        {
+            abort_record( a_record );
+            return false;
+        }
+    }
+    else if( !log_uint( a_record, "uptime_ms", (uint64_t)( esp_timer_get_time() / 1000ULL ) ) )
+    {
+        abort_record( a_record );
+        return false;
+    }
+
+    rfscout_gps_snapshot_t gps;
+    if( gps_snapshot_get( &gps ) && gps.location_valid &&
+        ( !log_double( a_record, "lat", gps.latitude_deg ) ||
+          !log_double( a_record, "lon", gps.longitude_deg ) ) )
+    {
+        abort_record( a_record );
+        return false;
+    }
+    return true;
+}
+
+bool log_str( rfscout_log_record_t *a_record, const char *a_key, const char *a_value )
+{
+    if( ( NULL == a_value ) || ( '\0' == a_value[ 0 ] ) )
+    {
+        return true;
+    }
+    if( !append_field_name( a_record, a_key ) || !append_json_string( a_record, a_value ) )
+    {
+        abort_record( a_record );
+        return false;
+    }
+    return true;
+}
+
+bool log_int( rfscout_log_record_t *a_record, const char *a_key, int64_t a_value )
+{
+    char value[ 24 ];
+    snprintf( value, sizeof( value ), "%lld", (long long)a_value );
+    if( !append_number( a_record, a_key, value ) )
+    {
+        abort_record( a_record );
+        return false;
+    }
+    return true;
+}
+
+bool log_uint( rfscout_log_record_t *a_record, const char *a_key, uint64_t a_value )
+{
+    char value[ 24 ];
+    snprintf( value, sizeof( value ), "%llu", (unsigned long long)a_value );
+    if( !append_number( a_record, a_key, value ) )
+    {
+        abort_record( a_record );
+        return false;
+    }
+    return true;
+}
+
+bool log_bool( rfscout_log_record_t *a_record, const char *a_key, bool a_value )
+{
+    if( !append_field_name( a_record, a_key ) ||
+        !append_bytes( a_record, a_value ? "true" : "false", a_value ? 4U : 5U ) )
+    {
+        abort_record( a_record );
+        return false;
+    }
+    return true;
+}
+
+bool log_double( rfscout_log_record_t *a_record, const char *a_key, double a_value )
+{
+    if( !isfinite( a_value ) )
+    {
+        abort_record( a_record );
+        return false;
+    }
+
+    char value[ 32 ];
+    const int length = snprintf( value, sizeof( value ), "%.6f", a_value );
+    if( ( length <= 0 ) || ( (size_t)length >= sizeof( value ) ) ||
+        !append_number( a_record, a_key, value ) )
+    {
+        abort_record( a_record );
+        return false;
+    }
+    return true;
+}
+
+bool log_hex( rfscout_log_record_t *a_record,
+              const char *a_key,
+              const void *a_data,
+              size_t a_length )
+{
+    if( ( NULL == a_data ) || ( 0U == a_length ) )
+    {
+        return true;
+    }
+    if( !append_field_name( a_record, a_key ) || !append_char( a_record, '"' ) )
+    {
+        abort_record( a_record );
+        return false;
+    }
+
+    static const char digits[] = "0123456789ABCDEF";
+    const uint8_t *data = a_data;
+    for( size_t i = 0U; i < a_length; ++i )
+    {
+        const char pair[ 2 ] = { digits[ data[ i ] >> 4U ], digits[ data[ i ] & 0x0FU ] };
+        if( !append_bytes( a_record, pair, sizeof( pair ) ) )
+        {
+            abort_record( a_record );
+            return false;
+        }
+    }
+    if( !append_char( a_record, '"' ) )
+    {
+        abort_record( a_record );
+        return false;
+    }
+    return true;
+}
+
+bool log_end( rfscout_log_record_t *a_record )
+{
+    if( ( NULL == a_record ) || !a_record->active )
+    {
+        return false;
+    }
+    if( !append_bytes( a_record, "}\n", 2U ) )
+    {
+        abort_record( a_record );
+        return false;
+    }
+
+    if( 0 == buffer_started_us )
+    {
+        buffer_started_us = esp_timer_get_time();
+    }
+    if( buffer_used >= LOG_FLUSH_THRESHOLD )
+    {
+        flush_requested = true;
+    }
+    a_record->active = false;
+    xSemaphoreGive( buffer_lock );
+    return true;
+}
+
+static void consume_buffer_prefix( size_t a_length )
+{
+    xSemaphoreTake( buffer_lock, portMAX_DELAY );
+    if( a_length > buffer_used )
+    {
+        a_length = buffer_used;
+    }
+    buffer_used -= a_length;
+    if( buffer_used > 0U )
+    {
+        memmove( buffer, &buffer[ a_length ], buffer_used );
+    }
+    xSemaphoreGive( buffer_lock );
+}
+
+static bool flush_buffer( void )
+{
+    xSemaphoreTake( buffer_lock, portMAX_DELAY );
+    const size_t burst_size = buffer_used;
+    if( 0U == burst_size )
+    {
+        flush_requested = false;
+        buffer_started_us = 0;
+        xSemaphoreGive( buffer_lock );
+        return true;
+    }
+    flush_requested = false;
+    xSemaphoreGive( buffer_lock );
+
     if( !storage_io_acquire( RFSCOUT_STORAGE_WAIT_FOREVER ) )
     {
         io_error = true;
-        ESP_LOGE( TAG, "could not acquire SD I/O lock for log batch" );
-        return;
+        flush_requested = true;
+        ESP_LOGE( TAG, "could not acquire SD I/O lock for log burst" );
+        return false;
     }
 
-    log_record_t record;
-    for( UBaseType_t index = 0U; index < batch_count; ++index )
+    bool success = open_segment();
+    if( success && ( active_size + burst_size > RFSCOUT_LOG_SEGMENT_SIZE ) )
     {
-        if( pdTRUE != xQueueReceive( queue, &record, 0 ) )
+        success = close_segment();
+        if( success )
         {
-            break;
-        }
-        if( !write_record( &record ) )
-        {
-            ++dropped_records;
-            break;
+            advance_segment();
+            success = open_segment();
         }
     }
 
-    (void)close_segment();
+    size_t remaining = burst_size;
+    char chunk[ LOG_WRITE_CHUNK ];
+    while( success && ( remaining > 0U ) )
+    {
+        xSemaphoreTake( buffer_lock, portMAX_DELAY );
+        size_t chunk_size = remaining;
+        if( chunk_size > sizeof( chunk ) )
+        {
+            chunk_size = sizeof( chunk );
+        }
+        if( chunk_size > buffer_used )
+        {
+            chunk_size = buffer_used;
+        }
+        memcpy( chunk, buffer, chunk_size );
+        xSemaphoreGive( buffer_lock );
+
+        size_t offset = 0U;
+        while( offset < chunk_size )
+        {
+            const size_t written = fwrite( &chunk[ offset ], 1U, chunk_size - offset, active_file );
+            if( 0U == written )
+            {
+                mark_io_error( "SD log write" );
+                success = false;
+                break;
+            }
+            active_size += written;
+            offset += written;
+            remaining -= written;
+            consume_buffer_prefix( written );
+        }
+    }
+
+    if( !close_segment() )
+    {
+        success = false;
+    }
     storage_io_release();
+
+    xSemaphoreTake( buffer_lock, portMAX_DELAY );
+    if( 0U == buffer_used )
+    {
+        buffer_started_us = 0;
+        flush_requested = false;
+    }
+    else if( success )
+    {
+        buffer_started_us = esp_timer_get_time();
+        flush_requested = buffer_used >= LOG_FLUSH_THRESHOLD;
+    }
+    else
+    {
+        flush_requested = true;
+        if( 0 == buffer_started_us )
+        {
+            buffer_started_us = esp_timer_get_time();
+        }
+    }
+    xSemaphoreGive( buffer_lock );
+    return success;
 }
 
-/** @brief Batch queued records and own all filesystem writes in one task. */
 static void writer_task_main( void *a_argument )
 {
     (void)a_argument;
-    int64_t last_batch_us = esp_timer_get_time();
     while( true )
     {
-        const UBaseType_t queued = uxQueueMessagesWaiting( queue );
-        if( shutdown_requested && 0U == queued )
+        bool should_flush = shutdown_requested || flush_requested;
+        if( !should_flush )
         {
-            break;
+            xSemaphoreTake( buffer_lock, portMAX_DELAY );
+            should_flush = ( buffer_used > 0U ) && ( buffer_started_us > 0 ) &&
+                           ( esp_timer_get_time() - buffer_started_us >= LOG_BATCH_INTERVAL_US );
+            xSemaphoreGive( buffer_lock );
         }
 
-        const int64_t now_us = esp_timer_get_time();
-        const bool threshold_reached = queued >= LOG_BATCH_THRESHOLD;
-        const bool interval_elapsed =
-            queued > 0U && ( now_us - last_batch_us ) >= LOG_BATCH_INTERVAL_US;
-        if( shutdown_requested || threshold_reached || interval_elapsed )
+        if( should_flush )
         {
-            flush_queued_batch();
-            last_batch_us = esp_timer_get_time();
-            continue;
+            (void)flush_buffer();
+            xSemaphoreTake( buffer_lock, portMAX_DELAY );
+            const bool empty = 0U == buffer_used;
+            xSemaphoreGive( buffer_lock );
+            if( shutdown_requested && empty )
+            {
+                break;
+            }
+        }
+        else if( shutdown_requested )
+        {
+            break;
         }
 
         vTaskDelay( pdMS_TO_TICKS( LOG_BATCH_POLL_MS ) );
     }
 
-    flush_queued_batch();
     writer_stopped = true;
     writer_task = NULL;
     vTaskDelete( NULL );
@@ -646,6 +814,11 @@ static void writer_task_main( void *a_argument )
 
 esp_err_t log_writer_init( void )
 {
+    if( accepting && ( NULL != writer_task ) )
+    {
+        return ESP_OK;
+    }
+
     io_error = false;
     active_file = NULL;
     if( !storage_is_available() )
@@ -657,16 +830,26 @@ esp_err_t log_writer_init( void )
         mark_io_error( "log directory creation" );
         return ESP_FAIL;
     }
-    find_next_segment();
-    queue = xQueueCreateStatic(
-        LOG_QUEUE_DEPTH, sizeof( log_record_t ), queue_storage, &queue_control );
-    if( NULL == queue )
+    if( NULL == buffer_lock )
+    {
+        buffer_lock = xSemaphoreCreateMutex();
+        if( NULL == buffer_lock )
+        {
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    if( !ensure_capacity( LOG_BUFFER_INITIAL ) )
     {
         return ESP_ERR_NO_MEM;
     }
+
+    find_next_segment();
+    buffer_used = 0U;
+    record_start = 0U;
+    buffer_started_us = 0;
     shutdown_requested = false;
     writer_stopped = false;
-    dropped_records = 0U;
+    flush_requested = false;
     accepting = true;
     if( pdPASS != xTaskCreate( writer_task_main,
                                "sd_log",
@@ -676,56 +859,9 @@ esp_err_t log_writer_init( void )
                                &writer_task ) )
     {
         accepting = false;
-        queue = NULL;
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
-}
-
-bool log_writer_device_event( observation_store_event_t a_event, const rf_device_t *a_device )
-{
-    if( NULL == a_device )
-    {
-        return false;
-    }
-
-    log_record_t record = { .type = LOG_RECORD_DEVICE,
-                            .event = a_event,
-                            .source = a_device->last_source,
-                            .rssi = a_device->rssi,
-                            .channel = a_device->channel,
-                            .signature = a_device->surveillance_signature,
-                            .evidence = a_device->surveillance_evidence };
-    stamp_record( &record );
-    memcpy( record.address, a_device->address, sizeof( record.address ) );
-    strlcpy( record.vendor, a_device->vendor, sizeof( record.vendor ) );
-    if( a_device->has_name )
-    {
-        strlcpy( record.name, a_device->name, sizeof( record.name ) );
-    }
-    return queue_record( &record );
-}
-
-void log_writer_store_event( observation_store_event_t a_event,
-                             const rf_device_t *a_device,
-                             void *a_context )
-{
-    (void)a_context;
-    (void)log_writer_device_event( a_event, a_device );
-}
-
-bool log_writer_app_record( const char *a_app, const char *a_detail )
-{
-    if( ( NULL == a_app ) || ( '\0' == a_app[ 0 ] ) || ( NULL == a_detail ) )
-    {
-        return false;
-    }
-
-    log_record_t record = { .type = LOG_RECORD_APP };
-    stamp_record( &record );
-    strlcpy( record.app, a_app, sizeof( record.app ) );
-    strlcpy( record.detail, a_detail, sizeof( record.detail ) );
-    return queue_record( &record );
 }
 
 bool log_writer_shutdown( uint32_t a_timeout_ms )
@@ -737,6 +873,7 @@ bool log_writer_shutdown( uint32_t a_timeout_ms )
     }
     accepting = false;
     shutdown_requested = true;
+    flush_requested = true;
     const TickType_t delay = pdMS_TO_TICKS( LOG_SHUTDOWN_POLL_MS );
     uint32_t waited_ms = 0U;
     while( !writer_stopped && ( waited_ms < a_timeout_ms ) )
@@ -752,11 +889,6 @@ bool log_writer_shutdown( uint32_t a_timeout_ms )
     accepting = true;
     ESP_LOGW( TAG, "log shutdown timed out; storage remains mounted and logging resumes" );
     return false;
-}
-
-uint32_t log_writer_dropped_count( void )
-{
-    return dropped_records;
 }
 
 bool log_writer_has_error( void )

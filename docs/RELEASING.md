@@ -108,6 +108,12 @@ If a prepared draft should no longer be available, delete the GitHub draft relea
 
 Because GitHub does not generate draft-release deletion workflow events, deleting the GitHub draft alone does not instantly remove files from an already deployed Pages snapshot.
 
+## Compatibility before v1.0.0
+
+RFScout versions before `v1.0.0` are development releases and do not promise backward compatibility between releases. Internal persistence layouts, removable-storage formats, log schemas, and other implementation contracts may change without migration shims when doing so keeps the implementation simpler or materially improves the design. Compatibility work may still be added when it has a specific operational need, but preserving superseded pre-1.0 formats is not a default requirement.
+
+The project will revisit and define its long-term compatibility guarantees for `v1.0.0` and later. Until then, development builds should be treated as potentially format-breaking upgrades, and important removable or persistent data should be exported before upgrading when its continued readability matters.
+
 ## Installation behavior
 
 The combined image is a clean installation/recovery image flashed at `0x0`. It can replace internal NVS and LittleFS state, including RFScout configuration, calibration, and other persistent system/app records. Removable SD contents such as logs and recordings are not part of the image and are not erased by flashing internal storage.
