@@ -10,8 +10,6 @@ on:
       - 'tools/update_oui.py'
       - 'tools/update_surveillance.py'
       - 'data/surveillance_signatures.csv'
-  schedule:
-    - cron: '17 6 * * 1'
 
 permissions:
   contents: write
