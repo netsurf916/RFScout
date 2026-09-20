@@ -80,9 +80,12 @@ def read_png(path):
 def rgb_at(rows, channels, x, y):
     row = rows[y]
     base = x * channels
-    if channels == 4 and row[base + 3] == 0:
-        return (0, 0, 0)
-    return tuple(row[base : base + 3])
+    rgb = tuple(row[base : base + 3])
+    if channels != 4:
+        return rgb
+
+    alpha = row[base + 3]
+    return tuple(channel * alpha // 255 for channel in rgb)
 
 
 def content_bounds(width, height, channels, rows):
