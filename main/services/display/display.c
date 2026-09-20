@@ -68,10 +68,14 @@ static const st7789_init_command_t tdeck_st7789_init[] = {
       0 },
 };
 
+/*
+ * Keep RAMCTRL under ESP-IDF ownership. Its data_endian setting is what makes
+ * the little-endian uint16_t RGB565 framebuffer arrive at the panel correctly.
+ * LILYGO's TFT_eSPI RAMCTRL value assumes TFT_eSPI's different wire-byte order.
+ */
 static const st7789_init_command_t tembed_st7789_init[] = {
     { 0x13, { 0 }, 0, 0 },
     { 0xB6, { 0x0A, 0x82 }, 2, 0 },
-    { 0xB0, { 0x00, 0xE0 }, 2, 0 },
     { 0x3A, { 0x55 }, 1, 10 },
     { 0xB2, { 0x0C, 0x0C, 0x00, 0x33, 0x33 }, 5, 0 },
     { 0xB7, { 0x35 }, 1, 0 },
