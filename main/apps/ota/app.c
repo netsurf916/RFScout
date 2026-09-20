@@ -1,14 +1,669 @@
 /**
-    apps/ota/app.c : OTA Update application descriptor and baseline runtime
+    apps/ota/app.c : OTA Update application descriptor and network-management runtime
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
 
 #include "app_descriptor.h"
 
+#include "app_text_entry.h"
+#include "event.h"
+#include "ota_networks.h"
 #include "ota_view.h"
+#include "wifi_station.h"
+
+#include "esp_app_desc.h"
+#include "esp_err.h"
 
 #include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+#define OTA_REFRESH_INTERVAL_US 125000LL
+#define OTA_VISIBLE_MAX OTA_NETWORK_MAX_COUNT
+#define OTA_ERROR_TEXT_LENGTH 48U
+
+typedef enum
+{
+    OTA_SCREEN_MAIN = 0,
+    OTA_SCREEN_ACTION,
+    OTA_SCREEN_ADD,
+    OTA_SCREEN_SAVED,
+    OTA_SCREEN_PASSWORD
+} ota_screen_t;
+
+static ota_network_list_t saved_networks;
+static rfscout_wifi_station_ap_t scan_results[ RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS ];
+static ota_view_network_t view_networks[ RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS ];
+static size_t scan_count;
+static size_t view_network_count;
+static size_t visible_saved_indices[ OTA_VISIBLE_MAX ];
+static ota_screen_t screen;
+static unsigned selected_item;
+static int action_saved_index;
+static int action_scan_index;
+static char connecting_ssid[ OTA_NETWORK_SSID_MAX_LENGTH + 1U ];
+static char error_text[ OTA_ERROR_TEXT_LENGTH ];
+static rfscout_text_entry_t password_entry;
+static uint32_t last_scan_generation;
+static rfscout_wifi_station_state_t last_station_state;
+static int64_t last_refresh_us;
+
+static void emit_event( rfscout_event_type_t a_type, int32_t a_value )
+{
+    rfscout_event_emit( a_type, (uint8_t)RFSCOUT_APP_OTA, a_value );
+}
+
+static void set_error( esp_err_t a_error )
+{
+    if( ESP_OK == a_error )
+    {
+        error_text[ 0 ] = '\0';
+        return;
+    }
+    snprintf( error_text, sizeof( error_text ), "%s", esp_err_to_name( a_error ) );
+}
+
+static void refresh_scan_results( void )
+{
+    scan_count = wifi_station_scan_results( scan_results, RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS );
+}
+
+static int scan_index_for_ssid( const char *a_ssid )
+{
+    if( NULL == a_ssid )
+    {
+        return -1;
+    }
+    for( size_t index = 0U; index < scan_count; ++index )
+    {
+        if( 0 == strcmp( scan_results[ index ].ssid, a_ssid ) )
+        {
+            return (int)index;
+        }
+    }
+    return -1;
+}
+
+static void build_visible_saved( void )
+{
+    view_network_count = 0U;
+    for( size_t scan_index = 0U;
+         scan_index < scan_count && view_network_count < OTA_VISIBLE_MAX;
+         ++scan_index )
+    {
+        const int saved_index =
+            ota_networks_find( &saved_networks, scan_results[ scan_index ].ssid );
+        if( saved_index < 0 )
+        {
+            continue;
+        }
+        view_networks[ view_network_count ] = ( ota_view_network_t ){
+            .ssid = saved_networks.entries[ saved_index ].ssid,
+            .rssi = scan_results[ scan_index ].rssi,
+        };
+        visible_saved_indices[ view_network_count ] = (size_t)saved_index;
+        ++view_network_count;
+    }
+}
+
+static void build_add_list( void )
+{
+    view_network_count = 0U;
+    for( size_t scan_index = 0U;
+         scan_index < scan_count && view_network_count < RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS;
+         ++scan_index )
+    {
+        if( ota_networks_find( &saved_networks, scan_results[ scan_index ].ssid ) >= 0 )
+        {
+            continue;
+        }
+        view_networks[ view_network_count++ ] = ( ota_view_network_t ){
+            .ssid = scan_results[ scan_index ].ssid,
+            .rssi = scan_results[ scan_index ].rssi,
+        };
+    }
+}
+
+static void build_saved_list( void )
+{
+    view_network_count = saved_networks.count;
+    for( size_t index = 0U; index < saved_networks.count; ++index )
+    {
+        const int scan_index = scan_index_for_ssid( saved_networks.entries[ index ].ssid );
+        view_networks[ index ] = ( ota_view_network_t ){
+            .ssid = saved_networks.entries[ index ].ssid,
+            .rssi = scan_index >= 0 ? scan_results[ scan_index ].rssi : INT8_MIN,
+        };
+    }
+}
+
+static const char *connection_status( void )
+{
+    const rfscout_wifi_station_status_t current = wifi_station_status();
+    switch( current.state )
+    {
+        case RFSCOUT_WIFI_STATION_SCANNING:
+            return "Passive scan";
+        case RFSCOUT_WIFI_STATION_CONNECTING:
+            return "Connecting";
+        case RFSCOUT_WIFI_STATION_CONNECTED:
+            return '\0' != connecting_ssid[ 0 ] ? connecting_ssid : "Connected";
+        case RFSCOUT_WIFI_STATION_FAILED:
+            return "Connection failed";
+        case RFSCOUT_WIFI_STATION_OFF:
+        case RFSCOUT_WIFI_STATION_IDLE:
+        default:
+            return "Disconnected";
+    }
+}
+
+static void render_main( void )
+{
+    build_visible_saved();
+    const esp_app_desc_t *description = esp_app_get_description();
+    const rfscout_wifi_station_status_t current = wifi_station_status();
+    const bool scanning = RFSCOUT_WIFI_STATION_SCANNING == current.state;
+    const unsigned item_count = (unsigned)view_network_count + 3U;
+    if( selected_item >= item_count )
+    {
+        selected_item = item_count - 1U;
+    }
+    ota_view_render_main( NULL != description ? description->version : "unknown",
+                          connection_status(),
+                          view_networks,
+                          view_network_count,
+                          selected_item,
+                          scanning,
+                          error_text );
+}
+
+static void render_action( void )
+{
+    const char *ssid = NULL;
+    bool saved = action_saved_index >= 0 && (size_t)action_saved_index < saved_networks.count;
+    bool visible = action_scan_index >= 0 && (size_t)action_scan_index < scan_count;
+    int8_t rssi = visible ? scan_results[ action_scan_index ].rssi : INT8_MIN;
+    if( saved )
+    {
+        ssid = saved_networks.entries[ action_saved_index ].ssid;
+        action_scan_index = scan_index_for_ssid( ssid );
+        visible = action_scan_index >= 0;
+        rssi = visible ? scan_results[ action_scan_index ].rssi : INT8_MIN;
+    }
+    else if( visible )
+    {
+        ssid = scan_results[ action_scan_index ].ssid;
+    }
+
+    const rfscout_wifi_station_status_t current = wifi_station_status();
+    const bool connected = RFSCOUT_WIFI_STATION_CONNECTED == current.state && NULL != ssid &&
+                           0 == strcmp( connecting_ssid, ssid );
+    const char *status_text = error_text;
+    if( RFSCOUT_WIFI_STATION_CONNECTING == current.state && NULL != ssid &&
+        0 == strcmp( connecting_ssid, ssid ) )
+    {
+        status_text = "Connecting...";
+    }
+    else if( connected )
+    {
+        status_text = "Connected";
+    }
+    else if( RFSCOUT_WIFI_STATION_FAILED == current.state && NULL != ssid &&
+             0 == strcmp( connecting_ssid, ssid ) )
+    {
+        status_text = "Connection failed";
+    }
+
+    unsigned action_count = saved ? ( visible ? 3U : 2U ) : 2U;
+    if( selected_item >= action_count )
+    {
+        selected_item = action_count - 1U;
+    }
+    const bool open =
+        visible && action_scan_index >= 0 ? scan_results[ action_scan_index ].open : false;
+    ota_view_render_network_action(
+        ssid, rssi, visible, saved, open, connected, selected_item, status_text );
+}
+
+static void render_add( void )
+{
+    build_add_list();
+    const unsigned item_count = (unsigned)view_network_count + 1U;
+    if( selected_item >= item_count )
+    {
+        selected_item = item_count - 1U;
+    }
+    ota_view_render_network_list(
+        "ADD NETWORK", view_networks, view_network_count, selected_item, "No new APs seen" );
+}
+
+static void render_saved( void )
+{
+    build_saved_list();
+    const unsigned item_count = (unsigned)view_network_count + 1U;
+    if( selected_item >= item_count )
+    {
+        selected_item = item_count - 1U;
+    }
+    ota_view_render_network_list(
+        "SAVED NETWORKS", view_networks, view_network_count, selected_item, "No saved networks" );
+}
+
+static void render_password( void )
+{
+    const char *ssid = action_scan_index >= 0 && (size_t)action_scan_index < scan_count
+                           ? scan_results[ action_scan_index ].ssid
+                           : "Network";
+    ota_view_render_password( ssid,
+                              password_entry.length,
+                              app_text_entry_character( &password_entry ),
+                              error_text );
+}
+
+static void render( void )
+{
+    switch( screen )
+    {
+        case OTA_SCREEN_ACTION:
+            render_action();
+            break;
+        case OTA_SCREEN_ADD:
+            render_add();
+            break;
+        case OTA_SCREEN_SAVED:
+            render_saved();
+            break;
+        case OTA_SCREEN_PASSWORD:
+            render_password();
+            break;
+        case OTA_SCREEN_MAIN:
+        default:
+            render_main();
+            break;
+    }
+}
+
+static void begin_passive_scan( void )
+{
+    set_error( wifi_station_passive_scan_start() );
+    render();
+}
+
+static void move_selection( int a_direction, unsigned a_item_count )
+{
+    if( 0U == a_item_count )
+    {
+        selected_item = 0U;
+        return;
+    }
+    int item = (int)selected_item + ( a_direction > 0 ? 1 : -1 );
+    if( item < 0 )
+    {
+        item = (int)a_item_count - 1;
+    }
+    else if( item >= (int)a_item_count )
+    {
+        item = 0;
+    }
+    selected_item = (unsigned)item;
+    emit_event( RFSCOUT_EVENT_NAVIGATE, a_direction > 0 ? 1 : -1 );
+}
+
+static void open_saved_action( size_t a_saved_index )
+{
+    if( a_saved_index >= saved_networks.count )
+    {
+        return;
+    }
+    action_saved_index = (int)a_saved_index;
+    action_scan_index = scan_index_for_ssid( saved_networks.entries[ a_saved_index ].ssid );
+    selected_item = 0U;
+    screen = OTA_SCREEN_ACTION;
+    error_text[ 0 ] = '\0';
+    render();
+}
+
+static void open_unsaved_action( size_t a_scan_index )
+{
+    if( a_scan_index >= scan_count )
+    {
+        return;
+    }
+    action_saved_index = -1;
+    action_scan_index = (int)a_scan_index;
+    selected_item = 0U;
+    screen = OTA_SCREEN_ACTION;
+    error_text[ 0 ] = '\0';
+    render();
+}
+
+static void handle_main_select( void )
+{
+    build_visible_saved();
+    if( selected_item < view_network_count )
+    {
+        open_saved_action( visible_saved_indices[ selected_item ] );
+        return;
+    }
+    if( selected_item == view_network_count )
+    {
+        begin_passive_scan();
+        return;
+    }
+    if( selected_item == view_network_count + 1U )
+    {
+        selected_item = 0U;
+        screen = OTA_SCREEN_ADD;
+        render();
+        return;
+    }
+    selected_item = 0U;
+    screen = OTA_SCREEN_SAVED;
+    render();
+}
+
+static void save_open_network( void )
+{
+    if( action_scan_index < 0 || (size_t)action_scan_index >= scan_count )
+    {
+        set_error( ESP_ERR_INVALID_STATE );
+        render();
+        return;
+    }
+    esp_err_t result =
+        ota_networks_upsert( &saved_networks, scan_results[ action_scan_index ].ssid, "" );
+    if( ESP_OK == result )
+    {
+        result = ota_networks_save( &saved_networks );
+    }
+    set_error( result );
+    if( ESP_OK == result )
+    {
+        action_saved_index =
+            ota_networks_find( &saved_networks, scan_results[ action_scan_index ].ssid );
+        selected_item = 0U;
+    }
+    render();
+}
+
+static void begin_password_entry( void )
+{
+    error_text[ 0 ] = '\0';
+    app_text_entry_begin( &password_entry, NULL, OTA_NETWORK_PASSWORD_MAX_LENGTH );
+    screen = OTA_SCREEN_PASSWORD;
+    render();
+}
+
+static void connect_selected_network( void )
+{
+    if( action_saved_index < 0 || (size_t)action_saved_index >= saved_networks.count )
+    {
+        return;
+    }
+    const ota_network_t *network = &saved_networks.entries[ action_saved_index ];
+    snprintf( connecting_ssid, sizeof( connecting_ssid ), "%s", network->ssid );
+    set_error( wifi_station_connect( network->ssid, network->password ) );
+    render();
+}
+
+static void forget_selected_network( void )
+{
+    if( action_saved_index < 0 || (size_t)action_saved_index >= saved_networks.count )
+    {
+        return;
+    }
+
+    const char *ssid = saved_networks.entries[ action_saved_index ].ssid;
+    if( '\0' != connecting_ssid[ 0 ] && 0 == strcmp( connecting_ssid, ssid ) )
+    {
+        (void)wifi_station_disconnect();
+        memset( connecting_ssid, 0, sizeof( connecting_ssid ) );
+    }
+
+    esp_err_t result = ota_networks_forget( &saved_networks, (size_t)action_saved_index );
+    if( ESP_OK == result )
+    {
+        result = ota_networks_save( &saved_networks );
+    }
+    set_error( result );
+    screen = OTA_SCREEN_MAIN;
+    selected_item = 0U;
+    action_saved_index = -1;
+    action_scan_index = -1;
+    render();
+}
+
+static void handle_action_select( void )
+{
+    const bool saved =
+        action_saved_index >= 0 && (size_t)action_saved_index < saved_networks.count;
+    const bool visible = action_scan_index >= 0 && (size_t)action_scan_index < scan_count;
+
+    if( 0U == selected_item )
+    {
+        screen = OTA_SCREEN_MAIN;
+        selected_item = 0U;
+        render();
+        return;
+    }
+
+    if( !saved )
+    {
+        if( visible && scan_results[ action_scan_index ].open )
+        {
+            save_open_network();
+        }
+        else
+        {
+            begin_password_entry();
+        }
+        return;
+    }
+
+    if( visible && 1U == selected_item )
+    {
+        const rfscout_wifi_station_status_t current = wifi_station_status();
+        if( RFSCOUT_WIFI_STATION_CONNECTED == current.state &&
+            0 == strcmp( connecting_ssid, saved_networks.entries[ action_saved_index ].ssid ) )
+        {
+            (void)wifi_station_disconnect();
+            memset( connecting_ssid, 0, sizeof( connecting_ssid ) );
+            error_text[ 0 ] = '\0';
+            render();
+        }
+        else
+        {
+            connect_selected_network();
+        }
+        return;
+    }
+
+    forget_selected_network();
+}
+
+static void handle_add_select( void )
+{
+    build_add_list();
+    if( 0U == selected_item )
+    {
+        screen = OTA_SCREEN_MAIN;
+        selected_item = 0U;
+        render();
+        return;
+    }
+
+    const size_t view_index = selected_item - 1U;
+    if( view_index >= view_network_count )
+    {
+        return;
+    }
+    const int scan_index = scan_index_for_ssid( view_networks[ view_index ].ssid );
+    if( scan_index >= 0 )
+    {
+        open_unsaved_action( (size_t)scan_index );
+    }
+}
+
+static void handle_saved_select( void )
+{
+    if( 0U == selected_item )
+    {
+        screen = OTA_SCREEN_MAIN;
+        selected_item = 0U;
+        render();
+        return;
+    }
+    const size_t saved_index = selected_item - 1U;
+    if( saved_index < saved_networks.count )
+    {
+        open_saved_action( saved_index );
+    }
+}
+
+static void handle_password_input( const rfscout_input_event_t *a_input )
+{
+    const rfscout_text_entry_result_t result = app_text_entry_input( &password_entry, a_input );
+    if( RFSCOUT_TEXT_ENTRY_CANCELLED == result )
+    {
+        app_text_entry_clear( &password_entry );
+        screen = OTA_SCREEN_ACTION;
+        error_text[ 0 ] = '\0';
+        render();
+        return;
+    }
+    if( RFSCOUT_TEXT_ENTRY_ACCEPTED == result )
+    {
+        if( action_scan_index < 0 || (size_t)action_scan_index >= scan_count )
+        {
+            set_error( ESP_ERR_INVALID_STATE );
+            app_text_entry_clear( &password_entry );
+            screen = OTA_SCREEN_ACTION;
+            render();
+            return;
+        }
+
+        esp_err_t save_result =
+            ota_networks_upsert( &saved_networks,
+                                 scan_results[ action_scan_index ].ssid,
+                                 password_entry.value );
+        if( ESP_OK == save_result )
+        {
+            save_result = ota_networks_save( &saved_networks );
+        }
+        app_text_entry_clear( &password_entry );
+        set_error( save_result );
+        screen = OTA_SCREEN_ACTION;
+        if( ESP_OK == save_result )
+        {
+            action_saved_index =
+                ota_networks_find( &saved_networks, scan_results[ action_scan_index ].ssid );
+            selected_item = 0U;
+        }
+        render();
+        return;
+    }
+    render();
+}
+
+static void handle_input( const rfscout_input_event_t *a_input )
+{
+    if( OTA_SCREEN_PASSWORD == screen )
+    {
+        handle_password_input( a_input );
+        return;
+    }
+
+    if( RFSCOUT_INPUT_BACK == a_input->type )
+    {
+        if( OTA_SCREEN_MAIN == screen )
+        {
+            return;
+        }
+        screen = OTA_SCREEN_MAIN;
+        selected_item = 0U;
+        action_saved_index = -1;
+        action_scan_index = -1;
+        error_text[ 0 ] = '\0';
+        render();
+        emit_event( RFSCOUT_EVENT_BACK, 0 );
+        return;
+    }
+
+    if( RFSCOUT_INPUT_NAVIGATION == a_input->type )
+    {
+        unsigned item_count = 1U;
+        if( OTA_SCREEN_MAIN == screen )
+        {
+            build_visible_saved();
+            item_count = (unsigned)view_network_count + 3U;
+        }
+        else if( OTA_SCREEN_ACTION == screen )
+        {
+            const bool saved =
+                action_saved_index >= 0 && (size_t)action_saved_index < saved_networks.count;
+            const bool visible =
+                action_scan_index >= 0 && (size_t)action_scan_index < scan_count;
+            item_count = saved ? ( visible ? 3U : 2U ) : 2U;
+        }
+        else if( OTA_SCREEN_ADD == screen )
+        {
+            build_add_list();
+            item_count = (unsigned)view_network_count + 1U;
+        }
+        else if( OTA_SCREEN_SAVED == screen )
+        {
+            item_count = (unsigned)saved_networks.count + 1U;
+        }
+        move_selection( a_input->value > 0 ? 1 : -1, item_count );
+        render();
+        return;
+    }
+
+    if( RFSCOUT_INPUT_SELECT != a_input->type )
+    {
+        return;
+    }
+
+    emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
+    if( OTA_SCREEN_MAIN == screen )
+    {
+        handle_main_select();
+    }
+    else if( OTA_SCREEN_ACTION == screen )
+    {
+        handle_action_select();
+    }
+    else if( OTA_SCREEN_ADD == screen )
+    {
+        handle_add_select();
+    }
+    else if( OTA_SCREEN_SAVED == screen )
+    {
+        handle_saved_select();
+    }
+}
+
+static void reset_runtime_state( void )
+{
+    ota_networks_clear_runtime( &saved_networks );
+    memset( scan_results, 0, sizeof( scan_results ) );
+    memset( view_networks, 0, sizeof( view_networks ) );
+    memset( visible_saved_indices, 0, sizeof( visible_saved_indices ) );
+    scan_count = 0U;
+    view_network_count = 0U;
+    screen = OTA_SCREEN_MAIN;
+    selected_item = 0U;
+    action_saved_index = -1;
+    action_scan_index = -1;
+    memset( connecting_ssid, 0, sizeof( connecting_ssid ) );
+    memset( error_text, 0, sizeof( error_text ) );
+    app_text_entry_clear( &password_entry );
+    last_scan_generation = 0U;
+    last_station_state = RFSCOUT_WIFI_STATION_OFF;
+    last_refresh_us = 0;
+}
 
 static rfscout_app_runtime_result_t ota_runtime( const rfscout_app_runtime_event_t *a_event )
 {
@@ -19,18 +674,43 @@ static rfscout_app_runtime_result_t ota_runtime( const rfscout_app_runtime_event
 
     if( RFSCOUT_APP_RUNTIME_ENTER == a_event->type )
     {
-        ota_view_render();
+        reset_runtime_state();
+        const esp_err_t load_result = ota_networks_load( &saved_networks );
+        if( ESP_OK != load_result )
+        {
+            set_error( load_result );
+        }
+        render();
+        begin_passive_scan();
         return RFSCOUT_APP_RUNTIME_HANDLED;
-    }
-    if( RFSCOUT_APP_RUNTIME_LEAVE == a_event->type )
-    {
-        return RFSCOUT_APP_RUNTIME_HANDLED;
-    }
-    if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type )
-    {
-        return RFSCOUT_APP_RUNTIME_IGNORED;
     }
 
+    if( RFSCOUT_APP_RUNTIME_LEAVE == a_event->type )
+    {
+        reset_runtime_state();
+        return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
+
+    if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type )
+    {
+        handle_input( &a_event->input );
+        return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
+
+    if( RFSCOUT_APP_RUNTIME_POLL == a_event->type &&
+        a_event->now_us - last_refresh_us >= OTA_REFRESH_INTERVAL_US )
+    {
+        last_refresh_us = a_event->now_us;
+        const rfscout_wifi_station_status_t current = wifi_station_status();
+        if( current.scan_generation != last_scan_generation ||
+            current.state != last_station_state )
+        {
+            last_scan_generation = current.scan_generation;
+            last_station_state = current.state;
+            refresh_scan_results();
+            render();
+        }
+    }
     return RFSCOUT_APP_RUNTIME_HANDLED;
 }
 
@@ -41,6 +721,6 @@ const rfscout_app_descriptor_t rfscout_ota_app = {
     .probe_policy = RFSCOUT_APP_PROBE_NONE,
     .probe = NULL,
     .requires_activation = false,
-    .services = RFSCOUT_APP_SERVICE_NONE,
+    .services = RFSCOUT_APP_SERVICE_WIFI_STATION,
     .runtime = ota_runtime,
 };

@@ -49,7 +49,8 @@ typedef enum
     RFSCOUT_APP_SERVICE_BLE_MONITOR = 1U << 1,
     RFSCOUT_APP_SERVICE_CC1101 = 1U << 2,
     RFSCOUT_APP_SERVICE_NRF24 = 1U << 3,
-    RFSCOUT_APP_SERVICE_AUDIO_CAPTURE = 1U << 4
+    RFSCOUT_APP_SERVICE_AUDIO_CAPTURE = 1U << 4,
+    RFSCOUT_APP_SERVICE_WIFI_STATION = 1U << 5
 } rfscout_app_service_mask_t;
 
 /** @brief Runtime events delivered by the application manager to the active app module. */

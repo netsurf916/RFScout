@@ -15,6 +15,7 @@
 #include "nrf24.h"
 #include "radio_monitor.h"
 #include "recorder.h"
+#include "wifi_station.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -65,6 +66,18 @@ static bool wifi_active( void *a_context )
 {
     (void)a_context;
     return radio_monitor_is_running();
+}
+
+static esp_err_t stop_wifi_station( void *a_context )
+{
+    (void)a_context;
+    return wifi_station_stop();
+}
+
+static bool wifi_station_active( void *a_context )
+{
+    (void)a_context;
+    return wifi_station_is_active();
 }
 
 static esp_err_t start_ble( void *a_context )
@@ -153,6 +166,13 @@ static app_session_service_t platform_services[] = {
         .stop = stop_wifi,
         .recover_failed_stop = start_wifi,
         .active = wifi_active,
+        .always_stop_for_close = true,
+    },
+    {
+        .capability = RFSCOUT_APP_SERVICE_WIFI_STATION,
+        .name = "Wi-Fi STA",
+        .stop = stop_wifi_station,
+        .active = wifi_station_active,
         .always_stop_for_close = true,
     },
     {
