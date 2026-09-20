@@ -1,6 +1,6 @@
 # RFScout
 
-RFScout is a handheld **RF situational-awareness** instrument for ESP32-S3. A single universal firmware image currently supports runtime profiles for the **LILYGO T-Embed CC1101 Plus** and **LILYGO T-Deck Plus**. The T-Embed remains the hardware-validated baseline; T-Deck support is being validated incrementally on hardware, including the current audio-capture path.
+RFScout is a handheld **RF situational-awareness** instrument for ESP32-S3. The currently supported hardware profile is the **LILYGO T-Embed CC1101 Plus**. RFScout retains a runtime board-profile and capability abstraction so future hardware can be added without exposing board identity to applications.
 
 RFScout combines passive Wi-Fi/BLE observation, board-appropriate RF capabilities, SD logging/storage, semantic input and notifications, persistent device configuration, battery telemetry, and optional hardware-specific applications exposed only when the active runtime profile has a safe provider.
 
@@ -41,7 +41,7 @@ nRF24 performs receive-only 2.4 GHz RPD scanning with configurable channel bound
 
 ### Recorder
 
-Recorder uses the board-neutral audio-capture service plus SD storage for 16-bit mono WAV capture and playback. T-Embed retains its PDM provider; T-Deck uses the onboard ES7210 codec while RFScout owns the I2S0/DMA transport. The codec runs in four-slot Philips-format TDM and the provider compacts MIC1/slot 0 into ordinary mono PCM for Recorder and Audio Spectrum. Provider selection, lightweight hardware probing, transport lifecycle, and reads remain behind `audio_capture`; Recorder never receives a raw I2S handle. Active recording or finalization blocks app transitions until the file is safely complete.
+Recorder uses the board-neutral audio-capture service plus SD storage for 16-bit mono WAV capture and playback. The current T-Embed profile uses its PDM microphone provider while the audio-capture service owns provider selection, hardware probing, transport lifecycle, and reads. Recorder never receives a raw I2S handle. Active recording or finalization blocks app transitions until the file is safely complete.
 
 ### Audio Spectrum
 
@@ -53,7 +53,7 @@ Thermal uses an optional MLX90640 on the external I2C/Qwiic interface. Native 32
 
 ## Home / Device Settings
 
-Current global settings include brightness/display idle, visual theme, independent **Normal / Quiet** audio policy, UI/Event/Alert presentation levels, supported power-button/protective actions, time source/timezone/manual time, startup/app enablement, SD logging, and touch recalibration when a touch provider is available.
+Current global settings include brightness/display idle, visual theme, independent **Normal / Quiet** audio policy, UI/Event/Alert presentation levels, supported power-button/protective actions, time source/timezone/manual time, startup/app enablement, SD logging, and breadcrumb policy.
 
 Setting changes are persisted automatically through RFScout's internal persistent-record service; there is no user-facing Save step. App-owned notification settings and WiFi / BT retention remain in their respective app menus.
 
@@ -61,21 +61,16 @@ The Time submenu separates source policy from timezone presentation. **Auto** ac
 
 ## Power, display, and persistence
 
-Display and power actions are capability-gated by the selected runtime profile. T-Embed retains its validated dedicated power-button, deep-sleep, and physical power-off semantics. The device-wide input lock suppresses navigation, touch, and future keyboard input, but intentionally does not disable T-Embed's dedicated power button.
+Display and power actions are capability-gated by the selected runtime profile. T-Embed retains its validated dedicated power-button, deep-sleep, and physical power-off semantics. The device-wide input lock suppresses semantic navigation/select input but intentionally does not disable T-Embed's dedicated power button.
 
-T-Deck Plus currently exposes a voltage-only battery estimate but no authoritative charger/external-power state, so automatic low-battery power actions are intentionally disabled there. T-Deck also does not currently advertise sleep or physical power-off capabilities.
 
-Persistent preferences are firmware-managed internal records split between device-wide system records and descriptor-owned app records. Touch calibration and time policy are also system-owned bounded records. SD is reserved for removable/bulk data and logging, not configuration authority. See `docs/CONFIGURATION.md`.
+Persistent preferences are firmware-managed internal records split between device-wide system records and descriptor-owned app records. Time policy is a separate system-owned bounded record. SD is reserved for removable/bulk data and logging, not configuration authority. See `docs/CONFIGURATION.md`.
 
-## T-Deck Plus baseline
 
-T-Deck Plus support includes runtime board detection, the 320x240 ST7789 display, a managed 320x170 app view plus system-owned navigation region, trackball/center input, calibrated GT911 touch tab navigation, GPS location/time service, SD support, voltage-derived battery percentage, standard-I2S speaker output, and hardware-validated ES7210 microphone capture for Recorder/Audio Spectrum. ES7210 presence is checked non-invasively over the shared I2C bus; actual capture owns I2S0/DMA exclusively and uses four-slot TDM with MIC1/slot 0 compacted to mono PCM. GPIO0/trackball-center is suspended while capture owns the conflicting hardware path, and app-view touch provides semantic Select only during that interval. Hardware capabilities without a validated RFScout provider, including SX1262 and keyboard input, are not advertised to applications yet.
-
-GPS fixes are exposed with explicit validity/freshness and are opportunistically attached to SD log records. A system status indicator shows GPS receiver detection and fix state.
 
 ## Hardware and memory
 
-The runtime board profile owns physical pin mappings, buses, display transforms, capabilities, and power semantics. Provider code is compiled into the universal image but initializes only when the selected profile permits it. Unknown hardware remains awake and inert without initializing board GPIO/peripherals so it can be recovered by reflashing.
+The runtime board profile owns physical pin mappings, buses, display transforms, capabilities, and power semantics. Provider code initializes only when the selected profile permits it. Unknown hardware remains awake and inert without initializing board GPIO/peripherals so it can be recovered by reflashing.
 
 RFScout requires usable external **PSRAM**. Large app-owned collections can grow dynamically during an app resource session and are reclaimed only after the platform proves workers/callbacks no longer reference them. Internal SRAM remains reserved for system, stack, DMA/hardware-constrained, and latency-sensitive allocations.
 
@@ -91,7 +86,7 @@ idf.py build
 idf.py flash monitor
 ```
 
-The same firmware image selects T-Embed CC1101 Plus or T-Deck Plus at runtime. Ready-for-review pull requests can produce short-lived candidate bundles. Published releases are prepared deliberately through the release workflow and mirrored to the browser flasher.
+The firmware validates the T-Embed CC1101 Plus runtime profile at startup and leaves unsupported hardware inert. Ready-for-review pull requests can produce short-lived candidate bundles. Published releases are prepared deliberately through the release workflow and mirrored to the browser flasher.
 
 ## Documentation
 

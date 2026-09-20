@@ -11,7 +11,6 @@ Durable state is addressed by logical owner and key rather than caller-visible f
 - logical `system/config` owns ordinary device-wide policy: display/power behavior, theme, timezone selection/clock presentation, SD logging, app enablement/startup choice, global audio policy/gains, and global alert policy;
 - logical `app/<persistence_key>/config` owns application-specific preference overrides. The compiled app descriptor supplies the stable persistence identity; app-facing store calls derive ownership from the active app session and cannot select another app namespace;
 - logical `system/time.policy` owns the small Auto/Manual wall-clock synchronization policy;
-- logical `system/touch.calibration` owns bounded touch calibration tied to compatible board/display geometry;
 - logical `system/breadcrumbs` owns breadcrumb enablement and retained-file limit; and
 - other logical `system/*` or `app/<persistence_key>/*` records are reserved for durable state that is not ordinary configuration.
 
@@ -19,7 +18,7 @@ These names are an API model, not literal filenames. The persistent-store servic
 
 The persistent-store service owns LittleFS mounting, physical path construction, record availability, and synchronization. Filesystem operations are serialized internally by the service, so callers do not manage storage mutexes. Records are bounded to 16 KiB and each write atomically replaces one record through a same-directory temporary, flush/fsync, and rename. Atomicity is per record rather than a transaction across multiple records. Interrupted-write `.tmp` files are ignored as authority and removed by one startup cleanup pass; no periodic cleanup task runs. Reads and existence checks do not create app directories.
 
-The `device_config` API remains the in-memory surface for ordinary device/app settings. Small system-owned services such as time policy, touch calibration, and breadcrumbs own their specialized records directly rather than enlarging the ordinary configuration schema.
+The `device_config` API remains the in-memory surface for ordinary device/app settings. Small system-owned services such as time policy and breadcrumbs own their specialized records directly rather than enlarging the ordinary configuration schema.
 
 ## Save semantics
 
@@ -27,7 +26,7 @@ Ordinary configuration changes are persisted automatically; the Home UI no longe
 
 A successful save clears the dirty state only after all current app override records and the system record have been written successfully. A failed save leaves the state dirty so the change is not falsely considered durable. Persistence failures must remain diagnosable; callers should not assume an in-memory change has reached flash merely because the setter accepted the value.
 
-The small time-policy, touch-calibration, and breadcrumb-settings records are written directly by their owning services because they are system state outside ordinary `system/config`. Time-mode and breadcrumb-setting changes use persist-before-publish semantics: if the owned record write fails, the new setting is not exposed as accepted runtime state. Manual-time commit also validates and persists Manual policy before changing the wall clock.
+The small time-policy and breadcrumb-settings records are written directly by their owning services because they are system state outside ordinary `system/config`. Time-mode and breadcrumb-setting changes use persist-before-publish semantics: if the owned record write fails, the new setting is not exposed as accepted runtime state. Manual-time commit also validates and persists Manual policy before changing the wall clock.
 
 ## Defaults and record versions
 
@@ -47,27 +46,12 @@ Dim/off are presentation states only. Applications, RF acquisition, logging, fra
 
 Visual themes are **Indoor**, **Outdoor**, and **Night** and affect presentation colors only. Unsupported values retain the compiled default.
 
-## Touch calibration
-
-Touch calibration is system-owned state rather than app configuration or SD data. It is stored as one small versioned `system/touch.calibration` record.
-
-Compatibility is checked against the active board identity, physical/native display geometry, and transform metadata. Missing or incompatible calibration causes startup calibration before touch is authoritative. Explicit recalibration captures a replacement and atomically overwrites the same record only after the new geometry passes sanity checks. If persistence fails, the newly captured calibration may remain active for that boot while the previously stored record remains authoritative after reboot.
-
-## Audio policy and volumes
-
-RFScout distinguishes **UI/device**, **Event**, **Alert**, and **Content** audio. Device-wide configuration owns UI/Event/Alert policy and levels; app-owned configuration owns content-specific preferences such as Recorder playback volume.
-
-`normal` permits UI, Event, Alert, and requested Content subject to their normal controls. `quiet` suppresses UI, Event, and Alert presentation without rewriting saved levels or semantic events; requested Content such as Recorder playback remains available where the active board has a speaker provider.
-
-Global Alert presentation is `OFF`, `TONE`, or `MORSE`. Recorder has no persistent capture-gain setting: it records the microphone stream without software pre-amplification, then post-processes the completed WAV through trim, DC/low-frequency high-pass filtering, and bounded normalization. Audio Spectrum uses the same shared one-pole high-pass primitive before its FFT and then applies automatic display ranging; `AUTO N dB` is the current display-window span, not signal gain.
-
 ## Battery and protective power policy
 
 Valid semantic power actions are `none`, `screen_off`, `sleep`, and `power_off`, subject to gesture/policy and runtime board capability. Compiled defaults remain short press `sleep`, long press `power_off`, low-battery threshold 10% with `power_off`, and high internal temperature 90 C with `power_off`; unsupported actions are not executable on a profile that does not advertise them.
 
 T-Embed uses its fuel-gauge/charger telemetry. Low-battery protection requires five consecutive fresh successful percentage readings plus fresh authoritative evidence that external power is absent. External power cancels a pending low-battery action; the condition rearms after charge rises three percentage points above threshold.
 
-T-Deck currently exposes only voltage-derived battery percentage. Because no authoritative external-power/charging state is available, RFScout deliberately does **not** use that estimated percentage to trigger an automatic sleep or power-off action. This prevents a low battery that is already plugged in from entering a shutdown loop.
 
 High-temperature protection uses the ESP32-S3 internal temperature sensor, requires five consecutive one-second samples, and rearms 5 C below threshold. High temperature has priority over low battery, but any requested action is still constrained by the semantic power capabilities of the active profile.
 
@@ -119,10 +103,9 @@ Timezone selection and 12/24-hour presentation remain ordinary persistent config
 
 Deep sleep loses ordinary RAM, so profiles that support it keep a small RTC-backed session envelope separate from persistent configuration. It currently preserves active-app/input-lock session state; menus, edit state, queued sounds, and active Recorder operations are not reconstructed. Because active recording/finalization vetoes terminal sleep, RFScout never relies on reconstructing an interrupted recording after wake.
 
-T-Deck currently advertises no RFScout deep-sleep or physical-power-off capability. Its center/BOOT GPIO is an input provider control, not a semantic power button.
 
 ## Erase and update semantics
 
-A full-device erase destroys system and app internal records, including device/app configuration, time policy, touch calibration, breadcrumb settings, and other internal history records. It does not erase removable SD contents, including breadcrumb CSV files.
+A full-device erase destroys system and app internal records, including device/app configuration, time policy, breadcrumb settings, and other internal history records. It does not erase removable SD contents, including breadcrumb CSV files.
 
 Ordinary firmware updates with an unchanged partition layout preserve internal files physically, but RFScout intentionally makes no promise that an older internal record layout will remain semantically compatible. An unsupported record simply falls back to defaults. Partition-layout migrations may require a destructive installation and must make that explicit to the user.

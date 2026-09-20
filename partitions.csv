@@ -1,4 +1,4 @@
-# RFScout partition table for supported 16 MB ESP32-S3 board profiles.
+# RFScout partition table for the supported 16 MB ESP32-S3 board profile.
 # Split flash between firmware growth and persistent internal storage.
 # Name,     Type, SubType, Offset,   Size,       Flags
 nvs,        data, nvs,     0x9000,   0x6000,

@@ -46,7 +46,7 @@ idf.py set-target esp32s3
 idf.py build
 ```
 
-RFScout builds one universal ESP32-S3 image and selects the supported board profile at runtime. The first build resolves managed components declared in `main/idf_component.yml`. The generated `managed_components/` directory is ignored. The repository intentionally tracks `dependencies.lock`; do not add it to `.gitignore`. It pins resolved component versions so local, CI, and historical release builds are less likely to drift.
+RFScout builds one ESP32-S3 image and validates the supported T-Embed board profile at runtime. The first build resolves managed components declared in `main/idf_component.yml`. The generated `managed_components/` directory is ignored. The repository intentionally tracks `dependencies.lock`; do not add it to `.gitignore`. It pins resolved component versions so local, CI, and historical release builds are less likely to drift.
 
 If major build configuration changes, regenerate the local build tree:
 
@@ -110,7 +110,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 
 Exit the monitor with **Ctrl+]**.
 
-The same firmware image supports both the LILYGO T-Embed CC1101 Plus and T-Deck Plus. If automatic flashing does not enter the ESP32-S3 ROM bootloader, use the board's BOOT mechanism while connecting/resetting it; on T-Deck Plus the trackball center button is GPIO0/BOOT.
+The supported hardware is the LILYGO T-Embed CC1101 Plus. If automatic flashing does not enter the ESP32-S3 ROM bootloader, use the T-Embed BOOT mechanism while connecting/resetting it.
 
 ## Browser flashing development builds and releases
 
