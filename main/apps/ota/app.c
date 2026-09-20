@@ -8,11 +8,11 @@
 
 #include "app_text_entry.h"
 #include "event.h"
+#include "firmware_identity.h"
 #include "ota_networks.h"
 #include "ota_view.h"
 #include "wifi_station.h"
 
-#include "esp_app_desc.h"
 #include "esp_err.h"
 
 #include <stddef.h>
@@ -161,7 +161,7 @@ static const char *connection_status( void )
 static void render_main( void )
 {
     build_visible_saved();
-    const esp_app_desc_t *description = esp_app_get_description();
+    const rfscout_firmware_identity_t *identity = firmware_identity();
     const rfscout_wifi_station_status_t current = wifi_station_status();
     const bool scanning = RFSCOUT_WIFI_STATION_SCANNING == current.state;
     const unsigned item_count = (unsigned)view_network_count + 3U;
@@ -169,7 +169,7 @@ static void render_main( void )
     {
         selected_item = item_count - 1U;
     }
-    ota_view_render_main( NULL != description ? description->version : "unknown",
+    ota_view_render_main( identity->version,
                           connection_status(),
                           view_networks,
                           view_network_count,

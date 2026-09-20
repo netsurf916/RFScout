@@ -18,6 +18,7 @@ static const char *TAG = "board";
 
 static const rfscout_board_profile_t unknown_profile = {
     .id = RFSCOUT_BOARD_UNKNOWN,
+    .target_id = "unknown",
     .name = "Unknown hardware",
     .capabilities = 0,
     .power_enable_pin = -1,
@@ -73,6 +74,7 @@ static const rfscout_board_profile_t unknown_profile = {
 
 static const rfscout_board_profile_t tembed_profile = {
     .id = RFSCOUT_BOARD_TEMBED_CC1101_PLUS,
+    .target_id = "t-embed-cc1101-plus",
     .name = "LILYGO T-Embed CC1101 Plus",
     .capabilities = RFSCOUT_BOARD_CAP_CC1101 | RFSCOUT_BOARD_CAP_NRF24 |
                     RFSCOUT_BOARD_CAP_ROTARY_ENCODER | RFSCOUT_BOARD_CAP_PDM_MIC |
