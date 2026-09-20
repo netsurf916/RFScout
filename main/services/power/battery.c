@@ -10,9 +10,6 @@
 #include "board_i2c.h"
 
 #include "driver/i2c_master.h"
-#include "esp_adc/adc_cali.h"
-#include "esp_adc/adc_cali_scheme.h"
-#include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 
@@ -21,10 +18,6 @@
 
 #define BATTERY_POLL_INTERVAL_US 1000000LL
 #define BATTERY_I2C_TIMEOUT_MS 50
-#define BATTERY_ADC_ATTEN ADC_ATTEN_DB_12
-#define BATTERY_ADC_FILTER_NUMERATOR 3U
-#define BATTERY_ADC_FILTER_DENOMINATOR 4U
-
 #define BQ27220_REG_VOLTAGE 0x08U
 #define BQ27220_REG_STATUS 0x0AU
 #define BQ27220_REG_CURRENT 0x0CU
@@ -48,34 +41,11 @@
 #define BQ25896_CHARGE_DONE 3U
 #define BATTERY_CURRENT_ACTIVE_MA 30
 
-typedef struct
-{
-    uint16_t millivolts;
-    uint8_t percent;
-} battery_soc_point_t;
-
-static const battery_soc_point_t LIPO_SOC_CURVE[] = {
-    { 3300U, 0U },
-    { 3500U, 5U },
-    { 3600U, 12U },
-    { 3700U, 30U },
-    { 3800U, 50U },
-    { 3900U, 65U },
-    { 4000U, 80U },
-    { 4100U, 90U },
-    { 4200U, 100U },
-};
-
 static const char *TAG = "battery";
 static i2c_master_dev_handle_t gauge_device;
 static i2c_master_dev_handle_t charger_device;
-static adc_oneshot_unit_handle_t adc_unit;
-static adc_cali_handle_t adc_calibration;
-static adc_channel_t adc_channel;
 static battery_status_t cached_status;
 static int64_t last_poll_us;
-static uint32_t filtered_voltage_mv;
-static bool have_filtered_voltage;
 static bool initialized;
 
 static esp_err_t
@@ -176,140 +146,6 @@ static battery_charge_state_t charger_charge_state( uint8_t a_status, bool a_ext
     }
 }
 
-static uint8_t estimate_soc( uint16_t a_voltage_mv )
-{
-    if( a_voltage_mv <= LIPO_SOC_CURVE[ 0 ].millivolts )
-    {
-        return LIPO_SOC_CURVE[ 0 ].percent;
-    }
-    const size_t count = sizeof( LIPO_SOC_CURVE ) / sizeof( LIPO_SOC_CURVE[ 0 ] );
-    if( a_voltage_mv >= LIPO_SOC_CURVE[ count - 1U ].millivolts )
-    {
-        return LIPO_SOC_CURVE[ count - 1U ].percent;
-    }
-
-    for( size_t index = 1U; index < count; ++index )
-    {
-        const battery_soc_point_t *low = &LIPO_SOC_CURVE[ index - 1U ];
-        const battery_soc_point_t *high = &LIPO_SOC_CURVE[ index ];
-        if( a_voltage_mv <= high->millivolts )
-        {
-            const uint32_t span_mv = (uint32_t)( high->millivolts - low->millivolts );
-            const uint32_t offset_mv = (uint32_t)( a_voltage_mv - low->millivolts );
-            const uint32_t span_percent = (uint32_t)( high->percent - low->percent );
-            return (uint8_t)( low->percent + ( offset_mv * span_percent ) / span_mv );
-        }
-    }
-    return 0U;
-}
-
-static esp_err_t init_adc_provider( void )
-{
-    adc_unit_t unit_id;
-    esp_err_t result =
-        adc_oneshot_io_to_channel( RFSCOUT_BOARD_BATTERY_ADC_PIN, &unit_id, &adc_channel );
-    if( ESP_OK != result )
-    {
-        return result;
-    }
-
-    const adc_oneshot_unit_init_cfg_t unit_config = {
-        .unit_id = unit_id,
-    };
-    result = adc_oneshot_new_unit( &unit_config, &adc_unit );
-    if( ESP_OK != result )
-    {
-        return result;
-    }
-
-    const adc_oneshot_chan_cfg_t channel_config = {
-        .atten = BATTERY_ADC_ATTEN,
-        .bitwidth = ADC_BITWIDTH_DEFAULT,
-    };
-    result = adc_oneshot_config_channel( adc_unit, adc_channel, &channel_config );
-    if( ESP_OK != result )
-    {
-        return result;
-    }
-
-    const adc_cali_curve_fitting_config_t calibration_config = {
-        .unit_id = unit_id,
-        .chan = adc_channel,
-        .atten = BATTERY_ADC_ATTEN,
-        .bitwidth = ADC_BITWIDTH_DEFAULT,
-    };
-    result = adc_cali_create_scheme_curve_fitting( &calibration_config, &adc_calibration );
-    if( ESP_OK != result )
-    {
-        ESP_LOGW( TAG, "battery ADC calibration unavailable: %s", esp_err_to_name( result ) );
-        return result;
-    }
-
-    ESP_LOGI( TAG,
-              "voltage-only battery provider: GPIO%d divider=%u/%u",
-              RFSCOUT_BOARD_BATTERY_ADC_PIN,
-              (unsigned)RFSCOUT_BOARD_BATTERY_DIVIDER_NUMERATOR,
-              (unsigned)RFSCOUT_BOARD_BATTERY_DIVIDER_DENOMINATOR );
-    return ESP_OK;
-}
-
-static esp_err_t sample_adc_battery( battery_status_t *a_status )
-{
-    if( NULL == a_status || NULL == adc_unit || NULL == adc_calibration ||
-        0U == RFSCOUT_BOARD_BATTERY_DIVIDER_DENOMINATOR )
-    {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    int raw = 0;
-    esp_err_t result = adc_oneshot_read( adc_unit, adc_channel, &raw );
-    if( ESP_OK != result )
-    {
-        return result;
-    }
-    int measured_mv = 0;
-    result = adc_cali_raw_to_voltage( adc_calibration, raw, &measured_mv );
-    if( ESP_OK != result || measured_mv < 0 )
-    {
-        return ESP_OK == result ? ESP_ERR_INVALID_RESPONSE : result;
-    }
-
-    const uint32_t battery_mv =
-        ( (uint32_t)measured_mv * RFSCOUT_BOARD_BATTERY_DIVIDER_NUMERATOR ) /
-        RFSCOUT_BOARD_BATTERY_DIVIDER_DENOMINATOR;
-    if( !have_filtered_voltage )
-    {
-        filtered_voltage_mv = battery_mv;
-        have_filtered_voltage = true;
-    }
-    else
-    {
-        filtered_voltage_mv = ( filtered_voltage_mv * BATTERY_ADC_FILTER_NUMERATOR + battery_mv ) /
-                              BATTERY_ADC_FILTER_DENOMINATOR;
-    }
-
-    a_status->voltage_mv =
-        (uint16_t)( filtered_voltage_mv > UINT16_MAX ? UINT16_MAX : filtered_voltage_mv );
-    a_status->percentage = estimate_soc( a_status->voltage_mv );
-    a_status->available = true;
-    a_status->percentage_fresh = true;
-    a_status->gauge_available = false;
-    a_status->charger_available = false;
-    a_status->charger_fresh = false;
-    a_status->external_power = false;
-    a_status->current_ma = 0;
-    a_status->charge_state = BATTERY_CHARGE_UNKNOWN;
-
-    ESP_LOGD( TAG,
-              "battery ADC raw=%d measured=%dmV battery=%umV filtered=%umV soc=%u%%",
-              raw,
-              measured_mv,
-              (unsigned)battery_mv,
-              (unsigned)a_status->voltage_mv,
-              (unsigned)a_status->percentage );
-    return ESP_OK;
-}
-
 static void refresh_i2c_battery( battery_status_t *a_status )
 {
     bool gauge_sampled = false;
@@ -380,14 +216,7 @@ void battery_refresh( void )
     next.percentage_fresh = false;
     next.charger_fresh = false;
 
-    if( RFSCOUT_BATTERY_ADC_VOLTAGE_ONLY == RFSCOUT_BOARD_BATTERY_TYPE )
-    {
-        if( ESP_OK != sample_adc_battery( &next ) )
-        {
-            next.percentage_fresh = false;
-        }
-    }
-    else if( RFSCOUT_BATTERY_I2C_GAUGE_CHARGER == RFSCOUT_BOARD_BATTERY_TYPE )
+    if( RFSCOUT_BATTERY_I2C_GAUGE_CHARGER == RFSCOUT_BOARD_BATTERY_TYPE )
     {
         refresh_i2c_battery( &next );
     }
@@ -404,16 +233,9 @@ esp_err_t battery_init( void )
     cached_status.charge_state = BATTERY_CHARGE_UNKNOWN;
     gauge_device = NULL;
     charger_device = NULL;
-    adc_unit = NULL;
-    adc_calibration = NULL;
-    have_filtered_voltage = false;
 
     esp_err_t result = ESP_OK;
-    if( RFSCOUT_BATTERY_ADC_VOLTAGE_ONLY == RFSCOUT_BOARD_BATTERY_TYPE )
-    {
-        result = init_adc_provider();
-    }
-    else if( RFSCOUT_BATTERY_I2C_GAUGE_CHARGER == RFSCOUT_BOARD_BATTERY_TYPE )
+    if( RFSCOUT_BATTERY_I2C_GAUGE_CHARGER == RFSCOUT_BOARD_BATTERY_TYPE )
     {
         result = board_i2c_init();
         if( ESP_OK == result )

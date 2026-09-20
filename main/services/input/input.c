@@ -46,7 +46,6 @@ static bool button_long_event;
 static bool button_back_event;
 static bool button_lock_fired;
 static bool locked;
-static volatile bool primary_button_suspended;
 static int primary_button_pin = -1;
 static rfscout_input_provider_t provider;
 
@@ -77,22 +76,9 @@ static void IRAM_ATTR encoder_isr( void *a_argument )
     portEXIT_CRITICAL_ISR( &navigation_lock );
 }
 
-static void IRAM_ATTR trackball_isr( void *a_argument )
-{
-    const int direction = (int)(intptr_t)a_argument;
-    portENTER_CRITICAL_ISR( &navigation_lock );
-    navigation_delta += direction;
-    portEXIT_CRITICAL_ISR( &navigation_lock );
-}
-
 static void IRAM_ATTR primary_button_isr( void *a_argument )
 {
     (void)a_argument;
-    if( primary_button_suspended )
-    {
-        return;
-    }
-
     const bool pressed =
         ( primary_button_pin >= 0 ) && ( 0 == gpio_get_level( primary_button_pin ) );
     const int64_t now_us = esp_timer_get_time();
@@ -173,25 +159,8 @@ static void initialize_button_state( void )
     button_long_event = false;
     button_back_event = false;
     button_lock_fired = false;
-    primary_button_suspended = false;
     rfscout_session_state_t restored_session;
     locked = session_state_restore( &restored_session ) && restored_session.input_locked;
-}
-
-static void clear_primary_button_state( void )
-{
-    portENTER_CRITICAL( &button_lock );
-    button_down = false;
-    button_pressed_us = 0;
-    button_pending_duration_us = 0;
-    button_pending_sequence = 0U;
-    button_seen_sequence = button_press_sequence;
-    button_lock_sequence = button_press_sequence;
-    button_lock_fired = false;
-    button_event = false;
-    button_long_event = false;
-    button_back_event = false;
-    portEXIT_CRITICAL( &button_lock );
 }
 
 static esp_err_t install_rotary_provider( void )
@@ -240,80 +209,21 @@ static esp_err_t install_rotary_provider( void )
     return ESP_OK;
 }
 
-static esp_err_t install_trackball_provider( void )
-{
-    primary_button_pin = RFSCOUT_BOARD_TRACKBALL_SELECT_PIN;
-    const uint64_t mask = ( 1ULL << RFSCOUT_BOARD_TRACKBALL_UP_PIN ) |
-                          ( 1ULL << RFSCOUT_BOARD_TRACKBALL_DOWN_PIN ) |
-                          ( 1ULL << RFSCOUT_BOARD_TRACKBALL_LEFT_PIN ) |
-                          ( 1ULL << RFSCOUT_BOARD_TRACKBALL_RIGHT_PIN ) |
-                          ( 1ULL << RFSCOUT_BOARD_TRACKBALL_SELECT_PIN );
-    gpio_config_t inputs = { .pin_bit_mask = mask,
-                             .mode = GPIO_MODE_INPUT,
-                             .pull_up_en = GPIO_PULLUP_ENABLE,
-                             .intr_type = GPIO_INTR_DISABLE };
-    esp_err_t result = gpio_config( &inputs );
-    if( ESP_OK != result )
-    {
-        return result;
-    }
-
-    navigation_accumulator = 0;
-    navigation_delta = 0;
-    initialize_button_state();
-
-    result = gpio_install_isr_service( 0 );
-    if( ESP_OK != result )
-    {
-        return result;
-    }
-    const int pins[] = { RFSCOUT_BOARD_TRACKBALL_UP_PIN,
-                         RFSCOUT_BOARD_TRACKBALL_LEFT_PIN,
-                         RFSCOUT_BOARD_TRACKBALL_DOWN_PIN,
-                         RFSCOUT_BOARD_TRACKBALL_RIGHT_PIN };
-    const int directions[] = { -1, -1, 1, 1 };
-    for( size_t index = 0U; index < sizeof( pins ) / sizeof( pins[ 0 ] ); ++index )
-    {
-        if( ESP_OK != ( result = gpio_set_intr_type( pins[ index ], GPIO_INTR_NEGEDGE ) ) ||
-            ESP_OK != ( result = gpio_isr_handler_add( pins[ index ],
-                                                       trackball_isr,
-                                                       (void *)(intptr_t)directions[ index ] ) ) )
-        {
-            return result;
-        }
-    }
-    if( ESP_OK != ( result = gpio_set_intr_type( RFSCOUT_BOARD_TRACKBALL_SELECT_PIN,
-                                                 GPIO_INTR_ANYEDGE ) ) ||
-        ESP_OK != ( result = gpio_isr_handler_add(
-                        RFSCOUT_BOARD_TRACKBALL_SELECT_PIN, primary_button_isr, NULL ) ) )
-    {
-        return result;
-    }
-    provider = RFSCOUT_INPUT_PROVIDER_TRACKBALL_BUTTONS;
-    return ESP_OK;
-}
-
 esp_err_t input_init( void )
 {
     provider = RFSCOUT_INPUT_PROVIDER_NONE;
-    esp_err_t result = ESP_ERR_NOT_SUPPORTED;
-    if( RFSCOUT_BOARD_HAS_ROTARY_ENCODER )
+    if( !RFSCOUT_BOARD_HAS_ROTARY_ENCODER )
     {
-        result = install_rotary_provider();
+        return ESP_ERR_NOT_SUPPORTED;
     }
-    else if( RFSCOUT_BOARD_HAS_TRACKBALL )
-    {
-        result = install_trackball_provider();
-    }
+
+    const esp_err_t result = install_rotary_provider();
     if( ESP_OK != result )
     {
         return result;
     }
 
-    ESP_LOGI( TAG,
-              "%s input provider selected",
-              RFSCOUT_INPUT_PROVIDER_ROTARY_BUTTONS == provider ? "rotary/button"
-                                                                : "trackball/button" );
+    ESP_LOGI( TAG, "rotary/button input provider selected" );
     rfscout_event_emit(
         RFSCOUT_EVENT_INPUT_PROVIDER_SELECTED, RFSCOUT_EVENT_SOURCE_SYSTEM, (int32_t)provider );
     return ESP_OK;
@@ -321,11 +231,6 @@ esp_err_t input_init( void )
 
 void input_poll( void )
 {
-    if( primary_button_suspended )
-    {
-        return;
-    }
-
     const int64_t now_us = esp_timer_get_time();
     bool current_button_down;
     int64_t pressed_us;
@@ -394,8 +299,7 @@ bool input_activity_pending( void )
     portEXIT_CRITICAL( &navigation_lock );
 
     portENTER_CRITICAL( &button_lock );
-    button_activity =
-        !primary_button_suspended && ( button_down || ( button_pending_duration_us > 0 ) );
+    button_activity = button_down || ( button_pending_duration_us > 0 );
     portEXIT_CRITICAL( &button_lock );
 
     const bool user_key =
@@ -417,7 +321,7 @@ void input_consume_wake( void )
     button_pending_duration_us = 0;
     button_pending_sequence = 0U;
     press_sequence = button_press_sequence;
-    current_button_down = !primary_button_suspended && button_down;
+    current_button_down = button_down;
     portEXIT_CRITICAL( &button_lock );
 
     button_seen_sequence = press_sequence;
@@ -459,48 +363,6 @@ bool input_get( rfscout_input_event_t *a_event )
         return true;
     }
     return false;
-}
-
-void input_primary_select_suspend( void )
-{
-    if( primary_button_suspended || primary_button_pin < 0 )
-    {
-        return;
-    }
-
-    primary_button_suspended = true;
-    (void)gpio_intr_disable( primary_button_pin );
-    clear_primary_button_state();
-}
-
-void input_primary_select_resume( void )
-{
-    if( !primary_button_suspended || primary_button_pin < 0 )
-    {
-        return;
-    }
-
-    clear_primary_button_state();
-    primary_button_suspended = false;
-    (void)gpio_intr_enable( primary_button_pin );
-}
-
-bool input_primary_select_available( void )
-{
-    return primary_button_pin >= 0 && !primary_button_suspended;
-}
-
-void input_inject_select( void )
-{
-    if( !locked )
-    {
-        button_event = true;
-    }
-}
-
-void input_toggle_lock( void )
-{
-    toggle_input_lock( button_press_sequence );
 }
 
 bool input_locked( void )

@@ -8,8 +8,6 @@
 #include "audio_capture.h"
 
 #include "board.h"
-#include "es7210_input.h"
-
 #include "driver/gpio.h"
 #include "driver/i2s_pdm.h"
 #include "driver/pulse_cnt.h"
@@ -32,7 +30,6 @@ typedef enum
 {
     AUDIO_CAPTURE_PROVIDER_NONE = 0,
     AUDIO_CAPTURE_PROVIDER_PDM,
-    AUDIO_CAPTURE_PROVIDER_ES7210,
 } audio_capture_provider_t;
 
 static const char *TAG = "audio_capture";
@@ -45,10 +42,6 @@ static audio_capture_provider_t selected_provider( void )
     if( RFSCOUT_BOARD_HAS_PDM_MIC )
     {
         return AUDIO_CAPTURE_PROVIDER_PDM;
-    }
-    if( RFSCOUT_BOARD_HAS_ES7210_MIC )
-    {
-        return AUDIO_CAPTURE_PROVIDER_ES7210;
     }
     return AUDIO_CAPTURE_PROVIDER_NONE;
 }
@@ -279,10 +272,6 @@ esp_err_t audio_capture_probe( void )
     }
 
     const audio_capture_provider_t provider = selected_provider();
-    if( AUDIO_CAPTURE_PROVIDER_ES7210 == provider )
-    {
-        return es7210_input_probe();
-    }
     if( AUDIO_CAPTURE_PROVIDER_PDM != provider )
     {
         return ESP_ERR_NOT_SUPPORTED;
@@ -313,11 +302,6 @@ esp_err_t audio_capture_probe( void )
     return ESP_OK;
 }
 
-bool audio_capture_primary_select_conflict( void )
-{
-    return AUDIO_CAPTURE_PROVIDER_ES7210 == selected_provider();
-}
-
 esp_err_t audio_capture_open( rfscout_audio_capture_format_t *a_format )
 {
     if( audio_capture_is_open() )
@@ -326,19 +310,11 @@ esp_err_t audio_capture_open( rfscout_audio_capture_format_t *a_format )
     }
 
     const audio_capture_provider_t provider = selected_provider();
-    esp_err_t result;
-    if( AUDIO_CAPTURE_PROVIDER_PDM == provider )
-    {
-        result = open_pdm();
-    }
-    else if( AUDIO_CAPTURE_PROVIDER_ES7210 == provider )
-    {
-        result = es7210_input_open();
-    }
-    else
+    if( AUDIO_CAPTURE_PROVIDER_PDM != provider )
     {
         return ESP_ERR_NOT_SUPPORTED;
     }
+    const esp_err_t result = open_pdm();
 
     if( ESP_OK != result )
     {
@@ -348,9 +324,7 @@ esp_err_t audio_capture_open( rfscout_audio_capture_format_t *a_format )
     active_provider = provider;
     if( NULL != a_format )
     {
-        a_format->sample_rate_hz = AUDIO_CAPTURE_PROVIDER_ES7210 == provider
-                                       ? RFSCOUT_ES7210_INPUT_SAMPLE_RATE
-                                       : RFSCOUT_AUDIO_CAPTURE_SAMPLE_RATE;
+        a_format->sample_rate_hz = RFSCOUT_AUDIO_CAPTURE_SAMPLE_RATE;
         a_format->channels = RFSCOUT_AUDIO_CAPTURE_CHANNELS;
         a_format->bits_per_sample = RFSCOUT_AUDIO_CAPTURE_BITS_PER_SAMPLE;
     }
@@ -370,19 +344,11 @@ audio_capture_read( void *a_buffer, size_t a_capacity, size_t *a_bytes_read, uin
         /* i2s_channel_read() takes milliseconds, matching the audio_capture service contract. */
         return i2s_channel_read( pdm_channel, a_buffer, a_capacity, a_bytes_read, a_timeout_ms );
     }
-    if( AUDIO_CAPTURE_PROVIDER_ES7210 == active_provider )
-    {
-        return es7210_input_read( a_buffer, a_capacity, a_bytes_read, a_timeout_ms );
-    }
     return ESP_ERR_INVALID_STATE;
 }
 
 void audio_capture_close( void )
 {
-    if( es7210_input_is_open() )
-    {
-        es7210_input_close();
-    }
     if( NULL != pdm_channel )
     {
         close_pdm();
@@ -392,8 +358,7 @@ void audio_capture_close( void )
 
 bool audio_capture_is_open( void )
 {
-    return AUDIO_CAPTURE_PROVIDER_NONE != active_provider || NULL != pdm_channel ||
-           es7210_input_is_open();
+    return AUDIO_CAPTURE_PROVIDER_NONE != active_provider || NULL != pdm_channel;
 }
 
 rfscout_audio_capture_provider_t audio_capture_provider( void )
@@ -402,19 +367,11 @@ rfscout_audio_capture_provider_t audio_capture_provider( void )
     {
         return RFSCOUT_AUDIO_CAPTURE_PROVIDER_PDM;
     }
-    if( AUDIO_CAPTURE_PROVIDER_ES7210 == active_provider )
-    {
-        return RFSCOUT_AUDIO_CAPTURE_PROVIDER_ES7210;
-    }
     return RFSCOUT_AUDIO_CAPTURE_PROVIDER_NONE;
 }
 
 const char *audio_capture_input_name( void )
 {
-    if( AUDIO_CAPTURE_PROVIDER_ES7210 == active_provider )
-    {
-        return "MIC1";
-    }
     if( AUDIO_CAPTURE_PROVIDER_PDM == active_provider )
     {
         return "LEFT";

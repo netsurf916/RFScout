@@ -10,9 +10,9 @@ The release packager validates ESP-IDF build metadata before producing files. RF
 | --- | ---: | --- |
 | Bootloader | `0x0` | ESP32-S3 second-stage bootloader |
 | Partition table | `0x8000` | RFScout 16 MB flash layout |
-| Application | `0x10000` | Universal RFScout firmware |
+| Application | `0x10000` | RFScout firmware |
 
-The bundle contains a combined image for ordinary installation, the component images for development/recovery, SHA-256 checksums, installation instructions, structured build metadata, and an ESP Web Tools manifest. It does not contain the ESP-IDF build tree. The same ESP32-S3 firmware image selects a supported RFScout board profile at runtime.
+The bundle contains a combined image for ordinary installation, the component images for development/recovery, SHA-256 checksums, installation instructions, structured build metadata, and an ESP Web Tools manifest. It does not contain the ESP-IDF build tree. The ESP32-S3 firmware validates the supported T-Embed profile at runtime.
 
 `manifest.web.json` is consumed by the browser flasher. The Pages deployment mirrors the manifest and referenced combined image onto the same HTTPS origin so flashing does not depend on cross-origin access to GitHub release or Actions URLs.
 
@@ -93,7 +93,7 @@ Before publishing a draft:
 1. confirm that the firmware and release assets are suitable for public exposure;
 2. review the generated release notes/version;
 3. verify the archive/checksums;
-4. perform applicable hardware installation and smoke tests using the same universal image on each supported profile;
+4. perform applicable hardware installation and smoke tests on the supported T-Embed profile;
 5. record hardware validation in the release notes; and
 6. publish the release deliberately through GitHub.
 

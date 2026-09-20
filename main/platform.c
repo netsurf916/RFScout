@@ -48,7 +48,6 @@ esp_err_t platform_init( void )
     add_output_pin( &output_mask, RFSCOUT_BOARD_NRF24_CE_PIN );
     add_output_pin( &output_mask, RFSCOUT_BOARD_CC1101_SWITCH_1_PIN );
     add_output_pin( &output_mask, RFSCOUT_BOARD_CC1101_SWITCH_0_PIN );
-    add_output_pin( &output_mask, RFSCOUT_BOARD_SX1262_CS_PIN );
 
     if( 0U != output_mask )
     {
@@ -66,7 +65,6 @@ esp_err_t platform_init( void )
     set_level_if_valid( RFSCOUT_BOARD_CC1101_CS_PIN, 1U );
     set_level_if_valid( RFSCOUT_BOARD_NRF24_CS_PIN, 1U );
     set_level_if_valid( RFSCOUT_BOARD_NRF24_CE_PIN, 0U );
-    set_level_if_valid( RFSCOUT_BOARD_SX1262_CS_PIN, 1U );
 
     ESP_LOGI( TAG, "%s shared board GPIO initialized", RFSCOUT_BOARD_NAME );
     return ESP_OK;

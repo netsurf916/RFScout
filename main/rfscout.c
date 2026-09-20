@@ -22,7 +22,6 @@
 #include "gps.h"
 #include "input.h"
 #include "log_writer.h"
-#include "navigation_bar.h"
 #include "notification.h"
 #include "notification_preferences.h"
 #include "observation_store.h"
@@ -35,7 +34,6 @@
 #include "storage.h"
 #include "surveillance.h"
 #include "system_events.h"
-#include "touch.h"
 #include "ui_theme.h"
 
 #include "esp_log.h"
@@ -464,15 +462,6 @@ void app_main( void )
     ESP_ERROR_CHECK( ble_monitor_init( on_observation ) );
 
     ESP_ERROR_CHECK( app_manager_init() );
-    result = touch_init();
-    if( ( ESP_OK != result ) && ( ESP_ERR_NOT_SUPPORTED != result ) )
-    {
-        ESP_LOGW( TAG, "touch diagnostics unavailable: %s", esp_err_to_name( result ) );
-    }
-    else if( ESP_OK == result && touch_calibration_active() )
-    {
-        display_invalidate();
-    }
     system_events_poll();
     display_set_brightness( device_config_get()->brightness_percent );
     ESP_ERROR_CHECK( display_idle_init() );
@@ -499,12 +488,7 @@ void app_main( void )
     while( true )
     {
         input_poll();
-        if( touch_poll() )
-        {
-            display_invalidate();
-        }
         display_idle_poll();
-        navigation_bar_poll();
         gps_poll();
         gps_state_poll();
         breadcrumbs_poll();

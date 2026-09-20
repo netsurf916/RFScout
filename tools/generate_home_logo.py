@@ -12,6 +12,8 @@ from pathlib import Path
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 PALETTE = ((0, 0, 0), (255, 128, 0), (255, 255, 255))
+NEUTRAL_CHROMA_THRESHOLD = 16
+NEUTRAL_WHITE_THRESHOLD = 192
 
 
 def paeth(a, b, c):
@@ -80,9 +82,12 @@ def read_png(path):
 def rgb_at(rows, channels, x, y):
     row = rows[y]
     base = x * channels
-    if channels == 4 and row[base + 3] == 0:
-        return (0, 0, 0)
-    return tuple(row[base : base + 3])
+    rgb = tuple(row[base : base + 3])
+    if channels != 4:
+        return rgb
+
+    alpha = row[base + 3]
+    return tuple(channel * alpha // 255 for channel in rgb)
 
 
 def content_bounds(width, height, channels, rows):
@@ -100,6 +105,13 @@ def content_bounds(width, height, channels, rows):
 
 def nearest_palette(rgb):
     r, g, b = rgb
+
+    # The canonical RGB asset is already antialiased onto black. Keep neutral
+    # gray edge pixels on the black/white axis so Euclidean distance cannot
+    # misclassify a gray edge as saturated RFScout orange.
+    if max(rgb) - min(rgb) <= NEUTRAL_CHROMA_THRESHOLD:
+        return 0 if r + g + b < (3 * NEUTRAL_WHITE_THRESHOLD) else 2
+
     return min(
         range(len(PALETTE)),
         key=lambda i: (r - PALETTE[i][0]) ** 2 + (g - PALETTE[i][1]) ** 2 + (b - PALETTE[i][2]) ** 2,

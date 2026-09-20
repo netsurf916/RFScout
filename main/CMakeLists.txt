@@ -81,7 +81,6 @@ idf_component_register(
         "apps/recorder/app.c"
         "services/audio/audio_capture.c"
         "services/audio/recorder.c"
-        "services/audio/es7210_input.c"
         "apps/recorder/recorder_view.c"
         "apps/audio_spectrum/app.c"
         "apps/audio_spectrum/view.c"
@@ -106,7 +105,6 @@ idf_component_register(
         "services/board/board_spi.c"
         "services/board/board_i2c.c"
         "services/input/input.c"
-        "services/input/touch.c"
         "services/location/gps.c"
         "services/wireless/radio_monitor.c"
         "services/wireless/ble_monitor.c"
@@ -133,9 +131,8 @@ idf_component_register(
         "services/display/display_mask.c"
         "services/display/display_brightness.c"
         "services/display/display_idle.c"
-        "services/display/navigation_bar.c"
         "services/display/ui_present.c"
     INCLUDE_DIRS ${RFSCOUT_INCLUDE_DIRS} "${CMAKE_CURRENT_BINARY_DIR}"
-    PRIV_REQUIRES bt cjson esp_adc esp_driver_ledc esp_driver_tsens mbedtls
+    PRIV_REQUIRES bt cjson esp_driver_ledc esp_driver_tsens mbedtls
     REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_timer driver esp_driver_i2c esp_driver_i2s esp_driver_pcnt esp_driver_uart esp_lcd fatfs sdmmc
 )

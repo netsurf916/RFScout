@@ -46,8 +46,6 @@ typedef struct
 const rfscout_display_info_t *display_info( void );
 /** @brief Return the single managed application view used by app sessions. */
 const rfscout_view_t *display_app_view( void );
-/** @brief Return the system-owned global navigation rectangle, or an empty view when not reserved. */
-rfscout_view_t display_navigation_view( void );
 
 /** @brief Initialize the board-selected display provider and framebuffer. */
 esp_err_t display_init( void );

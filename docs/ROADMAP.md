@@ -407,6 +407,8 @@ Systematically inventory each supported board schematic and implementation so ev
 
 **Priority:** Medium/platform prerequisite
 
+Current production support is intentionally T-Embed-only. The runtime profile/capability abstraction remains the extension point for a future board, but adding another target should follow a concrete hardware use case and hardware validation rather than being treated as a commitment to restore T-Deck Plus support.
+
 - give every supported board a stable hardware target ID and display name independent of MCU family;
 - make board metadata the canonical source for build/package identity;
 - package each target into a deterministic, self-describing target directory/manifest;
