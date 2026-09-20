@@ -93,8 +93,15 @@ static const st7789_init_command_t tembed_st7789_init[] = {
 };
 
 static const int8_t pixel_shift_positions[ DISPLAY_PIXEL_SHIFT_POSITION_COUNT ][ 2 ] = {
-    { 0, 0 }, { 1, 0 }, { 1, 1 }, { 0, 1 }, { -1, 1 },
-    { -1, 0 }, { -1, -1 }, { 0, -1 }, { 1, -1 },
+    { 0, 0 },
+    { 1, 0 },
+    { 1, 1 },
+    { 0, 1 },
+    { -1, 1 },
+    { -1, 0 },
+    { -1, -1 },
+    { 0, -1 },
+    { 1, -1 },
 };
 
 static const char *TAG = "display";
