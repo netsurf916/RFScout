@@ -1,7 +1,9 @@
 # RFScout partition table for the supported 16 MB ESP32-S3 board profile.
-# Split flash between firmware growth and persistent internal storage.
+# Two 6 MiB OTA application slots leave approximately 3.94 MiB for LittleFS.
 # Name,     Type, SubType, Offset,   Size,       Flags
-nvs,        data, nvs,     0x9000,   0x6000,
+nvs,        data, nvs,     0x9000,   0x4000,
+otadata,    data, ota,     0xD000,   0x2000,
 phy_init,   data, phy,     0xF000,   0x1000,
-factory,    app,  factory, 0x10000,  0x800000,
-storage,    data, littlefs,0x810000, 0x7F0000,
+ota_0,      app,  ota_0,   0x10000,  0x600000,
+ota_1,      app,  ota_1,   0x610000, 0x600000,
+storage,    data, littlefs,0xC10000, 0x3F0000,
