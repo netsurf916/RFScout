@@ -141,6 +141,16 @@ Internal-storage mount, recovery-format/mount-failure, and configuration-default
 
 The conservative hardware-tested SD baseline remains a FAT-compatible SanDisk card of 32 GB or less on the T-Embed. Logging rotates `rfscout-00.log` through `rfscout-99.log` at up to 4 MiB each and attempts to preserve at least 64 MiB free.
 
+## Firmware image and OTA storage foundation
+
+The OTA development line uses the ESP-IDF A/B application layout rather than a single factory application partition. The 16 MiB internal flash map reserves NVS/PHY metadata, the ESP-IDF OTA-data partition, two 6 MiB OTA application slots, and approximately 3.94 MiB of LittleFS. LittleFS consumers remain behind the persistent-record abstraction and must not infer or depend on this physical capacity.
+
+Application rollback support is enabled in the bootloader configuration. OTA-data is bootloader/platform state rather than application-owned persistent configuration.
+
+The combined image contains the bootloader, A/B partition table, initialized OTA metadata, and application and remains the clean-install/recovery image for this development line. The published `v0.3.2` layout predates this foundation.
+
+The planned in-device OTA application, network/session ownership, update-catalog/waypoint selection, partition-selection abstraction, installer, and first-boot confirmation/rollback policy are maintained in [ROADMAP.md](ROADMAP.md#in-device-ota-update-architecture) until those behaviors are implemented.
+
 ## Shared hardware/resource boundaries
 
 T-Embed:

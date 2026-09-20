@@ -350,6 +350,237 @@ Rework application/system logging as a common policy rather than letting each fe
 - add regression tests for levels, missing/unknown fields, long values, and quoting;
 - preserve UTC ISO-8601 timestamps and explicit uptime fallback.
 
+## In-device OTA update architecture
+
+**Status:** Design agreed; A/B flash/rollback foundation is established on the OTA development branch, while the OTA application, temporary infrastructure-Wi-Fi support, release catalog, installer, and boot-confirmation policy remain implementation work.
+
+**Design goal:** Preserve RFScout's passive-by-default behavior and strict application/service lifecycle boundaries while allowing a user to deliberately obtain temporary Internet connectivity, check for a release, install an application image into the inactive OTA slot, and recover automatically if the new image does not boot successfully.
+
+### Passive-by-default OTA application
+
+OTA is a top-level application rather than a Home/Device setting. Infrastructure networking exists only as an explicit capability of that application; RFScout does not gain a device-wide "known networks" or always-connected policy.
+
+Entering the OTA app must not associate with an access point. While active and disconnected, the app may perform passive AP scans and present remembered networks that have been observed in range. Passive scan results are volatile app-session state. Association is always a deliberate user action.
+
+The initial UI contract is:
+
+- show the running firmware version and current OTA-network state;
+- show remembered networks that have been observed by a passive scan, including useful signal information;
+- selecting a visible remembered network opens an action screen rather than connecting immediately;
+- the network action screen offers at least **Connect**, **Forget**, and **Back**;
+- provide a network-management/add flow for entering credentials for a new SSID;
+- after an explicit connection succeeds, expose **Check for update**;
+- after a compatible release is discovered, show the current and target versions and require an explicit install action;
+- download/install progress is presented inside the OTA app and makes cancellation semantics clear.
+
+The OTA app may retain credentials for multiple access points. Those credentials are application-owned durable state under the OTA app's persistence identity, not fields in device-wide configuration and not state owned by the Wi-Fi service. The app chooses which credential set to offer/use based on its own saved list and current passive scan results. No automatic association occurs merely because a remembered AP is visible.
+
+Hidden-network support is not required initially because discovering a hidden SSID generally requires active probing or a direct connection attempt. It can be added later as an explicit user action without changing the passive default.
+
+### Application-lifecycle boundary
+
+The existing application transition contract remains authoritative. OTA does not create a background networking/update mode that survives app changes.
+
+On committed OTA-app LEAVE, platform/app teardown must:
+
+1. stop/cancel passive scanning owned by the OTA session;
+2. cancel any manifest or firmware HTTP request;
+3. abort an in-progress OTA write before it is made bootable;
+4. disconnect the infrastructure STA session;
+5. release Wi-Fi/network resources through the normal service/session teardown path;
+6. clear transient credential/password copies and scan/manifest/download state; and
+7. leave only the OTA app's intentionally persisted remembered-network configuration.
+
+A firmware download is therefore cancelable by changing apps. Partial data in the inactive OTA slot is not resumable state and may be overwritten from the beginning on the next attempt. The currently running partition remains the boot target until the installer has completely received and validated the candidate and enters the final commit/reboot phase.
+
+The installer must avoid a long-lived "staged for next reboot" state. After final validation, selecting the new boot partition and restarting should be treated as one tightly coupled terminal operation. Before that commit point, app transition can cancel safely; after it, ordinary app navigation is no longer meaningful because reboot is immediate.
+
+### Network ownership and abstraction
+
+Credential ownership, connection policy, and user intent belong to the OTA app. Low-level infrastructure Wi-Fi belongs behind a semantic service/provider boundary.
+
+The OTA app may ask that service to:
+
+- perform a passive AP scan;
+- establish a STA connection using one credential set supplied for the current OTA session;
+- report connection/DHCP status; and
+- disconnect/close.
+
+The Wi-Fi service must not maintain a global remembered-network database or silently reconnect after the OTA app exits. Likewise, the OTA app must not take ownership of driver handles, event-loop internals, DHCP implementation details, or hardware-specific Wi-Fi teardown.
+
+The existing WiFi / BT observation application remains a separate passive-monitoring concern. Infrastructure STA operation must acquire/quiesce shared Wi-Fi resources through the platform lifecycle rather than reaching into the observation app or allowing monitor and OTA modes to conflict implicitly.
+
+### Static OTA backend
+
+The initial backend is intentionally static HTTPS content under:
+
+`https://null.link/rfscout/`
+
+The web server does not need an application service, API, or database. Release files are immutable after publication; only the stable-channel catalog/pointer is replaced when promoting a release.
+
+The intended filesystem/URL shape is:
+
+```text
+/rfscout/
+    stable.json
+    releases/
+        0.4.0/
+            rfscout-v0.4.0-esp32s3-app.bin
+        0.5.0/
+            rfscout-v0.5.0-esp32s3-app.bin
+```
+
+Normal in-device OTA consumes only the application image. The combined `0x0` image remains the clean-install/recovery artifact and is the required mechanism for incompatible partition-layout changes.
+
+Publication order is artifact first, catalog last. A release artifact must be completely uploaded and verified before `stable.json` is atomically replaced, so a device never observes a catalog entry whose referenced image has not been published yet.
+
+The first implementation does not require firmware signing. HTTPS certificate validation is therefore the initial authenticity boundary, while the manifest's SHA-256 and size protect transfer/storage integrity. The schema should remain extensible so an image-signature object can be added later without redesigning acquisition or installation.
+
+### Running-version identity
+
+The OTA application must not infer its version from filenames, Git state, or hard-coded UI text. The running image is authoritative.
+
+Release builds must embed the semantic release version into ESP-IDF application metadata (`PROJECT_VER`), and runtime code reads `esp_app_get_description()->version`. RFScout's release workflow currently supplies the semantic version to the external packager but does not yet guarantee that the same value is embedded in the application image; OTA implementation must close that gap and add validation so packaged release metadata and embedded image metadata agree.
+
+Stable-channel ordering applies only to semantic release versions. Candidate/local development identifiers may still be displayed for diagnostics, but a non-SemVer running image must not guess its place in the stable upgrade graph.
+
+RFScout's published `0.3.2` release predates the A/B partition layout and therefore cannot be an in-device source for this OTA mechanism. The first release that contains the A/B/rollback foundation is an explicit bootstrap boundary and requires a clean/manual combined-image installation for devices coming from `0.3.2` or any other legacy partition map.
+
+### Stable catalog and strict update waypoints
+
+Predicting the next filename from the running version is intentionally rejected. A device running `0.3.2` cannot know whether the next release is `0.3.3`, `0.4.0`, or something else, and future updater/storage changes may require an intermediate version.
+
+The initial `stable.json` format should therefore be a small release catalog rather than only a single latest-version pointer. A v1 shape is:
+
+```json
+{
+  "schema_version": 1,
+  "channel": "stable",
+  "latest": "0.6.0",
+  "releases": [
+    {
+      "version": "0.5.0",
+      "minimum_source_version": "0.4.0",
+      "hardware_target": "t-embed-cc1101-plus",
+      "idf_target": "esp32s3",
+      "partition_layout": "ab-v1",
+      "artifact": {
+        "path": "releases/0.5.0/rfscout-v0.5.0-esp32s3-app.bin",
+        "size": 1234567,
+        "sha256": "..."
+      }
+    },
+    {
+      "version": "0.6.0",
+      "minimum_source_version": "0.5.0",
+      "hardware_target": "t-embed-cc1101-plus",
+      "idf_target": "esp32s3",
+      "partition_layout": "ab-v1",
+      "artifact": {
+        "path": "releases/0.6.0/rfscout-v0.6.0-esp32s3-app.bin",
+        "size": 1234567,
+        "sha256": "..."
+      }
+    }
+  ]
+}
+```
+
+Artifact paths are relative to the catalog origin so the complete tree remains portable to a test server or future host.
+
+For a running semantic version, the client:
+
+1. validates the catalog schema and stable-channel metadata;
+2. filters releases to the exact supported hardware target, ESP-IDF target, and current partition-layout generation;
+3. considers only versions newer than the running version;
+4. considers a release directly reachable only when the running version is at least that release's `minimum_source_version`;
+5. selects the highest directly reachable release rather than blindly selecting `latest`; and
+6. after a successful update/reboot/confirmation, performs a new check to discover the next hop when the catalog still contains a newer release.
+
+This makes a waypoint strict without embedding special-case version logic in firmware. For example, if `0.6.0` requires updater behavior introduced by `0.5.0`, publishing `0.6.0` with `minimum_source_version: 0.5.0` forces older compatible devices to install a reachable `0.5.x` release first. If newer releases exist but none is directly reachable, the OTA UI must report that no supported in-device path is available rather than guessing or bypassing the constraint.
+
+The v1 selection model intentionally uses one monotonic lower-bound field rather than a general SemVer-range language. If a future compatibility problem cannot be represented safely by monotonic waypoints, that is a reason to revise the manifest/update protocol deliberately rather than embedding a complex range evaluator in the device.
+
+### Partition-layout generation
+
+Each OTA-compatible release identifies the partition-layout generation it expects, beginning with `ab-v1`. Normal OTA must reject a candidate whose layout generation does not match the running firmware's layout.
+
+The application image cannot safely redefine the bootloader, partition table, or OTA-data placement that governs the currently running updater. A future partition-layout migration therefore requires either:
+
+- an explicitly designed/tested migration mechanism with its own recovery guarantees; or
+- a clean/manual combined-image installation.
+
+It must never be smuggled through the ordinary app-image OTA path.
+
+### Installer and A/B partition ownership
+
+The OTA app must not know flash offsets, partition labels, OTA sequence counters, or which physical slot is called `ota_0` versus `ota_1`. Those are platform/update-service implementation details.
+
+A semantic updater/installer service owns the ESP-IDF OTA API and exposes operations such as begin/write/finish/abort/progress without exposing `esp_partition_t` or raw flash addresses to the app.
+
+For an install, that service:
+
+1. asks ESP-IDF for the currently running application partition;
+2. asks `esp_ota_get_next_update_partition(NULL)` for the eligible update destination;
+3. verifies that a valid non-running OTA destination exists and that the declared image can fit;
+4. begins the OTA write with `esp_ota_begin()`;
+5. streams the HTTPS response directly into the OTA handle with `esp_ota_write()` while computing SHA-256 and byte count;
+6. validates image/application metadata as soon as enough header data is available and requires the image's project/version/target assumptions to agree with the selected catalog entry;
+7. requires the final byte count and SHA-256 to match the catalog and completes ESP-IDF image validation with `esp_ota_end()`;
+8. only after all validation succeeds, marks that destination as the next boot image with `esp_ota_set_boot_partition()`; and
+9. immediately enters the platform reboot path.
+
+With the current two-slot layout, ESP-IDF's "next update partition" policy naturally resolves to the inactive slot; RFScout code does not encode that fact by offset or slot name. OTA-data state remains owned by ESP-IDF/bootloader logic.
+
+Errors before the boot-partition commit abort the OTA handle and leave the currently running application selected. Leaving the OTA app during download follows the same abort path.
+
+### First-boot confirmation and rollback
+
+Rollback confirmation is a boot/platform responsibility, not an OTA-app responsibility. The new image must be able to prove basic operability even if the user never opens OTA again.
+
+With `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`, `esp_ota_set_boot_partition()` marks a newly selected image for first-boot verification. Early common startup must inspect the running OTA partition state. When it is `ESP_OTA_IMG_PENDING_VERIFY`, RFScout runs a bounded core-health check and then either:
+
+- calls `esp_ota_mark_app_valid_cancel_rollback()` after the image has demonstrated minimum viable operation; or
+- calls `esp_ota_mark_app_invalid_rollback_and_reboot()` when the new image is known to be unusable.
+
+An unexpected reset/power loss before confirmation intentionally allows the ESP-IDF bootloader to reject the unconfirmed image and return to the previous working slot.
+
+The confirmation test should prove RFScout can reach a stable core runtime on the supported hardware, but it must not depend on optional/hot-plug peripherals, Internet availability, an OTA-server response, or opening the OTA app. The exact health checklist is separate implementation/test work and should be conservative enough to avoid accepting a fundamentally broken build without turning an unrelated optional-device failure into a firmware rollback.
+
+The updater must not start another OTA while the currently running image is still pending verification. ESP-IDF already rejects that state; RFScout should surface it as a platform/update-state error rather than attempting to work around it.
+
+### Manifest/image validation
+
+Before a candidate can become bootable, validation must cover at least:
+
+- supported manifest schema;
+- semantic source/target version ordering and waypoint eligibility;
+- exact RFScout project/hardware target;
+- ESP-IDF chip target;
+- matching partition-layout generation;
+- safe relative artifact path under the OTA origin;
+- declared image size that fits the selected OTA partition;
+- received byte count equal to declared size;
+- SHA-256 equal to the catalog value;
+- valid ESP application image structure; and
+- embedded application version/project metadata consistent with the catalog.
+
+Unknown optional manifest fields should be ignored when schema v1 semantics remain intact; an unsupported schema version is a hard failure.
+
+### Implementation slicing
+
+Keep the feature reviewable and preserve abstraction boundaries by landing it in small pieces on the OTA integration branch:
+
+1. document/finalize manifest, version, partition, rollback, and app/network ownership contracts;
+2. embed authoritative semantic release version metadata and test release/catalog generation;
+3. add the OTA app shell plus app-owned remembered-network persistence and reusable credential/text-entry UI;
+4. add session-scoped passive scan and explicit infrastructure-STA connect/disconnect support behind a semantic service;
+5. add static HTTPS catalog retrieval, validation, and waypoint selection without flash writes;
+6. add the transport-neutral installer abstraction and ESP-IDF A/B streaming implementation;
+7. add boot-time pending-image confirmation/rollback handling;
+8. integrate release publication for `null.link/rfscout/`; and
+9. validate cancellation, app switching, network loss, truncated/corrupt images, power loss at each OTA stage, waypoint upgrades, rollback, and recovery flashing on hardware.
+
 ## Medium-term platform work
 
 ### System-owned internal persistent record/database service

@@ -9,10 +9,11 @@ The release packager validates ESP-IDF build metadata before producing files. RF
 | Image | Flash offset | Purpose |
 | --- | ---: | --- |
 | Bootloader | `0x0` | ESP32-S3 second-stage bootloader |
-| Partition table | `0x8000` | RFScout 16 MB flash layout |
-| Application | `0x10000` | RFScout firmware |
+| Partition table | `0x8000` | RFScout 16 MB A/B flash layout |
+| OTA metadata | `0xD000` | ESP-IDF OTA slot-selection/rollback metadata |
+| Application | `0x10000` | Initial RFScout application in the first OTA slot |
 
-The bundle contains a combined image for ordinary installation, the component images for development/recovery, SHA-256 checksums, installation instructions, structured build metadata, and an ESP Web Tools manifest. It does not contain the ESP-IDF build tree. The ESP32-S3 firmware validates the supported T-Embed profile at runtime.
+The bundle contains a combined image for ordinary installation, the application/bootloader/partition-table component images for development and recovery, SHA-256 checksums, installation instructions, structured build metadata, and an ESP Web Tools manifest. The combined image also contains the generated ESP-IDF OTA metadata image required to initialize the A/B boot state. It does not contain the ESP-IDF build tree. The ESP32-S3 firmware validates the supported T-Embed profile at runtime.
 
 `manifest.web.json` is consumed by the browser flasher. The Pages deployment mirrors the manifest and referenced combined image onto the same HTTPS origin so flashing does not depend on cross-origin access to GitHub release or Actions URLs.
 
@@ -116,9 +117,11 @@ The project will revisit and define its long-term compatibility guarantees for `
 
 ## Installation behavior
 
-The combined image is a clean installation/recovery image flashed at `0x0`. It can replace internal NVS and LittleFS state, including RFScout configuration, calibration, and other persistent system/app records. Removable SD contents such as logs and recordings are not part of the image and are not erased by flashing internal storage.
+The combined image is a clean installation/recovery image flashed at `0x0`. It contains the bootloader, A/B partition table, initialized OTA metadata, and application. It can replace internal NVS and LittleFS state, including RFScout configuration, calibration, and other persistent system/app records. Removable SD contents such as logs and recordings are not part of the image and are not erased by flashing internal storage.
 
-Separate component images are included for development/recovery. RFScout does not guarantee that application-image-only flashing is compatible across arbitrary releases.
+The A/B partition/rollback foundation is present on this development line, but the OTA application and installer are not implemented by this foundation alone. The published `v0.3.2` firmware predates the A/B layout, so moving a device from `v0.3.2` to the first A/B-capable release requires the combined clean-install/recovery image.
+
+Separate component images remain development/recovery artifacts. The planned in-device protocol, compatibility/waypoint rules, static backend, and rollback-confirmation behavior are maintained in [ROADMAP.md](ROADMAP.md#in-device-ota-update-architecture) until they are implemented.
 
 ## Reproducibility
 
