@@ -96,10 +96,13 @@ Draft releases remain browser-testable without becoming visible to deployed devi
 From the repository **Actions** page, select **Prepare firmware release**, choose **Run workflow**, and provide:
 
 - a semantic version beginning with `v`, for example `v0.2.0` or `v0.2.1-rc.1`;
-- a source ref, normally `main`; and
+- a source ref, normally `main`;
+- `minimum_source_version`, the oldest OTA-capable `X.Y.Z` release allowed to install this release; and
 - whether the release should be marked prerelease.
 
-The workflow resolves the source ref to an immutable commit and rejects requests when the version is malformed/duplicate, the source is not part of `main`, or the source contains no commits after the latest published release.
+For the first A/B-capable RFScout release, set `minimum_source_version` to that release's own version because legacy `v0.3.2` devices must use the combined clean-install image first. Later releases can point back to the oldest compatible OTA-capable release, or to a newer mandatory waypoint when updater/storage semantics require one. The workflow rejects a minimum source version newer than the target release.
+
+The workflow resolves the source ref to an immutable commit and rejects requests when the version is malformed/duplicate, the OTA waypoint is invalid, the source is not part of `main`, or the source contains no commits after the latest published release.
 
 It repeats formatting, packaging tests, the ESP-IDF 6.1 build, and bundle generation at that exact commit. The build embeds the requested semantic version without the leading `v` into ESP-IDF application metadata, and the packager verifies that embedded version before producing release assets. Only after those jobs pass does it create the semantic version tag at the validated commit and then create the **draft** GitHub Release against that existing tag. This explicit ordering prevents GitHub from assigning a temporary `untagged-*` release identity while a release is under review.
 
