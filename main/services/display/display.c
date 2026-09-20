@@ -18,6 +18,8 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_vendor.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -26,6 +28,74 @@
 #define DISPLAY_PIXEL_COUNT ( RFSCOUT_DISPLAY_WIDTH * RFSCOUT_DISPLAY_HEIGHT )
 #define DISPLAY_DMA_ROWS 10
 #define DISPLAY_DMA_PIXEL_COUNT ( RFSCOUT_DISPLAY_WIDTH * DISPLAY_DMA_ROWS )
+#define DISPLAY_ST7789_RESET_SETTLE_MS 120U
+#define DISPLAY_ST7789_SLEEP_IN_SETTLE_MS 20U
+#define DISPLAY_ST7789_SLEEP_OUT_SETTLE_MS 20U
+#define DISPLAY_ST7789_DISPLAY_ON_SETTLE_MS 120U
+#define DISPLAY_PIXEL_SHIFT_POSITION_COUNT 9U
+
+typedef struct
+{
+    uint8_t command;
+    uint8_t data[ 14 ];
+    uint8_t length;
+    uint16_t delay_ms;
+} st7789_init_command_t;
+
+/*
+ * LILYGO's board-specific TFT_eSPI initialization values. ESP-IDF's generic
+ * ST7789 provider intentionally covers only the controller's basic setup.
+ */
+static const st7789_init_command_t tdeck_st7789_init[] = {
+    { 0x13, { 0 }, 0, 0 },
+    { 0x3A, { 0x55 }, 1, 0 },
+    { 0xB2, { 0x0C, 0x0C, 0x00, 0x33, 0x33 }, 5, 0 },
+    { 0xB7, { 0x75 }, 1, 0 },
+    { 0xBB, { 0x1A }, 1, 0 },
+    { 0xC0, { 0x2C }, 1, 0 },
+    { 0xC2, { 0x01 }, 1, 0 },
+    { 0xC3, { 0x13 }, 1, 0 },
+    { 0xC4, { 0x20 }, 1, 0 },
+    { 0xC6, { 0x0F }, 1, 0 },
+    { 0xD0, { 0xA4, 0xA1 }, 2, 0 },
+    { 0xE0,
+      { 0xD0, 0x0D, 0x14, 0x0D, 0x0D, 0x09, 0x38, 0x44, 0x4E, 0x3A, 0x17, 0x18, 0x2F, 0x30 },
+      14,
+      0 },
+    { 0xE1,
+      { 0xD0, 0x09, 0x0F, 0x08, 0x07, 0x14, 0x37, 0x44, 0x4D, 0x38, 0x15, 0x16, 0x2C, 0x3E },
+      14,
+      0 },
+};
+
+static const st7789_init_command_t tembed_st7789_init[] = {
+    { 0x13, { 0 }, 0, 0 },
+    { 0xB6, { 0x0A, 0x82 }, 2, 0 },
+    { 0xB0, { 0x00, 0xE0 }, 2, 0 },
+    { 0x3A, { 0x55 }, 1, 10 },
+    { 0xB2, { 0x0C, 0x0C, 0x00, 0x33, 0x33 }, 5, 0 },
+    { 0xB7, { 0x35 }, 1, 0 },
+    { 0xBB, { 0x28 }, 1, 0 },
+    { 0xC0, { 0x0C }, 1, 0 },
+    { 0xC2, { 0x01, 0xFF }, 2, 0 },
+    { 0xC3, { 0x10 }, 1, 0 },
+    { 0xC4, { 0x20 }, 1, 0 },
+    { 0xC6, { 0x0F }, 1, 0 },
+    { 0xD0, { 0xA4, 0xA1 }, 2, 0 },
+    { 0xE0,
+      { 0xD0, 0x00, 0x02, 0x07, 0x0A, 0x28, 0x32, 0x44, 0x42, 0x06, 0x0E, 0x12, 0x14, 0x17 },
+      14,
+      0 },
+    { 0xE1,
+      { 0xD0, 0x00, 0x02, 0x07, 0x0A, 0x28, 0x31, 0x54, 0x47, 0x0E, 0x1C, 0x17, 0x1B, 0x1E },
+      14,
+      0 },
+};
+
+static const int8_t pixel_shift_positions[ DISPLAY_PIXEL_SHIFT_POSITION_COUNT ][ 2 ] = {
+    { 0, 0 }, { 1, 0 }, { 1, 1 }, { 0, 1 }, { -1, 1 },
+    { -1, 0 }, { -1, -1 }, { 0, -1 }, { 1, -1 },
+};
 
 static const char *TAG = "display";
 static esp_lcd_panel_handle_t panel;
@@ -35,6 +105,9 @@ static uint16_t *dma_buffer;
 static bool display_dirty = true;
 static bool output_enabled;
 static bool low_power_active;
+static size_t pixel_shift_position;
+static int8_t pixel_shift_x;
+static int8_t pixel_shift_y;
 
 /** @brief Compact 5x7 printable ASCII font used by the RFScout LCD UI. */
 // clang-format off
@@ -61,6 +134,90 @@ static void wait_for_transfer( void )
 {
     while( !transfer_done )
     {
+    }
+}
+
+static esp_err_t apply_st7789_init_sequence( esp_lcd_panel_io_handle_t a_io,
+                                             const st7789_init_command_t *a_sequence,
+                                             size_t a_count )
+{
+    for( size_t index = 0U; index < a_count; ++index )
+    {
+        const st7789_init_command_t *entry = &a_sequence[ index ];
+        const esp_err_t result = esp_lcd_panel_io_tx_param(
+            a_io, entry->command, entry->length ? entry->data : NULL, entry->length );
+        if( ESP_OK != result )
+        {
+            return result;
+        }
+        if( 0U != entry->delay_ms )
+        {
+            vTaskDelay( pdMS_TO_TICKS( entry->delay_ms ) );
+        }
+    }
+    return ESP_OK;
+}
+
+static esp_err_t apply_board_st7789_init( esp_lcd_panel_io_handle_t a_io )
+{
+    switch( board_profile()->id )
+    {
+        case RFSCOUT_BOARD_TDECK_PLUS:
+            return apply_st7789_init_sequence( a_io,
+                                               tdeck_st7789_init,
+                                               sizeof( tdeck_st7789_init ) /
+                                                   sizeof( tdeck_st7789_init[ 0 ] ) );
+        case RFSCOUT_BOARD_TEMBED_CC1101_PLUS:
+            return apply_st7789_init_sequence( a_io,
+                                               tembed_st7789_init,
+                                               sizeof( tembed_st7789_init ) /
+                                                   sizeof( tembed_st7789_init[ 0 ] ) );
+        case RFSCOUT_BOARD_UNKNOWN:
+        default:
+            return ESP_ERR_NOT_SUPPORTED;
+    }
+}
+
+static void fill_dma_row( int a_destination_y, uint16_t *a_destination )
+{
+    const uint16_t background = ui_theme_get()->background;
+    const int source_y = a_destination_y - pixel_shift_y;
+    if( source_y < 0 || source_y >= RFSCOUT_DISPLAY_HEIGHT )
+    {
+        for( int x = 0; x < RFSCOUT_DISPLAY_WIDTH; ++x )
+        {
+            a_destination[ x ] = background;
+        }
+        return;
+    }
+
+    const uint16_t *source = &framebuffer[ (size_t)source_y * RFSCOUT_DISPLAY_WIDTH ];
+    if( 0 == pixel_shift_x )
+    {
+        memcpy( a_destination, source, RFSCOUT_DISPLAY_WIDTH * sizeof( *a_destination ) );
+        return;
+    }
+
+    if( pixel_shift_x > 0 )
+    {
+        const size_t offset = (size_t)pixel_shift_x;
+        for( size_t x = 0U; x < offset; ++x )
+        {
+            a_destination[ x ] = background;
+        }
+        memcpy( &a_destination[ offset ],
+                source,
+                ( RFSCOUT_DISPLAY_WIDTH - offset ) * sizeof( *a_destination ) );
+        return;
+    }
+
+    const size_t offset = (size_t)( -pixel_shift_x );
+    memcpy( a_destination,
+            &source[ offset ],
+            ( RFSCOUT_DISPLAY_WIDTH - offset ) * sizeof( *a_destination ) );
+    for( size_t x = RFSCOUT_DISPLAY_WIDTH - offset; x < RFSCOUT_DISPLAY_WIDTH; ++x )
+    {
+        a_destination[ x ] = background;
     }
 }
 
@@ -127,6 +284,7 @@ esp_err_t display_enter_low_power( void )
         return sleep_result;
     }
 
+    vTaskDelay( pdMS_TO_TICKS( DISPLAY_ST7789_SLEEP_IN_SETTLE_MS ) );
     low_power_active = true;
     return ESP_OK;
 }
@@ -148,6 +306,7 @@ esp_err_t display_exit_low_power( void )
         return sleep_result;
     }
 
+    vTaskDelay( pdMS_TO_TICKS( DISPLAY_ST7789_SLEEP_OUT_SETTLE_MS ) );
     const esp_err_t output_result = display_set_output_enabled( true );
     if( ESP_OK != output_result )
     {
@@ -155,6 +314,7 @@ esp_err_t display_exit_low_power( void )
         return output_result;
     }
 
+    vTaskDelay( pdMS_TO_TICKS( DISPLAY_ST7789_DISPLAY_ON_SETTLE_MS ) );
     low_power_active = false;
     display_invalidate();
     return ESP_OK;
@@ -178,6 +338,27 @@ bool display_is_dirty( void )
 void display_mark_clean( void )
 {
     display_dirty = false;
+}
+
+void display_pixel_shift_reset( void )
+{
+    if( 0U == pixel_shift_position )
+    {
+        return;
+    }
+
+    pixel_shift_position = 0U;
+    pixel_shift_x = pixel_shift_positions[ 0 ][ 0 ];
+    pixel_shift_y = pixel_shift_positions[ 0 ][ 1 ];
+    display_invalidate();
+}
+
+void display_pixel_shift_advance( void )
+{
+    pixel_shift_position = ( pixel_shift_position + 1U ) % DISPLAY_PIXEL_SHIFT_POSITION_COUNT;
+    pixel_shift_x = pixel_shift_positions[ pixel_shift_position ][ 0 ];
+    pixel_shift_y = pixel_shift_positions[ pixel_shift_position ][ 1 ];
+    display_invalidate();
 }
 
 void display_fill_rect_raw( int a_x, int a_y, int a_width, int a_height, uint16_t a_color )
@@ -248,6 +429,9 @@ esp_err_t display_init( void )
     display_dirty = true;
     output_enabled = false;
     low_power_active = false;
+    pixel_shift_position = 0U;
+    pixel_shift_x = 0;
+    pixel_shift_y = 0;
 
     const esp_err_t bus_result = board_spi_init();
     if( ESP_OK != bus_result )
@@ -297,14 +481,19 @@ esp_err_t display_init( void )
                                                 .bits_per_pixel = 16 };
     ESP_ERROR_CHECK( esp_lcd_new_panel_st7789( io, &panel_config, &panel ) );
     ESP_ERROR_CHECK( esp_lcd_panel_reset( panel ) );
+    vTaskDelay( pdMS_TO_TICKS( DISPLAY_ST7789_RESET_SETTLE_MS ) );
     ESP_ERROR_CHECK( esp_lcd_panel_init( panel ) );
+    vTaskDelay( pdMS_TO_TICKS( DISPLAY_ST7789_RESET_SETTLE_MS ) );
+    ESP_ERROR_CHECK( apply_board_st7789_init( io ) );
     ESP_ERROR_CHECK( esp_lcd_panel_swap_xy( panel, RFSCOUT_BOARD_DISPLAY_SWAP_XY ) );
     ESP_ERROR_CHECK( esp_lcd_panel_mirror(
         panel, RFSCOUT_BOARD_DISPLAY_MIRROR_X, RFSCOUT_BOARD_DISPLAY_MIRROR_Y ) );
     ESP_ERROR_CHECK(
         esp_lcd_panel_set_gap( panel, RFSCOUT_BOARD_DISPLAY_X_GAP, RFSCOUT_BOARD_DISPLAY_Y_GAP ) );
     ESP_ERROR_CHECK( esp_lcd_panel_invert_color( panel, RFSCOUT_BOARD_DISPLAY_INVERT_COLOR ) );
+    vTaskDelay( pdMS_TO_TICKS( DISPLAY_ST7789_DISPLAY_ON_SETTLE_MS ) );
     ESP_ERROR_CHECK( esp_lcd_panel_disp_on_off( panel, true ) );
+    vTaskDelay( pdMS_TO_TICKS( DISPLAY_ST7789_DISPLAY_ON_SETTLE_MS ) );
     output_enabled = true;
 
     display_clear( 0x0000U );
@@ -421,10 +610,10 @@ esp_err_t display_flush( void )
             rows = RFSCOUT_DISPLAY_HEIGHT - y;
         }
 
-        const size_t pixel_count = (size_t)rows * RFSCOUT_DISPLAY_WIDTH;
-        memcpy( dma_buffer,
-                &framebuffer[ (size_t)y * RFSCOUT_DISPLAY_WIDTH ],
-                pixel_count * sizeof( *dma_buffer ) );
+        for( int row = 0; row < rows; ++row )
+        {
+            fill_dma_row( y + row, &dma_buffer[ (size_t)row * RFSCOUT_DISPLAY_WIDTH ] );
+        }
 
         transfer_done = false;
         const esp_err_t result =
