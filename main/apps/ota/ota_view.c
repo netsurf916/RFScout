@@ -97,8 +97,7 @@ void ota_view_render_main( const char *a_version,
             {
                 if( 0U == action )
                 {
-                    draw_menu_row(
-                        row, item, a_selected, "Check for update", a_update_status );
+                    draw_menu_row( row, item, a_selected, "Check for update", a_update_status );
                 }
                 else
                 {

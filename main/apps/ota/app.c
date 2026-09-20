@@ -633,8 +633,7 @@ static void handle_input( const rfscout_input_event_t *a_input )
         if( OTA_SCREEN_MAIN == screen )
         {
             build_visible_saved();
-            item_count =
-                (unsigned)view_network_count + ( network_connected() ? 2U : 3U );
+            item_count = (unsigned)view_network_count + ( network_connected() ? 2U : 3U );
         }
         else if( OTA_SCREEN_ACTION == screen )
         {

@@ -42,9 +42,7 @@ esp_err_t ota_acquisition_begin_catalog( void );
 ota_acquisition_status_t ota_acquisition_status( void );
 
 /** @brief Copy a completed catalog into caller storage, including a terminating NUL byte. */
-esp_err_t ota_acquisition_copy_catalog( char *a_destination,
-                                        size_t a_capacity,
-                                        size_t *a_length );
+esp_err_t ota_acquisition_copy_catalog( char *a_destination, size_t a_capacity, size_t *a_length );
 
 /** @brief Cancel/join any in-flight request and erase transient acquisition data. */
 esp_err_t ota_acquisition_stop( void );

@@ -19,7 +19,8 @@ const rfscout_firmware_identity_t *firmware_identity( void )
 
     identity.project = NULL != description ? description->project_name : "unknown";
     identity.version = NULL != description ? description->version : "unknown";
-    identity.hardware_target = NULL != board && NULL != board->target_id ? board->target_id : "unknown";
+    identity.hardware_target =
+        NULL != board && NULL != board->target_id ? board->target_id : "unknown";
     identity.idf_target = CONFIG_IDF_TARGET;
     identity.partition_layout = "ab-v1";
     return &identity;

@@ -202,8 +202,7 @@ static bool parse_artifact( const cJSON *a_release, ota_catalog_candidate_t *a_c
         return false;
     }
 
-    return copy_bounded(
-               a_candidate->artifact_path, sizeof( a_candidate->artifact_path ), path ) &&
+    return copy_bounded( a_candidate->artifact_path, sizeof( a_candidate->artifact_path ), path ) &&
            copy_bounded( a_candidate->sha256, sizeof( a_candidate->sha256 ), sha256 ) &&
            ( a_candidate->artifact_size = parsed_size, true );
 }
@@ -297,7 +296,7 @@ esp_err_t ota_catalog_select( const char *a_json,
         }
     }
 
-    a_selection->result = selected            ? OTA_CATALOG_UPDATE_AVAILABLE
+    a_selection->result = selected           ? OTA_CATALOG_UPDATE_AVAILABLE
                           : newer_compatible ? OTA_CATALOG_BLOCKED
                                              : OTA_CATALOG_CURRENT;
     result = ESP_OK;

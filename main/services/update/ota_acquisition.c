@@ -63,9 +63,7 @@ static esp_err_t http_event( esp_http_client_event_t *a_event )
     return ESP_OK;
 }
 
-static void finish_worker( ota_acquisition_state_t a_state,
-                           esp_err_t a_error,
-                           int a_http_status )
+static void finish_worker( ota_acquisition_state_t a_state, esp_err_t a_error, int a_http_status )
 {
     portENTER_CRITICAL( &state_lock );
     status.state = a_state;
@@ -173,11 +171,11 @@ esp_err_t ota_acquisition_begin_catalog( void )
     portEXIT_CRITICAL( &state_lock );
 
     if( pdPASS != xTaskCreate( acquisition_worker,
-                              "ota_catalog",
-                              OTA_ACQUISITION_TASK_STACK,
-                              NULL,
-                              5U,
-                              &worker_task ) )
+                               "ota_catalog",
+                               OTA_ACQUISITION_TASK_STACK,
+                               NULL,
+                               5U,
+                               &worker_task ) )
     {
         portENTER_CRITICAL( &state_lock );
         worker_task = NULL;
@@ -200,9 +198,7 @@ ota_acquisition_status_t ota_acquisition_status( void )
     return result;
 }
 
-esp_err_t ota_acquisition_copy_catalog( char *a_destination,
-                                        size_t a_capacity,
-                                        size_t *a_length )
+esp_err_t ota_acquisition_copy_catalog( char *a_destination, size_t a_capacity, size_t *a_length )
 {
     if( NULL == a_destination || NULL == a_length )
     {
