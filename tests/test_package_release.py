@@ -56,6 +56,7 @@ class PackageReleaseTest(unittest.TestCase):
         (build / "partition_table").mkdir()
         (build / "bootloader" / "bootloader.bin").write_bytes(b"bootloader")
         (build / "partition_table" / "partition-table.bin").write_bytes(b"partitions")
+        (build / "ota_data_initial.bin").write_bytes(b"ota metadata")
         (build / "rfscout.bin").write_bytes(b"application")
         merged = build / "rfscout-full.bin"
         merged.write_bytes(b"combined firmware")
@@ -72,6 +73,7 @@ class PackageReleaseTest(unittest.TestCase):
             "flash_files": {
                 "0x0": "bootloader/bootloader.bin",
                 "0x8000": "partition_table/partition-table.bin",
+                "0xd000": "ota_data_initial.bin",
                 "0x10000": "rfscout.bin",
             },
         }
