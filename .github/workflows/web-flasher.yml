@@ -1,4 +1,4 @@
-name: Publish browser flasher
+name: Publish RFScout Pages
 
 on:
   workflow_run:
@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: rfscout-web-flasher
+  group: rfscout-pages
   cancel-in-progress: true
 
 jobs:
@@ -33,7 +33,7 @@ jobs:
     if: github.event_name == 'release'
     runs-on: ubuntu-24.04
     steps:
-      - name: Refresh browser flasher from main
+      - name: Refresh RFScout Pages from main
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run web-flasher.yml --repo "$GITHUB_REPOSITORY" --ref main
@@ -105,7 +105,7 @@ jobs:
           cp -R web/flasher/. site/
           cp assets/logo.png site/logo.png
 
-      - name: Mirror firmware releases including drafts
+      - name: Mirror browser-flasher releases including drafts
         if: steps.stability.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -129,6 +129,34 @@ jobs:
             gh release download "$tag" --pattern manifest.json --pattern manifest.web.json \
               --pattern 'rfscout-*-full.bin' --dir "$destination"
           done
+
+
+
+      - name: Stage published stable OTA releases
+        if: steps.stability.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p ota-staging
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select((.draft | not) and (.prerelease | not)) | .tag_name' \
+            | while IFS= read -r tag; do
+                assets=$(gh release view "$tag" --json assets --jq '.assets[].name')
+                if ! grep -qx 'ota-release.json' <<< "$assets"; then
+                  continue
+                fi
+
+                destination="ota-staging/$tag"
+                mkdir -p "$destination"
+                gh release download "$tag" --pattern ota-release.json --dir "$destination"
+
+                artifact=$(jq -r '.artifact.file // empty' "$destination/ota-release.json")
+                if [[ -z "$artifact" ]] || ! grep -Fxq "$artifact" <<< "$assets"; then
+                  echo "OTA metadata for $tag references missing asset: $artifact" >&2
+                  exit 1
+                fi
+                gh release download "$tag" --pattern "$artifact" --dir "$destination"
+              done
 
       - name: Collect current main and pull request candidates
         if: steps.stability.outputs.ready == 'true'
@@ -184,11 +212,12 @@ jobs:
           gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" --jq '.[] | [.number, .head.sha] | @tsv' \
             | while IFS=$'\t' read -r pr sha; do collect_candidate pull_request "$sha" "$pr"; done
 
-      - name: Build firmware catalog
+      - name: Build Pages firmware catalogs
         if: steps.stability.outputs.ready == 'true'
         run: |
           python3 tools/build_web_flasher.py --site-dir site --releases-json releases.json \
-            --candidate-root candidates --candidates-json candidates.json
+            --candidate-root candidates --candidates-json candidates.json \
+            --ota-release-root ota-staging
 
       - name: Configure GitHub Pages
         if: steps.stability.outputs.ready == 'true'
@@ -225,7 +254,7 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Deploy browser flasher
+      - name: Deploy RFScout Pages
         if: steps.revalidate.outputs.ready == 'true'
         id: deployment
         uses: actions/deploy-pages@v5

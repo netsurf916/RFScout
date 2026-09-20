@@ -17,6 +17,7 @@ sys.path.insert(0, str(REPOSITORY_ROOT / "tools"))
 from package_release import (  # noqa: E402
     PackagingError,
     package_release,
+    validate_ota_source_version,
     validate_release_version,
 )
 
@@ -33,6 +34,17 @@ class PackageReleaseTest(unittest.TestCase):
         ):
             with self.subTest(version=version):
                 validate_release_version(version)
+
+    def test_accepts_plain_ota_source_versions(self) -> None:
+        for version in ("0.0.0", "0.4.0", "12.34.56"):
+            with self.subTest(version=version):
+                validate_ota_source_version(version)
+
+    def test_rejects_malformed_ota_source_versions(self) -> None:
+        for version in ("v0.4.0", "0.4", "01.4.0", "0.04.0", "0.4.00", "0.4.0-rc.1"):
+            with self.subTest(version=version):
+                with self.assertRaises(PackagingError):
+                    validate_ota_source_version(version)
 
     def test_rejects_malformed_semantic_release_versions(self) -> None:
         for version in (
@@ -107,6 +119,7 @@ class PackageReleaseTest(unittest.TestCase):
                 "v0.1.0",
                 "0123456789abcdef0123456789abcdef01234567",
                 "ESP-IDF v6.1-dev",
+                "0.1.0",
             )
 
             names = {path.name for path in files}
@@ -118,6 +131,7 @@ class PackageReleaseTest(unittest.TestCase):
             self.assertEqual([part["offset"] for part in manifest["parts"]], [0, 0x8000, 0x10000])
             ota_release = json.loads((output / "ota-release.json").read_text(encoding="utf-8"))
             self.assertEqual(ota_release["version"], "0.1.0")
+            self.assertEqual(ota_release["minimum_source_version"], "0.1.0")
             self.assertEqual(ota_release["hardware_target"], "t-embed-cc1101-plus")
             self.assertEqual(ota_release["idf_target"], "esp32s3")
             self.assertEqual(ota_release["partition_layout"], "ab-v1")
@@ -166,6 +180,7 @@ class PackageReleaseTest(unittest.TestCase):
                     "v0.1.0",
                     "0123456789abcdef0123456789abcdef01234567",
                     "ESP-IDF v6.1-dev",
+                    "0.1.0",
                 )
 
     def test_rejects_unexpected_target(self) -> None:
@@ -180,6 +195,7 @@ class PackageReleaseTest(unittest.TestCase):
                     "v0.1.0",
                     "0123456789abcdef0123456789abcdef01234567",
                     "ESP-IDF v6.1-dev",
+                    "0.1.0",
                 )
 
     def test_rejects_unexpected_layout(self) -> None:
@@ -198,6 +214,7 @@ class PackageReleaseTest(unittest.TestCase):
                     "v0.1.0",
                     "0123456789abcdef0123456789abcdef01234567",
                     "ESP-IDF v6.1-dev",
+                    "0.1.0",
                 )
 
 

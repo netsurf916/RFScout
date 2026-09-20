@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from tools.build_web_flasher import candidate_entries, release_entries
+from tools.build_web_flasher import build_ota_catalog, candidate_entries, release_entries
 
 
 class WebFlasherCatalogTest(unittest.TestCase):
@@ -98,6 +99,81 @@ class WebFlasherCatalogTest(unittest.TestCase):
                 ],
             )
             self.assertEqual(entries, [])
+
+
+    def test_ota_catalog_builds_published_release_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            site = root / "site"
+            staging = root / "ota-staging"
+            release = staging / "v0.5.0"
+            release.mkdir(parents=True)
+            image = release / "rfscout-v0.5.0-esp32s3-app.bin"
+            image.write_bytes(b"application image")
+            digest = hashlib.sha256(image.read_bytes()).hexdigest()
+            (release / "ota-release.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "project": "RFScout",
+                        "version": "0.5.0",
+                        "minimum_source_version": "0.4.0",
+                        "hardware_target": "t-embed-cc1101-plus",
+                        "idf_target": "esp32s3",
+                        "partition_layout": "ab-v1",
+                        "artifact": {
+                            "file": image.name,
+                            "size": image.stat().st_size,
+                            "sha256": digest,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            catalog = build_ota_catalog(site, staging)
+
+            self.assertEqual(catalog["latest"], "0.5.0")
+            self.assertEqual(catalog["releases"][0]["minimum_source_version"], "0.4.0")
+            self.assertEqual(
+                catalog["releases"][0]["artifact"]["path"],
+                "releases/0.5.0/rfscout-v0.5.0-esp32s3-app.bin",
+            )
+            self.assertTrue(
+                (site / "ota" / "releases" / "0.5.0" / image.name).is_file()
+            )
+            self.assertTrue((site / "ota" / "stable.json").is_file())
+
+    def test_ota_catalog_rejects_bad_artifact_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            site = root / "site"
+            release = root / "ota-staging" / "v0.5.0"
+            release.mkdir(parents=True)
+            image = release / "rfscout-v0.5.0-esp32s3-app.bin"
+            image.write_bytes(b"application image")
+            (release / "ota-release.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "project": "RFScout",
+                        "version": "0.5.0",
+                        "minimum_source_version": "0.4.0",
+                        "hardware_target": "t-embed-cc1101-plus",
+                        "idf_target": "esp32s3",
+                        "partition_layout": "ab-v1",
+                        "artifact": {
+                            "file": image.name,
+                            "size": image.stat().st_size,
+                            "sha256": "0" * 64,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
+                build_ota_catalog(site, root / "ota-staging")
 
 
 if __name__ == "__main__":

@@ -28,6 +28,9 @@ EXPECTED_PARTS = {
     0x10000: "rfscout.bin",
 }
 VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
+OTA_SOURCE_VERSION_RE = re.compile(
+    r"^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$"
+)
 RELEASE_VERSION_RE = re.compile(
     r"^v(?:0|[1-9][0-9]*)\."
     r"(?:0|[1-9][0-9]*)\."
@@ -39,6 +42,14 @@ RELEASE_VERSION_RE = re.compile(
 
 class PackagingError(RuntimeError):
     """Raised when build output cannot form a safe release bundle."""
+
+
+def validate_ota_source_version(a_version: str) -> None:
+    """Validate the oldest source version allowed by one OTA release."""
+    if not OTA_SOURCE_VERSION_RE.fullmatch(a_version):
+        raise PackagingError(
+            "minimum OTA source version must be plain X.Y.Z Semantic Versioning"
+        )
 
 
 def validate_release_version(a_version: str) -> None:
@@ -215,6 +226,7 @@ def package_release(
     a_version: str,
     a_commit: str,
     a_idf_version: str,
+    a_minimum_source_version: str | None = None,
 ) -> list[Path]:
     if not VERSION_RE.fullmatch(a_version):
         raise PackagingError(
@@ -224,6 +236,12 @@ def package_release(
         raise PackagingError("commit must be a 7- to 40-character hexadecimal Git SHA")
     if not a_merged_image.is_file() or a_merged_image.stat().st_size == 0:
         raise PackagingError(f"missing or empty merged image: {a_merged_image}")
+    if a_version.startswith("v"):
+        if a_minimum_source_version is None:
+            raise PackagingError("release bundles require --minimum-source-version")
+        validate_ota_source_version(a_minimum_source_version)
+    elif a_minimum_source_version is not None:
+        validate_ota_source_version(a_minimum_source_version)
 
     validate_build(a_build_dir, a_version)
 
@@ -295,6 +313,7 @@ def package_release(
         "schema_version": 1,
         "project": "RFScout",
         "version": embedded_version(a_version),
+        "minimum_source_version": a_minimum_source_version,
         "hardware_target": EXPECTED_HARDWARE_TARGET,
         "idf_target": EXPECTED_TARGET,
         "partition_layout": EXPECTED_PARTITION_LAYOUT,
@@ -348,6 +367,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--version", required=True)
     parser.add_argument("--commit", required=True)
     parser.add_argument("--idf-version", required=True)
+    parser.add_argument("--minimum-source-version")
     return parser.parse_args()
 
 
@@ -361,6 +381,7 @@ def main() -> int:
             args.version,
             args.commit,
             args.idf_version,
+            args.minimum_source_version,
         )
     except PackagingError as error:
         print(f"error: {error}", file=sys.stderr)

@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
-"""Assemble the static RFScout browser-flasher catalog."""
+"""Assemble the static RFScout GitHub Pages firmware catalogs."""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 import shutil
 from pathlib import Path
+
+OTA_VERSION_RE = re.compile(
+    r"^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$"
+)
+OTA_HARDWARE_TARGET = "t-embed-cc1101-plus"
+OTA_IDF_TARGET = "esp32s3"
+OTA_PARTITION_LAYOUT = "ab-v1"
 
 
 def load_json(a_path: Path) -> object:
@@ -120,6 +129,142 @@ def candidate_entries(
     )
 
 
+
+
+def file_sha256(a_path: Path) -> str:
+    digest = hashlib.sha256()
+    with a_path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def semver_key(a_version: str) -> tuple[int, int, int]:
+    if not OTA_VERSION_RE.fullmatch(a_version):
+        raise ValueError(f"invalid stable OTA version: {a_version!r}")
+    return tuple(int(part) for part in a_version.split("."))
+
+
+def ota_release_entry(a_directory: Path) -> dict:
+    metadata_path = a_directory / "ota-release.json"
+    metadata = load_json(metadata_path)
+    if not isinstance(metadata, dict) or metadata.get("schema_version") != 1:
+        raise ValueError(f"invalid OTA release metadata: {metadata_path}")
+
+    version = metadata.get("version")
+    minimum = metadata.get("minimum_source_version")
+    if not isinstance(version, str) or not isinstance(minimum, str):
+        raise ValueError(f"missing OTA release version/waypoint metadata: {metadata_path}")
+    version_key = semver_key(version)
+    minimum_key = semver_key(minimum)
+    if minimum_key > version_key:
+        raise ValueError(
+            f"minimum source {minimum} is newer than OTA release {version}: {metadata_path}"
+        )
+
+    expected = {
+        "project": "RFScout",
+        "hardware_target": OTA_HARDWARE_TARGET,
+        "idf_target": OTA_IDF_TARGET,
+        "partition_layout": OTA_PARTITION_LAYOUT,
+    }
+    for key, value in expected.items():
+        if metadata.get(key) != value:
+            raise ValueError(
+                f"unexpected OTA {key} in {metadata_path}: {metadata.get(key)!r}"
+            )
+
+    artifact = metadata.get("artifact")
+    if not isinstance(artifact, dict):
+        raise ValueError(f"missing OTA artifact metadata: {metadata_path}")
+    filename = artifact.get("file")
+    expected_size = artifact.get("size")
+    expected_sha256 = artifact.get("sha256")
+    if (
+        not isinstance(filename, str)
+        or "/" in filename
+        or "\\" in filename
+        or not isinstance(expected_size, int)
+        or expected_size <= 0
+        or not isinstance(expected_sha256, str)
+        or not re.fullmatch(r"[0-9a-fA-F]{64}", expected_sha256)
+    ):
+        raise ValueError(f"invalid OTA artifact metadata: {metadata_path}")
+
+    image = a_directory / filename
+    if not image.is_file():
+        raise ValueError(f"missing OTA application image: {image}")
+    if image.stat().st_size != expected_size:
+        raise ValueError(f"OTA application size mismatch: {image}")
+    if file_sha256(image).lower() != expected_sha256.lower():
+        raise ValueError(f"OTA application SHA-256 mismatch: {image}")
+
+    return {
+        "version": version,
+        "minimum_source_version": minimum,
+        "hardware_target": OTA_HARDWARE_TARGET,
+        "idf_target": OTA_IDF_TARGET,
+        "partition_layout": OTA_PARTITION_LAYOUT,
+        "artifact": {
+            "file": filename,
+            "size": expected_size,
+            "sha256": expected_sha256.lower(),
+        },
+    }
+
+
+def build_ota_catalog(a_site_dir: Path, a_ota_release_root: Path) -> dict:
+    output_root = a_site_dir / "ota"
+    if output_root.exists():
+        shutil.rmtree(output_root)
+    releases_output = output_root / "releases"
+    releases_output.mkdir(parents=True)
+
+    entries: list[dict] = []
+    if a_ota_release_root.is_dir():
+        for directory in sorted(
+            path for path in a_ota_release_root.iterdir() if path.is_dir()
+        ):
+            metadata_path = directory / "ota-release.json"
+            if not metadata_path.is_file():
+                continue
+            entry = ota_release_entry(directory)
+            version = entry["version"]
+            destination = releases_output / version
+            if destination.exists():
+                raise ValueError(f"duplicate stable OTA version: {version}")
+            destination.mkdir()
+            artifact = entry["artifact"]
+            shutil.copyfile(
+                directory / artifact["file"], destination / artifact["file"]
+            )
+            shutil.copyfile(metadata_path, destination / "ota-release.json")
+            entries.append(
+                {
+                    "version": version,
+                    "minimum_source_version": entry["minimum_source_version"],
+                    "hardware_target": entry["hardware_target"],
+                    "idf_target": entry["idf_target"],
+                    "partition_layout": entry["partition_layout"],
+                    "artifact": {
+                        "path": f"releases/{version}/{artifact['file']}",
+                        "size": artifact["size"],
+                        "sha256": artifact["sha256"],
+                    },
+                }
+            )
+
+    entries.sort(key=lambda entry: semver_key(entry["version"]))
+    catalog = {
+        "schema_version": 1,
+        "channel": "stable",
+        "latest": entries[-1]["version"] if entries else "0.0.0",
+        "releases": entries,
+    }
+    write_json(output_root / "stable.json", catalog)
+    return catalog
+
+
 def deduplicate(entries: list[dict]) -> list[dict]:
     release_commits = {
         entry["commit"]
@@ -143,6 +288,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--releases-json", type=Path, required=True)
     parser.add_argument("--candidate-root", type=Path, required=True)
     parser.add_argument("--candidates-json", type=Path, required=True)
+    parser.add_argument("--ota-release-root", type=Path, required=True)
     return parser.parse_args()
 
 
@@ -160,6 +306,7 @@ def main() -> int:
     entries = deduplicate(candidates_entries + releases_entries)
 
     write_json(args.site_dir / "catalog.json", {"schema_version": 1, "builds": entries})
+    build_ota_catalog(args.site_dir, args.ota_release_root)
     return 0
 
 
