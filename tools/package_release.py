@@ -13,6 +13,9 @@ import zipfile
 from pathlib import Path
 
 
+EXPECTED_PROJECT_NAME = "rfscout"
+EXPECTED_HARDWARE_TARGET = "t-embed-cc1101-plus"
+EXPECTED_PARTITION_LAYOUT = "ab-v1"
 EXPECTED_TARGET = "esp32s3"
 EXPECTED_CHIP_FAMILY = "ESP32-S3"
 EXPECTED_FLASH_MODE = "dio"
@@ -78,7 +81,35 @@ def flash_option(a_args: list[str], a_name: str) -> str:
         raise PackagingError(f"flasher_args.json is missing {a_name}") from error
 
 
-def validate_build(a_build_dir: Path) -> dict:
+def embedded_version(a_version: str) -> str:
+    """Return the version embedded into ESP-IDF application metadata."""
+    return a_version.removeprefix("v")
+
+
+def validate_build(a_build_dir: Path, a_version: str) -> dict:
+    project_path = a_build_dir / "project_description.json"
+    if not project_path.is_file():
+        raise PackagingError(f"missing ESP-IDF project metadata: {project_path}")
+
+    try:
+        project = json.loads(project_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise PackagingError(f"cannot read {project_path}: {error}") from error
+
+    project_name = project.get("project_name")
+    if project_name != EXPECTED_PROJECT_NAME:
+        raise PackagingError(
+            f"expected project {EXPECTED_PROJECT_NAME}, found {project_name!r}"
+        )
+
+    expected_version = embedded_version(a_version)
+    project_version = project.get("project_version")
+    if project_version != expected_version:
+        raise PackagingError(
+            f"embedded project version {project_version!r} does not match "
+            f"packaged version {expected_version!r}"
+        )
+
     metadata_path = a_build_dir / "flasher_args.json"
     if not metadata_path.is_file():
         raise PackagingError(f"missing ESP-IDF metadata: {metadata_path}")
@@ -194,7 +225,7 @@ def package_release(
     if not a_merged_image.is_file() or a_merged_image.stat().st_size == 0:
         raise PackagingError(f"missing or empty merged image: {a_merged_image}")
 
-    validate_build(a_build_dir)
+    validate_build(a_build_dir, a_version)
 
     if a_output_dir.exists():
         shutil.rmtree(a_output_dir)
@@ -258,6 +289,24 @@ def package_release(
     manifest_path = a_output_dir / "manifest.json"
     write_json(manifest_path, manifest)
 
+    app_name = f"{stem}-app.bin"
+    app_path = a_output_dir / app_name
+    ota_release = {
+        "schema_version": 1,
+        "project": "RFScout",
+        "version": embedded_version(a_version),
+        "hardware_target": EXPECTED_HARDWARE_TARGET,
+        "idf_target": EXPECTED_TARGET,
+        "partition_layout": EXPECTED_PARTITION_LAYOUT,
+        "artifact": {
+            "file": app_name,
+            "sha256": sha256(app_path),
+            "size": app_path.stat().st_size,
+        },
+    }
+    ota_release_path = a_output_dir / "ota-release.json"
+    write_json(ota_release_path, ota_release)
+
     web_manifest = {
         "name": "RFScout",
         "version": a_version.removeprefix("v"),
@@ -275,7 +324,7 @@ def package_release(
     guide_path = a_output_dir / "FLASHING.md"
     guide_path.write_text(flashing_guide(a_version, full_name), encoding="utf-8")
 
-    checksum_inputs = copied + [manifest_path, web_manifest_path, guide_path]
+    checksum_inputs = copied + [manifest_path, ota_release_path, web_manifest_path, guide_path]
     checksum_path = a_output_dir / "SHA256SUMS"
     checksum_path.write_text(
         "".join(

@@ -352,7 +352,7 @@ Rework application/system logging as a common policy rather than letting each fe
 
 ## In-device OTA update architecture
 
-**Status:** Design agreed; A/B flash/rollback foundation, the disabled-by-default OTA application, OTA-owned remembered-network persistence, passive AP discovery, explicit STA association, lifecycle-bound STA teardown, running-image identity abstraction, and bounded stable-catalog/waypoint selection are implemented on the OTA development branch. Authoritative release-version embedding, HTTPS catalog acquisition/UI integration, installer, and boot-confirmation policy remain implementation work.
+**Status:** Design agreed; A/B flash/rollback foundation, the disabled-by-default OTA application, OTA-owned remembered-network persistence, passive AP discovery, explicit STA association, lifecycle-bound STA teardown, authoritative embedded build/release identity, immutable OTA release metadata generation, and bounded stable-catalog/waypoint selection are implemented on the OTA development branch. HTTPS catalog acquisition/UI integration, installer, and boot-confirmation policy remain implementation work.
 
 **Design goal:** Preserve RFScout's passive-by-default behavior and strict application/service lifecycle boundaries while allowing a user to deliberately obtain temporary Internet connectivity, check for a release, install an application image into the inactive OTA slot, and recover automatically if the new image does not boot successfully.
 
@@ -572,7 +572,7 @@ Unknown optional manifest fields should be ignored when schema v1 semantics rema
 Keep the feature reviewable and preserve abstraction boundaries by landing it in small pieces on the OTA integration branch:
 
 1. document/finalize manifest, version, partition, rollback, and app/network ownership contracts;
-2. embed authoritative semantic release version metadata and test release/catalog generation;
+2. **implemented on the OTA development branch:** embed authoritative candidate/release version metadata, verify it during packaging, and generate immutable OTA release metadata;
 3. **implemented on the OTA development branch:** add the OTA app shell plus app-owned remembered-network persistence and reusable credential/text-entry UI;
 4. **implemented on the OTA development branch:** add session-scoped passive scan and explicit infrastructure-STA connect/disconnect support behind a semantic service;
 5. **partially implemented on the OTA development branch:** stable-catalog validation and waypoint selection are implemented; add static HTTPS retrieval and OTA UI integration without flash writes;

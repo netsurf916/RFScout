@@ -13,7 +13,9 @@ The release packager validates ESP-IDF build metadata before producing files. RF
 | OTA metadata | `0xD000` | ESP-IDF OTA slot-selection/rollback metadata |
 | Application | `0x10000` | Initial RFScout application in the first OTA slot |
 
-The bundle contains a combined image for ordinary installation, the application/bootloader/partition-table component images for development and recovery, SHA-256 checksums, installation instructions, structured build metadata, and an ESP Web Tools manifest. The combined image also contains the generated ESP-IDF OTA metadata image required to initialize the A/B boot state. It does not contain the ESP-IDF build tree. The ESP32-S3 firmware validates the supported T-Embed profile at runtime.
+The bundle contains a combined image for ordinary installation, the application/bootloader/partition-table component images for development and recovery, SHA-256 checksums, installation instructions, structured build metadata, an immutable `ota-release.json` metadata fragment, and an ESP Web Tools manifest. The combined image also contains the generated ESP-IDF OTA metadata image required to initialize the A/B boot state. It does not contain the ESP-IDF build tree. The ESP32-S3 firmware validates the supported T-Embed profile at runtime.
+
+`ota-release.json` describes the application image using the normalized embedded version (without the release tag's presentation `v` prefix), stable hardware target ID, ESP-IDF target, partition-layout generation, size, and SHA-256. It intentionally does not choose a `minimum_source_version`; that compatibility/waypoint decision belongs to promotion into the stable OTA catalog. Release packaging rejects a build when ESP-IDF's generated `project_description.json` does not report the same embedded project version being packaged.
 
 `manifest.web.json` is consumed by the browser flasher. The Pages deployment mirrors the manifest and referenced combined image onto the same HTTPS origin so flashing does not depend on cross-origin access to GitHub release or Actions URLs.
 
@@ -22,7 +24,7 @@ The bundle contains a combined image for ordinary installation, the application/
 The normal **Build and formatting** workflow:
 
 1. runs the complete clang-format 18 audit and release-packager tests;
-2. builds RFScout with ESP-IDF 6.1 for eligible non-draft PR/main runs;
+2. builds RFScout with ESP-IDF 6.1 for eligible non-draft PR/main runs, embedding the deterministic `candidate-<sha>` version into application metadata;
 3. creates a combined raw image with `idf.py merge-bin`;
 4. validates/packages the flash layout; and
 5. retains the candidate bundle as a short-lived GitHub Actions artifact.
@@ -81,7 +83,7 @@ From the repository **Actions** page, select **Prepare firmware release**, choos
 
 The workflow resolves the source ref to an immutable commit and rejects requests when the version is malformed/duplicate, the source is not part of `main`, or the source contains no commits after the latest published release.
 
-It repeats formatting, packaging tests, the ESP-IDF 6.1 build, and bundle generation at that exact commit. Only after those jobs pass does it create the semantic version tag at the validated commit and then create the **draft** GitHub Release against that existing tag. This explicit ordering prevents GitHub from assigning a temporary `untagged-*` release identity while a release is under review.
+It repeats formatting, packaging tests, the ESP-IDF 6.1 build, and bundle generation at that exact commit. The build embeds the requested semantic version without the leading `v` into ESP-IDF application metadata, and the packager verifies that embedded version before producing release assets. Only after those jobs pass does it create the semantic version tag at the validated commit and then create the **draft** GitHub Release against that existing tag. This explicit ordering prevents GitHub from assigning a temporary `untagged-*` release identity while a release is under review.
 
 If draft creation itself fails after the workflow has pushed the tag, the workflow removes that newly-created tag before exiting. A successfully prepared draft intentionally retains its semantic tag while release notes and hardware validation are completed. The workflow never publishes the GitHub Release automatically.
 

@@ -56,8 +56,9 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           . "$IDF_PATH/export.sh"
           idf.py --version
+          version="candidate-${GITHUB_SHA:0:12}"
           idf.py -DRFSCOUT_FORMAT_CHECK=OFF set-target esp32s3
-          idf.py -DRFSCOUT_FORMAT_CHECK=OFF build
+          idf.py -DRFSCOUT_FORMAT_CHECK=OFF -DPROJECT_VER="$version" build
 
       - name: Package candidate firmware
         shell: bash
