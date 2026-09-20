@@ -23,6 +23,8 @@
 #define DISPLAY_IDLE_US_PER_MILLISECOND 1000LL
 #define DISPLAY_IDLE_DIM_DIVISOR 4U
 #define DISPLAY_IDLE_DIM_MIN_PERCENT 1U
+#define DISPLAY_IDLE_PIXEL_SHIFT_FALLBACK_SECONDS 120U
+#define DISPLAY_IDLE_PIXEL_SHIFT_INTERVAL_SECONDS 60U
 
 static const char *TAG = "display_idle";
 
@@ -37,8 +39,35 @@ static display_idle_state_t state;
 static display_idle_state_t attention_restore_state;
 static int64_t last_activity_us;
 static int64_t attention_until_us;
+static int64_t pixel_shift_last_advance_us;
 static bool attention_restore_pending;
 static bool off_requested;
+
+static void reset_pixel_shift( int64_t a_now_us )
+{
+    display_pixel_shift_reset();
+    pixel_shift_last_advance_us = a_now_us;
+}
+
+static void update_pixel_shift( int64_t a_now_us, int64_t a_idle_us, uint16_t a_dim_seconds )
+{
+    const uint16_t start_seconds =
+        ( 0U != a_dim_seconds ) ? a_dim_seconds : DISPLAY_IDLE_PIXEL_SHIFT_FALLBACK_SECONDS;
+    const int64_t start_us = (int64_t)start_seconds * DISPLAY_IDLE_US_PER_SECOND;
+    if( a_idle_us < start_us )
+    {
+        return;
+    }
+
+    const int64_t shift_start_us = last_activity_us + start_us;
+    if( pixel_shift_last_advance_us < shift_start_us ||
+        a_now_us - pixel_shift_last_advance_us >=
+            (int64_t)DISPLAY_IDLE_PIXEL_SHIFT_INTERVAL_SECONDS * DISPLAY_IDLE_US_PER_SECOND )
+    {
+        display_pixel_shift_advance();
+        pixel_shift_last_advance_us = a_now_us;
+    }
+}
 
 static uint8_t dim_brightness( uint8_t a_normal_percent )
 {
@@ -159,8 +188,10 @@ esp_err_t display_idle_init( void )
     attention_restore_state = DISPLAY_IDLE_ACTIVE;
     last_activity_us = esp_timer_get_time();
     attention_until_us = 0;
+    pixel_shift_last_advance_us = last_activity_us;
     attention_restore_pending = false;
     off_requested = false;
+    display_pixel_shift_reset();
     const esp_err_t result = display_exit_low_power();
     display_set_brightness( device_config_get()->brightness_percent );
     return result;
@@ -178,6 +209,7 @@ esp_err_t display_idle_request_wake( void )
     off_requested = false;
     cancel_attention_restore();
     last_activity_us = esp_timer_get_time();
+    reset_pixel_shift( last_activity_us );
     if( DISPLAY_IDLE_ACTIVE == state )
     {
         display_set_brightness( device_config_get()->brightness_percent );
@@ -229,6 +261,7 @@ void display_idle_poll( void )
     if( input_activity || touch_activity )
     {
         cancel_attention_restore();
+        reset_pixel_shift( now_us );
         if( DISPLAY_IDLE_ACTIVE != state )
         {
             if( input_activity )
@@ -287,6 +320,8 @@ void display_idle_poll( void )
         }
         return;
     }
+
+    update_pixel_shift( now_us, idle_us, dim_seconds );
 
     if( ( DISPLAY_IDLE_ACTIVE == state ) && ( 0U != dim_seconds ) &&
         ( idle_us >= (int64_t)dim_seconds * DISPLAY_IDLE_US_PER_SECOND ) )
