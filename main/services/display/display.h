@@ -69,6 +69,10 @@ void display_invalidate( void );
 bool display_is_dirty( void );
 /** @brief Mark the current composed presentation clean after transient overlay restoration. */
 void display_mark_clean( void );
+/** @brief Restore presentation to the framebuffer's nominal physical pixel position. */
+void display_pixel_shift_reset( void );
+/** @brief Advance to the next one-pixel presentation offset used during prolonged inactivity. */
+void display_pixel_shift_advance( void );
 
 void display_clear( uint16_t a_color );
 void display_draw_text( int a_x, int a_y, const char *a_text, uint16_t a_color, unsigned a_scale );
