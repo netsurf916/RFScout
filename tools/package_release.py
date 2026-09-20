@@ -21,6 +21,7 @@ EXPECTED_FLASH_SIZE = "16MB"
 EXPECTED_PARTS = {
     0x0000: "bootloader/bootloader.bin",
     0x8000: "partition_table/partition-table.bin",
+    0xD000: "ota_data_initial.bin",
     0x10000: "rfscout.bin",
 }
 VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
@@ -149,7 +150,7 @@ python -m esptool --chip esp32s3 --port PORT --baud 460800 \\
     0x0 {a_full_image}
 ```
 
-The combined image contains the RFScout bootloader, partition table, and application. Treat it as a clean installation: it can replace internal NVS and other internal-flash state. It does not erase or modify the removable SD card.
+The combined image contains the RFScout bootloader, partition table, OTA metadata, and application. Treat it as a clean installation: it can replace internal NVS and other internal-flash state. It does not erase or modify the removable SD card.
 
 If automatic reset does not enter the ROM bootloader:
 
