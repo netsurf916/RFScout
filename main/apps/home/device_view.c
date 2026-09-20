@@ -43,18 +43,19 @@
 #define DEVICE_ITEM_TIME 11U
 #define DEVICE_ITEM_STARTUP 12U
 #define DEVICE_ITEM_SYSTEM_EVENTS 13U
-#define DEVICE_ITEM_WIFI 14U
-#define DEVICE_ITEM_CC1101 15U
-#define DEVICE_ITEM_NRF24 16U
-#define DEVICE_ITEM_AUDIO 17U
-#define DEVICE_ITEM_THERMAL 18U
-#define DEVICE_ITEM_AUDIO_SPECTRUM 19U
-#define DEVICE_ITEM_LOGGING 20U
-#define DEVICE_ITEM_POWER_BUTTON 21U
-#define DEVICE_ITEM_POWER_POLICY 22U
-#define DEVICE_ITEM_BREADCRUMBS 23U
-#define DEVICE_ITEM_BREADCRUMB_FILES 24U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 25U
+#define DEVICE_ITEM_OTA 14U
+#define DEVICE_ITEM_WIFI 15U
+#define DEVICE_ITEM_CC1101 16U
+#define DEVICE_ITEM_NRF24 17U
+#define DEVICE_ITEM_AUDIO 18U
+#define DEVICE_ITEM_THERMAL 19U
+#define DEVICE_ITEM_AUDIO_SPECTRUM 20U
+#define DEVICE_ITEM_LOGGING 21U
+#define DEVICE_ITEM_POWER_BUTTON 22U
+#define DEVICE_ITEM_POWER_POLICY 23U
+#define DEVICE_ITEM_BREADCRUMBS 24U
+#define DEVICE_ITEM_BREADCRUMB_FILES 25U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 26U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
 #define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_BREADCRUMB_FILES + 1U )
@@ -191,6 +192,8 @@ static const char *startup_app_name( rfscout_app_id_t a_app )
     {
         case RFSCOUT_APP_SYSTEM_EVENTS:
             return "System Events";
+        case RFSCOUT_APP_OTA:
+            return "OTA Update";
         case RFSCOUT_APP_WIFI_BT:
             return "WiFi / BT";
         case RFSCOUT_APP_CC1101:
@@ -229,7 +232,8 @@ static bool item_direct_toggle( unsigned a_item )
 {
     return ( DEVICE_ITEM_BREADCRUMBS == a_item ) || ( DEVICE_ITEM_AUDIO_POLICY == a_item ) ||
            ( DEVICE_ITEM_ALERT_MODE == a_item ) || ( DEVICE_ITEM_CLOCK_FORMAT == a_item ) ||
-           ( DEVICE_ITEM_SYSTEM_EVENTS == a_item ) || ( DEVICE_ITEM_WIFI == a_item ) ||
+           ( DEVICE_ITEM_SYSTEM_EVENTS == a_item ) || ( DEVICE_ITEM_OTA == a_item ) ||
+           ( DEVICE_ITEM_WIFI == a_item ) ||
            ( DEVICE_ITEM_CC1101 == a_item ) || ( DEVICE_ITEM_NRF24 == a_item ) ||
            ( DEVICE_ITEM_AUDIO == a_item ) || ( DEVICE_ITEM_THERMAL == a_item ) ||
            ( DEVICE_ITEM_AUDIO_SPECTRUM == a_item ) || ( DEVICE_ITEM_LOGGING == a_item );
@@ -274,6 +278,8 @@ static const char *item_label( unsigned a_item )
             return "Startup app";
         case DEVICE_ITEM_SYSTEM_EVENTS:
             return "System Events";
+        case DEVICE_ITEM_OTA:
+            return "OTA Update";
         case DEVICE_ITEM_WIFI:
             return "WiFi / BT";
         case DEVICE_ITEM_CC1101:
@@ -359,6 +365,10 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
                       a_capacity,
                       "%s",
                       on_off( config->apps_enabled[ RFSCOUT_APP_SYSTEM_EVENTS ] ) );
+            break;
+        case DEVICE_ITEM_OTA:
+            snprintf(
+                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_OTA ] ) );
             break;
         case DEVICE_ITEM_WIFI:
             snprintf(
@@ -1423,6 +1433,10 @@ static void adjust_selected( int a_delta )
     else if( DEVICE_ITEM_SYSTEM_EVENTS == selected_item )
     {
         toggle_app( RFSCOUT_APP_SYSTEM_EVENTS, "apps.system_events" );
+    }
+    else if( DEVICE_ITEM_OTA == selected_item )
+    {
+        toggle_app( RFSCOUT_APP_OTA, "apps.ota" );
     }
     else if( DEVICE_ITEM_WIFI == selected_item )
     {

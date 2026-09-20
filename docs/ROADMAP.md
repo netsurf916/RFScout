@@ -352,13 +352,13 @@ Rework application/system logging as a common policy rather than letting each fe
 
 ## In-device OTA update architecture
 
-**Status:** Design agreed; A/B flash/rollback foundation is established on the OTA development branch, while the OTA application, temporary infrastructure-Wi-Fi support, release catalog, installer, and boot-confirmation policy remain implementation work.
+**Status:** Design agreed; A/B flash/rollback foundation and the disabled-by-default OTA application shell are established on the OTA development branch. Temporary infrastructure-Wi-Fi support, credential management, release catalog, installer, and boot-confirmation policy remain implementation work.
 
 **Design goal:** Preserve RFScout's passive-by-default behavior and strict application/service lifecycle boundaries while allowing a user to deliberately obtain temporary Internet connectivity, check for a release, install an application image into the inactive OTA slot, and recover automatically if the new image does not boot successfully.
 
 ### Passive-by-default OTA application
 
-OTA is a top-level application rather than a Home/Device setting. Infrastructure networking exists only as an explicit capability of that application; RFScout does not gain a device-wide "known networks" or always-connected policy.
+OTA is a top-level application rather than a Home/Device setting. Its baseline shell is disabled by default and occupies the canonical navigation slot between System Events and Home when enabled. Infrastructure networking exists only as an explicit capability of that application; RFScout does not gain a device-wide "known networks" or always-connected policy.
 
 Entering the OTA app must not associate with an access point. While active and disconnected, the app may perform passive AP scans and present remembered networks that have been observed in range. Passive scan results are volatile app-session state. Association is always a deliberate user action.
 

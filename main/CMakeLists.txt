@@ -34,6 +34,7 @@ set(RFSCOUT_INCLUDE_DIRS
     "apps"
     "apps/home"
     "apps/system_events"
+    "apps/ota"
     "apps/wifi_ble"
     "apps/cc1101"
     "apps/nrf24"
@@ -64,6 +65,8 @@ idf_component_register(
         "apps/app_registry.c"
         "apps/system_events/app.c"
         "apps/system_events/system_events_view.c"
+        "apps/ota/app.c"
+        "apps/ota/ota_view.c"
         "apps/home/app.c"
         "apps/home/device_view.c"
         "apps/home/home_landing.c"
@@ -133,6 +136,6 @@ idf_component_register(
         "services/display/display_idle.c"
         "services/display/ui_present.c"
     INCLUDE_DIRS ${RFSCOUT_INCLUDE_DIRS} "${CMAKE_CURRENT_BINARY_DIR}"
-    PRIV_REQUIRES bt cjson esp_driver_ledc esp_driver_tsens mbedtls
+    PRIV_REQUIRES bt cjson esp_app_format esp_driver_ledc esp_driver_tsens mbedtls
     REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_timer driver esp_driver_i2c esp_driver_i2s esp_driver_pcnt esp_driver_uart esp_lcd fatfs sdmmc
 )

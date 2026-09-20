@@ -17,6 +17,15 @@ static const rfscout_app_audio_policy_t policies[ RFSCOUT_APP_COUNT ] = {
             .notifications_supported = false,
             .notifications_enabled_default = false,
         },
+    [RFSCOUT_APP_OTA] =
+        {
+            .ui_audio = true,
+            .event_audio = true,
+            .alert_audio = true,
+            .content_audio = false,
+            .notifications_supported = false,
+            .notifications_enabled_default = false,
+        },
     [RFSCOUT_APP_WIFI_BT] =
         {
             .ui_audio = true,

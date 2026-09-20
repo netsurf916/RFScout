@@ -50,6 +50,8 @@ static const char *source_name( uint8_t a_source )
     {
         case RFSCOUT_APP_SYSTEM_EVENTS:
             return "EVT";
+        case RFSCOUT_APP_OTA:
+            return "OTA";
         case RFSCOUT_APP_DEVICE:
             return "SET";
         case RFSCOUT_APP_WIFI_BT:

@@ -15,15 +15,20 @@ RFScout is intentionally passive wherever the underlying radio APIs allow it. It
 Top-level application order is:
 
 0. **System Events** — optional and disabled by default
-1. **Home / Device Settings**
-2. **WiFi / BT**
-3. **CC1101** — only when the active board provides the current CC1101 service
-4. **nRF24** — only when the active board provides the current nRF24 service
-5. **Recorder** — only when the current audio-capture/storage providers are available
-6. **Thermal** — only when enabled and an MLX90640 is detected
-7. **Audio Spectrum** — when enabled and the microphone provider is available
+1. **OTA Update** — optional and disabled by default
+2. **Home / Device Settings**
+3. **WiFi / BT**
+4. **CC1101** — only when the active board provides the current CC1101 service
+5. **nRF24** — only when the active board provides the current nRF24 service
+6. **Recorder** — only when the current audio-capture/storage providers are available
+7. **Thermal** — only when enabled and an MLX90640 is detected
+8. **Audio Spectrum** — when enabled and the microphone provider is available
 
 Disabled or unavailable apps are skipped. Home is always available and is the default/fallback startup target. Applications consume board-neutral semantic input, service availability, and a managed application view rather than board names or physical controls.
+
+### OTA Update
+
+OTA Update is a top-level system application that is disabled by default. The current baseline shell reports the running build version plus disconnected/not-checked state; infrastructure Wi-Fi, remembered credentials, update discovery, and installation remain follow-on work. Enabling OTA places it between System Events and Home in semantic app navigation.
 
 ### WiFi / BT
 

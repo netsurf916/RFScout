@@ -10,18 +10,21 @@ Applications consume semantic service availability rather than board identity. T
 
 The canonical application registry order remains:
 
-1. Home / Device Settings
-2. System Events
-3. WiFi / BLE
-4. CC1101
-5. nRF24
-6. Recorder
-7. Thermal
-8. Audio Spectrum
+1. System Events
+2. OTA Update
+3. Home / Device Settings
+4. WiFi / BLE
+5. CC1101
+6. nRF24
+7. Recorder
+8. Thermal
+9. Audio Spectrum
 
 Disabled or unavailable applications are skipped by semantic navigation.
 
 System Events is a read-only view of the RAM-only structured event ring. Center enters/exits a stable Browse snapshot; semantic navigation scrolls only while Browse is active.
+
+OTA Update is disabled by default and currently provides only its baseline top-level app shell. When enabled it appears immediately after System Events and before Home, reports the running build version, and shows disconnected/not-checked state without starting infrastructure networking. Network credentials, passive AP discovery, explicit association, update discovery, and installation remain roadmap work.
 
 ## Managed application view
 

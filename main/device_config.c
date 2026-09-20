@@ -41,6 +41,7 @@ static const char *app_config_name( rfscout_app_id_t a_app )
 {
     static const char *names[ RFSCOUT_APP_COUNT ] = {
         [RFSCOUT_APP_SYSTEM_EVENTS] = "system_events",
+        [RFSCOUT_APP_OTA] = "ota",
         [RFSCOUT_APP_DEVICE] = "device",
         [RFSCOUT_APP_WIFI_BT] = "wifi_bt",
         [RFSCOUT_APP_CC1101] = "cc1101",
@@ -225,6 +226,7 @@ static void set_defaults( void )
             policy->notifications_supported && policy->notifications_enabled_default;
     }
     config.apps_enabled[ RFSCOUT_APP_SYSTEM_EVENTS ] = false;
+    config.apps_enabled[ RFSCOUT_APP_OTA ] = false;
     config.apps_enabled[ RFSCOUT_APP_DEVICE ] = true;
 
     for( size_t index = 0U; index < RFSCOUT_NOTIFICATION_TYPE_COUNT; ++index )
