@@ -21,7 +21,6 @@
 #include "power.h"
 #include "power_policy_view.h"
 #include "storage.h"
-#include "touch.h"
 #include "ui_chrome.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
@@ -55,8 +54,7 @@
 #define DEVICE_ITEM_POWER_POLICY 22U
 #define DEVICE_ITEM_BREADCRUMBS 23U
 #define DEVICE_ITEM_BREADCRUMB_FILES 24U
-#define DEVICE_ITEM_TOUCH_CALIBRATION 25U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 26U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 25U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
 #define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_BREADCRUMB_FILES + 1U )
@@ -104,7 +102,7 @@ static bool time_editing;
 
 static unsigned device_item_count( void )
 {
-    return touch_available() ? DEVICE_ITEM_TOUCH_CALIBRATION + 1U : DEVICE_ITEM_BASE_COUNT;
+    return DEVICE_ITEM_BASE_COUNT;
 }
 
 static unsigned time_menu_item_count( void )
@@ -241,7 +239,7 @@ static bool item_editable( unsigned a_item )
 {
     return ( DEVICE_ITEM_BACK != a_item ) && ( DEVICE_ITEM_TIME != a_item ) &&
            ( DEVICE_ITEM_POWER_BUTTON != a_item ) && ( DEVICE_ITEM_POWER_POLICY != a_item ) &&
-           ( DEVICE_ITEM_BREADCRUMBS != a_item ) && ( DEVICE_ITEM_TOUCH_CALIBRATION != a_item );
+           ( DEVICE_ITEM_BREADCRUMBS != a_item );
 }
 
 static const char *item_label( unsigned a_item )
@@ -298,8 +296,6 @@ static const char *item_label( unsigned a_item )
             return "Breadcrumbs";
         case DEVICE_ITEM_BREADCRUMB_FILES:
             return "Breadcrumb files";
-        case DEVICE_ITEM_TOUCH_CALIBRATION:
-            return "Touch calibration";
         default:
             if( ( a_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
                 ( a_item <= DEVICE_ITEM_NOTIFICATION_LAST ) )
@@ -398,14 +394,6 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             break;
         case DEVICE_ITEM_BREADCRUMB_FILES:
             snprintf( a_value, a_capacity, "%u", (unsigned)breadcrumbs_file_limit() );
-            break;
-        case DEVICE_ITEM_TOUCH_CALIBRATION:
-            snprintf( a_value,
-                      a_capacity,
-                      "%s",
-                      touch_calibration_active()
-                          ? "Running"
-                          : ( touch_calibration_valid() ? "Ready" : "Required" ) );
             break;
         default:
             if( ( a_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
@@ -1577,14 +1565,6 @@ bool device_view_input( bool a_pressed, int a_delta )
             power_policy_menu_open = true;
             emit_device_event( RFSCOUT_EVENT_ENTER, 1 );
             power_policy_view_enter();
-            return false;
-        }
-        if( ( DEVICE_ITEM_TOUCH_CALIBRATION == selected_item ) && !editing )
-        {
-            const esp_err_t result = touch_calibration_begin();
-            emit_device_event( ESP_OK == result ? RFSCOUT_EVENT_ACTIVATE : RFSCOUT_EVENT_ERROR,
-                               ESP_OK == result ? 0 : (int32_t)result );
-            device_view_render();
             return false;
         }
         if( !editing && item_direct_toggle( selected_item ) )

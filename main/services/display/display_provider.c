@@ -1,6 +1,6 @@
 /**
     display_provider.c : RFScout display provider selection metadata
-    Description: Describes physical display geometry and the managed application/system view split.
+    Description: Describes physical display geometry and the managed application view.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -64,19 +64,4 @@ const rfscout_view_t *display_app_view( void )
         return NULL;
     }
     return &view;
-}
-
-rfscout_view_t display_navigation_view( void )
-{
-    const rfscout_display_info_t *info = display_info();
-    const rfscout_view_t *app_view = display_app_view();
-    if( !RFSCOUT_BOARD_HAS_GLOBAL_TABS || ( NULL == app_view ) ||
-        ( info->height <= app_view->height ) )
-    {
-        return ( rfscout_view_t ){ 0 };
-    }
-    return ( rfscout_view_t ){ .x = 0,
-                               .y = (int16_t)app_view->height,
-                               .width = info->width,
-                               .height = (uint16_t)( info->height - app_view->height ) };
 }

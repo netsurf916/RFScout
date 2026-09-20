@@ -43,32 +43,6 @@ typedef struct
 } st7789_init_command_t;
 
 /*
- * LILYGO's board-specific TFT_eSPI initialization values. ESP-IDF's generic
- * ST7789 provider intentionally covers only the controller's basic setup.
- */
-static const st7789_init_command_t tdeck_st7789_init[] = {
-    { 0x13, { 0 }, 0, 0 },
-    { 0x3A, { 0x55 }, 1, 0 },
-    { 0xB2, { 0x0C, 0x0C, 0x00, 0x33, 0x33 }, 5, 0 },
-    { 0xB7, { 0x75 }, 1, 0 },
-    { 0xBB, { 0x1A }, 1, 0 },
-    { 0xC0, { 0x2C }, 1, 0 },
-    { 0xC2, { 0x01 }, 1, 0 },
-    { 0xC3, { 0x13 }, 1, 0 },
-    { 0xC4, { 0x20 }, 1, 0 },
-    { 0xC6, { 0x0F }, 1, 0 },
-    { 0xD0, { 0xA4, 0xA1 }, 2, 0 },
-    { 0xE0,
-      { 0xD0, 0x0D, 0x14, 0x0D, 0x0D, 0x09, 0x38, 0x44, 0x4E, 0x3A, 0x17, 0x18, 0x2F, 0x30 },
-      14,
-      0 },
-    { 0xE1,
-      { 0xD0, 0x09, 0x0F, 0x08, 0x07, 0x14, 0x37, 0x44, 0x4D, 0x38, 0x15, 0x16, 0x2C, 0x3E },
-      14,
-      0 },
-};
-
-/*
  * T-Embed electrical/drive tuning from LILYGO's ST7789 setup. Transport
  * semantics remain owned by ESP-IDF: do not write RAMCTRL (0xB0), MADCTL,
  * or COLMOD here because those encode byte order, RGB order, and pixel format.
@@ -172,11 +146,6 @@ static esp_err_t apply_board_st7789_init( esp_lcd_panel_io_handle_t a_io )
 {
     switch( board_profile()->id )
     {
-        case RFSCOUT_BOARD_TDECK_PLUS:
-            return apply_st7789_init_sequence( a_io,
-                                               tdeck_st7789_init,
-                                               sizeof( tdeck_st7789_init ) /
-                                                   sizeof( tdeck_st7789_init[ 0 ] ) );
         case RFSCOUT_BOARD_TEMBED_CC1101_PLUS:
             return apply_st7789_init_sequence( a_io,
                                                tembed_st7789_init,

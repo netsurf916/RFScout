@@ -7,7 +7,6 @@
 
 #include "display.h"
 
-#include "navigation_bar.h"
 #include "power.h"
 #include "system_events.h"
 #include "ui_theme.h"
@@ -123,10 +122,6 @@ esp_err_t display_present( void )
     {
         return ESP_OK;
     }
-
-    /* System-owned chrome is repainted after app rendering so applications cannot
-       accidentally retain pixels outside their managed view. On T-Embed this is a no-op. */
-    navigation_bar_draw();
 
     power_status_t status;
     power_get_status( &status );

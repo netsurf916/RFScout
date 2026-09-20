@@ -48,34 +48,15 @@ static const rfscout_board_profile_t unknown_profile = {
     .cc1101_switch_0_pin = -1,
     .nrf24_cs_pin = -1,
     .nrf24_ce_pin = -1,
-    .sx1262_cs_pin = -1,
-    .sx1262_busy_pin = -1,
-    .sx1262_reset_pin = -1,
-    .sx1262_dio1_pin = -1,
     .i2c_sda_pin = -1,
     .i2c_scl_pin = -1,
-    .keyboard_i2c_address = 0,
-    .keyboard_irq_pin = -1,
-    .touch_irq_pin = -1,
     .encoder_a_pin = -1,
     .encoder_b_pin = -1,
     .encoder_key_pin = -1,
-    .trackball_up_pin = -1,
-    .trackball_down_pin = -1,
-    .trackball_left_pin = -1,
-    .trackball_right_pin = -1,
-    .trackball_select_pin = -1,
-    .es7210_mclk_pin = -1,
-    .es7210_lrclk_pin = -1,
-    .es7210_sclk_pin = -1,
-    .es7210_data_pin = -1,
     .speaker_lrclk_pin = -1,
     .speaker_bclk_pin = -1,
     .speaker_data_pin = -1,
     .battery_type = RFSCOUT_BATTERY_NONE,
-    .battery_adc_pin = -1,
-    .battery_divider_numerator = 0,
-    .battery_divider_denominator = 0,
     .pn532_i2c_address = 0,
     .mlx90640_i2c_address = 0,
     .bq27220_i2c_address = 0,
@@ -126,34 +107,15 @@ static const rfscout_board_profile_t tembed_profile = {
     .cc1101_switch_0_pin = 48,
     .nrf24_cs_pin = 44,
     .nrf24_ce_pin = 43,
-    .sx1262_cs_pin = -1,
-    .sx1262_busy_pin = -1,
-    .sx1262_reset_pin = -1,
-    .sx1262_dio1_pin = -1,
     .i2c_sda_pin = 8,
     .i2c_scl_pin = 18,
-    .keyboard_i2c_address = 0,
-    .keyboard_irq_pin = -1,
-    .touch_irq_pin = -1,
     .encoder_a_pin = 4,
     .encoder_b_pin = 5,
     .encoder_key_pin = 0,
-    .trackball_up_pin = -1,
-    .trackball_down_pin = -1,
-    .trackball_left_pin = -1,
-    .trackball_right_pin = -1,
-    .trackball_select_pin = -1,
-    .es7210_mclk_pin = -1,
-    .es7210_lrclk_pin = -1,
-    .es7210_sclk_pin = -1,
-    .es7210_data_pin = -1,
     .speaker_lrclk_pin = 40,
     .speaker_bclk_pin = 46,
     .speaker_data_pin = 7,
     .battery_type = RFSCOUT_BATTERY_I2C_GAUGE_CHARGER,
-    .battery_adc_pin = -1,
-    .battery_divider_numerator = 0,
-    .battery_divider_denominator = 0,
     .pn532_i2c_address = 0x24,
     .mlx90640_i2c_address = 0x33,
     .bq27220_i2c_address = 0x55,
@@ -164,83 +126,6 @@ static const rfscout_board_profile_t tembed_profile = {
     .ir_rx_pin = 1,
     .mic_data_pin = 42,
     .mic_clock_pin = 39,
-    .gps_tx_pin = 43,
-    .gps_rx_pin = 44,
-};
-
-static const rfscout_board_profile_t tdeck_plus_profile = {
-    .id = RFSCOUT_BOARD_TDECK_PLUS,
-    .name = "LILYGO T-Deck Plus",
-    .capabilities = RFSCOUT_BOARD_CAP_GPS | RFSCOUT_BOARD_CAP_TRACKBALL | RFSCOUT_BOARD_CAP_TOUCH |
-                    RFSCOUT_BOARD_CAP_ES7210_MIC | RFSCOUT_BOARD_CAP_SPEAKER |
-                    RFSCOUT_BOARD_CAP_SD | RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE |
-                    RFSCOUT_BOARD_CAP_GLOBAL_TABS,
-    .power_enable_pin = 10,
-    .user_key_pin = -1,
-    .spi_mosi_pin = 41,
-    .spi_miso_pin = 38,
-    .spi_sclk_pin = 40,
-    .display_cs_pin = 12,
-    .display_dc_pin = 11,
-    .display_reset_pin = -1,
-    .display_backlight_pin = 42,
-    .display_width = 320,
-    .display_height = 240,
-    .display_native_width = 240,
-    .display_native_height = 320,
-    .display_x_gap = 0,
-    .display_y_gap = 0,
-    .display_swap_xy = true,
-    .display_mirror_x = true,
-    .display_mirror_y = false,
-    .display_invert_color = true,
-    .backlight_type = RFSCOUT_BACKLIGHT_PULSE_16_STEP,
-    .sd_cs_pin = 39,
-    .cc1101_cs_pin = -1,
-    .cc1101_gdo2_pin = -1,
-    .cc1101_gdo0_pin = -1,
-    .cc1101_switch_1_pin = -1,
-    .cc1101_switch_0_pin = -1,
-    .nrf24_cs_pin = -1,
-    .nrf24_ce_pin = -1,
-    .sx1262_cs_pin = 9,
-    .sx1262_busy_pin = 13,
-    .sx1262_reset_pin = 17,
-    .sx1262_dio1_pin = 45,
-    .i2c_sda_pin = 18,
-    .i2c_scl_pin = 8,
-    .keyboard_i2c_address = 0x55,
-    .keyboard_irq_pin = 46,
-    .touch_irq_pin = 16,
-    .encoder_a_pin = -1,
-    .encoder_b_pin = -1,
-    .encoder_key_pin = -1,
-    .trackball_up_pin = 3,
-    .trackball_down_pin = 15,
-    .trackball_left_pin = 1,
-    .trackball_right_pin = 2,
-    .trackball_select_pin = 0,
-    .es7210_mclk_pin = 48,
-    .es7210_lrclk_pin = 21,
-    .es7210_sclk_pin = 47,
-    .es7210_data_pin = 14,
-    .speaker_lrclk_pin = 5,
-    .speaker_bclk_pin = 7,
-    .speaker_data_pin = 6,
-    .battery_type = RFSCOUT_BATTERY_ADC_VOLTAGE_ONLY,
-    .battery_adc_pin = 4,
-    .battery_divider_numerator = 2,
-    .battery_divider_denominator = 1,
-    .pn532_i2c_address = 0x24,
-    .mlx90640_i2c_address = 0x33,
-    .bq27220_i2c_address = 0,
-    .bq25896_i2c_address = 0,
-    .pn532_reset_pin = -1,
-    .pn532_irq_pin = -1,
-    .ir_enable_pin = -1,
-    .ir_rx_pin = -1,
-    .mic_data_pin = -1,
-    .mic_clock_pin = -1,
     .gps_tx_pin = 43,
     .gps_rx_pin = 44,
 };
@@ -279,29 +164,14 @@ esp_err_t board_profile_detect( void )
         return ESP_OK;
     }
 
-    static const uint8_t TDECK_SIGNATURES[] = { 0x5D, 0x14 };
     static const uint8_t TEMBED_SIGNATURES[] = { 0x6B, 0x55 };
-
-    const bool tdeck = probe_fingerprint( 18, 8, TDECK_SIGNATURES, sizeof( TDECK_SIGNATURES ) );
-    const bool tembed = probe_fingerprint( 8, 18, TEMBED_SIGNATURES, sizeof( TEMBED_SIGNATURES ) );
-
-    if( tdeck && !tembed )
+    if( !probe_fingerprint( 8, 18, TEMBED_SIGNATURES, sizeof( TEMBED_SIGNATURES ) ) )
     {
-        active_profile = &tdeck_plus_profile;
-    }
-    else if( tembed && !tdeck )
-    {
-        active_profile = &tembed_profile;
-    }
-    else
-    {
-        ESP_LOGE( TAG,
-                  "hardware profile detection failed or ambiguous (T-Deck=%d T-Embed=%d)",
-                  tdeck,
-                  tembed );
+        ESP_LOGE( TAG, "no supported hardware profile detected" );
         return ESP_ERR_NOT_FOUND;
     }
 
+    active_profile = &tembed_profile;
     ESP_LOGI( TAG, "selected hardware profile: %s", active_profile->name );
     return ESP_OK;
 }

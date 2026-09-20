@@ -13,7 +13,6 @@
 #include "recorder.h"
 #include "recorder_view.h"
 #include "storage.h"
-#include "touch.h"
 
 #include "esp_log.h"
 
@@ -225,13 +224,6 @@ static void handle_browser_input( const rfscout_input_event_t *a_input )
         }
         if( RECORDER_BROWSER_NEW == browser_item )
         {
-            if( audio_capture_primary_select_conflict() &&
-                ( !touch_available() || !touch_calibration_valid() ) )
-            {
-                ESP_LOGW( TAG, "recording requires calibrated touch while capture owns Select" );
-                render();
-                return;
-            }
             if( ESP_OK != recorder_start_recording() )
             {
                 ESP_LOGW( TAG, "could not start recording" );
