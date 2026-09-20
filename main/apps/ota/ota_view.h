@@ -25,6 +25,8 @@ void ota_view_render_main( const char *a_version,
                            size_t a_network_count,
                            unsigned a_selected,
                            bool a_scanning,
+                           bool a_can_check,
+                           const char *a_update_status,
                            const char *a_error );
 void ota_view_render_network_action( const char *a_ssid,
                                      int8_t a_rssi,

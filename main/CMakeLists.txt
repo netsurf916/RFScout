@@ -50,6 +50,7 @@ set(RFSCOUT_INCLUDE_DIRS
     "services/audio"
     "services/thermal"
     "services/storage"
+    "services/update"
     "services/power"
     "services/display"
 )
@@ -126,6 +127,7 @@ idf_component_register(
         "services/storage/persistent_store.c"
         "services/storage/log_writer.c"
         "services/storage/breadcrumbs.c"
+        "services/update/ota_acquisition.c"
         "services/power/battery.c"
         "services/power/power.c"
         "services/power/power_policy.c"
@@ -141,6 +143,6 @@ idf_component_register(
         "services/display/display_idle.c"
         "services/display/ui_present.c"
     INCLUDE_DIRS ${RFSCOUT_INCLUDE_DIRS} "${CMAKE_CURRENT_BINARY_DIR}"
-    PRIV_REQUIRES bt cjson esp_app_format esp_driver_ledc esp_driver_tsens mbedtls
+    PRIV_REQUIRES bt cjson esp_app_format esp_driver_ledc esp_driver_tsens esp_http_client mbedtls
     REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_timer driver esp_driver_i2c esp_driver_i2s esp_driver_pcnt esp_driver_uart esp_lcd fatfs sdmmc
 )

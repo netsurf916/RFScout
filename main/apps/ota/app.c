@@ -9,6 +9,8 @@
 #include "app_text_entry.h"
 #include "event.h"
 #include "firmware_identity.h"
+#include "ota_acquisition.h"
+#include "ota_catalog.h"
 #include "ota_networks.h"
 #include "ota_view.h"
 #include "wifi_station.h"
@@ -46,6 +48,10 @@ static int action_scan_index;
 static char connecting_ssid[ OTA_NETWORK_SSID_MAX_LENGTH + 1U ];
 static char error_text[ OTA_ERROR_TEXT_LENGTH ];
 static rfscout_text_entry_t password_entry;
+static ota_catalog_selection_t catalog_selection;
+static char catalog_json[ OTA_ACQUISITION_CATALOG_MAX_LENGTH + 1U ];
+static char update_status[ OTA_CATALOG_VERSION_MAX_LENGTH + 1U ];
+static uint32_t last_acquisition_generation;
 static uint32_t last_scan_generation;
 static rfscout_wifi_station_state_t last_station_state;
 static int64_t last_refresh_us;
@@ -138,6 +144,11 @@ static void build_saved_list( void )
     }
 }
 
+static bool network_connected( void )
+{
+    return RFSCOUT_WIFI_STATION_CONNECTED == wifi_station_status().state;
+}
+
 static const char *connection_status( void )
 {
     const rfscout_wifi_station_status_t current = wifi_station_status();
@@ -164,7 +175,8 @@ static void render_main( void )
     const rfscout_firmware_identity_t *identity = firmware_identity();
     const rfscout_wifi_station_status_t current = wifi_station_status();
     const bool scanning = RFSCOUT_WIFI_STATION_SCANNING == current.state;
-    const unsigned item_count = (unsigned)view_network_count + 3U;
+    const bool can_check = RFSCOUT_WIFI_STATION_CONNECTED == current.state;
+    const unsigned item_count = (unsigned)view_network_count + ( can_check ? 2U : 3U );
     if( selected_item >= item_count )
     {
         selected_item = item_count - 1U;
@@ -175,6 +187,8 @@ static void render_main( void )
                           view_network_count,
                           selected_item,
                           scanning,
+                          can_check,
+                          update_status,
                           error_text );
 }
 
@@ -336,6 +350,20 @@ static void open_unsaved_action( size_t a_scan_index )
     render();
 }
 
+static void begin_update_check( void )
+{
+    error_text[ 0 ] = '\0';
+    const esp_err_t result = ota_acquisition_begin_catalog();
+    if( ESP_OK != result )
+    {
+        set_error( result );
+        render();
+        return;
+    }
+    snprintf( update_status, sizeof( update_status ), "Checking..." );
+    render();
+}
+
 static void handle_main_select( void )
 {
     build_visible_saved();
@@ -344,12 +372,26 @@ static void handle_main_select( void )
         open_saved_action( visible_saved_indices[ selected_item ] );
         return;
     }
-    if( selected_item == view_network_count )
+    unsigned action = selected_item - (unsigned)view_network_count;
+    if( network_connected() )
+    {
+        if( 0U == action )
+        {
+            begin_update_check();
+            return;
+        }
+        selected_item = 0U;
+        screen = OTA_SCREEN_SAVED;
+        render();
+        return;
+    }
+
+    if( 0U == action )
     {
         begin_passive_scan();
         return;
     }
-    if( selected_item == view_network_count + 1U )
+    if( 1U == action )
     {
         selected_item = 0U;
         screen = OTA_SCREEN_ADD;
@@ -591,7 +633,8 @@ static void handle_input( const rfscout_input_event_t *a_input )
         if( OTA_SCREEN_MAIN == screen )
         {
             build_visible_saved();
-            item_count = (unsigned)view_network_count + 3U;
+            item_count =
+                (unsigned)view_network_count + ( network_connected() ? 2U : 3U );
         }
         else if( OTA_SCREEN_ACTION == screen )
         {
@@ -653,6 +696,10 @@ static void reset_runtime_state( void )
     memset( connecting_ssid, 0, sizeof( connecting_ssid ) );
     memset( error_text, 0, sizeof( error_text ) );
     app_text_entry_clear( &password_entry );
+    memset( &catalog_selection, 0, sizeof( catalog_selection ) );
+    memset( catalog_json, 0, sizeof( catalog_json ) );
+    snprintf( update_status, sizeof( update_status ), "Not checked" );
+    last_acquisition_generation = 0U;
     last_scan_generation = 0U;
     last_station_state = RFSCOUT_WIFI_STATION_OFF;
     last_refresh_us = 0;
@@ -694,12 +741,74 @@ static rfscout_app_runtime_result_t ota_runtime( const rfscout_app_runtime_event
         a_event->now_us - last_refresh_us >= OTA_REFRESH_INTERVAL_US )
     {
         last_refresh_us = a_event->now_us;
+        bool redraw = false;
+
         const rfscout_wifi_station_status_t current = wifi_station_status();
         if( current.scan_generation != last_scan_generation || current.state != last_station_state )
         {
             last_scan_generation = current.scan_generation;
             last_station_state = current.state;
             refresh_scan_results();
+            redraw = true;
+        }
+
+        const ota_acquisition_status_t acquisition = ota_acquisition_status();
+        if( acquisition.generation != last_acquisition_generation )
+        {
+            last_acquisition_generation = acquisition.generation;
+            if( OTA_ACQUISITION_READY == acquisition.state )
+            {
+                size_t length = 0U;
+                esp_err_t result =
+                    ota_acquisition_copy_catalog( catalog_json, sizeof( catalog_json ), &length );
+                if( ESP_OK == result )
+                {
+                    result = ota_catalog_select(
+                        catalog_json, length, firmware_identity(), &catalog_selection );
+                }
+                if( ESP_OK == result )
+                {
+                    if( OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result )
+                    {
+                        snprintf( update_status,
+                                  sizeof( update_status ),
+                                  "%s",
+                                  catalog_selection.candidate.version );
+                    }
+                    else if( OTA_CATALOG_BLOCKED == catalog_selection.result )
+                    {
+                        snprintf( update_status, sizeof( update_status ), "Waypoint required" );
+                    }
+                    else
+                    {
+                        snprintf( update_status, sizeof( update_status ), "Current" );
+                    }
+                    error_text[ 0 ] = '\0';
+                }
+                else
+                {
+                    set_error( result );
+                    snprintf( update_status, sizeof( update_status ), "Check failed" );
+                }
+            }
+            else if( OTA_ACQUISITION_FAILED == acquisition.state )
+            {
+                if( acquisition.http_status > 0 )
+                {
+                    snprintf(
+                        error_text, sizeof( error_text ), "HTTP %d", acquisition.http_status );
+                }
+                else
+                {
+                    set_error( acquisition.error );
+                }
+                snprintf( update_status, sizeof( update_status ), "Check failed" );
+            }
+            redraw = true;
+        }
+
+        if( redraw )
+        {
             render();
         }
     }
@@ -713,6 +822,6 @@ const rfscout_app_descriptor_t rfscout_ota_app = {
     .probe_policy = RFSCOUT_APP_PROBE_NONE,
     .probe = NULL,
     .requires_activation = false,
-    .services = RFSCOUT_APP_SERVICE_WIFI_STATION,
+    .services = RFSCOUT_APP_SERVICE_WIFI_STATION | RFSCOUT_APP_SERVICE_OTA_ACQUISITION,
     .runtime = ota_runtime,
 };

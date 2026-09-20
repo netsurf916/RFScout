@@ -57,10 +57,12 @@ void ota_view_render_main( const char *a_version,
                            size_t a_network_count,
                            unsigned a_selected,
                            bool a_scanning,
+                           bool a_can_check,
+                           const char *a_update_status,
                            const char *a_error )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
-    const unsigned item_count = (unsigned)a_network_count + 3U;
+    const unsigned item_count = (unsigned)a_network_count + ( a_can_check ? 2U : 3U );
     const unsigned start = menu_window_start( a_selected, item_count );
 
     display_clear( theme->background );
@@ -88,17 +90,34 @@ void ota_view_render_main( const char *a_version,
             snprintf( rssi, sizeof( rssi ), "%d", (int)a_networks[ item ].rssi );
             draw_menu_row( row, item, a_selected, a_networks[ item ].ssid, rssi );
         }
-        else if( item == a_network_count )
-        {
-            draw_menu_row( row, item, a_selected, a_scanning ? "Scanning..." : "Scan again", NULL );
-        }
-        else if( item == a_network_count + 1U )
-        {
-            draw_menu_row( row, item, a_selected, "Add network", NULL );
-        }
         else
         {
-            draw_menu_row( row, item, a_selected, "Saved networks", NULL );
+            const unsigned action = item - (unsigned)a_network_count;
+            if( a_can_check )
+            {
+                if( 0U == action )
+                {
+                    draw_menu_row(
+                        row, item, a_selected, "Check for update", a_update_status );
+                }
+                else
+                {
+                    draw_menu_row( row, item, a_selected, "Saved networks", NULL );
+                }
+            }
+            else if( 0U == action )
+            {
+                draw_menu_row(
+                    row, item, a_selected, a_scanning ? "Scanning..." : "Scan again", NULL );
+            }
+            else if( 1U == action )
+            {
+                draw_menu_row( row, item, a_selected, "Add network", NULL );
+            }
+            else
+            {
+                draw_menu_row( row, item, a_selected, "Saved networks", NULL );
+            }
         }
     }
 

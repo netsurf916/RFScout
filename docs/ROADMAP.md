@@ -352,7 +352,7 @@ Rework application/system logging as a common policy rather than letting each fe
 
 ## In-device OTA update architecture
 
-**Status:** Design agreed; A/B flash/rollback foundation, the disabled-by-default OTA application, OTA-owned remembered-network persistence, passive AP discovery, explicit STA association, lifecycle-bound STA teardown, authoritative embedded build/release identity, immutable OTA release metadata generation, and bounded stable-catalog/waypoint selection are implemented on the OTA development branch. HTTPS catalog acquisition/UI integration, installer, and boot-confirmation policy remain implementation work.
+**Status:** Design agreed; A/B flash/rollback foundation, the disabled-by-default OTA application, OTA-owned remembered-network persistence, passive AP discovery, explicit STA association, lifecycle-bound STA teardown, authoritative embedded build/release identity, immutable OTA release metadata generation, bounded stable-catalog/waypoint selection, and explicit cancellable HTTPS catalog checks are implemented on the OTA development branch. Firmware installation and boot-confirmation policy remain implementation work.
 
 **Design goal:** Preserve RFScout's passive-by-default behavior and strict application/service lifecycle boundaries while allowing a user to deliberately obtain temporary Internet connectivity, check for a release, install an application image into the inactive OTA slot, and recover automatically if the new image does not boot successfully.
 
@@ -575,7 +575,7 @@ Keep the feature reviewable and preserve abstraction boundaries by landing it in
 2. **implemented on the OTA development branch:** embed authoritative candidate/release version metadata, verify it during packaging, and generate immutable OTA release metadata;
 3. **implemented on the OTA development branch:** add the OTA app shell plus app-owned remembered-network persistence and reusable credential/text-entry UI;
 4. **implemented on the OTA development branch:** add session-scoped passive scan and explicit infrastructure-STA connect/disconnect support behind a semantic service;
-5. **partially implemented on the OTA development branch:** stable-catalog validation and waypoint selection are implemented; add static HTTPS retrieval and OTA UI integration without flash writes;
+5. **implemented on the OTA development branch:** add explicit static HTTPS catalog retrieval, validation, waypoint selection, cancellation on app transition, and OTA UI reporting without flash writes;
 6. add the transport-neutral installer abstraction and ESP-IDF A/B streaming implementation;
 7. add boot-time pending-image confirmation/rollback handling;
 8. integrate release publication for `null.link/rfscout/`; and

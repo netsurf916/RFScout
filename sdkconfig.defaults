@@ -26,6 +26,11 @@ CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 
+# OTA catalog and firmware acquisition use ESP-IDF HTTPS with the default
+# Mozilla-derived root certificate bundle. Hostname verification remains enabled.
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+CONFIG_MBEDTLS_DEFAULT_CERTIFICATE_BUNDLE=y
+
 # Remove local paths and build timestamps so release images can be reproduced
 # from the same source and ESP-IDF/toolchain inputs.
 CONFIG_APP_REPRODUCIBLE_BUILD=y
