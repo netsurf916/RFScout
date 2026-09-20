@@ -24,6 +24,7 @@ class GenerateHomeLogoTests(unittest.TestCase):
 
     def test_neutral_antialias_gray_does_not_quantize_to_orange(self):
         self.assertEqual(0, GENERATE_HOME_LOGO.nearest_palette((107, 107, 106)))
+        self.assertEqual(0, GENERATE_HOME_LOGO.nearest_palette((180, 181, 179)))
         self.assertEqual(2, GENERATE_HOME_LOGO.nearest_palette((200, 199, 201)))
 
     def test_colored_orange_still_quantizes_to_orange(self):
