@@ -24,7 +24,7 @@ Disabled or unavailable applications are skipped by semantic navigation.
 
 System Events is a read-only view of the RAM-only structured event ring. Center enters/exits a stable Browse snapshot; semantic navigation scrolls only while Browse is active.
 
-OTA Update is disabled by default and currently provides only its baseline top-level app shell. When enabled it appears immediately after System Events and before Home, reports the running build version, and shows disconnected/not-checked state without starting infrastructure networking. Network credentials, passive AP discovery, explicit association, update discovery, and installation remain roadmap work.
+OTA Update is disabled by default and appears immediately after System Events and before Home. Its current implementation performs passive AP discovery, retains up to eight OTA-owned infrastructure-network credentials, highlights remembered networks seen in the latest scan, and requires an explicit per-network action before association. Saved-network management, password entry, explicit disconnect/forget, DHCP status, and app-session teardown are implemented; leaving OTA stops STA activity and clears transient driver credentials/results. Update-catalog retrieval, waypoint selection in the UI, and firmware installation remain roadmap work.
 
 ## Managed application view
 

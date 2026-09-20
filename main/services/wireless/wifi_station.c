@@ -93,10 +93,8 @@ static void collect_scan_results( void )
     memset( scan_records, 0, sizeof( scan_records ) );
 }
 
-static void wifi_event( void *a_context,
-                        esp_event_base_t a_event_base,
-                        int32_t a_event_id,
-                        void *a_event_data )
+static void
+wifi_event( void *a_context, esp_event_base_t a_event_base, int32_t a_event_id, void *a_event_data )
 {
     (void)a_context;
     (void)a_event_base;
@@ -144,10 +142,8 @@ static void wifi_event( void *a_context,
     }
 }
 
-static void ip_event( void *a_context,
-                      esp_event_base_t a_event_base,
-                      int32_t a_event_id,
-                      void *a_event_data )
+static void
+ip_event( void *a_context, esp_event_base_t a_event_base, int32_t a_event_id, void *a_event_data )
 {
     (void)a_context;
     (void)a_event_base;
@@ -307,9 +303,8 @@ esp_err_t wifi_station_connect( const char *a_ssid, const char *a_password )
 
     const size_t ssid_length = strnlen( a_ssid, RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH + 1U );
     const size_t password_length =
-        NULL == a_password
-            ? 0U
-            : strnlen( a_password, RFSCOUT_WIFI_STATION_PASSWORD_MAX_LENGTH + 1U );
+        NULL == a_password ? 0U
+                           : strnlen( a_password, RFSCOUT_WIFI_STATION_PASSWORD_MAX_LENGTH + 1U );
     if( 0U == ssid_length || ssid_length > RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH ||
         password_length > RFSCOUT_WIFI_STATION_PASSWORD_MAX_LENGTH )
     {

@@ -32,7 +32,8 @@ void app_text_entry_begin( rfscout_text_entry_t *a_entry,
         memcpy( a_entry->value, a_initial, a_entry->length );
         a_entry->value[ a_entry->length ] = '\0';
     }
-    a_entry->character_index = (unsigned)( TEXT_ENTRY_DEFAULT_CHARACTER - TEXT_ENTRY_FIRST_CHARACTER );
+    a_entry->character_index =
+        (unsigned)( TEXT_ENTRY_DEFAULT_CHARACTER - TEXT_ENTRY_FIRST_CHARACTER );
     a_entry->active = true;
 }
 

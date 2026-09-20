@@ -89,8 +89,7 @@ static int scan_index_for_ssid( const char *a_ssid )
 static void build_visible_saved( void )
 {
     view_network_count = 0U;
-    for( size_t scan_index = 0U;
-         scan_index < scan_count && view_network_count < OTA_VISIBLE_MAX;
+    for( size_t scan_index = 0U; scan_index < scan_count && view_network_count < OTA_VISIBLE_MAX;
          ++scan_index )
     {
         const int saved_index =
@@ -256,10 +255,8 @@ static void render_password( void )
     const char *ssid = action_scan_index >= 0 && (size_t)action_scan_index < scan_count
                            ? scan_results[ action_scan_index ].ssid
                            : "Network";
-    ota_view_render_password( ssid,
-                              password_entry.length,
-                              app_text_entry_character( &password_entry ),
-                              error_text );
+    ota_view_render_password(
+        ssid, password_entry.length, app_text_entry_character( &password_entry ), error_text );
 }
 
 static void render( void )
@@ -437,8 +434,7 @@ static void forget_selected_network( void )
 
 static void handle_action_select( void )
 {
-    const bool saved =
-        action_saved_index >= 0 && (size_t)action_saved_index < saved_networks.count;
+    const bool saved = action_saved_index >= 0 && (size_t)action_saved_index < saved_networks.count;
     const bool visible = action_scan_index >= 0 && (size_t)action_scan_index < scan_count;
 
     if( 0U == selected_item )
@@ -544,10 +540,8 @@ static void handle_password_input( const rfscout_input_event_t *a_input )
             return;
         }
 
-        esp_err_t save_result =
-            ota_networks_upsert( &saved_networks,
-                                 scan_results[ action_scan_index ].ssid,
-                                 password_entry.value );
+        esp_err_t save_result = ota_networks_upsert(
+            &saved_networks, scan_results[ action_scan_index ].ssid, password_entry.value );
         if( ESP_OK == save_result )
         {
             save_result = ota_networks_save( &saved_networks );
@@ -603,8 +597,7 @@ static void handle_input( const rfscout_input_event_t *a_input )
         {
             const bool saved =
                 action_saved_index >= 0 && (size_t)action_saved_index < saved_networks.count;
-            const bool visible =
-                action_scan_index >= 0 && (size_t)action_scan_index < scan_count;
+            const bool visible = action_scan_index >= 0 && (size_t)action_scan_index < scan_count;
             item_count = saved ? ( visible ? 3U : 2U ) : 2U;
         }
         else if( OTA_SCREEN_ADD == screen )
@@ -702,8 +695,7 @@ static rfscout_app_runtime_result_t ota_runtime( const rfscout_app_runtime_event
     {
         last_refresh_us = a_event->now_us;
         const rfscout_wifi_station_status_t current = wifi_station_status();
-        if( current.scan_generation != last_scan_generation ||
-            current.state != last_station_state )
+        if( current.scan_generation != last_scan_generation || current.state != last_station_state )
         {
             last_scan_generation = current.scan_generation;
             last_station_state = current.state;

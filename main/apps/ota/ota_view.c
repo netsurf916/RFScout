@@ -33,11 +33,8 @@ static unsigned menu_window_start( unsigned a_selected, unsigned a_count )
     return start;
 }
 
-static void draw_menu_row( unsigned a_row,
-                           unsigned a_item,
-                           unsigned a_selected,
-                           const char *a_label,
-                           const char *a_value )
+static void draw_menu_row(
+    unsigned a_row, unsigned a_item, unsigned a_selected, const char *a_label, const char *a_value )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     const bool active = a_item == a_selected;
@@ -93,8 +90,7 @@ void ota_view_render_main( const char *a_version,
         }
         else if( item == a_network_count )
         {
-            draw_menu_row(
-                row, item, a_selected, a_scanning ? "Scanning..." : "Scan again", NULL );
+            draw_menu_row( row, item, a_selected, a_scanning ? "Scanning..." : "Scan again", NULL );
         }
         else if( item == a_network_count + 1U )
         {
@@ -106,9 +102,8 @@ void ota_view_render_main( const char *a_version,
         }
     }
 
-    const char *footer = NULL != a_error && '\0' != a_error[ 0 ]
-                             ? a_error
-                             : "TURN SELECT / CENTER ACTION";
+    const char *footer =
+        NULL != a_error && '\0' != a_error[ 0 ] ? a_error : "TURN SELECT / CENTER ACTION";
     display_draw_text( UI_LAYOUT_LEFT_X,
                        UI_LAYOUT_FOOTER_Y,
                        footer,
@@ -131,7 +126,8 @@ void ota_view_render_network_action( const char *a_ssid,
 
     display_clear( theme->background );
     ui_chrome_draw( "NETWORK", theme->secondary );
-    display_draw_text( UI_LAYOUT_LEFT_X, 26, NULL != a_ssid ? a_ssid : "Unknown", theme->accent, 1U );
+    display_draw_text(
+        UI_LAYOUT_LEFT_X, 26, NULL != a_ssid ? a_ssid : "Unknown", theme->accent, 1U );
 
     char detail[ 48 ];
     if( a_visible )
@@ -228,7 +224,8 @@ void ota_view_render_password( const char *a_ssid,
     display_clear( theme->background );
     ui_chrome_draw( "WI-FI PASSWORD", theme->secondary );
 
-    display_draw_text( UI_LAYOUT_LEFT_X, 31, NULL != a_ssid ? a_ssid : "Network", theme->accent, 1U );
+    display_draw_text(
+        UI_LAYOUT_LEFT_X, 31, NULL != a_ssid ? a_ssid : "Network", theme->accent, 1U );
 
     char masked[ 33 ];
     const size_t shown = a_length < sizeof( masked ) - 1U ? a_length : sizeof( masked ) - 1U;
@@ -238,10 +235,8 @@ void ota_view_render_password( const char *a_ssid,
     display_draw_text( 90, 58, masked, theme->secondary, 1U );
 
     char candidate[ 24 ];
-    snprintf( candidate,
-              sizeof( candidate ),
-              "Character: %c",
-              ' ' == a_character ? '_' : a_character );
+    snprintf(
+        candidate, sizeof( candidate ), "Character: %c", ' ' == a_character ? '_' : a_character );
     display_draw_text( UI_LAYOUT_LEFT_X, 84, candidate, theme->selected, 1U );
     display_draw_text( UI_LAYOUT_LEFT_X, 106, "CENTER ADD  BACK DELETE", theme->secondary, 1U );
     display_draw_text( UI_LAYOUT_LEFT_X, 121, "HOLD CENTER: SAVE", theme->secondary, 1U );

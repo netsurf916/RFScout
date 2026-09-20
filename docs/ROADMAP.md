@@ -352,7 +352,7 @@ Rework application/system logging as a common policy rather than letting each fe
 
 ## In-device OTA update architecture
 
-**Status:** Design agreed; A/B flash/rollback foundation and the disabled-by-default OTA application shell are established on the OTA development branch. Temporary infrastructure-Wi-Fi support, credential management, release catalog, installer, and boot-confirmation policy remain implementation work.
+**Status:** Design agreed; A/B flash/rollback foundation, the disabled-by-default OTA application, OTA-owned remembered-network persistence, passive AP discovery, explicit STA association, and lifecycle-bound STA teardown are implemented on the OTA development branch. Authoritative release-version embedding, release catalog/acquisition, waypoint selection, installer, and boot-confirmation policy remain implementation work.
 
 **Design goal:** Preserve RFScout's passive-by-default behavior and strict application/service lifecycle boundaries while allowing a user to deliberately obtain temporary Internet connectivity, check for a release, install an application image into the inactive OTA slot, and recover automatically if the new image does not boot successfully.
 
@@ -573,8 +573,8 @@ Keep the feature reviewable and preserve abstraction boundaries by landing it in
 
 1. document/finalize manifest, version, partition, rollback, and app/network ownership contracts;
 2. embed authoritative semantic release version metadata and test release/catalog generation;
-3. add the OTA app shell plus app-owned remembered-network persistence and reusable credential/text-entry UI;
-4. add session-scoped passive scan and explicit infrastructure-STA connect/disconnect support behind a semantic service;
+3. **implemented on the OTA development branch:** add the OTA app shell plus app-owned remembered-network persistence and reusable credential/text-entry UI;
+4. **implemented on the OTA development branch:** add session-scoped passive scan and explicit infrastructure-STA connect/disconnect support behind a semantic service;
 5. add static HTTPS catalog retrieval, validation, and waypoint selection without flash writes;
 6. add the transport-neutral installer abstraction and ESP-IDF A/B streaming implementation;
 7. add boot-time pending-image confirmation/rollback handling;

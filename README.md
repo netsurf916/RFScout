@@ -28,7 +28,7 @@ Disabled or unavailable apps are skipped. Home is always available and is the de
 
 ### OTA Update
 
-OTA Update is a top-level system application that is disabled by default. The current baseline shell reports the running build version plus disconnected/not-checked state; infrastructure Wi-Fi, remembered credentials, update discovery, and installation remain follow-on work. Enabling OTA places it between System Events and Home in semantic app navigation.
+OTA Update is a top-level system application that is disabled by default and appears between System Events and Home when enabled. Entering it starts only a passive infrastructure-Wi-Fi scan; it never associates automatically. The app owns a bounded list of remembered SSIDs/passwords in its own persistent namespace, shows remembered APs that are currently visible, provides explicit per-network Connect/Disconnect/Forget actions, and clears transient STA state when the app session ends. ESP-IDF Wi-Fi configuration is kept in RAM so the driver does not become a second global credential store. Update-catalog retrieval and firmware installation remain follow-on work.
 
 ### WiFi / BT
 

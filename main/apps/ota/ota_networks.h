@@ -32,9 +32,8 @@ typedef struct
 esp_err_t ota_networks_load( ota_network_list_t *a_networks );
 esp_err_t ota_networks_save( const ota_network_list_t *a_networks );
 int ota_networks_find( const ota_network_list_t *a_networks, const char *a_ssid );
-esp_err_t ota_networks_upsert( ota_network_list_t *a_networks,
-                               const char *a_ssid,
-                               const char *a_password );
+esp_err_t
+ota_networks_upsert( ota_network_list_t *a_networks, const char *a_ssid, const char *a_password );
 esp_err_t ota_networks_forget( ota_network_list_t *a_networks, size_t a_index );
 void ota_networks_clear_runtime( ota_network_list_t *a_networks );
 

@@ -74,9 +74,8 @@ esp_err_t ota_networks_load( ota_network_list_t *a_networks )
     }
 
     a_networks->count = record.count;
-    memcpy( a_networks->entries,
-            record.entries,
-            record.count * sizeof( a_networks->entries[ 0 ] ) );
+    memcpy(
+        a_networks->entries, record.entries, record.count * sizeof( a_networks->entries[ 0 ] ) );
     memset( &record, 0, sizeof( record ) );
     return ESP_OK;
 }
@@ -100,11 +99,9 @@ esp_err_t ota_networks_save( const ota_network_list_t *a_networks )
         .version = OTA_NETWORK_RECORD_VERSION,
         .count = (uint16_t)a_networks->count,
     };
-    memcpy( record.entries,
-            a_networks->entries,
-            a_networks->count * sizeof( record.entries[ 0 ] ) );
-    const esp_err_t result =
-        app_store_write( OTA_NETWORK_RECORD_KEY, &record, sizeof( record ) );
+    memcpy(
+        record.entries, a_networks->entries, a_networks->count * sizeof( record.entries[ 0 ] ) );
+    const esp_err_t result = app_store_write( OTA_NETWORK_RECORD_KEY, &record, sizeof( record ) );
     memset( &record, 0, sizeof( record ) );
     return result;
 }
@@ -125,9 +122,8 @@ int ota_networks_find( const ota_network_list_t *a_networks, const char *a_ssid 
     return -1;
 }
 
-esp_err_t ota_networks_upsert( ota_network_list_t *a_networks,
-                               const char *a_ssid,
-                               const char *a_password )
+esp_err_t
+ota_networks_upsert( ota_network_list_t *a_networks, const char *a_ssid, const char *a_password )
 {
     if( NULL == a_networks || NULL == a_ssid )
     {
