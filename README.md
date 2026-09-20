@@ -91,7 +91,7 @@ idf.py build
 idf.py flash monitor
 ```
 
-The firmware validates the T-Embed CC1101 Plus runtime profile at startup and leaves unsupported hardware inert. Ready-for-review pull requests can produce short-lived candidate bundles. Published releases are prepared deliberately through the release workflow and mirrored to the browser flasher.
+The firmware validates the T-Embed CC1101 Plus runtime profile at startup and leaves unsupported hardware inert. Ready-for-review pull requests can produce short-lived candidate bundles. Published releases are prepared deliberately through the release workflow. GitHub Pages is generated from those artifacts and carries both the browser flasher and the stable in-device OTA catalog/application images.
 
 ## Documentation
 

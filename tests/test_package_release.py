@@ -18,6 +18,7 @@ from package_release import (  # noqa: E402
     PackagingError,
     package_release,
     validate_ota_source_version,
+    validate_ota_waypoint,
     validate_release_version,
 )
 
@@ -45,6 +46,10 @@ class PackageReleaseTest(unittest.TestCase):
             with self.subTest(version=version):
                 with self.assertRaises(PackagingError):
                     validate_ota_source_version(version)
+
+    def test_rejects_waypoint_newer_than_release(self) -> None:
+        with self.assertRaisesRegex(PackagingError, "newer than the target release"):
+            validate_ota_waypoint("v0.5.0", "0.6.0")
 
     def test_rejects_malformed_semantic_release_versions(self) -> None:
         for version in (

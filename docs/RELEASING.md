@@ -15,7 +15,7 @@ The release packager validates ESP-IDF build metadata before producing files. RF
 
 The bundle contains a combined image for ordinary installation, the application/bootloader/partition-table component images for development and recovery, SHA-256 checksums, installation instructions, structured build metadata, an immutable `ota-release.json` metadata fragment, and an ESP Web Tools manifest. The combined image also contains the generated ESP-IDF OTA metadata image required to initialize the A/B boot state. It does not contain the ESP-IDF build tree. The ESP32-S3 firmware validates the supported T-Embed profile at runtime.
 
-`ota-release.json` describes the application image using the normalized embedded version (without the release tag's presentation `v` prefix), stable hardware target ID, ESP-IDF target, partition-layout generation, size, and SHA-256. It intentionally does not choose a `minimum_source_version`; that compatibility/waypoint decision belongs to promotion into the stable OTA catalog. Release packaging rejects a build when ESP-IDF's generated `project_description.json` does not report the same embedded project version being packaged.
+`ota-release.json` describes the application image using the normalized embedded version (without the release tag's presentation `v` prefix), the release's required `minimum_source_version` waypoint, stable hardware target ID, ESP-IDF target, partition-layout generation, size, and SHA-256. **Prepare firmware release** requires the maintainer to choose that oldest directly supported source version. Release packaging rejects malformed or impossible waypoint versions and rejects a build when ESP-IDF's generated `project_description.json` does not report the same embedded project version being packaged.
 
 `manifest.web.json` is consumed by the browser flasher. The Pages deployment mirrors the manifest and referenced combined image onto the same HTTPS origin so flashing does not depend on cross-origin access to GitHub release or Actions URLs.
 
@@ -33,7 +33,11 @@ New draft pull requests intentionally skip the expensive ESP-IDF candidate build
 
 Candidate artifacts are diagnostic build products, not releases, and are never marked stable automatically.
 
-## Browser flasher
+## GitHub Pages publication
+
+The **Publish RFScout Pages** workflow produces one static deployment containing the browser flasher plus the stable in-device OTA tree. GitHub Releases are the durable artifact store; Pages is a generated deployment view.
+
+### Browser flasher
 
 The browser flasher is intentionally a continuous view of RFScout's current development and release lifecycle. A stable catalog can contain all of the following at the same time:
 
@@ -43,9 +47,9 @@ The browser flasher is intentionally a continuous view of RFScout's current deve
 - prerelease releases; and
 - published releases.
 
-The **Publish browser flasher** workflow reevaluates the catalog when a **Build and formatting** workflow completes, when a pull request closes, when a release is published, when supported release deletion events are delivered, when started manually, and on an hourly reconciliation schedule. Successful **Prepare firmware release** completion also dispatches a flasher refresh so a newly prepared draft can become available for hardware validation without waiting for an unrelated CI event.
+The **Publish RFScout Pages** workflow reevaluates the catalog when a **Build and formatting** workflow completes, when a pull request closes, when a release is published, when supported release deletion events are delivered, when started manually, and on an hourly reconciliation schedule. Successful **Prepare firmware release** completion also dispatches a flasher refresh so a newly prepared draft can become available for hardware validation without waiting for an unrelated CI event.
 
-Release events are relay-only. GitHub executes a `release`-triggered workflow in the release tag context, while the `github-pages` environment is intentionally restricted to `main`. The release-triggered job therefore dispatches **Publish browser flasher** on `main`; only that main-context run assembles and deploys Pages. Do not move Pages deployment back into the tag-context release run or weaken the environment restriction to make it pass.
+Release events are relay-only. GitHub executes a `release`-triggered workflow in the release tag context, while the `github-pages` environment is intentionally restricted to `main`. The release-triggered job therefore dispatches **Publish RFScout Pages** on `main`; only that main-context run assembles and deploys Pages. Do not move Pages deployment back into the tag-context release run or weaken the environment restriction to make it pass.
 
 Each completed Pages deployment is rebuilt from the current repository state rather than incrementally editing the previous deployment. Current `main`, current PR heads, and currently visible GitHub Releases are rediscovered each time. This means expired candidate artifacts, closed PR candidates, and withdrawn releases disappear from the next successful reconciliation rather than remaining as permanent Pages content.
 
@@ -65,13 +69,27 @@ Each deployment is self-contained: firmware files and manifests are copied into 
 
 **Important:** GitHub draft status is not a privacy boundary for RFScout firmware once a draft has been successfully prepared. The release-preparation workflow triggers a browser-flasher refresh, and valid draft release assets are mirrored into the public GitHub Pages site so they can be installed for pre-publication hardware validation. Anyone who knows or discovers the Pages site can download those mirrored files before the GitHub Release is formally published. Do not place confidential, embargoed, security-sensitive, or otherwise non-public firmware/assets into a prepared draft. Use a separate private validation path if the firmware must remain private until publication.
 
-GitHub does not emit `release: deleted` workflow activity for draft releases. As a result, manually deleting a prepared draft cannot trigger an immediate event-driven cleanup. The hourly flasher reconciliation is the fallback that removes such withdrawn drafts from the public Pages mirror; a maintainer can also run **Publish browser flasher** manually for immediate cleanup. Treat a deleted draft as potentially still downloadable from the previous Pages deployment until one of those reconciliations succeeds.
+GitHub does not emit `release: deleted` workflow activity for draft releases. As a result, manually deleting a prepared draft cannot trigger an immediate event-driven cleanup. The hourly flasher reconciliation is the fallback that removes such withdrawn drafts from the public Pages mirror; a maintainer can also run **Publish RFScout Pages** manually for immediate cleanup. Treat a deleted draft as potentially still downloadable from the previous Pages deployment until one of those reconciliations succeeds.
 
 Publishing a draft triggers an immediate release event. That tag-context event relays a fresh flasher run onto `main`, and the main-context run removes the draft label once candidate state is stable. Deleting a published/non-draft release can use the same relay where GitHub supplies that event.
 
 The static flasher shell uses the repository's `assets/logo.png` branding and RFScout orange/white visual theme. GitHub Pages uses **GitHub Actions** as its publishing source. The flasher requires HTTPS and Web Serial; Chromium-based desktop browsers such as Edge and Chrome are the supported path.
 
 The candidate portion of a Pages deployment represents current testable development builds rather than permanent hosting for historical CI artifacts. Published GitHub Releases provide the durable firmware history.
+
+
+
+### Stable in-device OTA
+
+The same Pages deployment builds `ota/stable.json` and the referenced `ota/releases/<version>/` application-image tree. This channel is intentionally narrower than the browser flasher:
+
+- only **published, non-prerelease** GitHub Releases are eligible;
+- a release without valid `ota-release.json` metadata is not an OTA release;
+- the Pages builder verifies the release tag, application asset size, and SHA-256 before deployment;
+- `minimum_source_version` comes from immutable release metadata and defines strict waypoint reachability; and
+- old releases that predate OTA metadata, including `v0.3.2`, are naturally absent.
+
+Draft releases remain browser-testable without becoming visible to deployed devices. Publishing a stable release triggers a Pages refresh; the generated OTA catalog and all referenced application images are deployed atomically as one Pages artifact.
 
 ## Preparing a draft release
 
@@ -100,13 +118,13 @@ Before publishing a draft:
 5. record hardware validation in the release notes; and
 6. publish the release deliberately through GitHub.
 
-Publishing preserves the semantic tag created during draft preparation. The release publication event automatically starts the tag-context relay, which dispatches **Publish browser flasher** on `main`. The main-context run discovers the now-published release state and republishes the firmware catalog so the draft label is removed once candidate state is stable. The flasher does not rebuild firmware during publication/deployment.
+Publishing preserves the semantic tag created during draft preparation. The release publication event automatically starts the tag-context relay, which dispatches **Publish RFScout Pages** on `main`. The main-context run discovers the now-published release state and republishes the firmware catalog so the draft label is removed once candidate state is stable. The flasher does not rebuild firmware during publication/deployment.
 
 ## Withdrawing a prepared draft
 
 If a prepared draft should no longer be available, delete the GitHub draft release and then either:
 
-- run **Publish browser flasher** manually for immediate reconciliation; or
+- run **Publish RFScout Pages** manually for immediate reconciliation; or
 - allow the hourly scheduled reconciliation to remove it.
 
 Because GitHub does not generate draft-release deletion workflow events, deleting the GitHub draft alone does not instantly remove files from an already deployed Pages snapshot.

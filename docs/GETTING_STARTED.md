@@ -114,7 +114,7 @@ The supported hardware is the LILYGO T-Embed CC1101 Plus. If automatic flashing 
 
 ## Browser flashing development builds and releases
 
-RFScout also publishes a GitHub Pages browser flasher through the **Publish browser flasher** workflow. The catalog is intentionally a view of the current development/release lifecycle, not just a list of published releases.
+RFScout publishes its browser flasher and stable OTA tree together through the **Publish RFScout Pages** workflow. The catalog is intentionally a view of the current development/release lifecycle, not just a list of published releases.
 
 The flasher can contain:
 

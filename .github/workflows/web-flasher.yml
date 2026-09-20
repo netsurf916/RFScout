@@ -131,7 +131,6 @@ jobs:
           done
 
 
-
       - name: Stage published stable OTA releases
         if: steps.stability.outputs.ready == 'true'
         env:

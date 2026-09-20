@@ -52,6 +52,22 @@ def validate_ota_source_version(a_version: str) -> None:
         )
 
 
+def ota_version_tuple(a_version: str) -> tuple[int, int, int]:
+    """Return the stable X.Y.Z precedence portion of a validated release/source version."""
+    value = a_version.removeprefix("v").split("+", 1)[0].split("-", 1)[0]
+    validate_ota_source_version(value)
+    return tuple(int(part) for part in value.split("."))
+
+
+def validate_ota_waypoint(a_release_version: str, a_minimum_source_version: str) -> None:
+    """Reject a waypoint that is newer than the release it is meant to reach."""
+    validate_ota_source_version(a_minimum_source_version)
+    if ota_version_tuple(a_minimum_source_version) > ota_version_tuple(a_release_version):
+        raise PackagingError(
+            "minimum OTA source version cannot be newer than the target release"
+        )
+
+
 def validate_release_version(a_version: str) -> None:
     """Validate a v-prefixed Semantic Versioning release identifier."""
     match = RELEASE_VERSION_RE.fullmatch(a_version)
@@ -239,7 +255,7 @@ def package_release(
     if a_version.startswith("v"):
         if a_minimum_source_version is None:
             raise PackagingError("release bundles require --minimum-source-version")
-        validate_ota_source_version(a_minimum_source_version)
+        validate_ota_waypoint(a_version, a_minimum_source_version)
     elif a_minimum_source_version is not None:
         validate_ota_source_version(a_minimum_source_version)
 

@@ -129,8 +129,6 @@ def candidate_entries(
     )
 
 
-
-
 def file_sha256(a_path: Path) -> str:
     digest = hashlib.sha256()
     with a_path.open("rb") as source:
@@ -157,6 +155,11 @@ def ota_release_entry(a_directory: Path) -> dict:
         raise ValueError(f"missing OTA release version/waypoint metadata: {metadata_path}")
     version_key = semver_key(version)
     minimum_key = semver_key(minimum)
+    expected_tag = f"v{version}"
+    if a_directory.name != expected_tag:
+        raise ValueError(
+            f"OTA release tag {a_directory.name!r} does not match metadata version {version!r}"
+        )
     if minimum_key > version_key:
         raise ValueError(
             f"minimum source {minimum} is newer than OTA release {version}: {metadata_path}"

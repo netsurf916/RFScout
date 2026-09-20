@@ -410,31 +410,40 @@ The Wi-Fi service must not maintain a global remembered-network database or sile
 
 The existing WiFi / BT observation application remains a separate passive-monitoring concern. Infrastructure STA operation must acquire/quiesce shared Wi-Fi resources through the platform lifecycle rather than reaching into the observation app or allowing monitor and OTA modes to conflict implicitly.
 
-### Static OTA backend
+### GitHub Pages OTA publication
 
-The initial backend is intentionally static HTTPS content under:
+OTA is published as part of RFScout's existing GitHub Pages deployment rather than through a separately administered web server. The firmware fetches:
 
-`https://null.link/rfscout/`
+`https://netsurf916.github.io/RFScout/ota/stable.json`
 
-The web server does not need an application service, API, or database. Release files are immutable after publication; only the stable-channel catalog/pointer is replaced when promoting a release.
-
-The intended filesystem/URL shape is:
+GitHub Releases remain the durable source artifacts. The Pages workflow assembles one atomic static deployment containing both the browser flasher and the OTA view of published releases:
 
 ```text
-/rfscout/
-    stable.json
-    releases/
-        0.4.0/
-            rfscout-v0.4.0-esp32s3-app.bin
-        0.5.0/
-            rfscout-v0.5.0-esp32s3-app.bin
+/
+    index.html
+    catalog.json
+    firmware/
+        ...
+    ota/
+        stable.json
+        releases/
+            0.4.0/
+                ota-release.json
+                rfscout-v0.4.0-esp32s3-app.bin
+            0.5.0/
+                ota-release.json
+                rfscout-v0.5.0-esp32s3-app.bin
 ```
+
+Draft releases may still be mirrored into the browser flasher for hardware validation, but they are never placed in the stable OTA catalog. Prereleases are also excluded from the stable OTA channel. A release becomes eligible for stable OTA only after GitHub publication and only when its immutable `ota-release.json` includes valid compatibility metadata and references a matching application image.
+
+The release-preparation workflow records `minimum_source_version` in `ota-release.json`. That makes waypoint policy part of immutable release metadata rather than separate server state. The Pages builder verifies release/tag identity, artifact size, SHA-256, hardware target, ESP-IDF target, layout generation, and waypoint metadata before copying the application image and synthesizing `ota/stable.json`.
+
+Because Pages deployment replaces the generated site as one deployment artifact, firmware images and the catalog are published together rather than relying on a manual artifact-first/catalog-last server update sequence.
 
 Normal in-device OTA consumes only the application image. The combined `0x0` image remains the clean-install/recovery artifact and is the required mechanism for incompatible partition-layout changes.
 
-Publication order is artifact first, catalog last. A release artifact must be completely uploaded and verified before `stable.json` is atomically replaced, so a device never observes a catalog entry whose referenced image has not been published yet.
-
-The first implementation does not require firmware signing. HTTPS certificate validation is therefore the initial authenticity boundary, while the manifest's SHA-256 and size protect transfer/storage integrity. The schema should remain extensible so an image-signature object can be added later without redesigning acquisition or installation.
+The first implementation does not require firmware signing. HTTPS certificate validation is therefore the initial authenticity boundary, while the catalog's SHA-256 and size protect transfer/storage integrity. The schema remains extensible so image signatures can be added later without redesigning acquisition or installation.
 
 ### Running-version identity
 
@@ -578,7 +587,7 @@ Keep the feature reviewable and preserve abstraction boundaries by landing it in
 5. **implemented on the OTA development branch:** add explicit static HTTPS catalog retrieval, validation, waypoint selection, cancellation on app transition, and OTA UI reporting without flash writes;
 6. add the transport-neutral installer abstraction and ESP-IDF A/B streaming implementation;
 7. add boot-time pending-image confirmation/rollback handling;
-8. integrate release publication for `null.link/rfscout/`; and
+8. **implemented on the OTA development branch:** integrate stable OTA publication into the existing atomic GitHub Pages deployment; and
 9. validate cancellation, app switching, network loss, truncated/corrupt images, power loss at each OTA stage, waypoint upgrades, rollback, and recovery flashing on hardware.
 
 ## Medium-term platform work

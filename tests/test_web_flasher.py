@@ -100,7 +100,6 @@ class WebFlasherCatalogTest(unittest.TestCase):
             )
             self.assertEqual(entries, [])
 
-
     def test_ota_catalog_builds_published_release_tree(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
