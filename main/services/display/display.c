@@ -68,34 +68,6 @@ static const st7789_init_command_t tdeck_st7789_init[] = {
       0 },
 };
 
-/*
- * Keep RAMCTRL under ESP-IDF ownership. Its data_endian setting is what makes
- * the little-endian uint16_t RGB565 framebuffer arrive at the panel correctly.
- * LILYGO's TFT_eSPI RAMCTRL value assumes TFT_eSPI's different wire-byte order.
- */
-static const st7789_init_command_t tembed_st7789_init[] = {
-    { 0x13, { 0 }, 0, 0 },
-    { 0xB6, { 0x0A, 0x82 }, 2, 0 },
-    { 0x3A, { 0x55 }, 1, 10 },
-    { 0xB2, { 0x0C, 0x0C, 0x00, 0x33, 0x33 }, 5, 0 },
-    { 0xB7, { 0x35 }, 1, 0 },
-    { 0xBB, { 0x28 }, 1, 0 },
-    { 0xC0, { 0x0C }, 1, 0 },
-    { 0xC2, { 0x01, 0xFF }, 2, 0 },
-    { 0xC3, { 0x10 }, 1, 0 },
-    { 0xC4, { 0x20 }, 1, 0 },
-    { 0xC6, { 0x0F }, 1, 0 },
-    { 0xD0, { 0xA4, 0xA1 }, 2, 0 },
-    { 0xE0,
-      { 0xD0, 0x00, 0x02, 0x07, 0x0A, 0x28, 0x32, 0x44, 0x42, 0x06, 0x0E, 0x12, 0x14, 0x17 },
-      14,
-      0 },
-    { 0xE1,
-      { 0xD0, 0x00, 0x02, 0x07, 0x0A, 0x28, 0x31, 0x54, 0x47, 0x0E, 0x1C, 0x17, 0x1B, 0x1E },
-      14,
-      0 },
-};
-
 static const int8_t pixel_shift_positions[ DISPLAY_PIXEL_SHIFT_POSITION_COUNT ][ 2 ] = {
     { 0, 0 },
     { 1, 0 },
@@ -179,10 +151,11 @@ static esp_err_t apply_board_st7789_init( esp_lcd_panel_io_handle_t a_io )
                                                sizeof( tdeck_st7789_init ) /
                                                    sizeof( tdeck_st7789_init[ 0 ] ) );
         case RFSCOUT_BOARD_TEMBED_CC1101_PLUS:
-            return apply_st7789_init_sequence( a_io,
-                                               tembed_st7789_init,
-                                               sizeof( tembed_st7789_init ) /
-                                                   sizeof( tembed_st7789_init[ 0 ] ) );
+            /*
+             * The generic ESP-IDF ST7789 setup was already hardware-proven on
+             * T-Embed and owns RGB order, RGB565 byte order, and pixel format.
+             */
+            return ESP_OK;
         case RFSCOUT_BOARD_UNKNOWN:
         default:
             return ESP_ERR_NOT_SUPPORTED;
