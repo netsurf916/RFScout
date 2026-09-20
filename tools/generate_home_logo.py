@@ -103,6 +103,13 @@ def content_bounds(width, height, channels, rows):
 
 def nearest_palette(rgb):
     r, g, b = rgb
+
+    # The canonical RGB asset is already antialiased onto black. Keep neutral
+    # gray edge pixels on the black/white axis so Euclidean distance cannot
+    # misclassify a gray edge as saturated RFScout orange.
+    if max(rgb) - min(rgb) <= 16:
+        return 0 if r + g + b < (3 * 128) else 2
+
     return min(
         range(len(PALETTE)),
         key=lambda i: (r - PALETTE[i][0]) ** 2 + (g - PALETTE[i][1]) ** 2 + (b - PALETTE[i][2]) ** 2,
