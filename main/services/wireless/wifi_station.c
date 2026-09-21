@@ -28,7 +28,7 @@ static bool disconnect_requested;
 static esp_event_handler_instance_t wifi_event_handler;
 static esp_event_handler_instance_t ip_event_handler;
 static portMUX_TYPE state_lock = portMUX_INITIALIZER_UNLOCKED;
-static rfscout_wifi_station_status_t status;
+static rfscout_rfscout_wifi_station_status_t status;
 static rfscout_wifi_station_ap_t scan_results[ RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS ];
 static wifi_ap_record_t scan_records[ RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS ];
 static size_t scan_result_count;
@@ -242,7 +242,7 @@ static esp_err_t ensure_started( void )
     return ESP_OK;
 }
 
-esp_err_t wifi_station_init( void )
+esp_err_t rfscout_wifi_station_init( void )
 {
     if( initialized )
     {
@@ -271,7 +271,7 @@ esp_err_t wifi_station_init( void )
     started = false;
     stopping = false;
     disconnect_requested = false;
-    status = ( rfscout_wifi_station_status_t ){
+    status = ( rfscout_rfscout_wifi_station_status_t ){
         .state = RFSCOUT_WIFI_STATION_OFF,
         .scan_generation = 0U,
         .disconnect_reason = 0,
@@ -282,18 +282,18 @@ esp_err_t wifi_station_init( void )
     return ESP_OK;
 }
 
-esp_err_t wifi_station_passive_scan_start( void )
+esp_err_t rfscout_wifi_station_passive_scan_start( void )
 {
     if( !initialized )
     {
-        const esp_err_t init_result = wifi_station_init();
+        const esp_err_t init_result = rfscout_wifi_station_init();
         if( ESP_OK != init_result )
         {
             return init_result;
         }
     }
 
-    rfscout_wifi_station_status_t current = wifi_station_status();
+    rfscout_rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
     if( RFSCOUT_WIFI_STATION_CONNECTING == current.state ||
         RFSCOUT_WIFI_STATION_CONNECTED == current.state ||
         RFSCOUT_WIFI_STATION_SCANNING == current.state ||
@@ -326,7 +326,7 @@ esp_err_t wifi_station_passive_scan_start( void )
     return result;
 }
 
-size_t wifi_station_scan_results( rfscout_wifi_station_ap_t *a_results, size_t a_capacity )
+size_t rfscout_wifi_station_scan_results( rfscout_wifi_station_ap_t *a_results, size_t a_capacity )
 {
     portENTER_CRITICAL( &state_lock );
     const size_t count = scan_result_count < a_capacity ? scan_result_count : a_capacity;
@@ -338,11 +338,11 @@ size_t wifi_station_scan_results( rfscout_wifi_station_ap_t *a_results, size_t a
     return count;
 }
 
-esp_err_t wifi_station_connect( const char *a_ssid, const char *a_password )
+esp_err_t rfscout_wifi_station_connect( const char *a_ssid, const char *a_password )
 {
     if( !initialized )
     {
-        const esp_err_t init_result = wifi_station_init();
+        const esp_err_t init_result = rfscout_wifi_station_init();
         if( ESP_OK != init_result )
         {
             return init_result;
@@ -363,7 +363,7 @@ esp_err_t wifi_station_connect( const char *a_ssid, const char *a_password )
         return ESP_ERR_INVALID_SIZE;
     }
 
-    rfscout_wifi_station_status_t current = wifi_station_status();
+    rfscout_rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
     if( RFSCOUT_WIFI_STATION_SCANNING == current.state ||
         RFSCOUT_WIFI_STATION_SEARCHING == current.state ||
         RFSCOUT_WIFI_STATION_CONNECTING == current.state ||
@@ -433,7 +433,7 @@ esp_err_t wifi_station_connect( const char *a_ssid, const char *a_password )
     return result;
 }
 
-esp_err_t wifi_station_disconnect( void )
+esp_err_t rfscout_wifi_station_disconnect( void )
 {
     if( !initialized )
     {
@@ -453,7 +453,7 @@ esp_err_t wifi_station_disconnect( void )
     return ESP_OK;
 }
 
-esp_err_t wifi_station_stop( void )
+esp_err_t rfscout_wifi_station_stop( void )
 {
     if( !initialized )
     {
@@ -492,7 +492,7 @@ esp_err_t wifi_station_stop( void )
     return ESP_OK;
 }
 
-bool wifi_station_is_active( void )
+bool rfscout_wifi_station_is_active( void )
 {
     bool active;
     portENTER_CRITICAL( &state_lock );
@@ -501,9 +501,9 @@ bool wifi_station_is_active( void )
     return active;
 }
 
-rfscout_wifi_station_status_t wifi_station_status( void )
+rfscout_rfscout_wifi_station_status_t rfscout_wifi_station_status( void )
 {
-    rfscout_wifi_station_status_t result;
+    rfscout_rfscout_wifi_station_status_t result;
     portENTER_CRITICAL( &state_lock );
     result = status;
     portEXIT_CRITICAL( &state_lock );

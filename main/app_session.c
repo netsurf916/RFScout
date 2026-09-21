@@ -72,13 +72,13 @@ static bool wifi_active( void *a_context )
 static esp_err_t stop_wifi_station( void *a_context )
 {
     (void)a_context;
-    return wifi_station_stop();
+    return rfscout_wifi_station_stop();
 }
 
 static bool wifi_station_active( void *a_context )
 {
     (void)a_context;
-    return wifi_station_is_active();
+    return rfscout_wifi_station_is_active();
 }
 
 static esp_err_t stop_ota_acquisition( void *a_context )
