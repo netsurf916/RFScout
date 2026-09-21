@@ -29,7 +29,6 @@ static const char *app_name( rfscout_app_id_t a_app )
 {
     static const char *names[ RFSCOUT_APP_COUNT ] = {
         [RFSCOUT_APP_SYSTEM_EVENTS] = "SYSTEM_EVENTS",
-        [RFSCOUT_APP_OTA] = "OTA",
         [RFSCOUT_APP_DEVICE] = "DEVICE",
         [RFSCOUT_APP_WIFI_BT] = "WIFI_BT",
         [RFSCOUT_APP_CC1101] = "CC1101",
@@ -54,8 +53,8 @@ static void write_lifecycle_record( rfscout_app_id_t a_app, const char *a_event 
 
 static void write_periodic_record( rfscout_app_id_t a_app )
 {
-    if( ( RFSCOUT_APP_WIFI_BT == a_app ) || ( RFSCOUT_APP_OTA == a_app ) ||
-        ( RFSCOUT_APP_DEVICE == a_app ) || ( a_app >= RFSCOUT_APP_COUNT ) )
+    if( ( RFSCOUT_APP_WIFI_BT == a_app ) || ( RFSCOUT_APP_DEVICE == a_app ) ||
+        ( a_app >= RFSCOUT_APP_COUNT ) )
     {
         return;
     }
