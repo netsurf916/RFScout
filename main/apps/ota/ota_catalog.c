@@ -393,7 +393,7 @@ static cJSON *parse_catalog_root( const char *a_json, size_t a_length, const cJS
     const cJSON *schema = cJSON_GetObjectItemCaseSensitive( root, "schema_version" );
     const cJSON *builds = cJSON_GetObjectItemCaseSensitive( root, "builds" );
     if( !cJSON_IsNumber( schema ) || OTA_CATALOG_SCHEMA_VERSION != schema->valueint ||
-        !cJSON_IsArray( builds ) || cJSON_GetArraySize( builds ) > OTA_CATALOG_MAX_BUILDS )
+        !cJSON_IsArray( builds ) )
     {
         cJSON_Delete( root );
         return NULL;
@@ -528,13 +528,11 @@ esp_err_t ota_catalog_list( const char *a_json,
         {
             continue;
         }
-        if( *a_count >= a_capacity )
+        if( *a_count < a_capacity )
         {
-            result = ESP_ERR_INVALID_SIZE;
-            goto cleanup;
+            a_builds[ *a_count ] = parsed.build;
+            ++( *a_count );
         }
-        a_builds[ *a_count ] = parsed.build;
-        ++( *a_count );
     }
 
     result = ESP_OK;
