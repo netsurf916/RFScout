@@ -31,9 +31,7 @@ VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 RELEASE_VERSION_RE = re.compile(
     r"^v(?:0|[1-9][0-9]*)\."
     r"(?:0|[1-9][0-9]*)\."
-    r"(?:0|[1-9][0-9]*)"
-    r"(?:-(?P<prerelease>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
-    r"(?:\+(?P<build>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
+    r"(?:0|[1-9][0-9]*)$"
 )
 
 
