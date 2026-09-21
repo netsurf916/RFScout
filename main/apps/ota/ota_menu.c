@@ -1,0 +1,1138 @@
+/**
+    apps/ota/ota_menu.c : Home Update menu controller and OTA network-management runtime
+    Copyright 2026 Daniel Wilson
+    SPDX-License-Identifier: MIT
+*/
+
+#include "app_descriptor.h"
+#include "ota_menu.h"
+
+#include "app_text_entry.h"
+#include "event.h"
+#include "firmware_identity.h"
+#include "ota_acquisition.h"
+#include "ota_catalog.h"
+#include "ota_networks.h"
+#include "ota_installer.h"
+#include "ota_view.h"
+#include "wifi_station.h"
+
+#include "esp_err.h"
+#include "esp_log.h"
+#include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+#define OTA_REFRESH_INTERVAL_US 125000LL
+#define OTA_VISIBLE_MAX OTA_NETWORK_MAX_COUNT
+#define OTA_ERROR_TEXT_LENGTH 48U
+
+static const char *TAG = "ota_app";
+
+typedef enum
+{
+    OTA_SCREEN_MAIN = 0,
+    OTA_SCREEN_ACTION,
+    OTA_SCREEN_ADD,
+    OTA_SCREEN_SAVED,
+    OTA_SCREEN_PASSWORD,
+    OTA_SCREEN_BUILDS,
+    OTA_SCREEN_BUILD_ACTION
+} ota_screen_t;
+
+static ota_network_list_t saved_networks;
+static rfscout_wifi_station_ap_t scan_results[ RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS ];
+static ota_view_network_t view_networks[ RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS ];
+static size_t scan_count;
+static size_t view_network_count;
+static size_t visible_saved_indices[ OTA_VISIBLE_MAX ];
+static ota_screen_t screen;
+static unsigned selected_item;
+static int action_saved_index;
+static int action_scan_index;
+static char connecting_ssid[ OTA_NETWORK_SSID_MAX_LENGTH + 1U ];
+static char error_text[ OTA_ERROR_TEXT_LENGTH ];
+static rfscout_text_entry_t password_entry;
+static ota_catalog_selection_t catalog_selection;
+static ota_catalog_build_t available_builds[ OTA_CATALOG_MAX_BUILDS ];
+static ota_view_build_t view_builds[ OTA_CATALOG_MAX_BUILDS ];
+static size_t available_build_count;
+static int selected_build_index;
+static bool open_builds_after_catalog;
+static char catalog_json[ OTA_ACQUISITION_CATALOG_MAX_LENGTH + 1U ];
+static char update_status[ OTA_CATALOG_VERSION_MAX_LENGTH + 1U ];
+static uint32_t last_acquisition_generation;
+static uint32_t last_installer_generation;
+static uint32_t last_scan_generation;
+static rfscout_wifi_station_state_t last_station_state;
+static int64_t last_refresh_us;
+static bool close_requested;
+
+static void emit_event( rfscout_event_type_t a_type, int32_t a_value )
+{
+    rfscout_event_emit( a_type, (uint8_t)RFSCOUT_APP_DEVICE, a_value );
+}
+
+static void set_error( esp_err_t a_error )
+{
+    if( ESP_OK == a_error )
+    {
+        error_text[ 0 ] = '\0';
+        return;
+    }
+    snprintf( error_text, sizeof( error_text ), "%s", esp_err_to_name( a_error ) );
+}
+
+static void refresh_scan_results( void )
+{
+    scan_count =
+        rfscout_wifi_station_scan_results( scan_results, RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS );
+}
+
+static int scan_index_for_ssid( const char *a_ssid )
+{
+    if( NULL == a_ssid )
+    {
+        return -1;
+    }
+    for( size_t index = 0U; index < scan_count; ++index )
+    {
+        if( 0 == strcmp( scan_results[ index ].ssid, a_ssid ) )
+        {
+            return (int)index;
+        }
+    }
+    return -1;
+}
+
+static void build_visible_saved( void )
+{
+    view_network_count = 0U;
+    for( size_t scan_index = 0U; scan_index < scan_count && view_network_count < OTA_VISIBLE_MAX;
+         ++scan_index )
+    {
+        const int saved_index =
+            ota_networks_find( &saved_networks, scan_results[ scan_index ].ssid );
+        if( saved_index < 0 )
+        {
+            continue;
+        }
+        view_networks[ view_network_count ] = ( ota_view_network_t ){
+            .ssid = saved_networks.entries[ saved_index ].ssid,
+            .rssi = scan_results[ scan_index ].rssi,
+        };
+        visible_saved_indices[ view_network_count ] = (size_t)saved_index;
+        ++view_network_count;
+    }
+}
+
+static void build_add_list( void )
+{
+    view_network_count = 0U;
+    for( size_t scan_index = 0U;
+         scan_index < scan_count && view_network_count < RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS;
+         ++scan_index )
+    {
+        if( ota_networks_find( &saved_networks, scan_results[ scan_index ].ssid ) >= 0 )
+        {
+            continue;
+        }
+        view_networks[ view_network_count++ ] = ( ota_view_network_t ){
+            .ssid = scan_results[ scan_index ].ssid,
+            .rssi = scan_results[ scan_index ].rssi,
+        };
+    }
+}
+
+static void build_saved_list( void )
+{
+    view_network_count = saved_networks.count;
+    for( size_t index = 0U; index < saved_networks.count; ++index )
+    {
+        const int scan_index = scan_index_for_ssid( saved_networks.entries[ index ].ssid );
+        view_networks[ index ] = ( ota_view_network_t ){
+            .ssid = saved_networks.entries[ index ].ssid,
+            .rssi = scan_index >= 0 ? scan_results[ scan_index ].rssi : INT8_MIN,
+        };
+    }
+}
+
+static bool network_connected( void )
+{
+    return RFSCOUT_WIFI_STATION_CONNECTED == rfscout_wifi_station_status().state;
+}
+
+static const char *connection_status( void )
+{
+    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    switch( current.state )
+    {
+        case RFSCOUT_WIFI_STATION_SCANNING:
+            return "Passive scan";
+        case RFSCOUT_WIFI_STATION_SEARCHING:
+            return "Active search";
+        case RFSCOUT_WIFI_STATION_CONNECTING:
+            return "Connecting";
+        case RFSCOUT_WIFI_STATION_CONNECTED:
+            return '\0' != connecting_ssid[ 0 ] ? connecting_ssid : "Connected";
+        case RFSCOUT_WIFI_STATION_FAILED:
+            return "Connection failed";
+        case RFSCOUT_WIFI_STATION_OFF:
+        case RFSCOUT_WIFI_STATION_IDLE:
+        default:
+            return "Disconnected";
+    }
+}
+
+static void render_main( void )
+{
+    build_visible_saved();
+    const rfscout_firmware_identity_t *identity = firmware_identity();
+    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    const bool scanning = RFSCOUT_WIFI_STATION_SCANNING == current.state;
+    const bool can_check = RFSCOUT_WIFI_STATION_CONNECTED == current.state;
+    const bool can_install = can_check && OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result;
+    const unsigned item_count =
+        1U + (unsigned)view_network_count + ( can_check ? ( can_install ? 4U : 3U ) : 3U );
+    if( selected_item >= item_count )
+    {
+        selected_item = item_count - 1U;
+    }
+    ota_view_render_main( identity->version,
+                          connection_status(),
+                          view_networks,
+                          view_network_count,
+                          selected_item,
+                          scanning,
+                          can_check,
+                          can_install,
+                          update_status,
+                          error_text );
+}
+
+static void render_action( void )
+{
+    const char *ssid = NULL;
+    bool saved = action_saved_index >= 0 && (size_t)action_saved_index < saved_networks.count;
+    bool visible = action_scan_index >= 0 && (size_t)action_scan_index < scan_count;
+    int8_t rssi = visible ? scan_results[ action_scan_index ].rssi : INT8_MIN;
+    if( saved )
+    {
+        ssid = saved_networks.entries[ action_saved_index ].ssid;
+        action_scan_index = scan_index_for_ssid( ssid );
+        visible = action_scan_index >= 0;
+        rssi = visible ? scan_results[ action_scan_index ].rssi : INT8_MIN;
+    }
+    else if( visible )
+    {
+        ssid = scan_results[ action_scan_index ].ssid;
+    }
+
+    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    const bool connected = RFSCOUT_WIFI_STATION_CONNECTED == current.state && NULL != ssid &&
+                           0 == strcmp( connecting_ssid, ssid );
+    const char *status_text = error_text;
+    if( RFSCOUT_WIFI_STATION_SEARCHING == current.state && NULL != ssid &&
+        0 == strcmp( connecting_ssid, ssid ) )
+    {
+        status_text = "Actively searching...";
+    }
+    else if( RFSCOUT_WIFI_STATION_CONNECTING == current.state && NULL != ssid &&
+             0 == strcmp( connecting_ssid, ssid ) )
+    {
+        status_text = "Connecting...";
+    }
+    else if( connected )
+    {
+        status_text = "Connected";
+    }
+    else if( RFSCOUT_WIFI_STATION_FAILED == current.state && NULL != ssid &&
+             0 == strcmp( connecting_ssid, ssid ) )
+    {
+        status_text = ESP_ERR_NOT_FOUND == current.disconnect_reason ? "Network not found"
+                                                                     : "Connection failed";
+    }
+
+    unsigned action_count = saved ? 3U : 2U;
+    if( selected_item >= action_count )
+    {
+        selected_item = action_count - 1U;
+    }
+    const bool open =
+        visible && action_scan_index >= 0 ? scan_results[ action_scan_index ].open : false;
+    ota_view_render_network_action(
+        ssid, rssi, visible, saved, open, connected, selected_item, status_text );
+}
+
+static void render_add( void )
+{
+    build_add_list();
+    const unsigned item_count = (unsigned)view_network_count + 1U;
+    if( selected_item >= item_count )
+    {
+        selected_item = item_count - 1U;
+    }
+    ota_view_render_network_list(
+        "ADD NETWORK", view_networks, view_network_count, selected_item, "No new APs seen" );
+}
+
+static void render_saved( void )
+{
+    build_saved_list();
+    const unsigned item_count = (unsigned)view_network_count + 1U;
+    if( selected_item >= item_count )
+    {
+        selected_item = item_count - 1U;
+    }
+    ota_view_render_network_list(
+        "SAVED NETWORKS", view_networks, view_network_count, selected_item, "No saved networks" );
+}
+
+static void render_password( void )
+{
+    const char *ssid = action_scan_index >= 0 && (size_t)action_scan_index < scan_count
+                           ? scan_results[ action_scan_index ].ssid
+                           : "Network";
+    ota_view_render_password( ssid,
+                              password_entry.length,
+                              app_text_entry_selection( &password_entry ),
+                              app_text_entry_character( &password_entry ),
+                              error_text );
+}
+
+static void build_build_views( void )
+{
+    for( size_t index = 0U; index < available_build_count; ++index )
+    {
+        view_builds[ index ].label = available_builds[ index ].label;
+        view_builds[ index ].version = available_builds[ index ].candidate.version;
+    }
+}
+
+static void render_builds( void )
+{
+    build_build_views();
+    const unsigned item_count = (unsigned)available_build_count + 1U;
+    if( selected_item >= item_count )
+    {
+        selected_item = item_count - 1U;
+    }
+    ota_view_render_build_list(
+        view_builds, available_build_count, selected_item, "No compatible builds" );
+}
+
+static void render_build_action( void )
+{
+    if( selected_build_index < 0 || (size_t)selected_build_index >= available_build_count )
+    {
+        screen = OTA_SCREEN_BUILDS;
+        selected_item = 0U;
+        render_builds();
+        return;
+    }
+
+    const ota_catalog_build_t *build = &available_builds[ selected_build_index ];
+    ota_view_render_build_action(
+        build->label, build->candidate.version, build->candidate.commit, selected_item );
+}
+
+static void render( void )
+{
+    switch( screen )
+    {
+        case OTA_SCREEN_ACTION:
+            render_action();
+            break;
+        case OTA_SCREEN_ADD:
+            render_add();
+            break;
+        case OTA_SCREEN_SAVED:
+            render_saved();
+            break;
+        case OTA_SCREEN_PASSWORD:
+            render_password();
+            break;
+        case OTA_SCREEN_BUILDS:
+            render_builds();
+            break;
+        case OTA_SCREEN_BUILD_ACTION:
+            render_build_action();
+            break;
+        case OTA_SCREEN_MAIN:
+        default:
+            render_main();
+            break;
+    }
+}
+
+static void begin_passive_scan( void )
+{
+    set_error( rfscout_wifi_station_passive_scan_start() );
+    render();
+}
+
+static void move_selection( int a_direction, unsigned a_item_count )
+{
+    if( 0U == a_item_count )
+    {
+        selected_item = 0U;
+        return;
+    }
+    int item = (int)selected_item + ( a_direction > 0 ? 1 : -1 );
+    if( item < 0 )
+    {
+        item = (int)a_item_count - 1;
+    }
+    else if( item >= (int)a_item_count )
+    {
+        item = 0;
+    }
+    selected_item = (unsigned)item;
+    emit_event( RFSCOUT_EVENT_NAVIGATE, a_direction > 0 ? 1 : -1 );
+}
+
+static void open_saved_action( size_t a_saved_index )
+{
+    if( a_saved_index >= saved_networks.count )
+    {
+        return;
+    }
+    action_saved_index = (int)a_saved_index;
+    action_scan_index = scan_index_for_ssid( saved_networks.entries[ a_saved_index ].ssid );
+    selected_item = 0U;
+    screen = OTA_SCREEN_ACTION;
+    error_text[ 0 ] = '\0';
+    render();
+}
+
+static void open_unsaved_action( size_t a_scan_index )
+{
+    if( a_scan_index >= scan_count )
+    {
+        return;
+    }
+    action_saved_index = -1;
+    action_scan_index = (int)a_scan_index;
+    selected_item = 0U;
+    screen = OTA_SCREEN_ACTION;
+    error_text[ 0 ] = '\0';
+    render();
+}
+
+static void begin_update_check( void )
+{
+    error_text[ 0 ] = '\0';
+    memset( &catalog_selection, 0, sizeof( catalog_selection ) );
+    available_build_count = 0U;
+    selected_build_index = -1;
+    const esp_err_t result = ota_acquisition_begin_catalog();
+    if( ESP_OK != result )
+    {
+        open_builds_after_catalog = false;
+        set_error( result );
+        render();
+        return;
+    }
+    snprintf( update_status, sizeof( update_status ), "Checking..." );
+    render();
+}
+
+static void begin_candidate_install( const ota_catalog_candidate_t *a_candidate )
+{
+    if( NULL == a_candidate )
+    {
+        return;
+    }
+
+    ota_installer_image_t image;
+    memset( &image, 0, sizeof( image ) );
+    snprintf( image.version, sizeof( image.version ), "%s", a_candidate->version );
+    snprintf( image.sha256, sizeof( image.sha256 ), "%s", a_candidate->sha256 );
+    image.size = a_candidate->artifact_size;
+
+    esp_err_t result = ota_installer_begin( &image );
+    if( ESP_OK == result )
+    {
+        result = ota_acquisition_begin_firmware( a_candidate->artifact_path );
+    }
+    if( ESP_OK != result )
+    {
+        (void)ota_installer_abort();
+        set_error( result );
+        snprintf( update_status, sizeof( update_status ), "Install failed" );
+        render();
+        return;
+    }
+
+    error_text[ 0 ] = '\0';
+    screen = OTA_SCREEN_MAIN;
+    selected_item = 0U;
+    snprintf( update_status, sizeof( update_status ), "Downloading..." );
+    render();
+}
+
+static void begin_update_install( void )
+{
+    if( OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result )
+    {
+        begin_candidate_install( &catalog_selection.candidate );
+    }
+}
+
+static void open_available_builds( void )
+{
+    if( available_build_count > 0U )
+    {
+        screen = OTA_SCREEN_BUILDS;
+        selected_item = 0U;
+        render();
+        return;
+    }
+
+    open_builds_after_catalog = true;
+    begin_update_check();
+}
+
+static void handle_main_select( void )
+{
+    build_visible_saved();
+    if( 0U == selected_item )
+    {
+        close_requested = true;
+        return;
+    }
+
+    const unsigned menu_item = selected_item - 1U;
+    if( menu_item < view_network_count )
+    {
+        open_saved_action( visible_saved_indices[ menu_item ] );
+        return;
+    }
+    unsigned action = menu_item - (unsigned)view_network_count;
+    if( network_connected() )
+    {
+        if( 0U == action )
+        {
+            begin_update_check();
+            return;
+        }
+        unsigned next_action = 1U;
+        if( OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result )
+        {
+            if( next_action == action )
+            {
+                begin_update_install();
+                return;
+            }
+            ++next_action;
+        }
+        if( next_action == action )
+        {
+            open_available_builds();
+            return;
+        }
+        selected_item = 0U;
+        screen = OTA_SCREEN_SAVED;
+        render();
+        return;
+    }
+
+    if( 0U == action )
+    {
+        begin_passive_scan();
+        return;
+    }
+    if( 1U == action )
+    {
+        selected_item = 0U;
+        screen = OTA_SCREEN_ADD;
+        render();
+        return;
+    }
+    selected_item = 0U;
+    screen = OTA_SCREEN_SAVED;
+    render();
+}
+
+static void save_open_network( void )
+{
+    if( action_scan_index < 0 || (size_t)action_scan_index >= scan_count )
+    {
+        set_error( ESP_ERR_INVALID_STATE );
+        render();
+        return;
+    }
+    esp_err_t result =
+        ota_networks_upsert( &saved_networks, scan_results[ action_scan_index ].ssid, "" );
+    if( ESP_OK == result )
+    {
+        result = ota_networks_save( &saved_networks );
+    }
+    set_error( result );
+    if( ESP_OK == result )
+    {
+        action_saved_index =
+            ota_networks_find( &saved_networks, scan_results[ action_scan_index ].ssid );
+        selected_item = 0U;
+    }
+    render();
+}
+
+static void begin_password_entry( void )
+{
+    error_text[ 0 ] = '\0';
+    app_text_entry_begin( &password_entry, NULL, OTA_NETWORK_PASSWORD_MAX_LENGTH );
+    screen = OTA_SCREEN_PASSWORD;
+    render();
+}
+
+static void connect_selected_network( void )
+{
+    if( action_saved_index < 0 || (size_t)action_saved_index >= saved_networks.count )
+    {
+        return;
+    }
+    const ota_network_t *network = &saved_networks.entries[ action_saved_index ];
+    snprintf( connecting_ssid, sizeof( connecting_ssid ), "%s", network->ssid );
+    set_error( rfscout_wifi_station_connect( network->ssid, network->password ) );
+    render();
+}
+
+static void forget_selected_network( void )
+{
+    if( action_saved_index < 0 || (size_t)action_saved_index >= saved_networks.count )
+    {
+        return;
+    }
+
+    const char *ssid = saved_networks.entries[ action_saved_index ].ssid;
+    if( '\0' != connecting_ssid[ 0 ] && 0 == strcmp( connecting_ssid, ssid ) )
+    {
+        (void)rfscout_wifi_station_disconnect();
+        memset( connecting_ssid, 0, sizeof( connecting_ssid ) );
+    }
+
+    esp_err_t result = ota_networks_forget( &saved_networks, (size_t)action_saved_index );
+    if( ESP_OK == result )
+    {
+        result = ota_networks_save( &saved_networks );
+    }
+    set_error( result );
+    screen = OTA_SCREEN_MAIN;
+    selected_item = 0U;
+    action_saved_index = -1;
+    action_scan_index = -1;
+    render();
+}
+
+static void handle_action_select( void )
+{
+    const bool saved = action_saved_index >= 0 && (size_t)action_saved_index < saved_networks.count;
+    const bool visible = action_scan_index >= 0 && (size_t)action_scan_index < scan_count;
+
+    if( 0U == selected_item )
+    {
+        screen = OTA_SCREEN_MAIN;
+        selected_item = 0U;
+        render();
+        return;
+    }
+
+    if( !saved )
+    {
+        if( visible && scan_results[ action_scan_index ].open )
+        {
+            save_open_network();
+        }
+        else
+        {
+            begin_password_entry();
+        }
+        return;
+    }
+
+    if( 1U == selected_item )
+    {
+        const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+        if( RFSCOUT_WIFI_STATION_CONNECTED == current.state &&
+            0 == strcmp( connecting_ssid, saved_networks.entries[ action_saved_index ].ssid ) )
+        {
+            (void)rfscout_wifi_station_disconnect();
+            memset( connecting_ssid, 0, sizeof( connecting_ssid ) );
+            error_text[ 0 ] = '\0';
+            render();
+        }
+        else
+        {
+            connect_selected_network();
+        }
+        return;
+    }
+
+    forget_selected_network();
+}
+
+static void handle_add_select( void )
+{
+    build_add_list();
+    if( 0U == selected_item )
+    {
+        screen = OTA_SCREEN_MAIN;
+        selected_item = 0U;
+        render();
+        return;
+    }
+
+    const size_t view_index = selected_item - 1U;
+    if( view_index >= view_network_count )
+    {
+        return;
+    }
+    const int scan_index = scan_index_for_ssid( view_networks[ view_index ].ssid );
+    if( scan_index >= 0 )
+    {
+        open_unsaved_action( (size_t)scan_index );
+    }
+}
+
+static void handle_saved_select( void )
+{
+    if( 0U == selected_item )
+    {
+        screen = OTA_SCREEN_MAIN;
+        selected_item = 0U;
+        render();
+        return;
+    }
+    const size_t saved_index = selected_item - 1U;
+    if( saved_index < saved_networks.count )
+    {
+        open_saved_action( saved_index );
+    }
+}
+
+static void handle_builds_select( void )
+{
+    if( 0U == selected_item )
+    {
+        screen = OTA_SCREEN_MAIN;
+        selected_item = 0U;
+        render();
+        return;
+    }
+
+    const size_t build_index = selected_item - 1U;
+    if( build_index >= available_build_count )
+    {
+        return;
+    }
+    selected_build_index = (int)build_index;
+    selected_item = 0U;
+    screen = OTA_SCREEN_BUILD_ACTION;
+    render();
+}
+
+static void handle_build_action_select( void )
+{
+    if( 0U == selected_item )
+    {
+        screen = OTA_SCREEN_BUILDS;
+        selected_item = 0U;
+        render();
+        return;
+    }
+    if( 1U != selected_item || selected_build_index < 0 ||
+        (size_t)selected_build_index >= available_build_count )
+    {
+        return;
+    }
+
+    begin_candidate_install( &available_builds[ selected_build_index ].candidate );
+}
+
+static void handle_password_input( const rfscout_input_event_t *a_input )
+{
+    const rfscout_text_entry_result_t result = app_text_entry_input( &password_entry, a_input );
+    if( RFSCOUT_TEXT_ENTRY_CANCELLED == result )
+    {
+        app_text_entry_clear( &password_entry );
+        screen = OTA_SCREEN_ACTION;
+        error_text[ 0 ] = '\0';
+        render();
+        return;
+    }
+    if( RFSCOUT_TEXT_ENTRY_ACCEPTED == result )
+    {
+        if( action_scan_index < 0 || (size_t)action_scan_index >= scan_count )
+        {
+            set_error( ESP_ERR_INVALID_STATE );
+            app_text_entry_clear( &password_entry );
+            screen = OTA_SCREEN_ACTION;
+            render();
+            return;
+        }
+
+        esp_err_t save_result = ota_networks_upsert(
+            &saved_networks, scan_results[ action_scan_index ].ssid, password_entry.value );
+        if( ESP_OK == save_result )
+        {
+            ESP_LOGI( TAG,
+                      "saving OTA network credentials; stack high-water=%u bytes",
+                      (unsigned)uxTaskGetStackHighWaterMark( NULL ) );
+            save_result = ota_networks_save( &saved_networks );
+            ESP_LOGI( TAG,
+                      "saved OTA network credentials: %s; stack high-water=%u bytes",
+                      esp_err_to_name( save_result ),
+                      (unsigned)uxTaskGetStackHighWaterMark( NULL ) );
+        }
+        app_text_entry_clear( &password_entry );
+        set_error( save_result );
+        screen = OTA_SCREEN_ACTION;
+        if( ESP_OK == save_result )
+        {
+            action_saved_index =
+                ota_networks_find( &saved_networks, scan_results[ action_scan_index ].ssid );
+            selected_item = 0U;
+        }
+        render();
+        return;
+    }
+    render();
+}
+
+static void handle_input( const rfscout_input_event_t *a_input )
+{
+    if( OTA_SCREEN_PASSWORD == screen )
+    {
+        handle_password_input( a_input );
+        return;
+    }
+
+    if( RFSCOUT_INPUT_BACK == a_input->type )
+    {
+        if( OTA_SCREEN_MAIN == screen )
+        {
+            return;
+        }
+        if( OTA_SCREEN_BUILD_ACTION == screen )
+        {
+            screen = OTA_SCREEN_BUILDS;
+        }
+        else
+        {
+            screen = OTA_SCREEN_MAIN;
+            action_saved_index = -1;
+            action_scan_index = -1;
+        }
+        selected_item = 0U;
+        error_text[ 0 ] = '\0';
+        render();
+        emit_event( RFSCOUT_EVENT_BACK, 0 );
+        return;
+    }
+
+    if( RFSCOUT_INPUT_NAVIGATION == a_input->type )
+    {
+        unsigned item_count = 1U;
+        if( OTA_SCREEN_MAIN == screen )
+        {
+            build_visible_saved();
+            const bool can_install =
+                network_connected() && OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result;
+            item_count = 1U + (unsigned)view_network_count +
+                         ( network_connected() ? ( can_install ? 4U : 3U ) : 3U );
+        }
+        else if( OTA_SCREEN_ACTION == screen )
+        {
+            const bool saved =
+                action_saved_index >= 0 && (size_t)action_saved_index < saved_networks.count;
+            item_count = saved ? 3U : 2U;
+        }
+        else if( OTA_SCREEN_ADD == screen )
+        {
+            build_add_list();
+            item_count = (unsigned)view_network_count + 1U;
+        }
+        else if( OTA_SCREEN_SAVED == screen )
+        {
+            item_count = (unsigned)saved_networks.count + 1U;
+        }
+        else if( OTA_SCREEN_BUILDS == screen )
+        {
+            item_count = (unsigned)available_build_count + 1U;
+        }
+        else if( OTA_SCREEN_BUILD_ACTION == screen )
+        {
+            item_count = 2U;
+        }
+        move_selection( a_input->value > 0 ? 1 : -1, item_count );
+        render();
+        return;
+    }
+
+    if( RFSCOUT_INPUT_SELECT != a_input->type )
+    {
+        return;
+    }
+
+    emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
+    if( OTA_SCREEN_MAIN == screen )
+    {
+        handle_main_select();
+    }
+    else if( OTA_SCREEN_ACTION == screen )
+    {
+        handle_action_select();
+    }
+    else if( OTA_SCREEN_ADD == screen )
+    {
+        handle_add_select();
+    }
+    else if( OTA_SCREEN_SAVED == screen )
+    {
+        handle_saved_select();
+    }
+    else if( OTA_SCREEN_BUILDS == screen )
+    {
+        handle_builds_select();
+    }
+    else if( OTA_SCREEN_BUILD_ACTION == screen )
+    {
+        handle_build_action_select();
+    }
+}
+
+static void reset_runtime_state( void )
+{
+    ota_networks_clear_runtime( &saved_networks );
+    memset( scan_results, 0, sizeof( scan_results ) );
+    memset( view_networks, 0, sizeof( view_networks ) );
+    memset( visible_saved_indices, 0, sizeof( visible_saved_indices ) );
+    scan_count = 0U;
+    view_network_count = 0U;
+    screen = OTA_SCREEN_MAIN;
+    selected_item = 0U;
+    action_saved_index = -1;
+    action_scan_index = -1;
+    memset( connecting_ssid, 0, sizeof( connecting_ssid ) );
+    memset( error_text, 0, sizeof( error_text ) );
+    app_text_entry_clear( &password_entry );
+    memset( &catalog_selection, 0, sizeof( catalog_selection ) );
+    memset( available_builds, 0, sizeof( available_builds ) );
+    memset( view_builds, 0, sizeof( view_builds ) );
+    available_build_count = 0U;
+    selected_build_index = -1;
+    open_builds_after_catalog = false;
+    memset( catalog_json, 0, sizeof( catalog_json ) );
+    snprintf( update_status, sizeof( update_status ), "Not checked" );
+    last_acquisition_generation = 0U;
+    last_installer_generation = 0U;
+    last_scan_generation = 0U;
+    last_station_state = RFSCOUT_WIFI_STATION_OFF;
+    last_refresh_us = 0;
+    close_requested = false;
+}
+
+void ota_menu_enter( void )
+{
+    reset_runtime_state();
+    const esp_err_t load_result = ota_networks_load( &saved_networks );
+    if( ESP_OK != load_result )
+    {
+        set_error( load_result );
+    }
+    render();
+    begin_passive_scan();
+}
+
+void ota_menu_leave( void )
+{
+    (void)ota_acquisition_stop();
+    (void)ota_installer_abort();
+    (void)rfscout_wifi_station_stop();
+    reset_runtime_state();
+}
+
+bool ota_menu_input( bool a_pressed, int a_delta )
+{
+    rfscout_input_event_t input;
+    memset( &input, 0, sizeof( input ) );
+
+    if( a_pressed )
+    {
+        input.type = RFSCOUT_INPUT_SELECT;
+    }
+    else if( 0 != a_delta )
+    {
+        input.type = RFSCOUT_INPUT_NAVIGATION;
+        input.value = a_delta;
+    }
+    else
+    {
+        return false;
+    }
+
+    close_requested = false;
+    handle_input( &input );
+    const bool close = close_requested;
+    close_requested = false;
+    return close;
+}
+
+bool ota_menu_back( void )
+{
+    if( OTA_SCREEN_MAIN == screen )
+    {
+        return true;
+    }
+
+    rfscout_input_event_t input;
+    memset( &input, 0, sizeof( input ) );
+    input.type = RFSCOUT_INPUT_BACK;
+    handle_input( &input );
+    return false;
+}
+
+void ota_menu_poll( int64_t a_now_us )
+{
+    if( a_now_us - last_refresh_us < OTA_REFRESH_INTERVAL_US )
+    {
+        return;
+    }
+
+    last_refresh_us = a_now_us;
+    bool redraw = false;
+
+    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    if( current.scan_generation != last_scan_generation || current.state != last_station_state )
+    {
+        last_scan_generation = current.scan_generation;
+        last_station_state = current.state;
+        refresh_scan_results();
+        redraw = true;
+    }
+
+    const ota_acquisition_status_t acquisition = ota_acquisition_status();
+    if( acquisition.generation != last_acquisition_generation )
+    {
+        last_acquisition_generation = acquisition.generation;
+        if( OTA_ACQUISITION_READY == acquisition.state )
+        {
+            if( OTA_ACQUISITION_KIND_CATALOG == acquisition.kind )
+            {
+                size_t length = 0U;
+                esp_err_t result =
+                    ota_acquisition_copy_catalog( catalog_json, sizeof( catalog_json ), &length );
+                if( ESP_OK == result )
+                {
+                    result = ota_catalog_select(
+                        catalog_json, length, firmware_identity(), &catalog_selection );
+                }
+                if( ESP_OK == result )
+                {
+                    result = ota_catalog_list( catalog_json,
+                                               length,
+                                               firmware_identity(),
+                                               available_builds,
+                                               OTA_CATALOG_MAX_BUILDS,
+                                               &available_build_count );
+                }
+                if( ESP_OK == result )
+                {
+                    if( OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result )
+                    {
+                        snprintf( update_status,
+                                  sizeof( update_status ),
+                                  "%s",
+                                  catalog_selection.candidate.version );
+                    }
+                    else
+                    {
+                        snprintf( update_status, sizeof( update_status ), "Current" );
+                    }
+                    error_text[ 0 ] = '\0';
+                    if( open_builds_after_catalog )
+                    {
+                        screen = OTA_SCREEN_BUILDS;
+                        selected_item = 0U;
+                        open_builds_after_catalog = false;
+                    }
+                }
+                else
+                {
+                    open_builds_after_catalog = false;
+                    set_error( result );
+                    snprintf( update_status, sizeof( update_status ), "Check failed" );
+                }
+            }
+            else if( OTA_ACQUISITION_KIND_FIRMWARE == acquisition.kind )
+            {
+                esp_err_t result = ota_installer_finish();
+                if( ESP_OK == result )
+                {
+                    result = ota_installer_commit();
+                }
+                if( ESP_OK == result )
+                {
+                    snprintf( update_status, sizeof( update_status ), "Rebooting..." );
+                    render();
+                    esp_restart();
+                }
+                (void)ota_installer_abort();
+                set_error( result );
+                snprintf( update_status, sizeof( update_status ), "Install failed" );
+            }
+        }
+        else if( OTA_ACQUISITION_FAILED == acquisition.state )
+        {
+            if( OTA_ACQUISITION_KIND_FIRMWARE == acquisition.kind )
+            {
+                (void)ota_installer_abort();
+                snprintf( update_status, sizeof( update_status ), "Install failed" );
+            }
+            else
+            {
+                snprintf( update_status, sizeof( update_status ), "Check failed" );
+            }
+            if( acquisition.http_status > 0 )
+            {
+                snprintf( error_text, sizeof( error_text ), "HTTP %d", acquisition.http_status );
+            }
+            else
+            {
+                set_error( acquisition.error );
+            }
+        }
+        redraw = true;
+    }
+
+    const ota_installer_status_t installer = ota_installer_status();
+    if( installer.generation != last_installer_generation )
+    {
+        last_installer_generation = installer.generation;
+        redraw = true;
+    }
+
+    if( OTA_INSTALLER_WRITING == installer.state && installer.expected_size > 0U )
+    {
+        const unsigned percent =
+            (unsigned)( (uint64_t)installer.bytes_written * 100U / installer.expected_size );
+        snprintf( update_status, sizeof( update_status ), "Downloading %u%%", percent );
+        redraw = true;
+    }
+    else if( OTA_INSTALLER_VERIFYING == installer.state )
+    {
+        snprintf( update_status, sizeof( update_status ), "Verifying..." );
+        redraw = true;
+    }
+
+    if( redraw )
+    {
+        render();
+    }
+}
