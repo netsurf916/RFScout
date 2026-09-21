@@ -88,7 +88,6 @@ static bool release_catalog( void )
     return true;
 }
 
-
 static bool safe_relative_path( const char *a_path )
 {
     if( NULL == a_path || '\0' == a_path[ 0 ] || '/' == a_path[ 0 ] ||
