@@ -202,7 +202,14 @@ ip_event( void *a_context, esp_event_base_t a_event_base, int32_t a_event_id, vo
 
     if( IP_EVENT_STA_GOT_IP == a_event_id )
     {
-        set_state( RFSCOUT_WIFI_STATION_CONNECTED, 0 );
+        portENTER_CRITICAL( &state_lock );
+        if( started && !stopping && !disconnect_requested &&
+            RFSCOUT_WIFI_STATION_CONNECTING == status.state )
+        {
+            status.state = RFSCOUT_WIFI_STATION_CONNECTED;
+            status.disconnect_reason = 0;
+        }
+        portEXIT_CRITICAL( &state_lock );
     }
 }
 
