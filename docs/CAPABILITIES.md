@@ -11,10 +11,9 @@ Applications consume semantic service availability rather than board identity. T
 The canonical application registry order remains:
 
 1. System Events
-2. OTA Update
-3. Home / Device Settings
-4. WiFi / BLE
-5. CC1101
+2. Home / Device Settings
+3. WiFi / BLE
+4. CC1101
 6. nRF24
 7. Recorder
 8. Thermal
@@ -24,11 +23,11 @@ Disabled or unavailable applications are skipped by semantic navigation.
 
 System Events is a read-only view of the RAM-only structured event ring. Center enters/exits a stable Browse snapshot; semantic navigation scrolls only while Browse is active.
 
-OTA Update is disabled by default and appears immediately after System Events and before Home. Its current implementation performs passive AP discovery, retains up to eight OTA-owned infrastructure-network credentials, highlights remembered networks seen in the latest scan, and requires an explicit per-network action before association. Saved-network management, rotary password entry, explicit disconnect/forget, DHCP status, and app-session teardown are implemented; leaving OTA stops STA activity and clears transient driver credentials/results. Password entry rotates through printable characters plus explicit **Done** and **Backspace** actions, while the semantic Back gesture cancels entry. A remembered SSID that was not observed passively can be selected with **Connect anyway**, which performs an SSID-targeted active search only after that explicit user action. The running-image identity is exposed through a platform abstraction, and a bounded OTA build-catalog parser validates exact project/hardware/IDF/layout compatibility. After explicit association, the OTA UI exposes **Check for update**. The catalog is fetched from the static HTTPS origin through a bounded cancellable platform service using ESP-IDF certificate-bundle validation; stable checking selects the newest compatible published stable release, while the same catalog is designed to expose main, pull-request, draft-release, and prerelease builds for explicit/manual installation.
+Firmware Update is available from **Home / Device Settings → Update** rather than as a top-level application. The nested menu performs passive AP discovery, retains up to eight OTA-owned infrastructure-network credentials, highlights remembered networks seen in the latest scan, and requires an explicit per-network action before association. Saved-network management, rotary password entry, explicit disconnect/forget, DHCP status, and deterministic teardown are implemented; leaving the Update menu stops acquisition/installer/STA activity and clears transient driver credentials/results. Password entry rotates through printable characters plus explicit **Done** and **Backspace** actions, while the semantic Back gesture cancels entry. A remembered SSID that was not observed passively can be selected with **Connect anyway**, which performs an SSID-targeted active search only after that explicit user action.
 
-The OTA UI also exposes **Available builds**, populated from the same validated Pages catalog used by the browser flasher. Compatible main, pull-request, draft-release, prerelease, and published-release entries can be explicitly selected and installed without stable SemVer ordering.
+After explicit association, the Update menu exposes **Check for update** and **Available builds**. The catalog is fetched from the static HTTPS origin through a bounded cancellable platform service using ESP-IDF certificate-bundle validation; stable checking selects the newest compatible published stable release, while the same validated Pages catalog carries main, pull-request, draft-release, prerelease, and published-release builds for explicit/manual installation.
 
-A selected stable or explicitly chosen update can now be streamed directly over HTTPS into the ESP-IDF-selected inactive OTA partition. The installer is transport-neutral and owns partition selection, exact byte-count enforcement, streaming SHA-256, ESP-IDF image validation, embedded project/version checks, exact flash-readback SHA-256, and boot-partition commit. It never stages firmware on SD or LittleFS, and app-session teardown cancels acquisition before aborting the installer and then stopping STA. A successfully committed image reboots immediately; on first boot, RFScout confirms a pending image only after bounded mandatory common startup has completed. Optional storage, GPS, notification, battery, and similar peripherals are not OTA health dependencies.
+A selected stable or explicitly chosen update streams directly over HTTPS into the ESP-IDF-selected inactive OTA partition. The installer is transport-neutral and owns partition selection, exact byte-count enforcement, streaming SHA-256, ESP-IDF image validation, embedded project/version checks, exact flash-readback SHA-256, and boot-partition commit. It never stages firmware on SD or LittleFS. A successfully committed image reboots immediately; on first boot, RFScout confirms a pending image only after bounded mandatory common startup has completed. Optional storage, GPS, notification, battery, and similar peripherals are not OTA health dependencies.
 
 ## Managed application view
 
