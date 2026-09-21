@@ -13,8 +13,7 @@ from pathlib import Path
 OTA_HARDWARE_TARGET = "t-embed-cc1101-plus"
 OTA_IDF_TARGET = "esp32s3"
 OTA_PARTITION_LAYOUT = "ab-v1"
-OTA_CATALOG_MAX_BUILDS = 32
-OTA_CATALOG_MAX_BYTES = 16384
+OTA_CATALOG_MAX_BYTES = 8192
 OTA_BUILD_ID_MAX_LENGTH = 63
 OTA_BUILD_LABEL_MAX_LENGTH = 95
 OTA_VERSION_MAX_LENGTH = 31
@@ -73,6 +72,7 @@ def release_entries(a_site_dir: Path, a_releases: list[dict]) -> list[dict]:
                 "draft": draft,
                 "prerelease": bool(release.get("isPrerelease", False)),
                 "published_at": release.get("publishedAt"),
+                "created_at": release.get("createdAt"),
             }
         )
     return entries
@@ -87,6 +87,7 @@ def candidate_entries(
         pr = candidate.get("pr")
         sha = candidate.get("sha")
         run_url = candidate.get("run_url")
+        created_at = candidate.get("created_at")
         if not isinstance(sha, str) or not sha:
             continue
         if source_kind == "pull_request":
@@ -128,6 +129,7 @@ def candidate_entries(
             "commit": packaged,
             "source_commit": sha.lower(),
             "run_url": run_url if isinstance(run_url, str) and run_url else None,
+            "created_at": created_at if isinstance(created_at, str) else None,
         }
         if pr is not None:
             entry["pr"] = pr
@@ -289,28 +291,51 @@ def ota_build_entry(a_site_dir: Path, a_browser_entry: dict) -> dict | None:
     return result
 
 
+def ota_catalog_recency(a_entry: dict) -> str:
+    published_at = a_entry.get("published_at")
+    if isinstance(published_at, str) and published_at:
+        return published_at
+    created_at = a_entry.get("created_at")
+    return created_at if isinstance(created_at, str) else ""
+
+
+def ota_catalog_priority(a_browser_entries: list[dict]) -> list[dict]:
+    def newest_first(entries: list[dict]) -> list[dict]:
+        return sorted(
+            entries,
+            key=lambda entry: (ota_catalog_recency(entry), str(entry.get("id", ""))),
+            reverse=True,
+        )
+
+    official_releases = [
+        entry
+        for entry in a_browser_entries
+        if entry.get("kind") == "release"
+        and not bool(entry.get("draft", False))
+        and not bool(entry.get("prerelease", False))
+    ]
+    other_builds = [entry for entry in a_browser_entries if entry not in official_releases]
+    return newest_first(official_releases) + newest_first(other_builds)
+
+
 def build_ota_catalog(a_site_dir: Path, a_browser_entries: list[dict]) -> dict:
     entries = []
-    for browser_entry in a_browser_entries:
+    for browser_entry in ota_catalog_priority(a_browser_entries):
         entry = ota_build_entry(a_site_dir, browser_entry)
-        if entry is not None:
-            entries.append(entry)
+        if entry is None:
+            continue
 
-    if len(entries) > OTA_CATALOG_MAX_BUILDS:
-        raise ValueError(
-            f"OTA catalog has {len(entries)} builds; maximum is {OTA_CATALOG_MAX_BUILDS}"
-        )
+        candidate = {"schema_version": 1, "builds": entries + [entry]}
+        payload = json.dumps(candidate, sort_keys=True, separators=(",", ":")) + "\n"
+        if len(payload.encode("utf-8")) > OTA_CATALOG_MAX_BYTES:
+            break
+        entries.append(entry)
 
     catalog = {"schema_version": 1, "builds": entries}
     payload = json.dumps(catalog, sort_keys=True, separators=(",", ":")) + "\n"
-    encoded = payload.encode("utf-8")
-    if len(encoded) > OTA_CATALOG_MAX_BYTES:
-        raise ValueError(
-            f"OTA catalog is {len(encoded)} bytes; maximum is {OTA_CATALOG_MAX_BYTES}"
-        )
     catalog_path = a_site_dir / "ota" / "catalog.json"
     catalog_path.parent.mkdir(parents=True, exist_ok=True)
-    catalog_path.write_bytes(encoded)
+    catalog_path.write_bytes(payload.encode("utf-8"))
     return catalog
 
 
