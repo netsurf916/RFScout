@@ -271,8 +271,7 @@ static bool parse_build( const cJSON *a_json,
     if( 0 == strcmp( kind, "release" ) )
     {
         a_parsed->build.kind = OTA_CATALOG_BUILD_RELEASE;
-        if( a_parsed->build.stable &&
-            ( a_parsed->build.draft || a_parsed->build.prerelease ) )
+        if( a_parsed->build.stable && ( a_parsed->build.draft || a_parsed->build.prerelease ) )
         {
             return false;
         }
@@ -318,11 +317,10 @@ static bool parse_build( const cJSON *a_json,
         return false;
     }
 
-    a_parsed->compatible =
-        0 == strcmp( project, a_running->project ) &&
-        0 == strcmp( hardware, a_running->hardware_target ) &&
-        0 == strcmp( target, a_running->idf_target ) &&
-        0 == strcmp( layout, a_running->partition_layout );
+    a_parsed->compatible = 0 == strcmp( project, a_running->project ) &&
+                           0 == strcmp( hardware, a_running->hardware_target ) &&
+                           0 == strcmp( target, a_running->idf_target ) &&
+                           0 == strcmp( layout, a_running->partition_layout );
     return true;
 }
 

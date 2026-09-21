@@ -330,10 +330,8 @@ static void render_build_action( void )
     }
 
     const ota_catalog_build_t *build = &available_builds[ selected_build_index ];
-    ota_view_render_build_action( build->label,
-                                  build->candidate.version,
-                                  build->candidate.commit,
-                                  selected_item );
+    ota_view_render_build_action(
+        build->label, build->candidate.version, build->candidate.commit, selected_item );
 }
 
 static void render( void )
