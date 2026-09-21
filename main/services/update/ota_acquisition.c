@@ -20,7 +20,7 @@
 #define OTA_CATALOG_URL "https://netsurf916.github.io/RFScout/ota/catalog.json"
 #define OTA_PAGES_BASE_URL "https://netsurf916.github.io/RFScout/"
 #define OTA_HTTP_URL_MAX_LENGTH 320U
-#define OTA_HTTP_TIMEOUT_MS 5000
+#define OTA_HTTP_TIMEOUT_MS 15000
 #define OTA_ACQUISITION_TASK_STACK 8192U
 #define OTA_ACQUISITION_STOP_TIMEOUT_MS 6000U
 
@@ -192,6 +192,22 @@ static void acquisition_worker( void *a_context )
     {
         result = esp_http_client_perform( client );
         http_status = esp_http_client_get_status_code( client );
+        if( ESP_OK != result )
+        {
+            int tls_code = 0;
+            int tls_flags = 0;
+            const int socket_errno = esp_http_client_get_errno( client );
+            const esp_err_t tls_error =
+                esp_http_client_get_and_clear_last_tls_error( client, &tls_code, &tls_flags );
+            ESP_LOGW( TAG,
+                      "HTTP transport error: error=%s errno=%d tls=%s tls_code=%d "
+                      "tls_flags=0x%x",
+                      esp_err_to_name( result ),
+                      socket_errno,
+                      esp_err_to_name( tls_error ),
+                      tls_code,
+                      (unsigned)tls_flags );
+        }
     }
 
     ota_acquisition_kind_t kind;
