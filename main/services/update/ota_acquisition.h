@@ -15,7 +15,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OTA_ACQUISITION_CATALOG_MAX_LENGTH 16384U
+#define OTA_ACQUISITION_CATALOG_MAX_LENGTH 8192U
 
 typedef enum
 {
