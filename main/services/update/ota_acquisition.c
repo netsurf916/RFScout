@@ -207,8 +207,7 @@ static void acquisition_worker( void *a_context )
         finish_worker( OTA_ACQUISITION_IDLE, ESP_OK, 0 );
     }
     else if( ESP_OK == result && 200 == http_status && ESP_OK == stream_error &&
-             ( OTA_ACQUISITION_KIND_FIRMWARE == kind ||
-               ( !overflowed && catalog_length > 0U ) ) )
+             ( OTA_ACQUISITION_KIND_FIRMWARE == kind || ( !overflowed && catalog_length > 0U ) ) )
     {
         finish_worker( OTA_ACQUISITION_READY, ESP_OK, http_status );
     }
@@ -300,8 +299,7 @@ esp_err_t ota_acquisition_begin_firmware( const char *a_artifact_path )
     }
 
     char url[ OTA_HTTP_URL_MAX_LENGTH ];
-    const int length =
-        snprintf( url, sizeof( url ), "%s%s", OTA_PAGES_BASE_URL, a_artifact_path );
+    const int length = snprintf( url, sizeof( url ), "%s%s", OTA_PAGES_BASE_URL, a_artifact_path );
     if( length <= 0 || (size_t)length >= sizeof( url ) )
     {
         return ESP_ERR_INVALID_SIZE;

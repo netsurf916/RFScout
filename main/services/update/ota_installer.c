@@ -377,7 +377,8 @@ ota_installer_status_t ota_installer_status( void )
 bool ota_installer_is_active( void )
 {
     portENTER_CRITICAL( &state_lock );
-    const bool active = OTA_INSTALLER_IDLE != status.state && OTA_INSTALLER_COMMITTED != status.state;
+    const bool active =
+        OTA_INSTALLER_IDLE != status.state && OTA_INSTALLER_COMMITTED != status.state;
     portEXIT_CRITICAL( &state_lock );
     return active;
 }
