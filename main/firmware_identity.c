@@ -99,8 +99,8 @@ esp_err_t firmware_running_image_sha256( uint8_t a_digest[ RFSCOUT_FIRMWARE_SHA2
     memset( hash_read_buffer, 0, sizeof( hash_read_buffer ) );
 
     size_t digest_length = 0U;
-    sha_result = psa_hash_finish(
-        &sha256, a_digest, RFSCOUT_FIRMWARE_SHA256_LENGTH, &digest_length );
+    sha_result =
+        psa_hash_finish( &sha256, a_digest, RFSCOUT_FIRMWARE_SHA256_LENGTH, &digest_length );
     if( PSA_SUCCESS != sha_result || RFSCOUT_FIRMWARE_SHA256_LENGTH != digest_length )
     {
         (void)psa_hash_abort( &sha256 );
