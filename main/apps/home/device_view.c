@@ -18,6 +18,7 @@
 #include "event.h"
 #include "log_writer.h"
 #include "morse.h"
+#include "ota_menu.h"
 #include "power.h"
 #include "power_policy_view.h"
 #include "storage.h"
@@ -100,6 +101,7 @@ static bool power_policy_menu_open;
 static bool time_menu_open;
 static unsigned time_selected_item;
 static bool time_editing;
+static bool ota_menu_open;
 
 static unsigned device_item_count( void )
 {
@@ -232,8 +234,7 @@ static bool item_direct_toggle( unsigned a_item )
 {
     return ( DEVICE_ITEM_BREADCRUMBS == a_item ) || ( DEVICE_ITEM_AUDIO_POLICY == a_item ) ||
            ( DEVICE_ITEM_ALERT_MODE == a_item ) || ( DEVICE_ITEM_CLOCK_FORMAT == a_item ) ||
-           ( DEVICE_ITEM_SYSTEM_EVENTS == a_item ) || ( DEVICE_ITEM_OTA == a_item ) ||
-           ( DEVICE_ITEM_WIFI == a_item ) || ( DEVICE_ITEM_CC1101 == a_item ) ||
+           ( DEVICE_ITEM_SYSTEM_EVENTS == a_item ) || ( DEVICE_ITEM_WIFI == a_item ) || ( DEVICE_ITEM_CC1101 == a_item ) ||
            ( DEVICE_ITEM_NRF24 == a_item ) || ( DEVICE_ITEM_AUDIO == a_item ) ||
            ( DEVICE_ITEM_THERMAL == a_item ) || ( DEVICE_ITEM_AUDIO_SPECTRUM == a_item ) ||
            ( DEVICE_ITEM_LOGGING == a_item );
@@ -242,8 +243,8 @@ static bool item_direct_toggle( unsigned a_item )
 static bool item_editable( unsigned a_item )
 {
     return ( DEVICE_ITEM_BACK != a_item ) && ( DEVICE_ITEM_TIME != a_item ) &&
-           ( DEVICE_ITEM_POWER_BUTTON != a_item ) && ( DEVICE_ITEM_POWER_POLICY != a_item ) &&
-           ( DEVICE_ITEM_BREADCRUMBS != a_item );
+           ( DEVICE_ITEM_OTA != a_item ) && ( DEVICE_ITEM_POWER_BUTTON != a_item ) &&
+           ( DEVICE_ITEM_POWER_POLICY != a_item ) && ( DEVICE_ITEM_BREADCRUMBS != a_item );
 }
 
 static const char *item_label( unsigned a_item )
@@ -279,7 +280,7 @@ static const char *item_label( unsigned a_item )
         case DEVICE_ITEM_SYSTEM_EVENTS:
             return "System Events";
         case DEVICE_ITEM_OTA:
-            return "OTA Update";
+            return "Update";
         case DEVICE_ITEM_WIFI:
             return "WiFi / BT";
         case DEVICE_ITEM_CC1101:
@@ -367,8 +368,6 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
                       on_off( config->apps_enabled[ RFSCOUT_APP_SYSTEM_EVENTS ] ) );
             break;
         case DEVICE_ITEM_OTA:
-            snprintf(
-                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_OTA ] ) );
             break;
         case DEVICE_ITEM_WIFI:
             snprintf(
@@ -687,6 +686,10 @@ void device_view_render( void )
         render_power_menu();
         return;
     }
+    if( ota_menu_open )
+    {
+        return;
+    }
 
     const unsigned item_count = device_item_count();
     display_clear( COLOR_BACKGROUND );
@@ -729,6 +732,7 @@ void device_view_enter( void )
     time_menu_open = false;
     time_selected_item = TIME_MENU_BACK;
     time_editing = false;
+    ota_menu_open = false;
     refresh_edited_time();
     device_view_render();
 }
@@ -1434,10 +1438,6 @@ static void adjust_selected( int a_delta )
     {
         toggle_app( RFSCOUT_APP_SYSTEM_EVENTS, "apps.system_events" );
     }
-    else if( DEVICE_ITEM_OTA == selected_item )
-    {
-        toggle_app( RFSCOUT_APP_OTA, "apps.ota" );
-    }
     else if( DEVICE_ITEM_WIFI == selected_item )
     {
         toggle_app( RFSCOUT_APP_WIFI_BT, "apps.wifi_bt" );
@@ -1483,6 +1483,16 @@ static void adjust_selected( int a_delta )
 
 bool device_view_back( void )
 {
+    if( ota_menu_open )
+    {
+        if( ota_menu_back() )
+        {
+            ota_menu_leave();
+            ota_menu_open = false;
+            device_view_render();
+        }
+        return true;
+    }
     if( time_menu_open )
     {
         time_menu_open = false;
@@ -1510,6 +1520,17 @@ bool device_view_back( void )
 
 bool device_view_input( bool a_pressed, int a_delta )
 {
+    if( ota_menu_open )
+    {
+        if( ota_menu_input( a_pressed, a_delta ) )
+        {
+            ota_menu_leave();
+            ota_menu_open = false;
+            emit_device_event( RFSCOUT_EVENT_BACK, 0 );
+            device_view_render();
+        }
+        return false;
+    }
     if( time_menu_open )
     {
         (void)time_menu_input( a_pressed, a_delta );
@@ -1555,6 +1576,13 @@ bool device_view_input( bool a_pressed, int a_delta )
         {
             emit_device_event( RFSCOUT_EVENT_BACK, 0 );
             return true;
+        }
+        if( ( DEVICE_ITEM_OTA == selected_item ) && !editing )
+        {
+            ota_menu_open = true;
+            emit_device_event( RFSCOUT_EVENT_ENTER, 1 );
+            ota_menu_enter();
+            return false;
         }
         if( ( DEVICE_ITEM_TIME == selected_item ) && !editing )
         {
@@ -1612,4 +1640,22 @@ bool device_view_input( bool a_pressed, int a_delta )
     }
     device_view_render();
     return false;
+}
+
+
+void device_view_poll( int64_t a_now_us )
+{
+    if( ota_menu_open )
+    {
+        ota_menu_poll( a_now_us );
+    }
+}
+
+void device_view_leave( void )
+{
+    if( ota_menu_open )
+    {
+        ota_menu_leave();
+        ota_menu_open = false;
+    }
 }
