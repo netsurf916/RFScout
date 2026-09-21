@@ -183,8 +183,8 @@ esp_err_t ota_installer_begin( const ota_installer_image_t *a_image )
         return result;
     }
 
-    psa_hash_operation_t hash = PSA_HASH_OPERATION_INIT;
-    if( PSA_SUCCESS != psa_hash_setup( &hash, PSA_ALG_SHA_256 ) )
+    reset_stream_hash();
+    if( PSA_SUCCESS != psa_hash_setup( &stream_hash, PSA_ALG_SHA_256 ) )
     {
         (void)esp_ota_abort( handle );
         return ESP_FAIL;
@@ -194,7 +194,6 @@ esp_err_t ota_installer_begin( const ota_installer_image_t *a_image )
     target_partition = target;
     ota_handle = handle;
     ota_handle_open = true;
-    stream_hash = hash;
     stream_hash_open = true;
 
     portENTER_CRITICAL( &state_lock );
