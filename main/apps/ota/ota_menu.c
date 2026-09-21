@@ -32,7 +32,7 @@
 #define OTA_VISIBLE_MAX OTA_NETWORK_MAX_COUNT
 #define OTA_ERROR_TEXT_LENGTH 48U
 
-static const char *TAG = "ota_app";
+static const char *TAG = "ota_menu";
 
 typedef enum
 {
