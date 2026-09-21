@@ -10,6 +10,8 @@
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
 #include "psa/crypto.h"
 
 #include <string.h>
@@ -24,9 +26,15 @@ static ota_installer_image_t expected_image;
 static const esp_partition_t *target_partition;
 static esp_ota_handle_t ota_handle;
 static bool ota_handle_open;
-static psa_hash_operation_t stream_hash = PSA_HASH_OPERATION_INIT;
+static psa_hash_operation_t reset_stream_hash();
 static bool stream_hash_open;
 static uint8_t readback_buffer[ OTA_INSTALLER_HASH_CHUNK ];
+
+static void reset_stream_hash( void )
+{
+    psa_hash_operation_t initial = PSA_HASH_OPERATION_INIT;
+    stream_hash = initial;
+}
 
 static void set_failure( esp_err_t a_error )
 {
@@ -124,7 +132,7 @@ static void clear_runtime( void )
     if( stream_hash_open )
     {
         (void)psa_hash_abort( &stream_hash );
-        stream_hash = PSA_HASH_OPERATION_INIT;
+        reset_stream_hash();
         stream_hash_open = false;
     }
     memset( &expected_image, 0, sizeof( expected_image ) );
@@ -272,7 +280,7 @@ esp_err_t ota_installer_finish( void )
 
     esp_err_t result = finish_hash( &stream_hash, stream_digest );
     stream_hash_open = false;
-    stream_hash = PSA_HASH_OPERATION_INIT;
+    reset_stream_hash();
     if( ESP_OK != result || 0 != memcmp( expected_digest, stream_digest, sizeof( stream_digest ) ) )
     {
         memset( expected_digest, 0, sizeof( expected_digest ) );

@@ -428,6 +428,7 @@ static void begin_update_check( void )
     const esp_err_t result = ota_acquisition_begin_catalog();
     if( ESP_OK != result )
     {
+        open_builds_after_catalog = false;
         set_error( result );
         render();
         return;
