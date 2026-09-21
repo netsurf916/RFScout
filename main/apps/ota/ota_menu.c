@@ -59,8 +59,8 @@ static char connecting_ssid[ OTA_NETWORK_SSID_MAX_LENGTH + 1U ];
 static char error_text[ OTA_ERROR_TEXT_LENGTH ];
 static rfscout_text_entry_t password_entry;
 static ota_catalog_selection_t catalog_selection;
-static ota_catalog_build_t available_builds[ OTA_CATALOG_MAX_BUILDS ];
-static ota_view_build_t view_builds[ OTA_CATALOG_MAX_BUILDS ];
+static ota_catalog_build_t available_builds[ OTA_CATALOG_VISIBLE_BUILDS ];
+static ota_view_build_t view_builds[ OTA_CATALOG_VISIBLE_BUILDS ];
 static size_t available_build_count;
 static int selected_build_index;
 static bool open_builds_after_catalog;
@@ -1061,7 +1061,7 @@ void ota_menu_poll( int64_t a_now_us )
                                                length,
                                                firmware_identity(),
                                                available_builds,
-                                               OTA_CATALOG_MAX_BUILDS,
+                                               OTA_CATALOG_VISIBLE_BUILDS,
                                                &available_build_count );
                 }
                 if( ESP_OK == result )
