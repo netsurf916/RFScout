@@ -1,6 +1,6 @@
 /**
     apps/ota/ota_networks.c : OTA-owned remembered infrastructure networks
-    Description: Persists bounded OTA credentials only inside the OTA application namespace.
+    Description: Persists bounded credentials only inside the Home Update feature namespace.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
