@@ -485,7 +485,7 @@ static void begin_candidate_install( const ota_catalog_candidate_t *a_candidate 
     {
         return;
     }
-    if( ota_acquisition_is_active() || ota_installer_active() )
+    if( ota_acquisition_is_active() || ota_installer_is_active() )
     {
         set_error( ESP_ERR_INVALID_STATE );
         render();
