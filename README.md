@@ -15,10 +15,9 @@ RFScout is intentionally passive wherever the underlying radio APIs allow it. It
 Top-level application order is:
 
 0. **System Events** — optional and disabled by default
-1. **OTA Update** — optional and disabled by default
-2. **Home / Device Settings**
-3. **WiFi / BT**
-4. **CC1101** — only when the active board provides the current CC1101 service
+1. **Home / Device Settings**
+2. **WiFi / BT**
+3. **CC1101** — only when the active board provides the current CC1101 service
 5. **nRF24** — only when the active board provides the current nRF24 service
 6. **Recorder** — only when the current audio-capture/storage providers are available
 7. **Thermal** — only when enabled and an MLX90640 is detected
@@ -26,9 +25,9 @@ Top-level application order is:
 
 Disabled or unavailable apps are skipped. Home is always available and is the default/fallback startup target. Applications consume board-neutral semantic input, service availability, and a managed application view rather than board names or physical controls.
 
-### OTA Update
+### Firmware Update
 
-OTA Update is a top-level system application that is disabled by default and appears between System Events and Home when enabled. Entering it starts only a passive infrastructure-Wi-Fi scan; it never associates automatically. The app owns a bounded list of remembered SSIDs/passwords in its own persistent namespace, shows remembered APs that are currently visible, provides explicit per-network Connect/Disconnect/Forget actions, and clears transient STA state when the app session ends. ESP-IDF Wi-Fi configuration is kept in RAM so the driver does not become a second global credential store. The firmware now has a platform-owned running-image identity and a bounded OTA build-catalog selector that enforces project/hardware/IDF/layout sanity checks. After explicit association, the app exposes an explicit **Check for update** action. Catalog retrieval runs as a cancellable HTTPS service using ESP-IDF certificate-bundle validation, then selects the newest compatible published stable release; the same catalog also carries main, pull-request, draft-release, and prerelease builds for explicit/manual installation. Changing apps cancels acquisition before STA teardown. Firmware installation remains follow-on work.
+Firmware Update is a nested Home / Device Settings menu rather than a top-level application. Opening **Update** starts only a passive infrastructure-Wi-Fi scan; it never associates automatically. The menu owns a bounded list of remembered SSIDs/passwords in its own persistent namespace, shows remembered APs that are currently visible, provides explicit per-network Connect/Disconnect/Forget actions, and clears transient STA state when the Update menu closes or Home exits. ESP-IDF Wi-Fi configuration is kept in RAM so the driver does not become a second global credential store. The firmware has a platform-owned running-image identity and a bounded OTA build-catalog selector that enforces project/hardware/IDF/layout sanity checks. After explicit association, the menu exposes **Check for update** and **Available builds** actions. Catalog retrieval runs as a cancellable HTTPS service using ESP-IDF certificate-bundle validation; leaving Update cancels acquisition before installer/STA teardown.
 
 ### WiFi / BT
 
