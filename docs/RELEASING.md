@@ -101,7 +101,7 @@ Legacy browser-flasher releases that predate `ota-image.json` may be skipped tem
 
 From the repository **Actions** page, select **Prepare firmware release**, choose **Run workflow**, and provide:
 
-- a semantic version beginning with `v`, for example `v0.3.0` or `v0.3.1-rc.1`;
+- a release version in `vX.Y.Z` form, for example `v0.3.0`;
 - a source ref, normally `main`; and
 - whether the release should be marked prerelease.
 
@@ -149,7 +149,7 @@ The combined image is a clean installation/recovery image flashed at `0x0`. It c
 
 The A/B partition/rollback foundation is present on this development line. The currently published legacy firmware predates this layout, so the first OTA-capable release is a clean-install boundary; incompatible pre-OTA releases should be removed from the active release set when that release is established.
 
-Separate component images remain development/recovery artifacts. The remaining in-device installer, explicit build-selection UI, and rollback-confirmation behavior are maintained in [ROADMAP.md](ROADMAP.md#in-device-ota-update-architecture) until they are implemented.
+Separate component images remain development/recovery artifacts. The in-device installer, explicit build-selection UI, and first-boot rollback-confirmation path are implemented on this development line; the remaining hardware-validation work is maintained in [ROADMAP.md](ROADMAP.md#in-device-ota-update-architecture).
 
 ## Reproducibility
 
