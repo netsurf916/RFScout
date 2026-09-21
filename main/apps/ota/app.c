@@ -17,7 +17,10 @@
 #include "wifi_station.h"
 
 #include "esp_err.h"
+#include "esp_log.h"
 #include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -27,6 +30,8 @@
 #define OTA_REFRESH_INTERVAL_US 125000LL
 #define OTA_VISIBLE_MAX OTA_NETWORK_MAX_COUNT
 #define OTA_ERROR_TEXT_LENGTH 48U
+
+static const char *TAG = "ota_app";
 
 typedef enum
 {
@@ -767,7 +772,14 @@ static void handle_password_input( const rfscout_input_event_t *a_input )
             &saved_networks, scan_results[ action_scan_index ].ssid, password_entry.value );
         if( ESP_OK == save_result )
         {
+            ESP_LOGI( TAG,
+                      "saving OTA network credentials; stack high-water=%u bytes",
+                      (unsigned)( uxTaskGetStackHighWaterMark( NULL ) * sizeof( StackType_t ) ) );
             save_result = ota_networks_save( &saved_networks );
+            ESP_LOGI( TAG,
+                      "saved OTA network credentials: %s; stack high-water=%u bytes",
+                      esp_err_to_name( save_result ),
+                      (unsigned)( uxTaskGetStackHighWaterMark( NULL ) * sizeof( StackType_t ) ) );
         }
         app_text_entry_clear( &password_entry );
         set_error( save_result );

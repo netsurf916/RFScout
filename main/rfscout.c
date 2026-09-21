@@ -376,6 +376,7 @@ static void on_observation( rf_device_t *a_observation )
 
 void app_main( void )
 {
+    ESP_LOGI( TAG, "reset reason: %d", (int)esp_reset_reason() );
     esp_err_t result = nvs_flash_init();
     if( ( ESP_ERR_NVS_NO_FREE_PAGES == result ) || ( ESP_ERR_NVS_NEW_VERSION_FOUND == result ) )
     {

@@ -24,6 +24,8 @@ typedef struct
     ota_network_t entries[ OTA_NETWORK_MAX_COUNT ];
 } ota_network_record_t;
 
+static ota_network_record_t record_buffer;
+
 static bool network_valid( const ota_network_t *a_network )
 {
     if( NULL == a_network )
@@ -44,39 +46,41 @@ esp_err_t ota_networks_load( ota_network_list_t *a_networks )
     }
     memset( a_networks, 0, sizeof( *a_networks ) );
 
-    ota_network_record_t record;
-    memset( &record, 0, sizeof( record ) );
+    memset( &record_buffer, 0, sizeof( record_buffer ) );
     size_t length = 0U;
     const esp_err_t result =
-        app_store_read( OTA_NETWORK_RECORD_KEY, &record, sizeof( record ), &length );
+        app_store_read( OTA_NETWORK_RECORD_KEY, &record_buffer, sizeof( record_buffer ), &length );
     if( ESP_ERR_NOT_FOUND == result )
     {
         return ESP_OK;
     }
     if( ESP_OK != result )
     {
+        memset( &record_buffer, 0, sizeof( record_buffer ) );
         return result;
     }
-    if( sizeof( record ) != length || OTA_NETWORK_RECORD_MAGIC != record.magic ||
-        OTA_NETWORK_RECORD_VERSION != record.version || record.count > OTA_NETWORK_MAX_COUNT )
+    if( sizeof( record_buffer ) != length || OTA_NETWORK_RECORD_MAGIC != record_buffer.magic ||
+        OTA_NETWORK_RECORD_VERSION != record_buffer.version ||
+        record_buffer.count > OTA_NETWORK_MAX_COUNT )
     {
-        memset( &record, 0, sizeof( record ) );
+        memset( &record_buffer, 0, sizeof( record_buffer ) );
         return ESP_ERR_INVALID_RESPONSE;
     }
 
-    for( size_t index = 0U; index < record.count; ++index )
+    for( size_t index = 0U; index < record_buffer.count; ++index )
     {
-        if( !network_valid( &record.entries[ index ] ) )
+        if( !network_valid( &record_buffer.entries[ index ] ) )
         {
-            memset( &record, 0, sizeof( record ) );
+            memset( &record_buffer, 0, sizeof( record_buffer ) );
             return ESP_ERR_INVALID_RESPONSE;
         }
     }
 
-    a_networks->count = record.count;
-    memcpy(
-        a_networks->entries, record.entries, record.count * sizeof( a_networks->entries[ 0 ] ) );
-    memset( &record, 0, sizeof( record ) );
+    a_networks->count = record_buffer.count;
+    memcpy( a_networks->entries,
+            record_buffer.entries,
+            record_buffer.count * sizeof( a_networks->entries[ 0 ] ) );
+    memset( &record_buffer, 0, sizeof( record_buffer ) );
     return ESP_OK;
 }
 
@@ -94,15 +98,16 @@ esp_err_t ota_networks_save( const ota_network_list_t *a_networks )
         }
     }
 
-    ota_network_record_t record = {
-        .magic = OTA_NETWORK_RECORD_MAGIC,
-        .version = OTA_NETWORK_RECORD_VERSION,
-        .count = (uint16_t)a_networks->count,
-    };
-    memcpy(
-        record.entries, a_networks->entries, a_networks->count * sizeof( record.entries[ 0 ] ) );
-    const esp_err_t result = app_store_write( OTA_NETWORK_RECORD_KEY, &record, sizeof( record ) );
-    memset( &record, 0, sizeof( record ) );
+    memset( &record_buffer, 0, sizeof( record_buffer ) );
+    record_buffer.magic = OTA_NETWORK_RECORD_MAGIC;
+    record_buffer.version = OTA_NETWORK_RECORD_VERSION;
+    record_buffer.count = (uint16_t)a_networks->count;
+    memcpy( record_buffer.entries,
+            a_networks->entries,
+            a_networks->count * sizeof( record_buffer.entries[ 0 ] ) );
+    const esp_err_t result =
+        app_store_write( OTA_NETWORK_RECORD_KEY, &record_buffer, sizeof( record_buffer ) );
+    memset( &record_buffer, 0, sizeof( record_buffer ) );
     return result;
 }
 
