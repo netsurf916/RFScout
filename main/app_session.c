@@ -14,6 +14,7 @@
 #include "memory_manager.h"
 #include "nrf24.h"
 #include "ota_acquisition.h"
+#include "ota_installer.h"
 #include "radio_monitor.h"
 #include "recorder.h"
 #include "wifi_station.h"
@@ -91,6 +92,18 @@ static bool ota_acquisition_active( void *a_context )
 {
     (void)a_context;
     return ota_acquisition_is_active();
+}
+
+static esp_err_t stop_ota_installer( void *a_context )
+{
+    (void)a_context;
+    return ota_installer_abort();
+}
+
+static bool ota_installer_active( void *a_context )
+{
+    (void)a_context;
+    return ota_installer_is_active();
 }
 
 static esp_err_t start_ble( void *a_context )
@@ -186,6 +199,13 @@ static app_session_service_t platform_services[] = {
         .name = "Wi-Fi STA",
         .stop = stop_wifi_station,
         .active = wifi_station_active,
+        .always_stop_for_close = true,
+    },
+    {
+        .capability = RFSCOUT_APP_SERVICE_OTA_INSTALLER,
+        .name = "OTA installer",
+        .stop = stop_ota_installer,
+        .active = ota_installer_active,
         .always_stop_for_close = true,
     },
     {

@@ -149,6 +149,8 @@ Application rollback support is enabled in the bootloader configuration. OTA-dat
 
 The combined image contains the bootloader, A/B partition table, initialized OTA metadata, and application and remains the clean-install/recovery image for this development line. The published `v0.3.2` layout predates this foundation.
 
+The OTA installer treats the inactive ESP-IDF OTA partition as the only firmware staging area. HTTPS acquisition supplies byte fragments to a transport-neutral installer service; SD and LittleFS are never used for firmware staging. The installer does not expose partition names, offsets, or ESP-IDF OTA handles to the application.
+
 At startup RFScout computes and logs a SHA-256 over the exact byte range occupied by the running ESP application image in flash. ESP-IDF image metadata determines the stored image length, including the appended simple-hash field when present, and RFScout reads that range back through the partition API before hashing it. The resulting value is therefore directly comparable to the SHA-256 of the packaged `*-app.bin` artifact rather than to ESP-IDF's distinct image-content digest returned by `esp_partition_get_sha256()`.
 
 The remaining in-device OTA installer, explicit build-selection UI, partition-selection abstraction, and first-boot confirmation/rollback policy are maintained in [ROADMAP.md](ROADMAP.md#in-device-ota-update-architecture) until those behaviors are implemented.

@@ -51,7 +51,8 @@ typedef enum
     RFSCOUT_APP_SERVICE_NRF24 = 1U << 3,
     RFSCOUT_APP_SERVICE_AUDIO_CAPTURE = 1U << 4,
     RFSCOUT_APP_SERVICE_WIFI_STATION = 1U << 5,
-    RFSCOUT_APP_SERVICE_OTA_ACQUISITION = 1U << 6
+    RFSCOUT_APP_SERVICE_OTA_INSTALLER = 1U << 6,
+    RFSCOUT_APP_SERVICE_OTA_ACQUISITION = 1U << 7
 } rfscout_app_service_mask_t;
 
 /** @brief Runtime events delivered by the application manager to the active app module. */

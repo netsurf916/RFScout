@@ -12,10 +12,12 @@
 #include "ota_acquisition.h"
 #include "ota_catalog.h"
 #include "ota_networks.h"
+#include "ota_installer.h"
 #include "ota_view.h"
 #include "wifi_station.h"
 
 #include "esp_err.h"
+#include "esp_system.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -52,6 +54,7 @@ static ota_catalog_selection_t catalog_selection;
 static char catalog_json[ OTA_ACQUISITION_CATALOG_MAX_LENGTH + 1U ];
 static char update_status[ OTA_CATALOG_VERSION_MAX_LENGTH + 1U ];
 static uint32_t last_acquisition_generation;
+static uint32_t last_installer_generation;
 static uint32_t last_scan_generation;
 static rfscout_wifi_station_state_t last_station_state;
 static int64_t last_refresh_us;
@@ -179,7 +182,10 @@ static void render_main( void )
     const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
     const bool scanning = RFSCOUT_WIFI_STATION_SCANNING == current.state;
     const bool can_check = RFSCOUT_WIFI_STATION_CONNECTED == current.state;
-    const unsigned item_count = (unsigned)view_network_count + ( can_check ? 2U : 3U );
+    const bool can_install =
+        can_check && OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result;
+    const unsigned item_count =
+        (unsigned)view_network_count + ( can_check ? ( can_install ? 3U : 2U ) : 3U );
     if( selected_item >= item_count )
     {
         selected_item = item_count - 1U;
@@ -191,6 +197,7 @@ static void render_main( void )
                           selected_item,
                           scanning,
                           can_check,
+                          can_install,
                           update_status,
                           error_text );
 }
@@ -365,6 +372,7 @@ static void open_unsaved_action( size_t a_scan_index )
 static void begin_update_check( void )
 {
     error_text[ 0 ] = '\0';
+    memset( &catalog_selection, 0, sizeof( catalog_selection ) );
     const esp_err_t result = ota_acquisition_begin_catalog();
     if( ESP_OK != result )
     {
@@ -373,6 +381,38 @@ static void begin_update_check( void )
         return;
     }
     snprintf( update_status, sizeof( update_status ), "Checking..." );
+    render();
+}
+
+static void begin_update_install( void )
+{
+    if( OTA_CATALOG_UPDATE_AVAILABLE != catalog_selection.result )
+    {
+        return;
+    }
+
+    ota_installer_image_t image;
+    memset( &image, 0, sizeof( image ) );
+    snprintf( image.version, sizeof( image.version ), "%s", catalog_selection.candidate.version );
+    snprintf( image.sha256, sizeof( image.sha256 ), "%s", catalog_selection.candidate.sha256 );
+    image.size = catalog_selection.candidate.artifact_size;
+
+    esp_err_t result = ota_installer_begin( &image );
+    if( ESP_OK == result )
+    {
+        result = ota_acquisition_begin_firmware( catalog_selection.candidate.artifact_path );
+    }
+    if( ESP_OK != result )
+    {
+        (void)ota_installer_abort();
+        set_error( result );
+        snprintf( update_status, sizeof( update_status ), "Install failed" );
+        render();
+        return;
+    }
+
+    error_text[ 0 ] = '\0';
+    snprintf( update_status, sizeof( update_status ), "Downloading..." );
     render();
 }
 
@@ -390,6 +430,11 @@ static void handle_main_select( void )
         if( 0U == action )
         {
             begin_update_check();
+            return;
+        }
+        if( OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result && 1U == action )
+        {
+            begin_update_install();
             return;
         }
         selected_item = 0U;
@@ -645,7 +690,11 @@ static void handle_input( const rfscout_input_event_t *a_input )
         if( OTA_SCREEN_MAIN == screen )
         {
             build_visible_saved();
-            item_count = (unsigned)view_network_count + ( network_connected() ? 2U : 3U );
+            const bool can_install =
+                network_connected() && OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result;
+            item_count =
+                (unsigned)view_network_count + ( network_connected() ? ( can_install ? 3U : 2U )
+                                                                     : 3U );
         }
         else if( OTA_SCREEN_ACTION == screen )
         {
@@ -710,6 +759,7 @@ static void reset_runtime_state( void )
     memset( catalog_json, 0, sizeof( catalog_json ) );
     snprintf( update_status, sizeof( update_status ), "Not checked" );
     last_acquisition_generation = 0U;
+    last_installer_generation = 0U;
     last_scan_generation = 0U;
     last_station_state = RFSCOUT_WIFI_STATION_OFF;
     last_refresh_us = 0;
@@ -772,37 +822,66 @@ static rfscout_app_runtime_result_t ota_runtime( const rfscout_app_runtime_event
             last_acquisition_generation = acquisition.generation;
             if( OTA_ACQUISITION_READY == acquisition.state )
             {
-                size_t length = 0U;
-                esp_err_t result =
-                    ota_acquisition_copy_catalog( catalog_json, sizeof( catalog_json ), &length );
-                if( ESP_OK == result )
+                if( OTA_ACQUISITION_KIND_CATALOG == acquisition.kind )
                 {
-                    result = ota_catalog_select(
-                        catalog_json, length, firmware_identity(), &catalog_selection );
-                }
-                if( ESP_OK == result )
-                {
-                    if( OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result )
+                    size_t length = 0U;
+                    esp_err_t result = ota_acquisition_copy_catalog(
+                        catalog_json, sizeof( catalog_json ), &length );
+                    if( ESP_OK == result )
                     {
-                        snprintf( update_status,
-                                  sizeof( update_status ),
-                                  "%s",
-                                  catalog_selection.candidate.version );
+                        result = ota_catalog_select(
+                            catalog_json, length, firmware_identity(), &catalog_selection );
+                    }
+                    if( ESP_OK == result )
+                    {
+                        if( OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result )
+                        {
+                            snprintf( update_status,
+                                      sizeof( update_status ),
+                                      "%s",
+                                      catalog_selection.candidate.version );
+                        }
+                        else
+                        {
+                            snprintf( update_status, sizeof( update_status ), "Current" );
+                        }
+                        error_text[ 0 ] = '\0';
                     }
                     else
                     {
-                        snprintf( update_status, sizeof( update_status ), "Current" );
+                        set_error( result );
+                        snprintf( update_status, sizeof( update_status ), "Check failed" );
                     }
-                    error_text[ 0 ] = '\0';
                 }
-                else
+                else if( OTA_ACQUISITION_KIND_FIRMWARE == acquisition.kind )
                 {
+                    esp_err_t result = ota_installer_finish();
+                    if( ESP_OK == result )
+                    {
+                        result = ota_installer_commit();
+                    }
+                    if( ESP_OK == result )
+                    {
+                        snprintf( update_status, sizeof( update_status ), "Rebooting..." );
+                        render();
+                        esp_restart();
+                    }
+                    (void)ota_installer_abort();
                     set_error( result );
-                    snprintf( update_status, sizeof( update_status ), "Check failed" );
+                    snprintf( update_status, sizeof( update_status ), "Install failed" );
                 }
             }
             else if( OTA_ACQUISITION_FAILED == acquisition.state )
             {
+                if( OTA_ACQUISITION_KIND_FIRMWARE == acquisition.kind )
+                {
+                    (void)ota_installer_abort();
+                    snprintf( update_status, sizeof( update_status ), "Install failed" );
+                }
+                else
+                {
+                    snprintf( update_status, sizeof( update_status ), "Check failed" );
+                }
                 if( acquisition.http_status > 0 )
                 {
                     snprintf(
@@ -812,8 +891,27 @@ static rfscout_app_runtime_result_t ota_runtime( const rfscout_app_runtime_event
                 {
                     set_error( acquisition.error );
                 }
-                snprintf( update_status, sizeof( update_status ), "Check failed" );
             }
+            redraw = true;
+        }
+
+        const ota_installer_status_t installer = ota_installer_status();
+        if( installer.generation != last_installer_generation )
+        {
+            last_installer_generation = installer.generation;
+            redraw = true;
+        }
+
+        if( OTA_INSTALLER_WRITING == installer.state && installer.expected_size > 0U )
+        {
+            const unsigned percent =
+                (unsigned)( (uint64_t)installer.bytes_written * 100U / installer.expected_size );
+            snprintf( update_status, sizeof( update_status ), "Downloading %u%%", percent );
+            redraw = true;
+        }
+        else if( OTA_INSTALLER_VERIFYING == installer.state )
+        {
+            snprintf( update_status, sizeof( update_status ), "Verifying..." );
             redraw = true;
         }
 
@@ -832,6 +930,7 @@ const rfscout_app_descriptor_t rfscout_ota_app = {
     .probe_policy = RFSCOUT_APP_PROBE_NONE,
     .probe = NULL,
     .requires_activation = false,
-    .services = RFSCOUT_APP_SERVICE_WIFI_STATION | RFSCOUT_APP_SERVICE_OTA_ACQUISITION,
+    .services = RFSCOUT_APP_SERVICE_WIFI_STATION | RFSCOUT_APP_SERVICE_OTA_INSTALLER |
+                RFSCOUT_APP_SERVICE_OTA_ACQUISITION,
     .runtime = ota_runtime,
 };

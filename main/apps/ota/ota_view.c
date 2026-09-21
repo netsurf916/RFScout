@@ -58,11 +58,13 @@ void ota_view_render_main( const char *a_version,
                            unsigned a_selected,
                            bool a_scanning,
                            bool a_can_check,
+                           bool a_can_install,
                            const char *a_update_status,
                            const char *a_error )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
-    const unsigned item_count = (unsigned)a_network_count + ( a_can_check ? 2U : 3U );
+    const unsigned item_count =
+        (unsigned)a_network_count + ( a_can_check ? ( a_can_install ? 3U : 2U ) : 3U );
     const unsigned start = menu_window_start( a_selected, item_count );
 
     display_clear( theme->background );
@@ -98,6 +100,10 @@ void ota_view_render_main( const char *a_version,
                 if( 0U == action )
                 {
                     draw_menu_row( row, item, a_selected, "Check for update", a_update_status );
+                }
+                else if( a_can_install && 1U == action )
+                {
+                    draw_menu_row( row, item, a_selected, "Install update", a_update_status );
                 }
                 else
                 {

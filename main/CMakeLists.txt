@@ -128,6 +128,7 @@ idf_component_register(
         "services/storage/log_writer.c"
         "services/storage/breadcrumbs.c"
         "services/update/ota_acquisition.c"
+        "services/update/ota_installer.c"
         "services/power/battery.c"
         "services/power/power.c"
         "services/power/power_policy.c"

@@ -1,11 +1,12 @@
 /**
-    ota_acquisition.c : RFScout OTA catalog acquisition service
-    Description: Fetches the static stable catalog over verified HTTPS with hard cancellation.
+    ota_acquisition.c : RFScout cancellable HTTPS OTA acquisition service
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
 
 #include "ota_acquisition.h"
+
+#include "ota_installer.h"
 
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
@@ -13,9 +14,12 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #define OTA_CATALOG_URL "https://netsurf916.github.io/RFScout/ota/catalog.json"
+#define OTA_PAGES_BASE_URL "https://netsurf916.github.io/RFScout/"
+#define OTA_HTTP_URL_MAX_LENGTH 320U
 #define OTA_HTTP_TIMEOUT_MS 5000
 #define OTA_ACQUISITION_TASK_STACK 8192U
 #define OTA_ACQUISITION_STOP_TIMEOUT_MS 6000U
@@ -25,11 +29,44 @@ static portMUX_TYPE state_lock = portMUX_INITIALIZER_UNLOCKED;
 static TaskHandle_t worker_task;
 static esp_http_client_handle_t active_client;
 static ota_acquisition_status_t status;
+static char request_url[ OTA_HTTP_URL_MAX_LENGTH ];
 static char catalog[ OTA_ACQUISITION_CATALOG_MAX_LENGTH + 1U ];
 static size_t catalog_length;
 static bool cancel_requested;
 static bool cancel_call_active;
 static bool overflowed;
+static esp_err_t stream_error;
+
+static bool safe_relative_path( const char *a_path )
+{
+    if( NULL == a_path || '\0' == a_path[ 0 ] || '/' == a_path[ 0 ] ||
+        NULL != strstr( a_path, "://" ) || NULL != strchr( a_path, '\\' ) ||
+        NULL != strchr( a_path, '?' ) || NULL != strchr( a_path, '#' ) )
+    {
+        return false;
+    }
+
+    const char *segment = a_path;
+    for( const char *cursor = a_path;; ++cursor )
+    {
+        if( '/' != *cursor && '\0' != *cursor )
+        {
+            continue;
+        }
+        const size_t length = (size_t)( cursor - segment );
+        if( 0U == length || ( 1U == length && '.' == segment[ 0 ] ) ||
+            ( 2U == length && '.' == segment[ 0 ] && '.' == segment[ 1 ] ) )
+        {
+            return false;
+        }
+        if( '\0' == *cursor )
+        {
+            break;
+        }
+        segment = cursor + 1;
+    }
+    return true;
+}
 
 static esp_err_t http_event( esp_http_client_event_t *a_event )
 {
@@ -42,8 +79,10 @@ static esp_err_t http_event( esp_http_client_event_t *a_event )
         return ESP_OK;
     }
 
+    ota_acquisition_kind_t kind;
     bool cancelled;
     portENTER_CRITICAL( &state_lock );
+    kind = status.kind;
     cancelled = cancel_requested;
     portEXIT_CRITICAL( &state_lock );
     if( cancelled )
@@ -52,16 +91,37 @@ static esp_err_t http_event( esp_http_client_event_t *a_event )
     }
 
     const size_t incoming = (size_t)a_event->data_len;
-    if( incoming > OTA_ACQUISITION_CATALOG_MAX_LENGTH - catalog_length )
+    if( OTA_ACQUISITION_KIND_CATALOG == kind )
     {
-        overflowed = true;
-        return ESP_ERR_NO_MEM;
+        if( incoming > OTA_ACQUISITION_CATALOG_MAX_LENGTH - catalog_length )
+        {
+            overflowed = true;
+            return ESP_ERR_NO_MEM;
+        }
+        memcpy( catalog + catalog_length, a_event->data, incoming );
+        catalog_length += incoming;
+        catalog[ catalog_length ] = '\0';
+        portENTER_CRITICAL( &state_lock );
+        status.length = catalog_length;
+        portEXIT_CRITICAL( &state_lock );
+        return ESP_OK;
     }
 
-    memcpy( catalog + catalog_length, a_event->data, incoming );
-    catalog_length += incoming;
-    catalog[ catalog_length ] = '\0';
-    return ESP_OK;
+    if( OTA_ACQUISITION_KIND_FIRMWARE == kind )
+    {
+        const esp_err_t result = ota_installer_write( a_event->data, incoming );
+        if( ESP_OK != result )
+        {
+            stream_error = result;
+            return result;
+        }
+        portENTER_CRITICAL( &state_lock );
+        status.length += incoming;
+        portEXIT_CRITICAL( &state_lock );
+        return ESP_OK;
+    }
+
+    return ESP_ERR_INVALID_STATE;
 }
 
 static void finish_worker( ota_acquisition_state_t a_state, esp_err_t a_error, int a_http_status )
@@ -70,7 +130,6 @@ static void finish_worker( ota_acquisition_state_t a_state, esp_err_t a_error, i
     status.state = a_state;
     status.error = a_error;
     status.http_status = a_http_status;
-    status.length = OTA_ACQUISITION_READY == a_state ? catalog_length : 0U;
     ++status.generation;
     portEXIT_CRITICAL( &state_lock );
 }
@@ -106,7 +165,7 @@ static void acquisition_worker( void *a_context )
     (void)a_context;
 
     const esp_http_client_config_t config = {
-        .url = OTA_CATALOG_URL,
+        .url = request_url,
         .event_handler = http_event,
         .crt_bundle_attach = esp_crt_bundle_attach,
         .timeout_ms = OTA_HTTP_TIMEOUT_MS,
@@ -135,21 +194,31 @@ static void acquisition_worker( void *a_context )
         http_status = esp_http_client_get_status_code( client );
     }
 
+    ota_acquisition_kind_t kind;
+    size_t transferred;
     portENTER_CRITICAL( &state_lock );
     const bool cancelled = cancel_requested;
+    kind = status.kind;
+    transferred = status.length;
     portEXIT_CRITICAL( &state_lock );
 
     if( cancelled )
     {
         finish_worker( OTA_ACQUISITION_IDLE, ESP_OK, 0 );
     }
-    else if( ESP_OK == result && 200 == http_status && !overflowed && catalog_length > 0U )
+    else if( ESP_OK == result && 200 == http_status && ESP_OK == stream_error &&
+             ( OTA_ACQUISITION_KIND_FIRMWARE == kind ||
+               ( !overflowed && catalog_length > 0U ) ) )
     {
         finish_worker( OTA_ACQUISITION_READY, ESP_OK, http_status );
     }
     else
     {
-        if( overflowed )
+        if( ESP_OK != stream_error )
+        {
+            result = stream_error;
+        }
+        else if( overflowed )
         {
             result = ESP_ERR_NO_MEM;
         }
@@ -158,10 +227,11 @@ static void acquisition_worker( void *a_context )
             result = ESP_FAIL;
         }
         ESP_LOGW( TAG,
-                  "catalog fetch failed: error=%s http=%d bytes=%u",
+                  "OTA acquisition failed: kind=%d error=%s http=%d bytes=%u",
+                  (int)kind,
                   esp_err_to_name( result ),
                   http_status,
-                  (unsigned)catalog_length );
+                  (unsigned)transferred );
         finish_worker( OTA_ACQUISITION_FAILED, result, http_status );
     }
 
@@ -171,8 +241,13 @@ static void acquisition_worker( void *a_context )
     vTaskDelete( NULL );
 }
 
-esp_err_t ota_acquisition_begin_catalog( void )
+static esp_err_t begin_request( ota_acquisition_kind_t a_kind, const char *a_url )
 {
+    if( NULL == a_url || '\0' == a_url[ 0 ] )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
     portENTER_CRITICAL( &state_lock );
     if( NULL != worker_task )
     {
@@ -180,11 +255,14 @@ esp_err_t ota_acquisition_begin_catalog( void )
         return ESP_ERR_INVALID_STATE;
     }
 
+    snprintf( request_url, sizeof( request_url ), "%s", a_url );
     memset( catalog, 0, sizeof( catalog ) );
     catalog_length = 0U;
     overflowed = false;
+    stream_error = ESP_OK;
     cancel_requested = false;
     cancel_call_active = false;
+    status.kind = a_kind;
     status.state = OTA_ACQUISITION_FETCHING;
     status.error = ESP_OK;
     status.http_status = 0;
@@ -192,7 +270,7 @@ esp_err_t ota_acquisition_begin_catalog( void )
     portEXIT_CRITICAL( &state_lock );
 
     if( pdPASS != xTaskCreate( acquisition_worker,
-                               "ota_catalog",
+                               "ota_acquire",
                                OTA_ACQUISITION_TASK_STACK,
                                NULL,
                                5U,
@@ -206,8 +284,29 @@ esp_err_t ota_acquisition_begin_catalog( void )
         portEXIT_CRITICAL( &state_lock );
         return ESP_ERR_NO_MEM;
     }
-
     return ESP_OK;
+}
+
+esp_err_t ota_acquisition_begin_catalog( void )
+{
+    return begin_request( OTA_ACQUISITION_KIND_CATALOG, OTA_CATALOG_URL );
+}
+
+esp_err_t ota_acquisition_begin_firmware( const char *a_artifact_path )
+{
+    if( !safe_relative_path( a_artifact_path ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    char url[ OTA_HTTP_URL_MAX_LENGTH ];
+    const int length =
+        snprintf( url, sizeof( url ), "%s%s", OTA_PAGES_BASE_URL, a_artifact_path );
+    if( length <= 0 || (size_t)length >= sizeof( url ) )
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    return begin_request( OTA_ACQUISITION_KIND_FIRMWARE, url );
 }
 
 ota_acquisition_status_t ota_acquisition_status( void )
@@ -227,7 +326,7 @@ esp_err_t ota_acquisition_copy_catalog( char *a_destination, size_t a_capacity, 
     }
 
     portENTER_CRITICAL( &state_lock );
-    if( OTA_ACQUISITION_READY != status.state )
+    if( OTA_ACQUISITION_KIND_CATALOG != status.kind || OTA_ACQUISITION_READY != status.state )
     {
         portEXIT_CRITICAL( &state_lock );
         return ESP_ERR_INVALID_STATE;
@@ -279,7 +378,7 @@ esp_err_t ota_acquisition_stop( void )
             }
             if( xTaskGetTickCount() - started >= timeout )
             {
-                ESP_LOGE( TAG, "catalog acquisition did not stop within timeout" );
+                ESP_LOGE( TAG, "OTA acquisition did not stop within timeout" );
                 return ESP_ERR_TIMEOUT;
             }
             vTaskDelay( pdMS_TO_TICKS( 10U ) );
@@ -287,12 +386,15 @@ esp_err_t ota_acquisition_stop( void )
     }
 
     portENTER_CRITICAL( &state_lock );
+    memset( request_url, 0, sizeof( request_url ) );
     memset( catalog, 0, sizeof( catalog ) );
     catalog_length = 0U;
     overflowed = false;
+    stream_error = ESP_OK;
     cancel_requested = false;
     cancel_call_active = false;
     active_client = NULL;
+    status.kind = OTA_ACQUISITION_KIND_NONE;
     status.state = OTA_ACQUISITION_IDLE;
     status.error = ESP_OK;
     status.http_status = 0;

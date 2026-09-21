@@ -1,6 +1,5 @@
 /**
-    ota_acquisition.h : RFScout OTA catalog acquisition service
-    Description: Owns bounded cancellable retrieval of the stable update catalog.
+    ota_acquisition.h : RFScout cancellable HTTPS OTA acquisition service
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -20,6 +19,13 @@
 
 typedef enum
 {
+    OTA_ACQUISITION_KIND_NONE = 0,
+    OTA_ACQUISITION_KIND_CATALOG,
+    OTA_ACQUISITION_KIND_FIRMWARE
+} ota_acquisition_kind_t;
+
+typedef enum
+{
     OTA_ACQUISITION_IDLE = 0,
     OTA_ACQUISITION_FETCHING,
     OTA_ACQUISITION_READY,
@@ -28,6 +34,7 @@ typedef enum
 
 typedef struct
 {
+    ota_acquisition_kind_t kind;
     ota_acquisition_state_t state;
     esp_err_t error;
     int http_status;
@@ -35,19 +42,11 @@ typedef struct
     uint32_t generation;
 } ota_acquisition_status_t;
 
-/** @brief Begin one explicit fetch of the stable RFScout OTA catalog. */
 esp_err_t ota_acquisition_begin_catalog( void );
-
-/** @brief Snapshot acquisition state without exposing HTTP/TLS implementation details. */
+esp_err_t ota_acquisition_begin_firmware( const char *a_artifact_path );
 ota_acquisition_status_t ota_acquisition_status( void );
-
-/** @brief Copy a completed catalog into caller storage, including a terminating NUL byte. */
 esp_err_t ota_acquisition_copy_catalog( char *a_destination, size_t a_capacity, size_t *a_length );
-
-/** @brief Cancel/join any in-flight request and erase transient acquisition data. */
 esp_err_t ota_acquisition_stop( void );
-
-/** @brief Return whether an acquisition worker currently owns network activity. */
 bool ota_acquisition_is_active( void );
 
 #endif // _RFSCOUT_OTA_ACQUISITION_H_
