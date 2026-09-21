@@ -22,7 +22,6 @@
 typedef enum
 {
     RFSCOUT_APP_SYSTEM_EVENTS = 0,
-    RFSCOUT_APP_OTA, /* Reserved legacy ID; Update UI is a Home submenu. */
     RFSCOUT_APP_DEVICE,
     RFSCOUT_APP_WIFI_BT,
     RFSCOUT_APP_CC1101,
