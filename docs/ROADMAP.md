@@ -537,7 +537,7 @@ Keep the feature reviewable and preserve abstraction boundaries by landing it in
 4. **implemented on the OTA development branch:** add session-scoped passive scan and explicit infrastructure-STA connect/disconnect support behind a semantic service, including explicit SSID-targeted active search for remembered networks not seen passively;
 5. **implemented on the OTA development branch:** add explicit static HTTPS catalog retrieval, hard build-identity/layout validation, stable-release selection, cancellation on app transition, and OTA UI reporting without flash writes;
 6. **implemented on the OTA development branch:** add the transport-neutral installer abstraction and ESP-IDF A/B streaming implementation, including exact byte count, streaming SHA-256, ESP-IDF image validation, embedded project/version checks, flash-readback SHA-256, boot commit, and immediate reboot;
-7. add boot-time pending-image confirmation/rollback handling;
+7. **implemented on the OTA development branch:** add boot-time pending-image confirmation after bounded mandatory common startup, preserving automatic rollback across crash/reset/power loss before confirmation;
 8. **implemented on the OTA development branch:** derive the device OTA catalog from the same main/PR/release inventory used by the atomic GitHub Pages browser-flasher deployment; and
 9. validate cancellation, app switching, network loss, truncated/corrupt images, power loss at each OTA stage, explicit candidate installs, rollback, and recovery flashing on hardware.
 

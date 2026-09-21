@@ -26,6 +26,7 @@
 #include "notification.h"
 #include "notification_preferences.h"
 #include "observation_store.h"
+#include "ota_boot.h"
 #include "oui_database.h"
 #include "platform.h"
 #include "power.h"
@@ -488,6 +489,12 @@ void app_main( void )
     system_events_poll();
     display_set_brightness( device_config_get()->brightness_percent );
     ESP_ERROR_CHECK( display_idle_init() );
+
+    /*
+     * Confirm a newly installed image only after mandatory common startup has succeeded.
+     * Optional peripherals/storage above are deliberately not part of OTA health.
+     */
+    ESP_ERROR_CHECK( ota_boot_confirm_if_pending() );
     system_events_enable_notifications();
 
     if( storage_is_available() && device_config_get()->logging_enabled )
