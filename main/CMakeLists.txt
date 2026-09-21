@@ -68,7 +68,7 @@ idf_component_register(
         "apps/app_registry.c"
         "apps/system_events/app.c"
         "apps/system_events/system_events_view.c"
-        "apps/ota/app.c"
+        "apps/ota/ota_menu.c"
         "apps/ota/ota_catalog.c"
         "apps/ota/ota_networks.c"
         "apps/ota/ota_view.c"
