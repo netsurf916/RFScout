@@ -26,7 +26,7 @@ static ota_installer_image_t expected_image;
 static const esp_partition_t *target_partition;
 static esp_ota_handle_t ota_handle;
 static bool ota_handle_open;
-static psa_hash_operation_t reset_stream_hash();
+static psa_hash_operation_t stream_hash = PSA_HASH_OPERATION_INIT;
 static bool stream_hash_open;
 static uint8_t readback_buffer[ OTA_INSTALLER_HASH_CHUNK ];
 
