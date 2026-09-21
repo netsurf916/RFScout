@@ -194,8 +194,6 @@ static const char *startup_app_name( rfscout_app_id_t a_app )
     {
         case RFSCOUT_APP_SYSTEM_EVENTS:
             return "System Events";
-        case RFSCOUT_APP_OTA:
-            return "OTA Update";
         case RFSCOUT_APP_WIFI_BT:
             return "WiFi / BT";
         case RFSCOUT_APP_CC1101:
