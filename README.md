@@ -14,10 +14,10 @@ RFScout is intentionally passive wherever the underlying radio APIs allow it. It
 
 Top-level application order is:
 
-0. **System Events** — optional and disabled by default
-1. **Home / Device Settings**
-2. **WiFi / BT**
-3. **CC1101** — only when the active board provides the current CC1101 service
+1. **System Events** — optional and disabled by default
+2. **Home / Device Settings**
+3. **WiFi / BT**
+4. **CC1101** — only when the active board provides the current CC1101 service
 5. **nRF24** — only when the active board provides the current nRF24 service
 6. **Recorder** — only when the current audio-capture/storage providers are available
 7. **Thermal** — only when enabled and an MLX90640 is detected
