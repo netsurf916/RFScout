@@ -44,6 +44,11 @@ esp_err_t firmware_running_image_sha256( uint8_t a_digest[ RFSCOUT_FIRMWARE_SHA2
         return ESP_ERR_INVALID_ARG;
     }
 
+    if( PSA_SUCCESS != psa_crypto_init() )
+    {
+        return ESP_FAIL;
+    }
+
     const esp_partition_t *running = esp_ota_get_running_partition();
     if( NULL == running )
     {
