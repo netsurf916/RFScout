@@ -17,6 +17,8 @@ The bundle contains a combined image for ordinary installation, the application/
 
 `ota-release.json` describes the application image using the normalized embedded version (without the release tag's presentation `v` prefix), the release's required `minimum_source_version` waypoint, stable hardware target ID, ESP-IDF target, partition-layout generation, size, and SHA-256. **Prepare firmware release** requires the maintainer to choose that oldest directly supported source version. Release packaging rejects malformed or impossible waypoint versions and rejects a build when ESP-IDF's generated `project_description.json` does not report the same embedded project version being packaged.
 
+RFScout logs the running application's exact on-flash artifact byte length and SHA-256 during startup. For an application image flashed without modification, that startup digest should match the SHA-256 recorded for the corresponding `*-app.bin` in `ota-release.json` and `SHA256SUMS`. This startup diagnostic deliberately hashes the complete stored application artifact rather than using ESP-IDF's separate app-content digest returned by `esp_partition_get_sha256()`.
+
 `manifest.web.json` is consumed by the browser flasher. The Pages deployment mirrors the manifest and referenced combined image onto the same HTTPS origin so flashing does not depend on cross-origin access to GitHub release or Actions URLs.
 
 ## Candidate artifacts

@@ -535,9 +535,10 @@ For an install, that service:
 4. begins the OTA write with `esp_ota_begin()`;
 5. streams the HTTPS response directly into the OTA handle with `esp_ota_write()` while computing SHA-256 and byte count;
 6. validates image/application metadata as soon as enough header data is available and requires the image's project/version/target assumptions to agree with the selected catalog entry;
-7. requires the final byte count and SHA-256 to match the catalog and completes ESP-IDF image validation with `esp_ota_end()`;
-8. only after all validation succeeds, marks that destination as the next boot image with `esp_ota_set_boot_partition()`; and
-9. immediately enters the platform reboot path.
+7. requires the final byte count and streaming SHA-256 to match the catalog and completes ESP-IDF image validation with `esp_ota_end()`;
+8. reads back exactly the declared application-artifact byte count from the destination partition, computes SHA-256 over those stored bytes, and requires that flash-readback SHA-256 to match the catalog;
+9. only after streaming integrity, ESP-IDF image validation, and flash-readback integrity all succeed, marks that destination as the next boot image with `esp_ota_set_boot_partition()`; and
+10. immediately enters the platform reboot path.
 
 With the current two-slot layout, ESP-IDF's "next update partition" policy naturally resolves to the inactive slot; RFScout code does not encode that fact by offset or slot name. OTA-data state remains owned by ESP-IDF/bootloader logic.
 
@@ -570,7 +571,8 @@ Before a candidate can become bootable, validation must cover at least:
 - safe relative artifact path under the OTA origin;
 - declared image size that fits the selected OTA partition;
 - received byte count equal to declared size;
-- SHA-256 equal to the catalog value;
+- streaming SHA-256 equal to the catalog value;
+- post-write flash-readback SHA-256 over exactly the declared artifact byte count equal to the catalog value;
 - valid ESP application image structure; and
 - embedded application version/project metadata consistent with the catalog.
 
