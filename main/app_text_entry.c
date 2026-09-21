@@ -10,10 +10,10 @@
 #include <string.h>
 
 static const char text_entry_characters[] = "abcdefghijklmnopqrstuvwxyz"
-                                             "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                                             "0123456789"
-                                             " "
-                                             "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
+                                            "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                                            "0123456789"
+                                            " "
+                                            "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
 
 #define TEXT_ENTRY_CHARACTER_COUNT ( sizeof( text_entry_characters ) - 1U )
 #define TEXT_ENTRY_DONE_INDEX TEXT_ENTRY_CHARACTER_COUNT
