@@ -352,15 +352,15 @@ Rework application/system logging as a common policy rather than letting each fe
 
 ## In-device OTA update architecture
 
-**Status:** Design agreed; A/B flash/rollback foundation, the disabled-by-default OTA application, OTA-owned remembered-network persistence, passive AP discovery, explicit STA association, lifecycle-bound STA teardown, authoritative embedded build identity, immutable OTA image metadata generation, a unified Pages OTA build catalog with hard identity/layout validation and stable-release selection, and explicit cancellable HTTPS catalog checks are implemented on the OTA development branch. Firmware installation, explicit non-stable build selection UI, and boot-confirmation policy remain implementation work.
+**Status:** A/B flash/rollback, the Home-owned Update menu, OTA-owned remembered-network persistence, passive AP discovery, explicit STA association, deterministic teardown, embedded build identity, Pages OTA catalogs, stable/manual build selection, streaming installation, and first-boot rollback confirmation are implemented on the OTA development branch. Hardware validation remains.
 
 **Design goal:** Preserve RFScout's passive-by-default behavior and strict application/service lifecycle boundaries while allowing a user to deliberately obtain temporary Internet connectivity, check for a release, install an application image into the inactive OTA slot, and recover automatically if the new image does not boot successfully.
 
-### Passive-by-default OTA application
+### Passive-by-default Update menu
 
-OTA is a top-level application rather than a Home/Device setting. Its baseline shell is disabled by default and occupies the canonical navigation slot between System Events and Home when enabled. Infrastructure networking exists only as an explicit capability of that application; RFScout does not gain a device-wide "known networks" or always-connected policy.
+Firmware update is a nested **Home / Device Settings → Update** menu rather than a top-level application. Infrastructure networking exists only while that menu is in use; RFScout does not gain a device-wide "known networks" or always-connected policy.
 
-Entering the OTA app must not associate with an access point. While active and disconnected, the app may perform passive AP scans and present remembered networks that have been observed in range. Passive scan results are volatile app-session state. Association is always a deliberate user action.
+Opening the Update menu must not associate with an access point. While active and disconnected, the app may perform passive AP scans and present remembered networks that have been observed in range. Passive scan results are volatile app-session state. Association is always a deliberate user action.
 
 The initial UI contract is:
 
@@ -371,42 +371,42 @@ The initial UI contract is:
 - provide a network-management/add flow for entering credentials for a new SSID;
 - after an explicit connection succeeds, expose **Check for update**;
 - after a compatible release is discovered, show the current and target versions and require an explicit install action;
-- download/install progress is presented inside the OTA app and makes cancellation semantics clear.
+- download/install progress is presented inside the Update menu and makes cancellation semantics clear.
 
-The OTA app may retain credentials for multiple access points. Those credentials are application-owned durable state under the OTA app's persistence identity, not fields in device-wide configuration and not state owned by the Wi-Fi service. The app chooses which credential set to offer/use based on its own saved list and current passive scan results. No automatic association occurs merely because a remembered AP is visible.
+The Update menu may retain credentials for multiple access points. Those credentials are application-owned durable state under the update feature's persistence identity, not fields in device-wide configuration and not state owned by the Wi-Fi service. The Update menu chooses which credential set to offer/use based on its own saved list and current passive scan results. No automatic association occurs merely because a remembered AP is visible.
 
 Hidden-network support is not required initially because discovering a hidden SSID generally requires active probing or a direct connection attempt. It can be added later as an explicit user action without changing the passive default.
 
-### Application-lifecycle boundary
+### Update-menu lifecycle boundary
 
-The existing application transition contract remains authoritative. OTA does not create a background networking/update mode that survives app changes.
+The Update menu does not create a background networking/update mode. Closing Update or leaving Home tears down its transient networking and acquisition state.
 
-On committed OTA-app LEAVE, platform/app teardown must:
+When the Update menu closes or Home exits, teardown must:
 
-1. stop/cancel passive scanning owned by the OTA session;
+1. stop/cancel passive scanning owned by the Update session;
 2. cancel any manifest or firmware HTTP request;
 3. abort an in-progress OTA write before it is made bootable;
 4. disconnect the infrastructure STA session;
 5. release Wi-Fi/network resources through the normal service/session teardown path;
 6. clear transient credential/password copies and scan/manifest/download state; and
-7. leave only the OTA app's intentionally persisted remembered-network configuration.
+7. leave only the intentionally persisted remembered-network configuration.
 
-A firmware download is therefore cancelable by changing apps. Partial data in the inactive OTA slot is not resumable state and may be overwritten from the beginning on the next attempt. The currently running partition remains the boot target until the installer has completely received and validated the candidate and enters the final commit/reboot phase.
+A firmware download is therefore cancelable by leaving Update or Home. Partial data in the inactive OTA slot is not resumable state and may be overwritten from the beginning on the next attempt. The currently running partition remains the boot target until the installer has completely received and validated the candidate and enters the final commit/reboot phase.
 
-The installer must avoid a long-lived "staged for next reboot" state. After final validation, selecting the new boot partition and restarting should be treated as one tightly coupled terminal operation. Before that commit point, app transition can cancel safely; after it, ordinary app navigation is no longer meaningful because reboot is immediate.
+The installer must avoid a long-lived "staged for next reboot" state. After final validation, selecting the new boot partition and restarting should be treated as one tightly coupled terminal operation. Before that commit point, menu exit can cancel safely; after it, ordinary app navigation is no longer meaningful because reboot is immediate.
 
 ### Network ownership and abstraction
 
-Credential ownership, connection policy, and user intent belong to the OTA app. Low-level infrastructure Wi-Fi belongs behind a semantic service/provider boundary.
+Credential ownership, connection policy, and user intent belong to the Home Update menu. Low-level infrastructure Wi-Fi belongs behind a semantic service/provider boundary.
 
-The OTA app may ask that service to:
+The Update menu may ask that service to:
 
 - perform a passive AP scan;
 - establish a STA connection using one credential set supplied for the current OTA session;
 - report connection/DHCP status; and
 - disconnect/close.
 
-The Wi-Fi service must not maintain a global remembered-network database or silently reconnect after the OTA app exits. Likewise, the OTA app must not take ownership of driver handles, event-loop internals, DHCP implementation details, or hardware-specific Wi-Fi teardown.
+The Wi-Fi service must not maintain a global remembered-network database or silently reconnect after the Update menu closes. Likewise, the Update menu must not take ownership of driver handles, event-loop internals, DHCP implementation details, or hardware-specific Wi-Fi teardown.
 
 The existing WiFi / BT observation application remains a separate passive-monitoring concern. Infrastructure STA operation must acquire/quiesce shared Wi-Fi resources through the platform lifecycle rather than reaching into the observation app or allowing monitor and OTA modes to conflict implicitly.
 
@@ -436,7 +436,7 @@ The catalog intentionally contains the current `main` candidate, current open-PR
 
 ### Running-version identity
 
-The OTA application must not infer its version from filenames, Git state, or hard-coded UI text. The running image is authoritative. Release and candidate builds embed their package version into ESP-IDF application metadata, and packaging verifies that metadata before producing artifacts.
+The updater must not infer its version from filenames, Git state, or hard-coded UI text. The running image is authoritative. Release and candidate builds embed their package version into ESP-IDF application metadata, and packaging verifies that metadata before producing artifacts.
 
 Stable-channel ordering applies only to semantic release versions. Candidate identifiers remain valid explicit install targets but do not participate in SemVer ordering.
 
@@ -473,9 +473,9 @@ It must never be smuggled through the ordinary app-image OTA path.
 
 ### Installer and A/B partition ownership
 
-The OTA app must not know flash offsets, partition labels, OTA sequence counters, or which physical slot is called `ota_0` versus `ota_1`. Those are platform/update-service implementation details.
+The Update UI must not know flash offsets, partition labels, OTA sequence counters, or which physical slot is called `ota_0` versus `ota_1`. Those are platform/update-service implementation details.
 
-A semantic updater/installer service owns the ESP-IDF OTA API and exposes operations such as begin/write/finish/abort/progress without exposing `esp_partition_t` or raw flash addresses to the app.
+A semantic updater/installer service owns the ESP-IDF OTA API and exposes operations such as begin/write/finish/abort/progress without exposing `esp_partition_t` or raw flash addresses to the UI.
 
 For an install, that service:
 
@@ -496,7 +496,7 @@ Errors before the boot-partition commit abort the OTA handle and leave the curre
 
 ### First-boot confirmation and rollback
 
-Rollback confirmation is a boot/platform responsibility, not an Update-menu responsibility. The new image must be able to prove basic operability even if the user never opens OTA again.
+Rollback confirmation is a boot/platform responsibility, not an Update-menu responsibility. The new image must be able to prove basic operability even if the user never opens the Update menu again.
 
 With `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`, `esp_ota_set_boot_partition()` marks a newly selected image for first-boot verification. Early common startup must inspect the running OTA partition state. When it is `ESP_OTA_IMG_PENDING_VERIFY`, RFScout runs a bounded core-health check and then either:
 
