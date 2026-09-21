@@ -231,9 +231,9 @@ static void render_main( void )
     const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
     const bool scanning = RFSCOUT_WIFI_STATION_SCANNING == current.state;
     const bool can_check = RFSCOUT_WIFI_STATION_CONNECTED == current.state;
-    const bool install_active = ota_acquisition_is_active() || ota_installer_active();
-    const bool can_install = can_check && !install_active &&
-                             OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result;
+    const bool install_active = ota_acquisition_is_active() || ota_installer_is_active();
+    const bool can_install =
+        can_check && !install_active && OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result;
     const unsigned item_count =
         1U + (unsigned)view_network_count + ( can_check ? ( can_install ? 4U : 3U ) : 3U );
     if( selected_item >= item_count )
