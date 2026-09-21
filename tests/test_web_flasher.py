@@ -54,6 +54,10 @@ class WebFlasherCatalogTest(unittest.TestCase):
                     json.dumps({"name": "RFScout", "version": version, "builds": []}),
                     encoding="utf-8",
                 )
+                (artifact / "manifest.json").write_text(
+                    json.dumps({"commit": (str(pr)[0] * 40)}),
+                    encoding="utf-8",
+                )
                 (artifact / "rfscout-candidate-full.bin").write_bytes(b"firmware")
 
             entries = candidate_entries(
@@ -75,6 +79,8 @@ class WebFlasherCatalogTest(unittest.TestCase):
 
             self.assertEqual([entry["pr"] for entry in entries], [52, 42])
             self.assertEqual(entries[0]["label"], "PR #52 candidate")
+            self.assertEqual(entries[0]["source_commit"], "bbbbbbbbbbbb2222")
+            self.assertEqual(entries[0]["commit"], "5" * 40)
             self.assertEqual(
                 entries[0]["manifest"],
                 "firmware/candidates/pr-52/manifest.web.json",
@@ -100,79 +106,148 @@ class WebFlasherCatalogTest(unittest.TestCase):
             )
             self.assertEqual(entries, [])
 
-    def test_ota_catalog_builds_published_release_tree(self) -> None:
+    def write_ota_image(
+        self,
+        a_directory: Path,
+        *,
+        a_version: str,
+        a_commit: str,
+        a_contents: bytes = b"application image",
+    ) -> Path:
+        a_directory.mkdir(parents=True, exist_ok=True)
+        image = a_directory / f"rfscout-{a_version}-esp32s3-app.bin"
+        image.write_bytes(a_contents)
+        digest = hashlib.sha256(image.read_bytes()).hexdigest()
+        (a_directory / "ota-image.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "project": "rfscout",
+                    "version": a_version,
+                    "commit": a_commit,
+                    "hardware_target": "t-embed-cc1101-plus",
+                    "idf_target": "esp32s3",
+                    "partition_layout": "ab-v1",
+                    "artifact": {
+                        "file": image.name,
+                        "size": image.stat().st_size,
+                        "sha256": digest,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        return image
+
+    def test_ota_catalog_uses_same_release_and_candidate_inventory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            site = root / "site"
-            staging = root / "ota-staging"
-            release = staging / "v0.5.0"
-            release.mkdir(parents=True)
-            image = release / "rfscout-v0.5.0-esp32s3-app.bin"
-            image.write_bytes(b"application image")
-            digest = hashlib.sha256(image.read_bytes()).hexdigest()
-            (release / "ota-release.json").write_text(
-                json.dumps(
-                    {
-                        "schema_version": 1,
-                        "project": "RFScout",
-                        "version": "0.5.0",
-                        "minimum_source_version": "0.4.0",
-                        "hardware_target": "t-embed-cc1101-plus",
-                        "idf_target": "esp32s3",
-                        "partition_layout": "ab-v1",
-                        "artifact": {
-                            "file": image.name,
-                            "size": image.stat().st_size,
-                            "sha256": digest,
-                        },
-                    }
-                ),
-                encoding="utf-8",
+            site = Path(temporary) / "site"
+            release_dir = site / "firmware" / "releases" / "v0.3.0"
+            candidate_dir = site / "firmware" / "candidates" / "pr-75"
+            release_commit = "a" * 40
+            candidate_commit = "b" * 40
+            self.write_ota_image(
+                release_dir, a_version="0.3.0", a_commit=release_commit
+            )
+            self.write_ota_image(
+                candidate_dir,
+                a_version="candidate-bbbbbbbbbbbb",
+                a_commit=candidate_commit,
             )
 
-            catalog = build_ota_catalog(site, staging)
+            browser_entries = [
+                {
+                    "id": "pr-75-bbbbbbbbbbbb",
+                    "kind": "candidate",
+                    "source": "pull_request",
+                    "pr": 75,
+                    "label": "PR #75 candidate",
+                    "version": "candidate-bbbbbbbbbbbb",
+                    "manifest": "firmware/candidates/pr-75/manifest.web.json",
+                    "commit": candidate_commit,
+                },
+                {
+                    "id": "release-v0.3.0",
+                    "kind": "release",
+                    "label": "RFScout v0.3.0",
+                    "version": "0.3.0",
+                    "manifest": "firmware/releases/v0.3.0/manifest.web.json",
+                    "commit": release_commit,
+                    "draft": False,
+                    "prerelease": False,
+                },
+            ]
 
-            self.assertEqual(catalog["latest"], "0.5.0")
-            self.assertEqual(catalog["releases"][0]["minimum_source_version"], "0.4.0")
+            catalog = build_ota_catalog(site, browser_entries)
+
+            self.assertEqual(len(catalog["builds"]), 2)
+            self.assertEqual(catalog["builds"][0]["pr"], 75)
+            self.assertFalse(catalog["builds"][0]["stable"])
+            self.assertTrue(catalog["builds"][1]["stable"])
             self.assertEqual(
-                catalog["releases"][0]["artifact"]["path"],
-                "releases/0.5.0/rfscout-v0.5.0-esp32s3-app.bin",
+                catalog["builds"][0]["artifact"]["path"],
+                "firmware/candidates/pr-75/"
+                "rfscout-candidate-bbbbbbbbbbbb-esp32s3-app.bin",
             )
-            self.assertTrue(
-                (site / "ota" / "releases" / "0.5.0" / image.name).is_file()
-            )
-            self.assertTrue((site / "ota" / "stable.json").is_file())
+            self.assertTrue((site / "ota" / "catalog.json").is_file())
 
     def test_ota_catalog_rejects_bad_artifact_hash(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            site = root / "site"
-            release = root / "ota-staging" / "v0.5.0"
-            release.mkdir(parents=True)
-            image = release / "rfscout-v0.5.0-esp32s3-app.bin"
-            image.write_bytes(b"application image")
-            (release / "ota-release.json").write_text(
-                json.dumps(
-                    {
-                        "schema_version": 1,
-                        "project": "RFScout",
-                        "version": "0.5.0",
-                        "minimum_source_version": "0.4.0",
-                        "hardware_target": "t-embed-cc1101-plus",
-                        "idf_target": "esp32s3",
-                        "partition_layout": "ab-v1",
-                        "artifact": {
-                            "file": image.name,
-                            "size": image.stat().st_size,
-                            "sha256": "0" * 64,
-                        },
-                    }
-                ),
-                encoding="utf-8",
+            site = Path(temporary) / "site"
+            directory = site / "firmware" / "releases" / "v0.3.0"
+            commit = "a" * 40
+            self.write_ota_image(
+                directory, a_version="0.3.0", a_commit=commit
             )
+            metadata_path = directory / "ota-image.json"
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["artifact"]["sha256"] = "0" * 64
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
 
             with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
-                build_ota_catalog(site, root / "ota-staging")
+                build_ota_catalog(
+                    site,
+                    [
+                        {
+                            "id": "release-v0.3.0",
+                            "kind": "release",
+                            "label": "RFScout v0.3.0",
+                            "version": "0.3.0",
+                            "manifest": "firmware/releases/v0.3.0/manifest.web.json",
+                            "commit": commit,
+                            "draft": False,
+                            "prerelease": False,
+                        }
+                    ],
+                )
+
+    def test_ota_catalog_rejects_identity_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            site = Path(temporary) / "site"
+            directory = site / "firmware" / "releases" / "v0.3.0"
+            commit = "a" * 40
+            self.write_ota_image(directory, a_version="0.3.0", a_commit=commit)
+            metadata_path = directory / "ota-image.json"
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["partition_layout"] = "legacy"
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "partition_layout"):
+                build_ota_catalog(
+                    site,
+                    [
+                        {
+                            "id": "release-v0.3.0",
+                            "kind": "release",
+                            "label": "RFScout v0.3.0",
+                            "version": "0.3.0",
+                            "manifest": "firmware/releases/v0.3.0/manifest.web.json",
+                            "commit": commit,
+                            "draft": False,
+                            "prerelease": False,
+                        }
+                    ],
+                )
 
 
 if __name__ == "__main__":

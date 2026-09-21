@@ -10,9 +10,6 @@ import re
 import shutil
 from pathlib import Path
 
-OTA_VERSION_RE = re.compile(
-    r"^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$"
-)
 OTA_HARDWARE_TARGET = "t-embed-cc1101-plus"
 OTA_IDF_TARGET = "esp32s3"
 OTA_PARTITION_LAYOUT = "ab-v1"
@@ -23,6 +20,7 @@ def load_json(a_path: Path) -> object:
 
 
 def write_json(a_path: Path, a_value: object) -> None:
+    a_path.parent.mkdir(parents=True, exist_ok=True)
     a_path.write_text(
         json.dumps(a_value, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
@@ -109,14 +107,20 @@ def candidate_entries(
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(source, destination)
 
+        web_manifest = destination / "manifest.web.json"
+        packaged = packaged_commit(web_manifest)
+        if packaged is None:
+            raise ValueError(f"candidate is missing packaged commit metadata: {destination}")
+
         entry = {
             "id": f"{source_name}-{sha[:12]}",
             "kind": "candidate",
             "source": source_kind,
             "label": label,
-            "version": manifest_version(destination / "manifest.web.json"),
+            "version": manifest_version(web_manifest),
             "manifest": f"firmware/candidates/{source_name}/manifest.web.json",
-            "commit": sha.lower(),
+            "commit": packaged,
+            "source_commit": sha.lower(),
             "run_url": run_url if isinstance(run_url, str) and run_url else None,
         }
         if pr is not None:
@@ -137,36 +141,24 @@ def file_sha256(a_path: Path) -> str:
     return digest.hexdigest()
 
 
-def semver_key(a_version: str) -> tuple[int, int, int]:
-    if not OTA_VERSION_RE.fullmatch(a_version):
-        raise ValueError(f"invalid stable OTA version: {a_version!r}")
-    return tuple(int(part) for part in a_version.split("."))
+def ota_build_entry(a_site_dir: Path, a_browser_entry: dict) -> dict | None:
+    manifest_path = a_browser_entry.get("manifest")
+    if not isinstance(manifest_path, str) or not manifest_path:
+        raise ValueError("browser catalog entry is missing its manifest path")
 
+    directory = a_site_dir / Path(manifest_path).parent
+    metadata_path = directory / "ota-image.json"
+    if not metadata_path.is_file():
+        if a_browser_entry.get("kind") == "candidate":
+            raise ValueError(f"candidate is missing OTA image metadata: {directory}")
+        return None
 
-def ota_release_entry(a_directory: Path) -> dict:
-    metadata_path = a_directory / "ota-release.json"
     metadata = load_json(metadata_path)
     if not isinstance(metadata, dict) or metadata.get("schema_version") != 1:
-        raise ValueError(f"invalid OTA release metadata: {metadata_path}")
-
-    version = metadata.get("version")
-    minimum = metadata.get("minimum_source_version")
-    if not isinstance(version, str) or not isinstance(minimum, str):
-        raise ValueError(f"missing OTA release version/waypoint metadata: {metadata_path}")
-    version_key = semver_key(version)
-    minimum_key = semver_key(minimum)
-    expected_tag = f"v{version}"
-    if a_directory.name != expected_tag:
-        raise ValueError(
-            f"OTA release tag {a_directory.name!r} does not match metadata version {version!r}"
-        )
-    if minimum_key > version_key:
-        raise ValueError(
-            f"minimum source {minimum} is newer than OTA release {version}: {metadata_path}"
-        )
+        raise ValueError(f"invalid OTA image metadata: {metadata_path}")
 
     expected = {
-        "project": "RFScout",
+        "project": "rfscout",
         "hardware_target": OTA_HARDWARE_TARGET,
         "idf_target": OTA_IDF_TARGET,
         "partition_layout": OTA_PARTITION_LAYOUT,
@@ -176,6 +168,22 @@ def ota_release_entry(a_directory: Path) -> dict:
             raise ValueError(
                 f"unexpected OTA {key} in {metadata_path}: {metadata.get(key)!r}"
             )
+
+    version = metadata.get("version")
+    commit = metadata.get("commit")
+    if version != a_browser_entry.get("version"):
+        raise ValueError(
+            f"OTA version {version!r} does not match browser catalog "
+            f"{a_browser_entry.get('version')!r}: {metadata_path}"
+        )
+    if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-fA-F]{40}", commit):
+        raise ValueError(f"invalid OTA commit in {metadata_path}")
+    browser_commit = a_browser_entry.get("commit")
+    if isinstance(browser_commit, str) and browser_commit and commit.lower() != browser_commit.lower():
+        raise ValueError(
+            f"OTA commit {commit!r} does not match browser catalog {browser_commit!r}: "
+            f"{metadata_path}"
+        )
 
     artifact = metadata.get("artifact")
     if not isinstance(artifact, dict):
@@ -194,7 +202,7 @@ def ota_release_entry(a_directory: Path) -> dict:
     ):
         raise ValueError(f"invalid OTA artifact metadata: {metadata_path}")
 
-    image = a_directory / filename
+    image = directory / filename
     if not image.is_file():
         raise ValueError(f"missing OTA application image: {image}")
     if image.stat().st_size != expected_size:
@@ -202,69 +210,52 @@ def ota_release_entry(a_directory: Path) -> dict:
     if file_sha256(image).lower() != expected_sha256.lower():
         raise ValueError(f"OTA application SHA-256 mismatch: {image}")
 
-    return {
+    kind = a_browser_entry.get("kind")
+    stable = (
+        kind == "release"
+        and not bool(a_browser_entry.get("draft", False))
+        and not bool(a_browser_entry.get("prerelease", False))
+    )
+    result = {
+        "id": a_browser_entry.get("id"),
+        "kind": kind,
+        "label": a_browser_entry.get("label"),
         "version": version,
-        "minimum_source_version": minimum,
-        "hardware_target": OTA_HARDWARE_TARGET,
-        "idf_target": OTA_IDF_TARGET,
-        "partition_layout": OTA_PARTITION_LAYOUT,
+        "commit": commit.lower(),
+        "stable": stable,
+        "project": expected["project"],
+        "hardware_target": expected["hardware_target"],
+        "idf_target": expected["idf_target"],
+        "partition_layout": expected["partition_layout"],
         "artifact": {
-            "file": filename,
+            "path": (Path(manifest_path).parent / filename).as_posix(),
             "size": expected_size,
             "sha256": expected_sha256.lower(),
         },
     }
+    for key in (
+        "source",
+        "source_commit",
+        "pr",
+        "draft",
+        "prerelease",
+        "published_at",
+        "run_url",
+    ):
+        if key in a_browser_entry:
+            result[key] = a_browser_entry[key]
+    return result
 
 
-def build_ota_catalog(a_site_dir: Path, a_ota_release_root: Path) -> dict:
-    output_root = a_site_dir / "ota"
-    if output_root.exists():
-        shutil.rmtree(output_root)
-    releases_output = output_root / "releases"
-    releases_output.mkdir(parents=True)
+def build_ota_catalog(a_site_dir: Path, a_browser_entries: list[dict]) -> dict:
+    entries = []
+    for browser_entry in a_browser_entries:
+        entry = ota_build_entry(a_site_dir, browser_entry)
+        if entry is not None:
+            entries.append(entry)
 
-    entries: list[dict] = []
-    if a_ota_release_root.is_dir():
-        for directory in sorted(
-            path for path in a_ota_release_root.iterdir() if path.is_dir()
-        ):
-            metadata_path = directory / "ota-release.json"
-            if not metadata_path.is_file():
-                continue
-            entry = ota_release_entry(directory)
-            version = entry["version"]
-            destination = releases_output / version
-            if destination.exists():
-                raise ValueError(f"duplicate stable OTA version: {version}")
-            destination.mkdir()
-            artifact = entry["artifact"]
-            shutil.copyfile(
-                directory / artifact["file"], destination / artifact["file"]
-            )
-            shutil.copyfile(metadata_path, destination / "ota-release.json")
-            entries.append(
-                {
-                    "version": version,
-                    "minimum_source_version": entry["minimum_source_version"],
-                    "hardware_target": entry["hardware_target"],
-                    "idf_target": entry["idf_target"],
-                    "partition_layout": entry["partition_layout"],
-                    "artifact": {
-                        "path": f"releases/{version}/{artifact['file']}",
-                        "size": artifact["size"],
-                        "sha256": artifact["sha256"],
-                    },
-                }
-            )
-
-    entries.sort(key=lambda entry: semver_key(entry["version"]))
-    catalog = {
-        "schema_version": 1,
-        "channel": "stable",
-        "latest": entries[-1]["version"] if entries else "0.0.0",
-        "releases": entries,
-    }
-    write_json(output_root / "stable.json", catalog)
+    catalog = {"schema_version": 1, "builds": entries}
+    write_json(a_site_dir / "ota" / "catalog.json", catalog)
     return catalog
 
 
@@ -291,7 +282,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--releases-json", type=Path, required=True)
     parser.add_argument("--candidate-root", type=Path, required=True)
     parser.add_argument("--candidates-json", type=Path, required=True)
-    parser.add_argument("--ota-release-root", type=Path, required=True)
     return parser.parse_args()
 
 
@@ -309,7 +299,7 @@ def main() -> int:
     entries = deduplicate(candidates_entries + releases_entries)
 
     write_json(args.site_dir / "catalog.json", {"schema_version": 1, "builds": entries})
-    build_ota_catalog(args.site_dir, args.ota_release_root)
+    build_ota_catalog(args.site_dir, entries)
     return 0
 
 

@@ -352,7 +352,7 @@ Rework application/system logging as a common policy rather than letting each fe
 
 ## In-device OTA update architecture
 
-**Status:** Design agreed; A/B flash/rollback foundation, the disabled-by-default OTA application, OTA-owned remembered-network persistence, passive AP discovery, explicit STA association, lifecycle-bound STA teardown, authoritative embedded build/release identity, immutable OTA release metadata generation, bounded stable-catalog/waypoint selection, and explicit cancellable HTTPS catalog checks are implemented on the OTA development branch. Firmware installation and boot-confirmation policy remain implementation work.
+**Status:** Design agreed; A/B flash/rollback foundation, the disabled-by-default OTA application, OTA-owned remembered-network persistence, passive AP discovery, explicit STA association, lifecycle-bound STA teardown, authoritative embedded build identity, immutable OTA image metadata generation, a unified Pages OTA build catalog with hard identity/layout validation and stable-release selection, and explicit cancellable HTTPS catalog checks are implemented on the OTA development branch. Firmware installation, explicit non-stable build selection UI, and boot-confirmation policy remain implementation work.
 
 **Design goal:** Preserve RFScout's passive-by-default behavior and strict application/service lifecycle boundaries while allowing a user to deliberately obtain temporary Internet connectivity, check for a release, install an application image into the inactive OTA slot, and recover automatically if the new image does not boot successfully.
 
@@ -412,103 +412,53 @@ The existing WiFi / BT observation application remains a separate passive-monito
 
 ### GitHub Pages OTA publication
 
-OTA is published as part of RFScout's existing GitHub Pages deployment rather than through a separately administered web server. The firmware fetches:
+OTA is published as part of RFScout's existing GitHub Pages deployment. The device fetches:
 
-`https://netsurf916.github.io/RFScout/ota/stable.json`
+`https://netsurf916.github.io/RFScout/ota/catalog.json`
 
-GitHub Releases remain the durable source artifacts. The Pages workflow assembles one atomic static deployment containing both the browser flasher and the OTA view of published releases:
+GitHub Releases and successful Actions candidate artifacts remain the source builds. Pages creates one atomic deployment containing the browser flasher and an OTA catalog derived from the **same build inventory**:
 
 ```text
 /
     index.html
     catalog.json
     firmware/
-        ...
+        releases/<tag>/...
+        candidates/main/...
+        candidates/pr-<number>/...
     ota/
-        stable.json
-        releases/
-            0.4.0/
-                ota-release.json
-                rfscout-v0.4.0-esp32s3-app.bin
-            0.5.0/
-                ota-release.json
-                rfscout-v0.5.0-esp32s3-app.bin
+        catalog.json
 ```
 
-Draft releases may still be mirrored into the browser flasher for hardware validation, but they are never placed in the stable OTA catalog. Prereleases are also excluded from the stable OTA channel. A release becomes eligible for stable OTA only after GitHub publication and only when its immutable `ota-release.json` includes valid compatibility metadata and references a matching application image.
+The OTA catalog points at the application-only image already mirrored under each build's `firmware/...` directory. It does not duplicate firmware bytes into a separate OTA release tree. Builds are eligible for the device catalog only when they carry valid `ota-image.json` metadata whose version and source commit agree with the browser-flasher entry and whose project, hardware target, ESP-IDF target, partition-layout generation, application size, and SHA-256 pass publication-time validation.
 
-The release-preparation workflow records `minimum_source_version` in `ota-release.json`. That makes waypoint policy part of immutable release metadata rather than separate server state. The Pages builder verifies release/tag identity, artifact size, SHA-256, hardware target, ESP-IDF target, layout generation, and waypoint metadata before copying the application image and synthesizing `ota/stable.json`.
-
-Because Pages deployment replaces the generated site as one deployment artifact, firmware images and the catalog are published together rather than relying on a manual artifact-first/catalog-last server update sequence.
-
-Normal in-device OTA consumes only the application image. The combined `0x0` image remains the clean-install/recovery artifact and is the required mechanism for incompatible partition-layout changes.
-
-The first implementation does not require firmware signing. HTTPS certificate validation is therefore the initial authenticity boundary, while the catalog's SHA-256 and size protect transfer/storage integrity. The schema remains extensible so image signatures can be added later without redesigning acquisition or installation.
+The catalog intentionally contains the current `main` candidate, current open-PR candidates, draft releases, prereleases, and published releases whenever those builds are otherwise present in the web flasher and carry compatible OTA metadata. The normal **Check for update** path filters this catalog to published stable releases and selects the newest compatible SemVer. A separate explicit/manual build-selection UI will allow choosing an exact main, PR, draft, prerelease, or published build without applying stable-version ordering.
 
 ### Running-version identity
 
-The OTA application must not infer its version from filenames, Git state, or hard-coded UI text. The running image is authoritative.
+The OTA application must not infer its version from filenames, Git state, or hard-coded UI text. The running image is authoritative. Release and candidate builds embed their package version into ESP-IDF application metadata, and packaging verifies that metadata before producing artifacts.
 
-Release builds must embed the semantic release version into ESP-IDF application metadata (`PROJECT_VER`), and runtime code reads `esp_app_get_description()->version`. RFScout's release workflow currently supplies the semantic version to the external packager but does not yet guarantee that the same value is embedded in the application image; OTA implementation must close that gap and add validation so packaged release metadata and embedded image metadata agree.
+Stable-channel ordering applies only to semantic release versions. Candidate identifiers remain valid explicit install targets but do not participate in SemVer ordering.
 
-Stable-channel ordering applies only to semantic release versions. Candidate/local development identifiers may still be displayed for diagnostics, but a non-SemVer running image must not guess its place in the stable upgrade graph.
+### Pre-1.0 compatibility policy
 
-RFScout's published `0.3.2` release predates the A/B partition layout and therefore cannot be an in-device source for this OTA mechanism. The first release that contains the A/B/rollback foundation is an explicit bootstrap boundary and requires a clean/manual combined-image installation for devices coming from `0.3.2` or any other legacy partition map.
+RFScout does not maintain a historical OTA compatibility graph before `v1.0.0`. Once this OTA mechanism reaches `main`, the project may reset the development release line and remove older releases that are incompatible with the current OTA contract. Thereafter, builds exposed by the web flasher are expected to derive from the current compatible main line.
 
-### Stable catalog and strict update waypoints
+If a later pre-1.0 change deliberately breaks the OTA/partition contract, incompatible old releases should again be removed from the active published set and affected devices should use the combined clean-install/recovery image. The device still performs hard sanity checks rather than trusting catalog hygiene alone.
 
-Predicting the next filename from the running version is intentionally rejected. A device running `0.3.2` cannot know whether the next release is `0.3.3`, `0.4.0`, or something else, and future updater/storage changes may require an intermediate version.
+Stable selection therefore requires only:
 
-The initial `stable.json` format should therefore be a small release catalog rather than only a single latest-version pointer. A v1 shape is:
+1. valid catalog schema;
+2. exact RFScout project, supported hardware target, ESP-IDF target, and partition-layout generation;
+3. a published stable release entry;
+4. a valid semantic target version newer than the running semantic version; and
+5. validated artifact path, size, and SHA-256 metadata.
 
-```json
-{
-  "schema_version": 1,
-  "channel": "stable",
-  "latest": "0.6.0",
-  "releases": [
-    {
-      "version": "0.5.0",
-      "minimum_source_version": "0.4.0",
-      "hardware_target": "t-embed-cc1101-plus",
-      "idf_target": "esp32s3",
-      "partition_layout": "ab-v1",
-      "artifact": {
-        "path": "releases/0.5.0/rfscout-v0.5.0-esp32s3-app.bin",
-        "size": 1234567,
-        "sha256": "..."
-      }
-    },
-    {
-      "version": "0.6.0",
-      "minimum_source_version": "0.5.0",
-      "hardware_target": "t-embed-cc1101-plus",
-      "idf_target": "esp32s3",
-      "partition_layout": "ab-v1",
-      "artifact": {
-        "path": "releases/0.6.0/rfscout-v0.6.0-esp32s3-app.bin",
-        "size": 1234567,
-        "sha256": "..."
-      }
-    }
-  ]
-}
-```
+Explicit/manual selection does not require the target to be newer and does not interpret candidate identifiers as semantic versions. It still requires all hard project/hardware/layout/image sanity checks.
 
-Artifact paths are relative to the catalog origin so the complete tree remains portable to a test server or future host.
+Normal in-device OTA consumes only the application image. The combined `0x0` image remains the clean-install/recovery artifact and is the required mechanism for incompatible partition-layout changes.
 
-For a running semantic version, the client:
-
-1. validates the catalog schema and stable-channel metadata;
-2. filters releases to the exact supported hardware target, ESP-IDF target, and current partition-layout generation;
-3. considers only versions newer than the running version;
-4. considers a release directly reachable only when the running version is at least that release's `minimum_source_version`;
-5. selects the highest directly reachable release rather than blindly selecting `latest`; and
-6. after a successful update/reboot/confirmation, performs a new check to discover the next hop when the catalog still contains a newer release.
-
-This makes a waypoint strict without embedding special-case version logic in firmware. For example, if `0.6.0` requires updater behavior introduced by `0.5.0`, publishing `0.6.0` with `minimum_source_version: 0.5.0` forces older compatible devices to install a reachable `0.5.x` release first. If newer releases exist but none is directly reachable, the OTA UI must report that no supported in-device path is available rather than guessing or bypassing the constraint.
-
-The v1 selection model intentionally uses one monotonic lower-bound field rather than a general SemVer-range language. If a future compatibility problem cannot be represented safely by monotonic waypoints, that is a reason to revise the manifest/update protocol deliberately rather than embedding a complex range evaluator in the device.
+The first implementation does not require firmware signing. HTTPS certificate validation is therefore the initial authenticity boundary, while SHA-256 and size protect transfer/storage integrity. The schema remains extensible so image signatures can be added later without redesigning acquisition or installation.
 
 ### Partition-layout generation
 
@@ -563,8 +513,7 @@ The updater must not start another OTA while the currently running image is stil
 
 Before a candidate can become bootable, validation must cover at least:
 
-- supported manifest schema;
-- semantic source/target version ordering and waypoint eligibility;
+- supported manifest schema and selected build identity/provenance;
 - exact RFScout project/hardware target;
 - ESP-IDF chip target;
 - matching partition-layout generation;
@@ -586,11 +535,11 @@ Keep the feature reviewable and preserve abstraction boundaries by landing it in
 2. **implemented on the OTA development branch:** embed authoritative candidate/release version metadata, verify it during packaging, and generate immutable OTA release metadata;
 3. **implemented on the OTA development branch:** add the OTA app shell plus app-owned remembered-network persistence and reusable credential/text-entry UI;
 4. **implemented on the OTA development branch:** add session-scoped passive scan and explicit infrastructure-STA connect/disconnect support behind a semantic service, including explicit SSID-targeted active search for remembered networks not seen passively;
-5. **implemented on the OTA development branch:** add explicit static HTTPS catalog retrieval, validation, waypoint selection, cancellation on app transition, and OTA UI reporting without flash writes;
+5. **implemented on the OTA development branch:** add explicit static HTTPS catalog retrieval, hard build-identity/layout validation, stable-release selection, cancellation on app transition, and OTA UI reporting without flash writes;
 6. add the transport-neutral installer abstraction and ESP-IDF A/B streaming implementation;
 7. add boot-time pending-image confirmation/rollback handling;
-8. **implemented on the OTA development branch:** integrate stable OTA publication into the existing atomic GitHub Pages deployment; and
-9. validate cancellation, app switching, network loss, truncated/corrupt images, power loss at each OTA stage, waypoint upgrades, rollback, and recovery flashing on hardware.
+8. **implemented on the OTA development branch:** derive the device OTA catalog from the same main/PR/release inventory used by the atomic GitHub Pages browser-flasher deployment; and
+9. validate cancellation, app switching, network loss, truncated/corrupt images, power loss at each OTA stage, explicit candidate installs, rollback, and recovery flashing on hardware.
 
 ## Medium-term platform work
 

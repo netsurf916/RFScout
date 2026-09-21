@@ -1,5 +1,5 @@
 /**
-    apps/ota/ota_catalog.c : RFScout stable OTA catalog validation and waypoint selection
+    apps/ota/ota_catalog.c : RFScout OTA build-catalog validation and stable selection
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -16,7 +16,6 @@
 #include <string.h>
 
 #define OTA_CATALOG_SCHEMA_VERSION 1
-#define OTA_CATALOG_CHANNEL "stable"
 
 typedef struct
 {
@@ -105,6 +104,17 @@ static const char *json_string( const cJSON *a_object, const char *a_name )
     return cJSON_IsString( value ) && NULL != value->valuestring ? value->valuestring : NULL;
 }
 
+static bool json_bool( const cJSON *a_object, const char *a_name, bool *a_value )
+{
+    const cJSON *value = cJSON_GetObjectItemCaseSensitive( a_object, a_name );
+    if( !cJSON_IsBool( value ) )
+    {
+        return false;
+    }
+    *a_value = cJSON_IsTrue( value );
+    return true;
+}
+
 static bool copy_bounded( char *a_destination, size_t a_capacity, const char *a_source )
 {
     if( NULL == a_destination || 0U == a_capacity || NULL == a_source )
@@ -120,13 +130,13 @@ static bool copy_bounded( char *a_destination, size_t a_capacity, const char *a_
     return true;
 }
 
-static bool valid_sha256( const char *a_value )
+static bool valid_hex( const char *a_value, size_t a_length )
 {
-    if( NULL == a_value || OTA_CATALOG_SHA256_LENGTH != strlen( a_value ) )
+    if( NULL == a_value || a_length != strlen( a_value ) )
     {
         return false;
     }
-    for( size_t index = 0U; index < OTA_CATALOG_SHA256_LENGTH; ++index )
+    for( size_t index = 0U; index < a_length; ++index )
     {
         if( !isxdigit( (unsigned char)a_value[ index ] ) )
         {
@@ -167,21 +177,22 @@ static bool valid_relative_path( const char *a_path )
     return true;
 }
 
-static bool compatible_release( const cJSON *a_release,
-                                const rfscout_firmware_identity_t *a_running )
+static bool build_identity( const cJSON *a_build,
+                            const char **a_project,
+                            const char **a_hardware,
+                            const char **a_target,
+                            const char **a_layout )
 {
-    const char *hardware = json_string( a_release, "hardware_target" );
-    const char *target = json_string( a_release, "idf_target" );
-    const char *layout = json_string( a_release, "partition_layout" );
-    return NULL != hardware && NULL != target && NULL != layout &&
-           0 == strcmp( hardware, a_running->hardware_target ) &&
-           0 == strcmp( target, a_running->idf_target ) &&
-           0 == strcmp( layout, a_running->partition_layout );
+    *a_project = json_string( a_build, "project" );
+    *a_hardware = json_string( a_build, "hardware_target" );
+    *a_target = json_string( a_build, "idf_target" );
+    *a_layout = json_string( a_build, "partition_layout" );
+    return NULL != *a_project && NULL != *a_hardware && NULL != *a_target && NULL != *a_layout;
 }
 
-static bool parse_artifact( const cJSON *a_release, ota_catalog_candidate_t *a_candidate )
+static bool parse_artifact( const cJSON *a_build, ota_catalog_candidate_t *a_candidate )
 {
-    const cJSON *artifact = cJSON_GetObjectItemCaseSensitive( a_release, "artifact" );
+    const cJSON *artifact = cJSON_GetObjectItemCaseSensitive( a_build, "artifact" );
     if( !cJSON_IsObject( artifact ) )
     {
         return false;
@@ -190,8 +201,9 @@ static bool parse_artifact( const cJSON *a_release, ota_catalog_candidate_t *a_c
     const char *path = json_string( artifact, "path" );
     const char *sha256 = json_string( artifact, "sha256" );
     const cJSON *size = cJSON_GetObjectItemCaseSensitive( artifact, "size" );
-    if( !valid_relative_path( path ) || !valid_sha256( sha256 ) || !cJSON_IsNumber( size ) ||
-        size->valuedouble <= 0.0 || size->valuedouble > (double)UINT32_MAX )
+    if( !valid_relative_path( path ) || !valid_hex( sha256, OTA_CATALOG_SHA256_LENGTH ) ||
+        !cJSON_IsNumber( size ) || size->valuedouble <= 0.0 ||
+        size->valuedouble > (double)UINT32_MAX )
     {
         return false;
     }
@@ -219,10 +231,7 @@ esp_err_t ota_catalog_select( const char *a_json,
 
     memset( a_selection, 0, sizeof( *a_selection ) );
     ota_semver_t running_version;
-    if( !parse_semver( a_running->version, &running_version ) )
-    {
-        return ESP_ERR_NOT_SUPPORTED;
-    }
+    const bool running_is_semver = parse_semver( a_running->version, &running_version );
 
     cJSON *root = cJSON_ParseWithLength( a_json, a_length );
     if( NULL == root )
@@ -232,62 +241,83 @@ esp_err_t ota_catalog_select( const char *a_json,
 
     esp_err_t result = ESP_ERR_INVALID_RESPONSE;
     const cJSON *schema = cJSON_GetObjectItemCaseSensitive( root, "schema_version" );
-    const char *channel = json_string( root, "channel" );
-    const char *latest = json_string( root, "latest" );
-    const cJSON *releases = cJSON_GetObjectItemCaseSensitive( root, "releases" );
-    ota_semver_t latest_version;
+    const cJSON *builds = cJSON_GetObjectItemCaseSensitive( root, "builds" );
     if( !cJSON_IsNumber( schema ) || OTA_CATALOG_SCHEMA_VERSION != schema->valueint ||
-        NULL == channel || 0 != strcmp( channel, OTA_CATALOG_CHANNEL ) || NULL == latest ||
-        !parse_semver( latest, &latest_version ) || !cJSON_IsArray( releases ) ||
-        cJSON_GetArraySize( releases ) > OTA_CATALOG_MAX_RELEASES ||
-        !copy_bounded(
-            a_selection->latest_version, sizeof( a_selection->latest_version ), latest ) )
+        !cJSON_IsArray( builds ) || cJSON_GetArraySize( builds ) > OTA_CATALOG_MAX_BUILDS )
     {
         goto cleanup;
     }
 
-    bool newer_compatible = false;
     bool selected = false;
+    bool have_latest = false;
     ota_semver_t selected_version = { 0 };
-    const cJSON *release = NULL;
-    cJSON_ArrayForEach( release, releases )
+    ota_semver_t latest_version = { 0 };
+    const cJSON *build = NULL;
+    cJSON_ArrayForEach( build, builds )
     {
-        if( !cJSON_IsObject( release ) )
+        if( !cJSON_IsObject( build ) )
         {
             goto cleanup;
         }
 
-        const char *version = json_string( release, "version" );
-        const char *minimum = json_string( release, "minimum_source_version" );
-        ota_semver_t parsed_version;
-        ota_semver_t parsed_minimum;
+        const char *build_id = json_string( build, "id" );
+        const char *kind = json_string( build, "kind" );
+        const char *version = json_string( build, "version" );
+        const char *commit = json_string( build, "commit" );
+        const char *project = NULL;
+        const char *hardware = NULL;
+        const char *target = NULL;
+        const char *layout = NULL;
+        bool stable = false;
         ota_catalog_candidate_t candidate = { 0 };
-        if( NULL == version || NULL == minimum || !parse_semver( version, &parsed_version ) ||
-            !parse_semver( minimum, &parsed_minimum ) || !parse_artifact( release, &candidate ) )
+        if( NULL == build_id || NULL == kind || NULL == version || NULL == commit ||
+            !valid_hex( commit, OTA_CATALOG_COMMIT_LENGTH ) ||
+            !json_bool( build, "stable", &stable ) ||
+            !build_identity( build, &project, &hardware, &target, &layout ) ||
+            !parse_artifact( build, &candidate ) )
+        {
+            goto cleanup;
+        }
+        if( !copy_bounded( candidate.build_id, sizeof( candidate.build_id ), build_id ) ||
+            !copy_bounded( candidate.version, sizeof( candidate.version ), version ) ||
+            !copy_bounded( candidate.commit, sizeof( candidate.commit ), commit ) )
         {
             goto cleanup;
         }
 
-        if( !copy_bounded( candidate.version, sizeof( candidate.version ), version ) ||
-            !copy_bounded( candidate.minimum_source_version,
-                           sizeof( candidate.minimum_source_version ),
-                           minimum ) )
+        const bool compatible = 0 == strcmp( project, a_running->project ) &&
+                                0 == strcmp( hardware, a_running->hardware_target ) &&
+                                0 == strcmp( target, a_running->idf_target ) &&
+                                0 == strcmp( layout, a_running->partition_layout );
+        if( !compatible || !stable )
+        {
+            continue;
+        }
+        if( 0 != strcmp( kind, "release" ) )
         {
             goto cleanup;
         }
 
-        if( !compatible_release( release, a_running ) ||
-            compare_semver( &parsed_version, &running_version ) <= 0 )
+        ota_semver_t parsed_version;
+        if( !parse_semver( version, &parsed_version ) )
+        {
+            goto cleanup;
+        }
+        if( !have_latest || compare_semver( &parsed_version, &latest_version ) > 0 )
+        {
+            latest_version = parsed_version;
+            have_latest = true;
+            if( !copy_bounded(
+                    a_selection->latest_version, sizeof( a_selection->latest_version ), version ) )
+            {
+                goto cleanup;
+            }
+        }
+
+        if( running_is_semver && compare_semver( &parsed_version, &running_version ) <= 0 )
         {
             continue;
         }
-
-        newer_compatible = true;
-        if( compare_semver( &running_version, &parsed_minimum ) < 0 )
-        {
-            continue;
-        }
-
         if( !selected || compare_semver( &parsed_version, &selected_version ) > 0 )
         {
             a_selection->candidate = candidate;
@@ -296,9 +326,7 @@ esp_err_t ota_catalog_select( const char *a_json,
         }
     }
 
-    a_selection->result = selected           ? OTA_CATALOG_UPDATE_AVAILABLE
-                          : newer_compatible ? OTA_CATALOG_BLOCKED
-                                             : OTA_CATALOG_CURRENT;
+    a_selection->result = selected ? OTA_CATALOG_UPDATE_AVAILABLE : OTA_CATALOG_CURRENT;
     result = ESP_OK;
 
 cleanup:

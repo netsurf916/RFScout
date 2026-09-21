@@ -14,10 +14,6 @@ on:
         required: true
         default: main
         type: string
-      minimum_source_version:
-        description: Oldest OTA-capable source version allowed to install this release (X.Y.Z, no v)
-        required: true
-        type: string
       prerelease:
         description: Mark the draft as a prerelease
         required: true
@@ -38,7 +34,6 @@ jobs:
     outputs:
       commit: ${{ steps.source.outputs.commit }}
       version: ${{ steps.version.outputs.version }}
-      minimum_source_version: ${{ steps.version.outputs.minimum_source_version }}
 
     steps:
       - uses: actions/checkout@v6
@@ -50,20 +45,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
-          MINIMUM_SOURCE_VERSION: ${{ inputs.minimum_source_version }}
         run: |
-          python3 - "$VERSION" "$MINIMUM_SOURCE_VERSION" <<'PY'
+          python3 - "$VERSION" <<'PY'
           import sys
 
-          from tools.package_release import (
-              PackagingError,
-              validate_ota_source_version,
-              validate_release_version,
-          )
+          from tools.package_release import PackagingError, validate_release_version
 
           try:
               validate_release_version(sys.argv[1])
-              validate_ota_source_version(sys.argv[2])
           except PackagingError as error:
               print(error, file=sys.stderr)
               raise SystemExit(1) from error
@@ -77,7 +66,6 @@ jobs:
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "minimum_source_version=$MINIMUM_SOURCE_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Resolve and validate source
         id: source
@@ -142,7 +130,6 @@ jobs:
         env:
           COMMIT: ${{ needs.validate.outputs.commit }}
           VERSION: ${{ needs.validate.outputs.version }}
-          MINIMUM_SOURCE_VERSION: ${{ needs.validate.outputs.minimum_source_version }}
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           . "$IDF_PATH/export.sh"
@@ -157,8 +144,7 @@ jobs:
             --output-dir dist \
             --version "$VERSION" \
             --commit "$COMMIT" \
-            --idf-version "$idf_version" \
-            --minimum-source-version "$MINIMUM_SOURCE_VERSION"
+            --idf-version "$idf_version"
 
       - name: Upload verified release bundle
         uses: actions/upload-artifact@v7

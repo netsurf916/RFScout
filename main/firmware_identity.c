@@ -12,7 +12,7 @@
 #include "esp_image_format.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
-#include "mbedtls/sha256.h"
+#include "psa/crypto.h"
 #include "sdkconfig.h"
 
 #include <string.h>
@@ -66,12 +66,10 @@ esp_err_t firmware_running_image_sha256( uint8_t a_digest[ RFSCOUT_FIRMWARE_SHA2
         return ESP_ERR_INVALID_SIZE;
     }
 
-    mbedtls_sha256_context sha256;
-    mbedtls_sha256_init( &sha256 );
-    int sha_result = mbedtls_sha256_starts( &sha256, 0 );
-    if( 0 != sha_result )
+    psa_hash_operation_t sha256 = PSA_HASH_OPERATION_INIT;
+    psa_status_t sha_result = psa_hash_setup( &sha256, PSA_ALG_SHA_256 );
+    if( PSA_SUCCESS != sha_result )
     {
-        mbedtls_sha256_free( &sha256 );
         return ESP_FAIL;
     }
 
@@ -85,25 +83,27 @@ esp_err_t firmware_running_image_sha256( uint8_t a_digest[ RFSCOUT_FIRMWARE_SHA2
         if( ESP_OK != result )
         {
             memset( hash_read_buffer, 0, sizeof( hash_read_buffer ) );
-            mbedtls_sha256_free( &sha256 );
+            (void)psa_hash_abort( &sha256 );
             return result;
         }
 
-        sha_result = mbedtls_sha256_update( &sha256, hash_read_buffer, chunk );
-        if( 0 != sha_result )
+        sha_result = psa_hash_update( &sha256, hash_read_buffer, chunk );
+        if( PSA_SUCCESS != sha_result )
         {
             memset( hash_read_buffer, 0, sizeof( hash_read_buffer ) );
-            mbedtls_sha256_free( &sha256 );
+            (void)psa_hash_abort( &sha256 );
             return ESP_FAIL;
         }
         offset += chunk;
     }
     memset( hash_read_buffer, 0, sizeof( hash_read_buffer ) );
 
-    sha_result = mbedtls_sha256_finish( &sha256, a_digest );
-    mbedtls_sha256_free( &sha256 );
-    if( 0 != sha_result )
+    size_t digest_length = 0U;
+    sha_result = psa_hash_finish(
+        &sha256, a_digest, RFSCOUT_FIRMWARE_SHA256_LENGTH, &digest_length );
+    if( PSA_SUCCESS != sha_result || RFSCOUT_FIRMWARE_SHA256_LENGTH != digest_length )
     {
+        (void)psa_hash_abort( &sha256 );
         memset( a_digest, 0, RFSCOUT_FIRMWARE_SHA256_LENGTH );
         return ESP_FAIL;
     }

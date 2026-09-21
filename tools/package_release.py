@@ -28,9 +28,6 @@ EXPECTED_PARTS = {
     0x10000: "rfscout.bin",
 }
 VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
-OTA_SOURCE_VERSION_RE = re.compile(
-    r"^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$"
-)
 RELEASE_VERSION_RE = re.compile(
     r"^v(?:0|[1-9][0-9]*)\."
     r"(?:0|[1-9][0-9]*)\."
@@ -42,30 +39,6 @@ RELEASE_VERSION_RE = re.compile(
 
 class PackagingError(RuntimeError):
     """Raised when build output cannot form a safe release bundle."""
-
-
-def validate_ota_source_version(a_version: str) -> None:
-    """Validate the oldest source version allowed by one OTA release."""
-    if not OTA_SOURCE_VERSION_RE.fullmatch(a_version):
-        raise PackagingError(
-            "minimum OTA source version must be plain X.Y.Z Semantic Versioning"
-        )
-
-
-def ota_version_tuple(a_version: str) -> tuple[int, int, int]:
-    """Return the stable X.Y.Z precedence portion of a validated release/source version."""
-    value = a_version.removeprefix("v").split("+", 1)[0].split("-", 1)[0]
-    validate_ota_source_version(value)
-    return tuple(int(part) for part in value.split("."))
-
-
-def validate_ota_waypoint(a_release_version: str, a_minimum_source_version: str) -> None:
-    """Reject a waypoint that is newer than the release it is meant to reach."""
-    validate_ota_source_version(a_minimum_source_version)
-    if ota_version_tuple(a_minimum_source_version) > ota_version_tuple(a_release_version):
-        raise PackagingError(
-            "minimum OTA source version cannot be newer than the target release"
-        )
 
 
 def validate_release_version(a_version: str) -> None:
@@ -218,7 +191,7 @@ Press reset after flashing if the device does not restart automatically.
 
 ## Advanced images
 
-The separate bootloader, partition-table, and application images are included for development and recovery. RFScout does not yet promise app-only update compatibility across releases; use the combined image for normal installation.
+The separate bootloader, partition-table, and application images are included for development and recovery. The application image is used by in-device OTA only after project/hardware/chip/layout and image-integrity sanity checks pass. Use the combined image for clean installation, recovery, or any partition-layout boundary.
 
 Verify downloaded files against `SHA256SUMS` before flashing.
 """
@@ -242,23 +215,15 @@ def package_release(
     a_version: str,
     a_commit: str,
     a_idf_version: str,
-    a_minimum_source_version: str | None = None,
 ) -> list[Path]:
     if not VERSION_RE.fullmatch(a_version):
         raise PackagingError(
             "version must contain only letters, numbers, dots, underscores, and hyphens"
         )
-    if not re.fullmatch(r"[0-9a-fA-F]{7,40}", a_commit):
-        raise PackagingError("commit must be a 7- to 40-character hexadecimal Git SHA")
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", a_commit):
+        raise PackagingError("commit must be a 40-character hexadecimal Git SHA")
     if not a_merged_image.is_file() or a_merged_image.stat().st_size == 0:
         raise PackagingError(f"missing or empty merged image: {a_merged_image}")
-    if a_version.startswith("v"):
-        if a_minimum_source_version is None:
-            raise PackagingError("release bundles require --minimum-source-version")
-        validate_ota_waypoint(a_version, a_minimum_source_version)
-    elif a_minimum_source_version is not None:
-        validate_ota_source_version(a_minimum_source_version)
-
     validate_build(a_build_dir, a_version)
 
     if a_output_dir.exists():
@@ -325,11 +290,11 @@ def package_release(
 
     app_name = f"{stem}-app.bin"
     app_path = a_output_dir / app_name
-    ota_release = {
+    ota_image = {
         "schema_version": 1,
-        "project": "RFScout",
+        "project": EXPECTED_PROJECT_NAME,
         "version": embedded_version(a_version),
-        "minimum_source_version": a_minimum_source_version,
+        "commit": a_commit.lower(),
         "hardware_target": EXPECTED_HARDWARE_TARGET,
         "idf_target": EXPECTED_TARGET,
         "partition_layout": EXPECTED_PARTITION_LAYOUT,
@@ -339,8 +304,8 @@ def package_release(
             "size": app_path.stat().st_size,
         },
     }
-    ota_release_path = a_output_dir / "ota-release.json"
-    write_json(ota_release_path, ota_release)
+    ota_image_path = a_output_dir / "ota-image.json"
+    write_json(ota_image_path, ota_image)
 
     web_manifest = {
         "name": "RFScout",
@@ -359,7 +324,7 @@ def package_release(
     guide_path = a_output_dir / "FLASHING.md"
     guide_path.write_text(flashing_guide(a_version, full_name), encoding="utf-8")
 
-    checksum_inputs = copied + [manifest_path, ota_release_path, web_manifest_path, guide_path]
+    checksum_inputs = copied + [manifest_path, ota_image_path, web_manifest_path, guide_path]
     checksum_path = a_output_dir / "SHA256SUMS"
     checksum_path.write_text(
         "".join(
@@ -383,7 +348,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--version", required=True)
     parser.add_argument("--commit", required=True)
     parser.add_argument("--idf-version", required=True)
-    parser.add_argument("--minimum-source-version")
     return parser.parse_args()
 
 
@@ -397,7 +361,6 @@ def main() -> int:
             args.version,
             args.commit,
             args.idf_version,
-            args.minimum_source_version,
         )
     except PackagingError as error:
         print(f"error: {error}", file=sys.stderr)

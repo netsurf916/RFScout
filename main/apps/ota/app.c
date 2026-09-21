@@ -784,10 +784,6 @@ static rfscout_app_runtime_result_t ota_runtime( const rfscout_app_runtime_event
                                   "%s",
                                   catalog_selection.candidate.version );
                     }
-                    else if( OTA_CATALOG_BLOCKED == catalog_selection.result )
-                    {
-                        snprintf( update_status, sizeof( update_status ), "Waypoint required" );
-                    }
                     else
                     {
                         snprintf( update_status, sizeof( update_status ), "Current" );

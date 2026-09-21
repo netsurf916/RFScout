@@ -15,7 +15,7 @@
 
 #include <string.h>
 
-#define OTA_CATALOG_URL "https://netsurf916.github.io/RFScout/ota/stable.json"
+#define OTA_CATALOG_URL "https://netsurf916.github.io/RFScout/ota/catalog.json"
 #define OTA_HTTP_TIMEOUT_MS 5000
 #define OTA_ACQUISITION_TASK_STACK 8192U
 #define OTA_ACQUISITION_STOP_TIMEOUT_MS 6000U

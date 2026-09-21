@@ -13,11 +13,11 @@ The release packager validates ESP-IDF build metadata before producing files. RF
 | OTA metadata | `0xD000` | ESP-IDF OTA slot-selection/rollback metadata |
 | Application | `0x10000` | Initial RFScout application in the first OTA slot |
 
-The bundle contains a combined image for ordinary installation, the application/bootloader/partition-table component images for development and recovery, SHA-256 checksums, installation instructions, structured build metadata, an immutable `ota-release.json` metadata fragment, and an ESP Web Tools manifest. The combined image also contains the generated ESP-IDF OTA metadata image required to initialize the A/B boot state. It does not contain the ESP-IDF build tree. The ESP32-S3 firmware validates the supported T-Embed profile at runtime.
+The bundle contains a combined image for ordinary installation, the application/bootloader/partition-table component images for development and recovery, SHA-256 checksums, installation instructions, structured build metadata, an immutable `ota-image.json` metadata fragment, and an ESP Web Tools manifest. The combined image also contains the generated ESP-IDF OTA metadata image required to initialize the A/B boot state. It does not contain the ESP-IDF build tree. The ESP32-S3 firmware validates the supported T-Embed profile at runtime.
 
-`ota-release.json` describes the application image using the normalized embedded version (without the release tag's presentation `v` prefix), the release's required `minimum_source_version` waypoint, stable hardware target ID, ESP-IDF target, partition-layout generation, size, and SHA-256. **Prepare firmware release** requires the maintainer to choose that oldest directly supported source version. Release packaging rejects malformed or impossible waypoint versions and rejects a build when ESP-IDF's generated `project_description.json` does not report the same embedded project version being packaged.
+`ota-image.json` describes the application image for both release and candidate bundles: normalized embedded version, source commit, project ID, stable hardware target ID, ESP-IDF target, partition-layout generation, size, and SHA-256. Release packaging rejects a build when ESP-IDF's generated `project_description.json` does not report the same embedded project version being packaged. Compatibility policy is intentionally not encoded as a pre-1.0 version-range or waypoint field; compatibility is bounded by the currently published build set plus hard identity/layout/image checks on the device.
 
-RFScout logs the running application's exact on-flash artifact byte length and SHA-256 during startup. For an application image flashed without modification, that startup digest should match the SHA-256 recorded for the corresponding `*-app.bin` in `ota-release.json` and `SHA256SUMS`. This startup diagnostic deliberately hashes the complete stored application artifact rather than using ESP-IDF's separate app-content digest returned by `esp_partition_get_sha256()`.
+RFScout logs the running application's exact on-flash artifact byte length and SHA-256 during startup. For an application image flashed without modification, that startup digest should match the SHA-256 recorded for the corresponding `*-app.bin` in `ota-image.json` and `SHA256SUMS`. This startup diagnostic deliberately hashes the complete stored application artifact rather than using ESP-IDF's separate app-content digest returned by `esp_partition_get_sha256()`.
 
 `manifest.web.json` is consumed by the browser flasher. The Pages deployment mirrors the manifest and referenced combined image onto the same HTTPS origin so flashing does not depend on cross-origin access to GitHub release or Actions URLs.
 
@@ -33,11 +33,11 @@ The normal **Build and formatting** workflow:
 
 New draft pull requests intentionally skip the expensive ESP-IDF candidate build. Mark a PR Ready for Review when a fresh browser-flashable candidate is needed. If a PR already has a successful candidate for its current head and is later converted back to draft without changing that head, the existing candidate remains eligible for the browser flasher until the PR changes, closes, or the artifact expires.
 
-Candidate artifacts are diagnostic build products, not releases, and are never marked stable automatically.
+Candidate artifacts are diagnostic build products, not releases, and are never marked stable automatically. Pull-request candidates identify both the PR head used to discover the workflow run and the packaged merge-ref commit that produced the tested firmware bytes; OTA integrity metadata is tied to the packaged commit.
 
 ## GitHub Pages publication
 
-The **Publish RFScout Pages** workflow produces one static deployment containing the browser flasher plus the stable in-device OTA tree. GitHub Releases are the durable artifact store; Pages is a generated deployment view.
+The **Publish RFScout Pages** workflow produces one static deployment containing the browser flasher plus the unified in-device OTA build catalog. GitHub Releases and short-lived candidate artifacts are the source build inventory; Pages is a generated deployment view.
 
 ### Browser flasher
 
@@ -81,30 +81,31 @@ The candidate portion of a Pages deployment represents current testable developm
 
 
 
-### Stable in-device OTA
+### In-device OTA catalog
 
-The same Pages deployment builds `ota/stable.json` and the referenced `ota/releases/<version>/` application-image tree. This channel is intentionally narrower than the browser flasher:
+The same Pages deployment builds `ota/catalog.json` from the same normalized build inventory shown by the browser flasher. Any mirrored build carrying valid `ota-image.json` metadata is device-installable in principle:
 
-- only **published, non-prerelease** GitHub Releases are eligible;
-- a release without valid `ota-release.json` metadata is not an OTA release;
-- the Pages builder verifies the release tag, application asset size, and SHA-256 before deployment;
-- `minimum_source_version` comes from immutable release metadata and defines strict waypoint reachability; and
-- old releases that predate OTA metadata, including `v0.3.2`, are naturally absent.
+- the current successful `main` candidate;
+- successful candidates for open pull requests;
+- prepared draft releases;
+- prerelease releases; and
+- published releases.
 
-Draft releases remain browser-testable without becoming visible to deployed devices. Publishing a stable release triggers a Pages refresh; the generated OTA catalog and all referenced application images are deployed atomically as one Pages artifact.
+The default **Check for update** path considers only published, non-prerelease releases and applies ordinary semantic-version ordering. Explicit/manual build selection is different: it selects the exact main/PR/release build requested by the user and does not pretend candidate identifiers participate in SemVer ordering.
+
+Before a build is emitted into the OTA catalog, the Pages builder verifies that its OTA metadata agrees with the browser-catalog version/commit and that project, hardware target, ESP-IDF target, partition-layout generation, application size, and SHA-256 are exactly what RFScout expects. The application image itself remains under the same `firmware/...` Pages path used by the mirrored build; the OTA catalog points to that exact artifact rather than maintaining a second copy.
+
+Legacy browser-flasher releases that predate `ota-image.json` may be skipped temporarily during the transition. Once the first OTA-capable release is published, the intended pre-1.0 policy is to remove incompatible legacy releases rather than preserve upgrade shims for them.
 
 ## Preparing a draft release
 
 From the repository **Actions** page, select **Prepare firmware release**, choose **Run workflow**, and provide:
 
-- a semantic version beginning with `v`, for example `v0.2.0` or `v0.2.1-rc.1`;
-- a source ref, normally `main`;
-- `minimum_source_version`, the oldest OTA-capable `X.Y.Z` release allowed to install this release; and
+- a semantic version beginning with `v`, for example `v0.3.0` or `v0.3.1-rc.1`;
+- a source ref, normally `main`; and
 - whether the release should be marked prerelease.
 
-For the first A/B-capable RFScout release, set `minimum_source_version` to that release's own version because legacy `v0.3.2` devices must use the combined clean-install image first. Later releases can point back to the oldest compatible OTA-capable release, or to a newer mandatory waypoint when updater/storage semantics require one. The workflow rejects a minimum source version newer than the target release.
-
-The workflow resolves the source ref to an immutable commit and rejects requests when the version is malformed/duplicate, the OTA waypoint is invalid, the source is not part of `main`, or the source contains no commits after the latest published release.
+The workflow resolves the source ref to an immutable commit and rejects requests when the version is malformed/duplicate, the source is not part of `main`, or the source contains no commits after the latest published release.
 
 It repeats formatting, packaging tests, the ESP-IDF 6.1 build, and bundle generation at that exact commit. The build embeds the requested semantic version without the leading `v` into ESP-IDF application metadata, and the packager verifies that embedded version before producing release assets. Only after those jobs pass does it create the semantic version tag at the validated commit and then create the **draft** GitHub Release against that existing tag. This explicit ordering prevents GitHub from assigning a temporary `untagged-*` release identity while a release is under review.
 
@@ -136,17 +137,19 @@ Because GitHub does not generate draft-release deletion workflow events, deletin
 
 ## Compatibility before v1.0.0
 
-RFScout versions before `v1.0.0` are development releases and do not promise backward compatibility between releases. Internal persistence layouts, removable-storage formats, log schemas, and other implementation contracts may change without migration shims when doing so keeps the implementation simpler or materially improves the design. Compatibility work may still be added when it has a specific operational need, but preserving superseded pre-1.0 formats is not a default requirement.
+RFScout versions before `v1.0.0` are development releases and do not promise backward compatibility. The active GitHub Release/Pages inventory is the supported install universe rather than a permanent historical upgrade graph.
 
-The project will revisit and define its long-term compatibility guarantees for `v1.0.0` and later. Until then, development builds should be treated as potentially format-breaking upgrades, and important removable or persistent data should be exported before upgrading when its continued readability matters.
+When a pre-1.0 change intentionally breaks the OTA partition/update contract, old incompatible releases should be removed from the active GitHub Release set and Pages should be republished. Devices crossing that boundary use the combined clean-install/recovery image. RFScout does not carry migration waypoints or version-range shims solely to preserve superseded pre-1.0 firmware.
+
+This policy does **not** remove installation sanity checks. Every device-side install still has to match RFScout project identity, supported hardware target, ESP32-S3 target, current partition-layout generation, image size, embedded image metadata, transfer SHA-256, and post-write flash-readback SHA-256 before the image can become bootable.
 
 ## Installation behavior
 
 The combined image is a clean installation/recovery image flashed at `0x0`. It contains the bootloader, A/B partition table, initialized OTA metadata, and application. It can replace internal NVS and LittleFS state, including RFScout configuration, calibration, and other persistent system/app records. Removable SD contents such as logs and recordings are not part of the image and are not erased by flashing internal storage.
 
-The A/B partition/rollback foundation is present on this development line, but the OTA application and installer are not implemented by this foundation alone. The published `v0.3.2` firmware predates the A/B layout, so moving a device from `v0.3.2` to the first A/B-capable release requires the combined clean-install/recovery image.
+The A/B partition/rollback foundation is present on this development line. The currently published legacy firmware predates this layout, so the first OTA-capable release is a clean-install boundary; incompatible pre-OTA releases should be removed from the active release set when that release is established.
 
-Separate component images remain development/recovery artifacts. The planned in-device protocol, compatibility/waypoint rules, static backend, and rollback-confirmation behavior are maintained in [ROADMAP.md](ROADMAP.md#in-device-ota-update-architecture) until they are implemented.
+Separate component images remain development/recovery artifacts. The remaining in-device installer, explicit build-selection UI, and rollback-confirmation behavior are maintained in [ROADMAP.md](ROADMAP.md#in-device-ota-update-architecture) until they are implemented.
 
 ## Reproducibility
 

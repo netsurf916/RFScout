@@ -128,34 +128,17 @@ jobs:
             mkdir -p "$destination"
             gh release download "$tag" --pattern manifest.json --pattern manifest.web.json \
               --pattern 'rfscout-*-full.bin' --dir "$destination"
+
+            if grep -qx 'ota-image.json' <<< "$assets"; then
+              gh release download "$tag" --pattern ota-image.json --dir "$destination"
+              artifact=$(jq -r '.artifact.file // empty' "$destination/ota-image.json")
+              if [[ -z "$artifact" ]] || ! grep -Fxq "$artifact" <<< "$assets"; then
+                echo "OTA metadata for $tag references missing asset: $artifact" >&2
+                exit 1
+              fi
+              gh release download "$tag" --pattern "$artifact" --dir "$destination"
+            fi
           done
-
-
-      - name: Stage published stable OTA releases
-        if: steps.stability.outputs.ready == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p ota-staging
-          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-            --jq '.[] | select((.draft | not) and (.prerelease | not)) | .tag_name' \
-            | while IFS= read -r tag; do
-                assets=$(gh release view "$tag" --json assets --jq '.assets[].name')
-                if ! grep -qx 'ota-release.json' <<< "$assets"; then
-                  continue
-                fi
-
-                destination="ota-staging/$tag"
-                mkdir -p "$destination"
-                gh release download "$tag" --pattern ota-release.json --dir "$destination"
-
-                artifact=$(jq -r '.artifact.file // empty' "$destination/ota-release.json")
-                if [[ -z "$artifact" ]] || ! grep -Fxq "$artifact" <<< "$assets"; then
-                  echo "OTA metadata for $tag references missing asset: $artifact" >&2
-                  exit 1
-                fi
-                gh release download "$tag" --pattern "$artifact" --dir "$destination"
-              done
 
       - name: Collect current main and pull request candidates
         if: steps.stability.outputs.ready == 'true'
@@ -215,8 +198,7 @@ jobs:
         if: steps.stability.outputs.ready == 'true'
         run: |
           python3 tools/build_web_flasher.py --site-dir site --releases-json releases.json \
-            --candidate-root candidates --candidates-json candidates.json \
-            --ota-release-root ota-staging
+            --candidate-root candidates --candidates-json candidates.json
 
       - name: Configure GitHub Pages
         if: steps.stability.outputs.ready == 'true'

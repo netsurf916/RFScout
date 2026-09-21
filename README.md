@@ -28,7 +28,7 @@ Disabled or unavailable apps are skipped. Home is always available and is the de
 
 ### OTA Update
 
-OTA Update is a top-level system application that is disabled by default and appears between System Events and Home when enabled. Entering it starts only a passive infrastructure-Wi-Fi scan; it never associates automatically. The app owns a bounded list of remembered SSIDs/passwords in its own persistent namespace, shows remembered APs that are currently visible, provides explicit per-network Connect/Disconnect/Forget actions, and clears transient STA state when the app session ends. ESP-IDF Wi-Fi configuration is kept in RAM so the driver does not become a second global credential store. The firmware now has a platform-owned running-image identity and a bounded stable-catalog selector that enforces hardware/IDF/layout compatibility and strict update waypoints. After explicit association, the app exposes an explicit **Check for update** action. Catalog retrieval runs as a cancellable HTTPS service using ESP-IDF certificate-bundle validation, then feeds the bounded compatibility/waypoint selector; changing apps cancels acquisition before STA teardown. Firmware installation remains follow-on work.
+OTA Update is a top-level system application that is disabled by default and appears between System Events and Home when enabled. Entering it starts only a passive infrastructure-Wi-Fi scan; it never associates automatically. The app owns a bounded list of remembered SSIDs/passwords in its own persistent namespace, shows remembered APs that are currently visible, provides explicit per-network Connect/Disconnect/Forget actions, and clears transient STA state when the app session ends. ESP-IDF Wi-Fi configuration is kept in RAM so the driver does not become a second global credential store. The firmware now has a platform-owned running-image identity and a bounded OTA build-catalog selector that enforces project/hardware/IDF/layout sanity checks. After explicit association, the app exposes an explicit **Check for update** action. Catalog retrieval runs as a cancellable HTTPS service using ESP-IDF certificate-bundle validation, then selects the newest compatible published stable release; the same catalog also carries main, pull-request, draft-release, and prerelease builds for explicit/manual installation. Changing apps cancels acquisition before STA teardown. Firmware installation remains follow-on work.
 
 ### WiFi / BT
 
@@ -91,7 +91,7 @@ idf.py build
 idf.py flash monitor
 ```
 
-The firmware validates the T-Embed CC1101 Plus runtime profile at startup and leaves unsupported hardware inert. Ready-for-review pull requests can produce short-lived candidate bundles. Published releases are prepared deliberately through the release workflow. GitHub Pages is generated from those artifacts and carries both the browser flasher and the stable in-device OTA catalog/application images.
+The firmware validates the T-Embed CC1101 Plus runtime profile at startup and leaves unsupported hardware inert. Ready-for-review pull requests can produce short-lived candidate bundles. Published releases are prepared deliberately through the release workflow. GitHub Pages is generated from release and candidate artifacts and carries both the browser flasher and the unified in-device OTA build catalog/application images.
 
 ## Documentation
 
