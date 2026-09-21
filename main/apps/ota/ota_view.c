@@ -33,22 +33,31 @@ static unsigned menu_window_start( unsigned a_selected, unsigned a_count )
     return start;
 }
 
-static void draw_menu_row(
-    unsigned a_row, unsigned a_item, unsigned a_selected, const char *a_label, const char *a_value )
+static void draw_menu_row_at(
+    int a_y, unsigned a_item, unsigned a_selected, const char *a_label, const char *a_value )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     const bool active = a_item == a_selected;
     const uint16_t color = active ? theme->selected : theme->text;
-    const int y = OTA_MENU_START_Y + (int)a_row * OTA_MENU_ROW_HEIGHT;
     if( active )
     {
-        display_draw_text( UI_LAYOUT_LEFT_X, y, ">", color, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, a_y, ">", color, 1U );
     }
-    display_draw_text( UI_LAYOUT_LABEL_X, y, a_label, color, 1U );
+    display_draw_text( UI_LAYOUT_LABEL_X, a_y, a_label, color, 1U );
     if( NULL != a_value && '\0' != a_value[ 0 ] )
     {
-        display_draw_text( 242, y, a_value, active ? theme->accent : theme->secondary, 1U );
+        display_draw_text( 242, a_y, a_value, active ? theme->accent : theme->secondary, 1U );
     }
+}
+
+static void draw_menu_row(
+    unsigned a_row, unsigned a_item, unsigned a_selected, const char *a_label, const char *a_value )
+{
+    draw_menu_row_at( OTA_MENU_START_Y + (int)a_row * OTA_MENU_ROW_HEIGHT,
+                      a_item,
+                      a_selected,
+                      a_label,
+                      a_value );
 }
 
 void ota_view_render_main( const char *a_version,
@@ -64,7 +73,7 @@ void ota_view_render_main( const char *a_version,
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     const unsigned item_count =
-        (unsigned)a_network_count + ( a_can_check ? ( a_can_install ? 4U : 3U ) : 3U );
+        1U + (unsigned)a_network_count + ( a_can_check ? ( a_can_install ? 4U : 3U ) : 3U );
     const unsigned start = menu_window_start( a_selected, item_count );
 
     display_clear( theme->background );
@@ -86,15 +95,22 @@ void ota_view_render_main( const char *a_version,
             break;
         }
 
-        if( item < a_network_count )
+        if( 0U == item )
+        {
+            draw_menu_row( row, item, a_selected, "Back", NULL );
+            continue;
+        }
+
+        const unsigned menu_item = item - 1U;
+        if( menu_item < a_network_count )
         {
             char rssi[ 16 ];
-            snprintf( rssi, sizeof( rssi ), "%d", (int)a_networks[ item ].rssi );
-            draw_menu_row( row, item, a_selected, a_networks[ item ].ssid, rssi );
+            snprintf( rssi, sizeof( rssi ), "%d", (int)a_networks[ menu_item ].rssi );
+            draw_menu_row( row, item, a_selected, a_networks[ menu_item ].ssid, rssi );
         }
         else
         {
-            const unsigned action = item - (unsigned)a_network_count;
+            const unsigned action = menu_item - (unsigned)a_network_count;
             if( a_can_check )
             {
                 if( 0U == action )
@@ -196,12 +212,16 @@ void ota_view_render_network_action( const char *a_ssid,
         {
             label = "Forget";
         }
-        draw_menu_row( row, row, a_selected, label, NULL );
+        draw_menu_row_at( 58 + (int)row * OTA_MENU_ROW_HEIGHT,
+                          row,
+                          a_selected,
+                          label,
+                          NULL );
     }
 
     if( NULL != a_status && '\0' != a_status[ 0 ] )
     {
-        display_draw_text( UI_LAYOUT_LEFT_X, 118, a_status, theme->secondary, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 121, a_status, theme->secondary, 1U );
     }
     display_draw_text(
         UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN SELECT / CENTER ACTION", theme->secondary, 1U );
