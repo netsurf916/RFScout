@@ -86,7 +86,12 @@ static esp_err_t finish_hash( psa_hash_operation_t *a_hash, uint8_t a_digest[ 32
 {
     size_t digest_length = 0U;
     const psa_status_t result = psa_hash_finish( a_hash, a_digest, 32U, &digest_length );
-    return PSA_SUCCESS == result && 32U == digest_length ? ESP_OK : ESP_FAIL;
+    if( PSA_SUCCESS != result || 32U != digest_length )
+    {
+        (void)psa_hash_abort( a_hash );
+        return ESP_FAIL;
+    }
+    return ESP_OK;
 }
 
 static esp_err_t verify_flash_readback( const uint8_t a_expected[ 32 ] )
