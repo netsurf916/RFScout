@@ -15,8 +15,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OTA_ACQUISITION_CATALOG_MAX_LENGTH 8192U
-
 typedef enum
 {
     OTA_ACQUISITION_KIND_NONE = 0,
