@@ -41,7 +41,6 @@ static const char *app_config_name( rfscout_app_id_t a_app )
 {
     static const char *names[ RFSCOUT_APP_COUNT ] = {
         [RFSCOUT_APP_SYSTEM_EVENTS] = "system_events",
-        [RFSCOUT_APP_OTA] = "ota",
         [RFSCOUT_APP_DEVICE] = "device",
         [RFSCOUT_APP_WIFI_BT] = "wifi_bt",
         [RFSCOUT_APP_CC1101] = "cc1101",
@@ -226,7 +225,6 @@ static void set_defaults( void )
             policy->notifications_supported && policy->notifications_enabled_default;
     }
     config.apps_enabled[ RFSCOUT_APP_SYSTEM_EVENTS ] = false;
-    config.apps_enabled[ RFSCOUT_APP_OTA ] = false;
     config.apps_enabled[ RFSCOUT_APP_DEVICE ] = true;
 
     for( size_t index = 0U; index < RFSCOUT_NOTIFICATION_TYPE_COUNT; ++index )
@@ -968,12 +966,12 @@ const device_config_t *device_config_get( void )
 
 bool device_config_app_enabled( rfscout_app_id_t a_app )
 {
-    return a_app < RFSCOUT_APP_COUNT && RFSCOUT_APP_OTA != a_app && config.apps_enabled[ a_app ];
+    return a_app < RFSCOUT_APP_COUNT && config.apps_enabled[ a_app ];
 }
 
 esp_err_t device_config_set_app_enabled( rfscout_app_id_t a_app, bool a_enabled )
 {
-    if( a_app >= RFSCOUT_APP_COUNT || RFSCOUT_APP_DEVICE == a_app || RFSCOUT_APP_OTA == a_app )
+    if( a_app >= RFSCOUT_APP_COUNT || RFSCOUT_APP_DEVICE == a_app )
     {
         return ESP_ERR_INVALID_ARG;
     }
@@ -987,7 +985,7 @@ esp_err_t device_config_set_app_enabled( rfscout_app_id_t a_app, bool a_enabled 
 
 esp_err_t device_config_set_startup_app( rfscout_app_id_t a_app )
 {
-    if( a_app >= RFSCOUT_APP_COUNT || RFSCOUT_APP_OTA == a_app )
+    if( a_app >= RFSCOUT_APP_COUNT )
     {
         return ESP_ERR_INVALID_ARG;
     }
@@ -1001,7 +999,7 @@ esp_err_t device_config_set_startup_app( rfscout_app_id_t a_app )
 
 rfscout_app_id_t device_config_startup_app( void )
 {
-    return RFSCOUT_APP_OTA == config.startup_app ? RFSCOUT_APP_DEVICE : config.startup_app;
+    return config.startup_app;
 }
 
 rfscout_theme_id_t device_config_theme( void )
