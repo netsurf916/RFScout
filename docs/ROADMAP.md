@@ -432,7 +432,7 @@ GitHub Releases and successful Actions candidate artifacts remain the source bui
 
 The OTA catalog points at the application-only image already mirrored under each build's `firmware/...` directory. It does not duplicate firmware bytes into a separate OTA release tree. Builds are eligible for the device catalog only when they carry valid `ota-image.json` metadata whose version and source commit agree with the browser-flasher entry and whose project, hardware target, ESP-IDF target, partition-layout generation, application size, and SHA-256 pass publication-time validation.
 
-The catalog intentionally contains the current `main` candidate, current open-PR candidates, draft releases, prereleases, and published releases whenever those builds are otherwise present in the web flasher and carry compatible OTA metadata. The normal **Check for update** path filters this catalog to published stable releases and selects the newest compatible SemVer. A separate explicit/manual build-selection UI will allow choosing an exact main, PR, draft, prerelease, or published build without applying stable-version ordering.
+The catalog intentionally contains the current `main` candidate, current open-PR candidates, draft releases, prereleases, and published releases whenever those builds are otherwise present in the web flasher and carry compatible OTA metadata. The normal **Check for update** path filters this catalog to published stable releases and selects the newest compatible SemVer. The explicit/manual build-selection UI allows choosing an exact main, PR, draft, prerelease, or published build without applying stable-version ordering.
 
 ### Running-version identity
 
@@ -484,8 +484,8 @@ For an install, that service:
 3. verifies that a valid non-running OTA destination exists and that the declared image can fit;
 4. begins the OTA write with `esp_ota_begin()`;
 5. streams the HTTPS response directly into the OTA handle with `esp_ota_write()` while computing SHA-256 and byte count;
-6. validates image/application metadata as soon as enough header data is available and requires the image's project/version/target assumptions to agree with the selected catalog entry;
-7. requires the final byte count and streaming SHA-256 to match the catalog and completes ESP-IDF image validation with `esp_ota_end()`;
+6. requires the final byte count and streaming SHA-256 to match the catalog and completes ESP-IDF image validation with `esp_ota_end()`;
+7. reads the completed image metadata from the inactive partition and requires its embedded RFScout project/version identity to agree with the selected catalog entry;
 8. reads back exactly the declared application-artifact byte count from the destination partition, computes SHA-256 over those stored bytes, and requires that flash-readback SHA-256 to match the catalog;
 9. only after streaming integrity, ESP-IDF image validation, and flash-readback integrity all succeed, marks that destination as the next boot image with `esp_ota_set_boot_partition()`; and
 10. immediately enters the platform reboot path.
