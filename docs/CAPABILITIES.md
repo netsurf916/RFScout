@@ -14,10 +14,10 @@ The canonical application registry order remains:
 2. Home / Device Settings
 3. WiFi / BLE
 4. CC1101
-6. nRF24
-7. Recorder
-8. Thermal
-9. Audio Spectrum
+5. nRF24
+6. Recorder
+7. Thermal
+8. Audio Spectrum
 
 Disabled or unavailable applications are skipped by semantic navigation.
 
