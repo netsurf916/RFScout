@@ -968,12 +968,12 @@ const device_config_t *device_config_get( void )
 
 bool device_config_app_enabled( rfscout_app_id_t a_app )
 {
-    return a_app < RFSCOUT_APP_COUNT && config.apps_enabled[ a_app ];
+    return a_app < RFSCOUT_APP_COUNT && RFSCOUT_APP_OTA != a_app && config.apps_enabled[ a_app ];
 }
 
 esp_err_t device_config_set_app_enabled( rfscout_app_id_t a_app, bool a_enabled )
 {
-    if( a_app >= RFSCOUT_APP_COUNT || RFSCOUT_APP_DEVICE == a_app )
+    if( a_app >= RFSCOUT_APP_COUNT || RFSCOUT_APP_DEVICE == a_app || RFSCOUT_APP_OTA == a_app )
     {
         return ESP_ERR_INVALID_ARG;
     }
@@ -987,7 +987,7 @@ esp_err_t device_config_set_app_enabled( rfscout_app_id_t a_app, bool a_enabled 
 
 esp_err_t device_config_set_startup_app( rfscout_app_id_t a_app )
 {
-    if( a_app >= RFSCOUT_APP_COUNT )
+    if( a_app >= RFSCOUT_APP_COUNT || RFSCOUT_APP_OTA == a_app )
     {
         return ESP_ERR_INVALID_ARG;
     }
@@ -1001,7 +1001,7 @@ esp_err_t device_config_set_startup_app( rfscout_app_id_t a_app )
 
 rfscout_app_id_t device_config_startup_app( void )
 {
-    return config.startup_app;
+    return RFSCOUT_APP_OTA == config.startup_app ? RFSCOUT_APP_DEVICE : config.startup_app;
 }
 
 rfscout_theme_id_t device_config_theme( void )
