@@ -53,11 +53,8 @@ static void draw_menu_row_at(
 static void draw_menu_row(
     unsigned a_row, unsigned a_item, unsigned a_selected, const char *a_label, const char *a_value )
 {
-    draw_menu_row_at( OTA_MENU_START_Y + (int)a_row * OTA_MENU_ROW_HEIGHT,
-                      a_item,
-                      a_selected,
-                      a_label,
-                      a_value );
+    draw_menu_row_at(
+        OTA_MENU_START_Y + (int)a_row * OTA_MENU_ROW_HEIGHT, a_item, a_selected, a_label, a_value );
 }
 
 void ota_view_render_main( const char *a_version,
@@ -212,11 +209,7 @@ void ota_view_render_network_action( const char *a_ssid,
         {
             label = "Forget";
         }
-        draw_menu_row_at( 58 + (int)row * OTA_MENU_ROW_HEIGHT,
-                          row,
-                          a_selected,
-                          label,
-                          NULL );
+        draw_menu_row_at( 58 + (int)row * OTA_MENU_ROW_HEIGHT, row, a_selected, label, NULL );
     }
 
     if( NULL != a_status && '\0' != a_status[ 0 ] )
