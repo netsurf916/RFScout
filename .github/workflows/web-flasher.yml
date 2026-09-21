@@ -180,11 +180,12 @@ jobs:
             [[ -z "$run" ]] && { echo "Skipping $source: no live successful candidate for $sha"; return; }
             run_id=$(jq -r .id <<< "$run")
             run_url=$(jq -r .html_url <<< "$run")
+            created_at=$(jq -r .created_at <<< "$run")
             destination=$([[ "$source" == main ]] && echo candidates/main || echo "candidates/pr-$pr")
             gh run download "$run_id" --name "$artifact" --dir "$destination"
             temporary=$(mktemp)
-            jq --arg source "$source" --arg sha "$sha" --arg run_url "$run_url" --arg pr "$pr" \
-              '. + [{source: $source, sha: $sha, run_url: $run_url} + (if $pr == "" then {} else {pr: ($pr|tonumber)} end)]' \
+            jq --arg source "$source" --arg sha "$sha" --arg run_url "$run_url" --arg created_at "$created_at" --arg pr "$pr" \
+              '. + [{source: $source, sha: $sha, run_url: $run_url, created_at: $created_at} + (if $pr == "" then {} else {pr: ($pr|tonumber)} end)]' \
               candidates.json > "$temporary"
             mv "$temporary" candidates.json
           }
