@@ -233,9 +233,8 @@ static void render_action( void )
     else if( RFSCOUT_WIFI_STATION_FAILED == current.state && NULL != ssid &&
              0 == strcmp( connecting_ssid, ssid ) )
     {
-        status_text =
-            ESP_ERR_NOT_FOUND == current.disconnect_reason ? "Network not found"
-                                                           : "Connection failed";
+        status_text = ESP_ERR_NOT_FOUND == current.disconnect_reason ? "Network not found"
+                                                                     : "Connection failed";
     }
 
     unsigned action_count = saved ? 3U : 2U;

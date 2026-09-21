@@ -264,8 +264,10 @@ void ota_view_render_password( const char *a_ssid,
     }
     else
     {
-        snprintf(
-            candidate, sizeof( candidate ), "Character: %c", ' ' == a_character ? '_' : a_character );
+        snprintf( candidate,
+                  sizeof( candidate ),
+                  "Character: %c",
+                  ' ' == a_character ? '_' : a_character );
     }
     display_draw_text( UI_LAYOUT_LEFT_X, 84, candidate, theme->selected, 1U );
     display_draw_text( UI_LAYOUT_LEFT_X, 106, "CENTER: USE", theme->secondary, 1U );
@@ -277,8 +279,11 @@ void ota_view_render_password( const char *a_ssid,
     }
     else
     {
-        display_draw_text(
-            UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN: CHARACTER / ACTION", theme->secondary, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X,
+                           UI_LAYOUT_FOOTER_Y,
+                           "TURN: CHARACTER / ACTION",
+                           theme->secondary,
+                           1U );
     }
     (void)display_present();
 }
