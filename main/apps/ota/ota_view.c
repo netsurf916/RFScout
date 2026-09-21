@@ -299,19 +299,19 @@ void ota_view_render_build_action( const char *a_label,
     display_clear( theme->background );
     ui_chrome_draw( "FIRMWARE BUILD", theme->secondary );
     display_draw_text(
-        UI_LAYOUT_LEFT_X, 28, NULL != a_label ? a_label : "Build", theme->accent, 1U );
-    display_draw_text(
-        UI_LAYOUT_LEFT_X, 43, NULL != a_version ? a_version : "unknown", theme->secondary, 1U );
+        UI_LAYOUT_LEFT_X, 26, NULL != a_label ? a_label : "Build", theme->accent, 1U );
 
+    draw_menu_row( 0U, 0U, a_selected, "Back", NULL );
+    draw_menu_row( 1U, 1U, a_selected, "Install", NULL );
+
+    display_draw_text(
+        UI_LAYOUT_LEFT_X, 88, NULL != a_version ? a_version : "unknown", theme->secondary, 1U );
     char commit[ 24 ] = "";
     if( NULL != a_commit )
     {
         snprintf( commit, sizeof( commit ), "%.12s", a_commit );
     }
-    display_draw_text( UI_LAYOUT_LEFT_X, 58, commit, theme->secondary, 1U );
-
-    draw_menu_row( 0U, 0U, a_selected, "Back", NULL );
-    draw_menu_row( 1U, 1U, a_selected, "Install", NULL );
+    display_draw_text( UI_LAYOUT_LEFT_X, 103, commit, theme->secondary, 1U );
     display_draw_text(
         UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "EXPLICIT BUILD INSTALL", theme->secondary, 1U );
     (void)display_present();
