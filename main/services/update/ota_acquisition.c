@@ -7,6 +7,7 @@
 #include "ota_acquisition.h"
 
 #include "ota_installer.h"
+#include "memory_manager.h"
 
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
@@ -30,12 +31,63 @@ static TaskHandle_t worker_task;
 static esp_http_client_handle_t active_client;
 static ota_acquisition_status_t status;
 static char request_url[ OTA_HTTP_URL_MAX_LENGTH ];
-static char catalog[ OTA_ACQUISITION_CATALOG_MAX_LENGTH + 1U ];
+static char *catalog;
 static size_t catalog_length;
+static size_t catalog_capacity;
 static bool cancel_requested;
 static bool cancel_call_active;
-static bool overflowed;
 static esp_err_t stream_error;
+static esp_err_t ensure_catalog_capacity( size_t a_required )
+{
+    if( a_required <= catalog_capacity )
+    {
+        return ESP_OK;
+    }
+
+    size_t capacity = catalog_capacity > 0U ? catalog_capacity : 4096U;
+    while( capacity < a_required )
+    {
+        if( capacity > SIZE_MAX / 2U )
+        {
+            capacity = a_required;
+            break;
+        }
+        capacity *= 2U;
+    }
+
+    rfscout_memory_owner_t owner = memory_manager_app_owner( RFSCOUT_APP_DEVICE );
+    char *resized = memory_manager_resize( owner, catalog, capacity, sizeof( *catalog ) );
+    if( NULL == resized )
+    {
+        return ESP_ERR_NO_MEM;
+    }
+
+    catalog = resized;
+    catalog_capacity = capacity;
+    return ESP_OK;
+}
+
+static bool release_catalog( void )
+{
+    if( NULL == catalog )
+    {
+        catalog_length = 0U;
+        catalog_capacity = 0U;
+        return true;
+    }
+
+    rfscout_memory_owner_t owner = memory_manager_app_owner( RFSCOUT_APP_DEVICE );
+    if( !memory_manager_free( owner, catalog ) )
+    {
+        return false;
+    }
+
+    catalog = NULL;
+    catalog_length = 0U;
+    catalog_capacity = 0U;
+    return true;
+}
+
 
 static bool safe_relative_path( const char *a_path )
 {
@@ -93,11 +145,20 @@ static esp_err_t http_event( esp_http_client_event_t *a_event )
     const size_t incoming = (size_t)a_event->data_len;
     if( OTA_ACQUISITION_KIND_CATALOG == kind )
     {
-        if( incoming > OTA_ACQUISITION_CATALOG_MAX_LENGTH - catalog_length )
+        if( incoming > SIZE_MAX - catalog_length - 1U )
         {
-            overflowed = true;
-            return ESP_ERR_NO_MEM;
+            stream_error = ESP_ERR_NO_MEM;
+            return stream_error;
         }
+
+        const size_t required = catalog_length + incoming + 1U;
+        const esp_err_t resize_result = ensure_catalog_capacity( required );
+        if( ESP_OK != resize_result )
+        {
+            stream_error = resize_result;
+            return resize_result;
+        }
+
         memcpy( catalog + catalog_length, a_event->data, incoming );
         catalog_length += incoming;
         catalog[ catalog_length ] = '\0';
@@ -223,7 +284,7 @@ static void acquisition_worker( void *a_context )
         finish_worker( OTA_ACQUISITION_IDLE, ESP_OK, 0 );
     }
     else if( ESP_OK == result && 200 == http_status && ESP_OK == stream_error &&
-             ( OTA_ACQUISITION_KIND_FIRMWARE == kind || ( !overflowed && catalog_length > 0U ) ) )
+             ( OTA_ACQUISITION_KIND_FIRMWARE == kind || catalog_length > 0U ) )
     {
         finish_worker( OTA_ACQUISITION_READY, ESP_OK, http_status );
     }
@@ -232,10 +293,6 @@ static void acquisition_worker( void *a_context )
         if( ESP_OK != stream_error )
         {
             result = stream_error;
-        }
-        else if( overflowed )
-        {
-            result = ESP_ERR_NO_MEM;
         }
         else if( ESP_OK == result )
         {
@@ -270,10 +327,14 @@ static esp_err_t begin_request( ota_acquisition_kind_t a_kind, const char *a_url
         return ESP_ERR_INVALID_STATE;
     }
 
+    portEXIT_CRITICAL( &state_lock );
+    if( !release_catalog() )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    portENTER_CRITICAL( &state_lock );
+
     snprintf( request_url, sizeof( request_url ), "%s", a_url );
-    memset( catalog, 0, sizeof( catalog ) );
-    catalog_length = 0U;
-    overflowed = false;
     stream_error = ESP_OK;
     cancel_requested = false;
     cancel_call_active = false;
@@ -345,7 +406,7 @@ esp_err_t ota_acquisition_copy_catalog( char *a_destination, size_t a_capacity, 
         portEXIT_CRITICAL( &state_lock );
         return ESP_ERR_INVALID_STATE;
     }
-    if( a_capacity <= catalog_length )
+    if( NULL == catalog || a_capacity <= catalog_length )
     {
         portEXIT_CRITICAL( &state_lock );
         return ESP_ERR_INVALID_SIZE;
@@ -399,11 +460,13 @@ esp_err_t ota_acquisition_stop( void )
         }
     }
 
+    if( !release_catalog() )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     portENTER_CRITICAL( &state_lock );
     memset( request_url, 0, sizeof( request_url ) );
-    memset( catalog, 0, sizeof( catalog ) );
-    catalog_length = 0U;
-    overflowed = false;
     stream_error = ESP_OK;
     cancel_requested = false;
     cancel_call_active = false;
