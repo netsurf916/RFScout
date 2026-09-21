@@ -249,6 +249,31 @@ class WebFlasherCatalogTest(unittest.TestCase):
                     ],
                 )
 
+    def test_ota_catalog_rejects_more_than_device_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            site = Path(temporary) / "site"
+            entries = []
+            for index in range(33):
+                version = f"0.{index}.0"
+                commit = f"{index:040x}"
+                directory = site / "firmware" / "releases" / f"v{version}"
+                self.write_ota_image(directory, a_version=version, a_commit=commit)
+                entries.append(
+                    {
+                        "id": f"release-v{version}",
+                        "kind": "release",
+                        "label": f"RFScout v{version}",
+                        "version": version,
+                        "manifest": f"firmware/releases/v{version}/manifest.web.json",
+                        "commit": commit,
+                        "draft": False,
+                        "prerelease": False,
+                    }
+                )
+
+            with self.assertRaisesRegex(ValueError, "maximum is 32"):
+                build_ota_catalog(site, entries)
+
 
 if __name__ == "__main__":
     unittest.main()

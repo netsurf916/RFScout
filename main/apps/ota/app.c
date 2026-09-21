@@ -73,7 +73,8 @@ static void set_error( esp_err_t a_error )
 
 static void refresh_scan_results( void )
 {
-    scan_count = rfscout_wifi_station_scan_results( scan_results, RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS );
+    scan_count =
+        rfscout_wifi_station_scan_results( scan_results, RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS );
 }
 
 static int scan_index_for_ssid( const char *a_ssid )
@@ -151,7 +152,7 @@ static bool network_connected( void )
 
 static const char *connection_status( void )
 {
-    const rfscout_rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
     switch( current.state )
     {
         case RFSCOUT_WIFI_STATION_SCANNING:
@@ -175,7 +176,7 @@ static void render_main( void )
 {
     build_visible_saved();
     const rfscout_firmware_identity_t *identity = firmware_identity();
-    const rfscout_rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
     const bool scanning = RFSCOUT_WIFI_STATION_SCANNING == current.state;
     const bool can_check = RFSCOUT_WIFI_STATION_CONNECTED == current.state;
     const unsigned item_count = (unsigned)view_network_count + ( can_check ? 2U : 3U );
@@ -212,7 +213,7 @@ static void render_action( void )
         ssid = scan_results[ action_scan_index ].ssid;
     }
 
-    const rfscout_rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
     const bool connected = RFSCOUT_WIFI_STATION_CONNECTED == current.state && NULL != ssid &&
                            0 == strcmp( connecting_ssid, ssid );
     const char *status_text = error_text;
@@ -513,7 +514,7 @@ static void handle_action_select( void )
 
     if( 1U == selected_item )
     {
-        const rfscout_rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+        const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
         if( RFSCOUT_WIFI_STATION_CONNECTED == current.state &&
             0 == strcmp( connecting_ssid, saved_networks.entries[ action_saved_index ].ssid ) )
         {
@@ -742,6 +743,10 @@ static rfscout_app_runtime_result_t ota_runtime( const rfscout_app_runtime_event
 
     if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type )
     {
+        if( OTA_SCREEN_MAIN == screen && RFSCOUT_INPUT_BACK == a_event->input.type )
+        {
+            return RFSCOUT_APP_RUNTIME_IGNORED;
+        }
         handle_input( &a_event->input );
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
@@ -752,7 +757,7 @@ static rfscout_app_runtime_result_t ota_runtime( const rfscout_app_runtime_event
         last_refresh_us = a_event->now_us;
         bool redraw = false;
 
-        const rfscout_rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+        const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
         if( current.scan_generation != last_scan_generation || current.state != last_station_state )
         {
             last_scan_generation = current.scan_generation;

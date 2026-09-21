@@ -13,6 +13,7 @@ from pathlib import Path
 OTA_HARDWARE_TARGET = "t-embed-cc1101-plus"
 OTA_IDF_TARGET = "esp32s3"
 OTA_PARTITION_LAYOUT = "ab-v1"
+OTA_CATALOG_MAX_BUILDS = 32
 
 
 def load_json(a_path: Path) -> object:
@@ -253,6 +254,11 @@ def build_ota_catalog(a_site_dir: Path, a_browser_entries: list[dict]) -> dict:
         entry = ota_build_entry(a_site_dir, browser_entry)
         if entry is not None:
             entries.append(entry)
+
+    if len(entries) > OTA_CATALOG_MAX_BUILDS:
+        raise ValueError(
+            f"OTA catalog has {len(entries)} builds; maximum is {OTA_CATALOG_MAX_BUILDS}"
+        )
 
     catalog = {"schema_version": 1, "builds": entries}
     write_json(a_site_dir / "ota" / "catalog.json", catalog)

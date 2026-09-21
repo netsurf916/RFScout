@@ -44,7 +44,7 @@ typedef struct
     rfscout_wifi_station_state_t state;
     uint32_t scan_generation;
     int32_t disconnect_reason;
-} rfscout_rfscout_wifi_station_status_t;
+} rfscout_wifi_station_status_t;
 
 /** @brief Attach the infrastructure station netif to the already initialized Wi-Fi driver. */
 esp_err_t rfscout_wifi_station_init( void );
@@ -79,6 +79,6 @@ esp_err_t rfscout_wifi_station_stop( void );
 bool rfscout_wifi_station_is_active( void );
 
 /** @brief Snapshot connection/scan state without exposing ESP-IDF driver objects. */
-rfscout_rfscout_wifi_station_status_t rfscout_wifi_station_status( void );
+rfscout_wifi_station_status_t rfscout_wifi_station_status( void );
 
 #endif // _RFSCOUT_WIFI_STATION_H_

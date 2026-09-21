@@ -28,6 +28,7 @@ static ota_acquisition_status_t status;
 static char catalog[ OTA_ACQUISITION_CATALOG_MAX_LENGTH + 1U ];
 static size_t catalog_length;
 static bool cancel_requested;
+static bool cancel_call_active;
 static bool overflowed;
 
 static esp_err_t http_event( esp_http_client_event_t *a_event )
@@ -71,8 +72,26 @@ static void finish_worker( ota_acquisition_state_t a_state, esp_err_t a_error, i
     status.http_status = a_http_status;
     status.length = OTA_ACQUISITION_READY == a_state ? catalog_length : 0U;
     ++status.generation;
-    active_client = NULL;
     portEXIT_CRITICAL( &state_lock );
+}
+
+static void release_client_for_cleanup( esp_http_client_handle_t a_client )
+{
+    while( true )
+    {
+        portENTER_CRITICAL( &state_lock );
+        if( !cancel_call_active )
+        {
+            if( active_client == a_client )
+            {
+                active_client = NULL;
+            }
+            portEXIT_CRITICAL( &state_lock );
+            return;
+        }
+        portEXIT_CRITICAL( &state_lock );
+        vTaskDelay( 1U );
+    }
 }
 
 static void mark_worker_stopped( void )
@@ -146,6 +165,7 @@ static void acquisition_worker( void *a_context )
         finish_worker( OTA_ACQUISITION_FAILED, result, http_status );
     }
 
+    release_client_for_cleanup( client );
     esp_http_client_cleanup( client );
     mark_worker_stopped();
     vTaskDelete( NULL );
@@ -164,6 +184,7 @@ esp_err_t ota_acquisition_begin_catalog( void )
     catalog_length = 0U;
     overflowed = false;
     cancel_requested = false;
+    cancel_call_active = false;
     status.state = OTA_ACQUISITION_FETCHING;
     status.error = ESP_OK;
     status.http_status = 0;
@@ -232,11 +253,15 @@ esp_err_t ota_acquisition_stop( void )
     cancel_requested = true;
     client = active_client;
     task = worker_task;
+    cancel_call_active = NULL != client;
     portEXIT_CRITICAL( &state_lock );
 
     if( NULL != client )
     {
         (void)esp_http_client_cancel_request( client );
+        portENTER_CRITICAL( &state_lock );
+        cancel_call_active = false;
+        portEXIT_CRITICAL( &state_lock );
     }
 
     if( NULL != task )
@@ -266,6 +291,7 @@ esp_err_t ota_acquisition_stop( void )
     catalog_length = 0U;
     overflowed = false;
     cancel_requested = false;
+    cancel_call_active = false;
     active_client = NULL;
     status.state = OTA_ACQUISITION_IDLE;
     status.error = ESP_OK;
