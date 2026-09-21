@@ -462,14 +462,8 @@ esp_err_t rfscout_wifi_station_stop( void )
 
     portENTER_CRITICAL( &state_lock );
     const bool was_started = started;
+    const bool needs_mode_reset = was_started || RFSCOUT_WIFI_STATION_OFF != status.state;
     stopping = true;
-    started = false;
-    disconnect_requested = false;
-    status.state = RFSCOUT_WIFI_STATION_OFF;
-    status.disconnect_reason = 0;
-    scan_result_count = 0U;
-    memset( scan_results, 0, sizeof( scan_results ) );
-    memset( active_search_ssid, 0, sizeof( active_search_ssid ) );
     portEXIT_CRITICAL( &state_lock );
 
     if( was_started )
@@ -482,11 +476,39 @@ esp_err_t rfscout_wifi_station_stop( void )
         (void)esp_wifi_set_config( WIFI_IF_STA, &blank );
         memset( &blank, 0, sizeof( blank ) );
 
-        (void)esp_wifi_stop();
-        (void)esp_wifi_set_mode( WIFI_MODE_NULL );
+        const esp_err_t stop_result = esp_wifi_stop();
+        if( ESP_OK != stop_result )
+        {
+            portENTER_CRITICAL( &state_lock );
+            stopping = false;
+            portEXIT_CRITICAL( &state_lock );
+            return stop_result;
+        }
+
+        portENTER_CRITICAL( &state_lock );
+        started = false;
+        portEXIT_CRITICAL( &state_lock );
+    }
+
+    if( needs_mode_reset )
+    {
+        const esp_err_t mode_result = esp_wifi_set_mode( WIFI_MODE_NULL );
+        if( ESP_OK != mode_result )
+        {
+            portENTER_CRITICAL( &state_lock );
+            stopping = false;
+            portEXIT_CRITICAL( &state_lock );
+            return mode_result;
+        }
     }
 
     portENTER_CRITICAL( &state_lock );
+    disconnect_requested = false;
+    status.state = RFSCOUT_WIFI_STATION_OFF;
+    status.disconnect_reason = 0;
+    scan_result_count = 0U;
+    memset( scan_results, 0, sizeof( scan_results ) );
+    memset( active_search_ssid, 0, sizeof( active_search_ssid ) );
     stopping = false;
     portEXIT_CRITICAL( &state_lock );
     return ESP_OK;
