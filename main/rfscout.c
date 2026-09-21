@@ -67,10 +67,8 @@ static void log_running_image_hash( void )
     }
 
     firmware_sha256_hex( digest, digest_hex );
-    ESP_LOGI( TAG,
-              "running application image: bytes=%u sha256=%s",
-              (unsigned)image_length,
-              digest_hex );
+    ESP_LOGI(
+        TAG, "running application image: bytes=%u sha256=%s", (unsigned)image_length, digest_hex );
     memset( digest, 0, sizeof( digest ) );
     memset( digest_hex, 0, sizeof( digest_hex ) );
 }
