@@ -153,6 +153,11 @@ esp_err_t ota_installer_begin( const ota_installer_image_t *a_image )
         return ESP_ERR_INVALID_ARG;
     }
 
+    if( PSA_SUCCESS != psa_crypto_init() )
+    {
+        return ESP_FAIL;
+    }
+
     uint8_t expected_digest[ 32 ];
     if( !decode_sha256( a_image->sha256, expected_digest ) )
     {
