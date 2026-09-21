@@ -22,29 +22,20 @@ from package_release import (  # noqa: E402
 
 
 class PackageReleaseTest(unittest.TestCase):
-    def test_accepts_semantic_release_versions(self) -> None:
-        for version in (
-            "v0.0.0",
-            "v1.2.3",
-            "v1.2.3-rc.1",
-            "v1.2.3-alpha-1",
-            "v1.2.3+build.01",
-            "v1.2.3-rc.1+build.01",
-        ):
+    def test_accepts_supported_release_versions(self) -> None:
+        for version in ("v0.0.0", "v1.2.3", "v10.20.30"):
             with self.subTest(version=version):
                 validate_release_version(version)
 
-    def test_rejects_malformed_semantic_release_versions(self) -> None:
+    def test_rejects_unsupported_release_versions(self) -> None:
         for version in (
             "1.2.3",
             "v01.0.0",
             "v1.02.0",
             "v1.0.03",
-            "v1.0.0-01",
-            "v1.0.0-rc..1",
-            "v1.0.0-.rc",
-            "v1.0.0-rc.",
-            "v1.0.0+build..1",
+            "v1.0.0-rc.1",
+            "v1.0.0+build.01",
+            "v1.0.0-rc.1+build.01",
         ):
             with self.subTest(version=version):
                 with self.assertRaises(PackagingError):
