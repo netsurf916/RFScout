@@ -8,6 +8,7 @@
 #include "ota_menu.h"
 
 #include "app_text_entry.h"
+#include "app_session.h"
 #include "event.h"
 #include "firmware_identity.h"
 #include "ota_acquisition.h"
@@ -64,7 +65,8 @@ static ota_view_build_t view_builds[ OTA_CATALOG_VISIBLE_BUILDS ];
 static size_t available_build_count;
 static int selected_build_index;
 static bool open_builds_after_catalog;
-static char catalog_json[ OTA_ACQUISITION_CATALOG_MAX_LENGTH + 1U ];
+static char *catalog_json;
+static size_t catalog_json_capacity;
 static char update_status[ OTA_CATALOG_VERSION_MAX_LENGTH + 1U ];
 static uint32_t last_acquisition_generation;
 static uint32_t last_installer_generation;
@@ -86,6 +88,39 @@ static void set_error( esp_err_t a_error )
         return;
     }
     snprintf( error_text, sizeof( error_text ), "%s", esp_err_to_name( a_error ) );
+}
+
+static esp_err_t ensure_catalog_json_capacity( size_t a_length )
+{
+    if( a_length == SIZE_MAX )
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    const size_t required = a_length + 1U;
+    if( required <= catalog_json_capacity )
+    {
+        return ESP_OK;
+    }
+
+    char *resized = app_session_resize( catalog_json, required, sizeof( *catalog_json ) );
+    if( NULL == resized )
+    {
+        return ESP_ERR_NO_MEM;
+    }
+
+    catalog_json = resized;
+    catalog_json_capacity = required;
+    return ESP_OK;
+}
+
+static void release_catalog_json( void )
+{
+    if( NULL != catalog_json && app_session_free( catalog_json ) )
+    {
+        catalog_json = NULL;
+        catalog_json_capacity = 0U;
+    }
 }
 
 static void refresh_scan_results( void )
@@ -928,7 +963,7 @@ static void reset_runtime_state( void )
     available_build_count = 0U;
     selected_build_index = -1;
     open_builds_after_catalog = false;
-    memset( catalog_json, 0, sizeof( catalog_json ) );
+    release_catalog_json();
     snprintf( update_status, sizeof( update_status ), "Not checked" );
     last_acquisition_generation = 0U;
     last_installer_generation = 0U;
@@ -1048,8 +1083,12 @@ void ota_menu_poll( int64_t a_now_us )
             if( OTA_ACQUISITION_KIND_CATALOG == acquisition.kind )
             {
                 size_t length = 0U;
-                esp_err_t result =
-                    ota_acquisition_copy_catalog( catalog_json, sizeof( catalog_json ), &length );
+                esp_err_t result = ensure_catalog_json_capacity( acquisition.length );
+                if( ESP_OK == result )
+                {
+                    result = ota_acquisition_copy_catalog(
+                        catalog_json, catalog_json_capacity, &length );
+                }
                 if( ESP_OK == result )
                 {
                     result = ota_catalog_select(
