@@ -74,6 +74,38 @@ static bool parse_component( const char **a_cursor, uint32_t *a_value, char a_de
     return true;
 }
 
+static bool valid_build_metadata( const char *a_value )
+{
+    if( NULL == a_value || '\0' == a_value[ 0 ] )
+    {
+        return false;
+    }
+
+    bool segment_has_character = false;
+    for( const char *cursor = a_value;; ++cursor )
+    {
+        const char character = *cursor;
+        if( '\0' == character )
+        {
+            return segment_has_character;
+        }
+        if( '.' == character )
+        {
+            if( !segment_has_character )
+            {
+                return false;
+            }
+            segment_has_character = false;
+            continue;
+        }
+        if( !isalnum( (unsigned char)character ) && '-' != character )
+        {
+            return false;
+        }
+        segment_has_character = true;
+    }
+}
+
 static bool parse_semver( const char *a_value, ota_semver_t *a_version )
 {
     if( NULL == a_value || NULL == a_version || '\0' == a_value[ 0 ] )
@@ -82,9 +114,35 @@ static bool parse_semver( const char *a_value, ota_semver_t *a_version )
     }
 
     const char *cursor = a_value;
-    return parse_component( &cursor, &a_version->major, '.' ) &&
-           parse_component( &cursor, &a_version->minor, '.' ) &&
-           parse_component( &cursor, &a_version->patch, '\0' );
+    if( !parse_component( &cursor, &a_version->major, '.' ) ||
+        !parse_component( &cursor, &a_version->minor, '.' ) )
+    {
+        return false;
+    }
+
+    if( !isdigit( (unsigned char)*cursor ) ||
+        ( '0' == *cursor && isdigit( (unsigned char)cursor[ 1 ] ) ) )
+    {
+        return false;
+    }
+
+    uint64_t patch = 0U;
+    while( isdigit( (unsigned char)*cursor ) )
+    {
+        patch = patch * 10U + (uint64_t)( *cursor - '0' );
+        if( patch > UINT32_MAX )
+        {
+            return false;
+        }
+        ++cursor;
+    }
+    a_version->patch = (uint32_t)patch;
+
+    if( '\0' == *cursor )
+    {
+        return true;
+    }
+    return '+' == *cursor && valid_build_metadata( cursor + 1 );
 }
 
 static int compare_semver( const ota_semver_t *a_left, const ota_semver_t *a_right )
