@@ -14,6 +14,11 @@ OTA_HARDWARE_TARGET = "t-embed-cc1101-plus"
 OTA_IDF_TARGET = "esp32s3"
 OTA_PARTITION_LAYOUT = "ab-v1"
 OTA_CATALOG_MAX_BUILDS = 32
+OTA_CATALOG_MAX_BYTES = 16384
+OTA_BUILD_ID_MAX_LENGTH = 63
+OTA_BUILD_LABEL_MAX_LENGTH = 95
+OTA_VERSION_MAX_LENGTH = 31
+OTA_ARTIFACT_PATH_MAX_LENGTH = 191
 
 
 def load_json(a_path: Path) -> object:
@@ -134,6 +139,33 @@ def candidate_entries(
     )
 
 
+def ota_display_label(a_browser_entry: dict, a_version: str, a_commit: str) -> str:
+    kind = a_browser_entry.get("kind")
+    if kind == "release":
+        suffix = ""
+        if bool(a_browser_entry.get("draft", False)):
+            suffix = " (draft)"
+        elif bool(a_browser_entry.get("prerelease", False)):
+            suffix = " (prerelease)"
+        return f"RFScout {a_version}{suffix}"
+
+    source = a_browser_entry.get("source")
+    source_commit = a_browser_entry.get("source_commit")
+    display_commit = (
+        source_commit[:12]
+        if isinstance(source_commit, str) and source_commit
+        else a_commit[:12]
+    )
+    if source == "main":
+        return f"main @ {display_commit}"
+    if source == "pull_request":
+        pr = a_browser_entry.get("pr")
+        if not isinstance(pr, int) or pr <= 0:
+            raise ValueError("pull-request OTA build is missing PR number")
+        return f"PR #{pr} @ {display_commit}"
+    raise ValueError(f"unsupported OTA candidate source: {source!r}")
+
+
 def file_sha256(a_path: Path) -> str:
     digest = hashlib.sha256()
     with a_path.open("rb") as source:
@@ -217,10 +249,27 @@ def ota_build_entry(a_site_dir: Path, a_browser_entry: dict) -> dict | None:
         and not bool(a_browser_entry.get("draft", False))
         and not bool(a_browser_entry.get("prerelease", False))
     )
+    build_id = a_browser_entry.get("id")
+    label = ota_display_label(a_browser_entry, version, commit)
+    if (
+        not isinstance(build_id, str)
+        or not build_id
+        or len(build_id.encode("ascii", errors="ignore")) != len(build_id)
+        or len(build_id) > OTA_BUILD_ID_MAX_LENGTH
+        or not isinstance(version, str)
+        or len(version) > OTA_VERSION_MAX_LENGTH
+        or len(label) > OTA_BUILD_LABEL_MAX_LENGTH
+    ):
+        raise ValueError(f"OTA build identity exceeds device bounds: {metadata_path}")
+
+    artifact_path = (Path(manifest_path).parent / filename).as_posix()
+    if len(artifact_path) > OTA_ARTIFACT_PATH_MAX_LENGTH:
+        raise ValueError(f"OTA artifact path exceeds device bounds: {artifact_path}")
+
     result = {
-        "id": a_browser_entry.get("id"),
+        "id": build_id,
         "kind": kind,
-        "label": a_browser_entry.get("label"),
+        "label": label,
         "version": version,
         "commit": commit.lower(),
         "stable": stable,
@@ -229,20 +278,12 @@ def ota_build_entry(a_site_dir: Path, a_browser_entry: dict) -> dict | None:
         "idf_target": expected["idf_target"],
         "partition_layout": expected["partition_layout"],
         "artifact": {
-            "path": (Path(manifest_path).parent / filename).as_posix(),
+            "path": artifact_path,
             "size": expected_size,
             "sha256": expected_sha256.lower(),
         },
     }
-    for key in (
-        "source",
-        "source_commit",
-        "pr",
-        "draft",
-        "prerelease",
-        "published_at",
-        "run_url",
-    ):
+    for key in ("source", "source_commit", "pr", "draft", "prerelease"):
         if key in a_browser_entry:
             result[key] = a_browser_entry[key]
     return result
@@ -261,7 +302,15 @@ def build_ota_catalog(a_site_dir: Path, a_browser_entries: list[dict]) -> dict:
         )
 
     catalog = {"schema_version": 1, "builds": entries}
-    write_json(a_site_dir / "ota" / "catalog.json", catalog)
+    payload = json.dumps(catalog, sort_keys=True, separators=(",", ":")) + "\n"
+    encoded = payload.encode("utf-8")
+    if len(encoded) > OTA_CATALOG_MAX_BYTES:
+        raise ValueError(
+            f"OTA catalog is {len(encoded)} bytes; maximum is {OTA_CATALOG_MAX_BYTES}"
+        )
+    catalog_path = a_site_dir / "ota" / "catalog.json"
+    catalog_path.parent.mkdir(parents=True, exist_ok=True)
+    catalog_path.write_bytes(encoded)
     return catalog
 
 

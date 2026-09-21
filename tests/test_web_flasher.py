@@ -182,6 +182,8 @@ class WebFlasherCatalogTest(unittest.TestCase):
 
             self.assertEqual(len(catalog["builds"]), 2)
             self.assertEqual(catalog["builds"][0]["pr"], 75)
+            self.assertEqual(catalog["builds"][0]["label"], "PR #75 @ bbbbbbbbbbbb")
+            self.assertEqual(catalog["builds"][1]["label"], "RFScout 0.3.0")
             self.assertFalse(catalog["builds"][0]["stable"])
             self.assertTrue(catalog["builds"][1]["stable"])
             self.assertEqual(
@@ -189,7 +191,10 @@ class WebFlasherCatalogTest(unittest.TestCase):
                 "firmware/candidates/pr-75/"
                 "rfscout-candidate-bbbbbbbbbbbb-esp32s3-app.bin",
             )
-            self.assertTrue((site / "ota" / "catalog.json").is_file())
+            catalog_path = site / "ota" / "catalog.json"
+            self.assertTrue(catalog_path.is_file())
+            self.assertLessEqual(len(catalog_path.read_bytes()), 16384)
+            self.assertNotIn(b"\n  ", catalog_path.read_bytes())
 
     def test_ota_catalog_rejects_bad_artifact_hash(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
