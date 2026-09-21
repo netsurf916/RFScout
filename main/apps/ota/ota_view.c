@@ -1,5 +1,5 @@
 /**
-    apps/ota/ota_view.c : OTA Update application presentation
+    apps/ota/ota_view.c : Home Update menu presentation
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
