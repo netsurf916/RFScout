@@ -64,7 +64,7 @@ void ota_view_render_main( const char *a_version,
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     const unsigned item_count =
-        (unsigned)a_network_count + ( a_can_check ? ( a_can_install ? 3U : 2U ) : 3U );
+        (unsigned)a_network_count + ( a_can_check ? ( a_can_install ? 4U : 3U ) : 3U );
     const unsigned start = menu_window_start( a_selected, item_count );
 
     display_clear( theme->background );
@@ -101,13 +101,27 @@ void ota_view_render_main( const char *a_version,
                 {
                     draw_menu_row( row, item, a_selected, "Check for update", a_update_status );
                 }
-                else if( a_can_install && 1U == action )
-                {
-                    draw_menu_row( row, item, a_selected, "Install update", a_update_status );
-                }
                 else
                 {
-                    draw_menu_row( row, item, a_selected, "Saved networks", NULL );
+                    unsigned next_action = 1U;
+                    if( a_can_install )
+                    {
+                        if( next_action == action )
+                        {
+                            draw_menu_row(
+                                row, item, a_selected, "Install update", a_update_status );
+                            continue;
+                        }
+                        ++next_action;
+                    }
+                    if( next_action == action )
+                    {
+                        draw_menu_row( row, item, a_selected, "Available builds", NULL );
+                    }
+                    else
+                    {
+                        draw_menu_row( row, item, a_selected, "Saved networks", NULL );
+                    }
                 }
             }
             else if( 0U == action )
@@ -236,6 +250,70 @@ void ota_view_render_network_list( const char *a_title,
 
     display_draw_text(
         UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN SELECT / CENTER ACTION", theme->secondary, 1U );
+    (void)display_present();
+}
+
+void ota_view_render_build_list( const ota_view_build_t *a_builds,
+                                 size_t a_build_count,
+                                 unsigned a_selected,
+                                 const char *a_empty_message )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    const unsigned item_count = (unsigned)a_build_count + 1U;
+    const unsigned start = menu_window_start( a_selected, item_count );
+
+    display_clear( theme->background );
+    ui_chrome_draw( "AVAILABLE BUILDS", theme->secondary );
+    if( 0U == a_build_count && NULL != a_empty_message )
+    {
+        display_draw_text( UI_LAYOUT_LEFT_X, 28, a_empty_message, theme->secondary, 1U );
+    }
+
+    for( unsigned row = 0U; row < OTA_MENU_VISIBLE_ROWS; ++row )
+    {
+        const unsigned item = start + row;
+        if( item >= item_count )
+        {
+            break;
+        }
+        if( 0U == item )
+        {
+            draw_menu_row( row, item, a_selected, "Back", NULL );
+            continue;
+        }
+        const ota_view_build_t *build = &a_builds[ item - 1U ];
+        draw_menu_row( row, item, a_selected, build->label, build->version );
+    }
+
+    display_draw_text(
+        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN SELECT / CENTER ACTION", theme->secondary, 1U );
+    (void)display_present();
+}
+
+void ota_view_render_build_action( const char *a_label,
+                                   const char *a_version,
+                                   const char *a_commit,
+                                   unsigned a_selected )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    display_clear( theme->background );
+    ui_chrome_draw( "FIRMWARE BUILD", theme->secondary );
+    display_draw_text(
+        UI_LAYOUT_LEFT_X, 28, NULL != a_label ? a_label : "Build", theme->accent, 1U );
+    display_draw_text(
+        UI_LAYOUT_LEFT_X, 43, NULL != a_version ? a_version : "unknown", theme->secondary, 1U );
+
+    char commit[ 24 ] = "";
+    if( NULL != a_commit )
+    {
+        snprintf( commit, sizeof( commit ), "%.12s", a_commit );
+    }
+    display_draw_text( UI_LAYOUT_LEFT_X, 58, commit, theme->secondary, 1U );
+
+    draw_menu_row( 0U, 0U, a_selected, "Back", NULL );
+    draw_menu_row( 1U, 1U, a_selected, "Install", NULL );
+    display_draw_text(
+        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "EXPLICIT BUILD INSTALL", theme->secondary, 1U );
     (void)display_present();
 }
 

@@ -21,6 +21,12 @@ typedef struct
     int8_t rssi;
 } ota_view_network_t;
 
+typedef struct
+{
+    const char *label;
+    const char *version;
+} ota_view_build_t;
+
 void ota_view_render_main( const char *a_version,
                            const char *a_connection,
                            const ota_view_network_t *a_networks,
@@ -44,6 +50,14 @@ void ota_view_render_network_list( const char *a_title,
                                    size_t a_network_count,
                                    unsigned a_selected,
                                    const char *a_empty_message );
+void ota_view_render_build_list( const ota_view_build_t *a_builds,
+                                 size_t a_build_count,
+                                 unsigned a_selected,
+                                 const char *a_empty_message );
+void ota_view_render_build_action( const char *a_label,
+                                   const char *a_version,
+                                   const char *a_commit,
+                                   unsigned a_selected );
 void ota_view_render_password( const char *a_ssid,
                                size_t a_length,
                                rfscout_text_entry_selection_t a_selection,

@@ -34,7 +34,9 @@ typedef enum
     OTA_SCREEN_ACTION,
     OTA_SCREEN_ADD,
     OTA_SCREEN_SAVED,
-    OTA_SCREEN_PASSWORD
+    OTA_SCREEN_PASSWORD,
+    OTA_SCREEN_BUILDS,
+    OTA_SCREEN_BUILD_ACTION
 } ota_screen_t;
 
 static ota_network_list_t saved_networks;
@@ -51,6 +53,11 @@ static char connecting_ssid[ OTA_NETWORK_SSID_MAX_LENGTH + 1U ];
 static char error_text[ OTA_ERROR_TEXT_LENGTH ];
 static rfscout_text_entry_t password_entry;
 static ota_catalog_selection_t catalog_selection;
+static ota_catalog_build_t available_builds[ OTA_CATALOG_MAX_BUILDS ];
+static ota_view_build_t view_builds[ OTA_CATALOG_MAX_BUILDS ];
+static size_t available_build_count;
+static int selected_build_index;
+static bool open_builds_after_catalog;
 static char catalog_json[ OTA_ACQUISITION_CATALOG_MAX_LENGTH + 1U ];
 static char update_status[ OTA_CATALOG_VERSION_MAX_LENGTH + 1U ];
 static uint32_t last_acquisition_generation;
@@ -184,7 +191,7 @@ static void render_main( void )
     const bool can_check = RFSCOUT_WIFI_STATION_CONNECTED == current.state;
     const bool can_install = can_check && OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result;
     const unsigned item_count =
-        (unsigned)view_network_count + ( can_check ? ( can_install ? 3U : 2U ) : 3U );
+        (unsigned)view_network_count + ( can_check ? ( can_install ? 4U : 3U ) : 3U );
     if( selected_item >= item_count )
     {
         selected_item = item_count - 1U;
@@ -291,6 +298,44 @@ static void render_password( void )
                               error_text );
 }
 
+static void build_build_views( void )
+{
+    for( size_t index = 0U; index < available_build_count; ++index )
+    {
+        view_builds[ index ].label = available_builds[ index ].label;
+        view_builds[ index ].version = available_builds[ index ].candidate.version;
+    }
+}
+
+static void render_builds( void )
+{
+    build_build_views();
+    const unsigned item_count = (unsigned)available_build_count + 1U;
+    if( selected_item >= item_count )
+    {
+        selected_item = item_count - 1U;
+    }
+    ota_view_render_build_list(
+        view_builds, available_build_count, selected_item, "No compatible builds" );
+}
+
+static void render_build_action( void )
+{
+    if( selected_build_index < 0 || (size_t)selected_build_index >= available_build_count )
+    {
+        screen = OTA_SCREEN_BUILDS;
+        selected_item = 0U;
+        render_builds();
+        return;
+    }
+
+    const ota_catalog_build_t *build = &available_builds[ selected_build_index ];
+    ota_view_render_build_action( build->label,
+                                  build->candidate.version,
+                                  build->candidate.commit,
+                                  selected_item );
+}
+
 static void render( void )
 {
     switch( screen )
@@ -306,6 +351,12 @@ static void render( void )
             break;
         case OTA_SCREEN_PASSWORD:
             render_password();
+            break;
+        case OTA_SCREEN_BUILDS:
+            render_builds();
+            break;
+        case OTA_SCREEN_BUILD_ACTION:
+            render_build_action();
             break;
         case OTA_SCREEN_MAIN:
         default:
@@ -372,6 +423,8 @@ static void begin_update_check( void )
 {
     error_text[ 0 ] = '\0';
     memset( &catalog_selection, 0, sizeof( catalog_selection ) );
+    available_build_count = 0U;
+    selected_build_index = -1;
     const esp_err_t result = ota_acquisition_begin_catalog();
     if( ESP_OK != result )
     {
@@ -383,23 +436,23 @@ static void begin_update_check( void )
     render();
 }
 
-static void begin_update_install( void )
+static void begin_candidate_install( const ota_catalog_candidate_t *a_candidate )
 {
-    if( OTA_CATALOG_UPDATE_AVAILABLE != catalog_selection.result )
+    if( NULL == a_candidate )
     {
         return;
     }
 
     ota_installer_image_t image;
     memset( &image, 0, sizeof( image ) );
-    snprintf( image.version, sizeof( image.version ), "%s", catalog_selection.candidate.version );
-    snprintf( image.sha256, sizeof( image.sha256 ), "%s", catalog_selection.candidate.sha256 );
-    image.size = catalog_selection.candidate.artifact_size;
+    snprintf( image.version, sizeof( image.version ), "%s", a_candidate->version );
+    snprintf( image.sha256, sizeof( image.sha256 ), "%s", a_candidate->sha256 );
+    image.size = a_candidate->artifact_size;
 
     esp_err_t result = ota_installer_begin( &image );
     if( ESP_OK == result )
     {
-        result = ota_acquisition_begin_firmware( catalog_selection.candidate.artifact_path );
+        result = ota_acquisition_begin_firmware( a_candidate->artifact_path );
     }
     if( ESP_OK != result )
     {
@@ -411,8 +464,32 @@ static void begin_update_install( void )
     }
 
     error_text[ 0 ] = '\0';
+    screen = OTA_SCREEN_MAIN;
+    selected_item = 0U;
     snprintf( update_status, sizeof( update_status ), "Downloading..." );
     render();
+}
+
+static void begin_update_install( void )
+{
+    if( OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result )
+    {
+        begin_candidate_install( &catalog_selection.candidate );
+    }
+}
+
+static void open_available_builds( void )
+{
+    if( available_build_count > 0U )
+    {
+        screen = OTA_SCREEN_BUILDS;
+        selected_item = 0U;
+        render();
+        return;
+    }
+
+    open_builds_after_catalog = true;
+    begin_update_check();
 }
 
 static void handle_main_select( void )
@@ -431,9 +508,19 @@ static void handle_main_select( void )
             begin_update_check();
             return;
         }
-        if( OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result && 1U == action )
+        unsigned next_action = 1U;
+        if( OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result )
         {
-            begin_update_install();
+            if( next_action == action )
+            {
+                begin_update_install();
+                return;
+            }
+            ++next_action;
+        }
+        if( next_action == action )
+        {
+            open_available_builds();
             return;
         }
         selected_item = 0U;
@@ -616,6 +703,45 @@ static void handle_saved_select( void )
     }
 }
 
+static void handle_builds_select( void )
+{
+    if( 0U == selected_item )
+    {
+        screen = OTA_SCREEN_MAIN;
+        selected_item = 0U;
+        render();
+        return;
+    }
+
+    const size_t build_index = selected_item - 1U;
+    if( build_index >= available_build_count )
+    {
+        return;
+    }
+    selected_build_index = (int)build_index;
+    selected_item = 0U;
+    screen = OTA_SCREEN_BUILD_ACTION;
+    render();
+}
+
+static void handle_build_action_select( void )
+{
+    if( 0U == selected_item )
+    {
+        screen = OTA_SCREEN_BUILDS;
+        selected_item = 0U;
+        render();
+        return;
+    }
+    if( 1U != selected_item || selected_build_index < 0 ||
+        (size_t)selected_build_index >= available_build_count )
+    {
+        return;
+    }
+
+    begin_candidate_install( &available_builds[ selected_build_index ].candidate );
+}
+
 static void handle_password_input( const rfscout_input_event_t *a_input )
 {
     const rfscout_text_entry_result_t result = app_text_entry_input( &password_entry, a_input );
@@ -673,10 +799,17 @@ static void handle_input( const rfscout_input_event_t *a_input )
         {
             return;
         }
-        screen = OTA_SCREEN_MAIN;
+        if( OTA_SCREEN_BUILD_ACTION == screen )
+        {
+            screen = OTA_SCREEN_BUILDS;
+        }
+        else
+        {
+            screen = OTA_SCREEN_MAIN;
+            action_saved_index = -1;
+            action_scan_index = -1;
+        }
         selected_item = 0U;
-        action_saved_index = -1;
-        action_scan_index = -1;
         error_text[ 0 ] = '\0';
         render();
         emit_event( RFSCOUT_EVENT_BACK, 0 );
@@ -692,7 +825,7 @@ static void handle_input( const rfscout_input_event_t *a_input )
             const bool can_install =
                 network_connected() && OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result;
             item_count = (unsigned)view_network_count +
-                         ( network_connected() ? ( can_install ? 3U : 2U ) : 3U );
+                         ( network_connected() ? ( can_install ? 4U : 3U ) : 3U );
         }
         else if( OTA_SCREEN_ACTION == screen )
         {
@@ -708,6 +841,14 @@ static void handle_input( const rfscout_input_event_t *a_input )
         else if( OTA_SCREEN_SAVED == screen )
         {
             item_count = (unsigned)saved_networks.count + 1U;
+        }
+        else if( OTA_SCREEN_BUILDS == screen )
+        {
+            item_count = (unsigned)available_build_count + 1U;
+        }
+        else if( OTA_SCREEN_BUILD_ACTION == screen )
+        {
+            item_count = 2U;
         }
         move_selection( a_input->value > 0 ? 1 : -1, item_count );
         render();
@@ -736,6 +877,14 @@ static void handle_input( const rfscout_input_event_t *a_input )
     {
         handle_saved_select();
     }
+    else if( OTA_SCREEN_BUILDS == screen )
+    {
+        handle_builds_select();
+    }
+    else if( OTA_SCREEN_BUILD_ACTION == screen )
+    {
+        handle_build_action_select();
+    }
 }
 
 static void reset_runtime_state( void )
@@ -754,6 +903,11 @@ static void reset_runtime_state( void )
     memset( error_text, 0, sizeof( error_text ) );
     app_text_entry_clear( &password_entry );
     memset( &catalog_selection, 0, sizeof( catalog_selection ) );
+    memset( available_builds, 0, sizeof( available_builds ) );
+    memset( view_builds, 0, sizeof( view_builds ) );
+    available_build_count = 0U;
+    selected_build_index = -1;
+    open_builds_after_catalog = false;
     memset( catalog_json, 0, sizeof( catalog_json ) );
     snprintf( update_status, sizeof( update_status ), "Not checked" );
     last_acquisition_generation = 0U;
@@ -832,6 +986,15 @@ static rfscout_app_runtime_result_t ota_runtime( const rfscout_app_runtime_event
                     }
                     if( ESP_OK == result )
                     {
+                        result = ota_catalog_list( catalog_json,
+                                                   length,
+                                                   firmware_identity(),
+                                                   available_builds,
+                                                   OTA_CATALOG_MAX_BUILDS,
+                                                   &available_build_count );
+                    }
+                    if( ESP_OK == result )
+                    {
                         if( OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result )
                         {
                             snprintf( update_status,
@@ -844,9 +1007,16 @@ static rfscout_app_runtime_result_t ota_runtime( const rfscout_app_runtime_event
                             snprintf( update_status, sizeof( update_status ), "Current" );
                         }
                         error_text[ 0 ] = '\0';
+                        if( open_builds_after_catalog )
+                        {
+                            screen = OTA_SCREEN_BUILDS;
+                            selected_item = 0U;
+                            open_builds_after_catalog = false;
+                        }
                     }
                     else
                     {
+                        open_builds_after_catalog = false;
                         set_error( result );
                         snprintf( update_status, sizeof( update_status ), "Check failed" );
                     }
