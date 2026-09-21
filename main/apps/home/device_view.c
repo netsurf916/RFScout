@@ -1483,9 +1483,8 @@ bool device_view_back( void )
 {
     if( ota_menu_open )
     {
-        if( ota_menu_back() )
+        if( ota_menu_back() && ESP_OK == ota_menu_leave() )
         {
-            ota_menu_leave();
             ota_menu_open = false;
             device_view_render();
         }
@@ -1520,9 +1519,8 @@ bool device_view_input( bool a_pressed, int a_delta )
 {
     if( ota_menu_open )
     {
-        if( ota_menu_input( a_pressed, a_delta ) )
+        if( ota_menu_input( a_pressed, a_delta ) && ESP_OK == ota_menu_leave() )
         {
-            ota_menu_leave();
             ota_menu_open = false;
             emit_device_event( RFSCOUT_EVENT_BACK, 0 );
             device_view_render();
@@ -1652,7 +1650,9 @@ void device_view_leave( void )
 {
     if( ota_menu_open )
     {
-        ota_menu_leave();
-        ota_menu_open = false;
+        if( ESP_OK == ota_menu_leave() )
+        {
+            ota_menu_open = false;
+        }
     }
 }
