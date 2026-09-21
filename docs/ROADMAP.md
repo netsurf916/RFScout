@@ -492,11 +492,11 @@ For an install, that service:
 
 With the current two-slot layout, ESP-IDF's "next update partition" policy naturally resolves to the inactive slot; RFScout code does not encode that fact by offset or slot name. OTA-data state remains owned by ESP-IDF/bootloader logic.
 
-Errors before the boot-partition commit abort the OTA handle and leave the currently running application selected. Leaving the OTA app during download follows the same abort path.
+Errors before the boot-partition commit abort the OTA handle and leave the currently running application selected. Leaving the Home Update menu during download follows the same abort path.
 
 ### First-boot confirmation and rollback
 
-Rollback confirmation is a boot/platform responsibility, not an OTA-app responsibility. The new image must be able to prove basic operability even if the user never opens OTA again.
+Rollback confirmation is a boot/platform responsibility, not an Update-menu responsibility. The new image must be able to prove basic operability even if the user never opens OTA again.
 
 With `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`, `esp_ota_set_boot_partition()` marks a newly selected image for first-boot verification. Early common startup must inspect the running OTA partition state. When it is `ESP_OTA_IMG_PENDING_VERIFY`, RFScout runs a bounded core-health check and then either:
 
@@ -505,7 +505,7 @@ With `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`, `esp_ota_set_boot_partition()` mar
 
 An unexpected reset/power loss before confirmation intentionally allows the ESP-IDF bootloader to reject the unconfirmed image and return to the previous working slot.
 
-The confirmation test should prove RFScout can reach a stable core runtime on the supported hardware, but it must not depend on optional/hot-plug peripherals, Internet availability, an OTA-server response, or opening the OTA app. The exact health checklist is separate implementation/test work and should be conservative enough to avoid accepting a fundamentally broken build without turning an unrelated optional-device failure into a firmware rollback.
+The confirmation test should prove RFScout can reach a stable core runtime on the supported hardware, but it must not depend on optional/hot-plug peripherals, Internet availability, an OTA-server response, or opening the Update menu. The exact health checklist is separate implementation/test work and should be conservative enough to avoid accepting a fundamentally broken build without turning an unrelated optional-device failure into a firmware rollback.
 
 The updater must not start another OTA while the currently running image is still pending verification. ESP-IDF already rejects that state; RFScout should surface it as a platform/update-state error rather than attempting to work around it.
 
@@ -533,13 +533,13 @@ Keep the feature reviewable and preserve abstraction boundaries by landing it in
 
 1. document/finalize manifest, version, partition, rollback, and app/network ownership contracts;
 2. **implemented on the OTA development branch:** embed authoritative candidate/release version metadata, verify it during packaging, and generate immutable OTA release metadata;
-3. **implemented on the OTA development branch:** add the OTA app shell plus app-owned remembered-network persistence and reusable credential/text-entry UI;
+3. **implemented on the OTA development branch:** add the Home-owned Update menu plus OTA-owned remembered-network persistence and reusable credential/text-entry UI;
 4. **implemented on the OTA development branch:** add session-scoped passive scan and explicit infrastructure-STA connect/disconnect support behind a semantic service, including explicit SSID-targeted active search for remembered networks not seen passively;
-5. **implemented on the OTA development branch:** add explicit static HTTPS catalog retrieval, hard build-identity/layout validation, stable-release selection, explicit main/PR/draft/prerelease/release build browsing, cancellation on app transition, and OTA UI reporting;
+5. **implemented on the OTA development branch:** add explicit static HTTPS catalog retrieval, hard build-identity/layout validation, stable-release selection, explicit main/PR/draft/prerelease/release build browsing, cancellation on Update-menu/Home exit, and Update UI reporting;
 6. **implemented on the OTA development branch:** add the transport-neutral installer abstraction and ESP-IDF A/B streaming implementation, including exact byte count, streaming SHA-256, ESP-IDF image validation, embedded project/version checks, flash-readback SHA-256, boot commit, and immediate reboot;
 7. **implemented on the OTA development branch:** add boot-time pending-image confirmation after bounded mandatory common startup, preserving automatic rollback across crash/reset/power loss before confirmation;
 8. **implemented on the OTA development branch:** derive the device OTA catalog from the same main/PR/release inventory used by the atomic GitHub Pages browser-flasher deployment; and
-9. validate cancellation, app switching, network loss, truncated/corrupt images, power loss at each OTA stage, explicit candidate installs, rollback, and recovery flashing on hardware.
+9. validate cancellation, leaving Update/Home, app switching, network loss, truncated/corrupt images, power loss at each OTA stage, explicit candidate installs, rollback, and recovery flashing on hardware.
 
 ## Medium-term platform work
 
