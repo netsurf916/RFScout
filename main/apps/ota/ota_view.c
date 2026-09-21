@@ -140,7 +140,7 @@ void ota_view_render_network_action( const char *a_ssid,
                                      const char *a_status )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
-    const unsigned action_count = a_saved ? ( a_visible ? 3U : 2U ) : 2U;
+    const unsigned action_count = a_saved ? 3U : 2U;
 
     display_clear( theme->background );
     ui_chrome_draw( "NETWORK", theme->secondary );
@@ -165,7 +165,7 @@ void ota_view_render_network_action( const char *a_ssid,
         {
             if( a_saved )
             {
-                label = a_visible ? ( a_connected ? "Disconnect" : "Connect" ) : "Forget";
+                label = a_connected ? "Disconnect" : ( a_visible ? "Connect" : "Connect anyway" );
             }
             else
             {
@@ -235,6 +235,7 @@ void ota_view_render_network_list( const char *a_title,
 
 void ota_view_render_password( const char *a_ssid,
                                size_t a_length,
+                               rfscout_text_entry_selection_t a_selection,
                                char a_character,
                                const char *a_error )
 {
@@ -252,12 +253,23 @@ void ota_view_render_password( const char *a_ssid,
     display_draw_text( UI_LAYOUT_LEFT_X, 58, "Password", theme->text, 1U );
     display_draw_text( 90, 58, masked, theme->secondary, 1U );
 
-    char candidate[ 24 ];
-    snprintf(
-        candidate, sizeof( candidate ), "Character: %c", ' ' == a_character ? '_' : a_character );
+    char candidate[ 32 ];
+    if( RFSCOUT_TEXT_ENTRY_SELECTION_DONE == a_selection )
+    {
+        snprintf( candidate, sizeof( candidate ), "Action: Done" );
+    }
+    else if( RFSCOUT_TEXT_ENTRY_SELECTION_BACKSPACE == a_selection )
+    {
+        snprintf( candidate, sizeof( candidate ), "Action: Backspace" );
+    }
+    else
+    {
+        snprintf(
+            candidate, sizeof( candidate ), "Character: %c", ' ' == a_character ? '_' : a_character );
+    }
     display_draw_text( UI_LAYOUT_LEFT_X, 84, candidate, theme->selected, 1U );
-    display_draw_text( UI_LAYOUT_LEFT_X, 106, "CENTER ADD  BACK DELETE", theme->secondary, 1U );
-    display_draw_text( UI_LAYOUT_LEFT_X, 121, "HOLD CENTER: SAVE", theme->secondary, 1U );
+    display_draw_text( UI_LAYOUT_LEFT_X, 106, "CENTER: USE", theme->secondary, 1U );
+    display_draw_text( UI_LAYOUT_LEFT_X, 121, "BACK: CANCEL", theme->secondary, 1U );
 
     if( NULL != a_error && '\0' != a_error[ 0 ] )
     {
@@ -266,7 +278,7 @@ void ota_view_render_password( const char *a_ssid,
     else
     {
         display_draw_text(
-            UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN: CHARACTER", theme->secondary, 1U );
+            UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN: CHARACTER / ACTION", theme->secondary, 1U );
     }
     (void)display_present();
 }

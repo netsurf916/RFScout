@@ -156,6 +156,8 @@ static const char *connection_status( void )
     {
         case RFSCOUT_WIFI_STATION_SCANNING:
             return "Passive scan";
+        case RFSCOUT_WIFI_STATION_SEARCHING:
+            return "Active search";
         case RFSCOUT_WIFI_STATION_CONNECTING:
             return "Connecting";
         case RFSCOUT_WIFI_STATION_CONNECTED:
@@ -214,8 +216,13 @@ static void render_action( void )
     const bool connected = RFSCOUT_WIFI_STATION_CONNECTED == current.state && NULL != ssid &&
                            0 == strcmp( connecting_ssid, ssid );
     const char *status_text = error_text;
-    if( RFSCOUT_WIFI_STATION_CONNECTING == current.state && NULL != ssid &&
+    if( RFSCOUT_WIFI_STATION_SEARCHING == current.state && NULL != ssid &&
         0 == strcmp( connecting_ssid, ssid ) )
+    {
+        status_text = "Actively searching...";
+    }
+    else if( RFSCOUT_WIFI_STATION_CONNECTING == current.state && NULL != ssid &&
+             0 == strcmp( connecting_ssid, ssid ) )
     {
         status_text = "Connecting...";
     }
@@ -226,10 +233,12 @@ static void render_action( void )
     else if( RFSCOUT_WIFI_STATION_FAILED == current.state && NULL != ssid &&
              0 == strcmp( connecting_ssid, ssid ) )
     {
-        status_text = "Connection failed";
+        status_text =
+            ESP_ERR_NOT_FOUND == current.disconnect_reason ? "Network not found"
+                                                           : "Connection failed";
     }
 
-    unsigned action_count = saved ? ( visible ? 3U : 2U ) : 2U;
+    unsigned action_count = saved ? 3U : 2U;
     if( selected_item >= action_count )
     {
         selected_item = action_count - 1U;
@@ -269,8 +278,11 @@ static void render_password( void )
     const char *ssid = action_scan_index >= 0 && (size_t)action_scan_index < scan_count
                            ? scan_results[ action_scan_index ].ssid
                            : "Network";
-    ota_view_render_password(
-        ssid, password_entry.length, app_text_entry_character( &password_entry ), error_text );
+    ota_view_render_password( ssid,
+                              password_entry.length,
+                              app_text_entry_selection( &password_entry ),
+                              app_text_entry_character( &password_entry ),
+                              error_text );
 }
 
 static void render( void )
@@ -500,7 +512,7 @@ static void handle_action_select( void )
         return;
     }
 
-    if( visible && 1U == selected_item )
+    if( 1U == selected_item )
     {
         const rfscout_wifi_station_status_t current = wifi_station_status();
         if( RFSCOUT_WIFI_STATION_CONNECTED == current.state &&
@@ -639,8 +651,7 @@ static void handle_input( const rfscout_input_event_t *a_input )
         {
             const bool saved =
                 action_saved_index >= 0 && (size_t)action_saved_index < saved_networks.count;
-            const bool visible = action_scan_index >= 0 && (size_t)action_scan_index < scan_count;
-            item_count = saved ? ( visible ? 3U : 2U ) : 2U;
+            item_count = saved ? 3U : 2U;
         }
         else if( OTA_SCREEN_ADD == screen )
         {

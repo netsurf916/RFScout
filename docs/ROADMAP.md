@@ -585,7 +585,7 @@ Keep the feature reviewable and preserve abstraction boundaries by landing it in
 1. document/finalize manifest, version, partition, rollback, and app/network ownership contracts;
 2. **implemented on the OTA development branch:** embed authoritative candidate/release version metadata, verify it during packaging, and generate immutable OTA release metadata;
 3. **implemented on the OTA development branch:** add the OTA app shell plus app-owned remembered-network persistence and reusable credential/text-entry UI;
-4. **implemented on the OTA development branch:** add session-scoped passive scan and explicit infrastructure-STA connect/disconnect support behind a semantic service;
+4. **implemented on the OTA development branch:** add session-scoped passive scan and explicit infrastructure-STA connect/disconnect support behind a semantic service, including explicit SSID-targeted active search for remembered networks not seen passively;
 5. **implemented on the OTA development branch:** add explicit static HTTPS catalog retrieval, validation, waypoint selection, cancellation on app transition, and OTA UI reporting without flash writes;
 6. add the transport-neutral installer abstraction and ESP-IDF A/B streaming implementation;
 7. add boot-time pending-image confirmation/rollback handling;

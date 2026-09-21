@@ -18,6 +18,7 @@
 #include <string.h>
 
 #define WIFI_STATION_PASSIVE_DWELL_MS 200U
+#define WIFI_STATION_ACTIVE_MAX_DWELL_MS 120U
 
 static const char *TAG = "wifi_station";
 static bool initialized;
@@ -31,6 +32,7 @@ static rfscout_wifi_station_status_t status;
 static rfscout_wifi_station_ap_t scan_results[ RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS ];
 static wifi_ap_record_t scan_records[ RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS ];
 static size_t scan_result_count;
+static char active_search_ssid[ RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH + 1U ];
 
 static void set_state( rfscout_wifi_station_state_t a_state, int32_t a_disconnect_reason )
 {
@@ -52,6 +54,22 @@ static bool ssid_already_retained( const uint8_t *a_ssid, size_t a_count )
         }
     }
     return false;
+}
+
+static bool passive_snapshot_contains( const char *a_ssid )
+{
+    bool found = false;
+    portENTER_CRITICAL( &state_lock );
+    for( size_t index = 0U; index < scan_result_count; ++index )
+    {
+        if( 0 == strcmp( scan_results[ index ].ssid, a_ssid ) )
+        {
+            found = true;
+            break;
+        }
+    }
+    portEXIT_CRITICAL( &state_lock );
+    return found;
 }
 
 static void collect_scan_results( void )
@@ -93,6 +111,34 @@ static void collect_scan_results( void )
     memset( scan_records, 0, sizeof( scan_records ) );
 }
 
+static void complete_active_search( void )
+{
+    uint16_t count = 0U;
+    esp_err_t result = esp_wifi_scan_get_ap_num( &count );
+    (void)esp_wifi_clear_ap_list();
+
+    if( ESP_OK != result )
+    {
+        memset( active_search_ssid, 0, sizeof( active_search_ssid ) );
+        set_state( RFSCOUT_WIFI_STATION_FAILED, (int32_t)result );
+        return;
+    }
+    if( 0U == count )
+    {
+        memset( active_search_ssid, 0, sizeof( active_search_ssid ) );
+        set_state( RFSCOUT_WIFI_STATION_FAILED, (int32_t)ESP_ERR_NOT_FOUND );
+        return;
+    }
+
+    memset( active_search_ssid, 0, sizeof( active_search_ssid ) );
+    set_state( RFSCOUT_WIFI_STATION_CONNECTING, 0 );
+    result = esp_wifi_connect();
+    if( ESP_OK != result )
+    {
+        set_state( RFSCOUT_WIFI_STATION_FAILED, (int32_t)result );
+    }
+}
+
 static void
 wifi_event( void *a_context, esp_event_base_t a_event_base, int32_t a_event_id, void *a_event_data )
 {
@@ -101,13 +147,18 @@ wifi_event( void *a_context, esp_event_base_t a_event_base, int32_t a_event_id, 
 
     if( WIFI_EVENT_SCAN_DONE == a_event_id )
     {
-        bool accept;
+        rfscout_wifi_station_state_t scan_state;
         portENTER_CRITICAL( &state_lock );
-        accept = started && !stopping && RFSCOUT_WIFI_STATION_SCANNING == status.state;
+        scan_state = started && !stopping ? status.state : RFSCOUT_WIFI_STATION_OFF;
         portEXIT_CRITICAL( &state_lock );
-        if( accept )
+
+        if( RFSCOUT_WIFI_STATION_SCANNING == scan_state )
         {
             collect_scan_results();
+        }
+        else if( RFSCOUT_WIFI_STATION_SEARCHING == scan_state )
+        {
+            complete_active_search();
         }
         else
         {
@@ -245,7 +296,8 @@ esp_err_t wifi_station_passive_scan_start( void )
     rfscout_wifi_station_status_t current = wifi_station_status();
     if( RFSCOUT_WIFI_STATION_CONNECTING == current.state ||
         RFSCOUT_WIFI_STATION_CONNECTED == current.state ||
-        RFSCOUT_WIFI_STATION_SCANNING == current.state )
+        RFSCOUT_WIFI_STATION_SCANNING == current.state ||
+        RFSCOUT_WIFI_STATION_SEARCHING == current.state )
     {
         return ESP_ERR_INVALID_STATE;
     }
@@ -313,6 +365,7 @@ esp_err_t wifi_station_connect( const char *a_ssid, const char *a_password )
 
     rfscout_wifi_station_status_t current = wifi_station_status();
     if( RFSCOUT_WIFI_STATION_SCANNING == current.state ||
+        RFSCOUT_WIFI_STATION_SEARCHING == current.state ||
         RFSCOUT_WIFI_STATION_CONNECTING == current.state ||
         RFSCOUT_WIFI_STATION_CONNECTED == current.state )
     {
@@ -345,12 +398,36 @@ esp_err_t wifi_station_connect( const char *a_ssid, const char *a_password )
 
     portENTER_CRITICAL( &state_lock );
     disconnect_requested = false;
-    status.state = RFSCOUT_WIFI_STATION_CONNECTING;
     status.disconnect_reason = 0;
     portEXIT_CRITICAL( &state_lock );
-    result = esp_wifi_connect();
+
+    if( passive_snapshot_contains( a_ssid ) )
+    {
+        set_state( RFSCOUT_WIFI_STATION_CONNECTING, 0 );
+        result = esp_wifi_connect();
+        if( ESP_OK != result )
+        {
+            set_state( RFSCOUT_WIFI_STATION_FAILED, (int32_t)result );
+        }
+        return result;
+    }
+
+    memset( active_search_ssid, 0, sizeof( active_search_ssid ) );
+    memcpy( active_search_ssid, a_ssid, ssid_length );
+    wifi_scan_config_t search = {
+        .ssid = (uint8_t *)active_search_ssid,
+        .bssid = NULL,
+        .channel = 0U,
+        .show_hidden = true,
+        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+        .scan_time = { .active = { .min = 0U, .max = WIFI_STATION_ACTIVE_MAX_DWELL_MS } },
+    };
+
+    set_state( RFSCOUT_WIFI_STATION_SEARCHING, 0 );
+    result = esp_wifi_scan_start( &search, false );
     if( ESP_OK != result )
     {
+        memset( active_search_ssid, 0, sizeof( active_search_ssid ) );
         set_state( RFSCOUT_WIFI_STATION_FAILED, (int32_t)result );
     }
     return result;
@@ -392,6 +469,7 @@ esp_err_t wifi_station_stop( void )
     status.disconnect_reason = 0;
     scan_result_count = 0U;
     memset( scan_results, 0, sizeof( scan_results ) );
+    memset( active_search_ssid, 0, sizeof( active_search_ssid ) );
     portEXIT_CRITICAL( &state_lock );
 
     if( was_started )

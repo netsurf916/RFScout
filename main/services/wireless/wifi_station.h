@@ -25,6 +25,7 @@ typedef enum
     RFSCOUT_WIFI_STATION_OFF = 0,
     RFSCOUT_WIFI_STATION_IDLE,
     RFSCOUT_WIFI_STATION_SCANNING,
+    RFSCOUT_WIFI_STATION_SEARCHING,
     RFSCOUT_WIFI_STATION_CONNECTING,
     RFSCOUT_WIFI_STATION_CONNECTED,
     RFSCOUT_WIFI_STATION_FAILED
@@ -58,7 +59,11 @@ esp_err_t wifi_station_passive_scan_start( void );
 /** @brief Copy the current strongest-per-SSID passive scan snapshot. */
 size_t wifi_station_scan_results( rfscout_wifi_station_ap_t *a_results, size_t a_capacity );
 
-/** @brief Establish one explicitly requested station connection using caller-owned credentials. */
+/**
+ * @brief Establish one explicitly requested station connection using caller-owned credentials.
+ * @details If the target was absent from the latest passive scan snapshot, the service first
+ *          performs an SSID-targeted active scan before association.
+ */
 esp_err_t wifi_station_connect( const char *a_ssid, const char *a_password );
 
 /** @brief Disconnect the current station while leaving the OTA session able to scan again. */

@@ -9,6 +9,8 @@
 #ifndef _RFSCOUT_OTA_VIEW_H_
 #define _RFSCOUT_OTA_VIEW_H_
 
+#include "app_text_entry.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -43,6 +45,7 @@ void ota_view_render_network_list( const char *a_title,
                                    const char *a_empty_message );
 void ota_view_render_password( const char *a_ssid,
                                size_t a_length,
+                               rfscout_text_entry_selection_t a_selection,
                                char a_character,
                                const char *a_error );
 
