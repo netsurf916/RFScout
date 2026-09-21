@@ -42,22 +42,11 @@ class PackagingError(RuntimeError):
 
 
 def validate_release_version(a_version: str) -> None:
-    """Validate a v-prefixed Semantic Versioning release identifier."""
-    match = RELEASE_VERSION_RE.fullmatch(a_version)
-    if match is None:
+    """Validate the supported v-prefixed X.Y.Z release identifier."""
+    if RELEASE_VERSION_RE.fullmatch(a_version) is None:
         raise PackagingError(
-            "release version must be v-prefixed Semantic Versioning, such as "
-            "v0.1.0 or v0.1.0-rc.1"
+            "release version must use vX.Y.Z Semantic Versioning, such as v0.1.0"
         )
-
-    prerelease = match.group("prerelease")
-    if prerelease is None:
-        return
-    for identifier in prerelease.split("."):
-        if identifier.isdigit() and len(identifier) > 1 and identifier.startswith("0"):
-            raise PackagingError(
-                "numeric prerelease identifiers must not contain leading zeroes"
-            )
 
 
 def sha256(a_path: Path) -> str:
