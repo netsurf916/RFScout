@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Semantic version beginning with v, for example v0.1.0
+        description: Release version in vX.Y.Z form, for example v0.1.0
         required: true
         type: string
       source_ref:
