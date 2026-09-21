@@ -68,11 +68,13 @@ class WebFlasherCatalogTest(unittest.TestCase):
                         "pr": 42,
                         "sha": "aaaaaaaaaaaa1111",
                         "run_url": "https://github.example/run/42",
+                        "created_at": "2026-09-20T12:00:00Z",
                     },
                     {
                         "pr": 52,
                         "sha": "bbbbbbbbbbbb2222",
                         "run_url": "https://github.example/run/52",
+                        "created_at": "2026-09-21T12:00:00Z",
                     },
                 ],
             )
@@ -80,6 +82,7 @@ class WebFlasherCatalogTest(unittest.TestCase):
             self.assertEqual([entry["pr"] for entry in entries], [52, 42])
             self.assertEqual(entries[0]["label"], "PR #52 candidate")
             self.assertEqual(entries[0]["source_commit"], "bbbbbbbbbbbb2222")
+            self.assertEqual(entries[0]["created_at"], "2026-09-21T12:00:00Z")
             self.assertEqual(entries[0]["commit"], "5" * 40)
             self.assertEqual(
                 entries[0]["manifest"],
@@ -165,6 +168,7 @@ class WebFlasherCatalogTest(unittest.TestCase):
                     "version": "candidate-bbbbbbbbbbbb",
                     "manifest": "firmware/candidates/pr-75/manifest.web.json",
                     "commit": candidate_commit,
+                    "created_at": "2026-09-21T12:00:00Z",
                 },
                 {
                     "id": "release-v0.3.0",
@@ -175,25 +179,26 @@ class WebFlasherCatalogTest(unittest.TestCase):
                     "commit": release_commit,
                     "draft": False,
                     "prerelease": False,
+                    "published_at": "2026-09-01T12:00:00Z",
                 },
             ]
 
             catalog = build_ota_catalog(site, browser_entries)
 
             self.assertEqual(len(catalog["builds"]), 2)
-            self.assertEqual(catalog["builds"][0]["pr"], 75)
-            self.assertEqual(catalog["builds"][0]["label"], "PR #75 @ bbbbbbbbbbbb")
-            self.assertEqual(catalog["builds"][1]["label"], "RFScout 0.3.0")
-            self.assertFalse(catalog["builds"][0]["stable"])
-            self.assertTrue(catalog["builds"][1]["stable"])
+            self.assertEqual(catalog["builds"][0]["label"], "RFScout 0.3.0")
+            self.assertEqual(catalog["builds"][1]["pr"], 75)
+            self.assertEqual(catalog["builds"][1]["label"], "PR #75 @ bbbbbbbbbbbb")
+            self.assertTrue(catalog["builds"][0]["stable"])
+            self.assertFalse(catalog["builds"][1]["stable"])
             self.assertEqual(
-                catalog["builds"][0]["artifact"]["path"],
+                catalog["builds"][1]["artifact"]["path"],
                 "firmware/candidates/pr-75/"
                 "rfscout-candidate-bbbbbbbbbbbb-esp32s3-app.bin",
             )
             catalog_path = site / "ota" / "catalog.json"
             self.assertTrue(catalog_path.is_file())
-            self.assertLessEqual(len(catalog_path.read_bytes()), 16384)
+            self.assertLessEqual(len(catalog_path.read_bytes()), 8192)
             self.assertNotIn(b"\n  ", catalog_path.read_bytes())
 
     def test_ota_catalog_rejects_bad_artifact_hash(self) -> None:
@@ -254,7 +259,7 @@ class WebFlasherCatalogTest(unittest.TestCase):
                     ],
                 )
 
-    def test_ota_catalog_rejects_more_than_device_limit(self) -> None:
+    def test_ota_catalog_trims_to_8k_and_keeps_newest_official(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             site = Path(temporary) / "site"
             entries = []
@@ -273,11 +278,16 @@ class WebFlasherCatalogTest(unittest.TestCase):
                         "commit": commit,
                         "draft": False,
                         "prerelease": False,
+                        "published_at": f"2026-09-21T00:{index:02d}:00Z",
                     }
                 )
 
-            with self.assertRaisesRegex(ValueError, "maximum is 32"):
-                build_ota_catalog(site, entries)
+            catalog = build_ota_catalog(site, entries)
+            catalog_path = site / "ota" / "catalog.json"
+
+            self.assertLess(len(catalog["builds"]), len(entries))
+            self.assertEqual(catalog["builds"][0]["version"], "0.32.0")
+            self.assertLessEqual(len(catalog_path.read_bytes()), 8192)
 
 
 if __name__ == "__main__":
