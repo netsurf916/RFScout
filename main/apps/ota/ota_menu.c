@@ -950,12 +950,34 @@ void ota_menu_enter( void )
     begin_passive_scan();
 }
 
-void ota_menu_leave( void )
+esp_err_t ota_menu_leave( void )
 {
-    (void)ota_acquisition_stop();
-    (void)ota_installer_abort();
-    (void)rfscout_wifi_station_stop();
+    esp_err_t result = ota_acquisition_stop();
+    if( ESP_OK != result )
+    {
+        set_error( result );
+        render();
+        return result;
+    }
+
+    result = ota_installer_abort();
+    if( ESP_OK != result )
+    {
+        set_error( result );
+        render();
+        return result;
+    }
+
+    result = rfscout_wifi_station_stop();
+    if( ESP_OK != result )
+    {
+        set_error( result );
+        render();
+        return result;
+    }
+
     reset_runtime_state();
+    return ESP_OK;
 }
 
 bool ota_menu_input( bool a_pressed, int a_delta )
