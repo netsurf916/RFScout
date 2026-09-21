@@ -1,10 +1,11 @@
 /**
-    apps/ota/app.c : OTA Update application descriptor and network-management runtime
+    apps/ota/app.c : Home Update menu controller and OTA network-management runtime
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
 
 #include "app_descriptor.h"
+#include "ota_menu.h"
 
 #include "app_text_entry.h"
 #include "event.h"
@@ -70,10 +71,11 @@ static uint32_t last_installer_generation;
 static uint32_t last_scan_generation;
 static rfscout_wifi_station_state_t last_station_state;
 static int64_t last_refresh_us;
+static bool close_requested;
 
 static void emit_event( rfscout_event_type_t a_type, int32_t a_value )
 {
-    rfscout_event_emit( a_type, (uint8_t)RFSCOUT_APP_OTA, a_value );
+    rfscout_event_emit( a_type, (uint8_t)RFSCOUT_APP_DEVICE, a_value );
 }
 
 static void set_error( esp_err_t a_error )
@@ -196,7 +198,7 @@ static void render_main( void )
     const bool can_check = RFSCOUT_WIFI_STATION_CONNECTED == current.state;
     const bool can_install = can_check && OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result;
     const unsigned item_count =
-        (unsigned)view_network_count + ( can_check ? ( can_install ? 4U : 3U ) : 3U );
+        1U + (unsigned)view_network_count + ( can_check ? ( can_install ? 4U : 3U ) : 3U );
     if( selected_item >= item_count )
     {
         selected_item = item_count - 1U;
@@ -499,12 +501,19 @@ static void open_available_builds( void )
 static void handle_main_select( void )
 {
     build_visible_saved();
-    if( selected_item < view_network_count )
+    if( 0U == selected_item )
     {
-        open_saved_action( visible_saved_indices[ selected_item ] );
+        close_requested = true;
         return;
     }
-    unsigned action = selected_item - (unsigned)view_network_count;
+
+    const unsigned menu_item = selected_item - 1U;
+    if( menu_item < view_network_count )
+    {
+        open_saved_action( visible_saved_indices[ menu_item ] );
+        return;
+    }
+    unsigned action = menu_item - (unsigned)view_network_count;
     if( network_connected() )
     {
         if( 0U == action )
@@ -835,7 +844,7 @@ static void handle_input( const rfscout_input_event_t *a_input )
             build_visible_saved();
             const bool can_install =
                 network_connected() && OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result;
-            item_count = (unsigned)view_network_count +
+            item_count = 1U + (unsigned)view_network_count +
                          ( network_connected() ? ( can_install ? 4U : 3U ) : 3U );
         }
         else if( OTA_SCREEN_ACTION == screen )
@@ -926,6 +935,7 @@ static void reset_runtime_state( void )
     last_scan_generation = 0U;
     last_station_state = RFSCOUT_WIFI_STATION_OFF;
     last_refresh_us = 0;
+    close_requested = false;
 }
 
 static rfscout_app_runtime_result_t ota_runtime( const rfscout_app_runtime_event_t *a_event )
@@ -1102,6 +1112,82 @@ static rfscout_app_runtime_result_t ota_runtime( const rfscout_app_runtime_event
     return RFSCOUT_APP_RUNTIME_HANDLED;
 }
 
+
+void ota_menu_enter( void )
+{
+    const rfscout_app_runtime_event_t event = {
+        .type = RFSCOUT_APP_RUNTIME_ENTER,
+    };
+    (void)ota_runtime( &event );
+}
+
+void ota_menu_leave( void )
+{
+    (void)ota_acquisition_stop();
+    (void)ota_installer_abort();
+    (void)rfscout_wifi_station_stop();
+
+    const rfscout_app_runtime_event_t event = {
+        .type = RFSCOUT_APP_RUNTIME_LEAVE,
+    };
+    (void)ota_runtime( &event );
+}
+
+bool ota_menu_input( bool a_pressed, int a_delta )
+{
+    rfscout_app_runtime_event_t event = {
+        .type = RFSCOUT_APP_RUNTIME_INPUT,
+    };
+    if( a_pressed )
+    {
+        event.input.type = RFSCOUT_INPUT_SELECT;
+    }
+    else if( 0 != a_delta )
+    {
+        event.input.type = RFSCOUT_INPUT_NAVIGATION;
+        event.input.value = a_delta;
+    }
+    else
+    {
+        return false;
+    }
+
+    close_requested = false;
+    (void)ota_runtime( &event );
+    const bool close = close_requested;
+    close_requested = false;
+    return close;
+}
+
+bool ota_menu_back( void )
+{
+    if( OTA_SCREEN_MAIN == screen )
+    {
+        return true;
+    }
+
+    rfscout_app_runtime_event_t event = {
+        .type = RFSCOUT_APP_RUNTIME_INPUT,
+    };
+    event.input.type = RFSCOUT_INPUT_BACK;
+    (void)ota_runtime( &event );
+    return false;
+}
+
+void ota_menu_poll( int64_t a_now_us )
+{
+    const rfscout_app_runtime_event_t event = {
+        .type = RFSCOUT_APP_RUNTIME_POLL,
+        .now_us = a_now_us,
+    };
+    (void)ota_runtime( &event );
+}
+
+/*
+ * RFSCOUT_APP_OTA remains as a reserved pre-1.0 application ID so persisted
+ * app arrays and event sources do not renumber. device_config keeps it disabled;
+ * the user-facing Update UI is owned by Home through ota_menu_*().
+ */
 const rfscout_app_descriptor_t rfscout_ota_app = {
     .id = RFSCOUT_APP_OTA,
     .name = "OTA Update",
