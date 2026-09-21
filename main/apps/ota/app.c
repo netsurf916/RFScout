@@ -774,12 +774,12 @@ static void handle_password_input( const rfscout_input_event_t *a_input )
         {
             ESP_LOGI( TAG,
                       "saving OTA network credentials; stack high-water=%u bytes",
-                      (unsigned)( uxTaskGetStackHighWaterMark( NULL ) * sizeof( StackType_t ) ) );
+                      (unsigned)uxTaskGetStackHighWaterMark( NULL ) );
             save_result = ota_networks_save( &saved_networks );
             ESP_LOGI( TAG,
                       "saved OTA network credentials: %s; stack high-water=%u bytes",
                       esp_err_to_name( save_result ),
-                      (unsigned)( uxTaskGetStackHighWaterMark( NULL ) * sizeof( StackType_t ) ) );
+                      (unsigned)uxTaskGetStackHighWaterMark( NULL ) );
         }
         app_text_entry_clear( &password_entry );
         set_error( save_result );
