@@ -231,7 +231,9 @@ static void render_main( void )
     const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
     const bool scanning = RFSCOUT_WIFI_STATION_SCANNING == current.state;
     const bool can_check = RFSCOUT_WIFI_STATION_CONNECTED == current.state;
-    const bool can_install = can_check && OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result;
+    const bool install_active = ota_acquisition_is_active() || ota_installer_active();
+    const bool can_install = can_check && !install_active &&
+                             OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result;
     const unsigned item_count =
         1U + (unsigned)view_network_count + ( can_check ? ( can_install ? 4U : 3U ) : 3U );
     if( selected_item >= item_count )
@@ -483,6 +485,12 @@ static void begin_candidate_install( const ota_catalog_candidate_t *a_candidate 
     {
         return;
     }
+    if( ota_acquisition_is_active() || ota_installer_active() )
+    {
+        set_error( ESP_ERR_INVALID_STATE );
+        render();
+        return;
+    }
 
     ota_installer_image_t image;
     memset( &image, 0, sizeof( image ) );
@@ -491,13 +499,17 @@ static void begin_candidate_install( const ota_catalog_candidate_t *a_candidate 
     image.size = a_candidate->artifact_size;
 
     esp_err_t result = ota_installer_begin( &image );
-    if( ESP_OK == result )
+    const bool installer_started = ESP_OK == result;
+    if( installer_started )
     {
         result = ota_acquisition_begin_firmware( a_candidate->artifact_path );
     }
     if( ESP_OK != result )
     {
-        (void)ota_installer_abort();
+        if( installer_started )
+        {
+            (void)ota_installer_abort();
+        }
         set_error( result );
         snprintf( update_status, sizeof( update_status ), "Install failed" );
         render();
