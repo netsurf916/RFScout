@@ -388,6 +388,14 @@ void app_main( void )
     result = platform_init();
     if( ESP_OK != result )
     {
+        const esp_err_t rollback_result = ota_boot_rollback_if_pending();
+        if( ESP_OK != rollback_result )
+        {
+            ESP_LOGE( TAG,
+                      "could not roll back pending OTA image after platform failure: %s",
+                      esp_err_to_name( rollback_result ) );
+        }
+
         ESP_LOGE(
             TAG,
             "unsupported hardware profile; leaving ESP32-S3 awake and idle for recovery flashing" );
