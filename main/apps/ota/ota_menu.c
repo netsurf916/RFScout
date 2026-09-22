@@ -209,8 +209,7 @@ static bool ota_operation_active( void )
 
 static bool install_action_available( void )
 {
-    return !ota_operation_active() &&
-           OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result;
+    return !ota_operation_active() && OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result;
 }
 
 static const char *connection_status( void )
@@ -908,8 +907,8 @@ static void handle_input( const rfscout_input_event_t *a_input )
             build_visible_saved();
             const bool connected = network_connected();
             const bool can_install = connected && install_action_available();
-            item_count = 1U + (unsigned)view_network_count +
-                         ( connected ? ( can_install ? 4U : 3U ) : 3U );
+            item_count =
+                1U + (unsigned)view_network_count + ( connected ? ( can_install ? 4U : 3U ) : 3U );
         }
         else if( OTA_SCREEN_ACTION == screen )
         {
