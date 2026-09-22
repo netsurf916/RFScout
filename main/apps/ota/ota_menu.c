@@ -9,6 +9,7 @@
 
 #include "app_text_entry.h"
 #include "app_session.h"
+#include "device_time.h"
 #include "event.h"
 #include "firmware_identity.h"
 #include "ota_acquisition.h"
@@ -88,6 +89,17 @@ static void set_error( esp_err_t a_error )
         return;
     }
     snprintf( error_text, sizeof( error_text ), "%s", esp_err_to_name( a_error ) );
+}
+
+static bool update_clock_valid( void )
+{
+    if( device_time_now( NULL ) )
+    {
+        return true;
+    }
+
+    snprintf( error_text, sizeof( error_text ), "Set date/time first" );
+    return false;
 }
 
 static esp_err_t ensure_catalog_json_capacity( size_t a_length )
@@ -478,6 +490,12 @@ static void begin_update_check( void )
         return;
     }
 
+    if( !update_clock_valid() )
+    {
+        render();
+        return;
+    }
+
     const esp_err_t result = ota_acquisition_begin_catalog();
     if( ESP_OK != result )
     {
@@ -504,6 +522,12 @@ static void begin_candidate_install( const ota_catalog_candidate_t *a_candidate 
     if( ota_operation_active() )
     {
         set_error( ESP_ERR_INVALID_STATE );
+        render();
+        return;
+    }
+
+    if( !update_clock_valid() )
+    {
         render();
         return;
     }
