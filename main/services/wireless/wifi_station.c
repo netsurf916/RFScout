@@ -616,6 +616,12 @@ esp_err_t rfscout_wifi_station_stop( void )
         if( ESP_OK != stop_result )
         {
             portENTER_CRITICAL( &state_lock );
+            if( RFSCOUT_WIFI_STATION_SCANNING == status.state ||
+                RFSCOUT_WIFI_STATION_SEARCHING == status.state )
+            {
+                status.state = RFSCOUT_WIFI_STATION_IDLE;
+                status.disconnect_reason = 0;
+            }
             stopping = false;
             portEXIT_CRITICAL( &state_lock );
             return stop_result;
