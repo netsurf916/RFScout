@@ -89,5 +89,9 @@ esp_err_t display_write_rect(
     int a_x, int a_y, int a_width, int a_height, const uint16_t *a_pixels, size_t a_pixel_count );
 esp_err_t display_flush( void );
 esp_err_t display_present( void );
+/** @brief Show an app-owned modal overlay using the shared global popup presentation. */
+void display_modal_show( const char *a_title, const char *a_detail );
+/** @brief Clear the app-owned modal overlay. */
+void display_modal_clear( void );
 
 #endif // _RFSCOUT_DISPLAY_H_

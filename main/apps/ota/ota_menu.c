@@ -10,6 +10,7 @@
 #include "app_text_entry.h"
 #include "app_session.h"
 #include "event.h"
+#include "display.h"
 #include "firmware_identity.h"
 #include "ota_acquisition.h"
 #include "ota_catalog.h"
@@ -1093,6 +1094,7 @@ static void handle_input( const rfscout_input_event_t *a_input )
 
 static void reset_runtime_state( void )
 {
+    display_modal_clear();
     ota_networks_clear_runtime( &saved_networks );
     memset( scan_results, 0, sizeof( scan_results ) );
     memset( view_networks, 0, sizeof( view_networks ) );
@@ -1327,6 +1329,10 @@ static void submenu_poll( int64_t a_now_us )
             }
             else if( OTA_ACQUISITION_KIND_FIRMWARE == acquisition.kind )
             {
+                snprintf( update_status, sizeof( update_status ), "Verifying..." );
+                display_modal_show( "OTA UPDATE", "Verifying..." );
+                render();
+
                 esp_err_t result = ota_installer_finish();
                 if( ESP_OK == result )
                 {
@@ -1335,9 +1341,11 @@ static void submenu_poll( int64_t a_now_us )
                 if( ESP_OK == result )
                 {
                     snprintf( update_status, sizeof( update_status ), "Rebooting..." );
+                    display_modal_show( "OTA UPDATE", "Rebooting..." );
                     render();
                     esp_restart();
                 }
+                display_modal_clear();
                 (void)ota_installer_abort();
                 set_error( result );
                 snprintf( update_status, sizeof( update_status ), "Install failed" );
@@ -1347,6 +1355,7 @@ static void submenu_poll( int64_t a_now_us )
         {
             if( OTA_ACQUISITION_KIND_FIRMWARE == acquisition.kind )
             {
+                display_modal_clear();
                 (void)ota_installer_abort();
                 snprintf( update_status, sizeof( update_status ), "Install failed" );
             }
@@ -1378,11 +1387,20 @@ static void submenu_poll( int64_t a_now_us )
         const unsigned percent =
             (unsigned)( (uint64_t)installer.bytes_written * 100U / installer.expected_size );
         snprintf( update_status, sizeof( update_status ), "Downloading %u%%", percent );
+        char progress[ 32 ];
+        snprintf( progress,
+                  sizeof( progress ),
+                  "%u%%  %lu / %lu KB",
+                  percent,
+                  (unsigned long)( installer.bytes_written / 1024U ),
+                  (unsigned long)( installer.expected_size / 1024U ) );
+        display_modal_show( "OTA UPDATE", progress );
         redraw = true;
     }
     else if( OTA_INSTALLER_VERIFYING == installer.state )
     {
         snprintf( update_status, sizeof( update_status ), "Verifying..." );
+        display_modal_show( "OTA UPDATE", "Verifying..." );
         redraw = true;
     }
 

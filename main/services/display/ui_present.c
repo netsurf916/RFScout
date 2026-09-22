@@ -23,6 +23,9 @@
 #define GLOBAL_OVERLAY_PIXEL_COUNT ( GLOBAL_OVERLAY_WIDTH * GLOBAL_OVERLAY_HEIGHT )
 
 static uint16_t *overlay_backup;
+static bool modal_active;
+static char modal_title[ 32 ];
+static char modal_detail[ 32 ];
 
 static int text_width( const char *a_text, unsigned a_scale )
 {
@@ -57,6 +60,44 @@ static void draw_overlay_frame( uint16_t a_border_color )
                        2,
                        GLOBAL_OVERLAY_HEIGHT,
                        a_border_color );
+}
+
+void display_modal_show( const char *a_title, const char *a_detail )
+{
+    const char *title = ( NULL != a_title ) ? a_title : "";
+    const char *detail = ( NULL != a_detail ) ? a_detail : "";
+    if( modal_active && 0 == strcmp( modal_title, title ) && 0 == strcmp( modal_detail, detail ) )
+    {
+        return;
+    }
+
+    modal_active = true;
+    snprintf( modal_title, sizeof( modal_title ), "%s", title );
+    snprintf( modal_detail, sizeof( modal_detail ), "%s", detail );
+    display_invalidate();
+}
+
+void display_modal_clear( void )
+{
+    if( !modal_active )
+    {
+        return;
+    }
+    modal_active = false;
+    modal_title[ 0 ] = '\0';
+    modal_detail[ 0 ] = '\0';
+    display_invalidate();
+}
+
+static void draw_modal_overlay( void )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    draw_overlay_frame( theme->accent );
+    display_draw_text( centered_x( modal_title, 2U ), 63, modal_title, theme->accent, 2U );
+    if( '\0' != modal_detail[ 0 ] )
+    {
+        display_draw_text( centered_x( modal_detail, 2U ), 88, modal_detail, theme->text, 2U );
+    }
 }
 
 static void draw_power_overlay( const power_status_t *a_status )
@@ -127,7 +168,7 @@ esp_err_t display_present( void )
     power_get_status( &status );
     rfscout_system_event_notification_t system_notification;
     const bool system_event_active = system_events_notification_get( &system_notification );
-    if( POWER_HOLD_IDLE == status.state && !system_event_active )
+    if( POWER_HOLD_IDLE == status.state && !modal_active && !system_event_active )
     {
         return display_flush();
     }
@@ -161,6 +202,10 @@ esp_err_t display_present( void )
     if( POWER_HOLD_IDLE != status.state )
     {
         draw_power_overlay( &status );
+    }
+    else if( modal_active )
+    {
+        draw_modal_overlay();
     }
     else
     {
