@@ -784,7 +784,13 @@ static void forget_selected_network( void )
     const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
     if( RFSCOUT_WIFI_STATION_CONNECTED == current.state && 0 == strcmp( current.ssid, ssid ) )
     {
-        (void)rfscout_wifi_station_disconnect();
+        const esp_err_t disconnect_result = rfscout_wifi_station_disconnect();
+        if( ESP_OK != disconnect_result )
+        {
+            set_error( disconnect_result );
+            render();
+            return;
+        }
     }
 
     esp_err_t result = ota_networks_forget( &saved_networks, (size_t)action_saved_index );
