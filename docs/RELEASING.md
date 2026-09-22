@@ -15,7 +15,7 @@ The release packager validates ESP-IDF build metadata before producing files. RF
 
 The bundle contains a combined image for ordinary installation, the application/bootloader/partition-table component images for development and recovery, SHA-256 checksums, installation instructions, structured build metadata, an immutable `ota-image.json` metadata fragment, and an ESP Web Tools manifest. The combined image also contains the generated ESP-IDF OTA metadata image required to initialize the A/B boot state. It does not contain the ESP-IDF build tree. The ESP32-S3 firmware validates the supported T-Embed profile at runtime.
 
-`ota-image.json` describes the application image for both release and candidate bundles: normalized embedded version, source commit, project ID, stable hardware target ID, ESP-IDF target, partition-layout generation, size, and SHA-256. Release packaging rejects a build when ESP-IDF's generated `project_description.json` does not report the same embedded project version being packaged. Compatibility policy is intentionally not encoded as a pre-1.0 version-range or waypoint field; compatibility is bounded by the currently published build set plus hard identity/layout/image checks on the device.
+`ota-image.json` describes the application image for both release and candidate bundles: normalized embedded version, packaged build commit, project ID, stable hardware target ID, ESP-IDF target, partition-layout generation, size, and SHA-256. Release packaging rejects a build when ESP-IDF's generated `project_description.json` does not report the same embedded project version being packaged. Compatibility policy is intentionally not encoded as a pre-1.0 version-range or waypoint field; compatibility is bounded by the currently published build set plus hard identity/layout/image checks on the device.
 
 RFScout logs the running application's exact on-flash artifact byte length and SHA-256 during startup. For an application image flashed without modification, that startup digest should match the SHA-256 recorded for the corresponding `*-app.bin` in `ota-image.json` and `SHA256SUMS`. This startup diagnostic deliberately hashes the complete stored application artifact rather than using ESP-IDF's separate app-content digest returned by `esp_partition_get_sha256()`.
 
@@ -83,7 +83,7 @@ The candidate portion of a Pages deployment represents current testable developm
 
 ### In-device OTA catalog
 
-The same Pages deployment builds `ota/catalog.json` from the same normalized build inventory shown by the browser flasher. Any mirrored build carrying valid `ota-image.json` metadata is device-installable in principle:
+The same Pages deployment builds `ota/catalog.json` from the same normalized build inventory shown by the browser flasher. Mirrored builds carrying valid `ota-image.json` metadata are eligible for device-catalog retention:
 
 - the current successful `main` candidate;
 - successful candidates for open pull requests;
