@@ -634,7 +634,14 @@ static void open_available_builds( void )
     begin_update_check();
 }
 
-static void handle_main_select( void )
+static void open_saved_networks( void )
+{
+    selected_item = 0U;
+    screen = OTA_SCREEN_SAVED;
+    render();
+}
+
+static void handle_network_main_select( void )
 {
     build_visible_saved();
     if( 0U == selected_item )
@@ -649,35 +656,13 @@ static void handle_main_select( void )
         open_saved_action( visible_saved_indices[ menu_item ] );
         return;
     }
-    unsigned action = menu_item - (unsigned)view_network_count;
+
+    const unsigned action = menu_item - (unsigned)view_network_count;
     if( network_connected() )
     {
-        if( 0U == action )
-        {
-            begin_update_check();
-            return;
-        }
-        unsigned next_action = 1U;
-        if( install_action_available() )
-        {
-            if( next_action == action )
-            {
-                begin_update_install();
-                return;
-            }
-            ++next_action;
-        }
-        if( next_action == action )
-        {
-            open_available_builds();
-            return;
-        }
-        selected_item = 0U;
-        screen = OTA_SCREEN_SAVED;
-        render();
+        open_saved_networks();
         return;
     }
-
     if( 0U == action )
     {
         begin_passive_scan();
@@ -690,9 +675,53 @@ static void handle_main_select( void )
         render();
         return;
     }
-    selected_item = 0U;
-    screen = OTA_SCREEN_SAVED;
-    render();
+    open_saved_networks();
+}
+
+static void handle_update_main_select( void )
+{
+    if( 0U == selected_item )
+    {
+        close_requested = true;
+        return;
+    }
+    if( !update_ready() )
+    {
+        return;
+    }
+
+    if( 1U == selected_item )
+    {
+        begin_update_check();
+        return;
+    }
+
+    unsigned next_item = 2U;
+    if( install_action_available() )
+    {
+        if( next_item == selected_item )
+        {
+            begin_update_install();
+            return;
+        }
+        ++next_item;
+    }
+    if( next_item == selected_item )
+    {
+        open_available_builds();
+    }
+}
+
+static void handle_main_select( void )
+{
+    if( HOME_SUBMENU_NETWORK == submenu )
+    {
+        handle_network_main_select();
+    }
+    else
+    {
+        handle_update_main_select();
+    }
 }
 
 static void save_open_network( void )
