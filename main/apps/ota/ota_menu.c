@@ -1329,6 +1329,10 @@ static void submenu_poll( int64_t a_now_us )
             }
             else if( OTA_ACQUISITION_KIND_FIRMWARE == acquisition.kind )
             {
+                snprintf( update_status, sizeof( update_status ), "Verifying..." );
+                display_modal_show( "OTA UPDATE", "Verifying..." );
+                render();
+
                 esp_err_t result = ota_installer_finish();
                 if( ESP_OK == result )
                 {
