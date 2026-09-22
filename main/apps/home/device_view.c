@@ -250,7 +250,8 @@ static bool item_direct_toggle( unsigned a_item )
 static bool item_editable( unsigned a_item )
 {
     return ( DEVICE_ITEM_BACK != a_item ) && ( DEVICE_ITEM_TIME != a_item ) &&
-           ( DEVICE_ITEM_OTA != a_item ) && ( DEVICE_ITEM_POWER_BUTTON != a_item ) &&
+           ( DEVICE_ITEM_NETWORK != a_item ) && ( DEVICE_ITEM_OTA != a_item ) &&
+           ( DEVICE_ITEM_POWER_BUTTON != a_item ) &&
            ( DEVICE_ITEM_POWER_POLICY != a_item ) && ( DEVICE_ITEM_BREADCRUMBS != a_item );
 }
 
@@ -286,6 +287,8 @@ static const char *item_label( unsigned a_item )
             return "Startup app";
         case DEVICE_ITEM_SYSTEM_EVENTS:
             return "System Events";
+        case DEVICE_ITEM_NETWORK:
+            return "Network";
         case DEVICE_ITEM_OTA:
             return "Update";
         case DEVICE_ITEM_WIFI:
@@ -374,7 +377,30 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
                       "%s",
                       on_off( config->apps_enabled[ RFSCOUT_APP_SYSTEM_EVENTS ] ) );
             break;
+        case DEVICE_ITEM_NETWORK:
+        {
+            const rfscout_wifi_station_status_t status = rfscout_wifi_station_status();
+            if( RFSCOUT_WIFI_STATION_CONNECTED == status.state )
+            {
+                snprintf( a_value,
+                          a_capacity,
+                          "%s",
+                          status.ntp_synced ? "Ready"
+                                            : ( status.ntp_syncing ? "Syncing" : "Time error" ) );
+            }
+            else if( RFSCOUT_WIFI_STATION_CONNECTING == status.state ||
+                     RFSCOUT_WIFI_STATION_SEARCHING == status.state )
+            {
+                snprintf( a_value, a_capacity, "Connecting" );
+            }
+            else
+            {
+                snprintf( a_value, a_capacity, "Offline" );
+            }
+            break;
+        }
         case DEVICE_ITEM_OTA:
+            snprintf( a_value, a_capacity, "%s", network_update_ready() ? "Ready" : "Unavailable" );
             break;
         case DEVICE_ITEM_WIFI:
             snprintf(
