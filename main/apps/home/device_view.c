@@ -25,6 +25,7 @@
 #include "ui_chrome.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
+#include "wifi_station.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -44,19 +45,20 @@
 #define DEVICE_ITEM_TIME 11U
 #define DEVICE_ITEM_STARTUP 12U
 #define DEVICE_ITEM_SYSTEM_EVENTS 13U
-#define DEVICE_ITEM_OTA 14U
-#define DEVICE_ITEM_WIFI 15U
-#define DEVICE_ITEM_CC1101 16U
-#define DEVICE_ITEM_NRF24 17U
-#define DEVICE_ITEM_AUDIO 18U
-#define DEVICE_ITEM_THERMAL 19U
-#define DEVICE_ITEM_AUDIO_SPECTRUM 20U
-#define DEVICE_ITEM_LOGGING 21U
-#define DEVICE_ITEM_POWER_BUTTON 22U
-#define DEVICE_ITEM_POWER_POLICY 23U
-#define DEVICE_ITEM_BREADCRUMBS 24U
-#define DEVICE_ITEM_BREADCRUMB_FILES 25U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 26U
+#define DEVICE_ITEM_NETWORK 14U
+#define DEVICE_ITEM_OTA 15U
+#define DEVICE_ITEM_WIFI 16U
+#define DEVICE_ITEM_CC1101 17U
+#define DEVICE_ITEM_NRF24 18U
+#define DEVICE_ITEM_AUDIO 19U
+#define DEVICE_ITEM_THERMAL 20U
+#define DEVICE_ITEM_AUDIO_SPECTRUM 21U
+#define DEVICE_ITEM_LOGGING 22U
+#define DEVICE_ITEM_POWER_BUTTON 23U
+#define DEVICE_ITEM_POWER_POLICY 24U
+#define DEVICE_ITEM_BREADCRUMBS 25U
+#define DEVICE_ITEM_BREADCRUMB_FILES 26U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 27U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
 #define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_BREADCRUMB_FILES + 1U )
@@ -101,11 +103,18 @@ static bool power_policy_menu_open;
 static bool time_menu_open;
 static unsigned time_selected_item;
 static bool time_editing;
+static bool network_menu_open;
 static bool ota_menu_open;
 
 static unsigned device_item_count( void )
 {
     return DEVICE_ITEM_BASE_COUNT;
+}
+
+static bool network_update_ready( void )
+{
+    const rfscout_wifi_station_status_t status = rfscout_wifi_station_status();
+    return RFSCOUT_WIFI_STATION_CONNECTED == status.state && status.ntp_synced;
 }
 
 static unsigned time_menu_item_count( void )
