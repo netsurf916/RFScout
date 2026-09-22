@@ -237,6 +237,8 @@ static const char *connection_status( void )
             return "Active search";
         case RFSCOUT_WIFI_STATION_CONNECTING:
             return "Connecting";
+        case RFSCOUT_WIFI_STATION_DISCONNECTING:
+            return "Disconnecting";
         case RFSCOUT_WIFI_STATION_CONNECTED:
             return '\0' != current.ssid[ 0 ] ? current.ssid : "Connected";
         case RFSCOUT_WIFI_STATION_FAILED:
@@ -347,6 +349,11 @@ static void render_action( void )
              0 == strcmp( current.ssid, ssid ) )
     {
         status_text = "Connecting...";
+    }
+    else if( RFSCOUT_WIFI_STATION_DISCONNECTING == current.state && NULL != ssid &&
+             0 == strcmp( current.ssid, ssid ) )
+    {
+        status_text = "Disconnecting...";
     }
     else if( connected )
     {
@@ -1125,7 +1132,8 @@ void network_menu_enter( void )
     if( RFSCOUT_WIFI_STATION_CONNECTED != current.state &&
         RFSCOUT_WIFI_STATION_CONNECTING != current.state &&
         RFSCOUT_WIFI_STATION_SEARCHING != current.state &&
-        RFSCOUT_WIFI_STATION_SCANNING != current.state )
+        RFSCOUT_WIFI_STATION_SCANNING != current.state &&
+        RFSCOUT_WIFI_STATION_DISCONNECTING != current.state )
     {
         begin_passive_scan();
     }
