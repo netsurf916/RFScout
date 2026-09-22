@@ -537,8 +537,9 @@ static void begin_update_check( void )
         return;
     }
 
-    if( !update_clock_valid() )
+    if( !update_ready() )
     {
+        snprintf( error_text, sizeof( error_text ), "Network/time not ready" );
         render();
         return;
     }
@@ -573,8 +574,9 @@ static void begin_candidate_install( const ota_catalog_candidate_t *a_candidate 
         return;
     }
 
-    if( !update_clock_valid() )
+    if( !update_ready() )
     {
+        snprintf( error_text, sizeof( error_text ), "Network/time not ready" );
         render();
         return;
     }
