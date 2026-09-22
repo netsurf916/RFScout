@@ -251,8 +251,8 @@ static bool item_editable( unsigned a_item )
 {
     return ( DEVICE_ITEM_BACK != a_item ) && ( DEVICE_ITEM_TIME != a_item ) &&
            ( DEVICE_ITEM_NETWORK != a_item ) && ( DEVICE_ITEM_OTA != a_item ) &&
-           ( DEVICE_ITEM_POWER_BUTTON != a_item ) &&
-           ( DEVICE_ITEM_POWER_POLICY != a_item ) && ( DEVICE_ITEM_BREADCRUMBS != a_item );
+           ( DEVICE_ITEM_POWER_BUTTON != a_item ) && ( DEVICE_ITEM_POWER_POLICY != a_item ) &&
+           ( DEVICE_ITEM_BREADCRUMBS != a_item );
 }
 
 static const char *item_label( unsigned a_item )
