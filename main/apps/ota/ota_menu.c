@@ -63,6 +63,7 @@ static home_submenu_t submenu;
 static unsigned selected_item;
 static int action_saved_index;
 static int action_scan_index;
+static char action_ssid[ RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH + 1U ];
 static char error_text[ OTA_ERROR_TEXT_LENGTH ];
 static rfscout_text_entry_t password_entry;
 static ota_catalog_selection_t catalog_selection;
@@ -157,6 +158,19 @@ static int scan_index_for_ssid( const char *a_ssid )
         }
     }
     return -1;
+}
+
+static void refresh_action_indices( void )
+{
+    if( '\0' == action_ssid[ 0 ] )
+    {
+        action_saved_index = -1;
+        action_scan_index = -1;
+        return;
+    }
+
+    action_saved_index = ota_networks_find( &saved_networks, action_ssid );
+    action_scan_index = scan_index_for_ssid( action_ssid );
 }
 
 static void build_visible_saved( void )
@@ -320,21 +334,11 @@ static void render_main( void )
 
 static void render_action( void )
 {
-    const char *ssid = NULL;
-    bool saved = action_saved_index >= 0 && (size_t)action_saved_index < saved_networks.count;
-    bool visible = action_scan_index >= 0 && (size_t)action_scan_index < scan_count;
-    int8_t rssi = visible ? scan_results[ action_scan_index ].rssi : INT8_MIN;
-    if( saved )
-    {
-        ssid = saved_networks.entries[ action_saved_index ].ssid;
-        action_scan_index = scan_index_for_ssid( ssid );
-        visible = action_scan_index >= 0;
-        rssi = visible ? scan_results[ action_scan_index ].rssi : INT8_MIN;
-    }
-    else if( visible )
-    {
-        ssid = scan_results[ action_scan_index ].ssid;
-    }
+    refresh_action_indices();
+    const char *ssid = '\0' != action_ssid[ 0 ] ? action_ssid : NULL;
+    const bool saved = action_saved_index >= 0 && (size_t)action_saved_index < saved_networks.count;
+    const bool visible = action_scan_index >= 0 && (size_t)action_scan_index < scan_count;
+    const int8_t rssi = visible ? scan_results[ action_scan_index ].rssi : INT8_MIN;
 
     const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
     const bool connected = RFSCOUT_WIFI_STATION_CONNECTED == current.state && NULL != ssid &&
@@ -405,9 +409,7 @@ static void render_saved( void )
 
 static void render_password( void )
 {
-    const char *ssid = action_scan_index >= 0 && (size_t)action_scan_index < scan_count
-                           ? scan_results[ action_scan_index ].ssid
-                           : "Network";
+    const char *ssid = '\0' != action_ssid[ 0 ] ? action_ssid : "Network";
     ota_view_render_password( ssid,
                               password_entry.length,
                               app_text_entry_selection( &password_entry ),
@@ -512,8 +514,11 @@ static void open_saved_action( size_t a_saved_index )
     {
         return;
     }
-    action_saved_index = (int)a_saved_index;
-    action_scan_index = scan_index_for_ssid( saved_networks.entries[ a_saved_index ].ssid );
+    snprintf( action_ssid,
+              sizeof( action_ssid ),
+              "%s",
+              saved_networks.entries[ a_saved_index ].ssid );
+    refresh_action_indices();
     selected_item = 0U;
     screen = OTA_SCREEN_ACTION;
     error_text[ 0 ] = '\0';
@@ -526,8 +531,9 @@ static void open_unsaved_action( size_t a_scan_index )
     {
         return;
     }
-    action_saved_index = -1;
-    action_scan_index = (int)a_scan_index;
+    snprintf(
+        action_ssid, sizeof( action_ssid ), "%s", scan_results[ a_scan_index ].ssid );
+    refresh_action_indices();
     selected_item = 0U;
     screen = OTA_SCREEN_ACTION;
     error_text[ 0 ] = '\0';
@@ -732,14 +738,13 @@ static void handle_main_select( void )
 
 static void save_open_network( void )
 {
-    if( action_scan_index < 0 || (size_t)action_scan_index >= scan_count )
+    if( '\0' == action_ssid[ 0 ] )
     {
         set_error( ESP_ERR_INVALID_STATE );
         render();
         return;
     }
-    esp_err_t result =
-        ota_networks_upsert( &saved_networks, scan_results[ action_scan_index ].ssid, "" );
+    esp_err_t result = ota_networks_upsert( &saved_networks, action_ssid, "" );
     if( ESP_OK == result )
     {
         result = ota_networks_save( &saved_networks );
@@ -747,8 +752,7 @@ static void save_open_network( void )
     set_error( result );
     if( ESP_OK == result )
     {
-        action_saved_index =
-            ota_networks_find( &saved_networks, scan_results[ action_scan_index ].ssid );
+        refresh_action_indices();
         selected_item = 0U;
     }
     render();
@@ -943,7 +947,7 @@ static void handle_password_input( const rfscout_input_event_t *a_input )
     }
     if( RFSCOUT_TEXT_ENTRY_ACCEPTED == result )
     {
-        if( action_scan_index < 0 || (size_t)action_scan_index >= scan_count )
+        if( '\0' == action_ssid[ 0 ] )
         {
             set_error( ESP_ERR_INVALID_STATE );
             app_text_entry_clear( &password_entry );
@@ -952,8 +956,8 @@ static void handle_password_input( const rfscout_input_event_t *a_input )
             return;
         }
 
-        esp_err_t save_result = ota_networks_upsert(
-            &saved_networks, scan_results[ action_scan_index ].ssid, password_entry.value );
+        esp_err_t save_result =
+            ota_networks_upsert( &saved_networks, action_ssid, password_entry.value );
         if( ESP_OK == save_result )
         {
             ESP_LOGI( TAG,
@@ -970,8 +974,7 @@ static void handle_password_input( const rfscout_input_event_t *a_input )
         screen = OTA_SCREEN_ACTION;
         if( ESP_OK == save_result )
         {
-            action_saved_index =
-                ota_networks_find( &saved_networks, scan_results[ action_scan_index ].ssid );
+            refresh_action_indices();
             selected_item = 0U;
         }
         render();
@@ -1100,6 +1103,7 @@ static void reset_runtime_state( void )
     selected_item = 0U;
     action_saved_index = -1;
     action_scan_index = -1;
+    memset( action_ssid, 0, sizeof( action_ssid ) );
     memset( error_text, 0, sizeof( error_text ) );
     app_text_entry_clear( &password_entry );
     memset( &catalog_selection, 0, sizeof( catalog_selection ) );
