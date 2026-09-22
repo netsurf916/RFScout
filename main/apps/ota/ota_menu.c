@@ -906,10 +906,10 @@ static void handle_input( const rfscout_input_event_t *a_input )
         if( OTA_SCREEN_MAIN == screen )
         {
             build_visible_saved();
-            const bool can_install =
-                network_connected() && OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result;
+            const bool connected = network_connected();
+            const bool can_install = connected && install_action_available();
             item_count = 1U + (unsigned)view_network_count +
-                         ( network_connected() ? ( can_install ? 4U : 3U ) : 3U );
+                         ( connected ? ( can_install ? 4U : 3U ) : 3U );
         }
         else if( OTA_SCREEN_ACTION == screen )
         {
