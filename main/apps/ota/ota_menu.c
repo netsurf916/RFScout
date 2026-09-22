@@ -98,15 +98,10 @@ static void set_error( esp_err_t a_error )
     snprintf( error_text, sizeof( error_text ), "%s", esp_err_to_name( a_error ) );
 }
 
-static bool update_clock_valid( void )
+static bool update_ready( void )
 {
-    if( device_time_now( NULL ) )
-    {
-        return true;
-    }
-
-    snprintf( error_text, sizeof( error_text ), "Set date/time first" );
-    return false;
+    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    return RFSCOUT_WIFI_STATION_CONNECTED == current.state && current.ntp_synced;
 }
 
 static esp_err_t ensure_catalog_json_capacity( size_t a_length )
@@ -243,7 +238,7 @@ static const char *connection_status( void )
         case RFSCOUT_WIFI_STATION_CONNECTING:
             return "Connecting";
         case RFSCOUT_WIFI_STATION_CONNECTED:
-            return '\0' != connecting_ssid[ 0 ] ? connecting_ssid : "Connected";
+            return '\0' != current.ssid[ 0 ] ? current.ssid : "Connected";
         case RFSCOUT_WIFI_STATION_FAILED:
             return "Connection failed";
         case RFSCOUT_WIFI_STATION_OFF:
@@ -253,30 +248,72 @@ static const char *connection_status( void )
     }
 }
 
-static void render_main( void )
+static const char *network_time_status( void )
+{
+    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    if( RFSCOUT_WIFI_STATION_CONNECTED != current.state )
+    {
+        return "";
+    }
+    if( current.ntp_synced )
+    {
+        return "Time synced";
+    }
+    return current.ntp_syncing ? "Syncing time..." : "Time sync failed";
+}
+
+static void render_network_main( void )
 {
     build_visible_saved();
-    const rfscout_firmware_identity_t *identity = firmware_identity();
     const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    const bool connected = RFSCOUT_WIFI_STATION_CONNECTED == current.state;
     const bool scanning = RFSCOUT_WIFI_STATION_SCANNING == current.state;
-    const bool can_check = RFSCOUT_WIFI_STATION_CONNECTED == current.state;
-    const bool can_install = can_check && install_action_available();
-    const unsigned item_count =
-        1U + (unsigned)view_network_count + ( can_check ? ( can_install ? 4U : 3U ) : 3U );
+    const unsigned item_count = 1U + (unsigned)view_network_count + ( connected ? 1U : 3U );
     if( selected_item >= item_count )
     {
         selected_item = item_count - 1U;
     }
-    ota_view_render_main( identity->version,
-                          connection_status(),
-                          view_networks,
-                          view_network_count,
-                          selected_item,
-                          scanning,
-                          can_check,
-                          can_install,
-                          update_status,
-                          error_text );
+
+    ota_view_render_network_main( connection_status(),
+                                  network_time_status(),
+                                  view_networks,
+                                  view_network_count,
+                                  selected_item,
+                                  scanning,
+                                  connected,
+                                  error_text );
+}
+
+static void render_update_main( void )
+{
+    const rfscout_firmware_identity_t *identity = firmware_identity();
+    const bool ready = update_ready();
+    const bool can_install = ready && install_action_available();
+    const unsigned item_count = ready ? ( can_install ? 4U : 3U ) : 1U;
+    if( selected_item >= item_count )
+    {
+        selected_item = item_count - 1U;
+    }
+
+    ota_view_render_update_main( identity->version,
+                                 connection_status(),
+                                 selected_item,
+                                 ready,
+                                 can_install,
+                                 update_status,
+                                 error_text );
+}
+
+static void render_main( void )
+{
+    if( HOME_SUBMENU_NETWORK == submenu )
+    {
+        render_network_main();
+    }
+    else
+    {
+        render_update_main();
+    }
 }
 
 static void render_action( void )
