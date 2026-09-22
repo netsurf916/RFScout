@@ -131,6 +131,11 @@ esp_err_t device_time_offer_gps( time_t a_epoch )
     return set_epoch( a_epoch, RFSCOUT_TIME_SOURCE_GPS );
 }
 
+esp_err_t device_time_offer_ntp( time_t a_epoch )
+{
+    return set_epoch( a_epoch, RFSCOUT_TIME_SOURCE_NTP );
+}
+
 esp_err_t device_time_set_mode( rfscout_time_mode_t a_mode )
 {
     if( a_mode > RFSCOUT_TIME_MODE_MANUAL )

@@ -50,6 +50,7 @@ typedef enum
 typedef struct
 {
     rfscout_board_id_t id;
+    const char *target_id;
     const char *name;
     uint32_t capabilities;
 

@@ -1,4 +1,4 @@
-name: Refresh flasher after release preparation
+name: Refresh Pages after release preparation
 
 on:
   workflow_run:
@@ -16,7 +16,7 @@ jobs:
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     steps:
-      - name: Refresh browser flasher from main
+      - name: Refresh RFScout Pages from main
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run web-flasher.yml --repo "$GITHUB_REPOSITORY" --ref main

@@ -197,7 +197,11 @@ esp_err_t radio_monitor_start( void )
         return ESP_OK;
     }
 
-    esp_err_t err = esp_wifi_start();
+    esp_err_t err = esp_wifi_set_mode( WIFI_MODE_NULL );
+    if( ESP_OK == err )
+    {
+        err = esp_wifi_start();
+    }
     if( ESP_OK != err )
     {
         portENTER_CRITICAL( &callback_lock );

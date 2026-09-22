@@ -34,6 +34,7 @@ set(RFSCOUT_INCLUDE_DIRS
     "apps"
     "apps/home"
     "apps/system_events"
+    "apps/ota"
     "apps/wifi_ble"
     "apps/cc1101"
     "apps/nrf24"
@@ -49,6 +50,7 @@ set(RFSCOUT_INCLUDE_DIRS
     "services/audio"
     "services/thermal"
     "services/storage"
+    "services/update"
     "services/power"
     "services/display"
 )
@@ -61,9 +63,15 @@ idf_component_register(
         "app_session.c"
         "app_framework.c"
         "app_notification_menu.c"
+        "app_text_entry.c"
+        "firmware_identity.c"
         "apps/app_registry.c"
         "apps/system_events/app.c"
         "apps/system_events/system_events_view.c"
+        "apps/ota/ota_menu.c"
+        "apps/ota/ota_catalog.c"
+        "apps/ota/ota_networks.c"
+        "apps/ota/ota_view.c"
         "apps/home/app.c"
         "apps/home/device_view.c"
         "apps/home/home_landing.c"
@@ -107,6 +115,7 @@ idf_component_register(
         "services/input/input.c"
         "services/location/gps.c"
         "services/wireless/radio_monitor.c"
+        "services/wireless/wifi_station.c"
         "services/wireless/ble_monitor.c"
         "services/wireless/oui_database.c"
         "services/radio/cc1101.c"
@@ -118,6 +127,9 @@ idf_component_register(
         "services/storage/persistent_store.c"
         "services/storage/log_writer.c"
         "services/storage/breadcrumbs.c"
+        "services/update/ota_acquisition.c"
+        "services/update/ota_installer.c"
+        "services/update/ota_boot.c"
         "services/power/battery.c"
         "services/power/power.c"
         "services/power/power_policy.c"
@@ -133,6 +145,6 @@ idf_component_register(
         "services/display/display_idle.c"
         "services/display/ui_present.c"
     INCLUDE_DIRS ${RFSCOUT_INCLUDE_DIRS} "${CMAKE_CURRENT_BINARY_DIR}"
-    PRIV_REQUIRES bt cjson esp_driver_ledc esp_driver_tsens mbedtls
+    PRIV_REQUIRES app_update bootloader_support bt cjson esp_app_format esp_driver_ledc esp_driver_tsens esp_http_client esp_partition mbedtls
     REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_timer driver esp_driver_i2c esp_driver_i2s esp_driver_pcnt esp_driver_uart esp_lcd fatfs sdmmc
 )

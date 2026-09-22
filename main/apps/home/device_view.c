@@ -18,12 +18,14 @@
 #include "event.h"
 #include "log_writer.h"
 #include "morse.h"
+#include "ota_menu.h"
 #include "power.h"
 #include "power_policy_view.h"
 #include "storage.h"
 #include "ui_chrome.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
+#include "wifi_station.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -43,18 +45,20 @@
 #define DEVICE_ITEM_TIME 11U
 #define DEVICE_ITEM_STARTUP 12U
 #define DEVICE_ITEM_SYSTEM_EVENTS 13U
-#define DEVICE_ITEM_WIFI 14U
-#define DEVICE_ITEM_CC1101 15U
-#define DEVICE_ITEM_NRF24 16U
-#define DEVICE_ITEM_AUDIO 17U
-#define DEVICE_ITEM_THERMAL 18U
-#define DEVICE_ITEM_AUDIO_SPECTRUM 19U
-#define DEVICE_ITEM_LOGGING 20U
-#define DEVICE_ITEM_POWER_BUTTON 21U
-#define DEVICE_ITEM_POWER_POLICY 22U
-#define DEVICE_ITEM_BREADCRUMBS 23U
-#define DEVICE_ITEM_BREADCRUMB_FILES 24U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 25U
+#define DEVICE_ITEM_NETWORK 14U
+#define DEVICE_ITEM_OTA 15U
+#define DEVICE_ITEM_WIFI 16U
+#define DEVICE_ITEM_CC1101 17U
+#define DEVICE_ITEM_NRF24 18U
+#define DEVICE_ITEM_AUDIO 19U
+#define DEVICE_ITEM_THERMAL 20U
+#define DEVICE_ITEM_AUDIO_SPECTRUM 21U
+#define DEVICE_ITEM_LOGGING 22U
+#define DEVICE_ITEM_POWER_BUTTON 23U
+#define DEVICE_ITEM_POWER_POLICY 24U
+#define DEVICE_ITEM_BREADCRUMBS 25U
+#define DEVICE_ITEM_BREADCRUMB_FILES 26U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 27U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
 #define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_BREADCRUMB_FILES + 1U )
@@ -99,10 +103,18 @@ static bool power_policy_menu_open;
 static bool time_menu_open;
 static unsigned time_selected_item;
 static bool time_editing;
+static bool network_menu_open;
+static bool ota_menu_open;
 
 static unsigned device_item_count( void )
 {
     return DEVICE_ITEM_BASE_COUNT;
+}
+
+static bool network_update_ready( void )
+{
+    const rfscout_wifi_station_status_t status = rfscout_wifi_station_status();
+    return RFSCOUT_WIFI_STATION_CONNECTED == status.state && status.ntp_synced;
 }
 
 static unsigned time_menu_item_count( void )
@@ -238,6 +250,7 @@ static bool item_direct_toggle( unsigned a_item )
 static bool item_editable( unsigned a_item )
 {
     return ( DEVICE_ITEM_BACK != a_item ) && ( DEVICE_ITEM_TIME != a_item ) &&
+           ( DEVICE_ITEM_NETWORK != a_item ) && ( DEVICE_ITEM_OTA != a_item ) &&
            ( DEVICE_ITEM_POWER_BUTTON != a_item ) && ( DEVICE_ITEM_POWER_POLICY != a_item ) &&
            ( DEVICE_ITEM_BREADCRUMBS != a_item );
 }
@@ -274,6 +287,10 @@ static const char *item_label( unsigned a_item )
             return "Startup app";
         case DEVICE_ITEM_SYSTEM_EVENTS:
             return "System Events";
+        case DEVICE_ITEM_NETWORK:
+            return "Network";
+        case DEVICE_ITEM_OTA:
+            return "Update";
         case DEVICE_ITEM_WIFI:
             return "WiFi / BT";
         case DEVICE_ITEM_CC1101:
@@ -359,6 +376,35 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
                       a_capacity,
                       "%s",
                       on_off( config->apps_enabled[ RFSCOUT_APP_SYSTEM_EVENTS ] ) );
+            break;
+        case DEVICE_ITEM_NETWORK:
+        {
+            const rfscout_wifi_station_status_t status = rfscout_wifi_station_status();
+            if( RFSCOUT_WIFI_STATION_CONNECTED == status.state )
+            {
+                snprintf( a_value,
+                          a_capacity,
+                          "%s",
+                          status.ntp_synced ? "Ready"
+                                            : ( status.ntp_syncing ? "Syncing" : "Time error" ) );
+            }
+            else if( RFSCOUT_WIFI_STATION_CONNECTING == status.state ||
+                     RFSCOUT_WIFI_STATION_SEARCHING == status.state )
+            {
+                snprintf( a_value, a_capacity, "Connecting" );
+            }
+            else if( RFSCOUT_WIFI_STATION_DISCONNECTING == status.state )
+            {
+                snprintf( a_value, a_capacity, "Disconnecting" );
+            }
+            else
+            {
+                snprintf( a_value, a_capacity, "Offline" );
+            }
+            break;
+        }
+        case DEVICE_ITEM_OTA:
+            snprintf( a_value, a_capacity, "%s", network_update_ready() ? "Ready" : "Unavailable" );
             break;
         case DEVICE_ITEM_WIFI:
             snprintf(
@@ -677,6 +723,10 @@ void device_view_render( void )
         render_power_menu();
         return;
     }
+    if( network_menu_open || ota_menu_open )
+    {
+        return;
+    }
 
     const unsigned item_count = device_item_count();
     display_clear( COLOR_BACKGROUND );
@@ -719,6 +769,8 @@ void device_view_enter( void )
     time_menu_open = false;
     time_selected_item = TIME_MENU_BACK;
     time_editing = false;
+    network_menu_open = false;
+    ota_menu_open = false;
     refresh_edited_time();
     device_view_render();
 }
@@ -1469,6 +1521,25 @@ static void adjust_selected( int a_delta )
 
 bool device_view_back( void )
 {
+    if( network_menu_open )
+    {
+        if( network_menu_back() )
+        {
+            network_menu_leave();
+            network_menu_open = false;
+            device_view_render();
+        }
+        return true;
+    }
+    if( ota_menu_open )
+    {
+        if( ota_menu_back() && ESP_OK == ota_menu_leave() )
+        {
+            ota_menu_open = false;
+            device_view_render();
+        }
+        return true;
+    }
     if( time_menu_open )
     {
         time_menu_open = false;
@@ -1496,6 +1567,27 @@ bool device_view_back( void )
 
 bool device_view_input( bool a_pressed, int a_delta )
 {
+    if( network_menu_open )
+    {
+        if( network_menu_input( a_pressed, a_delta ) )
+        {
+            network_menu_leave();
+            network_menu_open = false;
+            emit_device_event( RFSCOUT_EVENT_BACK, 0 );
+            device_view_render();
+        }
+        return false;
+    }
+    if( ota_menu_open )
+    {
+        if( ota_menu_input( a_pressed, a_delta ) && ESP_OK == ota_menu_leave() )
+        {
+            ota_menu_open = false;
+            emit_device_event( RFSCOUT_EVENT_BACK, 0 );
+            device_view_render();
+        }
+        return false;
+    }
     if( time_menu_open )
     {
         (void)time_menu_input( a_pressed, a_delta );
@@ -1541,6 +1633,25 @@ bool device_view_input( bool a_pressed, int a_delta )
         {
             emit_device_event( RFSCOUT_EVENT_BACK, 0 );
             return true;
+        }
+        if( ( DEVICE_ITEM_NETWORK == selected_item ) && !editing )
+        {
+            network_menu_open = true;
+            emit_device_event( RFSCOUT_EVENT_ENTER, 1 );
+            network_menu_enter();
+            return false;
+        }
+        if( ( DEVICE_ITEM_OTA == selected_item ) && !editing )
+        {
+            if( !network_update_ready() )
+            {
+                device_view_render();
+                return false;
+            }
+            ota_menu_open = true;
+            emit_device_event( RFSCOUT_EVENT_ENTER, 1 );
+            ota_menu_enter();
+            return false;
         }
         if( ( DEVICE_ITEM_TIME == selected_item ) && !editing )
         {
@@ -1598,4 +1709,47 @@ bool device_view_input( bool a_pressed, int a_delta )
     }
     device_view_render();
     return false;
+}
+
+void device_view_poll( int64_t a_now_us )
+{
+    if( network_menu_open )
+    {
+        network_menu_poll( a_now_us );
+        return;
+    }
+    if( ota_menu_open )
+    {
+        ota_menu_poll( a_now_us );
+        return;
+    }
+
+    static rfscout_wifi_station_state_t last_state = RFSCOUT_WIFI_STATION_OFF;
+    static bool last_syncing;
+    static bool last_synced;
+    const rfscout_wifi_station_status_t status = rfscout_wifi_station_status();
+    if( status.state != last_state || status.ntp_syncing != last_syncing ||
+        status.ntp_synced != last_synced )
+    {
+        last_state = status.state;
+        last_syncing = status.ntp_syncing;
+        last_synced = status.ntp_synced;
+        device_view_render();
+    }
+}
+
+void device_view_leave( void )
+{
+    if( network_menu_open )
+    {
+        network_menu_leave();
+        network_menu_open = false;
+    }
+    if( ota_menu_open )
+    {
+        if( ESP_OK == ota_menu_leave() )
+        {
+            ota_menu_open = false;
+        }
+    }
 }

@@ -19,12 +19,17 @@ CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_USE_MALLOC=y
 
-# The supported RFScout profile uses 16 MB flash. The complete IEEE OUI registry
-# makes the firmware larger than ESP-IDF's default 1 MB factory application
-# partition, so use the project partition table with an 8 MB factory slot.
+# The supported RFScout profile uses 16 MB flash. Use the project A/B OTA partition
+# table with two 6 MiB application slots and the remaining ~3.94 MiB for LittleFS.
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# OTA catalog and firmware acquisition use ESP-IDF HTTPS with the default
+# Mozilla-derived root certificate bundle. Hostname verification remains enabled.
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+CONFIG_MBEDTLS_DEFAULT_CERTIFICATE_BUNDLE=y
 
 # Remove local paths and build timestamps so release images can be reproduced
 # from the same source and ESP-IDF/toolchain inputs.

@@ -45,7 +45,7 @@ Once source LEAVE/view reclamation has committed, RFScout does not attempt to re
 
 On an aborted service close, the session restores only platform service state that was active and successfully stopped when that service exposes a safe restart operation. Failed-stop recovery is service-specific so a self-restoring worker is not started twice. There is no app-level reactivation hook: reversible platform restoration belongs exclusively to `app_session` and the service implementation, while app modules may only veto before teardown through `prepare_leave` when semantic state cannot safely be interrupted.
 
-Current session-managed asynchronous services are Wi-Fi monitoring, BLE scanning, CC1101, nRF24, and shared audio capture/Recorder activity. Thermal acquisition is synchronous today; any future worker/DMA/callback path belongs behind a service rather than a new app-specific lifecycle protocol.
+Current session-managed asynchronous services include Wi-Fi monitoring, temporary infrastructure Wi-Fi, OTA acquisition/installation, BLE scanning, CC1101, nRF24, and shared audio capture/Recorder activity. Thermal acquisition is synchronous today; any future worker/DMA/callback path belongs behind a service rather than a new app-specific lifecycle protocol.
 
 ### Memory policy
 
@@ -107,7 +107,7 @@ MLX90640 is an optional hot-plug I2C/Qwiic peripheral exposed by the thermal ser
 
 The GPS/location service remains capability-gated for future profiles or hardware integrations; the current T-Embed profile does not advertise an onboard GPS provider.
 
-`device_time` owns RTC-backed wall-clock validity/source, Auto/Manual policy, and timezone conversion independently from any location provider.
+`device_time` owns RTC-backed wall-clock validity/source, Auto/Manual policy, and timezone conversion independently from any location provider. The Home-owned infrastructure station starts SNTP after DHCP succeeds and offers synchronized UTC as an explicit NTP time source without changing the persisted Auto/Manual policy. Certificate-validated OTA HTTPS is available only after that Home network session reports both connection and NTP synchronization ready.
 
 ## Power, battery, display idle, and sleep
 
@@ -140,6 +140,20 @@ The persistent-record abstraction is size-independent; consumers remain bounded 
 Internal-storage mount, recovery-format/mount-failure, and configuration-default recovery are recorded in the volatile System Events/dmesg history as distinct semantic events. GPS fix transitions are diagnostic console events and are also written through normal SD logging when logging is enabled. Startup discovery is retained without unrelated interactive notification.
 
 The conservative hardware-tested SD baseline remains a FAT-compatible SanDisk card of 32 GB or less on the T-Embed. Logging rotates `rfscout-00.log` through `rfscout-99.log` at up to 4 MiB each and attempts to preserve at least 64 MiB free.
+
+## Firmware image and OTA storage foundation
+
+The OTA development line uses the ESP-IDF A/B application layout rather than a single factory application partition. The 16 MiB internal flash map reserves NVS/PHY metadata, the ESP-IDF OTA-data partition, two 6 MiB OTA application slots, and approximately 3.94 MiB of LittleFS. LittleFS consumers remain behind the persistent-record abstraction and must not infer or depend on this physical capacity.
+
+Application rollback support is enabled in the bootloader configuration. OTA-data is bootloader/platform state rather than application-owned persistent configuration.
+
+The combined image contains the bootloader, A/B partition table, initialized OTA metadata, and application and remains the clean-install/recovery image for this development line. The published `v0.3.2` layout predates this foundation.
+
+The OTA installer treats the inactive ESP-IDF OTA partition as the only firmware staging area. HTTPS acquisition supplies byte fragments to a transport-neutral installer service; SD and LittleFS are never used for firmware staging. The installer does not expose partition names, offsets, or ESP-IDF OTA handles to the application.
+
+At startup RFScout computes and logs a SHA-256 over the exact byte range occupied by the running ESP application image in flash. ESP-IDF image metadata determines the stored image length, including the appended simple-hash field when present, and RFScout reads that range back through the partition API before hashing it. The resulting value is therefore directly comparable to the SHA-256 of the packaged `*-app.bin` artifact rather than to ESP-IDF's distinct image-content digest returned by `esp_partition_get_sha256()`.
+
+The remaining OTA hardware-validation work is maintained in [ROADMAP.md](ROADMAP.md#in-device-ota-update-architecture). A newly installed image remains pending verification until mandatory common startup reaches the application-manager/display-idle checkpoint; only then does RFScout call ESP-IDF's rollback-cancel confirmation. Optional peripherals and removable storage do not gate confirmation.
 
 ## Shared hardware/resource boundaries
 

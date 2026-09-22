@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Semantic version beginning with v, for example v0.1.0
+        description: Release version in vX.Y.Z form, for example v0.1.0
         required: true
         type: string
       source_ref:
@@ -134,8 +134,9 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           . "$IDF_PATH/export.sh"
           idf_version=$(idf.py --version)
+          project_version="${VERSION#v}"
           idf.py -DRFSCOUT_FORMAT_CHECK=OFF set-target esp32s3
-          idf.py -DRFSCOUT_FORMAT_CHECK=OFF build
+          idf.py -DRFSCOUT_FORMAT_CHECK=OFF -DPROJECT_VER="$project_version" build
           idf.py -DRFSCOUT_FORMAT_CHECK=OFF merge-bin -o rfscout-full.bin -f raw
           python3 tools/package_release.py \
             --build-dir build \

@@ -10,8 +10,8 @@ Applications consume semantic service availability rather than board identity. T
 
 The canonical application registry order remains:
 
-1. Home / Device Settings
-2. System Events
+1. System Events
+2. Home / Device Settings
 3. WiFi / BLE
 4. CC1101
 5. nRF24
@@ -23,6 +23,12 @@ Disabled or unavailable applications are skipped by semantic navigation.
 
 System Events is a read-only view of the RAM-only structured event ring. Center enters/exits a stable Browse snapshot; semantic navigation scrolls only while Browse is active.
 
+Infrastructure networking is available from **Home / Device Settings → Network**. That menu performs passive AP discovery, retains up to eight Home-owned infrastructure-network credentials, highlights remembered networks seen in the latest scan, and requires an explicit per-network action before association. Saved-network management, rotary password entry, explicit disconnect/forget, DHCP status, and targeted **Connect anyway** active search are implemented. After DHCP succeeds, the station service starts SNTP automatically and applies the synchronized UTC clock through `device_time`. The connection and SNTP service persist while Home remains active; leaving Network does not disconnect. An explicit Disconnect or leaving Home tears down the station session and clears transient driver credentials/results.
+
+Firmware Update remains at **Home / Device Settings → Update**, but the menu is unavailable until the Home-owned station is connected and NTP synchronization has succeeded. Pages publishes an 8 KiB OTA catalog that retains newest official stable releases first and then the newest remaining eligible builds. The device fetches that catalog from the static HTTPS origin through a cancellable platform service using ESP-IDF certificate-bundle validation and growable app-owned PSRAM, so the firmware does not mirror the server's byte cap. Stable checking selects the newest compatible published stable release; retained main, pull-request, draft-release, prerelease, and published-release entries remain available for explicit/manual installation. Leaving Update cancels acquisition/installation but deliberately preserves the Home network connection.
+
+A selected stable or explicitly chosen update streams directly over HTTPS into the ESP-IDF-selected inactive OTA partition. The installer is transport-neutral and owns partition selection, exact byte-count enforcement, streaming SHA-256, ESP-IDF image validation, embedded project/version checks, exact flash-readback SHA-256, and boot-partition commit. It never stages firmware on SD or LittleFS. A successfully committed image reboots immediately; on first boot, RFScout confirms a pending image only after bounded mandatory common startup has completed. Optional storage, GPS, notification, battery, and similar peripherals are not OTA health dependencies.
+
 ## Managed application view
 
 Each app session owns one managed `rfscout_view_t`. The current view is **320x170**, matching the full T-Embed LCD. Applications render only inside that view and remain independent from physical board identity.
@@ -31,7 +37,7 @@ Each app session owns one managed `rfscout_view_t`. The current view is **320x17
 
 The GPS service remains board-neutral and capability-gated for future profiles or hardware integrations. The current T-Embed profile does not advertise an onboard GPS provider.
 
-`device_time` continues to own RTC-backed wall-clock validity/source, Auto/Manual synchronization policy, timezone conversion, and manual time.
+`device_time` continues to own RTC-backed wall-clock validity/source, Auto/Manual synchronization policy, timezone conversion, and manual time. Successful Home Network connections provide an NTP source without changing the persisted Auto/Manual mode.
 
 ## Battery status
 

@@ -46,7 +46,7 @@ idf.py set-target esp32s3
 idf.py build
 ```
 
-RFScout builds one ESP32-S3 image and validates the supported T-Embed board profile at runtime. The first build resolves managed components declared in `main/idf_component.yml`. The generated `managed_components/` directory is ignored. The repository intentionally tracks `dependencies.lock`; do not add it to `.gitignore`. It pins resolved component versions so local, CI, and historical release builds are less likely to drift.
+RFScout builds one ESP32-S3 image and validates the supported T-Embed board profile at runtime. The first build resolves managed components declared in `main/idf_component.yml`. The generated `managed_components/` directory and `dependencies.lock` are ignored; ESP-IDF may regenerate them locally as part of dependency resolution.
 
 If major build configuration changes, regenerate the local build tree:
 
@@ -114,7 +114,7 @@ The supported hardware is the LILYGO T-Embed CC1101 Plus. If automatic flashing 
 
 ## Browser flashing development builds and releases
 
-RFScout also publishes a GitHub Pages browser flasher through the **Publish browser flasher** workflow. The catalog is intentionally a view of the current development/release lifecycle, not just a list of published releases.
+RFScout publishes its browser flasher and stable OTA tree together through the **Publish RFScout Pages** workflow. The catalog is intentionally a view of the current development/release lifecycle, not just a list of published releases.
 
 The flasher can contain:
 
@@ -184,7 +184,7 @@ idf.py set-target esp32s3
 idf.py build
 ```
 
-Keep the tracked `dependencies.lock` file; the component manager will use it to reproduce the resolved dependency set.
+If dependency resolution looks stale, remove the generated `dependencies.lock` together with the build and managed-component directories so ESP-IDF can resolve them again.
 
 ### Serial access problems
 

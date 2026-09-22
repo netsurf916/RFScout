@@ -1,0 +1,72 @@
+/**
+    apps/ota/ota_view.h : Home Update menu presentation
+    Copyright 2026 Daniel Wilson
+    SPDX-License-Identifier: MIT
+*/
+
+#pragma once
+
+#ifndef _RFSCOUT_OTA_VIEW_H_
+#define _RFSCOUT_OTA_VIEW_H_
+
+#include "app_text_entry.h"
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+typedef struct
+{
+    const char *ssid;
+    int8_t rssi;
+} ota_view_network_t;
+
+typedef struct
+{
+    const char *label;
+    const char *version;
+} ota_view_build_t;
+
+void ota_view_render_network_main( const char *a_connection,
+                                   const char *a_time_status,
+                                   const ota_view_network_t *a_networks,
+                                   size_t a_network_count,
+                                   unsigned a_selected,
+                                   bool a_scanning,
+                                   bool a_connected,
+                                   const char *a_error );
+void ota_view_render_update_main( const char *a_version,
+                                  const char *a_connection,
+                                  unsigned a_selected,
+                                  bool a_ready,
+                                  bool a_can_install,
+                                  const char *a_update_status,
+                                  const char *a_error );
+void ota_view_render_network_action( const char *a_ssid,
+                                     int8_t a_rssi,
+                                     bool a_visible,
+                                     bool a_saved,
+                                     bool a_open,
+                                     bool a_connected,
+                                     unsigned a_selected,
+                                     const char *a_status );
+void ota_view_render_network_list( const char *a_title,
+                                   const ota_view_network_t *a_networks,
+                                   size_t a_network_count,
+                                   unsigned a_selected,
+                                   const char *a_empty_message );
+void ota_view_render_build_list( const ota_view_build_t *a_builds,
+                                 size_t a_build_count,
+                                 unsigned a_selected,
+                                 const char *a_empty_message );
+void ota_view_render_build_action( const char *a_label,
+                                   const char *a_version,
+                                   const char *a_commit,
+                                   unsigned a_selected );
+void ota_view_render_password( const char *a_ssid,
+                               size_t a_length,
+                               rfscout_text_entry_selection_t a_selection,
+                               char a_character,
+                               const char *a_error );
+
+#endif // _RFSCOUT_OTA_VIEW_H_

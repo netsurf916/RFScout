@@ -33,7 +33,16 @@ static rfscout_app_runtime_result_t home_runtime( const rfscout_app_runtime_even
     }
     if( RFSCOUT_APP_RUNTIME_LEAVE == a_event->type )
     {
+        device_view_leave();
         menu_active = false;
+        return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
+    if( RFSCOUT_APP_RUNTIME_POLL == a_event->type )
+    {
+        if( menu_active )
+        {
+            device_view_poll( a_event->now_us );
+        }
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
     if( RFSCOUT_APP_RUNTIME_INPUT != a_event->type )
@@ -89,6 +98,7 @@ const rfscout_app_descriptor_t rfscout_home_app = {
     .probe_policy = RFSCOUT_APP_PROBE_NONE,
     .probe = NULL,
     .requires_activation = false,
-    .services = RFSCOUT_APP_SERVICE_NONE,
+    .services = RFSCOUT_APP_SERVICE_WIFI_STATION | RFSCOUT_APP_SERVICE_OTA_INSTALLER |
+                RFSCOUT_APP_SERVICE_OTA_ACQUISITION,
     .runtime = home_runtime,
 };

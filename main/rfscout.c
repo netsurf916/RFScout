@@ -19,12 +19,14 @@
 #include "display_idle.h"
 #include "event.h"
 #include "feedback.h"
+#include "firmware_identity.h"
 #include "gps.h"
 #include "input.h"
 #include "log_writer.h"
 #include "notification.h"
 #include "notification_preferences.h"
 #include "observation_store.h"
+#include "ota_boot.h"
 #include "oui_database.h"
 #include "platform.h"
 #include "power.h"
@@ -51,6 +53,26 @@ static const char *TAG = "rfscout";
 static bool gps_fix_state_known;
 static bool gps_fix_active;
 static int64_t config_save_retry_after_us;
+
+static void log_running_image_hash( void )
+{
+    uint8_t digest[ RFSCOUT_FIRMWARE_SHA256_LENGTH ];
+    char digest_hex[ RFSCOUT_FIRMWARE_SHA256_HEX_LENGTH + 1U ];
+    size_t image_length = 0U;
+
+    const esp_err_t result = firmware_running_image_sha256( digest, &image_length );
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG, "could not hash running application image: %s", esp_err_to_name( result ) );
+        return;
+    }
+
+    firmware_sha256_hex( digest, digest_hex );
+    ESP_LOGI(
+        TAG, "running application image: bytes=%u sha256=%s", (unsigned)image_length, digest_hex );
+    memset( digest, 0, sizeof( digest ) );
+    memset( digest_hex, 0, sizeof( digest_hex ) );
+}
 
 static rfscout_notification_type_t
 notification_for_surveillance( surveillance_class_t a_classification )
@@ -354,6 +376,7 @@ static void on_observation( rf_device_t *a_observation )
 
 void app_main( void )
 {
+    ESP_LOGI( TAG, "reset reason: %d", (int)esp_reset_reason() );
     esp_err_t result = nvs_flash_init();
     if( ( ESP_ERR_NVS_NO_FREE_PAGES == result ) || ( ESP_ERR_NVS_NEW_VERSION_FOUND == result ) )
     {
@@ -365,6 +388,14 @@ void app_main( void )
     result = platform_init();
     if( ESP_OK != result )
     {
+        const esp_err_t rollback_result = ota_boot_rollback_if_pending();
+        if( ESP_OK != rollback_result )
+        {
+            ESP_LOGE( TAG,
+                      "could not roll back pending OTA image after platform failure: %s",
+                      esp_err_to_name( rollback_result ) );
+        }
+
         ESP_LOGE(
             TAG,
             "unsupported hardware profile; leaving ESP32-S3 awake and idle for recovery flashing" );
@@ -373,6 +404,8 @@ void app_main( void )
             vTaskDelay( pdMS_TO_TICKS( 1000U ) );
         }
     }
+
+    log_running_image_hash();
 
     ESP_ERROR_CHECK( observation_store_init() );
     observation_store_set_event_callback( log_observation_event, NULL );
@@ -465,6 +498,12 @@ void app_main( void )
     system_events_poll();
     display_set_brightness( device_config_get()->brightness_percent );
     ESP_ERROR_CHECK( display_idle_init() );
+
+    /*
+     * Confirm a newly installed image only after mandatory common startup has succeeded.
+     * Optional peripherals/storage above are deliberately not part of OTA health.
+     */
+    ESP_ERROR_CHECK( ota_boot_confirm_if_pending() );
     system_events_enable_notifications();
 
     if( storage_is_available() && device_config_get()->logging_enabled )

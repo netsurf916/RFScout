@@ -14,16 +14,20 @@ RFScout is intentionally passive wherever the underlying radio APIs allow it. It
 
 Top-level application order is:
 
-0. **System Events** — optional and disabled by default
-1. **Home / Device Settings**
-2. **WiFi / BT**
-3. **CC1101** — only when the active board provides the current CC1101 service
-4. **nRF24** — only when the active board provides the current nRF24 service
-5. **Recorder** — only when the current audio-capture/storage providers are available
-6. **Thermal** — only when enabled and an MLX90640 is detected
-7. **Audio Spectrum** — when enabled and the microphone provider is available
+1. **System Events** — optional and disabled by default
+2. **Home / Device Settings**
+3. **WiFi / BT**
+4. **CC1101** — only when the active board provides the current CC1101 service
+5. **nRF24** — only when the active board provides the current nRF24 service
+6. **Recorder** — only when the current audio-capture/storage providers are available
+7. **Thermal** — only when enabled and an MLX90640 is detected
+8. **Audio Spectrum** — when enabled and the microphone provider is available
 
 Disabled or unavailable apps are skipped. Home is always available and is the default/fallback startup target. Applications consume board-neutral semantic input, service availability, and a managed application view rather than board names or physical controls.
+
+### Firmware Update
+
+Infrastructure networking and firmware update are separate nested Home / Device Settings menus. **Network** owns passive AP discovery, remembered SSIDs/passwords, and explicit Connect/Disconnect/Forget actions. After DHCP succeeds, RFScout starts SNTP automatically and marks the Home network ready only after network time has synchronized. The station connection then persists across Network and Update submenu transitions and is torn down only by an explicit Disconnect or when Home itself exits. ESP-IDF Wi-Fi configuration remains RAM-only so the driver does not become a second global credential store. **Update** is available only while that Home-owned connection is established and NTP-synchronized; it then exposes **Check for update** and **Available builds** actions. Catalog retrieval remains a cancellable HTTPS service using ESP-IDF certificate-bundle validation, and leaving Update cancels acquisition/installation without dropping the Home network session.
 
 ### WiFi / BT
 
@@ -57,7 +61,7 @@ Current global settings include brightness/display idle, visual theme, independe
 
 Setting changes are persisted automatically through RFScout's internal persistent-record service; there is no user-facing Save step. App-owned notification settings and WiFi / BT retention remain in their respective app menus.
 
-The Time submenu separates source policy from timezone presentation. **Auto** accepts valid GPS UTC time when the GPS service is available and locked; **Manual** exposes explicit date/time fields. Consumers can distinguish invalid, retained, manual, and GPS-synchronized wall-clock state.
+The Time submenu separates source policy from timezone presentation. **Auto** accepts valid GPS UTC time when the GPS service is available and locked; **Manual** exposes explicit date/time fields. A successful Home Network connection also applies NTP time without changing the user's Auto/Manual policy. Consumers can distinguish invalid, retained, manual, GPS-synchronized, and NTP-synchronized wall-clock state.
 
 ## Power, display, and persistence
 
@@ -86,7 +90,7 @@ idf.py build
 idf.py flash monitor
 ```
 
-The firmware validates the T-Embed CC1101 Plus runtime profile at startup and leaves unsupported hardware inert. Ready-for-review pull requests can produce short-lived candidate bundles. Published releases are prepared deliberately through the release workflow and mirrored to the browser flasher.
+The firmware validates the T-Embed CC1101 Plus runtime profile at startup and leaves unsupported hardware inert. Ready-for-review pull requests can produce short-lived candidate bundles. Published releases are prepared deliberately through the release workflow. GitHub Pages is generated from release and candidate artifacts and carries both the browser flasher and the unified in-device OTA build catalog/application images.
 
 ## Documentation
 
