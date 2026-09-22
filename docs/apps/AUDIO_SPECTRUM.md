@@ -21,8 +21,8 @@ The display identifies the live microphone and current automatic dB range. Spect
 
 ## Sample-rate interpretation
 
-The current provider measures PDM clock diagnostics but does **not** yet measure delivered PCM throughput/effective PCM sample rate. Frequency labels therefore derive from the current configured-rate interpretation. Moving FFT frequency interpretation to a measured effective rate remains roadmap work.
+The live monitor begins with the configured capture rate, then measures delivered PCM throughput over wall time while running. Valid measurements update the monitor sample rate used by `recorder_monitor_bin_frequency_hz()`, so peak-frequency labels use the measured effective rate after the first valid measurement. PDM clock diagnostics are measured separately by the low-level capture provider.
 
 ## Current limitations
 
-Hardware tuning of automatic range attack/decay and low-frequency cutoff may still be adjusted from field testing. Additional smoothing/averaging or peak-hold controls are intentionally deferred unless they clearly improve interpretation.
+The measured effective rate is currently maintained by the Recorder/monitor layer rather than exposed as generalized calibrated `audio_capture` telemetry. Hardware tuning of automatic range attack/decay and low-frequency cutoff may still be adjusted from field testing. Additional smoothing/averaging or peak-hold controls are intentionally deferred unless they clearly improve interpretation.

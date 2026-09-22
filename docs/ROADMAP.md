@@ -324,12 +324,11 @@ Goals:
 - [ ] Configure toward a desired physical PDM outcome rather than assuming an ESP-IDF request produces the requested clock/rate.
 - [ ] Use bounded reconfiguration when measured clock indicates the configured request is not producing the desired physical outcome.
 - [ ] Clamp requests to known-safe limits and reject measured clocks outside the supported range.
-- [ ] Measure delivered PCM throughput and expose an effective sample rate.
-- [ ] Expose requested rate, measured clock, effective rate, calibration result, level, peak, and clipping telemetry.
+- [x] Measure delivered PCM throughput in the current Recorder/monitor consumers, use valid measured rate for WAV metadata, and use it for live FFT frequency interpretation.
+- [ ] Promote requested rate, measured clock, effective rate, calibration result, level, peak, and clipping telemetry into a generalized shared `audio_capture` contract so future consumers do not need Recorder-specific measurement.
 - [ ] Generalize fixed digital input-gain policy so Recorder capture and live analysis have explicit, documented persistence/composition semantics.
 - [x] Serialize microphone ownership so recording and monitoring cannot independently own I2S0. PR #70 resource-session/audio-capture boundary.
-- [ ] Keep whole-recording operations such as DC correction, trim, and normalization in Recorder-specific behavior.
-- [ ] Make FFT frequency interpretation use the measured effective PCM rate.
+- [x] Keep whole-recording operations such as DC correction, trim, and normalization in Recorder-specific behavior.
 
 Future consumers may include tuner/pitch analysis and microphone-side CW/Morse receive. Those remain distinct from RF-side decoding and are not v0.4.0 release blockers unless separately promoted.
 

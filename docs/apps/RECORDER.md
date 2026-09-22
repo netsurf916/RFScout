@@ -10,7 +10,7 @@ The current T-Embed profile supplies a PDM microphone through the shared audio-c
 
 ## Recording
 
-Current recordings are **16 kHz / 16-bit mono PCM WAV** files under `/sdcard/audio/`.
+Recorder requests a **16 kHz** capture target and writes **16-bit mono PCM WAV** files under `/sdcard/audio/`.
 
 Capture itself is not software pre-amplified. After capture, Recorder performs asynchronous post-processing that:
 
@@ -18,7 +18,7 @@ Capture itself is not software pre-amplified. After capture, Recorder performs a
 2. removes DC/very-low-frequency content with the shared one-pole high-pass primitive; and
 3. applies bounded normalization before finalizing the WAV.
 
-The platform currently measures PDM clock diagnostics, but delivered PCM throughput/effective sample-rate calibration is **not yet implemented**. WAV/sample-rate behavior therefore remains based on the configured capture rate until that roadmap work lands.
+The shared Recorder service measures delivered PCM throughput over recording wall time. When that measured rate is within the accepted WAV range (8–48 kHz), it becomes the WAV header sample rate; otherwise Recorder retains the configured capture rate. PDM clock measurement is also logged for calibration diagnostics. This is a current consumer-level correction, not yet a generalized calibrated-rate contract in the low-level `audio_capture` API.
 
 ## UI and file management
 
@@ -46,4 +46,4 @@ Playback can be stopped normally when Recorder is left or a terminal transition 
 
 ## Current limitations
 
-Effective PCM sample-rate measurement/calibration, generalized microphone input gain, and broader app-owned PSRAM scratch separation remain roadmap work. Recorder-specific whole-recording post-processing stays separate from the shared capture provider.
+Generalizing effective-rate/calibration telemetry into the shared `audio_capture` API, bounded clock/rate correction, generalized microphone input gain, and broader app-owned PSRAM scratch separation remain roadmap work. Recorder-specific whole-recording post-processing stays separate from the shared capture provider.

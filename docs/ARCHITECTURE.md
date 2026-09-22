@@ -105,7 +105,7 @@ Common presentation overlays are platform-owned. Applications render their view,
 
 Audio capture is board-neutral. The current T-Embed PDM provider uses I2S0; the service owns provider probing, open/read/close, DMA/I2S lifetime, and physical PDM-clock diagnostics. Recorder and Audio Spectrum consume normalized PCM rather than raw I2S handles.
 
-The provider currently reports the configured capture sample rate. It does **not yet** measure delivered PCM throughput/effective PCM sample rate; that calibration/generalization remains roadmap work.
+The low-level `audio_capture` provider reports the configured capture rate and measured PDM-clock diagnostics. The shared Recorder/monitor layer currently measures delivered PCM throughput over wall time for its consumers: Recorder uses a valid measured rate in WAV metadata, and Audio Spectrum uses a valid measured rate for FFT frequency labels. That measurement has not yet been promoted into a generic calibrated `audio_capture` telemetry contract for future consumers; bounded clock/rate correction and generalized calibration remain roadmap work.
 
 Speaker output is a separate semantic service on the validated T-Embed I2S1 path. UI/event/alert feedback policy is independent from explicitly requested content playback such as Recorder audio.
 
