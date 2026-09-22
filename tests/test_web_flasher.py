@@ -201,6 +201,31 @@ class WebFlasherCatalogTest(unittest.TestCase):
             self.assertLessEqual(len(catalog_path.read_bytes()), 8192)
             self.assertNotIn(b"\n  ", catalog_path.read_bytes())
 
+    def test_ota_catalog_skips_candidate_without_ota_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            site = Path(temporary) / "site"
+            candidate_dir = site / "firmware" / "candidates" / "pr-42"
+            candidate_dir.mkdir(parents=True)
+
+            catalog = build_ota_catalog(
+                site,
+                [
+                    {
+                        "id": "pr-42-aaaaaaaaaaaa",
+                        "kind": "candidate",
+                        "source": "pull_request",
+                        "pr": 42,
+                        "label": "PR #42 candidate",
+                        "version": "candidate-aaaaaaaaaaaa",
+                        "manifest": "firmware/candidates/pr-42/manifest.web.json",
+                        "commit": "a" * 40,
+                        "created_at": "2026-09-21T12:00:00Z",
+                    }
+                ],
+            )
+
+            self.assertEqual(catalog["builds"], [])
+
     def test_ota_catalog_rejects_bad_artifact_hash(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             site = Path(temporary) / "site"
