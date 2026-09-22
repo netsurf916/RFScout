@@ -1103,6 +1103,8 @@ static void reset_runtime_state( void )
     last_installer_generation = 0U;
     last_scan_generation = 0U;
     last_station_state = RFSCOUT_WIFI_STATION_OFF;
+    last_ntp_syncing = false;
+    last_ntp_synced = false;
     last_refresh_us = 0;
     close_requested = false;
 }
@@ -1243,6 +1245,12 @@ static void submenu_poll( int64_t a_now_us )
         refresh_scan_results();
         redraw = true;
     }
+    if( current.ntp_syncing != last_ntp_syncing || current.ntp_synced != last_ntp_synced )
+    {
+        last_ntp_syncing = current.ntp_syncing;
+        last_ntp_synced = current.ntp_synced;
+        redraw = true;
+    }
 
     const ota_acquisition_status_t acquisition = ota_acquisition_status();
     if( acquisition.generation != last_acquisition_generation )
@@ -1366,4 +1374,14 @@ static void submenu_poll( int64_t a_now_us )
     {
         render();
     }
+}
+
+void network_menu_poll( int64_t a_now_us )
+{
+    submenu_poll( a_now_us );
+}
+
+void ota_menu_poll( int64_t a_now_us )
+{
+    submenu_poll( a_now_us );
 }
