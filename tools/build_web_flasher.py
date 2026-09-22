@@ -184,8 +184,6 @@ def ota_build_entry(a_site_dir: Path, a_browser_entry: dict) -> dict | None:
     directory = a_site_dir / Path(manifest_path).parent
     metadata_path = directory / "ota-image.json"
     if not metadata_path.is_file():
-        if a_browser_entry.get("kind") == "candidate":
-            raise ValueError(f"candidate is missing OTA image metadata: {directory}")
         return None
 
     metadata = load_json(metadata_path)
