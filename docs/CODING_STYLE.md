@@ -100,4 +100,18 @@ Host-side tooling follows normal Python readability conventions: descriptive nam
 
 ## Documentation maintenance
 
+Documentation ownership is deliberate:
+
+- `README.md` is the main current-product anchor and documentation map.
+- `docs/ARCHITECTURE.md` owns implemented shared platform contracts and invariants.
+- `docs/apps/*.md` own implemented app-specific behavior, controls, data interpretation, dependencies, and current limitations.
+- `docs/ROADMAP.md` is the single authoritative location for future design, priorities, active release scope, and unfinished work.
+- `docs/GETTING_STARTED.md` owns contributor ramp-up, and this file owns source/style conventions.
+- `docs/operations/RELEASING.md` is an operational release runbook.
+
+Changes that alter application behavior, controls, supported hardware, logging, resource lifecycle, persistence, power, user-visible terminology, or operational release behavior must update the owning documentation in the same pull request.
+
+Do not describe planned behavior as implemented in README, Architecture, or an app page. Conversely, once behavior is implemented, move its lasting factual description out of roadmap design prose and into the appropriate current-state document; git history and pull requests remain the implementation history.
+
+
 Changes that alter application behavior, controls, supported hardware, logging, power/resource lifecycle, or user-visible terminology should update the relevant README or document in `docs/` in the same pull request. `ARCHITECTURE.md` describes module ownership and lifecycle, `CAPABILITIES.md` describes user-visible functionality, and `CODING_STYLE.md` defines source conventions.

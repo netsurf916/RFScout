@@ -1,6 +1,6 @@
 # Getting started on Fedora Linux
 
-This guide describes the current RFScout development workflow for ESP32-S3 with ESP-IDF 6.1.
+This guide is the main development ramp-up for RFScout on ESP32-S3 with ESP-IDF 6.1.\n\n**Before changing source, read [RFScout coding style](CODING_STYLE.md).** It defines required source formatting, module/interface conventions, generated-file policy, and documentation expectations. Changes that affect shared ownership/lifecycle should also be checked against [Platform architecture](ARCHITECTURE.md); app behavior belongs in the corresponding page under [`apps/`](apps/).
 
 ## Host packages
 
@@ -197,7 +197,15 @@ sudo dmesg | tail -n 30
 
 Avoid running the complete ESP-IDF build/flash process as root.
 
-## Related documentation
+## Documentation for development
+
+- [Coding style](CODING_STYLE.md) — required source/style/module conventions
+- [Platform architecture](ARCHITECTURE.md) — shared lifecycle, service, resource, memory, persistence, hardware, and OTA contracts
+- [Application documentation](apps/) — current app-specific behavior and implementation boundaries
+- [Firmware releases](operations/RELEASING.md) — candidate/release/browser-flasher/OTA publication runbook
+- [Roadmap](ROADMAP.md) — authoritative future planning and active release scope
+- [README](../README.md) — product/current-state anchor and full documentation map
+
 
 - [Architecture](ARCHITECTURE.md)
 - [Capabilities](CAPABILITIES.md)
