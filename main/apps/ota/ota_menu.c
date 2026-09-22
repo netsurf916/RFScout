@@ -1107,16 +1107,40 @@ static void reset_runtime_state( void )
     close_requested = false;
 }
 
-void ota_menu_enter( void )
+void network_menu_enter( void )
 {
     reset_runtime_state();
+    submenu = HOME_SUBMENU_NETWORK;
+
     const esp_err_t load_result = ota_networks_load( &saved_networks );
     if( ESP_OK != load_result )
     {
         set_error( load_result );
     }
+
+    refresh_scan_results();
     render();
-    begin_passive_scan();
+
+    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    if( RFSCOUT_WIFI_STATION_CONNECTED != current.state &&
+        RFSCOUT_WIFI_STATION_CONNECTING != current.state &&
+        RFSCOUT_WIFI_STATION_SEARCHING != current.state &&
+        RFSCOUT_WIFI_STATION_SCANNING != current.state )
+    {
+        begin_passive_scan();
+    }
+}
+
+void network_menu_leave( void )
+{
+    reset_runtime_state();
+}
+
+void ota_menu_enter( void )
+{
+    reset_runtime_state();
+    submenu = HOME_SUBMENU_UPDATE;
+    render();
 }
 
 esp_err_t ota_menu_leave( void )
@@ -1137,19 +1161,11 @@ esp_err_t ota_menu_leave( void )
         return result;
     }
 
-    result = rfscout_wifi_station_stop();
-    if( ESP_OK != result )
-    {
-        set_error( result );
-        render();
-        return result;
-    }
-
     reset_runtime_state();
     return ESP_OK;
 }
 
-bool ota_menu_input( bool a_pressed, int a_delta )
+static bool submenu_input( bool a_pressed, int a_delta )
 {
     rfscout_input_event_t input;
     memset( &input, 0, sizeof( input ) );
@@ -1175,7 +1191,17 @@ bool ota_menu_input( bool a_pressed, int a_delta )
     return close;
 }
 
-bool ota_menu_back( void )
+bool network_menu_input( bool a_pressed, int a_delta )
+{
+    return submenu_input( a_pressed, a_delta );
+}
+
+bool ota_menu_input( bool a_pressed, int a_delta )
+{
+    return submenu_input( a_pressed, a_delta );
+}
+
+static bool submenu_back( void )
 {
     if( OTA_SCREEN_MAIN == screen )
     {
@@ -1189,7 +1215,17 @@ bool ota_menu_back( void )
     return false;
 }
 
-void ota_menu_poll( int64_t a_now_us )
+bool network_menu_back( void )
+{
+    return submenu_back();
+}
+
+bool ota_menu_back( void )
+{
+    return submenu_back();
+}
+
+static void submenu_poll( int64_t a_now_us )
 {
     if( a_now_us - last_refresh_us < OTA_REFRESH_INTERVAL_US )
     {
