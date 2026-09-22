@@ -250,6 +250,7 @@ wifi_event( void *a_context, esp_event_base_t a_event_base, int32_t a_event_id, 
             disconnect_requested = false;
             status.state = RFSCOUT_WIFI_STATION_IDLE;
             status.disconnect_reason = 0;
+            memset( status.ssid, 0, sizeof( status.ssid ) );
         }
         else
         {
@@ -386,6 +387,7 @@ esp_err_t rfscout_wifi_station_passive_scan_start( void )
 
     rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
     if( RFSCOUT_WIFI_STATION_CONNECTING == current.state ||
+        RFSCOUT_WIFI_STATION_DISCONNECTING == current.state ||
         RFSCOUT_WIFI_STATION_CONNECTED == current.state ||
         RFSCOUT_WIFI_STATION_SCANNING == current.state ||
         RFSCOUT_WIFI_STATION_SEARCHING == current.state )
@@ -458,6 +460,7 @@ esp_err_t rfscout_wifi_station_connect( const char *a_ssid, const char *a_passwo
     if( RFSCOUT_WIFI_STATION_SCANNING == current.state ||
         RFSCOUT_WIFI_STATION_SEARCHING == current.state ||
         RFSCOUT_WIFI_STATION_CONNECTING == current.state ||
+        RFSCOUT_WIFI_STATION_DISCONNECTING == current.state ||
         RFSCOUT_WIFI_STATION_CONNECTED == current.state )
     {
         return ESP_ERR_INVALID_STATE;
@@ -540,13 +543,27 @@ esp_err_t rfscout_wifi_station_disconnect( void )
     stop_ntp_sync();
 
     portENTER_CRITICAL( &state_lock );
+    if( !started || RFSCOUT_WIFI_STATION_CONNECTED != status.state )
+    {
+        portEXIT_CRITICAL( &state_lock );
+        return ESP_ERR_INVALID_STATE;
+    }
     disconnect_requested = true;
-    status.state = started ? RFSCOUT_WIFI_STATION_IDLE : RFSCOUT_WIFI_STATION_OFF;
+    status.state = RFSCOUT_WIFI_STATION_DISCONNECTING;
     status.disconnect_reason = 0;
-    memset( status.ssid, 0, sizeof( status.ssid ) );
     portEXIT_CRITICAL( &state_lock );
 
-    (void)esp_wifi_disconnect();
+    const esp_err_t result = esp_wifi_disconnect();
+    if( ESP_OK != result )
+    {
+        portENTER_CRITICAL( &state_lock );
+        disconnect_requested = false;
+        status.state = RFSCOUT_WIFI_STATION_IDLE;
+        memset( status.ssid, 0, sizeof( status.ssid ) );
+        portEXIT_CRITICAL( &state_lock );
+        return result;
+    }
+
     wifi_config_t blank = { 0 };
     (void)esp_wifi_set_config( WIFI_IF_STA, &blank );
     memset( &blank, 0, sizeof( blank ) );
