@@ -286,7 +286,8 @@ ip_event( void *a_context, esp_event_base_t a_event_base, int32_t a_event_id, vo
             const esp_err_t result = start_ntp_sync();
             if( ESP_OK != result )
             {
-                ESP_LOGW( TAG, "could not start NTP synchronization: %s", esp_err_to_name( result ) );
+                ESP_LOGW(
+                    TAG, "could not start NTP synchronization: %s", esp_err_to_name( result ) );
             }
         }
     }
