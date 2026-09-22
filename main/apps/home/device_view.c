@@ -393,6 +393,10 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             {
                 snprintf( a_value, a_capacity, "Connecting" );
             }
+            else if( RFSCOUT_WIFI_STATION_DISCONNECTING == status.state )
+            {
+                snprintf( a_value, a_capacity, "Disconnecting" );
+            }
             else
             {
                 snprintf( a_value, a_capacity, "Offline" );
