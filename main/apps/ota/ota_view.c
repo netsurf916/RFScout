@@ -151,7 +151,7 @@ void ota_view_render_update_main( const char *a_version,
     char status[ 64 ];
     snprintf( status,
               sizeof( status ),
-              "v%s  %s",
+              "%s  %s",
               NULL != a_version ? a_version : "unknown",
               NULL != a_connection ? a_connection : "Network unavailable" );
     display_draw_text( UI_LAYOUT_LEFT_X, 25, status, theme->secondary, 1U );
