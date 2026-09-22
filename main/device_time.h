@@ -22,6 +22,7 @@ typedef enum
     RFSCOUT_TIME_SOURCE_RETAINED,
     RFSCOUT_TIME_SOURCE_MANUAL,
     RFSCOUT_TIME_SOURCE_GPS,
+    RFSCOUT_TIME_SOURCE_NTP,
 } rfscout_time_source_t;
 
 typedef enum
@@ -44,6 +45,8 @@ esp_err_t device_time_init( void );
 esp_err_t device_time_set_epoch( time_t a_epoch );
 /** @brief Offer a fix-valid GPS UTC epoch; accepted only while Auto mode is selected. */
 esp_err_t device_time_offer_gps( time_t a_epoch );
+/** @brief Apply an explicit network time synchronization without changing the user's time mode. */
+esp_err_t device_time_offer_ntp( time_t a_epoch );
 /** @brief Change and persist the automatic/manual synchronization policy. */
 esp_err_t device_time_set_mode( rfscout_time_mode_t a_mode );
 /** @brief Return the current synchronization policy. */
