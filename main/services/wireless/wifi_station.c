@@ -540,8 +540,6 @@ esp_err_t rfscout_wifi_station_disconnect( void )
         return ESP_ERR_INVALID_STATE;
     }
 
-    stop_ntp_sync();
-
     portENTER_CRITICAL( &state_lock );
     if( !started || RFSCOUT_WIFI_STATION_CONNECTED != status.state )
     {
@@ -558,11 +556,12 @@ esp_err_t rfscout_wifi_station_disconnect( void )
     {
         portENTER_CRITICAL( &state_lock );
         disconnect_requested = false;
-        status.state = RFSCOUT_WIFI_STATION_IDLE;
-        memset( status.ssid, 0, sizeof( status.ssid ) );
+        status.state = RFSCOUT_WIFI_STATION_CONNECTED;
         portEXIT_CRITICAL( &state_lock );
         return result;
     }
+
+    stop_ntp_sync();
 
     wifi_config_t blank = { 0 };
     (void)esp_wifi_set_config( WIFI_IF_STA, &blank );
