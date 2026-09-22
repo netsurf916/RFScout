@@ -87,25 +87,43 @@ static void stop_ntp_sync( void )
 
 static esp_err_t start_ntp_sync( void )
 {
+    bool active;
     portENTER_CRITICAL( &state_lock );
-    status.ntp_syncing = true;
-    status.ntp_synced = false;
+    active = started && !stopping && RFSCOUT_WIFI_STATION_CONNECTED == status.state;
+    if( active )
+    {
+        status.ntp_syncing = true;
+        status.ntp_synced = false;
+    }
     portEXIT_CRITICAL( &state_lock );
+    if( !active )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
 
     esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG( WIFI_STATION_NTP_SERVER );
     config.sync_cb = ntp_sync_callback;
     const esp_err_t result = esp_netif_sntp_init( &config );
 
+    bool deinit = false;
     portENTER_CRITICAL( &state_lock );
-    if( ESP_OK == result )
+    active = started && !stopping && RFSCOUT_WIFI_STATION_CONNECTED == status.state;
+    if( ESP_OK == result && active )
     {
         ntp_initialized = true;
     }
     else
     {
         status.ntp_syncing = false;
+        deinit = ESP_OK == result;
     }
     portEXIT_CRITICAL( &state_lock );
+
+    if( deinit )
+    {
+        esp_netif_sntp_deinit();
+        return ESP_ERR_INVALID_STATE;
+    }
     return result;
 }
 
