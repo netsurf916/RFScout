@@ -57,31 +57,29 @@ static void draw_menu_row(
         OTA_MENU_START_Y + (int)a_row * OTA_MENU_ROW_HEIGHT, a_item, a_selected, a_label, a_value );
 }
 
-void ota_view_render_main( const char *a_version,
-                           const char *a_connection,
-                           const ota_view_network_t *a_networks,
-                           size_t a_network_count,
-                           unsigned a_selected,
-                           bool a_scanning,
-                           bool a_can_check,
-                           bool a_can_install,
-                           const char *a_update_status,
-                           const char *a_error )
+void ota_view_render_network_main( const char *a_connection,
+                                   const char *a_time_status,
+                                   const ota_view_network_t *a_networks,
+                                   size_t a_network_count,
+                                   unsigned a_selected,
+                                   bool a_scanning,
+                                   bool a_connected,
+                                   const char *a_error )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
-    const unsigned item_count =
-        1U + (unsigned)a_network_count + ( a_can_check ? ( a_can_install ? 4U : 3U ) : 3U );
+    const unsigned action_count = a_connected ? 1U : 3U;
+    const unsigned item_count = 1U + (unsigned)a_network_count + action_count;
     const unsigned start = menu_window_start( a_selected, item_count );
 
     display_clear( theme->background );
-    ui_chrome_draw( "OTA UPDATE", theme->secondary );
+    ui_chrome_draw( "NETWORK", theme->secondary );
 
-    char status[ 64 ];
+    char status[ 72 ];
     snprintf( status,
               sizeof( status ),
-              "v%s  %s",
-              NULL != a_version ? a_version : "unknown",
-              NULL != a_connection ? a_connection : "Disconnected" );
+              "%s  %s",
+              NULL != a_connection ? a_connection : "Disconnected",
+              NULL != a_time_status ? a_time_status : "" );
     display_draw_text( UI_LAYOUT_LEFT_X, 25, status, theme->secondary, 1U );
 
     for( unsigned row = 0U; row < OTA_MENU_VISIBLE_ROWS; ++row )
@@ -91,7 +89,6 @@ void ota_view_render_main( const char *a_version,
         {
             break;
         }
-
         if( 0U == item )
         {
             draw_menu_row( row, item, a_selected, "Back", NULL );
@@ -104,57 +101,91 @@ void ota_view_render_main( const char *a_version,
             char rssi[ 16 ];
             snprintf( rssi, sizeof( rssi ), "%d", (int)a_networks[ menu_item ].rssi );
             draw_menu_row( row, item, a_selected, a_networks[ menu_item ].ssid, rssi );
+            continue;
+        }
+
+        const unsigned action = menu_item - (unsigned)a_network_count;
+        if( a_connected )
+        {
+            draw_menu_row( row, item, a_selected, "Saved networks", NULL );
+        }
+        else if( 0U == action )
+        {
+            draw_menu_row(
+                row, item, a_selected, a_scanning ? "Scanning..." : "Scan again", NULL );
+        }
+        else if( 1U == action )
+        {
+            draw_menu_row( row, item, a_selected, "Add network", NULL );
         }
         else
         {
-            const unsigned action = menu_item - (unsigned)a_network_count;
-            if( a_can_check )
-            {
-                if( 0U == action )
-                {
-                    draw_menu_row( row, item, a_selected, "Check for update", a_update_status );
-                }
-                else
-                {
-                    unsigned next_action = 1U;
-                    if( a_can_install )
-                    {
-                        if( next_action == action )
-                        {
-                            draw_menu_row(
-                                row, item, a_selected, "Install update", a_update_status );
-                            continue;
-                        }
-                        ++next_action;
-                    }
-                    if( next_action == action )
-                    {
-                        draw_menu_row( row, item, a_selected, "Available builds", NULL );
-                    }
-                    else
-                    {
-                        draw_menu_row( row, item, a_selected, "Saved networks", NULL );
-                    }
-                }
-            }
-            else if( 0U == action )
-            {
-                draw_menu_row(
-                    row, item, a_selected, a_scanning ? "Scanning..." : "Scan again", NULL );
-            }
-            else if( 1U == action )
-            {
-                draw_menu_row( row, item, a_selected, "Add network", NULL );
-            }
-            else
-            {
-                draw_menu_row( row, item, a_selected, "Saved networks", NULL );
-            }
+            draw_menu_row( row, item, a_selected, "Saved networks", NULL );
         }
     }
 
     const char *footer =
         NULL != a_error && '\0' != a_error[ 0 ] ? a_error : "TURN SELECT / CENTER ACTION";
+    display_draw_text( UI_LAYOUT_LEFT_X,
+                       UI_LAYOUT_FOOTER_Y,
+                       footer,
+                       NULL != a_error && '\0' != a_error[ 0 ] ? theme->error : theme->secondary,
+                       1U );
+    (void)display_present();
+}
+
+void ota_view_render_update_main( const char *a_version,
+                                  const char *a_connection,
+                                  unsigned a_selected,
+                                  bool a_ready,
+                                  bool a_can_install,
+                                  const char *a_update_status,
+                                  const char *a_error )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    const unsigned item_count = a_ready ? ( a_can_install ? 4U : 3U ) : 1U;
+    const unsigned start = menu_window_start( a_selected, item_count );
+
+    display_clear( theme->background );
+    ui_chrome_draw( "OTA UPDATE", theme->secondary );
+
+    char status[ 64 ];
+    snprintf( status,
+              sizeof( status ),
+              "v%s  %s",
+              NULL != a_version ? a_version : "unknown",
+              NULL != a_connection ? a_connection : "Network unavailable" );
+    display_draw_text( UI_LAYOUT_LEFT_X, 25, status, theme->secondary, 1U );
+
+    for( unsigned row = 0U; row < OTA_MENU_VISIBLE_ROWS; ++row )
+    {
+        const unsigned item = start + row;
+        if( item >= item_count )
+        {
+            break;
+        }
+        if( 0U == item )
+        {
+            draw_menu_row( row, item, a_selected, "Back", NULL );
+        }
+        else if( 1U == item )
+        {
+            draw_menu_row( row, item, a_selected, "Check for update", a_update_status );
+        }
+        else if( a_can_install && 2U == item )
+        {
+            draw_menu_row( row, item, a_selected, "Install update", a_update_status );
+        }
+        else
+        {
+            draw_menu_row( row, item, a_selected, "Available builds", NULL );
+        }
+    }
+
+    const char *footer = NULL != a_error && '\0' != a_error[ 0 ]
+                             ? a_error
+                             : ( a_ready ? "TURN SELECT / CENTER ACTION"
+                                         : "CONNECT NETWORK / SYNC TIME FIRST" );
     display_draw_text( UI_LAYOUT_LEFT_X,
                        UI_LAYOUT_FOOTER_Y,
                        footer,
