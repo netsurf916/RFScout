@@ -350,10 +350,9 @@ static void render_action( void )
     }
     else if( connected )
     {
-        status_text = current.ntp_synced
-                          ? "Connected / time synced"
-                          : ( current.ntp_syncing ? "Connected / syncing time..."
-                                                : "Connected / time sync failed" );
+        status_text = current.ntp_synced ? "Connected / time synced"
+                                         : ( current.ntp_syncing ? "Connected / syncing time..."
+                                                                 : "Connected / time sync failed" );
     }
     else if( RFSCOUT_WIFI_STATION_FAILED == current.state && NULL != ssid &&
              0 == strcmp( current.ssid, ssid ) )
@@ -1007,8 +1006,7 @@ static void handle_input( const rfscout_input_event_t *a_input )
             if( HOME_SUBMENU_NETWORK == submenu )
             {
                 build_visible_saved();
-                item_count =
-                    1U + (unsigned)view_network_count + ( network_connected() ? 1U : 3U );
+                item_count = 1U + (unsigned)view_network_count + ( network_connected() ? 1U : 3U );
             }
             else
             {
