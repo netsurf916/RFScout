@@ -1,6 +1,7 @@
 name: Build and formatting
 
 on:
+  workflow_dispatch:
   pull_request:
     types:
       - opened
@@ -40,7 +41,7 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_*.py'
 
   build:
-    if: github.event_name == 'push' || github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: ESP-IDF Build and candidate bundle
     runs-on: ubuntu-latest
     container: espressif/idf:release-v6.1
