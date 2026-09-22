@@ -807,11 +807,13 @@ static void forget_selected_network( void )
     selected_item = 0U;
     action_saved_index = -1;
     action_scan_index = -1;
+    memset( action_ssid, 0, sizeof( action_ssid ) );
     render();
 }
 
 static void handle_action_select( void )
 {
+    refresh_action_indices();
     const bool saved = action_saved_index >= 0 && (size_t)action_saved_index < saved_networks.count;
     const bool visible = action_scan_index >= 0 && (size_t)action_scan_index < scan_count;
 
@@ -1006,6 +1008,7 @@ static void handle_input( const rfscout_input_event_t *a_input )
             screen = OTA_SCREEN_MAIN;
             action_saved_index = -1;
             action_scan_index = -1;
+            memset( action_ssid, 0, sizeof( action_ssid ) );
         }
         selected_item = 0U;
         error_text[ 0 ] = '\0';
