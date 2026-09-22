@@ -1,8 +1,8 @@
 # RFScout Roadmap
 
-This is the canonical planning document for RFScout. Production documentation describes implemented behavior; future design, priorities, follow-up work, and brainstorming belong here so intent is not scattered across operational docs.
+This is the **authoritative planning document** for RFScout. Current product behavior is anchored in [README.md](../README.md), shared implemented contracts live in [ARCHITECTURE.md](ARCHITECTURE.md), and implemented app behavior lives under [apps/](apps/). Future design, priorities, unfinished work, active release scope, and brainstorming belong here.
 
-Statuses describe implementation state, not release state. Active release planning is maintained here rather than in release-specific roadmap files.
+Statuses describe implementation state, not release state. Git history and pull requests preserve implementation history; completed items should remain here only when they provide useful context for still-open work.
 
 ## v0.4.0 milestone plan
 
@@ -314,14 +314,15 @@ The following baseline work is already complete and remains relevant context for
 
 **Priority:** High
 
-PR #70 establishes the first shared audio-capture boundary by moving microphone/recording implementation under `services/audio/` and allowing Recorder and Audio Spectrum to consume the same microphone service. The remaining work is calibration/generalization rather than making the microphone a Recorder-owned resource.
+PR #70 established the shared audio-capture boundary by moving microphone/recording implementation under `services/audio/` and allowing Recorder and Audio Spectrum to consume the same microphone service. The current provider already uses the deterministic LEFT PDM slot and measures physical PDM clock with PCNT; the remaining work is calibration/generalization.
 
 Goals:
 
 - [x] Move shared I2S0/PDM microphone ownership out of the Recorder app module and behind a reusable audio service boundary. PR #70.
-- [ ] Keep the board microphone on its deterministic LEFT slot.
+- [x] Keep the board microphone on its deterministic LEFT slot.
+- [x] Measure physical PDM clock with PCNT.
 - [ ] Configure toward a desired physical PDM outcome rather than assuming an ESP-IDF request produces the requested clock/rate.
-- [ ] Measure physical PDM clock with PCNT and use bounded reconfiguration when necessary.
+- [ ] Use bounded reconfiguration when measured clock indicates the configured request is not producing the desired physical outcome.
 - [ ] Clamp requests to known-safe limits and reject measured clocks outside the supported range.
 - [ ] Measure delivered PCM throughput and expose an effective sample rate.
 - [ ] Expose requested rate, measured clock, effective rate, calibration result, level, peak, and clipping telemetry.
@@ -369,17 +370,17 @@ Remaining planning is validation/hardening rather than an updater redesign:
 
 ## Medium-term platform work
 
-### System-owned internal persistent record/database service
+### Bounded persistent collection/database layer
 
 **Priority:** Platform prerequisite for applications that need small durable browsable histories without removable storage.
 
-Build a compact service over internal persistence that owns record layout, bounds/retention, durability, and iteration so applications do not know LittleFS paths or filesystem topology. It should support small app-specific durable collections while keeping configuration, removable bulk files, and transient/session PSRAM data semantically separate.
+The system-owned persistent-record service for bounded named records and configuration is already implemented. The remaining proposal is a higher-level bounded collection/iteration layer for small durable histories so applications still do not know LittleFS paths or filesystem topology.
 
-- [ ] Define service-owned namespacing/record identity and bounded retention semantics.
+- [ ] Define collection-owned namespacing/record identity and bounded retention semantics.
 - [ ] Provide compact put/get/delete/iterate operations suitable for on-device browsing.
 - [ ] Define corruption/recovery behavior without exposing raw filesystem ownership to applications.
-- [ ] Keep SD logging/export optional and separate from authoritative internal record state.
-- [ ] Validate write endurance and bounded-space behavior for expected low-volume records.
+- [ ] Keep ordinary configuration, durable collections, SD logging/export, and transient/session PSRAM semantically separate.
+- [ ] Validate write endurance and bounded-space behavior for expected low-volume histories.
 
 ### CW/Morse application
 
@@ -392,7 +393,7 @@ Build a compact service over internal persistence that owns record layout, bound
 - browse/select/add/delete transmit presets through the app UI;
 - send complete messages through the shared Morse/speaker service;
 - keep detection-notification one-character mappings separate from CW transmit presets;
-- if receive/decoding is added, store a small browsable decoded-message history through the system-owned internal record service rather than configuration;
+- if receive/decoding is added, store a small browsable decoded-message history through the bounded persistent collection layer rather than ordinary configuration;
 - emit structured decoded-message records through the common logger when receive/decoding is enabled, subject to the configured logging level;
 - keep decoded-message SD logging independent from internal app history so the app remains fully useful without removable storage;
 - reserve SD-specific files for genuinely bulk/raw capture data if such capture is added later.
@@ -490,13 +491,5 @@ These are ideas worth preserving, not committed scope or priority.
 - When planned behavior becomes implemented, move the lasting factual description into the owning current-state document and reduce/remove completed design prose here unless it remains necessary context for unfinished work.
 - Do not create parallel release-specific roadmap/status documents unless the material genuinely cannot be maintained coherently here.
 - Do not leave future-tense design promises in README, Architecture, app pages, Getting Started, Coding Style, or the release runbook.
-- Keep speculative/vision material here unless a separate technical research document is genuinely needed for a specialized subject.
-- A merged planning-only PR does not mean its feature is implemented; status must distinguish design capture from production code.
-
-
-- `ROADMAP.md` is the single canonical planning location, including active release milestones.
-- When a planned feature becomes implemented, move factual behavior into the appropriate production documentation and mark the roadmap item complete here.
-- Do not create parallel release-specific roadmap/status documents unless the material genuinely cannot be maintained coherently here.
-- Do not leave future-tense design promises in README, Architecture, Capabilities, Configuration, SD-card, or Release docs.
 - Keep speculative/vision material here unless a separate technical research document is genuinely needed for a specialized subject.
 - A merged planning-only PR does not mean its feature is implemented; status must distinguish design capture from production code.

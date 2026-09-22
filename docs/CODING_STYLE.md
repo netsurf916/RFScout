@@ -112,6 +112,3 @@ Documentation ownership is deliberate:
 Changes that alter application behavior, controls, supported hardware, logging, resource lifecycle, persistence, power, user-visible terminology, or operational release behavior must update the owning documentation in the same pull request.
 
 Do not describe planned behavior as implemented in README, Architecture, or an app page. Conversely, once behavior is implemented, move its lasting factual description out of roadmap design prose and into the appropriate current-state document; git history and pull requests remain the implementation history.
-
-
-Changes that alter application behavior, controls, supported hardware, logging, power/resource lifecycle, or user-visible terminology should update the relevant README or document in `docs/` in the same pull request. `ARCHITECTURE.md` describes module ownership and lifecycle, `CAPABILITIES.md` describes user-visible functionality, and `CODING_STYLE.md` defines source conventions.
