@@ -257,6 +257,7 @@ wifi_event( void *a_context, esp_event_base_t a_event_base, int32_t a_event_id, 
             status.disconnect_reason = reason;
         }
         portEXIT_CRITICAL( &state_lock );
+        stop_ntp_sync();
     }
 }
 
