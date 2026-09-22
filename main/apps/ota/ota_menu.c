@@ -202,6 +202,17 @@ static bool network_connected( void )
     return RFSCOUT_WIFI_STATION_CONNECTED == rfscout_wifi_station_status().state;
 }
 
+static bool ota_operation_active( void )
+{
+    return ota_acquisition_is_active() || ota_installer_is_active();
+}
+
+static bool install_action_available( void )
+{
+    return !ota_operation_active() &&
+           OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result;
+}
+
 static const char *connection_status( void )
 {
     const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
@@ -231,9 +242,7 @@ static void render_main( void )
     const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
     const bool scanning = RFSCOUT_WIFI_STATION_SCANNING == current.state;
     const bool can_check = RFSCOUT_WIFI_STATION_CONNECTED == current.state;
-    const bool install_active = ota_acquisition_is_active() || ota_installer_is_active();
-    const bool can_install =
-        can_check && !install_active && OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result;
+    const bool can_install = can_check && install_action_available();
     const unsigned item_count =
         1U + (unsigned)view_network_count + ( can_check ? ( can_install ? 4U : 3U ) : 3U );
     if( selected_item >= item_count )
@@ -463,10 +472,13 @@ static void open_unsaved_action( size_t a_scan_index )
 
 static void begin_update_check( void )
 {
-    error_text[ 0 ] = '\0';
-    memset( &catalog_selection, 0, sizeof( catalog_selection ) );
-    available_build_count = 0U;
-    selected_build_index = -1;
+    if( ota_operation_active() )
+    {
+        set_error( ESP_ERR_INVALID_STATE );
+        render();
+        return;
+    }
+
     const esp_err_t result = ota_acquisition_begin_catalog();
     if( ESP_OK != result )
     {
@@ -475,6 +487,11 @@ static void begin_update_check( void )
         render();
         return;
     }
+
+    error_text[ 0 ] = '\0';
+    memset( &catalog_selection, 0, sizeof( catalog_selection ) );
+    available_build_count = 0U;
+    selected_build_index = -1;
     snprintf( update_status, sizeof( update_status ), "Checking..." );
     render();
 }
@@ -485,7 +502,7 @@ static void begin_candidate_install( const ota_catalog_candidate_t *a_candidate 
     {
         return;
     }
-    if( ota_acquisition_is_active() || ota_installer_is_active() )
+    if( ota_operation_active() )
     {
         set_error( ESP_ERR_INVALID_STATE );
         render();
@@ -569,7 +586,7 @@ static void handle_main_select( void )
             return;
         }
         unsigned next_action = 1U;
-        if( OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result )
+        if( install_action_available() )
         {
             if( next_action == action )
             {
