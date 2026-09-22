@@ -1,5 +1,5 @@
 /**
-    apps/ota/ota_menu.c : Home Update menu controller and OTA network-management runtime
+    apps/ota/ota_menu.c : Home Network and Update menu controller
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -9,7 +9,6 @@
 
 #include "app_text_entry.h"
 #include "app_session.h"
-#include "device_time.h"
 #include "event.h"
 #include "firmware_identity.h"
 #include "ota_acquisition.h"
@@ -47,6 +46,12 @@ typedef enum
     OTA_SCREEN_BUILD_ACTION
 } ota_screen_t;
 
+typedef enum
+{
+    HOME_SUBMENU_NETWORK = 0,
+    HOME_SUBMENU_UPDATE
+} home_submenu_t;
+
 static ota_network_list_t saved_networks;
 static rfscout_wifi_station_ap_t scan_results[ RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS ];
 static ota_view_network_t view_networks[ RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS ];
@@ -54,10 +59,10 @@ static size_t scan_count;
 static size_t view_network_count;
 static size_t visible_saved_indices[ OTA_VISIBLE_MAX ];
 static ota_screen_t screen;
+static home_submenu_t submenu;
 static unsigned selected_item;
 static int action_saved_index;
 static int action_scan_index;
-static char connecting_ssid[ OTA_NETWORK_SSID_MAX_LENGTH + 1U ];
 static char error_text[ OTA_ERROR_TEXT_LENGTH ];
 static rfscout_text_entry_t password_entry;
 static ota_catalog_selection_t catalog_selection;
@@ -73,6 +78,8 @@ static uint32_t last_acquisition_generation;
 static uint32_t last_installer_generation;
 static uint32_t last_scan_generation;
 static rfscout_wifi_station_state_t last_station_state;
+static bool last_ntp_syncing;
+static bool last_ntp_synced;
 static int64_t last_refresh_us;
 static bool close_requested;
 
