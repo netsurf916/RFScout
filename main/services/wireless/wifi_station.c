@@ -7,9 +7,12 @@
 
 #include "wifi_station.h"
 
+#include "device_time.h"
+
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_netif_sntp.h"
 #include "esp_wifi.h"
 #include "esp_wifi_default.h"
 #include "freertos/FreeRTOS.h"
@@ -19,12 +22,14 @@
 
 #define WIFI_STATION_PASSIVE_DWELL_MS 200U
 #define WIFI_STATION_ACTIVE_MAX_DWELL_MS 120U
+#define WIFI_STATION_NTP_SERVER "pool.ntp.org"
 
 static const char *TAG = "wifi_station";
 static bool initialized;
 static bool started;
 static bool stopping;
 static bool disconnect_requested;
+static bool ntp_initialized;
 static esp_event_handler_instance_t wifi_event_handler;
 static esp_event_handler_instance_t ip_event_handler;
 static portMUX_TYPE state_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -40,6 +45,68 @@ static void set_state( rfscout_wifi_station_state_t a_state, int32_t a_disconnec
     status.state = a_state;
     status.disconnect_reason = a_disconnect_reason;
     portEXIT_CRITICAL( &state_lock );
+}
+
+static void ntp_sync_callback( struct timeval *a_time )
+{
+    if( NULL == a_time )
+    {
+        return;
+    }
+
+    const esp_err_t result = device_time_offer_ntp( a_time->tv_sec );
+    portENTER_CRITICAL( &state_lock );
+    if( started && !stopping && RFSCOUT_WIFI_STATION_CONNECTED == status.state )
+    {
+        status.ntp_syncing = false;
+        status.ntp_synced = ESP_OK == result;
+    }
+    portEXIT_CRITICAL( &state_lock );
+
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG, "could not accept NTP time: %s", esp_err_to_name( result ) );
+    }
+}
+
+static void stop_ntp_sync( void )
+{
+    bool deinit;
+    portENTER_CRITICAL( &state_lock );
+    deinit = ntp_initialized;
+    ntp_initialized = false;
+    status.ntp_syncing = false;
+    status.ntp_synced = false;
+    portEXIT_CRITICAL( &state_lock );
+
+    if( deinit )
+    {
+        esp_netif_sntp_deinit();
+    }
+}
+
+static esp_err_t start_ntp_sync( void )
+{
+    portENTER_CRITICAL( &state_lock );
+    status.ntp_syncing = true;
+    status.ntp_synced = false;
+    portEXIT_CRITICAL( &state_lock );
+
+    esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG( WIFI_STATION_NTP_SERVER );
+    config.sync_cb = ntp_sync_callback;
+    const esp_err_t result = esp_netif_sntp_init( &config );
+
+    portENTER_CRITICAL( &state_lock );
+    if( ESP_OK == result )
+    {
+        ntp_initialized = true;
+    }
+    else
+    {
+        status.ntp_syncing = false;
+    }
+    portEXIT_CRITICAL( &state_lock );
+    return result;
 }
 
 static bool ssid_already_retained( const uint8_t *a_ssid, size_t a_count )
@@ -202,14 +269,25 @@ ip_event( void *a_context, esp_event_base_t a_event_base, int32_t a_event_id, vo
 
     if( IP_EVENT_STA_GOT_IP == a_event_id )
     {
+        bool synchronize_time = false;
         portENTER_CRITICAL( &state_lock );
         if( started && !stopping && !disconnect_requested &&
             RFSCOUT_WIFI_STATION_CONNECTING == status.state )
         {
             status.state = RFSCOUT_WIFI_STATION_CONNECTED;
             status.disconnect_reason = 0;
+            synchronize_time = true;
         }
         portEXIT_CRITICAL( &state_lock );
+
+        if( synchronize_time )
+        {
+            const esp_err_t result = start_ntp_sync();
+            if( ESP_OK != result )
+            {
+                ESP_LOGW( TAG, "could not start NTP synchronization: %s", esp_err_to_name( result ) );
+            }
+        }
     }
 }
 
@@ -278,10 +356,14 @@ esp_err_t rfscout_wifi_station_init( void )
     started = false;
     stopping = false;
     disconnect_requested = false;
+    ntp_initialized = false;
     status = ( rfscout_wifi_station_status_t ){
         .state = RFSCOUT_WIFI_STATION_OFF,
         .scan_generation = 0U,
         .disconnect_reason = 0,
+        .ssid = "",
+        .ntp_syncing = false,
+        .ntp_synced = false,
     };
     scan_result_count = 0U;
     portEXIT_CRITICAL( &state_lock );
@@ -403,9 +485,15 @@ esp_err_t rfscout_wifi_station_connect( const char *a_ssid, const char *a_passwo
         return result;
     }
 
+    stop_ntp_sync();
+
     portENTER_CRITICAL( &state_lock );
     disconnect_requested = false;
     status.disconnect_reason = 0;
+    memset( status.ssid, 0, sizeof( status.ssid ) );
+    memcpy( status.ssid, a_ssid, ssid_length );
+    status.ntp_syncing = false;
+    status.ntp_synced = false;
     portEXIT_CRITICAL( &state_lock );
 
     if( passive_snapshot_contains( a_ssid ) )
@@ -447,10 +535,13 @@ esp_err_t rfscout_wifi_station_disconnect( void )
         return ESP_ERR_INVALID_STATE;
     }
 
+    stop_ntp_sync();
+
     portENTER_CRITICAL( &state_lock );
     disconnect_requested = true;
     status.state = started ? RFSCOUT_WIFI_STATION_IDLE : RFSCOUT_WIFI_STATION_OFF;
     status.disconnect_reason = 0;
+    memset( status.ssid, 0, sizeof( status.ssid ) );
     portEXIT_CRITICAL( &state_lock );
 
     (void)esp_wifi_disconnect();
@@ -466,6 +557,8 @@ esp_err_t rfscout_wifi_station_stop( void )
     {
         return ESP_OK;
     }
+
+    stop_ntp_sync();
 
     portENTER_CRITICAL( &state_lock );
     const bool was_started = started;
@@ -513,6 +606,9 @@ esp_err_t rfscout_wifi_station_stop( void )
     disconnect_requested = false;
     status.state = RFSCOUT_WIFI_STATION_OFF;
     status.disconnect_reason = 0;
+    memset( status.ssid, 0, sizeof( status.ssid ) );
+    status.ntp_syncing = false;
+    status.ntp_synced = false;
     scan_result_count = 0U;
     memset( scan_results, 0, sizeof( scan_results ) );
     memset( active_search_ssid, 0, sizeof( active_search_ssid ) );
