@@ -155,4 +155,4 @@ Separate component images remain development/recovery artifacts. The in-device i
 
 RFScout enables ESP-IDF reproducible-build configuration and generates deterministic package metadata/checksums/ZIP output. Reproducing a firmware build still requires the same source revision, ESP-IDF/toolchain, generated source inputs, and managed-component resolution.
 
-`dependencies.lock` is intentionally tracked in Git so managed component versions are part of the reproducibility boundary. It should change only when dependency resolution is intentionally updated.
+`dependencies.lock` is generated and ignored rather than treated as a source artifact. Reproducing a historical firmware build therefore also requires resolving the same managed-component versions from the declared manifests and ESP-IDF/component-registry inputs.
