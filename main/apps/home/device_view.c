@@ -1712,10 +1712,25 @@ void device_view_poll( int64_t a_now_us )
     if( network_menu_open )
     {
         network_menu_poll( a_now_us );
+        return;
     }
-    else if( ota_menu_open )
+    if( ota_menu_open )
     {
         ota_menu_poll( a_now_us );
+        return;
+    }
+
+    static rfscout_wifi_station_state_t last_state = RFSCOUT_WIFI_STATION_OFF;
+    static bool last_syncing;
+    static bool last_synced;
+    const rfscout_wifi_station_status_t status = rfscout_wifi_station_status();
+    if( status.state != last_state || status.ntp_syncing != last_syncing ||
+        status.ntp_synced != last_synced )
+    {
+        last_state = status.state;
+        last_syncing = status.ntp_syncing;
+        last_synced = status.ntp_synced;
+        device_view_render();
     }
 }
 
