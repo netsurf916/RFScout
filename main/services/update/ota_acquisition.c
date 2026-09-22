@@ -7,6 +7,7 @@
 #include "ota_acquisition.h"
 
 #include "ota_installer.h"
+#include "device_time.h"
 #include "memory_manager.h"
 
 #include "esp_crt_bundle.h"
@@ -317,6 +318,11 @@ static esp_err_t begin_request( ota_acquisition_kind_t a_kind, const char *a_url
     if( NULL == a_url || '\0' == a_url[ 0 ] )
     {
         return ESP_ERR_INVALID_ARG;
+    }
+
+    if( !device_time_now( NULL ) )
+    {
+        return ESP_ERR_INVALID_STATE;
     }
 
     portENTER_CRITICAL( &state_lock );
