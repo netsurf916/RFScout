@@ -45,7 +45,7 @@ Once source LEAVE/view reclamation has committed, RFScout does not attempt to re
 
 On an aborted service close, the session restores only platform service state that was active and successfully stopped when that service exposes a safe restart operation. Failed-stop recovery is service-specific so a self-restoring worker is not started twice. There is no app-level reactivation hook: reversible platform restoration belongs exclusively to `app_session` and the service implementation, while app modules may only veto before teardown through `prepare_leave` when semantic state cannot safely be interrupted.
 
-Current session-managed asynchronous services are Wi-Fi monitoring, BLE scanning, CC1101, nRF24, and shared audio capture/Recorder activity. Thermal acquisition is synchronous today; any future worker/DMA/callback path belongs behind a service rather than a new app-specific lifecycle protocol.
+Current session-managed asynchronous services include Wi-Fi monitoring, temporary infrastructure Wi-Fi, OTA acquisition/installation, BLE scanning, CC1101, nRF24, and shared audio capture/Recorder activity. Thermal acquisition is synchronous today; any future worker/DMA/callback path belongs behind a service rather than a new app-specific lifecycle protocol.
 
 ### Memory policy
 
