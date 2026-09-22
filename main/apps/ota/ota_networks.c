@@ -1,6 +1,6 @@
 /**
-    apps/ota/ota_networks.c : OTA-owned remembered infrastructure networks
-    Description: Persists bounded credentials only inside the Home Update feature namespace.
+    apps/ota/ota_networks.c : Home-owned remembered infrastructure networks
+    Description: Persists bounded credentials for the Home Network menu.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
