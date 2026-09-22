@@ -352,15 +352,15 @@ Rework application/system logging as a common policy rather than letting each fe
 
 ## In-device OTA update architecture
 
-**Status:** A/B flash/rollback, the Home-owned Update menu, OTA-owned remembered-network persistence, passive AP discovery, explicit STA association, deterministic teardown, embedded build identity, Pages OTA catalogs, stable/manual build selection, streaming installation, and first-boot rollback confirmation are implemented on the OTA development branch. Hardware validation remains.
+**Status:** A/B flash/rollback, separate Home-owned Network and Update menus, remembered-network persistence, passive AP discovery, explicit STA association, automatic NTP synchronization, deterministic Home-session teardown, embedded build identity, Pages OTA catalogs, stable/manual build selection, streaming installation, and first-boot rollback confirmation are implemented on the OTA development branch. Hardware validation remains.
 
 **Design goal:** Preserve RFScout's passive-by-default behavior and strict application/service lifecycle boundaries while allowing a user to deliberately obtain temporary Internet connectivity, check for a release, install an application image into the inactive OTA slot, and recover automatically if the new image does not boot successfully.
 
-### Passive-by-default Update menu
+### Home-owned Network and Update menus
 
 Firmware update is a nested **Home / Device Settings → Update** menu rather than a top-level application. Infrastructure networking exists only while that menu is in use; RFScout does not gain a device-wide "known networks" or always-connected policy.
 
-Opening the Update menu must not associate with an access point. While active and disconnected, the app may perform passive AP scans and present remembered networks that have been observed in range. Passive scan results are volatile app-session state. Association is always a deliberate user action.
+Opening the Network menu must not associate with an access point. While disconnected, it may perform passive AP scans and present remembered networks that have been observed in range. Passive scan results are volatile Home-session state. Association is always a deliberate user action. After DHCP succeeds, the infrastructure station automatically starts SNTP and updates the authoritative device clock when synchronization completes.
 
 The initial UI contract is:
 
@@ -379,7 +379,7 @@ Hidden-network support is not required initially because discovering a hidden SS
 
 ### Update-menu lifecycle boundary
 
-The Update menu does not create a background networking/update mode. Closing Update or leaving Home tears down its transient networking and acquisition state.
+The infrastructure station is owned by the Home app session rather than either nested menu. Leaving Network or Update preserves the connection so the user can configure networking and then enter Update without reconnecting. An explicit Disconnect or leaving Home tears down the station; leaving Update independently stops OTA acquisition/installation.
 
 When the Update menu closes or Home exits, teardown must:
 
@@ -397,16 +397,16 @@ The installer must avoid a long-lived "staged for next reboot" state. After fina
 
 ### Network ownership and abstraction
 
-Credential ownership, connection policy, and user intent belong to the Home Update menu. Low-level infrastructure Wi-Fi belongs behind a semantic service/provider boundary.
+Credential ownership, connection policy, and user intent belong to the Home Network menu. Low-level infrastructure Wi-Fi and SNTP belong behind semantic service/provider boundaries.
 
-The Update menu may ask that service to:
+The Network menu may ask that station service to:
 
 - perform a passive AP scan;
-- establish a STA connection using one credential set supplied for the current OTA session;
+- establish a STA connection using one credential set supplied for the current Home session;
 - report connection/DHCP status; and
 - disconnect/close.
 
-The Wi-Fi service must not maintain a global remembered-network database or silently reconnect after the Update menu closes. Likewise, the Update menu must not take ownership of driver handles, event-loop internals, DHCP implementation details, or hardware-specific Wi-Fi teardown.
+The Wi-Fi service must not maintain a global remembered-network database or silently reconnect after Home exits. Likewise, the Network and Update menus must not take ownership of driver handles, event-loop internals, DHCP/SNTP implementation details, or hardware-specific Wi-Fi teardown.
 
 The existing WiFi / BT observation application remains a separate passive-monitoring concern. Infrastructure STA operation must acquire/quiesce shared Wi-Fi resources through the platform lifecycle rather than reaching into the observation app or allowing monitor and OTA modes to conflict implicitly.
 
@@ -579,8 +579,8 @@ Build a compact service over internal persistence that owns record layout, bound
 - use GNSS UTC as an explicit time authority;
 - expose fix/location/satellite/accuracy information;
 - optionally attach location metadata to observations/captures when enabled;
-- add NTP only under explicit networking policy;
-- define authority transitions among manual, saved, RTC, GNSS, and NTP sources.
+- [x] add NTP to the explicit Home networking workflow; a successful connection synchronizes UTC before Update becomes available.
+- [ ] define longer-term authority transitions among manual, saved, RTC, GNSS, and NTP sources beyond the current one-shot/network-session behavior.
 
 ### Diagnostics and self-measurement
 
