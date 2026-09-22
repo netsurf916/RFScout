@@ -107,7 +107,7 @@ MLX90640 is an optional hot-plug I2C/Qwiic peripheral exposed by the thermal ser
 
 The GPS/location service remains capability-gated for future profiles or hardware integrations; the current T-Embed profile does not advertise an onboard GPS provider.
 
-`device_time` owns RTC-backed wall-clock validity/source, Auto/Manual policy, and timezone conversion independently from any location provider.
+`device_time` owns RTC-backed wall-clock validity/source, Auto/Manual policy, and timezone conversion independently from any location provider. Certificate-validated OTA HTTPS is gated on this existing wall-clock validity; the OTA path does not silently establish a new NTP authority.
 
 ## Power, battery, display idle, and sleep
 
