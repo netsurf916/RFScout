@@ -719,7 +719,7 @@ void device_view_render( void )
         render_power_menu();
         return;
     }
-    if( ota_menu_open )
+    if( network_menu_open || ota_menu_open )
     {
         return;
     }
@@ -765,6 +765,7 @@ void device_view_enter( void )
     time_menu_open = false;
     time_selected_item = TIME_MENU_BACK;
     time_editing = false;
+    network_menu_open = false;
     ota_menu_open = false;
     refresh_edited_time();
     device_view_render();
@@ -1516,6 +1517,16 @@ static void adjust_selected( int a_delta )
 
 bool device_view_back( void )
 {
+    if( network_menu_open )
+    {
+        if( network_menu_back() )
+        {
+            network_menu_leave();
+            network_menu_open = false;
+            device_view_render();
+        }
+        return true;
+    }
     if( ota_menu_open )
     {
         if( ota_menu_back() && ESP_OK == ota_menu_leave() )
@@ -1552,6 +1563,17 @@ bool device_view_back( void )
 
 bool device_view_input( bool a_pressed, int a_delta )
 {
+    if( network_menu_open )
+    {
+        if( network_menu_input( a_pressed, a_delta ) )
+        {
+            network_menu_leave();
+            network_menu_open = false;
+            emit_device_event( RFSCOUT_EVENT_BACK, 0 );
+            device_view_render();
+        }
+        return false;
+    }
     if( ota_menu_open )
     {
         if( ota_menu_input( a_pressed, a_delta ) && ESP_OK == ota_menu_leave() )
@@ -1608,8 +1630,20 @@ bool device_view_input( bool a_pressed, int a_delta )
             emit_device_event( RFSCOUT_EVENT_BACK, 0 );
             return true;
         }
+        if( ( DEVICE_ITEM_NETWORK == selected_item ) && !editing )
+        {
+            network_menu_open = true;
+            emit_device_event( RFSCOUT_EVENT_ENTER, 1 );
+            network_menu_enter();
+            return false;
+        }
         if( ( DEVICE_ITEM_OTA == selected_item ) && !editing )
         {
+            if( !network_update_ready() )
+            {
+                device_view_render();
+                return false;
+            }
             ota_menu_open = true;
             emit_device_event( RFSCOUT_EVENT_ENTER, 1 );
             ota_menu_enter();
@@ -1675,7 +1709,11 @@ bool device_view_input( bool a_pressed, int a_delta )
 
 void device_view_poll( int64_t a_now_us )
 {
-    if( ota_menu_open )
+    if( network_menu_open )
+    {
+        network_menu_poll( a_now_us );
+    }
+    else if( ota_menu_open )
     {
         ota_menu_poll( a_now_us );
     }
@@ -1683,6 +1721,11 @@ void device_view_poll( int64_t a_now_us )
 
 void device_view_leave( void )
 {
+    if( network_menu_open )
+    {
+        network_menu_leave();
+        network_menu_open = false;
+    }
     if( ota_menu_open )
     {
         if( ESP_OK == ota_menu_leave() )
