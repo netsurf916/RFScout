@@ -1,5 +1,5 @@
 /**
-    apps/ota/ota_networks.h : OTA-owned remembered infrastructure networks
+    apps/ota/ota_networks.h : Home-owned remembered infrastructure networks
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
