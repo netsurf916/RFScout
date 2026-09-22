@@ -383,9 +383,9 @@ The system-owned persistent-record service for bounded named records and configu
 
 ### CW/Morse application
 
-**Priority:** After the system-owned internal persistent record/database service.
+**Priority:** After the bounded persistent collection/database layer.
 
-**Dependency:** Implement after the internal record/database service above so receive/decode history can be browsed persistently without requiring an SD card.
+**Dependency:** Implement after the collection layer above so receive/decode history can be browsed persistently without requiring an SD card.
 
 - compose transmit strings with the rotary encoder and center button;
 - store user-defined transmit message **presets** as ordinary descriptor-owned CW app configuration through the persistent-record service;
