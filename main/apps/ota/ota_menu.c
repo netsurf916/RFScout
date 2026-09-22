@@ -1004,11 +1004,18 @@ static void handle_input( const rfscout_input_event_t *a_input )
         unsigned item_count = 1U;
         if( OTA_SCREEN_MAIN == screen )
         {
-            build_visible_saved();
-            const bool connected = network_connected();
-            const bool can_install = connected && install_action_available();
-            item_count =
-                1U + (unsigned)view_network_count + ( connected ? ( can_install ? 4U : 3U ) : 3U );
+            if( HOME_SUBMENU_NETWORK == submenu )
+            {
+                build_visible_saved();
+                item_count =
+                    1U + (unsigned)view_network_count + ( network_connected() ? 1U : 3U );
+            }
+            else
+            {
+                const bool ready = update_ready();
+                const bool can_install = ready && install_action_available();
+                item_count = ready ? ( can_install ? 4U : 3U ) : 1U;
+            }
         }
         else if( OTA_SCREEN_ACTION == screen )
         {
