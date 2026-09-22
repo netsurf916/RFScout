@@ -349,9 +349,17 @@ esp_err_t rfscout_wifi_station_init( void )
     {
         result = esp_event_handler_instance_register(
             IP_EVENT, IP_EVENT_STA_GOT_IP, ip_event, NULL, &ip_event_handler );
+        if( ESP_OK != result )
+        {
+            (void)esp_event_handler_instance_unregister(
+                WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event_handler );
+            memset( &wifi_event_handler, 0, sizeof( wifi_event_handler ) );
+        }
     }
     if( ESP_OK != result )
     {
+        memset( &ip_event_handler, 0, sizeof( ip_event_handler ) );
+        esp_netif_destroy_default_wifi( station_netif );
         return result;
     }
 
