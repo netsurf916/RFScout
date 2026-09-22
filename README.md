@@ -27,7 +27,7 @@ Disabled or unavailable apps are skipped. Home is always available and is the de
 
 ### Firmware Update
 
-Firmware Update is a nested Home / Device Settings menu rather than a top-level application. Opening **Update** starts only a passive infrastructure-Wi-Fi scan; it never associates automatically. The menu owns a bounded list of remembered SSIDs/passwords in its own persistent namespace, shows remembered APs that are currently visible, provides explicit per-network Connect/Disconnect/Forget actions, and clears transient STA state when the Update menu closes or Home exits. ESP-IDF Wi-Fi configuration is kept in RAM so the driver does not become a second global credential store. The firmware has a platform-owned running-image identity and a validated OTA build-catalog selector that enforces project/hardware/IDF/layout sanity checks. After explicit association, the menu exposes **Check for update** and **Available builds** actions. Catalog retrieval runs as a cancellable HTTPS service using ESP-IDF certificate-bundle validation. Because certificate validity depends on wall-clock time, OTA requests require RFScout to already have valid retained/manual/GPS time; the Update menu prompts for date/time instead of silently starting NTP. Leaving Update cancels acquisition before installer/STA teardown.
+Infrastructure networking and firmware update are separate nested Home / Device Settings menus. **Network** owns passive AP discovery, remembered SSIDs/passwords, and explicit Connect/Disconnect/Forget actions. After DHCP succeeds, RFScout starts SNTP automatically and marks the Home network ready only after network time has synchronized. The station connection then persists across Network and Update submenu transitions and is torn down only by an explicit Disconnect or when Home itself exits. ESP-IDF Wi-Fi configuration remains RAM-only so the driver does not become a second global credential store. **Update** is available only while that Home-owned connection is established and NTP-synchronized; it then exposes **Check for update** and **Available builds** actions. Catalog retrieval remains a cancellable HTTPS service using ESP-IDF certificate-bundle validation, and leaving Update cancels acquisition/installation without dropping the Home network session.
 
 ### WiFi / BT
 
@@ -61,7 +61,7 @@ Current global settings include brightness/display idle, visual theme, independe
 
 Setting changes are persisted automatically through RFScout's internal persistent-record service; there is no user-facing Save step. App-owned notification settings and WiFi / BT retention remain in their respective app menus.
 
-The Time submenu separates source policy from timezone presentation. **Auto** accepts valid GPS UTC time when the GPS service is available and locked; **Manual** exposes explicit date/time fields. Consumers can distinguish invalid, retained, manual, and GPS-synchronized wall-clock state.
+The Time submenu separates source policy from timezone presentation. **Auto** accepts valid GPS UTC time when the GPS service is available and locked; **Manual** exposes explicit date/time fields. A successful Home Network connection also applies NTP time without changing the user's Auto/Manual policy. Consumers can distinguish invalid, retained, manual, GPS-synchronized, and NTP-synchronized wall-clock state.
 
 ## Power, display, and persistence
 
