@@ -336,24 +336,27 @@ static void render_action( void )
 
     const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
     const bool connected = RFSCOUT_WIFI_STATION_CONNECTED == current.state && NULL != ssid &&
-                           0 == strcmp( connecting_ssid, ssid );
+                           0 == strcmp( current.ssid, ssid );
     const char *status_text = error_text;
     if( RFSCOUT_WIFI_STATION_SEARCHING == current.state && NULL != ssid &&
-        0 == strcmp( connecting_ssid, ssid ) )
+        0 == strcmp( current.ssid, ssid ) )
     {
         status_text = "Actively searching...";
     }
     else if( RFSCOUT_WIFI_STATION_CONNECTING == current.state && NULL != ssid &&
-             0 == strcmp( connecting_ssid, ssid ) )
+             0 == strcmp( current.ssid, ssid ) )
     {
         status_text = "Connecting...";
     }
     else if( connected )
     {
-        status_text = "Connected";
+        status_text = current.ntp_synced
+                          ? "Connected / time synced"
+                          : ( current.ntp_syncing ? "Connected / syncing time..."
+                                                : "Connected / time sync failed" );
     }
     else if( RFSCOUT_WIFI_STATION_FAILED == current.state && NULL != ssid &&
-             0 == strcmp( connecting_ssid, ssid ) )
+             0 == strcmp( current.ssid, ssid ) )
     {
         status_text = ESP_ERR_NOT_FOUND == current.disconnect_reason ? "Network not found"
                                                                      : "Connection failed";
@@ -729,7 +732,6 @@ static void connect_selected_network( void )
         return;
     }
     const ota_network_t *network = &saved_networks.entries[ action_saved_index ];
-    snprintf( connecting_ssid, sizeof( connecting_ssid ), "%s", network->ssid );
     set_error( rfscout_wifi_station_connect( network->ssid, network->password ) );
     render();
 }
@@ -742,10 +744,10 @@ static void forget_selected_network( void )
     }
 
     const char *ssid = saved_networks.entries[ action_saved_index ].ssid;
-    if( '\0' != connecting_ssid[ 0 ] && 0 == strcmp( connecting_ssid, ssid ) )
+    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    if( RFSCOUT_WIFI_STATION_CONNECTED == current.state && 0 == strcmp( current.ssid, ssid ) )
     {
         (void)rfscout_wifi_station_disconnect();
-        memset( connecting_ssid, 0, sizeof( connecting_ssid ) );
     }
 
     esp_err_t result = ota_networks_forget( &saved_networks, (size_t)action_saved_index );
@@ -791,10 +793,9 @@ static void handle_action_select( void )
     {
         const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
         if( RFSCOUT_WIFI_STATION_CONNECTED == current.state &&
-            0 == strcmp( connecting_ssid, saved_networks.entries[ action_saved_index ].ssid ) )
+            0 == strcmp( current.ssid, saved_networks.entries[ action_saved_index ].ssid ) )
         {
             (void)rfscout_wifi_station_disconnect();
-            memset( connecting_ssid, 0, sizeof( connecting_ssid ) );
             error_text[ 0 ] = '\0';
             render();
         }
@@ -1050,7 +1051,6 @@ static void reset_runtime_state( void )
     selected_item = 0U;
     action_saved_index = -1;
     action_scan_index = -1;
-    memset( connecting_ssid, 0, sizeof( connecting_ssid ) );
     memset( error_text, 0, sizeof( error_text ) );
     app_text_entry_clear( &password_entry );
     memset( &catalog_selection, 0, sizeof( catalog_selection ) );
