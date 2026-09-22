@@ -44,6 +44,9 @@ typedef struct
     rfscout_wifi_station_state_t state;
     uint32_t scan_generation;
     int32_t disconnect_reason;
+    char ssid[ RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH + 1U ];
+    bool ntp_syncing;
+    bool ntp_synced;
 } rfscout_wifi_station_status_t;
 
 /** @brief Attach the infrastructure station netif to the already initialized Wi-Fi driver. */
