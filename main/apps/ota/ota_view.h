@@ -27,16 +27,21 @@ typedef struct
     const char *version;
 } ota_view_build_t;
 
-void ota_view_render_main( const char *a_version,
-                           const char *a_connection,
-                           const ota_view_network_t *a_networks,
-                           size_t a_network_count,
-                           unsigned a_selected,
-                           bool a_scanning,
-                           bool a_can_check,
-                           bool a_can_install,
-                           const char *a_update_status,
-                           const char *a_error );
+void ota_view_render_network_main( const char *a_connection,
+                                   const char *a_time_status,
+                                   const ota_view_network_t *a_networks,
+                                   size_t a_network_count,
+                                   unsigned a_selected,
+                                   bool a_scanning,
+                                   bool a_connected,
+                                   const char *a_error );
+void ota_view_render_update_main( const char *a_version,
+                                  const char *a_connection,
+                                  unsigned a_selected,
+                                  bool a_ready,
+                                  bool a_can_install,
+                                  const char *a_update_status,
+                                  const char *a_error );
 void ota_view_render_network_action( const char *a_ssid,
                                      int8_t a_rssi,
                                      bool a_visible,
