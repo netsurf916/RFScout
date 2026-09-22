@@ -96,8 +96,7 @@ static void draw_modal_overlay( void )
     display_draw_text( centered_x( modal_title, 2U ), 63, modal_title, theme->accent, 2U );
     if( '\0' != modal_detail[ 0 ] )
     {
-        display_draw_text(
-            centered_x( modal_detail, 2U ), 88, modal_detail, theme->text, 2U );
+        display_draw_text( centered_x( modal_detail, 2U ), 88, modal_detail, theme->text, 2U );
     }
 }
 
