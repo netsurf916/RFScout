@@ -111,8 +111,7 @@ void ota_view_render_network_main( const char *a_connection,
         }
         else if( 0U == action )
         {
-            draw_menu_row(
-                row, item, a_selected, a_scanning ? "Scanning..." : "Scan again", NULL );
+            draw_menu_row( row, item, a_selected, a_scanning ? "Scanning..." : "Scan again", NULL );
         }
         else if( 1U == action )
         {
@@ -182,10 +181,10 @@ void ota_view_render_update_main( const char *a_version,
         }
     }
 
-    const char *footer = NULL != a_error && '\0' != a_error[ 0 ]
-                             ? a_error
-                             : ( a_ready ? "TURN SELECT / CENTER ACTION"
-                                         : "CONNECT NETWORK / SYNC TIME FIRST" );
+    const char *footer =
+        NULL != a_error && '\0' != a_error[ 0 ]
+            ? a_error
+            : ( a_ready ? "TURN SELECT / CENTER ACTION" : "CONNECT NETWORK / SYNC TIME FIRST" );
     display_draw_text( UI_LAYOUT_LEFT_X,
                        UI_LAYOUT_FOOTER_Y,
                        footer,
