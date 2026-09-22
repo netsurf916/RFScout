@@ -231,6 +231,30 @@ class WebFlasherCatalogTest(unittest.TestCase):
                     ],
                 )
 
+    def test_ota_catalog_requires_packaged_commit_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            site = Path(temporary) / "site"
+            directory = site / "firmware" / "releases" / "v0.3.0"
+            commit = "a" * 40
+            self.write_ota_image(directory, a_version="0.3.0", a_commit=commit)
+
+            with self.assertRaisesRegex(ValueError, "valid packaged commit"):
+                build_ota_catalog(
+                    site,
+                    [
+                        {
+                            "id": "release-v0.3.0",
+                            "kind": "release",
+                            "label": "RFScout v0.3.0",
+                            "version": "0.3.0",
+                            "manifest": "firmware/releases/v0.3.0/manifest.web.json",
+                            "commit": None,
+                            "draft": False,
+                            "prerelease": False,
+                        }
+                    ],
+                )
+
     def test_ota_catalog_rejects_identity_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             site = Path(temporary) / "site"
