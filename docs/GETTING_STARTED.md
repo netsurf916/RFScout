@@ -46,7 +46,7 @@ idf.py set-target esp32s3
 idf.py build
 ```
 
-RFScout builds one ESP32-S3 image and validates the supported T-Embed board profile at runtime. The first build resolves managed components declared in `main/idf_component.yml`. The generated `managed_components/` directory is ignored. The repository intentionally tracks `dependencies.lock`; do not add it to `.gitignore`. It pins resolved component versions so local, CI, and historical release builds are less likely to drift.
+RFScout builds one ESP32-S3 image and validates the supported T-Embed board profile at runtime. The first build resolves managed components declared in `main/idf_component.yml`. The generated `managed_components/` directory and `dependencies.lock` are ignored; ESP-IDF may regenerate them locally as part of dependency resolution.
 
 If major build configuration changes, regenerate the local build tree:
 
@@ -184,7 +184,7 @@ idf.py set-target esp32s3
 idf.py build
 ```
 
-Keep the tracked `dependencies.lock` file; the component manager will use it to reproduce the resolved dependency set.
+If dependency resolution looks stale, remove the generated `dependencies.lock` together with the build and managed-component directories so ESP-IDF can resolve them again.
 
 ### Serial access problems
 
