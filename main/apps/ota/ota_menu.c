@@ -514,10 +514,8 @@ static void open_saved_action( size_t a_saved_index )
     {
         return;
     }
-    snprintf( action_ssid,
-              sizeof( action_ssid ),
-              "%s",
-              saved_networks.entries[ a_saved_index ].ssid );
+    snprintf(
+        action_ssid, sizeof( action_ssid ), "%s", saved_networks.entries[ a_saved_index ].ssid );
     refresh_action_indices();
     selected_item = 0U;
     screen = OTA_SCREEN_ACTION;
@@ -531,8 +529,7 @@ static void open_unsaved_action( size_t a_scan_index )
     {
         return;
     }
-    snprintf(
-        action_ssid, sizeof( action_ssid ), "%s", scan_results[ a_scan_index ].ssid );
+    snprintf( action_ssid, sizeof( action_ssid ), "%s", scan_results[ a_scan_index ].ssid );
     refresh_action_indices();
     selected_item = 0U;
     screen = OTA_SCREEN_ACTION;
