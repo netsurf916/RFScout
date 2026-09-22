@@ -576,8 +576,6 @@ esp_err_t rfscout_wifi_station_stop( void )
         return ESP_OK;
     }
 
-    stop_ntp_sync();
-
     portENTER_CRITICAL( &state_lock );
     const bool was_started = started;
     const bool needs_mode_reset = was_started || RFSCOUT_WIFI_STATION_OFF != status.state;
@@ -588,11 +586,6 @@ esp_err_t rfscout_wifi_station_stop( void )
     {
         (void)esp_wifi_scan_stop();
         (void)esp_wifi_clear_ap_list();
-        (void)esp_wifi_disconnect();
-
-        wifi_config_t blank = { 0 };
-        (void)esp_wifi_set_config( WIFI_IF_STA, &blank );
-        memset( &blank, 0, sizeof( blank ) );
 
         const esp_err_t stop_result = esp_wifi_stop();
         if( ESP_OK != stop_result )
@@ -606,6 +599,10 @@ esp_err_t rfscout_wifi_station_stop( void )
         portENTER_CRITICAL( &state_lock );
         started = false;
         portEXIT_CRITICAL( &state_lock );
+
+        wifi_config_t blank = { 0 };
+        (void)esp_wifi_set_config( WIFI_IF_STA, &blank );
+        memset( &blank, 0, sizeof( blank ) );
     }
 
     if( needs_mode_reset )
@@ -613,12 +610,11 @@ esp_err_t rfscout_wifi_station_stop( void )
         const esp_err_t mode_result = esp_wifi_set_mode( WIFI_MODE_NULL );
         if( ESP_OK != mode_result )
         {
-            portENTER_CRITICAL( &state_lock );
-            stopping = false;
-            portEXIT_CRITICAL( &state_lock );
-            return mode_result;
+            ESP_LOGW( TAG, "could not reset stopped Wi-Fi mode: %s", esp_err_to_name( mode_result ) );
         }
     }
+
+    stop_ntp_sync();
 
     portENTER_CRITICAL( &state_lock );
     disconnect_requested = false;
