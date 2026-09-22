@@ -69,7 +69,7 @@ size_t rfscout_wifi_station_scan_results( rfscout_wifi_station_ap_t *a_results, 
  */
 esp_err_t rfscout_wifi_station_connect( const char *a_ssid, const char *a_password );
 
-/** @brief Disconnect the current station while leaving the OTA session able to scan again. */
+/** @brief Disconnect the current station while leaving the Home session able to scan again. */
 esp_err_t rfscout_wifi_station_disconnect( void );
 
 /**
