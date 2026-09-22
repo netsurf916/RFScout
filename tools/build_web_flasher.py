@@ -214,7 +214,11 @@ def ota_build_entry(a_site_dir: Path, a_browser_entry: dict) -> dict | None:
     if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-fA-F]{40}", commit):
         raise ValueError(f"invalid OTA commit in {metadata_path}")
     browser_commit = a_browser_entry.get("commit")
-    if isinstance(browser_commit, str) and browser_commit and commit.lower() != browser_commit.lower():
+    if not isinstance(browser_commit, str) or not re.fullmatch(
+        r"[0-9a-fA-F]{40}", browser_commit
+    ):
+        raise ValueError(f"browser catalog entry is missing a valid packaged commit: {metadata_path}")
+    if commit.lower() != browser_commit.lower():
         raise ValueError(
             f"OTA commit {commit!r} does not match browser catalog {browser_commit!r}: "
             f"{metadata_path}"
