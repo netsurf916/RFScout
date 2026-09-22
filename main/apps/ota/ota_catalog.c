@@ -392,8 +392,8 @@ static cJSON *parse_catalog_root( const char *a_json, size_t a_length, const cJS
 
     const cJSON *schema = cJSON_GetObjectItemCaseSensitive( root, "schema_version" );
     const cJSON *builds = cJSON_GetObjectItemCaseSensitive( root, "builds" );
-    if( !cJSON_IsNumber( schema ) ||
-        (double)OTA_CATALOG_SCHEMA_VERSION != schema->valuedouble || !cJSON_IsArray( builds ) )
+    if( !cJSON_IsNumber( schema ) || (double)OTA_CATALOG_SCHEMA_VERSION != schema->valuedouble ||
+        !cJSON_IsArray( builds ) )
     {
         cJSON_Delete( root );
         return NULL;
