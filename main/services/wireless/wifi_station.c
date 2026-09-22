@@ -240,7 +240,7 @@ wifi_event( void *a_context, esp_event_base_t a_event_base, int32_t a_event_id, 
         const int32_t reason = NULL != event ? (int32_t)event->reason : 0;
 
         portENTER_CRITICAL( &state_lock );
-        if( stopping )
+        if( stopping || !started )
         {
             portEXIT_CRITICAL( &state_lock );
             return;
@@ -578,7 +578,6 @@ esp_err_t rfscout_wifi_station_stop( void )
 
     portENTER_CRITICAL( &state_lock );
     const bool was_started = started;
-    const bool needs_mode_reset = was_started || RFSCOUT_WIFI_STATION_OFF != status.state;
     stopping = true;
     portEXIT_CRITICAL( &state_lock );
 
@@ -603,15 +602,6 @@ esp_err_t rfscout_wifi_station_stop( void )
         wifi_config_t blank = { 0 };
         (void)esp_wifi_set_config( WIFI_IF_STA, &blank );
         memset( &blank, 0, sizeof( blank ) );
-    }
-
-    if( needs_mode_reset )
-    {
-        const esp_err_t mode_result = esp_wifi_set_mode( WIFI_MODE_NULL );
-        if( ESP_OK != mode_result )
-        {
-            ESP_LOGW( TAG, "could not reset stopped Wi-Fi mode: %s", esp_err_to_name( mode_result ) );
-        }
     }
 
     stop_ntp_sync();
