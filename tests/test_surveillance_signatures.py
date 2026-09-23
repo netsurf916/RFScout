@@ -1,5 +1,7 @@
 import csv
 import pathlib
+import subprocess
+import sys
 import unittest
 
 
@@ -55,6 +57,23 @@ class SurveillanceSignatureDataTests(unittest.TestCase):
                 "3500": 1,
             },
         )
+
+    def test_generated_tables_are_current(self):
+        generated = ROOT / "main" / "services" / "wireless" / "surveillance_signatures.inc"
+        report = ROOT / "data" / "surveillance_oui_validation.csv"
+        before_generated = generated.read_bytes()
+        before_report = report.read_bytes()
+
+        subprocess.run(
+            [sys.executable, str(ROOT / "tools" / "update_surveillance.py")],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(generated.read_bytes(), before_generated)
+        self.assertEqual(report.read_bytes(), before_report)
 
     def test_product_specific_non_oui_signals_live_in_database(self):
         signals = {
