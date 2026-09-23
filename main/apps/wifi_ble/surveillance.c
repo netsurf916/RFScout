@@ -49,38 +49,39 @@ static uint8_t threshold_score( void )
 
 static void evaluate_case( rf_device_t *a_case )
 {
+    uint16_t scores[ RFSCOUT_SURVEILLANCE_SIGNATURE_COUNT ] = { 0 };
+    uint8_t sources[ RFSCOUT_SURVEILLANCE_SIGNATURE_COUNT ] = { 0 };
+    surveillance_class_t classifications[ RFSCOUT_SURVEILLANCE_SIGNATURE_COUNT ] = { 0 };
+
+    const size_t fact_count = surveillance_database_fact_count();
+    for( size_t i = 0U; i < fact_count; ++i )
+    {
+        if( 0U == ( a_case->surveillance_evidence_bits[ i / 32U ] &
+                    ( UINT32_C( 1 ) << ( i % 32U ) ) ) )
+        {
+            continue;
+        }
+
+        const surveillance_fact_t *fact = surveillance_database_fact( (uint16_t)( i + 1U ) );
+        if( ( NULL == fact ) || ( 0U == fact->signature ) ||
+            ( fact->signature >= RFSCOUT_SURVEILLANCE_SIGNATURE_COUNT ) )
+        {
+            continue;
+        }
+
+        scores[ fact->signature ] += fact->weight;
+        sources[ fact->signature ] |= evidence_source( fact->signal );
+        classifications[ fact->signature ] = fact->classification;
+    }
+
     uint8_t best_score = 0U;
     uint8_t best_sources = 0U;
     surveillance_class_t best_classification = SURVEILLANCE_NONE;
     surveillance_signature_id_t best_signature = SURVEILLANCE_SIGNATURE_NONE;
     const size_t signature_count = surveillance_database_signature_count();
-
     for( size_t signature = 1U; signature < signature_count; ++signature )
     {
-        uint16_t score = 0U;
-        uint8_t sources = 0U;
-        surveillance_class_t classification = SURVEILLANCE_NONE;
-
-        const size_t evidence_count = surveillance_database_fact_count();
-        for( size_t i = 0U; i < evidence_count; ++i )
-        {
-            if( 0U == ( a_case->surveillance_evidence_bits[ i / 32U ] &
-                        ( UINT32_C( 1 ) << ( i % 32U ) ) ) )
-            {
-                continue;
-            }
-
-            const surveillance_fact_t *fact = surveillance_database_fact( (uint16_t)( i + 1U ) );
-            if( ( NULL == fact ) || ( fact->signature != signature ) )
-            {
-                continue;
-            }
-
-            score += fact->weight;
-            sources |= evidence_source( fact->signal );
-            classification = fact->classification;
-        }
-
+        uint16_t score = scores[ signature ];
         if( score > UINT8_MAX )
         {
             score = UINT8_MAX;
@@ -88,8 +89,8 @@ static void evaluate_case( rf_device_t *a_case )
         if( (uint8_t)score > best_score )
         {
             best_score = (uint8_t)score;
-            best_sources = sources;
-            best_classification = classification;
+            best_sources = sources[ signature ];
+            best_classification = classifications[ signature ];
             best_signature = (surveillance_signature_id_t)signature;
         }
     }
@@ -121,12 +122,19 @@ void surveillance_case_observe( rf_device_t *a_case, const rf_device_t *a_observ
         return;
     }
 
+    bool evidence_changed = false;
     for( size_t i = 0U; i < RFSCOUT_SURVEILLANCE_EVIDENCE_WORD_COUNT; ++i )
     {
-        a_case->surveillance_evidence_bits[ i ] |= a_observation->surveillance_evidence_bits[ i ];
+        const uint32_t merged =
+            a_case->surveillance_evidence_bits[ i ] | a_observation->surveillance_evidence_bits[ i ];
+        evidence_changed |= merged != a_case->surveillance_evidence_bits[ i ];
+        a_case->surveillance_evidence_bits[ i ] = merged;
     }
 
-    evaluate_case( a_case );
+    if( evidence_changed )
+    {
+        evaluate_case( a_case );
+    }
 }
 
 size_t surveillance_evidence_count( const rf_device_t *a_case )

@@ -161,6 +161,7 @@ def main() -> None:
         "#pragma once",
         "",
         f"#define RFSCOUT_SURVEILLANCE_EVIDENCE_WORD_COUNT {evidence_words}U",
+            f"#define RFSCOUT_SURVEILLANCE_SIGNATURE_COUNT {len(signatures) + 1}U",
         "",
     ]
     GENERATED_HEADER.write_text("\n".join(generated_header), encoding="utf-8")
