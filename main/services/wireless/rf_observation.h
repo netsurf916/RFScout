@@ -73,6 +73,7 @@ typedef struct
     uint32_t ble_last_seen_ms;
     surveillance_class_t surveillance;
     surveillance_signature_id_t surveillance_signature;
+    surveillance_signature_id_t surveillance_case_signature;
     uint8_t surveillance_evidence;
     uint8_t surveillance_score;
     uint8_t surveillance_evidence_count;
