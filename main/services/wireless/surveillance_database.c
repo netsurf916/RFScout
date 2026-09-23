@@ -100,8 +100,8 @@ void surveillance_database_match_observation( rf_device_t *a_observation )
                 matched = prefix == (uint32_t)fact->numeric_value;
                 break;
             case SURVEILLANCE_SIGNAL_NAME_CONTAINS:
-                matched = a_observation->has_name &&
-                          contains_ci( a_observation->name, fact->text_value );
+                matched =
+                    a_observation->has_name && contains_ci( a_observation->name, fact->text_value );
                 break;
             case SURVEILLANCE_SIGNAL_NAME_PREFIX:
                 matched = a_observation->has_name &&

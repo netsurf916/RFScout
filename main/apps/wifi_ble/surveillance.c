@@ -70,9 +70,8 @@ static void evaluate_case( rf_device_t *a_case )
                 continue;
             }
 
-            const surveillance_fact_t *fact =
-                surveillance_database_fact( (uint16_t)( i + 1U ) );
-            if( ( NULL == record ) || ( fact->signature != signature ) )
+            const surveillance_fact_t *fact = surveillance_database_fact( (uint16_t)( i + 1U ) );
+            if( ( NULL == fact ) || ( fact->signature != signature ) )
             {
                 continue;
             }
