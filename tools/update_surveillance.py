@@ -114,7 +114,7 @@ def main() -> None:
         '    { SURVEILLANCE_NONE, "" },',
     ]
     for (kind, brand), _signature in signatures.items():
-        lines.append(f"    {{ {CLASS_MAP[kind]}, {c_string(brand)} }},")
+        lines.append(f"    {{ {CLASS_MAP[kind]}, {c_string(kind + '/' + brand)} }},")
     lines += [
         "};",
         "#define SURVEILLANCE_SIGNATURE_COUNT \",
