@@ -70,6 +70,22 @@ The threshold contract is:
 
 Detection rules may assign different strengths to the same evidence source. For example, one known proprietary service UUID may be only possible evidence, while a validated combination of multiple services may be probable or distinctive. Conversely, a generic standard service UUID should not become surveillance evidence merely because the Possible threshold accepts weaker researched associations.
 
+## Raven acoustic-sensor evidence
+
+The current Raven rule is based on exact advertised 16-bit BLE service UUIDs `0x3100`, `0x3200`, `0x3300`, `0x3400`, and `0x3500`. RFScout does **not** treat the entire `0x3100-0x3500` numeric interval as Raven evidence.
+
+Research provenance and current interpretation:
+
+- GainSec independently examined an owned Flock Safety Raven v1.2 and documented an ESP32-WROOM-32D main controller. Community detector projects attribute the proprietary Raven service dataset to GainSec captures spanning firmware generations 1.1.7, 1.2.0, and 1.3.1.
+- Multiple independent implementations reproduce the same five exact proprietary services for later Raven firmware. This is useful corroboration, but many implementations share the same upstream dataset and therefore are not fully independent observations.
+- Community datasets also report legacy Raven 1.1.x advertisements using standard BLE services `0x1809` (Health Thermometer) and `0x1819` (Location and Navigation), usually alongside `0x180A` (Device Information). These standard services are not Raven-specific and must not be classified as Raven on their own.
+- Reports assigning semantic names such as GPS, power, network status, upload statistics, and diagnostics to `0x3100-0x3500` are secondary interpretations unless independently verified against the Raven firmware or GATT behavior. RFScout should not depend on those labels for detection.
+- Broad matching of arbitrary UUIDs numerically between `0x3100` and `0x3500` has produced field false positives in another detector. Exact UUID matching is therefore an explicit false-positive boundary.
+
+Current production logic requires at least two of the five exact proprietary UUIDs and treats that combination as **Distinctive** Raven evidence. That rule remains intentionally conservative while the research pass determines whether a single exact proprietary UUID should be Possible or Probable evidence and whether particular multi-service combinations justify Distinctive strength.
+
+Legacy `0x1809` / `0x1819` support is not enabled yet. If added, it should require corroborating Raven/Flock-specific evidence or a validated service combination rather than treating either standard UUID as independently identifying.
+
 ## Notifications
 
 Ordinary Wi-Fi/BLE discovery feedback can be enabled independently from surveillance alerts. Surveillance notifications use semantic categories such as ALPR, body camera, drone, camera, smart glasses, and acoustic sensor where supported by the current signature table.
