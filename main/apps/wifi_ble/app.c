@@ -10,7 +10,9 @@
 #include "ble_monitor.h"
 #include "device_config.h"
 #include "event.h"
+#include "notification.h"
 #include "notification_preferences.h"
+#include "platform.h"
 #include "observation_store.h"
 #include "radio_monitor.h"
 #include "ui.h"
@@ -151,7 +153,22 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
                                                        (unsigned)RFSCOUT_EVIDENCE_STRENGTH_COUNT );
             if( ESP_OK == device_config_set_evidence_threshold( threshold ) )
             {
-                observation_store_reevaluate_surveillance();
+                size_t newly_qualified[ SURVEILLANCE_OTHER + 1U ] = { 0 };
+                observation_store_reevaluate_surveillance(
+                    newly_qualified, sizeof( newly_qualified ) / sizeof( newly_qualified[ 0 ] ) );
+                for( size_t classification = (size_t)SURVEILLANCE_ALPR;
+                     classification <= (size_t)SURVEILLANCE_OTHER;
+                     ++classification )
+                {
+                    const rfscout_notification_type_t notification = notification_for_surveillance(
+                        (surveillance_class_t)classification );
+                    for( size_t count = 0U; count < newly_qualified[ classification ]; ++count )
+                    {
+                        platform_set_alert_led( true );
+                        (void)notification_emit( notification );
+                        platform_set_alert_led( false );
+                    }
+                }
                 render_menu();
                 emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
             }

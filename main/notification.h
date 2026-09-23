@@ -11,6 +11,7 @@
 #define _RFSCOUT_NOTIFICATION_H_
 
 #include "app_descriptor.h"
+#include "rf_observation.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -53,6 +54,9 @@ const char *notification_name( rfscout_notification_type_t a_type );
 const char *notification_config_key( rfscout_notification_type_t a_type );
 rfscout_app_id_t notification_app( rfscout_notification_type_t a_type );
 char notification_default_character( rfscout_notification_type_t a_type );
+
+/** @brief Map a surveillance classification to its semantic notification category. */
+rfscout_notification_type_t notification_for_surveillance( surveillance_class_t a_classification );
 
 /** @brief Return the number of semantic notification categories owned by one application. */
 size_t notification_count_for_app( rfscout_app_id_t a_app );

@@ -681,18 +681,40 @@ bool observation_store_observe( rf_device_t *a_observation,
     return true;
 }
 
-void observation_store_reevaluate_surveillance( void )
+void observation_store_reevaluate_surveillance( size_t *a_newly_qualified,
+                                                size_t a_count_capacity )
 {
     if( NULL == store_lock )
     {
         return;
     }
 
+    if( NULL != a_newly_qualified )
+    {
+        memset( a_newly_qualified, 0, a_count_capacity * sizeof( *a_newly_qualified ) );
+    }
+
     xSemaphoreTake( store_lock, portMAX_DELAY );
     synchronize_session_store();
     for( size_t i = 0U; i < device_count; ++i )
     {
-        surveillance_case_evaluate( &devices[ i ] );
+        rf_device_t *device = &devices[ i ];
+        const bool was_surveillance = SURVEILLANCE_NONE != device->surveillance;
+        surveillance_case_evaluate( device );
+        const bool became_surveillance =
+            !was_surveillance && ( SURVEILLANCE_NONE != device->surveillance ) &&
+            ( SURVEILLANCE_SIGNATURE_NONE != device->surveillance_signature );
+        if( !became_surveillance )
+        {
+            continue;
+        }
+
+        emit_event( OBSERVATION_STORE_EVENT_SURVEILLANCE_CHANGED, device );
+        if( ( NULL != a_newly_qualified ) &&
+            ( (size_t)device->surveillance < a_count_capacity ) )
+        {
+            ++a_newly_qualified[ device->surveillance ];
+        }
     }
     xSemaphoreGive( store_lock );
 }

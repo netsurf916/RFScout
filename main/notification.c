@@ -119,6 +119,29 @@ char notification_default_character( rfscout_notification_type_t a_type )
     return ( NULL != descriptor ) ? descriptor->default_character : NOTIFICATION_DEFAULT_CHARACTER;
 }
 
+rfscout_notification_type_t notification_for_surveillance( surveillance_class_t a_classification )
+{
+    switch( a_classification )
+    {
+        case SURVEILLANCE_ALPR:
+            return RFSCOUT_NOTIFICATION_ALPR;
+        case SURVEILLANCE_BODY_CAMERA:
+            return RFSCOUT_NOTIFICATION_BODY_CAMERA;
+        case SURVEILLANCE_DRONE:
+            return RFSCOUT_NOTIFICATION_DRONE;
+        case SURVEILLANCE_CAMERA:
+            return RFSCOUT_NOTIFICATION_CAMERA;
+        case SURVEILLANCE_SMART_GLASSES:
+            return RFSCOUT_NOTIFICATION_SMART_GLASSES;
+        case SURVEILLANCE_AUDIO:
+            return RFSCOUT_NOTIFICATION_ACOUSTIC_SENSOR;
+        case SURVEILLANCE_OTHER:
+        case SURVEILLANCE_NONE:
+        default:
+            return RFSCOUT_NOTIFICATION_SURVEILLANCE_OTHER;
+    }
+}
+
 size_t notification_count_for_app( rfscout_app_id_t a_app )
 {
     size_t count = 0U;

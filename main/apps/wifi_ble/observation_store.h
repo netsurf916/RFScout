@@ -74,8 +74,13 @@ bool observation_store_observe( rf_device_t *a_observation,
                                 bool *a_is_new,
                                 bool *a_surveillance_new );
 
-/** @brief Reevaluate surveillance classification for all active cases after a setting change. */
-void observation_store_reevaluate_surveillance( void );
+/**
+ * @brief Reevaluate surveillance classification for all active cases after a setting change.
+ * @param a_newly_qualified Optional per-classification counts for cases that newly qualify.
+ * @param a_count_capacity Number of entries available in a_newly_qualified.
+ */
+void observation_store_reevaluate_surveillance( size_t *a_newly_qualified,
+                                                size_t a_count_capacity );
 
 /** @brief Clear all live observations while retaining any current app-owned capacity. */
 void observation_store_reset( void );

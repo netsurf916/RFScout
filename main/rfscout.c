@@ -74,30 +74,6 @@ static void log_running_image_hash( void )
     memset( digest_hex, 0, sizeof( digest_hex ) );
 }
 
-static rfscout_notification_type_t
-notification_for_surveillance( surveillance_class_t a_classification )
-{
-    switch( a_classification )
-    {
-        case SURVEILLANCE_ALPR:
-            return RFSCOUT_NOTIFICATION_ALPR;
-        case SURVEILLANCE_BODY_CAMERA:
-            return RFSCOUT_NOTIFICATION_BODY_CAMERA;
-        case SURVEILLANCE_DRONE:
-            return RFSCOUT_NOTIFICATION_DRONE;
-        case SURVEILLANCE_CAMERA:
-            return RFSCOUT_NOTIFICATION_CAMERA;
-        case SURVEILLANCE_SMART_GLASSES:
-            return RFSCOUT_NOTIFICATION_SMART_GLASSES;
-        case SURVEILLANCE_AUDIO:
-            return RFSCOUT_NOTIFICATION_ACOUSTIC_SENSOR;
-        case SURVEILLANCE_OTHER:
-        case SURVEILLANCE_NONE:
-        default:
-            return RFSCOUT_NOTIFICATION_SURVEILLANCE_OTHER;
-    }
-}
-
 static void log_gps_fix( const rfscout_gps_snapshot_t *a_gps, const char *a_fix )
 {
     if( NULL == a_gps )
