@@ -33,6 +33,8 @@ RFScout applications should behave like isolated consumers of a common pool of d
 
 This is resource isolation by lifecycle, not a promise that literally every byte of physical PSRAM is available to an application. Platform, RTOS, display, driver, DMA, and service allocations that must remain resident are excluded from the app-owned pool. Internal SRAM remains reserved for the system, stacks, latency-sensitive state, and allocations constrained by ESP-IDF or peripheral hardware.
 
+Stack safety is part of the v0.4.0 resource contract. Nontrivial or growth-prone structures should be passed by pointer/reference rather than copied or returned by value when practical, especially across lifecycle, logging, collector, and application boundaries. Large retained state belongs in app-owned PSRAM where appropriate; fixed task stacks should not silently absorb structure growth. Ownership and lifetime should remain explicit so avoiding a stack copy does not introduce ambiguous reachability.
+
 ### Workstream A: application-scoped PSRAM memory manager
 
 **Status:** Implemented by PR #63.
@@ -81,6 +83,8 @@ PR #70 moves normal app runtime behavior behind compiled descriptors and removes
 Storage/resource policy distinguishes hard lifecycle dependencies from optional operation-time facilities. Hard services remain descriptor-managed; optional facilities such as removable storage are checked only by the service/operation that explicitly requires them, while internal persistence remains a separate device-owned capability.
 
 Outstanding validation includes rapid app rotation, repeated Home/app cycles, large histories, Recorder recording/save transition vetoes, Audio Spectrum rapid skip-through and no-SD operation, Thermal attach/detach, forced service-quiesce failures, callback/timer races, low-memory behavior, baseline-memory stability, and largest-free-block stability.
+
+Hardware validation should rely on the existing structured RFScout log as the primary evidence source whenever SD logging is available rather than requiring a parallel serial-console transcript. Extend the current logging path to preserve the lifecycle diagnostics already computed by the transition coordinator — sequence, source/destination app, outcome/error, reclaimed bytes, remaining managed allocations, transition duration, free PSRAM, and largest free PSRAM block. Reuse the existing lifecycle diagnostics and JSONL writer rather than creating a second lifecycle-event or logging subsystem. The serial console remains the fallback evidence path when storage is intentionally absent.
 
 ### Workstream C: dynamic WiFi/BLE retention and observation model
 
@@ -317,6 +321,7 @@ v0.4.0 is not complete until:
 - [x] Audio Spectrum can be skipped before delayed activation without acquiring the microphone.
 - [x] Audio Spectrum runs without SD storage while Recorder is unavailable when its storage dependency is absent.
 - [ ] Audio Spectrum repeatedly enters/exits without leaking shared audio/service state.
+- [ ] Structured lifecycle-transition records provide enough SD-log evidence to validate outcome/error, reclaimed bytes, zero remaining app allocations, transition timing, free PSRAM, and largest free block without requiring a parallel serial-console capture.
 - [ ] Largest free block remains stable enough to rule out systematic fragmentation/leak growth.
 - [ ] WiFi/BLE Instant, finite timed, and Never behavior is verified, including full reclamation on exit and memory-pressure paths.
 - [ ] Wi-Fi primary device counts are not inflated one-for-one by rotating randomized Probe Request MACs.
