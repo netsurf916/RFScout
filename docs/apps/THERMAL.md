@@ -8,6 +8,10 @@ The application uses hot-plug probing for an MLX90640 at I2C address `0x33` on t
 
 Loss/read failure marks the application unavailable and returns to Home through the normal app framework.
 
+Thermal has **no SD-storage dependency**. Its availability is determined by the MLX90640/I2C path, so the app is expected to remain navigable with or without an SD card when the sensor is healthy. This has been verified on the target hardware.
+
+When SD logging is mounted, the generic app logger can record Thermal lifecycle/telemetry. With the SD card absent there is intentionally no SD log, so console diagnostics or direct on-device observation must be used for that validation.
+
 ## Sensor and display
 
 The MLX90640 native sensor resolution is **32x24**.
