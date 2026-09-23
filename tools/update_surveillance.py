@@ -117,7 +117,7 @@ def main() -> None:
         lines.append(f"    {{ {CLASS_MAP[kind]}, {c_string(kind + '/' + brand)} }},")
     lines += [
         "};",
-        "#define SURVEILLANCE_SIGNATURE_COUNT \\\\",
+        "#define SURVEILLANCE_SIGNATURE_COUNT \\",
         "    ( sizeof( surveillance_signature_info ) / sizeof( surveillance_signature_info[ 0 ] ) )",
         "",
         "static const surveillance_evidence_record_t surveillance_evidence_records[] =",
@@ -148,7 +148,7 @@ def main() -> None:
         )
     lines += [
         "};",
-        "#define SURVEILLANCE_EVIDENCE_RECORD_COUNT \\\\",
+        "#define SURVEILLANCE_EVIDENCE_RECORD_COUNT \\",
         "    ( sizeof( surveillance_evidence_records ) / sizeof( surveillance_evidence_records[ 0 ] ) )",
         "",
     ]
