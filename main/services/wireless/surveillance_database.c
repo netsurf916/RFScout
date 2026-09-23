@@ -75,8 +75,7 @@ static void add_evidence_id( rf_device_t *a_observation, uint16_t a_record_id )
     }
 
     const size_t bit = (size_t)a_record_id - 1U;
-    a_observation->surveillance_evidence_bits[ bit / 32U ] |=
-        UINT32_C( 1 ) << ( bit % 32U );
+    a_observation->surveillance_evidence_bits[ bit / 32U ] |= UINT32_C( 1 ) << ( bit % 32U );
 }
 
 void surveillance_database_match_observation( rf_device_t *a_observation )

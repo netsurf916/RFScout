@@ -802,8 +802,7 @@ size_t observation_store_active_surveillance( observation_surveillance_signature
 
         size_t position = 0U;
         const size_t used = ( group_count - 1U < a_capacity ) ? group_count - 1U : a_capacity;
-        while( ( position < used ) &&
-               ( a_rows[ position ].last_seen_ms >= group.last_seen_ms ) )
+        while( ( position < used ) && ( a_rows[ position ].last_seen_ms >= group.last_seen_ms ) )
         {
             ++position;
         }
