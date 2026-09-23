@@ -133,9 +133,18 @@ def main() -> None:
         "remote_id": "SURVEILLANCE_SIGNAL_REMOTE_ID",
     }
     for record_id, kind, _brand, signature, signal, value, weight, _evidence in rows:
+        if signal in {"name_contains", "name_prefix"}:
+            text = c_string(value)
+            numeric = "0U"
+        elif signal == "remote_id":
+            text = "NULL"
+            numeric = f"{int(value)}U"
+        else:
+            text = "NULL"
+            numeric = f"UINT64_C( 0x{value} )" if len(value) <= 16 else "0U"
         lines.append(
             f"    {{ {record_id}U, {signature}U, {CLASS_MAP[kind]}, "
-            f"{signal_map[signal]}, {weight}U, {c_string(value)} }},"
+            f"{signal_map[signal]}, {weight}U, {numeric}, {text} }},"
         )
     lines += [
         "};",
