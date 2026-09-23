@@ -248,9 +248,9 @@ static bool open_segment( void )
         const esp_app_desc_t *app = esp_app_get_description();
         const int version_length =
             fprintf( active_file,
-                     "{\\\"type\\\":\\\"version\\\",\\\"version\\\":\\\"%s\\\","
-                     "\\\"project\\\":\\\"%s\\\",\\\"idf\\\":\\\"%s\\\","
-                     "\\\"build_date\\\":\\\"%s\\\",\\\"build_time\\\":\\\"%s\\\"}\\n",
+                     "{\"type\":\"version\",\"version\":\"%s\","
+                     "\"project\":\"%s\",\"idf\":\"%s\","
+                     "\"build_date\":\"%s\",\"build_time\":\"%s\"}\n",
                      app->version,
                      app->project_name,
                      app->idf_ver,
@@ -407,12 +407,12 @@ static bool append_json_string( rfscout_log_record_t *a_record, const char *a_va
         size_t length;
         if( '"' == value )
         {
-            text = "\\\"";
+            text = "\"";
             length = 2U;
         }
         else if( '\\' == value )
         {
-            text = "\\\\";
+            text = "\\";
             length = 2U;
         }
         else if( '\b' == value )
