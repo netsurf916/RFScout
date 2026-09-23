@@ -4,7 +4,7 @@ Recorder is RFScout's SD-backed microphone recording and playback application. S
 
 ## Availability
 
-Recorder uses the board-neutral `audio_capture` service plus removable SD storage. It is hot-plug/dependency probed: the app becomes unavailable when required storage or microphone access is unavailable.
+Recorder uses the board-neutral `audio_capture` service plus removable SD storage. Availability is dependency-probed: the app becomes unavailable when required storage or microphone access is unavailable. Runtime SD removal can be detected and latched unavailable when a storage health probe observes media loss, but hot insertion/remount is not currently supported.
 
 The current T-Embed profile supplies a PDM microphone through the shared audio-capture provider. Recorder never receives a raw I2S handle.
 
