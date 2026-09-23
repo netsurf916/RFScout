@@ -118,6 +118,7 @@ idf_component_register(
         "services/wireless/wifi_station.c"
         "services/wireless/ble_monitor.c"
         "services/wireless/oui_database.c"
+        "services/wireless/surveillance_database.c"
         "services/radio/cc1101.c"
         "services/radio/nrf24.c"
         "services/audio/audio_output.c"
