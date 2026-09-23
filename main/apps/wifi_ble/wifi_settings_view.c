@@ -23,8 +23,12 @@ void wifi_settings_view_render( unsigned a_selected,
                                 uint16_t a_wifi_timeout_seconds,
                                 uint16_t a_ble_timeout_seconds )
 {
-    static const char *labels[ WIFI_SETTINGS_ITEM_COUNT ] = {
-        "BACK", "RESET DETECTIONS", "NOTIFICATIONS", "EVIDENCE THRESH", "WIFI TIMEOUT", "BT TIMEOUT" };
+    static const char *labels[ WIFI_SETTINGS_ITEM_COUNT ] = { "BACK",
+                                                              "RESET DETECTIONS",
+                                                              "NOTIFICATIONS",
+                                                              "EVIDENCE THRESH",
+                                                              "WIFI TIMEOUT",
+                                                              "BT TIMEOUT" };
     const ui_theme_palette_t *theme = ui_theme_get();
 
     display_clear( theme->background );
@@ -59,9 +63,8 @@ void wifi_settings_view_render( unsigned a_selected,
             snprintf( value,
                       sizeof( value ),
                       "%s",
-                      ( a_threshold < RFSCOUT_EVIDENCE_STRENGTH_COUNT )
-                          ? names[ a_threshold ]
-                          : "POSSIBLE" );
+                      ( a_threshold < RFSCOUT_EVIDENCE_STRENGTH_COUNT ) ? names[ a_threshold ]
+                                                                        : "POSSIBLE" );
         }
         else if( 4U == item )
         {
