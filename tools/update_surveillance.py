@@ -133,7 +133,7 @@ def main() -> None:
         "remote_id": "SURVEILLANCE_SIGNAL_REMOTE_ID",
     }
     for record_id, kind, _brand, signature, signal, value, weight, _evidence in rows:
-        if signal in {"name_contains", "name_prefix"}:
+        if signal in {"name_contains", "name_prefix", "service_uuid128"}:
             text = c_string(value)
             numeric = "0U"
         elif signal == "remote_id":
