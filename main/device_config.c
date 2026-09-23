@@ -80,41 +80,41 @@ static bool app_from_config_name( const char *a_name, rfscout_app_id_t *a_app )
 }
 
 static const char *
-surveillance_sensitivity_config_name( rfscout_surveillance_sensitivity_t a_sensitivity )
+evidence_threshold_config_name( rfscout_evidence_strength_t a_threshold )
 {
-    switch( a_sensitivity )
+    switch( a_threshold )
     {
-        case RFSCOUT_SURVEILLANCE_SENSITIVITY_MEDIUM:
-            return "medium";
-        case RFSCOUT_SURVEILLANCE_SENSITIVITY_LOW:
-            return "low";
-        case RFSCOUT_SURVEILLANCE_SENSITIVITY_HIGH:
+        case RFSCOUT_EVIDENCE_STRENGTH_PROBABLE:
+            return "probable";
+        case RFSCOUT_EVIDENCE_STRENGTH_DISTINCTIVE:
+            return "distinctive";
+        case RFSCOUT_EVIDENCE_STRENGTH_POSSIBLE:
         default:
-            return "high";
+            return "possible";
     }
 }
 
 static bool
-surveillance_sensitivity_from_config_name( const char *a_name,
-                                           rfscout_surveillance_sensitivity_t *a_sensitivity )
+evidence_threshold_from_config_name( const char *a_name,
+                                           rfscout_evidence_strength_t *a_threshold )
 {
-    if( NULL == a_name || NULL == a_sensitivity )
+    if( NULL == a_name || NULL == a_threshold )
     {
         return false;
     }
-    if( 0 == strcasecmp( a_name, "high" ) )
+    if( 0 == strcasecmp( a_name, "possible" ) )
     {
-        *a_sensitivity = RFSCOUT_SURVEILLANCE_SENSITIVITY_HIGH;
+        *a_threshold = RFSCOUT_EVIDENCE_STRENGTH_POSSIBLE;
         return true;
     }
-    if( 0 == strcasecmp( a_name, "medium" ) )
+    if( 0 == strcasecmp( a_name, "probable" ) )
     {
-        *a_sensitivity = RFSCOUT_SURVEILLANCE_SENSITIVITY_MEDIUM;
+        *a_threshold = RFSCOUT_EVIDENCE_STRENGTH_PROBABLE;
         return true;
     }
-    if( 0 == strcasecmp( a_name, "low" ) )
+    if( 0 == strcasecmp( a_name, "distinctive" ) )
     {
-        *a_sensitivity = RFSCOUT_SURVEILLANCE_SENSITIVITY_LOW;
+        *a_threshold = RFSCOUT_EVIDENCE_STRENGTH_DISTINCTIVE;
         return true;
     }
     return false;
@@ -215,7 +215,7 @@ static void set_defaults( void )
     config.ble_device_feedback_enabled = true;
     config.wifi_timeout_seconds = RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS;
     config.ble_timeout_seconds = RFSCOUT_OBSERVATION_TIMEOUT_DEFAULT_SECONDS;
-    config.surveillance_sensitivity = RFSCOUT_SURVEILLANCE_SENSITIVITY_HIGH;
+    config.evidence_threshold = RFSCOUT_EVIDENCE_STRENGTH_POSSIBLE;
 
     for( size_t index = 0U; index < RFSCOUT_APP_COUNT; ++index )
     {
@@ -605,13 +605,13 @@ static void load_app_record( rfscout_app_id_t a_app, const cJSON *a_root )
                 json_timeout_seconds( retention, "bluetooth_seconds", config.ble_timeout_seconds );
         }
         const cJSON *sensitivity =
-            cJSON_GetObjectItemCaseSensitive( a_root, "surveillance_sensitivity" );
+            cJSON_GetObjectItemCaseSensitive( a_root, "evidence_threshold" );
         if( cJSON_IsString( sensitivity ) && NULL != sensitivity->valuestring )
         {
-            rfscout_surveillance_sensitivity_t parsed;
-            if( surveillance_sensitivity_from_config_name( sensitivity->valuestring, &parsed ) )
+            rfscout_evidence_strength_t parsed;
+            if( evidence_threshold_from_config_name( sensitivity->valuestring, &parsed ) )
             {
-                config.surveillance_sensitivity = parsed;
+                config.evidence_threshold = parsed;
             }
         }
     }
@@ -798,12 +798,12 @@ static cJSON *build_app_record( rfscout_app_id_t a_app )
                     retention, "bluetooth_seconds", config.ble_timeout_seconds );
             }
         }
-        if( RFSCOUT_SURVEILLANCE_SENSITIVITY_HIGH != config.surveillance_sensitivity )
+        if( RFSCOUT_EVIDENCE_STRENGTH_POSSIBLE != config.evidence_threshold )
         {
             cJSON_AddStringToObject(
                 root,
-                "surveillance_sensitivity",
-                surveillance_sensitivity_config_name( config.surveillance_sensitivity ) );
+                "evidence_threshold",
+                evidence_threshold_config_name( config.evidence_threshold ) );
         }
     }
     else if( RFSCOUT_APP_AUDIO == a_app &&
@@ -1158,23 +1158,23 @@ esp_err_t device_config_set_ble_timeout_seconds( uint16_t a_seconds )
     return ESP_OK;
 }
 
-rfscout_surveillance_sensitivity_t device_config_surveillance_sensitivity( void )
+rfscout_evidence_strength_t device_config_evidence_threshold( void )
 {
-    return config.surveillance_sensitivity < RFSCOUT_SURVEILLANCE_SENSITIVITY_COUNT
-               ? config.surveillance_sensitivity
-               : RFSCOUT_SURVEILLANCE_SENSITIVITY_HIGH;
+    return config.evidence_threshold < RFSCOUT_EVIDENCE_STRENGTH_COUNT
+               ? config.evidence_threshold
+               : RFSCOUT_EVIDENCE_STRENGTH_POSSIBLE;
 }
 
 esp_err_t
-device_config_set_surveillance_sensitivity( rfscout_surveillance_sensitivity_t a_sensitivity )
+device_config_set_evidence_threshold( rfscout_evidence_strength_t a_threshold )
 {
-    if( a_sensitivity >= RFSCOUT_SURVEILLANCE_SENSITIVITY_COUNT )
+    if( a_threshold >= RFSCOUT_EVIDENCE_STRENGTH_COUNT )
     {
         return ESP_ERR_INVALID_ARG;
     }
-    if( config.surveillance_sensitivity != a_sensitivity )
+    if( config.evidence_threshold != a_threshold )
     {
-        config.surveillance_sensitivity = a_sensitivity;
+        config.evidence_threshold = a_threshold;
         config_dirty = true;
     }
     return ESP_OK;
