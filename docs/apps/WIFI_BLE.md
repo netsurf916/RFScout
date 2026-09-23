@@ -56,13 +56,17 @@ CID is not used for ordinary vendor attribution because CID assignments are not 
 
 The classifier combines prefix evidence with independent signals such as advertised BLE names, manufacturer/company identifiers, service UUID patterns, Remote ID evidence, and supported protocol evidence.
 
-Sensitivity selects the minimum evidence strength for a single observation:
+Sensitivity selects the minimum evidence strength for a single observation. Evidence source and evidence strength are separate concepts: the evidence bitmask records what was observed (for example name, curated prefix/OUI, company identifier, service UUID, or protocol evidence), while strength expresses how specifically that observation supports a surveillance signature.
 
-- **High** — most permissive of the three current evidence thresholds and the compiled default;
-- **Medium** — requires stronger prefix/OUI or equivalent evidence;
-- **Low** — requires the most distinctive company/service/protocol evidence.
+The intended sensitivity contract is:
 
-Repeated observations refresh active presence; they do not accumulate a numeric confidence score. An active record keeps its first qualifying surveillance signature until expiry.
+- **High** — accepts **possible** evidence. Detection recall is favored and false positives are explicitly possible; researched signals should still have a reasonable basis for association rather than being generic radio activity.
+- **Medium** — accepts **probable** evidence. A surfaced detection should have strong product/family association and false positives should be unlikely.
+- **Low** — accepts only **distinctive** evidence. A surfaced detection should rely on evidence intended to be uniquely identifying under the supported passive-observation model.
+
+These labels describe evidence quality rather than a numeric probability calculation. RFScout does not accumulate repeated weak observations into confidence: repeated observations refresh active presence, while a candidate retains the strongest qualifying evidence observed for that signature. An active record keeps its first qualifying surveillance signature until expiry.
+
+Detection rules may assign different strengths to the same evidence source. For example, one known proprietary service UUID may be only possible evidence, while a validated combination of multiple services may be probable or distinctive. Conversely, a generic standard service UUID should not become surveillance evidence merely because High sensitivity permits possible matches.
 
 ## Notifications
 
