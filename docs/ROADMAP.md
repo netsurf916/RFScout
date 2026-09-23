@@ -8,7 +8,7 @@ Statuses describe implementation state, not release state. Git history and pull 
 
 **Status:** In progress
 
-v0.4.0 is a resource-management, lifecycle-stability, and application-quality release. The release should make application switching deterministic, allow data-heavy applications to use PSRAM opportunistically instead of being constrained by arbitrary fixed-capacity buffers, and improve each current application on top of that lifecycle model.
+v0.4.0 is a resource-management, lifecycle-stability, and WiFi/BLE observation-quality release. The release should make application switching deterministic, allow data-heavy applications to use PSRAM opportunistically instead of being constrained by arbitrary fixed-capacity buffers, and complete the current WiFi/BLE observation and surveillance-quality work on top of that lifecycle model. Broader feature-improvement passes across every application are intentionally outside the v0.4.0 release scope.
 
 Several foundations originally planned for v0.4.0 are already present on `main` and were included in the published v0.3.2 firmware. Git history is authoritative for those implementation boundaries:
 
@@ -195,9 +195,9 @@ For each signature/category, record the evidence source, provenance, expected un
 - [ ] Prove both collectors stop before all app-owned observation/identity memory is released.
 - [ ] Perform repeated enter/exit, large-growth, low-memory, and collector/reclamation race testing on hardware.
 
-### Workstream D: application-by-application improvement pass
+### Future application-by-application improvement backlog
 
-Every current application receives an explicit v0.4.0 review rather than treating the memory manager as an isolated infrastructure change.
+The following app-specific improvements remain useful roadmap work, but they are **not v0.4.0 release blockers** and v0.4.0 no longer includes a requirement to improve every current application.
 
 #### Home / Device Settings
 
@@ -292,7 +292,9 @@ Remaining work:
 - [ ] Validate protective power overlays retain priority.
 - [ ] Validate rapid event bursts overwrite history safely without creating an audible backlog.
 
-### Cross-application consistency and audio controls
+### Future cross-application consistency and audio controls
+
+These consistency improvements remain desirable follow-up work rather than v0.4.0 release scope.
 
 - [ ] Apply semantic menu behavior consistently across all applications.
 - [ ] Audit labels for consistent `volume`, `level`, and `gain` semantics.
