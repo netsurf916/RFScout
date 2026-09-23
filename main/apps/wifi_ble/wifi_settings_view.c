@@ -23,16 +23,16 @@ void wifi_settings_view_render( unsigned a_selected,
                                 uint16_t a_wifi_timeout_seconds,
                                 uint16_t a_ble_timeout_seconds )
 {
-    static const char *labels[ WIFI_SETTINGS_ITEM_COUNT ] = { "BACK",
-                                                              "RESET DETECTIONS",
-                                                              "NOTIFICATIONS",
-                                                              "EVIDENCE THRESH",
-                                                              "WIFI TIMEOUT",
-                                                              "BT TIMEOUT" };
+    static const char *labels[ WIFI_SETTINGS_ITEM_COUNT ] = { "Back",
+                                                              "Reset detections",
+                                                              "Notifications",
+                                                              "Evidence threshold",
+                                                              "WiFi timeout",
+                                                              "BLE timeout" };
     const ui_theme_palette_t *theme = ui_theme_get();
 
     display_clear( theme->background );
-    ui_chrome_draw( "WIFI / BT SETTINGS", theme->secondary );
+    ui_chrome_draw( "WiFi / BLE settings", theme->secondary );
 
     for( unsigned item = 0U; item < WIFI_SETTINGS_ITEM_COUNT; ++item )
     {
@@ -51,20 +51,20 @@ void wifi_settings_view_render( unsigned a_selected,
         value[ 0 ] = '\0';
         if( 2U == item )
         {
-            snprintf( value, sizeof( value ), "%s", a_notifications_enabled ? "ON" : "OFF" );
+            snprintf( value, sizeof( value ), "%s", a_notifications_enabled ? "On" : "Off" );
         }
         else if( 3U == item )
         {
             static const char *names[ RFSCOUT_EVIDENCE_STRENGTH_COUNT ] = {
-                [RFSCOUT_EVIDENCE_STRENGTH_POSSIBLE] = "POSSIBLE",
-                [RFSCOUT_EVIDENCE_STRENGTH_PROBABLE] = "PROBABLE",
-                [RFSCOUT_EVIDENCE_STRENGTH_DISTINCTIVE] = "DISTINCTIVE",
+                [RFSCOUT_EVIDENCE_STRENGTH_POSSIBLE] = "Possible",
+                [RFSCOUT_EVIDENCE_STRENGTH_PROBABLE] = "Probable",
+                [RFSCOUT_EVIDENCE_STRENGTH_DISTINCTIVE] = "Distinctive",
             };
             snprintf( value,
                       sizeof( value ),
                       "%s",
                       ( a_threshold < RFSCOUT_EVIDENCE_STRENGTH_COUNT ) ? names[ a_threshold ]
-                                                                        : "POSSIBLE" );
+                                                                        : "Possible" );
         }
         else if( 4U == item )
         {

@@ -66,7 +66,7 @@ The case score for a signature is the sum of the weights of the unique facts rep
 - **Probable** — score 4 or greater.
 - **Distinctive** — score 6 or greater.
 
-These are ordinal evidence scores, not calibrated probabilities. Evidence weights use a small **1 / 2 / 4** scale: 1 for weak/common indicators, 2 for meaningful supporting evidence, and 4 for strong product/vendor-specific identifiers. Several unique low-weight facts can therefore move a case through the levels, and a single packet can cross a threshold immediately when it contains enough distinct facts. Repeated copies of the same fact cannot add score.
+These are ordinal evidence scores, not calibrated probabilities. Evidence weights use a small **1 / 2 / 4** scale based on the usefulness of each fact for the specific hypothesis: 1 for weak/common indicators, 2 for meaningful supporting evidence, and 4 for facts that strongly distinguish the target product or family. Signal type alone does not determine weight; a company ID or OUI shared across product lines can therefore carry less weight than a product-specific name or service UUID. Several unique low-weight facts can therefore move a case through the levels, and a single packet can cross a threshold immediately when it contains enough distinct facts. Repeated copies of the same fact cannot add score.
 
 Evidence source and score remain separate concepts. The source bitmask records which kinds of evidence contributed to the selected signature (for example curated OUI/prefix, advertised name, company identifier, service UUID, or Remote ID), while the score determines whether the configured threshold has been reached.
 
@@ -74,11 +74,9 @@ Evidence source and score remain separate concepts. The source bitmask records w
 
 ## Raven acoustic-sensor evidence
 
-Raven is the first signature using the accumulating case model as a reference detector. The database contains five exact advertised 16-bit BLE service UUID records: `0x3100`, `0x3200`, `0x3300`, `0x3400`, and `0x3500`. Each currently contributes one point. Two distinct services reach Possible, four reach Probable, and the five currently known services alone do not reach Distinctive. RFScout does **not** treat the entire `0x3100-0x3500` numeric interval as Raven evidence.
+Raven is the first signature using the accumulating case model as a reference detector. The database contains five exact advertised 16-bit BLE service UUID records: `0x3100`, `0x3200`, `0x3300`, `0x3400`, and `0x3500`. Each contributes two points because the exact proprietary services are meaningful Raven-specific evidence. RFScout does **not** treat the entire `0x3100-0x3500` numeric interval as Raven evidence.
 
-This means one distinct proprietary Raven service reaches Possible, two distinct services reach Probable, and three or more reach Distinctive. Repeated advertisements of the same service do not add points.
-
-Research provenance and current interpretation:
+One distinct proprietary Raven service therefore reaches Possible, two distinct services reach Probable, and three or more reach Distinctive. Repeated advertisements of the same service do not add points. Research provenance and current interpretation:
 
 - GainSec independently examined an owned Flock Safety Raven v1.2 and documented an ESP32-WROOM-32D main controller. Community detector projects attribute the proprietary Raven service dataset to GainSec captures spanning firmware generations 1.1.7, 1.2.0, and 1.3.1.
 - Multiple implementations reproduce the same five exact proprietary services for later Raven firmware. This is useful corroboration, but many implementations share the same upstream dataset and therefore are not fully independent observations.

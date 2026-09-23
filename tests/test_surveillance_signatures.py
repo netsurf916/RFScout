@@ -24,7 +24,7 @@ class SurveillanceSignatureDataTests(unittest.TestCase):
         with SIGNATURES.open(newline="", encoding="utf-8") as stream:
             return list(csv.DictReader(stream))
 
-    def test_evidence_rows_have_unique_identity_and_positive_weight(self):
+    def test_fact_rows_have_unique_identity_and_supported_weight(self):
         seen = set()
         for row in self.load_rows():
             identity = (
@@ -37,9 +37,9 @@ class SurveillanceSignatureDataTests(unittest.TestCase):
             seen.add(identity)
             self.assertIn(identity[2], VALID_SIGNALS)
             self.assertIn(int(row["weight"]), {1, 2, 4})
-            self.assertTrue(row["evidence"].strip())
+            self.assertTrue(row["provenance"].strip())
 
-    def test_raven_proprietary_services_are_independent_low_weight_evidence(self):
+    def test_raven_proprietary_services_are_independent_supporting_evidence(self):
         raven = {
             row["value"].strip().upper(): int(row["weight"])
             for row in self.load_rows()
@@ -50,11 +50,11 @@ class SurveillanceSignatureDataTests(unittest.TestCase):
         self.assertEqual(
             raven,
             {
-                "3100": 1,
-                "3200": 1,
-                "3300": 1,
-                "3400": 1,
-                "3500": 1,
+                "3100": 2,
+                "3200": 2,
+                "3300": 2,
+                "3400": 2,
+                "3500": 2,
             },
         )
 
@@ -84,7 +84,7 @@ class SurveillanceSignatureDataTests(unittest.TestCase):
             for row in self.load_rows()
             if row["signal"].strip().lower() in {"company_id", "service_uuid128", "remote_id"}
         }
-        self.assertEqual(strong[("Flock", "company_id", "09C8")], 4)
+        self.assertEqual(strong[("Flock", "company_id", "09C8")], 2)
         self.assertEqual(strong[("Brilliant Frame", "service_uuid128", "7A2300015475A6A4654C8431F6AD49C4")], 4)
         self.assertEqual(strong[("Rokid", "service_uuid128", "0000910000001000800000805F9B34FB")], 4)
         self.assertEqual(strong[("Remote ID", "remote_id", "1")], 4)

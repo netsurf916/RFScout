@@ -1,84 +1,84 @@
-type,brand,oui,weight,evidence,ieee_owner,registry_status
+type,brand,oui,weight,provenance,ieee_owner,registry_status
 BODY,Axon,0025DF,2,stamenscan-lookout,Axon Enterprise,present
 CAM,Axis,00408C,2,stamenscan-axis-docs,Axis Communications AB,present
 BODY,Axon,005828,2,stamenscan-lookout,Axon Networks,present
-CAM,Ring,00B463,2,ouispy-c5,Ring,present
+CAM,Ring,00B463,1,ouispy-c5,Ring,present
 BODY,Axon,00C0D4,2,stamenscan-lookout,"AXON NETWORKS, INC.",present
 ALPR,Flock,00F48D,2,nitekry-2026-07,Liteon Technology,present
 ALPR,Flock,040D84,2,stamenscan-ble,Silicon Laboratories,present
 ALPR,Flock,083A88,2,nitekry-2026-07,Universal Global Scientific Ind,present
 ALPR,Flock,145AFC,2,nitekry-2026-07,Liteon Technology,present
 ALPR,Flock,14B5CD,2,nitekry-2026-07,Liteon Technology,present
-CAM,Hikvision,1868CB,2,stamenscan-ipvm,Hangzhou Hikvision Digital Tech,present
-CAM,Ring,187F88,2,ouispy-c5,Ring,present
+CAM,Hikvision,1868CB,1,stamenscan-ipvm,Hangzhou Hikvision Digital Tech,present
+CAM,Ring,187F88,1,ouispy-c5,Ring,present
 ALPR,Flock,1C34F1,2,stamenscan-ble,Silicon Laboratories,present
-CAM,Ring,242BD6,2,ouispy-c5,Ring,present
+CAM,Ring,242BD6,1,ouispy-c5,Ring,present
 ALPR,Flock,24B2B9,2,nitekry-2026-07,Liteon Technology,present
-CAM,Hikvision,2857BE,2,stamenscan-ipvm,Hangzhou Hikvision Digital Tech,present
-CAM,Ring,343EA4,2,ouispy-c5,Ring,present
+CAM,Hikvision,2857BE,1,stamenscan-ipvm,Hangzhou Hikvision Digital Tech,present
+CAM,Ring,343EA4,1,ouispy-c5,Ring,present
 ALPR,Flock,385B44,2,stamenscan-ble,Silicon Laboratories,present
 ALPR,Flock,3C71BF,2,nitekry-2026-07,Espressif,present
 ALPR,Flock,3C9180,2,nitekry-2026-07,Liteon Technology,present
-CAM,Dahua,3CEF8C,2,stamenscan-ipvm,"Zhejiang Dahua Technology Co.,",present
-CAM,Hikvision,4419B6,2,stamenscan-ipvm,Hangzhou Hikvision Digital Tech,present
+CAM,Dahua,3CEF8C,1,stamenscan-ipvm,"Zhejiang Dahua Technology Co.,",present
+CAM,Hikvision,4419B6,1,stamenscan-ipvm,Hangzhou Hikvision Digital Tech,present
 ALPR,Flock,4827EA,1,nitekry-2026-07-low,"Samsung Electronics Co.,Ltd",present
-CAM,Hikvision,4CBD8F,2,stamenscan-ipvm,Hangzhou Hikvision Digital Tech,present
-CAM,Ring,50E467,2,ouispy-c5,Ring,present
-CAM,Hikvision,54C415,2,stamenscan-ipvm,Hangzhou Hikvision Digital Tech,present
-CAM,Ring,54E019,2,ouispy-c5,Ring,present
+CAM,Hikvision,4CBD8F,1,stamenscan-ipvm,Hangzhou Hikvision Digital Tech,present
+CAM,Ring,50E467,1,ouispy-c5,Ring,present
+CAM,Hikvision,54C415,1,stamenscan-ipvm,Hangzhou Hikvision Digital Tech,present
+CAM,Ring,54E019,1,ouispy-c5,Ring,present
 ALPR,Flock,5800E3,2,nitekry-2026-07,Liteon Technology,present
 ALPR,Flock,588E81,2,nitekry-2026-07,Silicon Laboratories,present
 ALPR,Flock,588E87,2,stamenscan-ble,,not-in-current-ma-l-snapshot
-CAM,Ring,5C475E,2,ouispy-c5,Ring,present
+CAM,Ring,5C475E,1,ouispy-c5,Ring,present
 ALPR,Flock,5C93A2,2,nitekry-2026-07,Liteon Technology,present
-GLASS,Meta,5CE91E,2,ouispy-c5,Apple,present
+GLASS,Meta,5CE91E,1,ouispy-c5,Apple,present
 ALPR,Flock,646E69,2,nitekry-2026-07,Liteon Technology,present
-CAM,Ring,649A63,2,ouispy-c5,Ring,present
-CAM,Hikvision,64DB8B,2,stamenscan-ipvm,Hangzhou Hikvision Digital Tech,present
+CAM,Ring,649A63,1,ouispy-c5,Ring,present
+CAM,Hikvision,64DB8B,1,stamenscan-ipvm,Hangzhou Hikvision Digital Tech,present
 ALPR,Flock,700894,2,nitekry-2026-07,Liteon Technology,present
 ALPR,Flock,70C94E,2,nitekry-2026-07,Liteon Technology,present
 ALPR,Flock,744CA1,2,nitekry-2026-07,Liteon Technology,present
-GLASS,Meta,7C2A9E,2,ouispy-c5,,not-in-current-ma-l-snapshot
+GLASS,Meta,7C2A9E,1,ouispy-c5,,not-in-current-ma-l-snapshot
 ALPR,Flock,803049,2,nitekry-2026-07,Liteon Technology,present
 ALPR,Flock,826BF2,2,deflock-joplin,,not-in-current-ma-l-snapshot
 BODY,Axon,847003,2,stamenscan-lookout,Axon Networks,present
-CAM,Dahua,9002A9,2,stamenscan-ipvm,"Zhejiang Dahua Technology Co.,",present
+CAM,Dahua,9002A9,1,stamenscan-ipvm,"Zhejiang Dahua Technology Co.,",present
 ALPR,Flock,903586,2,stamenscan-ble,,not-in-current-ma-l-snapshot
 ALPR,Flock,9035EA,2,nitekry-2026-07,Silicon Laboratories,present
-CAM,Ring,90486C,2,ouispy-c5,Ring,present
+CAM,Ring,90486C,1,ouispy-c5,Ring,present
 ALPR,Flock,940853,2,nitekry-2026-07,Liteon Technology,present
 ALPR,Flock,943469,2,stamenscan-ble,Silicon Laboratories,present
-CAM,Hikvision,94E1AC,2,stamenscan-ipvm,Hangzhou Hikvision Digital Tech,present
-GLASS,Meta,985949,2,ouispy-c5,LUXOTTICA GROUP S.P.A.,present
-GLASS,Meta,98DA92,2,ouispy-c5,Vuzix,present
+CAM,Hikvision,94E1AC,1,stamenscan-ipvm,Hangzhou Hikvision Digital Tech,present
+GLASS,Meta,985949,1,ouispy-c5,LUXOTTICA GROUP S.P.A.,present
+GLASS,Meta,98DA92,1,ouispy-c5,Vuzix,present
 ALPR,Flock,9C2F9D,2,nitekry-2026-07,Liteon Technology,present
-CAM,Ring,9C7613,2,ouispy-c5,Ring,present
+CAM,Ring,9C7613,1,ouispy-c5,Ring,present
 ALPR,Flock,A4CF12,1,nitekry-2026-07-low,Espressif,present
-CAM,Ring,AC9FC3,2,ouispy-c5,Ring,present
+CAM,Ring,AC9FC3,1,ouispy-c5,Ring,present
 CAM,Axis,ACCC8E,2,stamenscan-axis-docs,Axis Communications AB,present
 ALPR,Flock,B4E3F9,2,stamenscan-ble,Silicon Laboratories,present
 ALPR,Flock,B81EA4,2,nitekry-2026-07,Liteon Technology,present
 ALPR,Flock,B827EB,2,stamenscan-wigle,Raspberry Pi Foundation,present
 ALPR,Flock,B83532,2,nitekry-2026-07,,not-in-current-ma-l-snapshot
 CAM,Axis,B8A44F,2,stamenscan-axis-docs,Axis Communications AB,present
-CAM,Dahua,BC325F,2,stamenscan-ipvm,"Zhejiang Dahua Technology Co.,",present
+CAM,Dahua,BC325F,1,stamenscan-ipvm,"Zhejiang Dahua Technology Co.,",present
 ALPR,Flock,C03532,2,nitekry-2026-07,Liteon Technology,present
-CAM,Hikvision,C056E3,2,stamenscan-ipvm,Hangzhou Hikvision Digital Tech,present
+CAM,Hikvision,C056E3,1,stamenscan-ipvm,Hangzhou Hikvision Digital Tech,present
 ALPR,Flock,C0C9E3,2,stamenscan-wigle,"TP-LINK TECHNOLOGIES CO.,LTD.",present
-CAM,Ring,C4DBAD,2,ouispy-c5,Ring,present
-CAM,Ring,CC3BFB,2,ouispy-c5,Ring,present
-GLASS,Meta,CC660A,2,ouispy-c5,Apple,present
+CAM,Ring,C4DBAD,1,ouispy-c5,Ring,present
+CAM,Ring,CC3BFB,1,ouispy-c5,Ring,present
+GLASS,Meta,CC660A,1,ouispy-c5,Apple,present
 ALPR,Flock,D03957,2,nitekry-2026-07,Liteon Technology,present
 ALPR,Flock,D8F3BC,2,nitekry-2026-07,Liteon Technology,present
 ALPR,Flock,E00AF6,2,nitekry-2026-07,Liteon Technology,present
 ALPR,Flock,E0382E,2,stamenscan-ble,,not-in-current-ma-l-snapshot
 ALPR,Flock,E04F43,2,nitekry-2026-07,Universal Global Scientific Ind,present
-CAM,Verkada,E0A700,2,verkada-docs,Verkada Inc,present
+CAM,Verkada,E0A700,1,verkada-docs,Verkada Inc,present
 ALPR,Flock,E4AAEA,2,nitekry-2026-07,Liteon Technology,present
 ALPR,Flock,E4C32A,2,stamenscan-wigle,"TP-LINK TECHNOLOGIES CO.,LTD.",present
 CAM,Axis,E82725,2,stamenscan-axis-docs,Axis Communications AB,present
 ALPR,Flock,E8D0FC,2,nitekry-2026-07,Liteon Technology,present
 ALPR,Flock,EC1BBD,2,nitekry-2026-07,Silicon Laboratories,present
 ALPR,Flock,F082C0,2,stamenscan-ble,Silicon Laboratories,present
-GLASS,Meta,F40343,2,ouispy-c5,Hewlett Packard Enterprise,present
+GLASS,Meta,F40343,1,ouispy-c5,Hewlett Packard Enterprise,present
 ALPR,Flock,F46ADD,2,nitekry-2026-07,Liteon Technology,present

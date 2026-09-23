@@ -1,4 +1,4 @@
-type,brand,signal,value,weight,evidence
+type,brand,signal,value,weight,provenance
 ALPR,Flock,oui,70C94E,2,nitekry-2026-07
 ALPR,Flock,oui,3C9180,2,nitekry-2026-07
 ALPR,Flock,oui,D8F3BC,2,nitekry-2026-07
@@ -47,41 +47,41 @@ BODY,Axon,oui,0025DF,2,stamenscan-lookout
 BODY,Axon,oui,005828,2,stamenscan-lookout
 BODY,Axon,oui,00C0D4,2,stamenscan-lookout
 BODY,Axon,oui,847003,2,stamenscan-lookout
-CAM,Ring,oui,187F88,2,ouispy-c5
-CAM,Ring,oui,242BD6,2,ouispy-c5
-CAM,Ring,oui,343EA4,2,ouispy-c5
-CAM,Ring,oui,50E467,2,ouispy-c5
-CAM,Ring,oui,54E019,2,ouispy-c5
-CAM,Ring,oui,5C475E,2,ouispy-c5
-CAM,Ring,oui,649A63,2,ouispy-c5
-CAM,Ring,oui,90486C,2,ouispy-c5
-CAM,Ring,oui,9C7613,2,ouispy-c5
-CAM,Ring,oui,AC9FC3,2,ouispy-c5
-CAM,Ring,oui,C4DBAD,2,ouispy-c5
-CAM,Ring,oui,CC3BFB,2,ouispy-c5
-CAM,Ring,oui,00B463,2,ouispy-c5
-CAM,Verkada,oui,E0A700,2,verkada-docs
+CAM,Ring,oui,187F88,1,ouispy-c5
+CAM,Ring,oui,242BD6,1,ouispy-c5
+CAM,Ring,oui,343EA4,1,ouispy-c5
+CAM,Ring,oui,50E467,1,ouispy-c5
+CAM,Ring,oui,54E019,1,ouispy-c5
+CAM,Ring,oui,5C475E,1,ouispy-c5
+CAM,Ring,oui,649A63,1,ouispy-c5
+CAM,Ring,oui,90486C,1,ouispy-c5
+CAM,Ring,oui,9C7613,1,ouispy-c5
+CAM,Ring,oui,AC9FC3,1,ouispy-c5
+CAM,Ring,oui,C4DBAD,1,ouispy-c5
+CAM,Ring,oui,CC3BFB,1,ouispy-c5
+CAM,Ring,oui,00B463,1,ouispy-c5
+CAM,Verkada,oui,E0A700,1,verkada-docs
 CAM,Axis,oui,00408C,2,stamenscan-axis-docs
 CAM,Axis,oui,ACCC8E,2,stamenscan-axis-docs
 CAM,Axis,oui,B8A44F,2,stamenscan-axis-docs
 CAM,Axis,oui,E82725,2,stamenscan-axis-docs
-CAM,Hikvision,oui,1868CB,2,stamenscan-ipvm
-CAM,Hikvision,oui,2857BE,2,stamenscan-ipvm
-CAM,Hikvision,oui,4419B6,2,stamenscan-ipvm
-CAM,Hikvision,oui,4CBD8F,2,stamenscan-ipvm
-CAM,Hikvision,oui,54C415,2,stamenscan-ipvm
-CAM,Hikvision,oui,64DB8B,2,stamenscan-ipvm
-CAM,Hikvision,oui,94E1AC,2,stamenscan-ipvm
-CAM,Hikvision,oui,C056E3,2,stamenscan-ipvm
-CAM,Dahua,oui,3CEF8C,2,stamenscan-ipvm
-CAM,Dahua,oui,9002A9,2,stamenscan-ipvm
-CAM,Dahua,oui,BC325F,2,stamenscan-ipvm
-GLASS,Meta,oui,7C2A9E,2,ouispy-c5
-GLASS,Meta,oui,CC660A,2,ouispy-c5
-GLASS,Meta,oui,F40343,2,ouispy-c5
-GLASS,Meta,oui,5CE91E,2,ouispy-c5
-GLASS,Meta,oui,985949,2,ouispy-c5
-GLASS,Meta,oui,98DA92,2,ouispy-c5
+CAM,Hikvision,oui,1868CB,1,stamenscan-ipvm
+CAM,Hikvision,oui,2857BE,1,stamenscan-ipvm
+CAM,Hikvision,oui,4419B6,1,stamenscan-ipvm
+CAM,Hikvision,oui,4CBD8F,1,stamenscan-ipvm
+CAM,Hikvision,oui,54C415,1,stamenscan-ipvm
+CAM,Hikvision,oui,64DB8B,1,stamenscan-ipvm
+CAM,Hikvision,oui,94E1AC,1,stamenscan-ipvm
+CAM,Hikvision,oui,C056E3,1,stamenscan-ipvm
+CAM,Dahua,oui,3CEF8C,1,stamenscan-ipvm
+CAM,Dahua,oui,9002A9,1,stamenscan-ipvm
+CAM,Dahua,oui,BC325F,1,stamenscan-ipvm
+GLASS,Meta,oui,7C2A9E,1,ouispy-c5
+GLASS,Meta,oui,CC660A,1,ouispy-c5
+GLASS,Meta,oui,F40343,1,ouispy-c5
+GLASS,Meta,oui,5CE91E,1,ouispy-c5
+GLASS,Meta,oui,985949,1,ouispy-c5
+GLASS,Meta,oui,98DA92,1,ouispy-c5
 BODY,Axon,name_contains,AXON,1,rfscout-existing-signature
 ALPR,Flock,name_contains,FLOCKCAM,1,rfscout-existing-signature
 ALPR,Flock,name_contains,FS EXT BATTERY,1,rfscout-existing-signature
@@ -94,12 +94,24 @@ GLASS,Meta,name_contains,RAYBAN,1,rfscout-existing-signature
 GLASS,Meta,name_contains,OAKLEY META,1,rfscout-existing-signature
 GLASS,Even G1,name_prefix,G1_,1,rfscout-existing-signature
 GLASS,Solos AirGo,name_contains,AIRGO,1,rfscout-existing-signature
-ALPR,Flock,company_id,09C8,4,rfscout-existing-signature
+ALPR,Flock,company_id,09C8,2,rfscout-existing-signature
 GLASS,Brilliant Frame,service_uuid128,7A2300015475A6A4654C8431F6AD49C4,4,rfscout-existing-signature
 GLASS,Rokid,service_uuid128,0000910000001000800000805F9B34FB,4,rfscout-existing-signature
-AUDIO,Raven,service_uuid16,3100,1,gainsec-2025-06
-AUDIO,Raven,service_uuid16,3200,1,gainsec-2025-06
-AUDIO,Raven,service_uuid16,3300,1,gainsec-2025-06
-AUDIO,Raven,service_uuid16,3400,1,gainsec-2025-06
-AUDIO,Raven,service_uuid16,3500,1,gainsec-2025-06
+AUDIO,Raven,service_uuid16,3100,2,gainsec-2025-06
+AUDIO,Raven,service_uuid16,3200,2,gainsec-2025-06
+AUDIO,Raven,service_uuid16,3300,2,gainsec-2025-06
+AUDIO,Raven,service_uuid16,3400,2,gainsec-2025-06
+AUDIO,Raven,service_uuid16,3500,2,gainsec-2025-06
 DRONE,Remote ID,remote_id,1,4,astm-open-drone-id
+ALPR,Flock,name_contains,FLOCKOS,1,plume-2026-09
+ALPR,Flock,name_contains,FLOCKSAFETY,1,plume-2026-09
+ALPR,Flock,name_contains,OFS_IOT,1,plume-2026-09
+ALPR,Flock,name_prefix,PFS_,1,plume-2026-09
+ALPR,Flock,name_contains,TEST_FLCK,1,plume-2026-09
+ALPR,Flock,name_prefix,RWLS-,1,plume-2026-09
+BODY,Transcend DrivePro Body,name_contains,DRIVEPROBODY20,4,transcend-docs
+BODY,Transcend DrivePro Body,name_contains,DRIVEPROBODY52,4,transcend-docs
+BODY,Transcend DrivePro Body,name_prefix,DPB30_,4,transcend-docs
+BODY,Transcend DrivePro Body,name_prefix,DPB40_,4,transcend-docs
+GLASS,Meta,company_id,01AB,1,bluetooth-sig-meta
+GLASS,Meta,service_uuid16,FD5F,4,bluetooth-sig-meta
