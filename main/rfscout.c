@@ -291,12 +291,13 @@ static void log_observation_event( observation_store_event_t a_event,
                 log_uint( &record, "evidence_count", a_device->surveillance_evidence_count ) &&
                 log_bool( &record, "evidence_overflow", a_device->surveillance_evidence_overflow ) &&
                 log_uint( &record, "score", a_device->surveillance_score );
-            if( success && ( SURVEILLANCE_SIGNATURE_NONE != a_device->surveillance_signature ) )
+            if( success &&
+                ( SURVEILLANCE_SIGNATURE_NONE != a_device->surveillance_case_signature ) )
             {
-                success =
-                    log_str( &record,
-                             "surveillance",
-                             surveillance_signature_label( a_device->surveillance_signature ) );
+                success = log_str(
+                    &record,
+                    "case_signature",
+                    surveillance_signature_label( a_device->surveillance_case_signature ) );
             }
         }
     }
