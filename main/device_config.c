@@ -83,6 +83,8 @@ static const char *evidence_threshold_config_name( rfscout_evidence_strength_t a
 {
     switch( a_threshold )
     {
+        case RFSCOUT_EVIDENCE_STRENGTH_EVERYTHING:
+            return "everything";
         case RFSCOUT_EVIDENCE_STRENGTH_PROBABLE:
             return "probable";
         case RFSCOUT_EVIDENCE_STRENGTH_DISTINCTIVE:
@@ -99,6 +101,11 @@ static bool evidence_threshold_from_config_name( const char *a_name,
     if( NULL == a_name || NULL == a_threshold )
     {
         return false;
+    }
+    if( 0 == strcasecmp( a_name, "everything" ) )
+    {
+        *a_threshold = RFSCOUT_EVIDENCE_STRENGTH_EVERYTHING;
+        return true;
     }
     if( 0 == strcasecmp( a_name, "possible" ) )
     {

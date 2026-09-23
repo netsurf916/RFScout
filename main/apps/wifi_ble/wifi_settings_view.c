@@ -56,6 +56,7 @@ void wifi_settings_view_render( unsigned a_selected,
         else if( 3U == item )
         {
             static const char *names[ RFSCOUT_EVIDENCE_STRENGTH_COUNT ] = {
+                [RFSCOUT_EVIDENCE_STRENGTH_EVERYTHING] = "Everything",
                 [RFSCOUT_EVIDENCE_STRENGTH_POSSIBLE] = "Possible",
                 [RFSCOUT_EVIDENCE_STRENGTH_PROBABLE] = "Probable",
                 [RFSCOUT_EVIDENCE_STRENGTH_DISTINCTIVE] = "Distinctive",

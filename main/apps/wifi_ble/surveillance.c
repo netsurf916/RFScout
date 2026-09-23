@@ -37,6 +37,8 @@ static uint8_t threshold_score( void )
 {
     switch( device_config_evidence_threshold() )
     {
+        case RFSCOUT_EVIDENCE_STRENGTH_EVERYTHING:
+            return 1U;
         case RFSCOUT_EVIDENCE_STRENGTH_DISTINCTIVE:
             return 6U;
         case RFSCOUT_EVIDENCE_STRENGTH_PROBABLE:

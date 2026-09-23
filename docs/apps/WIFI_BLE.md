@@ -33,7 +33,7 @@ Current settings are finite timeouts from **10–300 seconds** in 10-second step
 
 Surveillance classification is an attribute of that canonical active record and expires with it; there is no independent surveillance-retention list.
 
-WiFi/BLE persists a non-default threshold as the sparse `evidence_threshold` app setting (`probable` or `distinctive`). The retired pre-1.0 `surveillance_sensitivity` setting is not migrated; if encountered, it is ignored and pruned through the normal configuration-save workflow.
+WiFi/BLE persists a non-default threshold as the sparse `evidence_threshold` app setting (`everything`, `probable`, or `distinctive`). The retired pre-1.0 `surveillance_sensitivity` setting is not migrated; if encountered, it is ignored and pruned through the normal configuration-save workflow.
 
 Instant / Timed / Never retention modes are not implemented yet.
 
@@ -62,6 +62,7 @@ The canonical active observation identified by address type plus MAC also owns t
 
 The case score for a signature is the sum of the weights of the unique facts represented by its collected evidence. The **Evidence Threshold** setting maps the user-facing levels to minimum scores:
 
+- **Everything** — score 1 or greater. This exposes every curated fact match and is intended primarily for detector testing, fact validation, and field research; its practical value as a normal alerting mode has not yet been established.
 - **Possible** — score 2 or greater.
 - **Probable** — score 4 or greater.
 - **Distinctive** — score 6 or greater.
@@ -70,7 +71,7 @@ These are ordinal evidence scores, not calibrated probabilities. Evidence weight
 
 Evidence source and score remain separate concepts. The source bitmask records which kinds of evidence contributed to the selected signature (for example curated OUI/prefix, advertised name, company identifier, service UUID, or Remote ID), while the score determines whether the configured threshold has been reached.
 
-**Possible** remains the compiled default. Notification occurs when an active case first crosses the configured threshold. Evidence can continue to accumulate after notification without creating another new-device alert.
+**Possible** remains the compiled default. **Everything** is deliberately opt-in because weight-1 facts can be weak or ambiguous on their own; selecting it is useful when testing whether RFScout is seeing all candidate evidence, but does not make those individual facts stronger evidence. Notification occurs when an active case first crosses the configured threshold. Evidence can continue to accumulate after notification without creating another new-device alert.
 
 ## Raven acoustic-sensor evidence
 
