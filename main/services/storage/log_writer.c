@@ -246,15 +246,16 @@ static bool open_segment( void )
         active_size = (size_t)header_length;
 
         const esp_app_desc_t *app = esp_app_get_description();
-        const int version_length = fprintf( active_file,
-                                            "{\\\"type\\\":\\\"version\\\",\\\"version\\\":\\\"%s\\\"," 
-                                            "\\\"project\\\":\\\"%s\\\",\\\"idf\\\":\\\"%s\\\"," 
-                                            "\\\"build_date\\\":\\\"%s\\\",\\\"build_time\\\":\\\"%s\\\"}\\n",
-                                            app->version,
-                                            app->project_name,
-                                            app->idf_ver,
-                                            app->date,
-                                            app->time );
+        const int version_length =
+            fprintf( active_file,
+                     "{\\\"type\\\":\\\"version\\\",\\\"version\\\":\\\"%s\\\","
+                     "\\\"project\\\":\\\"%s\\\",\\\"idf\\\":\\\"%s\\\","
+                     "\\\"build_date\\\":\\\"%s\\\",\\\"build_time\\\":\\\"%s\\\"}\\n",
+                     app->version,
+                     app->project_name,
+                     app->idf_ver,
+                     app->date,
+                     app->time );
         if( version_length < 0 )
         {
             mark_io_error( "log version header write" );
