@@ -58,6 +58,19 @@ CID is not used for ordinary vendor attribution because CID assignments are not 
 
 `tools/update_surveillance.py` validates the human-maintained CSV and generates the compact firmware table under `main/services/wireless/`. Runtime code understands generic signal kinds and generated fact IDs; it does not assign product-specific identifiers in application code. When a fact matches an observed packet, that match becomes **evidence** for the observed device. The generator sizes the case evidence bitset in 32-bit words from the number of database facts, so adding facts does not require a hand-maintained runtime limit.
 
+### Fact matching contract
+
+Current surveillance facts match observations through a small set of generic rules:
+
+- `oui` compares the first 24 address bits exactly with the curated prefix in the surveillance database. This is a surveillance-evidence match, not ordinary IEEE vendor attribution: it does not use MA-M/MA-S longest-prefix lookup and does not inherit the vendor resolver's locally-administered-address suppression.
+- `name_contains` and `name_prefix` compare advertised names case-insensitively.
+- `company_id` compares the advertised 16-bit BLE company identifier exactly.
+- `service_uuid16` requires an exact advertised 16-bit service UUID.
+- `service_uuid128` canonicalizes the BLE UUID byte order and then requires an exact 128-bit UUID match.
+- `remote_id` matches the normalized presence of validated Remote ID evidence.
+
+The matcher records every fact that matches an observation. Product-specific recognition logic therefore remains data-driven in `data/surveillance_signatures.csv` rather than being spread through packet-processing code.
+
 The canonical active observation identified by address type plus MAC also owns the lifetime of its surveillance **case**. A case is the accumulated set of unique evidence about that specific device while the identity remains active. Each matching fact sets its evidence bit; all matching facts in an observation are retained, and a stronger match does not suppress other facts from the same packet. Matching the same fact again only sets an already-set bit and does not increase the score, while different facts with the same weight do. When the canonical observation expires, its accumulated evidence expires with it; a later reappearance starts a fresh case. Timeout logging records the case lifetime, final unique-evidence count, score, and best signature hypothesis even when the configured notification threshold was never reached.
 
 The case score for a signature is the sum of the weights of the unique facts represented by its collected evidence. The **Evidence Threshold** setting maps the user-facing levels to minimum scores:
@@ -69,9 +82,28 @@ The case score for a signature is the sum of the weights of the unique facts rep
 
 These are ordinal evidence scores, not calibrated probabilities. Evidence weights use a small **1 / 2 / 4** scale based on the usefulness of each fact for the specific hypothesis: 1 for weak/common indicators, 2 for meaningful supporting evidence, and 4 for facts that strongly distinguish the target product or family. Signal type alone does not determine weight; a company ID or OUI shared across product lines can therefore carry less weight than a product-specific name or service UUID. Several unique low-weight facts can therefore move a case through the levels, and a single packet can cross a threshold immediately when it contains enough distinct facts. Repeated copies of the same fact cannot add score.
 
+### Detection interpretation policy
+
+A fact weight describes how discriminating that fact is for one configured product/family hypothesis; it is not a universal score for a signal type. Broad or ambiguous ecosystem/vendor indicators should remain weight 1. A curated indicator that meaningfully narrows the observed device to a surveillance-focused product ecosystem can use weight 2. Weight 4 is reserved for identifiers that strongly distinguish the intended product or family. For example, a curated Ring prefix can be stronger supporting evidence than a broad general-purpose camera-vendor prefix without implying that every Ring-branded radio endpoint is itself a camera.
+
+The selected signature is the hypothesis with the highest accumulated score. Equal scores currently retain the earlier generated signature, whose order follows the first appearance of each class/brand pair in the authoritative CSV. That deterministic tie behavior is an implementation detail, not extra evidence and not a reason to treat the selected hypothesis as stronger than the tied alternative.
+
+Class labels such as **Camera / doorbell**, **ALPR**, or **Body camera** describe the surveillance hypothesis supported by the observed evidence. They do not prove that the individual radio endpoint contains that sensor. Accessories, hubs, chimes, and other devices in a product ecosystem can share identifiers; the evidence level is intended to communicate that distinction rather than convert ecosystem association into exact endpoint identity.
+
 Evidence source and score remain separate concepts. The source bitmask records which kinds of evidence contributed to the selected signature (for example curated OUI/prefix, advertised name, company identifier, service UUID, or Remote ID), while the score determines whether the configured threshold has been reached.
 
 **Possible** remains the compiled default. **Everything** is deliberately opt-in because weight-1 facts can be weak or ambiguous on their own; selecting it is useful when testing whether RFScout is seeing all candidate evidence, but does not make those individual facts stronger evidence. Notification occurs when an active case first crosses the configured threshold. Evidence can continue to accumulate after notification without creating another new-device alert.
+
+### SD log interpretation
+
+When SD logging is enabled, device records expose several different surveillance values that should not be conflated:
+
+- `evidence` is the evidence-source bitmask for the selected hypothesis, such as prefix/OUI, advertised name, company ID, service UUID, or Remote ID source kinds;
+- `evidence_count` is the number of unique matched database facts accumulated by the case;
+- `score` is the final score of the best signature hypothesis; and
+- `case_signature` is that best hypothesis at timeout, even when its score never reached the configured alert threshold.
+
+For timeout records, `lifetime_ms` is `last_seen_ms - first_seen_ms`: the span between the first and last observations of that canonical identity. It is **not** the amount of time the record remained retained before timeout. A device seen only once can therefore expire later with `lifetime_ms=0`.
 
 ## Raven acoustic-sensor evidence
 
