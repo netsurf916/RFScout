@@ -1,5 +1,5 @@
 /**
-    surveillance.h : RFScout surveillance classification interface
+    surveillance.h : RFScout surveillance case scoring interface
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -11,20 +11,17 @@
 
 #include "observation_store.h"
 
-typedef struct
-{
-    surveillance_class_t classification;
-    surveillance_signature_id_t signature;
-    uint8_t evidence;
-} surveillance_match_t;
+/** @brief Match database-defined evidence present in one normalized observation. */
+void surveillance_prepare_observation( rf_device_t *a_observation );
 
-/** @brief Classify an observation using all available passive evidence. */
-surveillance_match_t surveillance_match( const rf_device_t *a_observation );
+/**
+ * @brief Merge unique observation evidence into a canonical case and rescore it.
+ * @details The caller retains ownership of both structures. Evidence already present in the case
+ *          is not counted again.
+ */
+void surveillance_case_observe( rf_device_t *a_case, const rf_device_t *a_observation );
 
-/** @brief Compatibility helper returning only the broad classification. */
-surveillance_class_t surveillance_classify( const rf_device_t *a_observation );
-
-/** @brief Return the static LCD type/brand label for a specific signature. */
+/** @brief Return the generated display label for a surveillance signature. */
 const char *surveillance_signature_label( surveillance_signature_id_t a_signature );
 
 /** @brief Return a display name for a broad surveillance classification. */
