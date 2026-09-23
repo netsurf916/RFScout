@@ -56,17 +56,17 @@ CID is not used for ordinary vendor attribution because CID assignments are not 
 
 `data/surveillance_signatures.csv` is the authoritative RFScout surveillance-evidence database. It is deliberately separate from IEEE vendor ownership data. Each row describes a broad surveillance class, product/family label, observable signal kind and value, numeric evidence weight, and research provenance. Product-specific names, company IDs, service UUIDs, and curated prefixes belong in this data file rather than in classifier control flow.
 
-`tools/update_surveillance.py` validates the human-maintained CSV and generates the compact firmware table under `main/services/wireless/`. Runtime code understands generic signal kinds and generated record IDs; it does not assign product-specific evidence identifiers in application code.
+`tools/update_surveillance.py` validates the human-maintained CSV and generates the compact firmware table under `main/services/wireless/`. Runtime code understands generic signal kinds and generated record IDs; it does not assign product-specific evidence identifiers in application code. The generator also sizes a case evidence bitset in 32-bit words from the number of database rows, so adding evidence does not require a hand-maintained runtime limit.
 
-The canonical active observation identified by address type plus MAC also owns the lifetime of its surveillance case. Distinct database evidence records accumulate while that identity remains active. Repeating the same evidence record does not increase the score, but different records with the same weight do. When the canonical observation expires, its accumulated evidence expires with it; a later reappearance starts a fresh case. Timeout logging records the case lifetime, final evidence count/overflow state, score, and best signature hypothesis even when the configured notification threshold was never reached.
+The canonical active observation identified by address type plus MAC also owns the lifetime of its surveillance case. Distinct database evidence records accumulate as bits while that identity remains active. All matching facts in an observation are retained; a stronger match does not suppress other facts from the same packet. Repeating the same evidence record only sets an already-set bit and does not increase the score, but different records with the same weight do. When the canonical observation expires, its accumulated evidence expires with it; a later reappearance starts a fresh case. Timeout logging records the case lifetime, final unique-evidence count, score, and best signature hypothesis even when the configured notification threshold was never reached.
 
 The case score for a signature is the sum of the weights of its unique matching evidence records. The **Evidence Threshold** setting maps the user-facing levels to minimum scores:
 
-- **Possible** — score 1 or greater.
-- **Probable** — score 2 or greater.
-- **Distinctive** — score 3 or greater.
+- **Possible** — score 2 or greater.
+- **Probable** — score 4 or greater.
+- **Distinctive** — score 6 or greater.
 
-These are ordinal evidence scores, not calibrated probabilities. A weight describes how much one researched observation contributes to a signature hypothesis. Several independent low-weight observations can therefore move a case through the levels, while repeated copies of one advertisement cannot.
+These are ordinal evidence scores, not calibrated probabilities. Evidence weights use a small **1 / 2 / 4** scale: 1 for weak/common indicators, 2 for meaningful supporting evidence, and 4 for strong product/vendor-specific identifiers. Several unique low-weight facts can therefore move a case through the levels, and a single packet can cross a threshold immediately when it contains enough distinct facts. Repeated copies of the same fact cannot add score.
 
 Evidence source and score remain separate concepts. The source bitmask records which kinds of evidence contributed to the selected signature (for example curated OUI/prefix, advertised name, company identifier, service UUID, or Remote ID), while the score determines whether the configured threshold has been reached.
 
@@ -74,7 +74,7 @@ Evidence source and score remain separate concepts. The source bitmask records w
 
 ## Raven acoustic-sensor evidence
 
-Raven is the first signature using the accumulating case model as a reference detector. The database contains five exact advertised 16-bit BLE service UUID records: `0x3100`, `0x3200`, `0x3300`, `0x3400`, and `0x3500`. Each currently contributes one point. RFScout does **not** treat the entire `0x3100-0x3500` numeric interval as Raven evidence.
+Raven is the first signature using the accumulating case model as a reference detector. The database contains five exact advertised 16-bit BLE service UUID records: `0x3100`, `0x3200`, `0x3300`, `0x3400`, and `0x3500`. Each currently contributes one point. Two distinct services reach Possible, four reach Probable, and the five currently known services alone do not reach Distinctive. RFScout does **not** treat the entire `0x3100-0x3500` numeric interval as Raven evidence.
 
 This means one distinct proprietary Raven service reaches Possible, two distinct services reach Probable, and three or more reach Distinctive. Repeated advertisements of the same service do not add points.
 

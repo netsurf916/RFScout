@@ -38,25 +38,13 @@ static uint8_t threshold_score( void )
     switch( device_config_evidence_threshold() )
     {
         case RFSCOUT_EVIDENCE_STRENGTH_DISTINCTIVE:
-            return 3U;
+            return 6U;
         case RFSCOUT_EVIDENCE_STRENGTH_PROBABLE:
-            return 2U;
+            return 4U;
         case RFSCOUT_EVIDENCE_STRENGTH_POSSIBLE:
         default:
-            return 1U;
+            return 2U;
     }
-}
-
-static bool case_has_evidence( const rf_device_t *a_case, uint16_t a_record_id )
-{
-    for( size_t i = 0U; i < a_case->surveillance_evidence_count; ++i )
-    {
-        if( a_record_id == a_case->surveillance_evidence_ids[ i ] )
-        {
-            return true;
-        }
-    }
-    return false;
 }
 
 static void evaluate_case( rf_device_t *a_case )
@@ -73,10 +61,17 @@ static void evaluate_case( rf_device_t *a_case )
         uint8_t sources = 0U;
         surveillance_class_t classification = SURVEILLANCE_NONE;
 
-        for( size_t i = 0U; i < a_case->surveillance_evidence_count; ++i )
+        const size_t evidence_count = surveillance_database_evidence_count();
+        for( size_t i = 0U; i < evidence_count; ++i )
         {
+            if( 0U == ( a_case->surveillance_evidence_bits[ i / 32U ] &
+                        ( UINT32_C( 1 ) << ( i % 32U ) ) ) )
+            {
+                continue;
+            }
+
             const surveillance_evidence_record_t *record =
-                surveillance_database_record( a_case->surveillance_evidence_ids[ i ] );
+                surveillance_database_record( (uint16_t)( i + 1U ) );
             if( ( NULL == record ) || ( record->signature != signature ) )
             {
                 continue;
@@ -127,27 +122,32 @@ void surveillance_case_observe( rf_device_t *a_case, const rf_device_t *a_observ
         return;
     }
 
-    if( a_observation->surveillance_evidence_overflow )
+    for( size_t i = 0U; i < RFSCOUT_SURVEILLANCE_EVIDENCE_WORD_COUNT; ++i )
     {
-        a_case->surveillance_evidence_overflow = true;
-    }
-
-    for( size_t i = 0U; i < a_observation->surveillance_evidence_count; ++i )
-    {
-        const uint16_t record_id = a_observation->surveillance_evidence_ids[ i ];
-        if( case_has_evidence( a_case, record_id ) )
-        {
-            continue;
-        }
-        if( a_case->surveillance_evidence_count >= RFSCOUT_SURVEILLANCE_EVIDENCE_MAX )
-        {
-            a_case->surveillance_evidence_overflow = true;
-            break;
-        }
-        a_case->surveillance_evidence_ids[ a_case->surveillance_evidence_count++ ] = record_id;
+        a_case->surveillance_evidence_bits[ i ] |= a_observation->surveillance_evidence_bits[ i ];
     }
 
     evaluate_case( a_case );
+}
+
+size_t surveillance_evidence_count( const rf_device_t *a_case )
+{
+    if( NULL == a_case )
+    {
+        return 0U;
+    }
+
+    size_t count = 0U;
+    for( size_t i = 0U; i < RFSCOUT_SURVEILLANCE_EVIDENCE_WORD_COUNT; ++i )
+    {
+        count += (size_t)__builtin_popcount( a_case->surveillance_evidence_bits[ i ] );
+    }
+    return count;
+}
+
+size_t surveillance_signature_count( void )
+{
+    return surveillance_database_signature_count();
 }
 
 const char *surveillance_signature_label( surveillance_signature_id_t a_signature )

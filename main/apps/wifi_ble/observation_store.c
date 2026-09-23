@@ -551,7 +551,9 @@ static void copy_case_result( rf_device_t *a_observation, const rf_device_t *a_c
     a_observation->surveillance_case_signature = a_case->surveillance_case_signature;
     a_observation->surveillance_evidence = a_case->surveillance_evidence;
     a_observation->surveillance_score = a_case->surveillance_score;
-    a_observation->surveillance_evidence_overflow = a_case->surveillance_evidence_overflow;
+    memcpy( a_observation->surveillance_evidence_bits,
+            a_case->surveillance_evidence_bits,
+            sizeof( a_observation->surveillance_evidence_bits ) );
 }
 
 static void merge_observation( rf_device_t *a_device, const rf_device_t *a_observation )
@@ -758,52 +760,50 @@ size_t observation_store_active_surveillance( observation_surveillance_signature
         return 0U;
     }
 
-    observation_surveillance_signature_t grouped[ RFSCOUT_SURVEILLANCE_SIGNATURE_MAX ] = { 0 };
     xSemaphoreTake( store_lock, portMAX_DELAY );
     synchronize_session_store();
+
     size_t total_devices = 0U;
-    for( size_t i = 0U; i < device_count; ++i )
-    {
-        const rf_device_t *device = &devices[ i ];
-        const size_t signature = (size_t)device->surveillance_signature;
-        if( ( SURVEILLANCE_NONE == device->surveillance ) ||
-            ( signature <= (size_t)SURVEILLANCE_SIGNATURE_NONE ) ||
-            ( signature >= (size_t)RFSCOUT_SURVEILLANCE_SIGNATURE_MAX ) )
-        {
-            continue;
-        }
-        ++total_devices;
-        grouped[ signature ].signature = device->surveillance_signature;
-        ++grouped[ signature ].count;
-        if( device->last_seen_ms > grouped[ signature ].last_seen_ms )
-        {
-            grouped[ signature ].last_seen_ms = device->last_seen_ms;
-        }
-    }
-    xSemaphoreGive( store_lock );
-
-    if( NULL != a_total_devices )
-    {
-        *a_total_devices = total_devices;
-    }
-
     size_t group_count = 0U;
-    for( size_t signature = 1U; signature < (size_t)RFSCOUT_SURVEILLANCE_SIGNATURE_MAX;
-         ++signature )
+    const size_t signature_count = surveillance_signature_count();
+
+    for( size_t signature = 1U; signature < signature_count; ++signature )
     {
-        if( 0U == grouped[ signature ].count )
+        observation_surveillance_signature_t group = { 0 };
+        group.signature = (surveillance_signature_id_t)signature;
+
+        for( size_t i = 0U; i < device_count; ++i )
+        {
+            const rf_device_t *device = &devices[ i ];
+            if( ( SURVEILLANCE_NONE == device->surveillance ) ||
+                ( device->surveillance_signature != group.signature ) )
+            {
+                continue;
+            }
+
+            ++group.count;
+            ++total_devices;
+            if( device->last_seen_ms > group.last_seen_ms )
+            {
+                group.last_seen_ms = device->last_seen_ms;
+            }
+        }
+
+        if( 0U == group.count )
         {
             continue;
         }
+
         ++group_count;
         if( ( NULL == a_rows ) || ( 0U == a_capacity ) )
         {
             continue;
         }
+
         size_t position = 0U;
         const size_t used = ( group_count - 1U < a_capacity ) ? group_count - 1U : a_capacity;
         while( ( position < used ) &&
-               ( a_rows[ position ].last_seen_ms >= grouped[ signature ].last_seen_ms ) )
+               ( a_rows[ position ].last_seen_ms >= group.last_seen_ms ) )
         {
             ++position;
         }
@@ -811,12 +811,20 @@ size_t observation_store_active_surveillance( observation_surveillance_signature
         {
             continue;
         }
+
         const size_t last = ( used < a_capacity ) ? used : ( a_capacity - 1U );
         for( size_t move = last; move > position; --move )
         {
             a_rows[ move ] = a_rows[ move - 1U ];
         }
-        a_rows[ position ] = grouped[ signature ];
+        a_rows[ position ] = group;
+    }
+
+    xSemaphoreGive( store_lock );
+
+    if( NULL != a_total_devices )
+    {
+        *a_total_devices = total_devices;
     }
     return group_count;
 }

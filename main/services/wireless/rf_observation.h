@@ -10,6 +10,8 @@
 #ifndef _RFSCOUT_RF_OBSERVATION_H_
 #define _RFSCOUT_RF_OBSERVATION_H_
 
+#include "surveillance_generated.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -43,11 +45,9 @@ typedef enum
     SURVEILLANCE_OTHER
 } surveillance_class_t;
 
-typedef uint8_t surveillance_signature_id_t;
+typedef uint16_t surveillance_signature_id_t;
 
 #define SURVEILLANCE_SIGNATURE_NONE 0U
-#define RFSCOUT_SURVEILLANCE_SIGNATURE_MAX 32U
-#define RFSCOUT_SURVEILLANCE_EVIDENCE_MAX 8U
 
 typedef enum
 {
@@ -76,9 +76,7 @@ typedef struct
     surveillance_signature_id_t surveillance_case_signature;
     uint8_t surveillance_evidence;
     uint8_t surveillance_score;
-    uint8_t surveillance_evidence_count;
-    bool surveillance_evidence_overflow;
-    uint16_t surveillance_evidence_ids[ RFSCOUT_SURVEILLANCE_EVIDENCE_MAX ];
+    uint32_t surveillance_evidence_bits[ RFSCOUT_SURVEILLANCE_EVIDENCE_WORD_COUNT ];
     char vendor[ RFSCOUT_VENDOR_NAME_MAX ];
     char name[ RFSCOUT_DEVICE_NAME_MAX ];
     bool has_name;

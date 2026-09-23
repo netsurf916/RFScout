@@ -44,8 +44,11 @@ void surveillance_database_match_observation( rf_device_t *a_observation );
 void surveillance_database_match_service_uuid128( rf_device_t *a_observation,
                                                   const uint8_t a_uuid[ 16 ] );
 
-/** @brief Resolve a generated evidence record by stable generated record ID. */
+/** @brief Resolve a generated evidence record by generated record ID. */
 const surveillance_evidence_record_t *surveillance_database_record( uint16_t a_record_id );
+
+/** @brief Return the number of generated evidence records. */
+size_t surveillance_database_evidence_count( void );
 
 /** @brief Return the display label associated with a generated signature ID. */
 const char *surveillance_database_signature_label( surveillance_signature_id_t a_signature );

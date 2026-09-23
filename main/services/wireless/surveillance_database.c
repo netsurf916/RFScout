@@ -69,23 +69,14 @@ static bool has_service_uuid16( const rf_device_t *a_observation, uint16_t a_uui
 
 static void add_evidence_id( rf_device_t *a_observation, uint16_t a_record_id )
 {
-    for( size_t i = 0U; i < a_observation->surveillance_evidence_count; ++i )
+    if( ( 0U == a_record_id ) || ( a_record_id > SURVEILLANCE_EVIDENCE_RECORD_COUNT ) )
     {
-        if( a_record_id == a_observation->surveillance_evidence_ids[ i ] )
-        {
-            return;
-        }
+        return;
     }
 
-    if( a_observation->surveillance_evidence_count < RFSCOUT_SURVEILLANCE_EVIDENCE_MAX )
-    {
-        a_observation->surveillance_evidence_ids[ a_observation->surveillance_evidence_count++ ] =
-            a_record_id;
-    }
-    else
-    {
-        a_observation->surveillance_evidence_overflow = true;
-    }
+    const size_t bit = (size_t)a_record_id - 1U;
+    a_observation->surveillance_evidence_bits[ bit / 32U ] |=
+        UINT32_C( 1 ) << ( bit % 32U );
 }
 
 void surveillance_database_match_observation( rf_device_t *a_observation )
@@ -171,6 +162,11 @@ const surveillance_evidence_record_t *surveillance_database_record( uint16_t a_r
         return NULL;
     }
     return &surveillance_evidence_records[ a_record_id - 1U ];
+}
+
+size_t surveillance_database_evidence_count( void )
+{
+    return SURVEILLANCE_EVIDENCE_RECORD_COUNT;
 }
 
 const char *surveillance_database_signature_label( surveillance_signature_id_t a_signature )

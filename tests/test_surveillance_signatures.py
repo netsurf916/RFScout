@@ -36,7 +36,7 @@ class SurveillanceSignatureDataTests(unittest.TestCase):
             self.assertNotIn(identity, seen)
             seen.add(identity)
             self.assertIn(identity[2], VALID_SIGNALS)
-            self.assertGreater(int(row["weight"]), 0)
+            self.assertIn(int(row["weight"]), {1, 2, 4})
             self.assertTrue(row["evidence"].strip())
 
     def test_raven_proprietary_services_are_independent_low_weight_evidence(self):
@@ -60,8 +60,10 @@ class SurveillanceSignatureDataTests(unittest.TestCase):
 
     def test_generated_tables_are_current(self):
         generated = ROOT / "main" / "services" / "wireless" / "surveillance_signatures.inc"
+        generated_header = ROOT / "main" / "services" / "wireless" / "surveillance_generated.h"
         report = ROOT / "data" / "surveillance_oui_validation.csv"
         before_generated = generated.read_bytes()
+        before_generated_header = generated_header.read_bytes()
         before_report = report.read_bytes()
 
         subprocess.run(
@@ -73,7 +75,19 @@ class SurveillanceSignatureDataTests(unittest.TestCase):
         )
 
         self.assertEqual(generated.read_bytes(), before_generated)
+        self.assertEqual(generated_header.read_bytes(), before_generated_header)
         self.assertEqual(report.read_bytes(), before_report)
+
+    def test_strong_identifiers_use_weight_four(self):
+        strong = {
+            (row["brand"].strip(), row["signal"].strip().lower(), row["value"].strip().upper()): int(row["weight"])
+            for row in self.load_rows()
+            if row["signal"].strip().lower() in {"company_id", "service_uuid128", "remote_id"}
+        }
+        self.assertEqual(strong[("Flock", "company_id", "09C8")], 4)
+        self.assertEqual(strong[("Brilliant Frame", "service_uuid128", "7A2300015475A6A4654C8431F6AD49C4")], 4)
+        self.assertEqual(strong[("Rokid", "service_uuid128", "0000910000001000800000805F9B34FB")], 4)
+        self.assertEqual(strong[("Remote ID", "remote_id", "1")], 4)
 
     def test_product_specific_non_oui_signals_live_in_database(self):
         signals = {

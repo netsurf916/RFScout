@@ -152,7 +152,7 @@ The target strength semantics are:
 - **Probable** — strong association, with false positives expected to be uncommon.
 - **Distinctive** — evidence intended to be uniquely identifying.
 
-The user-facing **Evidence Threshold** selects a minimum numeric case score mapped to Possible / Probable / Distinctive. Unique evidence records contribute database-defined weights; repeated observations of the same record do not add score, while different evidence records may carry the same weight and accumulate. Product-specific signal values, weights, and provenance belong in `data/surveillance_signatures.csv`, not classifier control flow.
+The user-facing **Evidence Threshold** selects a minimum numeric case score mapped to Possible / Probable / Distinctive at 2 / 4 / 6. Unique evidence records contribute database-defined 1 / 2 / 4 weights; repeated observations of the same record do not add score, while every distinct matching fact in an observation can accumulate immediately. Cases retain evidence in a generator-sized 32-bit bitset, avoiding hand-maintained evidence-count limits. Product-specific signal values, weights, and provenance belong in `data/surveillance_signatures.csv`, not classifier control flow.
 
 The implementation pass should first perform the semantic refactor without mechanically preserving the old source-based strength assumptions. After that baseline is stable, perform evidence-backed research and tuning across every currently supported surveillance category/signature. Research should prefer primary/vendor/protocol material, device teardowns or captures, and independently corroborated field observations; community detector projects are useful discovery sources but should not be copied without evaluating false-positive behavior.
 
