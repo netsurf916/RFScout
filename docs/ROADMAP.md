@@ -148,11 +148,11 @@ This release should replace the classifier's current source-named priority conce
 
 The target strength semantics are:
 
-- **Possible** — credible researched association suitable for High sensitivity, with false positives possible.
-- **Probable** — strong association suitable for Medium sensitivity, with false positives expected to be uncommon.
-- **Distinctive** — evidence intended to be uniquely identifying and suitable for Low sensitivity.
+- **Possible** — credible researched association, with false positives possible.
+- **Probable** — strong association, with false positives expected to be uncommon.
+- **Distinctive** — evidence intended to be uniquely identifying.
 
-High / Medium / Low sensitivity therefore select the minimum acceptable evidence strength rather than assigning inherent trust to an evidence source such as a name, OUI, company ID, service UUID, or protocol. Individual rules own their strength; combinations of evidence from the same source may legitimately be stronger than an individual observation.
+The user-facing **Evidence Threshold** directly selects the minimum acceptable evidence strength rather than assigning inherent trust to an evidence source such as a name, OUI, company ID, service UUID, or protocol. Individual rules own their strength; combinations of evidence from the same source may legitimately be stronger than an individual observation.
 
 The implementation pass should first perform the semantic refactor without mechanically preserving the old source-based strength assumptions. After that baseline is stable, perform evidence-backed research and tuning across every currently supported surveillance category/signature. Research should prefer primary/vendor/protocol material, device teardowns or captures, and independently corroborated field observations; community detector projects are useful discovery sources but should not be copied without evaluating false-positive behavior.
 
@@ -170,10 +170,10 @@ For each signature/category, record the evidence source, provenance, expected un
 - [x] Rename classifier `priority` semantics to evidence `strength` without introducing a parallel confidence/priority mechanism.
 - [x] Define typed Possible / Probable / Distinctive strengths and expose the same Possible / Probable / Distinctive values directly through the Evidence Threshold UI.
 - [x] Preserve evidence-source reporting independently from strength.
-- [ ] Add tests proving sensitivity thresholds, strongest-evidence selection, and non-accumulation behavior.
+- [ ] Add tests proving evidence thresholds, strongest-evidence selection, and non-accumulation behavior.
 - [ ] Research and re-score every existing surveillance signature/category against the documented strength contract.
 - [ ] Expand detection fingerprints where research supports useful passive evidence, including older/newer hardware or firmware generations.
-- [ ] Add negative/near-match tests for researched fingerprints so permissive High-sensitivity rules have explicit false-positive boundaries.
+- [ ] Add negative/near-match tests for researched fingerprints so permissive Possible-strength rules have explicit false-positive boundaries.
 - [ ] Document durable provenance for curated fingerprints and generated surveillance-prefix data.
 - [ ] Hardware/field validate representative detections where suitable devices or captures are available.
 
