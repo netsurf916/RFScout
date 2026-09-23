@@ -37,11 +37,11 @@
 
 typedef enum
 {
-    RFSCOUT_SURVEILLANCE_SENSITIVITY_HIGH = 0,
-    RFSCOUT_SURVEILLANCE_SENSITIVITY_MEDIUM,
-    RFSCOUT_SURVEILLANCE_SENSITIVITY_LOW,
-    RFSCOUT_SURVEILLANCE_SENSITIVITY_COUNT
-} rfscout_surveillance_sensitivity_t;
+    RFSCOUT_EVIDENCE_STRENGTH_POSSIBLE = 0,
+    RFSCOUT_EVIDENCE_STRENGTH_PROBABLE,
+    RFSCOUT_EVIDENCE_STRENGTH_DISTINCTIVE,
+    RFSCOUT_EVIDENCE_STRENGTH_COUNT
+} rfscout_evidence_strength_t;
 
 typedef struct
 {
@@ -77,7 +77,7 @@ typedef struct
     bool ble_device_feedback_enabled;
     uint16_t wifi_timeout_seconds;
     uint16_t ble_timeout_seconds;
-    rfscout_surveillance_sensitivity_t surveillance_sensitivity;
+    rfscout_evidence_strength_t evidence_threshold;
     char notification_characters[ RFSCOUT_NOTIFICATION_TYPE_COUNT ];
     char timezone_selected[ RFSCOUT_TIMEZONE_NAME_MAX ];
     device_timezone_t timezones[ RFSCOUT_TIMEZONE_MAX ];
@@ -120,9 +120,8 @@ uint16_t device_config_wifi_timeout_seconds( void );
 esp_err_t device_config_set_wifi_timeout_seconds( uint16_t a_seconds );
 uint16_t device_config_ble_timeout_seconds( void );
 esp_err_t device_config_set_ble_timeout_seconds( uint16_t a_seconds );
-rfscout_surveillance_sensitivity_t device_config_surveillance_sensitivity( void );
-esp_err_t
-device_config_set_surveillance_sensitivity( rfscout_surveillance_sensitivity_t a_sensitivity );
+rfscout_evidence_strength_t device_config_evidence_threshold( void );
+esp_err_t device_config_set_evidence_threshold( rfscout_evidence_strength_t a_threshold );
 char device_config_notification_character( rfscout_notification_type_t a_type );
 esp_err_t device_config_set_notification_character( rfscout_notification_type_t a_type,
                                                     char a_character );
