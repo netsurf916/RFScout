@@ -242,7 +242,9 @@ Every current application receives an explicit v0.4.0 review rather than treatin
 - [x] Keep Audio Spectrum analysis on raw PCM rather than Recorder capture gain; replace the clipping-prone pre-FFT `0..+48 dB` control with continuous high-pass/DC-block filtering and smoothed automatic dB display scaling.
 - [ ] Tune automatic range attack/decay and low-frequency cutoff on hardware if field use shows the defaults need adjustment.
 - [ ] Add further spectrum controls only where they improve interpretation (for example averaging/smoothing or peak hold) without making the app contract complex.
-- [ ] Validate rapid skip-through before delayed activation, repeated entry/exit, and microphone-only operation without SD storage.
+- [x] Validate rapid skip-through before delayed activation without acquiring microphone hardware.
+- [x] Validate microphone-only Audio Spectrum operation without SD storage.
+- [ ] Validate repeated Audio Spectrum entry/exit with lifecycle diagnostics sufficient to rule out leaked shared audio/service state.
 
 #### Thermal
 
