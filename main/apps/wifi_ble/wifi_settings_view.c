@@ -61,7 +61,7 @@ void wifi_settings_view_render( unsigned a_selected,
                       "%s",
                       ( a_threshold < RFSCOUT_EVIDENCE_STRENGTH_COUNT )
                           ? names[ a_threshold ]
-                          : "HIGH" );
+                          : "POSSIBLE" );
         }
         else if( 4U == item )
         {
