@@ -74,6 +74,9 @@ bool observation_store_observe( rf_device_t *a_observation,
                                 bool *a_is_new,
                                 bool *a_surveillance_new );
 
+/** @brief Reevaluate surveillance classification for all active cases after a setting change. */
+void observation_store_reevaluate_surveillance( void );
+
 /** @brief Clear all live observations while retaining any current app-owned capacity. */
 void observation_store_reset( void );
 

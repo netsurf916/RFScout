@@ -23,6 +23,9 @@ void surveillance_prepare_observation( rf_device_t *a_observation );
  */
 void surveillance_case_observe( rf_device_t *a_case, const rf_device_t *a_observation );
 
+/** @brief Reevaluate a canonical case after an interpretation setting changes. */
+void surveillance_case_evaluate( rf_device_t *a_case );
+
 /** @brief Return the number of unique evidence facts retained by a case. */
 size_t surveillance_evidence_count( const rf_device_t *a_case );
 

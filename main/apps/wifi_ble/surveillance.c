@@ -110,6 +110,14 @@ static void evaluate_case( rf_device_t *a_case )
     }
 }
 
+void surveillance_case_evaluate( rf_device_t *a_case )
+{
+    if( NULL != a_case )
+    {
+        evaluate_case( a_case );
+    }
+}
+
 void surveillance_prepare_observation( rf_device_t *a_observation )
 {
     surveillance_database_match_observation( a_observation );

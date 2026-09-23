@@ -151,6 +151,7 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
                                                        (unsigned)RFSCOUT_EVIDENCE_STRENGTH_COUNT );
             if( ESP_OK == device_config_set_evidence_threshold( threshold ) )
             {
+                observation_store_reevaluate_surveillance();
                 render_menu();
                 emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
             }

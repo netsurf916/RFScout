@@ -660,7 +660,10 @@ bool observation_store_observe( rf_device_t *a_observation,
     rf_device_t *device = &devices[ slot ];
     *device = *a_observation;
     initialize_source_times( device );
-    surveillance_case_observe( device, a_observation );
+    if( 0U != surveillance_evidence_count( device ) )
+    {
+        surveillance_case_evaluate( device );
+    }
     copy_case_result( a_observation, device );
     identity_index_insert( slot );
     emit_event( OBSERVATION_STORE_EVENT_ADDED, device );
@@ -676,6 +679,22 @@ bool observation_store_observe( rf_device_t *a_observation,
     }
     xSemaphoreGive( store_lock );
     return true;
+}
+
+void observation_store_reevaluate_surveillance( void )
+{
+    if( NULL == store_lock )
+    {
+        return;
+    }
+
+    xSemaphoreTake( store_lock, portMAX_DELAY );
+    synchronize_session_store();
+    for( size_t i = 0U; i < device_count; ++i )
+    {
+        surveillance_case_evaluate( &devices[ i ] );
+    }
+    xSemaphoreGive( store_lock );
 }
 
 void observation_store_reset( void )
