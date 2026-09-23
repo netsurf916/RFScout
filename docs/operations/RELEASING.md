@@ -147,9 +147,9 @@ This policy does **not** remove installation sanity checks. Every device-side in
 
 The combined image is a clean installation/recovery image flashed at `0x0`. It contains the bootloader, A/B partition table, initialized OTA metadata, and application. It can replace internal NVS and LittleFS state, including RFScout configuration, calibration, and other persistent system/app records. Removable SD contents such as logs and recordings are not part of the image and are not erased by flashing internal storage.
 
-The A/B partition/rollback foundation is present on this development line. The currently published legacy firmware predates this layout, so the first OTA-capable release is a clean-install boundary; incompatible pre-OTA releases should be removed from the active release set when that release is established.
+The A/B partition/rollback foundation is present in the published v0.3.3 line. Releases that predate the A/B/OTA contract are outside the active pre-1.0 install universe when they are incompatible with the current layout; devices crossing an incompatible boundary use the combined clean-install/recovery image.
 
-Separate component images remain development/recovery artifacts. The in-device installer, explicit build-selection UI, and first-boot rollback-confirmation path are implemented on this development line; the remaining hardware-validation work is maintained in [ROADMAP.md](ROADMAP.md#in-device-ota-update-architecture).
+Separate component images remain development/recovery artifacts. The in-device installer, explicit build-selection UI, and first-boot rollback-confirmation path are implemented; remaining OTA fault-injection and hardware-validation work is maintained in [ROADMAP.md](../ROADMAP.md#ota-and-release-hardening).
 
 ## Reproducibility
 

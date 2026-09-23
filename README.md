@@ -1,8 +1,8 @@
 # RFScout
 
-RFScout is a handheld **RF situational-awareness** instrument for ESP32-S3. The currently supported hardware profile is the **LILYGO T-Embed CC1101 Plus**. RFScout retains a runtime board-profile and capability abstraction so future hardware can be added without exposing board identity to applications.
+RFScout is a handheld **RF situational-awareness** instrument for ESP32-S3. The currently supported hardware profile is the **LILYGO T-Embed CC1101 Plus**. RFScout keeps board identity behind runtime profile/capability boundaries so applications consume semantic services rather than hardware-specific GPIO or peripheral details.
 
-RFScout combines passive Wi-Fi/BLE observation, board-appropriate RF capabilities, SD logging/storage, semantic input and notifications, persistent device configuration, battery telemetry, and optional hardware-specific applications exposed only when the active runtime profile has a safe provider.
+RFScout combines passive Wi-Fi/BLE observation, receive-only RF activity monitoring, SD-backed audio recording and logging, thermal imaging with an optional MLX90640, semantic input/notifications, persistent device configuration, battery telemetry, and A/B firmware update support.
 
 <p align="center">
   <img src="assets/device.jpg" alt="RFScout running on a LILYGO T-Embed CC1101 Plus" width="800">
@@ -10,79 +10,54 @@ RFScout combines passive Wi-Fi/BLE observation, board-appropriate RF capabilitie
 
 RFScout is intentionally passive wherever the underlying radio APIs allow it. It is designed to answer “what electronic activity is around me?” without requiring continuous raw-packet inspection.
 
+## Documentation map
+
+This README is the main anchor for **what RFScout contains today**. Detailed current behavior is split only where a focused page is useful; future design and priorities belong in the roadmap.
+
+| Area | Document | Purpose |
+| --- | --- | --- |
+| Product | **README.md** | Current supported hardware, applications, major behavior, and navigation to the rest of the documentation |
+| Development | [Getting started](docs/GETTING_STARTED.md) | Development environment, build/flash workflow, and contributor ramp-up |
+| Development policy | [Coding style](docs/CODING_STYLE.md) | Required source, formatting, module-boundary, and documentation conventions |
+| Platform | [Platform architecture](docs/ARCHITECTURE.md) | Board/profile model, app lifecycle, services, memory, persistence, UI/input, power, storage, and OTA invariants |
+| Applications | [Home](docs/apps/HOME.md), [System Events](docs/apps/SYSTEM_EVENTS.md), [WiFi / BLE](docs/apps/WIFI_BLE.md), [CC1101](docs/apps/CC1101.md), [nRF24](docs/apps/NRF24.md), [Recorder](docs/apps/RECORDER.md), [Audio Spectrum](docs/apps/AUDIO_SPECTRUM.md), [Thermal](docs/apps/THERMAL.md) | Implemented application behavior, controls, data interpretation, dependencies, lifecycle, and current limitations |
+| Planning | [Roadmap](docs/ROADMAP.md) | **Authoritative future planning**, active release scope, unfinished work, and brainstorming |
+| Operations | [Firmware releases](docs/operations/RELEASING.md) | Candidate, release, browser-flasher, OTA-catalog, and publication runbook |
+
+The boundary is intentional: **README/app/architecture pages describe current implementation; ROADMAP describes intended work.** Git history and pull requests remain the implementation history.
+
 ## Applications
 
 Top-level application order is:
 
-1. **System Events** — optional and disabled by default
-2. **Home / Device Settings**
-3. **WiFi / BT**
-4. **CC1101** — only when the active board provides the current CC1101 service
-5. **nRF24** — only when the active board provides the current nRF24 service
-6. **Recorder** — only when the current audio-capture/storage providers are available
-7. **Thermal** — only when enabled and an MLX90640 is detected
-8. **Audio Spectrum** — when enabled and the microphone provider is available
+1. **System Events** — optional and disabled by default; bounded read-only system-event history
+2. **Home / Device Settings** — always available; device policy, networking, firmware update, and global settings
+3. **WiFi / BT** — passive Wi-Fi/BLE observation; the monitor UI already presents itself as **WiFi / BLE**, while some current descriptor/settings labels retain the older name
+4. **CC1101** — receive-only sub-GHz RSSI sweeps and conservative signal-shape classification
+5. **nRF24** — receive-only 2.4 GHz RPD activity scanning plus surfaces for separately validated Enhanced ShockBurst observations
+6. **Recorder** — SD-backed 16-bit mono WAV recording, post-processing, browsing, deletion, and playback
+7. **Thermal** — optional MLX90640 relative-IR heat-map application
+8. **Audio Spectrum** — live microphone spectrum/FFT application without an SD dependency
 
-Disabled or unavailable apps are skipped. Home is always available and is the default/fallback startup target. Applications consume board-neutral semantic input, service availability, and a managed application view rather than board names or physical controls.
+Disabled or unavailable apps are skipped. Home is always available and is the default/fallback startup target. Applications receive a managed view, semantic input, and platform-owned services rather than board-specific handles.
 
-### Firmware Update
+See the linked app pages in the [documentation map](#documentation-map) for detailed current behavior.
 
-Infrastructure networking and firmware update are separate nested Home / Device Settings menus. **Network** owns passive AP discovery, remembered SSIDs/passwords, and explicit Connect/Disconnect/Forget actions. After DHCP succeeds, RFScout starts SNTP automatically and marks the Home network ready only after network time has synchronized. The station connection then persists across Network and Update submenu transitions and is torn down only by an explicit Disconnect or when Home itself exits. ESP-IDF Wi-Fi configuration remains RAM-only so the driver does not become a second global credential store. **Update** is available only while that Home-owned connection is established and NTP-synchronized; it then exposes **Check for update** and **Available builds** actions. Catalog retrieval remains a cancellable HTTPS service using ESP-IDF certificate-bundle validation, and leaving Update cancels acquisition/installation without dropping the Home network session.
+## Platform overview
 
-### WiFi / BT
+The current supported runtime profile is the **LILYGO T-Embed CC1101 Plus**. A minimal early fingerprint selects the immutable profile before ordinary board GPIO/peripheral initialization. Unknown hardware remains awake and inert for recovery flashing.
 
-WiFi / BT passively observes Wi-Fi/BLE traffic, tracks recent devices in growable app-session PSRAM, performs longest-prefix IEEE vendor attribution, distinguishes private/random addresses from unresolved public addresses, and combines multiple signals for conservative surveillance-oriented classification.
+Every active application has a platform-owned resource session and managed view. Session-managed workers/services are quiesced before app-owned memory is reclaimed. Large retained app state belongs in external PSRAM; internal SRAM remains reserved for stacks, DMA/peripheral-constrained allocations, system state, and latency-sensitive work.
 
-Wi-Fi, BLE, and retained surveillance history currently have independent 10–300 second retention controls. Ordinary Wi-Fi/BLE discovery feedback can be enabled independently; surveillance categories use app-owned notifications.
+Persistent preferences are firmware-managed internal records split between system-owned and descriptor-confined app namespaces. SD is removable/bulk storage for logs, recordings, breadcrumbs, and future explicit transfer packages; it is not configuration authority.
 
-### CC1101
+Infrastructure Wi-Fi and firmware update are Home-owned platform workflows. A/B OTA streams an application image directly into the ESP-IDF-selected inactive slot, validates identity/size/SHA/image structure/readback before boot commit, and relies on ESP-IDF first-boot rollback until mandatory common startup confirms the new image.
 
-CC1101 performs receive-only RSSI spectrum sweeps with configurable profiles/range/step, a live activity histogram, conservative RF-behavior classifications, notifications, and count reset.
-
-### nRF24
-
-nRF24 performs receive-only 2.4 GHz RPD scanning with configurable channel bounds/dwell, activity history, conservative classification, and surfaces for validated Enhanced ShockBurst observations. The current RPD scanner does not itself decode packets; no ACK generation, replay, injection, or active discovery is performed.
-
-### Recorder
-
-Recorder uses the board-neutral audio-capture service plus SD storage for 16-bit mono WAV capture and playback. The current T-Embed profile uses its PDM microphone provider while the audio-capture service owns provider selection, hardware probing, transport lifecycle, and reads. Recorder never receives a raw I2S handle. Active recording or finalization blocks app transitions until the file is safely complete.
-
-### Audio Spectrum
-
-Audio Spectrum is the separate live microphone FFT/spectrum app and does not require an SD card. It is exposed only when the active profile has a compatible audio-capture provider. Live frequency labels use measured PCM throughput once available rather than assuming the configured request rate.
-
-### Thermal
-
-Thermal uses an optional MLX90640 on the external I2C/Qwiic interface. Native 32x24 data is interpolated for the LCD; literal thermal imagery bypasses semantic theme color translation.
-
-## Home / Device Settings
-
-Current global settings include brightness/display idle, visual theme, independent **Normal / Quiet** audio policy, UI/Event/Alert presentation levels, supported power-button/protective actions, time source/timezone/manual time, startup/app enablement, SD logging, and breadcrumb policy.
-
-Setting changes are persisted automatically through RFScout's internal persistent-record service; there is no user-facing Save step. App-owned notification settings and WiFi / BT retention remain in their respective app menus.
-
-The Time submenu separates source policy from timezone presentation. **Auto** accepts valid GPS UTC time when the GPS service is available and locked; **Manual** exposes explicit date/time fields. A successful Home Network connection also applies NTP time without changing the user's Auto/Manual policy. Consumers can distinguish invalid, retained, manual, GPS-synchronized, and NTP-synchronized wall-clock state.
-
-## Power, display, and persistence
-
-Display and power actions are capability-gated by the selected runtime profile. T-Embed retains its validated dedicated power-button, deep-sleep, and physical power-off semantics. The device-wide input lock suppresses semantic navigation/select input but intentionally does not disable T-Embed's dedicated power button.
-
-
-Persistent preferences are firmware-managed internal records split between device-wide system records and descriptor-owned app records. Time policy is a separate system-owned bounded record. SD is reserved for removable/bulk data and logging, not configuration authority. See `docs/CONFIGURATION.md`.
-
-
-
-## Hardware and memory
-
-The runtime board profile owns physical pin mappings, buses, display transforms, capabilities, and power semantics. Provider code initializes only when the selected profile permits it. Unknown hardware remains awake and inert without initializing board GPIO/peripherals so it can be recovered by reflashing.
-
-RFScout requires usable external **PSRAM**. Large app-owned collections can grow dynamically during an app resource session and are reclaimed only after the platform proves workers/callbacks no longer reference them. Internal SRAM remains reserved for system, stack, DMA/hardware-constrained, and latency-sensitive allocations.
-
-See [Board targets and porting](docs/BOARD_PORTING.md).
+The [platform architecture](docs/ARCHITECTURE.md) is the canonical reference for these shared contracts.
 
 ## Build and flashing
 
-RFScout targets ESP32-S3 with **ESP-IDF 6.1** and enforces clang-format 18.
+RFScout targets ESP32-S3 with **ESP-IDF 6.1** and enforces **clang-format 18**.
 
 ```sh
 idf.py set-target esp32s3
@@ -90,21 +65,13 @@ idf.py build
 idf.py flash monitor
 ```
 
-The firmware validates the T-Embed CC1101 Plus runtime profile at startup and leaves unsupported hardware inert. Ready-for-review pull requests can produce short-lived candidate bundles. Published releases are prepared deliberately through the release workflow. GitHub Pages is generated from release and candidate artifacts and carries both the browser flasher and the unified in-device OTA build catalog/application images.
+For a complete development setup, generated-data workflow, formatting commands, CI expectations, browser flashing, and troubleshooting, start with [Getting started](docs/GETTING_STARTED.md). Contributors should also read [Coding style](docs/CODING_STYLE.md) before changing source.
 
-## Documentation
+## Releases
 
-The documentation is intentionally consolidated. Production pages describe current behavior; future design and release planning belong only in the roadmap.
+Ready-for-review pull requests and `main` can produce short-lived candidate bundles. Durable releases are prepared deliberately, use SemVer `vX.Y.Z` tags, and publish browser-flasher plus in-device OTA catalog data through GitHub Pages.
 
-- [Capabilities](docs/CAPABILITIES.md) — implemented user-visible behavior
-- [Architecture](docs/ARCHITECTURE.md) — app/service boundaries, lifecycle, resource sessions, UI/audio/power/storage architecture
-- [Device configuration and persistence](docs/CONFIGURATION.md) — schema, migration, display/power behavior, SD/logging, time
-- [Board targets and porting](docs/BOARD_PORTING.md) — board/capability/memory contract
-- [Prefix identity](docs/PREFIX_IDENTITY.md) — generated OUI/prefix and surveillance identity data
-- [Coding style](docs/CODING_STYLE.md) — source/style requirements
-- [Getting started](docs/GETTING_STARTED.md) — development setup
-- [Firmware releases](docs/RELEASING.md) — candidate/release/browser-flasher workflow
-- [Roadmap](docs/ROADMAP.md) — canonical completed-work and future-release planning
+See the [firmware release runbook](docs/operations/RELEASING.md) for the operational workflow.
 
 ## License
 

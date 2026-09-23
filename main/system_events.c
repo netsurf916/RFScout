@@ -59,7 +59,6 @@ static bool is_system_state_event( const rfscout_event_t *a_event )
         case RFSCOUT_EVENT_POWER_DISCONNECTED:
         case RFSCOUT_EVENT_STORAGE_MOUNTED:
         case RFSCOUT_EVENT_STORAGE_MOUNT_FAILED:
-        case RFSCOUT_EVENT_STORAGE_UNMOUNTED:
         case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNTED:
         case RFSCOUT_EVENT_INTERNAL_STORAGE_FORMATTED:
         case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED:
@@ -109,7 +108,6 @@ static bool notification_eligible( const rfscout_event_t *a_event )
         case RFSCOUT_EVENT_POWER_DISCONNECTED:
         case RFSCOUT_EVENT_STORAGE_MOUNTED:
         case RFSCOUT_EVENT_STORAGE_MOUNT_FAILED:
-        case RFSCOUT_EVENT_STORAGE_UNMOUNTED:
         case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNTED:
         case RFSCOUT_EVENT_INTERNAL_STORAGE_FORMATTED:
         case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED:
@@ -168,11 +166,7 @@ static void render_event( const rfscout_event_t *a_event,
             break;
         case RFSCOUT_EVENT_STORAGE_MOUNT_FAILED:
             snprintf( a_title, a_title_size, "SD CARD" );
-            snprintf( a_detail, a_detail_size, "MOUNT FAILED" );
-            break;
-        case RFSCOUT_EVENT_STORAGE_UNMOUNTED:
-            snprintf( a_title, a_title_size, "SD CARD" );
-            snprintf( a_detail, a_detail_size, "UNMOUNTED" );
+            snprintf( a_detail, a_detail_size, "UNAVAILABLE" );
             break;
         case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNTED:
             snprintf( a_title, a_title_size, "INTERNAL STORAGE" );

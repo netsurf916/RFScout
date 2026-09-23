@@ -1,8 +1,8 @@
 # RFScout Roadmap
 
-This is the canonical planning document for RFScout. Production documentation describes implemented behavior; future design, priorities, follow-up work, and brainstorming belong here so intent is not scattered across operational docs.
+This is the **authoritative planning document** for RFScout. Current product behavior is anchored in [README.md](../README.md), shared implemented contracts live in [ARCHITECTURE.md](ARCHITECTURE.md), and implemented app behavior lives under [apps/](apps/). Future design, priorities, unfinished work, active release scope, and brainstorming belong here.
 
-Statuses describe implementation state, not release state. Active release planning is maintained here rather than in release-specific roadmap files.
+Statuses describe implementation state, not release state. Git history and pull requests preserve implementation history; completed items should remain here only when they provide useful context for still-open work.
 
 ## v0.4.0 milestone plan
 
@@ -314,21 +314,21 @@ The following baseline work is already complete and remains relevant context for
 
 **Priority:** High
 
-PR #70 establishes the first shared audio-capture boundary by moving microphone/recording implementation under `services/audio/` and allowing Recorder and Audio Spectrum to consume the same microphone service. The remaining work is calibration/generalization rather than making the microphone a Recorder-owned resource.
+PR #70 established the shared audio-capture boundary by moving microphone/recording implementation under `services/audio/` and allowing Recorder and Audio Spectrum to consume the same microphone service. The current provider already uses the deterministic LEFT PDM slot and measures physical PDM clock with PCNT; the remaining work is calibration/generalization.
 
 Goals:
 
 - [x] Move shared I2S0/PDM microphone ownership out of the Recorder app module and behind a reusable audio service boundary. PR #70.
-- [ ] Keep the board microphone on its deterministic LEFT slot.
+- [x] Keep the board microphone on its deterministic LEFT slot.
+- [x] Measure physical PDM clock with PCNT.
 - [ ] Configure toward a desired physical PDM outcome rather than assuming an ESP-IDF request produces the requested clock/rate.
-- [ ] Measure physical PDM clock with PCNT and use bounded reconfiguration when necessary.
+- [ ] Use bounded reconfiguration when measured clock indicates the configured request is not producing the desired physical outcome.
 - [ ] Clamp requests to known-safe limits and reject measured clocks outside the supported range.
-- [ ] Measure delivered PCM throughput and expose an effective sample rate.
-- [ ] Expose requested rate, measured clock, effective rate, calibration result, level, peak, and clipping telemetry.
+- [x] Measure delivered PCM throughput in the current Recorder/monitor consumers, use valid measured rate for WAV metadata, and use it for live FFT frequency interpretation.
+- [ ] Promote requested rate, measured clock, effective rate, calibration result, level, peak, and clipping telemetry into a generalized shared `audio_capture` contract so future consumers do not need Recorder-specific measurement.
 - [ ] Generalize fixed digital input-gain policy so Recorder capture and live analysis have explicit, documented persistence/composition semantics.
 - [x] Serialize microphone ownership so recording and monitoring cannot independently own I2S0. PR #70 resource-session/audio-capture boundary.
-- [ ] Keep whole-recording operations such as DC correction, trim, and normalization in Recorder-specific behavior.
-- [ ] Make FFT frequency interpretation use the measured effective PCM rate.
+- [x] Keep whole-recording operations such as DC correction, trim, and normalization in Recorder-specific behavior.
 
 Future consumers may include tuner/pitch analysis and microphone-side CW/Morse receive. Those remain distinct from RF-side decoding and are not v0.4.0 release blockers unless separately promoted.
 
@@ -350,223 +350,49 @@ Rework application/system logging as a common policy rather than letting each fe
 - add regression tests for levels, missing/unknown fields, long values, and quoting;
 - preserve UTC ISO-8601 timestamps and explicit uptime fallback.
 
-## In-device OTA update architecture
-
-**Status:** A/B flash/rollback, separate Home-owned Network and Update menus, remembered-network persistence, passive AP discovery, explicit STA association, automatic NTP synchronization, deterministic Home-session teardown, embedded build identity, Pages OTA catalogs, stable/manual build selection, streaming installation, and first-boot rollback confirmation are implemented on the OTA development branch. Hardware validation remains.
-
-**Design goal:** Preserve RFScout's passive-by-default behavior and strict application/service lifecycle boundaries while allowing a user to deliberately obtain temporary Internet connectivity, check for a release, install an application image into the inactive OTA slot, and recover automatically if the new image does not boot successfully.
-
-### Home-owned Network and Update menus
-
-Firmware update is a nested **Home / Device Settings → Update** menu rather than a top-level application. Infrastructure networking exists only while that menu is in use; RFScout does not gain a device-wide "known networks" or always-connected policy.
-
-Opening the Network menu must not associate with an access point. While disconnected, it may perform passive AP scans and present remembered networks that have been observed in range. Passive scan results are volatile Home-session state. Association is always a deliberate user action. After DHCP succeeds, the infrastructure station automatically starts SNTP and updates the authoritative device clock when synchronization completes.
-
-The initial UI contract is:
-
-- show the running firmware version and current OTA-network state;
-- show remembered networks that have been observed by a passive scan, including useful signal information;
-- selecting a visible remembered network opens an action screen rather than connecting immediately;
-- the network action screen offers at least **Connect**, **Forget**, and **Back**;
-- provide a network-management/add flow for entering credentials for a new SSID;
-- after an explicit connection succeeds, expose **Check for update**;
-- after a compatible release is discovered, show the current and target versions and require an explicit install action;
-- download/install progress is presented inside the Update menu and makes cancellation semantics clear.
-
-The Update menu may retain credentials for multiple access points. Those credentials are application-owned durable state under the update feature's persistence identity, not fields in device-wide configuration and not state owned by the Wi-Fi service. The Update menu chooses which credential set to offer/use based on its own saved list and current passive scan results. No automatic association occurs merely because a remembered AP is visible.
-
-Hidden-network support is not required initially because discovering a hidden SSID generally requires active probing or a direct connection attempt. It can be added later as an explicit user action without changing the passive default.
-
-### Update-menu lifecycle boundary
-
-The infrastructure station is owned by the Home app session rather than either nested menu. Leaving Network or Update preserves the connection so the user can configure networking and then enter Update without reconnecting. An explicit Disconnect or leaving Home tears down the station; leaving Update independently stops OTA acquisition/installation.
-
-When the Update menu closes or Home exits, teardown must:
-
-1. stop/cancel passive scanning owned by the Update session;
-2. cancel any manifest or firmware HTTP request;
-3. abort an in-progress OTA write before it is made bootable;
-4. disconnect the infrastructure STA session;
-5. release Wi-Fi/network resources through the normal service/session teardown path;
-6. clear transient credential/password copies and scan/manifest/download state; and
-7. leave only the intentionally persisted remembered-network configuration.
-
-A firmware download is therefore cancelable by leaving Update or Home. Partial data in the inactive OTA slot is not resumable state and may be overwritten from the beginning on the next attempt. The currently running partition remains the boot target until the installer has completely received and validated the candidate and enters the final commit/reboot phase.
-
-The installer must avoid a long-lived "staged for next reboot" state. After final validation, selecting the new boot partition and restarting should be treated as one tightly coupled terminal operation. Before that commit point, menu exit can cancel safely; after it, ordinary app navigation is no longer meaningful because reboot is immediate.
-
-### Network ownership and abstraction
-
-Credential ownership, connection policy, and user intent belong to the Home Network menu. Low-level infrastructure Wi-Fi and SNTP belong behind semantic service/provider boundaries.
-
-The Network menu may ask that station service to:
-
-- perform a passive AP scan;
-- establish a STA connection using one credential set supplied for the current Home session;
-- report connection/DHCP status; and
-- disconnect/close.
-
-The Wi-Fi service must not maintain a global remembered-network database or silently reconnect after Home exits. Likewise, the Network and Update menus must not take ownership of driver handles, event-loop internals, DHCP/SNTP implementation details, or hardware-specific Wi-Fi teardown.
-
-The existing WiFi / BT observation application remains a separate passive-monitoring concern. Infrastructure STA operation must acquire/quiesce shared Wi-Fi resources through the platform lifecycle rather than reaching into the observation app or allowing monitor and OTA modes to conflict implicitly.
-
-### GitHub Pages OTA publication
-
-OTA is published as part of RFScout's existing GitHub Pages deployment. The device fetches:
-
-`https://netsurf916.github.io/RFScout/ota/catalog.json`
-
-GitHub Releases and successful Actions candidate artifacts remain the source builds. Pages creates one atomic deployment containing the browser flasher and an OTA catalog derived from the **same build inventory**:
-
-```text
-/
-    index.html
-    catalog.json
-    firmware/
-        releases/<tag>/...
-        candidates/main/...
-        candidates/pr-<number>/...
-    ota/
-        catalog.json
-```
-
-The OTA catalog points at the application-only image already mirrored under each build's `firmware/...` directory. It does not duplicate firmware bytes into a separate OTA release tree. Builds are eligible for the device catalog only when they carry valid `ota-image.json` metadata whose version and packaged build commit agree with the browser-flasher entry and whose project, hardware target, ESP-IDF target, partition-layout generation, application size, and SHA-256 pass publication-time validation. Pull-request entries retain the PR head separately as source provenance while integrity remains tied to the merge-ref commit that produced the tested artifact.
-
-Eligible OTA entries come from the current `main` candidate, current open-PR candidates, draft releases, prereleases, and published releases when those builds are present in the web flasher and carry compatible OTA metadata. Pages serializes at most 8 KiB, retaining the newest official stable releases first and then the newest remaining eligible builds, so lower-priority entries may be omitted when the catalog is full. The normal **Check for update** path filters the retained catalog to published stable releases and selects the newest compatible SemVer. The explicit/manual build-selection UI allows choosing an exact retained main, PR, draft, prerelease, or published build without applying stable-version ordering.
-
-### Running-version identity
-
-The updater must not infer its version from filenames, Git state, or hard-coded UI text. The running image is authoritative. Release and candidate builds embed their package version into ESP-IDF application metadata, and packaging verifies that metadata before producing artifacts.
-
-Stable-channel ordering applies only to semantic release versions. Candidate identifiers remain valid explicit install targets but do not participate in SemVer ordering.
-
-### Pre-1.0 compatibility policy
-
-RFScout does not maintain a historical OTA compatibility graph before `v1.0.0`. Once this OTA mechanism reaches `main`, the project may reset the development release line and remove older releases that are incompatible with the current OTA contract. Thereafter, builds exposed by the web flasher are expected to derive from the current compatible main line.
-
-If a later pre-1.0 change deliberately breaks the OTA/partition contract, incompatible old releases should again be removed from the active published set and affected devices should use the combined clean-install/recovery image. The device still performs hard sanity checks rather than trusting catalog hygiene alone.
-
-Stable selection therefore requires only:
-
-1. valid catalog schema;
-2. exact RFScout project, supported hardware target, ESP-IDF target, and partition-layout generation;
-3. a published stable release entry;
-4. a valid semantic target version newer than the running semantic version; and
-5. validated artifact path, size, and SHA-256 metadata.
-
-Explicit/manual selection does not require the target to be newer and does not interpret candidate identifiers as semantic versions. It still requires all hard project/hardware/layout/image sanity checks.
-
-Normal in-device OTA consumes only the application image. The combined `0x0` image remains the clean-install/recovery artifact and is the required mechanism for incompatible partition-layout changes.
-
-The first implementation does not require firmware signing. HTTPS certificate validation is therefore the initial authenticity boundary, while SHA-256 and size protect transfer/storage integrity. The schema remains extensible so image signatures can be added later without redesigning acquisition or installation.
-
-### Partition-layout generation
-
-Each OTA-compatible release identifies the partition-layout generation it expects, beginning with `ab-v1`. Normal OTA must reject a candidate whose layout generation does not match the running firmware's layout.
-
-The application image cannot safely redefine the bootloader, partition table, or OTA-data placement that governs the currently running updater. A future partition-layout migration therefore requires either:
-
-- an explicitly designed/tested migration mechanism with its own recovery guarantees; or
-- a clean/manual combined-image installation.
-
-It must never be smuggled through the ordinary app-image OTA path.
-
-### Installer and A/B partition ownership
-
-The Update UI must not know flash offsets, partition labels, OTA sequence counters, or which physical slot is called `ota_0` versus `ota_1`. Those are platform/update-service implementation details.
-
-A semantic updater/installer service owns the ESP-IDF OTA API and exposes operations such as begin/write/finish/abort/progress without exposing `esp_partition_t` or raw flash addresses to the UI.
-
-For an install, that service:
-
-1. asks ESP-IDF for the currently running application partition;
-2. asks `esp_ota_get_next_update_partition(NULL)` for the eligible update destination;
-3. verifies that a valid non-running OTA destination exists and that the declared image can fit;
-4. begins the OTA write with `esp_ota_begin()`;
-5. streams the HTTPS response directly into the OTA handle with `esp_ota_write()` while computing SHA-256 and byte count;
-6. requires the final byte count and streaming SHA-256 to match the catalog and completes ESP-IDF image validation with `esp_ota_end()`;
-7. reads the completed image metadata from the inactive partition and requires its embedded RFScout project/version identity to agree with the selected catalog entry;
-8. reads back exactly the declared application-artifact byte count from the destination partition, computes SHA-256 over those stored bytes, and requires that flash-readback SHA-256 to match the catalog;
-9. only after streaming integrity, ESP-IDF image validation, and flash-readback integrity all succeed, marks that destination as the next boot image with `esp_ota_set_boot_partition()`; and
-10. immediately enters the platform reboot path.
-
-With the current two-slot layout, ESP-IDF's "next update partition" policy naturally resolves to the inactive slot; RFScout code does not encode that fact by offset or slot name. OTA-data state remains owned by ESP-IDF/bootloader logic.
-
-Errors before the boot-partition commit abort the OTA handle and leave the currently running application selected. Leaving the Home Update menu during download follows the same abort path.
-
-### First-boot confirmation and rollback
-
-Rollback confirmation is a boot/platform responsibility, not an Update-menu responsibility. The new image must be able to prove basic operability even if the user never opens the Update menu again.
-
-With `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`, `esp_ota_set_boot_partition()` marks a newly selected image for first-boot verification. Early common startup must inspect the running OTA partition state. When it is `ESP_OTA_IMG_PENDING_VERIFY`, RFScout runs a bounded core-health check and then either:
-
-- calls `esp_ota_mark_app_valid_cancel_rollback()` after the image has demonstrated minimum viable operation; or
-- calls `esp_ota_mark_app_invalid_rollback_and_reboot()` when the new image is known to be unusable.
-
-An unexpected reset/power loss before confirmation intentionally allows the ESP-IDF bootloader to reject the unconfirmed image and return to the previous working slot.
-
-The confirmation test should prove RFScout can reach a stable core runtime on the supported hardware, but it must not depend on optional/hot-plug peripherals, Internet availability, an OTA-server response, or opening the Update menu. The exact health checklist is separate implementation/test work and should be conservative enough to avoid accepting a fundamentally broken build without turning an unrelated optional-device failure into a firmware rollback.
-
-The updater must not start another OTA while the currently running image is still pending verification. ESP-IDF already rejects that state; RFScout should surface it as a platform/update-state error rather than attempting to work around it.
-
-### Manifest/image validation
-
-Before a candidate can become bootable, validation must cover at least:
-
-- supported manifest schema and selected build identity/provenance;
-- exact RFScout project/hardware target;
-- ESP-IDF chip target;
-- matching partition-layout generation;
-- safe relative artifact path under the OTA origin;
-- declared image size that fits the selected OTA partition;
-- received byte count equal to declared size;
-- streaming SHA-256 equal to the catalog value;
-- post-write flash-readback SHA-256 over exactly the declared artifact byte count equal to the catalog value;
-- valid ESP application image structure; and
-- embedded application version/project metadata consistent with the catalog.
-
-Unknown optional manifest fields should be ignored when schema v1 semantics remain intact; an unsupported schema version is a hard failure.
-
-### Implementation slicing
-
-Keep the feature reviewable and preserve abstraction boundaries by landing it in small pieces on the OTA integration branch:
-
-1. document/finalize manifest, version, partition, rollback, and app/network ownership contracts;
-2. **implemented on the OTA development branch:** embed authoritative candidate/release version metadata, verify it during packaging, and generate immutable OTA release metadata;
-3. **implemented on the OTA development branch:** add the Home-owned Update menu plus OTA-owned remembered-network persistence and reusable credential/text-entry UI;
-4. **implemented on the OTA development branch:** add session-scoped passive scan and explicit infrastructure-STA connect/disconnect support behind a semantic service, including explicit SSID-targeted active search for remembered networks not seen passively;
-5. **implemented on the OTA development branch:** add explicit static HTTPS catalog retrieval, hard build-identity/layout validation, stable-release selection, explicit main/PR/draft/prerelease/release build browsing, cancellation on Update-menu/Home exit, and Update UI reporting;
-6. **implemented on the OTA development branch:** add the transport-neutral installer abstraction and ESP-IDF A/B streaming implementation, including exact byte count, streaming SHA-256, ESP-IDF image validation, embedded project/version checks, flash-readback SHA-256, boot commit, and immediate reboot;
-7. **implemented on the OTA development branch:** add boot-time pending-image confirmation after bounded mandatory common startup, preserving automatic rollback across crash/reset/power loss before confirmation;
-8. **implemented on the OTA development branch:** derive the device OTA catalog from the same main/PR/release inventory used by the atomic GitHub Pages browser-flasher deployment; and
-9. validate cancellation, leaving Update/Home, app switching, network loss, truncated/corrupt images, power loss at each OTA stage, explicit candidate installs, rollback, and recovery flashing on hardware.
+## OTA and release hardening
+
+The A/B updater, Home-owned infrastructure networking, NTP gating, Pages OTA catalog, stable/manual build selection, streaming installer validation, first-boot confirmation, and rollback foundation are implemented. Their current contracts are documented in [Platform architecture](ARCHITECTURE.md), [Home / Device Settings](apps/HOME.md), and the [release runbook](operations/RELEASING.md).
+
+Remaining planning is validation/hardening rather than an updater redesign:
+
+- [ ] Validate leaving Update and leaving Home at each cancellable acquisition/install stage.
+- [ ] Validate station/network loss during catalog and firmware acquisition.
+- [ ] Validate truncated, corrupt, wrong-size, wrong-SHA, wrong-project, wrong-target, and wrong-layout images remain non-bootable.
+- [ ] Validate explicit main/PR/draft/prerelease/release candidate installation on hardware.
+- [ ] Validate power loss/reset before, during, and after boot-partition commit and prove rollback behavior.
+- [ ] Validate first-boot confirmation does not depend on optional peripherals, SD, Internet, or reopening Update.
+- [ ] Validate combined-image recovery flashing for an intentionally incompatible/broken application image.
+- [ ] Keep tag/build provenance exact: a release tag must identify the tested source commit and must never be silently moved.
+- [ ] Keep browser-flasher and in-device OTA inventory derived from the same validated build metadata.
+- [ ] Revisit image signing/authenticity only as an explicit future security design; do not weaken the existing HTTPS + identity/layout + SHA/readback checks in the meantime.
 
 ## Medium-term platform work
 
-### System-owned internal persistent record/database service
+### Bounded persistent collection/database layer
 
 **Priority:** Platform prerequisite for applications that need small durable browsable histories without removable storage.
 
-Build a compact service over internal persistence that owns record layout, bounds/retention, durability, and iteration so applications do not know LittleFS paths or filesystem topology. It should support small app-specific durable collections while keeping configuration, removable bulk files, and transient/session PSRAM data semantically separate.
+The system-owned persistent-record service for bounded named records and configuration is already implemented. The remaining proposal is a higher-level bounded collection/iteration layer for small durable histories so applications still do not know LittleFS paths or filesystem topology.
 
-- [ ] Define service-owned namespacing/record identity and bounded retention semantics.
+- [ ] Define collection-owned namespacing/record identity and bounded retention semantics.
 - [ ] Provide compact put/get/delete/iterate operations suitable for on-device browsing.
 - [ ] Define corruption/recovery behavior without exposing raw filesystem ownership to applications.
-- [ ] Keep SD logging/export optional and separate from authoritative internal record state.
-- [ ] Validate write endurance and bounded-space behavior for expected low-volume records.
+- [ ] Keep ordinary configuration, durable collections, SD logging/export, and transient/session PSRAM semantically separate.
+- [ ] Validate write endurance and bounded-space behavior for expected low-volume histories.
 
 ### CW/Morse application
 
-**Priority:** After the system-owned internal persistent record/database service.
+**Priority:** After the bounded persistent collection/database layer.
 
-**Dependency:** Implement after the internal record/database service above so receive/decode history can be browsed persistently without requiring an SD card.
+**Dependency:** Implement after the collection layer above so receive/decode history can be browsed persistently without requiring an SD card.
 
 - compose transmit strings with the rotary encoder and center button;
-- store user-defined transmit message **presets** as ordinary CW app configuration in authoritative `rfscout.json`;
+- store user-defined transmit message **presets** as ordinary descriptor-owned CW app configuration through the persistent-record service;
 - browse/select/add/delete transmit presets through the app UI;
 - send complete messages through the shared Morse/speaker service;
 - keep detection-notification one-character mappings separate from CW transmit presets;
-- if receive/decoding is added, store a small browsable decoded-message history through the system-owned internal record service rather than configuration;
+- if receive/decoding is added, store a small browsable decoded-message history through the bounded persistent collection layer rather than ordinary configuration;
 - emit structured decoded-message records through the common logger when receive/decoding is enabled, subject to the configured logging level;
 - keep decoded-message SD logging independent from internal app history so the app remains fully useful without removable storage;
 - reserve SD-specific files for genuinely bulk/raw capture data if such capture is added later.
@@ -658,9 +484,11 @@ These are ideas worth preserving, not committed scope or priority.
 
 ## Roadmap maintenance rules
 
-- `ROADMAP.md` is the single canonical planning location, including active release milestones.
-- When a planned feature becomes implemented, move factual behavior into the appropriate production documentation and mark the roadmap item complete here.
+- `ROADMAP.md` is the single authoritative planning location, including active release milestones.
+- `README.md` is the main current-product/documentation anchor.
+- `ARCHITECTURE.md` owns implemented shared platform contracts; `apps/*.md` own implemented app-specific behavior.
+- When planned behavior becomes implemented, move the lasting factual description into the owning current-state document and reduce/remove completed design prose here unless it remains necessary context for unfinished work.
 - Do not create parallel release-specific roadmap/status documents unless the material genuinely cannot be maintained coherently here.
-- Do not leave future-tense design promises in README, Architecture, Capabilities, Configuration, SD-card, or Release docs.
+- Do not leave future-tense design promises in README, Architecture, app pages, Getting Started, Coding Style, or the release runbook.
 - Keep speculative/vision material here unless a separate technical research document is genuinely needed for a specialized subject.
 - A merged planning-only PR does not mean its feature is implemented; status must distinguish design capture from production code.
