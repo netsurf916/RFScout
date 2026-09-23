@@ -10,7 +10,9 @@
 #include "ble_monitor.h"
 #include "device_config.h"
 #include "event.h"
+#include "notification.h"
 #include "notification_preferences.h"
+#include "platform.h"
 #include "observation_store.h"
 #include "radio_monitor.h"
 #include "ui.h"
@@ -25,7 +27,7 @@
 #define WIFI_MENU_BACK 0U
 #define WIFI_MENU_RESET 1U
 #define WIFI_MENU_NOTIFICATIONS 2U
-#define WIFI_MENU_SENSITIVITY 3U
+#define WIFI_MENU_EVIDENCE_THRESHOLD 3U
 #define WIFI_MENU_WIFI_TIMEOUT 4U
 #define WIFI_MENU_BLE_TIMEOUT 5U
 #define WIFI_MENU_ITEM_COUNT 6U
@@ -47,7 +49,7 @@ static void render_menu( void )
     wifi_settings_view_render( menu_item,
                                menu_editing,
                                notification_preferences_app_enabled( RFSCOUT_APP_WIFI_BT ),
-                               device_config_surveillance_sensitivity(),
+                               device_config_evidence_threshold(),
                                device_config_wifi_timeout_seconds(),
                                device_config_ble_timeout_seconds() );
 }
@@ -144,16 +146,29 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
             app_notification_menu_open( &notification_menu );
             return;
         }
-        if( WIFI_MENU_SENSITIVITY == menu_item )
+        if( WIFI_MENU_EVIDENCE_THRESHOLD == menu_item )
         {
-            rfscout_surveillance_sensitivity_t sensitivity =
-                device_config_surveillance_sensitivity();
-            sensitivity =
-                (rfscout_surveillance_sensitivity_t)( ( (unsigned)sensitivity + 1U ) %
-                                                      (unsigned)
-                                                          RFSCOUT_SURVEILLANCE_SENSITIVITY_COUNT );
-            if( ESP_OK == device_config_set_surveillance_sensitivity( sensitivity ) )
+            rfscout_evidence_strength_t threshold = device_config_evidence_threshold();
+            threshold = (rfscout_evidence_strength_t)( ( (unsigned)threshold + 1U ) %
+                                                       (unsigned)RFSCOUT_EVIDENCE_STRENGTH_COUNT );
+            if( ESP_OK == device_config_set_evidence_threshold( threshold ) )
             {
+                size_t newly_qualified[ SURVEILLANCE_OTHER + 1U ] = { 0 };
+                observation_store_reevaluate_surveillance(
+                    newly_qualified, sizeof( newly_qualified ) / sizeof( newly_qualified[ 0 ] ) );
+                for( size_t classification = (size_t)SURVEILLANCE_ALPR;
+                     classification <= (size_t)SURVEILLANCE_OTHER;
+                     ++classification )
+                {
+                    const rfscout_notification_type_t notification =
+                        notification_for_surveillance( (surveillance_class_t)classification );
+                    for( size_t count = 0U; count < newly_qualified[ classification ]; ++count )
+                    {
+                        platform_set_alert_led( true );
+                        (void)notification_emit( notification );
+                        platform_set_alert_led( false );
+                    }
+                }
                 render_menu();
                 emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
             }

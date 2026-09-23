@@ -26,12 +26,12 @@ jobs:
       - name: Commit registry and signature changes
         run: |
           GENERATED_DIR=main/services/wireless
-          if git diff --quiet -- "$GENERATED_DIR/oui_database.inc" "$GENERATED_DIR/oui_database_extended.inc" "$GENERATED_DIR/surveillance_signatures.inc" data/surveillance_oui_validation.csv; then
+          if git diff --quiet -- "$GENERATED_DIR/oui_database.inc" "$GENERATED_DIR/oui_database_extended.inc" "$GENERATED_DIR/surveillance_signatures.inc" "$GENERATED_DIR/surveillance_generated.h" data/surveillance_oui_validation.csv; then
             echo "OUI and surveillance databases already current"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "$GENERATED_DIR/oui_database.inc" "$GENERATED_DIR/oui_database_extended.inc" "$GENERATED_DIR/surveillance_signatures.inc" data/surveillance_oui_validation.csv
+          git add "$GENERATED_DIR/oui_database.inc" "$GENERATED_DIR/oui_database_extended.inc" "$GENERATED_DIR/surveillance_signatures.inc" "$GENERATED_DIR/surveillance_generated.h" data/surveillance_oui_validation.csv
           git commit -m "Refresh IEEE OUI and surveillance validation"
           git push

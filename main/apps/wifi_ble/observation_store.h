@@ -67,12 +67,21 @@ void observation_store_set_event_callback( observation_store_event_callback_t a_
 
 /**
  * @brief Add or refresh one normalized device observation.
+ * @param a_observation Borrowed mutable observation; receives the canonical case result.
  * @param a_is_new Optional output set when this identity is newly active.
  * @param a_surveillance_new Optional output set when this active identity first becomes surveillance.
  */
-bool observation_store_observe( const rf_device_t *a_observation,
+bool observation_store_observe( rf_device_t *a_observation,
                                 bool *a_is_new,
                                 bool *a_surveillance_new );
+
+/**
+ * @brief Reevaluate surveillance classification for all active cases after a setting change.
+ * @param a_newly_qualified Optional per-classification counts for cases that newly qualify.
+ * @param a_count_capacity Number of entries available in a_newly_qualified.
+ */
+void observation_store_reevaluate_surveillance( size_t *a_newly_qualified,
+                                                size_t a_count_capacity );
 
 /** @brief Clear all live observations while retaining any current app-owned capacity. */
 void observation_store_reset( void );

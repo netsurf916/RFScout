@@ -1,5 +1,5 @@
 /**
-    surveillance.h : RFScout surveillance classification interface
+    surveillance.h : RFScout surveillance case scoring interface
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -9,22 +9,30 @@
 #ifndef _RFSCOUT_SURVEILLANCE_H_
 #define _RFSCOUT_SURVEILLANCE_H_
 
-#include "observation_store.h"
+#include "rf_observation.h"
 
-typedef struct
-{
-    surveillance_class_t classification;
-    surveillance_signature_id_t signature;
-    uint8_t evidence;
-} surveillance_match_t;
+#include <stddef.h>
 
-/** @brief Classify an observation using all available passive evidence. */
-surveillance_match_t surveillance_match( const rf_device_t *a_observation );
+/** @brief Match database-defined evidence present in one normalized observation. */
+void surveillance_prepare_observation( rf_device_t *a_observation );
 
-/** @brief Compatibility helper returning only the broad classification. */
-surveillance_class_t surveillance_classify( const rf_device_t *a_observation );
+/**
+ * @brief Merge unique observation evidence into a canonical case and rescore it.
+ * @details The caller retains ownership of both structures. Evidence already present in the case
+ *          is not counted again.
+ */
+void surveillance_case_observe( rf_device_t *a_case, const rf_device_t *a_observation );
 
-/** @brief Return the static LCD type/brand label for a specific signature. */
+/** @brief Reevaluate a canonical case after an interpretation setting changes. */
+void surveillance_case_evaluate( rf_device_t *a_case );
+
+/** @brief Return the number of unique evidence facts retained by a case. */
+size_t surveillance_evidence_count( const rf_device_t *a_case );
+
+/** @brief Return the generated signature count including NONE. */
+size_t surveillance_signature_count( void );
+
+/** @brief Return the generated display label for a surveillance signature. */
 const char *surveillance_signature_label( surveillance_signature_id_t a_signature );
 
 /** @brief Return a display name for a broad surveillance classification. */

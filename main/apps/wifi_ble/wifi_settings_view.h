@@ -19,7 +19,7 @@
 void wifi_settings_view_render( unsigned a_selected,
                                 bool a_editing,
                                 bool a_notifications_enabled,
-                                rfscout_surveillance_sensitivity_t a_sensitivity,
+                                rfscout_evidence_strength_t a_threshold,
                                 uint16_t a_wifi_timeout_seconds,
                                 uint16_t a_ble_timeout_seconds );
 

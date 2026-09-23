@@ -33,6 +33,8 @@ Current settings are finite timeouts from **10–300 seconds** in 10-second step
 
 Surveillance classification is an attribute of that canonical active record and expires with it; there is no independent surveillance-retention list.
 
+WiFi/BLE persists a non-default threshold as the sparse `evidence_threshold` app setting (`everything`, `probable`, or `distinctive`). The retired pre-1.0 `surveillance_sensitivity` setting is not migrated; if encountered, it is ignored and pruned through the normal configuration-save workflow.
+
 Instant / Timed / Never retention modes are not implemented yet.
 
 ## Vendor identity
@@ -52,17 +54,38 @@ CID is not used for ordinary vendor attribution because CID assignments are not 
 
 ## Surveillance evidence
 
-`data/surveillance_signatures.csv` is RFScout-curated metadata and is distinct from IEEE ownership data. Curated prefixes can therefore contribute surveillance evidence even when they are not IEEE vendor assignments.
+`data/surveillance_signatures.csv` is the authoritative RFScout surveillance-fact database. It is deliberately separate from IEEE vendor ownership data. A **fact** is one static row of researched knowledge in this database. Each fact describes a broad surveillance class, product/family label, observable signal kind and value, numeric weight, and research provenance. Product-specific names, company IDs, service UUIDs, and curated prefixes belong in this data file rather than in classifier control flow.
 
-The classifier combines prefix evidence with independent signals such as advertised BLE names, manufacturer/company identifiers, service UUID patterns, Remote ID evidence, and supported protocol evidence.
+`tools/update_surveillance.py` validates the human-maintained CSV and generates the compact firmware table under `main/services/wireless/`. Runtime code understands generic signal kinds and generated fact IDs; it does not assign product-specific identifiers in application code. When a fact matches an observed packet, that match becomes **evidence** for the observed device. The generator sizes the case evidence bitset in 32-bit words from the number of database facts, so adding facts does not require a hand-maintained runtime limit.
 
-Sensitivity selects the minimum evidence strength for a single observation:
+The canonical active observation identified by address type plus MAC also owns the lifetime of its surveillance **case**. A case is the accumulated set of unique evidence about that specific device while the identity remains active. Each matching fact sets its evidence bit; all matching facts in an observation are retained, and a stronger match does not suppress other facts from the same packet. Matching the same fact again only sets an already-set bit and does not increase the score, while different facts with the same weight do. When the canonical observation expires, its accumulated evidence expires with it; a later reappearance starts a fresh case. Timeout logging records the case lifetime, final unique-evidence count, score, and best signature hypothesis even when the configured notification threshold was never reached.
 
-- **High** — most permissive of the three current evidence thresholds and the compiled default;
-- **Medium** — requires stronger prefix/OUI or equivalent evidence;
-- **Low** — requires the most distinctive company/service/protocol evidence.
+The case score for a signature is the sum of the weights of the unique facts represented by its collected evidence. The **Evidence Threshold** setting maps the user-facing levels to minimum scores:
 
-Repeated observations refresh active presence; they do not accumulate a numeric confidence score. An active record keeps its first qualifying surveillance signature until expiry.
+- **Everything** — score 1 or greater. This exposes every curated fact match and is intended primarily for detector testing, fact validation, and field research; its practical value as a normal alerting mode has not yet been established.
+- **Possible** — score 2 or greater.
+- **Probable** — score 4 or greater.
+- **Distinctive** — score 6 or greater.
+
+These are ordinal evidence scores, not calibrated probabilities. Evidence weights use a small **1 / 2 / 4** scale based on the usefulness of each fact for the specific hypothesis: 1 for weak/common indicators, 2 for meaningful supporting evidence, and 4 for facts that strongly distinguish the target product or family. Signal type alone does not determine weight; a company ID or OUI shared across product lines can therefore carry less weight than a product-specific name or service UUID. Several unique low-weight facts can therefore move a case through the levels, and a single packet can cross a threshold immediately when it contains enough distinct facts. Repeated copies of the same fact cannot add score.
+
+Evidence source and score remain separate concepts. The source bitmask records which kinds of evidence contributed to the selected signature (for example curated OUI/prefix, advertised name, company identifier, service UUID, or Remote ID), while the score determines whether the configured threshold has been reached.
+
+**Possible** remains the compiled default. **Everything** is deliberately opt-in because weight-1 facts can be weak or ambiguous on their own; selecting it is useful when testing whether RFScout is seeing all candidate evidence, but does not make those individual facts stronger evidence. Notification occurs when an active case first crosses the configured threshold. Evidence can continue to accumulate after notification without creating another new-device alert.
+
+## Raven acoustic-sensor evidence
+
+Raven is the first signature using the accumulating case model as a reference detector. The database contains five exact advertised 16-bit BLE service UUID records: `0x3100`, `0x3200`, `0x3300`, `0x3400`, and `0x3500`. Each contributes two points because the exact proprietary services are meaningful Raven-specific evidence. RFScout does **not** treat the entire `0x3100-0x3500` numeric interval as Raven evidence.
+
+One distinct proprietary Raven service therefore reaches Possible, two distinct services reach Probable, and three or more reach Distinctive. Repeated advertisements of the same service do not add points. Research provenance and current interpretation:
+
+- GainSec independently examined an owned Flock Safety Raven v1.2 and documented an ESP32-WROOM-32D main controller. Community detector projects attribute the proprietary Raven service dataset to GainSec captures spanning firmware generations 1.1.7, 1.2.0, and 1.3.1.
+- Multiple implementations reproduce the same five exact proprietary services for later Raven firmware. This is useful corroboration, but many implementations share the same upstream dataset and therefore are not fully independent observations.
+- Community datasets also report legacy Raven 1.1.x advertisements using standard BLE services `0x1809` (Health Thermometer) and `0x1819` (Location and Navigation), usually alongside `0x180A` (Device Information). These standard services are not Raven-specific and are not currently database facts.
+- Reports assigning semantic names such as GPS, power, network status, upload statistics, and diagnostics to `0x3100-0x3500` are secondary interpretations unless independently verified against Raven firmware or GATT behavior. RFScout does not depend on those labels for detection.
+- Broad matching of arbitrary UUIDs numerically between `0x3100` and `0x3500` has produced field false positives in another detector. Exact UUID matching is therefore an explicit false-positive boundary.
+
+Legacy `0x1809` / `0x1819` support remains disabled. If added, it should require corroborating Raven/Flock-specific evidence or a validated combination rather than treating either standard UUID as independently identifying.
 
 ## Notifications
 

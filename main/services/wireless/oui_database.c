@@ -27,16 +27,8 @@ typedef struct
     const char *brand;
 } oui36_record_t;
 
-typedef struct
-{
-    uint32_t prefix;
-    surveillance_class_t classification;
-    surveillance_signature_id_t signature;
-} surveillance_oui_signature_t;
-
 #include "oui_database.inc"
 #include "oui_database_extended.inc"
-#include "surveillance_signatures.inc"
 
 static const char *lookup_24( uint32_t a_prefix )
 {
@@ -107,30 +99,6 @@ static const char *lookup_36( uint64_t a_prefix )
                : NULL;
 }
 
-static const surveillance_oui_signature_t *lookup_surveillance( uint32_t a_prefix )
-{
-    size_t low = 0U;
-    size_t high = SURVEILLANCE_OUI_SIGNATURE_COUNT;
-
-    while( low < high )
-    {
-        const size_t middle = low + ( ( high - low ) / 2U );
-        if( surveillance_oui_signatures[ middle ].prefix < a_prefix )
-        {
-            low = middle + 1U;
-        }
-        else
-        {
-            high = middle;
-        }
-    }
-
-    return ( ( low < SURVEILLANCE_OUI_SIGNATURE_COUNT ) &&
-             ( surveillance_oui_signatures[ low ].prefix == a_prefix ) )
-               ? &surveillance_oui_signatures[ low ]
-               : NULL;
-}
-
 bool oui_database_lookup_info( const uint8_t a_address[ 6 ], oui_database_match_t *a_match )
 {
     if( ( NULL == a_address ) || ( NULL == a_match ) )
@@ -175,15 +143,7 @@ bool oui_database_lookup_info( const uint8_t a_address[ 6 ], oui_database_match_
         }
     }
 
-    const surveillance_oui_signature_t *surveillance = lookup_surveillance( prefix24 );
-    if( NULL != surveillance )
-    {
-        a_match->surveillance_classification = surveillance->classification;
-        a_match->surveillance_signature = surveillance->signature;
-    }
-
-    return ( NULL != a_match->vendor ) ||
-           ( SURVEILLANCE_SIGNATURE_NONE != a_match->surveillance_signature );
+    return NULL != a_match->vendor;
 }
 
 const char *oui_database_lookup( const uint8_t a_address[ 6 ] )

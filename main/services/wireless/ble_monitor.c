@@ -6,6 +6,7 @@
 */
 
 #include "ble_monitor.h"
+#include "surveillance_database.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -41,52 +42,6 @@ static bool scan_requested;
 static bool scanning;
 static portMUX_TYPE callback_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t observation_callbacks_inflight;
-
-static void mark_service_uuid128( rf_device_t *a_observation, const uint8_t *a_uuid )
-{
-    /* BLE transmits 128-bit UUIDs least-significant byte first. */
-    static const uint8_t brilliant_frame_uuid[ 16 ] = { 0xC4,
-                                                        0x49,
-                                                        0xAD,
-                                                        0xF6,
-                                                        0x31,
-                                                        0x84,
-                                                        0x4C,
-                                                        0x65,
-                                                        0xA4,
-                                                        0xA6,
-                                                        0x75,
-                                                        0x54,
-                                                        0x01,
-                                                        0x00,
-                                                        0x23,
-                                                        0x7A };
-    static const uint8_t rokid_cxr_uuid[ 16 ] = { 0xFB,
-                                                  0x34,
-                                                  0x9B,
-                                                  0x5F,
-                                                  0x80,
-                                                  0x00,
-                                                  0x00,
-                                                  0x80,
-                                                  0x00,
-                                                  0x10,
-                                                  0x00,
-                                                  0x00,
-                                                  0x00,
-                                                  0x91,
-                                                  0x00,
-                                                  0x00 };
-
-    if( 0 == memcmp( a_uuid, brilliant_frame_uuid, sizeof( brilliant_frame_uuid ) ) )
-    {
-        a_observation->ble_service_fingerprints |= RFSCOUT_BLE_SERVICE_FINGERPRINT_BRILLIANT_FRAME;
-    }
-    else if( 0 == memcmp( a_uuid, rokid_cxr_uuid, sizeof( rokid_cxr_uuid ) ) )
-    {
-        a_observation->ble_service_fingerprints |= RFSCOUT_BLE_SERVICE_FINGERPRINT_ROKID_CXR;
-    }
-}
 
 static void add_service_uuid( rf_device_t *a_observation, uint16_t a_uuid )
 {
@@ -160,12 +115,12 @@ static void parse_adv( const struct ble_gap_disc_desc *a_description, rf_device_
         {
             for( size_t index = 0U; index + 15U < data_length; index += 16U )
             {
-                mark_service_uuid128( a_observation, &data[ index ] );
+                surveillance_database_match_service_uuid128( a_observation, &data[ index ] );
             }
         }
         else if( ( BLE_AD_TYPE_SERVICE_DATA128 == type ) && ( data_length >= 16U ) )
         {
-            mark_service_uuid128( a_observation, data );
+            surveillance_database_match_service_uuid128( a_observation, data );
         }
         else if( ( BLE_AD_TYPE_SERVICE_DATA16 == type ) && ( data_length >= 2U ) )
         {

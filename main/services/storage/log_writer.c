@@ -13,6 +13,7 @@
 #include "storage.h"
 #include "storage_internal.h"
 
+#include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -243,7 +244,30 @@ static bool open_segment( void )
             return false;
         }
         active_size = (size_t)header_length;
-        ESP_LOGI( TAG, "logging to %s sequence=%lu", path, (unsigned long)active_sequence );
+
+        const esp_app_desc_t *app = esp_app_get_description();
+        const int version_length = fprintf( active_file,
+                                            "{\"type\":\"version\",\"version\":\"%s\","
+                                            "\"project\":\"%s\",\"idf\":\"%s\","
+                                            "\"build_date\":\"%s\",\"build_time\":\"%s\"}\n",
+                                            app->version,
+                                            app->project_name,
+                                            app->idf_ver,
+                                            app->date,
+                                            app->time );
+        if( version_length < 0 )
+        {
+            mark_io_error( "log version header write" );
+            fclose( active_file );
+            active_file = NULL;
+            return false;
+        }
+        active_size += (size_t)version_length;
+        ESP_LOGI( TAG,
+                  "logging to %s sequence=%lu version=%s",
+                  path,
+                  (unsigned long)active_sequence,
+                  app->version );
         return true;
     }
 

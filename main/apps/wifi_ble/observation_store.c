@@ -8,6 +8,7 @@
 
 #include "app_session.h"
 #include "device_config.h"
+#include "surveillance.h"
 
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -494,15 +495,14 @@ static bool expire_stale_devices( uint32_t a_now_ms )
             continue;
         }
 
-        rf_device_t dropped = *device;
-        dropped.source_mask = original_sources;
+        device->source_mask = original_sources;
+        emit_event( OBSERVATION_STORE_EVENT_DROPPED_TIMEOUT, device );
         --device_count;
         if( i != device_count )
         {
             devices[ i ] = devices[ device_count ];
         }
         memset( &devices[ device_count ], 0, sizeof( devices[ device_count ] ) );
-        emit_event( OBSERVATION_STORE_EVENT_DROPPED_TIMEOUT, &dropped );
         removed = true;
     }
 
@@ -544,7 +544,60 @@ void observation_store_set_event_callback( observation_store_event_callback_t a_
     xSemaphoreGive( store_lock );
 }
 
-bool observation_store_observe( const rf_device_t *a_observation,
+static void copy_case_result( rf_device_t *a_observation, const rf_device_t *a_case )
+{
+    a_observation->surveillance = a_case->surveillance;
+    a_observation->surveillance_signature = a_case->surveillance_signature;
+    a_observation->surveillance_case_signature = a_case->surveillance_case_signature;
+    a_observation->surveillance_evidence = a_case->surveillance_evidence;
+    a_observation->surveillance_score = a_case->surveillance_score;
+    memcpy( a_observation->surveillance_evidence_bits,
+            a_case->surveillance_evidence_bits,
+            sizeof( a_observation->surveillance_evidence_bits ) );
+}
+
+static void merge_observation( rf_device_t *a_device, const rf_device_t *a_observation )
+{
+    a_device->last_source = a_observation->last_source;
+    a_device->source_mask |= a_observation->source_mask;
+    a_device->rssi = a_observation->rssi;
+    a_device->channel = a_observation->channel;
+    a_device->last_seen_ms = a_observation->last_seen_ms;
+
+    if( ( RF_SOURCE_WIFI == a_observation->last_source ) ||
+        ( 0U != ( a_observation->source_mask & RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) ) )
+    {
+        a_device->wifi_last_seen_ms = a_observation->last_seen_ms;
+    }
+    if( ( RF_SOURCE_BLE == a_observation->last_source ) ||
+        ( 0U != ( a_observation->source_mask & RF_SOURCE_BIT( RF_SOURCE_BLE ) ) ) )
+    {
+        a_device->ble_last_seen_ms = a_observation->last_seen_ms;
+    }
+
+    if( '\0' != a_observation->vendor[ 0 ] )
+    {
+        memcpy( a_device->vendor, a_observation->vendor, sizeof( a_device->vendor ) );
+    }
+    if( a_observation->has_name )
+    {
+        memcpy( a_device->name, a_observation->name, sizeof( a_device->name ) );
+        a_device->has_name = true;
+    }
+
+    a_device->company_id = a_observation->company_id;
+    memcpy( a_device->manufacturer_data,
+            a_observation->manufacturer_data,
+            sizeof( a_device->manufacturer_data ) );
+    a_device->manufacturer_data_len = a_observation->manufacturer_data_len;
+    a_device->has_manufacturer_data = a_observation->has_manufacturer_data;
+    memcpy(
+        a_device->service_uuids, a_observation->service_uuids, sizeof( a_device->service_uuids ) );
+    a_device->service_uuid_count = a_observation->service_uuid_count;
+    a_device->has_remote_id = a_observation->has_remote_id;
+}
+
+bool observation_store_observe( rf_device_t *a_observation,
                                 bool *a_is_new,
                                 bool *a_surveillance_new )
 {
@@ -564,66 +617,23 @@ bool observation_store_observe( const rf_device_t *a_observation,
     const size_t existing_index = find_identity( a_observation );
     if( SIZE_MAX != existing_index )
     {
-        const uint32_t first_seen = devices[ existing_index ].first_seen_ms;
-        const uint32_t sources = devices[ existing_index ].source_mask | a_observation->source_mask;
-        uint32_t wifi_last_seen = devices[ existing_index ].wifi_last_seen_ms;
-        uint32_t ble_last_seen = devices[ existing_index ].ble_last_seen_ms;
-        const surveillance_class_t prior_class = devices[ existing_index ].surveillance;
-        const surveillance_signature_id_t prior_signature =
-            devices[ existing_index ].surveillance_signature;
-        const uint8_t prior_evidence = devices[ existing_index ].surveillance_evidence;
-        char prior_vendor[ RFSCOUT_VENDOR_NAME_MAX ];
-        char prior_name[ RFSCOUT_DEVICE_NAME_MAX ];
+        rf_device_t *device = &devices[ existing_index ];
+        const bool was_surveillance = SURVEILLANCE_NONE != device->surveillance;
 
-        if( ( RF_SOURCE_WIFI == a_observation->last_source ) ||
-            ( 0U != ( a_observation->source_mask & RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) ) )
-        {
-            wifi_last_seen = a_observation->last_seen_ms;
-        }
-        if( ( RF_SOURCE_BLE == a_observation->last_source ) ||
-            ( 0U != ( a_observation->source_mask & RF_SOURCE_BIT( RF_SOURCE_BLE ) ) ) )
-        {
-            ble_last_seen = a_observation->last_seen_ms;
-        }
-
-        memcpy( prior_vendor, devices[ existing_index ].vendor, sizeof( prior_vendor ) );
-        memcpy( prior_name, devices[ existing_index ].name, sizeof( prior_name ) );
-        const bool prior_has_name = devices[ existing_index ].has_name;
-
-        devices[ existing_index ] = *a_observation;
-        devices[ existing_index ].first_seen_ms = first_seen;
-        devices[ existing_index ].source_mask = sources;
-        devices[ existing_index ].wifi_last_seen_ms = wifi_last_seen;
-        devices[ existing_index ].ble_last_seen_ms = ble_last_seen;
+        surveillance_case_observe( device, a_observation );
+        merge_observation( device, a_observation );
+        copy_case_result( a_observation, device );
 
         const bool became_surveillance =
-            ( SURVEILLANCE_NONE == prior_class ) &&
-            ( SURVEILLANCE_NONE != devices[ existing_index ].surveillance ) &&
-            ( SURVEILLANCE_SIGNATURE_NONE != devices[ existing_index ].surveillance_signature );
-        if( SURVEILLANCE_NONE != prior_class )
-        {
-            devices[ existing_index ].surveillance = prior_class;
-            devices[ existing_index ].surveillance_signature = prior_signature;
-            devices[ existing_index ].surveillance_evidence |= prior_evidence;
-        }
+            !was_surveillance && ( SURVEILLANCE_NONE != device->surveillance ) &&
+            ( SURVEILLANCE_SIGNATURE_NONE != device->surveillance_signature );
         if( NULL != a_surveillance_new )
         {
             *a_surveillance_new = became_surveillance;
         }
-        if( '\0' == devices[ existing_index ].vendor[ 0 ] )
-        {
-            memcpy( devices[ existing_index ].vendor, prior_vendor, sizeof( prior_vendor ) );
-        }
-
-        if( !devices[ existing_index ].has_name && prior_has_name )
-        {
-            memcpy( devices[ existing_index ].name, prior_name, sizeof( prior_name ) );
-            devices[ existing_index ].has_name = true;
-        }
-
         if( became_surveillance )
         {
-            emit_event( OBSERVATION_STORE_EVENT_SURVEILLANCE_CHANGED, &devices[ existing_index ] );
+            emit_event( OBSERVATION_STORE_EVENT_SURVEILLANCE_CHANGED, device );
         }
 
         if( NULL != a_is_new )
@@ -647,22 +657,64 @@ bool observation_store_observe( const rf_device_t *a_observation,
     }
 
     const size_t slot = device_count++;
-    devices[ slot ] = *a_observation;
-    initialize_source_times( &devices[ slot ] );
+    rf_device_t *device = &devices[ slot ];
+    *device = *a_observation;
+    initialize_source_times( device );
+    if( 0U != surveillance_evidence_count( device ) )
+    {
+        surveillance_case_evaluate( device );
+    }
+    copy_case_result( a_observation, device );
     identity_index_insert( slot );
-    emit_event( OBSERVATION_STORE_EVENT_ADDED, &devices[ slot ] );
+    emit_event( OBSERVATION_STORE_EVENT_ADDED, device );
+
     if( NULL != a_is_new )
     {
         *a_is_new = true;
     }
     if( NULL != a_surveillance_new )
     {
-        *a_surveillance_new =
-            ( SURVEILLANCE_NONE != devices[ slot ].surveillance ) &&
-            ( SURVEILLANCE_SIGNATURE_NONE != devices[ slot ].surveillance_signature );
+        *a_surveillance_new = ( SURVEILLANCE_NONE != device->surveillance ) &&
+                              ( SURVEILLANCE_SIGNATURE_NONE != device->surveillance_signature );
     }
     xSemaphoreGive( store_lock );
     return true;
+}
+
+void observation_store_reevaluate_surveillance( size_t *a_newly_qualified, size_t a_count_capacity )
+{
+    if( NULL == store_lock )
+    {
+        return;
+    }
+
+    if( NULL != a_newly_qualified )
+    {
+        memset( a_newly_qualified, 0, a_count_capacity * sizeof( *a_newly_qualified ) );
+    }
+
+    xSemaphoreTake( store_lock, portMAX_DELAY );
+    synchronize_session_store();
+    for( size_t i = 0U; i < device_count; ++i )
+    {
+        rf_device_t *device = &devices[ i ];
+        const bool was_surveillance = SURVEILLANCE_NONE != device->surveillance;
+        surveillance_case_evaluate( device );
+        const bool became_surveillance =
+            !was_surveillance && ( SURVEILLANCE_NONE != device->surveillance ) &&
+            ( SURVEILLANCE_SIGNATURE_NONE != device->surveillance_signature );
+        if( !became_surveillance )
+        {
+            continue;
+        }
+
+        emit_event( OBSERVATION_STORE_EVENT_SURVEILLANCE_CHANGED, device );
+        if( ( NULL != a_newly_qualified ) && ( (size_t)device->surveillance < a_count_capacity ) )
+        {
+            ++a_newly_qualified[ device->surveillance ];
+        }
+    }
+    xSemaphoreGive( store_lock );
 }
 
 void observation_store_reset( void )
@@ -747,51 +799,49 @@ size_t observation_store_active_surveillance( observation_surveillance_signature
         return 0U;
     }
 
-    observation_surveillance_signature_t grouped[ SURVEILLANCE_SIGNATURE_COUNT ] = { 0 };
     xSemaphoreTake( store_lock, portMAX_DELAY );
     synchronize_session_store();
+
     size_t total_devices = 0U;
-    for( size_t i = 0U; i < device_count; ++i )
-    {
-        const rf_device_t *device = &devices[ i ];
-        const size_t signature = (size_t)device->surveillance_signature;
-        if( ( SURVEILLANCE_NONE == device->surveillance ) ||
-            ( signature <= (size_t)SURVEILLANCE_SIGNATURE_NONE ) ||
-            ( signature >= (size_t)SURVEILLANCE_SIGNATURE_COUNT ) )
-        {
-            continue;
-        }
-        ++total_devices;
-        grouped[ signature ].signature = device->surveillance_signature;
-        ++grouped[ signature ].count;
-        if( device->last_seen_ms > grouped[ signature ].last_seen_ms )
-        {
-            grouped[ signature ].last_seen_ms = device->last_seen_ms;
-        }
-    }
-    xSemaphoreGive( store_lock );
-
-    if( NULL != a_total_devices )
-    {
-        *a_total_devices = total_devices;
-    }
-
     size_t group_count = 0U;
-    for( size_t signature = 1U; signature < (size_t)SURVEILLANCE_SIGNATURE_COUNT; ++signature )
+    const size_t signature_count = surveillance_signature_count();
+
+    for( size_t signature = 1U; signature < signature_count; ++signature )
     {
-        if( 0U == grouped[ signature ].count )
+        observation_surveillance_signature_t group = { 0 };
+        group.signature = (surveillance_signature_id_t)signature;
+
+        for( size_t i = 0U; i < device_count; ++i )
+        {
+            const rf_device_t *device = &devices[ i ];
+            if( ( SURVEILLANCE_NONE == device->surveillance ) ||
+                ( device->surveillance_signature != group.signature ) )
+            {
+                continue;
+            }
+
+            ++group.count;
+            ++total_devices;
+            if( device->last_seen_ms > group.last_seen_ms )
+            {
+                group.last_seen_ms = device->last_seen_ms;
+            }
+        }
+
+        if( 0U == group.count )
         {
             continue;
         }
+
         ++group_count;
         if( ( NULL == a_rows ) || ( 0U == a_capacity ) )
         {
             continue;
         }
+
         size_t position = 0U;
         const size_t used = ( group_count - 1U < a_capacity ) ? group_count - 1U : a_capacity;
-        while( ( position < used ) &&
-               ( a_rows[ position ].last_seen_ms >= grouped[ signature ].last_seen_ms ) )
+        while( ( position < used ) && ( a_rows[ position ].last_seen_ms >= group.last_seen_ms ) )
         {
             ++position;
         }
@@ -799,12 +849,20 @@ size_t observation_store_active_surveillance( observation_surveillance_signature
         {
             continue;
         }
+
         const size_t last = ( used < a_capacity ) ? used : ( a_capacity - 1U );
         for( size_t move = last; move > position; --move )
         {
             a_rows[ move ] = a_rows[ move - 1U ];
         }
-        a_rows[ position ] = grouped[ signature ];
+        a_rows[ position ] = group;
+    }
+
+    xSemaphoreGive( store_lock );
+
+    if( NULL != a_total_devices )
+    {
+        *a_total_devices = total_devices;
     }
     return group_count;
 }

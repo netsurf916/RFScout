@@ -10,6 +10,8 @@
 #ifndef _RFSCOUT_RF_OBSERVATION_H_
 #define _RFSCOUT_RF_OBSERVATION_H_
 
+#include "surveillance_generated.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -43,26 +45,9 @@ typedef enum
     SURVEILLANCE_OTHER
 } surveillance_class_t;
 
-typedef enum
-{
-    SURVEILLANCE_SIGNATURE_NONE = 0,
-    SURVEILLANCE_SIGNATURE_FLOCK,
-    SURVEILLANCE_SIGNATURE_VIGILANT,
-    SURVEILLANCE_SIGNATURE_RAVEN,
-    SURVEILLANCE_SIGNATURE_AXON,
-    SURVEILLANCE_SIGNATURE_RING,
-    SURVEILLANCE_SIGNATURE_VERKADA,
-    SURVEILLANCE_SIGNATURE_AXIS,
-    SURVEILLANCE_SIGNATURE_HIKVISION,
-    SURVEILLANCE_SIGNATURE_DAHUA,
-    SURVEILLANCE_SIGNATURE_REMOTE_ID,
-    SURVEILLANCE_SIGNATURE_META,
-    SURVEILLANCE_SIGNATURE_BRILLIANT_FRAME,
-    SURVEILLANCE_SIGNATURE_EVEN_G1,
-    SURVEILLANCE_SIGNATURE_SOLOS_AIRGO,
-    SURVEILLANCE_SIGNATURE_ROKID,
-    SURVEILLANCE_SIGNATURE_COUNT
-} surveillance_signature_id_t;
+typedef uint16_t surveillance_signature_id_t;
+
+#define SURVEILLANCE_SIGNATURE_NONE 0U
 
 typedef enum
 {
@@ -73,12 +58,6 @@ typedef enum
     SURVEILLANCE_EVIDENCE_REMOTE_ID = 1U << 4,
     SURVEILLANCE_EVIDENCE_PAYLOAD = 1U << 5
 } surveillance_evidence_t;
-
-typedef enum
-{
-    RFSCOUT_BLE_SERVICE_FINGERPRINT_BRILLIANT_FRAME = 1U << 0,
-    RFSCOUT_BLE_SERVICE_FINGERPRINT_ROKID_CXR = 1U << 1
-} rfscout_ble_service_fingerprint_t;
 
 typedef struct
 {
@@ -94,7 +73,10 @@ typedef struct
     uint32_t ble_last_seen_ms;
     surveillance_class_t surveillance;
     surveillance_signature_id_t surveillance_signature;
+    surveillance_signature_id_t surveillance_case_signature;
     uint8_t surveillance_evidence;
+    uint8_t surveillance_score;
+    uint32_t surveillance_evidence_bits[ RFSCOUT_SURVEILLANCE_EVIDENCE_WORD_COUNT ];
     char vendor[ RFSCOUT_VENDOR_NAME_MAX ];
     char name[ RFSCOUT_DEVICE_NAME_MAX ];
     bool has_name;
@@ -104,7 +86,6 @@ typedef struct
     bool has_manufacturer_data;
     uint16_t service_uuids[ RFSCOUT_BLE_SERVICE_UUID_MAX ];
     uint8_t service_uuid_count;
-    uint32_t ble_service_fingerprints;
     bool has_remote_id;
 } rf_device_t;
 

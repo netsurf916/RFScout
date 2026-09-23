@@ -19,16 +19,20 @@
 void wifi_settings_view_render( unsigned a_selected,
                                 bool a_editing,
                                 bool a_notifications_enabled,
-                                rfscout_surveillance_sensitivity_t a_sensitivity,
+                                rfscout_evidence_strength_t a_threshold,
                                 uint16_t a_wifi_timeout_seconds,
                                 uint16_t a_ble_timeout_seconds )
 {
-    static const char *labels[ WIFI_SETTINGS_ITEM_COUNT ] = {
-        "BACK", "RESET DETECTIONS", "NOTIFICATIONS", "SENSITIVITY", "WIFI TIMEOUT", "BT TIMEOUT" };
+    static const char *labels[ WIFI_SETTINGS_ITEM_COUNT ] = { "Back",
+                                                              "Reset detections",
+                                                              "Notifications",
+                                                              "Evidence threshold",
+                                                              "WiFi timeout",
+                                                              "BLE timeout" };
     const ui_theme_palette_t *theme = ui_theme_get();
 
     display_clear( theme->background );
-    ui_chrome_draw( "WIFI / BT SETTINGS", theme->secondary );
+    ui_chrome_draw( "WiFi / BLE settings", theme->secondary );
 
     for( unsigned item = 0U; item < WIFI_SETTINGS_ITEM_COUNT; ++item )
     {
@@ -47,21 +51,21 @@ void wifi_settings_view_render( unsigned a_selected,
         value[ 0 ] = '\0';
         if( 2U == item )
         {
-            snprintf( value, sizeof( value ), "%s", a_notifications_enabled ? "ON" : "OFF" );
+            snprintf( value, sizeof( value ), "%s", a_notifications_enabled ? "On" : "Off" );
         }
         else if( 3U == item )
         {
-            static const char *names[ RFSCOUT_SURVEILLANCE_SENSITIVITY_COUNT ] = {
-                [RFSCOUT_SURVEILLANCE_SENSITIVITY_HIGH] = "HIGH",
-                [RFSCOUT_SURVEILLANCE_SENSITIVITY_MEDIUM] = "MEDIUM",
-                [RFSCOUT_SURVEILLANCE_SENSITIVITY_LOW] = "LOW",
+            static const char *names[ RFSCOUT_EVIDENCE_STRENGTH_COUNT ] = {
+                [RFSCOUT_EVIDENCE_STRENGTH_EVERYTHING] = "Everything",
+                [RFSCOUT_EVIDENCE_STRENGTH_POSSIBLE] = "Possible",
+                [RFSCOUT_EVIDENCE_STRENGTH_PROBABLE] = "Probable",
+                [RFSCOUT_EVIDENCE_STRENGTH_DISTINCTIVE] = "Distinctive",
             };
             snprintf( value,
                       sizeof( value ),
                       "%s",
-                      ( a_sensitivity < RFSCOUT_SURVEILLANCE_SENSITIVITY_COUNT )
-                          ? names[ a_sensitivity ]
-                          : "HIGH" );
+                      ( a_threshold < RFSCOUT_EVIDENCE_STRENGTH_COUNT ) ? names[ a_threshold ]
+                                                                        : "Possible" );
         }
         else if( 4U == item )
         {

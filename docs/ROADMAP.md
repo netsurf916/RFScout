@@ -142,6 +142,42 @@ Make radio type a first-class view dimension:
 
 The main screen should remain an actively updated analytical projection. Deeper relationships belong in context-sensitive drill-down. Internal IDs plus active/stale state should keep selection stable while observations continue changing.
 
+#### Surveillance detection quality
+
+This release should replace the classifier's source-named priority concept with an explicit accumulating evidence-case model while preserving evidence-source reporting. The canonical active observation remains the case lifetime/identity boundary; no parallel active-surveillance list or independent evidence-expiry clock is introduced.
+
+The target strength semantics are:
+
+- **Possible** — credible researched association, with false positives possible.
+- **Probable** — strong association, with false positives expected to be uncommon.
+- **Distinctive** — evidence intended to be uniquely identifying.
+
+The user-facing **Evidence Threshold** selects a minimum numeric case score mapped to Possible / Probable / Distinctive at 2 / 4 / 6. Unique matched facts contribute database-defined 1 / 2 / 4 weights; repeated observations of the same fact do not add score, while every distinct matching fact in an observation can accumulate immediately. Cases retain evidence in a generator-sized 32-bit bitset, avoiding hand-maintained evidence-count limits. Product-specific signal values, weights, and provenance belong in `data/surveillance_signatures.csv`, not classifier control flow.
+
+The implementation pass should first perform the semantic refactor without mechanically preserving the old source-based strength assumptions. After that baseline is stable, perform evidence-backed research and tuning across every currently supported surveillance category/signature. Research should prefer primary/vendor/protocol material, device teardowns or captures, and independently corroborated field observations; community detector projects are useful discovery sources but should not be copied without evaluating false-positive behavior.
+
+The category review must cover at least:
+
+- **ALPR** — Flock, Vigilant, and other supported ALPR evidence;
+- **body cameras** — Axon and other supported body-camera evidence;
+- **cameras / doorbells** — Ring, Verkada, Axis, Hikvision, Dahua, and other supported camera evidence;
+- **smart glasses** — Meta, Brilliant Frame, Even G1, Solos AirGo, Rokid, and other supported smart-glasses evidence;
+- **acoustic sensors** — Flock Raven and other supported acoustic-sensor evidence; and
+- **drones** — Remote ID and any other passive evidence that can be classified without active probing.
+
+For each signature/category, record the evidence source, provenance, expected uniqueness/false-positive risk, assigned strength, and any known hardware/firmware-generation limitations. Prefer explicit known fingerprints and combinations over broad numeric ranges or generic standard services. Do not infer an exact product from vendor/ecosystem evidence when the observed signal only supports the broader vendor or category.
+
+- [x] Rename classifier `priority` semantics to evidence `strength` without introducing a parallel confidence/priority mechanism.
+- [x] Define typed Possible / Probable / Distinctive strengths and expose the same Possible / Probable / Distinctive values directly through the Evidence Threshold UI.
+- [x] Preserve evidence-source reporting independently from strength.
+- [ ] Add tests proving evidence thresholds, unique-evidence accumulation, duplicate suppression, case expiry/reset, and competing-signature selection.
+- [ ] Research and re-score every existing surveillance signature/category against the documented strength contract.
+- [ ] Expand detection fingerprints where research supports useful passive evidence, including older/newer hardware or firmware generations.
+- [ ] Add negative/near-match tests for researched fingerprints so permissive Possible-strength rules have explicit false-positive boundaries.
+- [x] Make the surveillance signature CSV authoritative for signal values, numeric weights, and provenance; generate the compact firmware representation from it.
+- [ ] Complete durable provenance review for every curated database fact.
+- [ ] Hardware/field validate representative detections where suitable devices or captures are available.
+
 #### Remaining WiFi/BLE checklist
 
 - [ ] Rename user-facing WiFi / BT to WiFi / BLE across UI and production documentation.
@@ -149,7 +185,8 @@ The main screen should remain an actively updated analytical projection. Deeper 
 - [x] Remove the fixed 1000-item retained-store and UI-mirror limit. Implemented by PR #68.
 - [x] Add a generic internal persistent-record service with atomic system-owned records and descriptor-confined app namespaces; migrate device/app configuration onto that ownership model and remove SD configuration authority. Implemented by PR #77.
 - [ ] Add Instant / Timed / Never Wi-Fi and BLE retention.
-- [x] Keep surveillance classification on the canonical active observation record, sharing normal device expiry and re-arm semantics without accumulated confidence or a parallel active-surveillance list. Implemented by PR #73.
+- [x] Keep surveillance classification on the canonical active observation record, sharing normal device expiry and re-arm semantics without a parallel active-surveillance list. Implemented by PR #73.
+- [x] Accumulate evidence from unique matched surveillance facts for the lifetime of that canonical observation; expiry resets the case rather than expiring individual evidence.
 - [ ] Add active/stale UI semantics for selected objects.
 - [ ] Replace MAC-equals-device counting with semantic entities, identity sets, confidence, and provenance.
 - [ ] Parse richer Wi-Fi roles/subtypes/metadata and association evidence.

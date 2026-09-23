@@ -19,6 +19,22 @@ RFScout prioritizes readability, predictable interfaces, and consistent formatti
 - Prefer named local variables for geometry, timing, limits, and other values whose purpose would otherwise be unclear at the call site.
 - Empty functions are permitted only when they intentionally satisfy a stable module interface; document that intent in the public header.
 
+## Memory ownership and stack discipline
+
+RFScout runs on constrained task stacks, so interface design must make ownership and copy behavior explicit.
+
+- Prefer passing non-trivial structures by reference. Use `const T *` for borrowed read-only access and `T *` for borrowed mutable access.
+- Passing or returning substantial structures by value is exceptional and should have a concrete reason.
+- A pointer parameter is borrowed unless the interface explicitly documents ownership transfer or retention. A callee must not retain a borrowed pointer beyond its documented lifetime.
+- Caller-owned output should normally be written through an output pointer rather than returned as a substantial structure.
+- Avoid defensive whole-structure copies merely to simplify lifetime reasoning. Preserve ownership explicitly and copy only the fields that need independent storage.
+- Keep automatic objects small, especially in radio callbacks, FreeRTOS tasks, event callbacks, and other paths with constrained stacks.
+- Retained or growable state belongs in the established application/session allocation model rather than large task-stack temporaries.
+- Small scalar values, enums, and genuinely small value objects should still be passed by value; do not introduce pointer indirection without a memory or ownership benefit.
+- When expanding a frequently instantiated structure such as `rf_device_t`, review both its retained-memory cost and every stack/local allocation site that instantiates it.
+
+Public APIs with non-obvious lifetime behavior must document whether pointers are borrowed, retained, transferred, or caller-owned.
+
 ## Headers and module boundaries
 
 - Every functional module has a `.h` interface and a `.c` implementation.
