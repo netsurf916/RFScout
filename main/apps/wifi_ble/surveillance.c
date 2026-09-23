@@ -126,6 +126,11 @@ void surveillance_case_observe( rf_device_t *a_case, const rf_device_t *a_observ
         return;
     }
 
+    if( a_observation->surveillance_evidence_overflow )
+    {
+        a_case->surveillance_evidence_overflow = true;
+    }
+
     for( size_t i = 0U; i < a_observation->surveillance_evidence_count; ++i )
     {
         const uint16_t record_id = a_observation->surveillance_evidence_ids[ i ];
@@ -135,6 +140,7 @@ void surveillance_case_observe( rf_device_t *a_case, const rf_device_t *a_observ
         }
         if( a_case->surveillance_evidence_count >= RFSCOUT_SURVEILLANCE_EVIDENCE_MAX )
         {
+            a_case->surveillance_evidence_overflow = true;
             break;
         }
         a_case->surveillance_evidence_ids[ a_case->surveillance_evidence_count++ ] = record_id;
