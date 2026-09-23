@@ -21,7 +21,7 @@ The view displays compact severity/source markers and current semantic event tex
 Implemented event history includes platform/application lifecycle and diagnostic events such as:
 
 - external-power connection/disconnection;
-- SD mount, mount failure, and unmount/loss state;
+- SD mount and unavailable state;
 - display/input hardware discovery;
 - internal-storage mount/recovery failures;
 - configuration/default-recovery diagnostics; and
@@ -37,4 +37,4 @@ Protective power presentation has higher priority than ordinary system-event pre
 
 ## Current limitations
 
-Runtime removable-SD insertion/removal detection is limited by the current storage stack. Event payload richness and any future per-event presentation controls remain roadmap work.
+Runtime SD removal is detected when a storage health probe observes media loss and is then latched unavailable for the running session. Hot insertion/remount is not supported. Event payload richness and any future per-event presentation controls remain roadmap work.

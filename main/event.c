@@ -40,7 +40,6 @@ rfscout_audio_category_t rfscout_event_audio_category( rfscout_event_type_t a_ty
         case RFSCOUT_EVENT_POWER_CONNECTED:
         case RFSCOUT_EVENT_POWER_DISCONNECTED:
         case RFSCOUT_EVENT_STORAGE_MOUNTED:
-        case RFSCOUT_EVENT_STORAGE_UNMOUNTED:
         case RFSCOUT_EVENT_APP_AVAILABLE:
         case RFSCOUT_EVENT_APP_UNAVAILABLE:
             return RFSCOUT_AUDIO_CATEGORY_EVENT;

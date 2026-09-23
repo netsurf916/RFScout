@@ -10,6 +10,7 @@
 
 #include "board.h"
 #include "board_spi.h"
+#include "event.h"
 
 #include "driver/sdspi_host.h"
 #include "driver/spi_master.h"
@@ -149,6 +150,12 @@ esp_err_t storage_probe_card( void )
                   esp_err_to_name( result ) );
     }
     storage_io_release();
+
+    if( ESP_OK != result )
+    {
+        rfscout_event_emit(
+            RFSCOUT_EVENT_STORAGE_MOUNT_FAILED, RFSCOUT_EVENT_SOURCE_SYSTEM, (int32_t)result );
+    }
     return result;
 }
 

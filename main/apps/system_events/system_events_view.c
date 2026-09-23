@@ -99,10 +99,7 @@ static void event_text( const rfscout_event_t *a_event, char *a_text, size_t a_c
             snprintf( a_text, a_capacity, "SD MOUNTED" );
             break;
         case RFSCOUT_EVENT_STORAGE_MOUNT_FAILED:
-            snprintf( a_text, a_capacity, "SD MOUNT FAILED" );
-            break;
-        case RFSCOUT_EVENT_STORAGE_UNMOUNTED:
-            snprintf( a_text, a_capacity, "SD UNMOUNTED" );
+            snprintf( a_text, a_capacity, "SD UNAVAILABLE" );
             break;
         case RFSCOUT_EVENT_APP_DISCOVERED:
             if( RFSCOUT_APP_AVAILABILITY_AVAILABLE == (rfscout_app_availability_t)a_event->value )

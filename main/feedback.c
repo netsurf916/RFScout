@@ -45,7 +45,6 @@ static bool is_system_state_feedback( rfscout_event_type_t a_type )
         case RFSCOUT_EVENT_POWER_DISCONNECTED:
         case RFSCOUT_EVENT_STORAGE_MOUNTED:
         case RFSCOUT_EVENT_STORAGE_MOUNT_FAILED:
-        case RFSCOUT_EVENT_STORAGE_UNMOUNTED:
         case RFSCOUT_EVENT_APP_AVAILABLE:
         case RFSCOUT_EVENT_APP_UNAVAILABLE:
             return true;
@@ -186,7 +185,6 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
             duration = FEEDBACK_SYSTEM_STATE_MS;
             break;
         case RFSCOUT_EVENT_POWER_DISCONNECTED:
-        case RFSCOUT_EVENT_STORAGE_UNMOUNTED:
         case RFSCOUT_EVENT_APP_UNAVAILABLE:
             frequency = FEEDBACK_DISCONNECTED_HZ;
             duration = FEEDBACK_SYSTEM_STATE_MS;

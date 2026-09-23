@@ -38,8 +38,9 @@ bool storage_is_available( void );
  *         attempt to be deferred, ESP_ERR_INVALID_STATE when no healthy card is mounted, or the
  *         underlying SD/MMC status error when the card disappears or fails.
  * @note A failed physical probe latches the media unavailable for the remainder of the running
- *       platform session. Probe arbitration is storage-owned and never unmounts/remounts the volume
- *       or invalidates open files.
+ *       platform session and emits RFSCOUT_EVENT_STORAGE_MOUNT_FAILED once to report that storage
+ *       became unavailable. Probe arbitration is storage-owned and never unmounts/remounts the
+ *       volume or invalidates open files.
  */
 esp_err_t storage_probe_card( void );
 
