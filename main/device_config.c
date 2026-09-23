@@ -79,8 +79,7 @@ static bool app_from_config_name( const char *a_name, rfscout_app_id_t *a_app )
     return false;
 }
 
-static const char *
-evidence_threshold_config_name( rfscout_evidence_strength_t a_threshold )
+static const char *evidence_threshold_config_name( rfscout_evidence_strength_t a_threshold )
 {
     switch( a_threshold )
     {
@@ -94,8 +93,8 @@ evidence_threshold_config_name( rfscout_evidence_strength_t a_threshold )
     }
 }
 
-static bool
-evidence_threshold_from_config_name( const char *a_name, rfscout_evidence_strength_t *a_threshold )
+static bool evidence_threshold_from_config_name( const char *a_name,
+                                                 rfscout_evidence_strength_t *a_threshold )
 {
     if( NULL == a_name || NULL == a_threshold )
     {
@@ -603,8 +602,7 @@ static void load_app_record( rfscout_app_id_t a_app, const cJSON *a_root )
             config.ble_timeout_seconds =
                 json_timeout_seconds( retention, "bluetooth_seconds", config.ble_timeout_seconds );
         }
-        const cJSON *threshold =
-            cJSON_GetObjectItemCaseSensitive( a_root, "evidence_threshold" );
+        const cJSON *threshold = cJSON_GetObjectItemCaseSensitive( a_root, "evidence_threshold" );
         if( cJSON_IsString( threshold ) && NULL != threshold->valuestring )
         {
             rfscout_evidence_strength_t parsed;
@@ -808,10 +806,9 @@ static cJSON *build_app_record( rfscout_app_id_t a_app )
         }
         if( RFSCOUT_EVIDENCE_STRENGTH_POSSIBLE != config.evidence_threshold )
         {
-            cJSON_AddStringToObject(
-                root,
-                "evidence_threshold",
-                evidence_threshold_config_name( config.evidence_threshold ) );
+            cJSON_AddStringToObject( root,
+                                     "evidence_threshold",
+                                     evidence_threshold_config_name( config.evidence_threshold ) );
         }
     }
     else if( RFSCOUT_APP_AUDIO == a_app &&
@@ -1172,8 +1169,7 @@ rfscout_evidence_strength_t device_config_evidence_threshold( void )
                : RFSCOUT_EVIDENCE_STRENGTH_POSSIBLE;
 }
 
-esp_err_t
-device_config_set_evidence_threshold( rfscout_evidence_strength_t a_threshold )
+esp_err_t device_config_set_evidence_threshold( rfscout_evidence_strength_t a_threshold )
 {
     if( a_threshold >= RFSCOUT_EVIDENCE_STRENGTH_COUNT )
     {
