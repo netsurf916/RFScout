@@ -110,8 +110,8 @@ void surveillance_database_match_observation( rf_device_t *a_observation )
                           contains_ci( a_observation->name, record->text_value );
                 break;
             case SURVEILLANCE_SIGNAL_NAME_PREFIX:
-                matched =
-                    a_observation->has_name && starts_with_ci( a_observation->name, record->text_value );
+                matched = a_observation->has_name &&
+                          starts_with_ci( a_observation->name, record->text_value );
                 break;
             case SURVEILLANCE_SIGNAL_COMPANY_ID:
                 matched = a_observation->company_id == (uint16_t)record->numeric_value;
