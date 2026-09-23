@@ -53,6 +53,16 @@ A validated packet observation is admitted only when CRC is valid, the ESB addre
 
 These confidence values are deterministic heuristic strengths, not measured probabilities of product identity. Packet-derived classifications and RPD spectrum-shape classifications are separate evidence paths and should not be interpreted as interchangeable.
 
+### SD telemetry example
+
+The app emits one-second operational summaries while active when SD logging is available. A captured hardware record:
+
+```json
+{"type":"telemetry","time":"2026-09-23T22:38:44Z","app":"NRF24","low_channel":0,"high_channel":125,"dwell_us":250,"likely":6,"detected":true}
+```
+
+`likely` is the current classifier-fingerprint count; it does not mean six validated ESB devices or six identified products.
+
 ## Passive-only boundary
 
 RFScout does not enable auto-ACK, inject, replay, pair, probe, or actively discover nRF24 devices. That passive boundary is intentional.
