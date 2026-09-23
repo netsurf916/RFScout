@@ -56,8 +56,8 @@ static void evaluate_case( rf_device_t *a_case )
     const size_t fact_count = surveillance_database_fact_count();
     for( size_t i = 0U; i < fact_count; ++i )
     {
-        if( 0U == ( a_case->surveillance_evidence_bits[ i / 32U ] &
-                    ( UINT32_C( 1 ) << ( i % 32U ) ) ) )
+        if( 0U ==
+            ( a_case->surveillance_evidence_bits[ i / 32U ] & ( UINT32_C( 1 ) << ( i % 32U ) ) ) )
         {
             continue;
         }
@@ -125,8 +125,8 @@ void surveillance_case_observe( rf_device_t *a_case, const rf_device_t *a_observ
     bool evidence_changed = false;
     for( size_t i = 0U; i < RFSCOUT_SURVEILLANCE_EVIDENCE_WORD_COUNT; ++i )
     {
-        const uint32_t merged =
-            a_case->surveillance_evidence_bits[ i ] | a_observation->surveillance_evidence_bits[ i ];
+        const uint32_t merged = a_case->surveillance_evidence_bits[ i ] |
+                                a_observation->surveillance_evidence_bits[ i ];
         evidence_changed |= merged != a_case->surveillance_evidence_bits[ i ];
         a_case->surveillance_evidence_bits[ i ] = merged;
     }
