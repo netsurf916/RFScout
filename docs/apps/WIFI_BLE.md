@@ -58,7 +58,7 @@ CID is not used for ordinary vendor attribution because CID assignments are not 
 
 `tools/update_surveillance.py` validates the human-maintained CSV and generates the compact firmware table under `main/services/wireless/`. Runtime code understands generic signal kinds and generated record IDs; it does not assign product-specific evidence identifiers in application code.
 
-The canonical active observation identified by address type plus MAC also owns the lifetime of its surveillance case. Distinct database evidence records accumulate while that identity remains active. Repeating the same evidence record does not increase the score, but different records with the same weight do. When the canonical observation expires, its accumulated evidence expires with it; a later reappearance starts a fresh case.
+The canonical active observation identified by address type plus MAC also owns the lifetime of its surveillance case. Distinct database evidence records accumulate while that identity remains active. Repeating the same evidence record does not increase the score, but different records with the same weight do. When the canonical observation expires, its accumulated evidence expires with it; a later reappearance starts a fresh case. Timeout logging records the case lifetime, final evidence count/overflow state, score, and best signature hypothesis even when the configured notification threshold was never reached.
 
 The case score for a signature is the sum of the weights of its unique matching evidence records. The **Evidence Threshold** setting maps the user-facing levels to minimum scores:
 
