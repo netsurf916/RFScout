@@ -1,5 +1,5 @@
 /**
-    surveillance_database.h : RFScout generated surveillance evidence lookup interface
+    surveillance_database.h : RFScout generated surveillance fact lookup interface
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -35,20 +35,20 @@ typedef struct
     uint8_t weight;
     uint64_t numeric_value;
     const char *text_value;
-} surveillance_evidence_record_t;
+} surveillance_fact_t;
 
-/** @brief Add database evidence matching normalized fields in an observation. */
+/** @brief Match database facts against normalized fields and add resulting evidence. */
 void surveillance_database_match_observation( rf_device_t *a_observation );
 
-/** @brief Add database evidence matching one advertised 128-bit BLE service UUID. */
+/** @brief Match database facts against one advertised 128-bit BLE UUID and add evidence. */
 void surveillance_database_match_service_uuid128( rf_device_t *a_observation,
                                                   const uint8_t a_uuid[ 16 ] );
 
-/** @brief Resolve a generated evidence record by generated record ID. */
-const surveillance_evidence_record_t *surveillance_database_record( uint16_t a_record_id );
+/** @brief Resolve a generated database fact by generated fact ID. */
+const surveillance_fact_t *surveillance_database_fact( uint16_t a_fact_id );
 
-/** @brief Return the number of generated evidence records. */
-size_t surveillance_database_evidence_count( void );
+/** @brief Return the number of generated database facts. */
+size_t surveillance_database_fact_count( void );
 
 /** @brief Return the display label associated with a generated signature ID. */
 const char *surveillance_database_signature_label( surveillance_signature_id_t a_signature );

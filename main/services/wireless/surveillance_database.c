@@ -1,5 +1,5 @@
 /**
-    surveillance_database.c : RFScout generated surveillance evidence lookup implementation
+    surveillance_database.c : RFScout generated surveillance fact lookup implementation
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -67,14 +67,14 @@ static bool has_service_uuid16( const rf_device_t *a_observation, uint16_t a_uui
     return false;
 }
 
-static void add_evidence_id( rf_device_t *a_observation, uint16_t a_record_id )
+static void add_evidence( rf_device_t *a_observation, uint16_t a_fact_id )
 {
-    if( ( 0U == a_record_id ) || ( a_record_id > SURVEILLANCE_EVIDENCE_RECORD_COUNT ) )
+    if( ( 0U == a_fact_id ) || ( a_fact_id > SURVEILLANCE_FACT_COUNT ) )
     {
         return;
     }
 
-    const size_t bit = (size_t)a_record_id - 1U;
+    const size_t bit = (size_t)a_fact_id - 1U;
     a_observation->surveillance_evidence_bits[ bit / 32U ] |= UINT32_C( 1 ) << ( bit % 32U );
 }
 
@@ -89,32 +89,32 @@ void surveillance_database_match_observation( rf_device_t *a_observation )
                             ( (uint32_t)a_observation->address[ 1 ] << 8U ) |
                             (uint32_t)a_observation->address[ 2 ];
 
-    for( size_t i = 0U; i < SURVEILLANCE_EVIDENCE_RECORD_COUNT; ++i )
+    for( size_t i = 0U; i < SURVEILLANCE_FACT_COUNT; ++i )
     {
-        const surveillance_evidence_record_t *record = &surveillance_evidence_records[ i ];
+        const surveillance_fact_t *fact = &surveillance_facts[ i ];
         bool matched = false;
 
-        switch( record->signal )
+        switch( fact->signal )
         {
             case SURVEILLANCE_SIGNAL_OUI:
-                matched = prefix == (uint32_t)record->numeric_value;
+                matched = prefix == (uint32_t)fact->numeric_value;
                 break;
             case SURVEILLANCE_SIGNAL_NAME_CONTAINS:
                 matched = a_observation->has_name &&
-                          contains_ci( a_observation->name, record->text_value );
+                          contains_ci( a_observation->name, fact->text_value );
                 break;
             case SURVEILLANCE_SIGNAL_NAME_PREFIX:
                 matched = a_observation->has_name &&
-                          starts_with_ci( a_observation->name, record->text_value );
+                          starts_with_ci( a_observation->name, fact->text_value );
                 break;
             case SURVEILLANCE_SIGNAL_COMPANY_ID:
-                matched = a_observation->company_id == (uint16_t)record->numeric_value;
+                matched = a_observation->company_id == (uint16_t)fact->numeric_value;
                 break;
             case SURVEILLANCE_SIGNAL_SERVICE_UUID16:
-                matched = has_service_uuid16( a_observation, (uint16_t)record->numeric_value );
+                matched = has_service_uuid16( a_observation, (uint16_t)fact->numeric_value );
                 break;
             case SURVEILLANCE_SIGNAL_REMOTE_ID:
-                matched = a_observation->has_remote_id == ( 0U != record->numeric_value );
+                matched = a_observation->has_remote_id == ( 0U != fact->numeric_value );
                 break;
             case SURVEILLANCE_SIGNAL_SERVICE_UUID128:
             default:
@@ -123,7 +123,7 @@ void surveillance_database_match_observation( rf_device_t *a_observation )
 
         if( matched )
         {
-            add_evidence_id( a_observation, record->id );
+            add_evidence( a_observation, fact->id );
         }
     }
 }
@@ -143,29 +143,29 @@ void surveillance_database_match_service_uuid128( rf_device_t *a_observation,
     }
     canonical[ 32 ] = '\0';
 
-    for( size_t i = 0U; i < SURVEILLANCE_EVIDENCE_RECORD_COUNT; ++i )
+    for( size_t i = 0U; i < SURVEILLANCE_FACT_COUNT; ++i )
     {
-        const surveillance_evidence_record_t *record = &surveillance_evidence_records[ i ];
-        if( ( SURVEILLANCE_SIGNAL_SERVICE_UUID128 == record->signal ) &&
-            ( 0 == strcmp( canonical, record->text_value ) ) )
+        const surveillance_fact_t *fact = &surveillance_facts[ i ];
+        if( ( SURVEILLANCE_SIGNAL_SERVICE_UUID128 == fact->signal ) &&
+            ( 0 == strcmp( canonical, fact->text_value ) ) )
         {
-            add_evidence_id( a_observation, record->id );
+            add_evidence( a_observation, fact->id );
         }
     }
 }
 
-const surveillance_evidence_record_t *surveillance_database_record( uint16_t a_record_id )
+const surveillance_fact_t *surveillance_database_fact( uint16_t a_fact_id )
 {
-    if( ( 0U == a_record_id ) || ( a_record_id > SURVEILLANCE_EVIDENCE_RECORD_COUNT ) )
+    if( ( 0U == a_fact_id ) || ( a_fact_id > SURVEILLANCE_FACT_COUNT ) )
     {
         return NULL;
     }
-    return &surveillance_evidence_records[ a_record_id - 1U ];
+    return &surveillance_facts[ a_fact_id - 1U ];
 }
 
-size_t surveillance_database_evidence_count( void )
+size_t surveillance_database_fact_count( void )
 {
-    return SURVEILLANCE_EVIDENCE_RECORD_COUNT;
+    return SURVEILLANCE_FACT_COUNT;
 }
 
 const char *surveillance_database_signature_label( surveillance_signature_id_t a_signature )

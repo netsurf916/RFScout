@@ -152,7 +152,7 @@ The target strength semantics are:
 - **Probable** — strong association, with false positives expected to be uncommon.
 - **Distinctive** — evidence intended to be uniquely identifying.
 
-The user-facing **Evidence Threshold** selects a minimum numeric case score mapped to Possible / Probable / Distinctive at 2 / 4 / 6. Unique evidence records contribute database-defined 1 / 2 / 4 weights; repeated observations of the same record do not add score, while every distinct matching fact in an observation can accumulate immediately. Cases retain evidence in a generator-sized 32-bit bitset, avoiding hand-maintained evidence-count limits. Product-specific signal values, weights, and provenance belong in `data/surveillance_signatures.csv`, not classifier control flow.
+The user-facing **Evidence Threshold** selects a minimum numeric case score mapped to Possible / Probable / Distinctive at 2 / 4 / 6. Unique matched facts contribute database-defined 1 / 2 / 4 weights; repeated observations of the same fact do not add score, while every distinct matching fact in an observation can accumulate immediately. Cases retain evidence in a generator-sized 32-bit bitset, avoiding hand-maintained evidence-count limits. Product-specific signal values, weights, and provenance belong in `data/surveillance_signatures.csv`, not classifier control flow.
 
 The implementation pass should first perform the semantic refactor without mechanically preserving the old source-based strength assumptions. After that baseline is stable, perform evidence-backed research and tuning across every currently supported surveillance category/signature. Research should prefer primary/vendor/protocol material, device teardowns or captures, and independently corroborated field observations; community detector projects are useful discovery sources but should not be copied without evaluating false-positive behavior.
 
@@ -174,7 +174,7 @@ For each signature/category, record the evidence source, provenance, expected un
 - [ ] Research and re-score every existing surveillance signature/category against the documented strength contract.
 - [ ] Expand detection fingerprints where research supports useful passive evidence, including older/newer hardware or firmware generations.
 - [ ] Add negative/near-match tests for researched fingerprints so permissive Possible-strength rules have explicit false-positive boundaries.
-- [x] Make the surveillance signature CSV authoritative for signal values, numeric weights, and provenance; generate the compact firmware representation from it.\n- [ ] Complete durable provenance review for every curated evidence record.
+- [x] Make the surveillance signature CSV authoritative for signal values, numeric weights, and provenance; generate the compact firmware representation from it.\n- [ ] Complete durable provenance review for every curated database fact.
 - [ ] Hardware/field validate representative detections where suitable devices or captures are available.
 
 #### Remaining WiFi/BLE checklist
@@ -184,7 +184,7 @@ For each signature/category, record the evidence source, provenance, expected un
 - [x] Remove the fixed 1000-item retained-store and UI-mirror limit. Implemented by PR #68.
 - [x] Add a generic internal persistent-record service with atomic system-owned records and descriptor-confined app namespaces; migrate device/app configuration onto that ownership model and remove SD configuration authority. Implemented by PR #77.
 - [ ] Add Instant / Timed / Never Wi-Fi and BLE retention.
-- [x] Keep surveillance classification on the canonical active observation record, sharing normal device expiry and re-arm semantics without a parallel active-surveillance list. Implemented by PR #73.\n- [x] Accumulate unique weighted surveillance evidence for the lifetime of that canonical observation; expiry resets the case rather than expiring individual evidence records.
+- [x] Keep surveillance classification on the canonical active observation record, sharing normal device expiry and re-arm semantics without a parallel active-surveillance list. Implemented by PR #73.\n- [x] Accumulate evidence from unique matched surveillance facts for the lifetime of that canonical observation; expiry resets the case rather than expiring individual evidence.
 - [ ] Add active/stale UI semantics for selected objects.
 - [ ] Replace MAC-equals-device counting with semantic entities, identity sets, confidence, and provenance.
 - [ ] Parse richer Wi-Fi roles/subtypes/metadata and association evidence.

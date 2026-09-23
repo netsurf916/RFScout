@@ -60,7 +60,7 @@ idf.py build
 
 ## Generated identity and surveillance data
 
-Generated IEEE identity tables and the compiled surveillance-evidence database are already committed. Refresh them only when intentionally updating their source data:
+Generated IEEE identity tables and the compiled surveillance-fact database are already committed. Refresh them only when intentionally updating their source data:
 
 ```sh
 python3 tools/update_oui.py

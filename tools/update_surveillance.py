@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate RFScout's curated surveillance evidence database and advisory OUI report."""
+"""Generate RFScout's curated surveillance fact database and advisory OUI report."""
 
 import csv
 import pathlib
@@ -121,7 +121,7 @@ def main() -> None:
         "#define SURVEILLANCE_SIGNATURE_COUNT \\",
         "    ( sizeof( surveillance_signature_info ) / sizeof( surveillance_signature_info[ 0 ] ) )",
         "",
-        "static const surveillance_evidence_record_t surveillance_evidence_records[] =",
+        "static const surveillance_fact_t surveillance_facts[] =",
         "{",
     ]
     signal_map = {
@@ -133,7 +133,7 @@ def main() -> None:
         "service_uuid128": "SURVEILLANCE_SIGNAL_SERVICE_UUID128",
         "remote_id": "SURVEILLANCE_SIGNAL_REMOTE_ID",
     }
-    for record_id, kind, _brand, signature, signal, value, weight, _evidence in rows:
+    for fact_id, kind, _brand, signature, signal, value, weight, _evidence in rows:
         if signal in {"name_contains", "name_prefix", "service_uuid128"}:
             text = c_string(value)
             numeric = "0U"
@@ -144,13 +144,13 @@ def main() -> None:
             text = "NULL"
             numeric = f"UINT64_C( 0x{value} )" if len(value) <= 16 else "0U"
         lines.append(
-            f"    {{ {record_id}U, {signature}U, {CLASS_MAP[kind]}, "
+            f"    {{ {fact_id}U, {signature}U, {CLASS_MAP[kind]}, "
             f"{signal_map[signal]}, {weight}U, {numeric}, {text} }},"
         )
     lines += [
         "};",
-        "#define SURVEILLANCE_EVIDENCE_RECORD_COUNT \\",
-        "    ( sizeof( surveillance_evidence_records ) / sizeof( surveillance_evidence_records[ 0 ] ) )",
+        "#define SURVEILLANCE_FACT_COUNT \\",
+        "    ( sizeof( surveillance_facts ) / sizeof( surveillance_facts[ 0 ] ) )",
         "",
     ]
     OUT.write_text("\n".join(lines), encoding="utf-8")
@@ -182,7 +182,7 @@ def main() -> None:
                 )
 
     print(
-        f"wrote {len(rows)} surveillance evidence records "
+        f"wrote {len(rows)} surveillance facts "
         f"({evidence_words} x 32-bit case words) to {OUT}"
     )
     print(f"wrote advisory IEEE cross-reference report to {REPORT}")

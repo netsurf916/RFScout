@@ -1,6 +1,6 @@
 /**
     surveillance.c : RFScout surveillance case scoring
-    Description: Scores unique database-defined evidence accumulated by canonical observations.
+    Description: Scores evidence from unique matched database facts accumulated by canonical observations.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -61,7 +61,7 @@ static void evaluate_case( rf_device_t *a_case )
         uint8_t sources = 0U;
         surveillance_class_t classification = SURVEILLANCE_NONE;
 
-        const size_t evidence_count = surveillance_database_evidence_count();
+        const size_t evidence_count = surveillance_database_fact_count();
         for( size_t i = 0U; i < evidence_count; ++i )
         {
             if( 0U == ( a_case->surveillance_evidence_bits[ i / 32U ] &
@@ -70,16 +70,16 @@ static void evaluate_case( rf_device_t *a_case )
                 continue;
             }
 
-            const surveillance_evidence_record_t *record =
-                surveillance_database_record( (uint16_t)( i + 1U ) );
-            if( ( NULL == record ) || ( record->signature != signature ) )
+            const surveillance_fact_t *fact =
+                surveillance_database_fact( (uint16_t)( i + 1U ) );
+            if( ( NULL == record ) || ( fact->signature != signature ) )
             {
                 continue;
             }
 
-            score += record->weight;
-            sources |= evidence_source( record->signal );
-            classification = record->classification;
+            score += fact->weight;
+            sources |= evidence_source( fact->signal );
+            classification = fact->classification;
         }
 
         if( score > UINT8_MAX )

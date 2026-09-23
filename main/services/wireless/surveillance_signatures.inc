@@ -21,7 +21,7 @@ static const surveillance_signature_info_t surveillance_signature_info[] =
 #define SURVEILLANCE_SIGNATURE_COUNT \
     ( sizeof( surveillance_signature_info ) / sizeof( surveillance_signature_info[ 0 ] ) )
 
-static const surveillance_evidence_record_t surveillance_evidence_records[] =
+static const surveillance_fact_t surveillance_facts[] =
 {
     { 1U, 1U, SURVEILLANCE_ALPR, SURVEILLANCE_SIGNAL_OUI, 2U, UINT64_C( 0x70C94E ), NULL },
     { 2U, 1U, SURVEILLANCE_ALPR, SURVEILLANCE_SIGNAL_OUI, 2U, UINT64_C( 0x3C9180 ), NULL },
@@ -128,5 +128,5 @@ static const surveillance_evidence_record_t surveillance_evidence_records[] =
     { 103U, 13U, SURVEILLANCE_AUDIO, SURVEILLANCE_SIGNAL_SERVICE_UUID16, 1U, UINT64_C( 0x3500 ), NULL },
     { 104U, 14U, SURVEILLANCE_DRONE, SURVEILLANCE_SIGNAL_REMOTE_ID, 4U, 1U, NULL },
 };
-#define SURVEILLANCE_EVIDENCE_RECORD_COUNT \
-    ( sizeof( surveillance_evidence_records ) / sizeof( surveillance_evidence_records[ 0 ] ) )
+#define SURVEILLANCE_FACT_COUNT \
+    ( sizeof( surveillance_facts ) / sizeof( surveillance_facts[ 0 ] ) )
