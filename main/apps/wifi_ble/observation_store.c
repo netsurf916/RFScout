@@ -587,9 +587,8 @@ static void merge_observation( rf_device_t *a_device, const rf_device_t *a_obser
             sizeof( a_device->manufacturer_data ) );
     a_device->manufacturer_data_len = a_observation->manufacturer_data_len;
     a_device->has_manufacturer_data = a_observation->has_manufacturer_data;
-    memcpy( a_device->service_uuids,
-            a_observation->service_uuids,
-            sizeof( a_device->service_uuids ) );
+    memcpy(
+        a_device->service_uuids, a_observation->service_uuids, sizeof( a_device->service_uuids ) );
     a_device->service_uuid_count = a_observation->service_uuid_count;
     a_device->has_remote_id = a_observation->has_remote_id;
 }
@@ -668,9 +667,8 @@ bool observation_store_observe( rf_device_t *a_observation,
     }
     if( NULL != a_surveillance_new )
     {
-        *a_surveillance_new =
-            ( SURVEILLANCE_NONE != device->surveillance ) &&
-            ( SURVEILLANCE_SIGNATURE_NONE != device->surveillance_signature );
+        *a_surveillance_new = ( SURVEILLANCE_NONE != device->surveillance ) &&
+                              ( SURVEILLANCE_SIGNATURE_NONE != device->surveillance_signature );
     }
     xSemaphoreGive( store_lock );
     return true;
@@ -788,7 +786,8 @@ size_t observation_store_active_surveillance( observation_surveillance_signature
     }
 
     size_t group_count = 0U;
-    for( size_t signature = 1U; signature < (size_t)RFSCOUT_SURVEILLANCE_SIGNATURE_MAX; ++signature )
+    for( size_t signature = 1U; signature < (size_t)RFSCOUT_SURVEILLANCE_SIGNATURE_MAX;
+         ++signature )
     {
         if( 0U == grouped[ signature ].count )
         {
