@@ -1,9 +1,7 @@
 type,brand,oui,weight,provenance,ieee_owner,registry_status
-BODY,Axon,0025DF,2,stamenscan-lookout,Axon Enterprise,present
+BODY,Axon,0025DF,1,ieee-axon-enterprise,Axon Enterprise,present
 CAM,Axis,00408C,2,stamenscan-axis-docs,Axis Communications AB,present
-BODY,Axon,005828,2,stamenscan-lookout,Axon Networks,present
 CAM,Ring,00B463,1,ouispy-c5,Ring,present
-BODY,Axon,00C0D4,2,stamenscan-lookout,"AXON NETWORKS, INC.",present
 ALPR,Flock,00F48D,2,nitekry-2026-07,Liteon Technology,present
 ALPR,Flock,040D84,2,stamenscan-ble,Silicon Laboratories,present
 ALPR,Flock,083A88,2,nitekry-2026-07,Universal Global Scientific Ind,present
@@ -41,7 +39,6 @@ ALPR,Flock,744CA1,2,nitekry-2026-07,Liteon Technology,present
 GLASS,Meta,7C2A9E,1,ouispy-c5,,not-in-current-ma-l-snapshot
 ALPR,Flock,803049,2,nitekry-2026-07,Liteon Technology,present
 ALPR,Flock,826BF2,2,deflock-joplin,,not-in-current-ma-l-snapshot
-BODY,Axon,847003,2,stamenscan-lookout,Axon Networks,present
 CAM,Dahua,9002A9,1,stamenscan-ipvm,"Zhejiang Dahua Technology Co.,",present
 ALPR,Flock,903586,2,stamenscan-ble,,not-in-current-ma-l-snapshot
 ALPR,Flock,9035EA,2,nitekry-2026-07,Silicon Laboratories,present
