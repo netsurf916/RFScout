@@ -34,6 +34,29 @@ The recording browser supports:
 
 Playback loudness is user-facing percentage state and is persisted as device/app configuration.
 
+### Recorder state and SD telemetry
+
+The structured app log exposes Recorder's internal state numerically:
+
+| State | Meaning |
+| ---: | --- |
+| 0 | Idle / ready |
+| 1 | Recording |
+| 2 | Saving / asynchronous post-processing |
+| 3 | Live microphone monitoring (used by Audio Spectrum) |
+| 4 | Playback |
+| 5 | No storage |
+| 6 | Error |
+
+When SD logging is available, Recorder telemetry also includes the current playable-file count and the service's current/most-recent PCM byte count. A hardware recording captured the expected transition into recording and then asynchronous save:
+
+```json
+{"type":"telemetry","time":"2026-09-23T22:37:16Z","app":"RECORDER","state":1,"files":0,"bytes":1162240}
+{"type":"telemetry","time":"2026-09-23T22:37:17Z","app":"RECORDER","state":2,"files":0,"bytes":1163264}
+```
+
+Because Recorder itself requires mounted storage, no Recorder SD-log record can prove its behavior while the SD card is absent. In that condition the application is expected to become unavailable rather than remain navigable.
+
 ## Transition safety
 
 Recording and finalization are semantic transition blockers. While either is active:
