@@ -43,10 +43,7 @@ ALPR,Flock,oui,943469,2,stamenscan-ble
 ALPR,Flock,oui,B4E3F9,2,stamenscan-ble
 ALPR,Flock,oui,E0382E,2,stamenscan-ble
 ALPR,Flock,oui,F082C0,2,stamenscan-ble
-BODY,Axon,oui,0025DF,2,stamenscan-lookout
-BODY,Axon,oui,005828,2,stamenscan-lookout
-BODY,Axon,oui,00C0D4,2,stamenscan-lookout
-BODY,Axon,oui,847003,2,stamenscan-lookout
+BODY,Axon,oui,0025DF,1,ieee-axon-enterprise
 CAM,Ring,oui,187F88,1,ouispy-c5
 CAM,Ring,oui,242BD6,1,ouispy-c5
 CAM,Ring,oui,343EA4,1,ouispy-c5
