@@ -2,7 +2,7 @@
 
 This guide is the main development ramp-up for RFScout on ESP32-S3 with ESP-IDF 6.1.
 
-**Before changing source, read [RFScout coding style](CODING_STYLE.md).** It defines required source formatting, module/interface conventions, generated-file policy, and documentation expectations. Changes that affect shared ownership/lifecycle should also be checked against [Platform architecture](ARCHITECTURE.md); app behavior belongs in the corresponding page under [`apps/`](apps/).
+**Before changing source, read [RFScout coding style](CODING_STYLE.md).** It defines required source formatting, module/interface conventions, memory ownership and stack discipline, generated-file policy, and documentation expectations. Changes that affect shared ownership/lifecycle should also be checked against [Platform architecture](ARCHITECTURE.md); app behavior belongs in the corresponding page under [`apps/`](apps/).
 
 ## Host packages
 
@@ -58,9 +58,9 @@ idf.py set-target esp32s3
 idf.py build
 ```
 
-## Generated identity data
+## Generated identity and surveillance data
 
-Generated IEEE/curated prefix tables are already committed. Refresh them only when intentionally updating registry data:
+Generated IEEE identity tables and the compiled surveillance-evidence database are already committed. Refresh them only when intentionally updating their source data:
 
 ```sh
 python3 tools/update_oui.py
