@@ -95,8 +95,7 @@ evidence_threshold_config_name( rfscout_evidence_strength_t a_threshold )
 }
 
 static bool
-evidence_threshold_from_config_name( const char *a_name,
-                                           rfscout_evidence_strength_t *a_threshold )
+evidence_threshold_from_config_name( const char *a_name, rfscout_evidence_strength_t *a_threshold )
 {
     if( NULL == a_name || NULL == a_threshold )
     {
@@ -604,15 +603,24 @@ static void load_app_record( rfscout_app_id_t a_app, const cJSON *a_root )
             config.ble_timeout_seconds =
                 json_timeout_seconds( retention, "bluetooth_seconds", config.ble_timeout_seconds );
         }
-        const cJSON *sensitivity =
+        const cJSON *threshold =
             cJSON_GetObjectItemCaseSensitive( a_root, "evidence_threshold" );
-        if( cJSON_IsString( sensitivity ) && NULL != sensitivity->valuestring )
+        if( cJSON_IsString( threshold ) && NULL != threshold->valuestring )
         {
             rfscout_evidence_strength_t parsed;
-            if( evidence_threshold_from_config_name( sensitivity->valuestring, &parsed ) )
+            if( evidence_threshold_from_config_name( threshold->valuestring, &parsed ) )
             {
                 config.evidence_threshold = parsed;
             }
+        }
+
+        /*
+         * Pre-1.0 configuration is intentionally not migrated. Mark records using
+         * the retired sensitivity key dirty so the normal sparse-save path prunes it.
+         */
+        if( NULL != cJSON_GetObjectItemCaseSensitive( a_root, "surveillance_sensitivity" ) )
+        {
+            config_dirty = true;
         }
     }
     else if( RFSCOUT_APP_AUDIO == a_app )
