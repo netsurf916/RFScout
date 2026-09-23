@@ -19,12 +19,12 @@
 void wifi_settings_view_render( unsigned a_selected,
                                 bool a_editing,
                                 bool a_notifications_enabled,
-                                rfscout_surveillance_sensitivity_t a_sensitivity,
+                                rfscout_evidence_strength_t a_threshold,
                                 uint16_t a_wifi_timeout_seconds,
                                 uint16_t a_ble_timeout_seconds )
 {
     static const char *labels[ WIFI_SETTINGS_ITEM_COUNT ] = {
-        "BACK", "RESET DETECTIONS", "NOTIFICATIONS", "SENSITIVITY", "WIFI TIMEOUT", "BT TIMEOUT" };
+        "BACK", "RESET DETECTIONS", "NOTIFICATIONS", "EVIDENCE THRESH", "WIFI TIMEOUT", "BT TIMEOUT" };
     const ui_theme_palette_t *theme = ui_theme_get();
 
     display_clear( theme->background );
@@ -51,16 +51,16 @@ void wifi_settings_view_render( unsigned a_selected,
         }
         else if( 3U == item )
         {
-            static const char *names[ RFSCOUT_SURVEILLANCE_SENSITIVITY_COUNT ] = {
-                [RFSCOUT_SURVEILLANCE_SENSITIVITY_HIGH] = "HIGH",
-                [RFSCOUT_SURVEILLANCE_SENSITIVITY_MEDIUM] = "MEDIUM",
-                [RFSCOUT_SURVEILLANCE_SENSITIVITY_LOW] = "LOW",
+            static const char *names[ RFSCOUT_EVIDENCE_STRENGTH_COUNT ] = {
+                [RFSCOUT_EVIDENCE_STRENGTH_POSSIBLE] = "POSSIBLE",
+                [RFSCOUT_EVIDENCE_STRENGTH_PROBABLE] = "PROBABLE",
+                [RFSCOUT_EVIDENCE_STRENGTH_DISTINCTIVE] = "DISTINCTIVE",
             };
             snprintf( value,
                       sizeof( value ),
                       "%s",
-                      ( a_sensitivity < RFSCOUT_SURVEILLANCE_SENSITIVITY_COUNT )
-                          ? names[ a_sensitivity ]
+                      ( a_threshold < RFSCOUT_EVIDENCE_STRENGTH_COUNT )
+                          ? names[ a_threshold ]
                           : "HIGH" );
         }
         else if( 4U == item )
