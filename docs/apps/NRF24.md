@@ -61,7 +61,7 @@ The app emits one-second operational summaries while active when SD logging is a
 {"type":"telemetry","time":"2026-09-23T22:38:44Z","app":"NRF24","low_channel":0,"high_channel":125,"dwell_us":250,"likely":6,"detected":true}
 ```
 
-`likely` is the current classifier-fingerprint count; it does not mean six validated ESB devices or six identified products.
+`likely` is the number of fixed detection-category rows copied by the current telemetry path. It is currently **6** because nRF24 exposes six category rows; it is not a count of active detections, validated ESB devices, or identified products.
 
 ## Passive-only boundary
 
