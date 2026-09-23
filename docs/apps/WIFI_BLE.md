@@ -33,6 +33,8 @@ Current settings are finite timeouts from **10–300 seconds** in 10-second step
 
 Surveillance classification is an attribute of that canonical active record and expires with it; there is no independent surveillance-retention list.
 
+WiFi/BLE persists a non-default threshold as the sparse `evidence_threshold` app setting (`probable` or `distinctive`). The retired pre-1.0 `surveillance_sensitivity` setting is not migrated; if encountered, it is ignored and pruned through the normal configuration-save workflow.
+
 Instant / Timed / Never retention modes are not implemented yet.
 
 ## Vendor identity
@@ -56,17 +58,17 @@ CID is not used for ordinary vendor attribution because CID assignments are not 
 
 The classifier combines prefix evidence with independent signals such as advertised BLE names, manufacturer/company identifiers, service UUID patterns, Remote ID evidence, and supported protocol evidence.
 
-Sensitivity selects the minimum evidence strength for a single observation. Evidence source and evidence strength are separate concepts: the evidence bitmask records what was observed (for example name, curated prefix/OUI, company identifier, service UUID, or protocol evidence), while strength expresses how specifically that observation supports a surveillance signature.
+The **Evidence Threshold** setting selects the minimum evidence strength for a single observation and is presented directly as **Possible / Probable / Distinctive** rather than the former inverted High / Medium / Low sensitivity terminology. Evidence source and evidence strength are separate concepts: the evidence bitmask records what was observed (for example name, curated prefix/OUI, company identifier, service UUID, or protocol evidence), while strength expresses how specifically that observation supports a surveillance signature.
 
-The intended sensitivity contract is:
+The threshold contract is:
 
-- **High** — accepts **possible** evidence. Detection recall is favored and false positives are explicitly possible; researched signals should still have a reasonable basis for association rather than being generic radio activity.
-- **Medium** — accepts **probable** evidence. A surfaced detection should have strong product/family association and false positives should be unlikely.
-- **Low** — accepts only **distinctive** evidence. A surfaced detection should rely on evidence intended to be uniquely identifying under the supported passive-observation model.
+- **Possible** — detection recall is favored and false positives are explicitly possible; researched signals should still have a reasonable basis for association rather than being generic radio activity.
+- **Probable** — a surfaced detection should have strong product/family association and false positives should be unlikely.
+- **Distinctive** — a surfaced detection should rely on evidence intended to be uniquely identifying under the supported passive-observation model.
 
-These labels describe evidence quality rather than a numeric probability calculation. RFScout does not accumulate repeated weak observations into confidence: repeated observations refresh active presence, while a candidate retains the strongest qualifying evidence observed for that signature. An active record keeps its first qualifying surveillance signature until expiry.
+**Possible** is the compiled default. These labels describe evidence quality rather than a numeric probability calculation. RFScout does not accumulate repeated weak observations into confidence: repeated observations refresh active presence, while a candidate retains the strongest qualifying evidence observed for that signature. An active record keeps its first qualifying surveillance signature until expiry.
 
-Detection rules may assign different strengths to the same evidence source. For example, one known proprietary service UUID may be only possible evidence, while a validated combination of multiple services may be probable or distinctive. Conversely, a generic standard service UUID should not become surveillance evidence merely because High sensitivity permits possible matches.
+Detection rules may assign different strengths to the same evidence source. For example, one known proprietary service UUID may be only possible evidence, while a validated combination of multiple services may be probable or distinctive. Conversely, a generic standard service UUID should not become surveillance evidence merely because the Possible threshold accepts weaker researched associations.
 
 ## Notifications
 
