@@ -167,9 +167,9 @@ The category review must cover at least:
 
 For each signature/category, record the evidence source, provenance, expected uniqueness/false-positive risk, assigned strength, and any known hardware/firmware-generation limitations. Prefer explicit known fingerprints and combinations over broad numeric ranges or generic standard services. Do not infer an exact product from vendor/ecosystem evidence when the observed signal only supports the broader vendor or category.
 
-- [ ] Rename classifier `priority` semantics to evidence `strength` without introducing a parallel confidence/priority mechanism.
-- [ ] Define typed Possible / Probable / Distinctive strengths and map High / Medium / Low sensitivity to their minimum accepted strength.
-- [ ] Preserve evidence-source reporting independently from strength.
+- [x] Rename classifier `priority` semantics to evidence `strength` without introducing a parallel confidence/priority mechanism.
+- [x] Define typed Possible / Probable / Distinctive strengths and expose the same Possible / Probable / Distinctive values directly through the Evidence Threshold UI.
+- [x] Preserve evidence-source reporting independently from strength.
 - [ ] Add tests proving sensitivity thresholds, strongest-evidence selection, and non-accumulation behavior.
 - [ ] Research and re-score every existing surveillance signature/category against the documented strength contract.
 - [ ] Expand detection fingerprints where research supports useful passive evidence, including older/newer hardware or firmware generations.
