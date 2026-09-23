@@ -53,6 +53,8 @@ When SD logging is available, Recorder telemetry also includes the current playa
 ```json
 {"type":"telemetry","time":"2026-09-23T22:37:16Z","app":"RECORDER","state":1,"files":0,"bytes":1162240}
 {"type":"telemetry","time":"2026-09-23T22:37:17Z","app":"RECORDER","state":2,"files":0,"bytes":1163264}
+{"type":"telemetry","time":"2026-09-23T22:37:32Z","app":"RECORDER","state":0,"files":1,"bytes":1076892}
+{"type":"telemetry","time":"2026-09-23T22:37:34Z","app":"RECORDER","state":4,"files":1,"bytes":1076892}
 ```
 
 Because Recorder itself requires mounted storage, no Recorder SD-log record can prove its behavior while the SD card is absent. In that condition the application is expected to become unavailable rather than remain navigable.
