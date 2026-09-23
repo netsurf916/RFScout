@@ -550,6 +550,7 @@ static void copy_case_result( rf_device_t *a_observation, const rf_device_t *a_c
     a_observation->surveillance_signature = a_case->surveillance_signature;
     a_observation->surveillance_evidence = a_case->surveillance_evidence;
     a_observation->surveillance_score = a_case->surveillance_score;
+    a_observation->surveillance_evidence_overflow = a_case->surveillance_evidence_overflow;
 }
 
 static void merge_observation( rf_device_t *a_device, const rf_device_t *a_observation )
