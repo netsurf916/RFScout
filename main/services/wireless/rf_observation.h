@@ -76,6 +76,7 @@ typedef struct
     uint8_t surveillance_evidence;
     uint8_t surveillance_score;
     uint8_t surveillance_evidence_count;
+    bool surveillance_evidence_overflow;
     uint16_t surveillance_evidence_ids[ RFSCOUT_SURVEILLANCE_EVIDENCE_MAX ];
     char vendor[ RFSCOUT_VENDOR_NAME_MAX ];
     char name[ RFSCOUT_DEVICE_NAME_MAX ];
