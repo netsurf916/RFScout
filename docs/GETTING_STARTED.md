@@ -1,6 +1,8 @@
 # Getting started on Fedora Linux
 
-This guide is the main development ramp-up for RFScout on ESP32-S3 with ESP-IDF 6.1.\n\n**Before changing source, read [RFScout coding style](CODING_STYLE.md).** It defines required source formatting, module/interface conventions, generated-file policy, and documentation expectations. Changes that affect shared ownership/lifecycle should also be checked against [Platform architecture](ARCHITECTURE.md); app behavior belongs in the corresponding page under [`apps/`](apps/).
+This guide is the main development ramp-up for RFScout on ESP32-S3 with ESP-IDF 6.1.
+
+**Before changing source, read [RFScout coding style](CODING_STYLE.md).** It defines required source formatting, module/interface conventions, generated-file policy, and documentation expectations. Changes that affect shared ownership/lifecycle should also be checked against [Platform architecture](ARCHITECTURE.md); app behavior belongs in the corresponding page under [`apps/`](apps/).
 
 ## Host packages
 
