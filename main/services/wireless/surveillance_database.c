@@ -82,6 +82,10 @@ static void add_evidence_id( rf_device_t *a_observation, uint16_t a_record_id )
         a_observation->surveillance_evidence_ids[ a_observation->surveillance_evidence_count++ ] =
             a_record_id;
     }
+    else
+    {
+        a_observation->surveillance_evidence_overflow = true;
+    }
 }
 
 void surveillance_database_match_observation( rf_device_t *a_observation )
