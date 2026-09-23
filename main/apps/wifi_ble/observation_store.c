@@ -544,6 +544,14 @@ void observation_store_set_event_callback( observation_store_event_callback_t a_
     xSemaphoreGive( store_lock );
 }
 
+static void copy_case_result( rf_device_t *a_observation, const rf_device_t *a_case )
+{
+    a_observation->surveillance = a_case->surveillance;
+    a_observation->surveillance_signature = a_case->surveillance_signature;
+    a_observation->surveillance_evidence = a_case->surveillance_evidence;
+    a_observation->surveillance_score = a_case->surveillance_score;
+}
+
 static void merge_observation( rf_device_t *a_device, const rf_device_t *a_observation )
 {
     a_device->last_source = a_observation->last_source;
@@ -586,7 +594,7 @@ static void merge_observation( rf_device_t *a_device, const rf_device_t *a_obser
     a_device->has_remote_id = a_observation->has_remote_id;
 }
 
-bool observation_store_observe( const rf_device_t *a_observation,
+bool observation_store_observe( rf_device_t *a_observation,
                                 bool *a_is_new,
                                 bool *a_surveillance_new )
 {
@@ -611,6 +619,7 @@ bool observation_store_observe( const rf_device_t *a_observation,
 
         surveillance_case_observe( device, a_observation );
         merge_observation( device, a_observation );
+        copy_case_result( a_observation, device );
 
         const bool became_surveillance =
             !was_surveillance && ( SURVEILLANCE_NONE != device->surveillance ) &&
@@ -649,6 +658,7 @@ bool observation_store_observe( const rf_device_t *a_observation,
     *device = *a_observation;
     initialize_source_times( device );
     surveillance_case_observe( device, a_observation );
+    copy_case_result( a_observation, device );
     identity_index_insert( slot );
     emit_event( OBSERVATION_STORE_EVENT_ADDED, device );
 
