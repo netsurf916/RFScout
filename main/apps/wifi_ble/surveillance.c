@@ -14,10 +14,6 @@
 #include <string.h>
 
 #define FLOCK_COMPANY_ID 0x09C8U
-#define EVIDENCE_PRIORITY_NAME 1U
-#define EVIDENCE_PRIORITY_OUI 3U
-#define EVIDENCE_PRIORITY_DISTINCTIVE 4U
-#define EVIDENCE_PRIORITY_REMOTE_ID 5U
 
 typedef struct
 {
@@ -31,7 +27,7 @@ typedef struct
 {
     surveillance_class_t classification;
     uint8_t evidence;
-    uint8_t priority;
+    rfscout_evidence_strength_t strength;
     bool matched;
 } candidate_t;
 
@@ -101,7 +97,7 @@ static void add_evidence( candidate_t *a_candidates,
                           surveillance_class_t a_classification,
                           surveillance_signature_id_t a_signature,
                           uint8_t a_evidence,
-                          uint8_t a_priority )
+                          rfscout_evidence_strength_t a_strength )
 {
     if( ( NULL == a_candidates ) || ( SURVEILLANCE_SIGNATURE_NONE == a_signature ) ||
         ( a_signature >= SURVEILLANCE_SIGNATURE_COUNT ) )
@@ -113,46 +109,39 @@ static void add_evidence( candidate_t *a_candidates,
     candidate->classification = a_classification;
     candidate->evidence |= a_evidence;
     candidate->matched = true;
-    if( a_priority > candidate->priority )
+    if( a_strength > candidate->strength )
     {
-        candidate->priority = a_priority;
+        candidate->strength = a_strength;
     }
 }
 
-static uint8_t minimum_evidence_priority( void )
+static rfscout_evidence_strength_t minimum_evidence_strength( void )
 {
-    switch( device_config_surveillance_sensitivity() )
-    {
-        case RFSCOUT_SURVEILLANCE_SENSITIVITY_LOW:
-            return EVIDENCE_PRIORITY_DISTINCTIVE;
-        case RFSCOUT_SURVEILLANCE_SENSITIVITY_MEDIUM:
-            return EVIDENCE_PRIORITY_OUI;
-        case RFSCOUT_SURVEILLANCE_SENSITIVITY_HIGH:
-        default:
-            return EVIDENCE_PRIORITY_NAME;
-    }
+    return device_config_evidence_threshold();
 }
 
 static surveillance_match_t select_best_candidate( const candidate_t *a_candidates )
 {
     surveillance_match_t best = { 0 };
-    uint8_t best_priority = 0U;
-    const uint8_t minimum_priority = minimum_evidence_priority();
+    bool have_best = false;
+    rfscout_evidence_strength_t best_strength = RFSCOUT_EVIDENCE_STRENGTH_POSSIBLE;
+    const rfscout_evidence_strength_t minimum_strength = minimum_evidence_strength();
 
     for( size_t signature = (size_t)SURVEILLANCE_SIGNATURE_FLOCK;
          signature < (size_t)SURVEILLANCE_SIGNATURE_COUNT;
          ++signature )
     {
         const candidate_t *candidate = &a_candidates[ signature ];
-        if( !candidate->matched || ( candidate->priority < minimum_priority ) ||
-            ( candidate->priority <= best_priority ) )
+        if( !candidate->matched || ( candidate->strength < minimum_strength ) ||
+            ( have_best && candidate->strength <= best_strength ) )
         {
             continue;
         }
         best.classification = candidate->classification;
         best.signature = (surveillance_signature_id_t)signature;
         best.evidence = candidate->evidence;
-        best_priority = candidate->priority;
+        best_strength = candidate->strength;
+        have_best = true;
     }
     return best;
 }
@@ -174,7 +163,7 @@ surveillance_match_t surveillance_match( const rf_device_t *a_observation )
                       identity.surveillance_classification,
                       identity.surveillance_signature,
                       SURVEILLANCE_EVIDENCE_OUI,
-                      EVIDENCE_PRIORITY_OUI );
+                      RFSCOUT_EVIDENCE_STRENGTH_PROBABLE );
     }
 
     if( a_observation->has_name )
@@ -191,7 +180,7 @@ surveillance_match_t surveillance_match( const rf_device_t *a_observation )
                               name_signatures[ i ].classification,
                               name_signatures[ i ].signature,
                               SURVEILLANCE_EVIDENCE_NAME,
-                              EVIDENCE_PRIORITY_NAME );
+                              RFSCOUT_EVIDENCE_STRENGTH_POSSIBLE );
             }
         }
     }
@@ -202,7 +191,7 @@ surveillance_match_t surveillance_match( const rf_device_t *a_observation )
                       SURVEILLANCE_ALPR,
                       SURVEILLANCE_SIGNATURE_FLOCK,
                       SURVEILLANCE_EVIDENCE_COMPANY_ID,
-                      EVIDENCE_PRIORITY_DISTINCTIVE );
+                      RFSCOUT_EVIDENCE_STRENGTH_DISTINCTIVE );
     }
 
     if( 0U != ( a_observation->ble_service_fingerprints &
@@ -212,7 +201,7 @@ surveillance_match_t surveillance_match( const rf_device_t *a_observation )
                       SURVEILLANCE_SMART_GLASSES,
                       SURVEILLANCE_SIGNATURE_BRILLIANT_FRAME,
                       SURVEILLANCE_EVIDENCE_SERVICE_UUID,
-                      EVIDENCE_PRIORITY_DISTINCTIVE );
+                      RFSCOUT_EVIDENCE_STRENGTH_DISTINCTIVE );
     }
     if( 0U !=
         ( a_observation->ble_service_fingerprints & RFSCOUT_BLE_SERVICE_FINGERPRINT_ROKID_CXR ) )
@@ -221,7 +210,7 @@ surveillance_match_t surveillance_match( const rf_device_t *a_observation )
                       SURVEILLANCE_SMART_GLASSES,
                       SURVEILLANCE_SIGNATURE_ROKID,
                       SURVEILLANCE_EVIDENCE_SERVICE_UUID,
-                      EVIDENCE_PRIORITY_DISTINCTIVE );
+                      RFSCOUT_EVIDENCE_STRENGTH_DISTINCTIVE );
     }
 
     unsigned raven_services = 0U;
@@ -238,7 +227,7 @@ surveillance_match_t surveillance_match( const rf_device_t *a_observation )
                       SURVEILLANCE_AUDIO,
                       SURVEILLANCE_SIGNATURE_RAVEN,
                       SURVEILLANCE_EVIDENCE_SERVICE_UUID,
-                      EVIDENCE_PRIORITY_DISTINCTIVE );
+                      RFSCOUT_EVIDENCE_STRENGTH_DISTINCTIVE );
     }
 
     if( a_observation->has_remote_id )
@@ -247,7 +236,7 @@ surveillance_match_t surveillance_match( const rf_device_t *a_observation )
                       SURVEILLANCE_DRONE,
                       SURVEILLANCE_SIGNATURE_REMOTE_ID,
                       SURVEILLANCE_EVIDENCE_REMOTE_ID,
-                      EVIDENCE_PRIORITY_REMOTE_ID );
+                      RFSCOUT_EVIDENCE_STRENGTH_DISTINCTIVE );
     }
 
     return select_best_candidate( candidates );
