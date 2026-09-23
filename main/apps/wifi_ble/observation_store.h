@@ -67,7 +67,8 @@ void observation_store_set_event_callback( observation_store_event_callback_t a_
 
 /**
  * @brief Add or refresh one normalized device observation.
- * @param a_observation Borrowed mutable observation; receives the canonical case result.\n * @param a_is_new Optional output set when this identity is newly active.
+ * @param a_observation Borrowed mutable observation; receives the canonical case result.
+ * @param a_is_new Optional output set when this identity is newly active.
  * @param a_surveillance_new Optional output set when this active identity first becomes surveillance.
  */
 bool observation_store_observe( rf_device_t *a_observation,

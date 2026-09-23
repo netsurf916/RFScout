@@ -22,7 +22,8 @@ typedef struct
 
 /**
  * @brief Resolve IEEE identity and optional curated surveillance metadata.
- * @details IEEE attribution uses longest-prefix matching across MA-S/IAB, MA-M, then MA-L.\n * @return True when IEEE vendor identity matched.
+ * @details IEEE attribution uses longest-prefix matching across MA-S/IAB, MA-M, then MA-L.
+ * @return True when IEEE vendor identity matched.
  */
 bool oui_database_lookup_info( const uint8_t a_address[ 6 ], oui_database_match_t *a_match );
 
