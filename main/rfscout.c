@@ -286,15 +286,16 @@ static void log_observation_event( observation_store_event_t a_event,
         if( success && ( OBSERVATION_STORE_EVENT_DROPPED_TIMEOUT == a_event ) )
         {
             success =
-                log_uint( &record, "lifetime_ms", a_device->last_seen_ms - a_device->first_seen_ms ) &&
+                log_uint(
+                    &record, "lifetime_ms", a_device->last_seen_ms - a_device->first_seen_ms ) &&
                 log_uint( &record, "evidence_count", a_device->surveillance_evidence_count ) &&
                 log_uint( &record, "score", a_device->surveillance_score );
             if( success && ( SURVEILLANCE_SIGNATURE_NONE != a_device->surveillance_signature ) )
             {
-                success = log_str( &record,
-                                   "surveillance",
-                                   surveillance_signature_label(
-                                       a_device->surveillance_signature ) );
+                success =
+                    log_str( &record,
+                             "surveillance",
+                             surveillance_signature_label( a_device->surveillance_signature ) );
             }
         }
     }
