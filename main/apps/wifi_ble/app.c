@@ -146,11 +146,9 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
         }
         if( WIFI_MENU_EVIDENCE_THRESHOLD == menu_item )
         {
-            rfscout_evidence_strength_t threshold =
-                device_config_evidence_threshold();
-            threshold =
-                (rfscout_evidence_strength_t)( ( (unsigned)threshold + 1U ) %
-                                               (unsigned)RFSCOUT_EVIDENCE_STRENGTH_COUNT );
+            rfscout_evidence_strength_t threshold = device_config_evidence_threshold();
+            threshold = (rfscout_evidence_strength_t)( ( (unsigned)threshold + 1U ) %
+                                                       (unsigned)RFSCOUT_EVIDENCE_STRENGTH_COUNT );
             if( ESP_OK == device_config_set_evidence_threshold( threshold ) )
             {
                 render_menu();
