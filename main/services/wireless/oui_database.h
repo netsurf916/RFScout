@@ -9,7 +9,7 @@
 #ifndef _RFSCOUT_OUI_DATABASE_H_
 #define _RFSCOUT_OUI_DATABASE_H_
 
-#include "observation_store.h"
+#include "rf_observation.h"
 
 #include <stdbool.h>
 #include <stdint.h>
