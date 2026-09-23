@@ -174,7 +174,8 @@ For each signature/category, record the evidence source, provenance, expected un
 - [ ] Research and re-score every existing surveillance signature/category against the documented strength contract.
 - [ ] Expand detection fingerprints where research supports useful passive evidence, including older/newer hardware or firmware generations.
 - [ ] Add negative/near-match tests for researched fingerprints so permissive Possible-strength rules have explicit false-positive boundaries.
-- [x] Make the surveillance signature CSV authoritative for signal values, numeric weights, and provenance; generate the compact firmware representation from it.\n- [ ] Complete durable provenance review for every curated database fact.
+- [x] Make the surveillance signature CSV authoritative for signal values, numeric weights, and provenance; generate the compact firmware representation from it.
+- [ ] Complete durable provenance review for every curated database fact.
 - [ ] Hardware/field validate representative detections where suitable devices or captures are available.
 
 #### Remaining WiFi/BLE checklist
@@ -184,7 +185,8 @@ For each signature/category, record the evidence source, provenance, expected un
 - [x] Remove the fixed 1000-item retained-store and UI-mirror limit. Implemented by PR #68.
 - [x] Add a generic internal persistent-record service with atomic system-owned records and descriptor-confined app namespaces; migrate device/app configuration onto that ownership model and remove SD configuration authority. Implemented by PR #77.
 - [ ] Add Instant / Timed / Never Wi-Fi and BLE retention.
-- [x] Keep surveillance classification on the canonical active observation record, sharing normal device expiry and re-arm semantics without a parallel active-surveillance list. Implemented by PR #73.\n- [x] Accumulate evidence from unique matched surveillance facts for the lifetime of that canonical observation; expiry resets the case rather than expiring individual evidence.
+- [x] Keep surveillance classification on the canonical active observation record, sharing normal device expiry and re-arm semantics without a parallel active-surveillance list. Implemented by PR #73.
+- [x] Accumulate evidence from unique matched surveillance facts for the lifetime of that canonical observation; expiry resets the case rather than expiring individual evidence.
 - [ ] Add active/stale UI semantics for selected objects.
 - [ ] Replace MAC-equals-device counting with semantic entities, identity sets, confidence, and provenance.
 - [ ] Parse richer Wi-Fi roles/subtypes/metadata and association evidence.
