@@ -54,37 +54,39 @@ CID is not used for ordinary vendor attribution because CID assignments are not 
 
 ## Surveillance evidence
 
-`data/surveillance_signatures.csv` is RFScout-curated metadata and is distinct from IEEE ownership data. Curated prefixes can therefore contribute surveillance evidence even when they are not IEEE vendor assignments.
+`data/surveillance_signatures.csv` is the authoritative RFScout surveillance-evidence database. It is deliberately separate from IEEE vendor ownership data. Each row describes a broad surveillance class, product/family label, observable signal kind and value, numeric evidence weight, and research provenance. Product-specific names, company IDs, service UUIDs, and curated prefixes belong in this data file rather than in classifier control flow.
 
-The classifier combines prefix evidence with independent signals such as advertised BLE names, manufacturer/company identifiers, service UUID patterns, Remote ID evidence, and supported protocol evidence.
+`tools/update_surveillance.py` validates the human-maintained CSV and generates the compact firmware table under `main/services/wireless/`. Runtime code understands generic signal kinds and generated record IDs; it does not assign product-specific evidence identifiers in application code.
 
-The **Evidence Threshold** setting selects the minimum evidence strength for a single observation and is presented directly as **Possible / Probable / Distinctive** rather than the former inverted High / Medium / Low sensitivity terminology. Evidence source and evidence strength are separate concepts: the evidence bitmask records what was observed (for example name, curated prefix/OUI, company identifier, service UUID, or protocol evidence), while strength expresses how specifically that observation supports a surveillance signature.
+The canonical active observation identified by address type plus MAC also owns the lifetime of its surveillance case. Distinct database evidence records accumulate while that identity remains active. Repeating the same evidence record does not increase the score, but different records with the same weight do. When the canonical observation expires, its accumulated evidence expires with it; a later reappearance starts a fresh case.
 
-The threshold contract is:
+The case score for a signature is the sum of the weights of its unique matching evidence records. The **Evidence Threshold** setting maps the user-facing levels to minimum scores:
 
-- **Possible** — detection recall is favored and false positives are explicitly possible; researched signals should still have a reasonable basis for association rather than being generic radio activity.
-- **Probable** — a surfaced detection should have strong product/family association and false positives should be unlikely.
-- **Distinctive** — a surfaced detection should rely on evidence intended to be uniquely identifying under the supported passive-observation model.
+- **Possible** — score 1 or greater.
+- **Probable** — score 2 or greater.
+- **Distinctive** — score 3 or greater.
 
-**Possible** is the compiled default. These labels describe evidence quality rather than a numeric probability calculation. RFScout does not accumulate repeated weak observations into confidence: repeated observations refresh active presence, while a candidate retains the strongest qualifying evidence observed for that signature. An active record keeps its first qualifying surveillance signature until expiry.
+These are ordinal evidence scores, not calibrated probabilities. A weight describes how much one researched observation contributes to a signature hypothesis. Several independent low-weight observations can therefore move a case through the levels, while repeated copies of one advertisement cannot.
 
-Detection rules may assign different strengths to the same evidence source. For example, one known proprietary service UUID may be only possible evidence, while a validated combination of multiple services may be probable or distinctive. Conversely, a generic standard service UUID should not become surveillance evidence merely because the Possible threshold accepts weaker researched associations.
+Evidence source and score remain separate concepts. The source bitmask records which kinds of evidence contributed to the selected signature (for example curated OUI/prefix, advertised name, company identifier, service UUID, or Remote ID), while the score determines whether the configured threshold has been reached.
+
+**Possible** remains the compiled default. Notification occurs when an active case first crosses the configured threshold. Evidence can continue to accumulate after notification without creating another new-device alert.
 
 ## Raven acoustic-sensor evidence
 
-The current Raven rule is based on exact advertised 16-bit BLE service UUIDs `0x3100`, `0x3200`, `0x3300`, `0x3400`, and `0x3500`. RFScout does **not** treat the entire `0x3100-0x3500` numeric interval as Raven evidence.
+Raven is the first signature using the accumulating case model as a reference detector. The database contains five exact advertised 16-bit BLE service UUID records: `0x3100`, `0x3200`, `0x3300`, `0x3400`, and `0x3500`. Each currently contributes one point. RFScout does **not** treat the entire `0x3100-0x3500` numeric interval as Raven evidence.
+
+This means one distinct proprietary Raven service reaches Possible, two distinct services reach Probable, and three or more reach Distinctive. Repeated advertisements of the same service do not add points.
 
 Research provenance and current interpretation:
 
 - GainSec independently examined an owned Flock Safety Raven v1.2 and documented an ESP32-WROOM-32D main controller. Community detector projects attribute the proprietary Raven service dataset to GainSec captures spanning firmware generations 1.1.7, 1.2.0, and 1.3.1.
-- Multiple independent implementations reproduce the same five exact proprietary services for later Raven firmware. This is useful corroboration, but many implementations share the same upstream dataset and therefore are not fully independent observations.
-- Community datasets also report legacy Raven 1.1.x advertisements using standard BLE services `0x1809` (Health Thermometer) and `0x1819` (Location and Navigation), usually alongside `0x180A` (Device Information). These standard services are not Raven-specific and must not be classified as Raven on their own.
-- Reports assigning semantic names such as GPS, power, network status, upload statistics, and diagnostics to `0x3100-0x3500` are secondary interpretations unless independently verified against the Raven firmware or GATT behavior. RFScout should not depend on those labels for detection.
+- Multiple implementations reproduce the same five exact proprietary services for later Raven firmware. This is useful corroboration, but many implementations share the same upstream dataset and therefore are not fully independent observations.
+- Community datasets also report legacy Raven 1.1.x advertisements using standard BLE services `0x1809` (Health Thermometer) and `0x1819` (Location and Navigation), usually alongside `0x180A` (Device Information). These standard services are not Raven-specific and are not currently evidence records.
+- Reports assigning semantic names such as GPS, power, network status, upload statistics, and diagnostics to `0x3100-0x3500` are secondary interpretations unless independently verified against Raven firmware or GATT behavior. RFScout does not depend on those labels for detection.
 - Broad matching of arbitrary UUIDs numerically between `0x3100` and `0x3500` has produced field false positives in another detector. Exact UUID matching is therefore an explicit false-positive boundary.
 
-Current production logic requires at least two of the five exact proprietary UUIDs and treats that combination as **Distinctive** Raven evidence. That rule remains intentionally conservative while the research pass determines whether a single exact proprietary UUID should be Possible or Probable evidence and whether particular multi-service combinations justify Distinctive strength.
-
-Legacy `0x1809` / `0x1819` support is not enabled yet. If added, it should require corroborating Raven/Flock-specific evidence or a validated service combination rather than treating either standard UUID as independently identifying.
+Legacy `0x1809` / `0x1819` support remains disabled. If added, it should require corroborating Raven/Flock-specific evidence or a validated combination rather than treating either standard UUID as independently identifying.
 
 ## Notifications
 
