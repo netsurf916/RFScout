@@ -312,7 +312,9 @@ v0.4.0 is not complete until:
 - [ ] App-switch stress testing shows a stable memory baseline, no ownership violations, and zero app-owned allocations after successful exit.
 - [ ] Pre-reclamation safety gates prove no worker/callback/timer can reference app memory; forced service-close failures restore only safely restartable platform services before any irreversible cleanup.
 - [ ] Recorder recording/save transitions are vetoed until the file is safely finalized; no interrupted recording is reconstructed or restarted after an aborted transition.
-- [ ] Audio Spectrum can be skipped before delayed activation without touching microphone hardware, runs without SD storage, and repeatedly enters/exits without leaking service state.
+- [x] Audio Spectrum can be skipped before delayed activation without acquiring the microphone.
+- [x] Audio Spectrum runs without SD storage while Recorder is unavailable when its storage dependency is absent.
+- [ ] Audio Spectrum repeatedly enters/exits without leaking shared audio/service state.
 - [ ] Largest free block remains stable enough to rule out systematic fragmentation/leak growth.
 - [ ] WiFi/BLE Instant, finite timed, and Never behavior is verified, including full reclamation on exit and memory-pressure paths.
 - [ ] Wi-Fi primary device counts are not inflated one-for-one by rotating randomized Probe Request MACs.
