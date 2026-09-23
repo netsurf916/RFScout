@@ -952,7 +952,6 @@ esp_err_t device_config_init( void )
 
     if( ESP_OK == system_result )
     {
-        config_dirty = false;
         ESP_LOGI( TAG, "loaded persistent configuration" );
         return ESP_OK;
     }
