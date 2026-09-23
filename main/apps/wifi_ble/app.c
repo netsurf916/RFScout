@@ -160,8 +160,8 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
                      classification <= (size_t)SURVEILLANCE_OTHER;
                      ++classification )
                 {
-                    const rfscout_notification_type_t notification = notification_for_surveillance(
-                        (surveillance_class_t)classification );
+                    const rfscout_notification_type_t notification =
+                        notification_for_surveillance( (surveillance_class_t)classification );
                     for( size_t count = 0U; count < newly_qualified[ classification ]; ++count )
                     {
                         platform_set_alert_led( true );

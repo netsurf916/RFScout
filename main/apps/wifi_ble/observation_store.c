@@ -681,8 +681,7 @@ bool observation_store_observe( rf_device_t *a_observation,
     return true;
 }
 
-void observation_store_reevaluate_surveillance( size_t *a_newly_qualified,
-                                                size_t a_count_capacity )
+void observation_store_reevaluate_surveillance( size_t *a_newly_qualified, size_t a_count_capacity )
 {
     if( NULL == store_lock )
     {
@@ -710,8 +709,7 @@ void observation_store_reevaluate_surveillance( size_t *a_newly_qualified,
         }
 
         emit_event( OBSERVATION_STORE_EVENT_SURVEILLANCE_CHANGED, device );
-        if( ( NULL != a_newly_qualified ) &&
-            ( (size_t)device->surveillance < a_count_capacity ) )
+        if( ( NULL != a_newly_qualified ) && ( (size_t)device->surveillance < a_count_capacity ) )
         {
             ++a_newly_qualified[ device->surveillance ];
         }
