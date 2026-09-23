@@ -142,6 +142,41 @@ Make radio type a first-class view dimension:
 
 The main screen should remain an actively updated analytical projection. Deeper relationships belong in context-sensitive drill-down. Internal IDs plus active/stale state should keep selection stable while observations continue changing.
 
+#### Surveillance detection quality
+
+This release should replace the classifier's current source-named priority concept with an explicit evidence-strength model while preserving the existing evidence-source bitmask and non-accumulating classifier architecture.
+
+The target strength semantics are:
+
+- **Possible** — credible researched association suitable for High sensitivity, with false positives possible.
+- **Probable** — strong association suitable for Medium sensitivity, with false positives expected to be uncommon.
+- **Distinctive** — evidence intended to be uniquely identifying and suitable for Low sensitivity.
+
+High / Medium / Low sensitivity therefore select the minimum acceptable evidence strength rather than assigning inherent trust to an evidence source such as a name, OUI, company ID, service UUID, or protocol. Individual rules own their strength; combinations of evidence from the same source may legitimately be stronger than an individual observation.
+
+The implementation pass should first perform the semantic refactor without mechanically preserving the old source-based strength assumptions. After that baseline is stable, perform evidence-backed research and tuning across every currently supported surveillance category/signature. Research should prefer primary/vendor/protocol material, device teardowns or captures, and independently corroborated field observations; community detector projects are useful discovery sources but should not be copied without evaluating false-positive behavior.
+
+The category review must cover at least:
+
+- **ALPR** — Flock, Vigilant, and other supported ALPR evidence;
+- **body cameras** — Axon and other supported body-camera evidence;
+- **cameras / doorbells** — Ring, Verkada, Axis, Hikvision, Dahua, and other supported camera evidence;
+- **smart glasses** — Meta, Brilliant Frame, Even G1, Solos AirGo, Rokid, and other supported smart-glasses evidence;
+- **acoustic sensors** — Flock Raven and other supported acoustic-sensor evidence; and
+- **drones** — Remote ID and any other passive evidence that can be classified without active probing.
+
+For each signature/category, record the evidence source, provenance, expected uniqueness/false-positive risk, assigned strength, and any known hardware/firmware-generation limitations. Prefer explicit known fingerprints and combinations over broad numeric ranges or generic standard services. Do not infer an exact product from vendor/ecosystem evidence when the observed signal only supports the broader vendor or category.
+
+- [ ] Rename classifier `priority` semantics to evidence `strength` without introducing a parallel confidence/priority mechanism.
+- [ ] Define typed Possible / Probable / Distinctive strengths and map High / Medium / Low sensitivity to their minimum accepted strength.
+- [ ] Preserve evidence-source reporting independently from strength.
+- [ ] Add tests proving sensitivity thresholds, strongest-evidence selection, and non-accumulation behavior.
+- [ ] Research and re-score every existing surveillance signature/category against the documented strength contract.
+- [ ] Expand detection fingerprints where research supports useful passive evidence, including older/newer hardware or firmware generations.
+- [ ] Add negative/near-match tests for researched fingerprints so permissive High-sensitivity rules have explicit false-positive boundaries.
+- [ ] Document durable provenance for curated fingerprints and generated surveillance-prefix data.
+- [ ] Hardware/field validate representative detections where suitable devices or captures are available.
+
 #### Remaining WiFi/BLE checklist
 
 - [ ] Rename user-facing WiFi / BT to WiFi / BLE across UI and production documentation.
