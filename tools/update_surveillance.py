@@ -154,6 +154,8 @@ def main() -> None:
     ]
     OUT.write_text("\n".join(lines), encoding="utf-8")
 
+    oui_report.sort(key=lambda item: int(item[2], 16))
+
     with REPORT.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.writer(stream)
         writer.writerow(
