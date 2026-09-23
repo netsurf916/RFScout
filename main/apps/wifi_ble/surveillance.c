@@ -102,6 +102,7 @@ static void evaluate_case( rf_device_t *a_case )
 
     a_case->surveillance_score = best_score;
     a_case->surveillance_evidence = best_sources;
+    a_case->surveillance_case_signature = best_signature;
     if( best_score >= threshold_score() )
     {
         a_case->surveillance = best_classification;
