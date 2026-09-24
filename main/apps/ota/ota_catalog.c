@@ -316,8 +316,7 @@ static bool parse_build( const cJSON *a_json,
     const char *target = json_string( a_json, "idf_target" );
     const char *layout = json_string( a_json, "partition_layout" );
 
-    if( !string_fits( a_parsed->build_id, OTA_CATALOG_BUILD_ID_MAX_LENGTH + 1U ) ||
-        NULL == kind ||
+    if( !string_fits( a_parsed->build_id, OTA_CATALOG_BUILD_ID_MAX_LENGTH + 1U ) || NULL == kind ||
         !string_fits( a_parsed->label, OTA_CATALOG_BUILD_LABEL_MAX_LENGTH + 1U ) ||
         !string_fits( a_parsed->version, OTA_CATALOG_VERSION_MAX_LENGTH + 1U ) ||
         !valid_hex( a_parsed->commit, OTA_CATALOG_COMMIT_LENGTH ) || NULL == project ||
@@ -390,9 +389,8 @@ static bool materialize_candidate( const parsed_build_view_t *a_parsed,
                                    ota_catalog_candidate_t *a_candidate )
 {
     memset( a_candidate, 0, sizeof( *a_candidate ) );
-    if( !copy_bounded( a_candidate->build_id,
-                       sizeof( a_candidate->build_id ),
-                       a_parsed->build_id ) ||
+    if( !copy_bounded(
+            a_candidate->build_id, sizeof( a_candidate->build_id ), a_parsed->build_id ) ||
         !copy_bounded( a_candidate->version, sizeof( a_candidate->version ), a_parsed->version ) ||
         !copy_bounded( a_candidate->commit, sizeof( a_candidate->commit ), a_parsed->commit ) ||
         !copy_bounded( a_candidate->artifact_path,
@@ -407,8 +405,7 @@ static bool materialize_candidate( const parsed_build_view_t *a_parsed,
     return true;
 }
 
-static bool materialize_build( const parsed_build_view_t *a_parsed,
-                               ota_catalog_build_t *a_build )
+static bool materialize_build( const parsed_build_view_t *a_parsed, ota_catalog_build_t *a_build )
 {
     memset( a_build, 0, sizeof( *a_build ) );
     a_build->kind = a_parsed->kind;
@@ -500,8 +497,9 @@ esp_err_t ota_catalog_select( const char *a_json,
         {
             latest_version = parsed_version;
             have_latest = true;
-            if( !copy_bounded(
-                    a_selection->latest_version, sizeof( a_selection->latest_version ), parsed.version ) )
+            if( !copy_bounded( a_selection->latest_version,
+                               sizeof( a_selection->latest_version ),
+                               parsed.version ) )
             {
                 goto cleanup;
             }
