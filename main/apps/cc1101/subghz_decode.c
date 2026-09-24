@@ -360,7 +360,6 @@ void rfscout_subghz_decode( const rfscout_subghz_capture_t *a_capture,
     a_output->frequency_hz = a_capture->frequency_hz;
     a_output->resolution_hz = a_capture->resolution_hz;
     a_output->symbol_count = a_capture->symbol_count;
-    a_output->peak_rssi_dbm = a_capture->peak_rssi_dbm;
     a_output->truncated = a_capture->truncated;
 
     for( size_t index = 0U; index < a_capture->symbol_count; ++index )
