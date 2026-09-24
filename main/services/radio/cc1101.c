@@ -57,6 +57,8 @@
 #define CC1101_SAMPLES_PER_SCHEDULER_BREAK 16U
 #define CC1101_STOP_TIMEOUT_MS 250U
 #define CC1101_WAKE_TIMEOUT_US 1000U
+#define CC1101_PROBE_ATTEMPTS 3U
+#define CC1101_PROBE_RESET_SETTLE_US 100U
 
 #define CC1101_RMT_RESOLUTION_HZ 1000000U
 #define CC1101_RMT_GLITCH_NS 2000U
@@ -528,32 +530,67 @@ esp_err_t cc1101_init( void )
 {
     if( initialized )
     {
-        return detected ? ESP_OK : ESP_ERR_NOT_FOUND;
+        return ESP_OK;
     }
 
-    gpio_reset_pin( RFSCOUT_BOARD_CC1101_CS_PIN );
+    disable_rf_path();
 
-    esp_err_t result = attach_spi_device();
+    esp_err_t result = wake_from_power_down();
     if( ESP_OK != result )
     {
+        detected = false;
         return result;
     }
 
-    initialized = true;
-    disable_rf_path();
-    (void)strobe( CC1101_SRES );
-
     uint8_t part = 0xFFU;
     uint8_t version = 0xFFU;
-    (void)read_status( CC1101_PARTNUM, &part );
-    (void)read_status( CC1101_VERSION, &version );
+    detected = false;
 
-    detected = ( 0x00U == part ) && ( 0x00U != version ) && ( 0xFFU != version );
-    ESP_LOGI( TAG, "probe part=0x%02x version=0x%02x detected=%d", part, version, detected );
+    for( unsigned attempt = 0U; attempt < CC1101_PROBE_ATTEMPTS; ++attempt )
+    {
+        result = strobe( CC1101_SRES );
+        if( ESP_OK != result )
+        {
+            break;
+        }
+
+        esp_rom_delay_us( CC1101_PROBE_RESET_SETTLE_US );
+
+        part = 0xFFU;
+        version = 0xFFU;
+        result = read_status( CC1101_PARTNUM, &part );
+        if( ESP_OK == result )
+        {
+            result = read_status( CC1101_VERSION, &version );
+        }
+
+        detected =
+            ( ESP_OK == result ) && ( 0x00U == part ) && ( 0x00U != version ) && ( 0xFFU != version );
+        ESP_LOGI( TAG,
+                  "probe attempt=%u part=0x%02x version=0x%02x detected=%d",
+                  attempt + 1U,
+                  part,
+                  version,
+                  detected );
+        if( detected )
+        {
+            break;
+        }
+
+        esp_rom_delay_us( CC1101_PROBE_RESET_SETTLE_US );
+    }
+
+    if( !detected )
+    {
+        (void)strobe( CC1101_SIDLE );
+        (void)strobe( CC1101_SPWD );
+        disable_rf_path();
+        return ESP_OK == result ? ESP_ERR_NOT_FOUND : result;
+    }
 
     memset( display_spectrum, -120, sizeof( display_spectrum ) );
 
-    if( detected && ( NULL == scan_task ) )
+    if( NULL == scan_task )
     {
         if( pdPASS != xTaskCreate( scan_worker,
                                    "cc1101_scan",
@@ -563,6 +600,7 @@ esp_err_t cc1101_init( void )
                                    &scan_task ) )
         {
             scan_task = NULL;
+            detected = false;
             (void)strobe( CC1101_SIDLE );
             (void)strobe( CC1101_SPWD );
             disable_rf_path();
@@ -570,10 +608,11 @@ esp_err_t cc1101_init( void )
         }
     }
 
+    initialized = true;
     (void)strobe( CC1101_SIDLE );
     (void)strobe( CC1101_SPWD );
     disable_rf_path();
-    return detected ? ESP_OK : ESP_ERR_NOT_FOUND;
+    return ESP_OK;
 }
 
 esp_err_t cc1101_start( void )
