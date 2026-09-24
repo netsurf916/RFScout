@@ -44,7 +44,7 @@ typedef struct
 static const char *TAG = "subghz_capture";
 static portMUX_TYPE state_lock = portMUX_INITIALIZER_UNLOCKED;
 static rmt_channel_handle_t rmt_channel;
-static bool rmt_enabled;
+static volatile bool rmt_enabled;
 static volatile bool provider_active;
 static volatile bool provider_stopping;
 static capture_slot_t capture_pool[ RFSCOUT_SUBGHZ_CAPTURE_POOL_SIZE ];
