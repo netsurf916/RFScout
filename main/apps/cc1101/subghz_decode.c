@@ -33,7 +33,7 @@ typedef struct
 } pwm_rows_t;
 
 typedef bool ( *protocol_decoder_fn )( const rfscout_subghz_capture_t *a_capture,
-                                      rfscout_subghz_protocol_result_t *a_result );
+                                       rfscout_subghz_protocol_result_t *a_result );
 
 typedef struct
 {
@@ -47,9 +47,8 @@ static uint32_t quantize_duration( uint32_t a_duration_us )
            HISTOGRAM_QUANTUM_US;
 }
 
-static void histogram_add( rfscout_subghz_analysis_t *a_output,
-                           bool a_level,
-                           uint32_t a_duration_us )
+static void
+histogram_add( rfscout_subghz_analysis_t *a_output, bool a_level, uint32_t a_duration_us )
 {
     const uint32_t bucket_duration = quantize_duration( a_duration_us );
     size_t free_index = RFSCOUT_SUBGHZ_TIMING_BUCKETS;
@@ -138,17 +137,15 @@ static void histogram_finalize( rfscout_subghz_analysis_t *a_output )
     }
 }
 
-static void analysis_add_level( rfscout_subghz_analysis_t *a_output,
-                                bool a_level,
-                                uint16_t a_ticks )
+static void
+analysis_add_level( rfscout_subghz_analysis_t *a_output, bool a_level, uint16_t a_ticks )
 {
     if( 0U == a_ticks )
     {
         return;
     }
 
-    const uint32_t duration_us =
-        rfscout_subghz_ticks_to_us( a_ticks, a_output->resolution_hz );
+    const uint32_t duration_us = rfscout_subghz_ticks_to_us( a_ticks, a_output->resolution_hz );
     if( 0U == duration_us )
     {
         return;
@@ -175,10 +172,8 @@ static void analysis_add_level( rfscout_subghz_analysis_t *a_output,
     histogram_add( a_output, a_level, duration_us );
 }
 
-static bool pwm_pair_to_bit( uint32_t a_high_us,
-                             uint32_t a_low_us,
-                             uint8_t *a_bit,
-                             uint32_t *a_short_us )
+static bool
+pwm_pair_to_bit( uint32_t a_high_us, uint32_t a_low_us, uint8_t *a_bit, uint32_t *a_short_us )
 {
     if( ( 0U == a_high_us ) || ( 0U == a_low_us ) )
     {
@@ -342,7 +337,8 @@ void rfscout_subghz_decode( const rfscout_subghz_capture_t *a_capture,
     memset( a_output, 0, sizeof( *a_output ) );
     a_output->min_duration_us = UINT32_MAX;
 
-    if( ( NULL == a_capture ) || ( NULL == a_capture->symbols ) || ( 0U == a_capture->symbol_count ) )
+    if( ( NULL == a_capture ) || ( NULL == a_capture->symbols ) ||
+        ( 0U == a_capture->symbol_count ) )
     {
         a_output->min_duration_us = 0U;
         return;
