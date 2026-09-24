@@ -161,10 +161,9 @@ static void render_decode( const rfscout_subghz_analysis_t *a_analysis,
         display_draw_text( UI_LAYOUT_LEFT_X, 58, line, theme->secondary, 1U );
         snprintf( line,
                   sizeof( line ),
-                  "%lu-%lu us  RSSI %d",
+                  "%lu-%lu us",
                   (unsigned long)a_analysis->min_duration_us,
-                  (unsigned long)a_analysis->max_duration_us,
-                  (int)a_analysis->peak_rssi_dbm );
+                  (unsigned long)a_analysis->max_duration_us );
         display_draw_text( UI_LAYOUT_LEFT_X, 77, line, theme->text, 1U );
     }
 
