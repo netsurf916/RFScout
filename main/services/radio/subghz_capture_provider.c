@@ -339,8 +339,46 @@ bool subghz_capture_provider_stop( void )
         if( ESP_OK != delete_result )
         {
             ESP_LOGE( TAG, "RMT channel delete failed: %s", esp_err_to_name( delete_result ) );
+
+            const esp_err_t enable_result = rmt_enable( rmt_channel );
+            if( ESP_OK == enable_result )
+            {
+                rmt_enabled = true;
+                portENTER_CRITICAL( &state_lock );
+                provider_active = true;
+                provider_stopping = false;
+                const int slot_index = filling_slot;
+                portEXIT_CRITICAL( &state_lock );
+
+                if( ( slot_index >= 0 ) &&
+                    ( slot_index < (int)RFSCOUT_SUBGHZ_CAPTURE_POOL_SIZE ) )
+                {
+                    const esp_err_t receive_result =
+                        rmt_receive( rmt_channel,
+                                     capture_pool[ slot_index ].symbols,
+                                     RFSCOUT_SUBGHZ_CAPTURE_SYMBOL_CAPACITY *
+                                         sizeof( rfscout_subghz_symbol_t ),
+                                     &receive_config );
+                    if( ESP_OK == receive_result )
+                    {
+                        return false;
+                    }
+                    ESP_LOGE( TAG,
+                              "RMT receive restore failed after delete error: %s",
+                              esp_err_to_name( receive_result ) );
+                }
+            }
+            else
+            {
+                ESP_LOGE( TAG,
+                          "RMT enable restore failed after delete error: %s",
+                          esp_err_to_name( enable_result ) );
+            }
+
             portENTER_CRITICAL( &state_lock );
             provider_active = false;
+            provider_stopping = false;
+            rmt_enabled = false;
             portEXIT_CRITICAL( &state_lock );
             return false;
         }
