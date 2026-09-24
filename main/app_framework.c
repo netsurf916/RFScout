@@ -191,9 +191,7 @@ bool app_framework_check_available( rfscout_app_id_t a_app )
     {
         return false;
     }
-    if( RFSCOUT_APP_PROBE_HOTPLUG == descriptor->probe_policy ||
-        ( RFSCOUT_APP_PROBE_FIXED == descriptor->probe_policy &&
-          RFSCOUT_APP_AVAILABILITY_AVAILABLE != availability[ a_app ] ) )
+    if( RFSCOUT_APP_PROBE_HOTPLUG == descriptor->probe_policy )
     {
         (void)probe_descriptor( descriptor );
     }
