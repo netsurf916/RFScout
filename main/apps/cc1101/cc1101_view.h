@@ -29,7 +29,8 @@ void cc1101_view_discovery( const int8_t *a_rssi,
                             const cc1101_scan_config_t *a_config,
                             uint32_t a_peak_khz,
                             int8_t a_peak_rssi,
-                            bool a_detected );
+                            bool a_detected,
+                            bool a_app_locked );
 
 void cc1101_view_receive( cc1101_view_mode_t a_view,
                           const cc1101_receive_config_t *a_config,
@@ -37,11 +38,13 @@ void cc1101_view_receive( cc1101_view_mode_t a_view,
                           const cc1101_capture_stats_t *a_stats,
                           const rfscout_subghz_symbol_t *a_raw_symbols,
                           size_t a_raw_count,
-                          uint32_t a_raw_resolution_hz );
+                          uint32_t a_raw_resolution_hz,
+                          bool a_app_locked );
 
 void cc1101_view_menu( unsigned a_selected,
                        bool a_editing,
                        bool a_limit_reached,
+                       bool a_app_locked,
                        cc1101_acquisition_mode_t a_mode,
                        const cc1101_scan_config_t *a_scan,
                        const cc1101_receive_config_t *a_receive );
