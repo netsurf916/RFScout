@@ -18,25 +18,13 @@
 #include "recorder.h"
 #include "system_events.h"
 
-#include "esp_log.h"
 #include "esp_timer.h"
 
 #define APP_LOG_INTERVAL_US 1000000LL
-/* Static platform-state backlog: 32 entries cover several writer polling intervals even at the
- * main loop's fastest practical one-transition-per-pass cadence, without using task stack. */
-#define APP_LOG_PENDING_TRANSITION_CAPACITY 32U
 
-static const char *TAG = "app_logging";
 static rfscout_app_id_t last_app;
-static rfscout_app_transition_diagnostics_t
-    pending_transitions[ APP_LOG_PENDING_TRANSITION_CAPACITY ];
-static size_t pending_transition_head;
-static size_t pending_transition_count;
-static uint32_t pending_transition_dropped;
 static uint32_t last_transition_sequence;
-static rfscout_app_id_t logging_session_enter_app;
 static int64_t last_record_us;
-static bool logging_session_enter_pending;
 static bool initialized;
 
 static const char *app_name( rfscout_app_id_t a_app )
@@ -66,8 +54,7 @@ static bool write_lifecycle_record( rfscout_app_id_t a_app, const char *a_event 
     return log_end( &record );
 }
 
-static bool write_transition_record( const rfscout_app_transition_diagnostics_t *a_diagnostics,
-                                     uint32_t a_dropped_before )
+static bool write_transition_record( const rfscout_app_transition_diagnostics_t *a_diagnostics )
 {
     if( ( NULL == a_diagnostics ) || ( 0U == a_diagnostics->sequence ) )
     {
@@ -90,55 +77,9 @@ static bool write_transition_record( const rfscout_app_transition_diagnostics_t 
         log_uint( &record, "remaining", a_diagnostics->remaining_allocations ) &&
         log_int( &record, "elapsed_us", a_diagnostics->elapsed_us ) &&
         log_uint( &record, "psram_free", a_diagnostics->psram_free_bytes ) &&
-        log_uint( &record, "psram_largest", a_diagnostics->psram_largest_free_block ) &&
-        ( ( 0U == a_dropped_before ) || log_uint( &record, "dropped_before", a_dropped_before ) );
+        log_uint( &record, "psram_largest", a_diagnostics->psram_largest_free_block );
 
     return success && log_end( &record );
-}
-
-static void retain_transition( const rfscout_app_transition_diagnostics_t *a_diagnostics )
-{
-    if( ( NULL == a_diagnostics ) || ( 0U == a_diagnostics->sequence ) ||
-        ( a_diagnostics->sequence == last_transition_sequence ) )
-    {
-        return;
-    }
-
-    last_transition_sequence = a_diagnostics->sequence;
-    if( pending_transition_count >= APP_LOG_PENDING_TRANSITION_CAPACITY )
-    {
-        pending_transition_head =
-            ( pending_transition_head + 1U ) % APP_LOG_PENDING_TRANSITION_CAPACITY;
-        --pending_transition_count;
-        ++pending_transition_dropped;
-        ESP_LOGE( TAG,
-                  "pending transition log queue full; oldest snapshot dropped before seq=%u",
-                  (unsigned)a_diagnostics->sequence );
-    }
-
-    const size_t tail = ( pending_transition_head + pending_transition_count ) %
-                        APP_LOG_PENDING_TRANSITION_CAPACITY;
-    pending_transitions[ tail ] = *a_diagnostics;
-    ++pending_transition_count;
-}
-
-static bool flush_pending_transitions( void )
-{
-    while( pending_transition_count > 0U )
-    {
-        const rfscout_app_transition_diagnostics_t *transition =
-            &pending_transitions[ pending_transition_head ];
-        if( !write_transition_record( transition, pending_transition_dropped ) )
-        {
-            return false;
-        }
-
-        pending_transition_dropped = 0U;
-        pending_transition_head =
-            ( pending_transition_head + 1U ) % APP_LOG_PENDING_TRANSITION_CAPACITY;
-        --pending_transition_count;
-    }
-    return true;
 }
 
 static void write_periodic_record( rfscout_app_id_t a_app )
@@ -217,26 +158,12 @@ static void write_periodic_record( rfscout_app_id_t a_app )
 
 void app_logging_init( void )
 {
-    const rfscout_app_id_t current = app_manager_current();
+    last_app = app_manager_current();
     const rfscout_app_transition_diagnostics_t *transition = app_lifecycle_last_transition();
-
-    if( !initialized )
-    {
-        last_app = current;
-        last_transition_sequence = ( NULL != transition ) ? transition->sequence : 0U;
-        pending_transition_head = 0U;
-        pending_transition_count = 0U;
-        pending_transition_dropped = 0U;
-        initialized = true;
-    }
-    else
-    {
-        retain_transition( transition );
-    }
-
-    logging_session_enter_app = current;
-    logging_session_enter_pending = true;
+    last_transition_sequence = ( NULL != transition ) ? transition->sequence : 0U;
     last_record_us = 0;
+    initialized = true;
+    (void)write_lifecycle_record( last_app, "enter" );
 }
 
 void app_logging_poll( void )
@@ -246,29 +173,20 @@ void app_logging_poll( void )
         return;
     }
 
-    retain_transition( app_lifecycle_last_transition() );
-    if( !flush_pending_transitions() )
+    const rfscout_app_transition_diagnostics_t *transition = app_lifecycle_last_transition();
+    if( ( NULL != transition ) && ( 0U != transition->sequence ) &&
+        ( transition->sequence != last_transition_sequence ) )
     {
-        return;
-    }
-
-    if( logging_session_enter_pending )
-    {
-        if( !write_lifecycle_record( logging_session_enter_app, "enter" ) )
-        {
-            return;
-        }
-        last_app = logging_session_enter_app;
-        logging_session_enter_pending = false;
-        last_record_us = 0;
+        last_transition_sequence = transition->sequence;
+        (void)write_transition_record( transition );
     }
 
     const rfscout_app_id_t current = app_manager_current();
     const int64_t now = esp_timer_get_time();
     if( current != last_app )
     {
-        write_lifecycle_record( last_app, "exit" );
-        write_lifecycle_record( current, "enter" );
+        (void)write_lifecycle_record( last_app, "exit" );
+        (void)write_lifecycle_record( current, "enter" );
         last_app = current;
         last_record_us = 0;
     }
