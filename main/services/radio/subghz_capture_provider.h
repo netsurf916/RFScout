@@ -54,6 +54,9 @@ bool subghz_capture_provider_stop( void );
 /** @brief Return whether the provider currently owns an enabled RMT receive channel. */
 bool subghz_capture_provider_active( void );
 
+/** @brief Retry acquisition after a prior no-free-buffer or arm failure condition. */
+void subghz_capture_provider_poll( void );
+
 /** @brief Associate an RSSI sample with the capture currently being filled. */
 void subghz_capture_provider_note_rssi( int8_t a_rssi_dbm );
 
