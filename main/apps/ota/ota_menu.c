@@ -1366,7 +1366,7 @@ static void submenu_poll( int64_t a_now_us )
                     }
                     else
                     {
-                        snprintf( stable_update_status, sizeof( stable_update_status ), "Current" );
+                        snprintf( stable_update_status, sizeof( stable_update_status ), "Up to date" );
                     }
                     error_text[ 0 ] = '\0';
                     if( open_builds_after_catalog )
