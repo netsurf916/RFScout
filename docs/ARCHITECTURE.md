@@ -87,7 +87,7 @@ Current session-managed asynchronous services include Wi-Fi monitoring, infrastr
 
 Growable retained app state uses `app_session_calloc()`, `app_session_resize()`, and `app_session_free()`. The lower-level memory manager supplies owner accounting, failure tracking, and bulk reclamation.
 
-App-session **PSRAM** is for retained observations, histories, captures, and other meaningfully sized/growable state. Internal SRAM remains for RTOS/system state, task stacks, latency-sensitive allocations, and DMA/peripheral buffers when the target requires internal memory. A provider may use external PSRAM for DMA only when the supported target and driver explicitly permit external-memory DMA; that provider owns the capability-specific allocation and must quiesce the peripheral before releasing it.
+App-session **PSRAM** is for retained observations, histories, captures, and other meaningfully sized/growable state. Internal SRAM remains appropriate for RTOS/system state, task stacks, latency-sensitive allocations, and small bounded DMA/peripheral buffers. Providers should prefer the simplest memory class that satisfies the fixed capacity and peripheral constraints; external PSRAM is reserved for cases where retained/growable size materially justifies it.
 
 There is deliberately no arbitrary per-app item quota. Collections grow according to resources and semantics; presentation scratch can remain bounded separately.
 
