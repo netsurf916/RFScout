@@ -186,6 +186,19 @@ Current paths include:
 
 The conservative hardware-tested SD baseline remains a FAT-compatible SanDisk card of 32 GB or less. Rotating logs use `rfscout-00.log` through `rfscout-99.log`, up to 4 MiB each, while attempting to preserve at least 64 MiB free.
 
+Ordinary RFScout logs are newline-delimited structured records produced through the shared asynchronous log writer. Application lifecycle/telemetry logging also preserves each new transactional app-transition diagnostic as a `type:"transition"` record. The record reuses the lifecycle coordinator's existing diagnostic state rather than reconstructing transition results later and includes:
+
+- `seq` — monotonic transition-attempt sequence for the current boot;
+- `from` / `to` — application names;
+- `outcome` and `error` — lifecycle result and ESP error name;
+- `reclaimed` / `remaining` — managed bytes reclaimed from the source app and managed source allocations still present after committed reclamation;
+- `elapsed_us` — lifecycle transition duration; and
+- `psram_free` / `psram_largest` — free PSRAM and largest free PSRAM block captured when the transition result is finalized.
+
+The same lifecycle diagnostics continue to be emitted through the ESP console for development, but when SD logging is available the structured record is the preferred source for field validation because it can be correlated directly with adjacent app and telemetry records. The first logging initialization in a boot starts from the current transition sequence rather than backfilling transitions that occurred before application logging existed. If an already-running log writer is stopped and restarted, any transition snapshots that were already pending remain queued across the restart.
+
+If the asynchronous log writer cannot accept a transition record immediately, `app_logging` retains the lifecycle snapshot in a small static platform-state ring and retries it in sequence order. The retry storage is not placed on a task stack. A pending transition is an ordering barrier: later app-lifecycle and periodic telemetry records are deferred until the queued transition head has been accepted, so they cannot overtake the authoritative transition result. The pending ring and its drop accounting survive writer stop/start cycles. If sustained writer unavailability fills that ring, the oldest pending snapshots are discarded to retain newer diagnostics; the next successfully written transition includes `dropped_before` with the number of omitted transition snapshots, and transition `seq` values provide the corresponding gap. Queue saturation is also reported on the ESP console rather than silently presenting an incomplete SD log as complete.
+
 Breadcrumb recording is independent from the ordinary SD logging toggle and requires fresh valid GPS position **and GPS UTC**. Accepted fixes are sampled at most once every five seconds and bucketed into ten-minute GPS-UTC filenames. Current retention is file-count based.
 
 ## Firmware image and OTA architecture
