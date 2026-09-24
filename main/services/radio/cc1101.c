@@ -526,11 +526,11 @@ static esp_err_t apply_selected_mode( void )
     return ESP_OK;
 }
 
-esp_err_t cc1101_init( void )
+esp_err_t cc1101_probe( void )
 {
-    if( initialized )
+    if( service_started )
     {
-        return ESP_OK;
+        return detected ? ESP_OK : ESP_ERR_NOT_FOUND;
     }
 
     disable_rf_path();
@@ -580,12 +580,28 @@ esp_err_t cc1101_init( void )
         esp_rom_delay_us( CC1101_PROBE_RESET_SETTLE_US );
     }
 
+    (void)strobe( CC1101_SIDLE );
+    (void)strobe( CC1101_SPWD );
+    disable_rf_path();
+
     if( !detected )
     {
-        (void)strobe( CC1101_SIDLE );
-        (void)strobe( CC1101_SPWD );
-        disable_rf_path();
         return ESP_OK == result ? ESP_ERR_NOT_FOUND : result;
+    }
+    return ESP_OK;
+}
+
+esp_err_t cc1101_init( void )
+{
+    if( initialized )
+    {
+        return detected ? ESP_OK : cc1101_probe();
+    }
+
+    const esp_err_t probe_result = cc1101_probe();
+    if( ESP_OK != probe_result )
+    {
+        return probe_result;
     }
 
     memset( display_spectrum, -120, sizeof( display_spectrum ) );
@@ -600,18 +616,11 @@ esp_err_t cc1101_init( void )
                                    &scan_task ) )
         {
             scan_task = NULL;
-            detected = false;
-            (void)strobe( CC1101_SIDLE );
-            (void)strobe( CC1101_SPWD );
-            disable_rf_path();
             return ESP_ERR_NO_MEM;
         }
     }
 
     initialized = true;
-    (void)strobe( CC1101_SIDLE );
-    (void)strobe( CC1101_SPWD );
-    disable_rf_path();
     return ESP_OK;
 }
 
