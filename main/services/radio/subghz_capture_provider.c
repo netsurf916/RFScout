@@ -177,13 +177,11 @@ static bool capture_done_callback( rmt_channel_handle_t a_channel,
         capture_slot_t *slot = &capture_pool[ slot_index ];
         if( CAPTURE_SLOT_FILLING == slot->state )
         {
-            slot->symbol_count =
-                a_event->num_symbols < RFSCOUT_SUBGHZ_CAPTURE_SYMBOL_CAPACITY
-                    ? a_event->num_symbols
-                    : RFSCOUT_SUBGHZ_CAPTURE_SYMBOL_CAPACITY;
+            slot->symbol_count = a_event->num_symbols < RFSCOUT_SUBGHZ_CAPTURE_SYMBOL_CAPACITY
+                                     ? a_event->num_symbols
+                                     : RFSCOUT_SUBGHZ_CAPTURE_SYMBOL_CAPACITY;
             slot->ended_ms = capture_now_ms_from_isr();
-            slot->truncated =
-                a_event->num_symbols >= RFSCOUT_SUBGHZ_CAPTURE_SYMBOL_CAPACITY;
+            slot->truncated = a_event->num_symbols >= RFSCOUT_SUBGHZ_CAPTURE_SYMBOL_CAPACITY;
             slot->end_reason = slot->truncated ? RFSCOUT_SUBGHZ_CAPTURE_END_CAPACITY
                                                : RFSCOUT_SUBGHZ_CAPTURE_END_IDLE;
             slot->state = CAPTURE_SLOT_READY;
@@ -237,8 +235,7 @@ static esp_err_t allocate_capture_pool( void )
     return ESP_OK;
 }
 
-esp_err_t subghz_capture_provider_start(
-    const rfscout_subghz_capture_provider_config_t *a_config )
+esp_err_t subghz_capture_provider_start( const rfscout_subghz_capture_provider_config_t *a_config )
 {
     if( ( NULL == a_config ) || ( a_config->gpio_num < 0 ) || ( 0U == a_config->resolution_hz ) ||
         ( 0U == a_config->signal_range_max_ns ) )
