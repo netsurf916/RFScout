@@ -1,133 +1,124 @@
 /**
-    apps/cc1101/app.c : CC1101 application descriptor and runtime
+    apps/cc1101/app.c : CC1101/Sub-GHz application descriptor and runtime
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
 
 #include "app_descriptor.h"
 
-#include "app_notification_menu.h"
+#include "app_session.h"
 #include "cc1101.h"
-#include "cc1101_activity.h"
+#include "cc1101_view.h"
 #include "event.h"
-#include "notification.h"
-#include "notification_preferences.h"
-#include "radio_app_view.h"
+#include "subghz_decode.h"
 
 #include "esp_log.h"
 
+#include <limits.h>
 #include <stddef.h>
 #include <string.h>
 
-#define CC1101_MIN_STEP_KHZ 1U
-#define CC1101_MAX_STEP_KHZ 1000U
 #define CC1101_MENU_BACK 0U
-#define CC1101_MENU_RESET_COUNTS 1U
-#define CC1101_MENU_PROFILE 2U
-#define CC1101_MENU_LOW 3U
-#define CC1101_MENU_HIGH 4U
-#define CC1101_MENU_STEP 5U
-#define CC1101_MENU_NOTIFICATIONS 6U
-#define CC1101_MENU_ITEM_COUNT 7U
+#define CC1101_MENU_MODE 1U
+#define CC1101_MENU_SCAN_PROFILE 2U
+#define CC1101_MENU_RX_FREQUENCY 3U
+#define CC1101_MENU_RX_PRESET 4U
+#define CC1101_MENU_LOW 5U
+#define CC1101_MENU_HIGH 6U
+#define CC1101_MENU_STEP 7U
+#define CC1101_MENU_ITEM_COUNT 8U
+#define CC1101_DISCOVERY_LOCK_THRESHOLD_DBM ( -105 )
 
 static const char *TAG = "cc1101_app";
+
 static bool menu_active;
 static bool menu_editing;
 static bool menu_limit;
 static unsigned menu_item;
-static uint16_t notification_counts[ CC1101_FP_TYPE_COUNT ];
-static rfscout_app_notification_menu_t notification_menu;
+static cc1101_view_mode_t viewer;
+
+static int8_t discovery_rssi[ CC1101_SPECTRUM_BINS ];
+static size_t discovery_count;
+static uint32_t discovery_peak_khz;
+static int8_t discovery_peak_rssi;
+static bool discovery_peak_valid;
+
+static rfscout_subghz_analysis_t latest_analysis;
+static rfscout_subghz_symbol_t *raw_snapshot;
+static size_t raw_snapshot_count;
+static size_t raw_snapshot_capacity;
+static uint32_t raw_snapshot_resolution_hz;
 
 static void emit_event( rfscout_event_type_t a_type, int32_t a_value )
 {
     rfscout_event_emit( a_type, (uint8_t)RFSCOUT_APP_CC1101, a_value );
 }
 
-static rfscout_notification_type_t notification_type( cc1101_fingerprint_type_t a_type )
+static void clear_raw_snapshot( void )
 {
-    switch( a_type )
+    if( NULL != raw_snapshot )
     {
-        case CC1101_FP_NARROW_ISM:
-            return RFSCOUT_NOTIFICATION_CC1101_NARROW_ISM;
-        case CC1101_FP_REMOTE_SENSOR_LIKE:
-            return RFSCOUT_NOTIFICATION_CC1101_REMOTE_SENSOR;
-        case CC1101_FP_CONTINUOUS_CARRIER:
-            return RFSCOUT_NOTIFICATION_CC1101_CARRIER;
-        case CC1101_FP_BURSTY_SIGNAL:
-            return RFSCOUT_NOTIFICATION_CC1101_BURSTY;
-        case CC1101_FP_WIDEBAND_ACTIVITY:
-        case CC1101_FP_UNKNOWN:
-        case CC1101_FP_TYPE_COUNT:
-        default:
-            return RFSCOUT_NOTIFICATION_CC1101_WIDEBAND;
+        (void)app_session_free( raw_snapshot );
     }
+    raw_snapshot = NULL;
+    raw_snapshot_count = 0U;
+    raw_snapshot_capacity = 0U;
+    raw_snapshot_resolution_hz = 0U;
 }
 
-static void notify_detections( const cc1101_fingerprint_t *a_devices, size_t a_device_count )
+static void reset_receive_results( void )
 {
-    if( NULL == a_devices )
-    {
-        return;
-    }
-    for( size_t index = 0U; index < a_device_count; ++index )
-    {
-        const cc1101_fingerprint_type_t type = a_devices[ index ].type;
-        if( ( type <= CC1101_FP_UNKNOWN ) || ( type >= CC1101_FP_TYPE_COUNT ) )
-        {
-            continue;
-        }
-        const uint16_t count = a_devices[ index ].count;
-        if( count > notification_counts[ type ] )
-        {
-            (void)notification_emit( notification_type( type ) );
-        }
-        notification_counts[ type ] = count;
-    }
+    memset( &latest_analysis, 0, sizeof( latest_analysis ) );
+    clear_raw_snapshot();
 }
 
-static void render_spectrum( void )
+static void render_discovery( void )
 {
-    uint8_t current[ CC1101_SPECTRUM_BINS ];
-    cc1101_fingerprint_t devices[ CC1101_FINGERPRINT_MAX ];
-    const size_t count = cc1101_activity_levels( current, CC1101_SPECTRUM_BINS );
-    const size_t device_count = cc1101_activity_fingerprints( devices, CC1101_FINGERPRINT_MAX );
-    notify_detections( devices, device_count );
-    const cc1101_scan_config_t *config = cc1101_config();
-    radio_app_view_cc1101_spectrum( current,
-                                    count,
-                                    config->low_khz,
-                                    config->high_khz,
-                                    cc1101_is_detected(),
-                                    devices,
-                                    device_count );
+    cc1101_scan_config_t config;
+    cc1101_scan_config( &config );
+    cc1101_view_discovery( discovery_rssi,
+                           discovery_count,
+                           &config,
+                           discovery_peak_khz,
+                           discovery_peak_rssi,
+                           cc1101_is_detected() );
 }
 
-static void observe_spectrum( void )
+static void render_receive( void )
 {
-    int8_t rssi[ CC1101_SPECTRUM_BINS ];
-    const size_t count = cc1101_spectrum( rssi, CC1101_SPECTRUM_BINS );
-    const cc1101_scan_config_t *config = cc1101_config();
-    cc1101_activity_observe_sweep( rssi, count, config->low_khz, config->high_khz );
+    cc1101_receive_config_t config;
+    cc1101_capture_stats_t stats;
+    cc1101_receive_config( &config );
+    cc1101_capture_stats( &stats );
+    cc1101_view_receive( viewer,
+                         &config,
+                         &latest_analysis,
+                         &stats,
+                         raw_snapshot,
+                         raw_snapshot_count,
+                         raw_snapshot_resolution_hz );
+}
+
+static void render_current( void )
+{
+    if( CC1101_ACQUISITION_RECEIVE == cc1101_acquisition_mode() )
+    {
+        render_receive();
+    }
+    else
+    {
+        render_discovery();
+    }
 }
 
 static void render_menu( void )
 {
-    const cc1101_scan_config_t *config = cc1101_config();
-    radio_app_view_cc1101_menu( menu_item,
-                                menu_editing,
-                                cc1101_profile_name( config->profile ),
-                                config->low_khz,
-                                config->high_khz,
-                                config->step_khz,
-                                cc1101_sweep_count(),
-                                menu_limit,
-                                notification_preferences_app_enabled( RFSCOUT_APP_CC1101 ) );
-}
-
-static void render_menu_callback( void *a_context )
-{
-    (void)a_context;
-    render_menu();
+    cc1101_scan_config_t scan;
+    cc1101_receive_config_t receive;
+    cc1101_scan_config( &scan );
+    cc1101_receive_config( &receive );
+    cc1101_view_menu(
+        menu_item, menu_editing, menu_limit, cc1101_acquisition_mode(), &scan, &receive );
 }
 
 static void close_menu( void )
@@ -135,13 +126,170 @@ static void close_menu( void )
     menu_active = false;
     menu_editing = false;
     menu_limit = false;
-    render_spectrum();
+    render_current();
 }
 
-static bool step_at_endpoint( uint32_t a_step, int a_delta )
+static void update_discovery_peak( const cc1101_scan_config_t *a_config )
 {
-    return ( ( a_delta > 0 ) && ( a_step >= CC1101_MAX_STEP_KHZ ) ) ||
-           ( ( a_delta < 0 ) && ( a_step <= CC1101_MIN_STEP_KHZ ) );
+    discovery_peak_valid = false;
+    discovery_peak_rssi = INT8_MIN;
+    discovery_peak_khz = 0U;
+
+    if( ( NULL == a_config ) || ( 0U == discovery_count ) )
+    {
+        return;
+    }
+
+    size_t peak_index = 0U;
+    for( size_t index = 0U; index < discovery_count; ++index )
+    {
+        if( discovery_rssi[ index ] > discovery_peak_rssi )
+        {
+            discovery_peak_rssi = discovery_rssi[ index ];
+            peak_index = index;
+        }
+    }
+
+    if( discovery_count <= 1U )
+    {
+        discovery_peak_khz = a_config->low_khz;
+    }
+    else
+    {
+        const uint64_t span = (uint64_t)a_config->high_khz - a_config->low_khz;
+        discovery_peak_khz =
+            a_config->low_khz +
+            (uint32_t)( span * peak_index / (uint64_t)( discovery_count - 1U ) );
+    }
+    discovery_peak_valid = discovery_peak_rssi >= CC1101_DISCOVERY_LOCK_THRESHOLD_DBM;
+}
+
+static void consume_discovery_frame( bool a_render )
+{
+    cc1101_scan_config_t config;
+    cc1101_scan_config( &config );
+    discovery_count = cc1101_spectrum( discovery_rssi, CC1101_SPECTRUM_BINS );
+    update_discovery_peak( &config );
+    if( a_render )
+    {
+        render_discovery();
+    }
+}
+
+static bool retain_raw_snapshot( const rfscout_subghz_capture_t *a_capture )
+{
+    if( ( NULL == a_capture ) || ( NULL == a_capture->symbols ) || ( 0U == a_capture->symbol_count ) )
+    {
+        return false;
+    }
+
+    if( a_capture->symbol_count > raw_snapshot_capacity )
+    {
+        rfscout_subghz_symbol_t *replacement = app_session_resize(
+            raw_snapshot, a_capture->symbol_count, sizeof( *raw_snapshot ) );
+        if( NULL == replacement )
+        {
+            return false;
+        }
+        raw_snapshot = replacement;
+        raw_snapshot_capacity = a_capture->symbol_count;
+    }
+
+    memcpy( raw_snapshot,
+            a_capture->symbols,
+            a_capture->symbol_count * sizeof( *raw_snapshot ) );
+    raw_snapshot_count = a_capture->symbol_count;
+    raw_snapshot_resolution_hz = a_capture->resolution_hz;
+    return true;
+}
+
+static bool consume_receive_captures( bool a_render )
+{
+    bool consumed = false;
+    rfscout_subghz_capture_t capture;
+    uint8_t lease = 0U;
+
+    while( cc1101_capture_acquire( &capture, &lease ) )
+    {
+        if( capture.symbol_count > 0U )
+        {
+            rfscout_subghz_decode( &capture, &latest_analysis );
+            if( CC1101_VIEW_WAVEFORM == viewer )
+            {
+                (void)retain_raw_snapshot( &capture );
+            }
+            consumed = true;
+        }
+        cc1101_capture_release( lease );
+    }
+
+    if( consumed && a_render )
+    {
+        render_receive();
+    }
+    return consumed;
+}
+
+static void switch_to_discovery( void )
+{
+    if( ESP_OK == cc1101_set_acquisition_mode( CC1101_ACQUISITION_DISCOVERY ) )
+    {
+        reset_receive_results();
+        viewer = CC1101_VIEW_DECODED;
+        discovery_count = 0U;
+        discovery_peak_khz = 0U;
+        discovery_peak_rssi = INT8_MIN;
+        discovery_peak_valid = false;
+        memset( discovery_rssi, -120, sizeof( discovery_rssi ) );
+        render_discovery();
+    }
+}
+
+static void switch_to_receive( uint32_t a_frequency_khz )
+{
+    if( ESP_OK != cc1101_set_receive_frequency( a_frequency_khz ) )
+    {
+        return;
+    }
+    reset_receive_results();
+    viewer = CC1101_VIEW_DECODED;
+    if( ESP_OK == cc1101_set_acquisition_mode( CC1101_ACQUISITION_RECEIVE ) )
+    {
+        render_receive();
+    }
+}
+
+static bool adjust_receive_frequency( int a_direction )
+{
+    cc1101_scan_config_t scan;
+    cc1101_receive_config_t receive;
+    cc1101_scan_config( &scan );
+    cc1101_receive_config( &receive );
+
+    const int64_t candidate =
+        (int64_t)receive.frequency_khz + ( (int64_t)a_direction * scan.step_khz );
+    if( ( candidate < 0 ) || ( candidate > UINT32_MAX ) )
+    {
+        return false;
+    }
+    return ESP_OK == cc1101_set_receive_frequency( (uint32_t)candidate );
+}
+
+static void change_mode( int a_direction )
+{
+    (void)a_direction;
+    if( CC1101_ACQUISITION_RECEIVE == cc1101_acquisition_mode() )
+    {
+        (void)cc1101_set_acquisition_mode( CC1101_ACQUISITION_DISCOVERY );
+        reset_receive_results();
+        viewer = CC1101_VIEW_DECODED;
+    }
+    else
+    {
+        reset_receive_results();
+        viewer = CC1101_VIEW_DECODED;
+        (void)cc1101_set_acquisition_mode( CC1101_ACQUISITION_RECEIVE );
+    }
 }
 
 static void handle_menu_input( const rfscout_input_event_t *a_input )
@@ -161,19 +309,7 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
             emit_event( RFSCOUT_EVENT_BACK, 0 );
             return;
         }
-        if( CC1101_MENU_NOTIFICATIONS == menu_item )
-        {
-            app_notification_menu_open( &notification_menu );
-            return;
-        }
-        if( CC1101_MENU_RESET_COUNTS == menu_item )
-        {
-            cc1101_activity_reset_counts();
-            memset( notification_counts, 0, sizeof( notification_counts ) );
-            close_menu();
-            emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
-            return;
-        }
+
         menu_editing = !menu_editing;
         menu_limit = false;
         render_menu();
@@ -185,6 +321,7 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
     {
         return;
     }
+
     const int direction = ( a_input->value > 0 ) ? 1 : -1;
     if( !menu_editing )
     {
@@ -207,12 +344,17 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
         return;
     }
 
-    const cc1101_scan_config_t before = *cc1101_config();
-    bool changed = true;
-    bool endpoint = false;
-    if( CC1101_MENU_PROFILE == menu_item )
+    bool changed = false;
+    if( CC1101_MENU_MODE == menu_item )
     {
-        int profile = (int)before.profile + direction;
+        change_mode( direction );
+        changed = true;
+    }
+    else if( CC1101_MENU_SCAN_PROFILE == menu_item )
+    {
+        cc1101_scan_config_t scan;
+        cc1101_scan_config( &scan );
+        int profile = (int)scan.profile + direction;
         if( profile < 0 )
         {
             profile = CC1101_PROFILE_COUNT - 1;
@@ -222,8 +364,20 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
             profile = 0;
         }
         cc1101_set_profile( (cc1101_profile_t)profile );
-        cc1101_activity_reset();
-        memset( notification_counts, 0, sizeof( notification_counts ) );
+        changed = true;
+    }
+    else if( CC1101_MENU_RX_FREQUENCY == menu_item )
+    {
+        changed = adjust_receive_frequency( direction );
+    }
+    else if( CC1101_MENU_RX_PRESET == menu_item )
+    {
+        cc1101_receive_config_t receive;
+        cc1101_receive_config( &receive );
+        const cc1101_receive_preset_t preset =
+            ( CC1101_RECEIVE_OOK_650 == receive.preset ) ? CC1101_RECEIVE_OOK_270
+                                                         : CC1101_RECEIVE_OOK_650;
+        changed = ESP_OK == cc1101_set_receive_preset( preset );
     }
     else if( CC1101_MENU_LOW == menu_item )
     {
@@ -235,24 +389,30 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
     }
     else if( CC1101_MENU_STEP == menu_item )
     {
-        endpoint = step_at_endpoint( before.step_khz, a_input->value );
         changed = cc1101_adjust_step( direction );
     }
-    else
-    {
-        changed = false;
-    }
-    if( changed && ( menu_item >= CC1101_MENU_LOW ) && ( menu_item <= CC1101_MENU_STEP ) )
-    {
-        cc1101_activity_reset();
-        memset( notification_counts, 0, sizeof( notification_counts ) );
-    }
-    menu_limit = !changed && !endpoint;
+
+    menu_limit = !changed;
     render_menu();
     if( changed )
     {
         emit_event( RFSCOUT_EVENT_NAVIGATE, direction );
     }
+}
+
+static void cycle_receive_view( void )
+{
+    viewer = (cc1101_view_mode_t)( ( viewer + 1U ) % CC1101_VIEW_COUNT );
+    if( CC1101_VIEW_WAVEFORM != viewer )
+    {
+        clear_raw_snapshot();
+    }
+    else
+    {
+        raw_snapshot_count = 0U;
+        raw_snapshot_resolution_hz = 0U;
+    }
+    render_receive();
 }
 
 static rfscout_app_runtime_result_t cc1101_runtime( const rfscout_app_runtime_event_t *a_event )
@@ -268,13 +428,24 @@ static rfscout_app_runtime_result_t cc1101_runtime( const rfscout_app_runtime_ev
         menu_editing = false;
         menu_limit = false;
         menu_item = CC1101_MENU_BACK;
-        memset( notification_counts, 0, sizeof( notification_counts ) );
-        app_notification_menu_init(
-            &notification_menu, RFSCOUT_APP_CC1101, render_menu_callback, NULL );
-        cc1101_activity_reset();
-        render_spectrum();
+        viewer = CC1101_VIEW_DECODED;
+
+        raw_snapshot = NULL;
+        raw_snapshot_count = 0U;
+        raw_snapshot_capacity = 0U;
+        raw_snapshot_resolution_hz = 0U;
+        memset( &latest_analysis, 0, sizeof( latest_analysis ) );
+        memset( discovery_rssi, -120, sizeof( discovery_rssi ) );
+        discovery_count = 0U;
+        discovery_peak_khz = 0U;
+        discovery_peak_rssi = INT8_MIN;
+        discovery_peak_valid = false;
+
+        (void)cc1101_set_acquisition_mode( CC1101_ACQUISITION_DISCOVERY );
+        render_discovery();
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
+
     if( RFSCOUT_APP_RUNTIME_ACTIVATE == a_event->type )
     {
         if( ESP_OK != cc1101_start() )
@@ -283,33 +454,29 @@ static rfscout_app_runtime_result_t cc1101_runtime( const rfscout_app_runtime_ev
         }
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
+
     if( RFSCOUT_APP_RUNTIME_LEAVE == a_event->type )
     {
-        cc1101_activity_reset();
-        cc1101_activity_reset_counts();
-        memset( notification_counts, 0, sizeof( notification_counts ) );
+        clear_raw_snapshot();
+        memset( &latest_analysis, 0, sizeof( latest_analysis ) );
         menu_active = false;
         menu_editing = false;
         menu_limit = false;
         menu_item = CC1101_MENU_BACK;
-        app_notification_menu_reset( &notification_menu );
+        viewer = CC1101_VIEW_DECODED;
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
+
     if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type )
     {
-        if( app_notification_menu_active( &notification_menu ) )
-        {
-            (void)app_notification_menu_input( &notification_menu, &a_event->input );
-            return RFSCOUT_APP_RUNTIME_HANDLED;
-        }
         if( menu_active )
         {
             handle_menu_input( &a_event->input );
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
+
         if( RFSCOUT_INPUT_SELECT == a_event->input.type )
         {
-            cc1101_activity_pause();
             menu_active = true;
             menu_editing = false;
             menu_limit = false;
@@ -318,18 +485,50 @@ static rfscout_app_runtime_result_t cc1101_runtime( const rfscout_app_runtime_ev
             emit_event( RFSCOUT_EVENT_ENTER, 0 );
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
+
+        if( RFSCOUT_INPUT_LONG_SELECT == a_event->input.type )
+        {
+            if( CC1101_ACQUISITION_DISCOVERY == cc1101_acquisition_mode() )
+            {
+                if( discovery_peak_valid )
+                {
+                    switch_to_receive( discovery_peak_khz );
+                    emit_event( RFSCOUT_EVENT_ACTIVATE, (int32_t)discovery_peak_khz );
+                }
+            }
+            else
+            {
+                cycle_receive_view();
+                emit_event( RFSCOUT_EVENT_NAVIGATE, (int32_t)viewer );
+            }
+            return RFSCOUT_APP_RUNTIME_HANDLED;
+        }
+
+        if( ( RFSCOUT_INPUT_BACK == a_event->input.type ) &&
+            ( CC1101_ACQUISITION_RECEIVE == cc1101_acquisition_mode() ) )
+        {
+            switch_to_discovery();
+            emit_event( RFSCOUT_EVENT_BACK, 0 );
+            return RFSCOUT_APP_RUNTIME_HANDLED;
+        }
+
         return RFSCOUT_APP_RUNTIME_IGNORED;
     }
-    if( RFSCOUT_APP_RUNTIME_POLL == a_event->type && a_event->activated && !menu_active &&
-        !app_notification_menu_active( &notification_menu ) )
+
+    if( ( RFSCOUT_APP_RUNTIME_POLL == a_event->type ) && a_event->activated )
     {
         cc1101_poll();
-        if( cc1101_take_frame_ready() )
+
+        if( CC1101_ACQUISITION_RECEIVE == cc1101_acquisition_mode() )
         {
-            observe_spectrum();
-            render_spectrum();
+            (void)consume_receive_captures( !menu_active );
+        }
+        else if( cc1101_take_frame_ready() )
+        {
+            consume_discovery_frame( !menu_active );
         }
     }
+
     return RFSCOUT_APP_RUNTIME_HANDLED;
 }
 
