@@ -55,21 +55,26 @@ Application availability is derived from configured enablement plus services/cap
 
 ### Hardware probe contract
 
-Optional application hardware uses one retry-safe probe contract. The framework owns the cached availability result; individual drivers must not permanently cache a failed probe in a way that prevents a later retry.
+Optional application hardware uses one retry-safe **hot-plug** probe contract. The framework owns cached availability; individual drivers must not permanently cache a failed probe or substitute prior initialization state for a current hardware check.
 
-Probe policy controls scheduling, not probe semantics:
+There are only two descriptor policies:
 
-- **None** — the selected profile/service contract is sufficient; no runtime hardware gate is needed.
-- **Fixed** — probe during initial discovery. If unavailable, re-probe when the app is explicitly checked/navigated to. Once available, do not poll continuously unless runtime operation reports a loss.
-- **Hot-plug** — use the same probe path, but also refresh while inactive and whenever availability is explicitly checked.
+- **None** — no runtime hardware availability gate is required.
+- **Hot-plug** — run the same retry-safe probe during initial discovery, when availability is explicitly checked for navigation, and periodically while the app is inactive.
 
-A probe may prepare reusable driver state, but it must leave the device inactive and must be safe to invoke again after any failed attempt. Runtime-observed loss may update framework availability for either fixed or hot-plug hardware.
+A hot-plug probe may prepare reusable driver plumbing, but it must leave acquisition inactive and be safe to invoke again after either success or failure. Probe answers only whether the required hardware/dependency responds now. Initialization and activation remain separate lifecycle concerns.
 
-CC1101, nRF24, and Audio Spectrum microphone availability use the fixed policy. Thermal and Recorder use the hot-plug policy because their required dependencies can change at runtime; Recorder's microphone check remains retryable even though SD-remount support is intentionally more conservative.
+Runtime-observed loss may report the app unavailable. Once the app is inactive, the ordinary hot-plug path can discover recovery again.
 
-Mandatory platform identification is separate from optional application availability. Board-profile detection must succeed before RFScout can safely assign board GPIO/peripherals, while display/input provider initialization is required for normal UI operation. GPS is also different: it continuously searches supported UART baud rates until valid NMEA traffic is observed rather than caching an absent/present probe result.
+CC1101, nRF24, microphone-backed audio apps, Thermal, and Recorder all use this model. Radio probes perform real identity checks rather than treating an earlier successful initialization as permanent presence. Recorder rechecks both microphone and storage dependencies; when no card has ever mounted, a later probe may retry the normal storage mount.
 
-Removable SD is an explicit exception to automatic recovery today. The mounted filesystem owns open-file/FatFs lifetime, so a detected media loss is latched unavailable rather than silently unmounting/remounting beneath active users. Hot insertion/remount remains a separate storage-lifecycle feature rather than a generic probe retry.
+The same retry principle applies to optional platform telemetry where practical. Battery gauge/charger handles are re-probed when absent and dropped/reacquired if the I2C device stops responding. GPS already continuously searches its supported UART rates until valid NMEA traffic appears.
+
+Two platform cases remain intentionally distinct:
+
+- **Board profile / mandatory UI providers** — these establish the hardware identity and minimum environment needed to run RFScout safely; failure is a platform startup/recovery condition, not an optional app being unavailable.
+- **Mounted SD media after physical loss** — RFScout latches the mounted filesystem unavailable rather than silently unmounting/remounting beneath open users. Initial insertion can be retried, but post-loss remount requires an explicit storage-lifecycle design.
+
 
 ## Application lifecycle, views, and resource sessions
 
