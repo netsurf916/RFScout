@@ -22,7 +22,7 @@ Current settings include:
 - SD logging;
 - supported power-button actions and protective power policy;
 - breadcrumb recording and retained breadcrumb-file count;
-- global long-hold shortcut selection between **Input Lock** and **App Lock**; and
+- global Hold shortcut selection between **Input Lock** and **App Lock**; and
 - application notification preferences exposed through the relevant app settings.
 
 Ordinary setting changes are persisted automatically through RFScout's internal persistent-record service. There is no user-facing Save step.
