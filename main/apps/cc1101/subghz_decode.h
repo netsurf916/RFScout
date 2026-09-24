@@ -53,7 +53,6 @@ typedef struct
     uint32_t total_duration_us;
     uint32_t min_duration_us;
     uint32_t max_duration_us;
-    int8_t peak_rssi_dbm;
     bool truncated;
     rfscout_subghz_timing_bucket_t timing[ RFSCOUT_SUBGHZ_TIMING_BUCKETS ];
     size_t timing_count;
