@@ -809,18 +809,18 @@ static void cancel_network_connect_modal( void )
     const esp_err_t result =
         cancel_time_sync ? rfscout_wifi_station_cancel_time_sync() : rfscout_wifi_station_stop();
 
-    if( ESP_OK == result )
-    {
-        error_text[ 0 ] = '\0';
-    }
-    else
+    if( ESP_OK != result )
     {
         set_error( result );
+        display_modal_show( "NETWORK", "Cancel failed" );
+        render();
+        return;
     }
 
+    error_text[ 0 ] = '\0';
     return_to_network_main();
 
-    if( ESP_OK == result && !cancel_time_sync )
+    if( !cancel_time_sync )
     {
         refresh_scan_results();
         begin_passive_scan();
@@ -1402,9 +1402,26 @@ static void submenu_poll( int64_t a_now_us )
             else if( !current.ntp_syncing ||
                      a_now_us - network_connect_ntp_started_us >= OTA_NTP_SYNC_TIMEOUT_US )
             {
-                snprintf( error_text, sizeof( error_text ), "Time sync failed" );
-                return_to_network_main();
-                return;
+                const bool timed_out =
+                    a_now_us - network_connect_ntp_started_us >= OTA_NTP_SYNC_TIMEOUT_US;
+                const esp_err_t cancel_result = rfscout_wifi_station_cancel_time_sync();
+                if( ESP_OK != cancel_result )
+                {
+                    ESP_LOGW( TAG,
+                              "could not cancel failed time synchronization: %s",
+                              esp_err_to_name( cancel_result ) );
+                    network_connect_ntp_started_us = a_now_us;
+                    redraw = true;
+                }
+                else
+                {
+                    snprintf( error_text,
+                              sizeof( error_text ),
+                              "%s",
+                              timed_out ? "Time sync timed out" : "Time sync failed" );
+                    return_to_network_main();
+                    return;
+                }
             }
             redraw = true;
         }
@@ -1419,10 +1436,15 @@ static void submenu_poll( int64_t a_now_us )
                     ESP_LOGW( TAG,
                               "could not stop timed-out Wi-Fi connection: %s",
                               esp_err_to_name( stop_result ) );
+                    network_connect_started_us = a_now_us;
+                    redraw = true;
                 }
-                snprintf( error_text, sizeof( error_text ), "Connection timed out" );
-                return_to_network_main();
-                return;
+                else
+                {
+                    snprintf( error_text, sizeof( error_text ), "Connection timed out" );
+                    return_to_network_main();
+                    return;
+                }
             }
 
             display_modal_show( "NETWORK", "Connecting..." );
