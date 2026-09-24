@@ -60,6 +60,7 @@
 #define CC1101_WAKE_TIMEOUT_US 1000U
 #define CC1101_PROBE_ATTEMPTS 3U
 #define CC1101_PROBE_RESET_SETTLE_US 100U
+#define CC1101_SCAN_ERROR_RETRIES 3U
 
 #define CC1101_RMT_RESOLUTION_HZ 500000U
 #define CC1101_RMT_GLITCH_NS 2000U
@@ -313,6 +314,7 @@ static void scan_worker( void *a_argument )
             memset( acquisition, -120, sizeof( acquisition ) );
             memset( acquisition_frequency_khz, 0, sizeof( acquisition_frequency_khz ) );
             bool scan_ok = true;
+            esp_err_t scan_error = ESP_OK;
             unsigned samples_since_break = 0U;
 
             for( size_t index = 0U; scan_running && ( index < count ); ++index )
@@ -322,6 +324,7 @@ static void scan_worker( void *a_argument )
                 if( ESP_OK != result )
                 {
                     scan_ok = false;
+                    scan_error = result;
                     break;
                 }
 
@@ -336,6 +339,7 @@ static void scan_worker( void *a_argument )
                 if( ESP_OK != result )
                 {
                     scan_ok = false;
+                    scan_error = result;
                     break;
                 }
 
@@ -361,9 +365,39 @@ static void scan_worker( void *a_argument )
             }
             if( !scan_ok )
             {
-                scan_running = false;
-                disable_rf_path();
-                break;
+                bool recovered = false;
+                for( unsigned attempt = 0U;
+                     scan_running && ( attempt < CC1101_SCAN_ERROR_RETRIES );
+                     ++attempt )
+                {
+                    ESP_LOGW( TAG,
+                              "discovery scan error %s; retry %u/%u",
+                              esp_err_to_name( scan_error ),
+                              attempt + 1U,
+                              (unsigned)CC1101_SCAN_ERROR_RETRIES );
+                    vTaskDelay( pdMS_TO_TICKS( 10U ) );
+                    const uint32_t probe_frequency = frequency_for_sample( &snapshot, 0U );
+                    scan_error = tune( probe_frequency );
+                    if( ESP_OK == scan_error )
+                    {
+                        recovered = true;
+                        break;
+                    }
+                }
+                if( !recovered )
+                {
+                    ESP_LOGE( TAG,
+                              "discovery scan stopped after repeated radio errors: %s",
+                              esp_err_to_name( scan_error ) );
+                    portENTER_CRITICAL( &state_lock );
+                    detected = false;
+                    scan_running = false;
+                    frame_ready = false;
+                    portEXIT_CRITICAL( &state_lock );
+                    disable_rf_path();
+                    break;
+                }
+                continue;
             }
 
             portENTER_CRITICAL( &state_lock );
@@ -419,7 +453,7 @@ static void start_scan_worker( void )
     xTaskNotifyGive( scan_task );
 }
 
-static esp_err_t configure_ook_receive( cc1101_receive_preset_t a_preset )
+static esp_err_t configure_receive_chain( cc1101_receive_preset_t a_preset )
 {
     const bool wide = ( CC1101_RECEIVE_OOK_650 == a_preset );
 
@@ -497,7 +531,7 @@ static esp_err_t configure_ook_receive( cc1101_receive_preset_t a_preset )
 
 static esp_err_t start_receive_acquisition( void )
 {
-    esp_err_t result = configure_ook_receive( receive_config.preset );
+    esp_err_t result = configure_receive_chain( receive_config.preset );
     if( ESP_OK == result )
     {
         result = tune( receive_config.frequency_khz );
@@ -543,6 +577,12 @@ static esp_err_t apply_selected_mode( void )
     if( CC1101_ACQUISITION_RECEIVE == acquisition_mode )
     {
         return start_receive_acquisition();
+    }
+
+    const esp_err_t result = configure_receive_chain( CC1101_RECEIVE_OOK_650 );
+    if( ESP_OK != result )
+    {
+        return result;
     }
 
     start_scan_worker();
