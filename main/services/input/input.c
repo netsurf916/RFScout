@@ -170,7 +170,6 @@ static void initialize_button_state( void )
     button_event = false;
     button_long_event = false;
     button_global_hold_event = false;
-    button_back_event = false;
     button_lock_fired = false;
     rfscout_session_state_t restored_session;
     locked = session_state_restore( &restored_session ) && restored_session.input_locked;
@@ -341,7 +340,6 @@ void input_consume_wake( void )
     button_event = false;
     button_long_event = false;
     button_global_hold_event = false;
-    button_back_event = false;
 
     uint32_t press_sequence;
     bool current_button_down;
