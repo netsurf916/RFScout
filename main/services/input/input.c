@@ -349,6 +349,7 @@ void input_consume_wake( void )
     clear_navigation_delta();
     button_event = false;
     button_long_event = false;
+    button_global_hold_event = false;
     button_back_event = false;
 
     uint32_t press_sequence;
