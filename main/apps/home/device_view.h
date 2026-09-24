@@ -23,12 +23,6 @@ void device_view_enter( void );
 void device_view_render( void );
 
 /**
- * @brief Handle a generic Back gesture within Device settings.
- * @return True when a nested Device-settings view consumed Back.
- */
-bool device_view_back( void );
-
-/**
  * @brief Handle Device settings button/encoder input.
  * @return True when the user selected Back and settings should close.
  */
