@@ -124,9 +124,7 @@ const char *cc1101_profile_name( cc1101_profile_t a_profile );
  * @param a_capacity Destination capacity in bins.
  * @return Number of bins copied.
  */
-size_t cc1101_spectrum( int8_t *a_output,
-                        uint32_t *a_frequency_khz,
-                        size_t a_capacity );
+size_t cc1101_spectrum( int8_t *a_output, uint32_t *a_frequency_khz, size_t a_capacity );
 
 /** @brief Consume the notification that a complete discovery sweep is ready. */
 bool cc1101_take_frame_ready( void );
