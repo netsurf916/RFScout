@@ -222,7 +222,7 @@ Every current application receives an explicit v0.4.0 review rather than treatin
 - [x] Process completed captures zero-copy through a hardware-agnostic analyzer/decoder registry, with compact timing results and an initial repeated 24-bit Princeton decoder.
 - [x] Keep decoded, timing-histogram, and raw-waveform presentation independent from acquisition; retain a raw snapshot only when the waveform viewer actually needs it.
 - [x] Integrate framework-owned application locking so locked rotary navigation cycles CC1101 Discovery / Decoded / Timing / Waveform surfaces without leaving or rebuilding the CC1101 resource session.
-- [x] Remove Back as the ordinary Discovery/Receive navigation mechanism; Back remains the explicit framework escape/home semantic when app-local modal state does not consume it.
+- [x] Remove the global Back input semantic and Back-to-Home fallback; explicit Back rows remain ordinary Select-driven local UI actions.
 - [x] Expose the current app-lock state from CC1101 settings while keeping lock ownership in the application manager.
 - [ ] Hardware-tune RMT resolution, glitch/idle limits, discovery thresholds, and OOK receive presets across representative fast and slow remotes.
 - [ ] Expand receive-only protocol coverage, including useful fixed-code and rolling-code garage/remote families, without adding transmit/replay semantics.
