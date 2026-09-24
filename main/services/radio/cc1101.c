@@ -7,17 +7,15 @@
 
 #include "cc1101.h"
 #include "board.h"
+#include "subghz_capture_provider.h"
 
 #include "driver/gpio.h"
-#include "driver/rmt_rx.h"
 #include "driver/spi_master.h"
-#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_rom_sys.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#include <limits.h>
 #include <string.h>
 
 #define CC1101_SPI_HOST SPI2_HOST
@@ -63,32 +61,7 @@
 #define CC1101_RMT_RESOLUTION_HZ 1000000U
 #define CC1101_RMT_GLITCH_NS 2000U
 #define CC1101_RMT_IDLE_NS 20000000U
-#define CC1101_RMT_ALIGNMENT 64U
 #define CC1101_RECEIVE_RSSI_POLL_MS 4U
-
-typedef enum
-{
-    CAPTURE_SLOT_FREE = 0,
-    CAPTURE_SLOT_FILLING,
-    CAPTURE_SLOT_READY,
-    CAPTURE_SLOT_PROCESSING,
-} capture_slot_state_t;
-
-typedef struct
-{
-    rfscout_subghz_symbol_t *symbols;
-    capture_slot_state_t state;
-    size_t symbol_count;
-    uint32_t frequency_hz;
-    uint32_t resolution_hz;
-    rfscout_subghz_modulation_t modulation;
-    uint32_t sequence;
-    uint32_t started_ms;
-    uint32_t ended_ms;
-    int8_t peak_rssi_dbm;
-    rfscout_subghz_capture_end_t end_reason;
-    bool truncated;
-} capture_slot_t;
 
 static const char *TAG = "cc1101";
 static spi_device_handle_t device;
@@ -106,20 +79,7 @@ static cc1101_acquisition_mode_t acquisition_mode = CC1101_ACQUISITION_DISCOVERY
 static cc1101_scan_config_t scan_config = { CC1101_PROFILE_433, 433050U, 434790U, 15U };
 static cc1101_receive_config_t receive_config = { 433920U, CC1101_RECEIVE_OOK_650 };
 
-static rmt_channel_handle_t rmt_channel;
-static bool rmt_enabled;
-static capture_slot_t capture_pool[ CC1101_CAPTURE_POOL_SIZE ];
-static int filling_slot = -1;
-static bool waiting_for_capture_slot;
-static uint32_t next_capture_sequence = 1U;
-static cc1101_capture_stats_t capture_stats_state;
 static TickType_t last_receive_rssi_tick;
-
-static const rmt_receive_config_t rmt_receive_config = {
-    .signal_range_min_ns = CC1101_RMT_GLITCH_NS,
-    .signal_range_max_ns = CC1101_RMT_IDLE_NS,
-    .flags.en_partial_rx = false,
-};
 
 static esp_err_t transfer( uint8_t a_header, uint8_t a_data, uint8_t *a_result )
 {
@@ -510,350 +470,47 @@ static esp_err_t configure_ook_receive( cc1101_receive_preset_t a_preset )
     return result;
 }
 
-static uint32_t capture_now_ms_from_isr( void )
-{
-    return (uint32_t)( xTaskGetTickCountFromISR() * portTICK_PERIOD_MS );
-}
-
-static uint32_t capture_now_ms( void )
-{
-    return (uint32_t)( xTaskGetTickCount() * portTICK_PERIOD_MS );
-}
-
-static int find_free_capture_slot_locked( void )
-{
-    for( size_t index = 0U; index < CC1101_CAPTURE_POOL_SIZE; ++index )
-    {
-        if( CAPTURE_SLOT_FREE == capture_pool[ index ].state )
-        {
-            return (int)index;
-        }
-    }
-    return -1;
-}
-
-static void initialize_capture_slot_locked( int a_index, uint32_t a_started_ms )
-{
-    capture_slot_t *slot = &capture_pool[ a_index ];
-    slot->state = CAPTURE_SLOT_FILLING;
-    slot->symbol_count = 0U;
-    slot->frequency_hz = receive_config.frequency_khz * 1000U;
-    slot->resolution_hz = CC1101_RMT_RESOLUTION_HZ;
-    slot->modulation = RFSCOUT_SUBGHZ_MODULATION_OOK;
-    slot->sequence = next_capture_sequence++;
-    if( 0U == next_capture_sequence )
-    {
-        next_capture_sequence = 1U;
-    }
-    slot->started_ms = a_started_ms;
-    slot->ended_ms = 0U;
-    slot->peak_rssi_dbm = INT8_MIN;
-    slot->end_reason = RFSCOUT_SUBGHZ_CAPTURE_END_IDLE;
-    slot->truncated = false;
-    filling_slot = a_index;
-    waiting_for_capture_slot = false;
-}
-
-static void capture_arm_failed_task( int a_index )
-{
-    portENTER_CRITICAL( &state_lock );
-    if( ( a_index >= 0 ) && ( a_index < (int)CC1101_CAPTURE_POOL_SIZE ) &&
-        ( CAPTURE_SLOT_FILLING == capture_pool[ a_index ].state ) )
-    {
-        capture_pool[ a_index ].state = CAPTURE_SLOT_FREE;
-    }
-    if( filling_slot == a_index )
-    {
-        filling_slot = -1;
-    }
-    ++capture_stats_state.capture_errors;
-    portEXIT_CRITICAL( &state_lock );
-}
-
-static void capture_arm_failed_isr( int a_index )
-{
-    portENTER_CRITICAL_ISR( &state_lock );
-    if( ( a_index >= 0 ) && ( a_index < (int)CC1101_CAPTURE_POOL_SIZE ) &&
-        ( CAPTURE_SLOT_FILLING == capture_pool[ a_index ].state ) )
-    {
-        capture_pool[ a_index ].state = CAPTURE_SLOT_FREE;
-    }
-    if( filling_slot == a_index )
-    {
-        filling_slot = -1;
-    }
-    ++capture_stats_state.capture_errors;
-    portEXIT_CRITICAL_ISR( &state_lock );
-}
-
-static bool arm_next_capture_task( void )
-{
-    if( ( NULL == rmt_channel ) || !rmt_enabled || !service_started ||
-        ( CC1101_ACQUISITION_RECEIVE != acquisition_mode ) )
-    {
-        return false;
-    }
-
-    int slot_index = -1;
-    portENTER_CRITICAL( &state_lock );
-    if( filling_slot < 0 )
-    {
-        slot_index = find_free_capture_slot_locked();
-        if( slot_index >= 0 )
-        {
-            initialize_capture_slot_locked( slot_index, capture_now_ms() );
-        }
-        else if( !waiting_for_capture_slot )
-        {
-            waiting_for_capture_slot = true;
-            ++capture_stats_state.capture_overruns;
-        }
-    }
-    portEXIT_CRITICAL( &state_lock );
-
-    if( slot_index < 0 )
-    {
-        return false;
-    }
-
-    const esp_err_t result =
-        rmt_receive( rmt_channel,
-                     capture_pool[ slot_index ].symbols,
-                     CC1101_CAPTURE_SYMBOL_CAPACITY * sizeof( rfscout_subghz_symbol_t ),
-                     &rmt_receive_config );
-    if( ESP_OK != result )
-    {
-        capture_arm_failed_task( slot_index );
-        ESP_LOGW( TAG, "RMT receive arm failed: %s", esp_err_to_name( result ) );
-        return false;
-    }
-    return true;
-}
-
-static bool arm_next_capture_isr( void )
-{
-    if( ( NULL == rmt_channel ) || !rmt_enabled || !service_started ||
-        ( CC1101_ACQUISITION_RECEIVE != acquisition_mode ) )
-    {
-        return false;
-    }
-
-    int slot_index = -1;
-    portENTER_CRITICAL_ISR( &state_lock );
-    if( filling_slot < 0 )
-    {
-        slot_index = find_free_capture_slot_locked();
-        if( slot_index >= 0 )
-        {
-            initialize_capture_slot_locked( slot_index, capture_now_ms_from_isr() );
-        }
-        else if( !waiting_for_capture_slot )
-        {
-            waiting_for_capture_slot = true;
-            ++capture_stats_state.capture_overruns;
-        }
-    }
-    portEXIT_CRITICAL_ISR( &state_lock );
-
-    if( slot_index < 0 )
-    {
-        return false;
-    }
-
-    const esp_err_t result = rmt_receive( rmt_channel,
-                                         capture_pool[ slot_index ].symbols,
-                                         CC1101_CAPTURE_SYMBOL_CAPACITY *
-                                             sizeof( rfscout_subghz_symbol_t ),
-                                         &rmt_receive_config );
-    if( ESP_OK != result )
-    {
-        capture_arm_failed_isr( slot_index );
-        return false;
-    }
-    return true;
-}
-
-static bool capture_done_callback( rmt_channel_handle_t a_channel,
-                                   const rmt_rx_done_event_data_t *a_event,
-                                   void *a_context )
-{
-    (void)a_channel;
-    (void)a_context;
-
-    if( NULL == a_event )
-    {
-        return false;
-    }
-
-    portENTER_CRITICAL_ISR( &state_lock );
-    const int slot_index = filling_slot;
-    if( ( slot_index >= 0 ) && ( slot_index < (int)CC1101_CAPTURE_POOL_SIZE ) )
-    {
-        capture_slot_t *slot = &capture_pool[ slot_index ];
-        if( CAPTURE_SLOT_FILLING == slot->state )
-        {
-            slot->symbol_count = a_event->num_symbols < CC1101_CAPTURE_SYMBOL_CAPACITY
-                                     ? a_event->num_symbols
-                                     : CC1101_CAPTURE_SYMBOL_CAPACITY;
-            slot->ended_ms = capture_now_ms_from_isr();
-            slot->truncated = ( a_event->num_symbols >= CC1101_CAPTURE_SYMBOL_CAPACITY );
-            slot->end_reason = slot->truncated ? RFSCOUT_SUBGHZ_CAPTURE_END_CAPACITY
-                                               : RFSCOUT_SUBGHZ_CAPTURE_END_IDLE;
-            slot->state = CAPTURE_SLOT_READY;
-            ++capture_stats_state.captures_completed;
-            if( slot->truncated )
-            {
-                ++capture_stats_state.captures_truncated;
-            }
-        }
-    }
-    filling_slot = -1;
-    portEXIT_CRITICAL_ISR( &state_lock );
-
-    (void)arm_next_capture_isr();
-    return false;
-}
-
-static void clear_capture_pool_state( rfscout_subghz_capture_end_t a_reason )
-{
-    portENTER_CRITICAL( &state_lock );
-    for( size_t index = 0U; index < CC1101_CAPTURE_POOL_SIZE; ++index )
-    {
-        capture_slot_t *slot = &capture_pool[ index ];
-        if( CAPTURE_SLOT_FREE != slot->state )
-        {
-            slot->end_reason = a_reason;
-        }
-        slot->state = CAPTURE_SLOT_FREE;
-        slot->symbol_count = 0U;
-    }
-    filling_slot = -1;
-    waiting_for_capture_slot = false;
-    portEXIT_CRITICAL( &state_lock );
-}
-
-static void destroy_capture_provider( void )
-{
-    if( NULL != rmt_channel )
-    {
-        if( rmt_enabled )
-        {
-            const esp_err_t disable_result = rmt_disable( rmt_channel );
-            if( ESP_OK != disable_result )
-            {
-                ESP_LOGW( TAG, "RMT disable failed: %s", esp_err_to_name( disable_result ) );
-            }
-            rmt_enabled = false;
-        }
-        clear_capture_pool_state( RFSCOUT_SUBGHZ_CAPTURE_END_ABORT );
-        const esp_err_t delete_result = rmt_del_channel( rmt_channel );
-        if( ESP_OK != delete_result )
-        {
-            ESP_LOGW( TAG, "RMT channel delete failed: %s", esp_err_to_name( delete_result ) );
-        }
-        rmt_channel = NULL;
-    }
-
-    for( size_t index = 0U; index < CC1101_CAPTURE_POOL_SIZE; ++index )
-    {
-        heap_caps_free( capture_pool[ index ].symbols );
-        memset( &capture_pool[ index ], 0, sizeof( capture_pool[ index ] ) );
-    }
-}
-
-static esp_err_t ensure_capture_provider( void )
-{
-    if( NULL != rmt_channel )
-    {
-        return ESP_OK;
-    }
-
-    for( size_t index = 0U; index < CC1101_CAPTURE_POOL_SIZE; ++index )
-    {
-        capture_pool[ index ].symbols =
-            heap_caps_aligned_calloc( CC1101_RMT_ALIGNMENT,
-                                      CC1101_CAPTURE_SYMBOL_CAPACITY,
-                                      sizeof( rfscout_subghz_symbol_t ),
-                                      MALLOC_CAP_8BIT | MALLOC_CAP_DMA | MALLOC_CAP_SPIRAM );
-        if( NULL == capture_pool[ index ].symbols )
-        {
-            destroy_capture_provider();
-            return ESP_ERR_NO_MEM;
-        }
-        capture_pool[ index ].state = CAPTURE_SLOT_FREE;
-    }
-
-    rmt_rx_channel_config_t channel_config = {
-        .gpio_num = RFSCOUT_BOARD_CC1101_GDO0_PIN,
-        .clk_src = RMT_CLK_SRC_DEFAULT,
-        .resolution_hz = CC1101_RMT_RESOLUTION_HZ,
-        .mem_block_symbols = CC1101_CAPTURE_SYMBOL_CAPACITY,
-        .intr_priority = 0,
-        .flags.with_dma = true,
-        .flags.allow_pd = false,
-        .flags.invert_in = false,
-    };
-
-    esp_err_t result = rmt_new_rx_channel( &channel_config, &rmt_channel );
-    if( ESP_OK != result )
-    {
-        destroy_capture_provider();
-        return result;
-    }
-
-    const rmt_rx_event_callbacks_t callbacks = {
-        .on_recv_done = capture_done_callback,
-    };
-    result = rmt_rx_register_event_callbacks( rmt_channel, &callbacks, NULL );
-    if( ESP_OK != result )
-    {
-        destroy_capture_provider();
-        return result;
-    }
-
-    result = rmt_enable( rmt_channel );
-    if( ESP_OK != result )
-    {
-        destroy_capture_provider();
-        return result;
-    }
-    rmt_enabled = true;
-    return ESP_OK;
-}
-
 static esp_err_t start_receive_acquisition( void )
 {
-    esp_err_t result = ensure_capture_provider();
-    if( ESP_OK != result )
-    {
-        ESP_LOGE( TAG, "capture provider unavailable: %s", esp_err_to_name( result ) );
-        return result;
-    }
-
-    result = configure_ook_receive( receive_config.preset );
+    esp_err_t result = configure_ook_receive( receive_config.preset );
     if( ESP_OK == result )
     {
         result = tune( receive_config.frequency_khz );
     }
     if( ESP_OK != result )
     {
-        destroy_capture_provider();
+        return result;
+    }
+
+    const rfscout_subghz_capture_provider_config_t capture_config = {
+        .gpio_num = RFSCOUT_BOARD_CC1101_GDO0_PIN,
+        .resolution_hz = CC1101_RMT_RESOLUTION_HZ,
+        .signal_range_min_ns = CC1101_RMT_GLITCH_NS,
+        .signal_range_max_ns = CC1101_RMT_IDLE_NS,
+        .frequency_hz = receive_config.frequency_khz * 1000U,
+        .modulation = RFSCOUT_SUBGHZ_MODULATION_OOK,
+    };
+
+    result = subghz_capture_provider_start( &capture_config );
+    if( ESP_OK != result )
+    {
+        ESP_LOGE( TAG, "capture provider unavailable: %s", esp_err_to_name( result ) );
+        (void)strobe( CC1101_SIDLE );
         return result;
     }
 
     last_receive_rssi_tick = 0U;
-    if( !arm_next_capture_task() )
-    {
-        destroy_capture_provider();
-        return ESP_FAIL;
-    }
     return ESP_OK;
 }
 
-static void stop_receive_acquisition( void )
+static bool stop_receive_acquisition( void )
 {
-    destroy_capture_provider();
+    if( !subghz_capture_provider_stop() )
+    {
+        return false;
+    }
     (void)strobe( CC1101_SIDLE );
+    return true;
 }
 
 static esp_err_t apply_selected_mode( void )
@@ -968,7 +625,10 @@ bool cc1101_stop( void )
         return false;
     }
 
-    stop_receive_acquisition();
+    if( !stop_receive_acquisition() )
+    {
+        return false;
+    }
     (void)strobe( CC1101_SIDLE );
     (void)strobe( CC1101_SPWD );
     disable_rf_path();
@@ -990,25 +650,12 @@ void cc1101_poll( void )
         uint8_t raw_rssi = 0U;
         if( ESP_OK == read_status( CC1101_RSSI, &raw_rssi ) )
         {
-            const int8_t rssi = decode_rssi( raw_rssi );
-            portENTER_CRITICAL( &state_lock );
-            if( ( filling_slot >= 0 ) && ( filling_slot < (int)CC1101_CAPTURE_POOL_SIZE ) )
-            {
-                capture_slot_t *slot = &capture_pool[ filling_slot ];
-                if( ( CAPTURE_SLOT_FILLING == slot->state ) && ( rssi > slot->peak_rssi_dbm ) )
-                {
-                    slot->peak_rssi_dbm = rssi;
-                }
-            }
-            portEXIT_CRITICAL( &state_lock );
+            subghz_capture_provider_note_rssi( decode_rssi( raw_rssi ) );
         }
         last_receive_rssi_tick = now;
     }
 
-    if( filling_slot < 0 )
-    {
-        (void)arm_next_capture_task();
-    }
+    subghz_capture_provider_poll();
 }
 
 bool cc1101_is_detected( void )
@@ -1352,66 +999,12 @@ const char *cc1101_receive_preset_name( cc1101_receive_preset_t a_preset )
 
 bool cc1101_capture_acquire( rfscout_subghz_capture_t *a_capture, uint8_t *a_lease )
 {
-    if( ( NULL == a_capture ) || ( NULL == a_lease ) )
-    {
-        return false;
-    }
-
-    int selected = -1;
-    uint32_t selected_sequence = UINT32_MAX;
-
-    portENTER_CRITICAL( &state_lock );
-    for( size_t index = 0U; index < CC1101_CAPTURE_POOL_SIZE; ++index )
-    {
-        const capture_slot_t *slot = &capture_pool[ index ];
-        if( ( CAPTURE_SLOT_READY == slot->state ) && ( slot->sequence < selected_sequence ) )
-        {
-            selected = (int)index;
-            selected_sequence = slot->sequence;
-        }
-    }
-
-    if( selected >= 0 )
-    {
-        capture_slot_t *slot = &capture_pool[ selected ];
-        slot->state = CAPTURE_SLOT_PROCESSING;
-        *a_capture = ( rfscout_subghz_capture_t ){
-            .symbols = slot->symbols,
-            .symbol_count = slot->symbol_count,
-            .frequency_hz = slot->frequency_hz,
-            .resolution_hz = slot->resolution_hz,
-            .modulation = slot->modulation,
-            .sequence = slot->sequence,
-            .started_ms = slot->started_ms,
-            .ended_ms = slot->ended_ms,
-            .peak_rssi_dbm = slot->peak_rssi_dbm,
-            .end_reason = slot->end_reason,
-            .truncated = slot->truncated,
-        };
-        *a_lease = (uint8_t)selected;
-    }
-    portEXIT_CRITICAL( &state_lock );
-
-    return selected >= 0;
+    return subghz_capture_provider_acquire( a_capture, a_lease );
 }
 
 void cc1101_capture_release( uint8_t a_lease )
 {
-    if( a_lease >= CC1101_CAPTURE_POOL_SIZE )
-    {
-        return;
-    }
-
-    portENTER_CRITICAL( &state_lock );
-    capture_slot_t *slot = &capture_pool[ a_lease ];
-    if( CAPTURE_SLOT_PROCESSING == slot->state )
-    {
-        slot->state = CAPTURE_SLOT_FREE;
-        slot->symbol_count = 0U;
-    }
-    portEXIT_CRITICAL( &state_lock );
-
-    (void)arm_next_capture_task();
+    subghz_capture_provider_release( a_lease );
 }
 
 void cc1101_capture_stats( cc1101_capture_stats_t *a_output )
@@ -1421,7 +1014,10 @@ void cc1101_capture_stats( cc1101_capture_stats_t *a_output )
         return;
     }
 
-    portENTER_CRITICAL( &state_lock );
-    *a_output = capture_stats_state;
-    portEXIT_CRITICAL( &state_lock );
+    rfscout_subghz_capture_stats_t stats;
+    subghz_capture_provider_stats( &stats );
+    a_output->captures_completed = stats.captures_completed;
+    a_output->captures_truncated = stats.captures_truncated;
+    a_output->capture_overruns = stats.capture_overruns;
+    a_output->capture_errors = stats.capture_errors;
 }
