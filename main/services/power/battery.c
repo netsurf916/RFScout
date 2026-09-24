@@ -108,7 +108,7 @@ attach_optional_device( uint16_t a_address, const char *a_name, i2c_master_dev_h
     const esp_err_t probe_result = board_i2c_probe( a_address );
     if( ESP_OK != probe_result )
     {
-        ESP_LOGW( TAG, "%s not detected at 0x%02X", a_name, (unsigned)a_address );
+        ESP_LOGD( TAG, "%s not detected at 0x%02X", a_name, (unsigned)a_address );
         return probe_result;
     }
     const esp_err_t result = board_i2c_add_device( a_address, a_device );
