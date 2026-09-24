@@ -436,6 +436,11 @@ bool subghz_capture_provider_active( void )
     return active;
 }
 
+void subghz_capture_provider_poll( void )
+{
+    (void)arm_next_capture_task();
+}
+
 void subghz_capture_provider_note_rssi( int8_t a_rssi_dbm )
 {
     portENTER_CRITICAL( &state_lock );
