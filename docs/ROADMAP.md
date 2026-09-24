@@ -321,7 +321,7 @@ v0.4.0 is not complete until:
 - [x] Audio Spectrum can be skipped before delayed activation without acquiring the microphone.
 - [x] Audio Spectrum runs without SD storage while Recorder is unavailable when its storage dependency is absent.
 - [ ] Audio Spectrum repeatedly enters/exits without leaking shared audio/service state.
-- [ ] Structured lifecycle-transition records provide enough SD-log evidence to validate outcome/error, reclaimed bytes, zero remaining app allocations, transition timing, free PSRAM, and largest free block without requiring a parallel serial-console capture.
+- [ ] When structured lifecycle-transition records are present, they provide enough SD-log evidence to validate outcome/error, reclaimed bytes, zero remaining app allocations, transition timing, free PSRAM, and largest free block without requiring a parallel serial-console capture; missing records remain acceptable under the platform's best-effort logging contract.
 - [ ] Largest free block remains stable enough to rule out systematic fragmentation/leak growth.
 - [ ] WiFi/BLE Instant, finite timed, and Never behavior is verified, including full reclamation on exit and memory-pressure paths.
 - [ ] Wi-Fi primary device counts are not inflated one-for-one by rotating randomized Probe Request MACs.
