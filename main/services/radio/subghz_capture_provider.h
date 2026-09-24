@@ -42,8 +42,7 @@ typedef struct
  * @brief Allocate the DMA-capable pool, configure RMT receive, and arm the first capture.
  * @details The provider is singleton because RFScout currently has one asynchronous Sub-GHz input.
  */
-esp_err_t subghz_capture_provider_start(
-    const rfscout_subghz_capture_provider_config_t *a_config );
+esp_err_t subghz_capture_provider_start( const rfscout_subghz_capture_provider_config_t *a_config );
 
 /**
  * @brief Disable RMT before releasing DMA buffers.
