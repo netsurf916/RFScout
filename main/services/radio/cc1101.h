@@ -84,7 +84,7 @@ esp_err_t cc1101_start( void );
 /** @brief Quiesce discovery/RMT acquisition, release capture resources, and power down the radio. */
 bool cc1101_stop( void );
 
-/** @brief Service foreground bookkeeping, including receive RSSI sampling and stalled-buffer rearm. */
+/** @brief Service foreground bookkeeping, including stalled-buffer rearm. */
 void cc1101_poll( void );
 
 /** @brief Return true when a valid CC1101 part/version probe succeeded. */
