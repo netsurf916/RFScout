@@ -42,6 +42,7 @@ typedef struct
     bool confirmed;
     bool matched_this_sweep;
     bool episode_active;
+    int8_t episode_peak_rssi;
     uint32_t episode_started_ms;
     uint32_t last_seen_ms;
 } tracked_fingerprint_t;
@@ -163,11 +164,10 @@ static void append_history( const tracked_fingerprint_t *a_entry )
     observation->confidence = a_entry->fingerprint.confidence;
     observation->center_khz = a_entry->fingerprint.center_khz;
     observation->bandwidth_khz = a_entry->fingerprint.bandwidth_khz;
-    observation->peak_rssi = a_entry->fingerprint.peak_rssi;
+    observation->peak_rssi = a_entry->episode_peak_rssi;
     observation->started_ms = a_entry->episode_started_ms;
     observation->ended_ms = a_entry->last_seen_ms;
-    observation->duration_ms =
-        (uint32_t)( observation->ended_ms - observation->started_ms );
+    observation->duration_ms = (uint32_t)( observation->ended_ms - observation->started_ms );
     if( 0U != previous_end_ms )
     {
         observation->gap_ms = (uint32_t)( observation->started_ms - previous_end_ms );
@@ -410,7 +410,12 @@ static void update_tracked_fingerprints( uint32_t a_now_ms )
         if( !entry->episode_active )
         {
             entry->episode_active = true;
+            entry->episode_peak_rssi = candidate.peak_rssi;
             entry->episode_started_ms = a_now_ms;
+        }
+        else if( candidate.peak_rssi > entry->episode_peak_rssi )
+        {
+            entry->episode_peak_rssi = candidate.peak_rssi;
         }
         entry->last_seen_ms = a_now_ms;
         if( entry->seen_streak < 255U )
@@ -473,6 +478,15 @@ void cc1101_activity_reset_counts( void )
 
     memset( fingerprint_counts, 0, sizeof( fingerprint_counts ) );
     memset( tracked, 0, sizeof( tracked ) );
+}
+
+void cc1101_activity_pause( void )
+{
+    synchronize_history_session();
+    for( size_t i = 0U; i < CC1101_FINGERPRINT_MAX; ++i )
+    {
+        finalize_episode( &tracked[ i ] );
+    }
 }
 
 void cc1101_activity_observe_sweep( const int8_t *a_rssi,
