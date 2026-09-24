@@ -44,6 +44,20 @@ typedef struct
     char label[ CC1101_FINGERPRINT_LABEL_MAX ];
 } cc1101_fingerprint_t;
 
+/** @brief Completed sweep-derived CC1101 activity observation retained for this app session. */
+typedef struct
+{
+    cc1101_fingerprint_type_t type;
+    uint8_t confidence;
+    uint32_t center_khz;
+    uint32_t bandwidth_khz;
+    int8_t peak_rssi;
+    uint32_t started_ms;
+    uint32_t ended_ms;
+    uint32_t duration_ms;
+    uint32_t gap_ms;
+} cc1101_activity_observation_t;
+
 /** @brief Clear spectrum history, classifier state, and counts. */
 void cc1101_activity_reset( void );
 
@@ -77,6 +91,20 @@ size_t cc1101_activity_levels( uint8_t *a_current, size_t a_capacity );
  * @return Number of fingerprint rows copied.
  */
 size_t cc1101_activity_fingerprints( cc1101_fingerprint_t *a_output, size_t a_capacity );
+
+/**
+ * @brief Copy newest completed activity observations first.
+ * @param a_output Destination observation array.
+ * @param a_capacity Destination capacity.
+ * @return Number of observations copied.
+ */
+size_t cc1101_activity_history( cc1101_activity_observation_t *a_output, size_t a_capacity );
+
+/** @brief Return the number of completed observations retained in app-session PSRAM. */
+size_t cc1101_activity_history_count( void );
+
+/** @brief Return the number of completed observations dropped because history growth failed. */
+uint32_t cc1101_activity_history_dropped( void );
 
 /** @brief Return a stable display name for a CC1101 fingerprint category. */
 const char *cc1101_activity_fingerprint_name( cc1101_fingerprint_type_t a_type );
