@@ -326,11 +326,11 @@ static void render_update_main( void )
     }
 
     ota_view_render_update_main( identity->version,
+                                 stable_update_status,
                                  connection_status(),
                                  selected_item,
                                  ready,
                                  can_install,
-                                 stable_update_status,
                                  error_text );
 }
 
