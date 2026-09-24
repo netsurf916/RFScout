@@ -58,7 +58,9 @@ static uint8_t policy_source_for_event( const rfscout_event_t *a_event )
     if( is_system_state_feedback( a_event->type ) ||
         ( ( RFSCOUT_EVENT_SOURCE_SYSTEM == a_event->source ) &&
           ( ( RFSCOUT_EVENT_INPUT_LOCKED == a_event->type ) ||
-            ( RFSCOUT_EVENT_INPUT_UNLOCKED == a_event->type ) ) ) )
+            ( RFSCOUT_EVENT_INPUT_UNLOCKED == a_event->type ) ||
+            ( RFSCOUT_EVENT_APP_LOCKED == a_event->type ) ||
+            ( RFSCOUT_EVENT_APP_UNLOCKED == a_event->type ) ) ) )
     {
         return (uint8_t)app_manager_current();
     }
@@ -172,6 +174,14 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
             break;
         case RFSCOUT_EVENT_INPUT_UNLOCKED:
             frequency = FEEDBACK_LOCK_HZ + 500U;
+            duration = FEEDBACK_STATE_MS;
+            break;
+        case RFSCOUT_EVENT_APP_LOCKED:
+            frequency = FEEDBACK_LOCK_HZ + 150U;
+            duration = FEEDBACK_STATE_MS;
+            break;
+        case RFSCOUT_EVENT_APP_UNLOCKED:
+            frequency = FEEDBACK_LOCK_HZ + 650U;
             duration = FEEDBACK_STATE_MS;
             break;
         case RFSCOUT_EVENT_DETECTED:
