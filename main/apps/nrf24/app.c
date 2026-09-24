@@ -142,7 +142,7 @@ static void handle_packet_input( const rfscout_input_event_t *a_input )
     const size_t item_count = packet_count();
     if( packet_detail )
     {
-        if( ( RFSCOUT_INPUT_SELECT == a_input->type ) || ( RFSCOUT_INPUT_BACK == a_input->type ) )
+        if( RFSCOUT_INPUT_SELECT == a_input->type )
         {
             packet_detail = false;
             (void)nrf24_packet_view_list( packet_item );
@@ -151,14 +151,6 @@ static void handle_packet_input( const rfscout_input_event_t *a_input )
         return;
     }
 
-    if( RFSCOUT_INPUT_BACK == a_input->type )
-    {
-        packet_browser = false;
-        packet_item = 0U;
-        render_menu();
-        emit_event( RFSCOUT_EVENT_BACK, 0 );
-        return;
-    }
     if( RFSCOUT_INPUT_SELECT == a_input->type )
     {
         if( 0U == packet_item )
@@ -209,12 +201,6 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
     if( packet_browser )
     {
         handle_packet_input( a_input );
-        return;
-    }
-    if( RFSCOUT_INPUT_BACK == a_input->type )
-    {
-        close_menu();
-        emit_event( RFSCOUT_EVENT_BACK, 0 );
         return;
     }
     if( RFSCOUT_INPUT_SELECT == a_input->type )
