@@ -405,7 +405,7 @@ Rework application/system logging as a common policy rather than letting each fe
 
 ## OTA and release hardening
 
-The A/B updater, Home-owned infrastructure networking, NTP gating, Pages OTA catalog, stable/manual build selection, streaming installer validation, first-boot confirmation, and rollback foundation are implemented. Their current contracts are documented in [Platform architecture](ARCHITECTURE.md), [Home / Device Settings](apps/HOME.md), and the [release runbook](operations/RELEASING.md).
+The A/B updater, Home-owned infrastructure networking and automatic NTP attempt, Pages OTA catalog, stable/manual build selection, streaming installer validation, first-boot confirmation, and rollback foundation are implemented. Their current contracts are documented in [Platform architecture](ARCHITECTURE.md), [Home / Device Settings](apps/HOME.md), and the [release runbook](operations/RELEASING.md).
 
 Remaining planning is validation/hardening rather than an updater redesign:
 
@@ -458,7 +458,7 @@ The system-owned persistent-record service for bounded named records and configu
 - use GNSS UTC as an explicit time authority;
 - expose fix/location/satellite/accuracy information;
 - optionally attach location metadata to observations/captures when enabled;
-- [x] add NTP to the explicit Home networking workflow; a successful connection synchronizes UTC before Update becomes available.
+- [x] add NTP to the explicit Home networking workflow; a successful connection attempts UTC synchronization, while Update remains available if time sync fails or is cancelled.
 - [ ] define longer-term authority transitions among manual, saved, RTC, GNSS, and NTP sources beyond the current one-shot/network-session behavior.
 
 ### Diagnostics and self-measurement
