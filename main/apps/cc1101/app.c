@@ -243,18 +243,22 @@ static void switch_to_discovery( void )
     }
 }
 
-static void switch_to_receive( uint32_t a_frequency_khz )
+static bool switch_to_receive( uint32_t a_frequency_khz )
 {
     if( ESP_OK != cc1101_set_receive_frequency( a_frequency_khz ) )
     {
-        return;
+        return false;
     }
+
+    if( ESP_OK != cc1101_set_acquisition_mode( CC1101_ACQUISITION_RECEIVE ) )
+    {
+        return false;
+    }
+
     reset_receive_results();
     viewer = CC1101_VIEW_DECODED;
-    if( ESP_OK == cc1101_set_acquisition_mode( CC1101_ACQUISITION_RECEIVE ) )
-    {
-        render_receive();
-    }
+    render_receive();
+    return true;
 }
 
 static bool adjust_receive_frequency( int a_direction )
@@ -273,21 +277,22 @@ static bool adjust_receive_frequency( int a_direction )
     return ESP_OK == cc1101_set_receive_frequency( (uint32_t)candidate );
 }
 
-static void change_mode( int a_direction )
+static bool change_mode( int a_direction )
 {
     (void)a_direction;
-    if( CC1101_ACQUISITION_RECEIVE == cc1101_acquisition_mode() )
+    const cc1101_acquisition_mode_t target =
+        ( CC1101_ACQUISITION_RECEIVE == cc1101_acquisition_mode() )
+            ? CC1101_ACQUISITION_DISCOVERY
+            : CC1101_ACQUISITION_RECEIVE;
+
+    if( ESP_OK != cc1101_set_acquisition_mode( target ) )
     {
-        (void)cc1101_set_acquisition_mode( CC1101_ACQUISITION_DISCOVERY );
-        reset_receive_results();
-        viewer = CC1101_VIEW_DECODED;
+        return false;
     }
-    else
-    {
-        reset_receive_results();
-        viewer = CC1101_VIEW_DECODED;
-        (void)cc1101_set_acquisition_mode( CC1101_ACQUISITION_RECEIVE );
-    }
+
+    reset_receive_results();
+    viewer = CC1101_VIEW_DECODED;
+    return true;
 }
 
 static void handle_menu_input( const rfscout_input_event_t *a_input )
@@ -345,8 +350,7 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
     bool changed = false;
     if( CC1101_MENU_MODE == menu_item )
     {
-        change_mode( direction );
-        changed = true;
+        changed = change_mode( direction );
     }
     else if( CC1101_MENU_SCAN_PROFILE == menu_item )
     {
@@ -488,9 +492,8 @@ static rfscout_app_runtime_result_t cc1101_runtime( const rfscout_app_runtime_ev
         {
             if( CC1101_ACQUISITION_DISCOVERY == cc1101_acquisition_mode() )
             {
-                if( discovery_peak_valid )
+                if( discovery_peak_valid && switch_to_receive( discovery_peak_khz ) )
                 {
-                    switch_to_receive( discovery_peak_khz );
                     emit_event( RFSCOUT_EVENT_ACTIVATE, (int32_t)discovery_peak_khz );
                 }
             }
