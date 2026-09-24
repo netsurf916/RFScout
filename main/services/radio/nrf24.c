@@ -230,12 +230,12 @@ esp_err_t nrf24_probe( void )
         return detected ? ESP_OK : ESP_ERR_NOT_FOUND;
     }
 
-    gpio_reset_pin( RFSCOUT_BOARD_NRF24_CS_PIN );
     gpio_set_direction( RFSCOUT_BOARD_NRF24_CE_PIN, GPIO_MODE_OUTPUT );
     ce( false );
 
     if( NULL == device )
     {
+        gpio_reset_pin( RFSCOUT_BOARD_NRF24_CS_PIN );
         spi_device_interface_config_t device_config = { .clock_speed_hz = 4000000,
                                                         .mode = 0,
                                                         .spics_io_num = RFSCOUT_BOARD_NRF24_CS_PIN,
