@@ -363,8 +363,7 @@ static void scan_worker( void *a_argument )
             if( !scan_ok )
             {
                 bool recovered = false;
-                for( unsigned attempt = 0U;
-                     scan_running && ( attempt < CC1101_SCAN_ERROR_RETRIES );
+                for( unsigned attempt = 0U; scan_running && ( attempt < CC1101_SCAN_ERROR_RETRIES );
                      ++attempt )
                 {
                     ESP_LOGW( TAG,
