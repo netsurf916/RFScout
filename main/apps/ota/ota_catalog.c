@@ -206,17 +206,18 @@ static bool json_optional_bool( const cJSON *a_object, const char *a_name, bool 
     return true;
 }
 
+static bool string_fits( const char *a_value, size_t a_capacity )
+{
+    return ( NULL != a_value ) && ( a_capacity > 0U ) && ( strlen( a_value ) < a_capacity );
+}
+
 static bool copy_bounded( char *a_destination, size_t a_capacity, const char *a_source )
 {
-    if( NULL == a_destination || 0U == a_capacity || NULL == a_source )
+    if( NULL == a_destination || !string_fits( a_source, a_capacity ) )
     {
         return false;
     }
     const size_t length = strlen( a_source );
-    if( length >= a_capacity )
-    {
-        return false;
-    }
     memcpy( a_destination, a_source, length + 1U );
     return true;
 }
@@ -279,9 +280,10 @@ static bool parse_artifact( const cJSON *a_build, parsed_build_view_t *a_parsed 
     const char *path = json_string( artifact, "path" );
     const char *sha256 = json_string( artifact, "sha256" );
     const cJSON *size = cJSON_GetObjectItemCaseSensitive( artifact, "size" );
-    if( !valid_relative_path( path ) || !valid_hex( sha256, OTA_CATALOG_SHA256_LENGTH ) ||
-        !cJSON_IsNumber( size ) || size->valuedouble <= 0.0 ||
-        size->valuedouble > (double)UINT32_MAX )
+    if( !valid_relative_path( path ) ||
+        !string_fits( path, OTA_CATALOG_ARTIFACT_PATH_MAX_LENGTH + 1U ) ||
+        !valid_hex( sha256, OTA_CATALOG_SHA256_LENGTH ) || !cJSON_IsNumber( size ) ||
+        size->valuedouble <= 0.0 || size->valuedouble > (double)UINT32_MAX )
     {
         return false;
     }
@@ -314,10 +316,12 @@ static bool parse_build( const cJSON *a_json,
     const char *target = json_string( a_json, "idf_target" );
     const char *layout = json_string( a_json, "partition_layout" );
 
-    if( NULL == a_parsed->build_id || NULL == kind || NULL == a_parsed->label ||
-        NULL == a_parsed->version || NULL == a_parsed->commit || NULL == project ||
+    if( !string_fits( a_parsed->build_id, OTA_CATALOG_BUILD_ID_MAX_LENGTH + 1U ) ||
+        NULL == kind ||
+        !string_fits( a_parsed->label, OTA_CATALOG_BUILD_LABEL_MAX_LENGTH + 1U ) ||
+        !string_fits( a_parsed->version, OTA_CATALOG_VERSION_MAX_LENGTH + 1U ) ||
+        !valid_hex( a_parsed->commit, OTA_CATALOG_COMMIT_LENGTH ) || NULL == project ||
         NULL == hardware || NULL == target || NULL == layout ||
-        !valid_hex( a_parsed->commit, OTA_CATALOG_COMMIT_LENGTH ) ||
         !json_bool( a_json, "stable", &a_parsed->stable ) ||
         !json_optional_bool( a_json, "draft", &a_parsed->draft ) ||
         !json_optional_bool( a_json, "prerelease", &a_parsed->prerelease ) ||
