@@ -82,7 +82,7 @@ esp_err_t rfscout_wifi_station_stop( void );
 /** @brief Return whether the infrastructure Wi-Fi driver session is currently started. */
 bool rfscout_wifi_station_is_active( void );
 
-/** @brief Snapshot connection/scan state without exposing ESP-IDF driver objects. */
-rfscout_wifi_station_status_t rfscout_wifi_station_status( void );
+/** @brief Snapshot connection/scan state into caller-owned storage. */
+void rfscout_wifi_station_status( rfscout_wifi_station_status_t *a_status );
 
 #endif // _RFSCOUT_WIFI_STATION_H_
