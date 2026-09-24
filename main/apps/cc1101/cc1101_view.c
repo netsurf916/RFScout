@@ -116,7 +116,7 @@ void cc1101_view_discovery( const int8_t *a_rssi,
     display_draw_text( UI_LAYOUT_LEFT_X,
                        UI_LAYOUT_FOOTER_Y,
                        a_app_locked ? "TURN: VIEWS  CENTER: SETTINGS"
-                                    : "TURN: APPS  HOLD: VIEW  CENTER: SETTINGS",
+                                    : "TURN: APPS  LONG PRESS: VIEW  CENTER: SETTINGS",
                        SUBDUED,
                        1U );
     (void)display_present();
@@ -341,7 +341,7 @@ void cc1101_view_receive( cc1101_view_mode_t a_view,
     display_draw_text( UI_LAYOUT_LEFT_X,
                        UI_LAYOUT_FOOTER_Y,
                        a_app_locked ? "TURN: VIEWS  CENTER: SETTINGS"
-                                    : "TURN: APPS  HOLD: VIEW  CENTER: SETTINGS",
+                                    : "TURN: APPS  LONG PRESS: VIEW  CENTER: SETTINGS",
                        SUBDUED,
                        1U );
     (void)display_present();
