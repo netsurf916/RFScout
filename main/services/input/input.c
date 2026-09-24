@@ -41,7 +41,7 @@ static volatile uint32_t button_pending_sequence;
 static uint32_t button_seen_sequence;
 static uint32_t button_lock_sequence;
 static bool button_event;
-static bool button_long_event;
+static bool button_long_press_event;
 static bool button_global_hold_event;
 static bool button_lock_fired;
 static bool locked;
@@ -139,7 +139,7 @@ void input_set_locked( bool a_locked )
 
     locked = a_locked;
     button_event = false;
-    button_long_event = false;
+    button_long_press_event = false;
     button_global_hold_event = false;
     clear_navigation_delta();
     ESP_LOGI( TAG, "user input %s", locked ? "locked" : "unlocked" );
@@ -153,7 +153,7 @@ static void queue_global_hold( uint32_t a_press_sequence )
     button_lock_fired = true;
     button_lock_sequence = a_press_sequence;
     button_event = false;
-    button_long_event = false;
+    button_long_press_event = false;
     button_global_hold_event = true;
     clear_navigation_delta();
 }
@@ -168,7 +168,7 @@ static void initialize_button_state( void )
     button_seen_sequence = button_press_sequence;
     button_lock_sequence = 0U;
     button_event = false;
-    button_long_event = false;
+    button_long_press_event = false;
     button_global_hold_event = false;
     button_lock_fired = false;
     rfscout_session_state_t restored_session;
@@ -307,7 +307,7 @@ void input_poll( void )
 
     if( completed_duration_us >= INPUT_BUTTON_LONG_PRESS_US )
     {
-        button_long_event = true;
+        button_long_press_event = true;
     }
     else
     {
@@ -330,7 +330,7 @@ bool input_activity_pending( void )
 
     const bool user_key =
         RFSCOUT_BOARD_USER_KEY_PIN >= 0 && 0 == gpio_get_level( RFSCOUT_BOARD_USER_KEY_PIN );
-    return movement || button_activity || button_event || button_long_event ||
+    return movement || button_activity || button_event || button_long_press_event ||
            button_global_hold_event || user_key;
 }
 
@@ -338,7 +338,7 @@ void input_consume_wake( void )
 {
     clear_navigation_delta();
     button_event = false;
-    button_long_event = false;
+    button_long_press_event = false;
     button_global_hold_event = false;
 
     uint32_t press_sequence;
@@ -370,9 +370,9 @@ bool input_get( rfscout_input_event_t *a_event )
         a_event->type = RFSCOUT_INPUT_GLOBAL_HOLD;
         return true;
     }
-    if( consume_button_event( &button_long_event ) )
+    if( consume_button_event( &button_long_press_event ) )
     {
-        a_event->type = RFSCOUT_INPUT_LONG_SELECT;
+        a_event->type = RFSCOUT_INPUT_LONG_PRESS;
         return true;
     }
     if( consume_button_event( &button_event ) )
