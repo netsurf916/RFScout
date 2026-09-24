@@ -157,9 +157,8 @@ static void update_discovery_peak( const cc1101_scan_config_t *a_config )
     else
     {
         const uint64_t span = (uint64_t)a_config->high_khz - a_config->low_khz;
-        discovery_peak_khz =
-            a_config->low_khz +
-            (uint32_t)( span * peak_index / (uint64_t)( discovery_count - 1U ) );
+        discovery_peak_khz = a_config->low_khz +
+                             (uint32_t)( span * peak_index / (uint64_t)( discovery_count - 1U ) );
     }
     discovery_peak_valid = discovery_peak_rssi >= CC1101_DISCOVERY_LOCK_THRESHOLD_DBM;
 }
@@ -178,15 +177,16 @@ static void consume_discovery_frame( bool a_render )
 
 static bool retain_raw_snapshot( const rfscout_subghz_capture_t *a_capture )
 {
-    if( ( NULL == a_capture ) || ( NULL == a_capture->symbols ) || ( 0U == a_capture->symbol_count ) )
+    if( ( NULL == a_capture ) || ( NULL == a_capture->symbols ) ||
+        ( 0U == a_capture->symbol_count ) )
     {
         return false;
     }
 
     if( a_capture->symbol_count > raw_snapshot_capacity )
     {
-        rfscout_subghz_symbol_t *replacement = app_session_resize(
-            raw_snapshot, a_capture->symbol_count, sizeof( *raw_snapshot ) );
+        rfscout_subghz_symbol_t *replacement =
+            app_session_resize( raw_snapshot, a_capture->symbol_count, sizeof( *raw_snapshot ) );
         if( NULL == replacement )
         {
             return false;
@@ -195,9 +195,7 @@ static bool retain_raw_snapshot( const rfscout_subghz_capture_t *a_capture )
         raw_snapshot_capacity = a_capture->symbol_count;
     }
 
-    memcpy( raw_snapshot,
-            a_capture->symbols,
-            a_capture->symbol_count * sizeof( *raw_snapshot ) );
+    memcpy( raw_snapshot, a_capture->symbols, a_capture->symbol_count * sizeof( *raw_snapshot ) );
     raw_snapshot_count = a_capture->symbol_count;
     raw_snapshot_resolution_hz = a_capture->resolution_hz;
     return true;
@@ -374,9 +372,9 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
     {
         cc1101_receive_config_t receive;
         cc1101_receive_config( &receive );
-        const cc1101_receive_preset_t preset =
-            ( CC1101_RECEIVE_OOK_650 == receive.preset ) ? CC1101_RECEIVE_OOK_270
-                                                         : CC1101_RECEIVE_OOK_650;
+        const cc1101_receive_preset_t preset = ( CC1101_RECEIVE_OOK_650 == receive.preset )
+                                                   ? CC1101_RECEIVE_OOK_270
+                                                   : CC1101_RECEIVE_OOK_650;
         changed = ESP_OK == cc1101_set_receive_preset( preset );
     }
     else if( CC1101_MENU_LOW == menu_item )
