@@ -550,7 +550,7 @@ static rfscout_app_runtime_result_t cc1101_runtime( const rfscout_app_runtime_ev
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
 
-        if( RFSCOUT_INPUT_LONG_SELECT == a_event->input.type )
+        if( RFSCOUT_INPUT_LONG_PRESS == a_event->input.type )
         {
             if( navigate_surface( 1 ) )
             {
