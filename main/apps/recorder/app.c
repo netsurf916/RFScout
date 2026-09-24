@@ -27,8 +27,6 @@
 #define RECORDER_BROWSER_FILE_BASE 2U
 
 static const char *TAG = "recorder_app";
-static bool microphone_probed;
-static esp_err_t microphone_result = ESP_ERR_NOT_FOUND;
 static bool browser_active;
 static bool delete_mode;
 static bool delete_confirm;
@@ -50,12 +48,7 @@ static esp_err_t probe_recorder( void )
     {
         return ESP_ERR_NOT_FOUND;
     }
-    if( !microphone_probed )
-    {
-        microphone_result = recorder_probe_microphone();
-        microphone_probed = true;
-    }
-    return microphone_result;
+    return recorder_probe_microphone();
 }
 
 static void render( void )
