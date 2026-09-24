@@ -191,7 +191,9 @@ bool app_framework_check_available( rfscout_app_id_t a_app )
     {
         return false;
     }
-    if( RFSCOUT_APP_PROBE_HOTPLUG == descriptor->probe_policy )
+    if( RFSCOUT_APP_PROBE_HOTPLUG == descriptor->probe_policy ||
+        ( RFSCOUT_APP_PROBE_FIXED == descriptor->probe_policy &&
+          RFSCOUT_APP_AVAILABILITY_AVAILABLE != availability[ a_app ] ) )
     {
         (void)probe_descriptor( descriptor );
     }
@@ -213,7 +215,7 @@ void app_framework_report_availability( rfscout_app_id_t a_app,
 {
     const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
     if( ( NULL == descriptor ) || !profile_supports_services( descriptor->services ) ||
-        ( RFSCOUT_APP_PROBE_HOTPLUG != descriptor->probe_policy ) ||
+        ( RFSCOUT_APP_PROBE_NONE == descriptor->probe_policy ) ||
         ( RFSCOUT_APP_AVAILABILITY_UNKNOWN == a_availability ) )
     {
         return;
