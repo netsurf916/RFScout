@@ -181,7 +181,8 @@ static const char *hold_shortcut_config_name( rfscout_hold_shortcut_t a_shortcut
     return RFSCOUT_HOLD_SHORTCUT_APP_LOCK == a_shortcut ? "app_lock" : "input_lock";
 }
 
-static bool hold_shortcut_from_config_name( const char *a_name, rfscout_hold_shortcut_t *a_shortcut )
+static bool hold_shortcut_from_config_name( const char *a_name,
+                                            rfscout_hold_shortcut_t *a_shortcut )
 {
     if( NULL == a_name || NULL == a_shortcut )
     {
@@ -199,7 +200,6 @@ static bool hold_shortcut_from_config_name( const char *a_name, rfscout_hold_sho
     }
     return false;
 }
-
 
 static void copy_string( char *a_destination, size_t a_capacity, const char *a_source )
 {
@@ -946,7 +946,8 @@ static cJSON *build_system_record( void )
                              power_action_config_name( config.high_temperature_action ) );
 
     cJSON *input = cJSON_AddObjectToObject( root, "input" );
-    cJSON_AddStringToObject( input, "long_hold", hold_shortcut_config_name( config.hold_shortcut ) );
+    cJSON_AddStringToObject(
+        input, "long_hold", hold_shortcut_config_name( config.hold_shortcut ) );
 
     cJSON *apps = cJSON_AddObjectToObject( root, "apps" );
     for( size_t index = 0U; index < RFSCOUT_APP_COUNT; ++index )
