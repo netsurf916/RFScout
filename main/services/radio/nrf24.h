@@ -54,7 +54,10 @@ typedef struct
     char label[ NRF24_FINGERPRINT_LABEL_MAX ];
 } nrf24_fingerprint_t;
 
-/** @brief Probe and initialize the nRF24 SPI device and worker task. */
+/** @brief Probe the nRF24 identity and leave the radio inactive. Safe to retry. */
+esp_err_t nrf24_probe( void );
+
+/** @brief Initialize reusable nRF24 service state after a successful probe. */
 esp_err_t nrf24_init( void );
 
 /** @brief Start asynchronous receive-only nRF24 channel acquisition. */
