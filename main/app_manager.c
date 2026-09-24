@@ -30,6 +30,7 @@ static rfscout_app_id_t active_app;
 static int64_t last_hotplug_probe_us;
 static int64_t app_entered_us;
 static bool app_activated;
+static bool app_locked;
 
 static bool app_available( rfscout_app_id_t a_app )
 {
@@ -211,6 +212,7 @@ static bool transition_to_app( rfscout_app_id_t a_destination, bool a_report_abo
         return false;
     }
 
+    (void)app_manager_set_locked( false );
     active_app = a_destination;
     enter_app( active_app );
     log_lifecycle( "transition", previous, active_app, esp_timer_get_time() - transition_started );
@@ -257,6 +259,7 @@ esp_err_t app_manager_init( void )
     last_hotplug_probe_us = esp_timer_get_time();
     app_entered_us = 0;
     app_activated = false;
+    app_locked = false;
 
     esp_err_t result = display_init();
     if( ESP_OK != result )
@@ -311,6 +314,30 @@ rfscout_app_id_t app_manager_current( void )
     return active_app;
 }
 
+bool app_manager_locked( void )
+{
+    return app_locked;
+}
+
+bool app_manager_set_locked( bool a_locked )
+{
+    if( a_locked && ( RFSCOUT_APP_DEVICE == active_app ) )
+    {
+        return false;
+    }
+    if( app_locked == a_locked )
+    {
+        return app_locked;
+    }
+
+    app_locked = a_locked;
+    ESP_LOGI( TAG, "application %s app=%d", app_locked ? "locked" : "unlocked", (int)active_app );
+    rfscout_event_emit( app_locked ? RFSCOUT_EVENT_APP_LOCKED : RFSCOUT_EVENT_APP_UNLOCKED,
+                        RFSCOUT_EVENT_SOURCE_SYSTEM,
+                        app_locked ? 1 : 0 );
+    return app_locked;
+}
+
 bool app_manager_select( rfscout_app_id_t a_app )
 {
     if( ( a_app < 0 ) || ( a_app >= RFSCOUT_APP_COUNT ) || ( a_app == active_app ) ||
@@ -346,6 +373,19 @@ void app_manager_poll( void )
     rfscout_input_event_t input;
     if( input_get( &input ) )
     {
+        if( RFSCOUT_INPUT_GLOBAL_HOLD == input.type )
+        {
+            if( RFSCOUT_HOLD_SHORTCUT_APP_LOCK == device_config_hold_shortcut() )
+            {
+                (void)app_manager_set_locked( !app_locked );
+            }
+            else
+            {
+                input_set_locked( true );
+            }
+            return;
+        }
+
         const rfscout_app_runtime_result_t result = dispatch_runtime(
             active_app, RFSCOUT_APP_RUNTIME_INPUT, &input, now_us, app_activated );
         if( RFSCOUT_APP_RUNTIME_REQUEST_HOME == result )
@@ -364,7 +404,10 @@ void app_manager_poll( void )
 
         if( RFSCOUT_INPUT_NAVIGATION == input.type )
         {
-            (void)switch_app_for_navigation( input.value );
+            if( !app_locked )
+            {
+                (void)switch_app_for_navigation( input.value );
+            }
             return;
         }
         if( ( RFSCOUT_INPUT_BACK == input.type ) && ( RFSCOUT_APP_DEVICE != active_app ) )
