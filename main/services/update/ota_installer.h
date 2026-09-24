@@ -49,7 +49,7 @@ esp_err_t ota_installer_write( const void *a_data, size_t a_length );
 esp_err_t ota_installer_finish( void );
 esp_err_t ota_installer_commit( void );
 esp_err_t ota_installer_abort( void );
-ota_installer_status_t ota_installer_status( void );
+void ota_installer_status( ota_installer_status_t *a_status );
 bool ota_installer_is_active( void );
 
 #endif // _RFSCOUT_OTA_INSTALLER_H_

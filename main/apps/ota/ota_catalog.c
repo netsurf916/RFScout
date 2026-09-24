@@ -26,9 +26,20 @@ typedef struct
 
 typedef struct
 {
-    ota_catalog_build_t build;
+    ota_catalog_build_kind_t kind;
+    const char *build_id;
+    const char *label;
+    const char *version;
+    const char *commit;
+    const char *artifact_path;
+    const char *sha256;
+    uint32_t artifact_size;
+    int32_t pull_request;
+    bool stable;
+    bool draft;
+    bool prerelease;
     bool compatible;
-} parsed_build_t;
+} parsed_build_view_t;
 
 static bool parse_component( const char **a_cursor, uint32_t *a_value, char a_delimiter )
 {
@@ -195,17 +206,18 @@ static bool json_optional_bool( const cJSON *a_object, const char *a_name, bool 
     return true;
 }
 
+static bool string_fits( const char *a_value, size_t a_capacity )
+{
+    return ( NULL != a_value ) && ( a_capacity > 0U ) && ( strlen( a_value ) < a_capacity );
+}
+
 static bool copy_bounded( char *a_destination, size_t a_capacity, const char *a_source )
 {
-    if( NULL == a_destination || 0U == a_capacity || NULL == a_source )
+    if( NULL == a_destination || !string_fits( a_source, a_capacity ) )
     {
         return false;
     }
     const size_t length = strlen( a_source );
-    if( length >= a_capacity )
-    {
-        return false;
-    }
     memcpy( a_destination, a_source, length + 1U );
     return true;
 }
@@ -257,7 +269,7 @@ static bool valid_relative_path( const char *a_path )
     return true;
 }
 
-static bool parse_artifact( const cJSON *a_build, ota_catalog_candidate_t *a_candidate )
+static bool parse_artifact( const cJSON *a_build, parsed_build_view_t *a_parsed )
 {
     const cJSON *artifact = cJSON_GetObjectItemCaseSensitive( a_build, "artifact" );
     if( !cJSON_IsObject( artifact ) )
@@ -268,9 +280,10 @@ static bool parse_artifact( const cJSON *a_build, ota_catalog_candidate_t *a_can
     const char *path = json_string( artifact, "path" );
     const char *sha256 = json_string( artifact, "sha256" );
     const cJSON *size = cJSON_GetObjectItemCaseSensitive( artifact, "size" );
-    if( !valid_relative_path( path ) || !valid_hex( sha256, OTA_CATALOG_SHA256_LENGTH ) ||
-        !cJSON_IsNumber( size ) || size->valuedouble <= 0.0 ||
-        size->valuedouble > (double)UINT32_MAX )
+    if( !valid_relative_path( path ) ||
+        !string_fits( path, OTA_CATALOG_ARTIFACT_PATH_MAX_LENGTH + 1U ) ||
+        !valid_hex( sha256, OTA_CATALOG_SHA256_LENGTH ) || !cJSON_IsNumber( size ) ||
+        size->valuedouble <= 0.0 || size->valuedouble > (double)UINT32_MAX )
     {
         return false;
     }
@@ -281,62 +294,52 @@ static bool parse_artifact( const cJSON *a_build, ota_catalog_candidate_t *a_can
         return false;
     }
 
-    return copy_bounded( a_candidate->artifact_path, sizeof( a_candidate->artifact_path ), path ) &&
-           copy_bounded( a_candidate->sha256, sizeof( a_candidate->sha256 ), sha256 ) &&
-           ( a_candidate->artifact_size = parsed_size, true );
+    a_parsed->artifact_path = path;
+    a_parsed->sha256 = sha256;
+    a_parsed->artifact_size = parsed_size;
+    return true;
 }
 
 static bool parse_build( const cJSON *a_json,
                          const rfscout_firmware_identity_t *a_running,
-                         parsed_build_t *a_parsed )
+                         parsed_build_view_t *a_parsed )
 {
-    memset( a_parsed, 0, sizeof( *a_parsed ) );
+    *a_parsed = ( parsed_build_view_t ){ 0 };
 
-    const char *build_id = json_string( a_json, "id" );
+    a_parsed->build_id = json_string( a_json, "id" );
     const char *kind = json_string( a_json, "kind" );
-    const char *label = json_string( a_json, "label" );
-    const char *version = json_string( a_json, "version" );
-    const char *commit = json_string( a_json, "commit" );
+    a_parsed->label = json_string( a_json, "label" );
+    a_parsed->version = json_string( a_json, "version" );
+    a_parsed->commit = json_string( a_json, "commit" );
     const char *project = json_string( a_json, "project" );
     const char *hardware = json_string( a_json, "hardware_target" );
     const char *target = json_string( a_json, "idf_target" );
     const char *layout = json_string( a_json, "partition_layout" );
 
-    if( NULL == build_id || NULL == kind || NULL == label || NULL == version || NULL == commit ||
-        NULL == project || NULL == hardware || NULL == target || NULL == layout ||
-        !valid_hex( commit, OTA_CATALOG_COMMIT_LENGTH ) ||
-        !json_bool( a_json, "stable", &a_parsed->build.stable ) ||
-        !json_optional_bool( a_json, "draft", &a_parsed->build.draft ) ||
-        !json_optional_bool( a_json, "prerelease", &a_parsed->build.prerelease ) ||
-        !parse_artifact( a_json, &a_parsed->build.candidate ) )
-    {
-        return false;
-    }
-
-    if( !copy_bounded( a_parsed->build.label, sizeof( a_parsed->build.label ), label ) ||
-        !copy_bounded( a_parsed->build.candidate.build_id,
-                       sizeof( a_parsed->build.candidate.build_id ),
-                       build_id ) ||
-        !copy_bounded( a_parsed->build.candidate.version,
-                       sizeof( a_parsed->build.candidate.version ),
-                       version ) ||
-        !copy_bounded(
-            a_parsed->build.candidate.commit, sizeof( a_parsed->build.candidate.commit ), commit ) )
+    if( !string_fits( a_parsed->build_id, OTA_CATALOG_BUILD_ID_MAX_LENGTH + 1U ) || NULL == kind ||
+        !string_fits( a_parsed->label, OTA_CATALOG_BUILD_LABEL_MAX_LENGTH + 1U ) ||
+        !string_fits( a_parsed->version, OTA_CATALOG_VERSION_MAX_LENGTH + 1U ) ||
+        !valid_hex( a_parsed->commit, OTA_CATALOG_COMMIT_LENGTH ) || NULL == project ||
+        NULL == hardware || NULL == target || NULL == layout ||
+        !json_bool( a_json, "stable", &a_parsed->stable ) ||
+        !json_optional_bool( a_json, "draft", &a_parsed->draft ) ||
+        !json_optional_bool( a_json, "prerelease", &a_parsed->prerelease ) ||
+        !parse_artifact( a_json, a_parsed ) )
     {
         return false;
     }
 
     if( 0 == strcmp( kind, "release" ) )
     {
-        a_parsed->build.kind = OTA_CATALOG_BUILD_RELEASE;
-        if( a_parsed->build.stable && ( a_parsed->build.draft || a_parsed->build.prerelease ) )
+        a_parsed->kind = OTA_CATALOG_BUILD_RELEASE;
+        if( a_parsed->stable && ( a_parsed->draft || a_parsed->prerelease ) )
         {
             return false;
         }
     }
     else if( 0 == strcmp( kind, "candidate" ) )
     {
-        if( a_parsed->build.stable )
+        if( a_parsed->stable )
         {
             return false;
         }
@@ -348,7 +351,7 @@ static bool parse_build( const cJSON *a_json,
         }
         if( 0 == strcmp( source, "main" ) )
         {
-            a_parsed->build.kind = OTA_CATALOG_BUILD_MAIN;
+            a_parsed->kind = OTA_CATALOG_BUILD_MAIN;
         }
         else if( 0 == strcmp( source, "pull_request" ) )
         {
@@ -358,12 +361,12 @@ static bool parse_build( const cJSON *a_json,
             {
                 return false;
             }
-            a_parsed->build.pull_request = (int32_t)pr->valuedouble;
-            if( (double)a_parsed->build.pull_request != pr->valuedouble )
+            a_parsed->pull_request = (int32_t)pr->valuedouble;
+            if( (double)a_parsed->pull_request != pr->valuedouble )
             {
                 return false;
             }
-            a_parsed->build.kind = OTA_CATALOG_BUILD_PULL_REQUEST;
+            a_parsed->kind = OTA_CATALOG_BUILD_PULL_REQUEST;
         }
         else
         {
@@ -380,6 +383,39 @@ static bool parse_build( const cJSON *a_json,
                            0 == strcmp( target, a_running->idf_target ) &&
                            0 == strcmp( layout, a_running->partition_layout );
     return true;
+}
+
+static bool materialize_candidate( const parsed_build_view_t *a_parsed,
+                                   ota_catalog_candidate_t *a_candidate )
+{
+    memset( a_candidate, 0, sizeof( *a_candidate ) );
+    if( !copy_bounded(
+            a_candidate->build_id, sizeof( a_candidate->build_id ), a_parsed->build_id ) ||
+        !copy_bounded( a_candidate->version, sizeof( a_candidate->version ), a_parsed->version ) ||
+        !copy_bounded( a_candidate->commit, sizeof( a_candidate->commit ), a_parsed->commit ) ||
+        !copy_bounded( a_candidate->artifact_path,
+                       sizeof( a_candidate->artifact_path ),
+                       a_parsed->artifact_path ) ||
+        !copy_bounded( a_candidate->sha256, sizeof( a_candidate->sha256 ), a_parsed->sha256 ) )
+    {
+        return false;
+    }
+
+    a_candidate->artifact_size = a_parsed->artifact_size;
+    return true;
+}
+
+static bool materialize_build( const parsed_build_view_t *a_parsed, ota_catalog_build_t *a_build )
+{
+    memset( a_build, 0, sizeof( *a_build ) );
+    a_build->kind = a_parsed->kind;
+    a_build->pull_request = a_parsed->pull_request;
+    a_build->stable = a_parsed->stable;
+    a_build->draft = a_parsed->draft;
+    a_build->prerelease = a_parsed->prerelease;
+
+    return copy_bounded( a_build->label, sizeof( a_build->label ), a_parsed->label ) &&
+           materialize_candidate( a_parsed, &a_build->candidate );
 }
 
 static cJSON *parse_catalog_root( const char *a_json, size_t a_length, const cJSON **a_builds )
@@ -438,22 +474,22 @@ esp_err_t ota_catalog_select( const char *a_json,
             goto cleanup;
         }
 
-        parsed_build_t parsed;
+        parsed_build_view_t parsed;
         if( !parse_build( entry, a_running, &parsed ) )
         {
             goto cleanup;
         }
-        if( !parsed.compatible || !parsed.build.stable )
+        if( !parsed.compatible || !parsed.stable )
         {
             continue;
         }
-        if( OTA_CATALOG_BUILD_RELEASE != parsed.build.kind )
+        if( OTA_CATALOG_BUILD_RELEASE != parsed.kind )
         {
             goto cleanup;
         }
 
         ota_semver_t parsed_version;
-        if( !parse_semver( parsed.build.candidate.version, &parsed_version ) )
+        if( !parse_semver( parsed.version, &parsed_version ) )
         {
             goto cleanup;
         }
@@ -463,7 +499,7 @@ esp_err_t ota_catalog_select( const char *a_json,
             have_latest = true;
             if( !copy_bounded( a_selection->latest_version,
                                sizeof( a_selection->latest_version ),
-                               parsed.build.candidate.version ) )
+                               parsed.version ) )
             {
                 goto cleanup;
             }
@@ -475,7 +511,10 @@ esp_err_t ota_catalog_select( const char *a_json,
         }
         if( !selected || compare_semver( &parsed_version, &selected_version ) > 0 )
         {
-            a_selection->candidate = parsed.build.candidate;
+            if( !materialize_candidate( &parsed, &a_selection->candidate ) )
+            {
+                goto cleanup;
+            }
             selected_version = parsed_version;
             selected = true;
         }
@@ -519,7 +558,7 @@ esp_err_t ota_catalog_list( const char *a_json,
             goto cleanup;
         }
 
-        parsed_build_t parsed;
+        parsed_build_view_t parsed;
         if( !parse_build( entry, a_running, &parsed ) )
         {
             goto cleanup;
@@ -530,7 +569,10 @@ esp_err_t ota_catalog_list( const char *a_json,
         }
         if( *a_count < a_capacity )
         {
-            a_builds[ *a_count ] = parsed.build;
+            if( !materialize_build( &parsed, &a_builds[ *a_count ] ) )
+            {
+                goto cleanup;
+            }
             ++( *a_count );
         }
     }

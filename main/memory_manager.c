@@ -385,21 +385,33 @@ size_t memory_manager_release_operation( rfscout_app_id_t a_app, uint16_t a_oper
     return release_matching( a_app, true, a_operation );
 }
 
-rfscout_memory_stats_t memory_manager_app_stats( rfscout_app_id_t a_app )
+void memory_manager_app_stats( rfscout_app_id_t a_app, rfscout_memory_stats_t *a_stats )
 {
-    rfscout_memory_stats_t result = { 0 };
+    if( NULL == a_stats )
+    {
+        return;
+    }
+
+    *a_stats = ( rfscout_memory_stats_t ){ 0 };
     if( ( NULL == manager_lock ) || ( a_app < 0 ) || ( a_app >= RFSCOUT_APP_COUNT ) )
     {
-        return result;
+        return;
     }
 
     xSemaphoreTake( manager_lock, portMAX_DELAY );
-    result = app_stats[ a_app ];
+    *a_stats = app_stats[ a_app ];
     xSemaphoreGive( manager_lock );
-    return result;
 }
 
 size_t memory_manager_app_allocation_count( rfscout_app_id_t a_app )
 {
-    return memory_manager_app_stats( a_app ).allocation_count;
+    if( ( NULL == manager_lock ) || ( a_app < 0 ) || ( a_app >= RFSCOUT_APP_COUNT ) )
+    {
+        return 0U;
+    }
+
+    xSemaphoreTake( manager_lock, portMAX_DELAY );
+    const size_t count = app_stats[ a_app ].allocation_count;
+    xSemaphoreGive( manager_lock );
+    return count;
 }

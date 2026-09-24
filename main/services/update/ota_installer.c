@@ -382,13 +382,16 @@ esp_err_t ota_installer_abort( void )
     return ESP_ERR_NOT_FOUND == result ? ESP_OK : result;
 }
 
-ota_installer_status_t ota_installer_status( void )
+void ota_installer_status( ota_installer_status_t *a_status )
 {
-    ota_installer_status_t result;
+    if( NULL == a_status )
+    {
+        return;
+    }
+
     portENTER_CRITICAL( &state_lock );
-    result = status;
+    *a_status = status;
     portEXIT_CRITICAL( &state_lock );
-    return result;
 }
 
 bool ota_installer_is_active( void )

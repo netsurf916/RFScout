@@ -411,7 +411,8 @@ esp_err_t rfscout_wifi_station_passive_scan_start( void )
         }
     }
 
-    rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
     if( RFSCOUT_WIFI_STATION_CONNECTING == current.state ||
         RFSCOUT_WIFI_STATION_DISCONNECTING == current.state ||
         RFSCOUT_WIFI_STATION_CONNECTED == current.state ||
@@ -482,7 +483,8 @@ esp_err_t rfscout_wifi_station_connect( const char *a_ssid, const char *a_passwo
         return ESP_ERR_INVALID_SIZE;
     }
 
-    rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
     if( RFSCOUT_WIFI_STATION_SCANNING == current.state ||
         RFSCOUT_WIFI_STATION_SEARCHING == current.state ||
         RFSCOUT_WIFI_STATION_CONNECTING == current.state ||
@@ -662,11 +664,14 @@ bool rfscout_wifi_station_is_active( void )
     return active;
 }
 
-rfscout_wifi_station_status_t rfscout_wifi_station_status( void )
+void rfscout_wifi_station_status( rfscout_wifi_station_status_t *a_status )
 {
-    rfscout_wifi_station_status_t result;
+    if( NULL == a_status )
+    {
+        return;
+    }
+
     portENTER_CRITICAL( &state_lock );
-    result = status;
+    *a_status = status;
     portEXIT_CRITICAL( &state_lock );
-    return result;
 }

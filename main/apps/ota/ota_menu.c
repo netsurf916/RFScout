@@ -83,6 +83,8 @@ static rfscout_wifi_station_state_t last_station_state;
 static bool last_ntp_syncing;
 static bool last_ntp_synced;
 static int64_t last_refresh_us;
+/* Borrowed from catalog_selection or available_builds while input is suppressed. */
+static const ota_catalog_candidate_t *pending_install_candidate;
 static bool close_requested;
 
 static void emit_event( rfscout_event_type_t a_type, int32_t a_value )
@@ -102,7 +104,8 @@ static void set_error( esp_err_t a_error )
 
 static bool update_ready( void )
 {
-    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
     return RFSCOUT_WIFI_STATION_CONNECTED == current.state && current.ntp_synced;
 }
 
@@ -228,12 +231,19 @@ static void build_saved_list( void )
 
 static bool network_connected( void )
 {
-    return RFSCOUT_WIFI_STATION_CONNECTED == rfscout_wifi_station_status().state;
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
+    return RFSCOUT_WIFI_STATION_CONNECTED == current.state;
+}
+
+static bool install_interaction_locked( void )
+{
+    return ( NULL != pending_install_candidate ) || ota_installer_is_active();
 }
 
 static bool ota_operation_active( void )
 {
-    return ota_acquisition_is_active() || ota_installer_is_active();
+    return install_interaction_locked() || ota_acquisition_is_active();
 }
 
 static bool install_action_available( void )
@@ -243,7 +253,8 @@ static bool install_action_available( void )
 
 static const char *connection_status( void )
 {
-    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
     switch( current.state )
     {
         case RFSCOUT_WIFI_STATION_SCANNING:
@@ -267,7 +278,8 @@ static const char *connection_status( void )
 
 static const char *network_time_status( void )
 {
-    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
     if( RFSCOUT_WIFI_STATION_CONNECTED != current.state )
     {
         return "";
@@ -282,7 +294,8 @@ static const char *network_time_status( void )
 static void render_network_main( void )
 {
     build_visible_saved();
-    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
     const bool connected = RFSCOUT_WIFI_STATION_CONNECTED == current.state;
     const bool scanning = RFSCOUT_WIFI_STATION_SCANNING == current.state;
     const unsigned item_count = 1U + (unsigned)view_network_count + ( connected ? 1U : 3U );
@@ -341,7 +354,8 @@ static void render_action( void )
     const bool visible = action_scan_index >= 0 && (size_t)action_scan_index < scan_count;
     const int8_t rssi = visible ? scan_results[ action_scan_index ].rssi : INT8_MIN;
 
-    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
     const bool connected = RFSCOUT_WIFI_STATION_CONNECTED == current.state && NULL != ssid &&
                            0 == strcmp( current.ssid, ssid );
     const char *status_text = error_text;
@@ -571,7 +585,7 @@ static void begin_update_check( void )
     render();
 }
 
-static void begin_candidate_install( const ota_catalog_candidate_t *a_candidate )
+static void request_candidate_install( const ota_catalog_candidate_t *a_candidate )
 {
     if( NULL == a_candidate )
     {
@@ -591,17 +605,35 @@ static void begin_candidate_install( const ota_catalog_candidate_t *a_candidate 
         return;
     }
 
+    pending_install_candidate = a_candidate;
+    error_text[ 0 ] = '\0';
+    screen = OTA_SCREEN_MAIN;
+    selected_item = 0U;
+    snprintf( update_status, sizeof( update_status ), "Preparing..." );
+    display_modal_show( "OTA UPDATE", "Preparing..." );
+    render();
+}
+
+static void start_pending_install( void )
+{
+    const ota_catalog_candidate_t *candidate = pending_install_candidate;
+    if( NULL == candidate )
+    {
+        return;
+    }
+    pending_install_candidate = NULL;
+
     ota_installer_image_t image;
     memset( &image, 0, sizeof( image ) );
-    snprintf( image.version, sizeof( image.version ), "%s", a_candidate->version );
-    snprintf( image.sha256, sizeof( image.sha256 ), "%s", a_candidate->sha256 );
-    image.size = a_candidate->artifact_size;
+    snprintf( image.version, sizeof( image.version ), "%s", candidate->version );
+    snprintf( image.sha256, sizeof( image.sha256 ), "%s", candidate->sha256 );
+    image.size = candidate->artifact_size;
 
     esp_err_t result = ota_installer_begin( &image );
     const bool installer_started = ESP_OK == result;
     if( installer_started )
     {
-        result = ota_acquisition_begin_firmware( a_candidate->artifact_path );
+        result = ota_acquisition_begin_firmware( candidate->artifact_path );
     }
     if( ESP_OK != result )
     {
@@ -609,16 +641,15 @@ static void begin_candidate_install( const ota_catalog_candidate_t *a_candidate 
         {
             (void)ota_installer_abort();
         }
+        display_modal_clear();
         set_error( result );
         snprintf( update_status, sizeof( update_status ), "Install failed" );
         render();
         return;
     }
 
-    error_text[ 0 ] = '\0';
-    screen = OTA_SCREEN_MAIN;
-    selected_item = 0U;
     snprintf( update_status, sizeof( update_status ), "Downloading..." );
+    display_modal_show( "OTA UPDATE", "Downloading..." );
     render();
 }
 
@@ -626,7 +657,7 @@ static void begin_update_install( void )
 {
     if( OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result )
     {
-        begin_candidate_install( &catalog_selection.candidate );
+        request_candidate_install( &catalog_selection.candidate );
     }
 }
 
@@ -783,7 +814,8 @@ static void forget_selected_network( void )
     }
 
     const char *ssid = saved_networks.entries[ action_saved_index ].ssid;
-    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
     if( RFSCOUT_WIFI_STATION_CONNECTED == current.state && 0 == strcmp( current.ssid, ssid ) )
     {
         const esp_err_t disconnect_result = rfscout_wifi_station_disconnect();
@@ -838,7 +870,8 @@ static void handle_action_select( void )
 
     if( 1U == selected_item )
     {
-        const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+        rfscout_wifi_station_status_t current;
+        rfscout_wifi_station_status( &current );
         if( RFSCOUT_WIFI_STATION_CONNECTED == current.state &&
             0 == strcmp( current.ssid, saved_networks.entries[ action_saved_index ].ssid ) )
         {
@@ -931,7 +964,7 @@ static void handle_build_action_select( void )
         return;
     }
 
-    begin_candidate_install( &available_builds[ selected_build_index ].candidate );
+    request_candidate_install( &available_builds[ selected_build_index ].candidate );
 }
 
 static void handle_password_input( const rfscout_input_event_t *a_input )
@@ -1123,6 +1156,7 @@ static void reset_runtime_state( void )
     last_ntp_syncing = false;
     last_ntp_synced = false;
     last_refresh_us = 0;
+    pending_install_candidate = NULL;
     close_requested = false;
 }
 
@@ -1140,7 +1174,8 @@ void network_menu_enter( void )
     refresh_scan_results();
     render();
 
-    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
     if( RFSCOUT_WIFI_STATION_CONNECTED != current.state &&
         RFSCOUT_WIFI_STATION_CONNECTING != current.state &&
         RFSCOUT_WIFI_STATION_SEARCHING != current.state &&
@@ -1187,6 +1222,11 @@ esp_err_t ota_menu_leave( void )
 
 static bool submenu_input( bool a_pressed, int a_delta )
 {
+    if( install_interaction_locked() )
+    {
+        return false;
+    }
+
     rfscout_input_event_t input;
     memset( &input, 0, sizeof( input ) );
 
@@ -1223,6 +1263,11 @@ bool ota_menu_input( bool a_pressed, int a_delta )
 
 static bool submenu_back( void )
 {
+    if( install_interaction_locked() )
+    {
+        return false;
+    }
+
     if( OTA_SCREEN_MAIN == screen )
     {
         return true;
@@ -1255,7 +1300,14 @@ static void submenu_poll( int64_t a_now_us )
     last_refresh_us = a_now_us;
     bool redraw = false;
 
-    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    if( NULL != pending_install_candidate )
+    {
+        start_pending_install();
+        return;
+    }
+
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
     if( current.scan_generation != last_scan_generation || current.state != last_station_state )
     {
         last_scan_generation = current.scan_generation;
@@ -1270,7 +1322,8 @@ static void submenu_poll( int64_t a_now_us )
         redraw = true;
     }
 
-    const ota_acquisition_status_t acquisition = ota_acquisition_status();
+    ota_acquisition_status_t acquisition;
+    ota_acquisition_status( &acquisition );
     if( acquisition.generation != last_acquisition_generation )
     {
         last_acquisition_generation = acquisition.generation;
@@ -1375,7 +1428,8 @@ static void submenu_poll( int64_t a_now_us )
         redraw = true;
     }
 
-    const ota_installer_status_t installer = ota_installer_status();
+    ota_installer_status_t installer;
+    ota_installer_status( &installer );
     if( installer.generation != last_installer_generation )
     {
         last_installer_generation = installer.generation;
