@@ -26,10 +26,18 @@ typedef struct
     bool active;
 } rfscout_log_record_t;
 
-/** Start asynchronous SD-card logging. */
+/**
+ * @brief Start asynchronous SD-card logging.
+ * @details Logging is observational and best-effort. Callers must not depend on record delivery for
+ *          application correctness or lifecycle behavior. When logging is unavailable or a record
+ *          cannot be accepted, the caller may drop it and continue.
+ */
 esp_err_t log_writer_init( void );
 
-/** Begin one JSON-line record. Time/uptime and fresh location metadata are added automatically. */
+/**
+ * @brief Begin one JSON-line record. Time/uptime and fresh location metadata are added automatically.
+ * @return true when the writer accepted the record start; false means this record is dropped.
+ */
 bool log_begin( rfscout_log_record_t *a_record, const char *a_type );
 
 /** Add one string field. NULL and empty values are omitted. */

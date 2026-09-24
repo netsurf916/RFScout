@@ -32,37 +32,50 @@ static void log_transition( const rfscout_app_transition_diagnostics_t *a_diagno
               (unsigned)a_diagnostics->reclaimed_bytes,
               (unsigned)a_diagnostics->remaining_allocations,
               (long long)a_diagnostics->elapsed_us,
-              (unsigned)heap_caps_get_free_size( MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT ),
-              (unsigned)heap_caps_get_largest_free_block( MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT ) );
+              (unsigned)a_diagnostics->psram_free_bytes,
+              (unsigned)a_diagnostics->psram_largest_free_block );
 }
 
-static rfscout_app_transition_diagnostics_t
-finish_transition( rfscout_app_transition_diagnostics_t a_diagnostics, int64_t a_started_us )
+static const rfscout_app_transition_diagnostics_t *
+finish_transition( rfscout_app_transition_diagnostics_t *a_diagnostics, int64_t a_started_us )
 {
-    a_diagnostics.elapsed_us = esp_timer_get_time() - a_started_us;
-    last_transition = a_diagnostics;
-    log_transition( &last_transition );
-    return last_transition;
+    if( NULL == a_diagnostics )
+    {
+        return NULL;
+    }
+
+    a_diagnostics->elapsed_us = esp_timer_get_time() - a_started_us;
+    a_diagnostics->psram_free_bytes =
+        heap_caps_get_free_size( MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
+    a_diagnostics->psram_largest_free_block =
+        heap_caps_get_largest_free_block( MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
+    log_transition( a_diagnostics );
+    return a_diagnostics;
 }
 
-static rfscout_app_transition_diagnostics_t
-abort_transition( rfscout_app_transition_diagnostics_t a_diagnostics,
+static const rfscout_app_transition_diagnostics_t *
+abort_transition( rfscout_app_transition_diagnostics_t *a_diagnostics,
                   rfscout_app_transition_outcome_t a_outcome,
                   esp_err_t a_error,
                   int64_t a_started_us )
 {
-    a_diagnostics.outcome = a_outcome;
-    a_diagnostics.error = a_error;
+    if( NULL == a_diagnostics )
+    {
+        return NULL;
+    }
+
+    a_diagnostics->outcome = a_outcome;
+    a_diagnostics->error = a_error;
 
     const esp_err_t session_result = app_session_abort_close();
     if( ESP_OK != session_result )
     {
-        a_diagnostics.outcome = RFSCOUT_APP_TRANSITION_ABORTED_SERVICE_RESTORE;
-        a_diagnostics.error = session_result;
+        a_diagnostics->outcome = RFSCOUT_APP_TRANSITION_ABORTED_SERVICE_RESTORE;
+        a_diagnostics->error = session_result;
         ESP_LOGE( TAG,
                   "source service restore failed after aborted transition from=%d to=%d",
-                  (int)a_diagnostics.from,
-                  (int)a_diagnostics.to );
+                  (int)a_diagnostics->from,
+                  (int)a_diagnostics->to );
     }
 
     return finish_transition( a_diagnostics, a_started_us );
@@ -86,31 +99,32 @@ esp_err_t app_lifecycle_init( void )
     return result;
 }
 
-rfscout_app_transition_diagnostics_t app_lifecycle_transition(
+const rfscout_app_transition_diagnostics_t *app_lifecycle_transition(
     rfscout_app_id_t a_from, rfscout_app_id_t a_to, const rfscout_app_lifecycle_hooks_t *a_hooks )
 {
     const int64_t started_us = esp_timer_get_time();
-    rfscout_app_transition_diagnostics_t diagnostics = {
+    last_transition = ( rfscout_app_transition_diagnostics_t ){
         .from = a_from,
         .to = a_to,
         .outcome = RFSCOUT_APP_TRANSITION_NONE,
         .error = ESP_OK,
         .sequence = ++transition_sequence,
     };
+    rfscout_app_transition_diagnostics_t *diagnostics = &last_transition;
 
     if( ( NULL == a_hooks ) || ( a_from < 0 ) || ( a_from >= RFSCOUT_APP_COUNT ) || ( a_to < 0 ) ||
         ( a_to >= RFSCOUT_APP_COUNT ) || ( a_from == a_to ) )
     {
-        diagnostics.outcome = RFSCOUT_APP_TRANSITION_ABORTED_PREPARE;
-        diagnostics.error = ESP_ERR_INVALID_ARG;
+        diagnostics->outcome = RFSCOUT_APP_TRANSITION_ABORTED_PREPARE;
+        diagnostics->error = ESP_ERR_INVALID_ARG;
         return finish_transition( diagnostics, started_us );
     }
 
     esp_err_t result = app_session_ensure( a_from );
     if( ESP_OK != result )
     {
-        diagnostics.outcome = RFSCOUT_APP_TRANSITION_ABORTED_PREPARE;
-        diagnostics.error = result;
+        diagnostics->outcome = RFSCOUT_APP_TRANSITION_ABORTED_PREPARE;
+        diagnostics->error = result;
         return finish_transition( diagnostics, started_us );
     }
 
@@ -120,8 +134,8 @@ rfscout_app_transition_diagnostics_t app_lifecycle_transition(
         if( ESP_OK != result )
         {
             /* No session close has begun yet. A semantic veto needs no service rollback. */
-            diagnostics.outcome = RFSCOUT_APP_TRANSITION_ABORTED_PREPARE;
-            diagnostics.error = result;
+            diagnostics->outcome = RFSCOUT_APP_TRANSITION_ABORTED_PREPARE;
+            diagnostics->error = result;
             return finish_transition( diagnostics, started_us );
         }
     }
@@ -143,28 +157,28 @@ rfscout_app_transition_diagnostics_t app_lifecycle_transition(
     }
     app_session_commit_close();
 
-    diagnostics.reclaimed_bytes = memory_manager_release_app( a_from );
-    diagnostics.remaining_allocations = memory_manager_app_allocation_count( a_from );
-    if( 0U != diagnostics.remaining_allocations )
+    diagnostics->reclaimed_bytes = memory_manager_release_app( a_from );
+    diagnostics->remaining_allocations = memory_manager_app_allocation_count( a_from );
+    if( 0U != diagnostics->remaining_allocations )
     {
-        diagnostics.outcome = RFSCOUT_APP_TRANSITION_COMMITTED_MEMORY_INVARIANT;
-        diagnostics.error = ESP_ERR_INVALID_STATE;
+        diagnostics->outcome = RFSCOUT_APP_TRANSITION_COMMITTED_MEMORY_INVARIANT;
+        diagnostics->error = ESP_ERR_INVALID_STATE;
         ESP_LOGE( TAG,
                   "committed app exit left %u managed allocations from=%d",
-                  (unsigned)diagnostics.remaining_allocations,
+                  (unsigned)diagnostics->remaining_allocations,
                   (int)a_from );
     }
     else
     {
-        diagnostics.outcome = RFSCOUT_APP_TRANSITION_COMMITTED;
-        diagnostics.error = ESP_OK;
+        diagnostics->outcome = RFSCOUT_APP_TRANSITION_COMMITTED;
+        diagnostics->error = ESP_OK;
     }
 
     result = app_session_ensure( a_to );
     if( ESP_OK != result )
     {
-        diagnostics.outcome = RFSCOUT_APP_TRANSITION_COMMITTED_DESTINATION_FAILED;
-        diagnostics.error = result;
+        diagnostics->outcome = RFSCOUT_APP_TRANSITION_COMMITTED_DESTINATION_FAILED;
+        diagnostics->error = result;
         ESP_LOGE( TAG,
                   "destination app session creation failed from=%d to=%d: %s",
                   (int)a_from,
@@ -186,7 +200,7 @@ bool app_lifecycle_transition_committed( const rfscout_app_transition_diagnostic
            ( RFSCOUT_APP_TRANSITION_COMMITTED_DESTINATION_FAILED == a_diagnostics->outcome );
 }
 
-rfscout_app_transition_diagnostics_t app_lifecycle_last_transition( void )
+const rfscout_app_transition_diagnostics_t *app_lifecycle_last_transition( void )
 {
-    return last_transition;
+    return &last_transition;
 }

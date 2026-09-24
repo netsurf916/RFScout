@@ -171,9 +171,9 @@ static bool transition_to_app( rfscout_app_id_t a_destination, bool a_report_abo
         .commit = commit_app_exit,
         .context = (void *)source_descriptor,
     };
-    const rfscout_app_transition_diagnostics_t diagnostics =
+    const rfscout_app_transition_diagnostics_t *diagnostics =
         app_lifecycle_transition( previous, a_destination, &hooks );
-    if( !app_lifecycle_transition_committed( &diagnostics ) )
+    if( !app_lifecycle_transition_committed( diagnostics ) )
     {
         log_lifecycle( "transition-abort",
                        previous,
@@ -182,12 +182,12 @@ static bool transition_to_app( rfscout_app_id_t a_destination, bool a_report_abo
         if( a_report_abort )
         {
             rfscout_event_emit(
-                RFSCOUT_EVENT_ERROR, (uint8_t)previous, (int32_t)diagnostics.error );
+                RFSCOUT_EVENT_ERROR, (uint8_t)previous, (int32_t)diagnostics->error );
         }
         return false;
     }
 
-    if( RFSCOUT_APP_TRANSITION_COMMITTED_DESTINATION_FAILED == diagnostics.outcome )
+    if( RFSCOUT_APP_TRANSITION_COMMITTED_DESTINATION_FAILED == diagnostics->outcome )
     {
         ESP_LOGE( TAG,
                   "committed transition from=%d could not establish destination=%d; using Home",
@@ -206,7 +206,7 @@ static bool transition_to_app( rfscout_app_id_t a_destination, bool a_report_abo
         if( a_report_abort )
         {
             rfscout_event_emit(
-                RFSCOUT_EVENT_ERROR, (uint8_t)previous, (int32_t)diagnostics.error );
+                RFSCOUT_EVENT_ERROR, (uint8_t)previous, (int32_t)diagnostics->error );
         }
         return false;
     }
@@ -214,13 +214,13 @@ static bool transition_to_app( rfscout_app_id_t a_destination, bool a_report_abo
     active_app = a_destination;
     enter_app( active_app );
     log_lifecycle( "transition", previous, active_app, esp_timer_get_time() - transition_started );
-    if( ESP_OK != diagnostics.error )
+    if( ESP_OK != diagnostics->error )
     {
         ESP_LOGE( TAG,
                   "committed transition from=%d to=%d reported %s",
                   (int)previous,
                   (int)active_app,
-                  esp_err_to_name( diagnostics.error ) );
+                  esp_err_to_name( diagnostics->error ) );
     }
     return true;
 }

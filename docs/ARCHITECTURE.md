@@ -186,6 +186,19 @@ Current paths include:
 
 The conservative hardware-tested SD baseline remains a FAT-compatible SanDisk card of 32 GB or less. Rotating logs use `rfscout-00.log` through `rfscout-99.log`, up to 4 MiB each, while attempting to preserve at least 64 MiB free.
 
+Ordinary RFScout logs are newline-delimited structured records produced through the shared asynchronous log writer. Application lifecycle/telemetry logging also preserves each new transactional app-transition diagnostic as a `type:"transition"` record. The record reuses the lifecycle coordinator's existing diagnostic state rather than reconstructing transition results later and includes:
+
+- `seq` — monotonic transition-attempt sequence for the current boot;
+- `from` / `to` — application names;
+- `outcome` and `error` — lifecycle result and ESP error name;
+- `reclaimed` / `remaining` — managed bytes reclaimed from the source app and managed source allocations still present after committed reclamation;
+- `elapsed_us` — lifecycle transition duration; and
+- `psram_free` / `psram_largest` — free PSRAM and largest free PSRAM block captured when the transition result is finalized.
+
+The same lifecycle diagnostics continue to be emitted through the ESP console for development, but when SD logging is available the structured record is the preferred source for field validation because it can be correlated directly with adjacent app and telemetry records. Logging is nevertheless **best-effort and non-authoritative**: application/lifecycle correctness must never depend on a record being accepted or persisted. If logging is disabled, unavailable, backpressured beyond the writer's bounded capacity, or fails, the record may be dropped and the producer continues without recovery coupling.
+
+`app_logging` observes each new lifecycle transition sequence once and offers one structured transition record to the existing writer. It does not retry or retain a second logging backlog. This keeps logging failure below the application/lifecycle boundary: individual apps do not know whether SD logging is enabled or whether a particular record was accepted. Transition `seq` values remain monotonic for the boot, so gaps between persisted transition records indicate omitted observations without turning logging into a reliable-delivery protocol.
+
 Breadcrumb recording is independent from the ordinary SD logging toggle and requires fresh valid GPS position **and GPS UTC**. Accepted fixes are sampled at most once every five seconds and bucketed into ten-minute GPS-UTC filenames. Current retention is file-count based.
 
 ## Firmware image and OTA architecture
