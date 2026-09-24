@@ -418,7 +418,8 @@ static bool stop_scan_worker( void )
 
     if( scan_worker_active )
     {
-        ESP_LOGE( TAG, "scan worker did not quiesce within %u ms", (unsigned)CC1101_STOP_TIMEOUT_MS );
+        ESP_LOGE(
+            TAG, "scan worker did not quiesce within %u ms", (unsigned)CC1101_STOP_TIMEOUT_MS );
         return false;
     }
     return true;
@@ -615,11 +616,11 @@ static bool arm_next_capture_task( void )
         return false;
     }
 
-    const esp_err_t result = rmt_receive( rmt_channel,
-                                         capture_pool[ slot_index ].symbols,
-                                         CC1101_CAPTURE_SYMBOL_CAPACITY *
-                                             sizeof( rfscout_subghz_symbol_t ),
-                                         &rmt_receive_config );
+    const esp_err_t result =
+        rmt_receive( rmt_channel,
+                     capture_pool[ slot_index ].symbols,
+                     CC1101_CAPTURE_SYMBOL_CAPACITY * sizeof( rfscout_subghz_symbol_t ),
+                     &rmt_receive_config );
     if( ESP_OK != result )
     {
         capture_arm_failed_task( slot_index );
@@ -769,11 +770,11 @@ static esp_err_t ensure_capture_provider( void )
 
     for( size_t index = 0U; index < CC1101_CAPTURE_POOL_SIZE; ++index )
     {
-        capture_pool[ index ].symbols = heap_caps_aligned_calloc(
-            CC1101_RMT_ALIGNMENT,
-            CC1101_CAPTURE_SYMBOL_CAPACITY,
-            sizeof( rfscout_subghz_symbol_t ),
-            MALLOC_CAP_8BIT | MALLOC_CAP_DMA | MALLOC_CAP_SPIRAM );
+        capture_pool[ index ].symbols =
+            heap_caps_aligned_calloc( CC1101_RMT_ALIGNMENT,
+                                      CC1101_CAPTURE_SYMBOL_CAPACITY,
+                                      sizeof( rfscout_subghz_symbol_t ),
+                                      MALLOC_CAP_8BIT | MALLOC_CAP_DMA | MALLOC_CAP_SPIRAM );
         if( NULL == capture_pool[ index ].symbols )
         {
             destroy_capture_provider();
@@ -1174,8 +1175,7 @@ bool cc1101_adjust_high( int a_delta )
 {
     portENTER_CRITICAL( &state_lock );
 
-    int64_t frequency =
-        (int64_t)scan_config.high_khz + ( (int64_t)a_delta * scan_config.step_khz );
+    int64_t frequency = (int64_t)scan_config.high_khz + ( (int64_t)a_delta * scan_config.step_khz );
     if( frequency > 928000LL )
     {
         frequency = 928000LL;
@@ -1375,7 +1375,7 @@ bool cc1101_capture_acquire( rfscout_subghz_capture_t *a_capture, uint8_t *a_lea
     {
         capture_slot_t *slot = &capture_pool[ selected ];
         slot->state = CAPTURE_SLOT_PROCESSING;
-        *a_capture = (rfscout_subghz_capture_t){
+        *a_capture = ( rfscout_subghz_capture_t ){
             .symbols = slot->symbols,
             .symbol_count = slot->symbol_count,
             .frequency_hz = slot->frequency_hz,
