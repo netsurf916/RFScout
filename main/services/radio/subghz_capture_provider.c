@@ -34,9 +34,7 @@ typedef struct
     uint32_t resolution_hz;
     rfscout_subghz_modulation_t modulation;
     uint32_t sequence;
-    uint32_t started_ms;
-    uint32_t ended_ms;
-    int8_t peak_rssi_dbm;
+    uint32_t timestamp_ms;
     rfscout_subghz_capture_end_t end_reason;
     bool truncated;
 } capture_slot_t;
@@ -77,7 +75,7 @@ static int find_free_capture_slot_locked( void )
     return -1;
 }
 
-static void initialize_capture_slot_locked( int a_index, uint32_t a_started_ms )
+static void initialize_capture_slot_locked( int a_index )
 {
     capture_slot_t *slot = &capture_pool[ a_index ];
     slot->state = CAPTURE_SLOT_FILLING;
@@ -90,9 +88,7 @@ static void initialize_capture_slot_locked( int a_index, uint32_t a_started_ms )
     {
         next_capture_sequence = 1U;
     }
-    slot->started_ms = a_started_ms;
-    slot->ended_ms = 0U;
-    slot->peak_rssi_dbm = INT8_MIN;
+    slot->timestamp_ms = 0U;
     slot->end_reason = RFSCOUT_SUBGHZ_CAPTURE_END_IDLE;
     slot->truncated = false;
     filling_slot = a_index;
@@ -129,7 +125,7 @@ static bool arm_next_capture_task( void )
         slot_index = find_free_capture_slot_locked();
         if( slot_index >= 0 )
         {
-            initialize_capture_slot_locked( slot_index, capture_now_ms() );
+            initialize_capture_slot_locked( slot_index );
         }
         else if( !waiting_for_capture_slot )
         {
@@ -180,7 +176,7 @@ static bool capture_done_callback( rmt_channel_handle_t a_channel,
             slot->symbol_count = a_event->num_symbols < RFSCOUT_SUBGHZ_CAPTURE_SYMBOL_CAPACITY
                                      ? a_event->num_symbols
                                      : RFSCOUT_SUBGHZ_CAPTURE_SYMBOL_CAPACITY;
-            slot->ended_ms = capture_now_ms_from_isr();
+            slot->timestamp_ms = capture_now_ms_from_isr();
             slot->truncated = a_event->num_symbols >= RFSCOUT_SUBGHZ_CAPTURE_SYMBOL_CAPACITY;
             slot->end_reason = slot->truncated ? RFSCOUT_SUBGHZ_CAPTURE_END_CAPACITY
                                                : RFSCOUT_SUBGHZ_CAPTURE_END_IDLE;
@@ -417,20 +413,6 @@ void subghz_capture_provider_poll( void )
     (void)arm_next_capture_task();
 }
 
-void subghz_capture_provider_note_rssi( int8_t a_rssi_dbm )
-{
-    portENTER_CRITICAL( &state_lock );
-    if( ( filling_slot >= 0 ) && ( filling_slot < (int)RFSCOUT_SUBGHZ_CAPTURE_POOL_SIZE ) )
-    {
-        capture_slot_t *slot = &capture_pool[ filling_slot ];
-        if( ( CAPTURE_SLOT_FILLING == slot->state ) && ( a_rssi_dbm > slot->peak_rssi_dbm ) )
-        {
-            slot->peak_rssi_dbm = a_rssi_dbm;
-        }
-    }
-    portEXIT_CRITICAL( &state_lock );
-}
-
 bool subghz_capture_provider_acquire( rfscout_subghz_capture_t *a_capture, uint8_t *a_lease )
 {
     if( ( NULL == a_capture ) || ( NULL == a_lease ) )
@@ -463,9 +445,7 @@ bool subghz_capture_provider_acquire( rfscout_subghz_capture_t *a_capture, uint8
             .resolution_hz = slot->resolution_hz,
             .modulation = slot->modulation,
             .sequence = slot->sequence,
-            .started_ms = slot->started_ms,
-            .ended_ms = slot->ended_ms,
-            .peak_rssi_dbm = slot->peak_rssi_dbm,
+            .timestamp_ms = slot->timestamp_ms,
             .end_reason = slot->end_reason,
             .truncated = slot->truncated,
         };
