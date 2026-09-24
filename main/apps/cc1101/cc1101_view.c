@@ -73,7 +73,12 @@ void cc1101_view_discovery( const int8_t *a_rssi,
     format_mhz( low, sizeof( low ), a_config->low_khz );
     format_mhz( high, sizeof( high ), a_config->high_khz );
     format_mhz( peak, sizeof( peak ), a_peak_khz );
-    snprintf( line, sizeof( line ), "%s-%s MHz  STEP %luK", low, high, (unsigned long)a_config->step_khz );
+    snprintf( line,
+              sizeof( line ),
+              "%s-%s MHz  STEP %luK",
+              low,
+              high,
+              (unsigned long)a_config->step_khz );
     display_draw_text( UI_LAYOUT_LEFT_X, 30, line, DIM, 1U );
 
     const int graph_x = UI_LAYOUT_LEFT_X;
@@ -99,18 +104,16 @@ void cc1101_view_discovery( const int8_t *a_rssi,
             const int height = level * ( GRAPH_HEIGHT - 2 ) / 80;
             if( height > 0 )
             {
-                display_fill_rect( x,
-                                   GRAPH_TOP + GRAPH_HEIGHT - height,
-                                   2,
-                                   height,
-                                   theme->graph_primary );
+                display_fill_rect(
+                    x, GRAPH_TOP + GRAPH_HEIGHT - height, 2, height, theme->graph_primary );
             }
         }
     }
 
     snprintf( line, sizeof( line ), "PEAK %s MHz  %d dBm", peak, (int)a_peak_rssi );
     display_draw_text( UI_LAYOUT_LEFT_X, 142, line, theme->secondary, 1U );
-    display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "HOLD CENTER: LOCK  CENTER: SETTINGS", SUBDUED, 1U );
+    display_draw_text(
+        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "HOLD CENTER: LOCK  CENTER: SETTINGS", SUBDUED, 1U );
     (void)display_present();
 }
 
@@ -134,10 +137,8 @@ static void render_decode( const rfscout_subghz_analysis_t *a_analysis,
                   (unsigned)a_analysis->protocol.bit_count,
                   (unsigned)a_analysis->protocol.repeats );
         display_draw_text( UI_LAYOUT_LEFT_X, 82, line, theme->secondary, 1U );
-        snprintf( line,
-                  sizeof( line ),
-                  "KEY %06llX",
-                  (unsigned long long)a_analysis->protocol.data );
+        snprintf(
+            line, sizeof( line ), "KEY %06llX", (unsigned long long)a_analysis->protocol.data );
         display_draw_text( UI_LAYOUT_LEFT_X, 99, line, theme->text, 1U );
         snprintf( line,
                   sizeof( line ),
@@ -196,7 +197,8 @@ static void render_timing( const rfscout_subghz_analysis_t *a_analysis )
         }
     }
 
-    const size_t rows = a_analysis->timing_count < TIMING_ROWS ? a_analysis->timing_count : TIMING_ROWS;
+    const size_t rows =
+        a_analysis->timing_count < TIMING_ROWS ? a_analysis->timing_count : TIMING_ROWS;
     for( size_t index = 0U; index < rows; ++index )
     {
         const rfscout_subghz_timing_bucket_t *bucket = &a_analysis->timing[ index ];
@@ -229,7 +231,8 @@ static void waveform_level( int *a_x,
         return;
     }
 
-    int width = (int)( ( (uint64_t)a_duration * (uint64_t)( a_end_x - UI_LAYOUT_LEFT_X ) ) / a_total );
+    int width =
+        (int)( ( (uint64_t)a_duration * (uint64_t)( a_end_x - UI_LAYOUT_LEFT_X ) ) / a_total );
     if( width < 1 )
     {
         width = 1;
@@ -268,7 +271,8 @@ static void render_waveform( const rfscout_subghz_symbol_t *a_symbols,
     }
 
     display_draw_text( UI_LAYOUT_LEFT_X, 48, "NATIVE RMT SNAPSHOT", theme->secondary, 1U );
-    display_fill_rect( UI_LAYOUT_LEFT_X, 92, RFSCOUT_DISPLAY_WIDTH - 2 * UI_LAYOUT_LEFT_X, 1, theme->divider );
+    display_fill_rect(
+        UI_LAYOUT_LEFT_X, 92, RFSCOUT_DISPLAY_WIDTH - 2 * UI_LAYOUT_LEFT_X, 1, theme->divider );
 
     int x = UI_LAYOUT_LEFT_X;
     const int end_x = RFSCOUT_DISPLAY_WIDTH - UI_LAYOUT_LEFT_X;
@@ -344,7 +348,14 @@ void cc1101_view_menu( unsigned a_selected,
                        const cc1101_receive_config_t *a_receive )
 {
     static const char *labels[ CC1101_MENU_ITEM_COUNT ] = {
-        "BACK", "MODE", "SCAN PROFILE", "RX FREQ", "RX PRESET", "LOW", "HIGH", "STEP",
+        "BACK",
+        "MODE",
+        "SCAN PROFILE",
+        "RX FREQ",
+        "RX PRESET",
+        "LOW",
+        "HIGH",
+        "STEP",
     };
     const ui_theme_palette_t *theme = ui_theme_get();
     const unsigned first = ui_layout_menu_window_start( a_selected, CC1101_MENU_ITEM_COUNT );
@@ -392,12 +403,14 @@ void cc1101_view_menu( unsigned a_selected,
         }
         else if( ( 4U == index ) && ( NULL != a_receive ) )
         {
-            snprintf( value, sizeof( value ), "%s", cc1101_receive_preset_name( a_receive->preset ) );
+            snprintf(
+                value, sizeof( value ), "%s", cc1101_receive_preset_name( a_receive->preset ) );
         }
         else if( ( index >= 5U ) && ( NULL != a_scan ) )
         {
-            const uint32_t setting =
-                ( 5U == index ) ? a_scan->low_khz : ( 6U == index ) ? a_scan->high_khz : a_scan->step_khz;
+            const uint32_t setting = ( 5U == index )   ? a_scan->low_khz
+                                     : ( 6U == index ) ? a_scan->high_khz
+                                                       : a_scan->step_khz;
             if( 7U == index )
             {
                 snprintf( value, sizeof( value ), "%lu kHz", (unsigned long)setting );
