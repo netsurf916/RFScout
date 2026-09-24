@@ -217,8 +217,8 @@ Every current application receives an explicit v0.4.0 review rather than treatin
 
 #### CC1101
 
-- [ ] Move eligible history/capture storage to app-owned PSRAM.
-- [ ] Add burst duration and inter-burst timing observations.
+- [x] Move eligible retained observation history to app-owned PSRAM.
+- [x] Add sweep-derived activity duration and inter-observation timing while keeping the distinction from decoded pulse/protocol timing explicit.
 - [ ] Add conservative modulation/behavior inference without presenting heuristics as decoded identity.
 - [ ] Add structured growable capture/history and useful drill-down.
 - [ ] Define memory-pressure behavior and prove worker quiesce before memory release.
