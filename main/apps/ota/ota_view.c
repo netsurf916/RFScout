@@ -410,7 +410,7 @@ void ota_view_render_password( const char *a_ssid,
     }
     display_draw_text( UI_LAYOUT_LEFT_X, 84, candidate, theme->selected, 1U );
     display_draw_text( UI_LAYOUT_LEFT_X, 106, "CENTER: USE", theme->secondary, 1U );
-    display_draw_text( UI_LAYOUT_LEFT_X, 121, "BACK: CANCEL", theme->secondary, 1U );
+    display_draw_text( UI_LAYOUT_LEFT_X, 121, "LONG CENTER: CANCEL", theme->secondary, 1U );
 
     if( NULL != a_error && '\0' != a_error[ 0 ] )
     {
