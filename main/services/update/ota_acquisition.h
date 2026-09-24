@@ -42,7 +42,7 @@ typedef struct
 
 esp_err_t ota_acquisition_begin_catalog( void );
 esp_err_t ota_acquisition_begin_firmware( const char *a_artifact_path );
-ota_acquisition_status_t ota_acquisition_status( void );
+void ota_acquisition_status( ota_acquisition_status_t *a_status );
 esp_err_t ota_acquisition_copy_catalog( char *a_destination, size_t a_capacity, size_t *a_length );
 esp_err_t ota_acquisition_stop( void );
 bool ota_acquisition_is_active( void );
