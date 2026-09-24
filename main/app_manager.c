@@ -322,10 +322,6 @@ bool app_manager_locked( void )
 
 bool app_manager_set_locked( bool a_locked )
 {
-    if( a_locked && ( RFSCOUT_APP_DEVICE == active_app ) )
-    {
-        return false;
-    }
     if( app_locked == a_locked )
     {
         return app_locked;
