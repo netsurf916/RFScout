@@ -716,8 +716,7 @@ void cc1101_poll( void )
         rssi_poll_ticks = 1U;
     }
 
-    if( ( 0U == last_receive_rssi_tick ) ||
-        ( now - last_receive_rssi_tick >= rssi_poll_ticks ) )
+    if( ( 0U == last_receive_rssi_tick ) || ( now - last_receive_rssi_tick >= rssi_poll_ticks ) )
     {
         uint8_t raw_rssi = 0U;
         if( ESP_OK == read_status( CC1101_RSSI, &raw_rssi ) )
