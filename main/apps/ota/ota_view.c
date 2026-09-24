@@ -284,7 +284,7 @@ void ota_view_render_network_list( const char *a_title,
         }
         if( 0U == item )
         {
-            draw_network_menu_row( row, item, a_selected, "Back", NULL );
+            draw_menu_row( row, item, a_selected, "Back", NULL );
             continue;
         }
 
@@ -329,7 +329,7 @@ void ota_view_render_build_list( const char *a_installed_version,
         }
         if( 0U == item )
         {
-            draw_network_menu_row( row, item, a_selected, "Back", NULL );
+            draw_menu_row( row, item, a_selected, "Back", NULL );
             continue;
         }
         const ota_view_build_t *build = &a_builds[ item - 1U ];
