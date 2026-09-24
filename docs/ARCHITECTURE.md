@@ -126,6 +126,14 @@ Usable external PSRAM is a supported-platform requirement. RFScout does not sile
 
 Applications consume semantic input rather than GPIOs. The current T-Embed provider maps the rotary encoder/buttons into signed navigation, Select, Long Press, and the global Hold shortcut. There is no global Back input semantic; explicit Back rows and app-local actions are ordinary Select-driven UI choices. The dedicated user/power key remains a separate power-policy input.
 
+The user-facing gesture vocabulary is intentional:
+
+- **Center / Select** — short center-button press and release; ordinary activation.
+- **Long Press** — center-button release after at least 0.8 seconds but before the Hold action fires; app-defined secondary action.
+- **Hold** — center button remains pressed for 2 seconds; framework-owned global Input Lock / App Lock shortcut.
+
+UI hints use `LONG PRESS` and `HOLD` with those meanings. “Long Select” and “long hold” are not alternate names.
+
 ### Input lock and application lock
 
 RFScout exposes two deliberately different global lock semantics:
