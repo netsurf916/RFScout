@@ -5,6 +5,7 @@
 */
 
 #include "app_descriptor.h"
+#include "app_manager.h"
 
 #include "app_session.h"
 #include "cc1101.h"
@@ -19,14 +20,15 @@
 #include <string.h>
 
 #define CC1101_MENU_BACK 0U
-#define CC1101_MENU_MODE 1U
-#define CC1101_MENU_SCAN_PROFILE 2U
-#define CC1101_MENU_RX_FREQUENCY 3U
-#define CC1101_MENU_RX_PRESET 4U
-#define CC1101_MENU_LOW 5U
-#define CC1101_MENU_HIGH 6U
-#define CC1101_MENU_STEP 7U
-#define CC1101_MENU_ITEM_COUNT 8U
+#define CC1101_MENU_APP_LOCK 1U
+#define CC1101_MENU_MODE 2U
+#define CC1101_MENU_SCAN_PROFILE 3U
+#define CC1101_MENU_RX_FREQUENCY 4U
+#define CC1101_MENU_RX_PRESET 5U
+#define CC1101_MENU_LOW 6U
+#define CC1101_MENU_HIGH 7U
+#define CC1101_MENU_STEP 8U
+#define CC1101_MENU_ITEM_COUNT 9U
 #define CC1101_DISCOVERY_LOCK_THRESHOLD_DBM ( -105 )
 
 static const char *TAG = "cc1101_app";
@@ -82,7 +84,8 @@ static void render_discovery( void )
                            &config,
                            discovery_peak_khz,
                            discovery_peak_rssi,
-                           cc1101_is_detected() );
+                           cc1101_is_detected(),
+                           app_manager_locked() );
 }
 
 static void render_receive( void )
@@ -97,7 +100,8 @@ static void render_receive( void )
                          &stats,
                          raw_snapshot,
                          raw_snapshot_count,
-                         raw_snapshot_resolution_hz );
+                         raw_snapshot_resolution_hz,
+                         app_manager_locked() );
 }
 
 static void render_current( void )
@@ -118,8 +122,13 @@ static void render_menu( void )
     cc1101_receive_config_t receive;
     cc1101_scan_config( &scan );
     cc1101_receive_config( &receive );
-    cc1101_view_menu(
-        menu_item, menu_editing, menu_limit, cc1101_acquisition_mode(), &scan, &receive );
+    cc1101_view_menu( menu_item,
+                      menu_editing,
+                      menu_limit,
+                      app_manager_locked(),
+                      cc1101_acquisition_mode(),
+                      &scan,
+                      &receive );
 }
 
 static void close_menu( void )
@@ -229,9 +238,21 @@ static void switch_to_discovery( void )
     }
 }
 
-static bool switch_to_receive( uint32_t a_frequency_khz )
+static uint32_t preferred_receive_frequency( void )
 {
-    if( ESP_OK != cc1101_set_receive_frequency( a_frequency_khz ) )
+    if( discovery_peak_valid )
+    {
+        return discovery_peak_khz;
+    }
+
+    cc1101_receive_config_t receive;
+    cc1101_receive_config( &receive );
+    return receive.frequency_khz;
+}
+
+static bool switch_to_receive( cc1101_view_mode_t a_view )
+{
+    if( ESP_OK != cc1101_set_receive_frequency( preferred_receive_frequency() ) )
     {
         return false;
     }
@@ -242,7 +263,7 @@ static bool switch_to_receive( uint32_t a_frequency_khz )
     }
 
     reset_receive_results();
-    viewer = CC1101_VIEW_DECODED;
+    viewer = a_view;
     render_receive();
     return true;
 }
@@ -301,6 +322,15 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
         {
             close_menu();
             emit_event( RFSCOUT_EVENT_BACK, 0 );
+            return;
+        }
+
+        if( CC1101_MENU_APP_LOCK == menu_item )
+        {
+            (void)app_manager_set_locked( !app_manager_locked() );
+            menu_editing = false;
+            menu_limit = false;
+            render_menu();
             return;
         }
 
@@ -397,9 +427,24 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
     }
 }
 
-static void cycle_receive_view( void )
+static bool set_receive_view( cc1101_view_mode_t a_view )
 {
-    viewer = (cc1101_view_mode_t)( ( viewer + 1U ) % CC1101_VIEW_COUNT );
+    if( a_view >= CC1101_VIEW_COUNT )
+    {
+        return false;
+    }
+
+    if( CC1101_ACQUISITION_DISCOVERY == cc1101_acquisition_mode() )
+    {
+        return switch_to_receive( a_view );
+    }
+
+    if( viewer == a_view )
+    {
+        return true;
+    }
+
+    viewer = a_view;
     if( CC1101_VIEW_WAVEFORM != viewer )
     {
         clear_raw_snapshot();
@@ -410,6 +455,32 @@ static void cycle_receive_view( void )
         raw_snapshot_resolution_hz = 0U;
     }
     render_receive();
+    return true;
+}
+
+static bool navigate_surface( int a_direction )
+{
+    const int surface_count = (int)CC1101_VIEW_COUNT + 1;
+    int surface = CC1101_ACQUISITION_DISCOVERY == cc1101_acquisition_mode()
+                      ? 0
+                      : (int)viewer + 1;
+    surface += a_direction > 0 ? 1 : -1;
+    if( surface < 0 )
+    {
+        surface = surface_count - 1;
+    }
+    else if( surface >= surface_count )
+    {
+        surface = 0;
+    }
+
+    if( 0 == surface )
+    {
+        switch_to_discovery();
+        return CC1101_ACQUISITION_DISCOVERY == cc1101_acquisition_mode();
+    }
+
+    return set_receive_view( (cc1101_view_mode_t)( surface - 1 ) );
 }
 
 static rfscout_app_runtime_result_t cc1101_runtime( const rfscout_app_runtime_event_t *a_event )
@@ -486,26 +557,20 @@ static rfscout_app_runtime_result_t cc1101_runtime( const rfscout_app_runtime_ev
 
         if( RFSCOUT_INPUT_LONG_SELECT == a_event->input.type )
         {
-            if( CC1101_ACQUISITION_DISCOVERY == cc1101_acquisition_mode() )
+            if( navigate_surface( 1 ) )
             {
-                if( discovery_peak_valid && switch_to_receive( discovery_peak_khz ) )
-                {
-                    emit_event( RFSCOUT_EVENT_ACTIVATE, (int32_t)discovery_peak_khz );
-                }
-            }
-            else
-            {
-                cycle_receive_view();
-                emit_event( RFSCOUT_EVENT_NAVIGATE, (int32_t)viewer );
+                emit_event( RFSCOUT_EVENT_NAVIGATE, 1 );
             }
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
 
-        if( ( RFSCOUT_INPUT_BACK == a_event->input.type ) &&
-            ( CC1101_ACQUISITION_RECEIVE == cc1101_acquisition_mode() ) )
+        if( ( RFSCOUT_INPUT_NAVIGATION == a_event->input.type ) && app_manager_locked() )
         {
-            switch_to_discovery();
-            emit_event( RFSCOUT_EVENT_BACK, 0 );
+            const int direction = a_event->input.value > 0 ? 1 : -1;
+            if( navigate_surface( direction ) )
+            {
+                emit_event( RFSCOUT_EVENT_NAVIGATE, direction );
+            }
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
 
