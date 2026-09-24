@@ -81,7 +81,8 @@ idf_component_register(
         "apps/wifi_ble/observation_store.c"
         "apps/wifi_ble/surveillance.c"
         "apps/cc1101/app.c"
-        "apps/cc1101/cc1101_activity.c"
+        "apps/cc1101/cc1101_view.c"
+        "apps/cc1101/subghz_decode.c"
         "apps/nrf24/app.c"
         "apps/nrf24/nrf24_activity.c"
         "apps/nrf24/nrf24_packet_view.c"
@@ -146,6 +147,6 @@ idf_component_register(
         "services/display/display_idle.c"
         "services/display/ui_present.c"
     INCLUDE_DIRS ${RFSCOUT_INCLUDE_DIRS} "${CMAKE_CURRENT_BINARY_DIR}"
-    PRIV_REQUIRES app_update bootloader_support bt cjson esp_app_format esp_driver_ledc esp_driver_tsens esp_http_client esp_partition mbedtls
+    PRIV_REQUIRES app_update bootloader_support bt cjson esp_app_format esp_driver_ledc esp_driver_rmt esp_driver_tsens esp_http_client esp_partition mbedtls
     REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_timer driver esp_driver_i2c esp_driver_i2s esp_driver_pcnt esp_driver_uart esp_lcd fatfs sdmmc
 )
