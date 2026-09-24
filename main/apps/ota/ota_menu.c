@@ -1069,30 +1069,6 @@ static void handle_input( const rfscout_input_event_t *a_input )
         return;
     }
 
-    if( RFSCOUT_INPUT_BACK == a_input->type )
-    {
-        if( OTA_SCREEN_MAIN == screen )
-        {
-            return;
-        }
-        if( OTA_SCREEN_BUILD_ACTION == screen )
-        {
-            screen = OTA_SCREEN_BUILDS;
-        }
-        else
-        {
-            screen = OTA_SCREEN_MAIN;
-            action_saved_index = -1;
-            action_scan_index = -1;
-            memset( action_ssid, 0, sizeof( action_ssid ) );
-        }
-        selected_item = 0U;
-        error_text[ 0 ] = '\0';
-        render();
-        emit_event( RFSCOUT_EVENT_BACK, 0 );
-        return;
-    }
-
     if( RFSCOUT_INPUT_NAVIGATION == a_input->type )
     {
         unsigned item_count = 1U;
@@ -1316,35 +1292,6 @@ bool network_menu_input( bool a_pressed, int a_delta )
 bool ota_menu_input( bool a_pressed, int a_delta )
 {
     return submenu_input( a_pressed, a_delta );
-}
-
-static bool submenu_back( void )
-{
-    if( install_interaction_locked() || network_connect_modal_active )
-    {
-        return false;
-    }
-
-    if( OTA_SCREEN_MAIN == screen )
-    {
-        return true;
-    }
-
-    rfscout_input_event_t input;
-    memset( &input, 0, sizeof( input ) );
-    input.type = RFSCOUT_INPUT_BACK;
-    handle_input( &input );
-    return false;
-}
-
-bool network_menu_back( void )
-{
-    return submenu_back();
-}
-
-bool ota_menu_back( void )
-{
-    return submenu_back();
 }
 
 static void submenu_poll( int64_t a_now_us )
