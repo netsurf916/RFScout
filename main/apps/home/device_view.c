@@ -58,10 +58,11 @@
 #define DEVICE_ITEM_POWER_POLICY 24U
 #define DEVICE_ITEM_BREADCRUMBS 25U
 #define DEVICE_ITEM_BREADCRUMB_FILES 26U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 27U
+#define DEVICE_ITEM_HOLD_SHORTCUT 27U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 28U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
-#define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_BREADCRUMB_FILES + 1U )
+#define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_HOLD_SHORTCUT + 1U )
 #define DEVICE_ROWS_PER_PAGE 6U
 #define DEVICE_LOG_SHUTDOWN_TIMEOUT_MS 3000U
 #define DEVICE_AUDIO_VOLUME_STEP 10
@@ -245,7 +246,8 @@ static bool item_direct_toggle( unsigned a_item )
            ( DEVICE_ITEM_SYSTEM_EVENTS == a_item ) || ( DEVICE_ITEM_WIFI == a_item ) ||
            ( DEVICE_ITEM_CC1101 == a_item ) || ( DEVICE_ITEM_NRF24 == a_item ) ||
            ( DEVICE_ITEM_AUDIO == a_item ) || ( DEVICE_ITEM_THERMAL == a_item ) ||
-           ( DEVICE_ITEM_AUDIO_SPECTRUM == a_item ) || ( DEVICE_ITEM_LOGGING == a_item );
+           ( DEVICE_ITEM_AUDIO_SPECTRUM == a_item ) || ( DEVICE_ITEM_LOGGING == a_item ) ||
+           ( DEVICE_ITEM_HOLD_SHORTCUT == a_item );
 }
 
 static bool item_editable( unsigned a_item )
@@ -314,6 +316,8 @@ static const char *item_label( unsigned a_item )
             return "Breadcrumbs";
         case DEVICE_ITEM_BREADCRUMB_FILES:
             return "Breadcrumb files";
+        case DEVICE_ITEM_HOLD_SHORTCUT:
+            return "Long hold";
         default:
             if( ( a_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
                 ( a_item <= DEVICE_ITEM_NOTIFICATION_LAST ) )
@@ -442,6 +446,12 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             break;
         case DEVICE_ITEM_BREADCRUMB_FILES:
             snprintf( a_value, a_capacity, "%u", (unsigned)breadcrumbs_file_limit() );
+            break;
+        case DEVICE_ITEM_HOLD_SHORTCUT:
+            snprintf( a_value,
+                      a_capacity,
+                      "%s",
+                      device_config_hold_shortcut_name( config->hold_shortcut ) );
             break;
         default:
             if( ( a_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
@@ -1310,6 +1320,25 @@ static void toggle_logging( void )
     emit_device_event( RFSCOUT_EVENT_ENABLE, 1 );
 }
 
+static void toggle_hold_shortcut( void )
+{
+    const rfscout_hold_shortcut_t old_shortcut = device_config_hold_shortcut();
+    const rfscout_hold_shortcut_t new_shortcut =
+        RFSCOUT_HOLD_SHORTCUT_INPUT_LOCK == old_shortcut ? RFSCOUT_HOLD_SHORTCUT_APP_LOCK
+                                                         : RFSCOUT_HOLD_SHORTCUT_INPUT_LOCK;
+    if( ESP_OK != device_config_set_hold_shortcut( new_shortcut ) )
+    {
+        save_error = true;
+        return;
+    }
+
+    log_config_change( "input.long_hold",
+                       device_config_hold_shortcut_name( old_shortcut ),
+                       device_config_hold_shortcut_name( new_shortcut ) );
+    save_error = false;
+    emit_device_event( RFSCOUT_EVENT_NAVIGATE, 1 );
+}
+
 static void toggle_breadcrumbs( void )
 {
     const bool old_value = breadcrumbs_enabled();
@@ -1513,6 +1542,10 @@ static void adjust_selected( int a_delta )
     else if( DEVICE_ITEM_BREADCRUMB_FILES == selected_item )
     {
         adjust_breadcrumb_file_limit( a_delta );
+    }
+    else if( DEVICE_ITEM_HOLD_SHORTCUT == selected_item )
+    {
+        toggle_hold_shortcut();
     }
     else if( ( selected_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
              ( selected_item <= DEVICE_ITEM_NOTIFICATION_LAST ) )
