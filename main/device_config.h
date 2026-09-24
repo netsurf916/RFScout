@@ -37,6 +37,13 @@
 
 typedef enum
 {
+    RFSCOUT_HOLD_SHORTCUT_INPUT_LOCK = 0,
+    RFSCOUT_HOLD_SHORTCUT_APP_LOCK,
+    RFSCOUT_HOLD_SHORTCUT_COUNT
+} rfscout_hold_shortcut_t;
+
+typedef enum
+{
     RFSCOUT_EVIDENCE_STRENGTH_EVERYTHING = 0,
     RFSCOUT_EVIDENCE_STRENGTH_POSSIBLE,
     RFSCOUT_EVIDENCE_STRENGTH_PROBABLE,
@@ -62,6 +69,7 @@ typedef struct
     power_action_t low_battery_action;
     uint8_t high_temperature_threshold_c;
     power_action_t high_temperature_action;
+    rfscout_hold_shortcut_t hold_shortcut;
     bool apps_enabled[ RFSCOUT_APP_COUNT ];
     rfscout_app_id_t startup_app;
     bool logging_enabled;
@@ -101,6 +109,9 @@ esp_err_t device_config_set_low_battery_threshold( uint8_t a_percent );
 esp_err_t device_config_set_low_battery_action( power_action_t a_action );
 esp_err_t device_config_set_high_temperature_threshold( uint8_t a_temperature_c );
 esp_err_t device_config_set_high_temperature_action( power_action_t a_action );
+rfscout_hold_shortcut_t device_config_hold_shortcut( void );
+const char *device_config_hold_shortcut_name( rfscout_hold_shortcut_t a_shortcut );
+esp_err_t device_config_set_hold_shortcut( rfscout_hold_shortcut_t a_shortcut );
 esp_err_t device_config_set_clock_24h( bool a_enabled );
 rfscout_theme_id_t device_config_theme( void );
 esp_err_t device_config_set_theme( rfscout_theme_id_t a_theme );
