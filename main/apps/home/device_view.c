@@ -381,7 +381,7 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
         case DEVICE_ITEM_NETWORK:
         {
             rfscout_wifi_station_status_t status;
-    rfscout_wifi_station_status( &status );
+            rfscout_wifi_station_status( &status );
             if( RFSCOUT_WIFI_STATION_CONNECTED == status.state )
             {
                 snprintf( a_value,
