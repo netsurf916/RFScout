@@ -371,6 +371,10 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
                                                    ? CC1101_RECEIVE_OOK_270
                                                    : CC1101_RECEIVE_OOK_650;
         changed = ESP_OK == cc1101_set_receive_preset( preset );
+        if( changed )
+        {
+            reset_receive_results();
+        }
     }
     else if( CC1101_MENU_LOW == menu_item )
     {
