@@ -20,8 +20,6 @@
 
 #define CC1101_SPECTRUM_BINS 128U
 #define CC1101_MAX_SWEEP_SAMPLES 128U
-#define CC1101_CAPTURE_POOL_SIZE 2U
-#define CC1101_CAPTURE_SYMBOL_CAPACITY 2048U
 
 /** @brief High-level acquisition role of the CC1101 service. */
 typedef enum
