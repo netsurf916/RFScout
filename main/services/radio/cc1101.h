@@ -120,6 +120,7 @@ const char *cc1101_profile_name( cc1101_profile_t a_profile );
 /**
  * @brief Copy the most recently completed discovery spectrum frame.
  * @param a_output Destination for signed RSSI values.
+ * @param a_frequency_khz Destination for the exact sampled frequency represented by each bin.
  * @param a_capacity Destination capacity in bins.
  * @return Number of bins copied.
  */
