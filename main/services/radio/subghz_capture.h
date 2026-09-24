@@ -46,9 +46,7 @@ typedef struct
     uint32_t resolution_hz;
     rfscout_subghz_modulation_t modulation;
     uint32_t sequence;
-    uint32_t started_ms;
-    uint32_t ended_ms;
-    int8_t peak_rssi_dbm;
+    uint32_t timestamp_ms;
     rfscout_subghz_capture_end_t end_reason;
     bool truncated;
 } rfscout_subghz_capture_t;
