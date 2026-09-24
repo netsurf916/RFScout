@@ -392,10 +392,7 @@ void app_manager_poll( void )
         }
         if( RFSCOUT_APP_RUNTIME_HANDLED == result )
         {
-            if( RFSCOUT_INPUT_BACK != input.type )
-            {
-                activate_app_if_ready( now_us );
-            }
+            activate_app_if_ready( now_us );
             return;
         }
 
@@ -404,14 +401,6 @@ void app_manager_poll( void )
             if( !app_locked )
             {
                 (void)switch_app_for_navigation( input.value );
-            }
-            return;
-        }
-        if( ( RFSCOUT_INPUT_BACK == input.type ) && ( RFSCOUT_APP_DEVICE != active_app ) )
-        {
-            if( transition_to_app( RFSCOUT_APP_DEVICE, true ) )
-            {
-                rfscout_event_emit( RFSCOUT_EVENT_BACK, (uint8_t)RFSCOUT_APP_DEVICE, 0 );
             }
             return;
         }
