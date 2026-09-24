@@ -38,6 +38,7 @@ static unsigned menu_item;
 static cc1101_view_mode_t viewer;
 
 static int8_t discovery_rssi[ CC1101_SPECTRUM_BINS ];
+static uint32_t discovery_frequency_khz[ CC1101_SPECTRUM_BINS ];
 static size_t discovery_count;
 static uint32_t discovery_peak_khz;
 static int8_t discovery_peak_rssi;
@@ -129,46 +130,30 @@ static void close_menu( void )
     render_current();
 }
 
-static void update_discovery_peak( const cc1101_scan_config_t *a_config )
+static void update_discovery_peak( void )
 {
     discovery_peak_valid = false;
     discovery_peak_rssi = INT8_MIN;
     discovery_peak_khz = 0U;
 
-    if( ( NULL == a_config ) || ( 0U == discovery_count ) )
-    {
-        return;
-    }
-
-    size_t peak_index = 0U;
     for( size_t index = 0U; index < discovery_count; ++index )
     {
         if( discovery_rssi[ index ] > discovery_peak_rssi )
         {
             discovery_peak_rssi = discovery_rssi[ index ];
-            peak_index = index;
+            discovery_peak_khz = discovery_frequency_khz[ index ];
         }
     }
 
-    if( discovery_count <= 1U )
-    {
-        discovery_peak_khz = a_config->low_khz;
-    }
-    else
-    {
-        const uint64_t span = (uint64_t)a_config->high_khz - a_config->low_khz;
-        discovery_peak_khz = a_config->low_khz +
-                             (uint32_t)( span * peak_index / (uint64_t)( discovery_count - 1U ) );
-    }
-    discovery_peak_valid = discovery_peak_rssi >= CC1101_DISCOVERY_LOCK_THRESHOLD_DBM;
+    discovery_peak_valid = ( 0U != discovery_peak_khz ) &&
+                           ( discovery_peak_rssi >= CC1101_DISCOVERY_LOCK_THRESHOLD_DBM );
 }
 
 static void consume_discovery_frame( bool a_render )
 {
-    cc1101_scan_config_t config;
-    cc1101_scan_config( &config );
-    discovery_count = cc1101_spectrum( discovery_rssi, CC1101_SPECTRUM_BINS );
-    update_discovery_peak( &config );
+    discovery_count = cc1101_spectrum(
+        discovery_rssi, discovery_frequency_khz, CC1101_SPECTRUM_BINS );
+    update_discovery_peak();
     if( a_render )
     {
         render_discovery();
@@ -239,6 +224,7 @@ static void switch_to_discovery( void )
         discovery_peak_rssi = INT8_MIN;
         discovery_peak_valid = false;
         memset( discovery_rssi, -120, sizeof( discovery_rssi ) );
+        memset( discovery_frequency_khz, 0, sizeof( discovery_frequency_khz ) );
         render_discovery();
     }
 }
@@ -274,7 +260,13 @@ static bool adjust_receive_frequency( int a_direction )
     {
         return false;
     }
-    return ESP_OK == cc1101_set_receive_frequency( (uint32_t)candidate );
+    if( ESP_OK != cc1101_set_receive_frequency( (uint32_t)candidate ) )
+    {
+        return false;
+    }
+
+    reset_receive_results();
+    return true;
 }
 
 static bool change_mode( int a_direction )
@@ -438,6 +430,7 @@ static rfscout_app_runtime_result_t cc1101_runtime( const rfscout_app_runtime_ev
         raw_snapshot_resolution_hz = 0U;
         memset( &latest_analysis, 0, sizeof( latest_analysis ) );
         memset( discovery_rssi, -120, sizeof( discovery_rssi ) );
+        memset( discovery_frequency_khz, 0, sizeof( discovery_frequency_khz ) );
         discovery_count = 0U;
         discovery_peak_khz = 0U;
         discovery_peak_rssi = INT8_MIN;
