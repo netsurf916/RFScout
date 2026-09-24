@@ -444,7 +444,7 @@ static void load_input( const cJSON *a_root )
         return;
     }
 
-    const cJSON *hold = cJSON_GetObjectItemCaseSensitive( input, "long_hold" );
+    const cJSON *hold = cJSON_GetObjectItemCaseSensitive( input, "hold" );
     rfscout_hold_shortcut_t parsed;
     if( cJSON_IsString( hold ) && NULL != hold->valuestring &&
         hold_shortcut_from_config_name( hold->valuestring, &parsed ) )
@@ -947,7 +947,7 @@ static cJSON *build_system_record( void )
 
     cJSON *input = cJSON_AddObjectToObject( root, "input" );
     cJSON_AddStringToObject(
-        input, "long_hold", hold_shortcut_config_name( config.hold_shortcut ) );
+        input, "hold", hold_shortcut_config_name( config.hold_shortcut ) );
 
     cJSON *apps = cJSON_AddObjectToObject( root, "apps" );
     for( size_t index = 0U; index < RFSCOUT_APP_COUNT; ++index )
