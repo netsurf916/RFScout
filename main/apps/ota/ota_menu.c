@@ -847,7 +847,7 @@ static void handle_action_select( void )
     if( 1U == selected_item )
     {
         rfscout_wifi_station_status_t current;
-    rfscout_wifi_station_status( &current );
+        rfscout_wifi_station_status( &current );
         if( RFSCOUT_WIFI_STATION_CONNECTED == current.state &&
             0 == strcmp( current.ssid, saved_networks.entries[ action_saved_index ].ssid ) )
         {
