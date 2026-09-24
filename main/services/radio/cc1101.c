@@ -65,7 +65,6 @@
 #define CC1101_RMT_RESOLUTION_HZ 500000U
 #define CC1101_RMT_GLITCH_NS 2000U
 #define CC1101_RMT_IDLE_NS 40000000U
-#define CC1101_RECEIVE_RSSI_POLL_MS 4U
 
 static const char *TAG = "cc1101";
 static spi_device_handle_t device;
@@ -83,8 +82,6 @@ static uint32_t display_frequency_khz[ CC1101_SPECTRUM_BINS ];
 static cc1101_acquisition_mode_t acquisition_mode = CC1101_ACQUISITION_DISCOVERY;
 static cc1101_scan_config_t scan_config = { CC1101_PROFILE_433, 433050U, 434790U, 15U };
 static cc1101_receive_config_t receive_config = { 433920U, CC1101_RECEIVE_OOK_650 };
-
-static TickType_t last_receive_rssi_tick;
 
 static esp_err_t transfer( uint8_t a_header, uint8_t a_data, uint8_t *a_result )
 {
@@ -558,7 +555,6 @@ static esp_err_t start_receive_acquisition( void )
         return result;
     }
 
-    last_receive_rssi_tick = 0U;
     return ESP_OK;
 }
 
@@ -753,23 +749,6 @@ void cc1101_poll( void )
     if( !service_started || ( CC1101_ACQUISITION_RECEIVE != acquisition_mode ) )
     {
         return;
-    }
-
-    const TickType_t now = xTaskGetTickCount();
-    TickType_t rssi_poll_ticks = pdMS_TO_TICKS( CC1101_RECEIVE_RSSI_POLL_MS );
-    if( 0U == rssi_poll_ticks )
-    {
-        rssi_poll_ticks = 1U;
-    }
-
-    if( ( 0U == last_receive_rssi_tick ) || ( now - last_receive_rssi_tick >= rssi_poll_ticks ) )
-    {
-        uint8_t raw_rssi = 0U;
-        if( ESP_OK == read_status( CC1101_RSSI, &raw_rssi ) )
-        {
-            subghz_capture_provider_note_rssi( decode_rssi( raw_rssi ) );
-        }
-        last_receive_rssi_tick = now;
     }
 
     subghz_capture_provider_poll();
