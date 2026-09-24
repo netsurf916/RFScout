@@ -571,8 +571,8 @@ esp_err_t cc1101_probe( void )
             result = read_status( CC1101_VERSION, &version );
         }
 
-        detected =
-            ( ESP_OK == result ) && ( 0x00U == part ) && ( 0x00U != version ) && ( 0xFFU != version );
+        detected = ( ESP_OK == result ) && ( 0x00U == part ) && ( 0x00U != version ) &&
+                   ( 0xFFU != version );
         ESP_LOGI( TAG,
                   "probe attempt=%u part=0x%02x version=0x%02x detected=%d",
                   attempt + 1U,
@@ -960,9 +960,7 @@ const char *cc1101_profile_name( cc1101_profile_t a_profile )
     return a_profile < CC1101_PROFILE_COUNT ? names[ a_profile ] : "?";
 }
 
-size_t cc1101_spectrum( int8_t *a_output,
-                        uint32_t *a_frequency_khz,
-                        size_t a_capacity )
+size_t cc1101_spectrum( int8_t *a_output, uint32_t *a_frequency_khz, size_t a_capacity )
 {
     if( ( NULL == a_output ) || ( NULL == a_frequency_khz ) || ( 0U == a_capacity ) )
     {
