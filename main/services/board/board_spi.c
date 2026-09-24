@@ -43,7 +43,6 @@ esp_err_t board_spi_init( void )
     return result;
 }
 
-
 static void ensure_manual_mutex( void )
 {
     if( NULL == manual_mutex )
@@ -59,10 +58,8 @@ static esp_err_t ensure_manual_guard_device( void )
         return ESP_OK;
     }
 
-    spi_device_interface_config_t guard_config = { .clock_speed_hz = 1000000,
-                                                   .mode = 0,
-                                                   .spics_io_num = -1,
-                                                   .queue_size = 1 };
+    spi_device_interface_config_t guard_config = {
+        .clock_speed_hz = 1000000, .mode = 0, .spics_io_num = -1, .queue_size = 1 };
     return spi_bus_add_device( RFSCOUT_BOARD_SPI_HOST, &guard_config, &manual_guard_device );
 }
 
