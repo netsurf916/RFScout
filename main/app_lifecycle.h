@@ -50,6 +50,8 @@ typedef struct
     esp_err_t error;
     size_t reclaimed_bytes;
     size_t remaining_allocations;
+    size_t psram_free_bytes;
+    size_t psram_largest_free_block;
     int64_t elapsed_us;
     uint32_t sequence;
 } rfscout_app_transition_diagnostics_t;
@@ -64,14 +66,17 @@ esp_err_t app_lifecycle_init( void );
  *          memory remains intact. After commit, all remaining managed allocations for the source
  *          app are reclaimed and verified before the destination session is established.
  */
-rfscout_app_transition_diagnostics_t app_lifecycle_transition(
+const rfscout_app_transition_diagnostics_t *app_lifecycle_transition(
     rfscout_app_id_t a_from, rfscout_app_id_t a_to, const rfscout_app_lifecycle_hooks_t *a_hooks );
 
 /** @brief Return true when the transition crossed the irreversible source commit boundary. */
 bool app_lifecycle_transition_committed(
     const rfscout_app_transition_diagnostics_t *a_diagnostics );
 
-/** @brief Return diagnostics for the most recent transition attempt. */
-rfscout_app_transition_diagnostics_t app_lifecycle_last_transition( void );
+/**
+ * @brief Return diagnostics for the most recent transition attempt.
+ * @details The returned pointer remains valid until the next transition attempt updates it.
+ */
+const rfscout_app_transition_diagnostics_t *app_lifecycle_last_transition( void );
 
 #endif // _RFSCOUT_APP_LIFECYCLE_H_
