@@ -54,7 +54,7 @@ ESP-IDF Wi-Fi persistence remains RAM-only so the driver does not become an inde
 
 ## Firmware Update
 
-**Device Settings → Update** is available only after the Home-owned station is connected and SNTP has synchronized time.
+**Device Settings → Update** is available whenever the Home-owned station is connected. RFScout still attempts SNTP automatically after association, but a failed or cancelled time sync does not block the user from trying an update. This permits retained or manually set clocks to work normally; if the actual wall clock is unsuitable for HTTPS certificate validation, the catalog/image request fails as a transport error instead of being preemptively blocked by the UI.
 
 The UI supports:
 
