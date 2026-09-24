@@ -1366,7 +1366,8 @@ static void submenu_poll( int64_t a_now_us )
                     }
                     else
                     {
-                        snprintf( stable_update_status, sizeof( stable_update_status ), "Up to date" );
+                        snprintf(
+                            stable_update_status, sizeof( stable_update_status ), "Up to date" );
                     }
                     error_text[ 0 ] = '\0';
                     if( open_builds_after_catalog )
@@ -1380,7 +1381,8 @@ static void submenu_poll( int64_t a_now_us )
                 {
                     open_builds_after_catalog = false;
                     set_error( result );
-                    snprintf( stable_update_status, sizeof( stable_update_status ), "Check failed" );
+                    snprintf(
+                        stable_update_status, sizeof( stable_update_status ), "Check failed" );
                 }
             }
             else if( OTA_ACQUISITION_KIND_FIRMWARE == acquisition.kind )
