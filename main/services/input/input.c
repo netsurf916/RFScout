@@ -157,7 +157,6 @@ static void queue_global_hold( uint32_t a_press_sequence )
     button_lock_sequence = a_press_sequence;
     button_event = false;
     button_long_event = false;
-    button_global_hold_event = false;
     button_back_event = false;
     button_global_hold_event = true;
     clear_navigation_delta();
