@@ -4,7 +4,7 @@ Audio Spectrum is RFScout's live microphone spectrum/FFT application. It uses th
 
 ## Availability and lifecycle
 
-The application probes the microphone provider at startup and requires delayed activation. Skipping through the app before activation should not touch microphone hardware.
+The application uses the platform's **fixed-hardware** probe policy for the microphone provider and requires delayed activation. Initial discovery probes the microphone, but a failed probe is retried when navigation checks the app rather than becoming a permanent boot-time miss. Skipping through the app before activation should not leave microphone capture active.
 
 When activated, it acquires the session-managed shared audio-capture service. Recorder and Audio Spectrum therefore cannot independently own I2S0 at the same time.
 
