@@ -43,28 +43,28 @@ static const char *app_name( rfscout_app_id_t a_app )
     return ( ( a_app >= 0 ) && ( a_app < RFSCOUT_APP_COUNT ) ) ? names[ a_app ] : "UNKNOWN";
 }
 
-static bool write_lifecycle_record( rfscout_app_id_t a_app, const char *a_event )
+static void write_lifecycle_record( rfscout_app_id_t a_app, const char *a_event )
 {
     rfscout_log_record_t record;
     if( !log_begin( &record, "app" ) || !log_str( &record, "app", app_name( a_app ) ) ||
         !log_str( &record, "event", a_event ) )
     {
-        return false;
+        return;
     }
-    return log_end( &record );
+    (void)log_end( &record );
 }
 
-static bool write_transition_record( const rfscout_app_transition_diagnostics_t *a_diagnostics )
+static void write_transition_record( const rfscout_app_transition_diagnostics_t *a_diagnostics )
 {
     if( ( NULL == a_diagnostics ) || ( 0U == a_diagnostics->sequence ) )
     {
-        return false;
+        return;
     }
 
     rfscout_log_record_t record;
     if( !log_begin( &record, "transition" ) )
     {
-        return false;
+        return;
     }
 
     const bool success =
@@ -79,7 +79,10 @@ static bool write_transition_record( const rfscout_app_transition_diagnostics_t 
         log_uint( &record, "psram_free", a_diagnostics->psram_free_bytes ) &&
         log_uint( &record, "psram_largest", a_diagnostics->psram_largest_free_block );
 
-    return success && log_end( &record );
+    if( success )
+    {
+        (void)log_end( &record );
+    }
 }
 
 static void write_periodic_record( rfscout_app_id_t a_app )
@@ -163,7 +166,7 @@ void app_logging_init( void )
     last_transition_sequence = ( NULL != transition ) ? transition->sequence : 0U;
     last_record_us = 0;
     initialized = true;
-    (void)write_lifecycle_record( last_app, "enter" );
+    write_lifecycle_record( last_app, "enter" );
 }
 
 void app_logging_poll( void )
@@ -178,15 +181,15 @@ void app_logging_poll( void )
         ( transition->sequence != last_transition_sequence ) )
     {
         last_transition_sequence = transition->sequence;
-        (void)write_transition_record( transition );
+        write_transition_record( transition );
     }
 
     const rfscout_app_id_t current = app_manager_current();
     const int64_t now = esp_timer_get_time();
     if( current != last_app )
     {
-        (void)write_lifecycle_record( last_app, "exit" );
-        (void)write_lifecycle_record( current, "enter" );
+        write_lifecycle_record( last_app, "exit" );
+        write_lifecycle_record( current, "enter" );
         last_app = current;
         last_record_us = 0;
     }
