@@ -5,6 +5,7 @@
 */
 
 #include "app_descriptor.h"
+#include "app_framework.h"
 #include "app_manager.h"
 
 #include "app_session.h"
@@ -574,6 +575,13 @@ static rfscout_app_runtime_result_t cc1101_runtime( const rfscout_app_runtime_ev
 
     if( ( RFSCOUT_APP_RUNTIME_POLL == a_event->type ) && a_event->activated )
     {
+        if( !cc1101_is_detected() )
+        {
+            app_framework_report_availability( RFSCOUT_APP_CC1101,
+                                               RFSCOUT_APP_AVAILABILITY_UNAVAILABLE );
+            return RFSCOUT_APP_RUNTIME_REQUEST_HOME;
+        }
+
         if( rendered_app_lock != app_manager_locked() )
         {
             if( menu_active )
