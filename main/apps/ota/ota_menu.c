@@ -75,7 +75,7 @@ static int selected_build_index;
 static bool open_builds_after_catalog;
 static char *catalog_json;
 static size_t catalog_json_capacity;
-static char update_status[ OTA_CATALOG_VERSION_MAX_LENGTH + 1U ];
+static char stable_update_status[ OTA_CATALOG_VERSION_MAX_LENGTH + 1U ];
 static uint32_t last_acquisition_generation;
 static uint32_t last_installer_generation;
 static uint32_t last_scan_generation;
@@ -330,7 +330,7 @@ static void render_update_main( void )
                                  selected_item,
                                  ready,
                                  can_install,
-                                 update_status,
+                                 stable_update_status,
                                  error_text );
 }
 
@@ -449,8 +449,11 @@ static void render_builds( void )
     {
         selected_item = item_count - 1U;
     }
-    ota_view_render_build_list(
-        view_builds, available_build_count, selected_item, "No compatible builds" );
+    ota_view_render_build_list( firmware_identity()->version,
+                                view_builds,
+                                available_build_count,
+                                selected_item,
+                                "No compatible builds" );
 }
 
 static void render_build_action( void )
@@ -464,8 +467,11 @@ static void render_build_action( void )
     }
 
     const ota_catalog_build_t *build = &available_builds[ selected_build_index ];
-    ota_view_render_build_action(
-        build->label, build->candidate.version, build->candidate.commit, selected_item );
+    ota_view_render_build_action( firmware_identity()->version,
+                                  build->label,
+                                  build->candidate.version,
+                                  build->candidate.commit,
+                                  selected_item );
 }
 
 static void render( void )
@@ -581,7 +587,7 @@ static void begin_update_check( void )
     memset( &catalog_selection, 0, sizeof( catalog_selection ) );
     available_build_count = 0U;
     selected_build_index = -1;
-    snprintf( update_status, sizeof( update_status ), "Checking..." );
+    snprintf( stable_update_status, sizeof( stable_update_status ), "Checking..." );
     render();
 }
 
@@ -609,7 +615,6 @@ static void request_candidate_install( const ota_catalog_candidate_t *a_candidat
     error_text[ 0 ] = '\0';
     screen = OTA_SCREEN_MAIN;
     selected_item = 0U;
-    snprintf( update_status, sizeof( update_status ), "Preparing..." );
     display_modal_show( "OTA UPDATE", "Preparing..." );
     render();
 }
@@ -643,12 +648,10 @@ static void start_pending_install( void )
         }
         display_modal_clear();
         set_error( result );
-        snprintf( update_status, sizeof( update_status ), "Install failed" );
         render();
         return;
     }
 
-    snprintf( update_status, sizeof( update_status ), "Downloading..." );
     display_modal_show( "OTA UPDATE", "Downloading..." );
     render();
 }
@@ -1148,7 +1151,7 @@ static void reset_runtime_state( void )
     selected_build_index = -1;
     open_builds_after_catalog = false;
     release_catalog_json();
-    snprintf( update_status, sizeof( update_status ), "Not checked" );
+    snprintf( stable_update_status, sizeof( stable_update_status ), "Not checked" );
     last_acquisition_generation = 0U;
     last_installer_generation = 0U;
     last_scan_generation = 0U;
@@ -1356,14 +1359,14 @@ static void submenu_poll( int64_t a_now_us )
                 {
                     if( OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result )
                     {
-                        snprintf( update_status,
-                                  sizeof( update_status ),
+                        snprintf( stable_update_status,
+                                  sizeof( stable_update_status ),
                                   "%s",
                                   catalog_selection.candidate.version );
                     }
                     else
                     {
-                        snprintf( update_status, sizeof( update_status ), "Current" );
+                        snprintf( stable_update_status, sizeof( stable_update_status ), "Current" );
                     }
                     error_text[ 0 ] = '\0';
                     if( open_builds_after_catalog )
@@ -1377,12 +1380,11 @@ static void submenu_poll( int64_t a_now_us )
                 {
                     open_builds_after_catalog = false;
                     set_error( result );
-                    snprintf( update_status, sizeof( update_status ), "Check failed" );
+                    snprintf( stable_update_status, sizeof( stable_update_status ), "Check failed" );
                 }
             }
             else if( OTA_ACQUISITION_KIND_FIRMWARE == acquisition.kind )
             {
-                snprintf( update_status, sizeof( update_status ), "Verifying..." );
                 display_modal_show( "OTA UPDATE", "Verifying..." );
                 render();
 
@@ -1393,7 +1395,6 @@ static void submenu_poll( int64_t a_now_us )
                 }
                 if( ESP_OK == result )
                 {
-                    snprintf( update_status, sizeof( update_status ), "Rebooting..." );
                     display_modal_show( "OTA UPDATE", "Rebooting..." );
                     render();
                     esp_restart();
@@ -1401,7 +1402,6 @@ static void submenu_poll( int64_t a_now_us )
                 display_modal_clear();
                 (void)ota_installer_abort();
                 set_error( result );
-                snprintf( update_status, sizeof( update_status ), "Install failed" );
             }
         }
         else if( OTA_ACQUISITION_FAILED == acquisition.state )
@@ -1410,11 +1410,10 @@ static void submenu_poll( int64_t a_now_us )
             {
                 display_modal_clear();
                 (void)ota_installer_abort();
-                snprintf( update_status, sizeof( update_status ), "Install failed" );
             }
             else
             {
-                snprintf( update_status, sizeof( update_status ), "Check failed" );
+                snprintf( stable_update_status, sizeof( stable_update_status ), "Check failed" );
             }
             if( acquisition.http_status > 0 )
             {
@@ -1440,7 +1439,6 @@ static void submenu_poll( int64_t a_now_us )
     {
         const unsigned percent =
             (unsigned)( (uint64_t)installer.bytes_written * 100U / installer.expected_size );
-        snprintf( update_status, sizeof( update_status ), "Downloading %u%%", percent );
         char progress[ 32 ];
         snprintf( progress,
                   sizeof( progress ),
@@ -1453,7 +1451,6 @@ static void submenu_poll( int64_t a_now_us )
     }
     else if( OTA_INSTALLER_VERIFYING == installer.state )
     {
-        snprintf( update_status, sizeof( update_status ), "Verifying..." );
         display_modal_show( "OTA UPDATE", "Verifying..." );
         redraw = true;
     }
