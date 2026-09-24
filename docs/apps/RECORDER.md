@@ -30,7 +30,7 @@ The recording browser supports:
 - browsing recordings and duration;
 - playback;
 - playback-volume adjustment; and
-- long-select deletion with confirmation.
+- Long Press deletion with confirmation.
 
 Playback loudness is user-facing percentage state and is persisted as device/app configuration.
 
