@@ -464,9 +464,7 @@ static bool set_receive_view( cc1101_view_mode_t a_view )
 static bool navigate_surface( int a_direction )
 {
     const int surface_count = (int)CC1101_VIEW_COUNT + 1;
-    int surface = CC1101_ACQUISITION_DISCOVERY == cc1101_acquisition_mode()
-                      ? 0
-                      : (int)viewer + 1;
+    int surface = CC1101_ACQUISITION_DISCOVERY == cc1101_acquisition_mode() ? 0 : (int)viewer + 1;
     surface += a_direction > 0 ? 1 : -1;
     if( surface < 0 )
     {
