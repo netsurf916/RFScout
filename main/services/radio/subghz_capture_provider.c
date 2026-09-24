@@ -285,7 +285,7 @@ static esp_err_t allocate_capture_pool( void )
             heap_caps_aligned_calloc( SUBGHZ_RMT_ALIGNMENT,
                                       RFSCOUT_SUBGHZ_CAPTURE_SYMBOL_CAPACITY,
                                       sizeof( rfscout_subghz_symbol_t ),
-                                      MALLOC_CAP_8BIT | MALLOC_CAP_DMA | MALLOC_CAP_SPIRAM );
+                                      MALLOC_CAP_8BIT | MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL );
         if( NULL == capture_pool[ index ].symbols )
         {
             free_capture_pool();
