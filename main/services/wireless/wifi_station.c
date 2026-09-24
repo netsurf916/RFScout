@@ -569,8 +569,7 @@ esp_err_t rfscout_wifi_station_cancel_time_sync( void )
     }
 
     portENTER_CRITICAL( &state_lock );
-    const bool can_cancel =
-        started && RFSCOUT_WIFI_STATION_CONNECTED == status.state && status.ntp_syncing;
+    const bool can_cancel = started && RFSCOUT_WIFI_STATION_CONNECTED == status.state;
     portEXIT_CRITICAL( &state_lock );
     if( !can_cancel )
     {
