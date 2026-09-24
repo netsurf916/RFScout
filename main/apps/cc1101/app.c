@@ -312,13 +312,6 @@ static bool change_mode( int a_direction )
 
 static void handle_menu_input( const rfscout_input_event_t *a_input )
 {
-    if( RFSCOUT_INPUT_BACK == a_input->type )
-    {
-        close_menu();
-        emit_event( RFSCOUT_EVENT_BACK, 0 );
-        return;
-    }
-
     if( RFSCOUT_INPUT_SELECT == a_input->type )
     {
         if( CC1101_MENU_BACK == menu_item )
