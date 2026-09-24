@@ -946,8 +946,7 @@ static cJSON *build_system_record( void )
                              power_action_config_name( config.high_temperature_action ) );
 
     cJSON *input = cJSON_AddObjectToObject( root, "input" );
-    cJSON_AddStringToObject(
-        input, "hold", hold_shortcut_config_name( config.hold_shortcut ) );
+    cJSON_AddStringToObject( input, "hold", hold_shortcut_config_name( config.hold_shortcut ) );
 
     cJSON *apps = cJSON_AddObjectToObject( root, "apps" );
     for( size_t index = 0U; index < RFSCOUT_APP_COUNT; ++index )
