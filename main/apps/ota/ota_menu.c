@@ -236,10 +236,14 @@ static bool network_connected( void )
     return RFSCOUT_WIFI_STATION_CONNECTED == current.state;
 }
 
+static bool install_interaction_locked( void )
+{
+    return ( NULL != pending_install_candidate ) || ota_installer_is_active();
+}
+
 static bool ota_operation_active( void )
 {
-    return ( NULL != pending_install_candidate ) || ota_acquisition_is_active() ||
-           ota_installer_is_active();
+    return install_interaction_locked() || ota_acquisition_is_active();
 }
 
 static bool install_action_available( void )
@@ -1218,7 +1222,7 @@ esp_err_t ota_menu_leave( void )
 
 static bool submenu_input( bool a_pressed, int a_delta )
 {
-    if( NULL != pending_install_candidate )
+    if( install_interaction_locked() )
     {
         return false;
     }
@@ -1259,7 +1263,7 @@ bool ota_menu_input( bool a_pressed, int a_delta )
 
 static bool submenu_back( void )
 {
-    if( NULL != pending_install_candidate )
+    if( install_interaction_locked() )
     {
         return false;
     }
