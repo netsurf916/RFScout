@@ -4,7 +4,7 @@ Recorder is RFScout's SD-backed microphone recording and playback application. S
 
 ## Availability
 
-Recorder uses the board-neutral `audio_capture` service plus removable SD storage. It is hot-plug/dependency probed: the app becomes unavailable when required storage or microphone access is unavailable.
+Recorder uses the board-neutral `audio_capture` service plus removable SD storage. Availability is dependency-probed: the app becomes unavailable when required storage or microphone access is unavailable. Runtime SD removal can be detected and latched unavailable when a storage health probe observes media loss, but hot insertion/remount is not currently supported.
 
 The current T-Embed profile supplies a PDM microphone through the shared audio-capture provider. Recorder never receives a raw I2S handle.
 
@@ -33,6 +33,31 @@ The recording browser supports:
 - long-select deletion with confirmation.
 
 Playback loudness is user-facing percentage state and is persisted as device/app configuration.
+
+### Recorder state and SD telemetry
+
+The structured app log exposes Recorder's internal state numerically:
+
+| State | Meaning |
+| ---: | --- |
+| 0 | Idle / ready |
+| 1 | Recording |
+| 2 | Saving / asynchronous post-processing |
+| 3 | Live microphone monitoring (used by Audio Spectrum) |
+| 4 | Playback |
+| 5 | No storage |
+| 6 | Error |
+
+When SD logging is available, Recorder telemetry also includes the current playable-file count and the service's current/most-recent PCM byte count. A hardware recording captured the expected transition into recording and then asynchronous save:
+
+```json
+{"type":"telemetry","time":"2026-09-23T22:37:16Z","app":"RECORDER","state":1,"files":0,"bytes":1162240}
+{"type":"telemetry","time":"2026-09-23T22:37:17Z","app":"RECORDER","state":2,"files":0,"bytes":1163264}
+{"type":"telemetry","time":"2026-09-23T22:37:32Z","app":"RECORDER","state":0,"files":1,"bytes":1076892}
+{"type":"telemetry","time":"2026-09-23T22:37:34Z","app":"RECORDER","state":4,"files":1,"bytes":1076892}
+```
+
+Because Recorder itself requires mounted storage, no Recorder SD-log record can prove its behavior while the SD card is absent. In that condition the application is expected to become unavailable rather than remain navigable.
 
 ## Transition safety
 

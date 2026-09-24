@@ -33,6 +33,8 @@ RFScout applications should behave like isolated consumers of a common pool of d
 
 This is resource isolation by lifecycle, not a promise that literally every byte of physical PSRAM is available to an application. Platform, RTOS, display, driver, DMA, and service allocations that must remain resident are excluded from the app-owned pool. Internal SRAM remains reserved for the system, stacks, latency-sensitive state, and allocations constrained by ESP-IDF or peripheral hardware.
 
+Stack safety is part of the v0.4.0 resource contract. Nontrivial or growth-prone structures should be passed by pointer/reference rather than copied or returned by value when practical, especially across lifecycle, logging, collector, and application boundaries. Large retained state belongs in app-owned PSRAM where appropriate; fixed task stacks should not silently absorb structure growth. Ownership and lifetime should remain explicit so avoiding a stack copy does not introduce ambiguous reachability.
+
 ### Workstream A: application-scoped PSRAM memory manager
 
 **Status:** Implemented by PR #63.
@@ -81,6 +83,8 @@ PR #70 moves normal app runtime behavior behind compiled descriptors and removes
 Storage/resource policy distinguishes hard lifecycle dependencies from optional operation-time facilities. Hard services remain descriptor-managed; optional facilities such as removable storage are checked only by the service/operation that explicitly requires them, while internal persistence remains a separate device-owned capability.
 
 Outstanding validation includes rapid app rotation, repeated Home/app cycles, large histories, Recorder recording/save transition vetoes, Audio Spectrum rapid skip-through and no-SD operation, Thermal attach/detach, forced service-quiesce failures, callback/timer races, low-memory behavior, baseline-memory stability, and largest-free-block stability.
+
+Hardware validation should rely on the existing structured RFScout log as the primary evidence source whenever SD logging is available rather than requiring a parallel serial-console transcript. Extend the current logging path to preserve the lifecycle diagnostics already computed by the transition coordinator — sequence, source/destination app, outcome/error, reclaimed bytes, remaining managed allocations, transition duration, free PSRAM, and largest free PSRAM block. Reuse the existing lifecycle diagnostics and JSONL writer rather than creating a second lifecycle-event or logging subsystem. The serial console remains the fallback evidence path when storage is intentionally absent.
 
 ### Workstream C: dynamic WiFi/BLE retention and observation model
 
@@ -152,7 +156,7 @@ The target strength semantics are:
 - **Probable** — strong association, with false positives expected to be uncommon.
 - **Distinctive** — evidence intended to be uniquely identifying.
 
-The user-facing **Evidence Threshold** selects a minimum numeric case score mapped to Possible / Probable / Distinctive at 2 / 4 / 6. Unique matched facts contribute database-defined 1 / 2 / 4 weights; repeated observations of the same fact do not add score, while every distinct matching fact in an observation can accumulate immediately. Cases retain evidence in a generator-sized 32-bit bitset, avoiding hand-maintained evidence-count limits. Product-specific signal values, weights, and provenance belong in `data/surveillance_signatures.csv`, not classifier control flow.
+The user-facing **Evidence Threshold** selects a minimum numeric case score. The normal strength levels map Possible / Probable / Distinctive to 2 / 4 / 6, and the implemented opt-in **Everything** mode exposes score-1 matches for detector testing and field validation without changing their evidence strength. Unique matched facts contribute database-defined 1 / 2 / 4 weights; repeated observations of the same fact do not add score, while every distinct matching fact in an observation can accumulate immediately. Cases retain evidence in a generator-sized 32-bit bitset, avoiding hand-maintained evidence-count limits. Product-specific signal values, weights, and provenance belong in `data/surveillance_signatures.csv`, not classifier control flow.
 
 The implementation pass should first perform the semantic refactor without mechanically preserving the old source-based strength assumptions. After that baseline is stable, perform evidence-backed research and tuning across every currently supported surveillance category/signature. Research should prefer primary/vendor/protocol material, device teardowns or captures, and independently corroborated field observations; community detector projects are useful discovery sources but should not be copied without evaluating false-positive behavior.
 
@@ -242,7 +246,9 @@ Every current application receives an explicit v0.4.0 review rather than treatin
 - [x] Keep Audio Spectrum analysis on raw PCM rather than Recorder capture gain; replace the clipping-prone pre-FFT `0..+48 dB` control with continuous high-pass/DC-block filtering and smoothed automatic dB display scaling.
 - [ ] Tune automatic range attack/decay and low-frequency cutoff on hardware if field use shows the defaults need adjustment.
 - [ ] Add further spectrum controls only where they improve interpretation (for example averaging/smoothing or peak hold) without making the app contract complex.
-- [ ] Validate rapid skip-through before delayed activation, repeated entry/exit, and microphone-only operation without SD storage.
+- [x] Validate rapid skip-through before delayed activation without acquiring microphone hardware.
+- [x] Validate microphone-only Audio Spectrum operation without SD storage.
+- [ ] Validate repeated Audio Spectrum entry/exit with lifecycle diagnostics sufficient to rule out leaked shared audio/service state.
 
 #### Thermal
 
@@ -284,7 +290,8 @@ Implemented behavior includes the RAM-only semantic event history/UI, transient 
 
 Remaining work:
 
-- [ ] Detect reliable runtime SD insertion/removal and write-failure transitions where the storage stack permits it.
+- [x] Detect runtime SD removal when a storage health probe observes media loss and latch storage unavailable for the running session.
+- [ ] Add supported hot insertion/remount behavior and reliable write-failure transitions where the storage stack permits it.
 - [ ] Add events for future hot-pluggable peripherals/capabilities that are not represented by the descriptor availability framework.
 - [ ] Decide whether SD-backed logs need a dedicated system-event record type beyond ESP diagnostics.
 - [ ] Refine event payloads where one compact integer is insufficient without turning events into preformatted strings.
@@ -311,7 +318,10 @@ v0.4.0 is not complete until:
 - [ ] App-switch stress testing shows a stable memory baseline, no ownership violations, and zero app-owned allocations after successful exit.
 - [ ] Pre-reclamation safety gates prove no worker/callback/timer can reference app memory; forced service-close failures restore only safely restartable platform services before any irreversible cleanup.
 - [ ] Recorder recording/save transitions are vetoed until the file is safely finalized; no interrupted recording is reconstructed or restarted after an aborted transition.
-- [ ] Audio Spectrum can be skipped before delayed activation without touching microphone hardware, runs without SD storage, and repeatedly enters/exits without leaking service state.
+- [x] Audio Spectrum can be skipped before delayed activation without acquiring the microphone.
+- [x] Audio Spectrum runs without SD storage while Recorder is unavailable when its storage dependency is absent.
+- [ ] Audio Spectrum repeatedly enters/exits without leaking shared audio/service state.
+- [ ] Structured lifecycle-transition records provide enough SD-log evidence to validate outcome/error, reclaimed bytes, zero remaining app allocations, transition timing, free PSRAM, and largest free block without requiring a parallel serial-console capture.
 - [ ] Largest free block remains stable enough to rule out systematic fragmentation/leak growth.
 - [ ] WiFi/BLE Instant, finite timed, and Never behavior is verified, including full reclamation on exit and memory-pressure paths.
 - [ ] Wi-Fi primary device counts are not inflated one-for-one by rotating randomized Probe Request MACs.

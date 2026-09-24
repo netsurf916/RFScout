@@ -16,6 +16,12 @@ RPD is threshold energy evidence. It is **not RSSI** and it is **not proof of a 
 
 The scanner maintains a fast activity histogram across the 126 nRF24 channel positions and applies conservative activity classification.
 
+### Spectrum-shape policy
+
+The fast histogram is intentionally coarse. A channel is considered busy when its accumulated activity reaches **72**. The current spectrum classifier calls activity **Wi-Fi-like** when it contains a contiguous run of at least **12** busy channels. Otherwise, it calls activity **BLE-like** when it contains at least **7** separate busy-channel islands while fewer than **28** channels are busy overall. Anything else remains unclassified by the broad spectrum-shape heuristic.
+
+These results describe the shape of energy occupancy seen by the nRF24 RPD scanner. They do not assert that an IEEE 802.11 or BLE packet was decoded. Broad spectrum-shape candidates are debounced across consecutive sweeps before being latched for presentation.
+
 ## Current classification
 
 Current category labels include:
@@ -36,6 +42,26 @@ The application also has a separate ingestion/presentation path for validated pa
 Retained metadata can include channel, air rate, address, payload length/content, PID, NO_ACK state, CRC state, and timestamp. The current recent-packet ring is bounded to 16 entries and the packet browser holds a stable displayed snapshot while a row is selected.
 
 The production RPD scanner does **not** currently decode ESB packets itself. Validated observations must come from a separately validated receive-only ingestion path.
+
+### Validated-packet classification policy
+
+A validated packet observation is admitted only when CRC is valid, the ESB address length is 3–5 bytes, and payload length is at most 32 bytes. New packet identities begin as **ESB device** with heuristic confidence 55. A known Logitech pairing address is labeled **Logitech?** with confidence 98. Other identities need at least six validated packets before timing/payload heuristics refine the label:
+
+- average inter-packet interval at or below **25 ms** with maximum payload length at or below **20 bytes** becomes **Input?**; confidence is 70 and rises to 82 after at least 20 packets;
+- average interval at or above **100 ms** with payload-size span no greater than one byte becomes **Sensor?**; confidence is 66 and rises to 78 after at least 12 packets; and
+- otherwise the observation remains **ESB device**, with confidence rising to 60 or 68 as additional validated packets accumulate.
+
+These confidence values are deterministic heuristic strengths, not measured probabilities of product identity. Packet-derived classifications and RPD spectrum-shape classifications are separate evidence paths and should not be interpreted as interchangeable.
+
+### SD telemetry example
+
+The app emits one-second operational summaries while active when SD logging is available. A captured hardware record:
+
+```json
+{"type":"telemetry","time":"2026-09-23T22:38:44Z","app":"NRF24","low_channel":0,"high_channel":125,"dwell_us":250,"likely":6,"detected":true}
+```
+
+`likely` is the number of fixed detection-category rows copied by the current telemetry path. It is currently **6** because nRF24 exposes six category rows; it is not a count of active detections, validated ESB devices, or identified products.
 
 ## Passive-only boundary
 

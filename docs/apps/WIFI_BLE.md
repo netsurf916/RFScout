@@ -10,6 +10,26 @@ The application requires delayed activation and declares both the Wi-Fi monitor 
 
 The normalized live observation store grows in app-owned PSRAM instead of enforcing the former fixed 1000-item limit. Collector ingestion uses an identity index rather than linearly rescanning the entire collection for every callback.
 
+### Passive collection behavior
+
+After the shared delayed-activation interval, the application starts both collectors. If either collector is unexpectedly not running, the app retries startup at one-second intervals while it remains active.
+
+The Wi-Fi collector uses ESP32 promiscuous receive mode with no station association. It channel-hops every **350 ms** across the configured receive region (US 1-11, ETSI 1-13, Japan 1-14, or Extended RX 1-14). Control frames are ignored; management/data frames contribute unicast MAC observations from the address fields that can be interpreted without joining the network. Multicast/group addresses are discarded.
+
+The BLE collector performs **passive** NimBLE scanning with duplicate filtering disabled so repeated advertisements can refresh liveness and contribute newly observed evidence. It normalizes:
+
+- public/random BLE address plus address type;
+- RSSI;
+- shortened/complete advertised name;
+- 16-bit advertised service UUIDs;
+- 128-bit advertised/service-data UUIDs used by the surveillance fact matcher;
+- manufacturer company ID and bounded manufacturer payload; and
+- the current Open Drone ID marker described below.
+
+Neither collector actively associates, pairs, probes, injects, or requests application data.
+
+On app exit, the platform first stops both collectors and waits for in-flight observation callbacks to drain. Only after that service-close gate succeeds may app-session PSRAM be reclaimed.
+
 ## Current presentation
 
 The primary display shows:
@@ -25,6 +45,23 @@ Both the ordinary summary and surveillance presentation are projections of the s
 
 The current primary count is still based on canonical observation/address records. It is **not yet** the semantic physical-entity model planned for v0.4.0.
 
+### Identity and merge semantics
+
+The current canonical identity key is exactly **(address type, MAC address)**. It is intentionally not a claim that one canonical record equals one physical device.
+
+When another observation matches an existing identity, RFScout:
+
+- preserves the original first-seen time;
+- refreshes overall and source-specific last-seen times;
+- ORs source membership so one identity can currently have both Wi-Fi and BLE membership;
+- replaces current RSSI/channel with the newest observation;
+- refreshes non-empty vendor/name and current BLE metadata; and
+- merges surveillance evidence into the case before recomputing the selected hypothesis.
+
+This means the store is a live observation model, not a packet history. Repeated packets refresh state rather than creating one row per packet.
+
+Leaving the application ends the app session. The canonical store is app-owned state, so re-entering WiFi/BLE begins with a fresh logical collection rather than resurrecting the previous session's observations.
+
 ## Retention
 
 Wi-Fi and BLE membership age independently.
@@ -36,6 +73,8 @@ Surveillance classification is an attribute of that canonical active record and 
 WiFi/BLE persists a non-default threshold as the sparse `evidence_threshold` app setting (`everything`, `probable`, or `distinctive`). The retired pre-1.0 `surveillance_sensitivity` setting is not migrated; if encountered, it is ignored and pruned through the normal configuration-save workflow.
 
 Instant / Timed / Never retention modes are not implemented yet.
+
+The **Reset detections** action clears all current logical observations and identity-index contents immediately while retaining the app's already-allocated session capacity for reuse. Normal timeout expiry removes a canonical record only after all active source memberships have expired.
 
 ## Vendor identity
 
@@ -58,6 +97,19 @@ CID is not used for ordinary vendor attribution because CID assignments are not 
 
 `tools/update_surveillance.py` validates the human-maintained CSV and generates the compact firmware table under `main/services/wireless/`. Runtime code understands generic signal kinds and generated fact IDs; it does not assign product-specific identifiers in application code. When a fact matches an observed packet, that match becomes **evidence** for the observed device. The generator sizes the case evidence bitset in 32-bit words from the number of database facts, so adding facts does not require a hand-maintained runtime limit.
 
+### Fact matching contract
+
+Current surveillance facts match observations through a small set of generic rules:
+
+- `oui` compares the first 24 address bits exactly with the curated prefix in the surveillance database. This is a surveillance-evidence match, not ordinary IEEE vendor attribution: it does not use MA-M/MA-S longest-prefix lookup and does not inherit the vendor resolver's locally-administered-address suppression.
+- `name_contains` and `name_prefix` compare advertised names case-insensitively.
+- `company_id` compares the advertised 16-bit BLE company identifier exactly.
+- `service_uuid16` requires an exact advertised 16-bit service UUID.
+- `service_uuid128` canonicalizes the BLE UUID byte order and then requires an exact 128-bit UUID match.
+- `remote_id` currently matches a BLE Service Data marker: service UUID `0xFFFA` with at least one following application-code byte equal to `0x0D`. The current implementation does **not** validate a complete Open Drone ID message or payload before setting this marker.
+
+The matcher records every fact that matches an observation. Product-specific recognition logic therefore remains data-driven in `data/surveillance_signatures.csv` rather than being spread through packet-processing code.
+
 The canonical active observation identified by address type plus MAC also owns the lifetime of its surveillance **case**. A case is the accumulated set of unique evidence about that specific device while the identity remains active. Each matching fact sets its evidence bit; all matching facts in an observation are retained, and a stronger match does not suppress other facts from the same packet. Matching the same fact again only sets an already-set bit and does not increase the score, while different facts with the same weight do. When the canonical observation expires, its accumulated evidence expires with it; a later reappearance starts a fresh case. Timeout logging records the case lifetime, final unique-evidence count, score, and best signature hypothesis even when the configured notification threshold was never reached.
 
 The case score for a signature is the sum of the weights of the unique facts represented by its collected evidence. The **Evidence Threshold** setting maps the user-facing levels to minimum scores:
@@ -69,9 +121,53 @@ The case score for a signature is the sum of the weights of the unique facts rep
 
 These are ordinal evidence scores, not calibrated probabilities. Evidence weights use a small **1 / 2 / 4** scale based on the usefulness of each fact for the specific hypothesis: 1 for weak/common indicators, 2 for meaningful supporting evidence, and 4 for facts that strongly distinguish the target product or family. Signal type alone does not determine weight; a company ID or OUI shared across product lines can therefore carry less weight than a product-specific name or service UUID. Several unique low-weight facts can therefore move a case through the levels, and a single packet can cross a threshold immediately when it contains enough distinct facts. Repeated copies of the same fact cannot add score.
 
+### Detection interpretation policy
+
+A fact weight describes how discriminating that fact is for one configured product/family hypothesis; it is not a universal score for a signal type. Broad or ambiguous ecosystem/vendor indicators should remain weight 1. A curated indicator that meaningfully narrows the observed device to a surveillance-focused product ecosystem can use weight 2. Weight 4 is reserved for identifiers that strongly distinguish the intended product or family. For example, a curated Ring prefix can be stronger supporting evidence than a broad general-purpose camera-vendor prefix without implying that every Ring-branded radio endpoint is itself a camera.
+
+The selected signature is the hypothesis with the highest accumulated score. Equal scores currently retain the earlier generated signature, whose order follows the first appearance of each class/brand pair in the authoritative CSV. That deterministic tie behavior is an implementation detail, not extra evidence and not a reason to treat the selected hypothesis as stronger than the tied alternative.
+
+Class labels such as **Camera / doorbell**, **ALPR**, or **Body camera** describe the surveillance hypothesis supported by the observed evidence. They do not prove that the individual radio endpoint contains that sensor. Accessories, hubs, chimes, and other devices in a product ecosystem can share identifiers; the evidence level is intended to communicate that distinction rather than convert ecosystem association into exact endpoint identity.
+
 Evidence source and score remain separate concepts. The source bitmask records which kinds of evidence contributed to the selected signature (for example curated OUI/prefix, advertised name, company identifier, service UUID, or Remote ID), while the score determines whether the configured threshold has been reached.
 
 **Possible** remains the compiled default. **Everything** is deliberately opt-in because weight-1 facts can be weak or ambiguous on their own; selecting it is useful when testing whether RFScout is seeing all candidate evidence, but does not make those individual facts stronger evidence. Notification occurs when an active case first crosses the configured threshold. Evidence can continue to accumulate after notification without creating another new-device alert.
+
+Changing the threshold reevaluates every currently retained case immediately. Lowering the threshold can therefore cause an already-active case to qualify and emit a surveillance transition/notification at that moment. Raising the threshold can remove a current classification. If the threshold is later lowered again while the same case is still retained, the unchanged evidence can qualify again and emit another surveillance transition/notification because the current implementation tracks qualification state, not a permanent per-case "already notified" history. Threshold cycling can therefore re-alert without new RF evidence.
+
+### Settings and controls
+
+Pressing the center/select control from the main WiFi/BLE view opens the app settings surface. Current items are:
+
+- **Reset detections** — clears the current canonical observation collection;
+- **Notifications** — opens the shared per-app notification settings;
+- **Evidence threshold** — cycles Everything / Possible / Probable / Distinctive and immediately reevaluates retained surveillance cases;
+- **WiFi timeout** — independent Wi-Fi source-retention timeout; and
+- **BLE timeout** — independent BLE source-retention timeout.
+
+Wi-Fi and BLE timeouts are edited in 10-second steps from 10 through 300 seconds. Configuration is persisted through the normal device-configuration path when the menu closes.
+
+### SD log interpretation
+
+When SD logging is enabled, device records expose several different surveillance values that should not be conflated:
+
+- `evidence` is the evidence-source bitmask for the selected hypothesis, such as prefix/OUI, advertised name, company ID, service UUID, or Remote ID source kinds;
+- `evidence_count` is the number of unique matched database facts accumulated by the case;
+- `score` is the final score of the best signature hypothesis; and
+- `case_signature` is that best hypothesis at timeout, even when its score never reached the configured alert threshold.
+
+For timeout records, `lifetime_ms` is `last_seen_ms - first_seen_ms`: the span between the first and last observations of that canonical identity. It is **not** the amount of time the record remained retained before timeout. A device seen only once can therefore expire later with `lifetime_ms=0`.
+
+Device log events currently use:
+
+- `event:"added"` when a canonical identity first enters the live store;
+- `event:"surveillance"` when an already-retained case first becomes classified at the current threshold;
+- `event:"dropped", reason:"timeout"` when its final active source membership expires; and
+- `event:"dropped", reason:"capacity"` when app-session growth fails and the new observation cannot be retained.
+
+`added` and `surveillance` records include current RSSI/channel plus the selected surveillance signature/evidence when applicable. Timeout records intentionally record final case evidence/count/score even when the configured threshold was never crossed.
+
+Real field logs have also confirmed the intended fresh-session behavior: after leaving and re-entering WiFi/BLE, identities seen in the prior session are emitted as new `added` records again. This is expected because app exit releases the prior canonical collection.
 
 ## Raven acoustic-sensor evidence
 
@@ -89,7 +185,9 @@ Legacy `0x1809` / `0x1819` support remains disabled. If added, it should require
 
 ## Notifications
 
-Ordinary Wi-Fi/BLE discovery feedback can be enabled independently from surveillance alerts. Surveillance notifications use semantic categories such as ALPR, body camera, drone, camera, smart glasses, and acoustic sensor where supported by the current signature table.
+Ordinary Wi-Fi/BLE discovery feedback can be enabled independently from surveillance alerts. New canonical Wi-Fi and BLE identities can drive the ordinary detection event path according to the app-level and Wi-Fi/BLE notification preferences.
+
+Surveillance notification is case/threshold based rather than packet based: the first transition of an active case into a qualifying surveillance classification maps to a semantic notification category such as ALPR, body camera, drone, camera, smart glasses, or acoustic sensor. Repeated unchanged evidence does not repeatedly notify. A later reappearance after the canonical identity has expired is a new case and can notify again.
 
 ## Generated-data maintenance
 
