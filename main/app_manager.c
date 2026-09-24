@@ -200,6 +200,7 @@ static bool transition_to_app( rfscout_app_id_t a_destination, bool a_report_abo
             ESP_LOGE( TAG, "Home session recovery failed: %s", esp_err_to_name( recovery ) );
             ESP_ERROR_CHECK( recovery );
         }
+        (void)app_manager_set_locked( false );
         active_app = RFSCOUT_APP_DEVICE;
         enter_app( active_app );
         log_lifecycle(
