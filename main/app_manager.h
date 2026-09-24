@@ -30,7 +30,7 @@ bool app_manager_locked( void );
 /**
  * @brief Change the framework-owned application lock.
  * @return true when the requested state is active after the call.
- * @details Home is never app-locked. Locking does not alter the active resource session.
+ * @details Locking does not alter the active resource session.
  */
 bool app_manager_set_locked( bool a_locked );
 
