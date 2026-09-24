@@ -54,7 +54,9 @@ ESP-IDF Wi-Fi persistence remains RAM-only so the driver does not become an inde
 The UI supports:
 
 - checking for the newest compatible published stable release;
-- browsing retained main, pull-request, draft-release, prerelease, and published-release builds;
+- showing the running **Installed** version separately from the stable **Update** candidate/status and current **Network** state;
+- browsing retained main, pull-request, draft-release, prerelease, and published-release builds while keeping the installed version visible for comparison;
+- showing **Installed**, **Selected**, and candidate commit metadata before an explicit/manual build installation;
 - explicit/manual installation of an exact retained build;
 - download progress, verification, and reboot presentation; and
 - cancellation when Update/Home is left before the final boot commit.
