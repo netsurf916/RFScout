@@ -274,7 +274,7 @@ The combined image remains the clean-install/recovery artifact and contains the 
 
 Infrastructure networking and Update are nested Home workflows, but the station session belongs to Home itself. Leaving Network or Update preserves a connected Home session; explicit Disconnect or leaving Home tears it down.
 
-Update requires both station connectivity and NTP-ready state before HTTPS catalog/install operations are offered.
+Update requires station connectivity. Home still attempts NTP after association, but NTP-ready state is not an authorization gate for catalog/install operations: retained or manually set wall time may already be usable, and an unsuitable clock is allowed to fail through normal HTTPS certificate validation rather than being preemptively rejected.
 
 ### Acquisition and installer
 
