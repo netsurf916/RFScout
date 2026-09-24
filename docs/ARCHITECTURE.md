@@ -144,7 +144,7 @@ The dispatch rule is therefore:
 
 The global long-hold shortcut is configurable as **Input Lock** or **App Lock**. When input lock is already active, long-hold always unlocks input regardless of the configured shortcut so the stronger lock retains an unambiguous escape gesture. Applications may also expose app-lock state through their own settings by calling the framework-owned lock API; they do not own a second private lock bit.
 
-Application lock is transient runtime state. It is cleared when an application transition commits and is not a distinct persistence/resource-ownership domain. A shared status-bar indicator renders an **A-marked lock** for application lock, distinct from the ordinary input-lock symbol.
+Application lock is transient runtime state. It is cleared when an application transition commits and is not a distinct persistence/resource-ownership domain. A shared status-bar indicator renders an **A-marked lock** for application lock, distinct from the ordinary input-lock symbol. When both locks are active, the stronger Input Lock symbol temporarily supersedes the A-lock; the app-lock indicator returns when input is unlocked.
 
 Edge capture survives temporary main-loop/display stalls. Input used only to wake a dimmed/off display is consumed before normal navigation or power handling.
 
