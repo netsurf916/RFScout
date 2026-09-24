@@ -133,7 +133,7 @@ Evidence source and score remain separate concepts. The source bitmask records w
 
 **Possible** remains the compiled default. **Everything** is deliberately opt-in because weight-1 facts can be weak or ambiguous on their own; selecting it is useful when testing whether RFScout is seeing all candidate evidence, but does not make those individual facts stronger evidence. Notification occurs when an active case first crosses the configured threshold. Evidence can continue to accumulate after notification without creating another new-device alert.
 
-Changing the threshold reevaluates every currently retained case immediately. Lowering the threshold can therefore cause an already-active case to qualify and emit its first surveillance transition/notification at that moment. Raising the threshold can remove a current classification, but does not fabricate a new-detection alert.
+Changing the threshold reevaluates every currently retained case immediately. Lowering the threshold can therefore cause an already-active case to qualify and emit a surveillance transition/notification at that moment. Raising the threshold can remove a current classification. If the threshold is later lowered again while the same case is still retained, the unchanged evidence can qualify again and emit another surveillance transition/notification because the current implementation tracks qualification state, not a permanent per-case "already notified" history. Threshold cycling can therefore re-alert without new RF evidence.
 
 ### Settings and controls
 
