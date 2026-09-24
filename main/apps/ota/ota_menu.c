@@ -102,7 +102,8 @@ static void set_error( esp_err_t a_error )
 
 static bool update_ready( void )
 {
-    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
     return RFSCOUT_WIFI_STATION_CONNECTED == current.state && current.ntp_synced;
 }
 
@@ -228,7 +229,9 @@ static void build_saved_list( void )
 
 static bool network_connected( void )
 {
-    return RFSCOUT_WIFI_STATION_CONNECTED == rfscout_wifi_station_status().state;
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
+    return RFSCOUT_WIFI_STATION_CONNECTED == current.state;
 }
 
 static bool ota_operation_active( void )
@@ -243,7 +246,8 @@ static bool install_action_available( void )
 
 static const char *connection_status( void )
 {
-    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
     switch( current.state )
     {
         case RFSCOUT_WIFI_STATION_SCANNING:
@@ -267,7 +271,8 @@ static const char *connection_status( void )
 
 static const char *network_time_status( void )
 {
-    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
     if( RFSCOUT_WIFI_STATION_CONNECTED != current.state )
     {
         return "";
@@ -282,7 +287,8 @@ static const char *network_time_status( void )
 static void render_network_main( void )
 {
     build_visible_saved();
-    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
     const bool connected = RFSCOUT_WIFI_STATION_CONNECTED == current.state;
     const bool scanning = RFSCOUT_WIFI_STATION_SCANNING == current.state;
     const unsigned item_count = 1U + (unsigned)view_network_count + ( connected ? 1U : 3U );
@@ -341,7 +347,8 @@ static void render_action( void )
     const bool visible = action_scan_index >= 0 && (size_t)action_scan_index < scan_count;
     const int8_t rssi = visible ? scan_results[ action_scan_index ].rssi : INT8_MIN;
 
-    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
     const bool connected = RFSCOUT_WIFI_STATION_CONNECTED == current.state && NULL != ssid &&
                            0 == strcmp( current.ssid, ssid );
     const char *status_text = error_text;
@@ -783,7 +790,8 @@ static void forget_selected_network( void )
     }
 
     const char *ssid = saved_networks.entries[ action_saved_index ].ssid;
-    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
     if( RFSCOUT_WIFI_STATION_CONNECTED == current.state && 0 == strcmp( current.ssid, ssid ) )
     {
         const esp_err_t disconnect_result = rfscout_wifi_station_disconnect();
@@ -838,7 +846,8 @@ static void handle_action_select( void )
 
     if( 1U == selected_item )
     {
-        const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+        rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
         if( RFSCOUT_WIFI_STATION_CONNECTED == current.state &&
             0 == strcmp( current.ssid, saved_networks.entries[ action_saved_index ].ssid ) )
         {
@@ -1140,7 +1149,8 @@ void network_menu_enter( void )
     refresh_scan_results();
     render();
 
-    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
     if( RFSCOUT_WIFI_STATION_CONNECTED != current.state &&
         RFSCOUT_WIFI_STATION_CONNECTING != current.state &&
         RFSCOUT_WIFI_STATION_SEARCHING != current.state &&
@@ -1255,7 +1265,8 @@ static void submenu_poll( int64_t a_now_us )
     last_refresh_us = a_now_us;
     bool redraw = false;
 
-    const rfscout_wifi_station_status_t current = rfscout_wifi_station_status();
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
     if( current.scan_generation != last_scan_generation || current.state != last_station_state )
     {
         last_scan_generation = current.scan_generation;
@@ -1270,7 +1281,8 @@ static void submenu_poll( int64_t a_now_us )
         redraw = true;
     }
 
-    const ota_acquisition_status_t acquisition = ota_acquisition_status();
+    ota_acquisition_status_t acquisition;
+    ota_acquisition_status( &acquisition );
     if( acquisition.generation != last_acquisition_generation )
     {
         last_acquisition_generation = acquisition.generation;
@@ -1375,7 +1387,8 @@ static void submenu_poll( int64_t a_now_us )
         redraw = true;
     }
 
-    const ota_installer_status_t installer = ota_installer_status();
+    ota_installer_status_t installer;
+    ota_installer_status( &installer );
     if( installer.generation != last_installer_generation )
     {
         last_installer_generation = installer.generation;
