@@ -64,6 +64,8 @@ There are only two descriptor policies:
 
 A hot-plug probe may prepare reusable driver plumbing, but it must leave acquisition inactive and be safe to invoke again after either success or failure. Probe answers only whether the required hardware/dependency responds now. Initialization and activation remain separate lifecycle concerns.
 
+When a shared provider is legitimately busy in another active application, a probe returns `ESP_ERR_INVALID_STATE`. The framework treats that as **deferred** and retains the previous availability instead of manufacturing a hardware-removal event. This is scheduling behavior, not a third availability state.
+
 Runtime-observed loss may report the app unavailable. Once the app is inactive, the ordinary hot-plug path can discover recovery again.
 
 CC1101, nRF24, microphone-backed audio apps, Thermal, and Recorder all use this model. Radio probes perform real identity checks rather than treating an earlier successful initialization as permanent presence. Recorder rechecks both microphone and storage dependencies; when no card has ever mounted, a later probe may retry the normal storage mount.
