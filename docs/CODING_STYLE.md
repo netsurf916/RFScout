@@ -27,7 +27,9 @@ RFScout runs on constrained task stacks, so interface design must make ownership
 - Passing or returning substantial structures by value is exceptional and should have a concrete reason.
 - A pointer parameter is borrowed unless the interface explicitly documents ownership transfer or retention. A callee must not retain a borrowed pointer beyond its documented lifetime.
 - Caller-owned output should normally be written through an output pointer rather than returned as a substantial structure.
+- Snapshot/status APIs whose structures contain arrays, strings, nested structures, or are expected to grow should write into caller-owned storage. Avoid return-by-value APIs whose future structure growth would silently enlarge every caller's stack frame.
 - Avoid defensive whole-structure copies merely to simplify lifetime reasoning. Preserve ownership explicitly and copy only the fields that need independent storage.
+- Whole-structure copies are appropriate when the copy itself establishes independent retained state, but that ownership decision should be obvious from the surrounding API rather than incidental convenience.
 - Keep automatic objects small, especially in radio callbacks, FreeRTOS tasks, event callbacks, and other paths with constrained stacks.
 - Retained or growable state belongs in the established application/session allocation model rather than large task-stack temporaries.
 - Small scalar values, enums, and genuinely small value objects should still be passed by value; do not introduce pointer indirection without a memory or ownership benefit.
