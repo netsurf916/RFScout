@@ -82,6 +82,8 @@ Two platform cases remain intentionally distinct:
 
 Every active app has a temporary **resource session**, including apps that currently allocate no dynamic PSRAM. The same session owns the app's managed `rfscout_view_t`.
 
+Application lock deliberately sits **above** this lifecycle boundary. Locking/unlocking the active application does not enter, leave, reactivate, quiesce, reclaim, or otherwise mutate its resource session; it only changes whether unhandled rotary input is permitted to request a different application.
+
 The current canonical view is 320x170 and maps to the full T-Embed display. Applications render through their assigned view rather than owning the physical display.
 
 The application-facing lifecycle is intentionally small:
@@ -122,9 +124,29 @@ Usable external PSRAM is a supported-platform requirement. RFScout does not sile
 
 ## Semantic input and presentation
 
-Applications consume semantic input rather than GPIOs. The current T-Embed provider maps the rotary encoder/buttons into signed navigation, Select, long-Select, and Back behavior. The dedicated user/power key remains a separate power-policy input.
+Applications consume semantic input rather than GPIOs. The current T-Embed provider maps the rotary encoder/buttons into signed navigation, Select, long-Select, Back, and the longer global-hold shortcut. The dedicated user/power key remains a separate power-policy input.
 
-Edge capture survives temporary main-loop/display stalls. Input used only to wake a dimmed/off display is consumed before normal navigation or power handling. The device-wide input lock suppresses ordinary semantic navigation/select input without disabling the dedicated T-Embed power key.
+### Input lock and application lock
+
+RFScout exposes two deliberately different global lock semantics:
+
+- **Input lock** suppresses ordinary semantic navigation/select input. The dedicated user/power key and the long-hold unlock path remain available.
+- **Application lock** keeps ordinary input active but prevents rotary navigation that the active application leaves unhandled from falling through to a global application transition.
+
+Application lock is owned by the application manager. It does **not** create a new resource session, change application identity, alter service ownership, or prevent an explicit Back transition. Its purpose is to preserve the active application/session and its retained data while allowing the application to use rotary navigation for local modes, views, cursors, or other app-specific interaction.
+
+The dispatch rule is therefore:
+
+1. deliver semantic input to the active application;
+2. if the application handles it, stop;
+3. if an unhandled event is rotary navigation and application lock is active, remain in the current application;
+4. otherwise apply the normal framework fallback, including global rotary application navigation and Back-to-Home behavior.
+
+The global long-hold shortcut is configurable as **Input Lock** or **App Lock**. When input lock is already active, long-hold always unlocks input regardless of the configured shortcut so the stronger lock retains an unambiguous escape gesture. Applications may also expose app-lock state through their own settings by calling the framework-owned lock API; they do not own a second private lock bit.
+
+Application lock is transient runtime state. It is cleared when an application transition commits and is not a distinct persistence/resource-ownership domain. A shared status-bar indicator renders an **A-marked lock** for application lock, distinct from the ordinary input-lock symbol.
+
+Edge capture survives temporary main-loop/display stalls. Input used only to wake a dimmed/off display is consumed before normal navigation or power handling.
 
 Common presentation overlays are platform-owned. Applications render their view, while power/system-event/app-modal presentation is composed by the shared display service so application lifecycle state is not replaced by a transient notification.
 
