@@ -115,22 +115,6 @@ static void capture_arm_failed_task( int a_index )
     portEXIT_CRITICAL( &state_lock );
 }
 
-static void capture_arm_failed_isr( int a_index )
-{
-    portENTER_CRITICAL_ISR( &state_lock );
-    if( ( a_index >= 0 ) && ( a_index < (int)RFSCOUT_SUBGHZ_CAPTURE_POOL_SIZE ) &&
-        ( CAPTURE_SLOT_FILLING == capture_pool[ a_index ].state ) )
-    {
-        capture_pool[ a_index ].state = CAPTURE_SLOT_FREE;
-    }
-    if( filling_slot == a_index )
-    {
-        filling_slot = -1;
-    }
-    ++capture_stats_state.capture_errors;
-    portEXIT_CRITICAL_ISR( &state_lock );
-}
-
 static bool arm_next_capture_task( void )
 {
     if( ( NULL == rmt_channel ) || !rmt_enabled || !provider_active || provider_stopping )
@@ -169,48 +153,6 @@ static bool arm_next_capture_task( void )
     {
         capture_arm_failed_task( slot_index );
         ESP_LOGW( TAG, "RMT receive arm failed: %s", esp_err_to_name( result ) );
-        return false;
-    }
-    return true;
-}
-
-static bool arm_next_capture_isr( void )
-{
-    if( ( NULL == rmt_channel ) || !rmt_enabled || !provider_active || provider_stopping )
-    {
-        return false;
-    }
-
-    int slot_index = -1;
-    portENTER_CRITICAL_ISR( &state_lock );
-    if( ( filling_slot < 0 ) && provider_active && !provider_stopping )
-    {
-        slot_index = find_free_capture_slot_locked();
-        if( slot_index >= 0 )
-        {
-            initialize_capture_slot_locked( slot_index, capture_now_ms_from_isr() );
-        }
-        else if( !waiting_for_capture_slot )
-        {
-            waiting_for_capture_slot = true;
-            ++capture_stats_state.capture_overruns;
-        }
-    }
-    portEXIT_CRITICAL_ISR( &state_lock );
-
-    if( slot_index < 0 )
-    {
-        return false;
-    }
-
-    const esp_err_t result =
-        rmt_receive( rmt_channel,
-                     capture_pool[ slot_index ].symbols,
-                     RFSCOUT_SUBGHZ_CAPTURE_SYMBOL_CAPACITY * sizeof( rfscout_subghz_symbol_t ),
-                     &receive_config );
-    if( ESP_OK != result )
-    {
-        capture_arm_failed_isr( slot_index );
         return false;
     }
     return true;
@@ -259,7 +201,6 @@ static bool capture_done_callback( rmt_channel_handle_t a_channel,
     filling_slot = -1;
     portEXIT_CRITICAL_ISR( &state_lock );
 
-    (void)arm_next_capture_isr();
     return false;
 }
 
