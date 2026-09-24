@@ -217,11 +217,14 @@ Every current application receives an explicit v0.4.0 review rather than treatin
 
 #### CC1101
 
-- [x] Move eligible retained observation history to app-owned PSRAM.
-- [x] Add sweep-derived activity duration and inter-observation timing while keeping the distinction from decoded pulse/protocol timing explicit.
-- [ ] Add conservative modulation/behavior inference without presenting heuristics as decoded identity.
-- [ ] Add structured growable capture/history and useful drill-down.
-- [ ] Define memory-pressure behavior and prove worker quiesce before memory release.
+- [x] Separate frequency discovery from fixed-frequency receive so the spectrum/activity view is a discovery surface rather than the application's core data model.
+- [x] Capture asynchronous CC1101 GDO timing with ESP32-S3 RMT/GDMA into a bounded two-entry PSRAM pool while preserving native RMT symbol semantics.
+- [x] Process completed captures zero-copy through a hardware-agnostic analyzer/decoder registry, with compact timing results and an initial repeated 24-bit Princeton decoder.
+- [x] Keep decoded, timing-histogram, and raw-waveform presentation independent from acquisition; retain a raw snapshot only when the waveform viewer actually needs it.
+- [ ] Hardware-tune RMT resolution, glitch/idle limits, discovery thresholds, and OOK receive presets across representative fast and slow remotes.
+- [ ] Expand receive-only protocol coverage, including useful fixed-code and rolling-code garage/remote families, without adding transmit/replay semantics.
+- [ ] Add longer-lived raw capture/history/drill-down only where it has clear value and explicit retention/memory-pressure semantics.
+- [ ] Prove RMT callback/worker quiesce, DMA-pool release, overrun/truncation behavior, and stable PSRAM baselines across repeated application transitions.
 
 #### nRF24
 
