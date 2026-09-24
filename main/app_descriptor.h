@@ -32,11 +32,11 @@ typedef enum
     RFSCOUT_APP_COUNT
 } rfscout_app_id_t;
 
-/** @brief When an application's hardware availability should be probed. */
+/** @brief Scheduling policy for one retry-safe application hardware probe. */
 typedef enum
 {
     RFSCOUT_APP_PROBE_NONE = 0,
-    RFSCOUT_APP_PROBE_STARTUP,
+    RFSCOUT_APP_PROBE_FIXED,
     RFSCOUT_APP_PROBE_HOTPLUG
 } rfscout_app_probe_policy_t;
 
