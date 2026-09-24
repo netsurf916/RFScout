@@ -25,11 +25,11 @@ typedef enum
     RFSCOUT_SUBGHZ_MODULATION_2FSK,
 } rfscout_subghz_modulation_t;
 
-/** @brief Why one bounded raw capture ended. */
+/** @brief How one bounded raw capture completed or was limited. */
 typedef enum
 {
     RFSCOUT_SUBGHZ_CAPTURE_END_IDLE = 0,
-    RFSCOUT_SUBGHZ_CAPTURE_END_CAPACITY,
+    RFSCOUT_SUBGHZ_CAPTURE_END_CAPACITY, /**< Buffer saturated before the hardware stop signal. */
     RFSCOUT_SUBGHZ_CAPTURE_END_ABORT,
 } rfscout_subghz_capture_end_t;
 
