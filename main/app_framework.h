@@ -22,19 +22,23 @@ typedef enum
     RFSCOUT_APP_AVAILABILITY_UNAVAILABLE
 } rfscout_app_availability_t;
 
-/** @brief Validate descriptors and run startup/hot-plug discovery once. */
+/** @brief Validate descriptors and run initial hardware discovery. */
 esp_err_t app_framework_init( void );
 
 /** @brief Return one compiled-in app descriptor or NULL for an unknown ID. */
 const rfscout_app_descriptor_t *app_framework_descriptor( rfscout_app_id_t a_app );
 
-/** @brief Check whether an app's required runtime capability is available. */
+/**
+ * @brief Check whether an app's required runtime capability is available.
+ * @details Fixed hardware is re-probed only while unavailable; hot-plug hardware is refreshed on
+ *          every explicit availability check.
+ */
 bool app_framework_check_available( rfscout_app_id_t a_app );
 
 /** @brief Refresh one app only when its descriptor is hot-pluggable. */
 void app_framework_refresh_hotplug( rfscout_app_id_t a_app );
 
-/** @brief Report an active hot-plug app's observed runtime availability. */
+/** @brief Report runtime-observed availability for any probed application. */
 void app_framework_report_availability( rfscout_app_id_t a_app,
                                         rfscout_app_availability_t a_availability );
 
