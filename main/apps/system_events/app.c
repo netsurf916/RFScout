@@ -59,12 +59,6 @@ system_events_runtime( const rfscout_app_runtime_event_t *a_event )
         emit_event( RFSCOUT_EVENT_ACTIVATE, system_events_view_browsing() ? 1 : 0 );
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
-    if( RFSCOUT_INPUT_BACK == a_event->input.type && system_events_view_browsing() )
-    {
-        system_events_view_toggle_browse();
-        emit_event( RFSCOUT_EVENT_BACK, 0 );
-        return RFSCOUT_APP_RUNTIME_HANDLED;
-    }
     if( RFSCOUT_INPUT_NAVIGATION == a_event->input.type && system_events_view_browsing() )
     {
         const int direction = ( a_event->input.value > 0 ) ? 1 : -1;
