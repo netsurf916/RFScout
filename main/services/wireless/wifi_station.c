@@ -561,6 +561,25 @@ esp_err_t rfscout_wifi_station_connect( const char *a_ssid, const char *a_passwo
     return result;
 }
 
+esp_err_t rfscout_wifi_station_cancel_time_sync( void )
+{
+    if( !initialized )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    portENTER_CRITICAL( &state_lock );
+    const bool can_cancel = started && RFSCOUT_WIFI_STATION_CONNECTED == status.state;
+    portEXIT_CRITICAL( &state_lock );
+    if( !can_cancel )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    stop_ntp_sync();
+    return ESP_OK;
+}
+
 esp_err_t rfscout_wifi_station_disconnect( void )
 {
     if( !initialized )

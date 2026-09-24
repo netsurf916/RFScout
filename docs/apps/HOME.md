@@ -38,6 +38,10 @@ The current workflow:
 - stores up to eight Home-owned remembered SSID/password entries;
 - highlights remembered networks observed in the latest scan;
 - requires an explicit connect action;
+- presents association and SNTP as a modal **Connecting...** → **Setting time...** transaction, then returns to the Network main screen;
+- lets a short center click cancel either modal: canceling **Connecting...** aborts the station attempt, while canceling **Setting time...** stops only SNTP and leaves Wi-Fi connected;
+- keeps bounded connection/time-sync deadlines as unattended fail-safes;
+- keeps normal connection/time progress out of the persistent Network screen, reserving its footer for terminal errors;
 - supports rotary password entry, disconnect, and forget;
 - can use a targeted **Connect anyway** active search for a remembered network not seen passively;
 - obtains DHCP state; and
@@ -54,7 +58,9 @@ ESP-IDF Wi-Fi persistence remains RAM-only so the driver does not become an inde
 The UI supports:
 
 - checking for the newest compatible published stable release;
-- browsing retained main, pull-request, draft-release, prerelease, and published-release builds;
+- showing the running **Installed** version separately from the stable **Update** candidate/status and current **Network** state;
+- browsing retained main, pull-request, draft-release, prerelease, and published-release builds while keeping the installed version visible for comparison;
+- showing **Installed**, **Selected**, and candidate commit metadata before an explicit/manual build installation;
 - explicit/manual installation of an exact retained build;
 - download progress, verification, and reboot presentation; and
 - cancellation when Update/Home is left before the final boot commit.

@@ -31,6 +31,8 @@
 #include <string.h>
 
 #define OTA_REFRESH_INTERVAL_US 125000LL
+#define OTA_NETWORK_CONNECT_TIMEOUT_US 30000000LL
+#define OTA_NTP_SYNC_TIMEOUT_US 15000000LL
 #define OTA_VISIBLE_MAX OTA_NETWORK_MAX_COUNT
 #define OTA_ERROR_TEXT_LENGTH 48U
 
@@ -75,13 +77,17 @@ static int selected_build_index;
 static bool open_builds_after_catalog;
 static char *catalog_json;
 static size_t catalog_json_capacity;
-static char update_status[ OTA_CATALOG_VERSION_MAX_LENGTH + 1U ];
+static char stable_update_status[ OTA_CATALOG_VERSION_MAX_LENGTH + 1U ];
 static uint32_t last_acquisition_generation;
 static uint32_t last_installer_generation;
 static uint32_t last_scan_generation;
 static rfscout_wifi_station_state_t last_station_state;
 static bool last_ntp_syncing;
 static bool last_ntp_synced;
+static bool network_connect_modal_active;
+static bool network_connect_connected_seen;
+static int64_t network_connect_started_us;
+static int64_t network_connect_ntp_started_us;
 static int64_t last_refresh_us;
 /* Borrowed from catalog_selection or available_builds while input is suppressed. */
 static const ota_catalog_candidate_t *pending_install_candidate;
@@ -276,21 +282,6 @@ static const char *connection_status( void )
     }
 }
 
-static const char *network_time_status( void )
-{
-    rfscout_wifi_station_status_t current;
-    rfscout_wifi_station_status( &current );
-    if( RFSCOUT_WIFI_STATION_CONNECTED != current.state )
-    {
-        return "";
-    }
-    if( current.ntp_synced )
-    {
-        return "Time synced";
-    }
-    return current.ntp_syncing ? "Syncing time..." : "Time sync failed";
-}
-
 static void render_network_main( void )
 {
     build_visible_saved();
@@ -304,14 +295,8 @@ static void render_network_main( void )
         selected_item = item_count - 1U;
     }
 
-    ota_view_render_network_main( connection_status(),
-                                  network_time_status(),
-                                  view_networks,
-                                  view_network_count,
-                                  selected_item,
-                                  scanning,
-                                  connected,
-                                  error_text );
+    ota_view_render_network_main(
+        view_networks, view_network_count, selected_item, scanning, connected, error_text );
 }
 
 static void render_update_main( void )
@@ -326,11 +311,11 @@ static void render_update_main( void )
     }
 
     ota_view_render_update_main( identity->version,
+                                 stable_update_status,
                                  connection_status(),
                                  selected_item,
                                  ready,
                                  can_install,
-                                 update_status,
                                  error_text );
 }
 
@@ -449,8 +434,11 @@ static void render_builds( void )
     {
         selected_item = item_count - 1U;
     }
-    ota_view_render_build_list(
-        view_builds, available_build_count, selected_item, "No compatible builds" );
+    ota_view_render_build_list( firmware_identity()->version,
+                                view_builds,
+                                available_build_count,
+                                selected_item,
+                                "No compatible builds" );
 }
 
 static void render_build_action( void )
@@ -464,8 +452,11 @@ static void render_build_action( void )
     }
 
     const ota_catalog_build_t *build = &available_builds[ selected_build_index ];
-    ota_view_render_build_action(
-        build->label, build->candidate.version, build->candidate.commit, selected_item );
+    ota_view_render_build_action( firmware_identity()->version,
+                                  build->label,
+                                  build->candidate.version,
+                                  build->candidate.commit,
+                                  selected_item );
 }
 
 static void render( void )
@@ -581,7 +572,7 @@ static void begin_update_check( void )
     memset( &catalog_selection, 0, sizeof( catalog_selection ) );
     available_build_count = 0U;
     selected_build_index = -1;
-    snprintf( update_status, sizeof( update_status ), "Checking..." );
+    snprintf( stable_update_status, sizeof( stable_update_status ), "Checking..." );
     render();
 }
 
@@ -609,7 +600,6 @@ static void request_candidate_install( const ota_catalog_candidate_t *a_candidat
     error_text[ 0 ] = '\0';
     screen = OTA_SCREEN_MAIN;
     selected_item = 0U;
-    snprintf( update_status, sizeof( update_status ), "Preparing..." );
     display_modal_show( "OTA UPDATE", "Preparing..." );
     render();
 }
@@ -643,12 +633,10 @@ static void start_pending_install( void )
         }
         display_modal_clear();
         set_error( result );
-        snprintf( update_status, sizeof( update_status ), "Install failed" );
         render();
         return;
     }
 
-    snprintf( update_status, sizeof( update_status ), "Downloading..." );
     display_modal_show( "OTA UPDATE", "Downloading..." );
     render();
 }
@@ -795,14 +783,71 @@ static void begin_password_entry( void )
     render();
 }
 
+static void return_to_network_main( void )
+{
+    display_modal_clear();
+    network_connect_modal_active = false;
+    network_connect_connected_seen = false;
+    network_connect_started_us = 0;
+    network_connect_ntp_started_us = 0;
+    screen = OTA_SCREEN_MAIN;
+    selected_item = 0U;
+    action_saved_index = -1;
+    action_scan_index = -1;
+    memset( action_ssid, 0, sizeof( action_ssid ) );
+    render();
+}
+
+static void cancel_network_connect_modal( void )
+{
+    if( !network_connect_modal_active )
+    {
+        return;
+    }
+
+    const bool cancel_time_sync = network_connect_connected_seen;
+    const esp_err_t result =
+        cancel_time_sync ? rfscout_wifi_station_cancel_time_sync() : rfscout_wifi_station_stop();
+
+    if( ESP_OK != result )
+    {
+        set_error( result );
+        display_modal_show( "NETWORK", "Cancel failed" );
+        render();
+        return;
+    }
+
+    error_text[ 0 ] = '\0';
+    return_to_network_main();
+
+    if( !cancel_time_sync )
+    {
+        refresh_scan_results();
+        begin_passive_scan();
+    }
+}
+
 static void connect_selected_network( void )
 {
     if( action_saved_index < 0 || (size_t)action_saved_index >= saved_networks.count )
     {
         return;
     }
+
     const ota_network_t *network = &saved_networks.entries[ action_saved_index ];
-    set_error( rfscout_wifi_station_connect( network->ssid, network->password ) );
+    const esp_err_t result = rfscout_wifi_station_connect( network->ssid, network->password );
+    set_error( result );
+    if( ESP_OK != result )
+    {
+        return_to_network_main();
+        return;
+    }
+
+    network_connect_modal_active = true;
+    network_connect_connected_seen = false;
+    network_connect_started_us = 0;
+    network_connect_ntp_started_us = 0;
+    display_modal_show( "NETWORK", "Connecting..." );
     render();
 }
 
@@ -1148,13 +1193,17 @@ static void reset_runtime_state( void )
     selected_build_index = -1;
     open_builds_after_catalog = false;
     release_catalog_json();
-    snprintf( update_status, sizeof( update_status ), "Not checked" );
+    snprintf( stable_update_status, sizeof( stable_update_status ), "Not checked" );
     last_acquisition_generation = 0U;
     last_installer_generation = 0U;
     last_scan_generation = 0U;
     last_station_state = RFSCOUT_WIFI_STATION_OFF;
     last_ntp_syncing = false;
     last_ntp_synced = false;
+    network_connect_modal_active = false;
+    network_connect_connected_seen = false;
+    network_connect_started_us = 0;
+    network_connect_ntp_started_us = 0;
     last_refresh_us = 0;
     pending_install_candidate = NULL;
     close_requested = false;
@@ -1222,6 +1271,14 @@ esp_err_t ota_menu_leave( void )
 
 static bool submenu_input( bool a_pressed, int a_delta )
 {
+    if( network_connect_modal_active )
+    {
+        if( a_pressed )
+        {
+            cancel_network_connect_modal();
+        }
+        return false;
+    }
     if( install_interaction_locked() )
     {
         return false;
@@ -1263,7 +1320,7 @@ bool ota_menu_input( bool a_pressed, int a_delta )
 
 static bool submenu_back( void )
 {
-    if( install_interaction_locked() )
+    if( install_interaction_locked() || network_connect_modal_active )
     {
         return false;
     }
@@ -1308,6 +1365,99 @@ static void submenu_poll( int64_t a_now_us )
 
     rfscout_wifi_station_status_t current;
     rfscout_wifi_station_status( &current );
+
+    if( network_connect_modal_active )
+    {
+        if( 0 == network_connect_started_us )
+        {
+            network_connect_started_us = a_now_us;
+        }
+
+        if( RFSCOUT_WIFI_STATION_FAILED == current.state )
+        {
+            snprintf( error_text,
+                      sizeof( error_text ),
+                      "%s",
+                      ESP_ERR_NOT_FOUND == current.disconnect_reason ? "Network not found"
+                                                                     : "Connection failed" );
+            return_to_network_main();
+            return;
+        }
+
+        if( RFSCOUT_WIFI_STATION_CONNECTED == current.state )
+        {
+            if( current.ntp_synced )
+            {
+                error_text[ 0 ] = '\0';
+                return_to_network_main();
+                return;
+            }
+
+            display_modal_show( "NETWORK", "Setting time..." );
+            if( !network_connect_connected_seen )
+            {
+                network_connect_connected_seen = true;
+                network_connect_ntp_started_us = a_now_us;
+            }
+            else if( !current.ntp_syncing ||
+                     a_now_us - network_connect_ntp_started_us >= OTA_NTP_SYNC_TIMEOUT_US )
+            {
+                const bool timed_out =
+                    a_now_us - network_connect_ntp_started_us >= OTA_NTP_SYNC_TIMEOUT_US;
+                const esp_err_t cancel_result = rfscout_wifi_station_cancel_time_sync();
+                if( ESP_OK != cancel_result )
+                {
+                    ESP_LOGW( TAG,
+                              "could not cancel failed time synchronization: %s",
+                              esp_err_to_name( cancel_result ) );
+                    network_connect_ntp_started_us = a_now_us;
+                    redraw = true;
+                }
+                else
+                {
+                    snprintf( error_text,
+                              sizeof( error_text ),
+                              "%s",
+                              timed_out ? "Time sync timed out" : "Time sync failed" );
+                    return_to_network_main();
+                    return;
+                }
+            }
+            redraw = true;
+        }
+        else if( RFSCOUT_WIFI_STATION_SEARCHING == current.state ||
+                 RFSCOUT_WIFI_STATION_CONNECTING == current.state )
+        {
+            if( a_now_us - network_connect_started_us >= OTA_NETWORK_CONNECT_TIMEOUT_US )
+            {
+                const esp_err_t stop_result = rfscout_wifi_station_stop();
+                if( ESP_OK != stop_result )
+                {
+                    ESP_LOGW( TAG,
+                              "could not stop timed-out Wi-Fi connection: %s",
+                              esp_err_to_name( stop_result ) );
+                    network_connect_started_us = a_now_us;
+                    redraw = true;
+                }
+                else
+                {
+                    snprintf( error_text, sizeof( error_text ), "Connection timed out" );
+                    return_to_network_main();
+                    return;
+                }
+            }
+
+            display_modal_show( "NETWORK", "Connecting..." );
+            redraw = true;
+        }
+        else if( RFSCOUT_WIFI_STATION_SCANNING != current.state )
+        {
+            snprintf( error_text, sizeof( error_text ), "Connection failed" );
+            return_to_network_main();
+            return;
+        }
+    }
+
     if( current.scan_generation != last_scan_generation || current.state != last_station_state )
     {
         last_scan_generation = current.scan_generation;
@@ -1356,14 +1506,15 @@ static void submenu_poll( int64_t a_now_us )
                 {
                     if( OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result )
                     {
-                        snprintf( update_status,
-                                  sizeof( update_status ),
+                        snprintf( stable_update_status,
+                                  sizeof( stable_update_status ),
                                   "%s",
                                   catalog_selection.candidate.version );
                     }
                     else
                     {
-                        snprintf( update_status, sizeof( update_status ), "Current" );
+                        snprintf(
+                            stable_update_status, sizeof( stable_update_status ), "Up to date" );
                     }
                     error_text[ 0 ] = '\0';
                     if( open_builds_after_catalog )
@@ -1377,12 +1528,12 @@ static void submenu_poll( int64_t a_now_us )
                 {
                     open_builds_after_catalog = false;
                     set_error( result );
-                    snprintf( update_status, sizeof( update_status ), "Check failed" );
+                    snprintf(
+                        stable_update_status, sizeof( stable_update_status ), "Check failed" );
                 }
             }
             else if( OTA_ACQUISITION_KIND_FIRMWARE == acquisition.kind )
             {
-                snprintf( update_status, sizeof( update_status ), "Verifying..." );
                 display_modal_show( "OTA UPDATE", "Verifying..." );
                 render();
 
@@ -1393,7 +1544,6 @@ static void submenu_poll( int64_t a_now_us )
                 }
                 if( ESP_OK == result )
                 {
-                    snprintf( update_status, sizeof( update_status ), "Rebooting..." );
                     display_modal_show( "OTA UPDATE", "Rebooting..." );
                     render();
                     esp_restart();
@@ -1401,7 +1551,6 @@ static void submenu_poll( int64_t a_now_us )
                 display_modal_clear();
                 (void)ota_installer_abort();
                 set_error( result );
-                snprintf( update_status, sizeof( update_status ), "Install failed" );
             }
         }
         else if( OTA_ACQUISITION_FAILED == acquisition.state )
@@ -1410,11 +1559,10 @@ static void submenu_poll( int64_t a_now_us )
             {
                 display_modal_clear();
                 (void)ota_installer_abort();
-                snprintf( update_status, sizeof( update_status ), "Install failed" );
             }
             else
             {
-                snprintf( update_status, sizeof( update_status ), "Check failed" );
+                snprintf( stable_update_status, sizeof( stable_update_status ), "Check failed" );
             }
             if( acquisition.http_status > 0 )
             {
@@ -1440,7 +1588,6 @@ static void submenu_poll( int64_t a_now_us )
     {
         const unsigned percent =
             (unsigned)( (uint64_t)installer.bytes_written * 100U / installer.expected_size );
-        snprintf( update_status, sizeof( update_status ), "Downloading %u%%", percent );
         char progress[ 32 ];
         snprintf( progress,
                   sizeof( progress ),
@@ -1453,7 +1600,6 @@ static void submenu_poll( int64_t a_now_us )
     }
     else if( OTA_INSTALLER_VERIFYING == installer.state )
     {
-        snprintf( update_status, sizeof( update_status ), "Verifying..." );
         display_modal_show( "OTA UPDATE", "Verifying..." );
         redraw = true;
     }

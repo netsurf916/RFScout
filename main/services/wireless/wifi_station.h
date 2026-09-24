@@ -73,6 +73,9 @@ esp_err_t rfscout_wifi_station_connect( const char *a_ssid, const char *a_passwo
 /** @brief Disconnect the current station while leaving the Home session able to scan again. */
 esp_err_t rfscout_wifi_station_disconnect( void );
 
+/** @brief Cancel an active NTP synchronization attempt while preserving the Wi-Fi connection. */
+esp_err_t rfscout_wifi_station_cancel_time_sync( void );
+
 /**
  * @brief Tear down all STA work and clear transient driver configuration/results.
  * @details Used by the app-session lifecycle when the owning application exits.
