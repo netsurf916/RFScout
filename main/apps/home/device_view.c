@@ -410,7 +410,8 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             break;
         }
         case DEVICE_ITEM_OTA:
-            snprintf( a_value, a_capacity, "%s", network_update_available() ? "Ready" : "Unavailable" );
+            snprintf(
+                a_value, a_capacity, "%s", network_update_available() ? "Ready" : "Unavailable" );
             break;
         case DEVICE_ITEM_WIFI:
             snprintf(
