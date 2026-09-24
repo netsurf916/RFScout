@@ -798,6 +798,35 @@ static void return_to_network_main( void )
     render();
 }
 
+static void cancel_network_connect_modal( void )
+{
+    if( !network_connect_modal_active )
+    {
+        return;
+    }
+
+    const bool cancel_time_sync = network_connect_connected_seen;
+    const esp_err_t result =
+        cancel_time_sync ? rfscout_wifi_station_cancel_time_sync() : rfscout_wifi_station_stop();
+
+    if( ESP_OK == result )
+    {
+        error_text[ 0 ] = '\0';
+    }
+    else
+    {
+        set_error( result );
+    }
+
+    return_to_network_main();
+
+    if( ESP_OK == result && !cancel_time_sync )
+    {
+        refresh_scan_results();
+        begin_passive_scan();
+    }
+}
+
 static void connect_selected_network( void )
 {
     if( action_saved_index < 0 || (size_t)action_saved_index >= saved_networks.count )
@@ -1242,7 +1271,15 @@ esp_err_t ota_menu_leave( void )
 
 static bool submenu_input( bool a_pressed, int a_delta )
 {
-    if( install_interaction_locked() || network_connect_modal_active )
+    if( network_connect_modal_active )
+    {
+        if( a_pressed )
+        {
+            cancel_network_connect_modal();
+        }
+        return false;
+    }
+    if( install_interaction_locked() )
     {
         return false;
     }
