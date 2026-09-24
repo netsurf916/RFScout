@@ -24,6 +24,16 @@ void app_manager_poll( void );
 /** @brief Return the application currently visible on the LCD. */
 rfscout_app_id_t app_manager_current( void );
 
+/** @brief Return whether global rotary application switching is locked to the active app. */
+bool app_manager_locked( void );
+
+/**
+ * @brief Change the framework-owned application lock.
+ * @return true when the requested state is active after the call.
+ * @details Home is never app-locked. Locking does not alter the active resource session.
+ */
+bool app_manager_set_locked( bool a_locked );
+
 /**
  * @brief Request a transition to one available application.
  *
