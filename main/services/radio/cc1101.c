@@ -692,7 +692,10 @@ esp_err_t cc1101_set_acquisition_mode( cc1101_acquisition_mode_t a_mode )
         {
             return ESP_ERR_TIMEOUT;
         }
-        stop_receive_acquisition();
+        if( !stop_receive_acquisition() )
+        {
+            return ESP_FAIL;
+        }
     }
 
     portENTER_CRITICAL( &state_lock );
@@ -949,7 +952,14 @@ esp_err_t cc1101_set_receive_frequency( uint32_t a_frequency_khz )
 
     if( service_started && ( CC1101_ACQUISITION_RECEIVE == acquisition_mode ) )
     {
-        stop_receive_acquisition();
+        if( !stop_receive_acquisition() )
+        {
+            portENTER_CRITICAL( &state_lock );
+            receive_config.frequency_khz = before;
+            portEXIT_CRITICAL( &state_lock );
+            return ESP_FAIL;
+        }
+
         const esp_err_t result = start_receive_acquisition();
         if( ESP_OK != result )
         {
@@ -977,7 +987,14 @@ esp_err_t cc1101_set_receive_preset( cc1101_receive_preset_t a_preset )
 
     if( service_started && ( CC1101_ACQUISITION_RECEIVE == acquisition_mode ) )
     {
-        stop_receive_acquisition();
+        if( !stop_receive_acquisition() )
+        {
+            portENTER_CRITICAL( &state_lock );
+            receive_config.preset = before;
+            portEXIT_CRITICAL( &state_lock );
+            return ESP_FAIL;
+        }
+
         const esp_err_t result = start_receive_acquisition();
         if( ESP_OK != result )
         {
