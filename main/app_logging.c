@@ -91,8 +91,7 @@ static bool write_transition_record( const rfscout_app_transition_diagnostics_t 
         log_int( &record, "elapsed_us", a_diagnostics->elapsed_us ) &&
         log_uint( &record, "psram_free", a_diagnostics->psram_free_bytes ) &&
         log_uint( &record, "psram_largest", a_diagnostics->psram_largest_free_block ) &&
-        ( ( 0U == a_dropped_before ) ||
-          log_uint( &record, "dropped_before", a_dropped_before ) );
+        ( ( 0U == a_dropped_before ) || log_uint( &record, "dropped_before", a_dropped_before ) );
 
     return success && log_end( &record );
 }
