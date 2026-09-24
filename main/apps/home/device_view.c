@@ -1554,52 +1554,6 @@ static void adjust_selected( int a_delta )
     }
 }
 
-bool device_view_back( void )
-{
-    if( network_menu_open )
-    {
-        if( network_menu_back() )
-        {
-            network_menu_leave();
-            network_menu_open = false;
-            device_view_render();
-        }
-        return true;
-    }
-    if( ota_menu_open )
-    {
-        if( ota_menu_back() && ESP_OK == ota_menu_leave() )
-        {
-            ota_menu_open = false;
-            device_view_render();
-        }
-        return true;
-    }
-    if( time_menu_open )
-    {
-        time_menu_open = false;
-        time_selected_item = TIME_MENU_BACK;
-        time_editing = false;
-        device_view_render();
-        return true;
-    }
-    if( power_policy_menu_open )
-    {
-        power_policy_menu_open = false;
-        device_view_render();
-        return true;
-    }
-    if( !power_menu_open )
-    {
-        return false;
-    }
-
-    power_menu_open = false;
-    power_selected_item = POWER_MENU_BACK;
-    device_view_render();
-    return true;
-}
-
 bool device_view_input( bool a_pressed, int a_delta )
 {
     if( network_menu_open )
