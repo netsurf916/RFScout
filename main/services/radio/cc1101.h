@@ -72,7 +72,10 @@ typedef struct
     uint32_t capture_errors;
 } cc1101_capture_stats_t;
 
-/** @brief Probe and initialize the CC1101 SPI device and long-lived worker task. */
+/** @brief Probe the CC1101 identity and leave the radio inactive. Safe to retry. */
+esp_err_t cc1101_probe( void );
+
+/** @brief Initialize reusable CC1101 service state after a successful probe. */
 esp_err_t cc1101_init( void );
 
 /** @brief Wake the CC1101 and resume the selected acquisition mode. */
