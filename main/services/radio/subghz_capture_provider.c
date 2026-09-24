@@ -346,15 +346,13 @@ bool subghz_capture_provider_stop( void )
                 const int slot_index = filling_slot;
                 portEXIT_CRITICAL( &state_lock );
 
-                if( ( slot_index >= 0 ) &&
-                    ( slot_index < (int)RFSCOUT_SUBGHZ_CAPTURE_POOL_SIZE ) )
+                if( ( slot_index >= 0 ) && ( slot_index < (int)RFSCOUT_SUBGHZ_CAPTURE_POOL_SIZE ) )
                 {
-                    const esp_err_t receive_result =
-                        rmt_receive( rmt_channel,
-                                     capture_pool[ slot_index ].symbols,
-                                     RFSCOUT_SUBGHZ_CAPTURE_SYMBOL_CAPACITY *
-                                         sizeof( rfscout_subghz_symbol_t ),
-                                     &receive_config );
+                    const esp_err_t receive_result = rmt_receive(
+                        rmt_channel,
+                        capture_pool[ slot_index ].symbols,
+                        RFSCOUT_SUBGHZ_CAPTURE_SYMBOL_CAPACITY * sizeof( rfscout_subghz_symbol_t ),
+                        &receive_config );
                     if( ESP_OK == receive_result )
                     {
                         return false;
