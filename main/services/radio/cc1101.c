@@ -1010,6 +1010,16 @@ void cc1101_receive_config( cc1101_receive_config_t *a_output )
     portEXIT_CRITICAL( &state_lock );
 }
 
+static void recover_receive_failure_to_discovery( void )
+{
+    portENTER_CRITICAL( &state_lock );
+    acquisition_mode = CC1101_ACQUISITION_DISCOVERY;
+    frame_ready = false;
+    portEXIT_CRITICAL( &state_lock );
+    start_scan_worker();
+    ESP_LOGW( TAG, "receive acquisition restore failed; recovered to discovery mode" );
+}
+
 esp_err_t cc1101_set_receive_frequency( uint32_t a_frequency_khz )
 {
     if( !frequency_supported( a_frequency_khz ) )
@@ -1038,7 +1048,11 @@ esp_err_t cc1101_set_receive_frequency( uint32_t a_frequency_khz )
             portENTER_CRITICAL( &state_lock );
             receive_config.frequency_khz = before;
             portEXIT_CRITICAL( &state_lock );
-            (void)start_receive_acquisition();
+            const esp_err_t restore_result = start_receive_acquisition();
+            if( ESP_OK != restore_result )
+            {
+                recover_receive_failure_to_discovery();
+            }
             return result;
         }
     }
@@ -1073,7 +1087,11 @@ esp_err_t cc1101_set_receive_preset( cc1101_receive_preset_t a_preset )
             portENTER_CRITICAL( &state_lock );
             receive_config.preset = before;
             portEXIT_CRITICAL( &state_lock );
-            (void)start_receive_acquisition();
+            const esp_err_t restore_result = start_receive_acquisition();
+            if( ESP_OK != restore_result )
+            {
+                recover_receive_failure_to_discovery();
+            }
             return result;
         }
     }
