@@ -96,8 +96,8 @@ size_t memory_manager_release_app( rfscout_app_id_t a_app );
 /** @brief Release all allocations belonging to one nested application operation. */
 size_t memory_manager_release_operation( rfscout_app_id_t a_app, uint16_t a_operation );
 
-/** @brief Return current accounting for one application and its nested operations. */
-rfscout_memory_stats_t memory_manager_app_stats( rfscout_app_id_t a_app );
+/** @brief Copy current accounting for one application and its nested operations. */
+void memory_manager_app_stats( rfscout_app_id_t a_app, rfscout_memory_stats_t *a_stats );
 
 /** @brief Return the number of managed allocations still owned by an application. */
 size_t memory_manager_app_allocation_count( rfscout_app_id_t a_app );
