@@ -18,7 +18,7 @@
 #define TEXT 0xBDF7U
 #define DIM 0x7BEFU
 #define YELLOW 0xFFE0U
-#define CC1101_MENU_ITEM_COUNT 8U
+#define CC1101_MENU_ITEM_COUNT 9U
 #define GRAPH_TOP 48
 #define GRAPH_HEIGHT 88
 #define TIMING_ROWS 6U
@@ -53,7 +53,8 @@ void cc1101_view_discovery( const int8_t *a_rssi,
                             const cc1101_scan_config_t *a_config,
                             uint32_t a_peak_khz,
                             int8_t a_peak_rssi,
-                            bool a_detected )
+                            bool a_detected,
+                            bool a_app_locked )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     display_clear( BG );
@@ -112,8 +113,12 @@ void cc1101_view_discovery( const int8_t *a_rssi,
 
     snprintf( line, sizeof( line ), "PEAK %s MHz  %d dBm", peak, (int)a_peak_rssi );
     display_draw_text( UI_LAYOUT_LEFT_X, 142, line, theme->secondary, 1U );
-    display_draw_text(
-        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "HOLD CENTER: LOCK  CENTER: SETTINGS", SUBDUED, 1U );
+    display_draw_text( UI_LAYOUT_LEFT_X,
+                       UI_LAYOUT_FOOTER_Y,
+                       a_app_locked ? "TURN: VIEWS  CENTER: SETTINGS"
+                                    : "TURN: APPS  HOLD: VIEW  CENTER: SETTINGS",
+                       SUBDUED,
+                       1U );
     (void)display_present();
 }
 
@@ -299,7 +304,8 @@ void cc1101_view_receive( cc1101_view_mode_t a_view,
                           const cc1101_capture_stats_t *a_stats,
                           const rfscout_subghz_symbol_t *a_raw_symbols,
                           size_t a_raw_count,
-                          uint32_t a_raw_resolution_hz )
+                          uint32_t a_raw_resolution_hz,
+                          bool a_app_locked )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     display_clear( BG );
@@ -334,7 +340,8 @@ void cc1101_view_receive( cc1101_view_mode_t a_view,
 
     display_draw_text( UI_LAYOUT_LEFT_X,
                        UI_LAYOUT_FOOTER_Y,
-                       "HOLD CENTER: VIEW  BACK: DISCOVERY  CENTER: SETTINGS",
+                       a_app_locked ? "TURN: VIEWS  CENTER: SETTINGS"
+                                    : "TURN: APPS  HOLD: VIEW  CENTER: SETTINGS",
                        SUBDUED,
                        1U );
     (void)display_present();
@@ -343,12 +350,14 @@ void cc1101_view_receive( cc1101_view_mode_t a_view,
 void cc1101_view_menu( unsigned a_selected,
                        bool a_editing,
                        bool a_limit_reached,
+                       bool a_app_locked,
                        cc1101_acquisition_mode_t a_mode,
                        const cc1101_scan_config_t *a_scan,
                        const cc1101_receive_config_t *a_receive )
 {
     static const char *labels[ CC1101_MENU_ITEM_COUNT ] = {
         "BACK",
+        "APP LOCK",
         "MODE",
         "SCAN PROFILE",
         "RX FREQ",
@@ -386,32 +395,36 @@ void cc1101_view_menu( unsigned a_selected,
         value[ 0 ] = '\0';
         if( 1U == index )
         {
+            snprintf( value, sizeof( value ), "%s", a_app_locked ? "ON" : "OFF" );
+        }
+        else if( 2U == index )
+        {
             snprintf( value,
                       sizeof( value ),
                       "%s",
                       CC1101_ACQUISITION_RECEIVE == a_mode ? "RECEIVE" : "DISCOVERY" );
         }
-        else if( ( 2U == index ) && ( NULL != a_scan ) )
+        else if( ( 3U == index ) && ( NULL != a_scan ) )
         {
             snprintf( value, sizeof( value ), "%s", cc1101_profile_name( a_scan->profile ) );
         }
-        else if( ( 3U == index ) && ( NULL != a_receive ) )
+        else if( ( 4U == index ) && ( NULL != a_receive ) )
         {
             char mhz[ 20 ];
             format_mhz( mhz, sizeof( mhz ), a_receive->frequency_khz );
             snprintf( value, sizeof( value ), "%s MHz", mhz );
         }
-        else if( ( 4U == index ) && ( NULL != a_receive ) )
+        else if( ( 5U == index ) && ( NULL != a_receive ) )
         {
             snprintf(
                 value, sizeof( value ), "%s", cc1101_receive_preset_name( a_receive->preset ) );
         }
-        else if( ( index >= 5U ) && ( NULL != a_scan ) )
+        else if( ( index >= 6U ) && ( NULL != a_scan ) )
         {
-            const uint32_t setting = ( 5U == index )   ? a_scan->low_khz
-                                     : ( 6U == index ) ? a_scan->high_khz
+            const uint32_t setting = ( 6U == index )   ? a_scan->low_khz
+                                     : ( 7U == index ) ? a_scan->high_khz
                                                        : a_scan->step_khz;
-            if( 7U == index )
+            if( 8U == index )
             {
                 snprintf( value, sizeof( value ), "%lu kHz", (unsigned long)setting );
             }
