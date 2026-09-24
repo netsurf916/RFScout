@@ -151,8 +151,8 @@ static void update_discovery_peak( void )
 
 static void consume_discovery_frame( bool a_render )
 {
-    discovery_count = cc1101_spectrum(
-        discovery_rssi, discovery_frequency_khz, CC1101_SPECTRUM_BINS );
+    discovery_count =
+        cc1101_spectrum( discovery_rssi, discovery_frequency_khz, CC1101_SPECTRUM_BINS );
     update_discovery_peak();
     if( a_render )
     {
@@ -273,9 +273,8 @@ static bool change_mode( int a_direction )
 {
     (void)a_direction;
     const cc1101_acquisition_mode_t target =
-        ( CC1101_ACQUISITION_RECEIVE == cc1101_acquisition_mode() )
-            ? CC1101_ACQUISITION_DISCOVERY
-            : CC1101_ACQUISITION_RECEIVE;
+        ( CC1101_ACQUISITION_RECEIVE == cc1101_acquisition_mode() ) ? CC1101_ACQUISITION_DISCOVERY
+                                                                    : CC1101_ACQUISITION_RECEIVE;
 
     if( ESP_OK != cc1101_set_acquisition_mode( target ) )
     {
