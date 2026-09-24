@@ -132,7 +132,7 @@ The user-facing gesture vocabulary is intentional:
 - **Long Press** — center-button release after at least 0.8 seconds but before the Hold action fires; app-defined secondary action.
 - **Hold** — center button remains pressed for 2 seconds; framework-owned global Input Lock / App Lock shortcut.
 
-UI hints use `LONG PRESS` and `HOLD` with those meanings. “Long Select” and “long hold” are not alternate names.
+UI hints use `LONG PRESS` and `HOLD` with those meanings.
 
 ### Input lock and application lock
 
