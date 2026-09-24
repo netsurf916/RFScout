@@ -30,8 +30,7 @@ const rfscout_app_descriptor_t *app_framework_descriptor( rfscout_app_id_t a_app
 
 /**
  * @brief Check whether an app's required runtime capability is available.
- * @details Fixed hardware is re-probed only while unavailable; hot-plug hardware is refreshed on
- *          every explicit availability check.
+ * @details Hot-plug hardware is refreshed on every explicit availability check.
  */
 bool app_framework_check_available( rfscout_app_id_t a_app );
 
