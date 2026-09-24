@@ -187,7 +187,7 @@ void recorder_view_browser( unsigned a_selected,
 
     display_draw_text( UI_LAYOUT_LEFT_X,
                        UI_LAYOUT_FOOTER_Y,
-                       "CENTER: SELECT  HOLD FILE: DELETE",
+                       "CENTER: SELECT  LONG PRESS: DELETE",
                        theme->secondary,
                        1U );
     (void)display_present();
