@@ -389,13 +389,16 @@ esp_err_t ota_acquisition_begin_firmware( const char *a_artifact_path )
     return begin_request( OTA_ACQUISITION_KIND_FIRMWARE, url );
 }
 
-ota_acquisition_status_t ota_acquisition_status( void )
+void ota_acquisition_status( ota_acquisition_status_t *a_status )
 {
-    ota_acquisition_status_t result;
+    if( NULL == a_status )
+    {
+        return;
+    }
+
     portENTER_CRITICAL( &state_lock );
-    result = status;
+    *a_status = status;
     portEXIT_CRITICAL( &state_lock );
-    return result;
 }
 
 esp_err_t ota_acquisition_copy_catalog( char *a_destination, size_t a_capacity, size_t *a_length )
