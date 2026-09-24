@@ -17,6 +17,8 @@
 #define OTA_MENU_START_Y 43
 #define OTA_MENU_ROW_HEIGHT 20
 #define OTA_MENU_VISIBLE_ROWS 5U
+#define OTA_UPDATE_MENU_START_Y 66
+#define OTA_UPDATE_MENU_ROW_HEIGHT 18
 
 static unsigned menu_window_start( unsigned a_selected, unsigned a_count )
 {
@@ -55,6 +57,18 @@ static void draw_menu_row(
 {
     draw_menu_row_at(
         OTA_MENU_START_Y + (int)a_row * OTA_MENU_ROW_HEIGHT, a_item, a_selected, a_label, a_value );
+}
+
+static void
+draw_information_row( int a_y, const char *a_label, const char *a_value, bool a_emphasize_value )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    display_draw_text( UI_LAYOUT_LEFT_X, a_y, a_label, theme->secondary, 1U );
+    display_draw_text( 78,
+                       a_y,
+                       NULL != a_value && '\0' != a_value[ 0 ] ? a_value : "unknown",
+                       a_emphasize_value ? theme->accent : theme->text,
+                       1U );
 }
 
 void ota_view_render_network_main( const char *a_connection,
@@ -133,51 +147,42 @@ void ota_view_render_network_main( const char *a_connection,
     (void)display_present();
 }
 
-void ota_view_render_update_main( const char *a_version,
+void ota_view_render_update_main( const char *a_installed_version,
+                                  const char *a_update_version,
                                   const char *a_connection,
                                   unsigned a_selected,
                                   bool a_ready,
                                   bool a_can_install,
-                                  const char *a_update_status,
                                   const char *a_error )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     const unsigned item_count = a_ready ? ( a_can_install ? 4U : 3U ) : 1U;
-    const unsigned start = menu_window_start( a_selected, item_count );
 
     display_clear( theme->background );
     ui_chrome_draw( "OTA UPDATE", theme->secondary );
 
-    char status[ 64 ];
-    snprintf( status,
-              sizeof( status ),
-              "%s  %s",
-              NULL != a_version ? a_version : "unknown",
-              NULL != a_connection ? a_connection : "Network unavailable" );
-    display_draw_text( UI_LAYOUT_LEFT_X, 25, status, theme->secondary, 1U );
+    draw_information_row( 25, "Installed", a_installed_version, true );
+    draw_information_row( 37, "Update", a_update_version, a_can_install );
+    draw_information_row( 49, "Network", a_connection, false );
 
-    for( unsigned row = 0U; row < OTA_MENU_VISIBLE_ROWS; ++row )
+    for( unsigned item = 0U; item < item_count; ++item )
     {
-        const unsigned item = start + row;
-        if( item >= item_count )
-        {
-            break;
-        }
+        const int y = OTA_UPDATE_MENU_START_Y + (int)item * OTA_UPDATE_MENU_ROW_HEIGHT;
         if( 0U == item )
         {
-            draw_menu_row( row, item, a_selected, "Back", NULL );
+            draw_menu_row_at( y, item, a_selected, "Back", NULL );
         }
         else if( 1U == item )
         {
-            draw_menu_row( row, item, a_selected, "Check for update", a_update_status );
+            draw_menu_row_at( y, item, a_selected, "Check for update", NULL );
         }
         else if( a_can_install && 2U == item )
         {
-            draw_menu_row( row, item, a_selected, "Install update", a_update_status );
+            draw_menu_row_at( y, item, a_selected, "Install update", NULL );
         }
         else
         {
-            draw_menu_row( row, item, a_selected, "Available builds", NULL );
+            draw_menu_row_at( y, item, a_selected, "Available builds", NULL );
         }
     }
 
@@ -296,7 +301,8 @@ void ota_view_render_network_list( const char *a_title,
     (void)display_present();
 }
 
-void ota_view_render_build_list( const ota_view_build_t *a_builds,
+void ota_view_render_build_list( const char *a_installed_version,
+                                 const ota_view_build_t *a_builds,
                                  size_t a_build_count,
                                  unsigned a_selected,
                                  const char *a_empty_message )
@@ -307,9 +313,10 @@ void ota_view_render_build_list( const ota_view_build_t *a_builds,
 
     display_clear( theme->background );
     ui_chrome_draw( "AVAILABLE BUILDS", theme->secondary );
+    draw_information_row( 25, "Installed", a_installed_version, true );
     if( 0U == a_build_count && NULL != a_empty_message )
     {
-        display_draw_text( UI_LAYOUT_LEFT_X, 28, a_empty_message, theme->secondary, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 34, a_empty_message, theme->secondary, 1U );
     }
 
     for( unsigned row = 0U; row < OTA_MENU_VISIBLE_ROWS; ++row )
@@ -333,7 +340,8 @@ void ota_view_render_build_list( const ota_view_build_t *a_builds,
     (void)display_present();
 }
 
-void ota_view_render_build_action( const char *a_label,
+void ota_view_render_build_action( const char *a_installed_version,
+                                   const char *a_label,
                                    const char *a_version,
                                    const char *a_commit,
                                    unsigned a_selected )
@@ -342,19 +350,21 @@ void ota_view_render_build_action( const char *a_label,
     display_clear( theme->background );
     ui_chrome_draw( "FIRMWARE BUILD", theme->secondary );
     display_draw_text(
-        UI_LAYOUT_LEFT_X, 26, NULL != a_label ? a_label : "Build", theme->accent, 1U );
+        UI_LAYOUT_LEFT_X, 25, NULL != a_label ? a_label : "Build", theme->accent, 1U );
 
-    draw_menu_row( 0U, 0U, a_selected, "Back", NULL );
-    draw_menu_row( 1U, 1U, a_selected, "Install", NULL );
+    draw_information_row( 40, "Installed", a_installed_version, false );
+    draw_information_row( 54, "Selected", a_version, true );
 
-    display_draw_text(
-        UI_LAYOUT_LEFT_X, 88, NULL != a_version ? a_version : "unknown", theme->secondary, 1U );
     char commit[ 24 ] = "";
     if( NULL != a_commit )
     {
         snprintf( commit, sizeof( commit ), "%.12s", a_commit );
     }
-    display_draw_text( UI_LAYOUT_LEFT_X, 103, commit, theme->secondary, 1U );
+    draw_information_row( 68, "Commit", commit, false );
+
+    draw_menu_row_at( 90, 0U, a_selected, "Back", NULL );
+    draw_menu_row_at( 110, 1U, a_selected, "Install selected", NULL );
+
     display_draw_text(
         UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "EXPLICIT BUILD INSTALL", theme->secondary, 1U );
     (void)display_present();
