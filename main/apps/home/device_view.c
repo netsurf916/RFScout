@@ -1323,9 +1323,9 @@ static void toggle_logging( void )
 static void toggle_hold_shortcut( void )
 {
     const rfscout_hold_shortcut_t old_shortcut = device_config_hold_shortcut();
-    const rfscout_hold_shortcut_t new_shortcut =
-        RFSCOUT_HOLD_SHORTCUT_INPUT_LOCK == old_shortcut ? RFSCOUT_HOLD_SHORTCUT_APP_LOCK
-                                                         : RFSCOUT_HOLD_SHORTCUT_INPUT_LOCK;
+    const rfscout_hold_shortcut_t new_shortcut = RFSCOUT_HOLD_SHORTCUT_INPUT_LOCK == old_shortcut
+                                                     ? RFSCOUT_HOLD_SHORTCUT_APP_LOCK
+                                                     : RFSCOUT_HOLD_SHORTCUT_INPUT_LOCK;
     if( ESP_OK != device_config_set_hold_shortcut( new_shortcut ) )
     {
         save_error = true;
