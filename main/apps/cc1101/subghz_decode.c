@@ -11,7 +11,8 @@
 
 #define HISTOGRAM_QUANTUM_US 25U
 #define PRINCETON_FRAME_BITS 24U
-#define PRINCETON_RESET_MIN_US 8000U
+#define PRINCETON_RESET_FALLBACK_US 8000U
+#define PRINCETON_RESET_RATIO 8U
 #define PRINCETON_SHORT_MIN_US 100U
 #define PRINCETON_SHORT_MAX_US 1000U
 #define PRINCETON_RATIO_MIN_X100 200U
@@ -213,12 +214,23 @@ static void pwm_rows_commit( pwm_rows_t *a_rows, pwm_row_t *a_current )
     memset( a_current, 0, sizeof( *a_current ) );
 }
 
+static bool princeton_is_reset( const pwm_row_t *a_current, uint32_t a_low_us )
+{
+    if( ( NULL != a_current ) && ( a_current->short_count > 0U ) )
+    {
+        const uint32_t average_short_us = a_current->short_sum_us / a_current->short_count;
+        return a_low_us >= average_short_us * PRINCETON_RESET_RATIO;
+    }
+
+    return a_low_us >= PRINCETON_RESET_FALLBACK_US;
+}
+
 static void princeton_consume_pair( pwm_rows_t *a_rows,
                                     pwm_row_t *a_current,
                                     uint32_t a_high_us,
                                     uint32_t a_low_us )
 {
-    if( a_low_us >= PRINCETON_RESET_MIN_US )
+    if( princeton_is_reset( a_current, a_low_us ) )
     {
         pwm_rows_commit( a_rows, a_current );
         return;
@@ -279,7 +291,7 @@ static bool decode_princeton( const rfscout_subghz_capture_t *a_capture,
                 princeton_consume_pair( &rows, &current, high_us, duration_us );
                 have_high = false;
             }
-            else if( duration_us >= PRINCETON_RESET_MIN_US )
+            else if( princeton_is_reset( &current, duration_us ) )
             {
                 pwm_rows_commit( &rows, &current );
             }
