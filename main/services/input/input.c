@@ -23,7 +23,6 @@
 
 #define INPUT_BUTTON_DEBOUNCE_US 30000LL
 #define INPUT_BUTTON_LONG_PRESS_US 800000LL
-#define INPUT_BUTTON_BACK_HOLD_US 1500000LL
 #define ENCODER_LATCH_STATE_0 0U
 #define ENCODER_LATCH_STATE_3 3U
 #define ENCODER_TRANSITIONS_PER_DETENT 2
@@ -44,7 +43,6 @@ static uint32_t button_lock_sequence;
 static bool button_event;
 static bool button_long_event;
 static bool button_global_hold_event;
-static bool button_back_event;
 static bool button_lock_fired;
 static bool locked;
 static int primary_button_pin = -1;
@@ -143,7 +141,6 @@ void input_set_locked( bool a_locked )
     button_event = false;
     button_long_event = false;
     button_global_hold_event = false;
-    button_back_event = false;
     clear_navigation_delta();
     ESP_LOGI( TAG, "user input %s", locked ? "locked" : "unlocked" );
     rfscout_event_emit( locked ? RFSCOUT_EVENT_INPUT_LOCKED : RFSCOUT_EVENT_INPUT_UNLOCKED,
@@ -157,7 +154,6 @@ static void queue_global_hold( uint32_t a_press_sequence )
     button_lock_sequence = a_press_sequence;
     button_event = false;
     button_long_event = false;
-    button_back_event = false;
     button_global_hold_event = true;
     clear_navigation_delta();
 }
@@ -310,11 +306,7 @@ void input_poll( void )
         return;
     }
 
-    if( completed_duration_us >= INPUT_BUTTON_BACK_HOLD_US )
-    {
-        button_back_event = true;
-    }
-    else if( completed_duration_us >= INPUT_BUTTON_LONG_PRESS_US )
+    if( completed_duration_us >= INPUT_BUTTON_LONG_PRESS_US )
     {
         button_long_event = true;
     }
@@ -340,7 +332,7 @@ bool input_activity_pending( void )
     const bool user_key =
         RFSCOUT_BOARD_USER_KEY_PIN >= 0 && 0 == gpio_get_level( RFSCOUT_BOARD_USER_KEY_PIN );
     return movement || button_activity || button_event || button_long_event ||
-           button_global_hold_event || button_back_event || user_key;
+           button_global_hold_event || user_key;
 }
 
 void input_consume_wake( void )
@@ -378,12 +370,6 @@ bool input_get( rfscout_input_event_t *a_event )
     {
         button_global_hold_event = false;
         a_event->type = RFSCOUT_INPUT_GLOBAL_HOLD;
-        return true;
-    }
-    if( button_back_event )
-    {
-        button_back_event = false;
-        a_event->type = RFSCOUT_INPUT_BACK;
         return true;
     }
     if( consume_button_event( &button_long_event ) )
