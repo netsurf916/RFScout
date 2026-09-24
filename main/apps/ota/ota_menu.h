@@ -20,8 +20,6 @@ void network_menu_enter( void );
 void network_menu_leave( void );
 /** @brief Handle Network-menu select/rotation input; true requests return to Device settings. */
 bool network_menu_input( bool a_pressed, int a_delta );
-/** @brief Handle Back within the Network menu; true requests return to Device settings. */
-bool network_menu_back( void );
 /** @brief Poll asynchronous Network state while the Home Network menu is open. */
 void network_menu_poll( int64_t a_now_us );
 
@@ -36,9 +34,6 @@ esp_err_t ota_menu_leave( void );
 
 /** @brief Handle Home-menu select/rotation input; true requests return to Device settings. */
 bool ota_menu_input( bool a_pressed, int a_delta );
-
-/** @brief Handle Back within the Update menu; true requests return to Device settings. */
-bool ota_menu_back( void );
 
 /** @brief Poll asynchronous Update operations while the Home Update menu is open. */
 void ota_menu_poll( int64_t a_now_us );
