@@ -386,6 +386,7 @@ static void scan_worker( void *a_argument )
 
 static bool stop_scan_worker( void )
 {
+    const bool was_running = scan_running;
     scan_running = false;
     const TickType_t started = xTaskGetTickCount();
     const TickType_t timeout = pdMS_TO_TICKS( CC1101_STOP_TIMEOUT_MS );
@@ -399,6 +400,11 @@ static bool stop_scan_worker( void )
     {
         ESP_LOGE(
             TAG, "scan worker did not quiesce within %u ms", (unsigned)CC1101_STOP_TIMEOUT_MS );
+        if( was_running )
+        {
+            scan_running = true;
+            xTaskNotifyGive( scan_task );
+        }
         return false;
     }
     return true;
