@@ -4,7 +4,7 @@ nRF24 is RFScout's receive-only 2.4 GHz activity application. Shared SPI/service
 
 ## Availability and lifecycle
 
-The application uses the platform's **fixed-hardware** probe policy. It is probed during initial discovery; if that probe misses, availability is retried when navigation checks the app rather than remaining permanently unavailable for the boot. The nRF24 driver keeps failed initialization retryable and only caches initialized state after a successful identity probe. The current T-Embed profile advertises the provider.
+The application uses the platform's common **hot-plug** probe policy. The same retry-safe identity probe runs during initial discovery, explicit availability checks/navigation, and periodic inactive refresh. Probe and initialization are separate: a prior successful initialization is not treated as permanent proof of presence, and a failed probe can recover on a later check. The current T-Embed profile advertises the provider.
 
 Activation starts the session-managed scanner worker. The worker must quiesce before app memory can be reclaimed.
 
