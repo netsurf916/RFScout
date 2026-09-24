@@ -94,7 +94,7 @@ static bool handle_active_operation( const rfscout_input_event_t *a_input )
     if( RFSCOUT_RECORDER_RECORDING == state )
     {
         if( ( RFSCOUT_INPUT_SELECT == a_input->type ) ||
-            ( RFSCOUT_INPUT_LONG_SELECT == a_input->type ) )
+            ( RFSCOUT_INPUT_LONG_PRESS == a_input->type ) )
         {
             recorder_request_stop_recording();
             last_state = RFSCOUT_RECORDER_SAVING;
@@ -192,7 +192,7 @@ static void handle_browser_input( const rfscout_input_event_t *a_input )
         return;
     }
 
-    if( ( RFSCOUT_INPUT_LONG_SELECT == a_input->type ) &&
+    if( ( RFSCOUT_INPUT_LONG_PRESS == a_input->type ) &&
         ( browser_item >= RECORDER_BROWSER_FILE_BASE ) )
     {
         delete_mode = true;
