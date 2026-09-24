@@ -31,6 +31,7 @@
 #include <string.h>
 
 #define OTA_REFRESH_INTERVAL_US 125000LL
+#define OTA_NTP_SYNC_TIMEOUT_US 15000000LL
 #define OTA_VISIBLE_MAX OTA_NETWORK_MAX_COUNT
 #define OTA_ERROR_TEXT_LENGTH 48U
 
@@ -84,6 +85,7 @@ static bool last_ntp_syncing;
 static bool last_ntp_synced;
 static bool network_connect_modal_active;
 static bool network_connect_connected_seen;
+static int64_t network_connect_ntp_started_us;
 static int64_t last_refresh_us;
 /* Borrowed from catalog_selection or available_builds while input is suppressed. */
 static const ota_catalog_candidate_t *pending_install_candidate;
@@ -784,6 +786,7 @@ static void return_to_network_main( void )
     display_modal_clear();
     network_connect_modal_active = false;
     network_connect_connected_seen = false;
+    network_connect_ntp_started_us = 0;
     screen = OTA_SCREEN_MAIN;
     selected_item = 0U;
     action_saved_index = -1;
@@ -810,6 +813,7 @@ static void connect_selected_network( void )
 
     network_connect_modal_active = true;
     network_connect_connected_seen = false;
+    network_connect_ntp_started_us = 0;
     display_modal_show( "NETWORK", "Connecting..." );
     render();
 }
@@ -1165,6 +1169,7 @@ static void reset_runtime_state( void )
     last_ntp_synced = false;
     network_connect_modal_active = false;
     network_connect_connected_seen = false;
+    network_connect_ntp_started_us = 0;
     last_refresh_us = 0;
     pending_install_candidate = NULL;
     close_requested = false;
@@ -1342,13 +1347,18 @@ static void submenu_poll( int64_t a_now_us )
             }
 
             display_modal_show( "NETWORK", "Setting time..." );
-            if( !current.ntp_syncing && network_connect_connected_seen )
+            if( !network_connect_connected_seen )
+            {
+                network_connect_connected_seen = true;
+                network_connect_ntp_started_us = a_now_us;
+            }
+            else if( !current.ntp_syncing ||
+                     a_now_us - network_connect_ntp_started_us >= OTA_NTP_SYNC_TIMEOUT_US )
             {
                 snprintf( error_text, sizeof( error_text ), "Time sync failed" );
                 return_to_network_main();
                 return;
             }
-            network_connect_connected_seen = true;
             redraw = true;
         }
         else if( RFSCOUT_WIFI_STATION_SEARCHING == current.state ||
