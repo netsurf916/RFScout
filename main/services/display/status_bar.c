@@ -157,7 +157,7 @@ void status_bar_draw_state( const rfscout_status_bar_state_t *a_state )
         draw_lock_icon( x );
         x -= STATUS_BAR_ICON_GAP;
     }
-    if( a_state->app_locked )
+    if( a_state->app_locked && !a_state->input_locked )
     {
         x -= STATUS_BAR_ICON_WIDTH;
         draw_app_lock_icon( x );
