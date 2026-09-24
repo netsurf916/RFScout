@@ -126,21 +126,6 @@ bool app_notification_menu_input( rfscout_app_notification_menu_t *a_menu,
         return false;
     }
 
-    if( RFSCOUT_INPUT_BACK == a_input->type )
-    {
-        if( a_menu->editing )
-        {
-            a_menu->editing = false;
-            render_menu( a_menu );
-            emit_event( a_menu, RFSCOUT_EVENT_BACK, 0 );
-        }
-        else if( close_menu( a_menu ) )
-        {
-            emit_event( a_menu, RFSCOUT_EVENT_BACK, 0 );
-        }
-        return true;
-    }
-
     const size_t notification_count = notification_count_for_app( a_menu->app );
     const unsigned first_mapping = mapping_base( a_menu );
     const unsigned item_count = first_mapping + (unsigned)notification_count;
