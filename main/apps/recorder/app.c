@@ -44,7 +44,14 @@ static void emit_event( rfscout_event_type_t a_type, int32_t a_value )
 
 static esp_err_t probe_recorder( void )
 {
-    if( !storage_is_available() || ( ESP_OK != storage_probe_card() ) )
+    if( !storage_is_available() )
+    {
+        if( ESP_OK != storage_init() )
+        {
+            return ESP_ERR_NOT_FOUND;
+        }
+    }
+    if( ESP_OK != storage_probe_card() )
     {
         return ESP_ERR_NOT_FOUND;
     }
