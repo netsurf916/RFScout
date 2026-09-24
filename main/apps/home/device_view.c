@@ -112,11 +112,11 @@ static unsigned device_item_count( void )
     return DEVICE_ITEM_BASE_COUNT;
 }
 
-static bool network_update_ready( void )
+static bool network_update_available( void )
 {
     rfscout_wifi_station_status_t status;
     rfscout_wifi_station_status( &status );
-    return RFSCOUT_WIFI_STATION_CONNECTED == status.state && status.ntp_synced;
+    return RFSCOUT_WIFI_STATION_CONNECTED == status.state;
 }
 
 static unsigned time_menu_item_count( void )
@@ -410,7 +410,7 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             break;
         }
         case DEVICE_ITEM_OTA:
-            snprintf( a_value, a_capacity, "%s", network_update_ready() ? "Ready" : "Unavailable" );
+            snprintf( a_value, a_capacity, "%s", network_update_available() ? "Ready" : "Unavailable" );
             break;
         case DEVICE_ITEM_WIFI:
             snprintf(
@@ -1554,11 +1554,19 @@ static void adjust_selected( int a_delta )
     }
 }
 
-bool device_view_input( bool a_pressed, int a_delta )
+bool device_view_input( const rfscout_input_event_t *a_input )
 {
+    if( NULL == a_input )
+    {
+        return false;
+    }
+
+    const bool a_pressed = RFSCOUT_INPUT_SELECT == a_input->type;
+    const int a_delta = RFSCOUT_INPUT_NAVIGATION == a_input->type ? (int)a_input->value : 0;
+
     if( network_menu_open )
     {
-        if( network_menu_input( a_pressed, a_delta ) )
+        if( network_menu_input( a_input ) )
         {
             network_menu_leave();
             network_menu_open = false;
@@ -1569,7 +1577,7 @@ bool device_view_input( bool a_pressed, int a_delta )
     }
     if( ota_menu_open )
     {
-        if( ota_menu_input( a_pressed, a_delta ) && ESP_OK == ota_menu_leave() )
+        if( ota_menu_input( a_input ) && ESP_OK == ota_menu_leave() )
         {
             ota_menu_open = false;
             emit_device_event( RFSCOUT_EVENT_BACK, 0 );
@@ -1632,7 +1640,7 @@ bool device_view_input( bool a_pressed, int a_delta )
         }
         if( ( DEVICE_ITEM_OTA == selected_item ) && !editing )
         {
-            if( !network_update_ready() )
+            if( !network_update_available() )
             {
                 device_view_render();
                 return false;
