@@ -148,7 +148,7 @@ void ota_view_render_network_main( const char *a_connection,
 }
 
 void ota_view_render_update_main( const char *a_installed_version,
-                                  const char *a_update_version,
+                                  const char *a_update_status,
                                   const char *a_connection,
                                   unsigned a_selected,
                                   bool a_ready,
@@ -162,7 +162,7 @@ void ota_view_render_update_main( const char *a_installed_version,
     ui_chrome_draw( "OTA UPDATE", theme->secondary );
 
     draw_information_row( 25, "Installed", a_installed_version, true );
-    draw_information_row( 37, "Update", a_update_version, a_can_install );
+    draw_information_row( 37, "Update", a_update_status, a_can_install );
     draw_information_row( 49, "Network", a_connection, false );
 
     for( unsigned item = 0U; item < item_count; ++item )
