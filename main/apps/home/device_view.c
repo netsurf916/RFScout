@@ -317,7 +317,7 @@ static const char *item_label( unsigned a_item )
         case DEVICE_ITEM_BREADCRUMB_FILES:
             return "Breadcrumb files";
         case DEVICE_ITEM_HOLD_SHORTCUT:
-            return "Long hold";
+            return "Hold";
         default:
             if( ( a_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
                 ( a_item <= DEVICE_ITEM_NOTIFICATION_LAST ) )
@@ -1332,7 +1332,7 @@ static void toggle_hold_shortcut( void )
         return;
     }
 
-    log_config_change( "input.long_hold",
+    log_config_change( "input.hold",
                        device_config_hold_shortcut_name( old_shortcut ),
                        device_config_hold_shortcut_name( new_shortcut ) );
     save_error = false;
