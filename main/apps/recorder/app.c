@@ -110,7 +110,7 @@ static bool handle_active_operation( const rfscout_input_event_t *a_input )
     }
     if( RFSCOUT_RECORDER_PLAYING == state )
     {
-        if( ( RFSCOUT_INPUT_SELECT == a_input->type ) || ( RFSCOUT_INPUT_BACK == a_input->type ) )
+        if( RFSCOUT_INPUT_SELECT == a_input->type )
         {
             stop_playback();
             emit_event( RFSCOUT_EVENT_BACK, 0 );
@@ -162,13 +162,6 @@ static void handle_browser_input( const rfscout_input_event_t *a_input )
 
     if( delete_mode )
     {
-        if( RFSCOUT_INPUT_BACK == a_input->type )
-        {
-            delete_mode = false;
-            delete_confirm = false;
-            render();
-            return;
-        }
         if( RFSCOUT_INPUT_NAVIGATION == a_input->type )
         {
             delete_confirm = !delete_confirm;
@@ -199,12 +192,6 @@ static void handle_browser_input( const rfscout_input_event_t *a_input )
         return;
     }
 
-    if( RFSCOUT_INPUT_BACK == a_input->type )
-    {
-        close_browser();
-        emit_event( RFSCOUT_EVENT_BACK, 0 );
-        return;
-    }
     if( ( RFSCOUT_INPUT_LONG_SELECT == a_input->type ) &&
         ( browser_item >= RECORDER_BROWSER_FILE_BASE ) )
     {
