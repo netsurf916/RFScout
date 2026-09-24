@@ -38,6 +38,7 @@ static bool menu_editing;
 static bool menu_limit;
 static unsigned menu_item;
 static cc1101_view_mode_t viewer;
+static bool rendered_app_lock;
 
 static int8_t discovery_rssi[ CC1101_SPECTRUM_BINS ];
 static uint32_t discovery_frequency_khz[ CC1101_SPECTRUM_BINS ];
@@ -106,6 +107,7 @@ static void render_receive( void )
 
 static void render_current( void )
 {
+    rendered_app_lock = app_manager_locked();
     if( CC1101_ACQUISITION_RECEIVE == cc1101_acquisition_mode() )
     {
         render_receive();
@@ -118,6 +120,7 @@ static void render_current( void )
 
 static void render_menu( void )
 {
+    rendered_app_lock = app_manager_locked();
     cc1101_scan_config_t scan;
     cc1101_receive_config_t receive;
     cc1101_scan_config( &scan );
@@ -497,6 +500,7 @@ static rfscout_app_runtime_result_t cc1101_runtime( const rfscout_app_runtime_ev
         menu_limit = false;
         menu_item = CC1101_MENU_BACK;
         viewer = CC1101_VIEW_DECODED;
+        rendered_app_lock = app_manager_locked();
 
         raw_snapshot = NULL;
         raw_snapshot_count = 0U;
@@ -579,6 +583,18 @@ static rfscout_app_runtime_result_t cc1101_runtime( const rfscout_app_runtime_ev
 
     if( ( RFSCOUT_APP_RUNTIME_POLL == a_event->type ) && a_event->activated )
     {
+        if( rendered_app_lock != app_manager_locked() )
+        {
+            if( menu_active )
+            {
+                render_menu();
+            }
+            else
+            {
+                render_current();
+            }
+        }
+
         cc1101_poll();
 
         if( CC1101_ACQUISITION_RECEIVE == cc1101_acquisition_mode() )
