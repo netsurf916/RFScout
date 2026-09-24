@@ -121,6 +121,7 @@ idf_component_register(
         "services/wireless/oui_database.c"
         "services/wireless/surveillance_database.c"
         "services/radio/cc1101.c"
+        "services/radio/subghz_capture_provider.c"
         "services/radio/nrf24.c"
         "services/audio/audio_output.c"
         "services/audio/morse.c"
