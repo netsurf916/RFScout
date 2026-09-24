@@ -36,7 +36,7 @@ void ota_view_render_network_main( const char *a_connection,
                                    bool a_connected,
                                    const char *a_error );
 void ota_view_render_update_main( const char *a_installed_version,
-                                  const char *a_update_version,
+                                  const char *a_update_status,
                                   const char *a_connection,
                                   unsigned a_selected,
                                   bool a_ready,
