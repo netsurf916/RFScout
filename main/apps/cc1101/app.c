@@ -309,6 +309,7 @@ static rfscout_app_runtime_result_t cc1101_runtime( const rfscout_app_runtime_ev
         }
         if( RFSCOUT_INPUT_SELECT == a_event->input.type )
         {
+            cc1101_activity_pause();
             menu_active = true;
             menu_editing = false;
             menu_limit = false;
