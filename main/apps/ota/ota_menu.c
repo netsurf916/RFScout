@@ -31,6 +31,7 @@
 #include <string.h>
 
 #define OTA_REFRESH_INTERVAL_US 125000LL
+#define OTA_NETWORK_CONNECT_TIMEOUT_US 30000000LL
 #define OTA_NTP_SYNC_TIMEOUT_US 15000000LL
 #define OTA_VISIBLE_MAX OTA_NETWORK_MAX_COUNT
 #define OTA_ERROR_TEXT_LENGTH 48U
@@ -85,6 +86,7 @@ static bool last_ntp_syncing;
 static bool last_ntp_synced;
 static bool network_connect_modal_active;
 static bool network_connect_connected_seen;
+static int64_t network_connect_started_us;
 static int64_t network_connect_ntp_started_us;
 static int64_t last_refresh_us;
 /* Borrowed from catalog_selection or available_builds while input is suppressed. */
@@ -786,6 +788,7 @@ static void return_to_network_main( void )
     display_modal_clear();
     network_connect_modal_active = false;
     network_connect_connected_seen = false;
+    network_connect_started_us = 0;
     network_connect_ntp_started_us = 0;
     screen = OTA_SCREEN_MAIN;
     selected_item = 0U;
@@ -813,6 +816,7 @@ static void connect_selected_network( void )
 
     network_connect_modal_active = true;
     network_connect_connected_seen = false;
+    network_connect_started_us = 0;
     network_connect_ntp_started_us = 0;
     display_modal_show( "NETWORK", "Connecting..." );
     render();
@@ -1169,6 +1173,7 @@ static void reset_runtime_state( void )
     last_ntp_synced = false;
     network_connect_modal_active = false;
     network_connect_connected_seen = false;
+    network_connect_started_us = 0;
     network_connect_ntp_started_us = 0;
     last_refresh_us = 0;
     pending_install_candidate = NULL;
@@ -1326,6 +1331,11 @@ static void submenu_poll( int64_t a_now_us )
 
     if( network_connect_modal_active )
     {
+        if( 0 == network_connect_started_us )
+        {
+            network_connect_started_us = a_now_us;
+        }
+
         if( RFSCOUT_WIFI_STATION_FAILED == current.state )
         {
             snprintf( error_text,
@@ -1364,6 +1374,20 @@ static void submenu_poll( int64_t a_now_us )
         else if( RFSCOUT_WIFI_STATION_SEARCHING == current.state ||
                  RFSCOUT_WIFI_STATION_CONNECTING == current.state )
         {
+            if( a_now_us - network_connect_started_us >= OTA_NETWORK_CONNECT_TIMEOUT_US )
+            {
+                const esp_err_t stop_result = rfscout_wifi_station_stop();
+                if( ESP_OK != stop_result )
+                {
+                    ESP_LOGW( TAG,
+                              "could not stop timed-out Wi-Fi connection: %s",
+                              esp_err_to_name( stop_result ) );
+                }
+                snprintf( error_text, sizeof( error_text ), "Connection timed out" );
+                return_to_network_main();
+                return;
+            }
+
             display_modal_show( "NETWORK", "Connecting..." );
             redraw = true;
         }
