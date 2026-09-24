@@ -27,9 +27,7 @@ typedef struct
     const char *version;
 } ota_view_build_t;
 
-void ota_view_render_network_main( const char *a_connection,
-                                   const char *a_time_status,
-                                   const ota_view_network_t *a_networks,
+void ota_view_render_network_main( const ota_view_network_t *a_networks,
                                    size_t a_network_count,
                                    unsigned a_selected,
                                    bool a_scanning,

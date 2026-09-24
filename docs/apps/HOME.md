@@ -38,6 +38,8 @@ The current workflow:
 - stores up to eight Home-owned remembered SSID/password entries;
 - highlights remembered networks observed in the latest scan;
 - requires an explicit connect action;
+- presents association and SNTP as a modal **Connecting...** → **Setting time...** transaction, then returns to the Network main screen;
+- keeps normal connection/time progress out of the persistent Network screen, reserving its footer for terminal errors;
 - supports rotary password entry, disconnect, and forget;
 - can use a targeted **Connect anyway** active search for a remembered network not seen passively;
 - obtains DHCP state; and

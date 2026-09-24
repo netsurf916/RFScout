@@ -82,6 +82,8 @@ static uint32_t last_scan_generation;
 static rfscout_wifi_station_state_t last_station_state;
 static bool last_ntp_syncing;
 static bool last_ntp_synced;
+static bool network_connect_modal_active;
+static bool network_connect_connected_seen;
 static int64_t last_refresh_us;
 /* Borrowed from catalog_selection or available_builds while input is suppressed. */
 static const ota_catalog_candidate_t *pending_install_candidate;
@@ -276,21 +278,6 @@ static const char *connection_status( void )
     }
 }
 
-static const char *network_time_status( void )
-{
-    rfscout_wifi_station_status_t current;
-    rfscout_wifi_station_status( &current );
-    if( RFSCOUT_WIFI_STATION_CONNECTED != current.state )
-    {
-        return "";
-    }
-    if( current.ntp_synced )
-    {
-        return "Time synced";
-    }
-    return current.ntp_syncing ? "Syncing time..." : "Time sync failed";
-}
-
 static void render_network_main( void )
 {
     build_visible_saved();
@@ -304,14 +291,8 @@ static void render_network_main( void )
         selected_item = item_count - 1U;
     }
 
-    ota_view_render_network_main( connection_status(),
-                                  network_time_status(),
-                                  view_networks,
-                                  view_network_count,
-                                  selected_item,
-                                  scanning,
-                                  connected,
-                                  error_text );
+    ota_view_render_network_main(
+        view_networks, view_network_count, selected_item, scanning, connected, error_text );
 }
 
 static void render_update_main( void )
@@ -798,23 +779,38 @@ static void begin_password_entry( void )
     render();
 }
 
+static void return_to_network_main( void )
+{
+    display_modal_clear();
+    network_connect_modal_active = false;
+    network_connect_connected_seen = false;
+    screen = OTA_SCREEN_MAIN;
+    selected_item = 0U;
+    action_saved_index = -1;
+    action_scan_index = -1;
+    memset( action_ssid, 0, sizeof( action_ssid ) );
+    render();
+}
+
 static void connect_selected_network( void )
 {
     if( action_saved_index < 0 || (size_t)action_saved_index >= saved_networks.count )
     {
         return;
     }
+
     const ota_network_t *network = &saved_networks.entries[ action_saved_index ];
     const esp_err_t result = rfscout_wifi_station_connect( network->ssid, network->password );
     set_error( result );
-    if( ESP_OK == result )
+    if( ESP_OK != result )
     {
-        screen = OTA_SCREEN_MAIN;
-        selected_item = 0U;
-        action_saved_index = -1;
-        action_scan_index = -1;
-        memset( action_ssid, 0, sizeof( action_ssid ) );
+        return_to_network_main();
+        return;
     }
+
+    network_connect_modal_active = true;
+    network_connect_connected_seen = false;
+    display_modal_show( "NETWORK", "Connecting..." );
     render();
 }
 
@@ -1167,6 +1163,8 @@ static void reset_runtime_state( void )
     last_station_state = RFSCOUT_WIFI_STATION_OFF;
     last_ntp_syncing = false;
     last_ntp_synced = false;
+    network_connect_modal_active = false;
+    network_connect_connected_seen = false;
     last_refresh_us = 0;
     pending_install_candidate = NULL;
     close_requested = false;
@@ -1234,7 +1232,7 @@ esp_err_t ota_menu_leave( void )
 
 static bool submenu_input( bool a_pressed, int a_delta )
 {
-    if( install_interaction_locked() )
+    if( install_interaction_locked() || network_connect_modal_active )
     {
         return false;
     }
@@ -1275,7 +1273,7 @@ bool ota_menu_input( bool a_pressed, int a_delta )
 
 static bool submenu_back( void )
 {
-    if( install_interaction_locked() )
+    if( install_interaction_locked() || network_connect_modal_active )
     {
         return false;
     }
@@ -1320,6 +1318,53 @@ static void submenu_poll( int64_t a_now_us )
 
     rfscout_wifi_station_status_t current;
     rfscout_wifi_station_status( &current );
+
+    if( network_connect_modal_active )
+    {
+        if( RFSCOUT_WIFI_STATION_FAILED == current.state )
+        {
+            snprintf( error_text,
+                      sizeof( error_text ),
+                      "%s",
+                      ESP_ERR_NOT_FOUND == current.disconnect_reason ? "Network not found"
+                                                                     : "Connection failed" );
+            return_to_network_main();
+            return;
+        }
+
+        if( RFSCOUT_WIFI_STATION_CONNECTED == current.state )
+        {
+            if( current.ntp_synced )
+            {
+                error_text[ 0 ] = '\0';
+                return_to_network_main();
+                return;
+            }
+
+            display_modal_show( "NETWORK", "Setting time..." );
+            if( !current.ntp_syncing && network_connect_connected_seen )
+            {
+                snprintf( error_text, sizeof( error_text ), "Time sync failed" );
+                return_to_network_main();
+                return;
+            }
+            network_connect_connected_seen = true;
+            redraw = true;
+        }
+        else if( RFSCOUT_WIFI_STATION_SEARCHING == current.state ||
+                 RFSCOUT_WIFI_STATION_CONNECTING == current.state )
+        {
+            display_modal_show( "NETWORK", "Connecting..." );
+            redraw = true;
+        }
+        else if( RFSCOUT_WIFI_STATION_SCANNING != current.state )
+        {
+            snprintf( error_text, sizeof( error_text ), "Connection failed" );
+            return_to_network_main();
+            return;
+        }
+    }
+
     if( current.scan_generation != last_scan_generation || current.state != last_station_state )
     {
         last_scan_generation = current.scan_generation;

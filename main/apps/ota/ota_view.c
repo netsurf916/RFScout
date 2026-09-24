@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#define OTA_NETWORK_MENU_START_Y 25
 #define OTA_MENU_START_Y 43
 #define OTA_MENU_ROW_HEIGHT 20
 #define OTA_MENU_VISIBLE_ROWS 5U
@@ -59,6 +60,16 @@ static void draw_menu_row(
         OTA_MENU_START_Y + (int)a_row * OTA_MENU_ROW_HEIGHT, a_item, a_selected, a_label, a_value );
 }
 
+static void draw_network_menu_row(
+    unsigned a_row, unsigned a_item, unsigned a_selected, const char *a_label, const char *a_value )
+{
+    draw_menu_row_at( OTA_NETWORK_MENU_START_Y + (int)a_row * OTA_MENU_ROW_HEIGHT,
+                      a_item,
+                      a_selected,
+                      a_label,
+                      a_value );
+}
+
 static void
 draw_information_row( int a_y, const char *a_label, const char *a_value, bool a_emphasize_value )
 {
@@ -71,9 +82,7 @@ draw_information_row( int a_y, const char *a_label, const char *a_value, bool a_
                        1U );
 }
 
-void ota_view_render_network_main( const char *a_connection,
-                                   const char *a_time_status,
-                                   const ota_view_network_t *a_networks,
+void ota_view_render_network_main( const ota_view_network_t *a_networks,
                                    size_t a_network_count,
                                    unsigned a_selected,
                                    bool a_scanning,
@@ -88,14 +97,6 @@ void ota_view_render_network_main( const char *a_connection,
     display_clear( theme->background );
     ui_chrome_draw( "NETWORK", theme->secondary );
 
-    char status[ 72 ];
-    snprintf( status,
-              sizeof( status ),
-              "%s  %s",
-              NULL != a_connection ? a_connection : "Disconnected",
-              NULL != a_time_status ? a_time_status : "" );
-    display_draw_text( UI_LAYOUT_LEFT_X, 25, status, theme->secondary, 1U );
-
     for( unsigned row = 0U; row < OTA_MENU_VISIBLE_ROWS; ++row )
     {
         const unsigned item = start + row;
@@ -105,7 +106,7 @@ void ota_view_render_network_main( const char *a_connection,
         }
         if( 0U == item )
         {
-            draw_menu_row( row, item, a_selected, "Back", NULL );
+            draw_network_menu_row( row, item, a_selected, "Back", NULL );
             continue;
         }
 
@@ -114,26 +115,26 @@ void ota_view_render_network_main( const char *a_connection,
         {
             char rssi[ 16 ];
             snprintf( rssi, sizeof( rssi ), "%d", (int)a_networks[ menu_item ].rssi );
-            draw_menu_row( row, item, a_selected, a_networks[ menu_item ].ssid, rssi );
+            draw_network_menu_row( row, item, a_selected, a_networks[ menu_item ].ssid, rssi );
             continue;
         }
 
         const unsigned action = menu_item - (unsigned)a_network_count;
         if( a_connected )
         {
-            draw_menu_row( row, item, a_selected, "Saved networks", NULL );
+            draw_network_menu_row( row, item, a_selected, "Saved networks", NULL );
         }
         else if( 0U == action )
         {
-            draw_menu_row( row, item, a_selected, a_scanning ? "Scanning..." : "Scan again", NULL );
+            draw_network_menu_row( row, item, a_selected, a_scanning ? "Scanning..." : "Scan again", NULL );
         }
         else if( 1U == action )
         {
-            draw_menu_row( row, item, a_selected, "Add network", NULL );
+            draw_network_menu_row( row, item, a_selected, "Add network", NULL );
         }
         else
         {
-            draw_menu_row( row, item, a_selected, "Saved networks", NULL );
+            draw_network_menu_row( row, item, a_selected, "Saved networks", NULL );
         }
     }
 
@@ -283,7 +284,7 @@ void ota_view_render_network_list( const char *a_title,
         }
         if( 0U == item )
         {
-            draw_menu_row( row, item, a_selected, "Back", NULL );
+            draw_network_menu_row( row, item, a_selected, "Back", NULL );
             continue;
         }
 
@@ -328,7 +329,7 @@ void ota_view_render_build_list( const char *a_installed_version,
         }
         if( 0U == item )
         {
-            draw_menu_row( row, item, a_selected, "Back", NULL );
+            draw_network_menu_row( row, item, a_selected, "Back", NULL );
             continue;
         }
         const ota_view_build_t *build = &a_builds[ item - 1U ];
