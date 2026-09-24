@@ -23,6 +23,7 @@ typedef enum
     RFSCOUT_INPUT_NAVIGATION,
     RFSCOUT_INPUT_SELECT,
     RFSCOUT_INPUT_LONG_SELECT,
+    RFSCOUT_INPUT_GLOBAL_HOLD,
     RFSCOUT_INPUT_BACK,
     RFSCOUT_INPUT_CHARACTER
 } rfscout_input_type_t;
@@ -45,6 +46,7 @@ bool input_activity_pending( void );
 void input_consume_wake( void );
 bool input_get( rfscout_input_event_t *a_event );
 bool input_locked( void );
+void input_set_locked( bool a_locked );
 rfscout_input_provider_t input_provider( void );
 
 #endif // _RFSCOUT_INPUT_H_
