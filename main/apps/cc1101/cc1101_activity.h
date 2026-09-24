@@ -64,6 +64,9 @@ void cc1101_activity_reset( void );
 /** @brief Clear accumulated likely-device counts without clearing spectrum history. */
 void cc1101_activity_reset_counts( void );
 
+/** @brief End active observations before an interval in which sweeps will not be consumed. */
+void cc1101_activity_pause( void );
+
 /**
  * @brief Add one completed RSSI sweep to the activity model.
  * @param a_rssi Per-bin signed RSSI values.
