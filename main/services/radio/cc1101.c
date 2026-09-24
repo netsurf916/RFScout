@@ -77,6 +77,7 @@ static volatile bool scan_worker_active;
 static bool frame_ready;
 static uint32_t config_generation;
 static int8_t display_spectrum[ CC1101_SPECTRUM_BINS ];
+static uint32_t display_frequency_khz[ CC1101_SPECTRUM_BINS ];
 static cc1101_acquisition_mode_t acquisition_mode = CC1101_ACQUISITION_DISCOVERY;
 static cc1101_scan_config_t scan_config = { CC1101_PROFILE_433, 433050U, 434790U, 15U };
 static cc1101_receive_config_t receive_config = { 433920U, CC1101_RECEIVE_OOK_650 };
@@ -286,6 +287,7 @@ static void scan_worker( void *a_argument )
 {
     (void)a_argument;
     int8_t acquisition[ CC1101_SPECTRUM_BINS ];
+    uint32_t acquisition_frequency_khz[ CC1101_SPECTRUM_BINS ];
 
     while( true )
     {
@@ -299,6 +301,7 @@ static void scan_worker( void *a_argument )
             const size_t count =
                 sweep_count_for( snapshot.low_khz, snapshot.high_khz, snapshot.step_khz );
             memset( acquisition, -120, sizeof( acquisition ) );
+            memset( acquisition_frequency_khz, 0, sizeof( acquisition_frequency_khz ) );
             bool scan_ok = true;
             unsigned samples_since_break = 0U;
 
@@ -331,6 +334,7 @@ static void scan_worker( void *a_argument )
                 if( rssi > acquisition[ bin ] )
                 {
                     acquisition[ bin ] = rssi;
+                    acquisition_frequency_khz[ bin ] = frequency;
                 }
 
                 ++samples_since_break;
@@ -356,6 +360,9 @@ static void scan_worker( void *a_argument )
             if( generation == config_generation )
             {
                 memcpy( display_spectrum, acquisition, sizeof( display_spectrum ) );
+                memcpy( display_frequency_khz,
+                        acquisition_frequency_khz,
+                        sizeof( display_frequency_khz ) );
                 frame_ready = true;
             }
             portEXIT_CRITICAL( &state_lock );
@@ -605,6 +612,7 @@ esp_err_t cc1101_init( void )
     }
 
     memset( display_spectrum, -120, sizeof( display_spectrum ) );
+    memset( display_frequency_khz, 0, sizeof( display_frequency_khz ) );
 
     if( NULL == scan_task )
     {
@@ -952,9 +960,11 @@ const char *cc1101_profile_name( cc1101_profile_t a_profile )
     return a_profile < CC1101_PROFILE_COUNT ? names[ a_profile ] : "?";
 }
 
-size_t cc1101_spectrum( int8_t *a_output, size_t a_capacity )
+size_t cc1101_spectrum( int8_t *a_output,
+                        uint32_t *a_frequency_khz,
+                        size_t a_capacity )
 {
-    if( ( NULL == a_output ) || ( 0U == a_capacity ) )
+    if( ( NULL == a_output ) || ( NULL == a_frequency_khz ) || ( 0U == a_capacity ) )
     {
         return 0U;
     }
@@ -962,6 +972,7 @@ size_t cc1101_spectrum( int8_t *a_output, size_t a_capacity )
     const size_t count = a_capacity < CC1101_SPECTRUM_BINS ? a_capacity : CC1101_SPECTRUM_BINS;
     portENTER_CRITICAL( &state_lock );
     memcpy( a_output, display_spectrum, count );
+    memcpy( a_frequency_khz, display_frequency_khz, count * sizeof( *a_frequency_khz ) );
     portEXIT_CRITICAL( &state_lock );
     return count;
 }
