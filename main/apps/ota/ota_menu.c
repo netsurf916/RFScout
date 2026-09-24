@@ -805,7 +805,16 @@ static void connect_selected_network( void )
         return;
     }
     const ota_network_t *network = &saved_networks.entries[ action_saved_index ];
-    set_error( rfscout_wifi_station_connect( network->ssid, network->password ) );
+    const esp_err_t result = rfscout_wifi_station_connect( network->ssid, network->password );
+    set_error( result );
+    if( ESP_OK == result )
+    {
+        screen = OTA_SCREEN_MAIN;
+        selected_item = 0U;
+        action_saved_index = -1;
+        action_scan_index = -1;
+        memset( action_ssid, 0, sizeof( action_ssid ) );
+    }
     render();
 }
 
