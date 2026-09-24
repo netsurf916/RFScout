@@ -7,6 +7,7 @@
 
 #include "cc1101.h"
 #include "board.h"
+#include "board_spi.h"
 #include "subghz_capture_provider.h"
 
 #include "driver/gpio.h"
@@ -60,9 +61,9 @@
 #define CC1101_PROBE_ATTEMPTS 3U
 #define CC1101_PROBE_RESET_SETTLE_US 100U
 
-#define CC1101_RMT_RESOLUTION_HZ 1000000U
+#define CC1101_RMT_RESOLUTION_HZ 500000U
 #define CC1101_RMT_GLITCH_NS 2000U
-#define CC1101_RMT_IDLE_NS 20000000U
+#define CC1101_RMT_IDLE_NS 40000000U
 #define CC1101_RECEIVE_RSSI_POLL_MS 4U
 
 static const char *TAG = "cc1101";
@@ -117,12 +118,19 @@ static esp_err_t attach_spi_device( void )
 
 static esp_err_t wake_from_power_down( void )
 {
+    esp_err_t result = board_spi_manual_acquire();
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
     if( NULL != device )
     {
-        const esp_err_t remove_result = spi_bus_remove_device( device );
-        if( ESP_OK != remove_result )
+        result = spi_bus_remove_device( device );
+        if( ESP_OK != result )
         {
-            return remove_result;
+            board_spi_manual_release();
+            return result;
         }
         device = NULL;
     }
@@ -142,6 +150,8 @@ static esp_err_t wake_from_power_down( void )
     }
 
     gpio_set_level( RFSCOUT_BOARD_CC1101_CS_PIN, 1 );
+    board_spi_manual_release();
+
     if( waited_us >= CC1101_WAKE_TIMEOUT_US )
     {
         ESP_LOGE( TAG, "CC1101 wake timed out waiting for SO" );
@@ -700,8 +710,14 @@ void cc1101_poll( void )
     }
 
     const TickType_t now = xTaskGetTickCount();
+    TickType_t rssi_poll_ticks = pdMS_TO_TICKS( CC1101_RECEIVE_RSSI_POLL_MS );
+    if( 0U == rssi_poll_ticks )
+    {
+        rssi_poll_ticks = 1U;
+    }
+
     if( ( 0U == last_receive_rssi_tick ) ||
-        ( now - last_receive_rssi_tick >= pdMS_TO_TICKS( CC1101_RECEIVE_RSSI_POLL_MS ) ) )
+        ( now - last_receive_rssi_tick >= rssi_poll_ticks ) )
     {
         uint8_t raw_rssi = 0U;
         if( ESP_OK == read_status( CC1101_RSSI, &raw_rssi ) )
