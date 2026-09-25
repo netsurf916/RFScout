@@ -61,7 +61,7 @@ The workflow captures the exact `main` and open-PR head/draft snapshot used for 
 
 Candidate discovery searches successful workflow runs for the requested source head until it finds a live `rfscout-candidate-*` artifact instead of assuming the newest successful run necessarily contains firmware. Pull-request lookup additionally filters runs by PR number so two PRs sharing a head SHA cannot cross-select each other's merge-ref firmware.
 
-The current successful `main` push candidate is exposed as a development entry. Open PR candidates are exposed independently. Candidate entries are presented ahead of ordinary release history for development/testing convenience.
+The current successful `main` candidate is exposed as a development entry. Normally it comes from the automatic push build; an explicitly dispatched **Build and formatting** run for the exact current `main` HEAD is also valid. This provides a recovery path when an automation-generated commit cannot trigger a second workflow through GitHub's `GITHUB_TOKEN` recursion protection. Open PR candidates are exposed independently. Candidate entries are presented ahead of ordinary release history for development/testing convenience.
 
 If a named draft, prerelease, or published release represents the same packaged commit as the current `main` candidate, the named release supersedes that duplicate `main` entry. This preserves a single meaningful identity for identical firmware while leaving unrelated PR candidates visible.
 

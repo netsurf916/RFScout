@@ -60,9 +60,12 @@ jobs:
           printf 'main\t%s\n' "$main_sha" > heads.tsv
 
           main_runs=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs" \
-            -f event=push -f head_sha="$main_sha" -f per_page=100)
-          main_count=$(jq '.workflow_runs | length' <<< "$main_runs")
-          main_pending=$(jq '[.workflow_runs[] | select(.status != "completed")] | length' <<< "$main_runs")
+            -f head_sha="$main_sha" -f per_page=100)
+          main_matching=$(jq -c \
+            '[.workflow_runs[] | select(.event == "push" or .event == "workflow_dispatch")]' \
+            <<< "$main_runs")
+          main_count=$(jq 'length' <<< "$main_matching")
+          main_pending=$(jq '[.[] | select(.status != "completed")] | length' <<< "$main_matching")
           if [[ "$main_count" -eq 0 ]]; then
             echo "Deferring Pages refresh: current main $main_sha has no Build and formatting run yet"
             ready=false
@@ -152,9 +155,13 @@ jobs:
             source=$1
             sha=$2
             pr=${3:-}
-            event=$([[ "$source" == main ]] && echo push || echo pull_request)
-            runs=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs" \
-              -f event="$event" -f status=success -f head_sha="$sha" -f per_page=100)
+            if [[ "$source" == main ]]; then
+              runs=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs" \
+                -f status=success -f head_sha="$sha" -f per_page=100)
+            else
+              runs=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs" \
+                -f event=pull_request -f status=success -f head_sha="$sha" -f per_page=100)
+            fi
 
             run=""
             artifact=""
@@ -169,7 +176,8 @@ jobs:
               fi
             done < <(
               if [[ "$source" == main ]]; then
-                jq -c '.workflow_runs[]' <<< "$runs"
+                jq -c '.workflow_runs[] | select(.event == "push" or .event == "workflow_dispatch")' \
+                  <<< "$runs"
               else
                 jq -c --argjson pr "$pr" \
                   '.workflow_runs[] | select(any(.pull_requests[]?; .number == $pr))' \
