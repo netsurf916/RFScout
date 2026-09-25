@@ -231,7 +231,7 @@ static void start_scan( void )
     }
 
     struct ble_gap_disc_params parameters = { .itvl = 0x0040,
-                                              .window = 0x0030,
+                                              .window = 0x0040,
                                               .filter_policy = BLE_HCI_SCAN_FILT_NO_WL,
                                               .limited = 0,
                                               .passive = 1,

@@ -510,8 +510,8 @@ void app_main( void )
 
     config_save_retry_after_us = 0;
     ESP_LOGI( TAG,
-              "RFScout started: app-managed radio lifecycle, Wi-Fi region=%s",
-              radio_monitor_region_name( radio_monitor_get_region() ) );
+              "RFScout started: app-managed radio lifecycle, passive Wi-Fi channels=1-%u",
+              (unsigned)RFSCOUT_WIFI_CHANNEL_MAX );
 
     while( true )
     {

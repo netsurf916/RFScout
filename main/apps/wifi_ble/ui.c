@@ -29,7 +29,13 @@
 #define UI_COLUMN_DIVIDER_X 198
 #define UI_SURVEILLANCE_X 205
 #define UI_SURVEILLANCE_LABEL_WIDTH 14
-#define UI_SURVEILLANCE_MAX_ROWS 9U
+#define UI_SURVEILLANCE_MAX_ROWS 8U
+#define UI_CHANNEL_GRID_X ( UI_COLUMN_DIVIDER_X + 5 )
+#define UI_CHANNEL_GRID_TOP_Y 143
+#define UI_CHANNEL_GRID_CELL_WIDTH 16
+#define UI_CHANNEL_GRID_CELL_HEIGHT 12
+#define UI_CHANNEL_GRID_ROW_STEP 14
+#define UI_CHANNEL_GRID_COLUMNS 7U
 
 static const char *TAG = "ui";
 static int64_t last_refresh_us;
@@ -45,6 +51,46 @@ static void draw_static_rows( size_t a_unknown_count, size_t a_random_count )
 
     snprintf( line, sizeof( line ), "%-27.27s %3u", "RANDOM", (unsigned)a_random_count );
     display_draw_text( UI_LAYOUT_LEFT_X, UI_RANDOM_ROW_Y, line, theme->info, 1 );
+}
+
+static void draw_channel_box( unsigned a_channel, uint16_t a_active_channel_mask )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    const unsigned index = a_channel - 1U;
+    const unsigned column = index % UI_CHANNEL_GRID_COLUMNS;
+    const unsigned row = index / UI_CHANNEL_GRID_COLUMNS;
+    const int x = UI_CHANNEL_GRID_X + (int)column * UI_CHANNEL_GRID_CELL_WIDTH;
+    const int y = UI_CHANNEL_GRID_TOP_Y + (int)row * UI_CHANNEL_GRID_ROW_STEP;
+    const bool active = 0U != ( a_active_channel_mask & (uint16_t)( 1U << index ) );
+    const uint16_t color = active ? theme->warning : theme->info;
+
+    display_fill_rect( x, y, UI_CHANNEL_GRID_CELL_WIDTH, 1, color );
+    display_fill_rect(
+        x, y + UI_CHANNEL_GRID_CELL_HEIGHT - 1, UI_CHANNEL_GRID_CELL_WIDTH, 1, color );
+    display_fill_rect( x, y, 1, UI_CHANNEL_GRID_CELL_HEIGHT, color );
+    display_fill_rect(
+        x + UI_CHANNEL_GRID_CELL_WIDTH - 1, y, 1, UI_CHANNEL_GRID_CELL_HEIGHT, color );
+
+    char label[ 3 ];
+    snprintf( label, sizeof( label ), "%u", a_channel );
+    const int label_width = ( a_channel < 10U ) ? 6 : 12;
+    const int label_x = x + ( UI_CHANNEL_GRID_CELL_WIDTH - label_width ) / 2;
+    display_draw_text( label_x, y + 3, label, color, 1U );
+}
+
+static void draw_channel_grid( uint16_t a_active_channel_mask )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    display_fill_rect( UI_CHANNEL_GRID_X,
+                       UI_STATIC_DIVIDER_Y,
+                       RFSCOUT_DISPLAY_WIDTH - UI_CHANNEL_GRID_X - 5,
+                       1,
+                       theme->divider );
+
+    for( unsigned channel = 1U; channel <= RFSCOUT_WIFI_CHANNEL_MAX; ++channel )
+    {
+        draw_channel_box( channel, a_active_channel_mask );
+    }
 }
 
 static void draw_surveillance_rows( const observation_surveillance_signature_t *a_rows,
@@ -94,6 +140,7 @@ static void render_summary( void )
     const size_t surveillance_row_count = ( active_signature_count < surveillance_row_capacity )
                                               ? active_signature_count
                                               : surveillance_row_capacity;
+    const uint16_t active_ap_channel_mask = observation_store_wifi_ap_channel_mask();
 
     display_clear( theme->background );
     ui_chrome_draw( "WIFI / BLE", theme->secondary );
@@ -127,6 +174,7 @@ static void render_summary( void )
 
     draw_static_rows( summary.unknown_count, summary.random_count );
     draw_surveillance_rows( surveillance_rows, surveillance_row_count, active_signature_count );
+    draw_channel_grid( active_ap_channel_mask );
 
     if( ESP_OK != display_present() )
     {

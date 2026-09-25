@@ -125,6 +125,14 @@ Timeouts define whether evidence is current, not whether an object under active 
 - Use authentication/association/reassociation exchanges and ordinary associated data traffic as useful topology evidence; EAPOL/handshake traffic strengthens confidence but is not required for ordinary associated-client discovery.
 - Treat SSID grouping as label-based analysis only. Same-named APs remain distinct unless separate evidence supports a stronger relationship.
 
+#### Adaptive passive Wi-Fi scan foundation
+
+**Status:** Implemented by PR #92.
+
+The collector now keeps channels 1-14 in every scan cycle, uses canonical retained AP/BSSID membership to choose short discovery versus longer observation dwell, and selectively interprets useful management/data/control frame roles. The implemented current-state behavior belongs in [WiFi / BLE](apps/WIFI_BLE.md).
+
+This remains only a foundation for the broader semantic AP/client topology work above. Full entity correlation, association confidence/provenance, probe relationships, and stable relationship drill-down remain open.
+
 #### BLE semantics
 
 BLE views should reflect what passive observation can actually establish:

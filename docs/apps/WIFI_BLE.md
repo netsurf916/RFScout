@@ -14,9 +14,13 @@ The normalized live observation store grows in app-owned PSRAM instead of enforc
 
 After the shared delayed-activation interval, the application starts both collectors. If either collector is unexpectedly not running, the app retries startup at one-second intervals while it remains active.
 
-The Wi-Fi collector uses ESP32 promiscuous receive mode with no station association. It channel-hops every **350 ms** across the configured receive region (US 1-11, ETSI 1-13, Japan 1-14, or Extended RX 1-14). Control frames are ignored; management/data frames contribute unicast MAC observations from the address fields that can be interpreted without joining the network. Multicast/group addresses are discarded.
+The Wi-Fi collector uses ESP32 promiscuous receive mode with no station association and always covers channels **1-14**. Channel dwell is adaptive: channels without retained AP/BSSID evidence use a **120 ms** discovery dwell, while channels with at least one retained AP/BSSID identity use a **350 ms** observation dwell. Every channel remains in the scan cycle; observed infrastructure changes only how long RFScout lingers there.
 
-The BLE collector performs **passive** NimBLE scanning with duplicate filtering disabled so repeated advertisements can refresh liveness and contribute newly observed evidence. It normalizes:
+AP/BSSID role is derived from 802.11 semantics rather than vendor identity. Beacon and Probe Response frames establish AP/BSSID evidence, and ordinary infrastructure data or PS-Poll traffic can reinforce that role. The canonical observation store maintains per-channel AP counts as a projection of retained Wi-Fi membership. Counts move when an observed AP changes channel and disappear when that identity's Wi-Fi membership expires or the store is reset, even if another source such as BLE keeps the canonical identity alive.
+
+The collector interprets management, data, and selected useful control frames before emitting observations. Data direction is used to distinguish wireless client/AP addresses from distribution-system addresses. Selected control reception includes PS-Poll, RTS, Block Ack Request, Block Ack, CF-End, and CF-End+ACK. One-address ACK/CTS traffic is not currently admitted because its identity value is limited relative to callback volume. Multicast/group addresses remain discarded.
+
+The BLE collector performs **passive** NimBLE scanning with duplicate filtering disabled so repeated advertisements can refresh liveness and contribute newly observed evidence. Its scan interval and scan window are both **40 ms**, requesting continuous passive scan coverage while ESP-IDF arbitrates the shared 2.4 GHz radio between Wi-Fi and BLE coexistence slices. It normalizes:
 
 - public/random BLE address plus address type;
 - RSSI;
@@ -43,6 +47,8 @@ The primary display shows:
 
 Both the ordinary summary and surveillance presentation are projections of the same canonical active observation collection.
 
+The lower summary area keeps the existing UNKNOWN and RANDOM counts in the left column. The right column mirrors the same horizontal divider and uses the space below it for a fixed 7-by-2 channel matrix covering Wi-Fi channels 1-14. Every channel cell is identical in size; channels with retained AP/BSSID evidence use the theme warning color, matching the vendor list, while inactive channels use the theme info color, matching UNKNOWN/RANDOM. Surveillance rows remain above that divider and use the existing overflow summary when more signatures are active than fit.
+
 The current primary count is still based on canonical observation/address records. It is **not yet** the semantic physical-entity model planned for v0.4.0.
 
 ### Identity and merge semantics
@@ -54,7 +60,7 @@ When another observation matches an existing identity, RFScout:
 - preserves the original first-seen time;
 - refreshes overall and source-specific last-seen times;
 - ORs source membership so one identity can currently have both Wi-Fi and BLE membership;
-- replaces current RSSI/channel with the newest observation;
+- replaces current RSSI/channel with the newest observation while retaining source-specific Wi-Fi channel state for AP scan weighting;
 - refreshes non-empty vendor/name and current BLE metadata; and
 - merges surveillance evidence into the case before recomputing the selected hypothesis.
 
@@ -203,4 +209,4 @@ Relevant generated tables live under `main/services/wireless/`. Registry, genera
 
 ## Current limitations
 
-Current production behavior does not yet provide semantic physical entities, Wi-Fi AP/client topology, probe relationships, stable relationship drill-down, BLE-native deep views, or conservative address-rotation correlation. Randomized addresses therefore remain evidence rather than proof of physical identity.
+Current production behavior preserves enough AP/BSSID and frame-role semantics for adaptive scanning, but it does not yet provide the full semantic physical-entity model, AP/client topology and association confidence, probe relationships, stable relationship drill-down, BLE-native deep views, or conservative address-rotation correlation planned for v0.4.0. Randomized addresses therefore remain evidence rather than proof of physical identity.
