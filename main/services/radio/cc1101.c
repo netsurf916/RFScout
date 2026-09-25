@@ -806,7 +806,23 @@ esp_err_t cc1101_set_acquisition_mode( cc1101_acquisition_mode_t a_mode )
             portENTER_CRITICAL( &state_lock );
             acquisition_mode = before;
             portEXIT_CRITICAL( &state_lock );
-            (void)apply_selected_mode();
+
+            const esp_err_t restore_result = apply_selected_mode();
+            if( ESP_OK != restore_result )
+            {
+                ESP_LOGE( TAG,
+                          "could not restore acquisition mode after transition failure: %s",
+                          esp_err_to_name( restore_result ) );
+                portENTER_CRITICAL( &state_lock );
+                detected = false;
+                frame_ready = false;
+                portEXIT_CRITICAL( &state_lock );
+                service_started = false;
+                (void)strobe( CC1101_SIDLE );
+                (void)strobe( CC1101_SPWD );
+                disable_rf_path();
+                return restore_result;
+            }
             return result;
         }
     }
