@@ -239,12 +239,12 @@ void ota_view_render_network_action( const char *a_ssid,
         draw_menu_row_at( 58 + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT, row, a_selected, label, NULL );
     }
 
-    if( NULL != a_status && '\0' != a_status[ 0 ] )
-    {
-        display_draw_text( UI_LAYOUT_LEFT_X, 121, a_status, theme->secondary, 1U );
-    }
-    display_draw_text(
-        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN SELECT / CENTER ACTION", theme->secondary, 1U );
+    const bool has_status = NULL != a_status && '\0' != a_status[ 0 ];
+    display_draw_text( UI_LAYOUT_LEFT_X,
+                       UI_LAYOUT_FOOTER_Y,
+                       has_status ? a_status : "TURN SELECT / CENTER ACTION",
+                       theme->secondary,
+                       1U );
     (void)display_present();
 }
 
@@ -403,8 +403,6 @@ void ota_view_render_password( const char *a_ssid,
                   ' ' == a_character ? '_' : a_character );
     }
     display_draw_text( UI_LAYOUT_LEFT_X, 84, candidate, theme->selected, 1U );
-    display_draw_text( UI_LAYOUT_LEFT_X, 106, "CENTER: USE", theme->secondary, 1U );
-    display_draw_text( UI_LAYOUT_LEFT_X, 121, "LONG PRESS: CANCEL", theme->secondary, 1U );
 
     if( NULL != a_error && '\0' != a_error[ 0 ] )
     {
@@ -414,7 +412,7 @@ void ota_view_render_password( const char *a_ssid,
     {
         display_draw_text( UI_LAYOUT_LEFT_X,
                            UI_LAYOUT_FOOTER_Y,
-                           "TURN: CHARACTER / ACTION",
+                           "TURN SELECT / CENTER USE / LONG PRESS CANCEL",
                            theme->secondary,
                            1U );
     }
