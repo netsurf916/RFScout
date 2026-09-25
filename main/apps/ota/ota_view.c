@@ -116,8 +116,7 @@ void ota_view_render_network_main( const ota_view_network_t *a_networks,
         }
         else if( 0U == action )
         {
-            draw_menu_row(
-                row, item, a_selected, a_scanning ? "Scanning..." : "Scan again", NULL );
+            draw_menu_row( row, item, a_selected, a_scanning ? "Scanning..." : "Scan again", NULL );
         }
         else if( 1U == action )
         {
