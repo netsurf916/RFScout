@@ -10,6 +10,8 @@
 #ifndef _RFSCOUT_DEVICE_VIEW_H_
 #define _RFSCOUT_DEVICE_VIEW_H_
 
+#include "input.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -23,16 +25,10 @@ void device_view_enter( void );
 void device_view_render( void );
 
 /**
- * @brief Handle a generic Back gesture within Device settings.
- * @return True when a nested Device-settings view consumed Back.
- */
-bool device_view_back( void );
-
-/**
  * @brief Handle Device settings button/encoder input.
  * @return True when the user selected Back and settings should close.
  */
-bool device_view_input( bool a_pressed, int a_delta );
+bool device_view_input( const rfscout_input_event_t *a_input );
 
 /** @brief Poll nested Home menus that own asynchronous services. */
 void device_view_poll( int64_t a_now_us );

@@ -37,6 +37,8 @@
 #define NRF24_CHANNELS_PER_SCHEDULER_BREAK 16U
 #define NRF24_FRAME_NOTIFY_INTERVAL_MS 125U
 #define NRF24_STOP_TIMEOUT_MS 250U
+#define NRF24_PROBE_ATTEMPTS 3U
+#define NRF24_PROBE_RETRY_US 100U
 
 static const char *TAG = "nrf24";
 static spi_device_handle_t device;
@@ -221,56 +223,111 @@ static void scan_worker( void *a_argument )
     }
 }
 
-esp_err_t nrf24_init( void )
+esp_err_t nrf24_probe( void )
 {
-    if( initialized )
+    if( running )
     {
         return detected ? ESP_OK : ESP_ERR_NOT_FOUND;
     }
 
-    gpio_reset_pin( RFSCOUT_BOARD_NRF24_CS_PIN );
     gpio_set_direction( RFSCOUT_BOARD_NRF24_CE_PIN, GPIO_MODE_OUTPUT );
     ce( false );
 
-    spi_device_interface_config_t device_config = { .clock_speed_hz = 4000000,
-                                                    .mode = 0,
-                                                    .spics_io_num = RFSCOUT_BOARD_NRF24_CS_PIN,
-                                                    .queue_size = 1 };
-
-    esp_err_t result = spi_bus_add_device( NRF24_SPI_HOST, &device_config, &device );
-    if( ESP_OK != result )
+    if( NULL == device )
     {
-        return result;
+        gpio_reset_pin( RFSCOUT_BOARD_NRF24_CS_PIN );
+        spi_device_interface_config_t device_config = { .clock_speed_hz = 4000000,
+                                                        .mode = 0,
+                                                        .spics_io_num = RFSCOUT_BOARD_NRF24_CS_PIN,
+                                                        .queue_size = 1 };
+
+        const esp_err_t attach_result =
+            spi_bus_add_device( NRF24_SPI_HOST, &device_config, &device );
+        if( ESP_OK != attach_result )
+        {
+            detected = false;
+            return attach_result;
+        }
     }
 
-    initialized = true;
+    esp_err_t result = ESP_OK;
     uint8_t setup_aw = 0xFFU;
     uint8_t rf_channel = 0xFFU;
     uint8_t status = 0xFFU;
-    (void)read_register( NRF24_REG_SETUP_AW, &setup_aw );
-    (void)read_register( NRF24_REG_RF_CH, &rf_channel );
-    (void)read_register( NRF24_REG_STATUS, &status );
+    detected = false;
 
-    detected =
-        ( setup_aw >= 1U ) && ( setup_aw <= 3U ) && ( rf_channel <= 125U ) && ( 0xFFU != status );
+    for( unsigned attempt = 0U; attempt < NRF24_PROBE_ATTEMPTS; ++attempt )
+    {
+        setup_aw = 0xFFU;
+        rf_channel = 0xFFU;
+        status = 0xFFU;
 
-    /* A warm reset can leave an externally powered nRF24 in standby.
-       Availability probing must always return the transceiver to an
-       inactive state and must not imply acquisition. */
+        result = read_register( NRF24_REG_SETUP_AW, &setup_aw );
+        if( ESP_OK == result )
+        {
+            result = read_register( NRF24_REG_RF_CH, &rf_channel );
+        }
+        if( ESP_OK == result )
+        {
+            result = read_register( NRF24_REG_STATUS, &status );
+        }
+
+        detected = ( ESP_OK == result ) && ( setup_aw >= 1U ) && ( setup_aw <= 3U ) &&
+                   ( rf_channel <= 125U ) && ( 0xFFU != status );
+
+        ESP_LOGI( TAG,
+                  "probe attempt=%u setup_aw=0x%02x rf_ch=%u status=0x%02x detected=%d",
+                  attempt + 1U,
+                  setup_aw,
+                  rf_channel,
+                  status,
+                  detected );
+        if( detected )
+        {
+            break;
+        }
+        esp_rom_delay_us( NRF24_PROBE_RETRY_US );
+    }
+
     ce( false );
-    (void)write_register( NRF24_REG_CONFIG, 0x00U );
+    if( detected )
+    {
+        result = write_register( NRF24_REG_CONFIG, 0x00U );
+        if( ESP_OK != result )
+        {
+            detected = false;
+        }
+    }
 
-    ESP_LOGI( TAG,
-              "probe setup_aw=0x%02x rf_ch=%u status=0x%02x detected=%d",
-              setup_aw,
-              rf_channel,
-              status,
-              detected );
+    if( !detected )
+    {
+        if( NULL != device )
+        {
+            (void)spi_bus_remove_device( device );
+            device = NULL;
+        }
+        return ESP_OK == result ? ESP_ERR_NOT_FOUND : result;
+    }
+    return ESP_OK;
+}
+
+esp_err_t nrf24_init( void )
+{
+    if( initialized )
+    {
+        return detected ? ESP_OK : nrf24_probe();
+    }
+
+    const esp_err_t probe_result = nrf24_probe();
+    if( ESP_OK != probe_result )
+    {
+        return probe_result;
+    }
 
     memset( acquisition, 0, sizeof( acquisition ) );
     memset( completed, 0, sizeof( completed ) );
 
-    if( detected && ( NULL == scan_task ) )
+    if( NULL == scan_task )
     {
         if( pdPASS != xTaskCreate( scan_worker,
                                    "nrf24_scan",
@@ -283,7 +340,9 @@ esp_err_t nrf24_init( void )
             return ESP_ERR_NO_MEM;
         }
     }
-    return detected ? ESP_OK : ESP_ERR_NOT_FOUND;
+
+    initialized = true;
+    return ESP_OK;
 }
 
 esp_err_t nrf24_start( void )

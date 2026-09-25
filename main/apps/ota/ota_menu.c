@@ -108,11 +108,11 @@ static void set_error( esp_err_t a_error )
     snprintf( error_text, sizeof( error_text ), "%s", esp_err_to_name( a_error ) );
 }
 
-static bool update_ready( void )
+static bool update_network_ready( void )
 {
     rfscout_wifi_station_status_t current;
     rfscout_wifi_station_status( &current );
-    return RFSCOUT_WIFI_STATION_CONNECTED == current.state && current.ntp_synced;
+    return RFSCOUT_WIFI_STATION_CONNECTED == current.state;
 }
 
 static esp_err_t ensure_catalog_json_capacity( size_t a_length )
@@ -302,7 +302,7 @@ static void render_network_main( void )
 static void render_update_main( void )
 {
     const rfscout_firmware_identity_t *identity = firmware_identity();
-    const bool ready = update_ready();
+    const bool ready = update_network_ready();
     const bool can_install = ready && install_action_available();
     const unsigned item_count = ready ? ( can_install ? 4U : 3U ) : 1U;
     if( selected_item >= item_count )
@@ -552,9 +552,9 @@ static void begin_update_check( void )
         return;
     }
 
-    if( !update_ready() )
+    if( !update_network_ready() )
     {
-        snprintf( error_text, sizeof( error_text ), "Network/time not ready" );
+        snprintf( error_text, sizeof( error_text ), "Network not ready" );
         render();
         return;
     }
@@ -589,9 +589,9 @@ static void request_candidate_install( const ota_catalog_candidate_t *a_candidat
         return;
     }
 
-    if( !update_ready() )
+    if( !update_network_ready() )
     {
-        snprintf( error_text, sizeof( error_text ), "Network/time not ready" );
+        snprintf( error_text, sizeof( error_text ), "Network not ready" );
         render();
         return;
     }
@@ -714,7 +714,7 @@ static void handle_update_main_select( void )
         close_requested = true;
         return;
     }
-    if( !update_ready() )
+    if( !update_network_ready() )
     {
         return;
     }
@@ -1069,30 +1069,6 @@ static void handle_input( const rfscout_input_event_t *a_input )
         return;
     }
 
-    if( RFSCOUT_INPUT_BACK == a_input->type )
-    {
-        if( OTA_SCREEN_MAIN == screen )
-        {
-            return;
-        }
-        if( OTA_SCREEN_BUILD_ACTION == screen )
-        {
-            screen = OTA_SCREEN_BUILDS;
-        }
-        else
-        {
-            screen = OTA_SCREEN_MAIN;
-            action_saved_index = -1;
-            action_scan_index = -1;
-            memset( action_ssid, 0, sizeof( action_ssid ) );
-        }
-        selected_item = 0U;
-        error_text[ 0 ] = '\0';
-        render();
-        emit_event( RFSCOUT_EVENT_BACK, 0 );
-        return;
-    }
-
     if( RFSCOUT_INPUT_NAVIGATION == a_input->type )
     {
         unsigned item_count = 1U;
@@ -1105,7 +1081,7 @@ static void handle_input( const rfscout_input_event_t *a_input )
             }
             else
             {
-                const bool ready = update_ready();
+                const bool ready = update_network_ready();
                 const bool can_install = ready && install_action_available();
                 item_count = ready ? ( can_install ? 4U : 3U ) : 1U;
             }
@@ -1269,11 +1245,16 @@ esp_err_t ota_menu_leave( void )
     return ESP_OK;
 }
 
-static bool submenu_input( bool a_pressed, int a_delta )
+static bool submenu_input( const rfscout_input_event_t *a_input )
 {
+    if( NULL == a_input )
+    {
+        return false;
+    }
+
     if( network_connect_modal_active )
     {
-        if( a_pressed )
+        if( RFSCOUT_INPUT_SELECT == a_input->type )
         {
             cancel_network_connect_modal();
         }
@@ -1284,67 +1265,21 @@ static bool submenu_input( bool a_pressed, int a_delta )
         return false;
     }
 
-    rfscout_input_event_t input;
-    memset( &input, 0, sizeof( input ) );
-
-    if( a_pressed )
-    {
-        input.type = RFSCOUT_INPUT_SELECT;
-    }
-    else if( 0 != a_delta )
-    {
-        input.type = RFSCOUT_INPUT_NAVIGATION;
-        input.value = a_delta;
-    }
-    else
-    {
-        return false;
-    }
-
     close_requested = false;
-    handle_input( &input );
+    handle_input( a_input );
     const bool close = close_requested;
     close_requested = false;
     return close;
 }
 
-bool network_menu_input( bool a_pressed, int a_delta )
+bool network_menu_input( const rfscout_input_event_t *a_input )
 {
-    return submenu_input( a_pressed, a_delta );
+    return submenu_input( a_input );
 }
 
-bool ota_menu_input( bool a_pressed, int a_delta )
+bool ota_menu_input( const rfscout_input_event_t *a_input )
 {
-    return submenu_input( a_pressed, a_delta );
-}
-
-static bool submenu_back( void )
-{
-    if( install_interaction_locked() || network_connect_modal_active )
-    {
-        return false;
-    }
-
-    if( OTA_SCREEN_MAIN == screen )
-    {
-        return true;
-    }
-
-    rfscout_input_event_t input;
-    memset( &input, 0, sizeof( input ) );
-    input.type = RFSCOUT_INPUT_BACK;
-    handle_input( &input );
-    return false;
-}
-
-bool network_menu_back( void )
-{
-    return submenu_back();
-}
-
-bool ota_menu_back( void )
-{
-    return submenu_back();
+    return submenu_input( a_input );
 }
 
 static void submenu_poll( int64_t a_now_us )

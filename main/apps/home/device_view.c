@@ -58,10 +58,11 @@
 #define DEVICE_ITEM_POWER_POLICY 24U
 #define DEVICE_ITEM_BREADCRUMBS 25U
 #define DEVICE_ITEM_BREADCRUMB_FILES 26U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 27U
+#define DEVICE_ITEM_HOLD_SHORTCUT 27U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 28U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
-#define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_BREADCRUMB_FILES + 1U )
+#define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_HOLD_SHORTCUT + 1U )
 #define DEVICE_ROWS_PER_PAGE 6U
 #define DEVICE_LOG_SHUTDOWN_TIMEOUT_MS 3000U
 #define DEVICE_AUDIO_VOLUME_STEP 10
@@ -111,11 +112,11 @@ static unsigned device_item_count( void )
     return DEVICE_ITEM_BASE_COUNT;
 }
 
-static bool network_update_ready( void )
+static bool network_update_available( void )
 {
     rfscout_wifi_station_status_t status;
     rfscout_wifi_station_status( &status );
-    return RFSCOUT_WIFI_STATION_CONNECTED == status.state && status.ntp_synced;
+    return RFSCOUT_WIFI_STATION_CONNECTED == status.state;
 }
 
 static unsigned time_menu_item_count( void )
@@ -245,7 +246,8 @@ static bool item_direct_toggle( unsigned a_item )
            ( DEVICE_ITEM_SYSTEM_EVENTS == a_item ) || ( DEVICE_ITEM_WIFI == a_item ) ||
            ( DEVICE_ITEM_CC1101 == a_item ) || ( DEVICE_ITEM_NRF24 == a_item ) ||
            ( DEVICE_ITEM_AUDIO == a_item ) || ( DEVICE_ITEM_THERMAL == a_item ) ||
-           ( DEVICE_ITEM_AUDIO_SPECTRUM == a_item ) || ( DEVICE_ITEM_LOGGING == a_item );
+           ( DEVICE_ITEM_AUDIO_SPECTRUM == a_item ) || ( DEVICE_ITEM_LOGGING == a_item ) ||
+           ( DEVICE_ITEM_HOLD_SHORTCUT == a_item );
 }
 
 static bool item_editable( unsigned a_item )
@@ -314,6 +316,8 @@ static const char *item_label( unsigned a_item )
             return "Breadcrumbs";
         case DEVICE_ITEM_BREADCRUMB_FILES:
             return "Breadcrumb files";
+        case DEVICE_ITEM_HOLD_SHORTCUT:
+            return "Hold";
         default:
             if( ( a_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
                 ( a_item <= DEVICE_ITEM_NOTIFICATION_LAST ) )
@@ -406,7 +410,8 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             break;
         }
         case DEVICE_ITEM_OTA:
-            snprintf( a_value, a_capacity, "%s", network_update_ready() ? "Ready" : "Unavailable" );
+            snprintf(
+                a_value, a_capacity, "%s", network_update_available() ? "Ready" : "Unavailable" );
             break;
         case DEVICE_ITEM_WIFI:
             snprintf(
@@ -442,6 +447,12 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             break;
         case DEVICE_ITEM_BREADCRUMB_FILES:
             snprintf( a_value, a_capacity, "%u", (unsigned)breadcrumbs_file_limit() );
+            break;
+        case DEVICE_ITEM_HOLD_SHORTCUT:
+            snprintf( a_value,
+                      a_capacity,
+                      "%s",
+                      device_config_hold_shortcut_name( config->hold_shortcut ) );
             break;
         default:
             if( ( a_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
@@ -1310,6 +1321,25 @@ static void toggle_logging( void )
     emit_device_event( RFSCOUT_EVENT_ENABLE, 1 );
 }
 
+static void toggle_hold_shortcut( void )
+{
+    const rfscout_hold_shortcut_t old_shortcut = device_config_hold_shortcut();
+    const rfscout_hold_shortcut_t new_shortcut = RFSCOUT_HOLD_SHORTCUT_INPUT_LOCK == old_shortcut
+                                                     ? RFSCOUT_HOLD_SHORTCUT_APP_LOCK
+                                                     : RFSCOUT_HOLD_SHORTCUT_INPUT_LOCK;
+    if( ESP_OK != device_config_set_hold_shortcut( new_shortcut ) )
+    {
+        save_error = true;
+        return;
+    }
+
+    log_config_change( "input.hold",
+                       device_config_hold_shortcut_name( old_shortcut ),
+                       device_config_hold_shortcut_name( new_shortcut ) );
+    save_error = false;
+    emit_device_event( RFSCOUT_EVENT_NAVIGATE, 1 );
+}
+
 static void toggle_breadcrumbs( void )
 {
     const bool old_value = breadcrumbs_enabled();
@@ -1514,6 +1544,10 @@ static void adjust_selected( int a_delta )
     {
         adjust_breadcrumb_file_limit( a_delta );
     }
+    else if( DEVICE_ITEM_HOLD_SHORTCUT == selected_item )
+    {
+        toggle_hold_shortcut();
+    }
     else if( ( selected_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
              ( selected_item <= DEVICE_ITEM_NOTIFICATION_LAST ) )
     {
@@ -1521,57 +1555,19 @@ static void adjust_selected( int a_delta )
     }
 }
 
-bool device_view_back( void )
+bool device_view_input( const rfscout_input_event_t *a_input )
 {
-    if( network_menu_open )
-    {
-        if( network_menu_back() )
-        {
-            network_menu_leave();
-            network_menu_open = false;
-            device_view_render();
-        }
-        return true;
-    }
-    if( ota_menu_open )
-    {
-        if( ota_menu_back() && ESP_OK == ota_menu_leave() )
-        {
-            ota_menu_open = false;
-            device_view_render();
-        }
-        return true;
-    }
-    if( time_menu_open )
-    {
-        time_menu_open = false;
-        time_selected_item = TIME_MENU_BACK;
-        time_editing = false;
-        device_view_render();
-        return true;
-    }
-    if( power_policy_menu_open )
-    {
-        power_policy_menu_open = false;
-        device_view_render();
-        return true;
-    }
-    if( !power_menu_open )
+    if( NULL == a_input )
     {
         return false;
     }
 
-    power_menu_open = false;
-    power_selected_item = POWER_MENU_BACK;
-    device_view_render();
-    return true;
-}
+    const bool a_pressed = RFSCOUT_INPUT_SELECT == a_input->type;
+    const int a_delta = RFSCOUT_INPUT_NAVIGATION == a_input->type ? (int)a_input->value : 0;
 
-bool device_view_input( bool a_pressed, int a_delta )
-{
     if( network_menu_open )
     {
-        if( network_menu_input( a_pressed, a_delta ) )
+        if( network_menu_input( a_input ) )
         {
             network_menu_leave();
             network_menu_open = false;
@@ -1582,7 +1578,7 @@ bool device_view_input( bool a_pressed, int a_delta )
     }
     if( ota_menu_open )
     {
-        if( ota_menu_input( a_pressed, a_delta ) && ESP_OK == ota_menu_leave() )
+        if( ota_menu_input( a_input ) && ESP_OK == ota_menu_leave() )
         {
             ota_menu_open = false;
             emit_device_event( RFSCOUT_EVENT_BACK, 0 );
@@ -1645,7 +1641,7 @@ bool device_view_input( bool a_pressed, int a_delta )
         }
         if( ( DEVICE_ITEM_OTA == selected_item ) && !editing )
         {
-            if( !network_update_ready() )
+            if( !network_update_available() )
             {
                 device_view_render();
                 return false;

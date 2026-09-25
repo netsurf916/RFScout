@@ -9,6 +9,8 @@
 #ifndef _RFSCOUT_OTA_MENU_H_
 #define _RFSCOUT_OTA_MENU_H_
 
+#include "input.h"
+
 #include "esp_err.h"
 
 #include <stdbool.h>
@@ -19,9 +21,7 @@ void network_menu_enter( void );
 /** @brief Leave the Network menu while preserving the Home-owned station connection. */
 void network_menu_leave( void );
 /** @brief Handle Network-menu select/rotation input; true requests return to Device settings. */
-bool network_menu_input( bool a_pressed, int a_delta );
-/** @brief Handle Back within the Network menu; true requests return to Device settings. */
-bool network_menu_back( void );
+bool network_menu_input( const rfscout_input_event_t *a_input );
 /** @brief Poll asynchronous Network state while the Home Network menu is open. */
 void network_menu_poll( int64_t a_now_us );
 
@@ -35,10 +35,7 @@ void ota_menu_enter( void );
 esp_err_t ota_menu_leave( void );
 
 /** @brief Handle Home-menu select/rotation input; true requests return to Device settings. */
-bool ota_menu_input( bool a_pressed, int a_delta );
-
-/** @brief Handle Back within the Update menu; true requests return to Device settings. */
-bool ota_menu_back( void );
+bool ota_menu_input( const rfscout_input_event_t *a_input );
 
 /** @brief Poll asynchronous Update operations while the Home Update menu is open. */
 void ota_menu_poll( int64_t a_now_us );

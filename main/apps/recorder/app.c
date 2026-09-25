@@ -27,8 +27,6 @@
 #define RECORDER_BROWSER_FILE_BASE 2U
 
 static const char *TAG = "recorder_app";
-static bool microphone_probed;
-static esp_err_t microphone_result = ESP_ERR_NOT_FOUND;
 static bool browser_active;
 static bool delete_mode;
 static bool delete_confirm;
@@ -46,16 +44,18 @@ static void emit_event( rfscout_event_type_t a_type, int32_t a_value )
 
 static esp_err_t probe_recorder( void )
 {
-    if( !storage_is_available() || ( ESP_OK != storage_probe_card() ) )
+    if( !storage_is_available() )
+    {
+        if( ESP_OK != storage_init() )
+        {
+            return ESP_ERR_NOT_FOUND;
+        }
+    }
+    if( ESP_OK != storage_probe_card() )
     {
         return ESP_ERR_NOT_FOUND;
     }
-    if( !microphone_probed )
-    {
-        microphone_result = recorder_probe_microphone();
-        microphone_probed = true;
-    }
-    return microphone_result;
+    return recorder_probe_microphone();
 }
 
 static void render( void )
@@ -94,7 +94,7 @@ static bool handle_active_operation( const rfscout_input_event_t *a_input )
     if( RFSCOUT_RECORDER_RECORDING == state )
     {
         if( ( RFSCOUT_INPUT_SELECT == a_input->type ) ||
-            ( RFSCOUT_INPUT_LONG_SELECT == a_input->type ) )
+            ( RFSCOUT_INPUT_LONG_PRESS == a_input->type ) )
         {
             recorder_request_stop_recording();
             last_state = RFSCOUT_RECORDER_SAVING;
@@ -110,7 +110,7 @@ static bool handle_active_operation( const rfscout_input_event_t *a_input )
     }
     if( RFSCOUT_RECORDER_PLAYING == state )
     {
-        if( ( RFSCOUT_INPUT_SELECT == a_input->type ) || ( RFSCOUT_INPUT_BACK == a_input->type ) )
+        if( RFSCOUT_INPUT_SELECT == a_input->type )
         {
             stop_playback();
             emit_event( RFSCOUT_EVENT_BACK, 0 );
@@ -162,13 +162,6 @@ static void handle_browser_input( const rfscout_input_event_t *a_input )
 
     if( delete_mode )
     {
-        if( RFSCOUT_INPUT_BACK == a_input->type )
-        {
-            delete_mode = false;
-            delete_confirm = false;
-            render();
-            return;
-        }
         if( RFSCOUT_INPUT_NAVIGATION == a_input->type )
         {
             delete_confirm = !delete_confirm;
@@ -199,13 +192,7 @@ static void handle_browser_input( const rfscout_input_event_t *a_input )
         return;
     }
 
-    if( RFSCOUT_INPUT_BACK == a_input->type )
-    {
-        close_browser();
-        emit_event( RFSCOUT_EVENT_BACK, 0 );
-        return;
-    }
-    if( ( RFSCOUT_INPUT_LONG_SELECT == a_input->type ) &&
+    if( ( RFSCOUT_INPUT_LONG_PRESS == a_input->type ) &&
         ( browser_item >= RECORDER_BROWSER_FILE_BASE ) )
     {
         delete_mode = true;

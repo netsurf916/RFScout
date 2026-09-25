@@ -176,6 +176,31 @@ static bool power_action_valid_for_policy( power_action_t a_action )
            POWER_ACTION_POWER_OFF == a_action;
 }
 
+static const char *hold_shortcut_config_name( rfscout_hold_shortcut_t a_shortcut )
+{
+    return RFSCOUT_HOLD_SHORTCUT_APP_LOCK == a_shortcut ? "app_lock" : "input_lock";
+}
+
+static bool hold_shortcut_from_config_name( const char *a_name,
+                                            rfscout_hold_shortcut_t *a_shortcut )
+{
+    if( NULL == a_name || NULL == a_shortcut )
+    {
+        return false;
+    }
+    if( 0 == strcasecmp( a_name, "input_lock" ) )
+    {
+        *a_shortcut = RFSCOUT_HOLD_SHORTCUT_INPUT_LOCK;
+        return true;
+    }
+    if( 0 == strcasecmp( a_name, "app_lock" ) )
+    {
+        *a_shortcut = RFSCOUT_HOLD_SHORTCUT_APP_LOCK;
+        return true;
+    }
+    return false;
+}
+
 static void copy_string( char *a_destination, size_t a_capacity, const char *a_source )
 {
     if( NULL == a_destination || 0U == a_capacity )
@@ -206,6 +231,7 @@ static void set_defaults( void )
     config.low_battery_action = POWER_ACTION_POWER_OFF;
     config.high_temperature_threshold_c = 90U;
     config.high_temperature_action = POWER_ACTION_POWER_OFF;
+    config.hold_shortcut = RFSCOUT_HOLD_SHORTCUT_INPUT_LOCK;
     config.startup_app = RFSCOUT_APP_DEVICE;
     config.logging_enabled = true;
     config.clock_24h = false;
@@ -407,6 +433,23 @@ static void load_power( const cJSON *a_root )
         power_action_valid_for_policy( parsed ) )
     {
         config.high_temperature_action = parsed;
+    }
+}
+
+static void load_input( const cJSON *a_root )
+{
+    const cJSON *input = cJSON_GetObjectItemCaseSensitive( a_root, "input" );
+    if( !cJSON_IsObject( input ) )
+    {
+        return;
+    }
+
+    const cJSON *hold = cJSON_GetObjectItemCaseSensitive( input, "hold" );
+    rfscout_hold_shortcut_t parsed;
+    if( cJSON_IsString( hold ) && NULL != hold->valuestring &&
+        hold_shortcut_from_config_name( hold->valuestring, &parsed ) )
+    {
+        config.hold_shortcut = parsed;
     }
 }
 
@@ -696,6 +739,7 @@ static esp_err_t load_system_record( void )
     load_display( root );
     load_audio_policy( root );
     load_power( root );
+    load_input( root );
     load_system_apps( root );
     load_logging( root );
     load_global_notifications( root );
@@ -900,6 +944,9 @@ static cJSON *build_system_record( void )
     cJSON_AddStringToObject( power,
                              "high_temperature_action",
                              power_action_config_name( config.high_temperature_action ) );
+
+    cJSON *input = cJSON_AddObjectToObject( root, "input" );
+    cJSON_AddStringToObject( input, "hold", hold_shortcut_config_name( config.hold_shortcut ) );
 
     cJSON *apps = cJSON_AddObjectToObject( root, "apps" );
     for( size_t index = 0U; index < RFSCOUT_APP_COUNT; ++index )
@@ -1329,6 +1376,30 @@ esp_err_t device_config_set_high_temperature_action( power_action_t a_action )
     if( config.high_temperature_action != a_action )
     {
         config.high_temperature_action = a_action;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+rfscout_hold_shortcut_t device_config_hold_shortcut( void )
+{
+    return config.hold_shortcut;
+}
+
+const char *device_config_hold_shortcut_name( rfscout_hold_shortcut_t a_shortcut )
+{
+    return RFSCOUT_HOLD_SHORTCUT_APP_LOCK == a_shortcut ? "App Lock" : "Input Lock";
+}
+
+esp_err_t device_config_set_hold_shortcut( rfscout_hold_shortcut_t a_shortcut )
+{
+    if( a_shortcut >= RFSCOUT_HOLD_SHORTCUT_COUNT )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( config.hold_shortcut != a_shortcut )
+    {
+        config.hold_shortcut = a_shortcut;
         config_dirty = true;
     }
     return ESP_OK;

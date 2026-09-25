@@ -35,6 +35,8 @@ rfscout_audio_category_t rfscout_event_audio_category( rfscout_event_type_t a_ty
         case RFSCOUT_EVENT_DISABLE:
         case RFSCOUT_EVENT_INPUT_LOCKED:
         case RFSCOUT_EVENT_INPUT_UNLOCKED:
+        case RFSCOUT_EVENT_APP_LOCKED:
+        case RFSCOUT_EVENT_APP_UNLOCKED:
             return RFSCOUT_AUDIO_CATEGORY_UI;
         case RFSCOUT_EVENT_DETECTED:
         case RFSCOUT_EVENT_POWER_CONNECTED:

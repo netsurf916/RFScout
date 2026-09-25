@@ -111,21 +111,6 @@ static uint16_t adjust_timeout_seconds( uint16_t a_current, int a_direction )
 
 static void handle_menu_input( const rfscout_input_event_t *a_input )
 {
-    if( RFSCOUT_INPUT_BACK == a_input->type )
-    {
-        if( menu_editing )
-        {
-            menu_editing = false;
-            render_menu();
-        }
-        else
-        {
-            close_menu();
-        }
-        emit_event( RFSCOUT_EVENT_BACK, 0 );
-        return;
-    }
-
     if( RFSCOUT_INPUT_SELECT == a_input->type )
     {
         if( menu_editing )

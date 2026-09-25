@@ -143,16 +143,10 @@ rfscout_text_entry_result_t app_text_entry_input( rfscout_text_entry_t *a_entry,
         return RFSCOUT_TEXT_ENTRY_CONTINUE;
     }
 
-    if( RFSCOUT_INPUT_BACK == a_input->type )
+    if( RFSCOUT_INPUT_LONG_PRESS == a_input->type )
     {
         a_entry->active = false;
         return RFSCOUT_TEXT_ENTRY_CANCELLED;
-    }
-
-    if( RFSCOUT_INPUT_LONG_SELECT == a_input->type )
-    {
-        a_entry->active = false;
-        return RFSCOUT_TEXT_ENTRY_ACCEPTED;
     }
 
     return RFSCOUT_TEXT_ENTRY_CONTINUE;

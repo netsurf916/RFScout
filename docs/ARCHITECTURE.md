@@ -53,9 +53,36 @@ The compiled application descriptor registry is authoritative for application id
 
 Application availability is derived from configured enablement plus services/capabilities legal and available on the selected profile. Board-specific branching belongs in board/provider integration code, not application modules.
 
+### Hardware probe contract
+
+Optional application hardware uses one retry-safe **hot-plug** probe contract. The framework owns cached availability; individual drivers must not permanently cache a failed probe or substitute prior initialization state for a current hardware check.
+
+There are only two descriptor policies:
+
+- **None** — no runtime hardware availability gate is required.
+- **Hot-plug** — run the same retry-safe probe during initial discovery, when availability is explicitly checked for navigation, and periodically while the app is inactive.
+
+A hot-plug probe may prepare reusable driver plumbing, but it must leave acquisition inactive and be safe to invoke again after either success or failure. Probe answers only whether the required hardware/dependency responds now. Initialization and activation remain separate lifecycle concerns.
+
+When a shared provider is legitimately busy in another active application, a probe returns `ESP_ERR_INVALID_STATE`. The framework treats that as **deferred** and retains the previous availability instead of manufacturing a hardware-removal event. This is scheduling behavior, not a third availability state.
+
+Runtime-observed loss may report the app unavailable. Once the app is inactive, the ordinary hot-plug path can discover recovery again.
+
+CC1101, nRF24, microphone-backed audio apps, Thermal, and Recorder all use this model. Radio probes perform real identity checks rather than treating an earlier successful initialization as permanent presence. Recorder rechecks both microphone and storage dependencies; when no card has ever mounted, a later probe may retry the normal storage mount.
+
+The same retry principle applies to optional platform telemetry where practical. Battery gauge/charger handles are re-probed when absent and dropped/reacquired if the I2C device stops responding. GPS already continuously searches its supported UART rates until valid NMEA traffic appears.
+
+Two platform cases remain intentionally distinct:
+
+- **Board profile / mandatory UI providers** — these establish the hardware identity and minimum environment needed to run RFScout safely; failure is a platform startup/recovery condition, not an optional app being unavailable.
+- **Mounted SD media after physical loss** — RFScout latches the mounted filesystem unavailable rather than silently unmounting/remounting beneath open users. Initial insertion can be retried, but post-loss remount requires an explicit storage-lifecycle design.
+
+
 ## Application lifecycle, views, and resource sessions
 
 Every active app has a temporary **resource session**, including apps that currently allocate no dynamic PSRAM. The same session owns the app's managed `rfscout_view_t`.
+
+Application lock deliberately sits **above** this lifecycle boundary. Locking/unlocking the active application does not enter, leave, reactivate, quiesce, reclaim, or otherwise mutate its resource session; it only changes whether unhandled rotary input is permitted to request a different application.
 
 The current canonical view is 320x170 and maps to the full T-Embed display. Applications render through their assigned view rather than owning the physical display.
 
@@ -87,7 +114,9 @@ Current session-managed asynchronous services include Wi-Fi monitoring, infrastr
 
 Growable retained app state uses `app_session_calloc()`, `app_session_resize()`, and `app_session_free()`. The lower-level memory manager supplies owner accounting, failure tracking, and bulk reclamation.
 
-App-session **PSRAM** is for retained observations, histories, captures, and other meaningfully sized/growable state. Internal SRAM remains for RTOS/system state, task stacks, DMA/peripheral-constrained buffers, and latency-sensitive allocations.
+Shared SPI peripherals normally rely on the ESP-IDF SPI driver's device arbitration. A provider that must perform a **manual GPIO-level SPI sequence** outside a normal transaction must first reserve the shared bus through the board SPI abstraction, perform the manual sequence, release that reservation, and only then resume normal device transactions. Device drivers must not independently manipulate a shared-bus CS line while unrelated SPI clients can transact.
+
+App-session **PSRAM** is for retained observations, histories, captures, and other meaningfully sized/growable state. Internal SRAM remains appropriate for RTOS/system state, task stacks, latency-sensitive allocations, and small bounded DMA/peripheral buffers. Providers should prefer the simplest memory class that satisfies the fixed capacity and peripheral constraints; external PSRAM is reserved for cases where retained/growable size materially justifies it.
 
 There is deliberately no arbitrary per-app item quota. Collections grow according to resources and semantics; presentation scratch can remain bounded separately.
 
@@ -95,9 +124,41 @@ Usable external PSRAM is a supported-platform requirement. RFScout does not sile
 
 ## Semantic input and presentation
 
-Applications consume semantic input rather than GPIOs. The current T-Embed provider maps the rotary encoder/buttons into signed navigation, Select, long-Select, and Back behavior. The dedicated user/power key remains a separate power-policy input.
+Applications consume semantic input rather than GPIOs. The current T-Embed provider maps the rotary encoder/buttons into signed navigation, Select, Long Press, and the global Hold shortcut. There is no global Back input semantic; explicit Back rows and app-local actions are ordinary Select-driven UI choices. The dedicated user/power key remains a separate power-policy input.
 
-Edge capture survives temporary main-loop/display stalls. Input used only to wake a dimmed/off display is consumed before normal navigation or power handling. The device-wide input lock suppresses ordinary semantic navigation/select input without disabling the dedicated T-Embed power key.
+The user-facing gesture vocabulary is intentional:
+
+- **Center / Select** — short center-button press and release; ordinary activation.
+- **Long Press** — center-button release after at least 0.8 seconds but before the Hold action fires; app-defined secondary action.
+- **Hold** — center button remains pressed for 2 seconds; framework-owned global Input Lock / App Lock shortcut.
+
+UI hints use `LONG PRESS` and `HOLD` with those meanings.
+
+### Input lock and application lock
+
+RFScout exposes two deliberately different global lock semantics:
+
+- **Input lock** suppresses ordinary semantic navigation/select input. The dedicated user/power key and the Hold unlock path remain available.
+- **Application lock** keeps ordinary input active but prevents rotary navigation that the active application leaves unhandled from falling through to a global application transition.
+
+Application lock is owned by the application manager. It does **not** create a new resource session, change application identity, or alter service ownership. Its purpose is to preserve the active application/session and its retained data while allowing the application to use rotary navigation for local modes, views, cursors, or other app-specific interaction.
+
+The dispatch rule is therefore:
+
+1. deliver semantic input to the active application;
+2. if the application handles it, stop;
+3. if an unhandled event is rotary navigation and application lock is active, remain in the current application;
+4. otherwise apply the normal framework fallback; unhandled rotary navigation changes applications only when application lock is inactive.
+
+The global Hold shortcut is configurable as **Input Lock** or **App Lock**. When input lock is already active, Hold always unlocks input regardless of the configured shortcut so the stronger lock retains an unambiguous escape gesture. Applications may also expose app-lock state through their own settings by calling the framework-owned lock API; they do not own a second private lock bit.
+
+Long Press remains an app-level semantic. In the shared rotary text-entry component it means **Cancel**; accepting text requires rotating to the visible **Done** item and pressing Select. This avoids a second hidden accept path and keeps cancellation available without a separate Back gesture.
+
+`RFSCOUT_EVENT_BACK` remains a logical UI/history/feedback event for explicit actions that move outward one local UI level (for example selecting a visible Back row). It is not an input event and does not trigger global application navigation.
+
+Application lock is transient runtime state. It is cleared when an application transition commits and is not a distinct persistence/resource-ownership domain. A shared status-bar indicator renders an **A-marked lock** for application lock, distinct from the ordinary input-lock symbol. When both locks are active, the stronger Input Lock symbol temporarily supersedes the A-lock; the app-lock indicator returns when input is unlocked.
+
+Edge capture survives temporary main-loop/display stalls. Input used only to wake a dimmed/off display is consumed before normal navigation or power handling.
 
 Common presentation overlays are platform-owned. Applications render their view, while power/system-event/app-modal presentation is composed by the shared display service so application lifecycle state is not replaced by a transient notification.
 
@@ -213,7 +274,7 @@ The combined image remains the clean-install/recovery artifact and contains the 
 
 Infrastructure networking and Update are nested Home workflows, but the station session belongs to Home itself. Leaving Network or Update preserves a connected Home session; explicit Disconnect or leaving Home tears it down.
 
-Update requires both station connectivity and NTP-ready state before HTTPS catalog/install operations are offered.
+Update requires station connectivity. Home still attempts NTP after association, but NTP-ready state is not an authorization gate for catalog/install operations: retained or manually set wall time may already be usable, and an unsuitable clock is allowed to fail through normal HTTPS certificate validation rather than being preemptively rejected.
 
 ### Acquisition and installer
 

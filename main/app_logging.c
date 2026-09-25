@@ -10,7 +10,6 @@
 #include "app_lifecycle.h"
 #include "app_manager.h"
 #include "cc1101.h"
-#include "cc1101_activity.h"
 #include "log_writer.h"
 #include "mlx90640.h"
 #include "nrf24.h"
@@ -108,15 +107,32 @@ static void write_periodic_record( rfscout_app_id_t a_app )
 
         case RFSCOUT_APP_CC1101:
         {
-            const cc1101_scan_config_t *config = cc1101_config();
-            cc1101_fingerprint_t fingerprints[ CC1101_FINGERPRINT_MAX ];
-            const size_t count =
-                cc1101_activity_fingerprints( fingerprints, CC1101_FINGERPRINT_MAX );
-            success = log_uint( &record, "low_khz", config->low_khz ) &&
-                      log_uint( &record, "high_khz", config->high_khz ) &&
-                      log_uint( &record, "step_khz", config->step_khz ) &&
-                      log_uint( &record, "likely", count ) &&
+            cc1101_scan_config_t scan;
+            cc1101_receive_config_t receive;
+            cc1101_capture_stats_t stats;
+            cc1101_scan_config( &scan );
+            cc1101_receive_config( &receive );
+            cc1101_capture_stats( &stats );
+
+            const cc1101_acquisition_mode_t mode = cc1101_acquisition_mode();
+            success = log_uint( &record, "mode", mode ) &&
                       log_bool( &record, "detected", cc1101_is_detected() );
+
+            if( success && ( CC1101_ACQUISITION_RECEIVE == mode ) )
+            {
+                success = log_uint( &record, "frequency_khz", receive.frequency_khz ) &&
+                          log_uint( &record, "preset", receive.preset ) &&
+                          log_uint( &record, "captures", stats.captures_completed ) &&
+                          log_uint( &record, "truncated", stats.captures_truncated ) &&
+                          log_uint( &record, "overruns", stats.capture_overruns ) &&
+                          log_uint( &record, "errors", stats.capture_errors );
+            }
+            else if( success )
+            {
+                success = log_uint( &record, "low_khz", scan.low_khz ) &&
+                          log_uint( &record, "high_khz", scan.high_khz ) &&
+                          log_uint( &record, "step_khz", scan.step_khz );
+            }
             break;
         }
 

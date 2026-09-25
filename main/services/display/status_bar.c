@@ -7,6 +7,7 @@
 
 #include "status_bar.h"
 
+#include "app_manager.h"
 #include "device_time.h"
 #include "display.h"
 #include "gps.h"
@@ -41,6 +42,17 @@ static void draw_lock_icon( int a_x )
     display_fill_rect( a_x + 9, y + 2, 1, 4, theme->warning );
     display_fill_rect( a_x + 1, y + 6, 10, 7, theme->warning );
     display_fill_rect( a_x + 5, y + 8, 2, 3, theme->background );
+}
+
+static void draw_app_lock_icon( int a_x )
+{
+    const int y = STATUS_BAR_ICON_Y;
+    const ui_theme_palette_t *theme = ui_theme_get();
+    display_fill_rect( a_x + 3, y + 1, 6, 1, theme->accent );
+    display_fill_rect( a_x + 2, y + 2, 1, 4, theme->accent );
+    display_fill_rect( a_x + 9, y + 2, 1, 4, theme->accent );
+    display_fill_rect( a_x + 1, y + 6, 10, 7, theme->accent );
+    display_draw_text( a_x + 3, y + 7, "A", theme->background, 1U );
 }
 
 static void draw_sd_icon( int a_x, uint16_t a_color, bool a_error )
@@ -90,6 +102,7 @@ static bool status_equal( const rfscout_status_bar_state_t *a_left,
                           const rfscout_status_bar_state_t *a_right )
 {
     return ( a_left->input_locked == a_right->input_locked ) &&
+           ( a_left->app_locked == a_right->app_locked ) &&
            ( a_left->sd_available == a_right->sd_available ) &&
            ( a_left->storage_error == a_right->storage_error ) &&
            ( a_left->thermal_available == a_right->thermal_available ) &&
@@ -107,6 +120,7 @@ bool status_bar_snapshot( rfscout_status_bar_state_t *a_state )
 
     memset( a_state, 0, sizeof( *a_state ) );
     a_state->input_locked = input_locked();
+    a_state->app_locked = app_manager_locked();
     a_state->sd_available = storage_is_available();
     a_state->storage_error = log_writer_has_error();
     a_state->thermal_available = mlx90640_is_detected();
@@ -141,6 +155,12 @@ void status_bar_draw_state( const rfscout_status_bar_state_t *a_state )
     {
         x -= STATUS_BAR_ICON_WIDTH;
         draw_lock_icon( x );
+        x -= STATUS_BAR_ICON_GAP;
+    }
+    if( a_state->app_locked && !a_state->input_locked )
+    {
+        x -= STATUS_BAR_ICON_WIDTH;
+        draw_app_lock_icon( x );
         x -= STATUS_BAR_ICON_GAP;
     }
     if( a_state->sd_available )

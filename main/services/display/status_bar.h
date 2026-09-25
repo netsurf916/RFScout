@@ -18,6 +18,7 @@
 typedef struct
 {
     bool input_locked;
+    bool app_locked;
     bool sd_available;
     bool storage_error;
     bool thermal_available;

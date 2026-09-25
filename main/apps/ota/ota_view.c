@@ -14,12 +14,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#define OTA_NETWORK_MENU_START_Y 25
-#define OTA_MENU_START_Y 43
-#define OTA_MENU_ROW_HEIGHT 20
 #define OTA_MENU_VISIBLE_ROWS 5U
-#define OTA_UPDATE_MENU_START_Y 66
-#define OTA_UPDATE_MENU_ROW_HEIGHT 18
+#define OTA_UPDATE_MENU_START_Y 72
+#define OTA_UPDATE_MENU_ROW_HEIGHT UI_LAYOUT_MENU_ROW_HEIGHT
 
 static unsigned menu_window_start( unsigned a_selected, unsigned a_count )
 {
@@ -56,14 +53,7 @@ static void draw_menu_row_at(
 static void draw_menu_row(
     unsigned a_row, unsigned a_item, unsigned a_selected, const char *a_label, const char *a_value )
 {
-    draw_menu_row_at(
-        OTA_MENU_START_Y + (int)a_row * OTA_MENU_ROW_HEIGHT, a_item, a_selected, a_label, a_value );
-}
-
-static void draw_network_menu_row(
-    unsigned a_row, unsigned a_item, unsigned a_selected, const char *a_label, const char *a_value )
-{
-    draw_menu_row_at( OTA_NETWORK_MENU_START_Y + (int)a_row * OTA_MENU_ROW_HEIGHT,
+    draw_menu_row_at( UI_LAYOUT_MENU_START_Y + (int)a_row * UI_LAYOUT_MENU_ROW_HEIGHT,
                       a_item,
                       a_selected,
                       a_label,
@@ -106,7 +96,7 @@ void ota_view_render_network_main( const ota_view_network_t *a_networks,
         }
         if( 0U == item )
         {
-            draw_network_menu_row( row, item, a_selected, "Back", NULL );
+            draw_menu_row( row, item, a_selected, "Back", NULL );
             continue;
         }
 
@@ -115,27 +105,26 @@ void ota_view_render_network_main( const ota_view_network_t *a_networks,
         {
             char rssi[ 16 ];
             snprintf( rssi, sizeof( rssi ), "%d", (int)a_networks[ menu_item ].rssi );
-            draw_network_menu_row( row, item, a_selected, a_networks[ menu_item ].ssid, rssi );
+            draw_menu_row( row, item, a_selected, a_networks[ menu_item ].ssid, rssi );
             continue;
         }
 
         const unsigned action = menu_item - (unsigned)a_network_count;
         if( a_connected )
         {
-            draw_network_menu_row( row, item, a_selected, "Saved networks", NULL );
+            draw_menu_row( row, item, a_selected, "Saved networks", NULL );
         }
         else if( 0U == action )
         {
-            draw_network_menu_row(
-                row, item, a_selected, a_scanning ? "Scanning..." : "Scan again", NULL );
+            draw_menu_row( row, item, a_selected, a_scanning ? "Scanning..." : "Scan again", NULL );
         }
         else if( 1U == action )
         {
-            draw_network_menu_row( row, item, a_selected, "Add network", NULL );
+            draw_menu_row( row, item, a_selected, "Add network", NULL );
         }
         else
         {
-            draw_network_menu_row( row, item, a_selected, "Saved networks", NULL );
+            draw_menu_row( row, item, a_selected, "Saved networks", NULL );
         }
     }
 
@@ -163,9 +152,9 @@ void ota_view_render_update_main( const char *a_installed_version,
     display_clear( theme->background );
     ui_chrome_draw( "OTA UPDATE", theme->secondary );
 
-    draw_information_row( 25, "Installed", a_installed_version, true );
-    draw_information_row( 37, "Update", a_update_status, a_can_install );
-    draw_information_row( 49, "Network", a_connection, false );
+    draw_information_row( 28, "Installed", a_installed_version, true );
+    draw_information_row( 42, "Update", a_update_status, a_can_install );
+    draw_information_row( 56, "Network", a_connection, false );
 
     for( unsigned item = 0U; item < item_count; ++item )
     {
@@ -191,7 +180,7 @@ void ota_view_render_update_main( const char *a_installed_version,
     const char *footer =
         NULL != a_error && '\0' != a_error[ 0 ]
             ? a_error
-            : ( a_ready ? "TURN SELECT / CENTER ACTION" : "CONNECT NETWORK / SYNC TIME FIRST" );
+            : ( a_ready ? "TURN SELECT / CENTER ACTION" : "CONNECT NETWORK FIRST" );
     display_draw_text( UI_LAYOUT_LEFT_X,
                        UI_LAYOUT_FOOTER_Y,
                        footer,
@@ -246,15 +235,15 @@ void ota_view_render_network_action( const char *a_ssid,
         {
             label = "Forget";
         }
-        draw_menu_row_at( 58 + (int)row * OTA_MENU_ROW_HEIGHT, row, a_selected, label, NULL );
+        draw_menu_row_at( 58 + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT, row, a_selected, label, NULL );
     }
 
-    if( NULL != a_status && '\0' != a_status[ 0 ] )
-    {
-        display_draw_text( UI_LAYOUT_LEFT_X, 121, a_status, theme->secondary, 1U );
-    }
-    display_draw_text(
-        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN SELECT / CENTER ACTION", theme->secondary, 1U );
+    const bool has_status = NULL != a_status && '\0' != a_status[ 0 ];
+    display_draw_text( UI_LAYOUT_LEFT_X,
+                       UI_LAYOUT_FOOTER_Y,
+                       has_status ? a_status : "TURN SELECT / CENTER ACTION",
+                       theme->secondary,
+                       1U );
     (void)display_present();
 }
 
@@ -273,7 +262,11 @@ void ota_view_render_network_list( const char *a_title,
 
     if( 0U == a_network_count && NULL != a_empty_message )
     {
-        display_draw_text( UI_LAYOUT_LEFT_X, 28, a_empty_message, theme->secondary, 1U );
+        display_draw_text( UI_LAYOUT_LABEL_X,
+                           UI_LAYOUT_MENU_START_Y + UI_LAYOUT_MENU_ROW_HEIGHT,
+                           a_empty_message,
+                           theme->secondary,
+                           1U );
     }
 
     for( unsigned row = 0U; row < OTA_MENU_VISIBLE_ROWS; ++row )
@@ -409,8 +402,6 @@ void ota_view_render_password( const char *a_ssid,
                   ' ' == a_character ? '_' : a_character );
     }
     display_draw_text( UI_LAYOUT_LEFT_X, 84, candidate, theme->selected, 1U );
-    display_draw_text( UI_LAYOUT_LEFT_X, 106, "CENTER: USE", theme->secondary, 1U );
-    display_draw_text( UI_LAYOUT_LEFT_X, 121, "BACK: CANCEL", theme->secondary, 1U );
 
     if( NULL != a_error && '\0' != a_error[ 0 ] )
     {
@@ -420,7 +411,7 @@ void ota_view_render_password( const char *a_ssid,
     {
         display_draw_text( UI_LAYOUT_LEFT_X,
                            UI_LAYOUT_FOOTER_Y,
-                           "TURN: CHARACTER / ACTION",
+                           "TURN SELECT / CENTER USE / LONG PRESS CANCEL",
                            theme->secondary,
                            1U );
     }

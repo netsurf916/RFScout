@@ -21,7 +21,8 @@ Current settings include:
 - preferred startup application and per-app enablement;
 - SD logging;
 - supported power-button actions and protective power policy;
-- breadcrumb recording and retained breadcrumb-file count; and
+- breadcrumb recording and retained breadcrumb-file count;
+- global Hold shortcut selection between **Input Lock** and **App Lock**; and
 - application notification preferences exposed through the relevant app settings.
 
 Ordinary setting changes are persisted automatically through RFScout's internal persistent-record service. There is no user-facing Save step.
@@ -53,7 +54,7 @@ ESP-IDF Wi-Fi persistence remains RAM-only so the driver does not become an inde
 
 ## Firmware Update
 
-**Device Settings → Update** is available only after the Home-owned station is connected and SNTP has synchronized time.
+**Device Settings → Update** is available whenever the Home-owned station is connected. RFScout still attempts SNTP automatically after association, but a failed or cancelled time sync does not block the user from trying an update. This permits retained or manually set clocks to work normally; if the actual wall clock is unsuitable for HTTPS certificate validation, the catalog/image request fails as a transport error instead of being preemptively blocked by the UI.
 
 The UI supports:
 
@@ -85,7 +86,7 @@ The current T-Embed profile supports semantic screen-off, deep-sleep, and physic
 
 Active Recorder recording/finalization can veto terminal transitions until the file is safe. Dirty configuration is flushed before terminal sleep/power-off preparation.
 
-The small deep-sleep RTC envelope preserves active-app and input-lock session state. Menus, edit state, queued sounds, and active Recorder operations are not reconstructed.
+The small deep-sleep RTC envelope preserves active-app and input-lock session state. Application lock is deliberately transient navigation state and is not restored after deep sleep. Menus, edit state, queued sounds, and active Recorder operations are not reconstructed.
 
 ## Current limitations
 

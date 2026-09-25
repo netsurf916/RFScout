@@ -50,29 +50,9 @@ static rfscout_app_runtime_result_t home_runtime( const rfscout_app_runtime_even
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
 
-    if( RFSCOUT_INPUT_BACK == a_event->input.type )
-    {
-        if( !menu_active )
-        {
-            return RFSCOUT_APP_RUNTIME_IGNORED;
-        }
-        if( device_view_back() )
-        {
-            emit_event( RFSCOUT_EVENT_BACK, 0 );
-            return RFSCOUT_APP_RUNTIME_HANDLED;
-        }
-        menu_active = false;
-        device_view_landing();
-        emit_event( RFSCOUT_EVENT_BACK, 0 );
-        return RFSCOUT_APP_RUNTIME_HANDLED;
-    }
-
     if( menu_active )
     {
-        const bool pressed = RFSCOUT_INPUT_SELECT == a_event->input.type;
-        const int delta =
-            RFSCOUT_INPUT_NAVIGATION == a_event->input.type ? (int)a_event->input.value : 0;
-        if( device_view_input( pressed, delta ) )
+        if( device_view_input( &a_event->input ) )
         {
             menu_active = false;
             device_view_landing();

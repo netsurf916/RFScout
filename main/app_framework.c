@@ -104,6 +104,13 @@ static rfscout_app_availability_t probe_descriptor( const rfscout_app_descriptor
     }
 
     const esp_err_t result = a_descriptor->probe();
+    if( ESP_ERR_INVALID_STATE == result )
+    {
+        /* A shared provider can be legitimately busy in another active app. A deferred probe
+           must not turn resource contention into a false hardware-removal event. */
+        return availability[ a_descriptor->id ];
+    }
+
     const rfscout_app_availability_t current = ( ESP_OK == result )
                                                    ? RFSCOUT_APP_AVAILABILITY_AVAILABLE
                                                    : RFSCOUT_APP_AVAILABILITY_UNAVAILABLE;
@@ -213,7 +220,7 @@ void app_framework_report_availability( rfscout_app_id_t a_app,
 {
     const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
     if( ( NULL == descriptor ) || !profile_supports_services( descriptor->services ) ||
-        ( RFSCOUT_APP_PROBE_HOTPLUG != descriptor->probe_policy ) ||
+        ( RFSCOUT_APP_PROBE_NONE == descriptor->probe_policy ) ||
         ( RFSCOUT_APP_AVAILABILITY_UNKNOWN == a_availability ) )
     {
         return;

@@ -32,11 +32,10 @@ typedef enum
     RFSCOUT_APP_COUNT
 } rfscout_app_id_t;
 
-/** @brief When an application's hardware availability should be probed. */
+/** @brief Whether an application has a retry-safe hot-plug hardware probe. */
 typedef enum
 {
     RFSCOUT_APP_PROBE_NONE = 0,
-    RFSCOUT_APP_PROBE_STARTUP,
     RFSCOUT_APP_PROBE_HOTPLUG
 } rfscout_app_probe_policy_t;
 
@@ -92,6 +91,8 @@ typedef rfscout_app_runtime_result_t ( *rfscout_app_runtime_handler_t )(
 /**
  * @brief Self-contained metadata and runtime contract exported by each compiled-in app module.
  * @details Probe implementations may use platform/service APIs but must leave hardware inactive.
+ *          Probes must be retry-safe. ESP_ERR_INVALID_STATE means the probe is temporarily deferred
+ *          because a shared provider is busy; the framework retains the previous availability.
  *          Service lifetime is declared as capability bits and remains implemented by the platform.
  *          Runtime handlers own app-local UI/state but not driver teardown or memory reachability.
  *          On ENTER, event.view identifies the managed content surface for the session; applications
