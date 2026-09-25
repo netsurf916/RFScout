@@ -308,6 +308,7 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         last_radio_retry_us = a_event->now_us;
         start_collectors();
     }
+    radio_monitor_set_active_ap_channels( observation_store_wifi_ap_channel_mask() );
     radio_monitor_step();
     if( !menu_active && !app_notification_menu_active( &notification_menu ) )
     {

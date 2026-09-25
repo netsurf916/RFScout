@@ -20,6 +20,7 @@
 #define RFSCOUT_DEVICE_NAME_MAX 32
 #define RFSCOUT_MFG_DATA_MAX 24
 #define RFSCOUT_BLE_SERVICE_UUID_MAX 12
+#define RFSCOUT_WIFI_CHANNEL_MAX 14U
 
 typedef enum
 {
@@ -71,6 +72,8 @@ typedef struct
     uint32_t last_seen_ms;
     uint32_t wifi_last_seen_ms;
     uint32_t ble_last_seen_ms;
+    uint8_t wifi_channel;
+    bool wifi_is_ap;
     surveillance_class_t surveillance;
     surveillance_signature_id_t surveillance_signature;
     surveillance_signature_id_t surveillance_case_signature;

@@ -93,6 +93,12 @@ void observation_store_reset( void );
  */
 void observation_store_housekeeping( void );
 
+/**
+ * @brief Return a bit mask of Wi-Fi channels with retained AP/BSSID evidence.
+ * @details Bit 0 represents channel 1. The projection follows canonical Wi-Fi source lifetime.
+ */
+uint16_t observation_store_wifi_ap_channel_mask( void );
+
 /** @brief Return the number of currently active observations. */
 size_t observation_store_count( void );
 

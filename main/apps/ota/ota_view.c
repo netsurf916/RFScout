@@ -311,7 +311,11 @@ void ota_view_render_build_list( const char *a_installed_version,
     draw_information_row( 25, "Installed", a_installed_version, true );
     if( 0U == a_build_count && NULL != a_empty_message )
     {
-        display_draw_text( UI_LAYOUT_LEFT_X, 34, a_empty_message, theme->secondary, 1U );
+        display_draw_text( UI_LAYOUT_LABEL_X,
+                           UI_LAYOUT_MENU_START_Y + UI_LAYOUT_MENU_ROW_HEIGHT,
+                           a_empty_message,
+                           theme->secondary,
+                           1U );
     }
 
     for( unsigned row = 0U; row < OTA_MENU_VISIBLE_ROWS; ++row )
