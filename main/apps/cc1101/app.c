@@ -187,6 +187,7 @@ static bool retain_raw_snapshot( const rfscout_subghz_capture_t *a_capture )
             app_session_resize( raw_snapshot, a_capture->symbol_count, sizeof( *raw_snapshot ) );
         if( NULL == replacement )
         {
+            clear_raw_snapshot();
             return false;
         }
         raw_snapshot = replacement;
