@@ -60,13 +60,17 @@ Optional application hardware uses one retry-safe **hot-plug** probe contract. T
 There are only two descriptor policies:
 
 - **None** — no runtime hardware availability gate is required.
-- **Hot-plug** — run the same retry-safe probe during initial discovery, when availability is explicitly checked for navigation, and periodically while the app is inactive.
+- **Hot-plug** — run the same retry-safe probe during initial discovery and whenever navigation explicitly checks the app's availability (rotary navigation evaluating the next candidate, or a system-owned selection such as Home choosing an app).
+
+There is deliberately **no background sweep** of inactive apps. Probes wake radios, power the microphone, and add shared-bus traffic, so they run only when the answer is about to be used. Hardware attached after startup is therefore discovered the next time navigation reaches that app, not announced in the background.
+
+Probe diagnostics are quiet: per-attempt probe details log at debug level, and the framework logs/emits events only when an app's retained availability actually changes. Microphone availability probes check PDM data activity without the physical-clock measurement that real capture sessions perform, so a probe never replaces the last capture session's clock diagnostic.
 
 A hot-plug probe may prepare reusable driver plumbing, but it must leave acquisition inactive and be safe to invoke again after either success or failure. Probe answers only whether the required hardware/dependency responds now. Initialization and activation remain separate lifecycle concerns.
 
 When a shared provider is legitimately busy in another active application, a probe returns `ESP_ERR_INVALID_STATE`. The framework treats that as **deferred** and retains the previous availability instead of manufacturing a hardware-removal event. This is scheduling behavior, not a third availability state.
 
-Runtime-observed loss may report the app unavailable. Once the app is inactive, the ordinary hot-plug path can discover recovery again.
+Runtime-observed loss may report the app unavailable. Once the app is inactive, the next navigation availability check can discover recovery again.
 
 CC1101, nRF24, microphone-backed audio apps, Thermal, and Recorder all use this model. Radio probes perform real identity checks rather than treating an earlier successful initialization as permanent presence. Recorder rechecks both microphone and storage dependencies; when no card has ever mounted, a later probe may retry the normal storage mount.
 
@@ -101,8 +105,9 @@ A transition is transactional:
 4. if service close fails, restore only safely restartable service state and keep source memory/presentation intact;
 5. dispatch committed LEAVE cleanup after successful service close;
 6. release/sanitize the source view;
-7. bulk-reclaim the exited app's managed memory and verify no managed allocation remains; and
-8. establish the destination session/view before ENTER can use destination resources.
+7. bulk-reclaim the exited app's managed memory and verify no managed allocation remains;
+8. force-close any SD media handle still owned by the exited app and record the count; and
+9. establish the destination session/view before ENTER can use destination resources.
 
 A successful service stop is the platform reachability proof: new work that can reference app state cannot enter, admitted workers/callbacks have drained, and shared hardware is inactive. Apps do not implement a second allocator/reachability protocol.
 
@@ -114,7 +119,9 @@ Current session-managed asynchronous services include Wi-Fi monitoring, infrastr
 
 Growable retained app state uses `app_session_calloc()`, `app_session_resize()`, and `app_session_free()`. The lower-level memory manager supplies owner accounting, failure tracking, and bulk reclamation.
 
-Shared SPI peripherals normally rely on the ESP-IDF SPI driver's device arbitration. A provider that must perform a **manual GPIO-level SPI sequence** outside a normal transaction must first reserve the shared bus through the board SPI abstraction, perform the manual sequence, release that reservation, and only then resume normal device transactions. Device drivers must not independently manipulate a shared-bus CS line while unrelated SPI clients can transact.
+Shared SPI peripherals use the ESP-IDF SPI driver's device arbitration **plus** a board-level recursive SPI lock (`board_spi_lock()` / `board_spi_unlock()`). Every SPI2 client holds the board lock around each group of transactions it issues: LCD flushes per DMA chunk and panel commands, every SD/FatFs transaction (taken automatically inside the storage I/O arbitration, so storage users never take it directly), and each CC1101/nRF24 register transfer. The board lock is defensive: it keeps clients from ever contending inside the driver's own bus lock, which has had shared-bus races in some ESP-IDF releases (for example the `spi_ll_get_running_cmd(hw) == 0` assert in `spi_hal_setup_trans`). Hold times stay short; the LCD releases between chunks so radios and SD can interleave. When both locks are needed, the storage I/O lock is always taken before the board SPI lock.
+
+A provider that must perform a **manual GPIO-level SPI sequence** outside a normal transaction must first reserve the shared bus through the board SPI abstraction (`board_spi_manual_acquire()`, which takes the board lock and acquires the driver bus), perform the manual sequence, release that reservation, and only then resume normal device transactions. Device drivers must not independently manipulate a shared-bus CS line while unrelated SPI clients can transact.
 
 App-session **PSRAM** is for retained observations, histories, captures, and other meaningfully sized/growable state. Internal SRAM remains appropriate for RTOS/system state, task stacks, latency-sensitive allocations, and small bounded DMA/peripheral buffers. Providers should prefer the simplest memory class that satisfies the fixed capacity and peripheral constraints; external PSRAM is reserved for cases where retained/growable size materially justifies it.
 
@@ -239,28 +246,51 @@ SD is removable/bulk storage for recordings, logs, breadcrumbs, captures, and fu
 
 The storage service owns the SD mount for the running firmware lifetime and latches physical-media loss unavailable rather than inventing an application-visible unmount/remount protocol.
 
-Current paths include:
+### Media store contract
 
-- Recorder WAV files under `/sdcard/audio/`;
-- rotating event logs under `/sdcard/logs/`; and
-- optional breadcrumb CSV files under `/sdcard/logs/breadcrumbs/`.
+All SD file access goes through the **media store** (`services/storage/media_store.h`). No system service or application constructs `/sdcard/...` paths, calls `fopen`/`opendir`/`mkdir` on the card, or depends on the mount point. The mount point is private to the storage service.
 
-The conservative hardware-tested SD baseline remains a FAT-compatible SanDisk card of 32 GB or less. Rotating logs use `rfscout-00.log` through `rfscout-99.log`, up to 4 MiB each, while attempting to preserve at least 64 MiB free.
+Files are addressed by **owner**, **collection**, and **name**, which map to readable FAT paths:
 
-Ordinary RFScout logs are newline-delimited structured records produced through the shared asynchronous log writer. Application lifecycle/telemetry logging also preserves each new transactional app-transition diagnostic as a `type:"transition"` record. The record reuses the lifecycle coordinator's existing diagnostic state rather than reconstructing transition results later and includes:
+```text
+/sdcard/<owner>/<collection>/<name>
+```
 
-- `seq` — monotonic transition-attempt sequence for the current boot;
-- `from` / `to` — application names;
-- `outcome` and `error` — lifecycle result and ESP error name;
-- `reclaimed` / `remaining` — managed bytes reclaimed from the source app and managed source allocations still present after committed reclamation;
-- `elapsed_us` — lifecycle transition duration; and
-- `psram_free` / `psram_largest` — free PSRAM and largest free PSRAM block captured when the transition result is finalized.
+- **Owner** is either the reserved `system` owner or an application's descriptor `persistence_key` (for example `audio` for Recorder). Applications cannot name another owner: app collections are resolved from the current app session. System collections are privileged platform API, in the same way as `system_store_*` on internal persistence.
+- **Collection** is one owner-local directory such as `logs`, `breadcrumbs`, or `recordings`. Collection names are lowercase ASCII letters, digits, `_`, and `-`.
+- **Name** is one file name within the collection. Names are validated: no path separators, no leading `.`, no control characters, and bounded length. Applications never pass paths.
 
-The same lifecycle diagnostics continue to be emitted through the ESP console for development, but when SD logging is available the structured record is the preferred source for field validation because it can be correlated directly with adjacent app and telemetry records. Logging is nevertheless **best-effort and non-authoritative**: application/lifecycle correctness must never depend on a record being accepted or persisted. If logging is disabled, unavailable, backpressured beyond the writer's bounded capacity, or fails, the record may be dropped and the producer continues without recovery coupling.
+Directory names are deliberately readable rather than hashed, because SD is the interchange medium a user inspects on a computer. Descriptor validation rejects a persistence key that is not a valid owner name or that collides with `system`.
 
-`app_logging` observes each new lifecycle transition sequence once and offers one structured transition record to the existing writer. It does not retry or retain a second logging backlog. This keeps logging failure below the application/lifecycle boundary: individual apps do not know whether SD logging is enabled or whether a particular record was accepted. Transition `seq` values remain monotonic for the boot, so gaps between persisted transition records indicate omitted observations without turning logging into a reliable-delivery protocol.
+A resolved collection is a small value that carries its owner identity. App collections also capture the app-session generation, so asynchronous work holding a collection from an exited app session is rejected rather than writing into the next session's namespace. Reads, listing, stat, and removal never create directories; opening a file for writing creates the owner/collection directories on demand.
 
-Breadcrumb recording is independent from the ordinary SD logging toggle and requires fresh valid GPS position **and GPS UTC**. Accepted fixes are sampled at most once every five seconds and bucketed into ten-minute GPS-UTC filenames. Current retention is file-count based.
+Current layout:
+
+| Owner | Collection | Contents |
+| --- | --- | --- |
+| `system` | `logs` | Rotating structured logs `rfscout-00.log` … `rfscout-99.log` |
+| `system` | `breadcrumbs` | Optional ten-minute GPS breadcrumb CSV buckets |
+| `audio` (Recorder) | `recordings` | Recorder 16-bit mono PCM WAV files |
+
+Files written by earlier firmware under `/sdcard/audio/`, `/sdcard/logs/`, or `/sdcard/logs/breadcrumbs/` are not migrated, browsed, rotated, or deleted by the current layout; they remain on the card for manual removal.
+
+### Media file handles and arbitration
+
+Open files are represented by opaque, generation-checked handles from a small fixed pool sized to the FAT open-file limit. A stale handle (already closed, or forcibly closed at app exit) is rejected rather than aliasing another owner's file.
+
+Every media operation — open, read, write, seek, truncate, sync, close, stat, list, remove, and capacity queries — runs as one bounded transaction under the storage service's I/O arbitration. Raw card-health probes therefore cannot interleave with a multi-command filesystem operation from any user, and no user takes the storage lock directly. Large transfers are naturally split into per-call transactions by their callers.
+
+Handles opened through an app collection belong to that app session. The lifecycle coordinator closes any app-owned media handle still open after the source app's services have quiesced, records the count in the transition diagnostics, and treats a nonzero count as a committed resource-invariant violation in the same way as remaining managed allocations. Services that write asynchronously on behalf of an app (for example Recorder recording or WAV playback) must still finish or stop through their ordinary session service/veto path; forced close is a safety net, not a shutdown protocol.
+
+After physical media loss, new opens and directory operations fail with `ESP_ERR_INVALID_STATE`; existing handles fail their next I/O but can still be closed. There is no remount beneath open handles.
+
+The media store also exposes a combined presence probe for hot-plug dependency checks (mount when no card has ever mounted, then verify the mounted card responds) and free-space queries.
+
+### Logging
+
+Rotating logs use `rfscout-00.log` through `rfscout-99.log` in `system/logs`, up to 4 MiB each, while attempting to preserve at least 64 MiB free. The conservative hardware-tested SD baseline remains a FAT-compatible SanDisk card of 32 GB or less.
+
+Breadcrumb recording is independent from the ordinary SD logging toggle and requires fresh valid GPS position **and GPS UTC**. Accepted fixes are sampled at most once every five seconds and bucketed into ten-minute GPS-UTC filenames in `system/breadcrumbs`. Current retention is file-count based.
 
 ## Firmware image and OTA architecture
 
@@ -329,13 +359,14 @@ Release validation should exercise rapid app rotation, low memory, callback/time
 
 Key invariants are:
 
-- successful app exit leaves zero managed allocations for the exited app;
+- successful app exit leaves zero managed allocations and zero open media handles for the exited app;
 - an aborted transition preserves source memory/state/presentation;
 - no worker/callback can reach reclaimed app state;
 - baseline free PSRAM and largest-free-block behavior do not decline monotonically through repeated cycles;
 - destination-session failure never dispatches ENTER without a valid view;
 - unknown hardware remains inert and providers never initialize outside profile legality;
 - internal configuration works without SD and corrupted/missing records recover to defaults;
+- no module outside the storage service constructs SD paths or performs direct SD filesystem calls;
 - Recorder operations cannot be truncated by application or terminal power transitions; and
 - OTA never marks an image bootable before identity, structure, byte-count, streaming SHA, and flash-readback checks all succeed.
 

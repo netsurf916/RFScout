@@ -182,9 +182,18 @@ static void close_pdm( void )
     }
 }
 
-static esp_err_t open_pdm( void )
+/**
+ * @brief Open and enable the PDM receive channel.
+ * @param a_measure_clock Measure and report the physical PDM clock. Real capture sessions do this
+ *        for calibration diagnostics; availability probes skip it so they stay quick, quiet, and
+ *        do not replace the last capture session's measurement.
+ */
+static esp_err_t open_pdm( bool a_measure_clock )
 {
-    measured_pdm_clock_hz = 0U;
+    if( a_measure_clock )
+    {
+        measured_pdm_clock_hz = 0U;
+    }
     i2s_chan_config_t channel_config = I2S_CHANNEL_DEFAULT_CONFIG( I2S_NUM_0, I2S_ROLE_MASTER );
     channel_config.dma_desc_num = AUDIO_CAPTURE_DMA_BUFFER_COUNT;
     channel_config.dma_frame_num = AUDIO_CAPTURE_DMA_BUFFER_LENGTH;
@@ -222,6 +231,11 @@ static esp_err_t open_pdm( void )
     {
         close_pdm();
         return result;
+    }
+
+    if( !a_measure_clock )
+    {
+        return ESP_OK;
     }
 
     measured_pdm_clock_hz = measure_pdm_clock_hz();
@@ -277,7 +291,7 @@ esp_err_t audio_capture_probe( void )
         return ESP_ERR_NOT_SUPPORTED;
     }
 
-    esp_err_t result = open_pdm();
+    esp_err_t result = open_pdm( false );
     if( ESP_OK != result )
     {
         return result;
@@ -289,13 +303,13 @@ esp_err_t audio_capture_probe( void )
     (void)gpio_set_pull_mode( RFSCOUT_BOARD_MIC_DATA_PIN, GPIO_FLOATING );
     if( edges < AUDIO_CAPTURE_PDM_PROBE_MIN_EDGES )
     {
-        ESP_LOGI( TAG,
+        ESP_LOGD( TAG,
                   "PDM probe: data_edges=%u/%ums; not detected",
                   (unsigned)edges,
                   AUDIO_CAPTURE_PDM_PROBE_MS );
         return ESP_ERR_NOT_FOUND;
     }
-    ESP_LOGI( TAG,
+    ESP_LOGD( TAG,
               "PDM probe: data_edges=%u/%ums; detected",
               (unsigned)edges,
               AUDIO_CAPTURE_PDM_PROBE_MS );
@@ -314,7 +328,7 @@ esp_err_t audio_capture_open( rfscout_audio_capture_format_t *a_format )
     {
         return ESP_ERR_NOT_SUPPORTED;
     }
-    const esp_err_t result = open_pdm();
+    const esp_err_t result = open_pdm( true );
 
     if( ESP_OK != result )
     {

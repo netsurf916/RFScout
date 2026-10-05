@@ -121,6 +121,30 @@ static void wait_for_transfer( void )
     }
 }
 
+/** @brief Send one panel on/off command while holding the board SPI lock. */
+static esp_err_t panel_disp_on_off_locked( bool a_on )
+{
+    if( !board_spi_lock( RFSCOUT_BOARD_SPI_WAIT_FOREVER ) )
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+    const esp_err_t result = esp_lcd_panel_disp_on_off( panel, a_on );
+    board_spi_unlock();
+    return result;
+}
+
+/** @brief Send one panel sleep command while holding the board SPI lock. */
+static esp_err_t panel_disp_sleep_locked( bool a_sleep )
+{
+    if( !board_spi_lock( RFSCOUT_BOARD_SPI_WAIT_FOREVER ) )
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+    const esp_err_t result = esp_lcd_panel_disp_sleep( panel, a_sleep );
+    board_spi_unlock();
+    return result;
+}
+
 static esp_err_t apply_st7789_init_sequence( esp_lcd_panel_io_handle_t a_io,
                                              const st7789_init_command_t *a_sequence,
                                              size_t a_count )
@@ -222,7 +246,7 @@ esp_err_t display_set_output_enabled( bool a_enabled )
         return ESP_OK;
     }
 
-    const esp_err_t result = esp_lcd_panel_disp_on_off( panel, a_enabled );
+    const esp_err_t result = panel_disp_on_off_locked( a_enabled );
     if( ESP_OK == result )
     {
         output_enabled = a_enabled;
@@ -256,7 +280,7 @@ esp_err_t display_enter_low_power( void )
         return output_result;
     }
 
-    const esp_err_t sleep_result = esp_lcd_panel_disp_sleep( panel, true );
+    const esp_err_t sleep_result = panel_disp_sleep_locked( true );
     if( ESP_OK != sleep_result )
     {
         (void)display_set_output_enabled( true );
@@ -279,7 +303,7 @@ esp_err_t display_exit_low_power( void )
         return display_set_output_enabled( true );
     }
 
-    const esp_err_t sleep_result = esp_lcd_panel_disp_sleep( panel, false );
+    const esp_err_t sleep_result = panel_disp_sleep_locked( false );
     if( ESP_OK != sleep_result )
     {
         return sleep_result;
@@ -289,7 +313,7 @@ esp_err_t display_exit_low_power( void )
     const esp_err_t output_result = display_set_output_enabled( true );
     if( ESP_OK != output_result )
     {
-        (void)esp_lcd_panel_disp_sleep( panel, true );
+        (void)panel_disp_sleep_locked( true );
         return output_result;
     }
 
@@ -439,6 +463,16 @@ esp_err_t display_init( void )
         return ESP_ERR_NO_MEM;
     }
 
+    /* Panel bring-up issues many command transactions; keep them together on the shared bus. */
+    if( !board_spi_lock( RFSCOUT_BOARD_SPI_WAIT_FOREVER ) )
+    {
+        heap_caps_free( dma_buffer );
+        dma_buffer = NULL;
+        heap_caps_free( framebuffer );
+        framebuffer = NULL;
+        return ESP_ERR_TIMEOUT;
+    }
+
     esp_lcd_panel_io_handle_t io = NULL;
     esp_lcd_panel_io_spi_config_t io_config = { .dc_gpio_num = RFSCOUT_BOARD_DISPLAY_DC_PIN,
                                                 .cs_gpio_num = RFSCOUT_BOARD_DISPLAY_CS_PIN,
@@ -472,6 +506,7 @@ esp_err_t display_init( void )
     ESP_ERROR_CHECK( esp_lcd_panel_invert_color( panel, RFSCOUT_BOARD_DISPLAY_INVERT_COLOR ) );
     vTaskDelay( pdMS_TO_TICKS( DISPLAY_ST7789_DISPLAY_ON_SETTLE_MS ) );
     ESP_ERROR_CHECK( esp_lcd_panel_disp_on_off( panel, true ) );
+    board_spi_unlock();
     vTaskDelay( pdMS_TO_TICKS( DISPLAY_ST7789_DISPLAY_ON_SETTLE_MS ) );
     output_enabled = true;
 
@@ -594,14 +629,24 @@ esp_err_t display_flush( void )
             fill_dma_row( y + row, &dma_buffer[ (size_t)row * RFSCOUT_DISPLAY_WIDTH ] );
         }
 
+        /* Hold the board SPI lock per DMA chunk, not per frame, so radios and SD can interleave
+           between chunks exactly as they could through the driver queue alone. */
+        if( !board_spi_lock( RFSCOUT_BOARD_SPI_WAIT_FOREVER ) )
+        {
+            return ESP_ERR_TIMEOUT;
+        }
         transfer_done = false;
         const esp_err_t result =
             esp_lcd_panel_draw_bitmap( panel, 0, y, RFSCOUT_DISPLAY_WIDTH, y + rows, dma_buffer );
+        if( ESP_OK == result )
+        {
+            wait_for_transfer();
+        }
+        board_spi_unlock();
         if( ESP_OK != result )
         {
             return result;
         }
-        wait_for_transfer();
     }
 
     display_mark_clean();

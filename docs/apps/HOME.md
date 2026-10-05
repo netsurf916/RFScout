@@ -19,9 +19,9 @@ Current settings include:
 - 12/24-hour clock presentation;
 - Auto/Manual time policy, timezone, and manual date/time fields;
 - preferred startup application and per-app enablement;
-- SD logging;
+- SD logging to the `system/logs` media collection;
 - supported power-button actions and protective power policy;
-- breadcrumb recording and retained breadcrumb-file count;
+- breadcrumb recording to the `system/breadcrumbs` media collection and retained breadcrumb-file count;
 - global Hold shortcut selection between **Input Lock** and **App Lock**; and
 - application notification preferences exposed through the relevant app settings.
 

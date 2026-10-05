@@ -324,6 +324,77 @@ Remaining work:
 - [ ] Decide whether notification and Recorder/content playback levels remain independent or participate in an explicit shared/master output policy.
 - [ ] If a master output policy is introduced, define composition with Normal/Quiet, environmental gain, content audio, defaults, persistence, clamping, and migration.
 
+### Workstream G: application framework isolation and platform services
+
+**Status:** In progress. G1 is implemented pending hardware validation; G2 is next.
+
+Applications should consume complete, owner-scoped platform services rather than reaching into shared filesystem paths, central configuration structures, or core boot code. Each slice below should leave the documented framework contracts in [ARCHITECTURE.md](ARCHITECTURE.md) true for every existing consumer, not just for the newest application.
+
+#### G1: SD media store
+
+**Status:** Implemented as documented in [ARCHITECTURE.md](ARCHITECTURE.md#media-store-contract); hardware validation open.
+
+Replace hard-coded SD paths and direct stdio/POSIX card access with one storage-owned media store addressed as `/sdcard/<owner>/<collection>/<name>`, where the owner is `system` or an application's descriptor `persistence_key`.
+
+- [x] Add `media_store` with system collections, app-session collections (generation-checked), validated collection/file names, and on-demand directory creation for writes only.
+- [x] Provide generation-checked file handles from a fixed pool sized to the FAT open-file limit: open (read / create-exclusive / append / replace), read, write, seek, size, truncate, sync, close.
+- [x] Provide stat, remove, list, free-space, availability, and a combined hot-plug presence probe.
+- [x] Run every media operation as one bounded transaction under storage I/O arbitration; make the mount point and arbitration lock private to the storage service.
+- [x] Track app-owned handles and force-close them during committed app exit; report the count as `media_closed` in transition diagnostics/logs and treat nonzero as a resource-invariant violation.
+- [x] Validate descriptor persistence keys as media owner names and reserve `system`.
+- [x] Move the SD log writer to `system/logs`.
+- [x] Move breadcrumbs to `system/breadcrumbs`.
+- [x] Move Recorder recording, enumeration, validation, deletion, and post-processing to the `recordings` app collection, and WAV playback to collection/name addressing.
+- [x] Remove `RFSCOUT_STORAGE_MOUNT_POINT`, `RFSCOUT_STORAGE_LOG_DIRECTORY`, and `RFSCOUT_RECORDER_DIRECTORY` from public headers; status/power/Home/Recorder code uses media-store availability instead of storage internals.
+- [x] No migration: files written by earlier firmware under `/sdcard/audio/` and `/sdcard/logs/` remain on the card untouched. Release notes must call this out.
+- [ ] Hardware-validate logging, breadcrumbs (when a GPS provider is present), Recorder record/save/browse/delete/playback, SD removal while each is active, forced-close diagnostics, and repeated Recorder enter/exit with zero remaining media handles.
+
+#### G2: Hotspotter Lite application
+
+**Status:** Planned; starts after G1.
+
+A lightweight, realtime view of nearby **open** Wi-Fi access points and whether each currently provides Internet connectivity. It is derived from the standalone Hotspotter project but intentionally narrower.
+
+Scope:
+
+- realtime only: results live in app-session PSRAM and are released when the app is left;
+- no GPS, location, distance, or history;
+- no persistent storage of any kind (no SD media collections and no internal app records beyond ordinary system-owned app enablement);
+- no credential entry, profiles, or secured networks; hidden SSIDs are not actionable;
+- this is RFScout's first application that **associates** with third-party networks. UI and documentation must state that explicitly, and checking must remain a clearly user-controlled behavior rather than a side effect of passive observation.
+
+Check sequence for one open BSSID:
+
+1. passive scan provides BSSID, SSID, channel, RSSI, and auth mode;
+2. associate pinned to that BSSID with no credentials, then complete DHCP — failure marks the AP **red / failed**;
+3. synchronize wall-clock time with the existing SNTP path after association;
+4. if NTP **fails or times out**, do **not** attempt HTTPS and mark the AP **yellow**;
+5. if NTP succeeds, perform one certificate-validated HTTPS viability request (Cloudflare `/cdn-cgi/trace`); HTTP 200 marks **green**, any other result marks **yellow**; and
+6. disconnect and return to passive scanning; every stage is bounded by its own timeout and cancellable when the app is left.
+
+Platform prerequisites (generalize existing services rather than adding an app-private Wi-Fi stack):
+
+- [ ] Extend the station service scan snapshot to per-BSSID records including auth mode (Home's strongest-per-SSID Network view becomes a projection of it).
+- [ ] Add BSSID-pinned open-network association without credentials.
+- [ ] Make post-association SNTP caller-controlled with an observable success/failure/timeout result (Home keeps its current automatic behavior).
+- [ ] Add a session-managed, cancellable HTTPS probe service usable by any app (status code, bounded body parse, timeout), declared through a descriptor service bit.
+- [ ] Add the app descriptor, view, and documentation page (`docs/apps/`), and update README application order.
+
+Open decisions:
+
+- [ ] Manual per-AP check only, or an additional opt-in automatic mode using Hotspotter's -80 dBm floor / +4 dB retry gating.
+- [ ] Whether OWE (Enhanced Open) networks are eligible; default is plain open only.
+- [ ] Whether to randomize the station MAC per attempt (locally administered) to avoid cross-hotspot tracking.
+- [ ] User-facing application name and position in navigation order.
+
+#### Further framework isolation candidates
+
+Not yet scheduled; recorded so later application work does not deepen these couplings:
+
+- [ ] Descriptor-owned app settings schemas instead of app-specific fields/setters in `device_config` (Recorder volume, Wi-Fi/BLE timeouts and feedback, evidence threshold).
+- [ ] Move WiFi/BLE observation handling (`on_observation`, observation logging, store initialization) out of `rfscout.c` and behind the app's activation path.
+- [ ] Descriptor-declared hard dependencies (for example SD media, microphone) so availability is derived uniformly instead of in app-specific probe code.
+
 ### v0.4.0 release validation gate
 
 v0.4.0 is not complete until:
@@ -351,6 +422,7 @@ v0.4.0 is not complete until:
 - [ ] Shared capability/status presentation derives from semantic application availability.
 - [ ] Theme selection and Normal/Quiet audio policy operate independently with migration/default behavior verified.
 - [ ] System-event history remains bounded/volatile, notifications do not disturb application lifecycle state, and attention wake returns to the original idle timeline.
+- [ ] All SD access goes through the media store; no module outside the storage service constructs SD paths, and app exit leaves zero open app media handles.
 - [ ] Production documentation reflects implemented behavior and release notes distinguish user-visible changes from internal resource-management work.
 
 ## Completed foundation before v0.4.0

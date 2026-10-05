@@ -9,9 +9,8 @@
 
 #include "device_time.h"
 #include "gps.h"
+#include "media_store.h"
 #include "memory_manager.h"
-#include "storage.h"
-#include "storage_internal.h"
 
 #include "esp_app_desc.h"
 #include "esp_log.h"
@@ -20,13 +19,10 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
-#include <errno.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <time.h>
-#include <unistd.h>
 
 #define LOG_BUFFER_INITIAL 512U
 #define LOG_BUFFER_MAX 4096U
@@ -40,6 +36,9 @@
 #define LOG_BATCH_POLL_MS 100U
 #define LOG_SHUTDOWN_POLL_MS 20U
 #define LOG_SEQUENCE_PREFIX "{\"type\":\"sequence\",\"sequence\":"
+#define LOG_COLLECTION "logs"
+#define LOG_SEGMENT_NAME_MAX 24U
+#define LOG_HEADER_MAX 256U
 
 static const char *TAG = "log_writer";
 static SemaphoreHandle_t buffer_lock;
@@ -49,7 +48,9 @@ static size_t buffer_used;
 static size_t buffer_capacity;
 static size_t record_start;
 static int64_t buffer_started_us;
-static FILE *active_file;
+static rfscout_media_collection_t log_collection;
+static rfscout_media_file_t active_file;
+static bool active_open;
 static uint32_t active_sequence;
 static unsigned active_slot;
 static size_t active_size;
@@ -63,37 +64,37 @@ static const rfscout_memory_owner_t log_owner = {
     .owner_class = RFSCOUT_MEMORY_OWNER_PLATFORM,
 };
 
-static void mark_io_error( const char *a_operation )
+static void mark_io_error( const char *a_operation, esp_err_t a_result )
 {
     io_error = true;
-    ESP_LOGE( TAG, "%s failed: errno=%d", a_operation, errno );
+    ESP_LOGE( TAG, "%s failed: %s", a_operation, esp_err_to_name( a_result ) );
 }
 
-static void segment_path( unsigned a_slot, char *a_path, size_t a_capacity )
+static void segment_name( unsigned a_slot, char *a_name, size_t a_capacity )
 {
-    snprintf( a_path,
-              a_capacity,
-              RFSCOUT_STORAGE_LOG_DIRECTORY "/rfscout-%02u.log",
-              a_slot % RFSCOUT_LOG_SEGMENT_COUNT );
+    snprintf( a_name, a_capacity, "rfscout-%02u.log", a_slot % RFSCOUT_LOG_SEGMENT_COUNT );
 }
 
 static bool read_sequence( unsigned a_slot, uint32_t *a_sequence )
 {
-    char path[ 64 ];
-    segment_path( a_slot, path, sizeof( path ) );
-    FILE *file = fopen( path, "r" );
-    if( NULL == file )
+    char name[ LOG_SEGMENT_NAME_MAX ];
+    segment_name( a_slot, name, sizeof( name ) );
+    rfscout_media_file_t file;
+    if( ESP_OK != media_open( &log_collection, name, RFSCOUT_MEDIA_OPEN_READ, &file ) )
     {
         return false;
     }
 
     char line[ 64 ];
-    const bool read_ok = ( NULL != fgets( line, sizeof( line ), file ) );
-    fclose( file );
+    size_t length = 0U;
+    const bool read_ok =
+        ( ESP_OK == media_read( &file, line, sizeof( line ) - 1U, &length ) ) && ( length > 0U );
+    (void)media_close( &file );
     if( !read_ok )
     {
         return false;
     }
+    line[ length ] = '\0';
 
     unsigned long sequence = 0;
     if( 1 != sscanf( line, LOG_SEQUENCE_PREFIX "%lu}", &sequence ) )
@@ -156,11 +157,12 @@ static bool delete_oldest_segment( void )
         return false;
     }
 
-    char path[ 64 ];
-    segment_path( oldest_slot, path, sizeof( path ) );
-    if( 0 != unlink( path ) )
+    char name[ LOG_SEGMENT_NAME_MAX ];
+    segment_name( oldest_slot, name, sizeof( name ) );
+    const esp_err_t result = media_remove( &log_collection, name );
+    if( ESP_OK != result )
     {
-        mark_io_error( "oldest log deletion" );
+        mark_io_error( "oldest log deletion", result );
         return false;
     }
     return true;
@@ -169,7 +171,7 @@ static bool delete_oldest_segment( void )
 static void enforce_free_space_reserve( void )
 {
     uint64_t free_bytes = 0;
-    while( ( ESP_OK == storage_get_capacity( NULL, &free_bytes ) ) &&
+    while( ( ESP_OK == media_store_space( NULL, &free_bytes ) ) &&
            ( free_bytes < RFSCOUT_LOG_FREE_RESERVE ) )
     {
         if( !delete_oldest_segment() )
@@ -187,123 +189,141 @@ static void advance_segment( void )
     active_size = 0U;
 }
 
+/** @brief Write one formatted header line to the active segment. */
+static bool write_header_line( const char *a_line, int a_length, const char *a_operation )
+{
+    if( a_length < 0 || (size_t)a_length >= LOG_HEADER_MAX )
+    {
+        io_error = true;
+        ESP_LOGE( TAG, "%s exceeded header capacity", a_operation );
+        return false;
+    }
+    const esp_err_t result = media_write( &active_file, a_line, (size_t)a_length );
+    if( ESP_OK != result )
+    {
+        mark_io_error( a_operation, result );
+        return false;
+    }
+    active_size += (size_t)a_length;
+    return true;
+}
+
 static bool open_segment( void )
 {
-    if( NULL != active_file )
+    if( active_open )
     {
         return true;
     }
 
-    char path[ 64 ];
-    segment_path( active_slot, path, sizeof( path ) );
+    char name[ LOG_SEGMENT_NAME_MAX ];
+    segment_name( active_slot, name, sizeof( name ) );
 
     if( active_size > 0U )
     {
-        struct stat state;
-        if( 0 != stat( path, &state ) )
+        rfscout_media_entry_t entry;
+        const esp_err_t stat_result = media_stat( &log_collection, name, &entry );
+        if( ESP_OK != stat_result )
         {
-            mark_io_error( "log size query" );
+            mark_io_error( "log size query", stat_result );
             return false;
         }
-        if( state.st_size < 0 )
-        {
-            io_error = true;
-            ESP_LOGE( TAG, "log size query returned a negative file size" );
-            return false;
-        }
-        active_size = (size_t)state.st_size;
+        active_size = (size_t)entry.size_bytes;
     }
 
     if( active_size >= RFSCOUT_LOG_SEGMENT_SIZE )
     {
         advance_segment();
-        segment_path( active_slot, path, sizeof( path ) );
+        segment_name( active_slot, name, sizeof( name ) );
     }
 
     if( 0U == active_size )
     {
-        if( ( 0 != unlink( path ) ) && ( ENOENT != errno ) )
+        const esp_err_t remove_result = media_remove( &log_collection, name );
+        if( ( ESP_OK != remove_result ) && ( ESP_ERR_NOT_FOUND != remove_result ) )
         {
-            mark_io_error( "log replacement" );
+            mark_io_error( "log replacement", remove_result );
             return false;
         }
         enforce_free_space_reserve();
-        active_file = fopen( path, "w" );
-        if( NULL == active_file )
+        const esp_err_t open_result =
+            media_open( &log_collection, name, RFSCOUT_MEDIA_OPEN_REPLACE, &active_file );
+        if( ESP_OK != open_result )
         {
-            mark_io_error( "log open" );
+            mark_io_error( "log open", open_result );
             return false;
         }
-        const int header_length =
-            fprintf( active_file, LOG_SEQUENCE_PREFIX "%lu}\n", (unsigned long)active_sequence );
-        if( header_length < 0 )
+        active_open = true;
+
+        char header[ LOG_HEADER_MAX ];
+        int length = snprintf( header,
+                               sizeof( header ),
+                               LOG_SEQUENCE_PREFIX "%lu}\n",
+                               (unsigned long)active_sequence );
+        if( !write_header_line( header, length, "log header write" ) )
         {
-            mark_io_error( "log header write" );
-            fclose( active_file );
-            active_file = NULL;
+            (void)media_close( &active_file );
+            active_open = false;
             return false;
         }
-        active_size = (size_t)header_length;
 
         const esp_app_desc_t *app = esp_app_get_description();
-        const int version_length = fprintf( active_file,
-                                            "{\"type\":\"version\",\"version\":\"%s\","
-                                            "\"project\":\"%s\",\"idf\":\"%s\","
-                                            "\"build_date\":\"%s\",\"build_time\":\"%s\"}\n",
-                                            app->version,
-                                            app->project_name,
-                                            app->idf_ver,
-                                            app->date,
-                                            app->time );
-        if( version_length < 0 )
+        length = snprintf( header,
+                           sizeof( header ),
+                           "{\"type\":\"version\",\"version\":\"%s\","
+                           "\"project\":\"%s\",\"idf\":\"%s\","
+                           "\"build_date\":\"%s\",\"build_time\":\"%s\"}\n",
+                           app->version,
+                           app->project_name,
+                           app->idf_ver,
+                           app->date,
+                           app->time );
+        if( !write_header_line( header, length, "log version header write" ) )
         {
-            mark_io_error( "log version header write" );
-            fclose( active_file );
-            active_file = NULL;
+            (void)media_close( &active_file );
+            active_open = false;
             return false;
         }
-        active_size += (size_t)version_length;
         ESP_LOGI( TAG,
-                  "logging to %s sequence=%lu version=%s",
-                  path,
+                  "logging to %s/%s sequence=%lu version=%s",
+                  LOG_COLLECTION,
+                  name,
                   (unsigned long)active_sequence,
                   app->version );
         return true;
     }
 
-    active_file = fopen( path, "a" );
-    if( NULL == active_file )
+    const esp_err_t append_result =
+        media_open( &log_collection, name, RFSCOUT_MEDIA_OPEN_APPEND, &active_file );
+    if( ESP_OK != append_result )
     {
-        mark_io_error( "log append open" );
+        mark_io_error( "log append open", append_result );
         return false;
     }
+    active_open = true;
     return true;
 }
 
 static bool close_segment( void )
 {
-    if( NULL == active_file )
+    if( !active_open )
     {
         return true;
     }
 
     bool success = true;
-    if( 0 != fflush( active_file ) )
+    const esp_err_t sync_result = media_sync( &active_file );
+    if( ESP_OK != sync_result )
     {
-        mark_io_error( "log flush" );
+        mark_io_error( "log sync", sync_result );
         success = false;
     }
-    if( 0 != fsync( fileno( active_file ) ) )
+    const esp_err_t close_result = media_close( &active_file );
+    if( ESP_OK != close_result )
     {
-        mark_io_error( "log sync" );
+        mark_io_error( "log close", close_result );
         success = false;
     }
-    if( 0 != fclose( active_file ) )
-    {
-        mark_io_error( "log close" );
-        success = false;
-    }
-    active_file = NULL;
+    active_open = false;
     return success;
 }
 
@@ -716,14 +736,6 @@ static bool flush_buffer( void )
     flush_requested = false;
     xSemaphoreGive( buffer_lock );
 
-    if( !storage_io_acquire( RFSCOUT_STORAGE_WAIT_FOREVER ) )
-    {
-        io_error = true;
-        flush_requested = true;
-        ESP_LOGE( TAG, "could not acquire SD I/O lock for log burst" );
-        return false;
-    }
-
     bool success = open_segment();
     if( success && ( active_size + burst_size > RFSCOUT_LOG_SEGMENT_SIZE ) )
     {
@@ -752,28 +764,26 @@ static bool flush_buffer( void )
         memcpy( chunk, buffer, chunk_size );
         xSemaphoreGive( buffer_lock );
 
-        size_t offset = 0U;
-        while( offset < chunk_size )
+        if( 0U == chunk_size )
         {
-            const size_t written = fwrite( &chunk[ offset ], 1U, chunk_size - offset, active_file );
-            if( 0U == written )
-            {
-                mark_io_error( "SD log write" );
-                success = false;
-                break;
-            }
-            active_size += written;
-            offset += written;
-            remaining -= written;
-            consume_buffer_prefix( written );
+            break;
         }
+        const esp_err_t write_result = media_write( &active_file, chunk, chunk_size );
+        if( ESP_OK != write_result )
+        {
+            mark_io_error( "SD log write", write_result );
+            success = false;
+            break;
+        }
+        active_size += chunk_size;
+        remaining -= chunk_size;
+        consume_buffer_prefix( chunk_size );
     }
 
     if( !close_segment() )
     {
         success = false;
     }
-    storage_io_release();
 
     xSemaphoreTake( buffer_lock, portMAX_DELAY );
     if( 0U == buffer_used )
@@ -844,15 +854,15 @@ esp_err_t log_writer_init( void )
     }
 
     io_error = false;
-    active_file = NULL;
-    if( !storage_is_available() )
+    active_open = false;
+    if( !media_store_available() )
     {
         return ESP_ERR_INVALID_STATE;
     }
-    if( ( 0 != mkdir( RFSCOUT_STORAGE_LOG_DIRECTORY, 0775 ) ) && ( EEXIST != errno ) )
+    const esp_err_t collection_result = media_system_collection( LOG_COLLECTION, &log_collection );
+    if( ESP_OK != collection_result )
     {
-        mark_io_error( "log directory creation" );
-        return ESP_FAIL;
+        return collection_result;
     }
     if( NULL == buffer_lock )
     {

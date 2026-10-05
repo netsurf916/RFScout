@@ -17,11 +17,11 @@
 #include "display.h"
 #include "event.h"
 #include "log_writer.h"
+#include "media_store.h"
 #include "morse.h"
 #include "ota_menu.h"
 #include "power.h"
 #include "power_policy_view.h"
-#include "storage.h"
 #include "ui_chrome.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
@@ -1309,7 +1309,7 @@ static void toggle_logging( void )
         return;
     }
 
-    if( !storage_is_available() || ( ESP_OK != log_writer_init() ) )
+    if( !media_store_available() || ( ESP_OK != log_writer_init() ) )
     {
         save_error = true;
         return;

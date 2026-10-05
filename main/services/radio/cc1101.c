@@ -92,7 +92,12 @@ static esp_err_t transfer( uint8_t a_header, uint8_t a_data, uint8_t *a_result )
     transaction.tx_buffer = tx;
     transaction.rx_buffer = rx;
 
+    if( !board_spi_lock( RFSCOUT_BOARD_SPI_WAIT_FOREVER ) )
+    {
+        return ESP_ERR_TIMEOUT;
+    }
     const esp_err_t result = spi_device_transmit( device, &transaction );
+    board_spi_unlock();
     if( ( ESP_OK == result ) && ( NULL != a_result ) )
     {
         *a_result = rx[ 1 ];
@@ -624,7 +629,7 @@ esp_err_t cc1101_probe( void )
 
         detected = ( ESP_OK == result ) && ( 0x00U == part ) && ( 0x00U != version ) &&
                    ( 0xFFU != version );
-        ESP_LOGI( TAG,
+        ESP_LOGD( TAG,
                   "probe attempt=%u part=0x%02x version=0x%02x detected=%d",
                   attempt + 1U,
                   part,

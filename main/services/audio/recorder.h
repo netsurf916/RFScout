@@ -17,7 +17,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define RFSCOUT_RECORDER_DIRECTORY "/sdcard/audio"
+/** Recorder app media collection holding WAV recordings (owner is the Recorder persistence key). */
+#define RFSCOUT_RECORDER_COLLECTION "recordings"
 #define RFSCOUT_RECORDER_SAMPLE_RATE RFSCOUT_AUDIO_CAPTURE_SAMPLE_RATE
 #define RFSCOUT_RECORDER_WAV_RATE_MIN 8000U
 #define RFSCOUT_RECORDER_WAV_RATE_MAX 48000U
@@ -47,7 +48,12 @@ typedef struct
 /** @brief Probe the active board audio-capture provider through the shared capture service. */
 esp_err_t recorder_probe_microphone( void );
 
-/** @brief Initialize recorder state and enumerate valid WAV files when storage is mounted. */
+/**
+ * @brief Initialize recorder state and enumerate valid WAV files when storage is mounted.
+ * @details Recording-file operations (init, refresh, record, delete, playback) resolve the
+ *          Recorder media collection from the current app session and must be called from the
+ *          Recorder application session.
+ */
 esp_err_t recorder_init( void );
 
 /** @brief Refresh storage state and the playable recording list. */

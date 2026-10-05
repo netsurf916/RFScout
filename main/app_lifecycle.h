@@ -25,6 +25,7 @@ typedef enum
     RFSCOUT_APP_TRANSITION_COMMITTED,
     RFSCOUT_APP_TRANSITION_ABORTED_PREPARE,
     RFSCOUT_APP_TRANSITION_ABORTED_SERVICE_RESTORE,
+    /** Committed, but managed allocations or open media handles remained after reclamation. */
     RFSCOUT_APP_TRANSITION_COMMITTED_MEMORY_INVARIANT,
     RFSCOUT_APP_TRANSITION_COMMITTED_DESTINATION_FAILED
 } rfscout_app_transition_outcome_t;
@@ -50,6 +51,8 @@ typedef struct
     esp_err_t error;
     size_t reclaimed_bytes;
     size_t remaining_allocations;
+    /** App-owned SD media handles force-closed after the source app quiesced; expected zero. */
+    size_t closed_media_handles;
     size_t psram_free_bytes;
     size_t psram_largest_free_block;
     int64_t elapsed_us;
@@ -64,7 +67,8 @@ esp_err_t app_lifecycle_init( void );
  * @details Semantic Prepare runs first, then the platform resource session quiesces its services.
  *          Any service-close failure invokes session-owned service restoration while app-owned
  *          memory remains intact. After commit, all remaining managed allocations for the source
- *          app are reclaimed and verified before the destination session is established.
+ *          app are reclaimed and verified, and any media handle the source app left open is
+ *          force-closed and counted, before the destination session is established.
  */
 const rfscout_app_transition_diagnostics_t *app_lifecycle_transition(
     rfscout_app_id_t a_from, rfscout_app_id_t a_to, const rfscout_app_lifecycle_hooks_t *a_hooks );

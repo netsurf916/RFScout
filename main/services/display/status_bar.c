@@ -13,8 +13,8 @@
 #include "gps.h"
 #include "input.h"
 #include "log_writer.h"
+#include "media_store.h"
 #include "mlx90640.h"
-#include "storage.h"
 #include "ui_theme.h"
 
 #include <stdbool.h>
@@ -121,7 +121,7 @@ bool status_bar_snapshot( rfscout_status_bar_state_t *a_state )
     memset( a_state, 0, sizeof( *a_state ) );
     a_state->input_locked = input_locked();
     a_state->app_locked = app_manager_locked();
-    a_state->sd_available = storage_is_available();
+    a_state->sd_available = media_store_available();
     a_state->storage_error = log_writer_has_error();
     a_state->thermal_available = mlx90640_is_detected();
 

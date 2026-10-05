@@ -15,11 +15,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define RFSCOUT_STORAGE_MOUNT_POINT "/sdcard"
-#define RFSCOUT_STORAGE_LOG_DIRECTORY "/sdcard/logs"
-
 /**
  * @brief Mount the SD card on the board's already initialized shared SPI bus.
+ * @details The mount point is private to the storage service. Other modules access files only
+ *          through media_store.h.
  * @return ESP_OK on success or the underlying ESP-IDF storage error.
  * @note Failure is nonfatal to the rest of RFScout. A successful mount remains owned by the
  *       platform for the lifetime of the running firmware.

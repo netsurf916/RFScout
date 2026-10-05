@@ -128,6 +128,7 @@ idf_component_register(
         "services/thermal/mlx90640.c"
         "services/storage/storage.c"
         "services/storage/persistent_store.c"
+        "services/storage/media_store.c"
         "services/storage/log_writer.c"
         "services/storage/breadcrumbs.c"
         "services/update/ota_acquisition.c"

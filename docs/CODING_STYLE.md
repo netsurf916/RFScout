@@ -42,6 +42,7 @@ Public APIs with non-obvious lifetime behavior must document whether pointers ar
 - Every functional module has a `.h` interface and a `.c` implementation.
 - Headers contain public types, constants, and function declarations; non-trivial function bodies belong in `.c` files.
 - Hardware pin definitions are centralized in `board.h`; drivers should not scatter literal GPIO numbers through implementations.
+- Removable SD storage is accessed only through `media_store.h` collections and handles. Do not construct `/sdcard` paths or call stdio/POSIX filesystem functions on the card outside the storage service.
 - Include guards are used in addition to `#pragma once`.
 - Keep project headers, SDK headers, and C library headers in visually separate include groups when practical.
 - Public functions, callback typedefs, and public data types require Doxygen documentation.

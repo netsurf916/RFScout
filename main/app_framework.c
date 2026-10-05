@@ -11,6 +11,7 @@
 #include "audio_capture.h"
 #include "board.h"
 #include "event.h"
+#include "media_store.h"
 #include "persistent_store.h"
 
 #include "esp_log.h"
@@ -137,7 +138,9 @@ static bool persistence_identity_valid( const rfscout_app_descriptor_t *a_descri
     }
     const size_t length =
         strnlen( a_descriptor->persistence_key, RFSCOUT_PERSISTENT_KEY_MAX_BYTES + 1U );
-    return length > 0U && length <= RFSCOUT_PERSISTENT_KEY_MAX_BYTES;
+    /* The persistence key is also the app's readable SD media owner directory. */
+    return length > 0U && length <= RFSCOUT_PERSISTENT_KEY_MAX_BYTES &&
+           media_owner_name_valid( a_descriptor->persistence_key );
 }
 
 esp_err_t app_framework_init( void )
@@ -203,16 +206,6 @@ bool app_framework_check_available( rfscout_app_id_t a_app )
         (void)probe_descriptor( descriptor );
     }
     return RFSCOUT_APP_AVAILABILITY_AVAILABLE == availability[ a_app ];
-}
-
-void app_framework_refresh_hotplug( rfscout_app_id_t a_app )
-{
-    const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
-    if( ( NULL != descriptor ) && profile_supports_services( descriptor->services ) &&
-        ( RFSCOUT_APP_PROBE_HOTPLUG == descriptor->probe_policy ) )
-    {
-        (void)probe_descriptor( descriptor );
-    }
 }
 
 void app_framework_report_availability( rfscout_app_id_t a_app,

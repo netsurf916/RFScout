@@ -74,6 +74,7 @@ static void write_transition_record( const rfscout_app_transition_diagnostics_t 
         log_str( &record, "error", esp_err_to_name( a_diagnostics->error ) ) &&
         log_uint( &record, "reclaimed", a_diagnostics->reclaimed_bytes ) &&
         log_uint( &record, "remaining", a_diagnostics->remaining_allocations ) &&
+        log_uint( &record, "media_closed", a_diagnostics->closed_media_handles ) &&
         log_int( &record, "elapsed_us", a_diagnostics->elapsed_us ) &&
         log_uint( &record, "psram_free", a_diagnostics->psram_free_bytes ) &&
         log_uint( &record, "psram_largest", a_diagnostics->psram_largest_free_block );

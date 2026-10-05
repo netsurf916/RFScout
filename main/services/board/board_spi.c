@@ -19,11 +19,49 @@
 
 static bool initialized;
 static spi_device_handle_t manual_guard_device;
-static StaticSemaphore_t manual_mutex_control;
-static SemaphoreHandle_t manual_mutex;
+static StaticSemaphore_t bus_mutex_control;
+static SemaphoreHandle_t bus_mutex;
+
+/** @brief Create the recursive board SPI lock; first used during single-threaded startup. */
+static void ensure_bus_mutex( void )
+{
+    if( NULL == bus_mutex )
+    {
+        bus_mutex = xSemaphoreCreateRecursiveMutexStatic( &bus_mutex_control );
+    }
+}
+
+bool board_spi_lock( uint32_t a_timeout_ms )
+{
+    ensure_bus_mutex();
+    if( NULL == bus_mutex )
+    {
+        return false;
+    }
+
+    TickType_t timeout = portMAX_DELAY;
+    if( RFSCOUT_BOARD_SPI_WAIT_FOREVER != a_timeout_ms )
+    {
+        timeout = pdMS_TO_TICKS( a_timeout_ms );
+        if( ( a_timeout_ms > 0U ) && ( 0U == timeout ) )
+        {
+            timeout = 1U;
+        }
+    }
+    return pdTRUE == xSemaphoreTakeRecursive( bus_mutex, timeout );
+}
+
+void board_spi_unlock( void )
+{
+    if( NULL != bus_mutex )
+    {
+        (void)xSemaphoreGiveRecursive( bus_mutex );
+    }
+}
 
 esp_err_t board_spi_init( void )
 {
+    ensure_bus_mutex();
     if( initialized )
     {
         return ESP_OK;
@@ -41,14 +79,6 @@ esp_err_t board_spi_init( void )
         initialized = true;
     }
     return result;
-}
-
-static void ensure_manual_mutex( void )
-{
-    if( NULL == manual_mutex )
-    {
-        manual_mutex = xSemaphoreCreateMutexStatic( &manual_mutex_control );
-    }
 }
 
 static esp_err_t ensure_manual_guard_device( void )
@@ -71,13 +101,7 @@ esp_err_t board_spi_manual_acquire( void )
         return result;
     }
 
-    ensure_manual_mutex();
-    if( NULL == manual_mutex )
-    {
-        return ESP_ERR_NO_MEM;
-    }
-
-    if( pdTRUE != xSemaphoreTake( manual_mutex, portMAX_DELAY ) )
+    if( !board_spi_lock( RFSCOUT_BOARD_SPI_WAIT_FOREVER ) )
     {
         return ESP_ERR_TIMEOUT;
     }
@@ -90,21 +114,16 @@ esp_err_t board_spi_manual_acquire( void )
 
     if( ESP_OK != result )
     {
-        (void)xSemaphoreGive( manual_mutex );
+        board_spi_unlock();
     }
     return result;
 }
 
 void board_spi_manual_release( void )
 {
-    if( NULL == manual_mutex )
-    {
-        return;
-    }
-
     if( NULL != manual_guard_device )
     {
         spi_device_release_bus( manual_guard_device );
     }
-    (void)xSemaphoreGive( manual_mutex );
+    board_spi_unlock();
 }

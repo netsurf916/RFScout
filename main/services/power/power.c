@@ -15,11 +15,11 @@
 #include "display.h"
 #include "display_idle.h"
 #include "log_writer.h"
+#include "media_store.h"
 #include "input.h"
 #include "platform.h"
 #include "recorder.h"
 #include "session_state.h"
-#include "storage.h"
 
 #include "driver/gpio.h"
 #include "esp_log.h"
@@ -159,7 +159,7 @@ static bool prepare_for_power_state( void )
         return false;
     }
 
-    if( !storage_is_available() )
+    if( !media_store_available() )
     {
         return true;
     }
@@ -228,7 +228,7 @@ static void restore_display_after_failed_power_off( void )
 /** @brief Restart SD background writers after a failed physical power-off request. */
 static void restore_storage_writers_after_failed_power_off( void )
 {
-    if( !storage_is_available() )
+    if( !media_store_available() )
     {
         return;
     }

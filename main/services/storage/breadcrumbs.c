@@ -8,27 +8,23 @@
 #include "breadcrumbs.h"
 
 #include "gps.h"
+#include "media_store.h"
 #include "persistent_store.h"
-#include "storage.h"
-#include "storage_internal.h"
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 #include <ctype.h>
-#include <dirent.h>
-#include <errno.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <time.h>
-#include <unistd.h>
 
-#define BREADCRUMB_DIRECTORY RFSCOUT_STORAGE_LOG_DIRECTORY "/breadcrumbs"
+#define BREADCRUMB_COLLECTION "breadcrumbs"
 #define BREADCRUMB_SETTINGS_KEY "breadcrumbs"
 #define BREADCRUMB_SETTINGS_VERSION 1U
 #define BREADCRUMB_SETTINGS_SIZE 4U
@@ -40,9 +36,9 @@
 #define BREADCRUMB_SHUTDOWN_POLL_MS 20U
 #define BREADCRUMB_FILENAME_LENGTH 15U
 #define BREADCRUMB_FILENAME_CAPACITY ( BREADCRUMB_FILENAME_LENGTH + 1U )
-#define BREADCRUMB_PATH_CAPACITY                                                                   \
-    ( sizeof( BREADCRUMB_DIRECTORY ) + BREADCRUMB_FILENAME_LENGTH + 1U )
 #define BREADCRUMB_CSV_HEADER "timestamp_utc,latitude_deg,longitude_deg\n"
+#define BREADCRUMB_CSV_HEADER_LENGTH ( sizeof( BREADCRUMB_CSV_HEADER ) - 1U )
+#define BREADCRUMB_LINE_MAX 96U
 
 typedef struct
 {
@@ -71,6 +67,19 @@ static volatile bool worker_quiesced;
 static bool settings_loaded;
 static volatile bool enabled;
 static volatile uint16_t file_limit = RFSCOUT_BREADCRUMB_FILE_LIMIT_DEFAULT;
+static rfscout_media_collection_t collection;
+static StaticSemaphore_t write_mutex_control;
+static SemaphoreHandle_t write_mutex;
+
+/** @brief Retention scan state shared by the two media_list() passes. */
+typedef struct
+{
+    char *retained;
+    size_t retained_count;
+    size_t limit;
+    size_t count;
+    const char *threshold;
+} breadcrumb_trim_scan_t;
 
 static esp_err_t persist_settings( bool a_enabled, uint16_t a_file_limit )
 {
@@ -121,21 +130,6 @@ static void load_settings( void )
     file_limit = stored_limit;
 }
 
-static bool ensure_directory_locked( void )
-{
-    if( 0 != mkdir( RFSCOUT_STORAGE_LOG_DIRECTORY, 0775 ) && EEXIST != errno )
-    {
-        ESP_LOGE( TAG, "log directory creation failed: errno=%d", errno );
-        return false;
-    }
-    if( 0 == mkdir( BREADCRUMB_DIRECTORY, 0775 ) || EEXIST == errno )
-    {
-        return true;
-    }
-    ESP_LOGE( TAG, "breadcrumb directory creation failed: errno=%d", errno );
-    return false;
-}
-
 static bool breadcrumb_filename_valid( const char *a_name )
 {
     if( NULL == a_name || BREADCRUMB_FILENAME_LENGTH != strlen( a_name ) ||
@@ -158,22 +152,6 @@ static void copy_breadcrumb_filename( char *a_destination, const char *a_source 
     memcpy( a_destination, a_source, BREADCRUMB_FILENAME_CAPACITY );
 }
 
-static bool breadcrumb_path_from_filename( const char *a_filename, char *a_path, size_t a_capacity )
-{
-    const size_t directory_length = sizeof( BREADCRUMB_DIRECTORY ) - 1U;
-    const size_t required = directory_length + 1U + BREADCRUMB_FILENAME_CAPACITY;
-    if( NULL == a_filename || NULL == a_path || a_capacity < required ||
-        !breadcrumb_filename_valid( a_filename ) )
-    {
-        return false;
-    }
-
-    memcpy( a_path, BREADCRUMB_DIRECTORY, directory_length );
-    a_path[ directory_length ] = '/';
-    memcpy( &a_path[ directory_length + 1U ], a_filename, BREADCRUMB_FILENAME_CAPACITY );
-    return true;
-}
-
 static char *retained_slot( char *a_retained, size_t a_index )
 {
     return &a_retained[ a_index * BREADCRUMB_FILENAME_CAPACITY ];
@@ -192,10 +170,52 @@ static size_t oldest_retained_index( char *a_retained, size_t a_count )
     return oldest;
 }
 
-static void trim_files_locked( void )
+/** @brief First retention pass: count bucket files and remember the newest `limit` names. */
+static bool collect_retained( const rfscout_media_entry_t *a_entry, void *a_context )
+{
+    breadcrumb_trim_scan_t *scan = a_context;
+    if( !breadcrumb_filename_valid( a_entry->name ) )
+    {
+        return true;
+    }
+    ++scan->count;
+    if( scan->retained_count < scan->limit )
+    {
+        copy_breadcrumb_filename( retained_slot( scan->retained, scan->retained_count ),
+                                  a_entry->name );
+        ++scan->retained_count;
+        return true;
+    }
+
+    const size_t oldest = oldest_retained_index( scan->retained, scan->retained_count );
+    if( strcmp( a_entry->name, retained_slot( scan->retained, oldest ) ) > 0 )
+    {
+        copy_breadcrumb_filename( retained_slot( scan->retained, oldest ), a_entry->name );
+    }
+    return true;
+}
+
+/** @brief Second retention pass: delete bucket files older than the retained threshold. */
+static bool delete_expired( const rfscout_media_entry_t *a_entry, void *a_context )
+{
+    const breadcrumb_trim_scan_t *scan = a_context;
+    if( !breadcrumb_filename_valid( a_entry->name ) ||
+        0 <= strcmp( a_entry->name, scan->threshold ) )
+    {
+        return true;
+    }
+    const esp_err_t result = media_remove( &collection, a_entry->name );
+    if( ESP_OK != result )
+    {
+        ESP_LOGE( TAG, "breadcrumb retention delete failed: %s", esp_err_to_name( result ) );
+    }
+    return true;
+}
+
+static void trim_files( void )
 {
     const uint16_t limit = file_limit;
-    if( 0U == limit )
+    if( 0U == limit || !media_store_available() )
     {
         return;
     }
@@ -208,84 +228,24 @@ static void trim_files_locked( void )
         return;
     }
 
-    DIR *directory = opendir( BREADCRUMB_DIRECTORY );
-    if( NULL == directory )
+    breadcrumb_trim_scan_t scan = {
+        .retained = retained,
+        .limit = limit,
+    };
+    if( ESP_OK != media_list( &collection, collect_retained, &scan ) || scan.count <= limit ||
+        0U == scan.retained_count )
     {
         heap_caps_free( retained );
         return;
     }
 
-    size_t count = 0U;
-    size_t retained_count = 0U;
-    struct dirent *entry;
-    while( NULL != ( entry = readdir( directory ) ) )
-    {
-        if( !breadcrumb_filename_valid( entry->d_name ) )
-        {
-            continue;
-        }
-        ++count;
-        if( retained_count < limit )
-        {
-            copy_breadcrumb_filename( retained_slot( retained, retained_count ), entry->d_name );
-            ++retained_count;
-            continue;
-        }
-
-        const size_t oldest = oldest_retained_index( retained, retained_count );
-        if( strcmp( entry->d_name, retained_slot( retained, oldest ) ) > 0 )
-        {
-            copy_breadcrumb_filename( retained_slot( retained, oldest ), entry->d_name );
-        }
-    }
-    closedir( directory );
-
-    if( count <= limit || 0U == retained_count )
-    {
-        heap_caps_free( retained );
-        return;
-    }
-
-    const size_t threshold_index = oldest_retained_index( retained, retained_count );
+    const size_t threshold_index = oldest_retained_index( retained, scan.retained_count );
     char threshold[ BREADCRUMB_FILENAME_CAPACITY ];
     copy_breadcrumb_filename( threshold, retained_slot( retained, threshold_index ) );
     heap_caps_free( retained );
 
-    directory = opendir( BREADCRUMB_DIRECTORY );
-    if( NULL == directory )
-    {
-        return;
-    }
-    while( NULL != ( entry = readdir( directory ) ) )
-    {
-        if( !breadcrumb_filename_valid( entry->d_name ) || 0 <= strcmp( entry->d_name, threshold ) )
-        {
-            continue;
-        }
-        char path[ BREADCRUMB_PATH_CAPACITY ];
-        if( !breadcrumb_path_from_filename( entry->d_name, path, sizeof( path ) ) )
-        {
-            continue;
-        }
-        if( 0 != unlink( path ) )
-        {
-            ESP_LOGE( TAG, "breadcrumb retention delete failed: errno=%d", errno );
-        }
-    }
-    closedir( directory );
-}
-
-static void trim_files( void )
-{
-    if( !storage_is_available() || !storage_io_acquire( RFSCOUT_STORAGE_WAIT_FOREVER ) )
-    {
-        return;
-    }
-    if( ensure_directory_locked() )
-    {
-        trim_files_locked();
-    }
-    storage_io_release();
+    scan.threshold = threshold;
+    (void)media_list( &collection, delete_expired, &scan );
 }
 
 static void request_trim( void )
@@ -296,7 +256,8 @@ static void request_trim( void )
     }
 }
 
-static bool format_bucket_path( time_t a_utc_epoch, char *a_path, size_t a_capacity )
+static bool format_bucket_name( time_t a_utc_epoch,
+                                char a_filename[ BREADCRUMB_FILENAME_CAPACITY ] )
 {
     struct tm utc;
     if( NULL == gmtime_r( &a_utc_epoch, &utc ) )
@@ -304,14 +265,13 @@ static bool format_bucket_path( time_t a_utc_epoch, char *a_path, size_t a_capac
         return false;
     }
 
-    char filename[ BREADCRUMB_FILENAME_CAPACITY ];
-    if( 10U != strftime( filename, sizeof( filename ), "%Y%m%d%H", &utc ) )
+    if( 10U != strftime( a_filename, BREADCRUMB_FILENAME_CAPACITY, "%Y%m%d%H", &utc ) )
     {
         return false;
     }
-    filename[ 10 ] = (char)( '0' + ( utc.tm_min / 10 ) );
-    memcpy( &filename[ 11 ], ".csv", 5U );
-    return breadcrumb_path_from_filename( filename, a_path, a_capacity );
+    a_filename[ 10 ] = (char)( '0' + ( utc.tm_min / 10 ) );
+    memcpy( &a_filename[ 11 ], ".csv", 5U );
+    return breadcrumb_filename_valid( a_filename );
 }
 
 static bool format_timestamp( time_t a_utc_epoch, char *a_output, size_t a_capacity )
@@ -324,102 +284,76 @@ static bool format_timestamp( time_t a_utc_epoch, char *a_output, size_t a_capac
     return 0U != strftime( a_output, a_capacity, "%Y-%m-%dT%H:%M:%SZ", &utc );
 }
 
-static breadcrumb_header_status_t existing_header_status( const char *a_path )
+static breadcrumb_header_status_t existing_header_status( const char *a_name )
 {
-    FILE *file = fopen( a_path, "r" );
-    if( NULL == file )
+    rfscout_media_file_t file;
+    if( ESP_OK != media_open( &collection, a_name, RFSCOUT_MEDIA_OPEN_READ, &file ) )
     {
         return BREADCRUMB_HEADER_IO_ERROR;
     }
 
-    char header[ sizeof( BREADCRUMB_CSV_HEADER ) ];
-    if( NULL == fgets( header, sizeof( header ), file ) )
-    {
-        const bool io_error = 0 != ferror( file );
-        if( 0 != fclose( file ) )
-        {
-            return BREADCRUMB_HEADER_IO_ERROR;
-        }
-        return io_error ? BREADCRUMB_HEADER_IO_ERROR : BREADCRUMB_HEADER_INVALID;
-    }
-
-    const bool valid = 0 == strcmp( header, BREADCRUMB_CSV_HEADER );
-    if( 0 != fclose( file ) )
+    char header[ BREADCRUMB_CSV_HEADER_LENGTH ];
+    size_t length = 0U;
+    const esp_err_t read_result = media_read( &file, header, sizeof( header ), &length );
+    if( ESP_OK != media_close( &file ) || ESP_OK != read_result )
     {
         return BREADCRUMB_HEADER_IO_ERROR;
     }
-    return valid ? BREADCRUMB_HEADER_VALID : BREADCRUMB_HEADER_INVALID;
+    return ( sizeof( header ) == length &&
+             0 == memcmp( header, BREADCRUMB_CSV_HEADER, BREADCRUMB_CSV_HEADER_LENGTH ) )
+               ? BREADCRUMB_HEADER_VALID
+               : BREADCRUMB_HEADER_INVALID;
 }
 
-static bool prepare_append( FILE *a_file, bool a_new_file, off_t a_size )
+static bool prepare_append( const rfscout_media_file_t *a_file, bool a_empty_file )
 {
-    if( a_new_file || 0 == a_size )
+    if( a_empty_file )
     {
-        return EOF != fputs( BREADCRUMB_CSV_HEADER, a_file );
+        return ESP_OK == media_write( a_file, BREADCRUMB_CSV_HEADER, BREADCRUMB_CSV_HEADER_LENGTH );
     }
 
-    if( 0 != fseek( a_file, -1L, SEEK_END ) )
+    char tail = '\0';
+    size_t length = 0U;
+    if( ESP_OK != media_seek( a_file, -1, RFSCOUT_MEDIA_SEEK_END ) ||
+        ESP_OK != media_read( a_file, &tail, 1U, &length ) || 1U != length )
     {
         return false;
     }
-    const int tail = fgetc( a_file );
-    if( EOF == tail )
+    /* Reposition before switching from reading to writing; append mode then writes at the end. */
+    if( ESP_OK != media_seek( a_file, 0, RFSCOUT_MEDIA_SEEK_END ) )
     {
         return false;
     }
-    if( 0 != fseek( a_file, 0L, SEEK_END ) )
-    {
-        return false;
-    }
-    return '\n' == tail || EOF != fputc( '\n', a_file );
+    return '\n' == tail || ESP_OK == media_write( a_file, "\n", 1U );
 }
 
-static void write_record( const breadcrumb_record_t *a_record )
+/** @brief Append one record; caller holds write_mutex so disable cannot race a write. */
+static void write_record_locked( const breadcrumb_record_t *a_record )
 {
-    if( NULL == a_record || !storage_is_available() ||
-        !storage_io_acquire( RFSCOUT_STORAGE_WAIT_FOREVER ) )
-    {
-        return;
-    }
-
-    if( !enabled )
-    {
-        storage_io_release();
-        return;
-    }
-
-    if( !ensure_directory_locked() )
-    {
-        storage_io_release();
-        return;
-    }
-
-    char path[ BREADCRUMB_PATH_CAPACITY ];
+    char name[ BREADCRUMB_FILENAME_CAPACITY ];
     char timestamp[ 32 ];
-    if( !format_bucket_path( a_record->utc_epoch, path, sizeof( path ) ) ||
+    if( !format_bucket_name( a_record->utc_epoch, name ) ||
         !format_timestamp( a_record->utc_epoch, timestamp, sizeof( timestamp ) ) )
     {
-        storage_io_release();
         return;
     }
 
-    struct stat state;
-    const bool new_file = 0 != stat( path, &state );
-    if( new_file && ENOENT != errno )
+    rfscout_media_entry_t entry;
+    const esp_err_t stat_result = media_stat( &collection, name, &entry );
+    const bool new_file = ESP_OK != stat_result;
+    if( new_file && ESP_ERR_NOT_FOUND != stat_result )
     {
-        ESP_LOGE( TAG, "breadcrumb size query failed: errno=%d", errno );
-        storage_io_release();
+        ESP_LOGE( TAG, "breadcrumb size query failed: %s", esp_err_to_name( stat_result ) );
         return;
     }
 
     breadcrumb_header_status_t header_status = BREADCRUMB_HEADER_VALID;
     if( !new_file )
     {
-        header_status = existing_header_status( path );
+        header_status = existing_header_status( name );
         if( BREADCRUMB_HEADER_IO_ERROR == header_status )
         {
-            ESP_LOGE( TAG, "breadcrumb header read failed: errno=%d", errno );
-            storage_io_release();
+            ESP_LOGE( TAG, "breadcrumb header read failed" );
             return;
         }
     }
@@ -430,46 +364,67 @@ static void write_record( const breadcrumb_record_t *a_record )
         ESP_LOGW( TAG, "recreating breadcrumb bucket with incomplete header" );
     }
 
-    FILE *file = fopen( path, recreate_file ? "w+" : "a+" );
-    if( NULL == file )
+    rfscout_media_file_t file;
+    const esp_err_t open_result =
+        media_open( &collection,
+                    name,
+                    recreate_file ? RFSCOUT_MEDIA_OPEN_REPLACE : RFSCOUT_MEDIA_OPEN_APPEND,
+                    &file );
+    if( ESP_OK != open_result )
     {
-        ESP_LOGE( TAG, "breadcrumb append open failed: errno=%d", errno );
-        storage_io_release();
+        ESP_LOGE( TAG, "breadcrumb append open failed: %s", esp_err_to_name( open_result ) );
         return;
     }
 
-    const bool empty_file = new_file || recreate_file;
-    bool success = prepare_append( file, empty_file, empty_file ? 0 : state.st_size );
-    if( success && 0 > fprintf( file,
-                                "%s,%.7f,%.7f\n",
-                                timestamp,
-                                a_record->latitude_deg,
-                                a_record->longitude_deg ) )
+    const bool empty_file = new_file || recreate_file || 0U == entry.size_bytes;
+    bool success = prepare_append( &file, empty_file );
+
+    char line[ BREADCRUMB_LINE_MAX ];
+    const int length = snprintf( line,
+                                 sizeof( line ),
+                                 "%s,%.7f,%.7f\n",
+                                 timestamp,
+                                 a_record->latitude_deg,
+                                 a_record->longitude_deg );
+    if( success && ( length < 0 || (size_t)length >= sizeof( line ) ) )
     {
         success = false;
     }
-    if( success && 0 != fflush( file ) )
+    if( success && ESP_OK != media_write( &file, line, (size_t)length ) )
     {
         success = false;
     }
-    if( success && 0 != fsync( fileno( file ) ) )
+    if( success && ESP_OK != media_sync( &file ) )
     {
         success = false;
     }
-    if( 0 != fclose( file ) )
+    if( ESP_OK != media_close( &file ) )
     {
         success = false;
     }
 
     if( !success )
     {
-        ESP_LOGE( TAG, "breadcrumb write failed: errno=%d", errno );
+        ESP_LOGE( TAG, "breadcrumb write failed" );
     }
     else if( new_file )
     {
-        trim_files_locked();
+        trim_files();
     }
-    storage_io_release();
+}
+
+static void write_record( const breadcrumb_record_t *a_record )
+{
+    if( NULL == a_record || !media_store_available() || NULL == write_mutex )
+    {
+        return;
+    }
+    (void)xSemaphoreTake( write_mutex, portMAX_DELAY );
+    if( enabled )
+    {
+        write_record_locked( a_record );
+    }
+    (void)xSemaphoreGive( write_mutex );
 }
 
 static void worker( void *a_argument )
@@ -510,9 +465,19 @@ esp_err_t breadcrumbs_init( void )
         shutdown_requested = false;
         return ESP_OK;
     }
-    if( !storage_is_available() )
+    if( !media_store_available() )
     {
         return ESP_ERR_INVALID_STATE;
+    }
+    const esp_err_t collection_result =
+        media_system_collection( BREADCRUMB_COLLECTION, &collection );
+    if( ESP_OK != collection_result )
+    {
+        return collection_result;
+    }
+    if( NULL == write_mutex )
+    {
+        write_mutex = xSemaphoreCreateMutexStatic( &write_mutex_control );
     }
 
     queue = xQueueCreateStatic(
@@ -543,7 +508,7 @@ esp_err_t breadcrumbs_init( void )
 void breadcrumbs_poll( void )
 {
     if( NULL == queue || shutdown_requested || !enabled || !gps_available() ||
-        !storage_is_available() )
+        !media_store_available() )
     {
         return;
     }
@@ -587,9 +552,11 @@ esp_err_t breadcrumbs_set_enabled( bool a_enabled )
         return ESP_OK;
     }
 
-    if( !a_enabled && !storage_io_acquire( RFSCOUT_STORAGE_WAIT_FOREVER ) )
+    /* Disabling waits for any in-progress append so no record lands after the setting changes. */
+    const bool hold_writes = !a_enabled && NULL != write_mutex;
+    if( hold_writes )
     {
-        return ESP_ERR_NO_MEM;
+        (void)xSemaphoreTake( write_mutex, portMAX_DELAY );
     }
 
     const esp_err_t result = persist_settings( a_enabled, file_limit );
@@ -604,9 +571,9 @@ esp_err_t breadcrumbs_set_enabled( bool a_enabled )
         }
     }
 
-    if( !a_enabled )
+    if( hold_writes )
     {
-        storage_io_release();
+        (void)xSemaphoreGive( write_mutex );
     }
     return result;
 }

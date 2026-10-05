@@ -11,8 +11,8 @@
 #include "device_config.h"
 #include "event.h"
 #include "recorder.h"
+#include "media_store.h"
 #include "recorder_view.h"
-#include "storage.h"
 
 #include "esp_log.h"
 
@@ -44,14 +44,7 @@ static void emit_event( rfscout_event_type_t a_type, int32_t a_value )
 
 static esp_err_t probe_recorder( void )
 {
-    if( !storage_is_available() )
-    {
-        if( ESP_OK != storage_init() )
-        {
-            return ESP_ERR_NOT_FOUND;
-        }
-    }
-    if( ESP_OK != storage_probe_card() )
+    if( ESP_OK != media_store_probe() )
     {
         return ESP_ERR_NOT_FOUND;
     }
@@ -276,7 +269,7 @@ static bool dependency_lost( int64_t a_now_us )
         return false;
     }
     last_dependency_probe_us = a_now_us;
-    return ESP_OK != storage_probe_card();
+    return ESP_OK != media_store_probe();
 }
 
 static esp_err_t prepare_leave( void )

@@ -4,13 +4,13 @@ Recorder is RFScout's SD-backed microphone recording and playback application. S
 
 ## Availability
 
-Recorder uses the board-neutral `audio_capture` service plus removable SD storage and follows the common **hot-plug** probe path. Both required dependencies are checked through retry-safe probes; the microphone result is not privately cached after one attempt. If no card mounted at startup, later hot-plug probes retry the ordinary mount and can make Recorder available after insertion. Runtime SD removal is still latched unavailable once a mounted filesystem is lost; automatic **remount after loss** is intentionally not supported yet because filesystem/open-file lifetime must be reconciled first.
+Recorder uses the board-neutral `audio_capture` service plus removable SD storage and follows the common **hot-plug** probe path. Both required dependencies are checked through retry-safe probes; the microphone result is not privately cached after one attempt. Storage presence uses the media store's combined probe: if no card mounted at startup, the next navigation availability check retries the ordinary mount and can make Recorder available after insertion. There is no background re-probe while Recorder is inactive. Runtime SD removal is still latched unavailable once a mounted filesystem is lost; automatic **remount after loss** is intentionally not supported yet because filesystem/open-file lifetime must be reconciled first.
 
 The current T-Embed profile supplies a PDM microphone through the shared audio-capture provider. Recorder never receives a raw I2S handle.
 
 ## Recording
 
-Recorder requests a **16 kHz** capture target and writes **16-bit mono PCM WAV** files under `/sdcard/audio/`.
+Recorder requests a **16 kHz** capture target and writes **16-bit mono PCM WAV** files to its `recordings` media collection, which the platform media store places at `/sdcard/audio/recordings/` (Recorder's persistence key is `audio`). Recorder addresses files only by collection and name; it does not construct SD paths. WAV files left directly under `/sdcard/audio/` by earlier firmware are not listed or deleted.
 
 Capture itself is not software pre-amplified. After capture, Recorder performs asynchronous post-processing that:
 
@@ -68,6 +68,8 @@ Recording and finalization are semantic transition blockers. While either is act
 - RFScout does not attempt to reconstruct or restart an interrupted recording.
 
 Playback can be stopped normally when Recorder is left or a terminal transition is prepared.
+
+Recording and playback files are app-owned media handles. The audio-capture session service stops recording/playback before Recorder's session closes, so the lifecycle coordinator's forced media-handle close is expected to find nothing to close.
 
 ## Current limitations
 

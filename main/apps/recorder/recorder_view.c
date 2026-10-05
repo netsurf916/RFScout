@@ -86,7 +86,7 @@ void recorder_view_landing( const char *a_playback_name, uint8_t a_playback_volu
     else if( RFSCOUT_RECORDER_NO_STORAGE == state )
     {
         display_draw_text( UI_LAYOUT_LEFT_X, 42, "NO SD CARD", theme->error, 2U );
-        display_draw_text( UI_LAYOUT_LEFT_X, 76, "/sdcard/audio unavailable", theme->divider, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 76, "SD storage unavailable", theme->divider, 1U );
     }
     else if( RFSCOUT_RECORDER_ERROR == state )
     {

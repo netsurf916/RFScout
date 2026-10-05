@@ -20,7 +20,6 @@
 #include "freertos/semphr.h"
 #include "sdmmc_cmd.h"
 
-#define STORAGE_MAX_OPEN_FILES 5
 #define STORAGE_PROBE_IO_TIMEOUT_MS 250U
 
 static const char *TAG = "storage";
@@ -55,13 +54,29 @@ bool storage_io_acquire( uint32_t a_timeout_ms )
             timeout = 1U;
         }
     }
-    return pdTRUE == xSemaphoreTakeRecursive( io_mutex, timeout );
+    if( pdTRUE != xSemaphoreTakeRecursive( io_mutex, timeout ) )
+    {
+        return false;
+    }
+
+    /* Every SD transaction also holds the board SPI lock so it cannot contend with the LCD or
+       radios inside the shared-bus driver. Lock order is always storage I/O, then board SPI. */
+    const uint32_t bus_timeout_ms = ( RFSCOUT_STORAGE_WAIT_FOREVER == a_timeout_ms )
+                                        ? RFSCOUT_BOARD_SPI_WAIT_FOREVER
+                                        : a_timeout_ms;
+    if( !board_spi_lock( bus_timeout_ms ) )
+    {
+        (void)xSemaphoreGiveRecursive( io_mutex );
+        return false;
+    }
+    return true;
 }
 
 void storage_io_release( void )
 {
     if( NULL != io_mutex )
     {
+        board_spi_unlock();
         (void)xSemaphoreGiveRecursive( io_mutex );
     }
 }
@@ -94,11 +109,18 @@ esp_err_t storage_init( void )
     slot.gpio_cs = RFSCOUT_BOARD_SD_CS_PIN;
 
     const esp_vfs_fat_sdmmc_mount_config_t mount_config = { .format_if_mount_failed = false,
-                                                            .max_files = STORAGE_MAX_OPEN_FILES,
+                                                            .max_files =
+                                                                RFSCOUT_STORAGE_MAX_OPEN_FILES,
                                                             .allocation_unit_size = 16U * 1024U };
 
+    /* Mounting talks to the card; hot-plug probes can run it while other SPI clients are active. */
+    if( !storage_io_acquire( RFSCOUT_STORAGE_WAIT_FOREVER ) )
+    {
+        return ESP_ERR_TIMEOUT;
+    }
     const esp_err_t result =
         esp_vfs_fat_sdspi_mount( RFSCOUT_STORAGE_MOUNT_POINT, &host, &slot, &mount_config, &card );
+    storage_io_release();
     if( ESP_OK != result )
     {
         card = NULL;

@@ -49,7 +49,7 @@ The current supported runtime profile is the **LILYGO T-Embed CC1101 Plus**. A m
 
 Every active application has a platform-owned resource session and managed view. Session-managed workers/services are quiesced before app-owned memory is reclaimed. Large retained app state belongs in external PSRAM; internal SRAM remains reserved for stacks, DMA/peripheral-constrained allocations, system state, and latency-sensitive work.
 
-Persistent preferences are firmware-managed internal records split between system-owned and descriptor-confined app namespaces. SD is removable/bulk storage for logs, recordings, breadcrumbs, and future explicit transfer packages; it is not configuration authority.
+Persistent preferences are firmware-managed internal records split between system-owned and descriptor-confined app namespaces. SD is removable/bulk storage for logs, recordings, breadcrumbs, and future explicit transfer packages; it is not configuration authority. All SD access goes through the platform media store, which places files at `/sdcard/<owner>/<collection>/<name>` where the owner is `system` or an app's persistence key.
 
 Infrastructure Wi-Fi and firmware update are Home-owned platform workflows. A/B OTA streams an application image directly into the ESP-IDF-selected inactive slot, validates identity/size/SHA/image structure/readback before boot commit, and relies on ESP-IDF first-boot rollback until mandatory common startup confirms the new image.
 

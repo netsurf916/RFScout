@@ -9,6 +9,7 @@
 
 #include "app_manager.h"
 #include "app_session.h"
+#include "media_store.h"
 #include "memory_manager.h"
 
 #include "esp_heap_caps.h"
@@ -23,7 +24,7 @@ static void log_transition( const rfscout_app_transition_diagnostics_t *a_diagno
 {
     ESP_LOGI( TAG,
               "transition seq=%u from=%d to=%d outcome=%d error=%s reclaimed=%u remaining=%u "
-              "elapsed=%lldus psram_free=%u psram_largest=%u",
+              "media_closed=%u elapsed=%lldus psram_free=%u psram_largest=%u",
               (unsigned)a_diagnostics->sequence,
               (int)a_diagnostics->from,
               (int)a_diagnostics->to,
@@ -31,6 +32,7 @@ static void log_transition( const rfscout_app_transition_diagnostics_t *a_diagno
               esp_err_to_name( a_diagnostics->error ),
               (unsigned)a_diagnostics->reclaimed_bytes,
               (unsigned)a_diagnostics->remaining_allocations,
+              (unsigned)a_diagnostics->closed_media_handles,
               (long long)a_diagnostics->elapsed_us,
               (unsigned)a_diagnostics->psram_free_bytes,
               (unsigned)a_diagnostics->psram_largest_free_block );
@@ -159,14 +161,26 @@ const rfscout_app_transition_diagnostics_t *app_lifecycle_transition(
 
     diagnostics->reclaimed_bytes = memory_manager_release_app( a_from );
     diagnostics->remaining_allocations = memory_manager_app_allocation_count( a_from );
-    if( 0U != diagnostics->remaining_allocations )
+    diagnostics->closed_media_handles = media_store_close_app( a_from );
+    if( 0U != diagnostics->closed_media_handles )
+    {
+        ESP_LOGE( TAG,
+                  "committed app exit left %u media handles open from=%d",
+                  (unsigned)diagnostics->closed_media_handles,
+                  (int)a_from );
+    }
+    if( ( 0U != diagnostics->remaining_allocations ) ||
+        ( 0U != diagnostics->closed_media_handles ) )
     {
         diagnostics->outcome = RFSCOUT_APP_TRANSITION_COMMITTED_MEMORY_INVARIANT;
         diagnostics->error = ESP_ERR_INVALID_STATE;
-        ESP_LOGE( TAG,
-                  "committed app exit left %u managed allocations from=%d",
-                  (unsigned)diagnostics->remaining_allocations,
-                  (int)a_from );
+        if( 0U != diagnostics->remaining_allocations )
+        {
+            ESP_LOGE( TAG,
+                      "committed app exit left %u managed allocations from=%d",
+                      (unsigned)diagnostics->remaining_allocations,
+                      (int)a_from );
+        }
     }
     else
     {

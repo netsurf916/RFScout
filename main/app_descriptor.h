@@ -104,6 +104,7 @@ typedef struct
 {
     rfscout_app_id_t id;
     const char *name;
+    /** Stable internal-record namespace and readable SD media owner directory ([a-z0-9_-]). */
     const char *persistence_key;
     rfscout_app_probe_policy_t probe_policy;
     esp_err_t ( *probe )( void );

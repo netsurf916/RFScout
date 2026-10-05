@@ -34,7 +34,6 @@
 #define AUDIO_OUTPUT_DMA_FRAME_NUM 240U
 #define AUDIO_OUTPUT_TRAILING_SILENCE_MS 20U
 #define AUDIO_OUTPUT_MAX_VOLUME_PERCENT 100U
-#define AUDIO_OUTPUT_WAV_PATH_MAX 160U
 #define AUDIO_OUTPUT_WAV_HEADER_SIZE 44U
 
 typedef enum
@@ -61,7 +60,8 @@ typedef struct
     char character;
     uint8_t volume_percent;
     uint32_t generation;
-    char path[ AUDIO_OUTPUT_WAV_PATH_MAX ];
+    rfscout_media_collection_t collection;
+    char name[ RFSCOUT_MEDIA_NAME_MAX + 1U ];
 } audio_output_command_t;
 
 static const char *TAG = "audio_output";
@@ -290,20 +290,24 @@ static void play_wav( const audio_output_command_t *a_command )
     }
 
     playback_worker_active = true;
-    FILE *file = fopen( a_command->path, "rb" );
-    if( NULL == file )
+    rfscout_media_file_t file;
+    const esp_err_t open_result =
+        media_open( &a_command->collection, a_command->name, RFSCOUT_MEDIA_OPEN_READ, &file );
+    if( ESP_OK != open_result )
     {
-        ESP_LOGW( TAG, "could not open WAV %s", a_command->path );
+        ESP_LOGW(
+            TAG, "could not open WAV %s: %s", a_command->name, esp_err_to_name( open_result ) );
         finish_wav_command( a_command->generation );
         return;
     }
 
     uint8_t header[ AUDIO_OUTPUT_WAV_HEADER_SIZE ];
-    if( ( sizeof( header ) != fread( header, 1U, sizeof( header ), file ) ) ||
-        !wav_supported( header ) )
+    size_t header_read = 0U;
+    if( ( ESP_OK != media_read( &file, header, sizeof( header ), &header_read ) ) ||
+        ( sizeof( header ) != header_read ) || !wav_supported( header ) )
     {
-        ESP_LOGW( TAG, "unsupported WAV %s", a_command->path );
-        fclose( file );
+        ESP_LOGW( TAG, "unsupported WAV %s", a_command->name );
+        (void)media_close( &file );
         finish_wav_command( a_command->generation );
         return;
     }
@@ -311,7 +315,7 @@ static void play_wav( const audio_output_command_t *a_command )
     const uint32_t wav_sample_rate = read_u32_le( &header[ 24 ] );
     if( !configure_sample_rate( wav_sample_rate ) || !enable_channel() )
     {
-        fclose( file );
+        (void)media_close( &file );
         finish_wav_command( a_command->generation );
         return;
     }
@@ -328,7 +332,12 @@ static void play_wav( const audio_output_command_t *a_command )
             frames = AUDIO_OUTPUT_CHUNK_FRAMES;
         }
 
-        const size_t read = fread( mono, sizeof( int16_t ), frames, file );
+        size_t read_bytes = 0U;
+        if( ESP_OK != media_read( &file, mono, frames * sizeof( int16_t ), &read_bytes ) )
+        {
+            break;
+        }
+        const size_t read = read_bytes / sizeof( int16_t );
         if( 0U == read )
         {
             break;
@@ -361,7 +370,7 @@ static void play_wav( const audio_output_command_t *a_command )
         remaining -= (uint32_t)( read * sizeof( int16_t ) );
     }
 
-    fclose( file );
+    (void)media_close( &file );
     finish_channel();
     finish_wav_command( a_command->generation );
 }
@@ -674,10 +683,11 @@ bool audio_output_play_notification_morse( char a_character,
                             a_volume_percent );
 }
 
-bool audio_output_play_wav( const char *a_path, uint8_t a_volume_percent )
+bool audio_output_play_wav( const rfscout_media_collection_t *a_collection,
+                            const char *a_name,
+                            uint8_t a_volume_percent )
 {
-    if( !initialized || ( NULL == a_path ) || ( '\0' == a_path[ 0 ] ) ||
-        ( strlen( a_path ) >= AUDIO_OUTPUT_WAV_PATH_MAX ) ||
+    if( !initialized || ( NULL == a_collection ) || !media_name_valid( a_name ) ||
         ( a_volume_percent > AUDIO_OUTPUT_MAX_VOLUME_PERCENT ) )
     {
         return false;
@@ -690,7 +700,8 @@ bool audio_output_play_wav( const char *a_path, uint8_t a_volume_percent )
         .volume_percent = a_volume_percent,
         .generation = generation,
     };
-    snprintf( command.path, sizeof( command.path ), "%s", a_path );
+    command.collection = *a_collection;
+    strlcpy( command.name, a_name, sizeof( command.name ) );
     playback_volume_percent = a_volume_percent;
     playback_active = true;
     if( !queue_command( &command ) )

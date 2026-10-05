@@ -34,9 +34,6 @@ const rfscout_app_descriptor_t *app_framework_descriptor( rfscout_app_id_t a_app
  */
 bool app_framework_check_available( rfscout_app_id_t a_app );
 
-/** @brief Refresh one app only when its descriptor is hot-pluggable. */
-void app_framework_refresh_hotplug( rfscout_app_id_t a_app );
-
 /** @brief Report runtime-observed availability for any probed application. */
 void app_framework_report_availability( rfscout_app_id_t a_app,
                                         rfscout_app_availability_t a_availability );

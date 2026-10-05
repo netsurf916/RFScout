@@ -22,12 +22,10 @@
 
 #include <stddef.h>
 
-#define APP_FEATURE_PROBE_INTERVAL_US 10000000LL
 #define APP_ACTIVATION_DELAY_US 500000LL
 
 static const char *TAG = "app_manager";
 static rfscout_app_id_t active_app;
-static int64_t last_hotplug_probe_us;
 static int64_t app_entered_us;
 static bool app_activated;
 static bool app_locked;
@@ -257,7 +255,6 @@ esp_err_t app_manager_init( void )
     active_app = device_config_startup_app();
     rfscout_session_state_t restored_session;
     const bool have_restored_session = session_state_restore( &restored_session );
-    last_hotplug_probe_us = esp_timer_get_time();
     app_entered_us = 0;
     app_activated = false;
     app_locked = false;
@@ -353,19 +350,9 @@ bool app_manager_select( rfscout_app_id_t a_app )
 
 void app_manager_poll( void )
 {
+    /* Hot-plug hardware is probed at startup and whenever navigation explicitly checks an app's
+       availability. There is deliberately no background sweep of inactive apps. */
     const int64_t now_us = esp_timer_get_time();
-    if( now_us - last_hotplug_probe_us >= APP_FEATURE_PROBE_INTERVAL_US )
-    {
-        for( int app = 0; app < RFSCOUT_APP_COUNT; ++app )
-        {
-            const rfscout_app_id_t candidate = (rfscout_app_id_t)app;
-            if( ( candidate != active_app ) && device_config_app_enabled( candidate ) )
-            {
-                app_framework_refresh_hotplug( candidate );
-            }
-        }
-        last_hotplug_probe_us = now_us;
-    }
 
     rfscout_input_event_t input;
     if( input_get( &input ) )

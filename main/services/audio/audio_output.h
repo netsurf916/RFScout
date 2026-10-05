@@ -10,6 +10,8 @@
 #ifndef _RFSCOUT_AUDIO_OUTPUT_H_
 #define _RFSCOUT_AUDIO_OUTPUT_H_
 
+#include "media_store.h"
+
 #include "esp_err.h"
 
 #include <stdbool.h>
@@ -53,11 +55,16 @@ bool audio_output_play_notification_morse( char a_character,
                                            uint8_t a_volume_percent );
 
 /**
- * @brief Queue intentional application PCM WAV playback.
+ * @brief Queue intentional application PCM WAV playback of one media-store file.
+ * @param a_collection Resolved collection; copied, so a captured app collection keeps its session
+ *        generation and playback fails cleanly if that session has already closed.
+ * @param a_name File name within the collection; copied.
  * @note Content audio is independent from theme/notification policy and remains explicitly usable
  *       in Discipline mode.
  */
-bool audio_output_play_wav( const char *a_path, uint8_t a_volume_percent );
+bool audio_output_play_wav( const rfscout_media_collection_t *a_collection,
+                            const char *a_name,
+                            uint8_t a_volume_percent );
 
 /** @brief Change gain for current/queued WAV playback without affecting feedback or notifications. */
 void audio_output_set_playback_volume( uint8_t a_volume_percent );

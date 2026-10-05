@@ -14,6 +14,10 @@
 #include <stdint.h>
 
 #define RFSCOUT_STORAGE_WAIT_FOREVER UINT32_MAX
+/** Private SD VFS mount point; never exposed outside the storage service. */
+#define RFSCOUT_STORAGE_MOUNT_POINT "/sdcard"
+/** FAT open-file limit configured at mount; also the media-store handle pool size. */
+#define RFSCOUT_STORAGE_MAX_OPEN_FILES 5
 
 /** @brief Acquire storage-service arbitration for one bounded filesystem transaction. */
 bool storage_io_acquire( uint32_t a_timeout_ms );

@@ -11,7 +11,7 @@
 #include "audio_filter.h"
 #include "audio_output.h"
 #include "device_time.h"
-#include "storage.h"
+#include "media_store.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -19,15 +19,12 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
-#include <dirent.h>
-#include <errno.h>
-#include <fcntl.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <strings.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <time.h>
-#include <unistd.h>
 
 #define RECORDER_DMA_READ_SAMPLES 512U
 #define RECORDER_TASK_STACK 6144U
@@ -57,7 +54,9 @@ static const char *TAG = "recorder";
 static TaskHandle_t record_task;
 static SemaphoreHandle_t record_done;
 static volatile bool record_running;
-static FILE *record_file;
+static rfscout_media_collection_t record_collection;
+static rfscout_media_file_t record_file;
+static bool record_file_open;
 static rfscout_recorder_state_t state = RFSCOUT_RECORDER_NO_STORAGE;
 static char active_name[ RFSCOUT_RECORDER_NAME_MAX ];
 static uint32_t data_bytes;
@@ -135,24 +134,23 @@ static void build_wav_header( uint8_t a_header[ RECORDER_WAV_HEADER_SIZE ],
     write_u32_le( &a_header[ 40 ], a_data_bytes );
 }
 
-static bool validate_wav( const char *a_path, rfscout_recording_t *a_recording )
+static bool validate_wav( const rfscout_media_entry_t *a_entry, rfscout_recording_t *a_recording )
 {
-    FILE *file = fopen( a_path, "rb" );
-    if( NULL == file )
+    rfscout_media_file_t file;
+    if( ESP_OK != media_open( &record_collection, a_entry->name, RFSCOUT_MEDIA_OPEN_READ, &file ) )
     {
         return false;
     }
 
     uint8_t header[ RECORDER_WAV_HEADER_SIZE ];
-    const size_t read = fread( header, 1U, sizeof( header ), file );
-    struct stat file_status;
-    const bool stat_ok = ( 0 == fstat( fileno( file ), &file_status ) );
-    fclose( file );
+    size_t read = 0U;
+    const esp_err_t read_result = media_read( &file, header, sizeof( header ), &read );
+    (void)media_close( &file );
 
-    if( read != sizeof( header ) || 0 != memcmp( &header[ 0 ], "RIFF", 4U ) ||
-        0 != memcmp( &header[ 8 ], "WAVE", 4U ) || 0 != memcmp( &header[ 12 ], "fmt ", 4U ) ||
-        0 != memcmp( &header[ 36 ], "data", 4U ) || 1U != read_u16_le( &header[ 20 ] ) ||
-        RECORDER_CHANNELS != read_u16_le( &header[ 22 ] ) ||
+    if( ESP_OK != read_result || read != sizeof( header ) ||
+        0 != memcmp( &header[ 0 ], "RIFF", 4U ) || 0 != memcmp( &header[ 8 ], "WAVE", 4U ) ||
+        0 != memcmp( &header[ 12 ], "fmt ", 4U ) || 0 != memcmp( &header[ 36 ], "data", 4U ) ||
+        1U != read_u16_le( &header[ 20 ] ) || RECORDER_CHANNELS != read_u16_le( &header[ 22 ] ) ||
         read_u32_le( &header[ 24 ] ) < RFSCOUT_RECORDER_WAV_RATE_MIN ||
         read_u32_le( &header[ 24 ] ) > RFSCOUT_RECORDER_WAV_RATE_MAX ||
         RECORDER_BITS_PER_SAMPLE != read_u16_le( &header[ 34 ] ) )
@@ -161,7 +159,7 @@ static bool validate_wav( const char *a_path, rfscout_recording_t *a_recording )
     }
 
     const uint32_t bytes = read_u32_le( &header[ 40 ] );
-    if( !stat_ok || file_status.st_size < (off_t)( RECORDER_WAV_HEADER_SIZE + (uint64_t)bytes ) )
+    if( a_entry->size_bytes < ( RECORDER_WAV_HEADER_SIZE + (uint64_t)bytes ) )
     {
         return false;
     }
@@ -190,19 +188,44 @@ static int recording_name_compare( const void *a_left, const void *a_right )
     return strcmp( right->name, left->name );
 }
 
-static esp_err_t ensure_directory( void )
+/** @brief Resolve the Recorder app's recording collection for the current app session. */
+static esp_err_t resolve_collection( void )
 {
-    struct stat status;
-    if( 0 == stat( RFSCOUT_RECORDER_DIRECTORY, &status ) )
-    {
-        return S_ISDIR( status.st_mode ) ? ESP_OK : ESP_ERR_INVALID_STATE;
-    }
+    return media_app_collection( RFSCOUT_RECORDER_COLLECTION, &record_collection );
+}
 
-    if( ( 0 == mkdir( RFSCOUT_RECORDER_DIRECTORY, 0775 ) ) || ( EEXIST == errno ) )
+static esp_err_t refresh_collection( void );
+
+/** @brief Close the active recording handle, optionally deleting the partially created file. */
+static void discard_record_file( bool a_remove )
+{
+    if( record_file_open )
     {
-        return ESP_OK;
+        (void)media_close( &record_file );
+        record_file_open = false;
     }
-    return ESP_FAIL;
+    if( a_remove && '\0' != active_name[ 0 ] )
+    {
+        (void)media_remove( &record_collection, active_name );
+    }
+}
+
+/** @brief Position the active recording at an absolute byte offset. */
+static bool record_seek( uint32_t a_offset )
+{
+    return ESP_OK == media_seek( &record_file, (int64_t)a_offset, RFSCOUT_MEDIA_SEEK_START );
+}
+
+/** @brief Read up to a_count PCM samples from the active recording. */
+static bool record_read_samples( int16_t *a_samples, size_t a_count, size_t *a_read )
+{
+    size_t bytes = 0U;
+    if( ESP_OK != media_read( &record_file, a_samples, a_count * sizeof( int16_t ), &bytes ) )
+    {
+        return false;
+    }
+    *a_read = bytes / sizeof( int16_t );
+    return true;
 }
 
 static void release_channel( void )
@@ -274,7 +297,7 @@ static void make_recording_name( char *a_name, size_t a_capacity )
     (void)strftime( a_name, a_capacity, "%Y%m%d-%H%M%S.wav", &local );
 }
 
-static FILE *open_unique_recording( char *a_path, size_t a_path_capacity )
+static esp_err_t open_unique_recording( void )
 {
     char base_name[ RFSCOUT_RECORDER_NAME_MAX ];
     make_recording_name( base_name, sizeof( base_name ) );
@@ -297,37 +320,27 @@ static FILE *open_unique_recording( char *a_path, size_t a_path_capacity )
                       suffix );
         }
 
-        const int path_length =
-            snprintf( a_path, a_path_capacity, "%s/%s", RFSCOUT_RECORDER_DIRECTORY, active_name );
-        if( ( path_length < 0 ) || ( (size_t)path_length >= a_path_capacity ) )
+        const esp_err_t result = media_open(
+            &record_collection, active_name, RFSCOUT_MEDIA_OPEN_CREATE_NEW, &record_file );
+        if( ESP_OK == result )
         {
-            return NULL;
+            record_file_open = true;
+            return ESP_OK;
         }
-
-        const int descriptor = open( a_path, O_CREAT | O_EXCL | O_RDWR, 0664 );
-        if( descriptor >= 0 )
+        if( ESP_ERR_NOT_ALLOWED != result )
         {
-            FILE *file = fdopen( descriptor, "wb+" );
-            if( NULL == file )
-            {
-                close( descriptor );
-                (void)remove( a_path );
-            }
-            return file;
-        }
-        if( EEXIST != errno )
-        {
-            return NULL;
+            active_name[ 0 ] = '\0';
+            return result;
         }
     }
 
-    errno = EEXIST;
-    return NULL;
+    active_name[ 0 ] = '\0';
+    return ESP_ERR_NOT_ALLOWED;
 }
 
 static bool trim_and_normalize_recording( void )
 {
-    if( NULL == record_file || 0U == data_bytes || 0U == recording_wav_sample_rate )
+    if( !record_file_open || 0U == data_bytes || 0U == recording_wav_sample_rate )
     {
         return true;
     }
@@ -347,7 +360,7 @@ static bool trim_and_normalize_recording( void )
                   (unsigned)end_bytes );
         return true;
     }
-    if( 0 != fflush( record_file ) )
+    if( ESP_OK != media_sync( &record_file ) )
         return false;
 
     const uint32_t retained_bytes = data_bytes - start_bytes - end_bytes;
@@ -355,15 +368,15 @@ static bool trim_and_normalize_recording( void )
     uint64_t count_total = 0U;
     int64_t signed_sum = 0;
     uint32_t remaining = retained_bytes;
-    if( 0 != fseek( record_file, RECORDER_WAV_HEADER_SIZE + (long)start_bytes, SEEK_SET ) )
+    if( !record_seek( RECORDER_WAV_HEADER_SIZE + start_bytes ) )
         return false;
     while( remaining > 0U )
     {
         size_t count = remaining / sizeof( int16_t );
         if( count > RECORDER_DMA_READ_SAMPLES )
             count = RECORDER_DMA_READ_SAMPLES;
-        const size_t read = fread( samples, sizeof( int16_t ), count, record_file );
-        if( 0U == read )
+        size_t read = 0U;
+        if( !record_read_samples( samples, count, &read ) || 0U == read )
             return false;
         for( size_t i = 0; i < read; ++i )
             signed_sum += samples[ i ];
@@ -379,15 +392,15 @@ static bool trim_and_normalize_recording( void )
     rfscout_audio_highpass_t analysis_filter;
     audio_highpass_reset( &analysis_filter );
     remaining = retained_bytes;
-    if( 0 != fseek( record_file, RECORDER_WAV_HEADER_SIZE + (long)start_bytes, SEEK_SET ) )
+    if( !record_seek( RECORDER_WAV_HEADER_SIZE + start_bytes ) )
         return false;
     while( remaining > 0U )
     {
         size_t count = remaining / sizeof( int16_t );
         if( count > RECORDER_DMA_READ_SAMPLES )
             count = RECORDER_DMA_READ_SAMPLES;
-        const size_t read = fread( samples, sizeof( int16_t ), count, record_file );
-        if( 0U == read )
+        size_t read = 0U;
+        if( !record_read_samples( samples, count, &read ) || 0U == read )
             return false;
         for( size_t i = 0; i < read; ++i )
         {
@@ -422,10 +435,10 @@ static bool trim_and_normalize_recording( void )
         size_t count = remaining / sizeof( int16_t );
         if( count > RECORDER_DMA_READ_SAMPLES )
             count = RECORDER_DMA_READ_SAMPLES;
-        if( 0 != fseek( record_file, (long)source_offset, SEEK_SET ) )
+        if( !record_seek( source_offset ) )
             return false;
-        const size_t read = fread( samples, sizeof( int16_t ), count, record_file );
-        if( 0U == read )
+        size_t read = 0U;
+        if( !record_read_samples( samples, count, &read ) || 0U == read )
             return false;
         for( size_t i = 0; i < read; ++i )
         {
@@ -444,17 +457,16 @@ static bool trim_and_normalize_recording( void )
             }
             samples[ i ] = (int16_t)scaled;
         }
-        if( 0 != fseek( record_file, (long)destination_offset, SEEK_SET ) ||
-            read != fwrite( samples, sizeof( int16_t ), read, record_file ) )
+        if( !record_seek( destination_offset ) ||
+            ESP_OK != media_write( &record_file, samples, read * sizeof( int16_t ) ) )
             return false;
         const uint32_t bytes = (uint32_t)( read * sizeof( int16_t ) );
         source_offset += bytes;
         destination_offset += bytes;
         remaining -= bytes;
     }
-    if( 0 != fflush( record_file ) ||
-        0 != ftruncate( fileno( record_file ),
-                        (off_t)( RECORDER_WAV_HEADER_SIZE + retained_bytes ) ) )
+    if( ESP_OK !=
+        media_truncate( &record_file, (uint64_t)RECORDER_WAV_HEADER_SIZE + retained_bytes ) )
         return false;
     ESP_LOGI( TAG,
               "trim/filter/normalize: start=%ums end=%ums bytes=%u->%u dc=%ld alpha=%.2f "
@@ -477,7 +489,7 @@ static bool trim_and_normalize_recording( void )
 
 static bool finalize_recording( void )
 {
-    if( NULL == record_file )
+    if( !record_file_open )
     {
         return true;
     }
@@ -485,18 +497,14 @@ static bool finalize_recording( void )
     bool ok = trim_and_normalize_recording();
     uint8_t header[ RECORDER_WAV_HEADER_SIZE ];
     build_wav_header( header, data_bytes, recording_wav_sample_rate );
-    ok = ok && ( 0 == fflush( record_file ) );
-    ok = ok && ( 0 == fseek( record_file, 0L, SEEK_SET ) );
-    if( ok )
-    {
-        ok = ( sizeof( header ) == fwrite( header, 1U, sizeof( header ), record_file ) );
-    }
-    ok = ok && ( 0 == fflush( record_file ) );
-    if( 0 != fclose( record_file ) )
+    ok = ok && record_seek( 0U );
+    ok = ok && ( ESP_OK == media_write( &record_file, header, sizeof( header ) ) );
+    ok = ok && ( ESP_OK == media_sync( &record_file ) );
+    if( ESP_OK != media_close( &record_file ) )
     {
         ok = false;
     }
-    record_file = NULL;
+    record_file_open = false;
     if( !ok )
     {
         ESP_LOGE( TAG, "recording finalization failed" );
@@ -627,7 +635,7 @@ static void record_worker( void *a_argument )
         }
 
         if( ( samples > 0U ) &&
-            ( samples != fwrite( dma_samples, sizeof( int16_t ), samples, record_file ) ) )
+            ( ESP_OK != media_write( &record_file, dma_samples, samples * sizeof( int16_t ) ) ) )
         {
             ESP_LOGW( TAG, "recording write failed" );
             failed = true;
@@ -726,10 +734,10 @@ static void record_worker( void *a_argument )
     {
         state = RFSCOUT_RECORDER_ERROR;
     }
-    else if( storage_is_available() )
+    else if( media_store_available() )
     {
         state = RFSCOUT_RECORDER_IDLE;
-        (void)recorder_refresh();
+        (void)refresh_collection();
         active_name[ 0 ] = '\0';
     }
     else
@@ -953,7 +961,7 @@ static void monitor_worker( void *a_argument )
     monitor_running = false;
     monitor_task = NULL;
     if( RFSCOUT_RECORDER_MONITORING == state )
-        state = storage_is_available() ? RFSCOUT_RECORDER_IDLE : RFSCOUT_RECORDER_NO_STORAGE;
+        state = media_store_available() ? RFSCOUT_RECORDER_IDLE : RFSCOUT_RECORDER_NO_STORAGE;
     vTaskDelete( NULL );
 }
 
@@ -999,7 +1007,7 @@ void recorder_stop_monitor( void )
     monitor_running = false;
     for( unsigned i = 0U; i < 20U && NULL != monitor_task; ++i )
         vTaskDelay( pdMS_TO_TICKS( 10 ) );
-    state = storage_is_available() ? RFSCOUT_RECORDER_IDLE : RFSCOUT_RECORDER_NO_STORAGE;
+    state = media_store_available() ? RFSCOUT_RECORDER_IDLE : RFSCOUT_RECORDER_NO_STORAGE;
 }
 
 size_t recorder_monitor_bins( uint8_t *a_bins, size_t a_capacity )
@@ -1041,7 +1049,44 @@ esp_err_t recorder_init( void )
     return recorder_refresh();
 }
 
-esp_err_t recorder_refresh( void )
+/** @brief Admit one listed WAV file into the bounded newest-recordings table. */
+static bool collect_recording( const rfscout_media_entry_t *a_entry, void *a_context )
+{
+    (void)a_context;
+    const size_t length = strlen( a_entry->name );
+    rfscout_recording_t candidate = { 0 };
+    if( ( length < 5U ) || ( length >= sizeof( candidate.name ) ) ||
+        ( 0 != strcasecmp( &a_entry->name[ length - 4U ], ".wav" ) ) ||
+        !validate_wav( a_entry, &candidate ) )
+    {
+        return true;
+    }
+    memcpy( candidate.name, a_entry->name, length + 1U );
+    candidate.modified_time = a_entry->modified_time;
+
+    if( recording_count < RFSCOUT_RECORDER_MAX_FILES )
+    {
+        recordings[ recording_count++ ] = candidate;
+        return true;
+    }
+
+    size_t oldest = 0U;
+    for( size_t index = 1U; index < recording_count; ++index )
+    {
+        if( recordings[ index ].modified_time < recordings[ oldest ].modified_time )
+        {
+            oldest = index;
+        }
+    }
+    if( candidate.modified_time > recordings[ oldest ].modified_time )
+    {
+        recordings[ oldest ] = candidate;
+    }
+    return true;
+}
+
+/** @brief Re-enumerate the already resolved recording collection. */
+static esp_err_t refresh_collection( void )
 {
     if( ( RFSCOUT_RECORDER_RECORDING == state ) || ( RFSCOUT_RECORDER_SAVING == state ) ||
         ( RFSCOUT_RECORDER_PLAYING == state ) )
@@ -1050,79 +1095,44 @@ esp_err_t recorder_refresh( void )
     }
 
     recording_count = 0U;
-    if( !storage_is_available() )
+    if( !media_store_available() )
     {
         state = RFSCOUT_RECORDER_NO_STORAGE;
         return ESP_ERR_INVALID_STATE;
     }
 
-    esp_err_t result = ensure_directory();
+    const esp_err_t result = media_list( &record_collection, collect_recording, NULL );
     if( ESP_OK != result )
     {
         state = RFSCOUT_RECORDER_ERROR;
         return result;
     }
 
-    DIR *directory = opendir( RFSCOUT_RECORDER_DIRECTORY );
-    if( NULL == directory )
-    {
-        state = RFSCOUT_RECORDER_ERROR;
-        return ESP_FAIL;
-    }
-
-    struct dirent *entry;
-    while( NULL != ( entry = readdir( directory ) ) )
-    {
-        const size_t length = strlen( entry->d_name );
-        rfscout_recording_t candidate = { 0 };
-        if( ( length < 5U ) || ( length >= sizeof( candidate.name ) ) ||
-            ( 0 != strcasecmp( &entry->d_name[ length - 4U ], ".wav" ) ) )
-        {
-            continue;
-        }
-
-        memcpy( candidate.name, entry->d_name, length + 1U );
-
-        char path[ 160 ];
-        const int path_length =
-            snprintf( path, sizeof( path ), "%s/%s", RFSCOUT_RECORDER_DIRECTORY, candidate.name );
-        struct stat file_status;
-        if( ( path_length < 0 ) || ( (size_t)path_length >= sizeof( path ) ) ||
-            !validate_wav( path, &candidate ) || ( 0 != stat( path, &file_status ) ) )
-        {
-            continue;
-        }
-        candidate.modified_time = (int64_t)file_status.st_mtime;
-
-        if( recording_count < RFSCOUT_RECORDER_MAX_FILES )
-        {
-            recordings[ recording_count++ ] = candidate;
-            continue;
-        }
-
-        size_t oldest = 0U;
-        for( size_t index = 1U; index < recording_count; ++index )
-        {
-            if( recordings[ index ].modified_time < recordings[ oldest ].modified_time )
-            {
-                oldest = index;
-            }
-        }
-        if( candidate.modified_time > recordings[ oldest ].modified_time )
-        {
-            recordings[ oldest ] = candidate;
-        }
-    }
-    closedir( directory );
-
     qsort( recordings, recording_count, sizeof( recordings[ 0 ] ), recording_name_compare );
     state = RFSCOUT_RECORDER_IDLE;
     return ESP_OK;
 }
 
+esp_err_t recorder_refresh( void )
+{
+    if( ( RFSCOUT_RECORDER_RECORDING == state ) || ( RFSCOUT_RECORDER_SAVING == state ) ||
+        ( RFSCOUT_RECORDER_PLAYING == state ) )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const esp_err_t result = resolve_collection();
+    if( ESP_OK != result )
+    {
+        recording_count = 0U;
+        state = RFSCOUT_RECORDER_ERROR;
+        return result;
+    }
+    return refresh_collection();
+}
+
 esp_err_t recorder_start_recording( void )
 {
-    if( !storage_is_available() )
+    if( !media_store_available() )
     {
         state = RFSCOUT_RECORDER_NO_STORAGE;
         return ESP_ERR_INVALID_STATE;
@@ -1132,7 +1142,7 @@ esp_err_t recorder_start_recording( void )
         return ESP_ERR_INVALID_STATE;
     }
 
-    esp_err_t result = ensure_directory();
+    esp_err_t result = resolve_collection();
     if( ESP_OK != result )
     {
         state = RFSCOUT_RECORDER_ERROR;
@@ -1146,21 +1156,18 @@ esp_err_t recorder_start_recording( void )
     }
     (void)xSemaphoreTake( record_done, 0U );
 
-    char path[ 160 ];
-    record_file = open_unique_recording( path, sizeof( path ) );
-    if( NULL == record_file )
+    result = open_unique_recording();
+    if( ESP_OK != result )
     {
         state = RFSCOUT_RECORDER_ERROR;
-        return ESP_FAIL;
+        return result;
     }
 
     rfscout_audio_capture_format_t format;
     result = open_microphone( &format );
     if( ESP_OK != result )
     {
-        fclose( record_file );
-        record_file = NULL;
-        (void)remove( path );
+        discard_record_file( true );
         state = RFSCOUT_RECORDER_ERROR;
         return result;
     }
@@ -1168,12 +1175,10 @@ esp_err_t recorder_start_recording( void )
 
     uint8_t header[ RECORDER_WAV_HEADER_SIZE ];
     build_wav_header( header, 0U, recording_wav_sample_rate );
-    if( sizeof( header ) != fwrite( header, 1U, sizeof( header ), record_file ) )
+    if( ESP_OK != media_write( &record_file, header, sizeof( header ) ) )
     {
         release_channel();
-        fclose( record_file );
-        record_file = NULL;
-        (void)remove( path );
+        discard_record_file( true );
         state = RFSCOUT_RECORDER_ERROR;
         return ESP_FAIL;
     }
@@ -1195,14 +1200,12 @@ esp_err_t recorder_start_recording( void )
     {
         record_running = false;
         release_channel();
-        fclose( record_file );
-        record_file = NULL;
-        (void)remove( path );
+        discard_record_file( true );
         state = RFSCOUT_RECORDER_ERROR;
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI( TAG, "recording %s", path );
+    ESP_LOGI( TAG, "recording %s/%s", RFSCOUT_RECORDER_COLLECTION, active_name );
     return ESP_OK;
 }
 
@@ -1270,27 +1273,25 @@ esp_err_t recorder_delete_file( size_t a_index )
         return ESP_ERR_INVALID_STATE;
     }
 
-    char path[ sizeof( RFSCOUT_RECORDER_DIRECTORY ) + RFSCOUT_RECORDER_NAME_MAX + 1U ];
-    const int length = snprintf(
-        path, sizeof( path ), "%s/%s", RFSCOUT_RECORDER_DIRECTORY, recordings[ a_index ].name );
-    if( length < 0 || (size_t)length >= sizeof( path ) )
+    esp_err_t result = resolve_collection();
+    if( ESP_OK == result )
     {
-        return ESP_ERR_INVALID_SIZE;
+        result = media_remove( &record_collection, recordings[ a_index ].name );
+    }
+    if( ESP_OK != result )
+    {
+        ESP_LOGW(
+            TAG, "delete failed %s: %s", recordings[ a_index ].name, esp_err_to_name( result ) );
+        return result;
     }
 
-    if( 0 != remove( path ) )
-    {
-        ESP_LOGW( TAG, "delete failed %s errno=%d", path, errno );
-        return ESP_FAIL;
-    }
-
-    ESP_LOGI( TAG, "deleted recording %s", path );
+    ESP_LOGI( TAG, "deleted recording %s", recordings[ a_index ].name );
     return recorder_refresh();
 }
 
 esp_err_t recorder_start_playback( size_t a_index, uint8_t a_volume_percent )
 {
-    if( !storage_is_available() )
+    if( !media_store_available() )
     {
         state = RFSCOUT_RECORDER_NO_STORAGE;
         return ESP_ERR_INVALID_STATE;
@@ -1300,10 +1301,8 @@ esp_err_t recorder_start_playback( size_t a_index, uint8_t a_volume_percent )
         return ESP_ERR_INVALID_ARG;
     }
 
-    char path[ 160 ];
-    snprintf(
-        path, sizeof( path ), "%s/%s", RFSCOUT_RECORDER_DIRECTORY, recordings[ a_index ].name );
-    if( !audio_output_play_wav( path, a_volume_percent ) )
+    if( ( ESP_OK != resolve_collection() ) ||
+        !audio_output_play_wav( &record_collection, recordings[ a_index ].name, a_volume_percent ) )
     {
         return ESP_FAIL;
     }
@@ -1331,12 +1330,12 @@ void recorder_stop( void )
     {
         audio_output_stop_playback();
     }
-    state = storage_is_available() ? RFSCOUT_RECORDER_IDLE : RFSCOUT_RECORDER_NO_STORAGE;
+    state = media_store_available() ? RFSCOUT_RECORDER_IDLE : RFSCOUT_RECORDER_NO_STORAGE;
 }
 
 rfscout_recorder_state_t recorder_state( void )
 {
-    if( !storage_is_available() && ( RFSCOUT_RECORDER_RECORDING != state ) &&
+    if( !media_store_available() && ( RFSCOUT_RECORDER_RECORDING != state ) &&
         ( RFSCOUT_RECORDER_SAVING != state ) && ( RFSCOUT_RECORDER_MONITORING != state ) )
     {
         return RFSCOUT_RECORDER_NO_STORAGE;

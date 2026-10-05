@@ -8,6 +8,7 @@
 #include "nrf24.h"
 #include "nrf24_activity.h"
 #include "board.h"
+#include "board_spi.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include "esp_log.h"
@@ -58,7 +59,13 @@ static esp_err_t transfer( const uint8_t *a_tx, uint8_t *a_rx, size_t a_length )
 {
     spi_transaction_t transaction = {
         .length = a_length * 8U, .rxlength = a_length * 8U, .tx_buffer = a_tx, .rx_buffer = a_rx };
-    return spi_device_transmit( device, &transaction );
+    if( !board_spi_lock( RFSCOUT_BOARD_SPI_WAIT_FOREVER ) )
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+    const esp_err_t result = spi_device_transmit( device, &transaction );
+    board_spi_unlock();
+    return result;
 }
 
 static esp_err_t read_register( uint8_t a_register, uint8_t *a_value )
@@ -275,7 +282,7 @@ esp_err_t nrf24_probe( void )
         detected = ( ESP_OK == result ) && ( setup_aw >= 1U ) && ( setup_aw <= 3U ) &&
                    ( rf_channel <= 125U ) && ( 0xFFU != status );
 
-        ESP_LOGI( TAG,
+        ESP_LOGD( TAG,
                   "probe attempt=%u setup_aw=0x%02x rf_ch=%u status=0x%02x detected=%d",
                   attempt + 1U,
                   setup_aw,

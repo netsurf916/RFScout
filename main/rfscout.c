@@ -23,6 +23,7 @@
 #include "gps.h"
 #include "input.h"
 #include "log_writer.h"
+#include "media_store.h"
 #include "notification.h"
 #include "notification_preferences.h"
 #include "observation_store.h"
@@ -495,7 +496,7 @@ void app_main( void )
     ESP_ERROR_CHECK( ota_boot_confirm_if_pending() );
     system_events_enable_notifications();
 
-    if( storage_is_available() && device_config_get()->logging_enabled )
+    if( media_store_available() && device_config_get()->logging_enabled )
     {
         result = log_writer_init();
         if( ESP_OK != result )

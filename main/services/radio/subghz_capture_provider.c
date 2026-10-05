@@ -58,11 +58,6 @@ static uint32_t capture_now_ms_from_isr( void )
     return (uint32_t)( xTaskGetTickCountFromISR() * portTICK_PERIOD_MS );
 }
 
-static uint32_t capture_now_ms( void )
-{
-    return (uint32_t)( xTaskGetTickCount() * portTICK_PERIOD_MS );
-}
-
 static int find_free_capture_slot_locked( void )
 {
     for( size_t index = 0U; index < RFSCOUT_SUBGHZ_CAPTURE_POOL_SIZE; ++index )
