@@ -7,6 +7,8 @@
 
 #include "wifi_station.h"
 
+#include "wifi_core.h"
+
 #include "device_time.h"
 
 #include "esp_event.h"
@@ -541,6 +543,12 @@ esp_err_t rfscout_wifi_station_init( void )
         return ESP_OK;
     }
 
+    const esp_err_t core_result = wifi_core_init();
+    if( ESP_OK != core_result )
+    {
+        return core_result;
+    }
+
     station_netif = esp_netif_create_default_wifi_sta();
     if( NULL == station_netif )
     {
@@ -616,11 +624,7 @@ esp_err_t rfscout_wifi_station_passive_scan_start( void )
 {
     if( !initialized )
     {
-        const esp_err_t init_result = rfscout_wifi_station_init();
-        if( ESP_OK != init_result )
-        {
-            return init_result;
-        }
+        return ESP_ERR_INVALID_STATE;
     }
 
     rfscout_wifi_station_status_t current;
@@ -687,11 +691,7 @@ esp_err_t rfscout_wifi_station_connect_open_bss( const rfscout_wifi_station_bss_
 {
     if( !initialized )
     {
-        const esp_err_t init_result = rfscout_wifi_station_init();
-        if( ESP_OK != init_result )
-        {
-            return init_result;
-        }
+        return ESP_ERR_INVALID_STATE;
     }
     if( NULL == a_bss || RFSCOUT_WIFI_STATION_SECURITY_SECURED == a_bss->security )
     {
@@ -841,11 +841,7 @@ rfscout_wifi_station_connect( const char *a_ssid, const char *a_password, bool a
 {
     if( !initialized )
     {
-        const esp_err_t init_result = rfscout_wifi_station_init();
-        if( ESP_OK != init_result )
-        {
-            return init_result;
-        }
+        return ESP_ERR_INVALID_STATE;
     }
     if( NULL == a_ssid )
     {
