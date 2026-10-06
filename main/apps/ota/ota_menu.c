@@ -104,9 +104,7 @@ static void set_error( esp_err_t a_error )
 
 static bool update_network_ready( void )
 {
-    rfscout_network_session_status_t current;
-    network_session_status( &current );
-    return RFSCOUT_NETWORK_SESSION_READY == current.state;
+    return network_session_ready();
 }
 
 static esp_err_t ensure_catalog_json_capacity( size_t a_length )
@@ -231,10 +229,7 @@ static void build_saved_list( void )
 
 static bool network_connected( void )
 {
-    rfscout_network_session_status_t current;
-    network_session_status( &current );
-    return RFSCOUT_NETWORK_SESSION_READY == current.state ||
-           RFSCOUT_NETWORK_SESSION_LIMITED == current.state;
+    return network_session_has_lan();
 }
 
 static bool install_interaction_locked( void )
