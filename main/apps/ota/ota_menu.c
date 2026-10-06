@@ -326,9 +326,8 @@ static void render_action( void )
     rfscout_network_session_status_t network;
     network_session_status( &network );
     const bool target = NULL != ssid && 0 == strcmp( network.ssid, ssid );
-    const bool connected =
-        target && ( RFSCOUT_NETWORK_SESSION_READY == network.state ||
-                    RFSCOUT_NETWORK_SESSION_LIMITED == network.state );
+    const bool connected = target && ( RFSCOUT_NETWORK_SESSION_READY == network.state ||
+                                       RFSCOUT_NETWORK_SESSION_LIMITED == network.state );
     const char *status_text = error_text;
     if( target && RFSCOUT_NETWORK_SESSION_ASSOCIATING == network.state )
     {
@@ -349,7 +348,7 @@ static void render_action( void )
     else if( target && RFSCOUT_NETWORK_SESSION_FAILED == network.state )
     {
         status_text = ESP_ERR_NOT_FOUND == network.disconnect_reason ? "Network not found"
-                                                                    : "Connection failed";
+                                                                     : "Connection failed";
     }
 
     unsigned action_count = saved ? 3U : 2U;
@@ -1044,7 +1043,8 @@ static void handle_input( const rfscout_input_event_t *a_input )
             if( HOME_SUBMENU_NETWORK == submenu )
             {
                 build_visible_saved();
-                item_count = 1U + (unsigned)view_network_count + ( network_session_has_lan() ? 1U : 3U );
+                item_count =
+                    1U + (unsigned)view_network_count + ( network_session_has_lan() ? 1U : 3U );
             }
             else
             {
@@ -1284,7 +1284,7 @@ static void submenu_poll( int64_t a_now_us )
                       sizeof( error_text ),
                       "%s",
                       ESP_ERR_NOT_FOUND == network.disconnect_reason ? "Network not found"
-                                                                    : "Connection failed" );
+                                                                     : "Connection failed" );
             return_to_network_main();
             return;
         }
