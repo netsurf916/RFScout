@@ -144,8 +144,7 @@ static bool ensure_scratch( size_t a_count )
 
 static bool attempt_running( void )
 {
-    return ( HOTSPOTS_PHASE_JOIN == phase ) || ( HOTSPOTS_PHASE_NTP == phase ) ||
-           ( HOTSPOTS_PHASE_HTTPS == phase );
+    return ( HOTSPOTS_PHASE_JOIN == phase ) || ( HOTSPOTS_PHASE_HTTPS == phase );
 }
 
 static bool entry_is_attempt_target( const hotspot_entry_t *a_entry )
@@ -200,7 +199,7 @@ static const char *entry_tag( const hotspot_entry_t *a_entry, hotspots_view_tone
         {
             return "JOIN";
         }
-        return ( HOTSPOTS_PHASE_NTP == phase ) ? "NTP" : "HTTPS";
+        return "HTTPS";
     }
     if( a_entry->manual_requested )
     {
@@ -257,9 +256,7 @@ static void format_footer( char *a_footer, size_t a_capacity )
         snprintf( a_footer,
                   a_capacity,
                   "%s %.32s",
-                  ( HOTSPOTS_PHASE_JOIN == phase )  ? "JOINING"
-                  : ( HOTSPOTS_PHASE_NTP == phase ) ? "TIME SYNC"
-                                                    : "HTTPS",
+                  ( HOTSPOTS_PHASE_JOIN == phase ) ? "NETWORK" : "HTTPS",
                   attempt_bss.ssid );
         return;
     }
