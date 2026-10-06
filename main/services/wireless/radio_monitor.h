@@ -23,7 +23,7 @@ void radio_monitor_set_observer( radio_observation_fn a_callback );
 /** @brief Initialize reusable passive Wi-Fi monitor state without starting reception. */
 esp_err_t radio_monitor_init( void );
 
-/** @brief Start Wi-Fi hardware and promiscuous reception after app entry. */
+/** @brief Activate Wi-Fi hardware and promiscuous reception after framework initialization. */
 esp_err_t radio_monitor_start( void );
 
 /** @brief Stop promiscuous reception and Wi-Fi hardware while app is inactive. */
