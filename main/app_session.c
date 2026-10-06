@@ -371,8 +371,7 @@ esp_err_t app_session_prepare_close( void )
             continue;
         }
 
-        service->was_active_for_close =
-            ( NULL != service->active ) && service->active();
+        service->was_active_for_close = ( NULL != service->active ) && service->active();
 
         /* stop() is the uniform quiesce operation and must be idempotent. Call it for every
            selected service so transactional services without a generic start() can also clean
