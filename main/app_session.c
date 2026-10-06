@@ -19,7 +19,6 @@
 #include "ota_installer.h"
 #include "radio_monitor.h"
 #include "recorder.h"
-#include "wifi_station.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -75,7 +74,7 @@ static bool wifi_active( void *a_context )
 static esp_err_t stop_network_session( void *a_context )
 {
     (void)a_context;
-    return network_session_stop();
+    return network_session_release();
 }
 
 static bool network_session_active( void *a_context )
@@ -198,16 +197,9 @@ static esp_err_t stop_recorder( void *a_context )
     return ESP_OK;
 }
 
-/* Services close in reverse table order. The connectivity probe precedes the station here so the
-   station is torn down first; its loss makes any in-flight HTTPS request fail promptly. */
+/* Services close in reverse table order. Network consumers follow the network provider so active
+   HTTPS work is stopped before the underlying network session is released. */
 static app_session_service_t platform_services[] = {
-    {
-        .capability = RFSCOUT_APP_SERVICE_CONNECTIVITY_PROBE,
-        .name = "Connectivity probe",
-        .stop = stop_connectivity_probe,
-        .active = connectivity_probe_active,
-        .always_stop_for_close = true,
-    },
     {
         .capability = RFSCOUT_APP_SERVICE_WIFI_MONITOR,
         .name = "Wi-Fi",
@@ -222,6 +214,13 @@ static app_session_service_t platform_services[] = {
         .name = "Network session",
         .stop = stop_network_session,
         .active = network_session_active,
+        .always_stop_for_close = true,
+    },
+    {
+        .capability = RFSCOUT_APP_SERVICE_CONNECTIVITY_PROBE,
+        .name = "Connectivity probe",
+        .stop = stop_connectivity_probe,
+        .active = connectivity_probe_active,
         .always_stop_for_close = true,
     },
     {
@@ -265,7 +264,7 @@ static app_session_service_t platform_services[] = {
         .stop = stop_recorder,
         .active = audio_capture_active,
     },
-};
+}
 
 static size_t platform_service_count( void )
 {
