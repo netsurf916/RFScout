@@ -47,7 +47,6 @@ typedef struct
     app_session_service_active_fn active;
     void *context;
     bool was_active_for_close;
-    bool stopped_for_close;
 } app_session_service_t;
 
 static const char *TAG = "app_session";
@@ -380,7 +379,6 @@ static void clear_close_state( void )
     for( size_t i = 0U; i < platform_service_count(); ++i )
     {
         platform_services[ i ].was_active_for_close = false;
-        platform_services[ i ].stopped_for_close = false;
     }
 }
 
@@ -553,7 +551,6 @@ esp_err_t app_session_prepare_close( void )
                       esp_err_to_name( result ) );
             return result;
         }
-        service->stopped_for_close = true;
     }
 
     ready_to_reclaim = true;
@@ -576,8 +573,7 @@ esp_err_t app_session_abort_close( void )
             continue;
         }
 
-        if( !service->was_active_for_close || !service->stopped_for_close ||
-            NULL == service->start )
+        if( !service->was_active_for_close || NULL == service->start )
         {
             continue;
         }
