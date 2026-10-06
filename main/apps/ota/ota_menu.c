@@ -1260,7 +1260,6 @@ static void submenu_poll( int64_t a_now_us )
         return;
     }
 
-    network_session_poll( a_now_us );
     rfscout_network_session_status_t network;
     network_session_status( &network );
 
