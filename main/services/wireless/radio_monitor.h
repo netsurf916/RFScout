@@ -30,7 +30,7 @@ esp_err_t radio_monitor_start( void );
 esp_err_t radio_monitor_stop( void );
 
 /** @brief Return whether the app currently requests Wi-Fi observation delivery. */
-bool radio_monitor_is_running( void );
+bool radio_monitor_is_active( void );
 
 /**
  * @brief Supply the canonical-store projection of channels with retained AP/BSSID evidence.
