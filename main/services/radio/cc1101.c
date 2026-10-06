@@ -661,10 +661,13 @@ esp_err_t cc1101_init( void )
         return detected ? ESP_OK : cc1101_probe();
     }
 
-    const esp_err_t probe_result = cc1101_probe();
-    if( ESP_OK != probe_result )
+    if( !detected )
     {
-        return probe_result;
+        const esp_err_t probe_result = cc1101_probe();
+        if( ESP_OK != probe_result )
+        {
+            return probe_result;
+        }
     }
 
     memset( display_spectrum, -120, sizeof( display_spectrum ) );
