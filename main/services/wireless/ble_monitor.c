@@ -276,7 +276,7 @@ static void host_task( void *a_argument )
     nimble_port_freertos_deinit();
 }
 
-bool ble_monitor_is_running( void )
+bool ble_monitor_is_active( void )
 {
     return scan_is_requested();
 }
