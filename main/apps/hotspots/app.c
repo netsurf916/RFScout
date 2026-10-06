@@ -344,6 +344,8 @@ static void render_detail( const hotspot_entry_t *a_entry )
     char status[ HOTSPOTS_DETAIL_LINE_MAX ];
     char last[ HOTSPOTS_DETAIL_LINE_MAX ];
     char addresses[ HOTSPOTS_DETAIL_LINE_MAX ];
+    char network[ HOTSPOTS_DETAIL_LINE_MAX ];
+    char dns[ HOTSPOTS_DETAIL_LINE_MAX ];
     /* "Public " + IP + " (" + colo + ")" must fit without truncation. */
     char egress[ sizeof( "Public  ()" ) + HOTSPOT_PUBLIC_IP_MAX_LENGTH + HOTSPOT_COLO_MAX_LENGTH ];
 
@@ -411,9 +413,17 @@ static void render_detail( const hotspot_entry_t *a_entry )
 
     char client[ 20 ];
     char gateway[ 20 ];
+    char netmask[ 20 ];
+    char dns_primary[ 20 ];
+    char dns_backup[ 20 ];
     format_ipv4( a_entry->last.address, client, sizeof( client ) );
     format_ipv4( a_entry->last.gateway, gateway, sizeof( gateway ) );
+    format_ipv4( a_entry->last.netmask, netmask, sizeof( netmask ) );
+    format_ipv4( a_entry->last.dns_primary, dns_primary, sizeof( dns_primary ) );
+    format_ipv4( a_entry->last.dns_backup, dns_backup, sizeof( dns_backup ) );
     snprintf( addresses, sizeof( addresses ), "IP %s  GW %s", client, gateway );
+    snprintf( network, sizeof( network ), "Mask %s", netmask );
+    snprintf( dns, sizeof( dns ), "DNS %s / %s", dns_primary, dns_backup );
     if( '\0' != a_entry->last.public_ip[ 0 ] )
     {
         snprintf( egress,
@@ -436,6 +446,8 @@ static void render_detail( const hotspot_entry_t *a_entry )
         .status_tone = tone,
         .last_attempt = last,
         .addresses = addresses,
+        .network = network,
+        .dns = dns,
         .egress = egress,
         .recheck_available = a_entry->visible,
     };
@@ -670,11 +682,22 @@ static void scheduler_poll( int64_t a_now_us )
         {
             rfscout_network_session_status_t network;
             network_session_status( &network );
-            if( RFSCOUT_NETWORK_SESSION_READY == network.state )
+            if( RFSCOUT_NETWORK_SESSION_READY == network.state ||
+                RFSCOUT_NETWORK_SESSION_LIMITED == network.state )
             {
                 attempt_result.address = network.ip.address;
                 attempt_result.netmask = network.ip.netmask;
                 attempt_result.gateway = network.ip.gateway;
+                attempt_result.dns_primary = network.ip.dns_primary;
+                attempt_result.dns_backup = network.ip.dns_backup;
+
+                if( RFSCOUT_NETWORK_SESSION_LIMITED == network.state )
+                {
+                    finish_attempt(
+                        HOTSPOT_STATUS_YELLOW, HOTSPOT_STAGE_NTP, network.error, a_now_us );
+                    break;
+                }
+
                 attempt_result.ntp_ok = true;
                 const esp_err_t result = connectivity_probe_start( HOTSPOTS_HTTPS_TIMEOUT_MS );
                 if( ESP_OK != result )
@@ -689,12 +712,8 @@ static void scheduler_poll( int64_t a_now_us )
             else if( RFSCOUT_NETWORK_SESSION_FAILED == network.state )
             {
                 attempt_result.disconnect_reason = network.disconnect_reason;
-                const bool time_failure =
-                    RFSCOUT_NETWORK_SESSION_FAILURE_TIME_SYNC == network.failure;
-                finish_attempt( time_failure ? HOTSPOT_STATUS_YELLOW : HOTSPOT_STATUS_RED,
-                                time_failure ? HOTSPOT_STAGE_NTP : HOTSPOT_STAGE_JOIN,
-                                network.error,
-                                a_now_us );
+                finish_attempt(
+                    HOTSPOT_STATUS_RED, HOTSPOT_STAGE_JOIN, network.error, a_now_us );
             }
             break;
         }
