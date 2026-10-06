@@ -15,7 +15,7 @@
 #include <stdint.h>
 
 #define SESSION_STATE_MAGIC 0x52534653U
-#define SESSION_STATE_VERSION 2U
+#define SESSION_STATE_VERSION 3U
 
 typedef struct
 {

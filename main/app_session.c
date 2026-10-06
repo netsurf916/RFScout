@@ -10,6 +10,7 @@
 #include "app_manager.h"
 #include "ble_monitor.h"
 #include "cc1101.h"
+#include "connectivity_probe.h"
 #include "display.h"
 #include "memory_manager.h"
 #include "nrf24.h"
@@ -80,6 +81,18 @@ static bool wifi_station_active( void *a_context )
 {
     (void)a_context;
     return rfscout_wifi_station_is_active();
+}
+
+static esp_err_t stop_connectivity_probe( void *a_context )
+{
+    (void)a_context;
+    return connectivity_probe_stop();
+}
+
+static bool connectivity_probe_active( void *a_context )
+{
+    (void)a_context;
+    return connectivity_probe_is_active();
 }
 
 static esp_err_t stop_ota_acquisition( void *a_context )
@@ -184,7 +197,16 @@ static esp_err_t stop_recorder( void *a_context )
     return ESP_OK;
 }
 
+/* Services close in reverse table order. The connectivity probe precedes the station here so the
+   station is torn down first; its loss makes any in-flight HTTPS request fail promptly. */
 static app_session_service_t platform_services[] = {
+    {
+        .capability = RFSCOUT_APP_SERVICE_CONNECTIVITY_PROBE,
+        .name = "Connectivity probe",
+        .stop = stop_connectivity_probe,
+        .active = connectivity_probe_active,
+        .always_stop_for_close = true,
+    },
     {
         .capability = RFSCOUT_APP_SERVICE_WIFI_MONITOR,
         .name = "Wi-Fi",

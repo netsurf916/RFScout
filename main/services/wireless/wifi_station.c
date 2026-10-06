@@ -11,8 +11,10 @@
 
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_netif_sntp.h"
+#include "esp_random.h"
 #include "esp_wifi.h"
 #include "esp_wifi_default.h"
 #include "freertos/FreeRTOS.h"
@@ -30,13 +32,19 @@ static bool started;
 static bool stopping;
 static bool disconnect_requested;
 static bool ntp_initialized;
+static bool auto_time_sync;
+static bool mac_randomized;
+static uint8_t factory_mac[ 6 ];
+static esp_netif_t *station_netif;
 static esp_event_handler_instance_t wifi_event_handler;
 static esp_event_handler_instance_t ip_event_handler;
 static portMUX_TYPE state_lock = portMUX_INITIALIZER_UNLOCKED;
 static rfscout_wifi_station_status_t status;
 static rfscout_wifi_station_ap_t scan_results[ RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS ];
-static wifi_ap_record_t scan_records[ RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS ];
+static wifi_ap_record_t scan_records[ RFSCOUT_WIFI_STATION_BSS_MAX_RESULTS ];
 static size_t scan_result_count;
+static rfscout_wifi_station_bss_t bss_results[ RFSCOUT_WIFI_STATION_BSS_MAX_RESULTS ];
+static size_t bss_result_count;
 static char active_search_ssid[ RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH + 1U ];
 
 static void set_state( rfscout_wifi_station_state_t a_state, int32_t a_disconnect_reason )
@@ -157,9 +165,23 @@ static bool passive_snapshot_contains( const char *a_ssid )
     return found;
 }
 
+/** @brief Classify a driver auth mode for credential-free association eligibility. */
+static rfscout_wifi_station_security_t security_class( wifi_auth_mode_t a_authmode )
+{
+    if( WIFI_AUTH_OPEN == a_authmode )
+    {
+        return RFSCOUT_WIFI_STATION_SECURITY_OPEN;
+    }
+    if( WIFI_AUTH_OWE == a_authmode )
+    {
+        return RFSCOUT_WIFI_STATION_SECURITY_OWE;
+    }
+    return RFSCOUT_WIFI_STATION_SECURITY_SECURED;
+}
+
 static void collect_scan_results( void )
 {
-    uint16_t count = RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS;
+    uint16_t count = RFSCOUT_WIFI_STATION_BSS_MAX_RESULTS;
     const esp_err_t result = esp_wifi_scan_get_ap_records( &count, scan_records );
     if( ESP_OK != result )
     {
@@ -169,6 +191,22 @@ static void collect_scan_results( void )
     }
 
     portENTER_CRITICAL( &state_lock );
+    bss_result_count = 0U;
+    memset( bss_results, 0, sizeof( bss_results ) );
+    for( uint16_t index = 0U;
+         index < count && bss_result_count < RFSCOUT_WIFI_STATION_BSS_MAX_RESULTS;
+         ++index )
+    {
+        const wifi_ap_record_t *record = &scan_records[ index ];
+        rfscout_wifi_station_bss_t *output = &bss_results[ bss_result_count++ ];
+        memcpy( output->bssid, record->bssid, sizeof( output->bssid ) );
+        memcpy( output->ssid, record->ssid, RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH );
+        output->ssid[ RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH ] = '\0';
+        output->rssi = record->rssi;
+        output->channel = record->primary;
+        output->security = security_class( record->authmode );
+    }
+
     scan_result_count = 0U;
     memset( scan_results, 0, sizeof( scan_results ) );
     for( uint16_t index = 0U;
@@ -296,7 +334,7 @@ ip_event( void *a_context, esp_event_base_t a_event_base, int32_t a_event_id, vo
         {
             status.state = RFSCOUT_WIFI_STATION_CONNECTED;
             status.disconnect_reason = 0;
-            synchronize_time = true;
+            synchronize_time = auto_time_sync;
         }
         portEXIT_CRITICAL( &state_lock );
 
@@ -348,6 +386,69 @@ static esp_err_t ensure_started( void )
     return ESP_OK;
 }
 
+/** @brief Put the factory station MAC back after a randomized connection; driver must be stopped. */
+static void restore_factory_mac( void )
+{
+    if( !mac_randomized )
+    {
+        return;
+    }
+    const esp_err_t result = esp_wifi_set_mac( WIFI_IF_STA, factory_mac );
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG, "could not restore factory station MAC: %s", esp_err_to_name( result ) );
+        return;
+    }
+    mac_randomized = false;
+}
+
+/** @brief Restart the started STA driver with a fresh random locally administered unicast MAC. */
+static esp_err_t restart_with_random_mac( void )
+{
+    uint8_t mac[ 6 ];
+    esp_fill_random( mac, sizeof( mac ) );
+    mac[ 0 ] = (uint8_t)( ( mac[ 0 ] & 0xFCU ) | 0x02U );
+
+    portENTER_CRITICAL( &state_lock );
+    stopping = true;
+    portEXIT_CRITICAL( &state_lock );
+
+    esp_err_t result = esp_wifi_stop();
+    if( ESP_OK == result )
+    {
+        result = esp_wifi_set_mac( WIFI_IF_STA, mac );
+        if( ESP_OK == result )
+        {
+            mac_randomized = true;
+        }
+        const esp_err_t start_result = esp_wifi_start();
+        if( ESP_OK == result )
+        {
+            result = start_result;
+        }
+    }
+
+    portENTER_CRITICAL( &state_lock );
+    stopping = false;
+    status.state = RFSCOUT_WIFI_STATION_IDLE;
+    status.disconnect_reason = 0;
+    portEXIT_CRITICAL( &state_lock );
+
+    if( ESP_OK == result )
+    {
+        ESP_LOGI( TAG,
+                  "station MAC randomized to %02X:%02X:%02X:%02X:%02X:%02X",
+                  mac[ 0 ],
+                  mac[ 1 ],
+                  mac[ 2 ],
+                  mac[ 3 ],
+                  mac[ 4 ],
+                  mac[ 5 ] );
+    }
+    memset( mac, 0, sizeof( mac ) );
+    return result;
+}
+
 esp_err_t rfscout_wifi_station_init( void )
 {
     if( initialized )
@@ -355,10 +456,14 @@ esp_err_t rfscout_wifi_station_init( void )
         return ESP_OK;
     }
 
-    esp_netif_t *station_netif = esp_netif_create_default_wifi_sta();
+    station_netif = esp_netif_create_default_wifi_sta();
     if( NULL == station_netif )
     {
         return ESP_ERR_NO_MEM;
+    }
+    if( ESP_OK != esp_read_mac( factory_mac, ESP_MAC_WIFI_STA ) )
+    {
+        memset( factory_mac, 0, sizeof( factory_mac ) );
     }
 
     esp_err_t result = esp_event_handler_instance_register(
@@ -378,6 +483,7 @@ esp_err_t rfscout_wifi_station_init( void )
     {
         memset( &ip_event_handler, 0, sizeof( ip_event_handler ) );
         esp_netif_destroy_default_wifi( station_netif );
+        station_netif = NULL;
         return result;
     }
 
@@ -386,6 +492,8 @@ esp_err_t rfscout_wifi_station_init( void )
     stopping = false;
     disconnect_requested = false;
     ntp_initialized = false;
+    auto_time_sync = true;
+    mac_randomized = false;
     status = ( rfscout_wifi_station_status_t ){
         .state = RFSCOUT_WIFI_STATION_OFF,
         .scan_generation = 0U,
@@ -395,6 +503,7 @@ esp_err_t rfscout_wifi_station_init( void )
         .ntp_synced = false,
     };
     scan_result_count = 0U;
+    bss_result_count = 0U;
     portEXIT_CRITICAL( &state_lock );
     initialized = true;
     return ESP_OK;
@@ -456,6 +565,170 @@ size_t rfscout_wifi_station_scan_results( rfscout_wifi_station_ap_t *a_results, 
     }
     portEXIT_CRITICAL( &state_lock );
     return count;
+}
+
+size_t rfscout_wifi_station_bss_results( rfscout_wifi_station_bss_t *a_results, size_t a_capacity )
+{
+    portENTER_CRITICAL( &state_lock );
+    const size_t count = bss_result_count < a_capacity ? bss_result_count : a_capacity;
+    if( NULL != a_results && count > 0U )
+    {
+        memcpy( a_results, bss_results, count * sizeof( bss_results[ 0 ] ) );
+    }
+    portEXIT_CRITICAL( &state_lock );
+    return count;
+}
+
+esp_err_t rfscout_wifi_station_connect_open_bss( const rfscout_wifi_station_bss_t *a_bss,
+                                                 bool a_randomize_mac )
+{
+    if( !initialized )
+    {
+        const esp_err_t init_result = rfscout_wifi_station_init();
+        if( ESP_OK != init_result )
+        {
+            return init_result;
+        }
+    }
+    if( NULL == a_bss || RFSCOUT_WIFI_STATION_SECURITY_SECURED == a_bss->security )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const size_t ssid_length = strnlen( a_bss->ssid, RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH + 1U );
+    if( 0U == ssid_length || ssid_length > RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH )
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
+    if( RFSCOUT_WIFI_STATION_SCANNING == current.state ||
+        RFSCOUT_WIFI_STATION_SEARCHING == current.state ||
+        RFSCOUT_WIFI_STATION_CONNECTING == current.state ||
+        RFSCOUT_WIFI_STATION_DISCONNECTING == current.state ||
+        RFSCOUT_WIFI_STATION_CONNECTED == current.state )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t result = ensure_started();
+    if( ESP_OK == result && a_randomize_mac )
+    {
+        result = restart_with_random_mac();
+    }
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
+    wifi_config_t config = { 0 };
+    memcpy( config.sta.ssid, a_bss->ssid, ssid_length );
+    memcpy( config.sta.bssid, a_bss->bssid, sizeof( config.sta.bssid ) );
+    config.sta.bssid_set = true;
+    config.sta.channel = a_bss->channel;
+    config.sta.scan_method = WIFI_FAST_SCAN;
+    config.sta.threshold.authmode =
+        ( RFSCOUT_WIFI_STATION_SECURITY_OWE == a_bss->security ) ? WIFI_AUTH_OWE : WIFI_AUTH_OPEN;
+    config.sta.failure_retry_cnt = 0U;
+
+    result = esp_wifi_set_config( WIFI_IF_STA, &config );
+    memset( &config, 0, sizeof( config ) );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
+    stop_ntp_sync();
+
+    portENTER_CRITICAL( &state_lock );
+    disconnect_requested = false;
+    auto_time_sync = false;
+    status.disconnect_reason = 0;
+    memset( status.ssid, 0, sizeof( status.ssid ) );
+    memcpy( status.ssid, a_bss->ssid, ssid_length );
+    status.ntp_syncing = false;
+    status.ntp_synced = false;
+    status.state = RFSCOUT_WIFI_STATION_CONNECTING;
+    portEXIT_CRITICAL( &state_lock );
+
+    result = esp_wifi_connect();
+    if( ESP_OK != result )
+    {
+        set_state( RFSCOUT_WIFI_STATION_FAILED, (int32_t)result );
+    }
+    return result;
+}
+
+esp_err_t rfscout_wifi_station_start_time_sync( void )
+{
+    if( !initialized )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    stop_ntp_sync();
+    return start_ntp_sync();
+}
+
+esp_err_t rfscout_wifi_station_abort( void )
+{
+    if( !initialized )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    portENTER_CRITICAL( &state_lock );
+    if( !started )
+    {
+        portEXIT_CRITICAL( &state_lock );
+        return ESP_ERR_INVALID_STATE;
+    }
+    const rfscout_wifi_station_state_t previous = status.state;
+    /* A late DISCONNECTED event for the abandoned attempt is absorbed as an orderly disconnect. */
+    disconnect_requested = true;
+    status.state = RFSCOUT_WIFI_STATION_IDLE;
+    status.disconnect_reason = 0;
+    memset( status.ssid, 0, sizeof( status.ssid ) );
+    memset( active_search_ssid, 0, sizeof( active_search_ssid ) );
+    portEXIT_CRITICAL( &state_lock );
+
+    stop_ntp_sync();
+    if( RFSCOUT_WIFI_STATION_SEARCHING == previous || RFSCOUT_WIFI_STATION_SCANNING == previous )
+    {
+        (void)esp_wifi_scan_stop();
+        (void)esp_wifi_clear_ap_list();
+    }
+    const esp_err_t result = esp_wifi_disconnect();
+
+    wifi_config_t blank = { 0 };
+    (void)esp_wifi_set_config( WIFI_IF_STA, &blank );
+    memset( &blank, 0, sizeof( blank ) );
+    return ( ESP_OK == result || ESP_ERR_WIFI_NOT_CONNECT == result ) ? ESP_OK : result;
+}
+
+esp_err_t rfscout_wifi_station_ip_info( rfscout_wifi_station_ip_info_t *a_info )
+{
+    if( NULL == a_info )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memset( a_info, 0, sizeof( *a_info ) );
+
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
+    if( NULL == station_netif || RFSCOUT_WIFI_STATION_CONNECTED != current.state )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_netif_ip_info_t info;
+    const esp_err_t result = esp_netif_get_ip_info( station_netif, &info );
+    if( ESP_OK == result )
+    {
+        a_info->address = info.ip.addr;
+        a_info->netmask = info.netmask.addr;
+        a_info->gateway = info.gw.addr;
+    }
+    return result;
 }
 
 esp_err_t rfscout_wifi_station_connect( const char *a_ssid, const char *a_password )
@@ -522,6 +795,7 @@ esp_err_t rfscout_wifi_station_connect( const char *a_ssid, const char *a_passwo
 
     portENTER_CRITICAL( &state_lock );
     disconnect_requested = false;
+    auto_time_sync = true;
     status.disconnect_reason = 0;
     memset( status.ssid, 0, sizeof( status.ssid ) );
     memcpy( status.ssid, a_ssid, ssid_length );
@@ -655,6 +929,7 @@ esp_err_t rfscout_wifi_station_stop( void )
         wifi_config_t blank = { 0 };
         (void)esp_wifi_set_config( WIFI_IF_STA, &blank );
         memset( &blank, 0, sizeof( blank ) );
+        restore_factory_mac();
     }
 
     stop_ntp_sync();
@@ -668,7 +943,10 @@ esp_err_t rfscout_wifi_station_stop( void )
     status.ntp_synced = false;
     scan_result_count = 0U;
     memset( scan_results, 0, sizeof( scan_results ) );
+    bss_result_count = 0U;
+    memset( bss_results, 0, sizeof( bss_results ) );
     memset( active_search_ssid, 0, sizeof( active_search_ssid ) );
+    auto_time_sync = true;
     stopping = false;
     portEXIT_CRITICAL( &state_lock );
     return ESP_OK;

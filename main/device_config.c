@@ -43,6 +43,7 @@ static const char *app_config_name( rfscout_app_id_t a_app )
         [RFSCOUT_APP_SYSTEM_EVENTS] = "system_events",
         [RFSCOUT_APP_DEVICE] = "device",
         [RFSCOUT_APP_WIFI_BT] = "wifi_bt",
+        [RFSCOUT_APP_HOTSPOTS] = "hotspots",
         [RFSCOUT_APP_CC1101] = "cc1101",
         [RFSCOUT_APP_NRF24] = "nrf24",
         [RFSCOUT_APP_AUDIO] = "audio",

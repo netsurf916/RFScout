@@ -10,6 +10,7 @@
 #include "app_lifecycle.h"
 #include "app_manager.h"
 #include "cc1101.h"
+#include "hotspots_app.h"
 #include "log_writer.h"
 #include "mlx90640.h"
 #include "nrf24.h"
@@ -32,6 +33,7 @@ static const char *app_name( rfscout_app_id_t a_app )
         [RFSCOUT_APP_SYSTEM_EVENTS] = "SYSTEM_EVENTS",
         [RFSCOUT_APP_DEVICE] = "DEVICE",
         [RFSCOUT_APP_WIFI_BT] = "WIFI_BT",
+        [RFSCOUT_APP_HOTSPOTS] = "HOTSPOTS",
         [RFSCOUT_APP_CC1101] = "CC1101",
         [RFSCOUT_APP_NRF24] = "NRF24",
         [RFSCOUT_APP_AUDIO] = "RECORDER",
@@ -164,6 +166,18 @@ static void write_periodic_record( rfscout_app_id_t a_app )
         case RFSCOUT_APP_THERMAL:
             success = log_bool( &record, "detected", mlx90640_is_detected() );
             break;
+
+        case RFSCOUT_APP_HOTSPOTS:
+        {
+            hotspots_app_counts_t counts;
+            hotspots_app_counts( &counts );
+            success = log_uint( &record, "visible", counts.visible ) &&
+                      log_uint( &record, "green", counts.green ) &&
+                      log_uint( &record, "yellow", counts.yellow ) &&
+                      log_uint( &record, "red", counts.red ) &&
+                      log_uint( &record, "checks", counts.checks );
+            break;
+        }
 
         default:
             success = false;

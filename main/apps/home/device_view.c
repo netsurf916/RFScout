@@ -48,18 +48,19 @@
 #define DEVICE_ITEM_NETWORK 14U
 #define DEVICE_ITEM_OTA 15U
 #define DEVICE_ITEM_WIFI 16U
-#define DEVICE_ITEM_CC1101 17U
-#define DEVICE_ITEM_NRF24 18U
-#define DEVICE_ITEM_AUDIO 19U
-#define DEVICE_ITEM_THERMAL 20U
-#define DEVICE_ITEM_AUDIO_SPECTRUM 21U
-#define DEVICE_ITEM_LOGGING 22U
-#define DEVICE_ITEM_POWER_BUTTON 23U
-#define DEVICE_ITEM_POWER_POLICY 24U
-#define DEVICE_ITEM_BREADCRUMBS 25U
-#define DEVICE_ITEM_BREADCRUMB_FILES 26U
-#define DEVICE_ITEM_HOLD_SHORTCUT 27U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 28U
+#define DEVICE_ITEM_HOTSPOTS 17U
+#define DEVICE_ITEM_CC1101 18U
+#define DEVICE_ITEM_NRF24 19U
+#define DEVICE_ITEM_AUDIO 20U
+#define DEVICE_ITEM_THERMAL 21U
+#define DEVICE_ITEM_AUDIO_SPECTRUM 22U
+#define DEVICE_ITEM_LOGGING 23U
+#define DEVICE_ITEM_POWER_BUTTON 24U
+#define DEVICE_ITEM_POWER_POLICY 25U
+#define DEVICE_ITEM_BREADCRUMBS 26U
+#define DEVICE_ITEM_BREADCRUMB_FILES 27U
+#define DEVICE_ITEM_HOLD_SHORTCUT 28U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 29U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
 #define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_HOLD_SHORTCUT + 1U )
@@ -207,6 +208,8 @@ static const char *startup_app_name( rfscout_app_id_t a_app )
             return "System Events";
         case RFSCOUT_APP_WIFI_BT:
             return "WiFi / BT";
+        case RFSCOUT_APP_HOTSPOTS:
+            return "Hotspots";
         case RFSCOUT_APP_CC1101:
             return "CC1101";
         case RFSCOUT_APP_NRF24:
@@ -244,10 +247,10 @@ static bool item_direct_toggle( unsigned a_item )
     return ( DEVICE_ITEM_BREADCRUMBS == a_item ) || ( DEVICE_ITEM_AUDIO_POLICY == a_item ) ||
            ( DEVICE_ITEM_ALERT_MODE == a_item ) || ( DEVICE_ITEM_CLOCK_FORMAT == a_item ) ||
            ( DEVICE_ITEM_SYSTEM_EVENTS == a_item ) || ( DEVICE_ITEM_WIFI == a_item ) ||
-           ( DEVICE_ITEM_CC1101 == a_item ) || ( DEVICE_ITEM_NRF24 == a_item ) ||
-           ( DEVICE_ITEM_AUDIO == a_item ) || ( DEVICE_ITEM_THERMAL == a_item ) ||
-           ( DEVICE_ITEM_AUDIO_SPECTRUM == a_item ) || ( DEVICE_ITEM_LOGGING == a_item ) ||
-           ( DEVICE_ITEM_HOLD_SHORTCUT == a_item );
+           ( DEVICE_ITEM_HOTSPOTS == a_item ) || ( DEVICE_ITEM_CC1101 == a_item ) ||
+           ( DEVICE_ITEM_NRF24 == a_item ) || ( DEVICE_ITEM_AUDIO == a_item ) ||
+           ( DEVICE_ITEM_THERMAL == a_item ) || ( DEVICE_ITEM_AUDIO_SPECTRUM == a_item ) ||
+           ( DEVICE_ITEM_LOGGING == a_item ) || ( DEVICE_ITEM_HOLD_SHORTCUT == a_item );
 }
 
 static bool item_editable( unsigned a_item )
@@ -296,6 +299,8 @@ static const char *item_label( unsigned a_item )
             return "Update";
         case DEVICE_ITEM_WIFI:
             return "WiFi / BT";
+        case DEVICE_ITEM_HOTSPOTS:
+            return "Hotspots";
         case DEVICE_ITEM_CC1101:
             return "CC1101";
         case DEVICE_ITEM_NRF24:
@@ -416,6 +421,10 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
         case DEVICE_ITEM_WIFI:
             snprintf(
                 a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_WIFI_BT ] ) );
+            break;
+        case DEVICE_ITEM_HOTSPOTS:
+            snprintf(
+                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_HOTSPOTS ] ) );
             break;
         case DEVICE_ITEM_CC1101:
             snprintf(
@@ -1511,6 +1520,10 @@ static void adjust_selected( int a_delta )
     else if( DEVICE_ITEM_WIFI == selected_item )
     {
         toggle_app( RFSCOUT_APP_WIFI_BT, "apps.wifi_bt" );
+    }
+    else if( DEVICE_ITEM_HOTSPOTS == selected_item )
+    {
+        toggle_app( RFSCOUT_APP_HOTSPOTS, "apps.hotspots" );
     }
     else if( DEVICE_ITEM_CC1101 == selected_item )
     {

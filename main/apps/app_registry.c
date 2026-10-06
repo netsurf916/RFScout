@@ -9,6 +9,7 @@
 extern const rfscout_app_descriptor_t rfscout_system_events_app;
 extern const rfscout_app_descriptor_t rfscout_home_app;
 extern const rfscout_app_descriptor_t rfscout_wifi_ble_app;
+extern const rfscout_app_descriptor_t rfscout_hotspots_app;
 extern const rfscout_app_descriptor_t rfscout_cc1101_app;
 extern const rfscout_app_descriptor_t rfscout_nrf24_app;
 extern const rfscout_app_descriptor_t rfscout_recorder_app;
@@ -19,6 +20,7 @@ const rfscout_app_descriptor_t *const rfscout_app_registry[ RFSCOUT_APP_COUNT ] 
     [RFSCOUT_APP_SYSTEM_EVENTS] = &rfscout_system_events_app,
     [RFSCOUT_APP_DEVICE] = &rfscout_home_app,
     [RFSCOUT_APP_WIFI_BT] = &rfscout_wifi_ble_app,
+    [RFSCOUT_APP_HOTSPOTS] = &rfscout_hotspots_app,
     [RFSCOUT_APP_CC1101] = &rfscout_cc1101_app,
     [RFSCOUT_APP_NRF24] = &rfscout_nrf24_app,
     [RFSCOUT_APP_AUDIO] = &rfscout_recorder_app,

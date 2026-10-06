@@ -54,6 +54,8 @@ static const char *source_name( uint8_t a_source )
             return "SET";
         case RFSCOUT_APP_WIFI_BT:
             return "W/B";
+        case RFSCOUT_APP_HOTSPOTS:
+            return "HOT";
         case RFSCOUT_APP_CC1101:
             return "CC1";
         case RFSCOUT_APP_NRF24:

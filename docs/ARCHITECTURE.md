@@ -11,6 +11,7 @@ Application pages own app-specific UI, interpretation, settings, and current lim
 - [Home / Device Settings](apps/HOME.md)
 - [System Events](apps/SYSTEM_EVENTS.md)
 - [WiFi / BLE](apps/WIFI_BLE.md)
+- [Hotspots](apps/HOTSPOTS.md)
 - [CC1101](apps/CC1101.md)
 - [nRF24](apps/NRF24.md)
 - [Recorder](apps/RECORDER.md)
@@ -113,7 +114,7 @@ A successful service stop is the platform reachability proof: new work that can 
 
 Once source cleanup has committed, RFScout does not resurrect the old application. If destination-session creation fails, lifecycle diagnostics record a committed-destination failure and the app manager attempts Home fallback without dispatching ENTER against an invalid view.
 
-Current session-managed asynchronous services include Wi-Fi monitoring, infrastructure Wi-Fi, OTA acquisition/installation, BLE monitoring, CC1101, nRF24, and shared audio capture/Recorder activity. Thermal acquisition is synchronous today.
+Current session-managed asynchronous services include Wi-Fi monitoring, infrastructure Wi-Fi station, connectivity probing, OTA acquisition/installation, BLE monitoring, CC1101, nRF24, and shared audio capture/Recorder activity. Thermal acquisition is synchronous today.
 
 ## Memory policy
 
@@ -183,7 +184,11 @@ The Wi-Fi and BLE monitor services normalize passive observations for the [WiFi 
 
 CC1101 and nRF24 are receive-only scanner services advertised by the current T-Embed profile. Each owns a session-managed worker that must stop before app memory release. App-specific interpretation and current retained-history limits are documented in [CC1101](apps/CC1101.md) and [nRF24](apps/NRF24.md).
 
-Infrastructure Wi-Fi is a different platform concern from the passive observation monitor. It is owned by the Home session and is used for explicit network/NTP/OTA workflows without teaching the WiFi/BLE observation app about station/update state.
+Infrastructure Wi-Fi (the station service) is a different platform concern from the passive observation monitor. It is a session-managed platform service: an app that declares it owns the station for its session, and session close tears the station down (including any connection, scan, and time sync) before app memory is reclaimed. Home uses it for explicit network/NTP/OTA workflows; Hotspots uses it to join open access points one BSSID at a time. Neither teaches the WiFi/BLE observation app about station state.
+
+The station service provides a strongest-per-SSID scan projection (Home's Network view) and a per-BSSID projection with security classification (Hotspots), credentialed connection by SSID with automatic NTP after DHCP (Home), and credential-free BSSID-pinned Open/OWE connection with caller-controlled NTP and an optional random locally administered MAC per connection (Hotspots). The factory station MAC is restored whenever the station session stops.
+
+The connectivity probe is a separate session-managed service that performs one bounded, cancellable, certificate-validated HTTPS request (Cloudflare `/cdn-cgi/trace`) over whatever station connection is up and reports the HTTP status plus public egress metadata. Session close cancels it and waits for its worker to exit.
 
 ## Configuration and persistent records
 

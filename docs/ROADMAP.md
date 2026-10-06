@@ -326,7 +326,7 @@ Remaining work:
 
 ### Workstream G: application framework isolation and platform services
 
-**Status:** In progress. G1 is implemented pending hardware validation; G2 is next.
+**Status:** In progress. G1 and G2 are implemented pending hardware validation.
 
 Applications should consume complete, owner-scoped platform services rather than reaching into shared filesystem paths, central configuration structures, or core boot code. Each slice below should leave the documented framework contracts in [ARCHITECTURE.md](ARCHITECTURE.md) true for every existing consumer, not just for the newest application.
 
@@ -349,43 +349,33 @@ Replace hard-coded SD paths and direct stdio/POSIX card access with one storage-
 - [x] No migration: files written by earlier firmware under `/sdcard/audio/` and `/sdcard/logs/` remain on the card untouched. Release notes must call this out.
 - [ ] Hardware-validate logging, breadcrumbs (when a GPS provider is present), Recorder record/save/browse/delete/playback, SD removal while each is active, forced-close diagnostics, and repeated Recorder enter/exit with zero remaining media handles.
 
-#### G2: Hotspotter Lite application
+#### G2: Hotspots (Hotspotter Lite) application
 
-**Status:** Planned; starts after G1.
+**Status:** Implemented as documented in [Hotspots](apps/HOTSPOTS.md); hardware validation open.
 
-A lightweight, realtime view of nearby **open** Wi-Fi access points and whether each currently provides Internet connectivity. It is derived from the standalone Hotspotter project but intentionally narrower.
+A lightweight, realtime view of nearby open access points and whether each currently provides Internet connectivity, derived from the standalone Hotspotter project but intentionally narrower: no GPS, no persistent storage, no credentials.
 
-Scope:
+Decisions:
 
-- realtime only: results live in app-session PSRAM and are released when the app is left;
-- no GPS, location, distance, or history;
-- no persistent storage of any kind (no SD media collections and no internal app records beyond ordinary system-owned app enablement);
-- no credential entry, profiles, or secured networks; hidden SSIDs are not actionable;
-- this is RFScout's first application that **associates** with third-party networks. UI and documentation must state that explicitly, and checking must remain a clearly user-controlled behavior rather than a side effect of passive observation.
+- [x] Automatic checking **on by default** (Hotspotter's -80 dBm floor and +4 dB retry gating, strongest first), with a per-visit toggle and manual Recheck.
+- [x] **Open and OWE** networks are eligible; secured and hidden networks are counted but never joined.
+- [x] A fresh random, locally administered station MAC for every check; factory MAC restored when the station session stops.
+- [x] Named **Hotspots**, placed after WiFi/BLE in navigation order.
+- [x] NTP is required before HTTPS: NTP failure or timeout marks the AP yellow without attempting HTTPS.
 
-Check sequence for one open BSSID:
+Platform prerequisites:
 
-1. passive scan provides BSSID, SSID, channel, RSSI, and auth mode;
-2. associate pinned to that BSSID with no credentials, then complete DHCP — failure marks the AP **red / failed**;
-3. synchronize wall-clock time with the existing SNTP path after association;
-4. if NTP **fails or times out**, do **not** attempt HTTPS and mark the AP **yellow**;
-5. if NTP succeeds, perform one certificate-validated HTTPS viability request (Cloudflare `/cdn-cgi/trace`); HTTP 200 marks **green**, any other result marks **yellow**; and
-6. disconnect and return to passive scanning; every stage is bounded by its own timeout and cancellable when the app is left.
+- [x] Station service per-BSSID scan projection with security classification (Home's strongest-per-SSID Network view unchanged).
+- [x] Credential-free BSSID-pinned Open/OWE association with optional per-connection MAC randomization.
+- [x] Caller-controlled post-association SNTP with observable success (Home keeps automatic NTP).
+- [x] Station abort usable from any connecting/connected state.
+- [x] Session-managed, cancellable connectivity-probe service (verified HTTPS to Cloudflare `/cdn-cgi/trace`) declared through a descriptor service bit.
+- [x] App descriptor, view, registry/config/logging wiring, and documentation page.
 
-Platform prerequisites (generalize existing services rather than adding an app-private Wi-Fi stack):
+Remaining:
 
-- [ ] Extend the station service scan snapshot to per-BSSID records including auth mode (Home's strongest-per-SSID Network view becomes a projection of it).
-- [ ] Add BSSID-pinned open-network association without credentials.
-- [ ] Make post-association SNTP caller-controlled with an observable success/failure/timeout result (Home keeps its current automatic behavior).
-- [ ] Add a session-managed, cancellable HTTPS probe service usable by any app (status code, bounded body parse, timeout), declared through a descriptor service bit.
-- [ ] Add the app descriptor, view, and documentation page (`docs/apps/`), and update README application order.
-
-Open decisions:
-
-- [ ] Manual per-AP check only, or an additional opt-in automatic mode using Hotspotter's -80 dBm floor / +4 dB retry gating.
-- [ ] Whether OWE (Enhanced Open) networks are eligible; default is plain open only.
-- [ ] Whether to randomize the station MAC per attempt (locally administered) to avoid cross-hotspot tracking.
-- [ ] User-facing application name and position in navigation order.
+- [ ] Hardware-validate open, OWE, captive-portal, NTP-blocked, and no-Internet networks; MAC randomization and factory-MAC restore; rapid enter/exit during each check stage.
+- [ ] Decide whether captive-portal detection (plain-HTTP generate_204-style check) should refine yellow.
 
 #### Further framework isolation candidates
 
