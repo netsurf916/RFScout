@@ -37,7 +37,6 @@ static bool started;
 static bool stopping;
 static bool disconnect_requested;
 static bool ntp_initialized;
-static bool auto_time_sync;
 static bool mac_randomized;
 static bool factory_mac_valid;
 static uint8_t factory_mac[ 6 ];
@@ -395,26 +394,14 @@ ip_event( void *a_context, esp_event_base_t a_event_base, int32_t a_event_id, vo
 
     if( IP_EVENT_STA_GOT_IP == a_event_id )
     {
-        bool synchronize_time = false;
         portENTER_CRITICAL( &state_lock );
         if( started && !stopping && !disconnect_requested &&
             RFSCOUT_WIFI_STATION_CONNECTING == status.state )
         {
             status.state = RFSCOUT_WIFI_STATION_CONNECTED;
             status.disconnect_reason = 0;
-            synchronize_time = auto_time_sync;
         }
         portEXIT_CRITICAL( &state_lock );
-
-        if( synchronize_time )
-        {
-            const esp_err_t result = start_ntp_sync();
-            if( ESP_OK != result )
-            {
-                ESP_LOGW(
-                    TAG, "could not start NTP synchronization: %s", esp_err_to_name( result ) );
-            }
-        }
     }
 }
 
@@ -605,7 +592,6 @@ esp_err_t rfscout_wifi_station_init( void )
     stopping = false;
     disconnect_requested = false;
     ntp_initialized = false;
-    auto_time_sync = true;
     mac_randomized = false;
     status = ( rfscout_wifi_station_status_t ){
         .state = RFSCOUT_WIFI_STATION_OFF,
@@ -758,7 +744,6 @@ esp_err_t rfscout_wifi_station_connect_open_bss( const rfscout_wifi_station_bss_
 
     portENTER_CRITICAL( &state_lock );
     disconnect_requested = false;
-    auto_time_sync = false;
     status.disconnect_reason = 0;
     memset( status.ssid, 0, sizeof( status.ssid ) );
     memcpy( status.ssid, a_bss->ssid, ssid_length );
@@ -918,7 +903,6 @@ rfscout_wifi_station_connect( const char *a_ssid, const char *a_password, bool a
 
     portENTER_CRITICAL( &state_lock );
     disconnect_requested = false;
-    auto_time_sync = false;
     status.disconnect_reason = 0;
     memset( status.ssid, 0, sizeof( status.ssid ) );
     memcpy( status.ssid, a_ssid, ssid_length );
@@ -1042,7 +1026,6 @@ esp_err_t rfscout_wifi_station_stop( void )
     bss_result_count = 0U;
     memset( bss_results, 0, sizeof( bss_results ) );
     memset( active_search_ssid, 0, sizeof( active_search_ssid ) );
-    auto_time_sync = true;
     stopping = false;
     portEXIT_CRITICAL( &state_lock );
     return ESP_OK;
