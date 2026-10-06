@@ -655,7 +655,7 @@ static void scheduler_poll( int64_t a_now_us )
                      ( a_now_us >= phase_deadline_us ) )
             {
                 ESP_LOGW( TAG, "passive scan did not complete; retrying" );
-                (void)rfscout_wifi_station_abort();
+                (void)rfscout_wifi_station_cancel_scan();
                 phase = HOTSPOTS_PHASE_SCAN_START;
                 next_scan_us = a_now_us + HOTSPOTS_SCAN_RETRY_US;
             }
