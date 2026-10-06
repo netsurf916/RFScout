@@ -699,7 +699,7 @@ static void scheduler_poll( int64_t a_now_us )
                 }
 
                 attempt_result.ntp_ok = true;
-                const esp_err_t result = connectivity_probe_start( HOTSPOTS_HTTPS_TIMEOUT_MS );
+                const esp_err_t result = connectivity_probe_begin( HOTSPOTS_HTTPS_TIMEOUT_MS );
                 if( ESP_OK != result )
                 {
                     finish_attempt( HOTSPOT_STATUS_YELLOW, HOTSPOT_STAGE_HTTPS, result, a_now_us );
