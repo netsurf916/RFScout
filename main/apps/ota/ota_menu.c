@@ -102,11 +102,6 @@ static void set_error( esp_err_t a_error )
     snprintf( error_text, sizeof( error_text ), "%s", esp_err_to_name( a_error ) );
 }
 
-static bool update_network_ready( void )
-{
-    return network_session_ready();
-}
-
 static esp_err_t ensure_catalog_json_capacity( size_t a_length )
 {
     if( a_length == SIZE_MAX )
@@ -227,11 +222,6 @@ static void build_saved_list( void )
     }
 }
 
-static bool network_connected( void )
-{
-    return network_session_has_lan();
-}
-
 static bool install_interaction_locked( void )
 {
     return ( NULL != pending_install_candidate ) || ota_installer_is_active();
@@ -296,7 +286,7 @@ static void render_network_main( void )
 static void render_update_main( void )
 {
     const rfscout_firmware_identity_t *identity = firmware_identity();
-    const bool ready = update_network_ready();
+    const bool ready = network_session_ready();
     const bool can_install = ready && install_action_available();
     const unsigned item_count = ready ? ( can_install ? 4U : 3U ) : 1U;
     if( selected_item >= item_count )
@@ -542,7 +532,7 @@ static void begin_update_check( void )
         return;
     }
 
-    if( !update_network_ready() )
+    if( !network_session_ready() )
     {
         snprintf( error_text, sizeof( error_text ), "Network not ready" );
         render();
@@ -579,7 +569,7 @@ static void request_candidate_install( const ota_catalog_candidate_t *a_candidat
         return;
     }
 
-    if( !update_network_ready() )
+    if( !network_session_ready() )
     {
         snprintf( error_text, sizeof( error_text ), "Network not ready" );
         render();
@@ -677,7 +667,7 @@ static void handle_network_main_select( void )
     }
 
     const unsigned action = menu_item - (unsigned)view_network_count;
-    if( network_connected() )
+    if( network_session_has_lan() )
     {
         open_saved_networks();
         return;
@@ -704,7 +694,7 @@ static void handle_update_main_select( void )
         close_requested = true;
         return;
     }
-    if( !update_network_ready() )
+    if( !network_session_ready() )
     {
         return;
     }
@@ -1054,11 +1044,11 @@ static void handle_input( const rfscout_input_event_t *a_input )
             if( HOME_SUBMENU_NETWORK == submenu )
             {
                 build_visible_saved();
-                item_count = 1U + (unsigned)view_network_count + ( network_connected() ? 1U : 3U );
+                item_count = 1U + (unsigned)view_network_count + ( network_session_has_lan() ? 1U : 3U );
             }
             else
             {
-                const bool ready = update_network_ready();
+                const bool ready = network_session_ready();
                 const bool can_install = ready && install_action_available();
                 item_count = ready ? ( can_install ? 4U : 3U ) : 1U;
             }
