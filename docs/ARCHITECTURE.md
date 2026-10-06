@@ -207,7 +207,7 @@ The network-session policy is common across applications: every new association 
 
 The station driver still provides a strongest-per-SSID scan projection for Home and a per-BSSID projection with security classification for Hotspots. The framework selects either credentialed SSID association or credential-free BSSID-pinned Open/OWE association, then applies the same network-session lifecycle to both. HTTPS remains a consumer of READY network sessions: OTA acquisition and the Hotspots connectivity probe retain separate transfer semantics while sharing connection/time policy.
 
-The connectivity probe is a separate session-managed service that performs one bounded, cancellable, certificate-validated HTTPS request (Cloudflare `/cdn-cgi/trace`) over whatever station connection is up and reports the HTTP status plus public egress metadata. Session close cancels it and waits for its worker to exit.
+The connectivity probe is a separate transactional session-managed service whose parameterized `begin` performs one bounded, cancellable, certificate-validated HTTPS request (Cloudflare `/cdn-cgi/trace`) over whatever station connection is up and reports the HTTP status plus public egress metadata. Session close cancels it and waits for its worker to exit.
 
 ## Configuration and persistent records
 
