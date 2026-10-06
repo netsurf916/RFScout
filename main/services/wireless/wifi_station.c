@@ -780,9 +780,8 @@ esp_err_t rfscout_wifi_station_cancel_scan( void )
     }
 
     portENTER_CRITICAL( &state_lock );
-    if( !started ||
-        ( RFSCOUT_WIFI_STATION_SCANNING != status.state &&
-          RFSCOUT_WIFI_STATION_SEARCHING != status.state ) )
+    if( !started || ( RFSCOUT_WIFI_STATION_SCANNING != status.state &&
+                      RFSCOUT_WIFI_STATION_SEARCHING != status.state ) )
     {
         portEXIT_CRITICAL( &state_lock );
         return ESP_ERR_INVALID_STATE;
