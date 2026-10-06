@@ -28,10 +28,19 @@ typedef enum
     RFSCOUT_NETWORK_SESSION_FAILED
 } rfscout_network_session_state_t;
 
+typedef enum
+{
+    RFSCOUT_NETWORK_SESSION_FAILURE_NONE = 0,
+    RFSCOUT_NETWORK_SESSION_FAILURE_ASSOCIATION,
+    RFSCOUT_NETWORK_SESSION_FAILURE_TIME_SYNC,
+    RFSCOUT_NETWORK_SESSION_FAILURE_TEARDOWN
+} rfscout_network_session_failure_t;
+
 typedef struct
 {
     rfscout_network_session_state_t state;
     esp_err_t error;
+    rfscout_network_session_failure_t failure;
     int32_t disconnect_reason;
     uint32_t generation;
     char ssid[ RFSCOUT_NETWORK_SESSION_SSID_MAX_LENGTH + 1U ];
