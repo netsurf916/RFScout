@@ -10,6 +10,8 @@
 #include "esp_netif.h"
 #include "esp_wifi.h"
 
+#include <stdbool.h>
+
 static bool initialized;
 
 esp_err_t wifi_core_init( void )
@@ -33,7 +35,7 @@ esp_err_t wifi_core_init( void )
 
     wifi_init_config_t config = WIFI_INIT_CONFIG_DEFAULT();
     result = esp_wifi_init( &config );
-    if( ESP_OK != result && ESP_ERR_WIFI_INIT_STATE != result )
+    if( ESP_OK != result )
     {
         return result;
     }
