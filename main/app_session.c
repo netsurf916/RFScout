@@ -13,6 +13,7 @@
 #include "connectivity_probe.h"
 #include "display.h"
 #include "memory_manager.h"
+#include "network_session.h"
 #include "nrf24.h"
 #include "ota_acquisition.h"
 #include "ota_installer.h"
@@ -71,16 +72,16 @@ static bool wifi_active( void *a_context )
     return radio_monitor_is_running();
 }
 
-static esp_err_t stop_wifi_station( void *a_context )
+static esp_err_t stop_network_session( void *a_context )
 {
     (void)a_context;
-    return rfscout_wifi_station_stop();
+    return network_session_stop();
 }
 
-static bool wifi_station_active( void *a_context )
+static bool network_session_active( void *a_context )
 {
     (void)a_context;
-    return rfscout_wifi_station_is_active();
+    return network_session_is_active();
 }
 
 static esp_err_t stop_connectivity_probe( void *a_context )
@@ -217,10 +218,10 @@ static app_session_service_t platform_services[] = {
         .always_stop_for_close = true,
     },
     {
-        .capability = RFSCOUT_APP_SERVICE_WIFI_STATION,
-        .name = "Wi-Fi STA",
-        .stop = stop_wifi_station,
-        .active = wifi_station_active,
+        .capability = RFSCOUT_APP_SERVICE_NETWORK_SESSION,
+        .name = "Network session",
+        .stop = stop_network_session,
+        .active = network_session_active,
         .always_stop_for_close = true,
     },
     {
