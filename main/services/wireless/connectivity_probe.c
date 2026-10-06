@@ -185,19 +185,33 @@ static void probe_worker( void *a_context )
     vTaskDelete( NULL );
 }
 
+esp_err_t connectivity_probe_init( void )
+{
+    if( NULL != client_mutex )
+    {
+        return ESP_OK;
+    }
+
+    client_mutex = xSemaphoreCreateMutexStatic( &client_mutex_control );
+    if( NULL == client_mutex )
+    {
+        return ESP_ERR_NO_MEM;
+    }
+
+    memset( &status, 0, sizeof( status ) );
+    status.state = RFSCOUT_CONNECTIVITY_PROBE_IDLE;
+    return ESP_OK;
+}
+
 esp_err_t connectivity_probe_start( uint32_t a_timeout_ms )
 {
+    if( NULL == client_mutex )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     if( 0U == a_timeout_ms )
     {
         return ESP_ERR_INVALID_ARG;
-    }
-    if( NULL == client_mutex )
-    {
-        client_mutex = xSemaphoreCreateMutexStatic( &client_mutex_control );
-        if( NULL == client_mutex )
-        {
-            return ESP_ERR_NO_MEM;
-        }
     }
 
     portENTER_CRITICAL( &state_lock );
