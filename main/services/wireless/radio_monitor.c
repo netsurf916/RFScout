@@ -337,7 +337,7 @@ static int64_t channel_dwell_us( uint8_t a_channel )
                                                               : WIFI_DISCOVERY_DWELL_US;
 }
 
-bool radio_monitor_is_running( void )
+bool radio_monitor_is_active( void )
 {
     bool result;
     portENTER_CRITICAL( &callback_lock );
@@ -483,7 +483,7 @@ void radio_monitor_set_active_ap_channels( uint16_t a_channel_mask )
 
 void radio_monitor_step( void )
 {
-    if( !radio_monitor_is_running() )
+    if( !radio_monitor_is_active() )
     {
         return;
     }
