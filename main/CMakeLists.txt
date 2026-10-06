@@ -120,6 +120,7 @@ idf_component_register(
         "services/input/input.c"
         "services/location/gps.c"
         "services/wireless/radio_monitor.c"
+        "services/wireless/wifi_core.c"
         "services/wireless/wifi_station.c"
         "services/wireless/network_session.c"
         "services/wireless/connectivity_probe.c"
