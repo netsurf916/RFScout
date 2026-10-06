@@ -424,6 +424,11 @@ bool nrf24_is_detected( void )
     return detected;
 }
 
+bool nrf24_is_active( void )
+{
+    return running;
+}
+
 const nrf24_scan_config_t *nrf24_config( void )
 {
     return &config;
