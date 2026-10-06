@@ -20,8 +20,8 @@
 #define HOTSPOTS_SSID_MAX_CHARS 26U
 #define HOTSPOTS_TAG_X 196
 #define HOTSPOTS_RSSI_X 274
-#define HOTSPOTS_DETAIL_LINE_HEIGHT 11
-#define HOTSPOTS_DETAIL_ACTION_Y 128
+#define HOTSPOTS_DETAIL_LINE_HEIGHT 10
+#define HOTSPOTS_DETAIL_ACTION_Y 144
 #define HOTSPOTS_DETAIL_ACTION_HEIGHT 12
 #define HOTSPOTS_DETAIL_TEXT_MAX_CHARS 51U
 
@@ -192,6 +192,8 @@ void hotspots_view_detail( const hotspots_view_detail_t *a_detail, unsigned a_se
         a_detail->status,
         a_detail->last_attempt,
         a_detail->addresses,
+        a_detail->network,
+        a_detail->dns,
         a_detail->egress,
     };
     for( size_t index = 0U; index < sizeof( lines ) / sizeof( lines[ 0 ] ); ++index )
