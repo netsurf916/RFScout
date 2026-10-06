@@ -17,8 +17,11 @@
 
 typedef void ( *radio_observation_fn )( rf_device_t *a_observation );
 
-/** @brief Initialize passive Wi-Fi monitoring and start the initial scan. */
-esp_err_t radio_monitor_init( radio_observation_fn a_callback );
+/** @brief Bind the platform observation sink used while monitoring is active. */
+void radio_monitor_set_observer( radio_observation_fn a_callback );
+
+/** @brief Initialize reusable passive Wi-Fi monitor state without starting reception. */
+esp_err_t radio_monitor_init( void );
 
 /** @brief Start Wi-Fi hardware and promiscuous reception after app entry. */
 esp_err_t radio_monitor_start( void );
