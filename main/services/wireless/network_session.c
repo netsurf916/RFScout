@@ -54,6 +54,16 @@ static void fail_session( esp_err_t a_error,
     }
 }
 
+static void limit_session( esp_err_t a_error )
+{
+    const esp_err_t cancel_result = rfscout_wifi_station_cancel_time_sync();
+    status.state = RFSCOUT_NETWORK_SESSION_LIMITED;
+    status.error = ( ESP_OK == cancel_result ) ? a_error : cancel_result;
+    status.failure = RFSCOUT_NETWORK_SESSION_FAILURE_TIME_SYNC;
+    status.disconnect_reason = 0;
+    phase_started_us = 0;
+}
+
 static esp_err_t prepare_begin( const char *a_ssid )
 {
     if( NULL == a_ssid )
@@ -143,8 +153,7 @@ void network_session_poll( int64_t a_now_us )
             const esp_err_t result = rfscout_wifi_station_start_time_sync();
             if( ESP_OK != result )
             {
-                fail_session(
-                    result, RFSCOUT_NETWORK_SESSION_FAILURE_TIME_SYNC, station.disconnect_reason );
+                limit_session( result );
                 return;
             }
             status.state = RFSCOUT_NETWORK_SESSION_TIME_SYNCING;
@@ -163,7 +172,7 @@ void network_session_poll( int64_t a_now_us )
     if( RFSCOUT_WIFI_STATION_CONNECTED != station.state )
     {
         fail_session( ESP_ERR_INVALID_STATE,
-                      RFSCOUT_NETWORK_SESSION_FAILURE_TIME_SYNC,
+                      RFSCOUT_NETWORK_SESSION_FAILURE_ASSOCIATION,
                       station.disconnect_reason );
         return;
     }
@@ -177,8 +186,7 @@ void network_session_poll( int64_t a_now_us )
     }
     if( !station.ntp_syncing || a_now_us - phase_started_us >= NETWORK_SESSION_NTP_TIMEOUT_US )
     {
-        fail_session(
-            ESP_ERR_TIMEOUT, RFSCOUT_NETWORK_SESSION_FAILURE_TIME_SYNC, station.disconnect_reason );
+        limit_session( ESP_ERR_TIMEOUT );
     }
 }
 
