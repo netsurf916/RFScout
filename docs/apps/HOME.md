@@ -39,22 +39,22 @@ The current workflow:
 - stores up to eight Home-owned remembered SSID/password entries;
 - highlights remembered networks observed in the latest scan;
 - requires an explicit connect action;
-- presents association and SNTP as a modal **Connecting...** → **Setting time...** transaction, then returns to the Network main screen;
-- lets a short center click cancel either modal: canceling **Connecting...** aborts the station attempt, while canceling **Setting time...** stops only SNTP and leaves Wi-Fi connected;
-- keeps bounded connection/time-sync deadlines as unattended fail-safes;
+- presents the framework network session as a modal **Connecting...** → **Setting time...** transaction, then returns to the Network main screen once the session is READY;
+- lets a short center click cancel the transaction; cancellation releases the whole logical network session through the framework;
+- inherits the common framework deadlines: 30 seconds for association/DHCP and 15 seconds for required NTP synchronization;
 - keeps normal connection/time progress out of the persistent Network screen, reserving its footer for terminal errors;
 - supports rotary password entry, disconnect, and forget;
 - can use a targeted **Connect anyway** active search for a remembered network not seen passively;
 - obtains DHCP state; and
-- starts SNTP after association succeeds.
+- uses the same randomized-MAC-by-default policy as every other infrastructure connection.
 
-The network session belongs to Home rather than to the nested Network or Update page. Leaving Network therefore keeps the station connected. Explicit Disconnect or leaving Home tears the session down and clears transient driver credentials/results.
+The network session belongs to Home rather than to the nested Network or Update page. Leaving Network therefore keeps the READY session available to Update. Explicit Disconnect or leaving Home releases it and clears transient driver credentials/results.
 
 ESP-IDF Wi-Fi persistence remains RAM-only so the driver does not become an independent credential authority.
 
 ## Firmware Update
 
-**Device Settings → Update** is available whenever the Home-owned station is connected. RFScout still attempts SNTP automatically after association, but a failed or cancelled time sync does not block the user from trying an update. This permits retained or manually set clocks to work normally; if the actual wall clock is unsuitable for HTTPS certificate validation, the catalog/image request fails as a transport error instead of being preemptively blocked by the UI.
+**Device Settings → Update** is available whenever the Home-owned network session is READY. READY means association, DHCP, and required NTP synchronization have all completed under the common framework policy. OTA acquisition therefore consumes an already prepared connection and does not implement its own connection or time-sync lifecycle.
 
 The UI supports:
 
