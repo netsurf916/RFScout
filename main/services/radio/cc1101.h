@@ -78,7 +78,7 @@ esp_err_t cc1101_probe( void );
 /** @brief Initialize reusable CC1101 service state after a successful probe. */
 esp_err_t cc1101_init( void );
 
-/** @brief Wake the CC1101 and resume the selected acquisition mode. */
+/** @brief Activate the already initialized CC1101 in the selected acquisition mode. */
 esp_err_t cc1101_start( void );
 
 /** @brief Quiesce discovery/RMT acquisition, release capture resources, and power down the radio. */
