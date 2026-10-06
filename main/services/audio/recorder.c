@@ -1335,6 +1335,13 @@ void recorder_stop( void )
     state = media_store_available() ? RFSCOUT_RECORDER_IDLE : RFSCOUT_RECORDER_NO_STORAGE;
 }
 
+bool recorder_is_active( void )
+{
+    const rfscout_recorder_state_t current = recorder_state();
+    return ( RFSCOUT_RECORDER_RECORDING == current ) || ( RFSCOUT_RECORDER_SAVING == current ) ||
+           ( RFSCOUT_RECORDER_MONITORING == current ) || ( RFSCOUT_RECORDER_PLAYING == current );
+}
+
 rfscout_recorder_state_t recorder_state( void )
 {
     if( !media_store_available() && ( RFSCOUT_RECORDER_RECORDING != state ) &&
