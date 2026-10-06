@@ -264,7 +264,7 @@ static app_session_service_t platform_services[] = {
         .stop = stop_recorder,
         .active = audio_capture_active,
     },
-}
+};
 
 static size_t platform_service_count( void )
 {
