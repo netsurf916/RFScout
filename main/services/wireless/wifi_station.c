@@ -881,6 +881,19 @@ esp_err_t rfscout_wifi_station_ip_info( rfscout_wifi_station_ip_info_t *a_info )
         a_info->address = info.ip.addr;
         a_info->netmask = info.netmask.addr;
         a_info->gateway = info.gw.addr;
+
+        esp_netif_dns_info_t dns;
+        if( ESP_OK == esp_netif_get_dns_info( station_netif, ESP_NETIF_DNS_MAIN, &dns ) &&
+            ESP_IPADDR_TYPE_V4 == dns.ip.type )
+        {
+            a_info->dns_primary = dns.ip.u_addr.ip4.addr;
+        }
+        memset( &dns, 0, sizeof( dns ) );
+        if( ESP_OK == esp_netif_get_dns_info( station_netif, ESP_NETIF_DNS_BACKUP, &dns ) &&
+            ESP_IPADDR_TYPE_V4 == dns.ip.type )
+        {
+            a_info->dns_backup = dns.ip.u_addr.ip4.addr;
+        }
     }
     return result;
 }
