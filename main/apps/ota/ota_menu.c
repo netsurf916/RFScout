@@ -351,10 +351,11 @@ static void render_action( void )
     }
     else if( target && RFSCOUT_NETWORK_SESSION_FAILED == network.state )
     {
-        status_text = RFSCOUT_NETWORK_SESSION_FAILURE_TIME_SYNC == network.failure
-                          ? "Connected / time sync failed"
-                          : ( ESP_ERR_NOT_FOUND == network.disconnect_reason ? "Network not found"
-                                                                            : "Connection failed" );
+        status_text =
+            RFSCOUT_NETWORK_SESSION_FAILURE_TIME_SYNC == network.failure
+                ? "Connected / time sync failed"
+                : ( ESP_ERR_NOT_FOUND == network.disconnect_reason ? "Network not found"
+                                                                   : "Connection failed" );
     }
 
     unsigned action_count = saved ? 3U : 2U;
@@ -1286,8 +1287,9 @@ static void submenu_poll( int64_t a_now_us )
                       "%s",
                       RFSCOUT_NETWORK_SESSION_FAILURE_TIME_SYNC == network.failure
                           ? "Time sync failed"
-                          : ( ESP_ERR_NOT_FOUND == network.disconnect_reason ? "Network not found"
-                                                                            : "Connection failed" ) );
+                          : ( ESP_ERR_NOT_FOUND == network.disconnect_reason
+                                  ? "Network not found"
+                                  : "Connection failed" ) );
             return_to_network_main();
             return;
         }
