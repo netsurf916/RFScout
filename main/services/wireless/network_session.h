@@ -53,7 +53,6 @@ esp_err_t network_session_begin_bss( const rfscout_wifi_station_bss_t *a_bss );
 void network_session_poll( int64_t a_now_us );
 void network_session_status( rfscout_network_session_status_t *a_status );
 esp_err_t network_session_release( void );
-esp_err_t network_session_stop( void );
 bool network_session_is_active( void );
 
 #endif // _RFSCOUT_NETWORK_SESSION_H_
