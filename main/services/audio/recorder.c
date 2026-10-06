@@ -1037,16 +1037,18 @@ uint8_t recorder_monitor_range_db( void )
 
 esp_err_t recorder_init( void )
 {
+    if( NULL != record_done )
+    {
+        return ESP_OK;
+    }
+
+    record_done = xSemaphoreCreateBinary();
     if( NULL == record_done )
     {
-        record_done = xSemaphoreCreateBinary();
-        if( NULL == record_done )
-        {
-            state = RFSCOUT_RECORDER_ERROR;
-            return ESP_ERR_NO_MEM;
-        }
+        state = RFSCOUT_RECORDER_ERROR;
+        return ESP_ERR_NO_MEM;
     }
-    return recorder_refresh();
+    return ESP_OK;
 }
 
 /** @brief Admit one listed WAV file into the bounded newest-recordings table. */
