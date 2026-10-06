@@ -360,6 +360,14 @@ esp_err_t nrf24_start( void )
         return result;
     }
 
+    portENTER_CRITICAL( &state_lock );
+    const bool already_running = running;
+    portEXIT_CRITICAL( &state_lock );
+    if( already_running )
+    {
+        return ESP_OK;
+    }
+
     ce( false );
     result = write_register( NRF24_REG_EN_AA, 0x00U );
     if( ESP_OK == result )
