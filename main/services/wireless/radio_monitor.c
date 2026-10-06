@@ -451,6 +451,10 @@ esp_err_t radio_monitor_init( void )
     {
         return ESP_OK;
     }
+    if( NULL == sink )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
 
     esp_err_t result = wifi_core_init();
     if( ESP_OK != result )
