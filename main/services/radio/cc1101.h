@@ -84,6 +84,9 @@ esp_err_t cc1101_start( void );
 /** @brief Quiesce discovery/RMT acquisition, release capture resources, and power down the radio. */
 bool cc1101_stop( void );
 
+/** @brief Return whether the CC1101 platform service is currently active. */
+bool cc1101_is_active( void );
+
 /** @brief Service foreground bookkeeping, including stalled-buffer rearm. */
 void cc1101_poll( void );
 
