@@ -66,6 +66,8 @@ typedef struct
     uint32_t address;
     uint32_t netmask;
     uint32_t gateway;
+    uint32_t dns_primary;
+    uint32_t dns_backup;
 } rfscout_wifi_station_ip_info_t;
 
 typedef struct
