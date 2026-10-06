@@ -887,13 +887,12 @@ static void handle_action_select( void )
 
     if( 1U == selected_item )
     {
-        rfscout_wifi_station_status_t current;
-        rfscout_wifi_station_status( &current );
-        if( RFSCOUT_WIFI_STATION_CONNECTED == current.state &&
+        rfscout_network_session_status_t current;
+        network_session_status( &current );
+        if( RFSCOUT_NETWORK_SESSION_READY == current.state &&
             0 == strcmp( current.ssid, saved_networks.entries[ action_saved_index ].ssid ) )
         {
-            (void)rfscout_wifi_station_disconnect();
-            error_text[ 0 ] = '\0';
+            set_error( network_session_release() );
             render();
         }
         else
