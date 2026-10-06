@@ -325,10 +325,13 @@ esp_err_t nrf24_init( void )
         return detected ? ESP_OK : nrf24_probe();
     }
 
-    const esp_err_t probe_result = nrf24_probe();
-    if( ESP_OK != probe_result )
+    if( !detected )
     {
-        return probe_result;
+        const esp_err_t probe_result = nrf24_probe();
+        if( ESP_OK != probe_result )
+        {
+            return probe_result;
+        }
     }
 
     memset( acquisition, 0, sizeof( acquisition ) );
