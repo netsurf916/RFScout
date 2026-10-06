@@ -34,6 +34,7 @@ static bool disconnect_requested;
 static bool ntp_initialized;
 static bool auto_time_sync;
 static bool mac_randomized;
+static bool factory_mac_valid;
 static uint8_t factory_mac[ 6 ];
 static esp_netif_t *station_netif;
 static esp_event_handler_instance_t wifi_event_handler;
@@ -393,6 +394,11 @@ static void restore_factory_mac( void )
     {
         return;
     }
+    if( !factory_mac_valid )
+    {
+        ESP_LOGE( TAG, "cannot restore station MAC because the factory MAC was not captured" );
+        return;
+    }
     const esp_err_t result = esp_wifi_set_mac( WIFI_IF_STA, factory_mac );
     if( ESP_OK != result )
     {
@@ -405,6 +411,12 @@ static void restore_factory_mac( void )
 /** @brief Restart the started STA driver with a fresh random locally administered unicast MAC. */
 static esp_err_t restart_with_random_mac( void )
 {
+    if( !factory_mac_valid )
+    {
+        ESP_LOGW( TAG, "MAC randomization unavailable because the factory MAC was not captured" );
+        return ESP_ERR_INVALID_STATE;
+    }
+
     uint8_t mac[ 6 ];
     esp_fill_random( mac, sizeof( mac ) );
     mac[ 0 ] = (uint8_t)( ( mac[ 0 ] & 0xFCU ) | 0x02U );
@@ -461,9 +473,14 @@ esp_err_t rfscout_wifi_station_init( void )
     {
         return ESP_ERR_NO_MEM;
     }
-    if( ESP_OK != esp_read_mac( factory_mac, ESP_MAC_WIFI_STA ) )
+    const esp_err_t mac_result = esp_read_mac( factory_mac, ESP_MAC_WIFI_STA );
+    factory_mac_valid = ESP_OK == mac_result;
+    if( !factory_mac_valid )
     {
         memset( factory_mac, 0, sizeof( factory_mac ) );
+        ESP_LOGW( TAG,
+                  "factory station MAC unavailable; per-check MAC randomization disabled: %s",
+                  esp_err_to_name( mac_result ) );
     }
 
     esp_err_t result = esp_event_handler_instance_register(
@@ -629,6 +646,7 @@ esp_err_t rfscout_wifi_station_connect_open_bss( const rfscout_wifi_station_bss_
     config.sta.scan_method = WIFI_FAST_SCAN;
     config.sta.threshold.authmode =
         ( RFSCOUT_WIFI_STATION_SECURITY_OWE == a_bss->security ) ? WIFI_AUTH_OWE : WIFI_AUTH_OPEN;
+    config.sta.owe_enabled = RFSCOUT_WIFI_STATION_SECURITY_OWE == a_bss->security;
     config.sta.failure_retry_cnt = 0U;
 
     result = esp_wifi_set_config( WIFI_IF_STA, &config );
@@ -683,9 +701,12 @@ esp_err_t rfscout_wifi_station_abort( void )
         return ESP_ERR_INVALID_STATE;
     }
     const rfscout_wifi_station_state_t previous = status.state;
-    /* A late DISCONNECTED event for the abandoned attempt is absorbed as an orderly disconnect. */
-    disconnect_requested = true;
-    status.state = RFSCOUT_WIFI_STATION_IDLE;
+    const bool connection_active = ( RFSCOUT_WIFI_STATION_CONNECTING == previous ) ||
+                                   ( RFSCOUT_WIFI_STATION_CONNECTED == previous ) ||
+                                   ( RFSCOUT_WIFI_STATION_DISCONNECTING == previous );
+    disconnect_requested = connection_active;
+    status.state =
+        connection_active ? RFSCOUT_WIFI_STATION_DISCONNECTING : RFSCOUT_WIFI_STATION_IDLE;
     status.disconnect_reason = 0;
     memset( status.ssid, 0, sizeof( status.ssid ) );
     memset( active_search_ssid, 0, sizeof( active_search_ssid ) );
@@ -697,12 +718,33 @@ esp_err_t rfscout_wifi_station_abort( void )
         (void)esp_wifi_scan_stop();
         (void)esp_wifi_clear_ap_list();
     }
-    const esp_err_t result = esp_wifi_disconnect();
+
+    esp_err_t result = ESP_OK;
+    if( connection_active )
+    {
+        result = esp_wifi_disconnect();
+        if( ESP_ERR_WIFI_NOT_CONNECT == result )
+        {
+            portENTER_CRITICAL( &state_lock );
+            disconnect_requested = false;
+            status.state = RFSCOUT_WIFI_STATION_IDLE;
+            portEXIT_CRITICAL( &state_lock );
+            result = ESP_OK;
+        }
+        else if( ESP_OK != result )
+        {
+            portENTER_CRITICAL( &state_lock );
+            disconnect_requested = false;
+            status.state = RFSCOUT_WIFI_STATION_FAILED;
+            status.disconnect_reason = (int32_t)result;
+            portEXIT_CRITICAL( &state_lock );
+        }
+    }
 
     wifi_config_t blank = { 0 };
     (void)esp_wifi_set_config( WIFI_IF_STA, &blank );
     memset( &blank, 0, sizeof( blank ) );
-    return ( ESP_OK == result || ESP_ERR_WIFI_NOT_CONNECT == result ) ? ESP_OK : result;
+    return result;
 }
 
 esp_err_t rfscout_wifi_station_ip_info( rfscout_wifi_station_ip_info_t *a_info )
