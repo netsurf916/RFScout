@@ -128,18 +128,11 @@ esp_err_t rfscout_wifi_station_connect_open_bss( const rfscout_wifi_station_bss_
  */
 esp_err_t rfscout_wifi_station_start_time_sync( void );
 
-/**
- * @brief Abandon any connection attempt or connection and return to IDLE.
- * @details Usable from SEARCHING, CONNECTING, CONNECTED, or FAILED. Stops NTP and clears the
- *          transient station configuration while keeping the station started for scanning.
- */
-esp_err_t rfscout_wifi_station_abort( void );
+/** @brief Cancel an in-progress scan/search and return the started station to IDLE. */
+esp_err_t rfscout_wifi_station_cancel_scan( void );
 
 /** @brief Copy the current IPv4 configuration; ESP_ERR_INVALID_STATE when not connected. */
 esp_err_t rfscout_wifi_station_ip_info( rfscout_wifi_station_ip_info_t *a_info );
-
-/** @brief Disconnect the current station while leaving the Home session able to scan again. */
-esp_err_t rfscout_wifi_station_disconnect( void );
 
 /** @brief Cancel an active NTP synchronization attempt while preserving the Wi-Fi connection. */
 esp_err_t rfscout_wifi_station_cancel_time_sync( void );
