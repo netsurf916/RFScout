@@ -30,6 +30,12 @@
 typedef esp_err_t ( *app_session_service_fn )( void *a_context );
 typedef bool ( *app_session_service_active_fn )( void *a_context );
 
+/**
+ * @brief Uniform lifecycle adapter for one app-owned platform service.
+ * @details Persistent services provide idempotent start/stop/is_active operations. Parameterized
+ *          transactional services omit start because their request cannot be reconstructed
+ *          generically; stop remains idempotent and is always invoked during app close.
+ */
 typedef struct
 {
     uint32_t capability;
@@ -206,8 +212,9 @@ static esp_err_t stop_recorder( void *a_context )
     return ESP_OK;
 }
 
-/* Services close in reverse table order. Network consumers follow the network provider so active
-   HTTPS work is stopped before the underlying network session is released. */
+/* Services close in reverse table order. Dependencies therefore appear before their consumers:
+   active HTTPS work is stopped before the network session, and persistent services can be restarted
+   with the same idempotent start() operation if a later close step causes the transition to abort. */
 static app_session_service_t platform_services[] = {
     {
         .capability = RFSCOUT_APP_SERVICE_WIFI_MONITOR,
