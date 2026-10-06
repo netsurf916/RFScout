@@ -43,6 +43,7 @@ esp_err_t wifi_core_init( void )
     result = esp_wifi_set_mode( WIFI_MODE_NULL );
     if( ESP_OK != result )
     {
+        (void)esp_wifi_deinit();
         return result;
     }
 
