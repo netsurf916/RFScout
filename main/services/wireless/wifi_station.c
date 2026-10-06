@@ -497,22 +497,38 @@ static esp_err_t restart_with_random_mac( void )
     esp_err_t result = esp_wifi_stop();
     if( ESP_OK == result )
     {
+        portENTER_CRITICAL( &state_lock );
+        started = false;
+        portEXIT_CRITICAL( &state_lock );
+
         result = esp_wifi_set_mac( WIFI_IF_STA, mac );
         if( ESP_OK == result )
         {
             mac_randomized = true;
         }
+
         const esp_err_t start_result = esp_wifi_start();
-        if( ESP_OK == result )
+        if( ESP_OK == start_result )
+        {
+            portENTER_CRITICAL( &state_lock );
+            started = true;
+            portEXIT_CRITICAL( &state_lock );
+        }
+        else if( ESP_OK == result )
         {
             result = start_result;
+        }
+
+        if( ESP_OK != start_result && mac_randomized )
+        {
+            restore_factory_mac();
         }
     }
 
     portENTER_CRITICAL( &state_lock );
     stopping = false;
-    status.state = RFSCOUT_WIFI_STATION_IDLE;
-    status.disconnect_reason = 0;
+    status.state = started ? RFSCOUT_WIFI_STATION_IDLE : RFSCOUT_WIFI_STATION_OFF;
+    status.disconnect_reason = ESP_OK == result ? 0 : (int32_t)result;
     portEXIT_CRITICAL( &state_lock );
 
     if( ESP_OK == result )
