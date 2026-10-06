@@ -354,10 +354,9 @@ esp_err_t nrf24_init( void )
 
 esp_err_t nrf24_start( void )
 {
-    esp_err_t result = nrf24_init();
-    if( ESP_OK != result )
+    if( !initialized )
     {
-        return result;
+        return ESP_ERR_INVALID_STATE;
     }
 
     portENTER_CRITICAL( &state_lock );
@@ -369,7 +368,7 @@ esp_err_t nrf24_start( void )
     }
 
     ce( false );
-    result = write_register( NRF24_REG_EN_AA, 0x00U );
+    esp_err_t result = write_register( NRF24_REG_EN_AA, 0x00U );
     if( ESP_OK == result )
         result = write_register( NRF24_REG_EN_RXADDR, 0x00U );
     if( ESP_OK == result )
