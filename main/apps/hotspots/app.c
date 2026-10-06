@@ -754,7 +754,8 @@ static void scheduler_poll( int64_t a_now_us )
         }
 
         case HOTSPOTS_PHASE_SETTLE:
-            if( a_now_us >= phase_deadline_us )
+            if( ( a_now_us >= phase_deadline_us ) &&
+                ( RFSCOUT_WIFI_STATION_IDLE == station.state ) )
             {
                 phase = HOTSPOTS_PHASE_CHECK;
             }
