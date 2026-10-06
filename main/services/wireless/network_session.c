@@ -8,6 +8,8 @@
 
 #include "esp_log.h"
 
+#include "wifi_core.h"
+
 #include <string.h>
 
 #define NETWORK_SESSION_CONNECT_TIMEOUT_US 30000000LL
@@ -16,6 +18,7 @@
 static const char *TAG = "network_session";
 static rfscout_network_session_status_t status;
 static int64_t phase_started_us;
+static bool initialized;
 
 static void advance_generation( void )
 {
@@ -93,8 +96,32 @@ static esp_err_t prepare_begin( const char *a_ssid )
     return ESP_OK;
 }
 
+esp_err_t network_session_init( void )
+{
+    if( initialized )
+    {
+        return ESP_OK;
+    }
+
+    esp_err_t result = wifi_core_init();
+    if( ESP_OK == result )
+    {
+        result = rfscout_wifi_station_init();
+    }
+    if( ESP_OK == result )
+    {
+        reset_logical_state();
+        initialized = true;
+    }
+    return result;
+}
+
 esp_err_t network_session_begin_saved( const char *a_ssid, const char *a_password )
 {
+    if( !initialized )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     esp_err_t result = prepare_begin( a_ssid );
     if( ESP_OK == result )
     {
@@ -109,6 +136,10 @@ esp_err_t network_session_begin_saved( const char *a_ssid, const char *a_passwor
 
 esp_err_t network_session_begin_bss( const rfscout_wifi_station_bss_t *a_bss )
 {
+    if( !initialized )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     if( NULL == a_bss )
     {
         return ESP_ERR_INVALID_ARG;
