@@ -763,6 +763,11 @@ bool cc1101_is_detected( void )
     return detected;
 }
 
+bool cc1101_is_active( void )
+{
+    return service_started;
+}
+
 cc1101_acquisition_mode_t cc1101_acquisition_mode( void )
 {
     portENTER_CRITICAL( &state_lock );
