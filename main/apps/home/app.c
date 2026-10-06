@@ -8,6 +8,7 @@
 
 #include "device_view.h"
 #include "event.h"
+#include "network_session.h"
 
 #include <stddef.h>
 
@@ -39,6 +40,7 @@ static rfscout_app_runtime_result_t home_runtime( const rfscout_app_runtime_even
     }
     if( RFSCOUT_APP_RUNTIME_POLL == a_event->type )
     {
+        network_session_poll( a_event->now_us );
         if( menu_active )
         {
             device_view_poll( a_event->now_us );
