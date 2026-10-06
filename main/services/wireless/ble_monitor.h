@@ -27,7 +27,7 @@ void ble_monitor_set_observer( ble_observation_fn a_callback );
 /** @brief Initialize reusable BLE monitor state without starting a scan. */
 esp_err_t ble_monitor_init( void );
 
-/** @brief Start passive BLE scanning when the WiFi/BT app is active. */
+/** @brief Activate passive BLE scanning after framework initialization. */
 esp_err_t ble_monitor_start( void );
 
 /** @brief Stop BLE scanning while another app is active. */
