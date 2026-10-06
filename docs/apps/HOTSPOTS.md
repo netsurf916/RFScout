@@ -13,7 +13,7 @@ Hotspots is RFScout's realtime view of nearby **open** Wi-Fi access points and w
 
 ## Services and lifecycle
 
-The descriptor declares the platform Wi-Fi station and connectivity-probe session services and requires delayed activation, so skipping through the app does not start the radio. Both services are stopped by the app session before app memory is reclaimed. Hotspots has no hardware probe; it is available whenever the profile provides Wi-Fi.
+The descriptor declares the framework network-session and connectivity-probe services and requires delayed activation, so skipping through the app does not start the radio. The network session owns association, DHCP, NTP, MAC policy, timeout, and teardown; the app owns only candidate selection and result interpretation. Both services are stopped by the app session before app memory is reclaimed.
 
 ## Scanning and observation sessions
 
@@ -34,7 +34,7 @@ One check for one open or OWE BSSID performs:
 3. **HTTPS** — one certificate-validated request to Cloudflare's `/cdn-cgi/trace`, bounded to **10 seconds**. HTTP 200 marks the AP **green** and records the public egress IP and Cloudflare colo; any other result marks it **yellow**.
 4. **Leave** — disconnect and return to scanning.
 
-Each check uses a fresh random, locally administered station MAC address so separate hotspots cannot correlate visits by MAC. The factory MAC is restored when the app's Wi-Fi station session stops.
+Each check inherits the platform-wide default of a fresh random, locally administered station MAC. This is the same policy used by Home/OTA connections. The factory MAC is restored when the network session stops; if the factory MAC could not be captured, the framework continues with the current station MAC rather than failing the check.
 
 A failed recheck does not erase an earlier green or yellow result for the same observation session; the latest attempt's failure is shown in the detail view.
 
@@ -69,7 +69,7 @@ Status column values:
 | `LTD` (yellow) | Joined, but NTP failed or the HTTPS check did not pass |
 | `FAIL` (red) | Association or DHCP failed and no earlier success exists in this session |
 | `Q` | Queued for a manual recheck |
-| `JOIN` / `NTP` / `HTTPS` | Check in progress at that stage |
+| `NETWORK` / `HTTPS` | Check in progress at that stage |
 | `<-80` | Waiting for the automatic RSSI gate |
 | `-` | Not yet checked |
 
