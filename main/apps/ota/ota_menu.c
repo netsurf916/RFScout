@@ -231,7 +231,10 @@ static void build_saved_list( void )
 
 static bool network_connected( void )
 {
-    return update_network_ready();
+    rfscout_network_session_status_t current;
+    network_session_status( &current );
+    return RFSCOUT_NETWORK_SESSION_READY == current.state ||
+           RFSCOUT_NETWORK_SESSION_LIMITED == current.state;
 }
 
 static bool install_interaction_locked( void )
@@ -259,6 +262,8 @@ static const char *connection_status( void )
             return "Connecting";
         case RFSCOUT_NETWORK_SESSION_TIME_SYNCING:
             return "Setting time";
+        case RFSCOUT_NETWORK_SESSION_LIMITED:
+            return "Connected / limited";
         case RFSCOUT_NETWORK_SESSION_READY:
             return '\0' != network.ssid[ 0 ] ? network.ssid : "Connected";
         case RFSCOUT_NETWORK_SESSION_FAILED:
@@ -280,7 +285,8 @@ static void render_network_main( void )
     network_session_status( &network );
     rfscout_wifi_station_status_t station;
     rfscout_wifi_station_status( &station );
-    const bool connected = RFSCOUT_NETWORK_SESSION_READY == network.state;
+    const bool connected = RFSCOUT_NETWORK_SESSION_READY == network.state ||
+                           RFSCOUT_NETWORK_SESSION_LIMITED == network.state;
     const bool scanning = RFSCOUT_WIFI_STATION_SCANNING == station.state;
     const unsigned item_count = 1U + (unsigned)view_network_count + ( connected ? 1U : 3U );
     if( selected_item >= item_count )
@@ -335,7 +341,9 @@ static void render_action( void )
     rfscout_network_session_status_t network;
     network_session_status( &network );
     const bool target = NULL != ssid && 0 == strcmp( network.ssid, ssid );
-    const bool connected = target && RFSCOUT_NETWORK_SESSION_READY == network.state;
+    const bool connected =
+        target && ( RFSCOUT_NETWORK_SESSION_READY == network.state ||
+                    RFSCOUT_NETWORK_SESSION_LIMITED == network.state );
     const char *status_text = error_text;
     if( target && RFSCOUT_NETWORK_SESSION_ASSOCIATING == network.state )
     {
@@ -344,6 +352,10 @@ static void render_action( void )
     else if( target && RFSCOUT_NETWORK_SESSION_TIME_SYNCING == network.state )
     {
         status_text = "Connected / syncing time...";
+    }
+    else if( target && RFSCOUT_NETWORK_SESSION_LIMITED == network.state )
+    {
+        status_text = "Connected / time sync failed";
     }
     else if( connected )
     {
@@ -890,7 +902,8 @@ static void handle_action_select( void )
     {
         rfscout_network_session_status_t current;
         network_session_status( &current );
-        if( RFSCOUT_NETWORK_SESSION_READY == current.state &&
+        if( ( RFSCOUT_NETWORK_SESSION_READY == current.state ||
+              RFSCOUT_NETWORK_SESSION_LIMITED == current.state ) &&
             0 == strcmp( current.ssid, saved_networks.entries[ action_saved_index ].ssid ) )
         {
             set_error( network_session_release() );
@@ -1265,9 +1278,6 @@ static void submenu_poll( int64_t a_now_us )
         return;
     }
 
-    rfscout_wifi_station_status_t current;
-    rfscout_wifi_station_status( &current );
-
     network_session_poll( a_now_us );
     rfscout_network_session_status_t network;
     network_session_status( &network );
@@ -1277,6 +1287,12 @@ static void submenu_poll( int64_t a_now_us )
         if( RFSCOUT_NETWORK_SESSION_READY == network.state )
         {
             error_text[ 0 ] = '\0';
+            return_to_network_main();
+            return;
+        }
+        if( RFSCOUT_NETWORK_SESSION_LIMITED == network.state )
+        {
+            snprintf( error_text, sizeof( error_text ), "Time sync failed" );
             return_to_network_main();
             return;
         }
