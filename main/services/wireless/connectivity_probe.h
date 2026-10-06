@@ -37,6 +37,9 @@ typedef struct
     char colo[ RFSCOUT_CONNECTIVITY_PROBE_COLO_MAX_LENGTH + 1U ];
 } rfscout_connectivity_probe_status_t;
 
+/** @brief Initialize reusable probe synchronization state without starting a request. */
+esp_err_t connectivity_probe_init( void );
+
 /**
  * @brief Start one verified HTTPS request to Cloudflare /cdn-cgi/trace on the current connection.
  * @param a_timeout_ms Request timeout; the whole request is also bounded by it.
