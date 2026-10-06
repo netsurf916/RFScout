@@ -198,6 +198,17 @@ void network_session_status( rfscout_network_session_status_t *a_status )
     }
 }
 
+bool network_session_has_lan( void )
+{
+    return RFSCOUT_NETWORK_SESSION_LIMITED == status.state ||
+           RFSCOUT_NETWORK_SESSION_READY == status.state;
+}
+
+bool network_session_ready( void )
+{
+    return RFSCOUT_NETWORK_SESSION_READY == status.state;
+}
+
 esp_err_t network_session_release( void )
 {
     const esp_err_t result = rfscout_wifi_station_stop();
