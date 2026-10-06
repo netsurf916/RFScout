@@ -126,7 +126,7 @@ static esp_err_t stop_wifi( void *a_context )
 static bool wifi_active( void *a_context )
 {
     (void)a_context;
-    return radio_monitor_is_running();
+    return radio_monitor_is_active();
 }
 
 static esp_err_t stop_network_session( void *a_context )
@@ -204,7 +204,7 @@ static esp_err_t stop_ble( void *a_context )
 static bool ble_active( void *a_context )
 {
     (void)a_context;
-    return ble_monitor_is_running();
+    return ble_monitor_is_active();
 }
 
 static esp_err_t start_cc1101( void *a_context )
@@ -239,9 +239,7 @@ static bool recorder_references_clear( void )
 static bool audio_capture_active( void *a_context )
 {
     (void)a_context;
-    const rfscout_recorder_state_t state = recorder_state();
-    return ( RFSCOUT_RECORDER_RECORDING == state ) || ( RFSCOUT_RECORDER_SAVING == state ) ||
-           ( RFSCOUT_RECORDER_MONITORING == state ) || ( RFSCOUT_RECORDER_PLAYING == state );
+    return recorder_is_active();
 }
 
 static esp_err_t stop_recorder( void *a_context )
