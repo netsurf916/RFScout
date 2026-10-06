@@ -525,7 +525,7 @@ static void finish_attempt( hotspot_status_t a_outcome,
                             esp_err_t a_error,
                             int64_t a_now_us )
 {
-(void)network_session_release();
+    (void)network_session_release();
 
     attempt_result.outcome = a_outcome;
     attempt_result.failed_stage = a_failed_stage;
