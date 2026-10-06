@@ -49,6 +49,12 @@ typedef struct
 } app_session_service_t;
 
 static const char *TAG = "app_session";
+static rfscout_app_id_t session_app = RFSCOUT_APP_COUNT;
+static const rfscout_view_t *session_view;
+static uint32_t session_generation;
+static uint32_t session_services;
+static bool close_in_progress;
+static bool ready_to_reclaim;
 static esp_err_t stop_cc1101( void )
 {
     return cc1101_stop() ? ESP_OK : ESP_ERR_TIMEOUT;
@@ -64,10 +70,8 @@ static bool recorder_references_clear( void )
     return ESP_ERR_INVALID_STATE != recorder_probe_microphone();
 }
 
-
 static esp_err_t stop_recorder( void )
 {
-
     if( !recorder_prepare_storage_shutdown( APP_SESSION_RECORDER_QUIESCE_TIMEOUT_MS ) )
     {
         return ESP_ERR_TIMEOUT;
