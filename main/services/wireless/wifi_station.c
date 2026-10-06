@@ -413,8 +413,10 @@ static esp_err_t restart_with_random_mac( void )
 {
     if( !factory_mac_valid )
     {
-        ESP_LOGW( TAG, "MAC randomization unavailable because the factory MAC was not captured" );
-        return ESP_ERR_INVALID_STATE;
+        ESP_LOGW( TAG,
+                  "MAC randomization unavailable because the factory MAC was not captured; "
+                  "continuing with the current station MAC" );
+        return ESP_OK;
     }
 
     uint8_t mac[ 6 ];
@@ -725,11 +727,24 @@ esp_err_t rfscout_wifi_station_abort( void )
         result = esp_wifi_disconnect();
         if( ESP_ERR_WIFI_NOT_CONNECT == result )
         {
+            /* The driver can already be disconnected while its DISCONNECTED event is still queued.
+               Stop/start the STA driver while stopping=true so any late event is ignored before a
+               new scan/check is allowed to begin. */
             portENTER_CRITICAL( &state_lock );
-            disconnect_requested = false;
-            status.state = RFSCOUT_WIFI_STATION_IDLE;
+            stopping = true;
             portEXIT_CRITICAL( &state_lock );
-            result = ESP_OK;
+
+            const esp_err_t stop_result = esp_wifi_stop();
+            const esp_err_t start_result = ( ESP_OK == stop_result ) ? esp_wifi_start() : stop_result;
+
+            portENTER_CRITICAL( &state_lock );
+            stopping = false;
+            disconnect_requested = false;
+            status.state = ( ESP_OK == start_result ) ? RFSCOUT_WIFI_STATION_IDLE
+                                                      : RFSCOUT_WIFI_STATION_FAILED;
+            status.disconnect_reason = ( ESP_OK == start_result ) ? 0 : (int32_t)start_result;
+            portEXIT_CRITICAL( &state_lock );
+            result = start_result;
         }
         else if( ESP_OK != result )
         {
