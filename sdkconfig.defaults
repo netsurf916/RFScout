@@ -11,6 +11,10 @@ CONFIG_BT_NIMBLE_ROLE_BROADCASTER=n
 CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
 CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=n
 
+# Hotspots supports Wi-Fi Enhanced Open (OWE) associations. Keep station-side
+# OWE support enabled so WIFI_AUTH_OWE records can be joined when selected.
+CONFIG_ESP_WIFI_ENABLE_WPA3_OWE_STA=y
+
 # Supported RFScout ESP32-S3 boards provide external OPI PSRAM. Large working
 # sets such as observation history live there rather than consuming the SoC's
 # limited internal DRAM.
