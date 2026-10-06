@@ -328,9 +328,9 @@ static rfscout_app_runtime_result_t recorder_runtime( const rfscout_app_runtime_
         last_state = RFSCOUT_RECORDER_IDLE;
         last_refresh_us = 0;
         last_dependency_probe_us = 0;
-        if( ESP_OK != recorder_init() )
+        if( ESP_OK != recorder_refresh() )
         {
-            ESP_LOGW( TAG, "Recorder initialization unavailable" );
+            ESP_LOGW( TAG, "Recorder media unavailable" );
         }
         render();
         return RFSCOUT_APP_RUNTIME_HANDLED;
