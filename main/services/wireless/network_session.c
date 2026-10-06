@@ -42,7 +42,8 @@ static void fail_session( esp_err_t a_error,
     const esp_err_t stop_result = rfscout_wifi_station_stop();
     status.state = RFSCOUT_NETWORK_SESSION_FAILED;
     status.error = ( ESP_OK == stop_result ) ? a_error : stop_result;
-    status.failure = ( ESP_OK == stop_result ) ? a_failure : RFSCOUT_NETWORK_SESSION_FAILURE_TEARDOWN;
+    status.failure =
+        ( ESP_OK == stop_result ) ? a_failure : RFSCOUT_NETWORK_SESSION_FAILURE_TEARDOWN;
     status.disconnect_reason = a_disconnect_reason;
     phase_started_us = 0;
     if( ESP_OK != stop_result )
@@ -132,7 +133,8 @@ void network_session_poll( int64_t a_now_us )
     {
         if( RFSCOUT_WIFI_STATION_FAILED == station.state )
         {
-            fail_session( ESP_FAIL, RFSCOUT_NETWORK_SESSION_FAILURE_ASSOCIATION, station.disconnect_reason );
+            fail_session(
+                ESP_FAIL, RFSCOUT_NETWORK_SESSION_FAILURE_ASSOCIATION, station.disconnect_reason );
             return;
         }
         if( RFSCOUT_WIFI_STATION_CONNECTED == station.state )
@@ -141,7 +143,8 @@ void network_session_poll( int64_t a_now_us )
             const esp_err_t result = rfscout_wifi_station_start_time_sync();
             if( ESP_OK != result )
             {
-                fail_session( result, RFSCOUT_NETWORK_SESSION_FAILURE_TIME_SYNC, station.disconnect_reason );
+                fail_session(
+                    result, RFSCOUT_NETWORK_SESSION_FAILURE_TIME_SYNC, station.disconnect_reason );
                 return;
             }
             status.state = RFSCOUT_NETWORK_SESSION_TIME_SYNCING;
@@ -150,14 +153,18 @@ void network_session_poll( int64_t a_now_us )
         }
         if( a_now_us - phase_started_us >= NETWORK_SESSION_CONNECT_TIMEOUT_US )
         {
-            fail_session( ESP_ERR_TIMEOUT, RFSCOUT_NETWORK_SESSION_FAILURE_ASSOCIATION, station.disconnect_reason );
+            fail_session( ESP_ERR_TIMEOUT,
+                          RFSCOUT_NETWORK_SESSION_FAILURE_ASSOCIATION,
+                          station.disconnect_reason );
         }
         return;
     }
 
     if( RFSCOUT_WIFI_STATION_CONNECTED != station.state )
     {
-        fail_session( ESP_ERR_INVALID_STATE, RFSCOUT_NETWORK_SESSION_FAILURE_TIME_SYNC, station.disconnect_reason );
+        fail_session( ESP_ERR_INVALID_STATE,
+                      RFSCOUT_NETWORK_SESSION_FAILURE_TIME_SYNC,
+                      station.disconnect_reason );
         return;
     }
     if( station.ntp_synced )
@@ -168,10 +175,10 @@ void network_session_poll( int64_t a_now_us )
         phase_started_us = 0;
         return;
     }
-    if( !station.ntp_syncing ||
-        a_now_us - phase_started_us >= NETWORK_SESSION_NTP_TIMEOUT_US )
+    if( !station.ntp_syncing || a_now_us - phase_started_us >= NETWORK_SESSION_NTP_TIMEOUT_US )
     {
-        fail_session( ESP_ERR_TIMEOUT, RFSCOUT_NETWORK_SESSION_FAILURE_TIME_SYNC, station.disconnect_reason );
+        fail_session(
+            ESP_ERR_TIMEOUT, RFSCOUT_NETWORK_SESSION_FAILURE_TIME_SYNC, station.disconnect_reason );
     }
 }
 
