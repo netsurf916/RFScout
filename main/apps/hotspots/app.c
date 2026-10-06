@@ -40,7 +40,7 @@ typedef enum
     HOTSPOTS_PHASE_SCAN_START,
     HOTSPOTS_PHASE_SCANNING,
     HOTSPOTS_PHASE_CHECK,
-    HOTSPOTS_PHASE_JOIN,
+    HOTSPOTS_PHASE_NETWORK,
     HOTSPOTS_PHASE_HTTPS,
     HOTSPOTS_PHASE_SETTLE
 } hotspots_phase_t;
@@ -144,7 +144,7 @@ static bool ensure_scratch( size_t a_count )
 
 static bool attempt_running( void )
 {
-    return ( HOTSPOTS_PHASE_JOIN == phase ) || ( HOTSPOTS_PHASE_HTTPS == phase );
+    return ( HOTSPOTS_PHASE_NETWORK == phase ) || ( HOTSPOTS_PHASE_HTTPS == phase );
 }
 
 static bool entry_is_attempt_target( const hotspot_entry_t *a_entry )
@@ -195,7 +195,7 @@ static const char *entry_tag( const hotspot_entry_t *a_entry, hotspots_view_tone
     if( entry_is_attempt_target( a_entry ) )
     {
         *a_tone = HOTSPOTS_TONE_ACTIVE;
-        if( HOTSPOTS_PHASE_JOIN == phase )
+        if( HOTSPOTS_PHASE_NETWORK == phase )
         {
             return "JOIN";
         }
@@ -256,7 +256,7 @@ static void format_footer( char *a_footer, size_t a_capacity )
         snprintf( a_footer,
                   a_capacity,
                   "%s %.32s",
-                  ( HOTSPOTS_PHASE_JOIN == phase ) ? "NETWORK" : "HTTPS",
+                  ( HOTSPOTS_PHASE_NETWORK == phase ) ? "NETWORK" : "HTTPS",
                   attempt_bss.ssid );
         return;
     }
@@ -578,7 +578,7 @@ static void start_attempt( hotspot_entry_t *a_entry, int64_t a_now_us )
     attempt_result.start_rssi = a_entry->bss.rssi;
     a_entry->manual_requested = false;
 
-    phase = HOTSPOTS_PHASE_JOIN;
+    phase = HOTSPOTS_PHASE_NETWORK;
     phase_deadline_us = 0;
     render_due = true;
 
@@ -678,7 +678,7 @@ static void scheduler_poll( int64_t a_now_us )
             break;
         }
 
-        case HOTSPOTS_PHASE_JOIN:
+        case HOTSPOTS_PHASE_NETWORK:
         {
             rfscout_network_session_status_t network;
             network_session_status( &network );
