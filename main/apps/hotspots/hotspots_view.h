@@ -55,6 +55,8 @@ typedef struct
     hotspots_view_tone_t status_tone;
     const char *last_attempt;
     const char *addresses;
+    const char *network;
+    const char *dns;
     const char *egress;
     bool recheck_available;
 } hotspots_view_detail_t;
