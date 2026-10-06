@@ -1146,12 +1146,7 @@ static void reset_runtime_state( void )
     last_installer_generation = 0U;
     last_scan_generation = 0U;
     last_station_state = RFSCOUT_WIFI_STATION_OFF;
-    last_ntp_syncing = false;
-    last_ntp_synced = false;
     network_connect_modal_active = false;
-    network_connect_connected_seen = false;
-    network_connect_started_us = 0;
-    network_connect_ntp_started_us = 0;
     last_refresh_us = 0;
     pending_install_candidate = NULL;
     close_requested = false;
