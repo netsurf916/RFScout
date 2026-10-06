@@ -78,7 +78,7 @@ const rfscout_app_descriptor_t rfscout_home_app = {
     .probe_policy = RFSCOUT_APP_PROBE_NONE,
     .probe = NULL,
     .requires_activation = false,
-    .services = RFSCOUT_APP_SERVICE_WIFI_STATION | RFSCOUT_APP_SERVICE_OTA_INSTALLER |
+    .services = RFSCOUT_APP_SERVICE_NETWORK_SESSION | RFSCOUT_APP_SERVICE_OTA_INSTALLER |
                 RFSCOUT_APP_SERVICE_OTA_ACQUISITION,
     .runtime = home_runtime,
 };
