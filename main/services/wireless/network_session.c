@@ -8,8 +8,6 @@
 
 #include "esp_log.h"
 
-#include "wifi_core.h"
-
 #include <string.h>
 
 #define NETWORK_SESSION_CONNECT_TIMEOUT_US 30000000LL
@@ -103,11 +101,7 @@ esp_err_t network_session_init( void )
         return ESP_OK;
     }
 
-    esp_err_t result = wifi_core_init();
-    if( ESP_OK == result )
-    {
-        result = rfscout_wifi_station_init();
-    }
+    const esp_err_t result = rfscout_wifi_station_init();
     if( ESP_OK == result )
     {
         reset_logical_state();
