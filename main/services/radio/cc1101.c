@@ -690,17 +690,16 @@ esp_err_t cc1101_init( void )
 
 esp_err_t cc1101_start( void )
 {
-    esp_err_t result = cc1101_init();
-    if( ESP_OK != result )
+    if( !initialized )
     {
-        return result;
+        return ESP_ERR_INVALID_STATE;
     }
     if( service_started )
     {
         return ESP_OK;
     }
 
-    result = wake_from_power_down();
+    esp_err_t result = wake_from_power_down();
     if( ESP_OK != result )
     {
         return result;
