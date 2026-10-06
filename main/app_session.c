@@ -32,14 +32,16 @@ typedef bool ( *app_session_service_active_fn )( void *a_context );
 
 /**
  * @brief Uniform lifecycle adapter for one app-owned platform service.
- * @details Persistent services provide idempotent start/stop/is_active operations. Parameterized
- *          transactional services omit start because their request cannot be reconstructed
- *          generically; stop remains idempotent and is always invoked during app close.
+ * @details The framework owns idempotent inactive init. Persistent services additionally provide
+ *          app-driven idempotent start plus stop/is_active. Parameterized transactional services
+ *          omit generic start because their request cannot be reconstructed; stop remains
+ *          idempotent and is always invoked during app close.
  */
 typedef struct
 {
     uint32_t capability;
     const char *name;
+    app_session_service_fn init;
     app_session_service_fn start;
     app_session_service_fn stop;
     app_session_service_active_fn active;
@@ -49,6 +51,42 @@ typedef struct
 } app_session_service_t;
 
 static const char *TAG = "app_session";
+static esp_err_t init_wifi( void *a_context )
+{
+    (void)a_context;
+    return radio_monitor_init();
+}
+
+static esp_err_t init_network_session( void *a_context )
+{
+    (void)a_context;
+    return network_session_init();
+}
+
+static esp_err_t init_ble( void *a_context )
+{
+    (void)a_context;
+    return ble_monitor_init();
+}
+
+static esp_err_t init_cc1101( void *a_context )
+{
+    (void)a_context;
+    return cc1101_init();
+}
+
+static esp_err_t init_nrf24( void *a_context )
+{
+    (void)a_context;
+    return nrf24_init();
+}
+
+static esp_err_t init_audio_capture( void *a_context )
+{
+    (void)a_context;
+    return recorder_init();
+}
+
 static rfscout_app_id_t session_app = RFSCOUT_APP_COUNT;
 static const rfscout_view_t *session_view;
 static uint32_t session_generation;
@@ -219,6 +257,7 @@ static app_session_service_t platform_services[] = {
     {
         .capability = RFSCOUT_APP_SERVICE_WIFI_MONITOR,
         .name = "Wi-Fi",
+        .init = init_wifi,
         .start = start_wifi,
         .stop = stop_wifi,
         .active = wifi_active,
@@ -226,6 +265,7 @@ static app_session_service_t platform_services[] = {
     {
         .capability = RFSCOUT_APP_SERVICE_NETWORK_SESSION,
         .name = "Network session",
+        .init = init_network_session,
         .stop = stop_network_session,
         .active = network_session_active,
     },
@@ -250,6 +290,7 @@ static app_session_service_t platform_services[] = {
     {
         .capability = RFSCOUT_APP_SERVICE_BLE_MONITOR,
         .name = "BLE",
+        .init = init_ble,
         .start = start_ble,
         .stop = stop_ble,
         .active = ble_active,
@@ -257,6 +298,7 @@ static app_session_service_t platform_services[] = {
     {
         .capability = RFSCOUT_APP_SERVICE_CC1101,
         .name = "CC1101",
+        .init = init_cc1101,
         .start = start_cc1101,
         .stop = stop_cc1101,
         .active = cc1101_active,
@@ -264,6 +306,7 @@ static app_session_service_t platform_services[] = {
     {
         .capability = RFSCOUT_APP_SERVICE_NRF24,
         .name = "nRF24",
+        .init = init_nrf24,
         .start = start_nrf24,
         .stop = stop_nrf24,
         .active = nrf24_active,
@@ -271,6 +314,7 @@ static app_session_service_t platform_services[] = {
     {
         .capability = RFSCOUT_APP_SERVICE_AUDIO_CAPTURE,
         .name = "Audio capture",
+        .init = init_audio_capture,
         .stop = stop_recorder,
         .active = audio_capture_active,
     },
@@ -279,6 +323,30 @@ static app_session_service_t platform_services[] = {
 static size_t platform_service_count( void )
 {
     return sizeof( platform_services ) / sizeof( platform_services[ 0 ] );
+}
+
+static esp_err_t init_selected_services( void )
+{
+    for( size_t i = 0U; i < platform_service_count(); ++i )
+    {
+        app_session_service_t *service = &platform_services[ i ];
+        if( !service_selected( service ) || NULL == service->init )
+        {
+            continue;
+        }
+
+        const esp_err_t result = service->init( service->context );
+        if( ESP_OK != result )
+        {
+            ESP_LOGE( TAG,
+                      "app=%d service=%s initialization failed: %s",
+                      (int)session_app,
+                      service->name,
+                      esp_err_to_name( result ) );
+            return result;
+        }
+    }
+    return ESP_OK;
 }
 
 static bool session_active( void )
@@ -381,6 +449,15 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
     session_app = a_app;
     reset_session_state();
     session_services = descriptor->services;
+
+    const esp_err_t init_result = init_selected_services();
+    if( ESP_OK != init_result )
+    {
+        reset_session_state();
+        session_app = RFSCOUT_APP_COUNT;
+        return init_result;
+    }
+
     const esp_err_t view_result = acquire_view();
     if( ESP_OK != view_result )
     {
