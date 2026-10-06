@@ -785,7 +785,7 @@ esp_err_t rfscout_wifi_station_start_time_sync( void )
     return start_ntp_sync();
 }
 
-esp_err_t rfscout_wifi_station_abort( void )
+esp_err_t rfscout_wifi_station_cancel_scan( void )
 {
     if( !initialized )
     {
@@ -793,70 +793,21 @@ esp_err_t rfscout_wifi_station_abort( void )
     }
 
     portENTER_CRITICAL( &state_lock );
-    if( !started )
+    if( !started ||
+        ( RFSCOUT_WIFI_STATION_SCANNING != status.state &&
+          RFSCOUT_WIFI_STATION_SEARCHING != status.state ) )
     {
         portEXIT_CRITICAL( &state_lock );
         return ESP_ERR_INVALID_STATE;
     }
-    const rfscout_wifi_station_state_t previous = status.state;
-    const bool connection_active = ( RFSCOUT_WIFI_STATION_CONNECTING == previous ) ||
-                                   ( RFSCOUT_WIFI_STATION_CONNECTED == previous ) ||
-                                   ( RFSCOUT_WIFI_STATION_DISCONNECTING == previous );
-    disconnect_requested = connection_active;
-    status.state =
-        connection_active ? RFSCOUT_WIFI_STATION_DISCONNECTING : RFSCOUT_WIFI_STATION_IDLE;
+    status.state = RFSCOUT_WIFI_STATION_IDLE;
     status.disconnect_reason = 0;
-    memset( status.ssid, 0, sizeof( status.ssid ) );
     memset( active_search_ssid, 0, sizeof( active_search_ssid ) );
     portEXIT_CRITICAL( &state_lock );
 
-    stop_ntp_sync();
-    if( RFSCOUT_WIFI_STATION_SEARCHING == previous || RFSCOUT_WIFI_STATION_SCANNING == previous )
-    {
-        (void)esp_wifi_scan_stop();
-        (void)esp_wifi_clear_ap_list();
-    }
-
-    esp_err_t result = ESP_OK;
-    if( connection_active )
-    {
-        result = esp_wifi_disconnect();
-        if( ESP_ERR_WIFI_NOT_CONNECT == result )
-        {
-            /* The driver can already be disconnected while its DISCONNECTED event is still queued.
-               Stop/start the STA driver while stopping=true so any late event is ignored before a
-               new scan/check is allowed to begin. */
-            portENTER_CRITICAL( &state_lock );
-            stopping = true;
-            portEXIT_CRITICAL( &state_lock );
-
-            const esp_err_t stop_result = esp_wifi_stop();
-            const esp_err_t start_result =
-                ( ESP_OK == stop_result ) ? esp_wifi_start() : stop_result;
-
-            portENTER_CRITICAL( &state_lock );
-            stopping = false;
-            disconnect_requested = false;
-            status.state = ( ESP_OK == start_result ) ? RFSCOUT_WIFI_STATION_IDLE
-                                                      : RFSCOUT_WIFI_STATION_FAILED;
-            status.disconnect_reason = ( ESP_OK == start_result ) ? 0 : (int32_t)start_result;
-            portEXIT_CRITICAL( &state_lock );
-            result = start_result;
-        }
-        else if( ESP_OK != result )
-        {
-            portENTER_CRITICAL( &state_lock );
-            disconnect_requested = false;
-            status.state = RFSCOUT_WIFI_STATION_FAILED;
-            status.disconnect_reason = (int32_t)result;
-            portEXIT_CRITICAL( &state_lock );
-        }
-    }
-
-    wifi_config_t blank = { 0 };
-    (void)esp_wifi_set_config( WIFI_IF_STA, &blank );
-    memset( &blank, 0, sizeof( blank ) );
-    return result;
+    (void)esp_wifi_scan_stop();
+    (void)esp_wifi_clear_ap_list();
+    return ESP_OK;
 }
 
 esp_err_t rfscout_wifi_station_ip_info( rfscout_wifi_station_ip_info_t *a_info )
@@ -1023,42 +974,6 @@ esp_err_t rfscout_wifi_station_cancel_time_sync( void )
     }
 
     stop_ntp_sync();
-    return ESP_OK;
-}
-
-esp_err_t rfscout_wifi_station_disconnect( void )
-{
-    if( !initialized )
-    {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    portENTER_CRITICAL( &state_lock );
-    if( !started || RFSCOUT_WIFI_STATION_CONNECTED != status.state )
-    {
-        portEXIT_CRITICAL( &state_lock );
-        return ESP_ERR_INVALID_STATE;
-    }
-    disconnect_requested = true;
-    status.state = RFSCOUT_WIFI_STATION_DISCONNECTING;
-    status.disconnect_reason = 0;
-    portEXIT_CRITICAL( &state_lock );
-
-    const esp_err_t result = esp_wifi_disconnect();
-    if( ESP_OK != result )
-    {
-        portENTER_CRITICAL( &state_lock );
-        disconnect_requested = false;
-        status.state = RFSCOUT_WIFI_STATION_CONNECTED;
-        portEXIT_CRITICAL( &state_lock );
-        return result;
-    }
-
-    stop_ntp_sync();
-
-    wifi_config_t blank = { 0 };
-    (void)esp_wifi_set_config( WIFI_IF_STA, &blank );
-    memset( &blank, 0, sizeof( blank ) );
     return ESP_OK;
 }
 
