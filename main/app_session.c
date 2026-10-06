@@ -36,13 +36,10 @@ typedef struct
     const char *name;
     app_session_service_fn start;
     app_session_service_fn stop;
-    app_session_service_fn recover_failed_stop;
     app_session_service_active_fn active;
     void *context;
-    bool always_stop_for_close;
     bool was_active_for_close;
     bool stopped_for_close;
-    bool failed_for_close;
 } app_session_service_t;
 
 static const char *TAG = "app_session";
@@ -81,6 +78,18 @@ static bool network_session_active( void *a_context )
 {
     (void)a_context;
     return network_session_is_active();
+}
+
+static bool cc1101_active( void *a_context )
+{
+    (void)a_context;
+    return cc1101_is_active();
+}
+
+static bool nrf24_active( void *a_context )
+{
+    (void)a_context;
+    return nrf24_is_active();
 }
 
 static esp_err_t stop_connectivity_probe( void *a_context )
@@ -205,58 +214,52 @@ static app_session_service_t platform_services[] = {
         .name = "Wi-Fi",
         .start = start_wifi,
         .stop = stop_wifi,
-        .recover_failed_stop = start_wifi,
         .active = wifi_active,
-        .always_stop_for_close = true,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_NETWORK_SESSION,
         .name = "Network session",
         .stop = stop_network_session,
         .active = network_session_active,
-        .always_stop_for_close = true,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_CONNECTIVITY_PROBE,
         .name = "Connectivity probe",
         .stop = stop_connectivity_probe,
         .active = connectivity_probe_active,
-        .always_stop_for_close = true,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_OTA_INSTALLER,
         .name = "OTA installer",
         .stop = stop_ota_installer,
         .active = ota_installer_active,
-        .always_stop_for_close = true,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_OTA_ACQUISITION,
         .name = "OTA acquisition",
         .stop = stop_ota_acquisition,
         .active = ota_acquisition_active,
-        .always_stop_for_close = true,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_BLE_MONITOR,
         .name = "BLE",
         .start = start_ble,
         .stop = stop_ble,
-        .recover_failed_stop = start_ble,
         .active = ble_active,
-        .always_stop_for_close = true,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_CC1101,
         .name = "CC1101",
         .start = start_cc1101,
         .stop = stop_cc1101,
+        .active = cc1101_active,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_NRF24,
         .name = "nRF24",
         .start = start_nrf24,
         .stop = stop_nrf24,
+        .active = nrf24_active,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_AUDIO_CAPTURE,
@@ -292,7 +295,6 @@ static void clear_close_state( void )
     {
         platform_services[ i ].was_active_for_close = false;
         platform_services[ i ].stopped_for_close = false;
-        platform_services[ i ].failed_for_close = false;
     }
 }
 
@@ -441,16 +443,14 @@ esp_err_t app_session_prepare_close( void )
         }
 
         service->was_active_for_close =
-            ( NULL == service->active ) || service->active( service->context );
-        if( !service->was_active_for_close && !service->always_stop_for_close )
-        {
-            continue;
-        }
+            ( NULL != service->active ) && service->active( service->context );
 
+        /* stop() is the uniform quiesce operation and must be idempotent. Call it for every
+           selected service so transactional services without a generic start() can also clean
+           residual state before app memory is reclaimed. */
         const esp_err_t result = service->stop( service->context );
         if( ESP_OK != result )
         {
-            service->failed_for_close = true;
             ESP_LOGE( TAG,
                       "app=%d service=%s did not close safely: %s",
                       (int)session_app,
@@ -481,21 +481,13 @@ esp_err_t app_session_abort_close( void )
             continue;
         }
 
-        app_session_service_fn restart = NULL;
-        if( service->was_active_for_close && service->failed_for_close )
-        {
-            restart = service->recover_failed_stop;
-        }
-        else if( service->was_active_for_close && service->stopped_for_close )
-        {
-            restart = service->start;
-        }
-        if( NULL == restart )
+        if( !service->was_active_for_close || !service->stopped_for_close ||
+            NULL == service->start )
         {
             continue;
         }
 
-        const esp_err_t result = restart( service->context );
+        const esp_err_t result = service->start( service->context );
         if( ESP_OK != result )
         {
             ESP_LOGE( TAG,
