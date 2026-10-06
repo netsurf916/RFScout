@@ -831,7 +831,8 @@ esp_err_t rfscout_wifi_station_abort( void )
             portEXIT_CRITICAL( &state_lock );
 
             const esp_err_t stop_result = esp_wifi_stop();
-            const esp_err_t start_result = ( ESP_OK == stop_result ) ? esp_wifi_start() : stop_result;
+            const esp_err_t start_result =
+                ( ESP_OK == stop_result ) ? esp_wifi_start() : stop_result;
 
             portENTER_CRITICAL( &state_lock );
             stopping = false;
@@ -884,9 +885,8 @@ esp_err_t rfscout_wifi_station_ip_info( rfscout_wifi_station_ip_info_t *a_info )
     return result;
 }
 
-esp_err_t rfscout_wifi_station_connect( const char *a_ssid,
-                                        const char *a_password,
-                                        bool a_randomize_mac )
+esp_err_t
+rfscout_wifi_station_connect( const char *a_ssid, const char *a_password, bool a_randomize_mac )
 {
     if( !initialized )
     {
