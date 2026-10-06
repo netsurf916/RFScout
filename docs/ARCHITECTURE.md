@@ -184,9 +184,11 @@ The Wi-Fi and BLE monitor services normalize passive observations for the [WiFi 
 
 CC1101 and nRF24 are receive-only scanner services advertised by the current T-Embed profile. Each owns a session-managed worker that must stop before app memory release. App-specific interpretation and current retained-history limits are documented in [CC1101](apps/CC1101.md) and [nRF24](apps/NRF24.md).
 
-Infrastructure Wi-Fi (the station service) is a different platform concern from the passive observation monitor. It is a session-managed platform service: an app that declares it owns the station for its session, and session close tears the station down (including any connection, scan, and time sync) before app memory is reclaimed. Home uses it for explicit network/NTP/OTA workflows; Hotspots uses it to join open access points one BSSID at a time. Neither teaches the WiFi/BLE observation app about station state.
+Infrastructure Wi-Fi is split into a low-level station driver and a framework-owned **network session**. Apps may consume passive scan snapshots from the station driver, but they do not own association, DHCP/NTP sequencing, connection deadlines, MAC policy, or teardown. Home and Hotspots both request a logical network session and observe only its high-level ASSOCIATING / TIME_SYNCING / READY / FAILED state.
 
-The station service provides a strongest-per-SSID scan projection (Home's Network view) and a per-BSSID projection with security classification (Hotspots), credentialed connection by SSID with automatic NTP after DHCP (Home), and credential-free BSSID-pinned Open/OWE connection with caller-controlled NTP and an optional random locally administered MAC per connection (Hotspots). The factory station MAC is restored whenever the station session stops.
+The network-session policy is common across applications: every new association requests a fresh random locally administered station MAC by default, association/DHCP is bounded to 30 seconds, NTP synchronization is required and bounded to 15 seconds, and release synchronously tears the station down before another logical session may reuse it. The station driver drains its event-loop work during stop so stale ESP-IDF disconnect events remain below the framework boundary. If the factory MAC cannot be captured, randomization degrades to the current station MAC rather than preventing connectivity. The factory MAC is restored after randomized sessions whenever the station stops.
+
+The station driver still provides a strongest-per-SSID scan projection for Home and a per-BSSID projection with security classification for Hotspots. The framework selects either credentialed SSID association or credential-free BSSID-pinned Open/OWE association, then applies the same network-session lifecycle to both. HTTPS remains a consumer of READY network sessions: OTA acquisition and the Hotspots connectivity probe retain separate transfer semantics while sharing connection/time policy.
 
 The connectivity probe is a separate session-managed service that performs one bounded, cancellable, certificate-validated HTTPS request (Cloudflare `/cdn-cgi/trace`) over whatever station connection is up and reports the HTTP status plus public egress metadata. Session close cancels it and waits for its worker to exit.
 
@@ -307,9 +309,9 @@ The combined image remains the clean-install/recovery artifact and contains the 
 
 ### Home network/update ownership
 
-Infrastructure networking and Update are nested Home workflows, but the station session belongs to Home itself. Leaving Network or Update preserves a connected Home session; explicit Disconnect or leaving Home tears it down.
+Infrastructure networking and Update are nested Home workflows, but the framework network session belongs to Home itself. Leaving Network or Update preserves a READY Home session; explicit Disconnect or leaving Home releases it.
 
-Update requires station connectivity. Home still attempts NTP after association, but NTP-ready state is not an authorization gate for catalog/install operations: retained or manually set wall time may already be usable, and an unsuitable clock is allowed to fail through normal HTTPS certificate validation rather than being preemptively rejected.
+Update requires a READY network session. The common framework policy requires successful NTP synchronization before READY is published, so OTA acquisition never needs to duplicate association or clock-readiness logic.
 
 ### Acquisition and installer
 
