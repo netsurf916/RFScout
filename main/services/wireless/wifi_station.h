@@ -105,9 +105,8 @@ size_t rfscout_wifi_station_bss_results( rfscout_wifi_station_bss_t *a_results, 
  *          the station restarts with a fresh random locally administered MAC before associating.
  *          NTP is not started automatically; the framework owns time synchronization policy.
  */
-esp_err_t rfscout_wifi_station_connect( const char *a_ssid,
-                                        const char *a_password,
-                                        bool a_randomize_mac );
+esp_err_t
+rfscout_wifi_station_connect( const char *a_ssid, const char *a_password, bool a_randomize_mac );
 
 /**
  * @brief Associate with one Open or OWE BSSID without credentials.
