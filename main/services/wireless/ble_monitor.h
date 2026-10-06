@@ -34,6 +34,6 @@ esp_err_t ble_monitor_start( void );
 esp_err_t ble_monitor_stop( void );
 
 /** @brief Return whether the app currently requests BLE observation delivery. */
-bool ble_monitor_is_running( void );
+bool ble_monitor_is_active( void );
 
 #endif // _RFSCOUT_BLE_MONITOR_H_
