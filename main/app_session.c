@@ -27,8 +27,8 @@
 
 #define APP_SESSION_RECORDER_QUIESCE_TIMEOUT_MS 5000U
 
-typedef esp_err_t ( *app_session_service_fn )( void *a_context );
-typedef bool ( *app_session_service_active_fn )( void *a_context );
+typedef esp_err_t ( *app_session_service_fn )( void );
+typedef bool ( *app_session_service_active_fn )( void );
 
 /**
  * @brief Uniform lifecycle adapter for one app-owned platform service.
@@ -45,189 +45,17 @@ typedef struct
     app_session_service_fn start;
     app_session_service_fn stop;
     app_session_service_active_fn active;
-    void *context;
     bool was_active_for_close;
 } app_session_service_t;
 
 static const char *TAG = "app_session";
-static esp_err_t init_wifi( void *a_context )
+static esp_err_t stop_cc1101( void )
 {
-    (void)a_context;
-    return radio_monitor_init();
-}
-
-static esp_err_t init_network_session( void *a_context )
-{
-    (void)a_context;
-    return network_session_init();
-}
-
-static esp_err_t init_ble( void *a_context )
-{
-    (void)a_context;
-    return ble_monitor_init();
-}
-
-static esp_err_t init_cc1101( void *a_context )
-{
-    (void)a_context;
-    return cc1101_init();
-}
-
-static esp_err_t init_nrf24( void *a_context )
-{
-    (void)a_context;
-    return nrf24_init();
-}
-
-static esp_err_t init_audio_capture( void *a_context )
-{
-    (void)a_context;
-    return recorder_init();
-}
-
-static esp_err_t init_connectivity_probe( void *a_context )
-{
-    (void)a_context;
-    return connectivity_probe_init();
-}
-
-static esp_err_t init_ota_installer( void *a_context )
-{
-    (void)a_context;
-    return ota_installer_init();
-}
-
-static esp_err_t init_ota_acquisition( void *a_context )
-{
-    (void)a_context;
-    return ota_acquisition_init();
-}
-
-static rfscout_app_id_t session_app = RFSCOUT_APP_COUNT;
-static const rfscout_view_t *session_view;
-static uint32_t session_generation;
-static uint32_t session_services;
-static bool close_in_progress;
-static bool ready_to_reclaim;
-
-static esp_err_t start_wifi( void *a_context )
-{
-    (void)a_context;
-    return radio_monitor_start();
-}
-
-static esp_err_t stop_wifi( void *a_context )
-{
-    (void)a_context;
-    return radio_monitor_stop();
-}
-
-static bool wifi_active( void *a_context )
-{
-    (void)a_context;
-    return radio_monitor_is_active();
-}
-
-static esp_err_t stop_network_session( void *a_context )
-{
-    (void)a_context;
-    return network_session_release();
-}
-
-static bool network_session_active( void *a_context )
-{
-    (void)a_context;
-    return network_session_is_active();
-}
-
-static bool cc1101_active( void *a_context )
-{
-    (void)a_context;
-    return cc1101_is_active();
-}
-
-static bool nrf24_active( void *a_context )
-{
-    (void)a_context;
-    return nrf24_is_active();
-}
-
-static esp_err_t stop_connectivity_probe( void *a_context )
-{
-    (void)a_context;
-    return connectivity_probe_stop();
-}
-
-static bool connectivity_probe_active( void *a_context )
-{
-    (void)a_context;
-    return connectivity_probe_is_active();
-}
-
-static esp_err_t stop_ota_acquisition( void *a_context )
-{
-    (void)a_context;
-    return ota_acquisition_stop();
-}
-
-static bool ota_acquisition_active( void *a_context )
-{
-    (void)a_context;
-    return ota_acquisition_is_active();
-}
-
-static esp_err_t stop_ota_installer( void *a_context )
-{
-    (void)a_context;
-    return ota_installer_abort();
-}
-
-static bool ota_installer_active( void *a_context )
-{
-    (void)a_context;
-    return ota_installer_is_active();
-}
-
-static esp_err_t start_ble( void *a_context )
-{
-    (void)a_context;
-    return ble_monitor_start();
-}
-
-static esp_err_t stop_ble( void *a_context )
-{
-    (void)a_context;
-    return ble_monitor_stop();
-}
-
-static bool ble_active( void *a_context )
-{
-    (void)a_context;
-    return ble_monitor_is_active();
-}
-
-static esp_err_t start_cc1101( void *a_context )
-{
-    (void)a_context;
-    return cc1101_start();
-}
-
-static esp_err_t stop_cc1101( void *a_context )
-{
-    (void)a_context;
     return cc1101_stop() ? ESP_OK : ESP_ERR_TIMEOUT;
 }
 
-static esp_err_t start_nrf24( void *a_context )
+static esp_err_t stop_nrf24( void )
 {
-    (void)a_context;
-    return nrf24_start();
-}
-
-static esp_err_t stop_nrf24( void *a_context )
-{
-    (void)a_context;
     return nrf24_stop() ? ESP_OK : ESP_ERR_TIMEOUT;
 }
 
@@ -236,15 +64,9 @@ static bool recorder_references_clear( void )
     return ESP_ERR_INVALID_STATE != recorder_probe_microphone();
 }
 
-static bool audio_capture_active( void *a_context )
-{
-    (void)a_context;
-    return recorder_is_active();
-}
 
-static esp_err_t stop_recorder( void *a_context )
+static esp_err_t stop_recorder( void )
 {
-    (void)a_context;
 
     if( !recorder_prepare_storage_shutdown( APP_SESSION_RECORDER_QUIESCE_TIMEOUT_MS ) )
     {
@@ -272,69 +94,69 @@ static app_session_service_t platform_services[] = {
     {
         .capability = RFSCOUT_APP_SERVICE_WIFI_MONITOR,
         .name = "Wi-Fi",
-        .init = init_wifi,
-        .start = start_wifi,
-        .stop = stop_wifi,
-        .active = wifi_active,
+        .init = radio_monitor_init,
+        .start = radio_monitor_start,
+        .stop = radio_monitor_stop,
+        .active = radio_monitor_is_active,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_NETWORK_SESSION,
         .name = "Network session",
-        .init = init_network_session,
-        .stop = stop_network_session,
-        .active = network_session_active,
+        .init = network_session_init,
+        .stop = network_session_release,
+        .active = network_session_is_active,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_CONNECTIVITY_PROBE,
         .name = "Connectivity probe",
-        .init = init_connectivity_probe,
-        .stop = stop_connectivity_probe,
-        .active = connectivity_probe_active,
+        .init = connectivity_probe_init,
+        .stop = connectivity_probe_stop,
+        .active = connectivity_probe_is_active,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_OTA_INSTALLER,
         .name = "OTA installer",
-        .init = init_ota_installer,
-        .stop = stop_ota_installer,
-        .active = ota_installer_active,
+        .init = ota_installer_init,
+        .stop = ota_installer_abort,
+        .active = ota_installer_is_active,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_OTA_ACQUISITION,
         .name = "OTA acquisition",
-        .init = init_ota_acquisition,
-        .stop = stop_ota_acquisition,
-        .active = ota_acquisition_active,
+        .init = ota_acquisition_init,
+        .stop = ota_acquisition_stop,
+        .active = ota_acquisition_is_active,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_BLE_MONITOR,
         .name = "BLE",
-        .init = init_ble,
-        .start = start_ble,
-        .stop = stop_ble,
-        .active = ble_active,
+        .init = ble_monitor_init,
+        .start = ble_monitor_start,
+        .stop = ble_monitor_stop,
+        .active = ble_monitor_is_active,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_CC1101,
         .name = "CC1101",
-        .init = init_cc1101,
-        .start = start_cc1101,
+        .init = cc1101_init,
+        .start = cc1101_start,
         .stop = stop_cc1101,
-        .active = cc1101_active,
+        .active = cc1101_is_active,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_NRF24,
         .name = "nRF24",
-        .init = init_nrf24,
-        .start = start_nrf24,
+        .init = nrf24_init,
+        .start = nrf24_start,
         .stop = stop_nrf24,
-        .active = nrf24_active,
+        .active = nrf24_is_active,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_AUDIO_CAPTURE,
         .name = "Audio capture",
-        .init = init_audio_capture,
+        .init = recorder_init,
         .stop = stop_recorder,
-        .active = audio_capture_active,
+        .active = recorder_is_active,
     },
 };
 
@@ -355,7 +177,7 @@ static esp_err_t init_selected_services( void )
             continue;
         }
 
-        const esp_err_t result = service->init( service->context );
+        const esp_err_t result = service->init();
         if( ESP_OK != result )
         {
             ESP_LOGE( TAG,
@@ -546,12 +368,12 @@ esp_err_t app_session_prepare_close( void )
         }
 
         service->was_active_for_close =
-            ( NULL != service->active ) && service->active( service->context );
+            ( NULL != service->active ) && service->active();
 
         /* stop() is the uniform quiesce operation and must be idempotent. Call it for every
            selected service so transactional services without a generic start() can also clean
            residual state before app memory is reclaimed. */
-        const esp_err_t result = service->stop( service->context );
+        const esp_err_t result = service->stop();
         if( ESP_OK != result )
         {
             ESP_LOGE( TAG,
@@ -588,7 +410,7 @@ esp_err_t app_session_abort_close( void )
             continue;
         }
 
-        const esp_err_t result = service->start( service->context );
+        const esp_err_t result = service->start();
         if( ESP_OK != result )
         {
             ESP_LOGE( TAG,
