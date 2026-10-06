@@ -39,7 +39,7 @@ The current workflow:
 - stores up to eight Home-owned remembered SSID/password entries;
 - highlights remembered networks observed in the latest scan;
 - requires an explicit connect action;
-- presents the framework network session as a modal **Connecting...** → **Setting time...** transaction, then returns to the Network main screen once the session is READY;
+- presents the framework network session as a modal **Connecting...** → **Setting time...** transaction, then returns to the Network main screen once the session is READY or LIMITED;
 - lets a short center click cancel the transaction; cancellation releases the whole logical network session through the framework;
 - inherits the common framework deadlines: 30 seconds for association/DHCP and 15 seconds for required NTP synchronization;
 - keeps normal connection/time progress out of the persistent Network screen, reserving its footer for terminal errors;
@@ -48,13 +48,13 @@ The current workflow:
 - obtains DHCP state; and
 - uses the same randomized-MAC-by-default policy as every other infrastructure connection.
 
-The network session belongs to Home rather than to the nested Network or Update page. Leaving Network therefore keeps the READY session available to Update. Explicit Disconnect or leaving Home releases it and clears transient driver credentials/results.
+The network session belongs to Home rather than to the nested Network or Update page. Leaving Network therefore keeps either a READY or LIMITED LAN session connected. Explicit Disconnect or leaving Home releases it and clears transient driver credentials/results.
 
 ESP-IDF Wi-Fi persistence remains RAM-only so the driver does not become an independent credential authority.
 
 ## Firmware Update
 
-**Device Settings → Update** is available whenever the Home-owned network session is READY. READY means association, DHCP, and required NTP synchronization have all completed under the common framework policy. OTA acquisition therefore consumes an already prepared connection and does not implement its own connection or time-sync lifecycle.
+**Device Settings → Update** only starts network acquisition when the Home-owned network session is READY. READY means association, DHCP, and NTP synchronization all completed under the common framework policy. LIMITED means DHCP succeeded but NTP did not; Home retains that LAN connection, but Update deliberately does not attempt HTTPS while it is limited.
 
 The UI supports:
 
