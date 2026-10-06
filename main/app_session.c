@@ -87,6 +87,12 @@ static esp_err_t init_audio_capture( void *a_context )
     return recorder_init();
 }
 
+static esp_err_t init_noop( void *a_context )
+{
+    (void)a_context;
+    return ESP_OK;
+}
+
 static rfscout_app_id_t session_app = RFSCOUT_APP_COUNT;
 static const rfscout_view_t *session_view;
 static uint32_t session_generation;
@@ -272,18 +278,21 @@ static app_session_service_t platform_services[] = {
     {
         .capability = RFSCOUT_APP_SERVICE_CONNECTIVITY_PROBE,
         .name = "Connectivity probe",
+        .init = init_noop,
         .stop = stop_connectivity_probe,
         .active = connectivity_probe_active,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_OTA_INSTALLER,
         .name = "OTA installer",
+        .init = init_noop,
         .stop = stop_ota_installer,
         .active = ota_installer_active,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_OTA_ACQUISITION,
         .name = "OTA acquisition",
+        .init = init_noop,
         .stop = stop_ota_acquisition,
         .active = ota_acquisition_active,
     },
@@ -324,6 +333,8 @@ static size_t platform_service_count( void )
 {
     return sizeof( platform_services ) / sizeof( platform_services[ 0 ] );
 }
+
+static bool service_selected( const app_session_service_t *a_service );
 
 static esp_err_t init_selected_services( void )
 {
