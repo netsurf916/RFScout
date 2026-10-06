@@ -340,6 +340,10 @@ esp_err_t ble_monitor_init( void )
     {
         return ESP_OK;
     }
+    if( NULL == sink )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
 
     portENTER_CRITICAL( &callback_lock );
     scan_requested = false;
