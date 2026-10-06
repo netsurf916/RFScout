@@ -46,6 +46,7 @@ static esp_event_handler_instance_t ip_event_handler;
 static esp_event_handler_instance_t barrier_event_handler;
 static uint32_t event_barrier_requested;
 static uint32_t event_barrier_completed;
+static bool event_drain_pending;
 static portMUX_TYPE state_lock = portMUX_INITIALIZER_UNLOCKED;
 static rfscout_wifi_station_status_t status;
 static rfscout_wifi_station_ap_t scan_results[ RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS ];
@@ -605,6 +606,7 @@ esp_err_t rfscout_wifi_station_init( void )
     bss_result_count = 0U;
     event_barrier_requested = 0U;
     event_barrier_completed = 0U;
+    event_drain_pending = false;
     portEXIT_CRITICAL( &state_lock );
     initialized = true;
     return ESP_OK;
@@ -970,6 +972,7 @@ esp_err_t rfscout_wifi_station_stop( void )
 
     portENTER_CRITICAL( &state_lock );
     const bool was_started = started;
+    const bool drain_was_pending = event_drain_pending;
     stopping = true;
     portEXIT_CRITICAL( &state_lock );
 
@@ -995,21 +998,30 @@ esp_err_t rfscout_wifi_station_stop( void )
 
         portENTER_CRITICAL( &state_lock );
         started = false;
+        event_drain_pending = true;
         portEXIT_CRITICAL( &state_lock );
 
+        wifi_config_t blank = { 0 };
+        (void)esp_wifi_set_config( WIFI_IF_STA, &blank );
+        memset( &blank, 0, sizeof( blank ) );
+        restore_factory_mac();
+    }
+
+    if( was_started || drain_was_pending )
+    {
         const esp_err_t drain_result = drain_default_event_loop();
         if( ESP_OK != drain_result )
         {
+            stop_ntp_sync();
             portENTER_CRITICAL( &state_lock );
             stopping = false;
             portEXIT_CRITICAL( &state_lock );
             return drain_result;
         }
 
-        wifi_config_t blank = { 0 };
-        (void)esp_wifi_set_config( WIFI_IF_STA, &blank );
-        memset( &blank, 0, sizeof( blank ) );
-        restore_factory_mac();
+        portENTER_CRITICAL( &state_lock );
+        event_drain_pending = false;
+        portEXIT_CRITICAL( &state_lock );
     }
 
     stop_ntp_sync();
