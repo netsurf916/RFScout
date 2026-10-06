@@ -37,6 +37,7 @@
 static const char *TAG = "ble_monitor";
 static uint8_t own_addr_type;
 static ble_observation_fn sink;
+static bool initialized;
 static bool host_synced;
 static bool scan_requested;
 static bool scanning;
@@ -282,6 +283,11 @@ bool ble_monitor_is_running( void )
 
 esp_err_t ble_monitor_start( void )
 {
+    if( !initialized )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     portENTER_CRITICAL( &callback_lock );
     scan_requested = true;
     portEXIT_CRITICAL( &callback_lock );
@@ -330,7 +336,6 @@ void ble_monitor_set_observer( ble_observation_fn a_callback )
 
 esp_err_t ble_monitor_init( void )
 {
-    static bool initialized;
     if( initialized )
     {
         return ESP_OK;
