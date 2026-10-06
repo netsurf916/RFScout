@@ -788,7 +788,9 @@ esp_err_t rfscout_wifi_station_ip_info( rfscout_wifi_station_ip_info_t *a_info )
     return result;
 }
 
-esp_err_t rfscout_wifi_station_connect( const char *a_ssid, const char *a_password )
+esp_err_t rfscout_wifi_station_connect( const char *a_ssid,
+                                        const char *a_password,
+                                        bool a_randomize_mac )
 {
     if( !initialized )
     {
@@ -825,6 +827,10 @@ esp_err_t rfscout_wifi_station_connect( const char *a_ssid, const char *a_passwo
     }
 
     esp_err_t result = ensure_started();
+    if( ESP_OK == result && a_randomize_mac )
+    {
+        result = restart_with_random_mac();
+    }
     if( ESP_OK != result )
     {
         return result;
@@ -852,7 +858,7 @@ esp_err_t rfscout_wifi_station_connect( const char *a_ssid, const char *a_passwo
 
     portENTER_CRITICAL( &state_lock );
     disconnect_requested = false;
-    auto_time_sync = true;
+    auto_time_sync = false;
     status.disconnect_reason = 0;
     memset( status.ssid, 0, sizeof( status.ssid ) );
     memcpy( status.ssid, a_ssid, ssid_length );
