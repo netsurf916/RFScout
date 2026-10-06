@@ -712,8 +712,7 @@ static void scheduler_poll( int64_t a_now_us )
             else if( RFSCOUT_NETWORK_SESSION_FAILED == network.state )
             {
                 attempt_result.disconnect_reason = network.disconnect_reason;
-                finish_attempt(
-                    HOTSPOT_STATUS_RED, HOTSPOT_STAGE_JOIN, network.error, a_now_us );
+                finish_attempt( HOTSPOT_STATUS_RED, HOTSPOT_STAGE_JOIN, network.error, a_now_us );
             }
             break;
         }
