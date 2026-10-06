@@ -107,7 +107,7 @@ esp_err_t network_session_begin_bss( const rfscout_wifi_station_bss_t *a_bss )
     }
     if( ESP_OK != result )
     {
-        fail_session( result, 0 );
+        fail_session( result, RFSCOUT_NETWORK_SESSION_FAILURE_ASSOCIATION, 0 );
     }
     return result;
 }
