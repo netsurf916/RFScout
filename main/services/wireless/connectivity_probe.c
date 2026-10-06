@@ -203,7 +203,7 @@ esp_err_t connectivity_probe_init( void )
     return ESP_OK;
 }
 
-esp_err_t connectivity_probe_start( uint32_t a_timeout_ms )
+esp_err_t connectivity_probe_begin( uint32_t a_timeout_ms )
 {
     if( NULL == client_mutex )
     {
