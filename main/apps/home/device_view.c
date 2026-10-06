@@ -113,11 +113,6 @@ static unsigned device_item_count( void )
     return DEVICE_ITEM_BASE_COUNT;
 }
 
-static bool network_update_available( void )
-{
-    return network_session_ready();
-}
-
 static unsigned time_menu_item_count( void )
 {
     return RFSCOUT_TIME_MODE_MANUAL == device_time_mode() ? TIME_MENU_MANUAL_COUNT
@@ -415,7 +410,7 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
         }
         case DEVICE_ITEM_OTA:
             snprintf(
-                a_value, a_capacity, "%s", network_update_available() ? "Ready" : "Unavailable" );
+                a_value, a_capacity, "%s", network_session_ready() ? "Ready" : "Unavailable" );
             break;
         case DEVICE_ITEM_WIFI:
             snprintf(
@@ -1653,7 +1648,7 @@ bool device_view_input( const rfscout_input_event_t *a_input )
         }
         if( ( DEVICE_ITEM_OTA == selected_item ) && !editing )
         {
-            if( !network_update_available() )
+            if( !network_session_ready() )
             {
                 device_view_render();
                 return false;
