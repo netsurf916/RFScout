@@ -115,9 +115,7 @@ static unsigned device_item_count( void )
 
 static bool network_update_available( void )
 {
-    rfscout_network_session_status_t status;
-    network_session_status( &status );
-    return RFSCOUT_NETWORK_SESSION_READY == status.state;
+    return network_session_ready();
 }
 
 static unsigned time_menu_item_count( void )
