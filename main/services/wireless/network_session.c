@@ -215,11 +215,6 @@ esp_err_t network_session_release( void )
     return result;
 }
 
-esp_err_t network_session_stop( void )
-{
-    return network_session_release();
-}
-
 bool network_session_is_active( void )
 {
     return RFSCOUT_NETWORK_SESSION_IDLE != status.state || rfscout_wifi_station_is_active();
