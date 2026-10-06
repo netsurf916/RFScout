@@ -29,10 +29,10 @@ Each BSSID has an independent observation session. A BSSID missing from one or t
 
 One check for one open or OWE BSSID performs:
 
-1. **Join** — associate pinned to that BSSID with no credentials (OWE networks require OWE), then complete DHCP. Association plus DHCP is bounded to **15 seconds**. Failure marks the AP **red**.
-2. **Time** — synchronize the wall clock with NTP through the network, bounded to **10 seconds**. If NTP fails or times out, HTTPS is **not attempted** and the AP is marked **yellow**. A successful sync also sets the device clock.
-3. **HTTPS** — one certificate-validated request to Cloudflare's `/cdn-cgi/trace`, bounded to **10 seconds**. HTTP 200 marks the AP **green** and records the public egress IP and Cloudflare colo; any other result marks it **yellow**.
-4. **Leave** — disconnect and return to scanning.
+1. **Network** — associate pinned to that BSSID with no credentials (OWE networks require OWE), then complete DHCP under the common framework policy. Association/DHCP failure marks the AP **red**.
+2. **Time** — once DHCP succeeds, the framework captures LAN attributes and attempts NTP. NTP failure leaves the session LIMITED, marks the AP **yellow**, retains the LAN attributes, and **skips HTTPS**. A successful sync promotes the session to READY and sets the device clock.
+3. **HTTPS** — only for READY sessions, perform one certificate-validated request to Cloudflare's `/cdn-cgi/trace`, bounded to **10 seconds**. HTTP 200 marks the AP **green** and records the public egress IP and Cloudflare colo; any other result marks it **yellow**.
+4. **Leave** — release the network session and return to scanning.
 
 Each check inherits the platform-wide default of a fresh random, locally administered station MAC. This is the same policy used by Home/OTA connections. The factory MAC is restored when the network session stops; if the factory MAC could not be captured, the framework continues with the current station MAC rather than failing the check.
 
@@ -59,7 +59,7 @@ Pressing **Select** opens the browser:
 - **Auto check** — toggle automatic checking for this visit; and
 - one row per eligible BSSID, sorted strongest first, showing SSID, status, and RSSI. Selection follows the BSSID while the list re-sorts.
 
-Selecting an access point opens its detail view: SSID, BSSID, channel, RSSI or not-visible state, security, status, current check stage, the last attempt's outcome, client IP / gateway, public IP, and Cloudflare colo when known. **Recheck** requests a manual check while the BSSID is visible.
+Selecting an access point opens its detail view: SSID, BSSID, channel, RSSI or not-visible state, security, status, current check stage, the last attempt's outcome, client IP, gateway, netmask, DHCP-provided DNS servers, public IP, and Cloudflare colo when known. LIMITED/NTP-failed results retain and display the LAN attributes even though HTTPS is skipped. **Recheck** requests a manual check while the BSSID is visible.
 
 Status column values:
 
