@@ -20,12 +20,12 @@
 #include "media_store.h"
 #include "morse.h"
 #include "ota_menu.h"
+#include "network_session.h"
 #include "power.h"
 #include "power_policy_view.h"
 #include "ui_chrome.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
-#include "wifi_station.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -115,9 +115,9 @@ static unsigned device_item_count( void )
 
 static bool network_update_available( void )
 {
-    rfscout_wifi_station_status_t status;
-    rfscout_wifi_station_status( &status );
-    return RFSCOUT_WIFI_STATION_CONNECTED == status.state;
+    rfscout_network_session_status_t status;
+    network_session_status( &status );
+    return RFSCOUT_NETWORK_SESSION_READY == status.state;
 }
 
 static unsigned time_menu_item_count( void )
@@ -389,28 +389,29 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             break;
         case DEVICE_ITEM_NETWORK:
         {
-            rfscout_wifi_station_status_t status;
-            rfscout_wifi_station_status( &status );
-            if( RFSCOUT_WIFI_STATION_CONNECTED == status.state )
+            rfscout_network_session_status_t status;
+            network_session_status( &status );
+            switch( status.state )
             {
-                snprintf( a_value,
-                          a_capacity,
-                          "%s",
-                          status.ntp_synced ? "Ready"
-                                            : ( status.ntp_syncing ? "Syncing" : "Time error" ) );
-            }
-            else if( RFSCOUT_WIFI_STATION_CONNECTING == status.state ||
-                     RFSCOUT_WIFI_STATION_SEARCHING == status.state )
-            {
-                snprintf( a_value, a_capacity, "Connecting" );
-            }
-            else if( RFSCOUT_WIFI_STATION_DISCONNECTING == status.state )
-            {
-                snprintf( a_value, a_capacity, "Disconnecting" );
-            }
-            else
-            {
-                snprintf( a_value, a_capacity, "Offline" );
+                case RFSCOUT_NETWORK_SESSION_ASSOCIATING:
+                    snprintf( a_value, a_capacity, "Connecting" );
+                    break;
+                case RFSCOUT_NETWORK_SESSION_TIME_SYNCING:
+                    snprintf( a_value, a_capacity, "Syncing" );
+                    break;
+                case RFSCOUT_NETWORK_SESSION_LIMITED:
+                    snprintf( a_value, a_capacity, "Limited" );
+                    break;
+                case RFSCOUT_NETWORK_SESSION_READY:
+                    snprintf( a_value, a_capacity, "Ready" );
+                    break;
+                case RFSCOUT_NETWORK_SESSION_FAILED:
+                    snprintf( a_value, a_capacity, "Failed" );
+                    break;
+                case RFSCOUT_NETWORK_SESSION_IDLE:
+                default:
+                    snprintf( a_value, a_capacity, "Offline" );
+                    break;
             }
             break;
         }
