@@ -112,9 +112,26 @@ A transition is transactional:
 
 A successful service stop is the platform reachability proof: new work that can reference app state cannot enter, admitted workers/callbacks have drained, and shared hardware is inactive. Apps do not implement a second allocator/reachability protocol.
 
+### Platform service lifecycle contract
+
+Platform services use one lifecycle vocabulary with ownership split deliberately between the framework and the application:
+
+- `probe()` answers app/provider availability only. It is retry-safe, minimally invasive, and leaves acquisition inactive.
+- `init()` is framework-owned, idempotent, and lightweight. It may validate dependencies, initialize reusable driver/library state, register callbacks, or create dormant worker infrastructure, but it must leave the service inactive.
+- `start()` is app-owned and idempotent for persistent services. It begins the service's ongoing activity after the app's normal activation point.
+- Parameterized transactional services use explicit `begin_*(...)` operations instead of a generic `start()`; the application still owns when those transactions begin.
+- `stop()` is idempotent and framework-safe. It quiesces active work and may also clear residual transaction state when already inactive.
+- `is_active()` is authoritative for whether ongoing work currently owns resources.
+
+The framework calls `init()` for every service declared by the destination app before ENTER/ACTIVATE can use it. Initialization success means a later app-driven `start()` or `begin_*(...)` is valid without repeating availability policy. Initialization does not imply activation.
+
+When an app transition closes a session, the framework calls `stop()` for every declared service in reverse dependency order. If a later close step fails, persistent services that were active before the attempted close are restored with their same idempotent `start()`; parameterized transactions are not reconstructed implicitly. There is no separate resume/recover verb.
+
+Capability bits name logical services, not raw drivers. Apps may still consume non-owning read/query APIs from lower layers where appropriate, but activation and teardown semantics must not bypass the declared platform-service boundary.
+
 Once source cleanup has committed, RFScout does not resurrect the old application. If destination-session creation fails, lifecycle diagnostics record a committed-destination failure and the app manager attempts Home fallback without dispatching ENTER against an invalid view.
 
-Current session-managed asynchronous services include Wi-Fi monitoring, infrastructure Wi-Fi station, connectivity probing, OTA acquisition/installation, BLE monitoring, CC1101, nRF24, and shared audio capture/Recorder activity. Thermal acquisition is synchronous today.
+Current session-managed asynchronous services include Wi-Fi monitoring, framework network sessions, connectivity probing, OTA acquisition/installation, BLE monitoring, CC1101, nRF24, and shared audio capture/Recorder activity. Thermal acquisition is synchronous today.
 
 ## Memory policy
 
