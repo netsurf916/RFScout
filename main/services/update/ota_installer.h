@@ -44,6 +44,9 @@ typedef struct
     uint32_t generation;
 } ota_installer_status_t;
 
+/** @brief Initialize reusable OTA installer cryptographic state without opening a write. */
+esp_err_t ota_installer_init( void );
+
 esp_err_t ota_installer_begin( const ota_installer_image_t *a_image );
 esp_err_t ota_installer_write( const void *a_data, size_t a_length );
 esp_err_t ota_installer_finish( void );

@@ -37,6 +37,7 @@ static size_t catalog_capacity;
 static bool cancel_requested;
 static bool cancel_call_active;
 static esp_err_t stream_error;
+static bool initialized;
 static esp_err_t ensure_catalog_capacity( size_t a_required )
 {
     if( a_required <= catalog_capacity )
@@ -362,13 +363,36 @@ static esp_err_t begin_request( ota_acquisition_kind_t a_kind, const char *a_url
     return ESP_OK;
 }
 
+esp_err_t ota_acquisition_init( void )
+{
+    if( initialized )
+    {
+        return ESP_OK;
+    }
+
+    portENTER_CRITICAL( &state_lock );
+    memset( &status, 0, sizeof( status ) );
+    status.state = OTA_ACQUISITION_IDLE;
+    portEXIT_CRITICAL( &state_lock );
+    initialized = true;
+    return ESP_OK;
+}
+
 esp_err_t ota_acquisition_begin_catalog( void )
 {
+    if( !initialized )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     return begin_request( OTA_ACQUISITION_KIND_CATALOG, OTA_CATALOG_URL );
 }
 
 esp_err_t ota_acquisition_begin_firmware( const char *a_artifact_path )
 {
+    if( !initialized )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     if( !safe_relative_path( a_artifact_path ) )
     {
         return ESP_ERR_INVALID_ARG;

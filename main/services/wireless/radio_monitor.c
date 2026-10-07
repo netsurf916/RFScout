@@ -7,9 +7,9 @@
 
 #include "radio_monitor.h"
 
-#include "esp_event.h"
+#include "wifi_core.h"
+
 #include "esp_log.h"
-#include "esp_netif.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
@@ -337,7 +337,7 @@ static int64_t channel_dwell_us( uint8_t a_channel )
                                                               : WIFI_DISCOVERY_DWELL_US;
 }
 
-bool radio_monitor_is_running( void )
+bool radio_monitor_is_active( void )
 {
     bool result;
     portENTER_CRITICAL( &callback_lock );
@@ -348,6 +348,11 @@ bool radio_monitor_is_running( void )
 
 esp_err_t radio_monitor_start( void )
 {
+    if( !initialized )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     portENTER_CRITICAL( &callback_lock );
     const bool already_running = running;
     if( !already_running )
@@ -433,25 +438,40 @@ esp_err_t radio_monitor_stop( void )
     return stop_result;
 }
 
-esp_err_t radio_monitor_init( radio_observation_fn a_callback )
+void radio_monitor_set_observer( radio_observation_fn a_callback )
 {
     sink = a_callback;
+}
+
+esp_err_t radio_monitor_init( void )
+{
+    if( initialized )
+    {
+        return ESP_OK;
+    }
+    if( NULL == sink )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t result = wifi_core_init();
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
+    result = esp_wifi_set_promiscuous_rx_cb( promiscuous );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
     portENTER_CRITICAL( &callback_lock );
     running = false;
     observation_callbacks_inflight = 0U;
     portEXIT_CRITICAL( &callback_lock );
     active_ap_channel_mask = 0U;
-
-    if( !initialized )
-    {
-        ESP_ERROR_CHECK( esp_netif_init() );
-        ESP_ERROR_CHECK( esp_event_loop_create_default() );
-        wifi_init_config_t config = WIFI_INIT_CONFIG_DEFAULT();
-        ESP_ERROR_CHECK( esp_wifi_init( &config ) );
-        ESP_ERROR_CHECK( esp_wifi_set_mode( WIFI_MODE_NULL ) );
-        ESP_ERROR_CHECK( esp_wifi_set_promiscuous_rx_cb( promiscuous ) );
-        initialized = true;
-    }
+    initialized = true;
     return ESP_OK;
 }
 
@@ -463,7 +483,7 @@ void radio_monitor_set_active_ap_channels( uint16_t a_channel_mask )
 
 void radio_monitor_step( void )
 {
-    if( !radio_monitor_is_running() )
+    if( !radio_monitor_is_active() )
     {
         return;
     }

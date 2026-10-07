@@ -37,13 +37,16 @@ typedef struct
     char colo[ RFSCOUT_CONNECTIVITY_PROBE_COLO_MAX_LENGTH + 1U ];
 } rfscout_connectivity_probe_status_t;
 
+/** @brief Initialize reusable probe synchronization state without starting a request. */
+esp_err_t connectivity_probe_init( void );
+
 /**
  * @brief Start one verified HTTPS request to Cloudflare /cdn-cgi/trace on the current connection.
  * @param a_timeout_ms Request timeout; the whole request is also bounded by it.
  * @return ESP_OK when the worker started, ESP_ERR_INVALID_STATE when a request is still running.
  * @details SUCCEEDED means HTTP 200; public egress IP and Cloudflare colo are parsed from the body.
  */
-esp_err_t connectivity_probe_start( uint32_t a_timeout_ms );
+esp_err_t connectivity_probe_begin( uint32_t a_timeout_ms );
 
 /** @brief Copy the latest probe status into caller-owned storage. */
 void connectivity_probe_status( rfscout_connectivity_probe_status_t *a_status );

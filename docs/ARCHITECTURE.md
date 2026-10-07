@@ -112,9 +112,26 @@ A transition is transactional:
 
 A successful service stop is the platform reachability proof: new work that can reference app state cannot enter, admitted workers/callbacks have drained, and shared hardware is inactive. Apps do not implement a second allocator/reachability protocol.
 
+### Platform service lifecycle contract
+
+Platform services use one lifecycle vocabulary with ownership split deliberately between the framework and the application:
+
+- `probe()` answers app/provider availability only. It is retry-safe, minimally invasive, and leaves acquisition inactive.
+- `init()` is framework-owned, idempotent, and lightweight. It may validate dependencies, initialize reusable driver/library state, register callbacks, or create dormant worker infrastructure, but it must leave the service inactive.
+- `start()` is app-owned and idempotent for persistent services. It begins the service's ongoing activity after the app's normal activation point.
+- Parameterized transactional services use explicit `begin_*(...)` operations instead of a generic `start()`; the application still owns when those transactions begin.
+- `stop()` is idempotent and framework-safe. It quiesces active work and may also clear residual transaction state when already inactive.
+- `is_active()` is authoritative for whether ongoing work currently owns resources.
+
+The framework calls `init()` for every service declared by the destination app before ENTER/ACTIVATE can use it. Initialization success means a later app-driven `start()` or `begin_*(...)` is valid without repeating availability policy. Initialization does not imply activation.
+
+When an app transition closes a session, the framework calls `stop()` for every declared service in reverse dependency order. If a later close step fails, persistent services that were active before the attempted close are restored with their same idempotent `start()`; parameterized transactions are not reconstructed implicitly. There is no separate resume/recover verb.
+
+Capability bits name logical services, not raw drivers. Apps may still consume non-owning read/query APIs from lower layers where appropriate, but activation and teardown semantics must not bypass the declared platform-service boundary.
+
 Once source cleanup has committed, RFScout does not resurrect the old application. If destination-session creation fails, lifecycle diagnostics record a committed-destination failure and the app manager attempts Home fallback without dispatching ENTER against an invalid view.
 
-Current session-managed asynchronous services include Wi-Fi monitoring, infrastructure Wi-Fi station, connectivity probing, OTA acquisition/installation, BLE monitoring, CC1101, nRF24, and shared audio capture/Recorder activity. Thermal acquisition is synchronous today.
+Current session-managed asynchronous services include Wi-Fi monitoring, framework network sessions, connectivity probing, OTA acquisition/installation, BLE monitoring, CC1101, nRF24, and shared audio capture/Recorder activity. Thermal acquisition is synchronous today.
 
 ## Memory policy
 
@@ -184,11 +201,13 @@ The Wi-Fi and BLE monitor services normalize passive observations for the [WiFi 
 
 CC1101 and nRF24 are receive-only scanner services advertised by the current T-Embed profile. Each owns a session-managed worker that must stop before app memory release. App-specific interpretation and current retained-history limits are documented in [CC1101](apps/CC1101.md) and [nRF24](apps/NRF24.md).
 
-Infrastructure Wi-Fi (the station service) is a different platform concern from the passive observation monitor. It is a session-managed platform service: an app that declares it owns the station for its session, and session close tears the station down (including any connection, scan, and time sync) before app memory is reclaimed. Home uses it for explicit network/NTP/OTA workflows; Hotspots uses it to join open access points one BSSID at a time. Neither teaches the WiFi/BLE observation app about station state.
+Infrastructure Wi-Fi is split into a low-level station driver and a framework-owned **network session**. Apps may consume passive scan snapshots from the station driver, but they do not own association, DHCP/NTP sequencing, connection deadlines, MAC policy, or teardown. Home and Hotspots both request a logical network session and observe only its high-level ASSOCIATING / TIME_SYNCING / LIMITED / READY / FAILED state.
 
-The station service provides a strongest-per-SSID scan projection (Home's Network view) and a per-BSSID projection with security classification (Hotspots), credentialed connection by SSID with automatic NTP after DHCP (Home), and credential-free BSSID-pinned Open/OWE connection with caller-controlled NTP and an optional random locally administered MAC per connection (Hotspots). The factory station MAC is restored whenever the station session stops.
+The network-session policy is common across applications: every new association requests a fresh random locally administered station MAC by default, association/DHCP is bounded to 30 seconds, and NTP synchronization is attempted for up to 15 seconds. Association plus DHCP establishes the LAN session; NTP failure leaves that connection in LIMITED rather than tearing it down, while successful NTP promotes it to READY. Only READY sessions may start HTTPS consumers. Release synchronously tears the station down before another logical session may reuse it. The station driver drains its event-loop work during stop so stale ESP-IDF disconnect events remain below the framework boundary. If the factory MAC cannot be captured, randomization degrades to the current station MAC rather than preventing connectivity. The factory MAC is restored after randomized sessions whenever the station stops.
 
-The connectivity probe is a separate session-managed service that performs one bounded, cancellable, certificate-validated HTTPS request (Cloudflare `/cdn-cgi/trace`) over whatever station connection is up and reports the HTTP status plus public egress metadata. Session close cancels it and waits for its worker to exit.
+The station driver still provides a strongest-per-SSID scan projection for Home and a per-BSSID projection with security classification for Hotspots. The framework selects either credentialed SSID association or credential-free BSSID-pinned Open/OWE association, then applies the same network-session lifecycle to both. HTTPS remains a consumer of READY network sessions: OTA acquisition and the Hotspots connectivity probe retain separate transfer semantics while sharing connection/time policy.
+
+The connectivity probe is a separate transactional session-managed service whose parameterized `begin` performs one bounded, cancellable, certificate-validated HTTPS request (Cloudflare `/cdn-cgi/trace`) over whatever station connection is up and reports the HTTP status plus public egress metadata. Session close cancels it and waits for its worker to exit.
 
 ## Configuration and persistent records
 
@@ -307,9 +326,9 @@ The combined image remains the clean-install/recovery artifact and contains the 
 
 ### Home network/update ownership
 
-Infrastructure networking and Update are nested Home workflows, but the station session belongs to Home itself. Leaving Network or Update preserves a connected Home session; explicit Disconnect or leaving Home tears it down.
+Infrastructure networking and Update are nested Home workflows, but the framework network session belongs to Home itself. Leaving Network or Update preserves a READY Home session; explicit Disconnect or leaving Home releases it.
 
-Update requires station connectivity. Home still attempts NTP after association, but NTP-ready state is not an authorization gate for catalog/install operations: retained or manually set wall time may already be usable, and an unsuitable clock is allowed to fail through normal HTTPS certificate validation rather than being preemptively rejected.
+Update requires a READY network session. A LIMITED Home session remains connected and can expose LAN state, but OTA acquisition does not attempt HTTPS until a later session reaches READY. The framework therefore preserves the proven Home behavior of keeping a DHCP-successful connection after NTP failure without duplicating connection/time logic in the OTA UI.
 
 ### Acquisition and installer
 

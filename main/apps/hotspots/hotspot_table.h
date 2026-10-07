@@ -60,6 +60,8 @@ typedef struct
     uint32_t address;
     uint32_t netmask;
     uint32_t gateway;
+    uint32_t dns_primary;
+    uint32_t dns_backup;
     char public_ip[ HOTSPOT_PUBLIC_IP_MAX_LENGTH + 1U ];
     char colo[ HOTSPOT_COLO_MAX_LENGTH + 1U ];
 } hotspot_result_t;

@@ -13,12 +13,12 @@
 #include "connectivity_probe.h"
 #include "display.h"
 #include "memory_manager.h"
+#include "network_session.h"
 #include "nrf24.h"
 #include "ota_acquisition.h"
 #include "ota_installer.h"
 #include "radio_monitor.h"
 #include "recorder.h"
-#include "wifi_station.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -27,22 +27,25 @@
 
 #define APP_SESSION_RECORDER_QUIESCE_TIMEOUT_MS 5000U
 
-typedef esp_err_t ( *app_session_service_fn )( void *a_context );
-typedef bool ( *app_session_service_active_fn )( void *a_context );
+typedef esp_err_t ( *app_session_service_fn )( void );
+typedef bool ( *app_session_service_active_fn )( void );
 
+/**
+ * @brief Uniform lifecycle adapter for one app-owned platform service.
+ * @details The framework owns idempotent inactive init. Persistent services additionally provide
+ *          app-driven idempotent start plus stop/is_active. Parameterized transactional services
+ *          omit generic start because their request cannot be reconstructed; stop remains
+ *          idempotent and is always invoked during app close.
+ */
 typedef struct
 {
     uint32_t capability;
     const char *name;
+    app_session_service_fn init;
     app_session_service_fn start;
     app_session_service_fn stop;
-    app_session_service_fn recover_failed_stop;
     app_session_service_active_fn active;
-    void *context;
-    bool always_stop_for_close;
     bool was_active_for_close;
-    bool stopped_for_close;
-    bool failed_for_close;
 } app_session_service_t;
 
 static const char *TAG = "app_session";
@@ -52,112 +55,13 @@ static uint32_t session_generation;
 static uint32_t session_services;
 static bool close_in_progress;
 static bool ready_to_reclaim;
-
-static esp_err_t start_wifi( void *a_context )
+static esp_err_t stop_cc1101( void )
 {
-    (void)a_context;
-    return radio_monitor_start();
-}
-
-static esp_err_t stop_wifi( void *a_context )
-{
-    (void)a_context;
-    return radio_monitor_stop();
-}
-
-static bool wifi_active( void *a_context )
-{
-    (void)a_context;
-    return radio_monitor_is_running();
-}
-
-static esp_err_t stop_wifi_station( void *a_context )
-{
-    (void)a_context;
-    return rfscout_wifi_station_stop();
-}
-
-static bool wifi_station_active( void *a_context )
-{
-    (void)a_context;
-    return rfscout_wifi_station_is_active();
-}
-
-static esp_err_t stop_connectivity_probe( void *a_context )
-{
-    (void)a_context;
-    return connectivity_probe_stop();
-}
-
-static bool connectivity_probe_active( void *a_context )
-{
-    (void)a_context;
-    return connectivity_probe_is_active();
-}
-
-static esp_err_t stop_ota_acquisition( void *a_context )
-{
-    (void)a_context;
-    return ota_acquisition_stop();
-}
-
-static bool ota_acquisition_active( void *a_context )
-{
-    (void)a_context;
-    return ota_acquisition_is_active();
-}
-
-static esp_err_t stop_ota_installer( void *a_context )
-{
-    (void)a_context;
-    return ota_installer_abort();
-}
-
-static bool ota_installer_active( void *a_context )
-{
-    (void)a_context;
-    return ota_installer_is_active();
-}
-
-static esp_err_t start_ble( void *a_context )
-{
-    (void)a_context;
-    return ble_monitor_start();
-}
-
-static esp_err_t stop_ble( void *a_context )
-{
-    (void)a_context;
-    return ble_monitor_stop();
-}
-
-static bool ble_active( void *a_context )
-{
-    (void)a_context;
-    return ble_monitor_is_running();
-}
-
-static esp_err_t start_cc1101( void *a_context )
-{
-    (void)a_context;
-    return cc1101_start();
-}
-
-static esp_err_t stop_cc1101( void *a_context )
-{
-    (void)a_context;
     return cc1101_stop() ? ESP_OK : ESP_ERR_TIMEOUT;
 }
 
-static esp_err_t start_nrf24( void *a_context )
+static esp_err_t stop_nrf24( void )
 {
-    (void)a_context;
-    return nrf24_start();
-}
-
-static esp_err_t stop_nrf24( void *a_context )
-{
-    (void)a_context;
     return nrf24_stop() ? ESP_OK : ESP_ERR_TIMEOUT;
 }
 
@@ -166,18 +70,8 @@ static bool recorder_references_clear( void )
     return ESP_ERR_INVALID_STATE != recorder_probe_microphone();
 }
 
-static bool audio_capture_active( void *a_context )
+static esp_err_t stop_recorder( void )
 {
-    (void)a_context;
-    const rfscout_recorder_state_t state = recorder_state();
-    return ( RFSCOUT_RECORDER_RECORDING == state ) || ( RFSCOUT_RECORDER_SAVING == state ) ||
-           ( RFSCOUT_RECORDER_MONITORING == state ) || ( RFSCOUT_RECORDER_PLAYING == state );
-}
-
-static esp_err_t stop_recorder( void *a_context )
-{
-    (void)a_context;
-
     if( !recorder_prepare_storage_shutdown( APP_SESSION_RECORDER_QUIESCE_TIMEOUT_MS ) )
     {
         return ESP_ERR_TIMEOUT;
@@ -197,78 +91,108 @@ static esp_err_t stop_recorder( void *a_context )
     return ESP_OK;
 }
 
-/* Services close in reverse table order. The connectivity probe precedes the station here so the
-   station is torn down first; its loss makes any in-flight HTTPS request fail promptly. */
+/* Services close in reverse table order. Dependencies therefore appear before their consumers:
+   active HTTPS work is stopped before the network session, and persistent services can be restarted
+   with the same idempotent start() operation if a later close step causes the transition to abort. */
 static app_session_service_t platform_services[] = {
-    {
-        .capability = RFSCOUT_APP_SERVICE_CONNECTIVITY_PROBE,
-        .name = "Connectivity probe",
-        .stop = stop_connectivity_probe,
-        .active = connectivity_probe_active,
-        .always_stop_for_close = true,
-    },
     {
         .capability = RFSCOUT_APP_SERVICE_WIFI_MONITOR,
         .name = "Wi-Fi",
-        .start = start_wifi,
-        .stop = stop_wifi,
-        .recover_failed_stop = start_wifi,
-        .active = wifi_active,
-        .always_stop_for_close = true,
+        .init = radio_monitor_init,
+        .start = radio_monitor_start,
+        .stop = radio_monitor_stop,
+        .active = radio_monitor_is_active,
     },
     {
-        .capability = RFSCOUT_APP_SERVICE_WIFI_STATION,
-        .name = "Wi-Fi STA",
-        .stop = stop_wifi_station,
-        .active = wifi_station_active,
-        .always_stop_for_close = true,
+        .capability = RFSCOUT_APP_SERVICE_NETWORK_SESSION,
+        .name = "Network session",
+        .init = network_session_init,
+        .stop = network_session_release,
+        .active = network_session_is_active,
+    },
+    {
+        .capability = RFSCOUT_APP_SERVICE_CONNECTIVITY_PROBE,
+        .name = "Connectivity probe",
+        .init = connectivity_probe_init,
+        .stop = connectivity_probe_stop,
+        .active = connectivity_probe_is_active,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_OTA_INSTALLER,
         .name = "OTA installer",
-        .stop = stop_ota_installer,
-        .active = ota_installer_active,
-        .always_stop_for_close = true,
+        .init = ota_installer_init,
+        .stop = ota_installer_abort,
+        .active = ota_installer_is_active,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_OTA_ACQUISITION,
         .name = "OTA acquisition",
-        .stop = stop_ota_acquisition,
-        .active = ota_acquisition_active,
-        .always_stop_for_close = true,
+        .init = ota_acquisition_init,
+        .stop = ota_acquisition_stop,
+        .active = ota_acquisition_is_active,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_BLE_MONITOR,
         .name = "BLE",
-        .start = start_ble,
-        .stop = stop_ble,
-        .recover_failed_stop = start_ble,
-        .active = ble_active,
-        .always_stop_for_close = true,
+        .init = ble_monitor_init,
+        .start = ble_monitor_start,
+        .stop = ble_monitor_stop,
+        .active = ble_monitor_is_active,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_CC1101,
         .name = "CC1101",
-        .start = start_cc1101,
+        .init = cc1101_init,
+        .start = cc1101_start,
         .stop = stop_cc1101,
+        .active = cc1101_is_active,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_NRF24,
         .name = "nRF24",
-        .start = start_nrf24,
+        .init = nrf24_init,
+        .start = nrf24_start,
         .stop = stop_nrf24,
+        .active = nrf24_is_active,
     },
     {
         .capability = RFSCOUT_APP_SERVICE_AUDIO_CAPTURE,
         .name = "Audio capture",
+        .init = recorder_init,
         .stop = stop_recorder,
-        .active = audio_capture_active,
+        .active = recorder_is_active,
     },
 };
 
 static size_t platform_service_count( void )
 {
     return sizeof( platform_services ) / sizeof( platform_services[ 0 ] );
+}
+
+static bool service_selected( const app_session_service_t *a_service );
+
+static esp_err_t init_selected_services( void )
+{
+    for( size_t i = 0U; i < platform_service_count(); ++i )
+    {
+        app_session_service_t *service = &platform_services[ i ];
+        if( !service_selected( service ) || NULL == service->init )
+        {
+            continue;
+        }
+
+        const esp_err_t result = service->init();
+        if( ESP_OK != result )
+        {
+            ESP_LOGE( TAG,
+                      "app=%d service=%s initialization failed: %s",
+                      (int)session_app,
+                      service->name,
+                      esp_err_to_name( result ) );
+            return result;
+        }
+    }
+    return ESP_OK;
 }
 
 static bool session_active( void )
@@ -291,8 +215,6 @@ static void clear_close_state( void )
     for( size_t i = 0U; i < platform_service_count(); ++i )
     {
         platform_services[ i ].was_active_for_close = false;
-        platform_services[ i ].stopped_for_close = false;
-        platform_services[ i ].failed_for_close = false;
     }
 }
 
@@ -372,6 +294,15 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
     session_app = a_app;
     reset_session_state();
     session_services = descriptor->services;
+
+    const esp_err_t init_result = init_selected_services();
+    if( ESP_OK != init_result )
+    {
+        reset_session_state();
+        session_app = RFSCOUT_APP_COUNT;
+        return init_result;
+    }
+
     const esp_err_t view_result = acquire_view();
     if( ESP_OK != view_result )
     {
@@ -440,17 +371,14 @@ esp_err_t app_session_prepare_close( void )
             continue;
         }
 
-        service->was_active_for_close =
-            ( NULL == service->active ) || service->active( service->context );
-        if( !service->was_active_for_close && !service->always_stop_for_close )
-        {
-            continue;
-        }
+        service->was_active_for_close = ( NULL != service->active ) && service->active();
 
-        const esp_err_t result = service->stop( service->context );
+        /* stop() is the uniform quiesce operation and must be idempotent. Call it for every
+           selected service so transactional services without a generic start() can also clean
+           residual state before app memory is reclaimed. */
+        const esp_err_t result = service->stop();
         if( ESP_OK != result )
         {
-            service->failed_for_close = true;
             ESP_LOGE( TAG,
                       "app=%d service=%s did not close safely: %s",
                       (int)session_app,
@@ -458,7 +386,6 @@ esp_err_t app_session_prepare_close( void )
                       esp_err_to_name( result ) );
             return result;
         }
-        service->stopped_for_close = true;
     }
 
     ready_to_reclaim = true;
@@ -481,21 +408,12 @@ esp_err_t app_session_abort_close( void )
             continue;
         }
 
-        app_session_service_fn restart = NULL;
-        if( service->was_active_for_close && service->failed_for_close )
-        {
-            restart = service->recover_failed_stop;
-        }
-        else if( service->was_active_for_close && service->stopped_for_close )
-        {
-            restart = service->start;
-        }
-        if( NULL == restart )
+        if( !service->was_active_for_close || NULL == service->start )
         {
             continue;
         }
 
-        const esp_err_t result = restart( service->context );
+        const esp_err_t result = service->start();
         if( ESP_OK != result )
         {
             ESP_LOGE( TAG,

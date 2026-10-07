@@ -95,6 +95,9 @@ esp_err_t recorder_start_playback( size_t a_index, uint8_t a_volume_percent );
 /** @brief Stop active recording or playback and leave the service idle. */
 void recorder_stop( void );
 
+/** @brief Return whether Recorder/monitor currently owns active audio work. */
+bool recorder_is_active( void );
+
 /** @brief Return current recorder state. */
 rfscout_recorder_state_t recorder_state( void );
 

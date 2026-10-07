@@ -15,6 +15,7 @@
 #include "hotspots_app.h"
 #include "hotspots_view.h"
 #include "log_writer.h"
+#include "network_session.h"
 #include "wifi_station.h"
 
 #include "esp_log.h"
@@ -23,8 +24,6 @@
 #include <string.h>
 
 #define HOTSPOTS_CHECK_WINDOW_US 2800000LL
-#define HOTSPOTS_JOIN_TIMEOUT_US 15000000LL
-#define HOTSPOTS_NTP_TIMEOUT_US 10000000LL
 #define HOTSPOTS_HTTPS_TIMEOUT_MS 10000U
 #define HOTSPOTS_HTTPS_GUARD_US 12000000LL
 #define HOTSPOTS_SETTLE_US 300000LL
@@ -41,8 +40,7 @@ typedef enum
     HOTSPOTS_PHASE_SCAN_START,
     HOTSPOTS_PHASE_SCANNING,
     HOTSPOTS_PHASE_CHECK,
-    HOTSPOTS_PHASE_JOIN,
-    HOTSPOTS_PHASE_NTP,
+    HOTSPOTS_PHASE_NETWORK,
     HOTSPOTS_PHASE_HTTPS,
     HOTSPOTS_PHASE_SETTLE
 } hotspots_phase_t;
@@ -146,8 +144,7 @@ static bool ensure_scratch( size_t a_count )
 
 static bool attempt_running( void )
 {
-    return ( HOTSPOTS_PHASE_JOIN == phase ) || ( HOTSPOTS_PHASE_NTP == phase ) ||
-           ( HOTSPOTS_PHASE_HTTPS == phase );
+    return ( HOTSPOTS_PHASE_NETWORK == phase ) || ( HOTSPOTS_PHASE_HTTPS == phase );
 }
 
 static bool entry_is_attempt_target( const hotspot_entry_t *a_entry )
@@ -198,11 +195,11 @@ static const char *entry_tag( const hotspot_entry_t *a_entry, hotspots_view_tone
     if( entry_is_attempt_target( a_entry ) )
     {
         *a_tone = HOTSPOTS_TONE_ACTIVE;
-        if( HOTSPOTS_PHASE_JOIN == phase )
+        if( HOTSPOTS_PHASE_NETWORK == phase )
         {
             return "JOIN";
         }
-        return ( HOTSPOTS_PHASE_NTP == phase ) ? "NTP" : "HTTPS";
+        return "HTTPS";
     }
     if( a_entry->manual_requested )
     {
@@ -259,9 +256,7 @@ static void format_footer( char *a_footer, size_t a_capacity )
         snprintf( a_footer,
                   a_capacity,
                   "%s %.32s",
-                  ( HOTSPOTS_PHASE_JOIN == phase )  ? "JOINING"
-                  : ( HOTSPOTS_PHASE_NTP == phase ) ? "TIME SYNC"
-                                                    : "HTTPS",
+                  ( HOTSPOTS_PHASE_NETWORK == phase ) ? "NETWORK" : "HTTPS",
                   attempt_bss.ssid );
         return;
     }
@@ -349,6 +344,8 @@ static void render_detail( const hotspot_entry_t *a_entry )
     char status[ HOTSPOTS_DETAIL_LINE_MAX ];
     char last[ HOTSPOTS_DETAIL_LINE_MAX ];
     char addresses[ HOTSPOTS_DETAIL_LINE_MAX ];
+    char network[ HOTSPOTS_DETAIL_LINE_MAX ];
+    char dns[ HOTSPOTS_DETAIL_LINE_MAX ];
     /* "Public " + IP + " (" + colo + ")" must fit without truncation. */
     char egress[ sizeof( "Public  ()" ) + HOTSPOT_PUBLIC_IP_MAX_LENGTH + HOTSPOT_COLO_MAX_LENGTH ];
 
@@ -416,9 +413,17 @@ static void render_detail( const hotspot_entry_t *a_entry )
 
     char client[ 20 ];
     char gateway[ 20 ];
+    char netmask[ 20 ];
+    char dns_primary[ 20 ];
+    char dns_backup[ 20 ];
     format_ipv4( a_entry->last.address, client, sizeof( client ) );
     format_ipv4( a_entry->last.gateway, gateway, sizeof( gateway ) );
+    format_ipv4( a_entry->last.netmask, netmask, sizeof( netmask ) );
+    format_ipv4( a_entry->last.dns_primary, dns_primary, sizeof( dns_primary ) );
+    format_ipv4( a_entry->last.dns_backup, dns_backup, sizeof( dns_backup ) );
     snprintf( addresses, sizeof( addresses ), "IP %s  GW %s", client, gateway );
+    snprintf( network, sizeof( network ), "Mask %s", netmask );
+    snprintf( dns, sizeof( dns ), "DNS %s / %s", dns_primary, dns_backup );
     if( '\0' != a_entry->last.public_ip[ 0 ] )
     {
         snprintf( egress,
@@ -441,6 +446,8 @@ static void render_detail( const hotspot_entry_t *a_entry )
         .status_tone = tone,
         .last_attempt = last,
         .addresses = addresses,
+        .network = network,
+        .dns = dns,
         .egress = egress,
         .recheck_available = a_entry->visible,
     };
@@ -530,7 +537,7 @@ static void finish_attempt( hotspot_status_t a_outcome,
                             esp_err_t a_error,
                             int64_t a_now_us )
 {
-    (void)rfscout_wifi_station_abort();
+    (void)network_session_release();
 
     attempt_result.outcome = a_outcome;
     attempt_result.failed_stage = a_failed_stage;
@@ -571,11 +578,11 @@ static void start_attempt( hotspot_entry_t *a_entry, int64_t a_now_us )
     attempt_result.start_rssi = a_entry->bss.rssi;
     a_entry->manual_requested = false;
 
-    phase = HOTSPOTS_PHASE_JOIN;
-    phase_deadline_us = a_now_us + HOTSPOTS_JOIN_TIMEOUT_US;
+    phase = HOTSPOTS_PHASE_NETWORK;
+    phase_deadline_us = 0;
     render_due = true;
 
-    const esp_err_t result = rfscout_wifi_station_connect_open_bss( &attempt_bss, true );
+    const esp_err_t result = network_session_begin_bss( &attempt_bss );
     if( ESP_OK != result )
     {
         ESP_LOGW( TAG, "could not start association: %s", esp_err_to_name( result ) );
@@ -607,6 +614,8 @@ static void complete_scan( int64_t a_now_us )
 /** @brief Advance the scan/check scheduler; never blocks the main loop. */
 static void scheduler_poll( int64_t a_now_us )
 {
+    network_session_poll( a_now_us );
+
     rfscout_wifi_station_status_t station;
     rfscout_wifi_station_status( &station );
 
@@ -646,7 +655,7 @@ static void scheduler_poll( int64_t a_now_us )
                      ( a_now_us >= phase_deadline_us ) )
             {
                 ESP_LOGW( TAG, "passive scan did not complete; retrying" );
-                (void)rfscout_wifi_station_abort();
+                (void)rfscout_wifi_station_cancel_scan();
                 phase = HOTSPOTS_PHASE_SCAN_START;
                 next_scan_us = a_now_us + HOTSPOTS_SCAN_RETRY_US;
             }
@@ -669,48 +678,28 @@ static void scheduler_poll( int64_t a_now_us )
             break;
         }
 
-        case HOTSPOTS_PHASE_JOIN:
-            if( RFSCOUT_WIFI_STATION_CONNECTED == station.state )
+        case HOTSPOTS_PHASE_NETWORK:
+        {
+            rfscout_network_session_status_t network;
+            network_session_status( &network );
+            if( RFSCOUT_NETWORK_SESSION_READY == network.state ||
+                RFSCOUT_NETWORK_SESSION_LIMITED == network.state )
             {
-                rfscout_wifi_station_ip_info_t info;
-                if( ESP_OK == rfscout_wifi_station_ip_info( &info ) )
+                attempt_result.address = network.ip.address;
+                attempt_result.netmask = network.ip.netmask;
+                attempt_result.gateway = network.ip.gateway;
+                attempt_result.dns_primary = network.ip.dns_primary;
+                attempt_result.dns_backup = network.ip.dns_backup;
+
+                if( RFSCOUT_NETWORK_SESSION_LIMITED == network.state )
                 {
-                    attempt_result.address = info.address;
-                    attempt_result.netmask = info.netmask;
-                    attempt_result.gateway = info.gateway;
-                }
-                const esp_err_t result = rfscout_wifi_station_start_time_sync();
-                if( ESP_OK != result )
-                {
-                    finish_attempt( HOTSPOT_STATUS_YELLOW, HOTSPOT_STAGE_NTP, result, a_now_us );
+                    finish_attempt(
+                        HOTSPOT_STATUS_YELLOW, HOTSPOT_STAGE_NTP, network.error, a_now_us );
                     break;
                 }
-                phase = HOTSPOTS_PHASE_NTP;
-                phase_deadline_us = a_now_us + HOTSPOTS_NTP_TIMEOUT_US;
-                render_due = true;
-            }
-            else if( RFSCOUT_WIFI_STATION_FAILED == station.state )
-            {
-                attempt_result.disconnect_reason = station.disconnect_reason;
-                finish_attempt( HOTSPOT_STATUS_RED, HOTSPOT_STAGE_JOIN, ESP_FAIL, a_now_us );
-            }
-            else if( a_now_us >= phase_deadline_us )
-            {
-                finish_attempt( HOTSPOT_STATUS_RED, HOTSPOT_STAGE_JOIN, ESP_ERR_TIMEOUT, a_now_us );
-            }
-            break;
 
-        case HOTSPOTS_PHASE_NTP:
-            if( RFSCOUT_WIFI_STATION_CONNECTED != station.state )
-            {
-                attempt_result.disconnect_reason = station.disconnect_reason;
-                finish_attempt(
-                    HOTSPOT_STATUS_YELLOW, HOTSPOT_STAGE_NTP, ESP_ERR_INVALID_STATE, a_now_us );
-            }
-            else if( station.ntp_synced )
-            {
                 attempt_result.ntp_ok = true;
-                const esp_err_t result = connectivity_probe_start( HOTSPOTS_HTTPS_TIMEOUT_MS );
+                const esp_err_t result = connectivity_probe_begin( HOTSPOTS_HTTPS_TIMEOUT_MS );
                 if( ESP_OK != result )
                 {
                     finish_attempt( HOTSPOT_STATUS_YELLOW, HOTSPOT_STAGE_HTTPS, result, a_now_us );
@@ -720,13 +709,13 @@ static void scheduler_poll( int64_t a_now_us )
                 phase_deadline_us = a_now_us + HOTSPOTS_HTTPS_GUARD_US;
                 render_due = true;
             }
-            else if( !station.ntp_syncing || ( a_now_us >= phase_deadline_us ) )
+            else if( RFSCOUT_NETWORK_SESSION_FAILED == network.state )
             {
-                /* NTP is a precondition for certificate validation; without it HTTPS is skipped. */
-                finish_attempt(
-                    HOTSPOT_STATUS_YELLOW, HOTSPOT_STAGE_NTP, ESP_ERR_TIMEOUT, a_now_us );
+                attempt_result.disconnect_reason = network.disconnect_reason;
+                finish_attempt( HOTSPOT_STATUS_RED, HOTSPOT_STAGE_JOIN, network.error, a_now_us );
             }
             break;
+        }
 
         case HOTSPOTS_PHASE_HTTPS:
         {
@@ -966,6 +955,6 @@ const rfscout_app_descriptor_t rfscout_hotspots_app = {
     .probe_policy = RFSCOUT_APP_PROBE_NONE,
     .probe = NULL,
     .requires_activation = true,
-    .services = RFSCOUT_APP_SERVICE_WIFI_STATION | RFSCOUT_APP_SERVICE_CONNECTIVITY_PROBE,
+    .services = RFSCOUT_APP_SERVICE_NETWORK_SESSION | RFSCOUT_APP_SERVICE_CONNECTIVITY_PROBE,
     .runtime = hotspots_runtime,
 };

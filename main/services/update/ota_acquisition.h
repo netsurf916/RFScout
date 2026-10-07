@@ -40,6 +40,9 @@ typedef struct
     uint32_t generation;
 } ota_acquisition_status_t;
 
+/** @brief Initialize reusable OTA acquisition state without starting an HTTPS request. */
+esp_err_t ota_acquisition_init( void );
+
 esp_err_t ota_acquisition_begin_catalog( void );
 esp_err_t ota_acquisition_begin_firmware( const char *a_artifact_path );
 void ota_acquisition_status( ota_acquisition_status_t *a_status );

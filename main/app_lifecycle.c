@@ -93,12 +93,7 @@ esp_err_t app_lifecycle_init( void )
     };
     transition_sequence = 0U;
 
-    esp_err_t result = memory_manager_init();
-    if( ESP_OK == result )
-    {
-        result = app_session_ensure( app_manager_current() );
-    }
-    return result;
+    return memory_manager_init();
 }
 
 const rfscout_app_transition_diagnostics_t *app_lifecycle_transition(

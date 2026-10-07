@@ -37,6 +37,7 @@
 static const char *TAG = "ble_monitor";
 static uint8_t own_addr_type;
 static ble_observation_fn sink;
+static bool initialized;
 static bool host_synced;
 static bool scan_requested;
 static bool scanning;
@@ -275,13 +276,18 @@ static void host_task( void *a_argument )
     nimble_port_freertos_deinit();
 }
 
-bool ble_monitor_is_running( void )
+bool ble_monitor_is_active( void )
 {
     return scan_is_requested();
 }
 
 esp_err_t ble_monitor_start( void )
 {
+    if( !initialized )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     portENTER_CRITICAL( &callback_lock );
     scan_requested = true;
     portEXIT_CRITICAL( &callback_lock );
@@ -323,9 +329,22 @@ esp_err_t ble_monitor_stop( void )
     return ESP_OK;
 }
 
-esp_err_t ble_monitor_init( ble_observation_fn a_callback )
+void ble_monitor_set_observer( ble_observation_fn a_callback )
 {
     sink = a_callback;
+}
+
+esp_err_t ble_monitor_init( void )
+{
+    if( initialized )
+    {
+        return ESP_OK;
+    }
+    if( NULL == sink )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     portENTER_CRITICAL( &callback_lock );
     scan_requested = false;
     observation_callbacks_inflight = 0U;
@@ -339,5 +358,6 @@ esp_err_t ble_monitor_init( ble_observation_fn a_callback )
 
     ble_hs_cfg.sync_cb = on_sync;
     nimble_port_freertos_init( host_task );
+    initialized = true;
     return ESP_OK;
 }

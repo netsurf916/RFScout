@@ -661,10 +661,13 @@ esp_err_t cc1101_init( void )
         return detected ? ESP_OK : cc1101_probe();
     }
 
-    const esp_err_t probe_result = cc1101_probe();
-    if( ESP_OK != probe_result )
+    if( !detected )
     {
-        return probe_result;
+        const esp_err_t probe_result = cc1101_probe();
+        if( ESP_OK != probe_result )
+        {
+            return probe_result;
+        }
     }
 
     memset( display_spectrum, -120, sizeof( display_spectrum ) );
@@ -690,17 +693,16 @@ esp_err_t cc1101_init( void )
 
 esp_err_t cc1101_start( void )
 {
-    esp_err_t result = cc1101_init();
-    if( ESP_OK != result )
+    if( !initialized )
     {
-        return result;
+        return ESP_ERR_INVALID_STATE;
     }
     if( service_started )
     {
         return ESP_OK;
     }
 
-    result = wake_from_power_down();
+    esp_err_t result = wake_from_power_down();
     if( ESP_OK != result )
     {
         return result;
@@ -761,6 +763,11 @@ void cc1101_poll( void )
 bool cc1101_is_detected( void )
 {
     return detected;
+}
+
+bool cc1101_is_active( void )
+{
+    return service_started;
 }
 
 cc1101_acquisition_mode_t cc1101_acquisition_mode( void )

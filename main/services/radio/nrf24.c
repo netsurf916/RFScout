@@ -325,10 +325,13 @@ esp_err_t nrf24_init( void )
         return detected ? ESP_OK : nrf24_probe();
     }
 
-    const esp_err_t probe_result = nrf24_probe();
-    if( ESP_OK != probe_result )
+    if( !detected )
     {
-        return probe_result;
+        const esp_err_t probe_result = nrf24_probe();
+        if( ESP_OK != probe_result )
+        {
+            return probe_result;
+        }
     }
 
     memset( acquisition, 0, sizeof( acquisition ) );
@@ -354,14 +357,21 @@ esp_err_t nrf24_init( void )
 
 esp_err_t nrf24_start( void )
 {
-    esp_err_t result = nrf24_init();
-    if( ESP_OK != result )
+    if( !initialized )
     {
-        return result;
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    portENTER_CRITICAL( &state_lock );
+    const bool already_running = running;
+    portEXIT_CRITICAL( &state_lock );
+    if( already_running )
+    {
+        return ESP_OK;
     }
 
     ce( false );
-    result = write_register( NRF24_REG_EN_AA, 0x00U );
+    esp_err_t result = write_register( NRF24_REG_EN_AA, 0x00U );
     if( ESP_OK == result )
         result = write_register( NRF24_REG_EN_RXADDR, 0x00U );
     if( ESP_OK == result )
@@ -422,6 +432,11 @@ void nrf24_poll( void )
 bool nrf24_is_detected( void )
 {
     return detected;
+}
+
+bool nrf24_is_active( void )
+{
+    return running;
 }
 
 const nrf24_scan_config_t *nrf24_config( void )

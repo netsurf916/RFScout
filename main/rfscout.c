@@ -481,8 +481,8 @@ void app_main( void )
     {
         ESP_LOGW( TAG, "breadcrumb recorder unavailable: %s", esp_err_to_name( result ) );
     }
-    ESP_ERROR_CHECK( radio_monitor_init( on_observation ) );
-    ESP_ERROR_CHECK( ble_monitor_init( on_observation ) );
+    radio_monitor_set_observer( on_observation );
+    ble_monitor_set_observer( on_observation );
 
     ESP_ERROR_CHECK( app_manager_init() );
     system_events_poll();

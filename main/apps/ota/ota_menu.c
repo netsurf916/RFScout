@@ -17,6 +17,7 @@
 #include "ota_networks.h"
 #include "ota_installer.h"
 #include "ota_view.h"
+#include "network_session.h"
 #include "wifi_station.h"
 
 #include "esp_err.h"
@@ -31,8 +32,6 @@
 #include <string.h>
 
 #define OTA_REFRESH_INTERVAL_US 125000LL
-#define OTA_NETWORK_CONNECT_TIMEOUT_US 30000000LL
-#define OTA_NTP_SYNC_TIMEOUT_US 15000000LL
 #define OTA_VISIBLE_MAX OTA_NETWORK_MAX_COUNT
 #define OTA_ERROR_TEXT_LENGTH 48U
 
@@ -82,12 +81,7 @@ static uint32_t last_acquisition_generation;
 static uint32_t last_installer_generation;
 static uint32_t last_scan_generation;
 static rfscout_wifi_station_state_t last_station_state;
-static bool last_ntp_syncing;
-static bool last_ntp_synced;
 static bool network_connect_modal_active;
-static bool network_connect_connected_seen;
-static int64_t network_connect_started_us;
-static int64_t network_connect_ntp_started_us;
 static int64_t last_refresh_us;
 /* Borrowed from catalog_selection or available_builds while input is suppressed. */
 static const ota_catalog_candidate_t *pending_install_candidate;
@@ -106,13 +100,6 @@ static void set_error( esp_err_t a_error )
         return;
     }
     snprintf( error_text, sizeof( error_text ), "%s", esp_err_to_name( a_error ) );
-}
-
-static bool update_network_ready( void )
-{
-    rfscout_wifi_station_status_t current;
-    rfscout_wifi_station_status( &current );
-    return RFSCOUT_WIFI_STATION_CONNECTED == current.state;
 }
 
 static esp_err_t ensure_catalog_json_capacity( size_t a_length )
@@ -235,13 +222,6 @@ static void build_saved_list( void )
     }
 }
 
-static bool network_connected( void )
-{
-    rfscout_wifi_station_status_t current;
-    rfscout_wifi_station_status( &current );
-    return RFSCOUT_WIFI_STATION_CONNECTED == current.state;
-}
-
 static bool install_interaction_locked( void )
 {
     return ( NULL != pending_install_candidate ) || ota_installer_is_active();
@@ -259,36 +239,40 @@ static bool install_action_available( void )
 
 static const char *connection_status( void )
 {
-    rfscout_wifi_station_status_t current;
-    rfscout_wifi_station_status( &current );
-    switch( current.state )
+    rfscout_network_session_status_t network;
+    network_session_status( &network );
+    switch( network.state )
     {
-        case RFSCOUT_WIFI_STATION_SCANNING:
-            return "Passive scan";
-        case RFSCOUT_WIFI_STATION_SEARCHING:
-            return "Active search";
-        case RFSCOUT_WIFI_STATION_CONNECTING:
+        case RFSCOUT_NETWORK_SESSION_ASSOCIATING:
             return "Connecting";
-        case RFSCOUT_WIFI_STATION_DISCONNECTING:
-            return "Disconnecting";
-        case RFSCOUT_WIFI_STATION_CONNECTED:
-            return '\0' != current.ssid[ 0 ] ? current.ssid : "Connected";
-        case RFSCOUT_WIFI_STATION_FAILED:
+        case RFSCOUT_NETWORK_SESSION_TIME_SYNCING:
+            return "Setting time";
+        case RFSCOUT_NETWORK_SESSION_LIMITED:
+            return "Connected / limited";
+        case RFSCOUT_NETWORK_SESSION_READY:
+            return '\0' != network.ssid[ 0 ] ? network.ssid : "Connected";
+        case RFSCOUT_NETWORK_SESSION_FAILED:
             return "Connection failed";
-        case RFSCOUT_WIFI_STATION_OFF:
-        case RFSCOUT_WIFI_STATION_IDLE:
+        case RFSCOUT_NETWORK_SESSION_IDLE:
         default:
-            return "Disconnected";
+            break;
     }
+
+    rfscout_wifi_station_status_t station;
+    rfscout_wifi_station_status( &station );
+    return RFSCOUT_WIFI_STATION_SCANNING == station.state ? "Passive scan" : "Disconnected";
 }
 
 static void render_network_main( void )
 {
     build_visible_saved();
-    rfscout_wifi_station_status_t current;
-    rfscout_wifi_station_status( &current );
-    const bool connected = RFSCOUT_WIFI_STATION_CONNECTED == current.state;
-    const bool scanning = RFSCOUT_WIFI_STATION_SCANNING == current.state;
+    rfscout_network_session_status_t network;
+    network_session_status( &network );
+    rfscout_wifi_station_status_t station;
+    rfscout_wifi_station_status( &station );
+    const bool connected = RFSCOUT_NETWORK_SESSION_READY == network.state ||
+                           RFSCOUT_NETWORK_SESSION_LIMITED == network.state;
+    const bool scanning = RFSCOUT_WIFI_STATION_SCANNING == station.state;
     const unsigned item_count = 1U + (unsigned)view_network_count + ( connected ? 1U : 3U );
     if( selected_item >= item_count )
     {
@@ -302,7 +286,7 @@ static void render_network_main( void )
 static void render_update_main( void )
 {
     const rfscout_firmware_identity_t *identity = firmware_identity();
-    const bool ready = update_network_ready();
+    const bool ready = network_session_ready();
     const bool can_install = ready && install_action_available();
     const unsigned item_count = ready ? ( can_install ? 4U : 3U ) : 1U;
     if( selected_item >= item_count )
@@ -339,36 +323,31 @@ static void render_action( void )
     const bool visible = action_scan_index >= 0 && (size_t)action_scan_index < scan_count;
     const int8_t rssi = visible ? scan_results[ action_scan_index ].rssi : INT8_MIN;
 
-    rfscout_wifi_station_status_t current;
-    rfscout_wifi_station_status( &current );
-    const bool connected = RFSCOUT_WIFI_STATION_CONNECTED == current.state && NULL != ssid &&
-                           0 == strcmp( current.ssid, ssid );
+    rfscout_network_session_status_t network;
+    network_session_status( &network );
+    const bool target = NULL != ssid && 0 == strcmp( network.ssid, ssid );
+    const bool connected = target && ( RFSCOUT_NETWORK_SESSION_READY == network.state ||
+                                       RFSCOUT_NETWORK_SESSION_LIMITED == network.state );
     const char *status_text = error_text;
-    if( RFSCOUT_WIFI_STATION_SEARCHING == current.state && NULL != ssid &&
-        0 == strcmp( current.ssid, ssid ) )
-    {
-        status_text = "Actively searching...";
-    }
-    else if( RFSCOUT_WIFI_STATION_CONNECTING == current.state && NULL != ssid &&
-             0 == strcmp( current.ssid, ssid ) )
+    if( target && RFSCOUT_NETWORK_SESSION_ASSOCIATING == network.state )
     {
         status_text = "Connecting...";
     }
-    else if( RFSCOUT_WIFI_STATION_DISCONNECTING == current.state && NULL != ssid &&
-             0 == strcmp( current.ssid, ssid ) )
+    else if( target && RFSCOUT_NETWORK_SESSION_TIME_SYNCING == network.state )
     {
-        status_text = "Disconnecting...";
+        status_text = "Connected / syncing time...";
+    }
+    else if( target && RFSCOUT_NETWORK_SESSION_LIMITED == network.state )
+    {
+        status_text = "Connected / time sync failed";
     }
     else if( connected )
     {
-        status_text = current.ntp_synced ? "Connected / time synced"
-                                         : ( current.ntp_syncing ? "Connected / syncing time..."
-                                                                 : "Connected / time sync failed" );
+        status_text = "Connected / time synced";
     }
-    else if( RFSCOUT_WIFI_STATION_FAILED == current.state && NULL != ssid &&
-             0 == strcmp( current.ssid, ssid ) )
+    else if( target && RFSCOUT_NETWORK_SESSION_FAILED == network.state )
     {
-        status_text = ESP_ERR_NOT_FOUND == current.disconnect_reason ? "Network not found"
+        status_text = ESP_ERR_NOT_FOUND == network.disconnect_reason ? "Network not found"
                                                                      : "Connection failed";
     }
 
@@ -552,7 +531,7 @@ static void begin_update_check( void )
         return;
     }
 
-    if( !update_network_ready() )
+    if( !network_session_ready() )
     {
         snprintf( error_text, sizeof( error_text ), "Network not ready" );
         render();
@@ -589,7 +568,7 @@ static void request_candidate_install( const ota_catalog_candidate_t *a_candidat
         return;
     }
 
-    if( !update_network_ready() )
+    if( !network_session_ready() )
     {
         snprintf( error_text, sizeof( error_text ), "Network not ready" );
         render();
@@ -687,7 +666,7 @@ static void handle_network_main_select( void )
     }
 
     const unsigned action = menu_item - (unsigned)view_network_count;
-    if( network_connected() )
+    if( network_session_has_lan() )
     {
         open_saved_networks();
         return;
@@ -714,7 +693,7 @@ static void handle_update_main_select( void )
         close_requested = true;
         return;
     }
-    if( !update_network_ready() )
+    if( !network_session_ready() )
     {
         return;
     }
@@ -787,9 +766,6 @@ static void return_to_network_main( void )
 {
     display_modal_clear();
     network_connect_modal_active = false;
-    network_connect_connected_seen = false;
-    network_connect_started_us = 0;
-    network_connect_ntp_started_us = 0;
     screen = OTA_SCREEN_MAIN;
     selected_item = 0U;
     action_saved_index = -1;
@@ -805,10 +781,7 @@ static void cancel_network_connect_modal( void )
         return;
     }
 
-    const bool cancel_time_sync = network_connect_connected_seen;
-    const esp_err_t result =
-        cancel_time_sync ? rfscout_wifi_station_cancel_time_sync() : rfscout_wifi_station_stop();
-
+    const esp_err_t result = network_session_release();
     if( ESP_OK != result )
     {
         set_error( result );
@@ -819,12 +792,8 @@ static void cancel_network_connect_modal( void )
 
     error_text[ 0 ] = '\0';
     return_to_network_main();
-
-    if( !cancel_time_sync )
-    {
-        refresh_scan_results();
-        begin_passive_scan();
-    }
+    refresh_scan_results();
+    begin_passive_scan();
 }
 
 static void connect_selected_network( void )
@@ -835,7 +804,7 @@ static void connect_selected_network( void )
     }
 
     const ota_network_t *network = &saved_networks.entries[ action_saved_index ];
-    const esp_err_t result = rfscout_wifi_station_connect( network->ssid, network->password );
+    const esp_err_t result = network_session_begin_saved( network->ssid, network->password );
     set_error( result );
     if( ESP_OK != result )
     {
@@ -844,9 +813,6 @@ static void connect_selected_network( void )
     }
 
     network_connect_modal_active = true;
-    network_connect_connected_seen = false;
-    network_connect_started_us = 0;
-    network_connect_ntp_started_us = 0;
     display_modal_show( "NETWORK", "Connecting..." );
     render();
 }
@@ -859,11 +825,11 @@ static void forget_selected_network( void )
     }
 
     const char *ssid = saved_networks.entries[ action_saved_index ].ssid;
-    rfscout_wifi_station_status_t current;
-    rfscout_wifi_station_status( &current );
-    if( RFSCOUT_WIFI_STATION_CONNECTED == current.state && 0 == strcmp( current.ssid, ssid ) )
+    rfscout_network_session_status_t current;
+    network_session_status( &current );
+    if( RFSCOUT_NETWORK_SESSION_IDLE != current.state && 0 == strcmp( current.ssid, ssid ) )
     {
-        const esp_err_t disconnect_result = rfscout_wifi_station_disconnect();
+        const esp_err_t disconnect_result = network_session_release();
         if( ESP_OK != disconnect_result )
         {
             set_error( disconnect_result );
@@ -915,13 +881,13 @@ static void handle_action_select( void )
 
     if( 1U == selected_item )
     {
-        rfscout_wifi_station_status_t current;
-        rfscout_wifi_station_status( &current );
-        if( RFSCOUT_WIFI_STATION_CONNECTED == current.state &&
+        rfscout_network_session_status_t current;
+        network_session_status( &current );
+        if( ( RFSCOUT_NETWORK_SESSION_READY == current.state ||
+              RFSCOUT_NETWORK_SESSION_LIMITED == current.state ) &&
             0 == strcmp( current.ssid, saved_networks.entries[ action_saved_index ].ssid ) )
         {
-            (void)rfscout_wifi_station_disconnect();
-            error_text[ 0 ] = '\0';
+            set_error( network_session_release() );
             render();
         }
         else
@@ -1077,11 +1043,12 @@ static void handle_input( const rfscout_input_event_t *a_input )
             if( HOME_SUBMENU_NETWORK == submenu )
             {
                 build_visible_saved();
-                item_count = 1U + (unsigned)view_network_count + ( network_connected() ? 1U : 3U );
+                item_count =
+                    1U + (unsigned)view_network_count + ( network_session_has_lan() ? 1U : 3U );
             }
             else
             {
-                const bool ready = update_network_ready();
+                const bool ready = network_session_ready();
                 const bool can_install = ready && install_action_available();
                 item_count = ready ? ( can_install ? 4U : 3U ) : 1U;
             }
@@ -1174,12 +1141,7 @@ static void reset_runtime_state( void )
     last_installer_generation = 0U;
     last_scan_generation = 0U;
     last_station_state = RFSCOUT_WIFI_STATION_OFF;
-    last_ntp_syncing = false;
-    last_ntp_synced = false;
     network_connect_modal_active = false;
-    network_connect_connected_seen = false;
-    network_connect_started_us = 0;
-    network_connect_ntp_started_us = 0;
     last_refresh_us = 0;
     pending_install_candidate = NULL;
     close_requested = false;
@@ -1298,100 +1260,43 @@ static void submenu_poll( int64_t a_now_us )
         return;
     }
 
-    rfscout_wifi_station_status_t current;
-    rfscout_wifi_station_status( &current );
+    rfscout_network_session_status_t network;
+    network_session_status( &network );
 
     if( network_connect_modal_active )
     {
-        if( 0 == network_connect_started_us )
+        if( RFSCOUT_NETWORK_SESSION_READY == network.state )
         {
-            network_connect_started_us = a_now_us;
+            error_text[ 0 ] = '\0';
+            return_to_network_main();
+            return;
         }
-
-        if( RFSCOUT_WIFI_STATION_FAILED == current.state )
+        if( RFSCOUT_NETWORK_SESSION_LIMITED == network.state )
+        {
+            snprintf( error_text, sizeof( error_text ), "Time sync failed" );
+            return_to_network_main();
+            return;
+        }
+        if( RFSCOUT_NETWORK_SESSION_FAILED == network.state )
         {
             snprintf( error_text,
                       sizeof( error_text ),
                       "%s",
-                      ESP_ERR_NOT_FOUND == current.disconnect_reason ? "Network not found"
+                      ESP_ERR_NOT_FOUND == network.disconnect_reason ? "Network not found"
                                                                      : "Connection failed" );
             return_to_network_main();
             return;
         }
 
-        if( RFSCOUT_WIFI_STATION_CONNECTED == current.state )
-        {
-            if( current.ntp_synced )
-            {
-                error_text[ 0 ] = '\0';
-                return_to_network_main();
-                return;
-            }
-
-            display_modal_show( "NETWORK", "Setting time..." );
-            if( !network_connect_connected_seen )
-            {
-                network_connect_connected_seen = true;
-                network_connect_ntp_started_us = a_now_us;
-            }
-            else if( !current.ntp_syncing ||
-                     a_now_us - network_connect_ntp_started_us >= OTA_NTP_SYNC_TIMEOUT_US )
-            {
-                const bool timed_out =
-                    a_now_us - network_connect_ntp_started_us >= OTA_NTP_SYNC_TIMEOUT_US;
-                const esp_err_t cancel_result = rfscout_wifi_station_cancel_time_sync();
-                if( ESP_OK != cancel_result )
-                {
-                    ESP_LOGW( TAG,
-                              "could not cancel failed time synchronization: %s",
-                              esp_err_to_name( cancel_result ) );
-                    network_connect_ntp_started_us = a_now_us;
-                    redraw = true;
-                }
-                else
-                {
-                    snprintf( error_text,
-                              sizeof( error_text ),
-                              "%s",
-                              timed_out ? "Time sync timed out" : "Time sync failed" );
-                    return_to_network_main();
-                    return;
-                }
-            }
-            redraw = true;
-        }
-        else if( RFSCOUT_WIFI_STATION_SEARCHING == current.state ||
-                 RFSCOUT_WIFI_STATION_CONNECTING == current.state )
-        {
-            if( a_now_us - network_connect_started_us >= OTA_NETWORK_CONNECT_TIMEOUT_US )
-            {
-                const esp_err_t stop_result = rfscout_wifi_station_stop();
-                if( ESP_OK != stop_result )
-                {
-                    ESP_LOGW( TAG,
-                              "could not stop timed-out Wi-Fi connection: %s",
-                              esp_err_to_name( stop_result ) );
-                    network_connect_started_us = a_now_us;
-                    redraw = true;
-                }
-                else
-                {
-                    snprintf( error_text, sizeof( error_text ), "Connection timed out" );
-                    return_to_network_main();
-                    return;
-                }
-            }
-
-            display_modal_show( "NETWORK", "Connecting..." );
-            redraw = true;
-        }
-        else if( RFSCOUT_WIFI_STATION_SCANNING != current.state )
-        {
-            snprintf( error_text, sizeof( error_text ), "Connection failed" );
-            return_to_network_main();
-            return;
-        }
+        display_modal_show( "NETWORK",
+                            RFSCOUT_NETWORK_SESSION_TIME_SYNCING == network.state
+                                ? "Setting time..."
+                                : "Connecting..." );
+        redraw = true;
     }
+
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
 
     if( current.scan_generation != last_scan_generation || current.state != last_station_state )
     {
@@ -1400,13 +1305,6 @@ static void submenu_poll( int64_t a_now_us )
         refresh_scan_results();
         redraw = true;
     }
-    if( current.ntp_syncing != last_ntp_syncing || current.ntp_synced != last_ntp_synced )
-    {
-        last_ntp_syncing = current.ntp_syncing;
-        last_ntp_synced = current.ntp_synced;
-        redraw = true;
-    }
-
     ota_acquisition_status_t acquisition;
     ota_acquisition_status( &acquisition );
     if( acquisition.generation != last_acquisition_generation )

@@ -29,6 +29,7 @@ static bool ota_handle_open;
 static psa_hash_operation_t stream_hash = PSA_HASH_OPERATION_INIT;
 static bool stream_hash_open;
 static uint8_t readback_buffer[ OTA_INSTALLER_HASH_CHUNK ];
+static bool initialized;
 
 static void reset_stream_hash( void )
 {
@@ -146,16 +147,29 @@ static void clear_runtime( void )
     ota_handle_open = false;
 }
 
-esp_err_t ota_installer_begin( const ota_installer_image_t *a_image )
+esp_err_t ota_installer_init( void )
 {
-    if( NULL == a_image || 0U == a_image->size || '\0' == a_image->version[ 0 ] )
+    if( initialized )
     {
-        return ESP_ERR_INVALID_ARG;
+        return ESP_OK;
     }
-
     if( PSA_SUCCESS != psa_crypto_init() )
     {
         return ESP_FAIL;
+    }
+    initialized = true;
+    return ESP_OK;
+}
+
+esp_err_t ota_installer_begin( const ota_installer_image_t *a_image )
+{
+    if( !initialized )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if( NULL == a_image || 0U == a_image->size || '\0' == a_image->version[ 0 ] )
+    {
+        return ESP_ERR_INVALID_ARG;
     }
 
     uint8_t expected_digest[ 32 ];

@@ -117,6 +117,19 @@ Generated source such as `main/services/wireless/oui_database.inc`, `main/servic
 
 Host-side tooling follows normal Python readability conventions: descriptive names, type annotations where useful, docstrings for non-trivial functions, and deterministic output. GitHub Actions YAML should remain simple and explicit.
 
+## Platform service lifecycle naming
+
+Shared platform services use consistent lifecycle names:
+
+- `probe()`: retry-safe availability check; no ongoing activity.
+- `init()`: framework-owned, idempotent, lightweight inactive setup.
+- `start()`: app-owned, idempotent activation for persistent services.
+- `begin_*(...)`: app-owned activation for parameterized transactions.
+- `stop()`: idempotent quiescence/cleanup, safe for framework teardown.
+- `is_active()`: authoritative active-resource predicate.
+
+Do not add alternate lifecycle synonyms such as `prepare`, `resume`, or `recover` when the common vocabulary is sufficient. A `start()` function must not be required merely to initialize reusable infrastructure; move that work to idempotent `init()` instead.
+
 ## Documentation maintenance
 
 Documentation ownership is deliberate:
