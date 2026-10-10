@@ -470,11 +470,6 @@ void app_main( void )
     }
 
     ESP_ERROR_CHECK( device_time_init() );
-    result = gps_init();
-    if( ( ESP_OK != result ) && ( ESP_ERR_NOT_SUPPORTED != result ) )
-    {
-        ESP_LOGW( TAG, "GPS service unavailable: %s", esp_err_to_name( result ) );
-    }
     result = breadcrumbs_init();
     if( ( ESP_OK != result ) && ( ESP_ERR_NOT_SUPPORTED != result ) &&
         ( ESP_ERR_INVALID_STATE != result ) )
@@ -485,6 +480,12 @@ void app_main( void )
     ble_monitor_set_observer( on_observation );
 
     ESP_ERROR_CHECK( app_manager_init() );
+    /* App discovery probes nRF24 first, then leaves its shared pins inactive for GPS. */
+    result = gps_init();
+    if( ( ESP_OK != result ) && ( ESP_ERR_NOT_SUPPORTED != result ) )
+    {
+        ESP_LOGW( TAG, "GPS service unavailable: %s", esp_err_to_name( result ) );
+    }
     system_events_poll();
     display_set_brightness( device_config_get()->brightness_percent );
     ESP_ERROR_CHECK( display_idle_init() );

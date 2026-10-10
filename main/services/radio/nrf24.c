@@ -9,6 +9,7 @@
 #include "nrf24_activity.h"
 #include "board.h"
 #include "board_spi.h"
+#include "gps.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include "esp_log.h"
@@ -230,31 +231,78 @@ static void scan_worker( void *a_argument )
     }
 }
 
+static esp_err_t attach_radio( void )
+{
+    if( NULL != device )
+    {
+        return ESP_OK;
+    }
+    gpio_reset_pin( RFSCOUT_BOARD_NRF24_CE_PIN );
+    gpio_set_direction( RFSCOUT_BOARD_NRF24_CE_PIN, GPIO_MODE_OUTPUT );
+    ce( false );
+    spi_device_interface_config_t config = { .clock_speed_hz = 4000000,
+                                             .mode = 0,
+                                             .spics_io_num = RFSCOUT_BOARD_NRF24_CS_PIN,
+                                             .queue_size = 1 };
+    return spi_bus_add_device( NRF24_SPI_HOST, &config, &device );
+}
+
+static esp_err_t release_radio( void )
+{
+    if( NULL == device )
+    {
+        return ESP_OK;
+    }
+    if( NULL != device )
+    {
+        const esp_err_t result = spi_bus_remove_device( device );
+        if( ESP_OK != result )
+        {
+            return result;
+        }
+        device = NULL;
+    }
+    (void)gpio_reset_pin( RFSCOUT_BOARD_NRF24_CE_PIN );
+    (void)gpio_reset_pin( RFSCOUT_BOARD_NRF24_CS_PIN );
+    return ESP_OK;
+}
+
 esp_err_t nrf24_probe( void )
 {
+    if( gps_detected() )
+    {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    if( detected )
+    {
+        return ESP_OK;
+    }
+    if( gps_available() && !gps_probe_complete() )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     if( running )
     {
         return detected ? ESP_OK : ESP_ERR_NOT_FOUND;
     }
 
-    gpio_set_direction( RFSCOUT_BOARD_NRF24_CE_PIN, GPIO_MODE_OUTPUT );
-    ce( false );
-
-    if( NULL == device )
+    const bool resume_gps = gps_available();
+    if( resume_gps )
     {
-        gpio_reset_pin( RFSCOUT_BOARD_NRF24_CS_PIN );
-        spi_device_interface_config_t device_config = { .clock_speed_hz = 4000000,
-                                                        .mode = 0,
-                                                        .spics_io_num = RFSCOUT_BOARD_NRF24_CS_PIN,
-                                                        .queue_size = 1 };
-
-        const esp_err_t attach_result =
-            spi_bus_add_device( NRF24_SPI_HOST, &device_config, &device );
-        if( ESP_OK != attach_result )
+        const esp_err_t stop_result = gps_stop();
+        if( ESP_OK != stop_result )
         {
-            detected = false;
-            return attach_result;
+            return stop_result;
         }
+    }
+    const esp_err_t attach_result = attach_radio();
+    if( ESP_OK != attach_result )
+    {
+        if( resume_gps )
+        {
+            (void)gps_init();
+        }
+        return attach_result;
     }
 
     esp_err_t result = ESP_OK;
@@ -306,20 +354,25 @@ esp_err_t nrf24_probe( void )
         }
     }
 
-    if( !detected )
+    const esp_err_t release_result = release_radio();
+    if( resume_gps )
     {
-        if( NULL != device )
-        {
-            (void)spi_bus_remove_device( device );
-            device = NULL;
-        }
-        return ESP_OK == result ? ESP_ERR_NOT_FOUND : result;
+        (void)gps_init();
     }
-    return ESP_OK;
+    if( ESP_OK != release_result )
+    {
+        detected = false;
+        return release_result;
+    }
+    return !detected ? ( ESP_OK == result ? ESP_ERR_NOT_FOUND : result ) : ESP_OK;
 }
 
 esp_err_t nrf24_init( void )
 {
+    if( gps_detected() )
+    {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
     if( initialized )
     {
         return detected ? ESP_OK : nrf24_probe();
@@ -357,6 +410,14 @@ esp_err_t nrf24_init( void )
 
 esp_err_t nrf24_start( void )
 {
+    if( gps_detected() )
+    {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    if( gps_available() && !gps_probe_complete() )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     if( !initialized )
     {
         return ESP_ERR_INVALID_STATE;
@@ -370,8 +431,26 @@ esp_err_t nrf24_start( void )
         return ESP_OK;
     }
 
+    const bool restart_gps = gps_available();
+    if( restart_gps )
+    {
+        const esp_err_t stop_result = gps_stop();
+        if( ESP_OK != stop_result )
+        {
+            return stop_result;
+        }
+    }
+    esp_err_t result = attach_radio();
+    if( ESP_OK != result )
+    {
+        if( restart_gps )
+        {
+            (void)gps_init();
+        }
+        return result;
+    }
     ce( false );
-    esp_err_t result = write_register( NRF24_REG_EN_AA, 0x00U );
+    result = write_register( NRF24_REG_EN_AA, 0x00U );
     if( ESP_OK == result )
         result = write_register( NRF24_REG_EN_RXADDR, 0x00U );
     if( ESP_OK == result )
@@ -382,6 +461,12 @@ esp_err_t nrf24_start( void )
     }
     if( ESP_OK != result )
     {
+        (void)write_register( NRF24_REG_CONFIG, 0x00U );
+        (void)release_radio();
+        if( restart_gps )
+        {
+            (void)gps_init();
+        }
         return result;
     }
 
@@ -420,8 +505,23 @@ bool nrf24_stop( void )
         return false;
     }
 
+    if( NULL == device )
+    {
+        return true; /* Never touch GPIOs owned by an unstarted GPS provider. */
+    }
     ce( false );
-    (void)write_register( NRF24_REG_CONFIG, 0x00U );
+    if( NULL != device && ESP_OK != write_register( NRF24_REG_CONFIG, 0x00U ) )
+    {
+        return false;
+    }
+    if( ESP_OK != release_radio() )
+    {
+        return false;
+    }
+    if( RFSCOUT_BOARD_HAS_GPS )
+    {
+        (void)gps_init();
+    }
     return true;
 }
 

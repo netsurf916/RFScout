@@ -60,10 +60,11 @@
 #define DEVICE_ITEM_BREADCRUMBS 26U
 #define DEVICE_ITEM_BREADCRUMB_FILES 27U
 #define DEVICE_ITEM_HOLD_SHORTCUT 28U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 29U
+#define DEVICE_ITEM_GPS_TIMEOUT 29U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 30U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
-#define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_HOLD_SHORTCUT + 1U )
+#define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_GPS_TIMEOUT + 1U )
 #define DEVICE_ROWS_PER_PAGE 6U
 #define DEVICE_LOG_SHUTDOWN_TIMEOUT_MS 3000U
 #define DEVICE_AUDIO_VOLUME_STEP 10
@@ -314,6 +315,8 @@ static const char *item_label( unsigned a_item )
             return "Breadcrumbs";
         case DEVICE_ITEM_BREADCRUMB_FILES:
             return "Breadcrumb files";
+        case DEVICE_ITEM_GPS_TIMEOUT:
+            return "GPS timeout";
         case DEVICE_ITEM_HOLD_SHORTCUT:
             return "Hold";
         default:
@@ -364,6 +367,9 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             break;
         case DEVICE_ITEM_CLOCK_FORMAT:
             snprintf( a_value, a_capacity, "%s", config->clock_24h ? "24h" : "12h" );
+            break;
+        case DEVICE_ITEM_GPS_TIMEOUT:
+            snprintf( a_value, a_capacity, "%us", (unsigned)config->gps_timeout_seconds );
             break;
         case DEVICE_ITEM_TIME:
             snprintf( a_value,
@@ -1554,6 +1560,20 @@ static void adjust_selected( int a_delta )
     else if( DEVICE_ITEM_HOLD_SHORTCUT == selected_item )
     {
         toggle_hold_shortcut();
+    }
+    else if( DEVICE_ITEM_GPS_TIMEOUT == selected_item )
+    {
+        const uint8_t old_value = config->gps_timeout_seconds;
+        const int step = a_delta > 0 ? 1 : -1;
+        int value = (int)old_value + step;
+        if( value > (int)RFSCOUT_GPS_TIMEOUT_MAX_SECONDS )
+            value = RFSCOUT_GPS_TIMEOUT_MIN_SECONDS;
+        if( value < (int)RFSCOUT_GPS_TIMEOUT_MIN_SECONDS )
+            value = RFSCOUT_GPS_TIMEOUT_MAX_SECONDS;
+        if( ESP_OK == device_config_set_gps_timeout_seconds( (uint8_t)value ) )
+        {
+            emit_device_event( RFSCOUT_EVENT_NAVIGATE, step );
+        }
     }
     else if( ( selected_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
              ( selected_item <= DEVICE_ITEM_NOTIFICATION_LAST ) )

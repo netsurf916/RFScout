@@ -76,7 +76,7 @@ static const rfscout_board_profile_t tembed_profile = {
     .id = RFSCOUT_BOARD_TEMBED_CC1101_PLUS,
     .target_id = "t-embed-cc1101-plus",
     .name = "LILYGO T-Embed CC1101 Plus",
-    .capabilities = RFSCOUT_BOARD_CAP_CC1101 | RFSCOUT_BOARD_CAP_NRF24 |
+    .capabilities = RFSCOUT_BOARD_CAP_CC1101 | RFSCOUT_BOARD_CAP_NRF24 | RFSCOUT_BOARD_CAP_GPS |
                     RFSCOUT_BOARD_CAP_ROTARY_ENCODER | RFSCOUT_BOARD_CAP_PDM_MIC |
                     RFSCOUT_BOARD_CAP_SPEAKER | RFSCOUT_BOARD_CAP_SD |
                     RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE | RFSCOUT_BOARD_CAP_SCREEN_OFF |
