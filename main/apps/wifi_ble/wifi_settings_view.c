@@ -38,9 +38,8 @@ void wifi_settings_view_render( unsigned a_selected,
 
     /* Keep the selected row visible on compact displays. */
     const unsigned first = ( a_selected >= 4U ) ? a_selected - 3U : 0U;
-    const unsigned end = ( first + 5U < WIFI_SETTINGS_ITEM_COUNT )
-                             ? first + 5U
-                             : WIFI_SETTINGS_ITEM_COUNT;
+    const unsigned end =
+        ( first + 5U < WIFI_SETTINGS_ITEM_COUNT ) ? first + 5U : WIFI_SETTINGS_ITEM_COUNT;
     for( unsigned item = first; item < end; ++item )
     {
         const int y = UI_LAYOUT_MENU_START_Y + (int)( item - first ) * UI_LAYOUT_MENU_ROW_HEIGHT;
