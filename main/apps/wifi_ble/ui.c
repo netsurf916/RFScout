@@ -271,7 +271,8 @@ static void render_surveillance_page( void )
                   live_surveillance_rows[ i ].address[ 3 ],
                   live_surveillance_rows[ i ].address[ 4 ],
                   live_surveillance_rows[ i ].address[ 5 ],
-                  live_surveillance_rows[ i ].vendor[ 0 ] ? live_surveillance_rows[ i ].vendor : "Unknown" );
+                  live_surveillance_rows[ i ].vendor[ 0 ] ? live_surveillance_rows[ i ].vendor
+                                                          : "Unknown" );
         display_draw_text( UI_LAYOUT_LEFT_X,
                            43 + (int)( row - start ) * 17,
                            line,
