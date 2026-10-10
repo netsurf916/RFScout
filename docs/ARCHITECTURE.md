@@ -395,3 +395,11 @@ Key invariants are:
 - OTA never marks an image bootable before identity, structure, byte-count, streaming SHA, and flash-readback checks all succeed.
 
 Build/release procedure is documented in [Firmware releases](operations/RELEASING.md). Application-specific behavior is documented under [`docs/apps/`](apps/).
+
+## T-Embed GPS and nRF24 shared-pin priority
+
+The T-Embed GPIO43/44 pair is shared by GPS UART TX/RX and the nRF24 CE/CSN interface. nRF24 identity discovery occurs during framework startup before GPS UART initialization. The probe powers the nRF24 down (`CONFIG=0x00`), detaches its SPI device, and releases both pins. GPS then probes five UART baud rates (38400, 9600, 19200, 57600, 115200) with a minimum two-cycle, 15-second initial detection window.
+
+Checksum-valid RMC/GGA reception latches GPS receiver presence until reboot, independently of fix freshness. Once latched, nRF24 probing/initialization/activation is forbidden. Without a detected receiver, the nRF24 service may stop GPS and claim the pins only after the initial probe window; stopping the radio must quiesce its worker, power down, detach SPI, release the pins, and restore GPS detection. GPS UART polling must never run while nRF24 owns these pins. The nRF24 app can defer activation until the probe window completes.
+
+This is a software pin-ownership policy, not galvanic isolation: nRF24 CSN remains electrically connected to GPIO44 in power-down. The target hardware must be checked for UART-induced CSN transitions, other SPI traffic, and any unintended radio behavior.
