@@ -83,11 +83,23 @@ bool observation_store_observe( rf_device_t *a_observation,
 void observation_store_reevaluate_surveillance( size_t *a_newly_qualified,
                                                 size_t a_count_capacity );
 
-/** @brief Copy currently qualified observation records into a caller-owned buffer. */
-size_t observation_store_surveillance_devices( rf_device_t *a_devices, size_t a_capacity );
+/** @brief Compact identity snapshot for history; avoids copying full device records. */
+typedef struct
+{
+    uint8_t address[ 6 ];
+    uint8_t address_type;
+    char vendor[ RFSCOUT_VENDOR_NAME_MAX ];
+    surveillance_class_t surveillance;
+    uint32_t last_seen_ms;
+} observation_history_identity_t;
 
-/** @brief Drain identities dropped by timeout without performing storage I/O under the store mutex. */
-size_t observation_store_take_expired( rf_device_t *a_devices, size_t a_capacity );
+/** @brief Copy only fields needed for surveillance history. */
+size_t observation_store_surveillance_devices( observation_history_identity_t *a_devices,
+                                               size_t a_capacity );
+
+/** @brief Drain expired identities without retaining full device records. */
+size_t observation_store_take_expired( observation_history_identity_t *a_devices,
+                                       size_t a_capacity );
 
 /** @brief Clear all live observations while retaining any current app-owned capacity. */
 void observation_store_reset( void );
