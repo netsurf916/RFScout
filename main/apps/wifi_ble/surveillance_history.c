@@ -40,9 +40,9 @@ void surveillance_history_open( void )
         (void)app_session_free( pending );
     if( NULL != writing )
         (void)app_session_free( writing );
-    pending = app_session_resize( NULL, 64U, sizeof( *pending ) );
+    pending = app_session_resize( NULL, 256U, sizeof( *pending ) );
     pending_count = 0U;
-    pending_capacity = NULL != pending ? 64U : 0U;
+    pending_capacity = NULL != pending ? 256U : 0U;
     writing = NULL;
     writing_count = 0U;
     dropped_points = 0U;
