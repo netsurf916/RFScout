@@ -202,6 +202,9 @@ void surveillance_history_flush( void )
 
 void surveillance_history_compact( void )
 {
+    /* Do not persist live, uncompleted observations during compaction. */
+    for( size_t i = 0U; i < entry_count; ++i )
+        if( entries[ i ].dirty ) return;
     rfscout_media_collection_t collection;
     if( ESP_OK != media_app_collection( "locations", &collection ) ) return;
     rfscout_media_file_t file = { 0 };
