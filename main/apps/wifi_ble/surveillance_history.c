@@ -19,6 +19,7 @@ static size_t entry_capacity;
 static bool ensure_history_capacity( size_t a_required )
 {
     if( a_required <= entry_capacity ) return true;
+    if( entry_capacity > SIZE_MAX / 2U ) return false;
     size_t capacity = entry_capacity ? entry_capacity * 2U : 32U;
     if( capacity < a_required ) capacity = a_required;
     surveillance_history_entry_t *next = app_session_resize( entries, capacity,
@@ -283,5 +284,5 @@ void surveillance_history_sample( void )
         memcpy( entry->vendor, device->vendor, sizeof( entry->vendor ) );
         entry->dirty = true;
     }
-    (void)app_session_resize( active, 0U, sizeof( *active ) );
+    (void)app_session_free( active );
 }
