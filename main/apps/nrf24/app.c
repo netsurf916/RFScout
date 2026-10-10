@@ -11,6 +11,7 @@
 #include "notification.h"
 #include "notification_preferences.h"
 #include "nrf24.h"
+#include "gps.h"
 #include "nrf24_activity.h"
 #include "nrf24_packet_view.h"
 #include "radio_app_view.h"
@@ -355,6 +356,11 @@ static rfscout_app_runtime_result_t nrf24_runtime( const rfscout_app_runtime_eve
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
         return RFSCOUT_APP_RUNTIME_IGNORED;
+    }
+    if( RFSCOUT_APP_RUNTIME_POLL == a_event->type && a_event->activated &&
+        !nrf24_is_active() && !gps_detected() && gps_probe_complete() )
+    {
+        (void)nrf24_start();
     }
     if( RFSCOUT_APP_RUNTIME_POLL == a_event->type && a_event->activated && !menu_active &&
         !app_notification_menu_active( &notification_menu ) )
