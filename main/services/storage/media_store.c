@@ -252,15 +252,8 @@ static media_slot_t *slot_for( const rfscout_media_file_t *a_file )
 /** @brief Close one slot and invalidate every outstanding copy of its handle. */
 static int close_slot( media_slot_t *a_slot )
 {
-    int result = 0;
-    if( 0 != fflush( a_slot->file ) )
-    {
-        result = errno;
-    }
-    if( 0 != fclose( a_slot->file ) && 0 == result )
-    {
-        result = errno;
-    }
+    /* fclose already flushes stdio; an extra fflush doubles attempted I/O on lost media. */
+    const int result = ( 0 == fclose( a_slot->file ) ) ? 0 : errno;
     a_slot->file = NULL;
     a_slot->serial = 0U;
     return result;
