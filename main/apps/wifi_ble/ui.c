@@ -20,6 +20,7 @@
 #include "esp_timer.h"
 
 #include <stdio.h>
+#include <math.h>
 
 #define UI_MAX_KNOWN_BRANDS 8U
 #define UI_REFRESH_INTERVAL_US 100000LL
@@ -210,38 +211,59 @@ void ui_surveillance_navigate( int a_direction )
     last_refresh_us = 0;
 }
 
+static double distance_to_bounds_m( const rfscout_gps_snapshot_t *a_gps,
+                                    const surveillance_history_entry_t *a_entry )
+{
+    const double latitude = fmax( a_entry->min_latitude,
+                                  fmin( a_gps->latitude_deg, a_entry->max_latitude ) );
+    const double longitude = fmax( a_entry->min_longitude,
+                                   fmin( a_gps->longitude_deg, a_entry->max_longitude ) );
+    const double lat_radians = ( latitude - a_gps->latitude_deg ) * 0.017453292519943295;
+    const double lon_radians = ( longitude - a_gps->longitude_deg ) * 0.017453292519943295;
+    const double cosine = cos( a_gps->latitude_deg * 0.017453292519943295 );
+    return 6371000.0 * sqrt( lat_radians * lat_radians +
+                             lon_radians * lon_radians * cosine * cosine );
+}
+
 static void render_surveillance_page( void )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
-    rf_device_t devices[ 6 ] = { 0 };
-    const size_t count = observation_store_surveillance_devices( devices, 6U );
+    const size_t count = surveillance_history_list( NULL, 0U );
     rfscout_gps_snapshot_t gps = { 0 };
-    const bool has_fix = gps_snapshot_get( &gps ) && gps.location_valid;
+    const bool has_fix = gps_snapshot_get( &gps ) && gps.location_valid &&
+                         gps.location_age_ms <= 5000U;
 
     display_clear( theme->background );
     ui_chrome_draw( "SURVEILLANCE", theme->secondary );
-    char line[ 72 ];
-    snprintf( line, sizeof( line ), "ACTIVE %u  GPS %s", (unsigned)count,
+    char line[ 80 ];
+    snprintf( line, sizeof( line ), "HISTORY %u  GPS %s", (unsigned)count,
               has_fix ? "FIX" : "NO FIX" );
     display_draw_text( UI_LAYOUT_LEFT_X, 25, line, theme->info, 1U );
-
-    if( surveillance_selection >= count && count > 0U )
-    {
+    if( count > 0U && surveillance_selection >= count )
         surveillance_selection = (unsigned)( count - 1U );
-    }
-    if( count > 6U )
+
+    const size_t start = surveillance_selection >= 6U ?
+                         surveillance_selection - 5U : 0U;
+    for( size_t i = start; i < count && i < start + 6U; ++i )
     {
-        display_draw_text( UI_LAYOUT_LEFT_X, 150, "MORE DEVICES ACTIVE", theme->info, 1U );
-    }
-    for( size_t index = 0U; index < count && index < 6U; ++index )
-    {
-        const rf_device_t *device = &devices[ index ];
-        snprintf( line, sizeof( line ), "%c %02X:%02X:%02X  %.19s",
-                  index == surveillance_selection ? '>' : ' ',
-                  device->address[ 3 ], device->address[ 4 ], device->address[ 5 ],
-                  device->vendor );
-        display_draw_text( UI_LAYOUT_LEFT_X, 43 + (int)index * 17, line,
-                           index == surveillance_selection ? theme->selected : theme->normal, 1U );
+        surveillance_history_entry_t entry = { 0 };
+        /* Request only the required prefix, avoiding large device snapshots. */
+        if( !surveillance_history_get( i, &entry ) ) continue;
+        char distance[ 20 ] = "--";
+        if( has_fix )
+        {
+            const double meters = distance_to_bounds_m( &gps, &entry );
+            if( meters >= 1000.0 )
+                snprintf( distance, sizeof( distance ), "%.1fkm", meters / 1000.0 );
+            else
+                snprintf( distance, sizeof( distance ), "%.0fm", meters );
+        }
+        snprintf( line, sizeof( line ), "%c %02X%02X%02X %-13.13s %s",
+                  i == surveillance_selection ? '>' : ' ',
+                  entry.address[ 3 ], entry.address[ 4 ], entry.address[ 5 ],
+                  entry.vendor[ 0 ] ? entry.vendor : "Unknown", distance );
+        display_draw_text( UI_LAYOUT_LEFT_X, 43 + (int)( i - start ) * 17, line,
+                           i == surveillance_selection ? theme->selected : theme->normal, 1U );
     }
     (void)display_present();
 }
