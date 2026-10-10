@@ -206,13 +206,26 @@ static double live_receiver_distance( const observation_history_identity_t *a_de
         lat = a_device->min_latitude;
     if( lat > a_device->max_latitude )
         lat = a_device->max_latitude;
-    if( lon < a_device->min_longitude )
-        lon = a_device->min_longitude;
-    if( lon > a_device->max_longitude )
-        lon = a_device->max_longitude;
+    const double west = a_device->min_longitude;
+    const double east = a_device->max_longitude;
+    const bool inside = west <= east ? lon >= west && lon <= east
+                                     : lon >= west || lon <= east;
+    if( !inside )
+    {
+        double to_west = fabs( lon - west );
+        double to_east = fabs( lon - east );
+        if( to_west > 180.0 )
+            to_west = 360.0 - to_west;
+        if( to_east > 180.0 )
+            to_east = 360.0 - to_east;
+        lon = to_west <= to_east ? west : east;
+    }
     const double dy = ( a_latitude - lat ) * 0.017453292519943295;
+    double delta_lon = fabs( a_longitude - lon );
+    if( delta_lon > 180.0 )
+        delta_lon = 360.0 - delta_lon;
     const double dx =
-        ( a_longitude - lon ) * 0.017453292519943295 * cos( a_latitude * 0.017453292519943295 );
+        delta_lon * 0.017453292519943295 * cos( a_latitude * 0.017453292519943295 );
     return 6371000.0 * sqrt( dx * dx + dy * dy );
 }
 
