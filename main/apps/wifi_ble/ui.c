@@ -45,6 +45,7 @@
 static const char *TAG = "ui";
 static int64_t last_refresh_us;
 static bool surveillance_page;
+static bool surveillance_focused;
 static unsigned surveillance_selection;
 static observation_history_identity_t *live_surveillance_rows;
 static size_t live_surveillance_capacity;
@@ -193,7 +194,14 @@ static void render_summary( void )
 void ui_set_surveillance_page( bool a_enabled )
 {
     surveillance_page = a_enabled;
+    surveillance_focused = false;
     surveillance_selection = 0U;
+    last_refresh_us = 0;
+}
+
+void ui_surveillance_set_focused( bool a_focused )
+{
+    surveillance_focused = a_focused;
     last_refresh_us = 0;
 }
 
@@ -269,10 +277,10 @@ static void render_surveillance_page( void )
     char line[ 80 ];
     snprintf( line,
               sizeof( line ),
-              "LIVE %u  SAVED %u  GPS %s",
+              "LIVE %u  SAVED %u  %s",
               (unsigned)displayed_live,
               (unsigned)unique_history,
-              has_fix ? "FIX" : "NO FIX" );
+              surveillance_focused ? "SCROLL" : ( has_fix ? "FIX" : "NO FIX" ) );
     display_draw_text( UI_LAYOUT_LEFT_X, 25, line, theme->info, 1U );
 
     const size_t start = surveillance_selection >= 6U ? surveillance_selection - 5U : 0U;
