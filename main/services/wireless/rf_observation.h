@@ -90,6 +90,11 @@ typedef struct
     uint16_t service_uuids[ RFSCOUT_BLE_SERVICE_UUID_MAX ];
     uint8_t service_uuid_count;
     bool has_remote_id;
+    bool location_valid;
+    double min_latitude;
+    double max_latitude;
+    double min_longitude;
+    double max_longitude;
 } rf_device_t;
 
 /**
