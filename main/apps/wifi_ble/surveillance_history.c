@@ -151,6 +151,8 @@ static void replay_line( const char *a_line )
 
 void surveillance_history_open( void )
 {
+    if( NULL != entries )
+        (void)app_session_free( entries );
     entries = NULL;
     entry_count = 0U;
     entry_capacity = 0U;
@@ -271,10 +273,10 @@ void surveillance_history_compact( void )
 
 void surveillance_history_process_expired( void )
 {
-    rf_device_t expired[ 8 ] = { 0 };
+    observation_history_identity_t expired[ 4 ] = { 0 };
     size_t count;
     bool changed = false;
-    while( 0U != ( count = observation_store_take_expired( expired, 8U ) ) )
+    while( 0U != ( count = observation_store_take_expired( expired, 4U ) ) )
     {
         for( size_t i = 0U; i < count; ++i )
         {
@@ -308,14 +310,14 @@ void surveillance_history_sample( void )
     const size_t total = observation_store_surveillance_devices( NULL, 0U );
     if( 0U == total )
         return;
-    rf_device_t *active = app_session_resize( NULL, total, sizeof( *active ) );
+    observation_history_identity_t *active = app_session_resize( NULL, total, sizeof( *active ) );
     if( NULL == active )
         return;
     const size_t copied = observation_store_surveillance_devices( active, total );
     const size_t count = copied < total ? copied : total;
     for( size_t i = 0U; i < count; ++i )
     {
-        const rf_device_t *device = &active[ i ];
+        const observation_history_identity_t *device = &active[ i ];
         surveillance_history_entry_t *entry = NULL;
         for( size_t j = 0U; j < entry_count; ++j )
         {
