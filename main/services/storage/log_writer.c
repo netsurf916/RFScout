@@ -325,7 +325,7 @@ static bool open_segment_serialized( void )
     {
         return false;
     }
-    const bool result = open_segment_serialized();
+    const bool result = open_segment();
     storage_io_release();
     return result;
 }
