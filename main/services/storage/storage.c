@@ -138,6 +138,32 @@ esp_err_t storage_init( void )
     return ESP_OK;
 }
 
+esp_err_t storage_recover_lost_media( void )
+{
+    if( !mounted || !media_lost )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if( !storage_io_acquire( RFSCOUT_STORAGE_WAIT_FOREVER ) )
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+    const esp_err_t result = esp_vfs_fat_sdcard_unmount( RFSCOUT_STORAGE_MOUNT_POINT, card );
+    if( ESP_OK == result )
+    {
+        card = NULL;
+        mounted = false;
+        media_lost = false;
+    }
+    storage_io_release();
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG, "SD unmount after media loss failed: %s", esp_err_to_name( result ) );
+        return result;
+    }
+    return storage_init();
+}
+
 bool storage_is_available( void )
 {
     return mounted && !media_lost;
