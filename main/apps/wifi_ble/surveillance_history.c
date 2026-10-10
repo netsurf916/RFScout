@@ -80,9 +80,9 @@ void surveillance_history_process_expired( void )
 {
     rf_device_t expired[ 8 ] = { 0 };
     size_t count;
+    bool changed = false;
     while( 0U != ( count = observation_store_take_expired( expired, 8U ) ) )
     {
-        bool changed = false;
         for( size_t i = 0U; i < count; ++i )
         {
             for( size_t j = 0U; j < HISTORY_CAPACITY; ++j )
@@ -98,7 +98,10 @@ void surveillance_history_process_expired( void )
                 }
             }
         }
-        if( changed ) surveillance_history_flush();
+    }
+    if( changed )
+    {
+        surveillance_history_flush();
     }
 }
 
