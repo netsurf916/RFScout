@@ -308,7 +308,7 @@ Handles opened through an app collection belong to that app session. The lifecyc
 
 After physical media loss, new opens and directory operations fail with `ESP_ERR_INVALID_STATE`; existing handles fail their next I/O but can still be closed. There is no remount beneath open handles.
 
-The media store also exposes a combined presence probe for hot-plug dependency checks (mount when no card has ever mounted, then verify the mounted card responds) and free-space queries.
+The media store also exposes an explicit presence probe for navigation dependency checks. Failed media starts a shared three-second cooldown; a later file operation, capacity query, or explicit probe may attempt one synchronous mount/recovery. Cached availability reads never trigger I/O.
 
 ### Logging
 
