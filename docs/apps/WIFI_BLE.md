@@ -219,8 +219,8 @@ GPS fix, and a trustworthy UTC timestamp when available. Repeated observations a
 times or places are retained for later analysis; GPS receiver positions are not verified
 transmitter positions. Do not write a record for every application poll or discard distinct
 observations during journal maintenance. Expiration, manual reset, and app exit remain the
-best-effort event-driven persistence boundaries. Existing consolidated bounding-box records
-must remain readable, although their original points cannot be reconstructed.
+best-effort event-driven persistence boundaries. Legacy consolidated bounding-box records are unsupported and must be ignored during replay.
+Only discrete-observation journal records belong to this contract.
 
 All surveillance classifications share the same runtime representation and list. There is no
 path view or type-specific runtime aggregation. Runtime distance is the minimum distance to
@@ -249,7 +249,6 @@ buffers; do not introduce another FreeRTOS task, queue, or scheduling subsystem.
 
 ### Validation
 
-Test multiple simultaneous detections/expirations, journal append and replay, restart and
-legacy replay, GPS loss and reacquisition, meaningful displacement, list prioritization,
+Test multiple simultaneous detections/expirations, journal append and replay, restart and rejection of legacy records, GPS loss and reacquisition, meaningful displacement, list prioritization,
 app exit, bounded RAM and task-stack headroom. This section describes the **target design**
 and does not assert that the current firmware implements it.
