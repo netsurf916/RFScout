@@ -5,14 +5,29 @@
 */
 #include "surveillance_history.h"
 #include "gps.h"
+#include "app_session.h"
 #include "media_store.h"
 #include "observation_store.h"
 
 #include <string.h>
 #include <stdio.h>
 
-#define HISTORY_CAPACITY 128U
-static surveillance_history_entry_t entries[ HISTORY_CAPACITY ];
+static surveillance_history_entry_t *entries;
+static size_t entry_count;
+static size_t entry_capacity;
+
+static bool ensure_history_capacity( size_t a_required )
+{
+    if( a_required <= entry_capacity ) return true;
+    size_t capacity = entry_capacity ? entry_capacity * 2U : 32U;
+    if( capacity < a_required ) capacity = a_required;
+    surveillance_history_entry_t *next = app_session_resize( entries, capacity,
+                                                              sizeof( *entries ) );
+    if( NULL == next ) return false;
+    entries = next;
+    entry_capacity = capacity;
+    return true;
+}
 
 #define HISTORY_JOURNAL "surveillance.jsonl"
 
@@ -39,7 +54,7 @@ static esp_err_t append_entry( const rfscout_media_file_t *a_file,
 size_t surveillance_history_list( surveillance_history_entry_t *a_rows, size_t a_capacity )
 {
     size_t count = 0U;
-    for( size_t i = 0U; i < HISTORY_CAPACITY; ++i )
+    for( size_t i = 0U; i < entry_count; ++i )
     {
         if( !entries[ i ].valid ) continue;
         if( NULL != a_rows && count < a_capacity ) a_rows[ count ] = entries[ i ];
@@ -50,7 +65,9 @@ size_t surveillance_history_list( surveillance_history_entry_t *a_rows, size_t a
 
 void surveillance_history_open( void )
 {
-    memset( entries, 0, sizeof( entries ) );
+    entries = NULL;
+    entry_count = 0U;
+    entry_capacity = 0U;
 }
 
 void surveillance_history_flush( void )
@@ -109,9 +126,9 @@ void surveillance_history_sample( void )
 {
     rfscout_gps_snapshot_t gps = { 0 };
     if( !gps_snapshot_get( &gps ) || !gps.location_valid ) return;
-    rf_device_t active[ HISTORY_CAPACITY ] = { 0 };
-    const size_t total = observation_store_surveillance_devices( active, HISTORY_CAPACITY );
-    const size_t count = total < HISTORY_CAPACITY ? total : HISTORY_CAPACITY;
+    rf_device_t active[ 32 ] = { 0 };
+    const size_t total = observation_store_surveillance_devices( active, 32U );
+    const size_t count = total < 32U ? total : 32U;
     for( size_t i = 0U; i < count; ++i )
     {
         const rf_device_t *device = &active[ i ];
