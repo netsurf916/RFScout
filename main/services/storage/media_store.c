@@ -24,7 +24,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define MEDIA_IO_TIMEOUT_MS 10000U
+#define MEDIA_IO_TIMEOUT_MS 250U
 #define MEDIA_PATH_MAX                                                                             \
     ( sizeof( RFSCOUT_STORAGE_MOUNT_POINT ) + RFSCOUT_MEDIA_OWNER_MAX +                            \
       RFSCOUT_MEDIA_COLLECTION_MAX + RFSCOUT_MEDIA_NAME_MAX + 4U )
@@ -42,10 +42,16 @@ typedef struct
 static const char *TAG = "media_store";
 static media_slot_t slots[ MEDIA_SLOT_COUNT ];
 static uint32_t next_serial;
+static uint32_t media_generation;
 
 /** @brief Translate a filesystem errno into the documented media-store error vocabulary. */
 static esp_err_t errno_result( int a_errno )
 {
+    /* Distinguish physical I/O failure from normal path errors and full media. */
+    if( EIO == a_errno || ENODEV == a_errno || ENXIO == a_errno || ETIMEDOUT == a_errno )
+    {
+        storage_note_media_failure();
+    }
     switch( a_errno )
     {
         case ENOENT:
@@ -222,15 +228,31 @@ static esp_err_t ensure_collection_directories( const rfscout_media_collection_t
     return ensure_directory( path );
 }
 
-/** @brief Acquire storage arbitration for one bounded media transaction. */
-static bool media_lock( void )
+/** @brief Recover at most once, then acquire storage arbitration for this request. */
+static esp_err_t media_lock( void )
 {
-    if( storage_io_acquire( MEDIA_IO_TIMEOUT_MS ) )
+    if( storage_retry_delayed() )
     {
-        return true;
+        return ESP_ERR_NOT_FOUND;
     }
-    ESP_LOGW( TAG, "SD arbitration timed out after %u ms", (unsigned)MEDIA_IO_TIMEOUT_MS );
-    return false;
+    if( !storage_is_available() )
+    {
+        const esp_err_t result = media_store_probe();
+        if( ESP_OK != result )
+        {
+            return result;
+        }
+    }
+    if( !storage_io_acquire( MEDIA_IO_TIMEOUT_MS ) )
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+    if( !storage_is_available() )
+    {
+        storage_io_release();
+        return ESP_ERR_NOT_FOUND;
+    }
+    return ESP_OK;
 }
 
 /** @brief Resolve a handle to its live slot; caller holds arbitration. */
@@ -251,15 +273,8 @@ static media_slot_t *slot_for( const rfscout_media_file_t *a_file )
 /** @brief Close one slot and invalidate every outstanding copy of its handle. */
 static int close_slot( media_slot_t *a_slot )
 {
-    int result = 0;
-    if( 0 != fflush( a_slot->file ) )
-    {
-        result = errno;
-    }
-    if( 0 != fclose( a_slot->file ) && 0 == result )
-    {
-        result = errno;
-    }
+    /* fclose already flushes stdio; an extra fflush doubles attempted I/O on lost media. */
+    const int result = ( 0 == fclose( a_slot->file ) ) ? 0 : errno;
     a_slot->file = NULL;
     a_slot->serial = 0U;
     return result;
@@ -270,18 +285,73 @@ bool media_store_available( void )
     return storage_is_available();
 }
 
+uint32_t media_store_generation( void )
+{
+    return __atomic_load_n( &media_generation, __ATOMIC_ACQUIRE );
+}
+
 esp_err_t media_store_probe( void )
 {
-    if( !storage_is_available() && ( ESP_OK != storage_init() ) )
+    if( storage_retry_delayed() )
     {
         return ESP_ERR_NOT_FOUND;
     }
-    return ( ESP_OK == storage_probe_card() ) ? ESP_OK : ESP_ERR_NOT_FOUND;
+    /* Healthy-card checks retain the bounded, contention-tolerant probe path.
+       Only a missing/lost volume needs the longer exclusive recovery transaction. */
+    if( storage_is_available() )
+    {
+        return ( ESP_OK == storage_probe_card() ) ? ESP_OK : ESP_ERR_NOT_FOUND;
+    }
+
+    if( !storage_io_acquire( MEDIA_IO_TIMEOUT_MS ) )
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+    if( storage_retry_delayed() )
+    {
+        storage_io_release();
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    /* Serialize the availability check with recovery: a competing probe may
+       already have mounted a replacement card while this task waited. */
+    if( !storage_is_available() )
+    {
+        /* Invalidate old VFS descriptors before unmounting the lost volume. */
+        for( size_t i = 0U; i < MEDIA_SLOT_COUNT; ++i )
+        {
+            if( NULL != slots[ i ].file )
+                (void)close_slot( &slots[ i ] );
+        }
+
+        const esp_err_t result =
+            storage_is_mounted() ? storage_recover_lost_media() : storage_init();
+        if( ESP_OK != result )
+        {
+            storage_io_release();
+            return ESP_ERR_NOT_FOUND;
+        }
+
+        /* Publish before releasing arbitration so new file operations cannot
+           observe the replacement volume with the previous generation. */
+        (void)__atomic_add_fetch( &media_generation, 1U, __ATOMIC_RELEASE );
+    }
+
+    const esp_err_t result = storage_probe_card();
+    storage_io_release();
+    return ( ESP_OK == result ) ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
 esp_err_t media_store_space( uint64_t *a_total_bytes, uint64_t *a_free_bytes )
 {
-    return storage_get_capacity( a_total_bytes, a_free_bytes );
+    const esp_err_t lock_result = media_lock();
+    if( ESP_OK != lock_result )
+    {
+        return lock_result;
+    }
+    const esp_err_t result = storage_get_capacity( a_total_bytes, a_free_bytes );
+    storage_io_release();
+    return result;
 }
 
 esp_err_t media_system_collection( const char *a_collection,
@@ -361,9 +431,10 @@ esp_err_t media_open( const rfscout_media_collection_t *a_collection,
         return ESP_ERR_INVALID_ARG;
     }
     memset( a_file, 0, sizeof( *a_file ) );
-    if( !media_lock() )
+    const esp_err_t lock_result = media_lock();
+    if( ESP_OK != lock_result )
     {
-        return ESP_ERR_TIMEOUT;
+        return lock_result;
     }
 
     esp_err_t result = collection_check( a_collection );
@@ -437,9 +508,10 @@ media_read( const rfscout_media_file_t *a_file, void *a_data, size_t a_capacity,
         return ESP_ERR_INVALID_ARG;
     }
     *a_read = 0U;
-    if( !media_lock() )
+    const esp_err_t lock_result = media_lock();
+    if( ESP_OK != lock_result )
     {
-        return ESP_ERR_TIMEOUT;
+        return lock_result;
     }
 
     esp_err_t result = ESP_OK;
@@ -453,8 +525,13 @@ media_read( const rfscout_media_file_t *a_file, void *a_data, size_t a_capacity,
         *a_read = fread( a_data, 1U, a_capacity, slot->file );
         if( *a_read < a_capacity && 0 != ferror( slot->file ) )
         {
+            const int read_errno = errno;
             clearerr( slot->file );
-            result = ESP_FAIL;
+            result = ( 0 == read_errno ) ? ESP_FAIL : errno_result( read_errno );
+            if( 0 == read_errno )
+            {
+                storage_note_media_failure();
+            }
         }
     }
 
@@ -468,9 +545,10 @@ esp_err_t media_write( const rfscout_media_file_t *a_file, const void *a_data, s
     {
         return ESP_ERR_INVALID_ARG;
     }
-    if( !media_lock() )
+    const esp_err_t lock_result = media_lock();
+    if( ESP_OK != lock_result )
     {
-        return ESP_ERR_TIMEOUT;
+        return lock_result;
     }
 
     esp_err_t result = ESP_OK;
@@ -481,7 +559,12 @@ esp_err_t media_write( const rfscout_media_file_t *a_file, const void *a_data, s
     }
     else if( a_length > 0U && a_length != fwrite( a_data, 1U, a_length, slot->file ) )
     {
-        result = errno_result( errno );
+        const int write_errno = errno;
+        result = ( 0 == write_errno ) ? ESP_FAIL : errno_result( write_errno );
+        if( 0 == write_errno )
+        {
+            storage_note_media_failure();
+        }
         clearerr( slot->file );
     }
 
@@ -498,9 +581,10 @@ esp_err_t media_seek( const rfscout_media_file_t *a_file,
     {
         return ESP_ERR_INVALID_ARG;
     }
-    if( !media_lock() )
+    const esp_err_t lock_result = media_lock();
+    if( ESP_OK != lock_result )
     {
-        return ESP_ERR_TIMEOUT;
+        return lock_result;
     }
 
     esp_err_t result = ESP_OK;
@@ -529,9 +613,10 @@ esp_err_t media_size( const rfscout_media_file_t *a_file, uint64_t *a_size_bytes
         return ESP_ERR_INVALID_ARG;
     }
     *a_size_bytes = 0U;
-    if( !media_lock() )
+    const esp_err_t lock_result = media_lock();
+    if( ESP_OK != lock_result )
     {
-        return ESP_ERR_TIMEOUT;
+        return lock_result;
     }
 
     esp_err_t result = ESP_OK;
@@ -564,9 +649,10 @@ esp_err_t media_truncate( const rfscout_media_file_t *a_file, uint64_t a_size_by
     {
         return ESP_ERR_INVALID_SIZE;
     }
-    if( !media_lock() )
+    const esp_err_t lock_result = media_lock();
+    if( ESP_OK != lock_result )
     {
-        return ESP_ERR_TIMEOUT;
+        return lock_result;
     }
 
     esp_err_t result = ESP_OK;
@@ -587,9 +673,10 @@ esp_err_t media_truncate( const rfscout_media_file_t *a_file, uint64_t a_size_by
 
 esp_err_t media_sync( const rfscout_media_file_t *a_file )
 {
-    if( !media_lock() )
+    const esp_err_t lock_result = media_lock();
+    if( ESP_OK != lock_result )
     {
-        return ESP_ERR_TIMEOUT;
+        return lock_result;
     }
 
     esp_err_t result = ESP_OK;
@@ -649,9 +736,10 @@ static esp_err_t begin_named_operation( const rfscout_media_collection_t *a_coll
     {
         return ESP_ERR_INVALID_ARG;
     }
-    if( !media_lock() )
+    const esp_err_t lock_result = media_lock();
+    if( ESP_OK != lock_result )
     {
-        return ESP_ERR_TIMEOUT;
+        return lock_result;
     }
 
     esp_err_t result = collection_check( a_collection );
@@ -796,9 +884,18 @@ esp_err_t media_list( const rfscout_media_collection_t *a_collection,
         return result;
     }
 
-    struct dirent *item;
-    while( NULL != ( item = readdir( directory ) ) )
+    while( true )
     {
+        errno = 0;
+        struct dirent *item = readdir( directory );
+        if( NULL == item )
+        {
+            if( 0 != errno )
+            {
+                result = errno_result( errno );
+            }
+            break;
+        }
         if( !media_name_valid( item->d_name ) )
         {
             continue;
@@ -806,8 +903,23 @@ esp_err_t media_list( const rfscout_media_collection_t *a_collection,
 
         char path[ MEDIA_PATH_MAX ];
         struct stat info;
-        if( !build_path( a_collection, item->d_name, false, path, sizeof( path ) ) ||
-            0 != stat( path, &info ) || !S_ISREG( info.st_mode ) || info.st_size < 0 )
+        if( !build_path( a_collection, item->d_name, false, path, sizeof( path ) ) )
+        {
+            result = ESP_ERR_INVALID_SIZE;
+            break;
+        }
+        if( 0 != stat( path, &info ) )
+        {
+            const int stat_errno = errno;
+            if( EIO == stat_errno || ENODEV == stat_errno || ENXIO == stat_errno ||
+                ETIMEDOUT == stat_errno )
+            {
+                result = errno_result( stat_errno );
+                break;
+            }
+            continue;
+        }
+        if( !S_ISREG( info.st_mode ) || info.st_size < 0 )
         {
             continue;
         }
@@ -821,10 +933,13 @@ esp_err_t media_list( const rfscout_media_collection_t *a_collection,
             break;
         }
     }
-    closedir( directory );
+    if( 0 != closedir( directory ) && ESP_OK == result )
+    {
+        result = errno_result( errno );
+    }
 
     storage_io_release();
-    return ESP_OK;
+    return result;
 }
 
 size_t media_store_close_app( rfscout_app_id_t a_app )
