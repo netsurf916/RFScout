@@ -89,11 +89,6 @@ esp_err_t storage_init( void )
         return ESP_ERR_NO_MEM;
     }
 
-    if( mounted )
-    {
-        return media_lost ? ESP_ERR_INVALID_STATE : ESP_OK;
-    }
-
     const esp_err_t bus_result = board_spi_init();
     if( ESP_OK != bus_result )
     {
@@ -118,19 +113,26 @@ esp_err_t storage_init( void )
     {
         return ESP_ERR_TIMEOUT;
     }
+    if( mounted )
+    {
+        const esp_err_t existing = media_lost ? ESP_ERR_INVALID_STATE : ESP_OK;
+        storage_io_release();
+        return existing;
+    }
     const esp_err_t result =
         esp_vfs_fat_sdspi_mount( RFSCOUT_STORAGE_MOUNT_POINT, &host, &slot, &mount_config, &card );
-    storage_io_release();
     if( ESP_OK != result )
     {
         card = NULL;
         media_lost = false;
+        storage_io_release();
         ESP_LOGW( TAG, "SD card unavailable: %s", esp_err_to_name( result ) );
         return result;
     }
 
     mounted = true;
     media_lost = false;
+    storage_io_release();
     ESP_LOGI( TAG,
               "SD card mounted: %llu MiB",
               (unsigned long long)( ( (uint64_t)card->csd.capacity * card->csd.sector_size ) /
@@ -140,27 +142,20 @@ esp_err_t storage_init( void )
 
 esp_err_t storage_recover_lost_media( void )
 {
+    /* The caller owns storage arbitration and has invalidated the media slots. */
     if( !mounted || !media_lost )
     {
         return ESP_ERR_INVALID_STATE;
     }
-    if( !storage_io_acquire( RFSCOUT_STORAGE_WAIT_FOREVER ) )
-    {
-        return ESP_ERR_TIMEOUT;
-    }
     const esp_err_t result = esp_vfs_fat_sdcard_unmount( RFSCOUT_STORAGE_MOUNT_POINT, card );
-    if( ESP_OK == result )
-    {
-        card = NULL;
-        mounted = false;
-        media_lost = false;
-    }
-    storage_io_release();
     if( ESP_OK != result )
     {
         ESP_LOGW( TAG, "SD unmount after media loss failed: %s", esp_err_to_name( result ) );
         return result;
     }
+    card = NULL;
+    mounted = false;
+    media_lost = false;
     return storage_init();
 }
 
