@@ -32,4 +32,5 @@ void surveillance_history_sample( void );
 void surveillance_history_process_expired( void );
 void surveillance_history_flush( void );
 void surveillance_history_compact( void );
+bool surveillance_history_get( size_t a_index, surveillance_history_entry_t *a_entry );
 size_t surveillance_history_list( surveillance_history_entry_t *a_rows, size_t a_capacity );
