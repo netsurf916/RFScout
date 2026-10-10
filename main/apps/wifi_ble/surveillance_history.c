@@ -68,7 +68,7 @@ static void replay_line( const char *a_line )
     unsigned type, classification, address[ 6 ];
     unsigned long seen;
     double min_lat, max_lat, min_lon, max_lon;
-    if( 11 != sscanf( a_line,
+    if( 13 != sscanf( a_line,
                      "{\"type\":%u,\"mac\":\"%2x%2x%2x%2x%2x%2x\",\"class\":%u,"
                      "\"min_lat\":%lf,\"max_lat\":%lf,\"min_lon\":%lf,\"max_lon\":%lf,"
                      "\"seen\":%lu}",
@@ -112,6 +112,38 @@ void surveillance_history_open( void )
     entries = NULL;
     entry_count = 0U;
     entry_capacity = 0U;
+    rfscout_media_collection_t collection;
+    if( ESP_OK != media_app_collection( "locations", &collection ) ) return;
+    rfscout_media_file_t file = { 0 };
+    if( ESP_OK != media_open( &collection, HISTORY_JOURNAL,
+                              RFSCOUT_MEDIA_OPEN_READ, &file ) ) return;
+    char line[ 256 ];
+    size_t used = 0U;
+    bool overflow = false;
+    char byte;
+    size_t read = 0U;
+    while( ESP_OK == media_read( &file, &byte, 1U, &read ) && 1U == read )
+    {
+        if( '\\n' == byte )
+        {
+            if( !overflow && used > 0U )
+            {
+                line[ used ] = '\\0';
+                replay_line( line );
+            }
+            used = 0U;
+            overflow = false;
+        }
+        else if( used + 1U < sizeof( line ) && !overflow )
+        {
+            line[ used++ ] = byte;
+        }
+        else
+        {
+            overflow = true;
+        }
+    }
+    (void)media_close( &file );
 }
 
 void surveillance_history_flush( void )
