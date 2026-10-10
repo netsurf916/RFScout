@@ -21,7 +21,7 @@ The view displays compact severity/source markers and current semantic event tex
 Implemented event history includes platform/application lifecycle and diagnostic events such as:
 
 - external-power connection/disconnection;
-- SD mount and unavailable state;
+- initial SD mount/failure, runtime SD connection loss, and subsequent successful recovery;
 - display/input hardware discovery;
 - internal-storage mount/recovery failures;
 - configuration/default-recovery diagnostics; and
@@ -37,4 +37,4 @@ Protective power presentation has higher priority than ordinary system-event pre
 
 ## Current limitations
 
-Runtime SD removal is detected when a storage health probe observes media loss. The old volume remains unavailable until a media-store probe invalidates old handles and attempts recovery; later insertion/remount is supported. Event payload richness and any future per-event presentation controls remain roadmap work.
+Runtime SD removal is detected when a storage health probe or filesystem I/O operation reports media loss. A loss is reported once, not on every failed write or cooldown rejection; a subsequent successful mount produces a recovery event. A storage request after the shared three-second cooldown invalidates old file handles and attempts a remount. These state transitions are staged inside the storage service and dispatched from the main loop outside SPI/storage arbitration. No background card probe is performed: reinsertion without another SD request cannot produce a recovery event until the next request. Event payload richness and any future per-event presentation controls remain roadmap work.
