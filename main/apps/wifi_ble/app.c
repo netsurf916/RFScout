@@ -25,6 +25,7 @@
 #include <stddef.h>
 
 #define WIFI_RADIO_RETRY_INTERVAL_US 1000000LL
+#define WIFI_JOURNAL_FLUSH_INTERVAL_US 2000000LL
 
 #define WIFI_MENU_BACK 0U
 #define WIFI_MENU_APP_LOCK 1U
@@ -42,6 +43,7 @@ static bool surveillance_list_focused;
 static bool rendered_app_lock;
 static unsigned menu_item;
 static int64_t last_radio_retry_us;
+static int64_t last_journal_flush_us;
 static rfscout_app_notification_menu_t notification_menu;
 
 static void emit_event( rfscout_event_type_t a_type, int32_t a_value )
@@ -265,6 +267,7 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         surveillance_list_focused = false;
         surveillance_history_open();
         last_radio_retry_us = 0;
+        last_journal_flush_us = 0;
         app_notification_menu_init(
             &notification_menu, RFSCOUT_APP_WIFI_BT, render_menu_callback, NULL );
         return RFSCOUT_APP_RUNTIME_HANDLED;
@@ -283,7 +286,6 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         surveillance_history_flush();
         surveillance_list_focused = false;
         ui_set_surveillance_page( false );
-        ui_surveillance_release();
         app_notification_menu_reset( &notification_menu );
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
@@ -352,9 +354,11 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
     }
     radio_monitor_set_active_ap_channels( observation_store_wifi_ap_channel_mask() );
     radio_monitor_step();
-    surveillance_history_sample();
-    surveillance_history_process_expired();
-    surveillance_history_replay_step( ui_surveillance_page_active() );
+    if( a_event->now_us - last_journal_flush_us >= WIFI_JOURNAL_FLUSH_INTERVAL_US )
+    {
+        last_journal_flush_us = a_event->now_us;
+        surveillance_history_flush();
+    }
     if( !menu_active && !app_notification_menu_active( &notification_menu ) )
     {
         ui_poll();
