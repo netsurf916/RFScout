@@ -1,6 +1,7 @@
 # GPS diagnostics
 
-The GPS application is a read-only presentation of the shared GPS location service.
+The GPS application is a read-only presentation of receiver telemetry from the shared
+GPS location service. Its only state-changing action resets the service's trip odometer.
 It neither opens a UART nor acquires the shared GPS/nRF24 pins and does not write
 position history to SD. Its descriptor has no exclusive service dependencies.
 
