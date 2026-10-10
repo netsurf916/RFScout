@@ -16,6 +16,8 @@ static surveillance_history_entry_t *entries;
 static size_t entry_count;
 static size_t entry_capacity;
 static size_t journal_appends;
+static observation_history_identity_t *sample_buffer;
+static size_t sample_capacity;
 
 static bool ensure_history_capacity( size_t a_required )
 {
@@ -157,6 +159,10 @@ void surveillance_history_open( void )
     entry_count = 0U;
     entry_capacity = 0U;
     journal_appends = 0U;
+    if( NULL != sample_buffer )
+        (void)app_session_free( sample_buffer );
+    sample_buffer = NULL;
+    sample_capacity = 0U;
     rfscout_media_collection_t collection;
     if( ESP_OK != media_app_collection( "locations", &collection ) )
         return;
@@ -310,14 +316,20 @@ void surveillance_history_sample( void )
     const size_t total = observation_store_surveillance_devices( NULL, 0U );
     if( 0U == total )
         return;
-    observation_history_identity_t *active = app_session_resize( NULL, total, sizeof( *active ) );
-    if( NULL == active )
-        return;
-    const size_t copied = observation_store_surveillance_devices( active, total );
+    if( total > sample_capacity )
+    {
+        observation_history_identity_t *next =
+            app_session_resize( sample_buffer, total, sizeof( *sample_buffer ) );
+        if( NULL == next )
+            return;
+        sample_buffer = next;
+        sample_capacity = total;
+    }
+    const size_t copied = observation_store_surveillance_devices( sample_buffer, sample_capacity );
     const size_t count = copied < total ? copied : total;
     for( size_t i = 0U; i < count; ++i )
     {
-        const observation_history_identity_t *device = &active[ i ];
+        const observation_history_identity_t *device = &sample_buffer[ i ];
         surveillance_history_entry_t *entry = NULL;
         for( size_t j = 0U; j < entry_count; ++j )
         {
@@ -358,5 +370,4 @@ void surveillance_history_sample( void )
         memcpy( entry->vendor, device->vendor, sizeof( entry->vendor ) );
         entry->dirty = true;
     }
-    (void)app_session_free( active );
 }
