@@ -8,6 +8,7 @@
 #include "gps.h"
 
 #include "board.h"
+#include "device_config.h"
 #include "device_time.h"
 
 #include "driver/gpio.h"
@@ -36,6 +37,7 @@ static const int GPS_BAUD_RATES[] = {
 static const char *TAG = "gps";
 static bool initialized;
 static bool receiver_detected;
+static int64_t last_nmea_us;
 static bool initial_probe_complete;
 static int64_t initial_probe_started_us;
 static bool baud_locked;
@@ -302,6 +304,7 @@ static void lock_active_baud( void )
     }
     baud_locked = true;
     receiver_detected = true;
+    last_nmea_us = esp_timer_get_time();
     initial_probe_complete = true;
     ESP_LOGI( TAG, "GPS NMEA detected at %d baud", active_baud );
 }
@@ -325,6 +328,7 @@ static void parse_line( char *a_line )
     if( type_length >= 3U && 0 == strcmp( payload + type_length - 3U, "RMC" ) )
     {
         lock_active_baud();
+        last_nmea_us = esp_timer_get_time();
         snapshot.available = true;
         parse_rmc( comma + 1 );
     }
@@ -370,6 +374,9 @@ esp_err_t gps_init( void )
     location_updated_us = 0;
     time_updated_us = 0;
     baud_locked = false;
+    receiver_detected = false;
+    last_nmea_us = 0;
+    initial_probe_complete = false;
     active_baud = GPS_BAUD_PRIMARY;
     active_baud_index = 0U;
     baud_probe_started_us = 0;
@@ -419,7 +426,7 @@ esp_err_t gps_stop( void )
     {
         return ESP_OK;
     }
-    if( receiver_detected )
+    if( gps_detected() )
     {
         return ESP_ERR_INVALID_STATE;
     }
@@ -493,6 +500,18 @@ void gps_poll( void )
                        ( sizeof( GPS_BAUD_RATES ) / sizeof( GPS_BAUD_RATES[ 0 ] ) ) ) )
     {
         initial_probe_complete = true;
+    }
+    if( receiver_detected &&
+        ( now - last_nmea_us ) / 1000000LL >=
+            (int64_t)device_config_get()->gps_timeout_seconds )
+    {
+        receiver_detected = false;
+        baud_locked = false;
+        snapshot.available = false;
+        snapshot.location_valid = false;
+        snapshot.time_valid = false;
+        baud_probe_started_us = now;
+        ESP_LOGI( TAG, "GPS NMEA timeout; shared pins eligible for radio acquisition" );
     }
     probe_next_baud( now );
     if( snapshot.location_valid &&
