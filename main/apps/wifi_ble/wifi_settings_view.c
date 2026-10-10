@@ -73,11 +73,11 @@ void wifi_settings_view_render( unsigned a_selected,
                       ( a_threshold < RFSCOUT_EVIDENCE_STRENGTH_COUNT ) ? names[ a_threshold ]
                                                                         : "Possible" );
         }
-        else if( 6U == item )
+        else if( 5U == item )
         {
             snprintf( value, sizeof( value ), "%u s", (unsigned)a_wifi_timeout_seconds );
         }
-        else if( 5U == item )
+        else if( 6U == item )
         {
             snprintf( value, sizeof( value ), "%u s", (unsigned)a_ble_timeout_seconds );
         }
