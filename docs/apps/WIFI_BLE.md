@@ -221,8 +221,9 @@ Expiration simply removes the active identity; it does not write a summary to SD
 
 Each GPS-qualified surveillance packet is separately queued for the append-only
 `locations/surveillance.jsonl` journal, including full MAC, address type, classification,
-receiver latitude/longitude, trusted UTC when available, and observation time. The app
-periodically appends batches from the poll context rather than writing inside radio callbacks.
+receiver latitude/longitude, trusted UTC when available, and observation time. The canonical store emits a compact event to an app-owned sink after releasing its lock.
+The sink only enqueues records into a preallocated PSRAM buffer; queue growth and
+batched SD writes happen from the app poll, never inside radio callbacks.
 The journal is retained for offline analysis. It is not replayed to populate the live UI,
 and legacy bounding-box journal formats are not read or supported. A failed SD append is
 retried while the app session remains active; insufficient PSRAM can still prevent capture.
@@ -238,5 +239,5 @@ without a separate scroll/focus mode.
 ### Validation
 
 Verify per-packet journal lines, bounding-box expansion, source timeouts, GPS loss,
-SD removal/reinsertion, retry behavior, PSRAM headroom, rotary focus, and app exit.
+SD removal/reinsertion, retry behavior, PSRAM headroom, rotary view switching, and app exit.
 No history replay, proximity reload threshold, or timeout-triggered SD write exists.
