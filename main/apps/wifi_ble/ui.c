@@ -43,8 +43,6 @@
 static const char *TAG = "ui";
 static int64_t last_refresh_us;
 static bool surveillance_page;
-static bool surveillance_focused;
-static unsigned surveillance_selection;
 static void draw_static_rows( size_t a_unknown_count, size_t a_random_count )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
@@ -190,33 +188,12 @@ static void render_summary( void )
 void ui_set_surveillance_page( bool a_enabled )
 {
     surveillance_page = a_enabled;
-    surveillance_focused = false;
-    surveillance_selection = 0U;
-    last_refresh_us = 0;
-}
-
-void ui_surveillance_set_focused( bool a_focused )
-{
-    surveillance_focused = a_focused;
     last_refresh_us = 0;
 }
 
 bool ui_surveillance_page_active( void )
 {
     return surveillance_page;
-}
-
-void ui_surveillance_navigate( int a_direction )
-{
-    if( a_direction > 0 )
-    {
-        ++surveillance_selection;
-    }
-    else if( surveillance_selection > 0U )
-    {
-        --surveillance_selection;
-    }
-    last_refresh_us = 0;
 }
 
 static double live_receiver_distance( const observation_history_identity_t *a_device,
@@ -246,8 +223,6 @@ static void render_surveillance_page( void )
     const bool has_fix =
         gps_snapshot_get( &gps ) && gps.location_valid && gps.location_age_ms <= 5000U;
     const size_t count = observation_store_surveillance_devices( NULL, 0U );
-    if( count > 0U && surveillance_selection >= count )
-        surveillance_selection = (unsigned)( count - 1U );
 
     display_clear( theme->background );
     ui_chrome_draw( "SURVEILLANCE", theme->secondary );
@@ -256,11 +231,10 @@ static void render_surveillance_page( void )
               sizeof( line ),
               "ACTIVE %u  %s",
               (unsigned)count,
-              surveillance_focused ? "SCROLL" : ( has_fix ? "GPS FIX" : "NO FIX" ) );
+              has_fix ? "GPS FIX" : "NO FIX" );
     display_draw_text( UI_LAYOUT_LEFT_X, 25, line, theme->info, 1U );
 
-    const size_t start = surveillance_selection >= 6U ? surveillance_selection - 5U : 0U;
-    for( size_t row = start; row < count && row < start + 6U; ++row )
+    for( size_t row = 0U; row < count && row < 6U; ++row )
     {
         observation_history_identity_t device = { 0 };
         if( !observation_store_surveillance_get( row, &device ) )
@@ -278,16 +252,16 @@ static void render_surveillance_page( void )
         snprintf( line,
                   sizeof( line ),
                   "%c %02X%02X%02X %-13.13s %s",
-                  row == surveillance_selection ? '>' : ' ',
+                  ' ',
                   device.address[ 3 ],
                   device.address[ 4 ],
                   device.address[ 5 ],
                   device.vendor[ 0 ] ? device.vendor : "Unknown",
                   distance );
         display_draw_text( UI_LAYOUT_LEFT_X,
-                           43 + (int)( row - start ) * 17,
+                           43 + (int)row * 17,
                            line,
-                           row == surveillance_selection ? theme->selected : theme->normal,
+                           theme->normal,
                            1U );
     }
     (void)display_present();
