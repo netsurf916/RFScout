@@ -226,8 +226,15 @@ The sink only enqueues records into a preallocated PSRAM buffer; queue growth an
 batched SD writes happen from the app poll, never inside radio callbacks.
 The journal is retained for offline analysis. It is not replayed to populate the live UI,
 and legacy bounding-box journal formats are not read or supported. A failed SD append is
-retried while the app session remains active; insufficient PSRAM can still prevent capture.
-App exit attempts a final flush.
+retried while the app session remains active if rollback succeeds. If a partial write cannot
+be safely rolled back, that uncertain batch is discarded; the next write request recovers
+the card after the shared 3-second cooldown and uses a unique
+`locations/surveillance-XXXXXXXX.jsonl` file, preserving the previous file for offline
+inspection. That rotation state survives WiFi/BLE app reentry during the same boot.
+Insufficient PSRAM or unavailable media can still prevent capture. App exit attempts a final flush.
+SD lost/recovered transitions enter System Events without periodic card polling; when there
+are no outstanding writes or other SD requests, mere insertion is not detected until the
+next storage operation.
 
 The surveillance list reads active identities directly from the canonical store and displays
 the distance from the current GPS receiver position to each identity's observed receiver

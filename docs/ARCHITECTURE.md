@@ -416,9 +416,13 @@ Each qualified packet with a fresh GPS fix is queued as an individual append-onl
 record in the app-owned `locations/surveillance.jsonl` file. The record contains full MAC,
 address type, classification, receiver latitude/longitude, valid UTC when available, and
 last-seen milliseconds. The app poll batches SD writes outside the observation-store lock;
-a failed batch remains queued for retry during the current app session. The app attempts
-a final flush at reset/exit. Insufficient memory or unavailable media can still result in
-loss; no cross-session recovery is promised.
+a failed batch remains queued for retry during the current app session when rollback succeeds.
+If rollback fails, the uncertain batch is dropped; a later media request uses a new,
+create-only `surveillance-XXXXXXXX.jsonl` journal segment instead of appending after a
+potentially incomplete line. App exit attempts a final flush. Insufficient memory or
+unavailable media can still result in loss; no cross-session queue recovery is promised.
+The storage service records SD mount, loss, and recovery transitions in System Events
+without checking the card when no client requests storage.
 
 The live surveillance view reads the canonical active identities directly, without replaying
 the SD journal or maintaining a second live list. Distance is computed to the nearest point
