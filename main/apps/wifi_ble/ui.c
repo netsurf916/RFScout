@@ -219,7 +219,7 @@ static bool history_identity_live( const surveillance_history_entry_t *a_entry,
 {
     for( size_t i = 0U; i < a_count; ++i )
         if( a_entry->address_type == a_live_surveillance_rows[ i ].address_type &&
-            0 == memcmp( a_entry->address, a_live[ i ].address, 6U ) )
+            0 == memcmp( a_entry->address, a_live_surveillance_rows[ i ].address, 6U ) )
             return true;
     return false;
 }
@@ -263,9 +263,9 @@ static void render_surveillance_page( void )
             continue;
         snprintf( line, sizeof( line ), "%c * %02X%02X%02X %-13.13s LIVE",
                   row == surveillance_selection ? '>' : ' ',
-                  live[ i ].address[ 3 ], live[ i ].address[ 4 ],
-                  live[ i ].address[ 5 ],
-                  live[ i ].vendor[ 0 ] ? live[ i ].vendor : "Unknown" );
+                  live_surveillance_rows[ i ].address[ 3 ], live_surveillance_rows[ i ].address[ 4 ],
+                  live_surveillance_rows[ i ].address[ 5 ],
+                  live_surveillance_rows[ i ].vendor[ 0 ] ? live_surveillance_rows[ i ].vendor : "Unknown" );
         display_draw_text( UI_LAYOUT_LEFT_X, 43 + (int)( row - start ) * 17,
                            line, row == surveillance_selection ? theme->selected : theme->normal,
                            1U );
@@ -274,7 +274,7 @@ static void render_surveillance_page( void )
     {
         surveillance_history_entry_t entry = { 0 };
         if( !surveillance_history_get( i, &entry ) ||
-            history_identity_live( &entry, live, live_count ) )
+            history_identity_live( &entry, live_surveillance_rows, live_count ) )
             continue;
         if( row >= start && row < start + 6U )
         {
