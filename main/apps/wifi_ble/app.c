@@ -312,6 +312,7 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
             {
                 /* Center enters scrolling mode; pressing again returns to view switching. */
                 surveillance_list_focused = !surveillance_list_focused;
+                ui_surveillance_set_focused( surveillance_list_focused );
                 return RFSCOUT_APP_RUNTIME_HANDLED;
             }
             menu_active = true;
