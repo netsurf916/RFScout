@@ -91,11 +91,19 @@ typedef struct
     char vendor[ RFSCOUT_VENDOR_NAME_MAX ];
     surveillance_class_t surveillance;
     uint32_t last_seen_ms;
+    bool location_valid;
+    double min_latitude;
+    double max_latitude;
+    double min_longitude;
+    double max_longitude;
 } observation_history_identity_t;
 
 /** @brief Copy only fields needed for surveillance history. */
 size_t observation_store_surveillance_devices( observation_history_identity_t *a_devices,
                                                size_t a_capacity );
+
+/** @brief Read a single live surveillance device by ordinal under the store lock. */
+bool observation_store_surveillance_get( size_t a_index, observation_history_identity_t *a_device );
 
 /** @brief Drain expired identities without retaining full device records. */
 size_t observation_store_take_expired( observation_history_identity_t *a_devices,
