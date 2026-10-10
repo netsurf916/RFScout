@@ -38,6 +38,7 @@
 static const char *TAG = "wifi_ble_app";
 static bool menu_active;
 static bool menu_editing;
+static bool surveillance_list_focused;
 static bool rendered_app_lock;
 static unsigned menu_item;
 static int64_t last_radio_retry_us;
@@ -261,6 +262,7 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         menu_item = WIFI_MENU_BACK;
         rendered_app_lock = app_manager_locked();
         ui_set_surveillance_page( false );
+        surveillance_list_focused = false;
         surveillance_history_open();
         last_radio_retry_us = 0;
         app_notification_menu_init(
@@ -279,6 +281,7 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         menu_editing = false;
         menu_item = WIFI_MENU_BACK;
         surveillance_history_flush();
+        surveillance_list_focused = false;
         ui_set_surveillance_page( false );
         app_notification_menu_reset( &notification_menu );
         return RFSCOUT_APP_RUNTIME_HANDLED;
@@ -297,15 +300,20 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         }
         if( RFSCOUT_INPUT_NAVIGATION == a_event->input.type && app_manager_locked() )
         {
-            /* First movement opens the combined list; subsequent movement scrolls it. */
-            if( !ui_surveillance_page_active() )
-                ui_set_surveillance_page( true );
-            else
+            if( surveillance_list_focused )
                 ui_surveillance_navigate( a_event->input.value > 0 ? 1 : -1 );
+            else
+                ui_set_surveillance_page( !ui_surveillance_page_active() );
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
         if( RFSCOUT_INPUT_SELECT == a_event->input.type )
         {
+            if( ui_surveillance_page_active() )
+            {
+                /* Center enters scrolling mode; pressing again returns to view switching. */
+                surveillance_list_focused = !surveillance_list_focused;
+                return RFSCOUT_APP_RUNTIME_HANDLED;
+            }
             menu_active = true;
             menu_editing = false;
             menu_item = WIFI_MENU_BACK;
