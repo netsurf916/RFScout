@@ -9,7 +9,6 @@
 #include "app_session.h"
 #include "device_config.h"
 #include "gps.h"
-#include "surveillance_history.h"
 #include "surveillance.h"
 
 #include "esp_timer.h"
@@ -31,6 +30,7 @@ static size_t summary_vendor_count;
 static uint16_t wifi_ap_channel_counts[ RFSCOUT_WIFI_CHANNEL_MAX ];
 static uint32_t store_generation;
 static SemaphoreHandle_t store_lock;
+static observation_location_sink_t location_sink;
 static observation_store_event_callback_t event_callback;
 static void *event_context;
 
@@ -682,36 +682,49 @@ static void merge_observation( rf_device_t *a_device, const rf_device_t *a_obser
     a_device->has_remote_id = a_observation->has_remote_id;
 }
 
-static void record_receiver_location( rf_device_t *a_device )
+void observation_store_set_location_sink( observation_location_sink_t a_sink )
 {
-    if( SURVEILLANCE_NONE == a_device->surveillance )
+    if( NULL == store_lock )
         return;
-    rfscout_gps_snapshot_t gps = { 0 };
-    if( !gps_snapshot_get( &gps ) || !gps.location_valid || gps.location_age_ms > 5000U )
-        return;
+    xSemaphoreTake( store_lock, portMAX_DELAY );
+    location_sink = a_sink;
+    xSemaphoreGive( store_lock );
+}
+
+static bool record_receiver_location( rf_device_t *a_device,
+                                      const rfscout_gps_snapshot_t *a_gps,
+                                      observation_location_event_t *a_event )
+{
+    if( SURVEILLANCE_NONE == a_device->surveillance || !a_gps->location_valid ||
+        a_gps->location_age_ms > 5000U )
+        return false;
     if( !a_device->location_valid )
     {
-        a_device->min_latitude = gps.latitude_deg;
-        a_device->max_latitude = gps.latitude_deg;
-        a_device->min_longitude = gps.longitude_deg;
-        a_device->max_longitude = gps.longitude_deg;
+        a_device->min_latitude = a_gps->latitude_deg;
+        a_device->max_latitude = a_gps->latitude_deg;
+        a_device->min_longitude = a_gps->longitude_deg;
+        a_device->max_longitude = a_gps->longitude_deg;
         a_device->location_valid = true;
     }
     else
     {
-        if( gps.latitude_deg < a_device->min_latitude )
-            a_device->min_latitude = gps.latitude_deg;
-        if( gps.latitude_deg > a_device->max_latitude )
-            a_device->max_latitude = gps.latitude_deg;
-        if( gps.longitude_deg < a_device->min_longitude )
-            a_device->min_longitude = gps.longitude_deg;
-        if( gps.longitude_deg > a_device->max_longitude )
-            a_device->max_longitude = gps.longitude_deg;
+        if( a_gps->latitude_deg < a_device->min_latitude )
+            a_device->min_latitude = a_gps->latitude_deg;
+        if( a_gps->latitude_deg > a_device->max_latitude )
+            a_device->max_latitude = a_gps->latitude_deg;
+        if( a_gps->longitude_deg < a_device->min_longitude )
+            a_device->min_longitude = a_gps->longitude_deg;
+        if( a_gps->longitude_deg > a_device->max_longitude )
+            a_device->max_longitude = a_gps->longitude_deg;
     }
-    surveillance_history_record( a_device,
-                                 gps.latitude_deg,
-                                 gps.longitude_deg,
-                                 gps.time_valid ? (int64_t)gps.utc_epoch : 0 );
+    memcpy( a_event->address, a_device->address, sizeof( a_event->address ) );
+    a_event->address_type = a_device->address_type;
+    a_event->classification = a_device->surveillance;
+    a_event->latitude = a_gps->latitude_deg;
+    a_event->longitude = a_gps->longitude_deg;
+    a_event->utc_epoch = a_gps->time_valid ? (int64_t)a_gps->utc_epoch : 0;
+    a_event->seen_ms = a_device->last_seen_ms;
+    return true;
 }
 
 bool observation_store_observe( rf_device_t *a_observation,
@@ -728,6 +741,12 @@ bool observation_store_observe( rf_device_t *a_observation,
         *a_surveillance_new = false;
     }
 
+    rfscout_gps_snapshot_t gps = { 0 };
+    (void)gps_snapshot_get( &gps );
+    observation_location_event_t location_event = { 0 };
+    bool location_ready = false;
+    observation_location_sink_t sink = NULL;
+
     xSemaphoreTake( store_lock, portMAX_DELAY );
     synchronize_session_store();
 
@@ -743,7 +762,7 @@ bool observation_store_observe( rf_device_t *a_observation,
         merge_observation( device, a_observation );
         update_wifi_ap_projection( was_wifi_ap, old_wifi_channel, device );
         copy_case_result( a_observation, device );
-        record_receiver_location( device );
+        location_ready = record_receiver_location( device, &gps, &location_event );
 
         const bool became_surveillance =
             !was_surveillance && ( SURVEILLANCE_NONE != device->surveillance ) &&
@@ -761,7 +780,10 @@ bool observation_store_observe( rf_device_t *a_observation,
         {
             *a_is_new = false;
         }
+        sink = location_sink;
         xSemaphoreGive( store_lock );
+        if( location_ready && NULL != sink )
+            sink( &location_event );
         return true;
     }
 
@@ -787,7 +809,7 @@ bool observation_store_observe( rf_device_t *a_observation,
         surveillance_case_evaluate( device );
     }
     copy_case_result( a_observation, device );
-    record_receiver_location( device );
+    location_ready = record_receiver_location( device, &gps, &location_event );
     identity_index_insert( slot );
     emit_event( OBSERVATION_STORE_EVENT_ADDED, device );
 
@@ -800,7 +822,10 @@ bool observation_store_observe( rf_device_t *a_observation,
         *a_surveillance_new = ( SURVEILLANCE_NONE != device->surveillance ) &&
                               ( SURVEILLANCE_SIGNATURE_NONE != device->surveillance_signature );
     }
+    sink = location_sink;
     xSemaphoreGive( store_lock );
+    if( location_ready && NULL != sink )
+        sink( &location_event );
     return true;
 }
 
