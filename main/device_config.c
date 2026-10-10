@@ -236,6 +236,7 @@ static void set_defaults( void )
     config.startup_app = RFSCOUT_APP_DEVICE;
     config.logging_enabled = true;
     config.clock_24h = false;
+    config.gps_timeout_seconds = RFSCOUT_GPS_TIMEOUT_DEFAULT_SECONDS;
     config.theme = RFSCOUT_THEME_INDOOR;
     config.audio_policy = RFSCOUT_AUDIO_POLICY_NORMAL;
     config.audio_interaction_gain_percent = CONFIG_AUDIO_INTERACTION_GAIN_DEFAULT_PERCENT;
@@ -342,6 +343,17 @@ static void load_display( const cJSON *a_root )
         {
             config.theme = parsed;
         }
+    }
+}
+
+static void load_gps( const cJSON *a_root )
+{
+    const cJSON *gps = cJSON_GetObjectItemCaseSensitive( a_root, "gps" );
+    const cJSON *timeout = cJSON_GetObjectItemCaseSensitive( gps, "inactivity_seconds" );
+    if( cJSON_IsNumber( timeout ) && timeout->valueint >= (int)RFSCOUT_GPS_TIMEOUT_MIN_SECONDS &&
+        timeout->valueint <= (int)RFSCOUT_GPS_TIMEOUT_MAX_SECONDS )
+    {
+        config.gps_timeout_seconds = (uint8_t)timeout->valueint;
     }
 }
 
@@ -738,6 +750,7 @@ static esp_err_t load_system_record( void )
     }
 
     load_display( root );
+    load_gps( root );
     load_audio_policy( root );
     load_power( root );
     load_input( root );
@@ -925,6 +938,9 @@ static cJSON *build_system_record( void )
     cJSON_AddNumberToObject( display, "off_timeout_seconds", config.display_off_timeout_seconds );
     cJSON_AddBoolToObject( display, "clock_24h", config.clock_24h );
     cJSON_AddStringToObject( display, "theme", ui_theme_config_name( config.theme ) );
+
+    cJSON *gps = cJSON_AddObjectToObject( root, "gps" );
+    cJSON_AddNumberToObject( gps, "inactivity_seconds", config.gps_timeout_seconds );
 
     cJSON *audio = cJSON_AddObjectToObject( root, "audio" );
     cJSON_AddStringToObject( audio, "policy", audio_policy_config_name( config.audio_policy ) );
@@ -1170,6 +1186,20 @@ esp_err_t device_config_set_ble_device_feedback_enabled( bool a_enabled )
     if( config.ble_device_feedback_enabled != a_enabled )
     {
         config.ble_device_feedback_enabled = a_enabled;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+esp_err_t device_config_set_gps_timeout_seconds( uint8_t a_seconds )
+{
+    if( a_seconds < RFSCOUT_GPS_TIMEOUT_MIN_SECONDS || a_seconds > RFSCOUT_GPS_TIMEOUT_MAX_SECONDS )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( config.gps_timeout_seconds != a_seconds )
+    {
+        config.gps_timeout_seconds = a_seconds;
         config_dirty = true;
     }
     return ESP_OK;
