@@ -63,6 +63,9 @@ static size_t line_length;
 static rfscout_gps_snapshot_t snapshot;
 static int64_t location_updated_us;
 static int64_t time_updated_us;
+static int64_t altitude_updated_us;
+static int64_t speed_updated_us;
+static int64_t satellites_updated_us;
 static portMUX_TYPE snapshot_mux = portMUX_INITIALIZER_UNLOCKED;
 static rfscout_gps_snapshot_t published_snapshot;
 static int64_t published_location_us;
@@ -357,6 +360,8 @@ static void parse_rmc( char *a_payload )
     const size_t count = split_fields( a_payload, fields, 16U );
     if( count < 9U || 'A' != fields[ 1 ][ 0 ] )
     {
+        snapshot.speed_valid = false;
+        trip_anchor_valid = false;
         return;
     }
 
@@ -374,9 +379,11 @@ static void parse_rmc( char *a_payload )
 
     double speed_knots;
     const bool valid_speed = parse_double_field( fields[ 6 ], &speed_knots ) && speed_knots >= 0.0;
+    snapshot.speed_valid = valid_speed;
     if( valid_speed )
     {
         snapshot.speed_mps = (float)( speed_knots * 0.514444 );
+        speed_updated_us = esp_timer_get_time();
     }
     if( valid_position && valid_speed )
     {
@@ -404,6 +411,8 @@ static void parse_gga( char *a_payload )
     long fix_quality;
     if( count < 9U || !parse_int_field( fields[ 5 ], &fix_quality ) || fix_quality <= 0 )
     {
+        snapshot.altitude_valid = false;
+        snapshot.satellites_valid = false;
         return;
     }
 
@@ -419,16 +428,20 @@ static void parse_gga( char *a_payload )
     }
 
     long satellites;
-    if( parse_int_field( fields[ 6 ], &satellites ) )
+    snapshot.satellites_valid = parse_int_field( fields[ 6 ], &satellites );
+    if( snapshot.satellites_valid )
     {
         snapshot.satellites =
             (uint8_t)( satellites < 0 ? 0 : ( satellites > 255 ? 255 : satellites ) );
+        satellites_updated_us = esp_timer_get_time();
     }
 
     double altitude;
-    if( parse_double_field( fields[ 8 ], &altitude ) )
+    snapshot.altitude_valid = parse_double_field( fields[ 8 ], &altitude );
+    if( snapshot.altitude_valid )
     {
         snapshot.altitude_m = (float)altitude;
+        altitude_updated_us = esp_timer_get_time();
     }
 }
 
@@ -512,6 +525,9 @@ esp_err_t gps_init( void )
     line_length = 0U;
     location_updated_us = 0;
     time_updated_us = 0;
+    altitude_updated_us = 0;
+    speed_updated_us = 0;
+    satellites_updated_us = 0;
     baud_locked = false;
     receiver_detected = false;
     last_nmea_us = 0;
@@ -652,6 +668,9 @@ void gps_poll( void )
         snapshot.available = false;
         snapshot.location_valid = false;
         snapshot.time_valid = false;
+        snapshot.altitude_valid = false;
+        snapshot.speed_valid = false;
+        snapshot.satellites_valid = false;
         trip_anchor_valid = false;
         baud_probe_started_us = now;
         ESP_LOGI( TAG, "GPS NMEA timeout; shared pins eligible for radio acquisition" );
@@ -666,6 +685,23 @@ void gps_poll( void )
     {
         snapshot.time_valid = false;
     }
+    if( snapshot.altitude_valid &&
+        ( now - altitude_updated_us ) / 1000LL > (int64_t)GPS_FIX_STALE_MS )
+    {
+        snapshot.altitude_valid = false;
+    }
+    if( snapshot.speed_valid && ( now - speed_updated_us ) / 1000LL > (int64_t)GPS_FIX_STALE_MS )
+    {
+        snapshot.speed_valid = false;
+    }
+    if( snapshot.satellites_valid &&
+        ( now - satellites_updated_us ) / 1000LL > (int64_t)GPS_FIX_STALE_MS )
+    {
+        snapshot.satellites_valid = false;
+    }
+    /* Checkpoint any eligible distance even after movement stops. No storage I/O
+       occurs until both the distance and interval thresholds are reached. */
+    trip_checkpoint( now );
     publish_snapshot();
 }
 
