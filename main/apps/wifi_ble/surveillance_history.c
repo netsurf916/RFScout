@@ -434,7 +434,7 @@ void surveillance_history_sample( void )
     if( !gps_snapshot_get( &gps ) || !gps.location_valid || gps.location_age_ms > 5000U )
         return;
     const size_t total = observation_store_surveillance_devices( NULL, 0U );
-    if( 0U == total )
+    if( total == 0U )
         return;
     if( total > sample_capacity )
     {
@@ -445,49 +445,43 @@ void surveillance_history_sample( void )
         sample_buffer = next;
         sample_capacity = total;
     }
-    const size_t copied = observation_store_surveillance_devices( sample_buffer, sample_capacity );
-    const size_t count = copied < total ? copied : total;
-    for( size_t i = 0U; i < count; ++i )
+    const size_t count = observation_store_surveillance_devices( sample_buffer, sample_capacity );
+    for( size_t i = 0U; i < count && i < sample_capacity; ++i )
     {
         const observation_history_identity_t *device = &sample_buffer[ i ];
-        surveillance_history_entry_t *entry = NULL;
-        for( size_t j = 0U; j < entry_count; ++j )
+        bool duplicate = false;
+        for( size_t j = pending_count; j > 0U; --j )
         {
-            if( entries[ j ].valid && entries[ j ].address_type == device->address_type &&
-                0 == memcmp( entries[ j ].address, device->address, 6U ) )
+            const history_point_t *point = &pending_points[ j - 1U ];
+            if( point->address_type == device->address_type &&
+                0 == memcmp( point->address, device->address, 6U ) )
             {
-                entry = &entries[ j ];
+                duplicate = point->seen_ms == device->last_seen_ms;
                 break;
             }
         }
-        if( NULL == entry )
-        {
-            if( !ensure_history_capacity( entry_count + 1U ) )
-                continue;
-            entry = &entries[ entry_count++ ];
-            memset( entry, 0, sizeof( *entry ) );
-            memcpy( entry->address, device->address, 6U );
-            entry->address_type = device->address_type;
-            entry->min_latitude = entry->max_latitude = gps.latitude_deg;
-            entry->min_longitude = entry->max_longitude = gps.longitude_deg;
-            entry->valid = true;
-        }
-        else if( entry->last_seen_ms == device->last_seen_ms )
+        if( duplicate )
             continue;
-        else
+        if( NULL == pending_points )
         {
-            if( gps.latitude_deg < entry->min_latitude )
-                entry->min_latitude = gps.latitude_deg;
-            if( gps.latitude_deg > entry->max_latitude )
-                entry->max_latitude = gps.latitude_deg;
-            if( gps.longitude_deg < entry->min_longitude )
-                entry->min_longitude = gps.longitude_deg;
-            if( gps.longitude_deg > entry->max_longitude )
-                entry->max_longitude = gps.longitude_deg;
+            pending_points = app_session_resize( NULL, HISTORY_PENDING_LIMIT,
+                                                  sizeof( *pending_points ) );
+            if( NULL == pending_points )
+                return;
         }
-        entry->last_seen_ms = device->last_seen_ms;
-        entry->classification = device->surveillance;
-        memcpy( entry->vendor, device->vendor, sizeof( entry->vendor ) );
-        entry->dirty = true;
+        if( pending_count == HISTORY_PENDING_LIMIT )
+        {
+            /* Never write on a polling interval: drop new samples on overflow. */
+            continue;
+        }
+        history_point_t *point = &pending_points[ pending_count++ ];
+        memset( point, 0, sizeof( *point ) );
+        memcpy( point->address, device->address, 6U );
+        point->address_type = device->address_type;
+        point->classification = device->surveillance;
+        point->latitude = gps.latitude_deg;
+        point->longitude = gps.longitude_deg;
+        point->utc_epoch = gps.time_valid ? (int64_t)gps.utc_epoch : 0;
+        point->seen_ms = device->last_seen_ms;
     }
 }
