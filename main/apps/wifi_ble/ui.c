@@ -8,6 +8,7 @@
 #include "ui.h"
 
 #include "display.h"
+#include "gps.h"
 #include "observation_store.h"
 #include "surveillance.h"
 #include "ui_chrome.h"
@@ -18,6 +19,7 @@
 #include "esp_timer.h"
 
 #include <stdio.h>
+#include <math.h>
 
 #define UI_MAX_KNOWN_BRANDS 8U
 #define UI_REFRESH_INTERVAL_US 100000LL
@@ -39,6 +41,8 @@
 
 static const char *TAG = "ui";
 static int64_t last_refresh_us;
+static bool surveillance_page;
+static unsigned surveillance_selection;
 
 static void draw_static_rows( size_t a_unknown_count, size_t a_random_count )
 {
@@ -182,6 +186,63 @@ static void render_summary( void )
     }
 }
 
+void ui_set_surveillance_page( bool a_enabled )
+{
+    surveillance_page = a_enabled;
+    surveillance_selection = 0U;
+    last_refresh_us = 0;
+}
+
+bool ui_surveillance_page_active( void )
+{
+    return surveillance_page;
+}
+
+void ui_surveillance_navigate( int a_direction )
+{
+    if( a_direction > 0 )
+    {
+        ++surveillance_selection;
+    }
+    else if( surveillance_selection > 0U )
+    {
+        --surveillance_selection;
+    }
+    last_refresh_us = 0;
+}
+
+static void render_surveillance_page( void )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    rf_device_t devices[ 6 ] = { 0 };
+    const size_t count = observation_store_surveillance_devices( devices, 6U );
+    rfscout_gps_snapshot_t gps = { 0 };
+    const bool has_fix = gps_snapshot_get( &gps ) && gps.location_valid;
+
+    display_clear( theme->background );
+    ui_chrome_draw( "SURVEILLANCE", theme->secondary );
+    char line[ 72 ];
+    snprintf( line, sizeof( line ), "ACTIVE %u  GPS %s", (unsigned)count,
+              has_fix ? "FIX" : "NO FIX" );
+    display_draw_text( UI_LAYOUT_LEFT_X, 25, line, theme->info, 1U );
+
+    if( count > 6U )
+    {
+        display_draw_text( UI_LAYOUT_LEFT_X, 150, "MORE DEVICES ACTIVE", theme->info, 1U );
+    }
+    for( size_t index = 0U; index < count && index < 6U; ++index )
+    {
+        const rf_device_t *device = &devices[ index ];
+        snprintf( line, sizeof( line ), "%c %02X:%02X:%02X  %.19s",
+                  index == surveillance_selection ? '>' : ' ',
+                  device->address[ 3 ], device->address[ 4 ], device->address[ 5 ],
+                  device->vendor );
+        display_draw_text( UI_LAYOUT_LEFT_X, 43 + (int)index * 17, line,
+                           index == surveillance_selection ? theme->selected : theme->normal, 1U );
+    }
+    (void)display_present();
+}
+
 void ui_poll( void )
 {
     const int64_t now_us = esp_timer_get_time();
@@ -190,5 +251,12 @@ void ui_poll( void )
         return;
     }
     last_refresh_us = now_us;
-    render_summary();
+    if( surveillance_page )
+    {
+        render_surveillance_page();
+    }
+    else
+    {
+        render_summary();
+    }
 }
