@@ -45,6 +45,7 @@ static const char *TAG = "ui";
 static int64_t last_refresh_us;
 static bool surveillance_page;
 static unsigned surveillance_selection;
+static observation_history_identity_t live_surveillance_rows[ 48 ];
 static void draw_static_rows( size_t a_unknown_count, size_t a_random_count )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
@@ -217,7 +218,7 @@ static bool history_identity_live( const surveillance_history_entry_t *a_entry,
                                    size_t a_count )
 {
     for( size_t i = 0U; i < a_count; ++i )
-        if( a_entry->address_type == a_live[ i ].address_type &&
+        if( a_entry->address_type == a_live_surveillance_rows[ i ].address_type &&
             0 == memcmp( a_entry->address, a_live[ i ].address, 6U ) )
             return true;
     return false;
@@ -231,8 +232,7 @@ static void render_surveillance_page( void )
         gps_snapshot_get( &gps ) && gps.location_valid && gps.location_age_ms <= 5000U;
 
     /* Live devices are independent of GPS and must not be hidden by history replay. */
-    observation_history_identity_t live[ 48 ] = { 0 };
-    const size_t live_total = observation_store_surveillance_devices( live, 48U );
+    const size_t live_total = observation_store_surveillance_devices( live_surveillance_rows, 48U );
     const size_t live_count = live_total < 48U ? live_total : 48U;
     const size_t history_count = surveillance_history_list( NULL, 0U );
     size_t unique_history = 0U;
@@ -240,7 +240,7 @@ static void render_surveillance_page( void )
     {
         surveillance_history_entry_t entry = { 0 };
         if( surveillance_history_get( i, &entry ) &&
-            !history_identity_live( &entry, live, live_count ) )
+            !history_identity_live( &entry, live_surveillance_rows, live_count ) )
             ++unique_history;
     }
     const size_t count = live_count + unique_history;
