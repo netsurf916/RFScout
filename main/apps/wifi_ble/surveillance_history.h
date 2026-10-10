@@ -25,10 +25,12 @@ typedef struct
     bool valid;
     bool dirty;
     bool completed;
+    double nearest_distance_m;
 } surveillance_history_entry_t;
 
 void surveillance_history_open( void );
 void surveillance_history_sample( void );
+void surveillance_history_replay_step( bool a_foreground );
 /** @brief Persist records for identities removed by timeout. */
 void surveillance_history_process_expired( void );
 void surveillance_history_flush( void );
