@@ -691,6 +691,29 @@ void observation_store_set_location_sink( observation_location_sink_t a_sink )
     xSemaphoreGive( store_lock );
 }
 
+static double eastward_degrees( double a_from, double a_to )
+{
+    double delta = a_to - a_from;
+    if( delta < 0.0 )
+        delta += 360.0;
+    return delta;
+}
+
+static void extend_longitude_bounds( rf_device_t *a_device, double a_longitude )
+{
+    const double west = a_device->min_longitude;
+    const double east = a_device->max_longitude;
+    const double width = eastward_degrees( west, east );
+    if( eastward_degrees( west, a_longitude ) <= width )
+        return;
+    const double extend_east = eastward_degrees( east, a_longitude );
+    const double extend_west = eastward_degrees( a_longitude, west );
+    if( extend_east <= extend_west )
+        a_device->max_longitude = a_longitude;
+    else
+        a_device->min_longitude = a_longitude;
+}
+
 static bool record_receiver_location( rf_device_t *a_device,
                                       const rfscout_gps_snapshot_t *a_gps,
                                       observation_location_event_t *a_event )
@@ -712,10 +735,7 @@ static bool record_receiver_location( rf_device_t *a_device,
             a_device->min_latitude = a_gps->latitude_deg;
         if( a_gps->latitude_deg > a_device->max_latitude )
             a_device->max_latitude = a_gps->latitude_deg;
-        if( a_gps->longitude_deg < a_device->min_longitude )
-            a_device->min_longitude = a_gps->longitude_deg;
-        if( a_gps->longitude_deg > a_device->max_longitude )
-            a_device->max_longitude = a_gps->longitude_deg;
+        extend_longitude_bounds( a_device, a_gps->longitude_deg );
     }
     memcpy( a_event->address, a_device->address, sizeof( a_event->address ) );
     a_event->address_type = a_device->address_type;
