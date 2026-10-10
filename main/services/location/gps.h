@@ -34,6 +34,12 @@ typedef struct
 
 /** @brief Initialize the runtime GPS provider when the active board advertises one. */
 esp_err_t gps_init( void );
+/** @brief Stop the GPS UART and release its pins for a mutually exclusive radio. */
+esp_err_t gps_stop( void );
+/** @brief True once checksum-valid RMC/GGA has identified a receiver this boot. */
+bool gps_detected( void );
+/** @brief True after the initial two full UART baud-rate detection cycles. */
+bool gps_probe_complete( void );
 /** @brief Drain and parse pending NMEA input; non-blocking. */
 void gps_poll( void );
 /** @brief Copy the latest detected-receiver state including explicit location/time validity. */
