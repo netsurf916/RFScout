@@ -20,6 +20,7 @@
 #include "esp_timer.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #define UI_MAX_KNOWN_BRANDS 8U
 #define UI_REFRESH_INTERVAL_US 100000LL
