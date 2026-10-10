@@ -616,12 +616,12 @@ These are ideas worth preserving, not committed scope or priority.
 - Keep speculative/vision material here unless a separate technical research document is genuinely needed for a specialized subject.
 - A merged planning-only PR does not mean its feature is implemented; status must distinguish design capture from production code.
 
-### Surveillance location journal and navigation
+### Surveillance receiver-location journal and live view
 
-- [ ] Persist consolidated snapshots of threshold-qualified surveillance identities to SD as JSONL via the WiFi/BLE-owned media collection; accumulate receiver latitude/longitude bounds only from fresh valid GPS fixes.
-- [ ] Flush once on ordinary timeout, manual reset, and app exit; bounded best-effort I/O without retry queues or extended transition blocking.
-- [ ] Add WiFi/BLE surveillance location page (type, brand, truncated MAC, GPS distance), using shared App Lock for rotary navigation, retaining collector lifecycle and evidence semantics.
-- [ ] Exercise storage-unavailable, stale/no-fix, source-specific aging, threshold changes, reset/exit, long-running scans, and display tests; confirm no radio callback performs filesystem operations.
-
-- [ ] Replay versioned surveillance JSONL snapshots into a consolidated (address type, MAC) index; merge geographic bounds across sessions, and append updated device snapshots on expiration/reset/exit; first-seen and session/observation counters remain future work.
-- [ ] Implement opportunistic bounded journal compaction to one snapshot per identity with safe temporary-file replacement, failure preservation, and truncated-tail recovery; never compact during app exit.
+- [x] Track receiver GPS latitude/longitude bounds on canonical active surveillance identities.
+- [x] Queue individual GPS-qualified surveillance packet observations for append-only JSONL SD writes.
+- [x] Batch journal writes in app poll; remove timeout-triggered persistence and historical replay.
+- [x] Render active surveillance devices directly from the canonical store with receiver-bound distances.
+- [x] Keep rotary view switching and center-click settings access.
+- [ ] Validate SD removal, interrupted writes, low-memory behavior, source-specific aging,
+      GPS freshness, classification threshold changes, and application exit on hardware.
