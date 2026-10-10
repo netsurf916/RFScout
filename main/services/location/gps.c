@@ -21,6 +21,9 @@
 #define GPS_UART UART_NUM_1
 #define GPS_BAUD_PRIMARY 38400
 #define GPS_BAUD_FALLBACK 9600
+#define GPS_BAUD_MAX 115200
+
+static const int GPS_BAUD_RATES[] = { GPS_BAUD_PRIMARY, GPS_BAUD_FALLBACK, 19200, 57600, GPS_BAUD_MAX };
 #define GPS_BAUD_PROBE_MS 1500U
 #define GPS_RX_BUFFER 1024
 #define GPS_LINE_MAX 128
@@ -31,6 +34,7 @@ static const char *TAG = "gps";
 static bool initialized;
 static bool baud_locked;
 static int active_baud;
+static size_t active_baud_index;
 static int64_t baud_probe_started_us;
 static char line[ GPS_LINE_MAX ];
 static size_t line_length;
@@ -331,8 +335,9 @@ static void probe_next_baud( int64_t a_now )
         return;
     }
 
-    const int next_baud =
-        ( GPS_BAUD_PRIMARY == active_baud ) ? GPS_BAUD_FALLBACK : GPS_BAUD_PRIMARY;
+    const size_t next_index = ( active_baud_index + 1U ) /
+                              ( sizeof( GPS_BAUD_RATES ) / sizeof( GPS_BAUD_RATES[ 0 ] ) );
+    const int next_baud = GPS_BAUD_RATES[ next_index ];
     if( ESP_OK != uart_set_baudrate( GPS_UART, next_baud ) )
     {
         baud_probe_started_us = a_now;
@@ -340,6 +345,7 @@ static void probe_next_baud( int64_t a_now )
     }
     (void)uart_flush_input( GPS_UART );
     line_length = 0U;
+    active_baud_index = next_index;
     active_baud = next_baud;
     baud_probe_started_us = a_now;
     ESP_LOGI( TAG, "probing GPS UART at %d baud", active_baud );
@@ -353,6 +359,7 @@ esp_err_t gps_init( void )
     time_updated_us = 0;
     baud_locked = false;
     active_baud = GPS_BAUD_PRIMARY;
+    active_baud_index = 0U;
     baud_probe_started_us = 0;
     initialized = false;
     if( !RFSCOUT_BOARD_HAS_GPS )
@@ -386,11 +393,10 @@ esp_err_t gps_init( void )
     baud_probe_started_us = esp_timer_get_time();
     initialized = true;
     ESP_LOGI( TAG,
-              "GPS provider started: UART1 RX=%d TX=%d probing baud=%d/%d",
+              "GPS provider started: UART1 RX=%d TX=%d probing baud up to %d",
               RFSCOUT_BOARD_GPS_RX_PIN,
               RFSCOUT_BOARD_GPS_TX_PIN,
-              GPS_BAUD_PRIMARY,
-              GPS_BAUD_FALLBACK );
+              GPS_BAUD_MAX );
     return ESP_OK;
 }
 
