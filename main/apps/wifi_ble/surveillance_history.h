@@ -4,17 +4,18 @@
     SPDX-License-Identifier: MIT
 */
 #pragma once
+#ifndef _RFSCOUT_SURVEILLANCE_HISTORY_H_
+#define _RFSCOUT_SURVEILLANCE_HISTORY_H_
 
-#include "rf_observation.h"
+#include "observation_store.h"
 
 /** @brief Reset pending journal state on app entry. */
 void surveillance_history_open( void );
 
 /** @brief Capture one GPS-qualified packet observation without SD I/O. */
-void surveillance_history_record( const rf_device_t *a_device,
-                                  double a_latitude,
-                                  double a_longitude,
-                                  int64_t a_utc_epoch );
+void surveillance_history_record( const observation_location_event_t *a_event );
 
 /** @brief Append pending packet observations from the app poll, never from radio callbacks. */
 void surveillance_history_flush( void );
+
+#endif // _RFSCOUT_SURVEILLANCE_HISTORY_H_
