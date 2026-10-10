@@ -102,7 +102,7 @@ bool media_store_available( void );
  */
 esp_err_t media_store_probe( void );
 
-/** @brief Return the current SD volume generation; increments after successful mount/recovery.
+/** @brief Return the current SD volume generation; increments after successful media-store probe mount/recovery.
  * @details Stateful clients can detect replacement media and rebuild file-local state. */
 uint32_t media_store_generation( void );
 
