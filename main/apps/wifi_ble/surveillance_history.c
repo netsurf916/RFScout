@@ -11,7 +11,6 @@
 
 #include <string.h>
 #include <stdio.h>
-#include <math.h>
 
 static surveillance_history_entry_t *entries;
 static size_t entry_count;
@@ -19,21 +18,9 @@ static size_t entry_capacity;
 static size_t journal_appends;
 static observation_history_identity_t *sample_buffer;
 static size_t sample_capacity;
-static rfscout_media_file_t replay_file;
-static bool replay_active;
-static bool replay_complete;
-static bool reference_valid;
-static double reference_lat;
-static double reference_lon;
-static char replay_buffer[ 256 ];
-static size_t replay_used;
-static bool replay_overflow;
-#define HISTORY_LIMIT 48U
 
 static bool ensure_history_capacity( size_t a_required )
 {
-    if( a_required > HISTORY_LIMIT )
-        return false;
     if( a_required <= entry_capacity )
         return true;
     if( entry_capacity > SIZE_MAX / 2U )
@@ -41,8 +28,6 @@ static bool ensure_history_capacity( size_t a_required )
     size_t capacity = entry_capacity ? entry_capacity * 2U : 32U;
     if( capacity < a_required )
         capacity = a_required;
-    if( capacity > HISTORY_LIMIT )
-        capacity = HISTORY_LIMIT;
     surveillance_history_entry_t *next =
         app_session_resize( entries, capacity, sizeof( *entries ) );
     if( NULL == next )
@@ -168,13 +153,6 @@ static void replay_line( const char *a_line )
 
 void surveillance_history_open( void )
 {
-    if( replay_active )
-        (void)media_close( &replay_file );
-    replay_active = false;
-    replay_complete = false;
-    reference_valid = false;
-    replay_used = 0U;
-    replay_overflow = false;
     if( NULL != entries )
         (void)app_session_free( entries );
     entries = NULL;
@@ -185,7 +163,39 @@ void surveillance_history_open( void )
         (void)app_session_free( sample_buffer );
     sample_buffer = NULL;
     sample_capacity = 0U;
-
+    rfscout_media_collection_t collection;
+    if( ESP_OK != media_app_collection( "locations", &collection ) )
+        return;
+    rfscout_media_file_t file = { 0 };
+    if( ESP_OK != media_open( &collection, HISTORY_JOURNAL, RFSCOUT_MEDIA_OPEN_READ, &file ) )
+        return;
+    char line[ 256 ];
+    size_t used = 0U;
+    bool overflow = false;
+    char byte;
+    size_t read = 0U;
+    while( ESP_OK == media_read( &file, &byte, 1U, &read ) && 1U == read )
+    {
+        if( '\n' == byte )
+        {
+            if( !overflow && used > 0U )
+            {
+                line[ used ] = '\0';
+                replay_line( line );
+            }
+            used = 0U;
+            overflow = false;
+        }
+        else if( used + 1U < sizeof( line ) && !overflow )
+        {
+            line[ used++ ] = byte;
+        }
+        else
+        {
+            overflow = true;
+        }
+    }
+    (void)media_close( &file );
 }
 
 static void flush_pending( bool a_include_active )
