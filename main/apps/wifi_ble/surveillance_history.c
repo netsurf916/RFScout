@@ -359,27 +359,23 @@ void surveillance_history_replay_step( bool a_foreground )
 
 static void flush_pending( bool a_include_active )
 {
-    size_t dirty = 0U;
-    for( size_t i = 0U; i < entry_count; ++i )
-        if( entries[ i ].valid && entries[ i ].dirty &&
-            ( a_include_active || entries[ i ].completed ) )
-            ++dirty;
-    if( 0U == dirty )
+    if( pending_count == 0U )
         return;
-
+    if( replay_active )
+        (void)media_close( &replay_file );
+    replay_active = false;
+    replay_complete = false;
+    replay_used = 0U;
     rfscout_media_collection_t collection;
-    esp_err_t result = media_app_collection( "locations", &collection );
     rfscout_media_file_t file = { 0 };
+    esp_err_t result = media_app_collection( "locations", &collection );
     if( ESP_OK == result )
         result = media_open( &collection, HISTORY_JOURNAL, RFSCOUT_MEDIA_OPEN_APPEND, &file );
     if( ESP_OK == result )
     {
-        for( size_t i = 0U; i < entry_count; ++i )
+        for( size_t i = 0U; i < pending_count; ++i )
         {
-            if( !entries[ i ].valid || !entries[ i ].dirty ||
-                ( !a_include_active && !entries[ i ].completed ) )
-                continue;
-            result = append_entry( &file, &entries[ i ] );
+            result = append_point( &file, &pending_points[ i ] );
             if( ESP_OK != result )
                 break;
         }
@@ -389,17 +385,10 @@ static void flush_pending( bool a_include_active )
         if( ESP_OK == result )
             result = close_result;
     }
-    /* One attempt per event; do not queue failed writes for retry. */
-    for( size_t i = 0U; i < entry_count; ++i )
-        if( a_include_active || entries[ i ].completed )
-        {
-            entries[ i ].dirty = false;
-            entries[ i ].completed = false;
-        }
-    if( ESP_OK == result )
-        journal_appends += dirty;
+    pending_count = 0U;
     if( ESP_OK != result )
         printf( "surveillance history flush failed: %ld\\n", (long)result );
+    (void)a_include_active;
 }
 
 void surveillance_history_flush( void )
@@ -412,31 +401,7 @@ void surveillance_history_flush( void )
 
 void surveillance_history_compact( void )
 {
-    /* Do not persist live, uncompleted observations during compaction. */
-    for( size_t i = 0U; i < entry_count; ++i )
-        if( entries[ i ].dirty )
-            return;
-    rfscout_media_collection_t collection;
-    if( ESP_OK != media_app_collection( "locations", &collection ) )
-        return;
-    rfscout_media_file_t file = { 0 };
-    if( ESP_OK != media_open( &collection, "surveillance.tmp", RFSCOUT_MEDIA_OPEN_REPLACE, &file ) )
-        return;
-    bool complete = true;
-    for( size_t i = 0U; i < entry_count; ++i )
-    {
-        if( entries[ i ].valid && ESP_OK != append_entry( &file, &entries[ i ] ) )
-        {
-            complete = false;
-            break;
-        }
-    }
-    if( complete )
-        complete = ESP_OK == media_sync( &file );
-    if( ESP_OK != media_close( &file ) )
-        complete = false;
-    if( complete && ESP_OK == media_rename( &collection, "surveillance.tmp", HISTORY_JOURNAL ) )
-        journal_appends = 0U;
+    /* Discrete records are authoritative; do not collapse them into bounding boxes. */
 }
 
 void surveillance_history_process_expired( void )
