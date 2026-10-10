@@ -4,9 +4,11 @@ nRF24 is RFScout's receive-only 2.4 GHz activity application. Shared SPI/service
 
 ## Availability and lifecycle
 
-The application uses the platform's common **hot-plug** probe policy. The same retry-safe identity probe runs during initial discovery and explicit availability checks during navigation; there is no background re-probe while the app is inactive. Probe and initialization are separate: a prior successful initialization is not treated as permanent proof of presence, and a failed probe can recover on a later check. The current T-Embed profile advertises the provider.
+The T-Embed profile advertises the nRF24 provider. Startup app discovery probes the radio before GPS initialization, caches a successful identity, writes `CONFIG=0x00` (power-down), detaches the SPI device, and releases the shared GPIO43/44 pins. Navigation retains the common hot-plug availability policy, but must not probe the radio while GPS owns the pins. A previously detected radio can be presented as present without reactivating it.
 
-Activation starts the session-managed scanner worker. The worker must quiesce before app memory can be reclaimed.
+GPS has priority on these shared pins. If checksum-valid GPS RMC/GGA is detected, nRF24 cannot power up for the remainder of the boot, regardless of satellite fix. Without GPS detection, activation is deferred until two full baud-probe cycles (15 seconds) have elapsed. Starting nRF24 then stops the GPS UART, claims the pins, and powers up the radio. Stopping the radio powers it down, detaches SPI, releases the pins, and resumes GPS detection. An nRF24 app that was opened before the detection window finishes retries activation after that window.
+
+Activation starts the session-managed scanner worker only when the GPS priority policy allows it. The worker must quiesce before app memory can be reclaimed. Power-down alone does not electrically disconnect the nRF24 CSN input; shared-pin operation requires validation on target hardware.
 
 ## RPD scanning
 
