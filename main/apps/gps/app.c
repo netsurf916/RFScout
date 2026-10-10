@@ -74,8 +74,8 @@ static rfscout_app_runtime_result_t gps_runtime( const rfscout_app_runtime_event
                     reset_failed = ESP_OK != result;
                     if( reset_failed )
                     {
-                        ESP_LOGW( TAG, "trip reset could not be saved: %s",
-                                  esp_err_to_name( result ) );
+                        ESP_LOGW(
+                            TAG, "trip reset could not be saved: %s", esp_err_to_name( result ) );
                     }
                 }
                 reset_prompt = false;

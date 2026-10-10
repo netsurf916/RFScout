@@ -72,7 +72,6 @@ void gps_view_render( bool a_reset_prompt, bool a_reset_yes, bool a_reset_failed
             display_draw_text( 8, 55, "POSITION UNAVAILABLE", theme->warning, 1U );
             display_draw_text( 8, 76, "WAITING FOR FRESH FIX", theme->info, 1U );
         }
-
     }
 
     snprintf( text, sizeof( text ), "TRIP: %.2f km", gps_trip_distance_m() / 1000.0 );

@@ -95,8 +95,7 @@ static void trip_load( void )
     trip_loaded = true;
     gps_trip_record_t stored = { 0 };
     size_t length = 0U;
-    if( ESP_OK == system_store_read(
-                      GPS_TRIP_STORE_KEY, &stored, sizeof( stored ), &length ) &&
+    if( ESP_OK == system_store_read( GPS_TRIP_STORE_KEY, &stored, sizeof( stored ), &length ) &&
         sizeof( stored ) == length && GPS_TRIP_STORE_VERSION == stored.version &&
         isfinite( stored.distance_m ) && stored.distance_m >= 0.0 )
     {
@@ -132,8 +131,7 @@ static void trip_observe( double a_latitude, double a_longitude, double a_speed_
         trip_anchor_valid = false;
         return;
     }
-    if( !trip_anchor_valid || now <= trip_anchor_us ||
-        now - trip_anchor_us > GPS_TRIP_MAX_GAP_US )
+    if( !trip_anchor_valid || now <= trip_anchor_us || now - trip_anchor_us > GPS_TRIP_MAX_GAP_US )
     {
         trip_anchor_valid = true;
         trip_anchor_latitude = a_latitude;
@@ -145,8 +143,7 @@ static void trip_observe( double a_latitude, double a_longitude, double a_speed_
     const double lat1 = trip_anchor_latitude * GPS_RADIANS_PER_DEGREE;
     const double lat2 = a_latitude * GPS_RADIANS_PER_DEGREE;
     const double half_lat = ( lat2 - lat1 ) / 2.0;
-    const double half_lon = ( a_longitude - trip_anchor_longitude ) *
-                            GPS_RADIANS_PER_DEGREE / 2.0;
+    const double half_lon = ( a_longitude - trip_anchor_longitude ) * GPS_RADIANS_PER_DEGREE / 2.0;
     const double haversine = sin( half_lat ) * sin( half_lat ) +
                              cos( lat1 ) * cos( lat2 ) * sin( half_lon ) * sin( half_lon );
     const double bounded = fmin( 1.0, fmax( 0.0, haversine ) );
@@ -365,9 +362,8 @@ static void parse_rmc( char *a_payload )
 
     double latitude;
     double longitude;
-    const bool valid_position =
-        nmea_coordinate( fields[ 2 ], fields[ 3 ][ 0 ], true, &latitude ) &&
-        nmea_coordinate( fields[ 4 ], fields[ 5 ][ 0 ], false, &longitude );
+    const bool valid_position = nmea_coordinate( fields[ 2 ], fields[ 3 ][ 0 ], true, &latitude ) &&
+                                nmea_coordinate( fields[ 4 ], fields[ 5 ][ 0 ], false, &longitude );
     if( valid_position )
     {
         snapshot.latitude_deg = latitude;
@@ -377,8 +373,7 @@ static void parse_rmc( char *a_payload )
     }
 
     double speed_knots;
-    const bool valid_speed =
-        parse_double_field( fields[ 6 ], &speed_knots ) && speed_knots >= 0.0;
+    const bool valid_speed = parse_double_field( fields[ 6 ], &speed_knots ) && speed_knots >= 0.0;
     if( valid_speed )
     {
         snapshot.speed_mps = (float)( speed_knots * 0.514444 );
