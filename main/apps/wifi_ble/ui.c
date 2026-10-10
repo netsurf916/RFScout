@@ -8,9 +8,9 @@
 #include "ui.h"
 
 #include "display.h"
-#include "media_store.h"
 #include "gps.h"
 #include "observation_store.h"
+#include "surveillance_history.h"
 #include "surveillance.h"
 #include "ui_chrome.h"
 #include "ui_layout.h"
@@ -20,7 +20,6 @@
 #include "esp_timer.h"
 
 #include <stdio.h>
-#include <string.h>
 
 #define UI_MAX_KNOWN_BRANDS 8U
 #define UI_REFRESH_INTERVAL_US 100000LL
@@ -44,22 +43,6 @@ static const char *TAG = "ui";
 static int64_t last_refresh_us;
 static bool surveillance_page;
 static unsigned surveillance_selection;
-typedef struct
-{
-    uint8_t address[ 6 ];
-    uint8_t address_type;
-    double min_latitude;
-    double max_latitude;
-    double min_longitude;
-    double max_longitude;
-    uint32_t last_seen_ms;
-    bool valid;
-} surveillance_bounds_t;
-
-#define UI_BOUNDS_CAPACITY 128U
-static surveillance_bounds_t bounds[ UI_BOUNDS_CAPACITY ];
-
-
 static void draw_static_rows( size_t a_unknown_count, size_t a_random_count )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
@@ -263,56 +246,6 @@ static void render_surveillance_page( void )
     (void)display_present();
 }
 
-static void sample_surveillance_locations( void )
-{
-    rfscout_gps_snapshot_t gps = { 0 };
-    if( !gps_snapshot_get( &gps ) || !gps.location_valid )
-    {
-        return;
-    }
-    rf_device_t devices[ UI_BOUNDS_CAPACITY ] = { 0 };
-    const size_t total = observation_store_surveillance_devices( devices, UI_BOUNDS_CAPACITY );
-    const size_t count = total < UI_BOUNDS_CAPACITY ? total : UI_BOUNDS_CAPACITY;
-    for( size_t i = 0U; i < count; ++i )
-    {
-        const rf_device_t *device = &devices[ i ];
-        surveillance_bounds_t *entry = NULL;
-        for( size_t j = 0U; j < UI_BOUNDS_CAPACITY; ++j )
-        {
-            if( bounds[ j ].valid && bounds[ j ].address_type == device->address_type &&
-                0 == memcmp( bounds[ j ].address, device->address, sizeof( device->address ) ) )
-            {
-                entry = &bounds[ j ];
-                break;
-            }
-            if( NULL == entry && !bounds[ j ].valid )
-            {
-                entry = &bounds[ j ];
-            }
-        }
-        if( NULL == entry )
-        {
-            continue;
-        }
-        if( !entry->valid )
-        {
-            memcpy( entry->address, device->address, sizeof( device->address ) );
-            entry->address_type = device->address_type;
-            entry->min_latitude = entry->max_latitude = gps.latitude_deg;
-            entry->min_longitude = entry->max_longitude = gps.longitude_deg;
-            entry->valid = true;
-        }
-        else if( entry->last_seen_ms != device->last_seen_ms )
-        {
-            if( gps.latitude_deg < entry->min_latitude ) entry->min_latitude = gps.latitude_deg;
-            if( gps.latitude_deg > entry->max_latitude ) entry->max_latitude = gps.latitude_deg;
-            if( gps.longitude_deg < entry->min_longitude ) entry->min_longitude = gps.longitude_deg;
-            if( gps.longitude_deg > entry->max_longitude ) entry->max_longitude = gps.longitude_deg;
-        }
-        entry->last_seen_ms = device->last_seen_ms;
-    }
-}
-
 void ui_poll( void )
 {
     const int64_t now_us = esp_timer_get_time();
@@ -321,7 +254,6 @@ void ui_poll( void )
         return;
     }
     last_refresh_us = now_us;
-    sample_surveillance_locations();
     if( surveillance_page )
     {
         render_surveillance_page();
