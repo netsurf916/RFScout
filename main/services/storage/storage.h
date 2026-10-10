@@ -19,7 +19,8 @@
  * @brief Mount the SD card on the board's already initialized shared SPI bus.
  * @details The mount point is private to the storage service. Other modules access files only
  *          through media_store.h.
- * @return ESP_OK on success or the underlying ESP-IDF storage error.
+ * @return ESP_OK on success, ESP_ERR_NOT_FOUND during the shared three-second failure
+ *         cooldown, or the underlying ESP-IDF storage error.
  * @note Failure is nonfatal to the rest of RFScout. A successful mount remains owned by the
  *       platform until physical media loss; media_store_probe() may subsequently unmount and
  *       remount a replacement volume after invalidating outstanding file handles.
@@ -27,7 +28,7 @@
 esp_err_t storage_init( void );
 
 /**
- * @brief Determine whether mounted SD media is currently considered healthy and usable.
+ * @brief Read cached SD availability, including the shared failure cooldown, without probing.
  * @return True only while storage is mounted and no physical-media loss has been latched.
  */
 bool storage_is_available( void );
