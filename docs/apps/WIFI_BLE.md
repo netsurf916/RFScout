@@ -211,12 +211,45 @@ Relevant generated tables live under `main/services/wireless/`. Registry, genera
 
 Current production behavior preserves enough AP/BSSID and frame-role semantics for adaptive scanning, but it does not yet provide the full semantic physical-entity model, AP/client topology and association confidence, probe relationships, stable relationship drill-down, BLE-native deep views, or conservative address-rotation correlation planned for v0.4.0. Randomized addresses therefore remain evidence rather than proof of physical identity.
 
-## Surveillance locations (planned implementation)
+## Surveillance locations: discrete history and bounded nearby view
 
-The proposed second WiFi/BLE page lists classified surveillance observations meeting the active Evidence Threshold, including surveillance type, brand/product family, truncated MAC, and estimated geographic distance. The application manager's existing App Lock (not Input Lock) allows local rotary list navigation and switching within the app while preventing global application changes; locking does not create a new session or stop Wi-Fi/BLE collectors. The ordinary summary remains available and no separate private lock state is introduced. Long Press provides local navigation back to the summary; settings continue to be accessible.
+The SD card is the authoritative store of **individual meaningful receiver observations**: full
+MAC and address type, surveillance classification, receiver latitude/longitude from a fresh valid
+GPS fix, and a trustworthy UTC timestamp when available. Repeated observations at different
+times or places are retained for later analysis; GPS receiver positions are not verified
+transmitter positions. Do not write a record for every application poll or discard distinct
+observations during journal maintenance. Expiration, manual reset, and app exit remain the
+best-effort event-driven persistence boundaries. Existing consolidated bounding-box records
+must remain readable, although their original points cannot be reconstructed.
 
-Location positions are **receiver observations**, not triangulated surveillance-device coordinates. Each fresh valid GPS fix accompanying an observation expands its session's latitude/longitude bounding rectangle. No valid fix means no position sample and no location record. Normal timeout of an identity's last active Wi-Fi/BLE membership writes one finalized JSONL record through `media_store` owner `wifi_ble`, collection `locations`. Manual Reset detections and WiFi/BLE exit also make one best-effort bounded flush of eligible active sessions. SD failure drops data without retry and never blocks a transition indefinitely. Position history is independent from rotating system diagnostic logs and must not be confused with a live device count. Distance uses current valid GPS position and the nearest point in the observed rectangle; it can report zero inside a rectangle without implying proximity to the transmitter. No current fix or position samples means distance unavailable.
+All surveillance classifications share the same runtime representation and list. There is no
+path view or type-specific runtime aggregation. Runtime distance is the minimum distance to
+a **saved receiver observation**, not distance to a bounding-box midpoint or an inferred
+camera position.
 
-### Consolidated device location history
+### Incremental, GPS-dependent history replay
 
-Multiple encounters with the same (address type, full MAC) represent **one logical historical device**, not one row per encounter. Replay append-only JSONL device snapshots on activation, taking the last valid snapshot per identity. Each qualified encounter merges fresh-GPS-only receiver-location bounds into that device's existing bounds, retains first seen, advances last seen, and updates observation/session counts; timeout/reset/exit append the resulting consolidated snapshot once on a best-effort basis. Duplicate physical journal lines are intentional until an opportunistic, bounded compaction writes a temporary one-record-per-identity file and safely replaces the old file. Compaction never occurs during an application transition, never blocks radio callbacks, and must preserve the old journal on failure. Device identity can be randomized or shared, so consolidation by MAC is an approximation rather than proof of physical identity.
+Do not load the complete journal on app activation. Wait for a fresh valid GPS fix before
+opening and replaying history. Stream records in small batches through the existing WiFi/BLE
+app poll and retain a **bounded nearest-device working set**, not all historical observations.
+Maintain unique (address type, full MAC) identities sorted nearest-first by insertion. For
+each saved observation, update the identity's nearest recorded distance to the reference GPS
+position, reposition it if already present, or insert it ahead of farther devices and evict the
+last entry when at capacity. A previously excluded device can enter the set if a later record
+is closer. Capacity must support list navigation beyond the visible rows.
+
+Normal scanning gives replay a small bounded time/record budget. Opening the surveillance
+list increases that budget, without blocking radio collection or UI rendering. Display partial
+results while loading. No fix suspends replay; a meaningful location displacement restarts
+ranking from a stable reference fix, rather than mixing different reference positions. Do not
+restart for every small GPS update. Coordinate concurrent journal appends and replay, and
+close file handles on app exit. Live detections continue independently of historical GPS
+availability. Use compact structures, pass-by-reference, and PSRAM for retained working
+buffers; do not introduce another FreeRTOS task, queue, or scheduling subsystem.
+
+### Validation
+
+Test multiple simultaneous detections/expirations, journal append and replay, restart and
+legacy replay, GPS loss and reacquisition, meaningful displacement, list prioritization,
+app exit, bounded RAM and task-stack headroom. This section describes the **target design**
+and does not assert that the current firmware implements it.
