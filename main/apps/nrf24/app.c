@@ -358,7 +358,8 @@ static rfscout_app_runtime_result_t nrf24_runtime( const rfscout_app_runtime_eve
         return RFSCOUT_APP_RUNTIME_IGNORED;
     }
     if( RFSCOUT_APP_RUNTIME_POLL == a_event->type && a_event->activated &&
-        !nrf24_is_active() && !gps_detected() && gps_probe_complete() )
+        !nrf24_is_active() && nrf24_is_detected() && !gps_detected() &&
+        gps_probe_complete() )
     {
         (void)nrf24_start();
     }
