@@ -8,14 +8,15 @@ position history to SD. Its descriptor has no exclusive service dependencies.
 ## Current display
 
 - Receiver status distinguishes an inactive UART from a receiver without valid NMEA and a receiver with/without a fresh position fix.
-- A fresh fix displays latitude, longitude, altitude (meters), speed (km/h), and fix age.
-- The existing GGA satellite field is the number of satellites **used in the fix**, not all satellites in view.
+- A fresh fix displays latitude, longitude and fix age; altitude (meters) is shown only with recent GGA data, and speed (km/h) only with recent RMC data. Missing or stale source fields display `--` rather than a fabricated zero or an old value.
+- The existing GGA satellite field is the number of satellites **used in the fix**, not all satellites in view. Its value also expires independently when GGA data stops arriving.
 - When the fix becomes stale, the app hides position and motion values rather than displaying them as live.
 - The GPS service maintains a resettable trip odometer from plausible, moving RMC fixes while the receiver is active, even when the GPS application is not open.
 - The trip counter ignores stationary jitter, implausible position jumps, and gaps in fix reception. It cannot reconstruct distance traveled without valid GPS fixes.
 - Select opens a trip-reset confirmation. Rotate to YES and select to reset; long-press cancels. A reset is written immediately to internal flash.
-- The distance is periodically checkpointed to internal flash (after at least 250 m of new travel and five minutes since the previous checkpoint). A sudden power loss can discard the most recent uncheckpointed distance; SD media is never used.
+- The distance is checkpointed to internal flash once at least 250 m of new movement **and** five minutes since the previous checkpoint are reached, including when the receiver remains stationary afterward. A sudden power loss can discard the most recent uncheckpointed distance; SD media is never used.
 - The display refreshes twice per second. Normal global navigation applies outside the reset confirmation.
+- GPS app periodic SD telemetry includes receiver/fix state, trip distance, and fresh speed/altitude/satellites-used values when available. The normal passive-app audio feedback policy applies.
 
 ## Receiver and radio interaction
 
