@@ -28,6 +28,8 @@ typedef struct
 
 void surveillance_history_open( void );
 void surveillance_history_sample( void );
+/** @brief Persist records for identities removed by timeout. */
+void surveillance_history_process_expired( void );
 void surveillance_history_flush( void );
 void surveillance_history_compact( void );
 size_t surveillance_history_list( surveillance_history_entry_t *a_rows, size_t a_capacity );
