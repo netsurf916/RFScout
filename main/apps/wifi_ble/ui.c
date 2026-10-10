@@ -250,8 +250,11 @@ static void render_surveillance_page( void )
     display_clear( theme->background );
     ui_chrome_draw( "SURVEILLANCE", theme->secondary );
     char line[ 80 ];
-    snprintf( line, sizeof( line ), "LIVE %u  SAVED %u  GPS %s",
-              (unsigned)live_count, (unsigned)unique_history,
+    snprintf( line,
+              sizeof( line ),
+              "LIVE %u  SAVED %u  GPS %s",
+              (unsigned)live_count,
+              (unsigned)unique_history,
               has_fix ? "FIX" : "NO FIX" );
     display_draw_text( UI_LAYOUT_LEFT_X, 25, line, theme->info, 1U );
 
@@ -261,13 +264,18 @@ static void render_surveillance_page( void )
     {
         if( row < start || row >= start + 6U )
             continue;
-        snprintf( line, sizeof( line ), "%c * %02X%02X%02X %-13.13s LIVE",
+        snprintf( line,
+                  sizeof( line ),
+                  "%c * %02X%02X%02X %-13.13s LIVE",
                   row == surveillance_selection ? '>' : ' ',
-                  live_surveillance_rows[ i ].address[ 3 ], live_surveillance_rows[ i ].address[ 4 ],
+                  live_surveillance_rows[ i ].address[ 3 ],
+                  live_surveillance_rows[ i ].address[ 4 ],
                   live_surveillance_rows[ i ].address[ 5 ],
                   live_surveillance_rows[ i ].vendor[ 0 ] ? live_surveillance_rows[ i ].vendor : "Unknown" );
-        display_draw_text( UI_LAYOUT_LEFT_X, 43 + (int)( row - start ) * 17,
-                           line, row == surveillance_selection ? theme->selected : theme->normal,
+        display_draw_text( UI_LAYOUT_LEFT_X,
+                           43 + (int)( row - start ) * 17,
+                           line,
+                           row == surveillance_selection ? theme->selected : theme->normal,
                            1U );
     }
     for( size_t i = 0U; i < history_count; ++i )
@@ -287,11 +295,17 @@ static void render_surveillance_page( void )
                 else
                     snprintf( distance, sizeof( distance ), "%.0fm", meters );
             }
-            snprintf( line, sizeof( line ), "%c   %02X%02X%02X %-13.13s %s",
+            snprintf( line,
+                      sizeof( line ),
+                      "%c   %02X%02X%02X %-13.13s %s",
                       row == surveillance_selection ? '>' : ' ',
-                      entry.address[ 3 ], entry.address[ 4 ], entry.address[ 5 ],
-                      entry.vendor[ 0 ] ? entry.vendor : "Unknown", distance );
-            display_draw_text( UI_LAYOUT_LEFT_X, 43 + (int)( row - start ) * 17,
+                      entry.address[ 3 ],
+                      entry.address[ 4 ],
+                      entry.address[ 5 ],
+                      entry.vendor[ 0 ] ? entry.vendor : "Unknown",
+                      distance );
+            display_draw_text( UI_LAYOUT_LEFT_X,
+                               43 + (int)( row - start ) * 17,
                                line,
                                row == surveillance_selection ? theme->selected : theme->normal,
                                1U );
