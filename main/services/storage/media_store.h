@@ -94,7 +94,7 @@ typedef bool ( *rfscout_media_list_fn )( const rfscout_media_entry_t *a_entry, v
 bool media_store_available( void );
 
 /**
- * @brief Retry-safe SD presence probe for hot-plug dependency checks.
+ * @brief Explicit, one-shot SD presence check and recovery request.
  * @details Mounts the card when no card has ever mounted, then verifies the mounted card responds.
  *          After detected removal, invalidates all open file handles, unmounts the old volume,
  *          and attempts a fresh mount. Callers must reopen files after recovery.
@@ -129,7 +129,8 @@ esp_err_t media_app_collection( const char *a_collection, rfscout_media_collecti
 
 /**
  * @brief Open one file in a collection.
- * @details Write modes create the owner and collection directories on demand. Reads never create
+ * @details When media is unavailable, this operation makes one synchronous recovery attempt.
+ *          No background polling or retry loop is scheduled. Write modes create the owner and collection directories on demand. Reads never create
  *          directories. As with stdio streams, call media_seek() (or media_sync()) between a read
  *          and a following write on the same handle, and between a write and a following read.
  * @return ESP_OK, ESP_ERR_NOT_FOUND for a missing file in READ mode, ESP_ERR_NOT_ALLOWED when
