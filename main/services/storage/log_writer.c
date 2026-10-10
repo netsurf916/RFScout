@@ -10,6 +10,7 @@
 #include "device_time.h"
 #include "gps.h"
 #include "media_store.h"
+#include "storage_internal.h"
 #include "memory_manager.h"
 
 #include "esp_app_desc.h"
@@ -313,6 +314,20 @@ static bool open_segment( void )
     }
     active_open = true;
     return true;
+}
+
+/* Keep generation inspection, segment selection and file operations within
+   one storage transaction. Media operations recursively acquire this same
+   arbitration, so a recovery cannot replace the volume between them. */
+static bool open_segment_serialized( void )
+{
+    if( !storage_io_acquire( RFSCOUT_STORAGE_WAIT_FOREVER ) )
+    {
+        return false;
+    }
+    const bool result = open_segment_serialized();
+    storage_io_release();
+    return result;
 }
 
 static bool close_segment( void )
@@ -748,14 +763,14 @@ static bool flush_buffer( void )
     flush_requested = false;
     xSemaphoreGive( buffer_lock );
 
-    bool success = open_segment();
+    bool success = open_segment_serialized();
     if( success && ( active_size + burst_size > RFSCOUT_LOG_SEGMENT_SIZE ) )
     {
         success = close_segment();
         if( success )
         {
             advance_segment();
-            success = open_segment();
+            success = open_segment_serialized();
         }
     }
 
