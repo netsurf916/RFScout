@@ -176,6 +176,16 @@ esp_err_t media_stat( const rfscout_media_collection_t *a_collection,
 esp_err_t media_remove( const rfscout_media_collection_t *a_collection, const char *a_name );
 
 /**
+ * @brief Rename a file within one collection, replacing an existing destination if supported.
+ * @details Both names are validated; arbitration and app-session generation checks apply.
+ *          Source and destination must not be open through media_store handles. This is a
+ *          filesystem rename, not a guaranteed power-loss-durable transaction.
+ */
+esp_err_t media_rename( const rfscout_media_collection_t *a_collection,
+                        const char *a_source_name,
+                        const char *a_destination_name );
+
+/**
  * @brief Visit regular files in a collection in directory order.
  * @details A collection that has never been written lists as empty. Hidden/dot names, directories,
  *          and names outside the media name rules are skipped.
