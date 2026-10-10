@@ -105,10 +105,6 @@ size_t observation_store_surveillance_devices( observation_history_identity_t *a
 /** @brief Read a single live surveillance device by ordinal under the store lock. */
 bool observation_store_surveillance_get( size_t a_index, observation_history_identity_t *a_device );
 
-/** @brief Drain expired identities without retaining full device records. */
-size_t observation_store_take_expired( observation_history_identity_t *a_devices,
-                                       size_t a_capacity );
-
 /** @brief Clear all live observations while retaining any current app-owned capacity. */
 void observation_store_reset( void );
 
