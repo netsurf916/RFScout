@@ -410,15 +410,14 @@ static uint32_t timeout_ms_for_source( rf_source_t a_source )
     return (uint32_t)seconds * 1000U;
 }
 
-static observation_history_identity_t history_identity( const rf_device_t *a_device )
+static void copy_history_identity( observation_history_identity_t *a_identity,
+                                   const rf_device_t *a_device )
 {
-    observation_history_identity_t identity = { 0 };
-    memcpy( identity.address, a_device->address, sizeof( identity.address ) );
-    identity.address_type = a_device->address_type;
-    memcpy( identity.vendor, a_device->vendor, sizeof( identity.vendor ) );
-    identity.surveillance = a_device->surveillance;
-    identity.last_seen_ms = a_device->last_seen_ms;
-    return identity;
+    memcpy( a_identity->address, a_device->address, sizeof( a_identity->address ) );
+    a_identity->address_type = a_device->address_type;
+    memcpy( a_identity->vendor, a_device->vendor, sizeof( a_identity->vendor ) );
+    a_identity->surveillance = a_device->surveillance;
+    a_identity->last_seen_ms = a_device->last_seen_ms;
 }
 
 static void emit_event( observation_store_event_t a_event, const rf_device_t *a_device )
@@ -438,7 +437,7 @@ static void emit_event( observation_store_event_t a_event, const rf_device_t *a_
         }
         if( expired_count < expired_capacity )
         {
-            expired_devices[ expired_count++ ] = history_identity( a_device );
+            copy_history_identity( &expired_devices[ expired_count++ ], a_device );
         }
     }
     if( NULL != event_callback )
@@ -842,7 +841,7 @@ size_t observation_store_surveillance_devices( observation_history_identity_t *a
         }
         if( NULL != a_devices && total < a_capacity )
         {
-            a_devices[ total ] = history_identity( &devices[ i ] );
+            copy_history_identity( &a_devices[ total ], &devices[ i ] );
         }
         ++total;
     }
