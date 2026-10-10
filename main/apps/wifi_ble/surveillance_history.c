@@ -154,11 +154,12 @@ void surveillance_history_open( void )
     (void)media_close( &file );
 }
 
-void surveillance_history_flush( void )
+static void flush_pending( bool a_include_active )
 {
     size_t dirty = 0U;
     for( size_t i = 0U; i < entry_count; ++i )
-        if( entries[ i ].valid && entries[ i ].dirty ) ++dirty;
+        if( entries[ i ].valid && entries[ i ].dirty &&
+            ( a_include_active || entries[ i ].completed ) ) ++dirty;
     if( 0U == dirty ) return;
 
     rfscout_media_collection_t collection;
@@ -171,7 +172,8 @@ void surveillance_history_flush( void )
     {
         for( size_t i = 0U; i < entry_count; ++i )
         {
-            if( !entries[ i ].valid || !entries[ i ].dirty ) continue;
+            if( !entries[ i ].valid || !entries[ i ].dirty ||
+                ( !a_include_active && !entries[ i ].completed ) ) continue;
             result = append_entry( &file, &entries[ i ] );
             if( ESP_OK != result ) break;
         }
@@ -181,9 +183,18 @@ void surveillance_history_flush( void )
     }
     /* One attempt per event; do not queue failed writes for retry. */
     for( size_t i = 0U; i < entry_count; ++i )
-        entries[ i ].dirty = false;
+        if( a_include_active || entries[ i ].completed )
+        {
+            entries[ i ].dirty = false;
+            entries[ i ].completed = false;
+        }
     if( ESP_OK != result )
         printf( "surveillance history flush failed: %ld\\n", (long)result );
+}
+
+void surveillance_history_flush( void )
+{
+    flush_pending( true );
 }
 
 void surveillance_history_compact( void )
@@ -224,6 +235,7 @@ void surveillance_history_process_expired( void )
                     0 == memcmp( entry->address, expired[ i ].address,
                                  sizeof( entry->address ) ) )
                 {
+                    entry->completed = true;
                     changed = true;
                     break;
                 }
@@ -232,7 +244,7 @@ void surveillance_history_process_expired( void )
     }
     if( changed )
     {
-        surveillance_history_flush();
+        flush_pending( false );
     }
 }
 
