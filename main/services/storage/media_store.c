@@ -844,9 +844,18 @@ esp_err_t media_list( const rfscout_media_collection_t *a_collection,
         return result;
     }
 
-    struct dirent *item;
-    while( NULL != ( item = readdir( directory ) ) )
+    while( true )
     {
+        errno = 0;
+        struct dirent *item = readdir( directory );
+        if( NULL == item )
+        {
+            if( 0 != errno )
+            {
+                result = errno_result( errno );
+            }
+            break;
+        }
         if( !media_name_valid( item->d_name ) )
         {
             continue;
@@ -854,8 +863,23 @@ esp_err_t media_list( const rfscout_media_collection_t *a_collection,
 
         char path[ MEDIA_PATH_MAX ];
         struct stat info;
-        if( !build_path( a_collection, item->d_name, false, path, sizeof( path ) ) ||
-            0 != stat( path, &info ) || !S_ISREG( info.st_mode ) || info.st_size < 0 )
+        if( !build_path( a_collection, item->d_name, false, path, sizeof( path ) ) )
+        {
+            result = ESP_ERR_INVALID_SIZE;
+            break;
+        }
+        if( 0 != stat( path, &info ) )
+        {
+            const int stat_errno = errno;
+            if( EIO == stat_errno || ENODEV == stat_errno || ENXIO == stat_errno ||
+                ETIMEDOUT == stat_errno )
+            {
+                result = errno_result( stat_errno );
+                break;
+            }
+            continue;
+        }
+        if( !S_ISREG( info.st_mode ) || info.st_size < 0 )
         {
             continue;
         }
@@ -869,10 +893,13 @@ esp_err_t media_list( const rfscout_media_collection_t *a_collection,
             break;
         }
     }
-    closedir( directory );
+    if( 0 != closedir( directory ) && ESP_OK == result )
+    {
+        result = errno_result( errno );
+    }
 
     storage_io_release();
-    return ESP_OK;
+    return result;
 }
 
 size_t media_store_close_app( rfscout_app_id_t a_app )
