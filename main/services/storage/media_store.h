@@ -107,7 +107,7 @@ esp_err_t media_store_probe( void );
 uint32_t media_store_generation( void );
 
 /**
- * @brief Query SD filesystem capacity.
+ * @brief Query SD filesystem capacity, with one-shot recovery after the failure cooldown.
  * @param a_total_bytes Receives total bytes when non-NULL.
  * @param a_free_bytes Receives free bytes when non-NULL.
  */
