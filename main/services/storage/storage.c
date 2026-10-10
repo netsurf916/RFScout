@@ -132,11 +132,11 @@ esp_err_t storage_init( void )
 
     mounted = true;
     media_lost = false;
-    storage_io_release();
     ESP_LOGI( TAG,
               "SD card mounted: %llu MiB",
               (unsigned long long)( ( (uint64_t)card->csd.capacity * card->csd.sector_size ) /
                                     ( 1024ULL * 1024ULL ) ) );
+    storage_io_release();
     return ESP_OK;
 }
 
