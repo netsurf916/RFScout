@@ -24,8 +24,8 @@ void wifi_settings_view_render( unsigned a_selected,
                                 uint16_t a_wifi_timeout_seconds,
                                 uint16_t a_ble_timeout_seconds )
 {
-    static const char *labels[ WIFI_SETTINGS_ITEM_COUNT ] = { "App lock",
-                                                              "Back",
+    static const char *labels[ WIFI_SETTINGS_ITEM_COUNT ] = { "Back",
+                                                              "App lock",
                                                               "Reset detections",
                                                               "Notifications",
                                                               "Evidence threshold",
@@ -55,7 +55,7 @@ void wifi_settings_view_render( unsigned a_selected,
 
         char value[ 16 ];
         value[ 0 ] = '\0';
-        if( 0U == item )
+        if( 1U == item )
         {
             snprintf( value, sizeof( value ), "%s", a_app_locked ? "On" : "Off" );
         }
