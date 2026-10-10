@@ -268,7 +268,7 @@ Terminal sleep/power-off preparation flushes dirty configuration and quiesces re
 
 SD is removable/bulk storage for recordings, logs, breadcrumbs, captures, and future explicit transfer packages. Internal configuration must remain usable without an SD card.
 
-The storage service owns SD mount/recovery. Physical-media loss latches the old volume unavailable; media-store probing can invalidate open handles, unmount the old volume, and remount replacement media. The media generation lets stateful clients rebuild per-volume state without exposing filesystem paths.
+The storage service owns SD mount/recovery. A failed mount, card-health probe, or media I/O operation starts a shared three-second cooldown. Storage requests during that period fail immediately without accessing the card. The first request after the cooldown may attempt one synchronous recovery; no timer, background retry, or status display triggers recovery. A replacement volume invalidates existing handles, and clients discard optional data rather than queueing retries.
 
 ### Media store contract
 
@@ -302,7 +302,7 @@ Files written by earlier firmware under `/sdcard/audio/`, `/sdcard/logs/`, or `/
 
 Open files are represented by opaque, generation-checked handles from a small fixed pool sized to the FAT open-file limit. A stale handle (already closed, or forcibly closed at app exit) is rejected rather than aliasing another owner's file.
 
-Every media operation — open, read, write, seek, truncate, sync, close, stat, list, remove, and capacity queries — runs as one bounded transaction under the storage service's I/O arbitration. Raw card-health probes therefore cannot interleave with a multi-command filesystem operation from any user, and no user takes the storage lock directly. Large transfers are naturally split into per-call transactions by their callers.
+Media file operations run under storage-service I/O arbitration, with a 250 ms lock-acquisition timeout on ordinary requests. Closing handles and app-exit cleanup remain available during the cooldown to release descriptors. Raw card-health probes therefore cannot interleave with a multi-command filesystem operation from any user, and no user takes the storage lock directly. Large transfers are naturally split into per-call transactions by their callers.
 
 Handles opened through an app collection belong to that app session. The lifecycle coordinator closes any app-owned media handle still open after the source app's services have quiesced, records the count in the transition diagnostics, and treats a nonzero count as a committed resource-invariant violation in the same way as remaining managed allocations. Services that write asynchronously on behalf of an app (for example Recorder recording or WAV playback) must still finish or stop through their ordinary session service/veto path; forced close is a safety net, not a shutdown protocol.
 
