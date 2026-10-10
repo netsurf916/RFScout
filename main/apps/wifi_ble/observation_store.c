@@ -31,9 +31,6 @@ static size_t summary_vendor_count;
 static uint16_t wifi_ap_channel_counts[ RFSCOUT_WIFI_CHANNEL_MAX ];
 static uint32_t store_generation;
 static SemaphoreHandle_t store_lock;
-static observation_history_identity_t *expired_devices;
-static size_t expired_count;
-static size_t expired_capacity;
 static observation_store_event_callback_t event_callback;
 static void *event_context;
 
@@ -56,9 +53,6 @@ static void synchronize_session_store( void )
     summary_vendor_slot_capacity = 0U;
     summary_vendor_count = 0U;
     memset( wifi_ap_channel_counts, 0, sizeof( wifi_ap_channel_counts ) );
-    expired_devices = NULL;
-    expired_count = 0U;
-    expired_capacity = 0U;
     store_generation = generation;
 }
 
@@ -429,24 +423,6 @@ static void copy_history_identity( observation_history_identity_t *a_identity,
 
 static void emit_event( observation_store_event_t a_event, const rf_device_t *a_device )
 {
-    if( OBSERVATION_STORE_EVENT_DROPPED_TIMEOUT == a_event && NULL != a_device )
-    {
-        if( expired_count == expired_capacity )
-        {
-            const size_t capacity = ( 0U == expired_capacity ) ? 8U : expired_capacity * 2U;
-            observation_history_identity_t *next =
-                app_session_resize( expired_devices, capacity, sizeof( *expired_devices ) );
-            if( NULL != next )
-            {
-                expired_devices = next;
-                expired_capacity = capacity;
-            }
-        }
-        if( expired_count < expired_capacity )
-        {
-            copy_history_identity( &expired_devices[ expired_count++ ], a_device );
-        }
-    }
     if( NULL != event_callback )
     {
         event_callback( a_event, a_device, event_context );
@@ -933,26 +909,6 @@ void observation_store_reset( void )
     device_count = 0U;
     memset( wifi_ap_channel_counts, 0, sizeof( wifi_ap_channel_counts ) );
     xSemaphoreGive( store_lock );
-}
-
-size_t observation_store_take_expired( observation_history_identity_t *a_devices,
-                                       size_t a_capacity )
-{
-    if( NULL == store_lock || NULL == a_devices || 0U == a_capacity )
-        return 0U;
-    xSemaphoreTake( store_lock, portMAX_DELAY );
-    synchronize_session_store();
-    const size_t count = expired_count < a_capacity ? expired_count : a_capacity;
-    memcpy( a_devices, expired_devices, count * sizeof( *a_devices ) );
-    expired_count -= count;
-    if( 0U != expired_count )
-    {
-        memmove( expired_devices,
-                 &expired_devices[ count ],
-                 expired_count * sizeof( *expired_devices ) );
-    }
-    xSemaphoreGive( store_lock );
-    return count;
 }
 
 void observation_store_housekeeping( void )
