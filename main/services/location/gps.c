@@ -622,6 +622,9 @@ bool gps_probe_complete( void )
 
 void gps_poll( void )
 {
+    /* The odometer is platform state, not UART state. When nRF24 owns the shared
+       pins, continue time-based flash checkpoints without probing the receiver. */
+    trip_checkpoint( esp_timer_get_time() );
     if( !initialized )
     {
         return;
@@ -700,9 +703,6 @@ void gps_poll( void )
     {
         snapshot.satellites_valid = false;
     }
-    /* Checkpoint any eligible distance even after movement stops. No storage I/O
-       occurs until both the distance and interval thresholds are reached. */
-    trip_checkpoint( now );
     publish_snapshot();
 }
 

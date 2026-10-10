@@ -14,7 +14,7 @@ position history to SD. Its descriptor has no exclusive service dependencies.
 - The GPS service maintains a resettable trip odometer from plausible, moving RMC fixes while the receiver is active, even when the GPS application is not open.
 - The trip counter ignores stationary jitter, implausible position jumps, and gaps in fix reception. It cannot reconstruct distance traveled without valid GPS fixes.
 - Select opens a trip-reset confirmation. Rotate to YES and select to reset; long-press cancels. A reset is written immediately to internal flash.
-- The distance is checkpointed to internal flash once at least 250 m of new movement **and** five minutes since the previous checkpoint are reached, including when the receiver remains stationary afterward. A sudden power loss can discard the most recent uncheckpointed distance; SD media is never used.
+- The distance is checkpointed to internal flash once at least 250 m of new movement **and** five minutes since the previous checkpoint are reached, including while stationary or when nRF24 has temporarily suspended the GPS UART. A sudden power loss can discard the most recent uncheckpointed distance; SD media is never used.
 - The display refreshes twice per second. Normal global navigation applies outside the reset confirmation.
 - GPS app periodic SD telemetry includes receiver/fix state, trip distance, and fresh speed/altitude/satellites-used values when available. The normal passive-app audio feedback policy applies.
 

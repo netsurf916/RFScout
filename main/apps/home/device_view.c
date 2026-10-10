@@ -214,6 +214,8 @@ static const char *startup_app_name( rfscout_app_id_t a_app )
             return "Thermal";
         case RFSCOUT_APP_AUDIO_SPECTRUM:
             return "Audio Spectrum";
+        case RFSCOUT_APP_GPS:
+            return "GPS";
         case RFSCOUT_APP_DEVICE:
         case RFSCOUT_APP_COUNT:
         default:
