@@ -5,6 +5,7 @@
 */
 
 #include "app_descriptor.h"
+#include "app_manager.h"
 
 #include "app_notification_menu.h"
 #include "ble_monitor.h"
@@ -24,13 +25,14 @@
 
 #define WIFI_RADIO_RETRY_INTERVAL_US 1000000LL
 
-#define WIFI_MENU_BACK 0U
-#define WIFI_MENU_RESET 1U
-#define WIFI_MENU_NOTIFICATIONS 2U
-#define WIFI_MENU_EVIDENCE_THRESHOLD 3U
-#define WIFI_MENU_WIFI_TIMEOUT 4U
-#define WIFI_MENU_BLE_TIMEOUT 5U
-#define WIFI_MENU_ITEM_COUNT 6U
+#define WIFI_MENU_APP_LOCK 0U
+#define WIFI_MENU_BACK 1U
+#define WIFI_MENU_RESET 2U
+#define WIFI_MENU_NOTIFICATIONS 3U
+#define WIFI_MENU_EVIDENCE_THRESHOLD 4U
+#define WIFI_MENU_WIFI_TIMEOUT 5U
+#define WIFI_MENU_BLE_TIMEOUT 6U
+#define WIFI_MENU_ITEM_COUNT 7U
 
 static const char *TAG = "wifi_ble_app";
 static bool menu_active;
@@ -48,6 +50,7 @@ static void render_menu( void )
 {
     wifi_settings_view_render( menu_item,
                                menu_editing,
+                               app_manager_locked(),
                                notification_preferences_app_enabled( RFSCOUT_APP_WIFI_BT ),
                                device_config_evidence_threshold(),
                                device_config_wifi_timeout_seconds(),
@@ -118,6 +121,12 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
             menu_editing = false;
             render_menu();
             emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
+            return;
+        }
+        if( WIFI_MENU_APP_LOCK == menu_item )
+        {
+            (void)app_manager_set_locked( !app_manager_locked() );
+            render_menu();
             return;
         }
         if( WIFI_MENU_BACK == menu_item )
