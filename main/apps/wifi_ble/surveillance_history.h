@@ -24,6 +24,7 @@ typedef struct
     uint32_t last_seen_ms;
     bool valid;
     bool dirty;
+    bool completed;
 } surveillance_history_entry_t;
 
 void surveillance_history_open( void );
