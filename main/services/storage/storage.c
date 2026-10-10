@@ -49,13 +49,8 @@ bool storage_retry_delayed( void )
     return false;
 }
 
-void storage_note_media_failure( void )
+static void storage_start_cooldown( void )
 {
-    /* Only the storage owner updates media state, under I/O arbitration. */
-    if( mounted )
-    {
-        media_lost = true;
-    }
     uint32_t deadline =
         (uint32_t)xTaskGetTickCount() + (uint32_t)pdMS_TO_TICKS( STORAGE_FAILURE_COOLDOWN_MS );
     if( 0U == deadline )
@@ -63,6 +58,16 @@ void storage_note_media_failure( void )
         deadline = 1U;
     }
     __atomic_store_n( &retry_after_tick, deadline, __ATOMIC_RELEASE );
+}
+
+void storage_note_media_failure( void )
+{
+    /* A failed SD transaction invalidates the mounted card, unlike bus contention. */
+    if( mounted )
+    {
+        media_lost = true;
+    }
+    storage_start_cooldown();
 }
 
 static void ensure_io_mutex( void )
@@ -132,7 +137,7 @@ esp_err_t storage_init( void )
     const esp_err_t bus_result = board_spi_init();
     if( ESP_OK != bus_result )
     {
-        storage_note_media_failure();
+        storage_start_cooldown();
         ESP_LOGW( TAG, "shared SPI bus unavailable: %s", esp_err_to_name( bus_result ) );
         return bus_result;
     }
@@ -152,7 +157,7 @@ esp_err_t storage_init( void )
     /* Mounting talks to the card; hot-plug probes can run it while other SPI clients are active. */
     if( !storage_io_acquire( STORAGE_PROBE_IO_TIMEOUT_MS ) )
     {
-        storage_note_media_failure();
+        storage_start_cooldown();
         return ESP_ERR_TIMEOUT;
     }
     if( storage_retry_delayed() )
@@ -171,7 +176,7 @@ esp_err_t storage_init( void )
     if( ESP_OK != result )
     {
         card = NULL;
-        storage_note_media_failure();
+        storage_start_cooldown();
         storage_io_release();
         ESP_LOGW( TAG, "SD card unavailable: %s", esp_err_to_name( result ) );
         return result;
@@ -197,7 +202,7 @@ esp_err_t storage_recover_lost_media( void )
     const esp_err_t result = esp_vfs_fat_sdcard_unmount( RFSCOUT_STORAGE_MOUNT_POINT, card );
     if( ESP_OK != result )
     {
-        storage_note_media_failure();
+        storage_start_cooldown();
         ESP_LOGW( TAG, "SD unmount after media loss failed: %s", esp_err_to_name( result ) );
         return result;
     }
