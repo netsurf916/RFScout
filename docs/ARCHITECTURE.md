@@ -80,7 +80,7 @@ The same retry principle applies to optional platform telemetry where practical.
 Two platform cases remain intentionally distinct:
 
 - **Board profile / mandatory UI providers** — these establish the hardware identity and minimum environment needed to run RFScout safely; failure is a platform startup/recovery condition, not an optional app being unavailable.
-- **Mounted SD media after physical loss** — RFScout latches the mounted filesystem unavailable rather than silently unmounting/remounting beneath open users. Initial insertion can be retried, but post-loss remount requires an explicit storage-lifecycle design.
+- **Mounted SD media after physical loss** — the storage probe latches the current volume unavailable. A subsequent media-store probe invalidates pooled file handles under storage arbitration, unmounts the lost volume, and attempts a fresh mount. Stateful clients must detect a changed media generation and rebuild volume-specific state.
 
 
 ## Application lifecycle, views, and resource sessions
@@ -268,7 +268,7 @@ Terminal sleep/power-off preparation flushes dirty configuration and quiesces re
 
 SD is removable/bulk storage for recordings, logs, breadcrumbs, captures, and future explicit transfer packages. Internal configuration must remain usable without an SD card.
 
-The storage service owns the SD mount for the running firmware lifetime and latches physical-media loss unavailable rather than inventing an application-visible unmount/remount protocol.
+The storage service owns SD mount/recovery. Physical-media loss latches the old volume unavailable; media-store probing can invalidate open handles, unmount the old volume, and remount replacement media. The media generation lets stateful clients rebuild per-volume state without exposing filesystem paths.
 
 ### Media store contract
 
