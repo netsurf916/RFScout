@@ -169,6 +169,13 @@ static void replay_line( const char *a_line )
 
 void surveillance_history_open( void )
 {
+    if( replay_active )
+        (void)media_close( &replay_file );
+    replay_active = false;
+    replay_complete = false;
+    reference_valid = false;
+    replay_used = 0U;
+    replay_overflow = false;
     if( NULL != entries )
         (void)app_session_free( entries );
     entries = NULL;
@@ -179,39 +186,7 @@ void surveillance_history_open( void )
         (void)app_session_free( sample_buffer );
     sample_buffer = NULL;
     sample_capacity = 0U;
-    rfscout_media_collection_t collection;
-    if( ESP_OK != media_app_collection( "locations", &collection ) )
-        return;
-    rfscout_media_file_t file = { 0 };
-    if( ESP_OK != media_open( &collection, HISTORY_JOURNAL, RFSCOUT_MEDIA_OPEN_READ, &file ) )
-        return;
-    char line[ 256 ];
-    size_t used = 0U;
-    bool overflow = false;
-    char byte;
-    size_t read = 0U;
-    while( ESP_OK == media_read( &file, &byte, 1U, &read ) && 1U == read )
-    {
-        if( '\n' == byte )
-        {
-            if( !overflow && used > 0U )
-            {
-                line[ used ] = '\0';
-                replay_line( line );
-            }
-            used = 0U;
-            overflow = false;
-        }
-        else if( used + 1U < sizeof( line ) && !overflow )
-        {
-            line[ used++ ] = byte;
-        }
-        else
-        {
-            overflow = true;
-        }
-    }
-    (void)media_close( &file );
+
 }
 
 static void flush_pending( bool a_include_active )
