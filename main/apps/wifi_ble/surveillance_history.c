@@ -51,6 +51,13 @@ static esp_err_t append_entry( const rfscout_media_file_t *a_file,
     return media_write( a_file, line, (size_t)length );
 }
 
+bool surveillance_history_get( size_t a_index, surveillance_history_entry_t *a_entry )
+{
+    if( NULL == a_entry || a_index >= entry_count ) return false;
+    *a_entry = entries[ a_index ];
+    return a_entry->valid;
+}
+
 size_t surveillance_history_list( surveillance_history_entry_t *a_rows, size_t a_capacity )
 {
     size_t count = 0U;
