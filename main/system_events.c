@@ -59,6 +59,8 @@ static bool is_system_state_event( const rfscout_event_t *a_event )
         case RFSCOUT_EVENT_POWER_DISCONNECTED:
         case RFSCOUT_EVENT_STORAGE_MOUNTED:
         case RFSCOUT_EVENT_STORAGE_MOUNT_FAILED:
+        case RFSCOUT_EVENT_STORAGE_LOST:
+        case RFSCOUT_EVENT_STORAGE_RECOVERED:
         case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNTED:
         case RFSCOUT_EVENT_INTERNAL_STORAGE_FORMATTED:
         case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED:
@@ -89,6 +91,7 @@ static rfscout_system_event_severity_t severity_for( const rfscout_event_t *a_ev
     }
     if( RFSCOUT_EVENT_WARNING == a_event->type ||
         RFSCOUT_EVENT_STORAGE_MOUNT_FAILED == a_event->type ||
+        RFSCOUT_EVENT_STORAGE_LOST == a_event->type ||
         RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED == a_event->type )
     {
         return RFSCOUT_SYSTEM_EVENT_WARNING;
@@ -108,6 +111,8 @@ static bool notification_eligible( const rfscout_event_t *a_event )
         case RFSCOUT_EVENT_POWER_DISCONNECTED:
         case RFSCOUT_EVENT_STORAGE_MOUNTED:
         case RFSCOUT_EVENT_STORAGE_MOUNT_FAILED:
+        case RFSCOUT_EVENT_STORAGE_LOST:
+        case RFSCOUT_EVENT_STORAGE_RECOVERED:
         case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNTED:
         case RFSCOUT_EVENT_INTERNAL_STORAGE_FORMATTED:
         case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNT_FAILED:
@@ -167,6 +172,14 @@ static void render_event( const rfscout_event_t *a_event,
         case RFSCOUT_EVENT_STORAGE_MOUNT_FAILED:
             snprintf( a_title, a_title_size, "SD CARD" );
             snprintf( a_detail, a_detail_size, "UNAVAILABLE" );
+            break;
+        case RFSCOUT_EVENT_STORAGE_LOST:
+            snprintf( a_title, a_title_size, "SD CARD" );
+            snprintf( a_detail, a_detail_size, "CONNECTION LOST" );
+            break;
+        case RFSCOUT_EVENT_STORAGE_RECOVERED:
+            snprintf( a_title, a_title_size, "SD CARD" );
+            snprintf( a_detail, a_detail_size, "RECOVERED" );
             break;
         case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNTED:
             snprintf( a_title, a_title_size, "INTERNAL STORAGE" );

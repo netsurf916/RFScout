@@ -429,15 +429,9 @@ void app_main( void )
     result = storage_init();
     if( ESP_OK != result )
     {
-        rfscout_event_emit(
-            RFSCOUT_EVENT_STORAGE_MOUNT_FAILED, RFSCOUT_EVENT_SOURCE_SYSTEM, (int32_t)result );
         ESP_LOGW( TAG, "SD storage unavailable: %s", esp_err_to_name( result ) );
     }
-    else
-    {
-        rfscout_event_emit(
-            RFSCOUT_EVENT_STORAGE_MOUNTED, RFSCOUT_EVENT_SOURCE_SYSTEM, (int32_t)ESP_OK );
-    }
+    storage_dispatch_events();
 
     result = device_config_init();
     if( ESP_OK != result )
@@ -532,6 +526,7 @@ void app_main( void )
 
         observation_store_housekeeping();
         app_manager_poll();
+        storage_dispatch_events();
         system_events_poll();
         status_bar_poll();
         battery_indicator_poll();

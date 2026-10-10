@@ -28,6 +28,13 @@
 esp_err_t storage_init( void );
 
 /**
+ * @brief Dispatch latched mount/loss/recovery events to the system event bus without accessing SD.
+ * @note Call from the main task outside storage arbitration. This is only event delivery;
+ *       it never initiates a card probe, mount, or background retry.
+ */
+void storage_dispatch_events( void );
+
+/**
  * @brief Read cached SD availability, including the shared failure cooldown, without probing.
  * @return True only while storage is mounted and no physical-media loss has been latched.
  */
