@@ -218,8 +218,8 @@ static bool history_identity_live( const surveillance_history_entry_t *a_entry,
                                    size_t a_count )
 {
     for( size_t i = 0U; i < a_count; ++i )
-        if( a_entry->address_type == a_live_surveillance_rows[ i ].address_type &&
-            0 == memcmp( a_entry->address, a_live_surveillance_rows[ i ].address, 6U ) )
+        if( a_entry->address_type == a_live[ i ].address_type &&
+            0 == memcmp( a_entry->address, a_live[ i ].address, 6U ) )
             return true;
     return false;
 }
