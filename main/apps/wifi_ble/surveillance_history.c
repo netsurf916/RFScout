@@ -20,16 +20,7 @@
 static const char *TAG = "surveillance_history";
 static uint32_t dropped_points;
 
-typedef struct
-{
-    uint8_t address[ 6 ];
-    uint8_t address_type;
-    surveillance_class_t classification;
-    double latitude;
-    double longitude;
-    int64_t utc_epoch;
-    uint32_t seen_ms;
-} history_point_t;
+typedef observation_location_event_t history_point_t;
 
 static SemaphoreHandle_t history_lock;
 static history_point_t *pending;
@@ -58,12 +49,9 @@ void surveillance_history_open( void )
     xSemaphoreGive( history_lock );
 }
 
-void surveillance_history_record( const rf_device_t *a_device,
-                                  double a_latitude,
-                                  double a_longitude,
-                                  int64_t a_utc_epoch )
+void surveillance_history_record( const observation_location_event_t *a_event )
 {
-    if( NULL == history_lock || NULL == a_device )
+    if( NULL == history_lock || NULL == a_event )
         return;
     xSemaphoreTake( history_lock, portMAX_DELAY );
     if( pending_count == pending_capacity )
@@ -80,16 +68,7 @@ void surveillance_history_record( const rf_device_t *a_device,
         }
     }
     if( pending_count < pending_capacity )
-    {
-        history_point_t *point = &pending[ pending_count++ ];
-        memcpy( point->address, a_device->address, sizeof( point->address ) );
-        point->address_type = a_device->address_type;
-        point->classification = a_device->surveillance;
-        point->latitude = a_latitude;
-        point->longitude = a_longitude;
-        point->utc_epoch = a_utc_epoch;
-        point->seen_ms = a_device->last_seen_ms;
-    }
+        pending[ pending_count++ ] = *a_event;
     else
     {
         ++dropped_points;
