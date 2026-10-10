@@ -13,7 +13,7 @@
 
 #include <stdio.h>
 
-void gps_view_render( void )
+void gps_view_render( bool a_reset_prompt, bool a_reset_yes, bool a_reset_failed )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     rfscout_gps_snapshot_t gps = { 0 };
@@ -22,6 +22,19 @@ void gps_view_render( void )
 
     display_clear( theme->background );
     ui_chrome_draw( "GPS", theme->secondary );
+
+    if( a_reset_prompt )
+    {
+        snprintf( text, sizeof( text ), "TRIP: %.2f km", gps_trip_distance_m() / 1000.0 );
+        display_draw_text( 8, 44, text, theme->text, 2U );
+        display_draw_text( 8, 82, "RESET TRIP DISTANCE?", theme->warning, 1U );
+        display_draw_text(
+            8, 104, a_reset_yes ? "   NO     [YES]" : "  [NO]     YES", theme->text, 2U );
+        display_draw_text( 8, 135, "ROTATE: CHOOSE  SELECT: OK", theme->info, 1U );
+        display_draw_text( 8, 153, "LONG PRESS: CANCEL", theme->info, 1U );
+        (void)display_present();
+        return;
+    }
 
     if( !gps_available() )
     {
@@ -60,7 +73,14 @@ void gps_view_render( void )
             display_draw_text( 8, 76, "WAITING FOR FRESH FIX", theme->info, 1U );
         }
 
-        display_draw_text( 8, 145, "COURSE / DOP / IN-VIEW: PENDING", theme->info, 1U );
     }
+
+    snprintf( text, sizeof( text ), "TRIP: %.2f km", gps_trip_distance_m() / 1000.0 );
+    display_draw_text( 8, 141, text, theme->text, 1U );
+    display_draw_text( 8,
+                       157,
+                       a_reset_failed ? "RESET NOT SAVED" : "SELECT: RESET TRIP",
+                       a_reset_failed ? theme->warning : theme->info,
+                       1U );
     (void)display_present();
 }
