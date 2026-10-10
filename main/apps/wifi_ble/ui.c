@@ -211,20 +211,6 @@ void ui_surveillance_navigate( int a_direction )
     last_refresh_us = 0;
 }
 
-static double distance_to_bounds_m( const rfscout_gps_snapshot_t *a_gps,
-                                    const surveillance_history_entry_t *a_entry )
-{
-    const double latitude =
-        fmax( a_entry->min_latitude, fmin( a_gps->latitude_deg, a_entry->max_latitude ) );
-    const double longitude =
-        fmax( a_entry->min_longitude, fmin( a_gps->longitude_deg, a_entry->max_longitude ) );
-    const double lat_radians = ( latitude - a_gps->latitude_deg ) * 0.017453292519943295;
-    const double lon_radians = ( longitude - a_gps->longitude_deg ) * 0.017453292519943295;
-    const double cosine = cos( a_gps->latitude_deg * 0.017453292519943295 );
-    return 6371000.0 *
-           sqrt( lat_radians * lat_radians + lon_radians * lon_radians * cosine * cosine );
-}
-
 static void render_surveillance_page( void )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
@@ -252,7 +238,7 @@ static void render_surveillance_page( void )
         char distance[ 20 ] = "--";
         if( has_fix )
         {
-            const double meters = distance_to_bounds_m( &gps, &entry );
+            const double meters = entry.nearest_distance_m;
             if( meters >= 1000.0 )
                 snprintf( distance, sizeof( distance ), "%.1fkm", meters / 1000.0 );
             else
