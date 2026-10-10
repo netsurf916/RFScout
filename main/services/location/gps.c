@@ -567,8 +567,7 @@ bool gps_snapshot_get( rfscout_gps_snapshot_t *a_snapshot )
     const int64_t now = esp_timer_get_time();
     a_snapshot->location_age_ms =
         location_us > 0 ? (uint32_t)( ( now - location_us ) / 1000LL ) : UINT32_MAX;
-    a_snapshot->time_age_ms =
-        time_us > 0 ? (uint32_t)( ( now - time_us ) / 1000LL ) : UINT32_MAX;
+    a_snapshot->time_age_ms = time_us > 0 ? (uint32_t)( ( now - time_us ) / 1000LL ) : UINT32_MAX;
     return true;
 }
 
