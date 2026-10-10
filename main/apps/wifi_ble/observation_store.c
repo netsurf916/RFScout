@@ -791,9 +791,27 @@ void observation_store_reevaluate_surveillance( size_t *a_newly_qualified, size_
 
 size_t observation_store_surveillance_devices( rf_device_t *a_devices, size_t a_capacity )
 {
-    (void)a_devices;
-    (void)a_capacity;
-    return 0U;
+    if( NULL == store_lock )
+    {
+        return 0U;
+    }
+    xSemaphoreTake( store_lock, portMAX_DELAY );
+    synchronize_session_store();
+    size_t total = 0U;
+    for( size_t i = 0U; i < device_count; ++i )
+    {
+        if( SURVEILLANCE_NONE == devices[ i ].surveillance )
+        {
+            continue;
+        }
+        if( NULL != a_devices && total < a_capacity )
+        {
+            a_devices[ total ] = devices[ i ];
+        }
+        ++total;
+    }
+    xSemaphoreGive( store_lock );
+    return total;
 }
 
 void observation_store_reset( void )
