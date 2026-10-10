@@ -9,9 +9,32 @@
 #include "observation_store.h"
 
 #include <string.h>
+#include <stdio.h>
 
 #define HISTORY_CAPACITY 128U
 static surveillance_history_entry_t entries[ HISTORY_CAPACITY ];
+
+#define HISTORY_JOURNAL "surveillance.jsonl"
+
+static esp_err_t append_entry( const rfscout_media_file_t *a_file,
+                               const surveillance_history_entry_t *a_entry )
+{
+    char line[ 256 ];
+    const int length = snprintf(
+        line, sizeof( line ),
+        "{\"type\":%u,\"mac\":\"%02X%02X%02X%02X%02X%02X\",\"class\":%u,"
+        "\"min_lat\":%.7f,\"max_lat\":%.7f,\"min_lon\":%.7f,\"max_lon\":%.7f,"
+        "\"seen\":%lu}\n",
+        (unsigned)a_entry->address_type,
+        a_entry->address[ 0 ], a_entry->address[ 1 ], a_entry->address[ 2 ],
+        a_entry->address[ 3 ], a_entry->address[ 4 ], a_entry->address[ 5 ],
+        (unsigned)a_entry->classification,
+        a_entry->min_latitude, a_entry->max_latitude,
+        a_entry->min_longitude, a_entry->max_longitude,
+        (unsigned long)a_entry->last_seen_ms );
+    if( length < 0 || (size_t)length >= sizeof( line ) ) return ESP_ERR_INVALID_SIZE;
+    return media_write( a_file, line, (size_t)length );
+}
 
 size_t surveillance_history_list( surveillance_history_entry_t *a_rows, size_t a_capacity )
 {
@@ -32,6 +55,21 @@ void surveillance_history_open( void )
 
 void surveillance_history_flush( void )
 {
+    rfscout_media_collection_t collection;
+    if( ESP_OK != media_app_collection( "locations", &collection ) ) return;
+    rfscout_media_file_t file = { 0 };
+    if( ESP_OK != media_open( &collection, HISTORY_JOURNAL,
+                              RFSCOUT_MEDIA_OPEN_APPEND, &file ) ) return;
+    for( size_t i = 0U; i < HISTORY_CAPACITY; ++i )
+    {
+        if( entries[ i ].valid && entries[ i ].dirty &&
+            ESP_OK == append_entry( &file, &entries[ i ] ) )
+        {
+            entries[ i ].dirty = false;
+        }
+    }
+    (void)media_sync( &file );
+    (void)media_close( &file );
 }
 
 void surveillance_history_compact( void )
