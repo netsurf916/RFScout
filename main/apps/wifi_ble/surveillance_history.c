@@ -11,6 +11,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <math.h>
 
 static surveillance_history_entry_t *entries;
 static size_t entry_count;
@@ -19,8 +20,21 @@ static size_t journal_appends;
 static observation_history_identity_t *sample_buffer;
 static size_t sample_capacity;
 
+#define HISTORY_LIMIT 48U
+static rfscout_media_file_t replay_file;
+static bool replay_active;
+static bool replay_complete;
+static bool reference_valid;
+static double reference_lat;
+static double reference_lon;
+static char replay_buffer[ 256 ];
+static size_t replay_used;
+static bool replay_overflow;
+
 static bool ensure_history_capacity( size_t a_required )
 {
+    if( a_required > HISTORY_LIMIT )
+        return false;
     if( a_required <= entry_capacity )
         return true;
     if( entry_capacity > SIZE_MAX / 2U )
@@ -28,6 +42,8 @@ static bool ensure_history_capacity( size_t a_required )
     size_t capacity = entry_capacity ? entry_capacity * 2U : 32U;
     if( capacity < a_required )
         capacity = a_required;
+    if( capacity > HISTORY_LIMIT )
+        capacity = HISTORY_LIMIT;
     surveillance_history_entry_t *next =
         app_session_resize( entries, capacity, sizeof( *entries ) );
     if( NULL == next )
