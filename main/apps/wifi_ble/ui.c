@@ -19,7 +19,6 @@
 #include "esp_timer.h"
 
 #include <stdio.h>
-#include <math.h>
 
 #define UI_MAX_KNOWN_BRANDS 8U
 #define UI_REFRESH_INTERVAL_US 100000LL
@@ -226,6 +225,10 @@ static void render_surveillance_page( void )
               has_fix ? "FIX" : "NO FIX" );
     display_draw_text( UI_LAYOUT_LEFT_X, 25, line, theme->info, 1U );
 
+    if( surveillance_selection >= count && count > 0U )
+    {
+        surveillance_selection = (unsigned)( count - 1U );
+    }
     if( count > 6U )
     {
         display_draw_text( UI_LAYOUT_LEFT_X, 150, "MORE DEVICES ACTIVE", theme->info, 1U );
