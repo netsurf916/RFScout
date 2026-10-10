@@ -211,8 +211,8 @@ static double live_receiver_distance( const observation_history_identity_t *a_de
     if( lon > a_device->max_longitude )
         lon = a_device->max_longitude;
     const double dy = ( a_latitude - lat ) * 0.017453292519943295;
-    const double dx = ( a_longitude - lon ) * 0.017453292519943295 *
-                      cos( a_latitude * 0.017453292519943295 );
+    const double dx =
+        ( a_longitude - lon ) * 0.017453292519943295 * cos( a_latitude * 0.017453292519943295 );
     return 6371000.0 * sqrt( dx * dx + dy * dy );
 }
 
@@ -227,11 +227,8 @@ static void render_surveillance_page( void )
     display_clear( theme->background );
     ui_chrome_draw( "SURVEILLANCE", theme->secondary );
     char line[ 80 ];
-    snprintf( line,
-              sizeof( line ),
-              "ACTIVE %u  %s",
-              (unsigned)count,
-              has_fix ? "GPS FIX" : "NO FIX" );
+    snprintf(
+        line, sizeof( line ), "ACTIVE %u  %s", (unsigned)count, has_fix ? "GPS FIX" : "NO FIX" );
     display_draw_text( UI_LAYOUT_LEFT_X, 25, line, theme->info, 1U );
 
     for( size_t row = 0U; row < count && row < 6U; ++row )
@@ -258,11 +255,7 @@ static void render_surveillance_page( void )
                   device.address[ 5 ],
                   device.vendor[ 0 ] ? device.vendor : "Unknown",
                   distance );
-        display_draw_text( UI_LAYOUT_LEFT_X,
-                           43 + (int)row * 17,
-                           line,
-                           theme->normal,
-                           1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 43 + (int)row * 17, line, theme->normal, 1U );
     }
     (void)display_present();
 }
