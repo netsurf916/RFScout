@@ -91,6 +91,23 @@ void surveillance_history_flush( void )
 
 void surveillance_history_compact( void )
 {
+    rfscout_media_collection_t collection;
+    if( ESP_OK != media_app_collection( "locations", &collection ) ) return;
+    rfscout_media_file_t file = { 0 };
+    if( ESP_OK != media_open( &collection, "surveillance.tmp",
+                              RFSCOUT_MEDIA_OPEN_REPLACE, &file ) ) return;
+    bool complete = true;
+    for( size_t i = 0U; i < entry_count; ++i )
+    {
+        if( entries[ i ].valid && ESP_OK != append_entry( &file, &entries[ i ] ) )
+        {
+            complete = false;
+            break;
+        }
+    }
+    if( complete ) complete = ESP_OK == media_sync( &file );
+    if( ESP_OK != media_close( &file ) ) complete = false;
+    if( complete ) (void)media_rename( &collection, "surveillance.tmp", HISTORY_JOURNAL );
 }
 
 void surveillance_history_process_expired( void )
