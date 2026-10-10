@@ -1,5 +1,5 @@
 /**
-    surveillance_history.h : Consolidated receiver observation history
+    surveillance_history.h : Receiver observation history
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -25,10 +25,13 @@ typedef struct
     bool valid;
     bool dirty;
     bool completed;
+    double nearest_distance_m;
 } surveillance_history_entry_t;
 
 void surveillance_history_open( void );
 void surveillance_history_sample( void );
+/** @brief Incrementally replay saved observations when a fresh GPS fix is available. */
+void surveillance_history_replay_step( bool a_foreground );
 /** @brief Persist records for identities removed by timeout. */
 void surveillance_history_process_expired( void );
 void surveillance_history_flush( void );
