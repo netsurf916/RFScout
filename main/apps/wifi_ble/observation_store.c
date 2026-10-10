@@ -29,7 +29,7 @@ static size_t summary_vendor_count;
 static uint16_t wifi_ap_channel_counts[ RFSCOUT_WIFI_CHANNEL_MAX ];
 static uint32_t store_generation;
 static SemaphoreHandle_t store_lock;
-static rf_device_t *expired_devices;
+static observation_history_identity_t *expired_devices;
 static size_t expired_count;
 static size_t expired_capacity;
 static observation_store_event_callback_t event_callback;
@@ -410,6 +410,17 @@ static uint32_t timeout_ms_for_source( rf_source_t a_source )
     return (uint32_t)seconds * 1000U;
 }
 
+static observation_history_identity_t history_identity( const rf_device_t *a_device )
+{
+    observation_history_identity_t identity = { 0 };
+    memcpy( identity.address, a_device->address, sizeof( identity.address ) );
+    identity.address_type = a_device->address_type;
+    memcpy( identity.vendor, a_device->vendor, sizeof( identity.vendor ) );
+    identity.surveillance = a_device->surveillance;
+    identity.last_seen_ms = a_device->last_seen_ms;
+    return identity;
+}
+
 static void emit_event( observation_store_event_t a_event, const rf_device_t *a_device )
 {
     if( OBSERVATION_STORE_EVENT_DROPPED_TIMEOUT == a_event && NULL != a_device )
@@ -427,7 +438,7 @@ static void emit_event( observation_store_event_t a_event, const rf_device_t *a_
         }
         if( expired_count < expired_capacity )
         {
-            expired_devices[ expired_count++ ] = *a_device;
+            expired_devices[ expired_count++ ] = history_identity( a_device );
         }
     }
     if( NULL != event_callback )
@@ -813,7 +824,8 @@ void observation_store_reevaluate_surveillance( size_t *a_newly_qualified, size_
     xSemaphoreGive( store_lock );
 }
 
-size_t observation_store_surveillance_devices( rf_device_t *a_devices, size_t a_capacity )
+size_t observation_store_surveillance_devices( observation_history_identity_t *a_devices,
+                                               size_t a_capacity )
 {
     if( NULL == store_lock )
     {
@@ -830,7 +842,7 @@ size_t observation_store_surveillance_devices( rf_device_t *a_devices, size_t a_
         }
         if( NULL != a_devices && total < a_capacity )
         {
-            a_devices[ total ] = devices[ i ];
+            a_devices[ total ] = history_identity( &devices[ i ] );
         }
         ++total;
     }
@@ -860,11 +872,13 @@ void observation_store_reset( void )
     xSemaphoreGive( store_lock );
 }
 
-size_t observation_store_take_expired( rf_device_t *a_devices, size_t a_capacity )
+size_t observation_store_take_expired( observation_history_identity_t *a_devices,
+                                       size_t a_capacity )
 {
     if( NULL == store_lock || NULL == a_devices || 0U == a_capacity )
         return 0U;
     xSemaphoreTake( store_lock, portMAX_DELAY );
+    synchronize_session_store();
     const size_t count = expired_count < a_capacity ? expired_count : a_capacity;
     memcpy( a_devices, expired_devices, count * sizeof( *a_devices ) );
     expired_count -= count;
