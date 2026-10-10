@@ -37,4 +37,4 @@ Protective power presentation has higher priority than ordinary system-event pre
 
 ## Current limitations
 
-Runtime SD removal is detected when a storage health probe observes media loss. The old volume remains unavailable until a media-store probe invalidates old handles and attempts recovery; later insertion/remount is supported. Event payload richness and any future per-event presentation controls remain roadmap work. Event payload richness and any future per-event presentation controls remain roadmap work.
+Runtime SD removal is detected when a storage health probe observes media loss. The old volume remains unavailable until a media-store probe invalidates old handles and attempts recovery; later insertion/remount is supported. Event payload richness and any future per-event presentation controls remain roadmap work.
