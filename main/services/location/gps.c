@@ -490,7 +490,7 @@ void gps_poll( void )
     if( !initial_probe_complete &&
         ( now - initial_probe_started_us ) / 1000LL >=
             (int64_t)( GPS_INITIAL_PROBE_CYCLES * GPS_BAUD_PROBE_MS *
-                       ( sizeof( GPS_BAUD_RATES ) / sizeof( GPS_BAUD_RATES[ 0 ] ) ) )
+                       ( sizeof( GPS_BAUD_RATES ) / sizeof( GPS_BAUD_RATES[ 0 ] ) ) ) )
     {
         initial_probe_complete = true;
     }
