@@ -29,6 +29,8 @@ static size_t summary_vendor_count;
 static uint16_t wifi_ap_channel_counts[ RFSCOUT_WIFI_CHANNEL_MAX ];
 static uint32_t store_generation;
 static SemaphoreHandle_t store_lock;
+static rf_device_t expired_devices[ 128 ];
+static size_t expired_count;
 static observation_store_event_callback_t event_callback;
 static void *event_context;
 
@@ -406,6 +408,11 @@ static uint32_t timeout_ms_for_source( rf_source_t a_source )
 
 static void emit_event( observation_store_event_t a_event, const rf_device_t *a_device )
 {
+    if( OBSERVATION_STORE_EVENT_DROPPED_TIMEOUT == a_event &&
+        NULL != a_device && expired_count < 128U )
+    {
+        expired_devices[ expired_count++ ] = *a_device;
+    }
     if( NULL != event_callback )
     {
         event_callback( a_event, a_device, event_context );
@@ -834,6 +841,19 @@ void observation_store_reset( void )
     device_count = 0U;
     memset( wifi_ap_channel_counts, 0, sizeof( wifi_ap_channel_counts ) );
     xSemaphoreGive( store_lock );
+}
+
+size_t observation_store_take_expired( rf_device_t *a_devices, size_t a_capacity )
+{
+    if( NULL == store_lock || NULL == a_devices || 0U == a_capacity ) return 0U;
+    xSemaphoreTake( store_lock, portMAX_DELAY );
+    const size_t count = expired_count < a_capacity ? expired_count : a_capacity;
+    memcpy( a_devices, expired_devices, count * sizeof( *a_devices ) );
+    expired_count -= count;
+    memmove( expired_devices, &expired_devices[ count ],
+             expired_count * sizeof( *expired_devices ) );
+    xSemaphoreGive( store_lock );
+    return count;
 }
 
 void observation_store_housekeeping( void )
