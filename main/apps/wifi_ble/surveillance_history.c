@@ -148,21 +148,34 @@ void surveillance_history_open( void )
 
 void surveillance_history_flush( void )
 {
-    rfscout_media_collection_t collection;
-    if( ESP_OK != media_app_collection( "locations", &collection ) ) return;
-    rfscout_media_file_t file = { 0 };
-    if( ESP_OK != media_open( &collection, HISTORY_JOURNAL,
-                              RFSCOUT_MEDIA_OPEN_APPEND, &file ) ) return;
+    size_t dirty = 0U;
     for( size_t i = 0U; i < entry_count; ++i )
+        if( entries[ i ].valid && entries[ i ].dirty ) ++dirty;
+    if( 0U == dirty ) return;
+
+    rfscout_media_collection_t collection;
+    esp_err_t result = media_app_collection( "locations", &collection );
+    rfscout_media_file_t file = { 0 };
+    if( ESP_OK == result )
+        result = media_open( &collection, HISTORY_JOURNAL,
+                             RFSCOUT_MEDIA_OPEN_APPEND, &file );
+    if( ESP_OK == result )
     {
-        if( entries[ i ].valid && entries[ i ].dirty &&
-            ESP_OK == append_entry( &file, &entries[ i ] ) )
+        for( size_t i = 0U; i < entry_count; ++i )
         {
-            entries[ i ].dirty = false;
+            if( !entries[ i ].valid || !entries[ i ].dirty ) continue;
+            result = append_entry( &file, &entries[ i ] );
+            if( ESP_OK != result ) break;
         }
+        if( ESP_OK == result ) result = media_sync( &file );
+        const esp_err_t close_result = media_close( &file );
+        if( ESP_OK == result ) result = close_result;
     }
-    (void)media_sync( &file );
-    (void)media_close( &file );
+    /* One attempt per event; do not queue failed writes for retry. */
+    for( size_t i = 0U; i < entry_count; ++i )
+        entries[ i ].dirty = false;
+    if( ESP_OK != result )
+        printf( "surveillance history flush failed: %ld\\n", (long)result );
 }
 
 void surveillance_history_compact( void )
