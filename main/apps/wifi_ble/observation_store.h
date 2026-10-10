@@ -83,6 +83,24 @@ bool observation_store_observe( rf_device_t *a_observation,
 void observation_store_reevaluate_surveillance( size_t *a_newly_qualified,
                                                 size_t a_count_capacity );
 
+/** @brief Immutable GPS-qualified packet observation for an app-owned persistence sink. */
+typedef struct
+{
+    uint8_t address[ 6 ];
+    uint8_t address_type;
+    surveillance_class_t classification;
+    double latitude;
+    double longitude;
+    int64_t utc_epoch;
+    uint32_t seen_ms;
+} observation_location_event_t;
+
+/** @brief Borrowed packet event, valid only during callback invocation. */
+typedef void ( *observation_location_sink_t )( const observation_location_event_t *a_event );
+
+/** @brief Register the app-owned location journal sink; NULL disables delivery. */
+void observation_store_set_location_sink( observation_location_sink_t a_sink );
+
 /** @brief Compact identity snapshot for history; avoids copying full device records. */
 typedef struct
 {
