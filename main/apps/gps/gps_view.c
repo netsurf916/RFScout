@@ -51,7 +51,14 @@ void gps_view_render( bool a_reset_prompt, bool a_reset_yes, bool a_reset_failed
         snprintf( text, sizeof( text ), "RECEIVER: %s", gps.location_valid ? "FIX" : "NO FIX" );
         display_draw_text( 8, 26, text, gps.location_valid ? theme->success : theme->warning, 1U );
 
-        snprintf( text, sizeof( text ), "SAT USED: %u", (unsigned)gps.satellites );
+        if( gps.satellites_valid )
+        {
+            snprintf( text, sizeof( text ), "SAT USED: %u", (unsigned)gps.satellites );
+        }
+        else
+        {
+            snprintf( text, sizeof( text ), "SAT USED: --" );
+        }
         display_draw_text( 170, 26, text, theme->text, 1U );
 
         if( gps.location_valid )
@@ -60,9 +67,23 @@ void gps_view_render( bool a_reset_prompt, bool a_reset_yes, bool a_reset_failed
             display_draw_text( 8, 48, text, theme->text, 1U );
             snprintf( text, sizeof( text ), "LON: %.6f", gps.longitude_deg );
             display_draw_text( 8, 66, text, theme->text, 1U );
-            snprintf( text, sizeof( text ), "ALT: %.1f m", (double)gps.altitude_m );
+            if( gps.altitude_valid )
+            {
+                snprintf( text, sizeof( text ), "ALT: %.1f m", (double)gps.altitude_m );
+            }
+            else
+            {
+                snprintf( text, sizeof( text ), "ALT: --" );
+            }
             display_draw_text( 8, 84, text, theme->text, 1U );
-            snprintf( text, sizeof( text ), "SPEED: %.1f km/h", (double)gps.speed_mps * 3.6 );
+            if( gps.speed_valid )
+            {
+                snprintf( text, sizeof( text ), "SPEED: %.1f km/h", (double)gps.speed_mps * 3.6 );
+            }
+            else
+            {
+                snprintf( text, sizeof( text ), "SPEED: --" );
+            }
             display_draw_text( 8, 102, text, theme->text, 1U );
             snprintf( text, sizeof( text ), "FIX AGE: %lu ms", (unsigned long)gps.location_age_ms );
             display_draw_text( 8, 120, text, theme->info, 1U );
