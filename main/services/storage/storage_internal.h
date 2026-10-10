@@ -25,4 +25,7 @@ bool storage_io_acquire( uint32_t a_timeout_ms );
 /** @brief Release storage-service arbitration after storage_io_acquire() succeeds. */
 void storage_io_release( void );
 
+/** @brief Unmount a latched-lost card and attempt a fresh mount. Caller must close media handles. */
+esp_err_t storage_recover_lost_media( void );
+
 #endif // _RFSCOUT_STORAGE_INTERNAL_H_
