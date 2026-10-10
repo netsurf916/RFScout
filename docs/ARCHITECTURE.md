@@ -250,7 +250,7 @@ The retired monolithic internal `rfscout.json` representation is not authoritati
 
 `device_time` owns RTC-backed wall-clock validity/source, Auto/Manual policy, timezone conversion, and manual time independently from any location provider.
 
-The current T-Embed profile does not advertise onboard GPS. A compatible GPS/location provider remains capability-gated. Home infrastructure networking can provide NTP after DHCP; NTP synchronization does not change the stored Auto/Manual policy.
+The current T-Embed profile advertises optional external UART GPS on GPIO43/44. A compatible GPS/location provider remains capability-gated. Home infrastructure networking can provide NTP after DHCP; NTP synchronization does not change the stored Auto/Manual policy.
 
 Deep sleep loses ordinary RAM, so supported profiles keep a small RTC-backed session envelope separate from persistent configuration. Current state preserves active application and input-lock state; menus, edit state, queued sounds, and active Recorder operations are not reconstructed.
 
@@ -400,6 +400,6 @@ Build/release procedure is documented in [Firmware releases](operations/RELEASIN
 
 The T-Embed GPIO43/44 pair is shared by GPS UART TX/RX and the nRF24 CE/CSN interface. nRF24 identity discovery occurs during framework startup before GPS UART initialization. The probe powers the nRF24 down (`CONFIG=0x00`), detaches its SPI device, and releases both pins. GPS then probes five UART baud rates (38400, 9600, 19200, 57600, 115200) with a minimum two-cycle, 15-second initial detection window.
 
-Checksum-valid RMC/GGA reception latches GPS receiver presence until reboot, independently of fix freshness. Once latched, nRF24 probing/initialization/activation is forbidden. Without a detected receiver, the nRF24 service may stop GPS and claim the pins only after the initial probe window; stopping the radio must quiesce its worker, power down, detach SPI, release the pins, and restore GPS detection. GPS UART polling must never run while nRF24 owns these pins. The nRF24 app can defer activation until the probe window completes.
+Checksum-valid RMC/GGA reception establishes GPS receiver presence independently of fix freshness. Presence expires after the Home-configurable NMEA inactivity timeout (default 5 seconds, 2–30 second range). While GPS is present, nRF24 acquisition is forbidden. After the initial startup detection window, a demand-driven nRF24 probe may temporarily stop an absent GPS provider, claim the pins, then restore GPS monitoring. An active nRF24 session holds the pins until app exit and cannot be preempted by GPS. Stopping the radio must quiesce its worker, power down, detach SPI, release the pins, and restore GPS detection; stopping an unstarted radio must not touch GPS-owned pins. GPS UART polling must never run while nRF24 owns these pins. Connecting or powering a GPS receiver during an active radio session is unsupported and may cause undefined hardware behavior.
 
 This is a software pin-ownership policy, not galvanic isolation: nRF24 CSN remains electrically connected to GPIO44 in power-down. The target hardware must be checked for UART-induced CSN transitions, other SPI traffic, and any unintended radio behavior.
