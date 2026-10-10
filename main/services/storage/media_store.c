@@ -739,7 +739,8 @@ esp_err_t media_rename( const rfscout_media_collection_t *a_collection,
         return ESP_ERR_INVALID_ARG;
     }
     char source[ MEDIA_PATH_MAX ];
-    esp_err_t result = begin_named_operation( a_collection, a_source_name, source, sizeof( source ) );
+    esp_err_t result =
+        begin_named_operation( a_collection, a_source_name, source, sizeof( source ) );
     if( ESP_OK != result )
     {
         return result;
