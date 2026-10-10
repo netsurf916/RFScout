@@ -109,7 +109,7 @@ esp_err_t storage_init( void )
                                                             .allocation_unit_size = 16U * 1024U };
 
     /* Mounting talks to the card; hot-plug probes can run it while other SPI clients are active. */
-    if( !storage_io_acquire( RFSCOUT_STORAGE_WAIT_FOREVER ) )
+    if( !storage_io_acquire( STORAGE_PROBE_IO_TIMEOUT_MS ) )
     {
         return ESP_ERR_TIMEOUT;
     }
