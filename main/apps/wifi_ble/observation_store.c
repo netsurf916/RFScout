@@ -867,8 +867,11 @@ size_t observation_store_take_expired( rf_device_t *a_devices, size_t a_capacity
     const size_t count = expired_count < a_capacity ? expired_count : a_capacity;
     memcpy( a_devices, expired_devices, count * sizeof( *a_devices ) );
     expired_count -= count;
-    memmove( expired_devices, &expired_devices[ count ],
-             expired_count * sizeof( *expired_devices ) );
+    if( 0U != expired_count )
+    {
+        memmove( expired_devices, &expired_devices[ count ],
+                 expired_count * sizeof( *expired_devices ) );
+    }
     xSemaphoreGive( store_lock );
     return count;
 }
