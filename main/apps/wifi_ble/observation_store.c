@@ -789,6 +789,13 @@ void observation_store_reevaluate_surveillance( size_t *a_newly_qualified, size_
     xSemaphoreGive( store_lock );
 }
 
+size_t observation_store_surveillance_devices( rf_device_t *a_devices, size_t a_capacity )
+{
+    (void)a_devices;
+    (void)a_capacity;
+    return 0U;
+}
+
 void observation_store_reset( void )
 {
     if( NULL == store_lock )
