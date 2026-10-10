@@ -22,6 +22,10 @@ typedef struct
     bool location_valid;
     /** True only while a recently received fix-valid UTC timestamp remains fresh. */
     bool time_valid;
+    /** Per-sentence freshness: GGA altitude, RMC speed and GGA satellites used. */
+    bool altitude_valid;
+    bool speed_valid;
+    bool satellites_valid;
     double latitude_deg;
     double longitude_deg;
     float altitude_m;
