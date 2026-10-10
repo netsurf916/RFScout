@@ -484,6 +484,7 @@ static void parse_line( char *a_line )
     else if( type_length >= 3U && 0 == strcmp( payload + type_length - 3U, "GGA" ) )
     {
         lock_active_baud();
+        last_nmea_us = esp_timer_get_time();
         snapshot.available = true;
         parse_gga( comma + 1 );
     }
