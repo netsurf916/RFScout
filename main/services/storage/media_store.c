@@ -24,7 +24,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define MEDIA_IO_TIMEOUT_MS 10000U
+#define MEDIA_IO_TIMEOUT_MS 250U
 #define MEDIA_PATH_MAX                                                                             \
     ( sizeof( RFSCOUT_STORAGE_MOUNT_POINT ) + RFSCOUT_MEDIA_OWNER_MAX +                            \
       RFSCOUT_MEDIA_COLLECTION_MAX + RFSCOUT_MEDIA_NAME_MAX + 4U )
