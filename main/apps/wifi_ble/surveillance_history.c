@@ -40,9 +40,9 @@ void surveillance_history_open( void )
         (void)app_session_free( pending );
     if( NULL != writing )
         (void)app_session_free( writing );
-    pending = NULL;
+    pending = app_session_resize( NULL, 64U, sizeof( *pending ) );
     pending_count = 0U;
-    pending_capacity = 0U;
+    pending_capacity = NULL != pending ? 64U : 0U;
     writing = NULL;
     writing_count = 0U;
     dropped_points = 0U;
@@ -54,19 +54,6 @@ void surveillance_history_record( const observation_location_event_t *a_event )
     if( NULL == history_lock || NULL == a_event )
         return;
     xSemaphoreTake( history_lock, portMAX_DELAY );
-    if( pending_count == pending_capacity )
-    {
-        const size_t capacity = pending_capacity ? pending_capacity * 2U : 64U;
-        if( capacity <= SIZE_MAX / sizeof( *pending ) )
-        {
-            history_point_t *next = app_session_resize( pending, capacity, sizeof( *pending ) );
-            if( NULL != next )
-            {
-                pending = next;
-                pending_capacity = capacity;
-            }
-        }
-    }
     if( pending_count < pending_capacity )
         pending[ pending_count++ ] = *a_event;
     else
@@ -111,11 +98,19 @@ void surveillance_history_flush( void )
     xSemaphoreTake( history_lock, portMAX_DELAY );
     if( NULL == writing && pending_count != 0U )
     {
-        writing = pending;
-        writing_count = pending_count;
-        pending = NULL;
-        pending_count = 0U;
-        pending_capacity = 0U;
+        const size_t next_capacity =
+            pending_count > pending_capacity / 2U && pending_capacity <= SIZE_MAX / 2U
+                ? pending_capacity * 2U
+                : pending_capacity;
+        history_point_t *next = app_session_resize( NULL, next_capacity, sizeof( *pending ) );
+        if( NULL != next )
+        {
+            writing = pending;
+            writing_count = pending_count;
+            pending = next;
+            pending_count = 0U;
+            pending_capacity = next_capacity;
+        }
     }
     xSemaphoreGive( history_lock );
     if( NULL == writing )
