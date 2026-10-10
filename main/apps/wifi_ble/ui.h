@@ -18,12 +18,6 @@ void ui_set_surveillance_page( bool a_enabled );
 /** @brief Return whether the surveillance list is displayed. */
 bool ui_surveillance_page_active( void );
 
-/** @brief Move the selected surveillance list row by one step. */
-void ui_surveillance_navigate( int a_direction );
-
-/** @brief Show whether the rotary scrolls the list or switches views. */
-void ui_surveillance_set_focused( bool a_focused );
-
 /** @brief Refresh the WiFi/BLE display when its update interval has elapsed. */
 void ui_poll( void );
 
