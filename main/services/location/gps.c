@@ -16,6 +16,9 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
+
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -47,6 +50,22 @@ static int64_t baud_probe_started_us;
 static char line[ GPS_LINE_MAX ];
 static size_t line_length;
 static rfscout_gps_snapshot_t snapshot;
+static portMUX_TYPE snapshot_mux = portMUX_INITIALIZER_UNLOCKED;
+static rfscout_gps_snapshot_t published_snapshot;
+static int64_t published_location_us;
+static int64_t published_time_us;
+static bool published_initialized;
+
+static void publish_snapshot( void )
+{
+    portENTER_CRITICAL( &snapshot_mux );
+    published_snapshot = snapshot;
+    published_location_us = location_updated_us;
+    published_time_us = time_updated_us;
+    published_initialized = initialized;
+    portEXIT_CRITICAL( &snapshot_mux );
+}
+
 static int64_t location_updated_us;
 static int64_t time_updated_us;
 
@@ -381,6 +400,7 @@ esp_err_t gps_init( void )
     active_baud_index = 0U;
     baud_probe_started_us = 0;
     initialized = false;
+    publish_snapshot();
     if( !RFSCOUT_BOARD_HAS_GPS )
     {
         return ESP_ERR_NOT_SUPPORTED;
@@ -522,20 +542,32 @@ void gps_poll( void )
     {
         snapshot.time_valid = false;
     }
+    publish_snapshot();
 }
 
 bool gps_snapshot_get( rfscout_gps_snapshot_t *a_snapshot )
 {
-    if( NULL == a_snapshot || !initialized || !snapshot.available )
-    {
+    if( NULL == a_snapshot )
         return false;
+    int64_t location_us;
+    int64_t time_us;
+    bool ready;
+    portENTER_CRITICAL( &snapshot_mux );
+    ready = published_initialized && published_snapshot.available;
+    if( ready )
+    {
+        *a_snapshot = published_snapshot;
+        location_us = published_location_us;
+        time_us = published_time_us;
     }
-    *a_snapshot = snapshot;
+    portEXIT_CRITICAL( &snapshot_mux );
+    if( !ready )
+        return false;
     const int64_t now = esp_timer_get_time();
     a_snapshot->location_age_ms =
-        location_updated_us > 0 ? (uint32_t)( ( now - location_updated_us ) / 1000LL ) : UINT32_MAX;
+        location_us > 0 ? (uint32_t)( ( now - location_us ) / 1000LL ) : UINT32_MAX;
     a_snapshot->time_age_ms =
-        time_updated_us > 0 ? (uint32_t)( ( now - time_updated_us ) / 1000LL ) : UINT32_MAX;
+        time_us > 0 ? (uint32_t)( ( now - time_us ) / 1000LL ) : UINT32_MAX;
     return true;
 }
 
