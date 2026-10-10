@@ -56,7 +56,6 @@ static bool ensure_history_capacity( size_t a_required )
 
 #define HISTORY_JOURNAL "surveillance.jsonl"
 
-
 typedef struct
 {
     uint8_t address[ 6 ];
@@ -76,20 +75,25 @@ static uint8_t last_sample_address[ HISTORY_LIMIT ][ 6 ];
 static uint8_t last_sample_type[ HISTORY_LIMIT ];
 static size_t last_sample_count;
 
-static esp_err_t append_point( const rfscout_media_file_t *a_file,
-                               const history_point_t *a_point )
+static esp_err_t append_point( const rfscout_media_file_t *a_file, const history_point_t *a_point )
 {
     char line[ 256 ];
-    const int length = snprintf(
-        line, sizeof( line ),
-        "{\"type\":%u,\"mac\":\"%02X%02X%02X%02X%02X%02X\",\"class\":%u,"
-        "\"lat\":%.7f,\"lon\":%.7f,\"utc\":%lld,\"seen\":%lu}\n",
-        (unsigned)a_point->address_type,
-        a_point->address[ 0 ], a_point->address[ 1 ], a_point->address[ 2 ],
-        a_point->address[ 3 ], a_point->address[ 4 ], a_point->address[ 5 ],
-        (unsigned)a_point->classification,
-        a_point->latitude, a_point->longitude,
-        (long long)a_point->utc_epoch, (unsigned long)a_point->seen_ms );
+    const int length = snprintf( line,
+                                 sizeof( line ),
+                                 "{\"type\":%u,\"mac\":\"%02X%02X%02X%02X%02X%02X\",\"class\":%u,"
+                                 "\"lat\":%.7f,\"lon\":%.7f,\"utc\":%lld,\"seen\":%lu}\n",
+                                 (unsigned)a_point->address_type,
+                                 a_point->address[ 0 ],
+                                 a_point->address[ 1 ],
+                                 a_point->address[ 2 ],
+                                 a_point->address[ 3 ],
+                                 a_point->address[ 4 ],
+                                 a_point->address[ 5 ],
+                                 (unsigned)a_point->classification,
+                                 a_point->latitude,
+                                 a_point->longitude,
+                                 (long long)a_point->utc_epoch,
+                                 (unsigned long)a_point->seen_ms );
     if( length < 0 || (size_t)length >= sizeof( line ) )
         return ESP_ERR_INVALID_SIZE;
     return media_write( a_file, line, (size_t)length );
@@ -146,13 +150,21 @@ static void replay_line( const char *a_line )
     unsigned long seen;
     double latitude = 0.0, longitude = 0.0;
     long long utc = 0;
-    const bool discrete = 12 == sscanf(
-        a_line,
-        "{\"type\":%u,\"mac\":\"%2x%2x%2x%2x%2x%2x\",\"class\":%u,"
-        "\"lat\":%lf,\"lon\":%lf,\"utc\":%lld,\"seen\":%lu}",
-        &type, &address[ 0 ], &address[ 1 ], &address[ 2 ],
-        &address[ 3 ], &address[ 4 ], &address[ 5 ], &classification,
-        &latitude, &longitude, &utc, &seen );
+    const bool discrete = 12 == sscanf( a_line,
+                                        "{\"type\":%u,\"mac\":\"%2x%2x%2x%2x%2x%2x\",\"class\":%u,"
+                                        "\"lat\":%lf,\"lon\":%lf,\"utc\":%lld,\"seen\":%lu}",
+                                        &type,
+                                        &address[ 0 ],
+                                        &address[ 1 ],
+                                        &address[ 2 ],
+                                        &address[ 3 ],
+                                        &address[ 4 ],
+                                        &address[ 5 ],
+                                        &classification,
+                                        &latitude,
+                                        &longitude,
+                                        &utc,
+                                        &seen );
     if( !discrete )
         return; /* Discard obsolete bounding-box records. */
     if( type > UINT8_MAX || classification > SURVEILLANCE_OTHER )
@@ -177,8 +189,8 @@ static void replay_line( const char *a_line )
             break;
         }
     }
-    if( !isfinite( latitude ) || !isfinite( longitude ) ||
-        fabs( latitude ) > 90.0 || fabs( longitude ) > 180.0 )
+    if( !isfinite( latitude ) || !isfinite( longitude ) || fabs( latitude ) > 90.0 ||
+        fabs( longitude ) > 180.0 )
         return;
     const double distance = history_distance( latitude, longitude );
     if( NULL != entry && distance >= entry->nearest_distance_m )
@@ -279,8 +291,8 @@ void surveillance_history_replay_step( bool a_foreground )
     {
         rfscout_media_collection_t collection;
         if( ESP_OK != media_app_collection( "locations", &collection ) ||
-            ESP_OK != media_open( &collection, HISTORY_JOURNAL,
-                                  RFSCOUT_MEDIA_OPEN_READ, &replay_file ) )
+            ESP_OK !=
+                media_open( &collection, HISTORY_JOURNAL, RFSCOUT_MEDIA_OPEN_READ, &replay_file ) )
             return;
         replay_active = true;
         if( replay_offset != 0U &&
@@ -449,8 +461,8 @@ void surveillance_history_sample( void )
             continue;
         if( NULL == pending_points )
         {
-            pending_points = app_session_resize( NULL, HISTORY_PENDING_LIMIT,
-                                                  sizeof( *pending_points ) );
+            pending_points =
+                app_session_resize( NULL, HISTORY_PENDING_LIMIT, sizeof( *pending_points ) );
             if( NULL == pending_points )
                 return;
         }
