@@ -7,6 +7,8 @@
 #include "app_session.h"
 #include "media_store.h"
 
+#include "esp_log.h"
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
@@ -14,6 +16,9 @@
 #include <string.h>
 
 #define HISTORY_JOURNAL "surveillance.jsonl"
+
+static const char *TAG = "surveillance_history";
+static uint32_t dropped_points;
 
 typedef struct
 {
@@ -49,6 +54,7 @@ void surveillance_history_open( void )
     pending_capacity = 0U;
     writing = NULL;
     writing_count = 0U;
+    dropped_points = 0U;
     xSemaphoreGive( history_lock );
 }
 
@@ -83,6 +89,13 @@ void surveillance_history_record( const rf_device_t *a_device,
         point->longitude = a_longitude;
         point->utc_epoch = a_utc_epoch;
         point->seen_ms = a_device->last_seen_ms;
+    }
+    else
+    {
+        ++dropped_points;
+        if( 1U == dropped_points || 0U == ( dropped_points % 100U ) )
+            ESP_LOGW( TAG, "Journal PSRAM exhausted; dropped %lu packet observations",
+                      (unsigned long)dropped_points );
     }
     xSemaphoreGive( history_lock );
 }
@@ -144,8 +157,8 @@ void surveillance_history_flush( void )
         if( ESP_OK != result )
             (void)media_truncate( &file, original_size );
         const esp_err_t close_result = media_close( &file );
-        if( ESP_OK == result )
-            result = close_result;
+        if( ESP_OK != close_result )
+            ESP_LOGW( TAG, "Journal close returned %ld", (long)close_result );
     }
     if( ESP_OK == result )
     {
@@ -154,5 +167,5 @@ void surveillance_history_flush( void )
         writing_count = 0U;
     }
     else
-        printf( "surveillance journal flush failed: %ld\n", (long)result );
+        ESP_LOGW( TAG, "Surveillance journal flush failed: %ld", (long)result );
 }
