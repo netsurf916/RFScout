@@ -247,8 +247,8 @@ static bool item_direct_toggle( unsigned a_item )
            ( DEVICE_ITEM_HOTSPOTS == a_item ) || ( DEVICE_ITEM_CC1101 == a_item ) ||
            ( DEVICE_ITEM_NRF24 == a_item ) || ( DEVICE_ITEM_AUDIO == a_item ) ||
            ( DEVICE_ITEM_THERMAL == a_item ) || ( DEVICE_ITEM_AUDIO_SPECTRUM == a_item ) ||
-            ( DEVICE_ITEM_GPS == a_item ) ||
-           ( DEVICE_ITEM_LOGGING == a_item ) || ( DEVICE_ITEM_HOLD_SHORTCUT == a_item );
+           ( DEVICE_ITEM_GPS == a_item ) || ( DEVICE_ITEM_LOGGING == a_item ) ||
+           ( DEVICE_ITEM_HOLD_SHORTCUT == a_item );
 }
 
 static bool item_editable( unsigned a_item )
@@ -455,7 +455,8 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
                       on_off( config->apps_enabled[ RFSCOUT_APP_AUDIO_SPECTRUM ] ) );
             break;
         case DEVICE_ITEM_GPS:
-            snprintf( a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_GPS ] ) );
+            snprintf(
+                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_GPS ] ) );
             break;
         case DEVICE_ITEM_LOGGING:
             snprintf( a_value, a_capacity, "%s", on_off( config->logging_enabled ) );
