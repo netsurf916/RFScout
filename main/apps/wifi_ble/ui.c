@@ -44,6 +44,21 @@ static const char *TAG = "ui";
 static int64_t last_refresh_us;
 static bool surveillance_page;
 static unsigned surveillance_selection;
+typedef struct
+{
+    uint8_t address[ 6 ];
+    uint8_t address_type;
+    double min_latitude;
+    double max_latitude;
+    double min_longitude;
+    double max_longitude;
+    uint32_t last_seen_ms;
+    bool valid;
+} surveillance_bounds_t;
+
+#define UI_BOUNDS_CAPACITY 128U
+static surveillance_bounds_t bounds[ UI_BOUNDS_CAPACITY ];
+
 
 static void draw_static_rows( size_t a_unknown_count, size_t a_random_count )
 {
