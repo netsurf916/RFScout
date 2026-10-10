@@ -83,6 +83,40 @@ static esp_err_t append_entry( const rfscout_media_file_t *a_file,
     return media_write( a_file, line, (size_t)length );
 }
 
+typedef struct
+{
+    uint8_t address[ 6 ];
+    uint8_t address_type;
+    surveillance_class_t classification;
+    double latitude;
+    double longitude;
+    int64_t utc_epoch;
+    uint32_t seen_ms;
+} history_point_t;
+
+#define HISTORY_PENDING_LIMIT 128U
+static history_point_t *pending_points;
+static size_t pending_count;
+
+static esp_err_t append_point( const rfscout_media_file_t *a_file,
+                               const history_point_t *a_point )
+{
+    char line[ 256 ];
+    const int length = snprintf(
+        line, sizeof( line ),
+        "{\"type\":%u,\"mac\":\"%02X%02X%02X%02X%02X%02X\",\"class\":%u,"
+        "\"lat\":%.7f,\"lon\":%.7f,\"utc\":%lld,\"seen\":%lu}\n",
+        (unsigned)a_point->address_type,
+        a_point->address[ 0 ], a_point->address[ 1 ], a_point->address[ 2 ],
+        a_point->address[ 3 ], a_point->address[ 4 ], a_point->address[ 5 ],
+        (unsigned)a_point->classification,
+        a_point->latitude, a_point->longitude,
+        (long long)a_point->utc_epoch, (unsigned long)a_point->seen_ms );
+    if( length < 0 || (size_t)length >= sizeof( line ) )
+        return ESP_ERR_INVALID_SIZE;
+    return media_write( a_file, line, (size_t)length );
+}
+
 bool surveillance_history_get( size_t a_index, surveillance_history_entry_t *a_entry )
 {
     if( NULL == a_entry || a_index >= entry_count )
@@ -243,7 +277,10 @@ void surveillance_history_open( void )
         (void)app_session_free( sample_buffer );
     sample_buffer = NULL;
     sample_capacity = 0U;
-
+    if( NULL != pending_points )
+        (void)app_session_free( pending_points );
+    pending_points = NULL;
+    pending_count = 0U;
 }
 
 void surveillance_history_replay_step( bool a_foreground )
