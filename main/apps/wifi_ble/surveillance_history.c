@@ -144,18 +144,21 @@ void surveillance_history_flush( void )
 
     rfscout_media_collection_t collection;
     rfscout_media_file_t file = { 0 };
-    esp_err_t result = media_app_collection( "locations", &collection );
+    esp_err_t result = media_store_probe();
+    if( ESP_OK == result )
+        result = media_app_collection( "locations", &collection );
     if( ESP_OK == result )
         result = media_open( &collection, HISTORY_JOURNAL, RFSCOUT_MEDIA_OPEN_APPEND, &file );
     if( ESP_OK == result )
     {
         uint64_t original_size = 0U;
         result = media_size( &file, &original_size );
+        const bool size_known = ESP_OK == result;
         for( size_t i = 0U; ESP_OK == result && i < writing_count; ++i )
             result = append_point( &file, &writing[ i ] );
         if( ESP_OK == result )
             result = media_sync( &file );
-        if( ESP_OK != result )
+        if( ESP_OK != result && size_known )
             (void)media_truncate( &file, original_size );
         const esp_err_t close_result = media_close( &file );
         if( ESP_OK != close_result )
