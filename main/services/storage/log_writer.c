@@ -321,8 +321,19 @@ static bool open_segment( void )
    arbitration, so a recovery cannot replace the volume between them. */
 static bool open_segment_serialized( void )
 {
-    if( !storage_io_acquire( RFSCOUT_STORAGE_WAIT_FOREVER ) )
+    /* Recheck once only when unavailable; the shared cooldown prevents repeated mounts. */
+    if( !media_store_available() && ESP_OK != media_store_probe() )
     {
+        return false;
+    }
+    if( !storage_io_acquire( 250U ) )
+    {
+        return false;
+    }
+    /* Do not inspect per-volume segment state while the media is unavailable. */
+    if( !media_store_available() )
+    {
+        storage_io_release();
         return false;
     }
     const bool result = open_segment();
@@ -825,11 +836,11 @@ static bool flush_buffer( void )
     }
     else
     {
-        flush_requested = true;
-        if( 0 == buffer_started_us )
-        {
-            buffer_started_us = esp_timer_get_time();
-        }
+        /* SD logs are best-effort. Discard failed data instead of retrying a backlog. */
+        buffer_used = 0U;
+        record_start = 0U;
+        buffer_started_us = 0;
+        flush_requested = false;
     }
     xSemaphoreGive( buffer_lock );
     return success;
