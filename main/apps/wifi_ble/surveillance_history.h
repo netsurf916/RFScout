@@ -1,5 +1,5 @@
 /**
-    surveillance_history.h : Consolidated receiver observation history
+    surveillance_history.h : Append-only receiver observation journal
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -7,33 +7,14 @@
 
 #include "rf_observation.h"
 
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-
-typedef struct
-{
-    uint8_t address[ 6 ];
-    uint8_t address_type;
-    char vendor[ 32 ];
-    surveillance_class_t classification;
-    double min_latitude;
-    double max_latitude;
-    double min_longitude;
-    double max_longitude;
-    uint32_t last_seen_ms;
-    bool valid;
-    bool dirty;
-    bool completed;
-    double nearest_distance_m;
-} surveillance_history_entry_t;
-
+/** @brief Reset pending journal state on app entry. */
 void surveillance_history_open( void );
-void surveillance_history_sample( void );
-void surveillance_history_replay_step( bool a_foreground );
-/** @brief Persist records for identities removed by timeout. */
-void surveillance_history_process_expired( void );
+
+/** @brief Capture one GPS-qualified packet observation without SD I/O. */
+void surveillance_history_record( const rf_device_t *a_device,
+                                  double a_latitude,
+                                  double a_longitude,
+                                  int64_t a_utc_epoch );
+
+/** @brief Append pending packet observations from the app poll, never from radio callbacks. */
 void surveillance_history_flush( void );
-void surveillance_history_compact( void );
-bool surveillance_history_get( size_t a_index, surveillance_history_entry_t *a_entry );
-size_t surveillance_history_list( surveillance_history_entry_t *a_rows, size_t a_capacity );
