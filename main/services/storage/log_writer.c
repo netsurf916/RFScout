@@ -54,6 +54,7 @@ static bool active_open;
 static uint32_t active_sequence;
 static unsigned active_slot;
 static size_t active_size;
+static uint32_t active_media_generation;
 static volatile bool accepting;
 static volatile bool shutdown_requested;
 static volatile bool writer_stopped;
@@ -210,6 +211,17 @@ static bool write_header_line( const char *a_line, int a_length, const char *a_o
 
 static bool open_segment( void )
 {
+    const uint32_t generation = media_store_generation();
+    if( generation != active_media_generation )
+    {
+        /* Media replacement invalidates the old handle and all per-volume segment state.
+           Rebuild from the newly mounted card before any append. */
+        active_open = false;
+        memset( &active_file, 0, sizeof( active_file ) );
+        find_next_segment();
+        active_media_generation = generation;
+        ESP_LOGI( TAG, "SD media generation changed; log segment state rebuilt" );
+    }
     if( active_open )
     {
         return true;
@@ -878,6 +890,7 @@ esp_err_t log_writer_init( void )
     }
 
     find_next_segment();
+    active_media_generation = media_store_generation();
     buffer_used = 0U;
     record_start = 0U;
     buffer_started_us = 0;
