@@ -55,33 +55,6 @@ static bool ensure_history_capacity( size_t a_required )
 
 #define HISTORY_JOURNAL "surveillance.jsonl"
 
-static esp_err_t append_entry( const rfscout_media_file_t *a_file,
-                               const surveillance_history_entry_t *a_entry )
-{
-    char line[ 256 ];
-    const int length =
-        snprintf( line,
-                  sizeof( line ),
-                  "{\"type\":%u,\"mac\":\"%02X%02X%02X%02X%02X%02X\",\"class\":%u,"
-                  "\"min_lat\":%.7f,\"max_lat\":%.7f,\"min_lon\":%.7f,\"max_lon\":%.7f,"
-                  "\"seen\":%lu}\n",
-                  (unsigned)a_entry->address_type,
-                  a_entry->address[ 0 ],
-                  a_entry->address[ 1 ],
-                  a_entry->address[ 2 ],
-                  a_entry->address[ 3 ],
-                  a_entry->address[ 4 ],
-                  a_entry->address[ 5 ],
-                  (unsigned)a_entry->classification,
-                  a_entry->min_latitude,
-                  a_entry->max_latitude,
-                  a_entry->min_longitude,
-                  a_entry->max_longitude,
-                  (unsigned long)a_entry->last_seen_ms );
-    if( length < 0 || (size_t)length >= sizeof( line ) )
-        return ESP_ERR_INVALID_SIZE;
-    return media_write( a_file, line, (size_t)length );
-}
 
 typedef struct
 {
