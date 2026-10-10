@@ -42,6 +42,7 @@ typedef struct
 static const char *TAG = "media_store";
 static media_slot_t slots[ MEDIA_SLOT_COUNT ];
 static uint32_t next_serial;
+static uint32_t media_generation;
 
 /** @brief Translate a filesystem errno into the documented media-store error vocabulary. */
 static esp_err_t errno_result( int a_errno )
@@ -270,6 +271,11 @@ bool media_store_available( void )
     return storage_is_available();
 }
 
+uint32_t media_store_generation( void )
+{
+    return __atomic_load_n( &media_generation, __ATOMIC_ACQUIRE );
+}
+
 esp_err_t media_store_probe( void )
 {
     if( !storage_is_available() )
@@ -289,6 +295,7 @@ esp_err_t media_store_probe( void )
         storage_io_release();
         if( ESP_OK != result )
             return ESP_ERR_NOT_FOUND;
+        (void)__atomic_add_fetch( &media_generation, 1U, __ATOMIC_RELEASE );
     }
     return ( ESP_OK == storage_probe_card() ) ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
