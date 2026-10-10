@@ -730,6 +730,33 @@ esp_err_t media_remove( const rfscout_media_collection_t *a_collection, const ch
     return result;
 }
 
+esp_err_t media_rename( const rfscout_media_collection_t *a_collection,
+                        const char *a_source_name,
+                        const char *a_destination_name )
+{
+    if( !media_name_valid( a_source_name ) || !media_name_valid( a_destination_name ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    char source[ MEDIA_PATH_MAX ];
+    esp_err_t result = begin_named_operation( a_collection, a_source_name, source, sizeof( source ) );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+    char destination[ MEDIA_PATH_MAX ];
+    if( !build_path( a_collection, a_destination_name, false, destination, sizeof( destination ) ) )
+    {
+        result = ESP_ERR_INVALID_SIZE;
+    }
+    else if( 0 != rename( source, destination ) )
+    {
+        result = errno_result( errno );
+    }
+    storage_io_release();
+    return result;
+}
+
 esp_err_t media_list( const rfscout_media_collection_t *a_collection,
                       rfscout_media_list_fn a_visit,
                       void *a_context )
