@@ -615,3 +615,10 @@ These are ideas worth preserving, not committed scope or priority.
 - Do not leave future-tense design promises in README, Architecture, app pages, Getting Started, Coding Style, or the release runbook.
 - Keep speculative/vision material here unless a separate technical research document is genuinely needed for a specialized subject.
 - A merged planning-only PR does not mean its feature is implemented; status must distinguish design capture from production code.
+
+### Surveillance location journal and navigation
+
+- [ ] Persist completed, threshold-qualified surveillance observation sessions to SD as JSONL via WiFi/BLE-owned media collection; accumulate latitude/longitude receiver bounds only from fresh valid GPS fixes.
+- [ ] Flush once on ordinary timeout, manual reset, and app exit; bounded best-effort I/O without retry queues or extended transition blocking.
+- [ ] Add WiFi/BLE surveillance location page (type, brand, truncated MAC, GPS distance), using shared App Lock for rotary navigation, retaining collector lifecycle and evidence semantics.
+- [ ] Exercise storage-unavailable, stale/no-fix, source-specific aging, threshold changes, reset/exit, long-running scans, and display tests; confirm no radio callback performs filesystem operations.
