@@ -348,6 +348,9 @@ static void flush_pending( bool a_include_active )
 void surveillance_history_flush( void )
 {
     flush_pending( true );
+    if( replay_active )
+        (void)media_close( &replay_file );
+    replay_active = false;
 }
 
 void surveillance_history_compact( void )
@@ -404,6 +407,11 @@ void surveillance_history_process_expired( void )
     }
     if( changed )
     {
+        if( replay_active )
+            (void)media_close( &replay_file );
+        replay_active = false;
+        replay_complete = false;
+        replay_used = 0U;
         flush_pending( false );
         if( journal_appends >= 64U )
             surveillance_history_compact();
