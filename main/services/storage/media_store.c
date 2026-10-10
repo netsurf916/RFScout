@@ -744,6 +744,18 @@ esp_err_t media_rename( const rfscout_media_collection_t *a_collection,
     {
         return result;
     }
+    /* Refuse rename while any collection handle is open: open streams can otherwise
+       append to an unlinked or replaced journal without the caller noticing. */
+    for( size_t index = 0U; index < MEDIA_SLOT_COUNT; ++index )
+    {
+        const media_slot_t *slot = &slots[ index ];
+        if( NULL != slot->file && slot->system == a_collection->system &&
+            slot->app == a_collection->app )
+        {
+            storage_io_release();
+            return ESP_ERR_INVALID_STATE;
+        }
+    }
     char destination[ MEDIA_PATH_MAX ];
     if( !build_path( a_collection, a_destination_name, false, destination, sizeof( destination ) ) )
     {
