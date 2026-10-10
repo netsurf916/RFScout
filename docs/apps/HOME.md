@@ -17,6 +17,7 @@ Current settings include:
 - independent Normal / Quiet audio policy;
 - UI, Event, and Alert presentation volumes;
 - 12/24-hour clock presentation;
+- GPS NMEA inactivity timeout (2–30 seconds, default 5 seconds) for shared GPS/nRF24 pins;
 - Auto/Manual time policy, timezone, and manual date/time fields;
 - preferred startup application and per-app enablement;
 - SD logging to the `system/logs` media collection;
@@ -78,7 +79,7 @@ Leaving Update cancels acquisition/installation but deliberately preserves the H
 - **Auto** hides manual fields and may accept a valid GPS UTC source when such a provider is available.
 - A successful Home Network connection applies synchronized NTP UTC without changing the stored Auto/Manual policy.
 
-The T-Embed profile enables optional UART GPS detection on GPIO43/44, which are also used by the nRF24 shield. After startup nRF24 discovery and power-down, GPS probes 38400, 9600, 19200, 57600, and 115200 baud. A checksum-valid RMC/GGA sentence establishes receiver presence even without a location fix and disables nRF24 activation until reboot. If no receiver is detected, nRF24 may use the pins after the initial two-cycle (15-second) GPS detection window; GPS polling pauses during radio use and resumes after radio shutdown.
+The T-Embed profile enables optional UART GPS detection on GPIO43/44, which are also used by the nRF24 shield. After startup nRF24 discovery and power-down, GPS probes 38400, 9600, 19200, 57600, and 115200 baud. A checksum-valid RMC/GGA sentence establishes receiver presence even without a location fix. Presence expires after the configured NMEA inactivity timeout (default 5 seconds). After the initial two-cycle (15-second) GPS detection window, nRF24 may probe on app demand only when GPS is absent. GPS monitoring is suspended while the nRF24 application owns the pins and resumes when it exits. GPS cannot preempt an active radio session. Plugging in or powering on a GPS receiver during an active nRF24 session is unsupported and may cause undefined hardware behavior due to the shared GPIO43/44 wiring.
 
 ## Power, display, and persistence
 
