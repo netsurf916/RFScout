@@ -21,6 +21,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define RFSCOUT_GPS_TIMEOUT_MIN_SECONDS 2U
+#define RFSCOUT_GPS_TIMEOUT_MAX_SECONDS 30U
+#define RFSCOUT_GPS_TIMEOUT_DEFAULT_SECONDS 5U
 #define RFSCOUT_CONFIG_SCHEMA_VERSION 1U
 #define RFSCOUT_TIMEZONE_MAX 8U
 #define RFSCOUT_TIMEZONE_NAME_MAX 32U
@@ -74,6 +77,7 @@ typedef struct
     rfscout_app_id_t startup_app;
     bool logging_enabled;
     bool clock_24h;
+    uint8_t gps_timeout_seconds;
     rfscout_theme_id_t theme;
     rfscout_audio_policy_id_t audio_policy;
     uint8_t audio_interaction_gain_percent;
@@ -112,6 +116,7 @@ esp_err_t device_config_set_high_temperature_action( power_action_t a_action );
 rfscout_hold_shortcut_t device_config_hold_shortcut( void );
 const char *device_config_hold_shortcut_name( rfscout_hold_shortcut_t a_shortcut );
 esp_err_t device_config_set_hold_shortcut( rfscout_hold_shortcut_t a_shortcut );
+esp_err_t device_config_set_gps_timeout_seconds( uint8_t a_seconds );
 esp_err_t device_config_set_clock_24h( bool a_enabled );
 rfscout_theme_id_t device_config_theme( void );
 esp_err_t device_config_set_theme( rfscout_theme_id_t a_theme );
