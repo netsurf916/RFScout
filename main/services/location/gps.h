@@ -26,6 +26,8 @@ typedef struct
     double longitude_deg;
     float altitude_m;
     float speed_mps;
+    /** Distance accumulated from qualified RMC fixes since the last explicit reset. */
+    double trip_distance_m;
     uint8_t satellites;
     time_t utc_epoch;
     uint32_t location_age_ms;
@@ -46,5 +48,9 @@ void gps_poll( void );
 bool gps_snapshot_get( rfscout_gps_snapshot_t *a_snapshot );
 /** @brief Return whether a GPS UART provider is active, independent of receiver detection/fix state. */
 bool gps_available( void );
+/** @brief Return the current trip odometer even when no receiver is present. */
+double gps_trip_distance_m( void );
+/** @brief Clear the trip odometer and persist the reset in internal flash. */
+esp_err_t gps_trip_reset( void );
 
 #endif // _RFSCOUT_GPS_H_
