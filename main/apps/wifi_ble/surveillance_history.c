@@ -124,11 +124,11 @@ void surveillance_history_open( void )
     size_t read = 0U;
     while( ESP_OK == media_read( &file, &byte, 1U, &read ) && 1U == read )
     {
-        if( '\\n' == byte )
+        if( '\n' == byte )
         {
             if( !overflow && used > 0U )
             {
-                line[ used ] = '\\0';
+                line[ used ] = '\0';
                 replay_line( line );
             }
             used = 0U;
@@ -153,7 +153,7 @@ void surveillance_history_flush( void )
     rfscout_media_file_t file = { 0 };
     if( ESP_OK != media_open( &collection, HISTORY_JOURNAL,
                               RFSCOUT_MEDIA_OPEN_APPEND, &file ) ) return;
-    for( size_t i = 0U; i < HISTORY_CAPACITY; ++i )
+    for( size_t i = 0U; i < entry_count; ++i )
     {
         if( entries[ i ].valid && entries[ i ].dirty &&
             ESP_OK == append_entry( &file, &entries[ i ] ) )
@@ -195,7 +195,7 @@ void surveillance_history_process_expired( void )
     {
         for( size_t i = 0U; i < count; ++i )
         {
-            for( size_t j = 0U; j < HISTORY_CAPACITY; ++j )
+            for( size_t j = 0U; j < entry_count; ++j )
             {
                 surveillance_history_entry_t *entry = &entries[ j ];
                 if( entry->valid && entry->dirty &&
@@ -218,18 +218,22 @@ void surveillance_history_process_expired( void )
 void surveillance_history_sample( void )
 {
     rfscout_gps_snapshot_t gps = { 0 };
-    if( !gps_snapshot_get( &gps ) || !gps.location_valid ) return;
-    rf_device_t active[ 32 ] = { 0 };
-    const size_t total = observation_store_surveillance_devices( active, 32U );
-    const size_t count = total < 32U ? total : 32U;
+    if( !gps_snapshot_get( &gps ) || !gps.location_valid ||
+        gps.location_age_ms > 5000U ) return;
+    const size_t total = observation_store_surveillance_devices( NULL, 0U );
+    if( 0U == total ) return;
+    rf_device_t *active = app_session_resize( NULL, total, sizeof( *active ) );
+    if( NULL == active ) return;
+    const size_t copied = observation_store_surveillance_devices( active, total );
+    const size_t count = copied < total ? copied : total;
     for( size_t i = 0U; i < count; ++i )
     {
         const rf_device_t *device = &active[ i ];
         surveillance_history_entry_t *entry = NULL;
-        for( size_t j = 0U; j < HISTORY_CAPACITY; ++j )
+        for( size_t j = 0U; j < entry_count; ++j )
         {
             if( entries[ j ].valid && entries[ j ].address_type == device->address_type &&
-                0 == memcmp( entries[ j ].address, device->address, sizeof( device->address ) ) )
+                0 == memcmp( entries[ j ].address, device->address, 6U ) )
             {
                 entry = &entries[ j ];
                 break;
@@ -237,35 +241,27 @@ void surveillance_history_sample( void )
         }
         if( NULL == entry )
         {
-            for( size_t j = 0U; j < HISTORY_CAPACITY; ++j )
-            {
-                if( !entries[ j ].valid )
-                {
-                    entry = &entries[ j ];
-                    break;
-                }
-            }
-        }
-        if( NULL == entry ) continue;
-        if( !entry->valid )
-        {
-            memcpy( entry->address, device->address, sizeof( device->address ) );
+            if( !ensure_history_capacity( entry_count + 1U ) ) continue;
+            entry = &entries[ entry_count++ ];
+            memset( entry, 0, sizeof( *entry ) );
+            memcpy( entry->address, device->address, 6U );
             entry->address_type = device->address_type;
             entry->min_latitude = entry->max_latitude = gps.latitude_deg;
             entry->min_longitude = entry->max_longitude = gps.longitude_deg;
             entry->valid = true;
         }
-        else if( entry->last_seen_ms != device->last_seen_ms )
+        else if( entry->last_seen_ms == device->last_seen_ms ) continue;
+        else
         {
             if( gps.latitude_deg < entry->min_latitude ) entry->min_latitude = gps.latitude_deg;
             if( gps.latitude_deg > entry->max_latitude ) entry->max_latitude = gps.latitude_deg;
             if( gps.longitude_deg < entry->min_longitude ) entry->min_longitude = gps.longitude_deg;
             if( gps.longitude_deg > entry->max_longitude ) entry->max_longitude = gps.longitude_deg;
         }
-        else continue;
         entry->last_seen_ms = device->last_seen_ms;
         entry->classification = device->surveillance;
         memcpy( entry->vendor, device->vendor, sizeof( entry->vendor ) );
         entry->dirty = true;
     }
+    (void)app_session_resize( active, 0U, sizeof( *active ) );
 }
