@@ -415,7 +415,7 @@ static void write_record_locked( const breadcrumb_record_t *a_record )
 
 static void write_record( const breadcrumb_record_t *a_record )
 {
-    if( NULL == a_record || !media_store_available() || NULL == write_mutex )
+    if( NULL == a_record || NULL == write_mutex )
     {
         return;
     }
@@ -465,10 +465,6 @@ esp_err_t breadcrumbs_init( void )
         shutdown_requested = false;
         return ESP_OK;
     }
-    if( !media_store_available() )
-    {
-        return ESP_ERR_INVALID_STATE;
-    }
     const esp_err_t collection_result =
         media_system_collection( BREADCRUMB_COLLECTION, &collection );
     if( ESP_OK != collection_result )
@@ -507,8 +503,7 @@ esp_err_t breadcrumbs_init( void )
 
 void breadcrumbs_poll( void )
 {
-    if( NULL == queue || shutdown_requested || !enabled || !gps_available() ||
-        !media_store_available() )
+    if( NULL == queue || shutdown_requested || !enabled || !gps_available() )
     {
         return;
     }
