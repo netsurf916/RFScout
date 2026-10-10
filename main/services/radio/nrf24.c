@@ -48,7 +48,6 @@ static TaskHandle_t scan_task;
 static portMUX_TYPE state_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool initialized;
 static bool detected;
-static bool radio_powered;
 static volatile bool running;
 static volatile bool worker_active;
 static volatile bool frame_ready;
@@ -396,7 +395,7 @@ esp_err_t nrf24_start( void )
     }
     if( gps_available() && !gps_probe_complete() )
     {
-        return ESP_ERR_NOT_FINISHED;
+        return ESP_ERR_INVALID_STATE;
     }
     if( !initialized )
     {
@@ -449,7 +448,6 @@ esp_err_t nrf24_start( void )
         }
         return result;
     }
-    radio_powered = true;
 
     portENTER_CRITICAL( &state_lock );
     memset( acquisition, 0, sizeof( acquisition ) );
@@ -491,7 +489,6 @@ bool nrf24_stop( void )
     {
         return false;
     }
-    radio_powered = false;
     if( ESP_OK != release_radio() )
     {
         return false;
