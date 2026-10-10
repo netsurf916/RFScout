@@ -404,16 +404,24 @@ Checksum-valid RMC/GGA reception establishes GPS receiver presence independently
 
 This is a software pin-ownership policy, not galvanic isolation: nRF24 CSN remains electrically connected to GPIO44 in power-down. The target hardware must be checked for UART-induced CSN transitions, other SPI traffic, and any unintended radio behavior.
 
-### Surveillance location-history persistence
+### Surveillance receiver locations and packet journal
 
-WiFi/BLE owns a best-effort, SD-backed surveillance location journal through its existing `wifi_ble` media owner and a `locations` collection. Records are append-only JSON Lines containing consolidated device-state snapshots keyed by address type and MAC. Each successful event-driven append updates the latest persisted bounds and last-seen time for that identity; replay uses the most recent complete snapshot. The current record includes address type, MAC, surveillance classification, receiver-location latitude/longitude bounds derived from fresh valid GPS fixes, and last-seen time. Never imply that the GPS receiver position is the actual transmitter position. The location journal is separate from rotating system diagnostic logs.
+The WiFi/BLE application's canonical observation store retains currently active identities
+until their source-specific timeouts. For surveillance-qualified observations with a fresh
+valid GPS fix, each identity expands a receiver-location latitude/longitude bounding box.
+This box records **where RFScout received packets**, not a transmitter's verified position.
+Expired identities are removed without any timeout-triggered storage write.
 
-Only surveillance observations meeting the currently configured evidence threshold qualify for location history. A fresh, valid GPS position is mandatory before any position coordinates or bounding information enter in-memory location state or persistent records; a detection without a valid position has no location record. Each observed packet may expand the in-memory geographic bounds using a fresh valid fix without writing to storage. Normal expiration of the final source membership finalizes the record and schedules exactly one append attempt outside the observation-store lock and radio callback.
+Each qualified packet with a fresh GPS fix is queued as an individual append-only JSONL
+record in the app-owned `locations/surveillance.jsonl` file. The record contains full MAC,
+address type, classification, receiver latitude/longitude, valid UTC when available, and
+last-seen milliseconds. The app poll batches SD writes outside the observation-store lock;
+a failed batch remains queued for retry during the current app session. The app attempts
+a final flush at reset/exit. Insufficient memory or unavailable media can still result in
+loss; no cross-session recovery is promised.
 
-Manual reset and application exit finalize eligible active records with one-shot best-effort appends before discarding memory. Exit may defer completion of the transition for a short bounded period to attempt the writes, never indefinitely. Missing media, failed/partial writes, and full media are logged and dropped: there is no retry queue, blocking recovery loop, or requirement to recover data across an app switch. Storage follows `media_store` collection/handle lifetime and shared SPI arbitration. Avoid holding a synchronization lock while issuing SD I/O. The on-screen distance is geographic separation from current valid GPS position to the nearest point of a recorded receiver-observation bounding rectangle, not radio-ranging or a claim about the device's exact position; unavailable fixes or absent bounds display unknown distance.
-
-#### Consolidated surveillance identities and journal compaction
-
-The JSONL file is an append-only sequence of **versioned device-state snapshots**, not an independent durable row per observation session. On app activation, replay valid journal entries in order into a dynamically allocated in-memory index keyed by (address type, full MAC); the latest complete snapshot for an identity supersedes its earlier snapshot. During a new session, merge fresh-fix-only geographic bounds into that identity's historical min/max latitude and longitude, advance latest last-seen. First-seen timestamps and session/observation counters are not yet recorded. Timeout appends one updated consolidated snapshot for an eligible identity, rather than a disconnected session record. A missing or invalid fix never introduces position data, including during replay and merging. The active evidence threshold gates new updates; previously saved evidence must not be silently relabeled as a new detection.
-
-Repeated snapshots are permitted in the append-only journal until **opportunistic compaction** rewrites a temporary journal containing one current snapshot per identity and atomically replaces the old journal only after successful completion. Preserve the original journal if compaction fails or media disappears. Trigger compaction by a bounded size/duplicate-ratio policy while the app is active and storage is available; never run compaction in the time-bounded app-exit path or radio callback. Media-store APIs and SD arbitration apply to reads, writes, replacement, and recovery. Document and test the exact atomic replacement and incomplete-final-line recovery behavior supported by media_store before enabling compaction. No retries are required for failed appends or compaction.
+The live surveillance view reads the canonical active identities directly, without replaying
+the SD journal or maintaining a second live list. Distance is computed to the nearest point
+of each identity's receiver-observation bounding rectangle. Without a fresh fix or recorded
+bounds, distance is unknown. The journal is for offline analysis, not live proximity replay.
+There is no historical index, journal compaction, or geographic reload threshold.
