@@ -431,6 +431,7 @@ esp_err_t gps_init( void )
     baud_probe_started_us = esp_timer_get_time();
     initial_probe_started_us = baud_probe_started_us;
     initialized = true;
+    publish_snapshot();
     ESP_LOGI( TAG,
               "GPS provider started: UART1 RX=%d TX=%d probing baud up to %d",
               RFSCOUT_BOARD_GPS_RX_PIN,
@@ -465,6 +466,7 @@ esp_err_t gps_stop( void )
             return rx_result;
         }
         initialized = false;
+        publish_snapshot();
     }
     return result;
 }
