@@ -278,26 +278,37 @@ uint32_t media_store_generation( void )
 
 esp_err_t media_store_probe( void )
 {
+    if( !storage_io_acquire( RFSCOUT_STORAGE_WAIT_FOREVER ) )
+        return ESP_ERR_TIMEOUT;
+
+    /* Serialize the availability check with recovery: a competing probe may
+       already have mounted a replacement card while this task waited. */
     if( !storage_is_available() )
     {
-        if( !storage_io_acquire( RFSCOUT_STORAGE_WAIT_FOREVER ) )
-            return ESP_ERR_TIMEOUT;
-        /* Invalidate every open handle before the old FAT volume is unmounted.
-           Closing on a removed card can fail, but must still release the VFS descriptors. */
+        /* Invalidate old VFS descriptors before unmounting the lost volume. */
         for( size_t i = 0U; i < MEDIA_SLOT_COUNT; ++i )
         {
             if( NULL != slots[ i ].file )
                 (void)close_slot( &slots[ i ] );
         }
+
         esp_err_t result = storage_recover_lost_media();
         if( ESP_ERR_INVALID_STATE == result )
             result = storage_init();
-        storage_io_release();
         if( ESP_OK != result )
+        {
+            storage_io_release();
             return ESP_ERR_NOT_FOUND;
+        }
+
+        /* Publish before releasing arbitration so new file operations cannot
+           observe the replacement volume with the previous generation. */
         (void)__atomic_add_fetch( &media_generation, 1U, __ATOMIC_RELEASE );
     }
-    return ( ESP_OK == storage_probe_card() ) ? ESP_OK : ESP_ERR_NOT_FOUND;
+
+    const esp_err_t result = storage_probe_card();
+    storage_io_release();
+    return ( ESP_OK == result ) ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
 esp_err_t media_store_space( uint64_t *a_total_bytes, uint64_t *a_free_bytes )
