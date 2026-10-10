@@ -8,6 +8,7 @@
 #include "ui.h"
 
 #include "display.h"
+#include "media_store.h"
 #include "gps.h"
 #include "observation_store.h"
 #include "surveillance.h"
