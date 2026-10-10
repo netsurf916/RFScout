@@ -417,8 +417,8 @@ static void emit_event( observation_store_event_t a_event, const rf_device_t *a_
         if( expired_count == expired_capacity )
         {
             const size_t capacity = ( 0U == expired_capacity ) ? 8U : expired_capacity * 2U;
-            rf_device_t *next = app_session_resize( expired_devices, capacity,
-                                                     sizeof( *expired_devices ) );
+            rf_device_t *next =
+                app_session_resize( expired_devices, capacity, sizeof( *expired_devices ) );
             if( NULL != next )
             {
                 expired_devices = next;
