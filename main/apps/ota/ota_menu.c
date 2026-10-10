@@ -237,6 +237,8 @@ static bool install_action_available( void )
     return !ota_operation_active() && OTA_CATALOG_UPDATE_AVAILABLE == catalog_selection.result;
 }
 
+static char connection_ssid[ RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH + 1U ];
+
 static const char *connection_status( void )
 {
     rfscout_network_session_status_t network;
@@ -250,7 +252,12 @@ static const char *connection_status( void )
         case RFSCOUT_NETWORK_SESSION_LIMITED:
             return "Connected / limited";
         case RFSCOUT_NETWORK_SESSION_READY:
-            return '\0' != network.ssid[ 0 ] ? network.ssid : "Connected";
+            if( '\0' == network.ssid[ 0 ] )
+            {
+                return "Connected";
+            }
+            snprintf( connection_ssid, sizeof( connection_ssid ), "%s", network.ssid );
+            return connection_ssid;
         case RFSCOUT_NETWORK_SESSION_FAILED:
             return "Connection failed";
         case RFSCOUT_NETWORK_SESSION_IDLE:
