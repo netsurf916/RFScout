@@ -392,6 +392,11 @@ esp_err_t media_open( const rfscout_media_collection_t *a_collection,
         return ESP_ERR_INVALID_ARG;
     }
     memset( a_file, 0, sizeof( *a_file ) );
+    /* One recovery attempt per open request; never retry in a background poll. */
+    if( !storage_is_available() && ESP_OK != media_store_probe() )
+    {
+        return ESP_ERR_NOT_FOUND;
+    }
     if( !media_lock() )
     {
         return ESP_ERR_TIMEOUT;
