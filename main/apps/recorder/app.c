@@ -20,7 +20,6 @@
 #include <string.h>
 
 #define RECORDER_REFRESH_INTERVAL_US 100000LL
-#define RECORDER_DEPENDENCY_INTERVAL_US 500000LL
 
 #define RECORDER_BROWSER_BACK 0U
 #define RECORDER_BROWSER_NEW 1U
@@ -35,7 +34,6 @@ static char playback_name[ RFSCOUT_RECORDER_NAME_MAX ];
 static uint8_t playback_volume = 50U;
 static rfscout_recorder_state_t last_state = RFSCOUT_RECORDER_IDLE;
 static int64_t last_refresh_us;
-static int64_t last_dependency_probe_us;
 
 static void emit_event( rfscout_event_type_t a_type, int32_t a_value )
 {
@@ -253,23 +251,10 @@ static void handle_browser_input( const rfscout_input_event_t *a_input )
     emit_event( RFSCOUT_EVENT_NAVIGATE, a_input->value > 0 ? 1 : -1 );
 }
 
-static bool dependency_lost( int64_t a_now_us )
+static bool dependency_lost( void )
 {
     const rfscout_recorder_state_t state = recorder_state();
-    if( ( RFSCOUT_RECORDER_ERROR == state ) || ( RFSCOUT_RECORDER_NO_STORAGE == state ) )
-    {
-        return true;
-    }
-    if( RFSCOUT_RECORDER_IDLE != state )
-    {
-        return false;
-    }
-    if( a_now_us - last_dependency_probe_us < RECORDER_DEPENDENCY_INTERVAL_US )
-    {
-        return false;
-    }
-    last_dependency_probe_us = a_now_us;
-    return ESP_OK != media_store_probe();
+    return RFSCOUT_RECORDER_ERROR == state || RFSCOUT_RECORDER_NO_STORAGE == state;
 }
 
 static esp_err_t prepare_leave( void )
@@ -327,7 +312,6 @@ static rfscout_app_runtime_result_t recorder_runtime( const rfscout_app_runtime_
         playback_volume = NULL != config ? config->recorder_volume_percent : 50U;
         last_state = RFSCOUT_RECORDER_IDLE;
         last_refresh_us = 0;
-        last_dependency_probe_us = 0;
         if( ESP_OK != recorder_refresh() )
         {
             ESP_LOGW( TAG, "Recorder media unavailable" );
@@ -346,7 +330,7 @@ static rfscout_app_runtime_result_t recorder_runtime( const rfscout_app_runtime_
     if( ( RFSCOUT_APP_RUNTIME_INPUT == a_event->type ) ||
         ( RFSCOUT_APP_RUNTIME_POLL == a_event->type ) )
     {
-        if( dependency_lost( a_event->now_us ) )
+        if( dependency_lost() )
         {
             app_framework_report_availability( RFSCOUT_APP_AUDIO,
                                                RFSCOUT_APP_AVAILABILITY_UNAVAILABLE );

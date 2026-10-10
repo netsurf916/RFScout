@@ -90,19 +90,24 @@ typedef struct
  */
 typedef bool ( *rfscout_media_list_fn )( const rfscout_media_entry_t *a_entry, void *a_context );
 
-/** @brief Return whether mounted SD media is currently healthy and usable. */
+/** @brief Read the last observed storage status without probing or recovering the card. */
 bool media_store_available( void );
 
 /**
- * @brief Retry-safe SD presence probe for hot-plug dependency checks.
- * @details Mounts the card when no card has ever mounted, then verifies the mounted card responds.
- *          It never remounts media that was latched lost.
- * @return ESP_OK when media is present and healthy, otherwise ESP_ERR_NOT_FOUND.
+ * @brief Explicit, one-shot SD presence check and recovery request.
+ * @details Failed card operations impose a shared three-second cooldown. Requests during that
+ *          window return immediately; the next request can attempt one synchronous mount or
+ *          recovery. There is no background retry or polling. Recovery invalidates old handles.
+ * @return ESP_OK when media responds; ESP_ERR_NOT_FOUND while unavailable or cooling down.
  */
 esp_err_t media_store_probe( void );
 
+/** @brief Return the current SD volume generation; increments after successful media-store probe mount/recovery.
+ * @details Stateful clients can detect replacement media and rebuild file-local state. */
+uint32_t media_store_generation( void );
+
 /**
- * @brief Query SD filesystem capacity.
+ * @brief Query SD filesystem capacity, with one-shot recovery after the failure cooldown.
  * @param a_total_bytes Receives total bytes when non-NULL.
  * @param a_free_bytes Receives free bytes when non-NULL.
  */
@@ -124,8 +129,9 @@ esp_err_t media_app_collection( const char *a_collection, rfscout_media_collecti
 
 /**
  * @brief Open one file in a collection.
- * @details Write modes create the owner and collection directories on demand. Reads never create
- *          directories. As with stdio streams, call media_seek() (or media_sync()) between a read
+ * @details Media access attempts one synchronous recovery when unavailable and outside the
+ *          shared three-second failure cooldown. Write modes create directories on demand;
+ *          read modes never create directories. As with stdio streams, call media_seek() (or media_sync()) between a read
  *          and a following write on the same handle, and between a write and a following read.
  * @return ESP_OK, ESP_ERR_NOT_FOUND for a missing file in READ mode, ESP_ERR_NOT_ALLOWED when
  *         CREATE_NEW finds an existing file, ESP_ERR_NO_MEM when no handle is free,

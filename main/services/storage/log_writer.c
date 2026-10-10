@@ -10,6 +10,7 @@
 #include "device_time.h"
 #include "gps.h"
 #include "media_store.h"
+#include "storage_internal.h"
 #include "memory_manager.h"
 
 #include "esp_app_desc.h"
@@ -54,6 +55,7 @@ static bool active_open;
 static uint32_t active_sequence;
 static unsigned active_slot;
 static size_t active_size;
+static uint32_t active_media_generation;
 static volatile bool accepting;
 static volatile bool shutdown_requested;
 static volatile bool writer_stopped;
@@ -210,6 +212,17 @@ static bool write_header_line( const char *a_line, int a_length, const char *a_o
 
 static bool open_segment( void )
 {
+    const uint32_t generation = media_store_generation();
+    if( generation != active_media_generation )
+    {
+        /* Media replacement invalidates the old handle and all per-volume segment state.
+           Rebuild from the newly mounted card before any append. */
+        active_open = false;
+        memset( &active_file, 0, sizeof( active_file ) );
+        find_next_segment();
+        active_media_generation = generation;
+        ESP_LOGI( TAG, "SD media generation changed; log segment state rebuilt" );
+    }
     if( active_open )
     {
         return true;
@@ -301,6 +314,31 @@ static bool open_segment( void )
     }
     active_open = true;
     return true;
+}
+
+/* Keep generation inspection, segment selection and file operations within
+   one storage transaction. Media operations recursively acquire this same
+   arbitration, so a recovery cannot replace the volume between them. */
+static bool open_segment_serialized( void )
+{
+    /* Recheck once only when unavailable; the shared cooldown prevents repeated mounts. */
+    if( !media_store_available() && ESP_OK != media_store_probe() )
+    {
+        return false;
+    }
+    if( !storage_io_acquire( 250U ) )
+    {
+        return false;
+    }
+    /* Do not inspect per-volume segment state while the media is unavailable. */
+    if( !media_store_available() )
+    {
+        storage_io_release();
+        return false;
+    }
+    const bool result = open_segment();
+    storage_io_release();
+    return result;
 }
 
 static bool close_segment( void )
@@ -736,14 +774,14 @@ static bool flush_buffer( void )
     flush_requested = false;
     xSemaphoreGive( buffer_lock );
 
-    bool success = open_segment();
+    bool success = open_segment_serialized();
     if( success && ( active_size + burst_size > RFSCOUT_LOG_SEGMENT_SIZE ) )
     {
         success = close_segment();
         if( success )
         {
             advance_segment();
-            success = open_segment();
+            success = open_segment_serialized();
         }
     }
 
@@ -798,11 +836,11 @@ static bool flush_buffer( void )
     }
     else
     {
-        flush_requested = true;
-        if( 0 == buffer_started_us )
-        {
-            buffer_started_us = esp_timer_get_time();
-        }
+        /* SD logs are best-effort. Discard failed data instead of retrying a backlog. */
+        buffer_used = 0U;
+        record_start = 0U;
+        buffer_started_us = 0;
+        flush_requested = false;
     }
     xSemaphoreGive( buffer_lock );
     return success;
@@ -878,6 +916,7 @@ esp_err_t log_writer_init( void )
     }
 
     find_next_segment();
+    active_media_generation = media_store_generation();
     buffer_used = 0U;
     record_start = 0U;
     buffer_started_us = 0;

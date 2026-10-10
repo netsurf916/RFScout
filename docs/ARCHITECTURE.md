@@ -81,7 +81,7 @@ The same retry principle applies to optional platform telemetry where practical.
 Two platform cases remain intentionally distinct:
 
 - **Board profile / mandatory UI providers** — these establish the hardware identity and minimum environment needed to run RFScout safely; failure is a platform startup/recovery condition, not an optional app being unavailable.
-- **Mounted SD media after physical loss** — RFScout latches the mounted filesystem unavailable rather than silently unmounting/remounting beneath open users. Initial insertion can be retried, but post-loss remount requires an explicit storage-lifecycle design.
+- **Mounted SD media after physical loss** — the storage probe latches the current volume unavailable. A subsequent media-store probe invalidates pooled file handles under storage arbitration, unmounts the lost volume, and attempts a fresh mount. Stateful clients must detect a changed media generation and rebuild volume-specific state.
 
 
 ## Application lifecycle, views, and resource sessions
@@ -269,7 +269,7 @@ Terminal sleep/power-off preparation flushes dirty configuration and quiesces re
 
 SD is removable/bulk storage for recordings, logs, breadcrumbs, captures, and future explicit transfer packages. Internal configuration must remain usable without an SD card.
 
-The storage service owns the SD mount for the running firmware lifetime and latches physical-media loss unavailable rather than inventing an application-visible unmount/remount protocol.
+The storage service owns SD mount/recovery. A failed mount, card-health probe, or media I/O operation starts a shared three-second cooldown. Storage requests during that period fail immediately without accessing the card. The first request after the cooldown may attempt one synchronous recovery; no timer, background retry, or status display triggers recovery. A replacement volume invalidates existing handles, and clients discard optional data rather than queueing retries.
 
 ### Media store contract
 
@@ -303,13 +303,13 @@ Files written by earlier firmware under `/sdcard/audio/`, `/sdcard/logs/`, or `/
 
 Open files are represented by opaque, generation-checked handles from a small fixed pool sized to the FAT open-file limit. A stale handle (already closed, or forcibly closed at app exit) is rejected rather than aliasing another owner's file.
 
-Every media operation — open, read, write, seek, truncate, sync, close, stat, list, remove, and capacity queries — runs as one bounded transaction under the storage service's I/O arbitration. Raw card-health probes therefore cannot interleave with a multi-command filesystem operation from any user, and no user takes the storage lock directly. Large transfers are naturally split into per-call transactions by their callers.
+Media file operations run under storage-service I/O arbitration, with a 250 ms lock-acquisition timeout on ordinary requests. Closing handles and app-exit cleanup remain available during the cooldown to release descriptors. Raw card-health probes therefore cannot interleave with a multi-command filesystem operation from any user, and no user takes the storage lock directly. Large transfers are naturally split into per-call transactions by their callers.
 
 Handles opened through an app collection belong to that app session. The lifecycle coordinator closes any app-owned media handle still open after the source app's services have quiesced, records the count in the transition diagnostics, and treats a nonzero count as a committed resource-invariant violation in the same way as remaining managed allocations. Services that write asynchronously on behalf of an app (for example Recorder recording or WAV playback) must still finish or stop through their ordinary session service/veto path; forced close is a safety net, not a shutdown protocol.
 
 After physical media loss, new opens and directory operations fail with `ESP_ERR_INVALID_STATE`; existing handles fail their next I/O but can still be closed. There is no remount beneath open handles.
 
-The media store also exposes a combined presence probe for hot-plug dependency checks (mount when no card has ever mounted, then verify the mounted card responds) and free-space queries.
+The media store also exposes an explicit presence probe for navigation dependency checks. Failed media starts a shared three-second cooldown; a later file operation, capacity query, or explicit probe may attempt one synchronous mount/recovery. Cached availability reads never trigger I/O.
 
 ### Logging
 
