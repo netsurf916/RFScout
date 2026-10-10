@@ -18,9 +18,11 @@
 #include "esp_vfs_fat.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "sdmmc_cmd.h"
 
 #define STORAGE_PROBE_IO_TIMEOUT_MS 250U
+#define STORAGE_FAILURE_COOLDOWN_MS 3000U
 
 static const char *TAG = "storage";
 static sdmmc_card_t *card;
@@ -28,6 +30,40 @@ static bool mounted;
 static bool media_lost;
 static StaticSemaphore_t io_mutex_control;
 static SemaphoreHandle_t io_mutex;
+/* Zero means no cooldown. A deadline, rather than a timer, avoids background work. */
+static uint32_t retry_after_tick;
+
+bool storage_retry_delayed( void )
+{
+    uint32_t deadline = __atomic_load_n( &retry_after_tick, __ATOMIC_ACQUIRE );
+    if( 0U == deadline )
+    {
+        return false;
+    }
+    if( (int32_t)( deadline - (uint32_t)xTaskGetTickCount() ) > 0 )
+    {
+        return true;
+    }
+    (void)__atomic_compare_exchange_n(
+        &retry_after_tick, &deadline, 0U, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE );
+    return false;
+}
+
+void storage_note_media_failure( void )
+{
+    /* Only the storage owner updates media state, under I/O arbitration. */
+    if( mounted )
+    {
+        media_lost = true;
+    }
+    uint32_t deadline =
+        (uint32_t)xTaskGetTickCount() + (uint32_t)pdMS_TO_TICKS( STORAGE_FAILURE_COOLDOWN_MS );
+    if( 0U == deadline )
+    {
+        deadline = 1U;
+    }
+    __atomic_store_n( &retry_after_tick, deadline, __ATOMIC_RELEASE );
+}
 
 static void ensure_io_mutex( void )
 {
@@ -83,6 +119,10 @@ void storage_io_release( void )
 
 esp_err_t storage_init( void )
 {
+    if( storage_retry_delayed() )
+    {
+        return ESP_ERR_NOT_FOUND;
+    }
     ensure_io_mutex();
     if( NULL == io_mutex )
     {
@@ -92,6 +132,7 @@ esp_err_t storage_init( void )
     const esp_err_t bus_result = board_spi_init();
     if( ESP_OK != bus_result )
     {
+        storage_note_media_failure();
         ESP_LOGW( TAG, "shared SPI bus unavailable: %s", esp_err_to_name( bus_result ) );
         return bus_result;
     }
@@ -111,7 +152,13 @@ esp_err_t storage_init( void )
     /* Mounting talks to the card; hot-plug probes can run it while other SPI clients are active. */
     if( !storage_io_acquire( STORAGE_PROBE_IO_TIMEOUT_MS ) )
     {
+        storage_note_media_failure();
         return ESP_ERR_TIMEOUT;
+    }
+    if( storage_retry_delayed() )
+    {
+        storage_io_release();
+        return ESP_ERR_NOT_FOUND;
     }
     if( mounted )
     {
@@ -124,7 +171,7 @@ esp_err_t storage_init( void )
     if( ESP_OK != result )
     {
         card = NULL;
-        media_lost = false;
+        storage_note_media_failure();
         storage_io_release();
         ESP_LOGW( TAG, "SD card unavailable: %s", esp_err_to_name( result ) );
         return result;
@@ -150,6 +197,7 @@ esp_err_t storage_recover_lost_media( void )
     const esp_err_t result = esp_vfs_fat_sdcard_unmount( RFSCOUT_STORAGE_MOUNT_POINT, card );
     if( ESP_OK != result )
     {
+        storage_note_media_failure();
         ESP_LOGW( TAG, "SD unmount after media loss failed: %s", esp_err_to_name( result ) );
         return result;
     }
@@ -166,11 +214,15 @@ bool storage_is_mounted( void )
 
 bool storage_is_available( void )
 {
-    return mounted && !media_lost;
+    return mounted && !media_lost && !storage_retry_delayed();
 }
 
 esp_err_t storage_probe_card( void )
 {
+    if( storage_retry_delayed() )
+    {
+        return ESP_ERR_NOT_FOUND;
+    }
     if( !mounted || NULL == card || media_lost )
     {
         return ESP_ERR_INVALID_STATE;
@@ -192,7 +244,7 @@ esp_err_t storage_probe_card( void )
     const esp_err_t result = sdmmc_get_status( card );
     if( ESP_OK != result )
     {
-        media_lost = true;
+        storage_note_media_failure();
         ESP_LOGW( TAG,
                   "SD card presence probe failed and media is now latched unavailable: %s",
                   esp_err_to_name( result ) );
@@ -209,11 +261,11 @@ esp_err_t storage_probe_card( void )
 
 esp_err_t storage_get_capacity( uint64_t *a_total_bytes, uint64_t *a_free_bytes )
 {
-    if( !mounted || media_lost )
+    if( !storage_is_available() )
     {
         return ESP_ERR_INVALID_STATE;
     }
-    if( !storage_io_acquire( RFSCOUT_STORAGE_WAIT_FOREVER ) )
+    if( !storage_io_acquire( STORAGE_PROBE_IO_TIMEOUT_MS ) )
     {
         return ESP_ERR_NO_MEM;
     }
@@ -222,6 +274,10 @@ esp_err_t storage_get_capacity( uint64_t *a_total_bytes, uint64_t *a_free_bytes 
     uint64_t free_bytes = 0U;
     const esp_err_t result =
         esp_vfs_fat_info( RFSCOUT_STORAGE_MOUNT_POINT, &total_bytes, &free_bytes );
+    if( ESP_FAIL == result )
+    {
+        storage_note_media_failure();
+    }
     storage_io_release();
     if( ESP_OK != result )
     {
