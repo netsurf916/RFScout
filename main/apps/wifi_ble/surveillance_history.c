@@ -413,14 +413,11 @@ void surveillance_history_process_expired( void )
     {
         for( size_t i = 0U; i < count; ++i )
         {
-            for( size_t j = 0U; j < entry_count; ++j )
+            for( size_t j = 0U; j < pending_count; ++j )
             {
-                surveillance_history_entry_t *entry = &entries[ j ];
-                if( entry->valid && entry->dirty &&
-                    entry->address_type == expired[ i ].address_type &&
-                    0 == memcmp( entry->address, expired[ i ].address, sizeof( entry->address ) ) )
+                if( pending_points[ j ].address_type == expired[ i ].address_type &&
+                    0 == memcmp( pending_points[ j ].address, expired[ i ].address, 6U ) )
                 {
-                    entry->completed = true;
                     changed = true;
                     break;
                 }
@@ -428,16 +425,7 @@ void surveillance_history_process_expired( void )
         }
     }
     if( changed )
-    {
-        if( replay_active )
-            (void)media_close( &replay_file );
-        replay_active = false;
-        replay_complete = false;
-        replay_used = 0U;
         flush_pending( false );
-        if( journal_appends >= 64U )
-            surveillance_history_compact();
-    }
 }
 
 void surveillance_history_sample( void )
