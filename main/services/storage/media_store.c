@@ -292,9 +292,8 @@ esp_err_t media_store_probe( void )
                 (void)close_slot( &slots[ i ] );
         }
 
-        esp_err_t result = storage_recover_lost_media();
-        if( ESP_ERR_INVALID_STATE == result )
-            result = storage_init();
+        const esp_err_t result = storage_is_mounted() ? storage_recover_lost_media()
+                                                      : storage_init();
         if( ESP_OK != result )
         {
             storage_io_release();
