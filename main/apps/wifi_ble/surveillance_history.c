@@ -63,6 +63,50 @@ size_t surveillance_history_list( surveillance_history_entry_t *a_rows, size_t a
     return count;
 }
 
+static void replay_line( const char *a_line )
+{
+    unsigned type, classification, address[ 6 ];
+    unsigned long seen;
+    double min_lat, max_lat, min_lon, max_lon;
+    if( 11 != sscanf( a_line,
+                     "{\"type\":%u,\"mac\":\"%2x%2x%2x%2x%2x%2x\",\"class\":%u,"
+                     "\"min_lat\":%lf,\"max_lat\":%lf,\"min_lon\":%lf,\"max_lon\":%lf,"
+                     "\"seen\":%lu}",
+                     &type, &address[ 0 ], &address[ 1 ], &address[ 2 ],
+                     &address[ 3 ], &address[ 4 ], &address[ 5 ], &classification,
+                     &min_lat, &max_lat, &min_lon, &max_lon, &seen ) )
+    {
+        return;
+    }
+    surveillance_history_entry_t *entry = NULL;
+    for( size_t i = 0U; i < entry_count; ++i )
+    {
+        if( entries[ i ].address_type != type ) continue;
+        bool same = true;
+        for( size_t j = 0U; j < 6U; ++j )
+        {
+            if( entries[ i ].address[ j ] != address[ j ] ) same = false;
+        }
+        if( same ) { entry = &entries[ i ]; break; }
+    }
+    if( NULL == entry )
+    {
+        if( !ensure_history_capacity( entry_count + 1U ) ) return;
+        entry = &entries[ entry_count++ ];
+        memset( entry, 0, sizeof( *entry ) );
+    }
+    for( size_t j = 0U; j < 6U; ++j ) entry->address[ j ] = (uint8_t)address[ j ];
+    entry->address_type = (uint8_t)type;
+    entry->classification = (surveillance_class_t)classification;
+    entry->min_latitude = min_lat;
+    entry->max_latitude = max_lat;
+    entry->min_longitude = min_lon;
+    entry->max_longitude = max_lon;
+    entry->last_seen_ms = (uint32_t)seen;
+    entry->valid = true;
+    entry->dirty = false;
+}
+
 void surveillance_history_open( void )
 {
     entries = NULL;
