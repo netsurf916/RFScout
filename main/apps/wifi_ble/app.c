@@ -26,8 +26,8 @@
 
 #define WIFI_RADIO_RETRY_INTERVAL_US 1000000LL
 
-#define WIFI_MENU_APP_LOCK 0U
-#define WIFI_MENU_BACK 1U
+#define WIFI_MENU_BACK 0U
+#define WIFI_MENU_APP_LOCK 1U
 #define WIFI_MENU_RESET 2U
 #define WIFI_MENU_NOTIFICATIONS 3U
 #define WIFI_MENU_EVIDENCE_THRESHOLD 4U
@@ -292,19 +292,10 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
             handle_menu_input( &a_event->input );
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
-        if( RFSCOUT_INPUT_NAVIGATION == a_event->input.type && ui_surveillance_page_active() )
+        if( RFSCOUT_INPUT_NAVIGATION == a_event->input.type && app_manager_locked() )
         {
-            ui_surveillance_navigate( a_event->input.value );
-            return RFSCOUT_APP_RUNTIME_HANDLED;
-        }
-        if( RFSCOUT_INPUT_SELECT == a_event->input.type && ui_surveillance_page_active() )
-        {
-            ui_set_surveillance_page( false );
-            return RFSCOUT_APP_RUNTIME_HANDLED;
-        }
-        if( RFSCOUT_INPUT_SELECT == a_event->input.type && app_manager_locked() )
-        {
-            ui_set_surveillance_page( true );
+            /* Rotary navigation selects the locked-app view; center remains settings. */
+            ui_set_surveillance_page( !ui_surveillance_page_active() );
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
         if( RFSCOUT_INPUT_SELECT == a_event->input.type )
