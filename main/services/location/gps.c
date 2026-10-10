@@ -376,7 +376,7 @@ esp_err_t gps_init( void )
     baud_locked = false;
     receiver_detected = false;
     last_nmea_us = 0;
-    initial_probe_complete = false;
+    /* Preserve the completed startup window across temporary radio ownership. */
     active_baud = GPS_BAUD_PRIMARY;
     active_baud_index = 0U;
     baud_probe_started_us = 0;
