@@ -8,6 +8,7 @@
 #include "ui.h"
 
 #include "display.h"
+#include "app_session.h"
 #include "gps.h"
 #include "observation_store.h"
 #include "surveillance_history.h"
@@ -45,7 +46,8 @@ static const char *TAG = "ui";
 static int64_t last_refresh_us;
 static bool surveillance_page;
 static unsigned surveillance_selection;
-static observation_history_identity_t live_surveillance_rows[ 48 ];
+static observation_history_identity_t *live_surveillance_rows;
+static size_t live_surveillance_capacity;
 static void draw_static_rows( size_t a_unknown_count, size_t a_random_count )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
@@ -232,18 +234,33 @@ static void render_surveillance_page( void )
         gps_snapshot_get( &gps ) && gps.location_valid && gps.location_age_ms <= 5000U;
 
     /* Live devices are independent of GPS and must not be hidden by history replay. */
-    const size_t live_total = observation_store_surveillance_devices( live_surveillance_rows, 48U );
-    const size_t live_count = live_total < 48U ? live_total : 48U;
+    const size_t live_total = observation_store_surveillance_devices( NULL, 0U );
+    if( live_total > live_surveillance_capacity )
+    {
+        observation_history_identity_t *next =
+            app_session_resize( live_surveillance_rows, live_total, sizeof( *live_surveillance_rows ) );
+        if( NULL != next )
+        {
+            live_surveillance_rows = next;
+            live_surveillance_capacity = live_total;
+        }
+    }
+    const size_t live_count = live_surveillance_rows
+                                  ? observation_store_surveillance_devices( live_surveillance_rows,
+                                                                            live_surveillance_capacity )
+                                  : 0U;
+    const size_t displayed_live = live_count < live_surveillance_capacity ? live_count
+                                                                          : live_surveillance_capacity;
     const size_t history_count = surveillance_history_list( NULL, 0U );
     size_t unique_history = 0U;
     for( size_t i = 0U; i < history_count; ++i )
     {
         surveillance_history_entry_t entry = { 0 };
         if( surveillance_history_get( i, &entry ) &&
-            !history_identity_live( &entry, live_surveillance_rows, live_count ) )
+            !history_identity_live( &entry, live_surveillance_rows, displayed_live ) )
             ++unique_history;
     }
-    const size_t count = live_count + unique_history;
+    const size_t count = displayed_live + unique_history;
     if( count > 0U && surveillance_selection >= count )
         surveillance_selection = (unsigned)( count - 1U );
 
@@ -253,14 +270,14 @@ static void render_surveillance_page( void )
     snprintf( line,
               sizeof( line ),
               "LIVE %u  SAVED %u  GPS %s",
-              (unsigned)live_count,
+              (unsigned)displayed_live,
               (unsigned)unique_history,
               has_fix ? "FIX" : "NO FIX" );
     display_draw_text( UI_LAYOUT_LEFT_X, 25, line, theme->info, 1U );
 
     const size_t start = surveillance_selection >= 6U ? surveillance_selection - 5U : 0U;
     size_t row = 0U;
-    for( size_t i = 0U; i < live_count; ++i, ++row )
+    for( size_t i = 0U; i < displayed_live; ++i, ++row )
     {
         if( row < start || row >= start + 6U )
             continue;
