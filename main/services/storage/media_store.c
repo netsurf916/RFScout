@@ -271,6 +271,13 @@ uint32_t media_store_generation( void )
 
 esp_err_t media_store_probe( void )
 {
+    /* Healthy-card checks retain the bounded, contention-tolerant probe path.
+       Only a missing/lost volume needs the longer exclusive recovery transaction. */
+    if( storage_is_available() )
+    {
+        return ( ESP_OK == storage_probe_card() ) ? ESP_OK : ESP_ERR_NOT_FOUND;
+    }
+
     if( !storage_io_acquire( RFSCOUT_STORAGE_WAIT_FOREVER ) )
         return ESP_ERR_TIMEOUT;
 
