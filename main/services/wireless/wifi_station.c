@@ -470,10 +470,8 @@ static esp_err_t restart_with_random_mac( void )
 {
     if( !factory_mac_valid )
     {
-        ESP_LOGW( TAG,
-                  "MAC randomization unavailable because the factory MAC was not captured; "
-                  "continuing with the current station MAC" );
-        return ESP_OK;
+        ESP_LOGE( TAG, "MAC randomization unavailable: factory MAC not captured" );
+        return ESP_ERR_INVALID_STATE;
     }
 
     uint8_t mac[ 6 ];
