@@ -342,6 +342,7 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
     radio_monitor_set_active_ap_channels( observation_store_wifi_ap_channel_mask() );
     radio_monitor_step();
     surveillance_history_sample();
+    surveillance_history_process_expired();
     if( !menu_active && !app_notification_menu_active( &notification_menu ) )
     {
         ui_poll();
