@@ -86,6 +86,9 @@ void observation_store_reevaluate_surveillance( size_t *a_newly_qualified,
 /** @brief Copy currently qualified observation records into a caller-owned buffer. */
 size_t observation_store_surveillance_devices( rf_device_t *a_devices, size_t a_capacity );
 
+/** @brief Drain identities dropped by timeout without performing storage I/O under the store mutex. */
+size_t observation_store_take_expired( rf_device_t *a_devices, size_t a_capacity );
+
 /** @brief Clear all live observations while retaining any current app-owned capacity. */
 void observation_store_reset( void );
 
