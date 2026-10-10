@@ -746,6 +746,15 @@ double gps_trip_distance_m( void )
 
 esp_err_t gps_trip_reset( void )
 {
+    /* Commit the reset before changing RAM so failure cannot resurrect a stale
+       trip total at the next boot after showing zero on the current screen. */
+    const gps_trip_record_t record = { .version = GPS_TRIP_STORE_VERSION, .distance_m = 0.0 };
+    const esp_err_t result = system_store_write( GPS_TRIP_STORE_KEY, &record, sizeof( record ) );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
     portENTER_CRITICAL( &snapshot_mux );
     trip_total_m = 0.0;
     trip_saved_m = 0.0;
@@ -754,7 +763,5 @@ esp_err_t gps_trip_reset( void )
     published_snapshot.trip_distance_m = 0.0;
     trip_last_checkpoint_us = esp_timer_get_time();
     portEXIT_CRITICAL( &snapshot_mux );
-
-    const gps_trip_record_t record = { .version = GPS_TRIP_STORE_VERSION, .distance_m = 0.0 };
-    return system_store_write( GPS_TRIP_STORE_KEY, &record, sizeof( record ) );
+    return ESP_OK;
 }
