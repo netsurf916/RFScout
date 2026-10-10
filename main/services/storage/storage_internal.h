@@ -10,6 +10,8 @@
 #ifndef _RFSCOUT_STORAGE_INTERNAL_H_
 #define _RFSCOUT_STORAGE_INTERNAL_H_
 
+#include "esp_err.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 
