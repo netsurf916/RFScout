@@ -231,8 +231,9 @@ App exit attempts a final flush.
 The surveillance list reads active identities directly from the canonical store and displays
 the distance from the current GPS receiver position to each identity's observed receiver
 bounding box. Without a fresh GPS fix or valid bounds, distance is unknown. Historical-only
-identities are never shown. The rotary normally switches views; center press on the
-surveillance page enters/exits scroll mode. Settings is opened from the main view.
+identities are never shown. The rotary switches between the summary and surveillance views. Center press opens
+settings from either view. The surveillance page shows the first six active entries
+without a separate scroll/focus mode.
 
 ### Validation
 
