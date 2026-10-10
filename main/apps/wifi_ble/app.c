@@ -297,8 +297,11 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         }
         if( RFSCOUT_INPUT_NAVIGATION == a_event->input.type && app_manager_locked() )
         {
-            /* Rotary navigation selects the locked-app view; center remains settings. */
-            ui_set_surveillance_page( !ui_surveillance_page_active() );
+            /* First movement opens the combined list; subsequent movement scrolls it. */
+            if( !ui_surveillance_page_active() )
+                ui_set_surveillance_page( true );
+            else
+                ui_surveillance_navigate( a_event->input.value > 0 ? 1 : -1 );
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
         if( RFSCOUT_INPUT_SELECT == a_event->input.type )
