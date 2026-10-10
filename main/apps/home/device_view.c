@@ -61,10 +61,11 @@
 #define DEVICE_ITEM_BREADCRUMB_FILES 27U
 #define DEVICE_ITEM_HOLD_SHORTCUT 28U
 #define DEVICE_ITEM_GPS_TIMEOUT 29U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 30U
+#define DEVICE_ITEM_GPS 30U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 31U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
-#define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_GPS_TIMEOUT + 1U )
+#define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_GPS + 1U )
 #define DEVICE_ROWS_PER_PAGE 6U
 #define DEVICE_LOG_SHUTDOWN_TIMEOUT_MS 3000U
 #define DEVICE_AUDIO_VOLUME_STEP 10
@@ -246,6 +247,7 @@ static bool item_direct_toggle( unsigned a_item )
            ( DEVICE_ITEM_HOTSPOTS == a_item ) || ( DEVICE_ITEM_CC1101 == a_item ) ||
            ( DEVICE_ITEM_NRF24 == a_item ) || ( DEVICE_ITEM_AUDIO == a_item ) ||
            ( DEVICE_ITEM_THERMAL == a_item ) || ( DEVICE_ITEM_AUDIO_SPECTRUM == a_item ) ||
+            ( DEVICE_ITEM_GPS == a_item ) ||
            ( DEVICE_ITEM_LOGGING == a_item ) || ( DEVICE_ITEM_HOLD_SHORTCUT == a_item );
 }
 
@@ -307,6 +309,8 @@ static const char *item_label( unsigned a_item )
             return "Thermal";
         case DEVICE_ITEM_AUDIO_SPECTRUM:
             return "Audio Spectrum";
+        case DEVICE_ITEM_GPS:
+            return "GPS";
         case DEVICE_ITEM_LOGGING:
             return "SD logging";
         case DEVICE_ITEM_POWER_BUTTON:
@@ -449,6 +453,9 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
                       a_capacity,
                       "%s",
                       on_off( config->apps_enabled[ RFSCOUT_APP_AUDIO_SPECTRUM ] ) );
+            break;
+        case DEVICE_ITEM_GPS:
+            snprintf( a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_GPS ] ) );
             break;
         case DEVICE_ITEM_LOGGING:
             snprintf( a_value, a_capacity, "%s", on_off( config->logging_enabled ) );
@@ -1546,6 +1553,10 @@ static void adjust_selected( int a_delta )
     else if( DEVICE_ITEM_AUDIO_SPECTRUM == selected_item )
     {
         toggle_app( RFSCOUT_APP_AUDIO_SPECTRUM, "apps.audio_spectrum" );
+    }
+    else if( DEVICE_ITEM_GPS == selected_item )
+    {
+        toggle_app( RFSCOUT_APP_GPS, "apps.gps" );
     }
     else if( DEVICE_ITEM_LOGGING == selected_item )
     {
