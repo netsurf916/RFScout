@@ -139,7 +139,6 @@ static void replay_line( const char *a_line )
 {
     unsigned type, classification, address[ 6 ];
     unsigned long seen;
-    double min_lat, max_lat, min_lon, max_lon;
     double latitude = 0.0, longitude = 0.0;
     long long utc = 0;
     const bool discrete = 12 == sscanf(
@@ -149,26 +148,8 @@ static void replay_line( const char *a_line )
         &type, &address[ 0 ], &address[ 1 ], &address[ 2 ],
         &address[ 3 ], &address[ 4 ], &address[ 5 ], &classification,
         &latitude, &longitude, &utc, &seen );
-    if( !discrete && 13 != sscanf( a_line,
-                      "{\"type\":%u,\"mac\":\"%2x%2x%2x%2x%2x%2x\",\"class\":%u,"
-                      "\"min_lat\":%lf,\"max_lat\":%lf,\"min_lon\":%lf,\"max_lon\":%lf,"
-                      "\"seen\":%lu}",
-                      &type,
-                      &address[ 0 ],
-                      &address[ 1 ],
-                      &address[ 2 ],
-                      &address[ 3 ],
-                      &address[ 4 ],
-                      &address[ 5 ],
-                      &classification,
-                      &min_lat,
-                      &max_lat,
-                      &min_lon,
-                      &max_lon,
-                      &seen ) )
-    {
-        return;
-    }
+    if( !discrete )
+        return; /* Discard obsolete bounding-box records. */
     if( type > UINT8_MAX || classification > SURVEILLANCE_OTHER )
         return;
     for( size_t i = 0U; i < 6U; ++i )
@@ -190,11 +171,6 @@ static void replay_line( const char *a_line )
             entry = &entries[ i ];
             break;
         }
-    }
-    if( !discrete )
-    {
-        latitude = fmax( min_lat, fmin( reference_lat, max_lat ) );
-        longitude = fmax( min_lon, fmin( reference_lon, max_lon ) );
     }
     if( !isfinite( latitude ) || !isfinite( longitude ) ||
         fabs( latitude ) > 90.0 || fabs( longitude ) > 180.0 )
@@ -220,10 +196,10 @@ static void replay_line( const char *a_line )
         entry->address[ j ] = (uint8_t)address[ j ];
     entry->address_type = (uint8_t)type;
     entry->classification = (surveillance_class_t)classification;
-    entry->min_latitude = discrete ? latitude : min_lat;
-    entry->max_latitude = discrete ? latitude : max_lat;
-    entry->min_longitude = discrete ? longitude : min_lon;
-    entry->max_longitude = discrete ? longitude : max_lon;
+    entry->min_latitude = latitude;
+    entry->max_latitude = latitude;
+    entry->min_longitude = longitude;
+    entry->max_longitude = longitude;
     entry->last_seen_ms = (uint32_t)seen;
     entry->valid = true;
     entry->nearest_distance_m = distance;
