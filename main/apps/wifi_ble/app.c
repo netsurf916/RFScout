@@ -16,6 +16,7 @@
 #include "platform.h"
 #include "observation_store.h"
 #include "radio_monitor.h"
+#include "surveillance_history.h"
 #include "ui.h"
 #include "wifi_settings_view.h"
 
@@ -177,6 +178,7 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
         }
         if( WIFI_MENU_RESET == menu_item )
         {
+            surveillance_history_flush();
             observation_store_reset();
             close_menu();
             emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
@@ -256,6 +258,7 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         menu_editing = false;
         menu_item = WIFI_MENU_BACK;
         ui_set_surveillance_page( false );
+        surveillance_history_open();
         last_radio_retry_us = 0;
         app_notification_menu_init(
             &notification_menu, RFSCOUT_APP_WIFI_BT, render_menu_callback, NULL );
@@ -272,6 +275,7 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         menu_active = false;
         menu_editing = false;
         menu_item = WIFI_MENU_BACK;
+        surveillance_history_flush();
         ui_set_surveillance_page( false );
         app_notification_menu_reset( &notification_menu );
         return RFSCOUT_APP_RUNTIME_HANDLED;
@@ -337,6 +341,7 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
     }
     radio_monitor_set_active_ap_channels( observation_store_wifi_ap_channel_mask() );
     radio_monitor_step();
+    surveillance_history_sample();
     if( !menu_active && !app_notification_menu_active( &notification_menu ) )
     {
         ui_poll();
