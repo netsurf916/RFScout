@@ -27,6 +27,12 @@ bool storage_io_acquire( uint32_t a_timeout_ms );
 /** @brief Release storage-service arbitration after storage_io_acquire() succeeds. */
 void storage_io_release( void );
 
+/** @brief True until three seconds have elapsed since the latest SD media failure. */
+bool storage_retry_delayed( void );
+
+/** @brief Latch failed SD media and begin the shared three-second cooldown. */
+void storage_note_media_failure( void );
+
 /** @brief Whether the SD volume is mounted (including a latched-lost volume); caller holds arbitration. */
 bool storage_is_mounted( void );
 
