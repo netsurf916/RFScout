@@ -10,6 +10,7 @@
 #include "board.h"
 #include "device_time.h"
 
+#include "driver/gpio.h"
 #include "driver/uart.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -425,6 +426,18 @@ esp_err_t gps_stop( void )
     const esp_err_t result = uart_driver_delete( GPS_UART );
     if( ESP_OK == result )
     {
+        /* Deleting the UART driver does not grant the nRF24 ownership of the
+           GPIO matrix. Return both pins to GPIO defaults before radio SPI setup. */
+        const esp_err_t tx_result = gpio_reset_pin( RFSCOUT_BOARD_GPS_TX_PIN );
+        const esp_err_t rx_result = gpio_reset_pin( RFSCOUT_BOARD_GPS_RX_PIN );
+        if( ESP_OK != tx_result )
+        {
+            return tx_result;
+        }
+        if( ESP_OK != rx_result )
+        {
+            return rx_result;
+        }
         initialized = false;
     }
     return result;
