@@ -96,10 +96,15 @@ bool media_store_available( void );
 /**
  * @brief Retry-safe SD presence probe for hot-plug dependency checks.
  * @details Mounts the card when no card has ever mounted, then verifies the mounted card responds.
- *          It never remounts media that was latched lost.
+ *          After detected removal, invalidates all open file handles, unmounts the old volume,
+ *          and attempts a fresh mount. Callers must reopen files after recovery.
  * @return ESP_OK when media is present and healthy, otherwise ESP_ERR_NOT_FOUND.
  */
 esp_err_t media_store_probe( void );
+
+/** @brief Return the current SD volume generation; increments after successful mount/recovery.
+ * @details Stateful clients can detect replacement media and rebuild file-local state. */
+uint32_t media_store_generation( void );
 
 /**
  * @brief Query SD filesystem capacity.
