@@ -19,6 +19,7 @@
 
 static const char *TAG = "surveillance_history";
 static uint32_t dropped_points;
+static bool journal_ambiguous;
 
 typedef observation_location_event_t history_point_t;
 
@@ -40,12 +41,13 @@ void surveillance_history_open( void )
         (void)app_session_free( pending );
     if( NULL != writing )
         (void)app_session_free( writing );
-    pending = app_session_resize( NULL, 256U, sizeof( *pending ) );
+    pending = app_session_resize( NULL, 2048U, sizeof( *pending ) );
     pending_count = 0U;
-    pending_capacity = NULL != pending ? 256U : 0U;
+    pending_capacity = NULL != pending ? 2048U : 0U;
     writing = NULL;
     writing_count = 0U;
     dropped_points = 0U;
+    journal_ambiguous = false;
     xSemaphoreGive( history_lock );
 }
 
@@ -93,7 +95,7 @@ static esp_err_t append_point( const rfscout_media_file_t *a_file, const history
 
 void surveillance_history_flush( void )
 {
-    if( NULL == history_lock )
+    if( NULL == history_lock || journal_ambiguous )
         return;
     xSemaphoreTake( history_lock, portMAX_DELAY );
     if( NULL == writing && pending_count != 0U )
@@ -133,7 +135,19 @@ void surveillance_history_flush( void )
         if( ESP_OK == result )
             result = media_sync( &file );
         if( ESP_OK != result && size_known )
-            (void)media_truncate( &file, original_size );
+        {
+            const esp_err_t rollback_result = media_truncate( &file, original_size );
+            if( ESP_OK != rollback_result )
+            {
+                journal_ambiguous = true;
+                ESP_LOGE( TAG, "Journal rollback failed; disabling retries to avoid corruption" );
+            }
+        }
+        else if( ESP_OK != result )
+        {
+            journal_ambiguous = true;
+            ESP_LOGE( TAG, "Journal size unknown; disabling retries to avoid corruption" );
+        }
         const esp_err_t close_result = media_close( &file );
         if( ESP_OK != close_result )
             ESP_LOGW( TAG, "Journal close returned %ld", (long)close_result );
