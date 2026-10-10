@@ -94,7 +94,8 @@ void surveillance_history_record( const rf_device_t *a_device,
     {
         ++dropped_points;
         if( 1U == dropped_points || 0U == ( dropped_points % 100U ) )
-            ESP_LOGW( TAG, "Journal PSRAM exhausted; dropped %lu packet observations",
+            ESP_LOGW( TAG,
+                      "Journal PSRAM exhausted; dropped %lu packet observations",
                       (unsigned long)dropped_points );
     }
     xSemaphoreGive( history_lock );
