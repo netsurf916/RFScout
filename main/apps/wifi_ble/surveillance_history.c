@@ -16,7 +16,6 @@
 static surveillance_history_entry_t *entries;
 static size_t entry_count;
 static size_t entry_capacity;
-static size_t journal_appends;
 static observation_history_identity_t *sample_buffer;
 static size_t sample_capacity;
 
@@ -221,7 +220,6 @@ void surveillance_history_open( void )
     entries = NULL;
     entry_count = 0U;
     entry_capacity = 0U;
-    journal_appends = 0U;
     if( NULL != sample_buffer )
         (void)app_session_free( sample_buffer );
     sample_buffer = NULL;
@@ -243,8 +241,7 @@ void surveillance_history_replay_step( bool a_foreground )
         replay_used = 0U;
         return;
     }
-    if( !reference_valid ||
-        ( reference_valid && history_distance( gps.latitude_deg, gps.longitude_deg ) > 100.0 ) )
+    if( !reference_valid || history_distance( gps.latitude_deg, gps.longitude_deg ) > 100.0 )
     {
         if( replay_active )
             (void)media_close( &replay_file );
@@ -301,6 +298,12 @@ void surveillance_history_replay_step( bool a_foreground )
     }
     if( replay_complete )
     {
+        if( replay_used > 0U && !replay_overflow )
+        {
+            replay_buffer[ replay_used ] = '\0';
+            replay_line( replay_buffer );
+        }
+        replay_used = 0U;
         (void)media_close( &replay_file );
         replay_active = false;
     }
