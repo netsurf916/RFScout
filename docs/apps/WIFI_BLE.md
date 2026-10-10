@@ -211,44 +211,31 @@ Relevant generated tables live under `main/services/wireless/`. Registry, genera
 
 Current production behavior preserves enough AP/BSSID and frame-role semantics for adaptive scanning, but it does not yet provide the full semantic physical-entity model, AP/client topology and association confidence, probe relationships, stable relationship drill-down, BLE-native deep views, or conservative address-rotation correlation planned for v0.4.0. Randomized addresses therefore remain evidence rather than proof of physical identity.
 
-## Surveillance locations: discrete history and bounded nearby view
+## Surveillance locations: live receiver bounds and packet journal
 
-The SD card is the authoritative store of **individual meaningful receiver observations**: full
-MAC and address type, surveillance classification, receiver latitude/longitude from a fresh valid
-GPS fix, and a trustworthy UTC timestamp when available. Repeated observations at different
-times or places are retained for later analysis; GPS receiver positions are not verified
-transmitter positions. Do not write a record for every application poll or discard distinct
-observations during journal maintenance. Expiration, manual reset, and app exit remain the
-best-effort event-driven persistence boundaries. Legacy consolidated bounding-box records are unsupported and must be ignored during replay.
-Only discrete-observation journal records belong to this contract.
+The canonical observation store owns every currently active Wi-Fi/BLE identity until its
+configured source timeout. GPS-qualified surveillance packet observations expand the
+**receiver-location** minimum/maximum latitude/longitude bounding box of the live identity.
+These coordinates represent where RFScout received packets, not a verified transmitter position.
+Expiration simply removes the active identity; it does not write a summary to SD.
 
-All surveillance classifications share the same runtime representation and list. There is no
-path view or type-specific runtime aggregation. Runtime distance is the minimum distance to
-a **saved receiver observation**, not distance to a bounding-box midpoint or an inferred
-camera position.
+Each GPS-qualified surveillance packet is separately queued for the append-only
+`locations/surveillance.jsonl` journal, including full MAC, address type, classification,
+receiver latitude/longitude, trusted UTC when available, and observation time. The app
+periodically appends batches from the poll context rather than writing inside radio callbacks.
+The journal is retained for offline analysis. It is not replayed to populate the live UI,
+and legacy bounding-box journal formats are not read or supported. A failed SD append is
+retried while the app session remains active; insufficient PSRAM can still prevent capture.
+App exit attempts a final flush.
 
-### Incremental, GPS-dependent history replay
-
-Do not load the complete journal on app activation. Wait for a fresh valid GPS fix before
-opening and replaying history. Stream records in small batches through the existing WiFi/BLE
-app poll and retain a **bounded nearest-device working set**, not all historical observations.
-Maintain unique (address type, full MAC) identities sorted nearest-first by insertion. For
-each saved observation, update the identity's nearest recorded distance to the reference GPS
-position, reposition it if already present, or insert it ahead of farther devices and evict the
-last entry when at capacity. A previously excluded device can enter the set if a later record
-is closer. Capacity must support list navigation beyond the visible rows.
-
-Normal scanning gives replay a small bounded time/record budget. Opening the surveillance
-list increases that budget, without blocking radio collection or UI rendering. Display partial
-results while loading. No fix suspends replay; a meaningful location displacement restarts
-ranking from a stable reference fix, rather than mixing different reference positions. Do not
-restart for every small GPS update. Coordinate concurrent journal appends and replay, and
-close file handles on app exit. Live detections continue independently of historical GPS
-availability. Use compact structures, pass-by-reference, and PSRAM for retained working
-buffers; do not introduce another FreeRTOS task, queue, or scheduling subsystem.
+The surveillance list reads active identities directly from the canonical store and displays
+the distance from the current GPS receiver position to each identity's observed receiver
+bounding box. Without a fresh GPS fix or valid bounds, distance is unknown. Historical-only
+identities are never shown. The rotary normally switches views; center press on the
+surveillance page enters/exits scroll mode. Settings is opened from the main view.
 
 ### Validation
 
-Test multiple simultaneous detections/expirations, journal append and replay, restart and rejection of legacy records, GPS loss and reacquisition, meaningful displacement, list prioritization,
-app exit, bounded RAM and task-stack headroom. This section describes the **target design**
-and does not assert that the current firmware implements it.
+Verify per-packet journal lines, bounding-box expansion, source timeouts, GPS loss,
+SD removal/reinsertion, retry behavior, PSRAM headroom, rotary focus, and app exit.
+No history replay, proximity reload threshold, or timeout-triggered SD write exists.
