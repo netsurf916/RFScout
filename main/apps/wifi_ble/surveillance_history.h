@@ -18,4 +18,7 @@ void surveillance_history_record( const observation_location_event_t *a_event );
 /** @brief Append pending packet observations from the app poll, never from radio callbacks. */
 void surveillance_history_flush( void );
 
+/** @brief On app exit, attempt to drain both journal buffers without unbounded retries. */
+void surveillance_history_flush_final( void );
+
 #endif // _RFSCOUT_SURVEILLANCE_HISTORY_H_
