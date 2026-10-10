@@ -50,6 +50,8 @@ static int64_t baud_probe_started_us;
 static char line[ GPS_LINE_MAX ];
 static size_t line_length;
 static rfscout_gps_snapshot_t snapshot;
+static int64_t location_updated_us;
+static int64_t time_updated_us;
 static portMUX_TYPE snapshot_mux = portMUX_INITIALIZER_UNLOCKED;
 static rfscout_gps_snapshot_t published_snapshot;
 static int64_t published_location_us;
@@ -65,9 +67,6 @@ static void publish_snapshot( void )
     published_initialized = initialized;
     portEXIT_CRITICAL( &snapshot_mux );
 }
-
-static int64_t location_updated_us;
-static int64_t time_updated_us;
 
 static bool checksum_valid( const char *a_line )
 {
