@@ -20,6 +20,7 @@
 #include "esp_timer.h"
 
 #include <stdio.h>
+#include <string.h>
 #include <math.h>
 
 #define UI_MAX_KNOWN_BRANDS 8U
@@ -211,53 +212,91 @@ void ui_surveillance_navigate( int a_direction )
     last_refresh_us = 0;
 }
 
+static bool history_identity_live( const surveillance_history_entry_t *a_entry,
+                                   const observation_history_identity_t *a_live,
+                                   size_t a_count )
+{
+    for( size_t i = 0U; i < a_count; ++i )
+        if( a_entry->address_type == a_live[ i ].address_type &&
+            0 == memcmp( a_entry->address, a_live[ i ].address, 6U ) )
+            return true;
+    return false;
+}
+
 static void render_surveillance_page( void )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
-    const size_t count = surveillance_history_list( NULL, 0U );
     rfscout_gps_snapshot_t gps = { 0 };
     const bool has_fix =
         gps_snapshot_get( &gps ) && gps.location_valid && gps.location_age_ms <= 5000U;
 
-    display_clear( theme->background );
-    ui_chrome_draw( "SURVEILLANCE", theme->secondary );
-    char line[ 80 ];
-    snprintf(
-        line, sizeof( line ), "HISTORY %u  GPS %s", (unsigned)count, has_fix ? "FIX" : "NO FIX" );
-    display_draw_text( UI_LAYOUT_LEFT_X, 25, line, theme->info, 1U );
+    /* Live devices are independent of GPS and must not be hidden by history replay. */
+    observation_history_identity_t live[ 48 ] = { 0 };
+    const size_t live_total = observation_store_surveillance_devices( live, 48U );
+    const size_t live_count = live_total < 48U ? live_total : 48U;
+    const size_t history_count = surveillance_history_list( NULL, 0U );
+    size_t unique_history = 0U;
+    for( size_t i = 0U; i < history_count; ++i )
+    {
+        surveillance_history_entry_t entry = { 0 };
+        if( surveillance_history_get( i, &entry ) &&
+            !history_identity_live( &entry, live, live_count ) )
+            ++unique_history;
+    }
+    const size_t count = live_count + unique_history;
     if( count > 0U && surveillance_selection >= count )
         surveillance_selection = (unsigned)( count - 1U );
 
+    display_clear( theme->background );
+    ui_chrome_draw( "SURVEILLANCE", theme->secondary );
+    char line[ 80 ];
+    snprintf( line, sizeof( line ), "LIVE %u  SAVED %u  GPS %s",
+              (unsigned)live_count, (unsigned)unique_history,
+              has_fix ? "FIX" : "NO FIX" );
+    display_draw_text( UI_LAYOUT_LEFT_X, 25, line, theme->info, 1U );
+
     const size_t start = surveillance_selection >= 6U ? surveillance_selection - 5U : 0U;
-    for( size_t i = start; i < count && i < start + 6U; ++i )
+    size_t row = 0U;
+    for( size_t i = 0U; i < live_count; ++i, ++row )
+    {
+        if( row < start || row >= start + 6U )
+            continue;
+        snprintf( line, sizeof( line ), "%c * %02X%02X%02X %-13.13s LIVE",
+                  row == surveillance_selection ? '>' : ' ',
+                  live[ i ].address[ 3 ], live[ i ].address[ 4 ],
+                  live[ i ].address[ 5 ],
+                  live[ i ].vendor[ 0 ] ? live[ i ].vendor : "Unknown" );
+        display_draw_text( UI_LAYOUT_LEFT_X, 43 + (int)( row - start ) * 17,
+                           line, row == surveillance_selection ? theme->selected : theme->normal,
+                           1U );
+    }
+    for( size_t i = 0U; i < history_count; ++i )
     {
         surveillance_history_entry_t entry = { 0 };
-        /* Request only the required prefix, avoiding large device snapshots. */
-        if( !surveillance_history_get( i, &entry ) )
+        if( !surveillance_history_get( i, &entry ) ||
+            history_identity_live( &entry, live, live_count ) )
             continue;
-        char distance[ 20 ] = "--";
-        if( has_fix )
+        if( row >= start && row < start + 6U )
         {
-            const double meters = entry.nearest_distance_m;
-            if( meters >= 1000.0 )
-                snprintf( distance, sizeof( distance ), "%.1fkm", meters / 1000.0 );
-            else
-                snprintf( distance, sizeof( distance ), "%.0fm", meters );
+            char distance[ 20 ] = "--";
+            if( has_fix )
+            {
+                const double meters = entry.nearest_distance_m;
+                if( meters >= 1000.0 )
+                    snprintf( distance, sizeof( distance ), "%.1fkm", meters / 1000.0 );
+                else
+                    snprintf( distance, sizeof( distance ), "%.0fm", meters );
+            }
+            snprintf( line, sizeof( line ), "%c   %02X%02X%02X %-13.13s %s",
+                      row == surveillance_selection ? '>' : ' ',
+                      entry.address[ 3 ], entry.address[ 4 ], entry.address[ 5 ],
+                      entry.vendor[ 0 ] ? entry.vendor : "Unknown", distance );
+            display_draw_text( UI_LAYOUT_LEFT_X, 43 + (int)( row - start ) * 17,
+                               line,
+                               row == surveillance_selection ? theme->selected : theme->normal,
+                               1U );
         }
-        snprintf( line,
-                  sizeof( line ),
-                  "%c %02X%02X%02X %-13.13s %s",
-                  i == surveillance_selection ? '>' : ' ',
-                  entry.address[ 3 ],
-                  entry.address[ 4 ],
-                  entry.address[ 5 ],
-                  entry.vendor[ 0 ] ? entry.vendor : "Unknown",
-                  distance );
-        display_draw_text( UI_LAYOUT_LEFT_X,
-                           43 + (int)( i - start ) * 17,
-                           line,
-                           i == surveillance_selection ? theme->selected : theme->normal,
-                           1U );
+        ++row;
     }
     (void)display_present();
 }
