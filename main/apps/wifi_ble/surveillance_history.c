@@ -170,6 +170,18 @@ static void replay_line( const char *a_line )
             break;
         }
     }
+    const double latitude = fmax( min_lat, fmin( reference_lat, max_lat ) );
+    const double longitude = fmax( min_lon, fmin( reference_lon, max_lon ) );
+    const double distance = history_distance( latitude, longitude );
+    if( NULL != entry && distance >= entry->nearest_distance_m )
+        return;
+    if( NULL == entry && entry_count == HISTORY_LIMIT )
+    {
+        history_sort();
+        if( distance >= entries[ entry_count - 1U ].nearest_distance_m )
+            return;
+        entry = &entries[ entry_count - 1U ];
+    }
     if( NULL == entry )
     {
         if( !ensure_history_capacity( entry_count + 1U ) )
@@ -187,7 +199,9 @@ static void replay_line( const char *a_line )
     entry->max_longitude = max_lon;
     entry->last_seen_ms = (uint32_t)seen;
     entry->valid = true;
+    entry->nearest_distance_m = distance;
     entry->dirty = false;
+    history_sort();
 }
 
 void surveillance_history_open( void )
