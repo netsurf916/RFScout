@@ -1,58 +1,17 @@
 /**
-    surveillance_history.c : Receiver-observation history
+    surveillance_history.c : Append-only GPS-qualified packet observations
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
 #include "surveillance_history.h"
-#include "gps.h"
 #include "app_session.h"
 #include "media_store.h"
-#include "observation_store.h"
 
-#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+
 #include <stdio.h>
-#include <math.h>
-
-static surveillance_history_entry_t *entries;
-static size_t entry_count;
-static size_t entry_capacity;
-static observation_history_identity_t *sample_buffer;
-static size_t sample_capacity;
-
-#define HISTORY_LIMIT 48U
-static rfscout_media_file_t replay_file;
-static bool replay_active;
-static bool replay_complete;
-static bool reference_valid;
-static double reference_lat;
-static double reference_lon;
-static char replay_buffer[ 256 ];
-static size_t replay_used;
-static bool replay_overflow;
-static size_t replay_offset;
-static bool replay_restart_needed;
-
-static bool ensure_history_capacity( size_t a_required )
-{
-    if( a_required > HISTORY_LIMIT )
-        return false;
-    if( a_required <= entry_capacity )
-        return true;
-    if( entry_capacity > SIZE_MAX / 2U )
-        return false;
-    size_t capacity = entry_capacity ? entry_capacity * 2U : 32U;
-    if( capacity < a_required )
-        capacity = a_required;
-    if( capacity > HISTORY_LIMIT )
-        capacity = HISTORY_LIMIT;
-    surveillance_history_entry_t *next =
-        app_session_resize( entries, capacity, sizeof( *entries ) );
-    if( NULL == next )
-        return false;
-    entries = next;
-    entry_capacity = capacity;
-    return true;
-}
+#include <string.h>
 
 #define HISTORY_JOURNAL "surveillance.jsonl"
 
@@ -67,13 +26,66 @@ typedef struct
     uint32_t seen_ms;
 } history_point_t;
 
-#define HISTORY_PENDING_LIMIT 128U
-static history_point_t *pending_points;
+static SemaphoreHandle_t history_lock;
+static history_point_t *pending;
 static size_t pending_count;
-static uint32_t last_sample_seen[ HISTORY_LIMIT ];
-static uint8_t last_sample_address[ HISTORY_LIMIT ][ 6 ];
-static uint8_t last_sample_type[ HISTORY_LIMIT ];
-static size_t last_sample_count;
+static size_t pending_capacity;
+static history_point_t *writing;
+static size_t writing_count;
+
+void surveillance_history_open( void )
+{
+    if( NULL == history_lock )
+        history_lock = xSemaphoreCreateMutex();
+    if( NULL == history_lock )
+        return;
+    xSemaphoreTake( history_lock, portMAX_DELAY );
+    if( NULL != pending )
+        (void)app_session_free( pending );
+    if( NULL != writing )
+        (void)app_session_free( writing );
+    pending = NULL;
+    pending_count = 0U;
+    pending_capacity = 0U;
+    writing = NULL;
+    writing_count = 0U;
+    xSemaphoreGive( history_lock );
+}
+
+void surveillance_history_record( const rf_device_t *a_device,
+                                  double a_latitude,
+                                  double a_longitude,
+                                  int64_t a_utc_epoch )
+{
+    if( NULL == history_lock || NULL == a_device )
+        return;
+    xSemaphoreTake( history_lock, portMAX_DELAY );
+    if( pending_count == pending_capacity )
+    {
+        const size_t capacity = pending_capacity ? pending_capacity * 2U : 64U;
+        if( capacity <= SIZE_MAX / sizeof( *pending ) )
+        {
+            history_point_t *next = app_session_resize( pending, capacity, sizeof( *pending ) );
+            if( NULL != next )
+            {
+                pending = next;
+                pending_capacity = capacity;
+            }
+        }
+    }
+    if( pending_count < pending_capacity )
+    {
+        history_point_t *point = &pending[ pending_count++ ];
+        memcpy( point->address, a_device->address, sizeof( point->address ) );
+        point->address_type = a_device->address_type;
+        point->classification = a_device->surveillance;
+        point->latitude = a_latitude;
+        point->longitude = a_longitude;
+        point->utc_epoch = a_utc_epoch;
+        point->seen_ms = a_device->last_seen_ms;
+    }
+    xSemaphoreGive( history_lock );
+}
 
 static esp_err_t append_point( const rfscout_media_file_t *a_file, const history_point_t *a_point )
 {
@@ -99,270 +111,23 @@ static esp_err_t append_point( const rfscout_media_file_t *a_file, const history
     return media_write( a_file, line, (size_t)length );
 }
 
-bool surveillance_history_get( size_t a_index, surveillance_history_entry_t *a_entry )
+void surveillance_history_flush( void )
 {
-    if( NULL == a_entry || a_index >= entry_count )
-        return false;
-    *a_entry = entries[ a_index ];
-    return a_entry->valid;
-}
-
-size_t surveillance_history_list( surveillance_history_entry_t *a_rows, size_t a_capacity )
-{
-    size_t count = 0U;
-    for( size_t i = 0U; i < entry_count; ++i )
-    {
-        if( !entries[ i ].valid )
-            continue;
-        if( NULL != a_rows && count < a_capacity )
-            a_rows[ count ] = entries[ i ];
-        ++count;
-    }
-    return count;
-}
-
-static double history_distance( double a_lat, double a_lon )
-{
-    const double lat = ( a_lat - reference_lat ) * 0.017453292519943295;
-    const double lon = ( a_lon - reference_lon ) * 0.017453292519943295;
-    const double cosine = cos( reference_lat * 0.017453292519943295 );
-    return 6371000.0 * sqrt( lat * lat + lon * lon * cosine * cosine );
-}
-
-static void history_sort( void )
-{
-    for( size_t i = 1U; i < entry_count; ++i )
-    {
-        surveillance_history_entry_t value = entries[ i ];
-        size_t j = i;
-        while( j > 0U && entries[ j - 1U ].nearest_distance_m > value.nearest_distance_m )
-        {
-            entries[ j ] = entries[ j - 1U ];
-            --j;
-        }
-        entries[ j ] = value;
-    }
-}
-
-static void replay_line( const char *a_line )
-{
-    unsigned type, classification, address[ 6 ];
-    unsigned long seen;
-    double latitude = 0.0, longitude = 0.0;
-    long long utc = 0;
-    const bool discrete = 12 == sscanf( a_line,
-                                        "{\"type\":%u,\"mac\":\"%2x%2x%2x%2x%2x%2x\",\"class\":%u,"
-                                        "\"lat\":%lf,\"lon\":%lf,\"utc\":%lld,\"seen\":%lu}",
-                                        &type,
-                                        &address[ 0 ],
-                                        &address[ 1 ],
-                                        &address[ 2 ],
-                                        &address[ 3 ],
-                                        &address[ 4 ],
-                                        &address[ 5 ],
-                                        &classification,
-                                        &latitude,
-                                        &longitude,
-                                        &utc,
-                                        &seen );
-    if( !discrete )
-        return; /* Discard obsolete bounding-box records. */
-    if( type > UINT8_MAX || classification > SURVEILLANCE_OTHER )
+    if( NULL == history_lock )
         return;
-    for( size_t i = 0U; i < 6U; ++i )
-        if( address[ i ] > UINT8_MAX )
-            return;
-    surveillance_history_entry_t *entry = NULL;
-    for( size_t i = 0U; i < entry_count; ++i )
+    xSemaphoreTake( history_lock, portMAX_DELAY );
+    if( NULL == writing && pending_count != 0U )
     {
-        if( entries[ i ].address_type != type )
-            continue;
-        bool same = true;
-        for( size_t j = 0U; j < 6U; ++j )
-        {
-            if( entries[ i ].address[ j ] != address[ j ] )
-                same = false;
-        }
-        if( same )
-        {
-            entry = &entries[ i ];
-            break;
-        }
+        writing = pending;
+        writing_count = pending_count;
+        pending = NULL;
+        pending_count = 0U;
+        pending_capacity = 0U;
     }
-    if( !isfinite( latitude ) || !isfinite( longitude ) || fabs( latitude ) > 90.0 ||
-        fabs( longitude ) > 180.0 )
+    xSemaphoreGive( history_lock );
+    if( NULL == writing )
         return;
-    const double distance = history_distance( latitude, longitude );
-    if( NULL != entry && distance >= entry->nearest_distance_m )
-        return;
-    if( NULL == entry && entry_count == HISTORY_LIMIT )
-    {
-        history_sort();
-        if( distance >= entries[ entry_count - 1U ].nearest_distance_m )
-            return;
-        entry = &entries[ entry_count - 1U ];
-    }
-    if( NULL == entry )
-    {
-        if( !ensure_history_capacity( entry_count + 1U ) )
-            return;
-        entry = &entries[ entry_count++ ];
-        memset( entry, 0, sizeof( *entry ) );
-    }
-    for( size_t j = 0U; j < 6U; ++j )
-        entry->address[ j ] = (uint8_t)address[ j ];
-    entry->address_type = (uint8_t)type;
-    entry->classification = (surveillance_class_t)classification;
-    entry->min_latitude = latitude;
-    entry->max_latitude = latitude;
-    entry->min_longitude = longitude;
-    entry->max_longitude = longitude;
-    entry->last_seen_ms = (uint32_t)seen;
-    entry->valid = true;
-    entry->nearest_distance_m = distance;
-    entry->dirty = false;
-    history_sort();
-}
 
-void surveillance_history_open( void )
-{
-    if( replay_active )
-        (void)media_close( &replay_file );
-    replay_active = false;
-    replay_complete = false;
-    reference_valid = false;
-    replay_used = 0U;
-    replay_overflow = false;
-    replay_offset = 0U;
-    replay_restart_needed = false;
-    if( NULL != entries )
-        (void)app_session_free( entries );
-    entries = NULL;
-    entry_count = 0U;
-    entry_capacity = 0U;
-    if( NULL != sample_buffer )
-        (void)app_session_free( sample_buffer );
-    sample_buffer = NULL;
-    sample_capacity = 0U;
-    if( NULL != pending_points )
-        (void)app_session_free( pending_points );
-    pending_points = NULL;
-    pending_count = 0U;
-    last_sample_count = 0U;
-}
-
-void surveillance_history_replay_step( bool a_foreground )
-{
-    rfscout_gps_snapshot_t gps = { 0 };
-    if( !gps_snapshot_get( &gps ) || !gps.location_valid || gps.location_age_ms > 5000U )
-    {
-        if( replay_active )
-            (void)media_close( &replay_file );
-        replay_active = false;
-        replay_used = 0U;
-        replay_offset = 0U;
-        replay_restart_needed = true;
-        return;
-    }
-    if( !reference_valid || history_distance( gps.latitude_deg, gps.longitude_deg ) > 100.0 )
-    {
-        if( replay_active )
-            (void)media_close( &replay_file );
-        replay_active = false;
-        reference_lat = gps.latitude_deg;
-        reference_lon = gps.longitude_deg;
-        reference_valid = true;
-        replay_complete = false;
-        replay_used = 0U;
-        replay_offset = 0U;
-        entry_count = 0U;
-    }
-    if( replay_restart_needed )
-    {
-        replay_restart_needed = false;
-        replay_complete = false;
-        replay_offset = 0U;
-        replay_used = 0U;
-        entry_count = 0U;
-    }
-    if( replay_complete )
-        return;
-    if( !replay_active )
-    {
-        rfscout_media_collection_t collection;
-        if( ESP_OK != media_app_collection( "locations", &collection ) ||
-            ESP_OK !=
-                media_open( &collection, HISTORY_JOURNAL, RFSCOUT_MEDIA_OPEN_READ, &replay_file ) )
-            return;
-        replay_active = true;
-        if( replay_offset != 0U &&
-            ESP_OK != media_seek( &replay_file, replay_offset, RFSCOUT_MEDIA_SEEK_START ) )
-        {
-            (void)media_close( &replay_file );
-            replay_active = false;
-            replay_offset = 0U;
-            replay_used = 0U;
-            entry_count = 0U;
-            return;
-        }
-    }
-    size_t budget = a_foreground ? 2048U : 256U;
-    char chunk[ 64 ];
-    while( budget > 0U )
-    {
-        size_t count = 0U;
-        const size_t requested = budget < sizeof( chunk ) ? budget : sizeof( chunk );
-        if( ESP_OK != media_read( &replay_file, chunk, requested, &count ) )
-            break;
-        if( count == 0U )
-        {
-            replay_complete = true;
-            break;
-        }
-        replay_offset += count;
-        budget -= count;
-        for( size_t i = 0U; i < count; ++i )
-        {
-            if( chunk[ i ] == '\n' )
-            {
-                if( replay_used && !replay_overflow )
-                {
-                    replay_buffer[ replay_used ] = '\0';
-                    replay_line( replay_buffer );
-                }
-                replay_used = 0U;
-                replay_overflow = false;
-            }
-            else if( !replay_overflow && replay_used + 1U < sizeof( replay_buffer ) )
-                replay_buffer[ replay_used++ ] = chunk[ i ];
-            else
-                replay_overflow = true;
-        }
-    }
-    if( replay_complete )
-    {
-        if( replay_used > 0U && !replay_overflow )
-        {
-            replay_buffer[ replay_used ] = '\0';
-            replay_line( replay_buffer );
-        }
-        replay_used = 0U;
-        (void)media_close( &replay_file );
-        replay_active = false;
-    }
-}
-
-static void flush_pending( bool a_include_active )
-{
-    if( pending_count == 0U )
-        return;
-    if( replay_active )
-        (void)media_close( &replay_file );
-    replay_active = false;
-    replay_complete = false;
-    replay_used = 0U;
-    replay_offset = 0U;
-    replay_restart_needed = true;
     rfscout_media_collection_t collection;
     rfscout_media_file_t file = { 0 };
     esp_err_t result = media_app_collection( "locations", &collection );
@@ -370,123 +135,24 @@ static void flush_pending( bool a_include_active )
         result = media_open( &collection, HISTORY_JOURNAL, RFSCOUT_MEDIA_OPEN_APPEND, &file );
     if( ESP_OK == result )
     {
-        for( size_t i = 0U; i < pending_count; ++i )
-        {
-            result = append_point( &file, &pending_points[ i ] );
-            if( ESP_OK != result )
-                break;
-        }
+        uint64_t original_size = 0U;
+        result = media_size( &file, &original_size );
+        for( size_t i = 0U; ESP_OK == result && i < writing_count; ++i )
+            result = append_point( &file, &writing[ i ] );
         if( ESP_OK == result )
             result = media_sync( &file );
+        if( ESP_OK != result )
+            (void)media_truncate( &file, original_size );
         const esp_err_t close_result = media_close( &file );
         if( ESP_OK == result )
             result = close_result;
     }
-    pending_count = 0U;
-    if( ESP_OK != result )
-        printf( "surveillance history flush failed: %ld\\n", (long)result );
-    (void)a_include_active;
-}
-
-void surveillance_history_flush( void )
-{
-    flush_pending( true );
-    if( replay_active )
-        (void)media_close( &replay_file );
-    replay_active = false;
-}
-
-void surveillance_history_compact( void )
-{
-    /* Discrete records are authoritative; do not collapse them into bounding boxes. */
-}
-
-void surveillance_history_process_expired( void )
-{
-    observation_history_identity_t expired[ 4 ] = { 0 };
-    size_t count;
-    bool changed = false;
-    while( 0U != ( count = observation_store_take_expired( expired, 4U ) ) )
+    if( ESP_OK == result )
     {
-        for( size_t i = 0U; i < count; ++i )
-        {
-            for( size_t j = 0U; j < pending_count; ++j )
-            {
-                if( pending_points[ j ].address_type == expired[ i ].address_type &&
-                    0 == memcmp( pending_points[ j ].address, expired[ i ].address, 6U ) )
-                {
-                    changed = true;
-                    break;
-                }
-            }
-        }
+        (void)app_session_free( writing );
+        writing = NULL;
+        writing_count = 0U;
     }
-    if( changed )
-        flush_pending( false );
-}
-
-void surveillance_history_sample( void )
-{
-    rfscout_gps_snapshot_t gps = { 0 };
-    if( !gps_snapshot_get( &gps ) || !gps.location_valid || gps.location_age_ms > 5000U )
-        return;
-    const size_t total = observation_store_surveillance_devices( NULL, 0U );
-    if( total == 0U )
-        return;
-    if( total > sample_capacity )
-    {
-        observation_history_identity_t *next =
-            app_session_resize( sample_buffer, total, sizeof( *sample_buffer ) );
-        if( NULL == next )
-            return;
-        sample_buffer = next;
-        sample_capacity = total;
-    }
-    const size_t count = observation_store_surveillance_devices( sample_buffer, sample_capacity );
-    for( size_t i = 0U; i < count && i < sample_capacity; ++i )
-    {
-        const observation_history_identity_t *device = &sample_buffer[ i ];
-        bool duplicate = false;
-        size_t tracked = 0U;
-        for( ; tracked < last_sample_count; ++tracked )
-        {
-            if( last_sample_type[ tracked ] == device->address_type &&
-                0 == memcmp( last_sample_address[ tracked ], device->address, 6U ) )
-            {
-                duplicate = last_sample_seen[ tracked ] == device->last_seen_ms;
-                break;
-            }
-        }
-        if( duplicate )
-            continue;
-        if( NULL == pending_points )
-        {
-            pending_points =
-                app_session_resize( NULL, HISTORY_PENDING_LIMIT, sizeof( *pending_points ) );
-            if( NULL == pending_points )
-                return;
-        }
-        if( pending_count == HISTORY_PENDING_LIMIT )
-        {
-            /* Never write on a polling interval: drop new samples on overflow. */
-            continue;
-        }
-        history_point_t *point = &pending_points[ pending_count++ ];
-        memset( point, 0, sizeof( *point ) );
-        memcpy( point->address, device->address, 6U );
-        point->address_type = device->address_type;
-        point->classification = device->surveillance;
-        point->latitude = gps.latitude_deg;
-        point->longitude = gps.longitude_deg;
-        point->utc_epoch = gps.time_valid ? (int64_t)gps.utc_epoch : 0;
-        point->seen_ms = device->last_seen_ms;
-        if( tracked == last_sample_count && last_sample_count < HISTORY_LIMIT )
-            ++last_sample_count;
-        if( tracked < HISTORY_LIMIT )
-        {
-            memcpy( last_sample_address[ tracked ], device->address, 6U );
-            last_sample_type[ tracked ] = device->address_type;
-            last_sample_seen[ tracked ] = device->last_seen_ms;
-        }
-    }
+    else
+        printf( "surveillance journal flush failed: %ld\n", (long)result );
 }
