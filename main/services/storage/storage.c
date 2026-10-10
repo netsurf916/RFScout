@@ -15,10 +15,10 @@
 #include "driver/sdspi_host.h"
 #include "driver/spi_master.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_vfs_fat.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-#include "freertos/task.h"
 #include "sdmmc_cmd.h"
 
 #define STORAGE_PROBE_IO_TIMEOUT_MS 250U
@@ -30,34 +30,24 @@ static bool mounted;
 static bool media_lost;
 static StaticSemaphore_t io_mutex_control;
 static SemaphoreHandle_t io_mutex;
-/* Zero means no cooldown. A deadline, rather than a timer, avoids background work. */
-static uint32_t retry_after_tick;
+/* Access to this 64-bit timestamp must be synchronized on 32-bit ESP targets.
+   An expired deadline may remain cached: monotonic time cannot reactivate it. */
+static portMUX_TYPE retry_lock = portMUX_INITIALIZER_UNLOCKED;
+static int64_t retry_after_us;
 
 bool storage_retry_delayed( void )
 {
-    uint32_t deadline = __atomic_load_n( &retry_after_tick, __ATOMIC_ACQUIRE );
-    if( 0U == deadline )
-    {
-        return false;
-    }
-    if( (int32_t)( deadline - (uint32_t)xTaskGetTickCount() ) > 0 )
-    {
-        return true;
-    }
-    (void)__atomic_compare_exchange_n(
-        &retry_after_tick, &deadline, 0U, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE );
-    return false;
+    portENTER_CRITICAL( &retry_lock );
+    const int64_t deadline = retry_after_us;
+    portEXIT_CRITICAL( &retry_lock );
+    return esp_timer_get_time() < deadline;
 }
 
 static void storage_start_cooldown( void )
 {
-    uint32_t deadline =
-        (uint32_t)xTaskGetTickCount() + (uint32_t)pdMS_TO_TICKS( STORAGE_FAILURE_COOLDOWN_MS );
-    if( 0U == deadline )
-    {
-        deadline = 1U;
-    }
-    __atomic_store_n( &retry_after_tick, deadline, __ATOMIC_RELEASE );
+    portENTER_CRITICAL( &retry_lock );
+    retry_after_us = esp_timer_get_time() + (int64_t)STORAGE_FAILURE_COOLDOWN_MS * 1000LL;
+    portEXIT_CRITICAL( &retry_lock );
 }
 
 void storage_note_media_failure( void )
