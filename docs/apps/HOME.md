@@ -78,7 +78,7 @@ Leaving Update cancels acquisition/installation but deliberately preserves the H
 - **Auto** hides manual fields and may accept a valid GPS UTC source when such a provider is available.
 - A successful Home Network connection applies synchronized NTP UTC without changing the stored Auto/Manual policy.
 
-The current T-Embed profile does not advertise onboard GPS, so GPS time/location remains capability-gated.
+The T-Embed profile enables optional UART GPS detection on GPIO43/44, which are also used by the nRF24 shield. After startup nRF24 discovery and power-down, GPS probes 38400, 9600, 19200, 57600, and 115200 baud. A checksum-valid RMC/GGA sentence establishes receiver presence even without a location fix and disables nRF24 activation until reboot. If no receiver is detected, nRF24 may use the pins after the initial two-cycle (15-second) GPS detection window; GPS polling pauses during radio use and resumes after radio shutdown.
 
 ## Power, display, and persistence
 
