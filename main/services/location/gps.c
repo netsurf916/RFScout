@@ -335,7 +335,7 @@ static void probe_next_baud( int64_t a_now )
         return;
     }
 
-    const size_t next_index = ( active_baud_index + 1U ) /
+    const size_t next_index = ( active_baud_index + 1U ) %
                               ( sizeof( GPS_BAUD_RATES ) / sizeof( GPS_BAUD_RATES[ 0 ] ) );
     const int next_baud = GPS_BAUD_RATES[ next_index ];
     if( ESP_OK != uart_set_baudrate( GPS_UART, next_baud ) )
