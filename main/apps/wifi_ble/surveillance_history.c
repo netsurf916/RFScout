@@ -76,6 +76,32 @@ void surveillance_history_compact( void )
 {
 }
 
+void surveillance_history_process_expired( void )
+{
+    rf_device_t expired[ 8 ] = { 0 };
+    size_t count;
+    while( 0U != ( count = observation_store_take_expired( expired, 8U ) ) )
+    {
+        bool changed = false;
+        for( size_t i = 0U; i < count; ++i )
+        {
+            for( size_t j = 0U; j < HISTORY_CAPACITY; ++j )
+            {
+                surveillance_history_entry_t *entry = &entries[ j ];
+                if( entry->valid && entry->dirty &&
+                    entry->address_type == expired[ i ].address_type &&
+                    0 == memcmp( entry->address, expired[ i ].address,
+                                 sizeof( entry->address ) ) )
+                {
+                    changed = true;
+                    break;
+                }
+            }
+        }
+        if( changed ) surveillance_history_flush();
+    }
+}
+
 void surveillance_history_sample( void )
 {
     rfscout_gps_snapshot_t gps = { 0 };
