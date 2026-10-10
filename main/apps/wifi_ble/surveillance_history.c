@@ -15,6 +15,7 @@
 static surveillance_history_entry_t *entries;
 static size_t entry_count;
 static size_t entry_capacity;
+static size_t journal_appends;
 
 static bool ensure_history_capacity( size_t a_required )
 {
@@ -120,6 +121,7 @@ void surveillance_history_open( void )
     entries = NULL;
     entry_count = 0U;
     entry_capacity = 0U;
+    journal_appends = 0U;
     rfscout_media_collection_t collection;
     if( ESP_OK != media_app_collection( "locations", &collection ) ) return;
     rfscout_media_file_t file = { 0 };
@@ -188,6 +190,7 @@ static void flush_pending( bool a_include_active )
             entries[ i ].dirty = false;
             entries[ i ].completed = false;
         }
+    if( ESP_OK == result ) journal_appends += dirty;
     if( ESP_OK != result )
         printf( "surveillance history flush failed: %ld\\n", (long)result );
 }
@@ -215,7 +218,8 @@ void surveillance_history_compact( void )
     }
     if( complete ) complete = ESP_OK == media_sync( &file );
     if( ESP_OK != media_close( &file ) ) complete = false;
-    if( complete ) (void)media_rename( &collection, "surveillance.tmp", HISTORY_JOURNAL );
+    if( complete && ESP_OK == media_rename( &collection, "surveillance.tmp", HISTORY_JOURNAL ) )
+        journal_appends = 0U;
 }
 
 void surveillance_history_process_expired( void )
@@ -245,6 +249,7 @@ void surveillance_history_process_expired( void )
     if( changed )
     {
         flush_pending( false );
+        if( journal_appends >= 64U ) surveillance_history_compact();
     }
 }
 
