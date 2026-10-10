@@ -26,6 +26,7 @@
 static const int GPS_BAUD_RATES[] = {
     GPS_BAUD_PRIMARY, GPS_BAUD_FALLBACK, 19200, 57600, GPS_BAUD_MAX };
 #define GPS_BAUD_PROBE_MS 1500U
+#define GPS_INITIAL_PROBE_CYCLES 2U
 #define GPS_RX_BUFFER 1024
 #define GPS_LINE_MAX 128
 #define GPS_FIX_STALE_MS 5000U
@@ -33,6 +34,9 @@ static const int GPS_BAUD_RATES[] = {
 
 static const char *TAG = "gps";
 static bool initialized;
+static bool receiver_detected;
+static bool initial_probe_complete;
+static int64_t initial_probe_started_us;
 static bool baud_locked;
 static int active_baud;
 static size_t active_baud_index;
@@ -296,6 +300,8 @@ static void lock_active_baud( void )
         return;
     }
     baud_locked = true;
+    receiver_detected = true;
+    initial_probe_complete = true;
     ESP_LOGI( TAG, "GPS NMEA detected at %d baud", active_baud );
 }
 
@@ -354,6 +360,10 @@ static void probe_next_baud( int64_t a_now )
 
 esp_err_t gps_init( void )
 {
+    if( initialized )
+    {
+        return ESP_OK;
+    }
     memset( &snapshot, 0, sizeof( snapshot ) );
     line_length = 0U;
     location_updated_us = 0;
@@ -392,6 +402,7 @@ esp_err_t gps_init( void )
         return result;
     }
     baud_probe_started_us = esp_timer_get_time();
+    initial_probe_started_us = baud_probe_started_us;
     initialized = true;
     ESP_LOGI( TAG,
               "GPS provider started: UART1 RX=%d TX=%d probing baud up to %d",
@@ -399,6 +410,34 @@ esp_err_t gps_init( void )
               RFSCOUT_BOARD_GPS_TX_PIN,
               GPS_BAUD_MAX );
     return ESP_OK;
+}
+
+esp_err_t gps_stop( void )
+{
+    if( !initialized )
+    {
+        return ESP_OK;
+    }
+    if( receiver_detected )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const esp_err_t result = uart_driver_delete( GPS_UART );
+    if( ESP_OK == result )
+    {
+        initialized = false;
+    }
+    return result;
+}
+
+bool gps_detected( void )
+{
+    return receiver_detected;
+}
+
+bool gps_probe_complete( void )
+{
+    return initial_probe_complete;
 }
 
 void gps_poll( void )
@@ -435,6 +474,13 @@ void gps_poll( void )
     }
 
     const int64_t now = esp_timer_get_time();
+    if( !initial_probe_complete &&
+        ( now - initial_probe_started_us ) / 1000LL >=
+            (int64_t)( GPS_INITIAL_PROBE_CYCLES * GPS_BAUD_PROBE_MS *
+                       ( sizeof( GPS_BAUD_RATES ) / sizeof( GPS_BAUD_RATES[ 0 ] ) ) )
+    {
+        initial_probe_complete = true;
+    }
     probe_next_baud( now );
     if( snapshot.location_valid &&
         ( now - location_updated_us ) / 1000LL > (int64_t)GPS_FIX_STALE_MS )
