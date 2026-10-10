@@ -349,6 +349,8 @@ static void flush_pending( bool a_include_active )
     replay_active = false;
     replay_complete = false;
     replay_used = 0U;
+    replay_offset = 0U;
+    replay_restart_needed = true;
     rfscout_media_collection_t collection;
     rfscout_media_file_t file = { 0 };
     esp_err_t result = media_app_collection( "locations", &collection );
