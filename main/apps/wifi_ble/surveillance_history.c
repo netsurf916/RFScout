@@ -188,7 +188,8 @@ static bool surveillance_history_flush_one( void )
             /* Even a successful truncate can fail to become durable during close.
                Treat the entire write outcome as uncertain, not safe to replay. */
             journal_ambiguous = true;
-            ESP_LOGE( TAG, "Journal close failed; rotating before the next write: %ld",
+            ESP_LOGE( TAG,
+                      "Journal close failed; rotating before the next write: %ld",
                       (long)close_result );
             if( ESP_OK == result )
                 result = close_result;
