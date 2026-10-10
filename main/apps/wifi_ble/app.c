@@ -38,6 +38,7 @@
 static const char *TAG = "wifi_ble_app";
 static bool menu_active;
 static bool menu_editing;
+static bool rendered_app_lock;
 static unsigned menu_item;
 static int64_t last_radio_retry_us;
 static rfscout_app_notification_menu_t notification_menu;
@@ -49,6 +50,7 @@ static void emit_event( rfscout_event_type_t a_type, int32_t a_value )
 
 static void render_menu( void )
 {
+    rendered_app_lock = app_manager_locked();
     wifi_settings_view_render( menu_item,
                                menu_editing,
                                app_manager_locked(),
@@ -257,6 +259,7 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         menu_active = false;
         menu_editing = false;
         menu_item = WIFI_MENU_BACK;
+        rendered_app_lock = app_manager_locked();
         ui_set_surveillance_page( false );
         surveillance_history_open();
         last_radio_retry_us = 0;
@@ -312,6 +315,11 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
     if( RFSCOUT_APP_RUNTIME_POLL != a_event->type )
     {
         return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
+
+    if( menu_active && rendered_app_lock != app_manager_locked() )
+    {
+        render_menu();
     }
 
     if( !a_event->activated )
