@@ -8,10 +8,8 @@
 #include "ui.h"
 
 #include "display.h"
-#include "app_session.h"
 #include "gps.h"
 #include "observation_store.h"
-#include "surveillance_history.h"
 #include "surveillance.h"
 #include "ui_chrome.h"
 #include "ui_layout.h"
@@ -47,8 +45,6 @@ static int64_t last_refresh_us;
 static bool surveillance_page;
 static bool surveillance_focused;
 static unsigned surveillance_selection;
-static observation_history_identity_t *live_surveillance_rows;
-static size_t live_surveillance_capacity;
 static void draw_static_rows( size_t a_unknown_count, size_t a_random_count )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
@@ -199,15 +195,6 @@ void ui_set_surveillance_page( bool a_enabled )
     last_refresh_us = 0;
 }
 
-void ui_surveillance_release( void )
-{
-    if( NULL != live_surveillance_rows )
-        (void)app_session_free( live_surveillance_rows );
-    live_surveillance_rows = NULL;
-    live_surveillance_capacity = 0U;
-    surveillance_focused = false;
-}
-
 void ui_surveillance_set_focused( bool a_focused )
 {
     surveillance_focused = a_focused;
@@ -232,15 +219,24 @@ void ui_surveillance_navigate( int a_direction )
     last_refresh_us = 0;
 }
 
-static bool history_identity_live( const surveillance_history_entry_t *a_entry,
-                                   const observation_history_identity_t *a_live,
-                                   size_t a_count )
+static double live_receiver_distance( const observation_history_identity_t *a_device,
+                                      double a_latitude,
+                                      double a_longitude )
 {
-    for( size_t i = 0U; i < a_count; ++i )
-        if( a_entry->address_type == a_live[ i ].address_type &&
-            0 == memcmp( a_entry->address, a_live[ i ].address, 6U ) )
-            return true;
-    return false;
+    double lat = a_latitude;
+    double lon = a_longitude;
+    if( lat < a_device->min_latitude )
+        lat = a_device->min_latitude;
+    if( lat > a_device->max_latitude )
+        lat = a_device->max_latitude;
+    if( lon < a_device->min_longitude )
+        lon = a_device->min_longitude;
+    if( lon > a_device->max_longitude )
+        lon = a_device->max_longitude;
+    const double dy = ( a_latitude - lat ) * 0.017453292519943295;
+    const double dx = ( a_longitude - lon ) * 0.017453292519943295 *
+                      cos( a_latitude * 0.017453292519943295 );
+    return 6371000.0 * sqrt( dx * dx + dy * dy );
 }
 
 static void render_surveillance_page( void )
@@ -249,35 +245,7 @@ static void render_surveillance_page( void )
     rfscout_gps_snapshot_t gps = { 0 };
     const bool has_fix =
         gps_snapshot_get( &gps ) && gps.location_valid && gps.location_age_ms <= 5000U;
-
-    /* Live devices are independent of GPS and must not be hidden by history replay. */
-    const size_t live_total = observation_store_surveillance_devices( NULL, 0U );
-    if( live_total > live_surveillance_capacity )
-    {
-        observation_history_identity_t *next =
-            app_session_resize( live_surveillance_rows, live_total, sizeof( *live_surveillance_rows ) );
-        if( NULL != next )
-        {
-            live_surveillance_rows = next;
-            live_surveillance_capacity = live_total;
-        }
-    }
-    const size_t live_count = live_surveillance_rows
-                                  ? observation_store_surveillance_devices( live_surveillance_rows,
-                                                                            live_surveillance_capacity )
-                                  : 0U;
-    const size_t displayed_live = live_count < live_surveillance_capacity ? live_count
-                                                                          : live_surveillance_capacity;
-    const size_t history_count = surveillance_history_list( NULL, 0U );
-    size_t unique_history = 0U;
-    for( size_t i = 0U; i < history_count; ++i )
-    {
-        surveillance_history_entry_t entry = { 0 };
-        if( surveillance_history_get( i, &entry ) &&
-            !history_identity_live( &entry, live_surveillance_rows, displayed_live ) )
-            ++unique_history;
-    }
-    const size_t count = displayed_live + unique_history;
+    const size_t count = observation_store_surveillance_devices( NULL, 0U );
     if( count > 0U && surveillance_selection >= count )
         surveillance_selection = (unsigned)( count - 1U );
 
@@ -286,66 +254,41 @@ static void render_surveillance_page( void )
     char line[ 80 ];
     snprintf( line,
               sizeof( line ),
-              "LIVE %u  SAVED %u  %s",
-              (unsigned)displayed_live,
-              (unsigned)unique_history,
-              surveillance_focused ? "SCROLL" : ( has_fix ? "FIX" : "NO FIX" ) );
+              "ACTIVE %u  %s",
+              (unsigned)count,
+              surveillance_focused ? "SCROLL" : ( has_fix ? "GPS FIX" : "NO FIX" ) );
     display_draw_text( UI_LAYOUT_LEFT_X, 25, line, theme->info, 1U );
 
     const size_t start = surveillance_selection >= 6U ? surveillance_selection - 5U : 0U;
-    size_t row = 0U;
-    for( size_t i = 0U; i < displayed_live; ++i, ++row )
+    for( size_t row = start; row < count && row < start + 6U; ++row )
     {
-        if( row < start || row >= start + 6U )
+        observation_history_identity_t device = { 0 };
+        if( !observation_store_surveillance_get( row, &device ) )
             continue;
+        char distance[ 20 ] = "--";
+        if( has_fix && device.location_valid )
+        {
+            const double meters =
+                live_receiver_distance( &device, gps.latitude_deg, gps.longitude_deg );
+            if( meters >= 1000.0 )
+                snprintf( distance, sizeof( distance ), "%.1fkm", meters / 1000.0 );
+            else
+                snprintf( distance, sizeof( distance ), "%.0fm", meters );
+        }
         snprintf( line,
                   sizeof( line ),
-                  "%c * %02X%02X%02X %-13.13s LIVE",
+                  "%c %02X%02X%02X %-13.13s %s",
                   row == surveillance_selection ? '>' : ' ',
-                  live_surveillance_rows[ i ].address[ 3 ],
-                  live_surveillance_rows[ i ].address[ 4 ],
-                  live_surveillance_rows[ i ].address[ 5 ],
-                  live_surveillance_rows[ i ].vendor[ 0 ] ? live_surveillance_rows[ i ].vendor
-                                                          : "Unknown" );
+                  device.address[ 3 ],
+                  device.address[ 4 ],
+                  device.address[ 5 ],
+                  device.vendor[ 0 ] ? device.vendor : "Unknown",
+                  distance );
         display_draw_text( UI_LAYOUT_LEFT_X,
                            43 + (int)( row - start ) * 17,
                            line,
                            row == surveillance_selection ? theme->selected : theme->normal,
                            1U );
-    }
-    for( size_t i = 0U; i < history_count; ++i )
-    {
-        surveillance_history_entry_t entry = { 0 };
-        if( !surveillance_history_get( i, &entry ) ||
-            history_identity_live( &entry, live_surveillance_rows, live_count ) )
-            continue;
-        if( row >= start && row < start + 6U )
-        {
-            char distance[ 20 ] = "--";
-            if( has_fix )
-            {
-                const double meters = entry.nearest_distance_m;
-                if( meters >= 1000.0 )
-                    snprintf( distance, sizeof( distance ), "%.1fkm", meters / 1000.0 );
-                else
-                    snprintf( distance, sizeof( distance ), "%.0fm", meters );
-            }
-            snprintf( line,
-                      sizeof( line ),
-                      "%c   %02X%02X%02X %-13.13s %s",
-                      row == surveillance_selection ? '>' : ' ',
-                      entry.address[ 3 ],
-                      entry.address[ 4 ],
-                      entry.address[ 5 ],
-                      entry.vendor[ 0 ] ? entry.vendor : "Unknown",
-                      distance );
-            display_draw_text( UI_LAYOUT_LEFT_X,
-                               43 + (int)( row - start ) * 17,
-                               line,
-                               row == surveillance_selection ? theme->selected : theme->normal,
-                               1U );
-        }
-        ++row;
     }
     (void)display_present();
 }
