@@ -105,6 +105,29 @@ size_t surveillance_history_list( surveillance_history_entry_t *a_rows, size_t a
     return count;
 }
 
+static double history_distance( double a_lat, double a_lon )
+{
+    const double lat = ( a_lat - reference_lat ) * 0.017453292519943295;
+    const double lon = ( a_lon - reference_lon ) * 0.017453292519943295;
+    const double cosine = cos( reference_lat * 0.017453292519943295 );
+    return 6371000.0 * sqrt( lat * lat + lon * lon * cosine * cosine );
+}
+
+static void history_sort( void )
+{
+    for( size_t i = 1U; i < entry_count; ++i )
+    {
+        surveillance_history_entry_t value = entries[ i ];
+        size_t j = i;
+        while( j > 0U && entries[ j - 1U ].nearest_distance_m > value.nearest_distance_m )
+        {
+            entries[ j ] = entries[ j - 1U ];
+            --j;
+        }
+        entries[ j ] = value;
+    }
+}
+
 static void replay_line( const char *a_line )
 {
     unsigned type, classification, address[ 6 ];
