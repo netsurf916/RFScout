@@ -420,6 +420,11 @@ static void copy_history_identity( observation_history_identity_t *a_identity,
     memcpy( a_identity->vendor, a_device->vendor, sizeof( a_identity->vendor ) );
     a_identity->surveillance = a_device->surveillance;
     a_identity->last_seen_ms = a_device->last_seen_ms;
+    a_identity->location_valid = a_device->location_valid;
+    a_identity->min_latitude = a_device->min_latitude;
+    a_identity->max_latitude = a_device->max_latitude;
+    a_identity->min_longitude = a_device->min_longitude;
+    a_identity->max_longitude = a_device->max_longitude;
 }
 
 static void emit_event( observation_store_event_t a_event, const rf_device_t *a_device )
@@ -883,6 +888,29 @@ size_t observation_store_surveillance_devices( observation_history_identity_t *a
     }
     xSemaphoreGive( store_lock );
     return total;
+}
+
+bool observation_store_surveillance_get( size_t a_index, observation_history_identity_t *a_device )
+{
+    if( NULL == store_lock || NULL == a_device )
+        return false;
+    xSemaphoreTake( store_lock, portMAX_DELAY );
+    synchronize_session_store();
+    size_t index = 0U;
+    bool found = false;
+    for( size_t i = 0U; i < device_count; ++i )
+    {
+        if( SURVEILLANCE_NONE == devices[ i ].surveillance )
+            continue;
+        if( index++ == a_index )
+        {
+            copy_history_identity( a_device, &devices[ i ] );
+            found = true;
+            break;
+        }
+    }
+    xSemaphoreGive( store_lock );
+    return found;
 }
 
 void observation_store_reset( void )
