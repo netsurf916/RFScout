@@ -502,8 +502,7 @@ void gps_poll( void )
         initial_probe_complete = true;
     }
     if( receiver_detected &&
-        ( now - last_nmea_us ) / 1000000LL >=
-            (int64_t)device_config_get()->gps_timeout_seconds )
+        ( now - last_nmea_us ) / 1000000LL >= (int64_t)device_config_get()->gps_timeout_seconds )
     {
         receiver_detected = false;
         baud_locked = false;
