@@ -159,6 +159,11 @@ esp_err_t storage_recover_lost_media( void )
     return storage_init();
 }
 
+bool storage_is_mounted( void )
+{
+    return mounted;
+}
+
 bool storage_is_available( void )
 {
     return mounted && !media_lost;
