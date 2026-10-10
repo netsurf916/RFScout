@@ -249,6 +249,10 @@ static esp_err_t attach_radio( void )
 
 static esp_err_t release_radio( void )
 {
+    if( NULL == device )
+    {
+        return ESP_OK;
+    }
     if( NULL != device )
     {
         const esp_err_t result = spi_bus_remove_device( device );
@@ -273,7 +277,7 @@ esp_err_t nrf24_probe( void )
     {
         return ESP_OK;
     }
-    if( gps_available() )
+    if( gps_available() && !gps_probe_complete() )
     {
         return ESP_ERR_INVALID_STATE;
     }
@@ -282,9 +286,22 @@ esp_err_t nrf24_probe( void )
         return detected ? ESP_OK : ESP_ERR_NOT_FOUND;
     }
 
+    const bool resume_gps = gps_available();
+    if( resume_gps )
+    {
+        const esp_err_t stop_result = gps_stop();
+        if( ESP_OK != stop_result )
+        {
+            return stop_result;
+        }
+    }
     const esp_err_t attach_result = attach_radio();
     if( ESP_OK != attach_result )
     {
+        if( resume_gps )
+        {
+            (void)gps_init();
+        }
         return attach_result;
     }
 
@@ -338,6 +355,10 @@ esp_err_t nrf24_probe( void )
     }
 
     const esp_err_t release_result = release_radio();
+    if( resume_gps )
+    {
+        (void)gps_init();
+    }
     if( ESP_OK != release_result )
     {
         detected = false;
@@ -484,6 +505,10 @@ bool nrf24_stop( void )
         return false;
     }
 
+    if( NULL == device )
+    {
+        return true; /* Never touch GPIOs owned by an unstarted GPS provider. */
+    }
     ce( false );
     if( NULL != device && ESP_OK != write_register( NRF24_REG_CONFIG, 0x00U ) )
     {
@@ -493,7 +518,7 @@ bool nrf24_stop( void )
     {
         return false;
     }
-    if( !gps_detected() && RFSCOUT_BOARD_HAS_GPS )
+    if( RFSCOUT_BOARD_HAS_GPS )
     {
         (void)gps_init();
     }
