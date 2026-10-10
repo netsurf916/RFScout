@@ -231,7 +231,9 @@ be safely rolled back, that uncertain batch is discarded; the next write request
 the card after the shared 3-second cooldown and uses a unique
 `locations/surveillance-XXXXXXXX.jsonl` file, preserving the previous file for offline
 inspection. That rotation state survives WiFi/BLE app reentry during the same boot.
-Insufficient PSRAM or unavailable media can still prevent capture. App exit attempts a final flush.
+Insufficient PSRAM or unavailable media can still prevent capture. App exit attempts to drain both the writing and pending journal batches when media is healthy; an
+I/O failure stops this bounded final flush. An unsuccessful file close also makes the batch
+ambiguous and forces journal rotation before further writes.
 SD lost/recovered transitions enter System Events without periodic card polling; when there
 are no outstanding writes or other SD requests, mere insertion is not detected until the
 next storage operation.

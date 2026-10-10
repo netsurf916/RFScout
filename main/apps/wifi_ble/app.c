@@ -283,7 +283,7 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         menu_editing = false;
         menu_item = WIFI_MENU_BACK;
         observation_store_set_location_sink( NULL );
-        surveillance_history_flush();
+        surveillance_history_flush_final();
         ui_set_surveillance_page( false );
         app_notification_menu_reset( &notification_menu );
         return RFSCOUT_APP_RUNTIME_HANDLED;

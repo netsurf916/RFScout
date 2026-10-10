@@ -125,10 +125,10 @@ static esp_err_t rotate_ambiguous_journal( const rfscout_media_collection_t *a_c
     return ESP_ERR_NOT_ALLOWED;
 }
 
-void surveillance_history_flush( void )
+static bool surveillance_history_flush_one( void )
 {
     if( NULL == history_lock )
-        return;
+        return false;
     xSemaphoreTake( history_lock, portMAX_DELAY );
     if( NULL == writing && pending_count != 0U )
     {
@@ -148,7 +148,7 @@ void surveillance_history_flush( void )
     }
     xSemaphoreGive( history_lock );
     if( NULL == writing )
-        return;
+        return false;
 
     rfscout_media_collection_t collection;
     rfscout_media_file_t file = { 0 };
@@ -184,7 +184,15 @@ void surveillance_history_flush( void )
         }
         const esp_err_t close_result = media_close( &file );
         if( ESP_OK != close_result )
-            ESP_LOGW( TAG, "Journal close returned %ld", (long)close_result );
+        {
+            /* Even a successful truncate can fail to become durable during close.
+               Treat the entire write outcome as uncertain, not safe to replay. */
+            journal_ambiguous = true;
+            ESP_LOGE( TAG, "Journal close failed; rotating before the next write: %ld",
+                      (long)close_result );
+            if( ESP_OK == result )
+                result = close_result;
+        }
     }
     if( ESP_OK == result || journal_ambiguous )
     {
@@ -196,4 +204,19 @@ void surveillance_history_flush( void )
     }
     if( ESP_OK != result )
         ESP_LOGW( TAG, "Surveillance journal flush failed: %ld", (long)result );
+    return ESP_OK == result;
+}
+
+/* Once the location sink is detached on app exit, at most two batches remain:
+   an in-flight writing batch and the pending batch collected behind it.
+   Stop after the first failure; no spin/retry loop against missing media. */
+void surveillance_history_flush_final( void )
+{
+    if( surveillance_history_flush_one() )
+        (void)surveillance_history_flush_one();
+}
+
+void surveillance_history_flush( void )
+{
+    (void)surveillance_history_flush_one();
 }

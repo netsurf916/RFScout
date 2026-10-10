@@ -24,10 +24,7 @@
 #define STORAGE_PROBE_IO_TIMEOUT_MS 250U
 #define STORAGE_FAILURE_COOLDOWN_MS 3000U
 
-#define STORAGE_EVENT_MOUNTED ( 1U << 0 )
-#define STORAGE_EVENT_MOUNT_FAILED ( 1U << 1 )
-#define STORAGE_EVENT_LOST ( 1U << 2 )
-#define STORAGE_EVENT_RECOVERED ( 1U << 3 )
+#define STORAGE_EVENT_QUEUE_CAPACITY 8U
 
 static const char *TAG = "storage";
 static sdmmc_card_t *card;
@@ -35,45 +32,74 @@ static bool mounted;
 static bool media_lost;
 static StaticSemaphore_t io_mutex_control;
 static SemaphoreHandle_t io_mutex;
-/* Access to this 64-bit timestamp must be synchronized on 32-bit ESP targets.
-   An expired deadline may remain cached: monotonic time cannot reactivate it. */
+/* The 64-bit monotonic retry deadline is synchronized on 32-bit ESP targets. */
 static portMUX_TYPE retry_lock = portMUX_INITIALIZER_UNLOCKED;
 static int64_t retry_after_us;
-/* Latch transitions only; no SD I/O, task, timer, or background recovery. */
-static uint32_t pending_events;
+
+typedef struct
+{
+    rfscout_event_type_t type;
+    int32_t value;
+} storage_transition_t;
+
+/* Queue real state transitions in order, without performing media I/O or notifying
+   synchronous observers while holding the storage/SPI locks. */
+static storage_transition_t pending_events[ STORAGE_EVENT_QUEUE_CAPACITY ];
+static size_t pending_event_count;
+static portMUX_TYPE event_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool mount_attempt_recorded;
+static bool recovery_confirmation_pending;
+
+static void storage_queue_event( rfscout_event_type_t a_type, esp_err_t a_result )
+{
+    portENTER_CRITICAL( &event_lock );
+    if( pending_event_count == STORAGE_EVENT_QUEUE_CAPACITY )
+    {
+        /* A bounded ring of transitions: retain the newest event on overflow. */
+        for( size_t i = 1U; i < pending_event_count; ++i )
+            pending_events[ i - 1U ] = pending_events[ i ];
+        --pending_event_count;
+    }
+    pending_events[ pending_event_count++ ] =
+        ( storage_transition_t ){ .type = a_type, .value = (int32_t)a_result };
+    portEXIT_CRITICAL( &event_lock );
+}
 
 static void storage_record_mount_result( esp_err_t a_result )
 {
     if( ESP_OK == a_result )
     {
-        (void)__atomic_fetch_or( &pending_events,
-                                 mount_attempt_recorded ? STORAGE_EVENT_RECOVERED
-                                                        : STORAGE_EVENT_MOUNTED,
-                                 __ATOMIC_RELEASE );
+        if( mount_attempt_recorded )
+        {
+            /* Only publish recovery after a real post-mount card status probe. */
+            recovery_confirmation_pending = true;
+        }
+        else
+        {
+            storage_queue_event( RFSCOUT_EVENT_STORAGE_MOUNTED, ESP_OK );
+        }
         mount_attempt_recorded = true;
     }
     else if( !mount_attempt_recorded )
     {
-        (void)__atomic_fetch_or( &pending_events, STORAGE_EVENT_MOUNT_FAILED, __ATOMIC_RELEASE );
+        storage_queue_event( RFSCOUT_EVENT_STORAGE_MOUNT_FAILED, a_result );
         mount_attempt_recorded = true;
     }
 }
 
-/* Synchronous subscribers are called only after leaving SPI/storage arbitration. */
 void storage_dispatch_events( void )
 {
-    const uint32_t events = __atomic_exchange_n( &pending_events, 0U, __ATOMIC_ACQ_REL );
-    if( 0U != ( events & STORAGE_EVENT_MOUNTED ) )
-        rfscout_event_emit( RFSCOUT_EVENT_STORAGE_MOUNTED, RFSCOUT_EVENT_SOURCE_SYSTEM, ESP_OK );
-    if( 0U != ( events & STORAGE_EVENT_MOUNT_FAILED ) )
-        rfscout_event_emit(
-            RFSCOUT_EVENT_STORAGE_MOUNT_FAILED, RFSCOUT_EVENT_SOURCE_SYSTEM, ESP_ERR_NOT_FOUND );
-    if( 0U != ( events & STORAGE_EVENT_LOST ) )
-        rfscout_event_emit(
-            RFSCOUT_EVENT_STORAGE_LOST, RFSCOUT_EVENT_SOURCE_SYSTEM, ESP_ERR_NOT_FOUND );
-    if( 0U != ( events & STORAGE_EVENT_RECOVERED ) )
-        rfscout_event_emit( RFSCOUT_EVENT_STORAGE_RECOVERED, RFSCOUT_EVENT_SOURCE_SYSTEM, ESP_OK );
+    storage_transition_t events[ STORAGE_EVENT_QUEUE_CAPACITY ];
+    size_t count;
+    portENTER_CRITICAL( &event_lock );
+    count = pending_event_count;
+    for( size_t i = 0U; i < count; ++i )
+        events[ i ] = pending_events[ i ];
+    pending_event_count = 0U;
+    portEXIT_CRITICAL( &event_lock );
+
+    for( size_t i = 0U; i < count; ++i )
+        rfscout_event_emit( events[ i ].type, RFSCOUT_EVENT_SOURCE_SYSTEM, events[ i ].value );
 }
 
 bool storage_retry_delayed( void )
@@ -97,7 +123,8 @@ void storage_note_media_failure( void )
     if( mounted && !media_lost )
     {
         media_lost = true;
-        (void)__atomic_fetch_or( &pending_events, STORAGE_EVENT_LOST, __ATOMIC_RELEASE );
+        recovery_confirmation_pending = false;
+        storage_queue_event( RFSCOUT_EVENT_STORAGE_LOST, ESP_ERR_NOT_FOUND );
     }
     storage_start_cooldown();
 }
@@ -282,6 +309,11 @@ esp_err_t storage_probe_card( void )
     }
 
     const esp_err_t result = sdmmc_get_status( card );
+    if( ESP_OK == result && recovery_confirmation_pending )
+    {
+        recovery_confirmation_pending = false;
+        storage_queue_event( RFSCOUT_EVENT_STORAGE_RECOVERED, ESP_OK );
+    }
     if( ESP_OK != result )
     {
         storage_note_media_failure();
