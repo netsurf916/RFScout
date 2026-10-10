@@ -8,6 +8,7 @@
 #include "media_store.h"
 
 #include "esp_log.h"
+#include "esp_timer.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -16,10 +17,14 @@
 #include <string.h>
 
 #define HISTORY_JOURNAL "surveillance.jsonl"
+#define HISTORY_ROTATION_ATTEMPTS 16U
 
 static const char *TAG = "surveillance_history";
 static uint32_t dropped_points;
 static bool journal_ambiguous;
+/* Keep the selected journal across app sessions; never reappend to an uncertain tail. */
+static char journal_name[ RFSCOUT_MEDIA_NAME_MAX + 1U ] = HISTORY_JOURNAL;
+static uint32_t journal_nonce;
 
 typedef observation_location_event_t history_point_t;
 
@@ -47,7 +52,7 @@ void surveillance_history_open( void )
     writing = NULL;
     writing_count = 0U;
     dropped_points = 0U;
-    journal_ambiguous = false;
+    /* Preserve journal ambiguity across app exit/reentry until a fresh file is opened. */
     xSemaphoreGive( history_lock );
 }
 
@@ -93,9 +98,36 @@ static esp_err_t append_point( const rfscout_media_file_t *a_file, const history
     return media_write( a_file, line, (size_t)length );
 }
 
+/* If rollback failed, the previous file may end in partial JSON. Preserve it for
+   offline inspection and use a CREATE_NEW segment instead of risking more corruption.
+   Collisions are checked without replacing existing files across reboots/sessions. */
+static esp_err_t rotate_ambiguous_journal( const rfscout_media_collection_t *a_collection )
+{
+    for( size_t attempt = 0U; attempt < HISTORY_ROTATION_ATTEMPTS; ++attempt )
+    {
+        char name[ RFSCOUT_MEDIA_NAME_MAX + 1U ];
+        const uint32_t suffix = (uint32_t)( esp_timer_get_time() / 1000LL ) + ++journal_nonce;
+        snprintf( name, sizeof( name ), "surveillance-%08lx.jsonl", (unsigned long)suffix );
+        rfscout_media_file_t file = { 0 };
+        esp_err_t result = media_open( a_collection, name, RFSCOUT_MEDIA_OPEN_CREATE_NEW, &file );
+        if( ESP_ERR_NOT_ALLOWED == result )
+            continue;
+        if( ESP_OK != result )
+            return result;
+        result = media_close( &file );
+        if( ESP_OK != result )
+            return result;
+        snprintf( journal_name, sizeof( journal_name ), "%s", name );
+        journal_ambiguous = false;
+        ESP_LOGW( TAG, "Resuming surveillance journal in a fresh file: %s", journal_name );
+        return ESP_OK;
+    }
+    return ESP_ERR_NOT_ALLOWED;
+}
+
 void surveillance_history_flush( void )
 {
-    if( NULL == history_lock || journal_ambiguous )
+    if( NULL == history_lock )
         return;
     xSemaphoreTake( history_lock, portMAX_DELAY );
     if( NULL == writing && pending_count != 0U )
@@ -123,8 +155,10 @@ void surveillance_history_flush( void )
     esp_err_t result = media_store_probe();
     if( ESP_OK == result )
         result = media_app_collection( "locations", &collection );
+    if( ESP_OK == result && journal_ambiguous )
+        result = rotate_ambiguous_journal( &collection );
     if( ESP_OK == result )
-        result = media_open( &collection, HISTORY_JOURNAL, RFSCOUT_MEDIA_OPEN_APPEND, &file );
+        result = media_open( &collection, journal_name, RFSCOUT_MEDIA_OPEN_APPEND, &file );
     if( ESP_OK == result )
     {
         uint64_t original_size = 0U;
@@ -140,24 +174,26 @@ void surveillance_history_flush( void )
             if( ESP_OK != rollback_result )
             {
                 journal_ambiguous = true;
-                ESP_LOGE( TAG, "Journal rollback failed; disabling retries to avoid corruption" );
+                ESP_LOGE( TAG, "Journal rollback failed; will rotate journal before resuming" );
             }
         }
         else if( ESP_OK != result )
         {
             journal_ambiguous = true;
-            ESP_LOGE( TAG, "Journal size unknown; disabling retries to avoid corruption" );
+            ESP_LOGE( TAG, "Journal size unknown; will rotate journal before resuming" );
         }
         const esp_err_t close_result = media_close( &file );
         if( ESP_OK != close_result )
             ESP_LOGW( TAG, "Journal close returned %ld", (long)close_result );
     }
-    if( ESP_OK == result )
+    if( ESP_OK == result || journal_ambiguous )
     {
+        /* A batch with an uncertain write outcome is dropped, never replayed
+           into another file where previously persisted rows could duplicate. */
         (void)app_session_free( writing );
         writing = NULL;
         writing_count = 0U;
     }
-    else
+    if( ESP_OK != result )
         ESP_LOGW( TAG, "Surveillance journal flush failed: %ld", (long)result );
 }

@@ -24,6 +24,11 @@
 #define STORAGE_PROBE_IO_TIMEOUT_MS 250U
 #define STORAGE_FAILURE_COOLDOWN_MS 3000U
 
+#define STORAGE_EVENT_MOUNTED ( 1U << 0 )
+#define STORAGE_EVENT_MOUNT_FAILED ( 1U << 1 )
+#define STORAGE_EVENT_LOST ( 1U << 2 )
+#define STORAGE_EVENT_RECOVERED ( 1U << 3 )
+
 static const char *TAG = "storage";
 static sdmmc_card_t *card;
 static bool mounted;
@@ -34,6 +39,42 @@ static SemaphoreHandle_t io_mutex;
    An expired deadline may remain cached: monotonic time cannot reactivate it. */
 static portMUX_TYPE retry_lock = portMUX_INITIALIZER_UNLOCKED;
 static int64_t retry_after_us;
+/* Latch transitions only; no SD I/O, task, timer, or background recovery. */
+static uint32_t pending_events;
+static bool mount_attempt_recorded;
+
+static void storage_record_mount_result( esp_err_t a_result )
+{
+    if( ESP_OK == a_result )
+    {
+        (void)__atomic_fetch_or( &pending_events,
+                                 mount_attempt_recorded ? STORAGE_EVENT_RECOVERED
+                                                        : STORAGE_EVENT_MOUNTED,
+                                 __ATOMIC_RELEASE );
+        mount_attempt_recorded = true;
+    }
+    else if( !mount_attempt_recorded )
+    {
+        (void)__atomic_fetch_or( &pending_events, STORAGE_EVENT_MOUNT_FAILED, __ATOMIC_RELEASE );
+        mount_attempt_recorded = true;
+    }
+}
+
+/* Synchronous subscribers are called only after leaving SPI/storage arbitration. */
+void storage_dispatch_events( void )
+{
+    const uint32_t events = __atomic_exchange_n( &pending_events, 0U, __ATOMIC_ACQ_REL );
+    if( 0U != ( events & STORAGE_EVENT_MOUNTED ) )
+        rfscout_event_emit( RFSCOUT_EVENT_STORAGE_MOUNTED, RFSCOUT_EVENT_SOURCE_SYSTEM, ESP_OK );
+    if( 0U != ( events & STORAGE_EVENT_MOUNT_FAILED ) )
+        rfscout_event_emit(
+            RFSCOUT_EVENT_STORAGE_MOUNT_FAILED, RFSCOUT_EVENT_SOURCE_SYSTEM, ESP_ERR_NOT_FOUND );
+    if( 0U != ( events & STORAGE_EVENT_LOST ) )
+        rfscout_event_emit(
+            RFSCOUT_EVENT_STORAGE_LOST, RFSCOUT_EVENT_SOURCE_SYSTEM, ESP_ERR_NOT_FOUND );
+    if( 0U != ( events & STORAGE_EVENT_RECOVERED ) )
+        rfscout_event_emit( RFSCOUT_EVENT_STORAGE_RECOVERED, RFSCOUT_EVENT_SOURCE_SYSTEM, ESP_OK );
+}
 
 bool storage_retry_delayed( void )
 {
@@ -53,9 +94,10 @@ static void storage_start_cooldown( void )
 void storage_note_media_failure( void )
 {
     /* A failed SD transaction invalidates the mounted card, unlike bus contention. */
-    if( mounted )
+    if( mounted && !media_lost )
     {
         media_lost = true;
+        (void)__atomic_fetch_or( &pending_events, STORAGE_EVENT_LOST, __ATOMIC_RELEASE );
     }
     storage_start_cooldown();
 }
@@ -128,6 +170,7 @@ esp_err_t storage_init( void )
     if( ESP_OK != bus_result )
     {
         storage_start_cooldown();
+        storage_record_mount_result( bus_result );
         ESP_LOGW( TAG, "shared SPI bus unavailable: %s", esp_err_to_name( bus_result ) );
         return bus_result;
     }
@@ -167,6 +210,7 @@ esp_err_t storage_init( void )
     {
         card = NULL;
         storage_start_cooldown();
+        storage_record_mount_result( result );
         storage_io_release();
         ESP_LOGW( TAG, "SD card unavailable: %s", esp_err_to_name( result ) );
         return result;
@@ -174,6 +218,7 @@ esp_err_t storage_init( void )
 
     mounted = true;
     media_lost = false;
+    storage_record_mount_result( ESP_OK );
     ESP_LOGI( TAG,
               "SD card mounted: %llu MiB",
               (unsigned long long)( ( (uint64_t)card->csd.capacity * card->csd.sector_size ) /
@@ -246,11 +291,6 @@ esp_err_t storage_probe_card( void )
     }
     storage_io_release();
 
-    if( ESP_OK != result )
-    {
-        rfscout_event_emit(
-            RFSCOUT_EVENT_STORAGE_MOUNT_FAILED, RFSCOUT_EVENT_SOURCE_SYSTEM, (int32_t)result );
-    }
     return result;
 }
 
