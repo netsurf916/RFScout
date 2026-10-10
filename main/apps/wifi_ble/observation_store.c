@@ -8,6 +8,8 @@
 
 #include "app_session.h"
 #include "device_config.h"
+#include "gps.h"
+#include "surveillance_history.h"
 #include "surveillance.h"
 
 #include "esp_timer.h"
@@ -699,6 +701,38 @@ static void merge_observation( rf_device_t *a_device, const rf_device_t *a_obser
     a_device->has_remote_id = a_observation->has_remote_id;
 }
 
+static void record_receiver_location( rf_device_t *a_device )
+{
+    if( SURVEILLANCE_NONE == a_device->surveillance )
+        return;
+    rfscout_gps_snapshot_t gps = { 0 };
+    if( !gps_snapshot_get( &gps ) || !gps.location_valid || gps.location_age_ms > 5000U )
+        return;
+    if( !a_device->location_valid )
+    {
+        a_device->min_latitude = gps.latitude_deg;
+        a_device->max_latitude = gps.latitude_deg;
+        a_device->min_longitude = gps.longitude_deg;
+        a_device->max_longitude = gps.longitude_deg;
+        a_device->location_valid = true;
+    }
+    else
+    {
+        if( gps.latitude_deg < a_device->min_latitude )
+            a_device->min_latitude = gps.latitude_deg;
+        if( gps.latitude_deg > a_device->max_latitude )
+            a_device->max_latitude = gps.latitude_deg;
+        if( gps.longitude_deg < a_device->min_longitude )
+            a_device->min_longitude = gps.longitude_deg;
+        if( gps.longitude_deg > a_device->max_longitude )
+            a_device->max_longitude = gps.longitude_deg;
+    }
+    surveillance_history_record( a_device,
+                                 gps.latitude_deg,
+                                 gps.longitude_deg,
+                                 gps.time_valid ? (int64_t)gps.utc_epoch : 0 );
+}
+
 bool observation_store_observe( rf_device_t *a_observation,
                                 bool *a_is_new,
                                 bool *a_surveillance_new )
@@ -728,6 +762,7 @@ bool observation_store_observe( rf_device_t *a_observation,
         merge_observation( device, a_observation );
         update_wifi_ap_projection( was_wifi_ap, old_wifi_channel, device );
         copy_case_result( a_observation, device );
+        record_receiver_location( device );
 
         const bool became_surveillance =
             !was_surveillance && ( SURVEILLANCE_NONE != device->surveillance ) &&
@@ -771,6 +806,7 @@ bool observation_store_observe( rf_device_t *a_observation,
         surveillance_case_evaluate( device );
     }
     copy_case_result( a_observation, device );
+    record_receiver_location( device );
     identity_index_insert( slot );
     emit_event( OBSERVATION_STORE_EVENT_ADDED, device );
 
