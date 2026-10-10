@@ -157,7 +157,7 @@ esp_err_t storage_init( void )
     /* Mounting talks to the card; hot-plug probes can run it while other SPI clients are active. */
     if( !storage_io_acquire( STORAGE_PROBE_IO_TIMEOUT_MS ) )
     {
-        storage_start_cooldown();
+        /* SPI contention is not evidence that the card failed. */
         return ESP_ERR_TIMEOUT;
     }
     if( storage_retry_delayed() )
