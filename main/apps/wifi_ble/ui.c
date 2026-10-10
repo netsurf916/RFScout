@@ -263,6 +263,56 @@ static void render_surveillance_page( void )
     (void)display_present();
 }
 
+static void sample_surveillance_locations( void )
+{
+    rfscout_gps_snapshot_t gps = { 0 };
+    if( !gps_snapshot_get( &gps ) || !gps.location_valid )
+    {
+        return;
+    }
+    rf_device_t devices[ UI_BOUNDS_CAPACITY ] = { 0 };
+    const size_t total = observation_store_surveillance_devices( devices, UI_BOUNDS_CAPACITY );
+    const size_t count = total < UI_BOUNDS_CAPACITY ? total : UI_BOUNDS_CAPACITY;
+    for( size_t i = 0U; i < count; ++i )
+    {
+        const rf_device_t *device = &devices[ i ];
+        surveillance_bounds_t *entry = NULL;
+        for( size_t j = 0U; j < UI_BOUNDS_CAPACITY; ++j )
+        {
+            if( bounds[ j ].valid && bounds[ j ].address_type == device->address_type &&
+                0 == memcmp( bounds[ j ].address, device->address, sizeof( device->address ) ) )
+            {
+                entry = &bounds[ j ];
+                break;
+            }
+            if( NULL == entry && !bounds[ j ].valid )
+            {
+                entry = &bounds[ j ];
+            }
+        }
+        if( NULL == entry )
+        {
+            continue;
+        }
+        if( !entry->valid )
+        {
+            memcpy( entry->address, device->address, sizeof( device->address ) );
+            entry->address_type = device->address_type;
+            entry->min_latitude = entry->max_latitude = gps.latitude_deg;
+            entry->min_longitude = entry->max_longitude = gps.longitude_deg;
+            entry->valid = true;
+        }
+        else if( entry->last_seen_ms != device->last_seen_ms )
+        {
+            if( gps.latitude_deg < entry->min_latitude ) entry->min_latitude = gps.latitude_deg;
+            if( gps.latitude_deg > entry->max_latitude ) entry->max_latitude = gps.latitude_deg;
+            if( gps.longitude_deg < entry->min_longitude ) entry->min_longitude = gps.longitude_deg;
+            if( gps.longitude_deg > entry->max_longitude ) entry->max_longitude = gps.longitude_deg;
+        }
+        entry->last_seen_ms = device->last_seen_ms;
+    }
+}
+
 void ui_poll( void )
 {
     const int64_t now_us = esp_timer_get_time();
@@ -271,6 +321,7 @@ void ui_poll( void )
         return;
     }
     last_refresh_us = now_us;
+    sample_surveillance_locations();
     if( surveillance_page )
     {
         render_surveillance_page();
