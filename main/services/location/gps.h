@@ -36,9 +36,9 @@ typedef struct
 esp_err_t gps_init( void );
 /** @brief Stop the GPS UART and release its pins for a mutually exclusive radio. */
 esp_err_t gps_stop( void );
-/** @brief True once checksum-valid RMC/GGA has identified a receiver this boot. */
+/** @brief True while checksum-valid RMC/GGA traffic is fresh; presence expires after inactivity. */
 bool gps_detected( void );
-/** @brief True after the initial two full UART baud-rate detection cycles. */
+/** @brief True after the current UART startup detection window finishes. */
 bool gps_probe_complete( void );
 /** @brief Drain and parse pending NMEA input; non-blocking. */
 void gps_poll( void );
