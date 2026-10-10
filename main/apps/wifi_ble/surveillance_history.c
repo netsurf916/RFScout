@@ -29,6 +29,8 @@ static double reference_lon;
 static char replay_buffer[ 256 ];
 static size_t replay_used;
 static bool replay_overflow;
+static size_t replay_offset;
+static bool replay_restart_needed;
 
 static bool ensure_history_capacity( size_t a_required )
 {
@@ -215,6 +217,8 @@ void surveillance_history_open( void )
     reference_valid = false;
     replay_used = 0U;
     replay_overflow = false;
+    replay_offset = 0U;
+    replay_restart_needed = false;
     if( NULL != entries )
         (void)app_session_free( entries );
     entries = NULL;
@@ -239,6 +243,8 @@ void surveillance_history_replay_step( bool a_foreground )
             (void)media_close( &replay_file );
         replay_active = false;
         replay_used = 0U;
+        replay_offset = 0U;
+        replay_restart_needed = true;
         return;
     }
     if( !reference_valid || history_distance( gps.latitude_deg, gps.longitude_deg ) > 100.0 )
@@ -250,6 +256,15 @@ void surveillance_history_replay_step( bool a_foreground )
         reference_lon = gps.longitude_deg;
         reference_valid = true;
         replay_complete = false;
+        replay_used = 0U;
+        replay_offset = 0U;
+        entry_count = 0U;
+    }
+    if( replay_restart_needed )
+    {
+        replay_restart_needed = false;
+        replay_complete = false;
+        replay_offset = 0U;
         replay_used = 0U;
         entry_count = 0U;
     }
@@ -263,6 +278,16 @@ void surveillance_history_replay_step( bool a_foreground )
                                   RFSCOUT_MEDIA_OPEN_READ, &replay_file ) )
             return;
         replay_active = true;
+        if( replay_offset != 0U &&
+            ESP_OK != media_seek( &replay_file, replay_offset, RFSCOUT_MEDIA_SEEK_START ) )
+        {
+            (void)media_close( &replay_file );
+            replay_active = false;
+            replay_offset = 0U;
+            replay_used = 0U;
+            entry_count = 0U;
+            return;
+        }
     }
     size_t budget = a_foreground ? 2048U : 256U;
     char chunk[ 64 ];
@@ -277,6 +302,7 @@ void surveillance_history_replay_step( bool a_foreground )
             replay_complete = true;
             break;
         }
+        replay_offset += count;
         budget -= count;
         for( size_t i = 0U; i < count; ++i )
         {
