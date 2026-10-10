@@ -226,6 +226,80 @@ void surveillance_history_open( void )
 
 }
 
+void surveillance_history_replay_step( bool a_foreground )
+{
+    rfscout_gps_snapshot_t gps = { 0 };
+    if( !gps_snapshot_get( &gps ) || !gps.location_valid || gps.location_age_ms > 5000U )
+    {
+        if( replay_active )
+            (void)media_close( &replay_file );
+        replay_active = false;
+        replay_used = 0U;
+        return;
+    }
+    if( !reference_valid ||
+        ( reference_valid && history_distance( gps.latitude_deg, gps.longitude_deg ) > 100.0 ) )
+    {
+        if( replay_active )
+            (void)media_close( &replay_file );
+        replay_active = false;
+        reference_lat = gps.latitude_deg;
+        reference_lon = gps.longitude_deg;
+        reference_valid = true;
+        replay_complete = false;
+        replay_used = 0U;
+        entry_count = 0U;
+    }
+    if( replay_complete )
+        return;
+    if( !replay_active )
+    {
+        rfscout_media_collection_t collection;
+        if( ESP_OK != media_app_collection( "locations", &collection ) ||
+            ESP_OK != media_open( &collection, HISTORY_JOURNAL,
+                                  RFSCOUT_MEDIA_OPEN_READ, &replay_file ) )
+            return;
+        replay_active = true;
+    }
+    size_t budget = a_foreground ? 2048U : 256U;
+    char chunk[ 64 ];
+    while( budget > 0U )
+    {
+        size_t count = 0U;
+        const size_t requested = budget < sizeof( chunk ) ? budget : sizeof( chunk );
+        if( ESP_OK != media_read( &replay_file, chunk, requested, &count ) )
+            break;
+        if( count == 0U )
+        {
+            replay_complete = true;
+            break;
+        }
+        budget -= count;
+        for( size_t i = 0U; i < count; ++i )
+        {
+            if( chunk[ i ] == '\n' )
+            {
+                if( replay_used && !replay_overflow )
+                {
+                    replay_buffer[ replay_used ] = '\0';
+                    replay_line( replay_buffer );
+                }
+                replay_used = 0U;
+                replay_overflow = false;
+            }
+            else if( !replay_overflow && replay_used + 1U < sizeof( replay_buffer ) )
+                replay_buffer[ replay_used++ ] = chunk[ i ];
+            else
+                replay_overflow = true;
+        }
+    }
+    if( replay_complete )
+    {
+        (void)media_close( &replay_file );
+        replay_active = false;
+    }
+}
+
 static void flush_pending( bool a_include_active )
 {
     size_t dirty = 0U;
