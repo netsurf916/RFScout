@@ -292,8 +292,7 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
             handle_menu_input( &a_event->input );
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
-        if( RFSCOUT_INPUT_NAVIGATION == a_event->input.type &&
-            ui_surveillance_page_active() )
+        if( RFSCOUT_INPUT_NAVIGATION == a_event->input.type && ui_surveillance_page_active() )
         {
             ui_surveillance_navigate( a_event->input.value );
             return RFSCOUT_APP_RUNTIME_HANDLED;
