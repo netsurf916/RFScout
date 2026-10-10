@@ -272,9 +272,23 @@ bool media_store_available( void )
 
 esp_err_t media_store_probe( void )
 {
-    if( !storage_is_available() && ( ESP_OK != storage_init() ) )
+    if( !storage_is_available() )
     {
-        return ESP_ERR_NOT_FOUND;
+        if( !storage_io_acquire( RFSCOUT_STORAGE_WAIT_FOREVER ) )
+            return ESP_ERR_TIMEOUT;
+        /* Invalidate every open handle before the old FAT volume is unmounted.
+           Closing on a removed card can fail, but must still release the VFS descriptors. */
+        for( size_t i = 0U; i < MEDIA_SLOT_COUNT; ++i )
+        {
+            if( NULL != slots[ i ].file )
+                (void)close_slot( &slots[ i ] );
+        }
+        esp_err_t result = storage_recover_lost_media();
+        if( ESP_ERR_INVALID_STATE == result )
+            result = storage_init();
+        storage_io_release();
+        if( ESP_OK != result )
+            return ESP_ERR_NOT_FOUND;
     }
     return ( ESP_OK == storage_probe_card() ) ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
