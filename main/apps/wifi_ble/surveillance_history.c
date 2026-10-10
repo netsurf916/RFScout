@@ -71,6 +71,10 @@ typedef struct
 #define HISTORY_PENDING_LIMIT 128U
 static history_point_t *pending_points;
 static size_t pending_count;
+static uint32_t last_sample_seen[ HISTORY_LIMIT ];
+static uint8_t last_sample_address[ HISTORY_LIMIT ][ 6 ];
+static uint8_t last_sample_type[ HISTORY_LIMIT ];
+static size_t last_sample_count;
 
 static esp_err_t append_point( const rfscout_media_file_t *a_file,
                                const history_point_t *a_point )
@@ -232,6 +236,7 @@ void surveillance_history_open( void )
         (void)app_session_free( pending_points );
     pending_points = NULL;
     pending_count = 0U;
+    last_sample_count = 0U;
 }
 
 void surveillance_history_replay_step( bool a_foreground )
@@ -428,13 +433,13 @@ void surveillance_history_sample( void )
     {
         const observation_history_identity_t *device = &sample_buffer[ i ];
         bool duplicate = false;
-        for( size_t j = pending_count; j > 0U; --j )
+        size_t tracked = 0U;
+        for( ; tracked < last_sample_count; ++tracked )
         {
-            const history_point_t *point = &pending_points[ j - 1U ];
-            if( point->address_type == device->address_type &&
-                0 == memcmp( point->address, device->address, 6U ) )
+            if( last_sample_type[ tracked ] == device->address_type &&
+                0 == memcmp( last_sample_address[ tracked ], device->address, 6U ) )
             {
-                duplicate = point->seen_ms == device->last_seen_ms;
+                duplicate = last_sample_seen[ tracked ] == device->last_seen_ms;
                 break;
             }
         }
@@ -461,5 +466,13 @@ void surveillance_history_sample( void )
         point->longitude = gps.longitude_deg;
         point->utc_epoch = gps.time_valid ? (int64_t)gps.utc_epoch : 0;
         point->seen_ms = device->last_seen_ms;
+        if( tracked == last_sample_count && last_sample_count < HISTORY_LIMIT )
+            ++last_sample_count;
+        if( tracked < HISTORY_LIMIT )
+        {
+            memcpy( last_sample_address[ tracked ], device->address, 6U );
+            last_sample_type[ tracked ] = device->address_type;
+            last_sample_seen[ tracked ] = device->last_seen_ms;
+        }
     }
 }
