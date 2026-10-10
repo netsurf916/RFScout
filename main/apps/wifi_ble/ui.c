@@ -199,6 +199,15 @@ void ui_set_surveillance_page( bool a_enabled )
     last_refresh_us = 0;
 }
 
+void ui_surveillance_release( void )
+{
+    if( NULL != live_surveillance_rows )
+        (void)app_session_free( live_surveillance_rows );
+    live_surveillance_rows = NULL;
+    live_surveillance_capacity = 0U;
+    surveillance_focused = false;
+}
+
 void ui_surveillance_set_focused( bool a_focused )
 {
     surveillance_focused = a_focused;
