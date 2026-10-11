@@ -20,6 +20,7 @@
 #include "platform.h"
 #include "recorder.h"
 #include "session_state.h"
+#include "system_lifecycle.h"
 
 #include "driver/gpio.h"
 #include "esp_log.h"
@@ -147,52 +148,6 @@ static void set_idle_status( void )
     set_power_status( POWER_HOLD_IDLE, POWER_ACTION_NONE, POWER_TRANSITION_NONE, 0U, "", "" );
 }
 
-/** @brief Flush internal state, then quiesce removable-storage users when SD is present. */
-static bool prepare_for_power_state( void )
-{
-    const esp_err_t save_result = device_config_save_if_dirty();
-    if( ESP_OK != save_result )
-    {
-        ESP_LOGW( TAG,
-                  "configuration save before power transition failed: %s",
-                  esp_err_to_name( save_result ) );
-        return false;
-    }
-
-    if( !media_store_available() )
-    {
-        return true;
-    }
-
-    const rfscout_recorder_state_t recorder = recorder_state();
-    if( ( RFSCOUT_RECORDER_RECORDING == recorder ) || ( RFSCOUT_RECORDER_SAVING == recorder ) )
-    {
-        ESP_LOGW( TAG, "power transition cancelled while Recorder is recording or saving" );
-        return false;
-    }
-
-    if( !recorder_prepare_storage_shutdown( POWER_RECORDER_STOP_TIMEOUT_MS ) )
-    {
-        ESP_LOGW( TAG, "power transition cancelled because Recorder did not stop" );
-        return false;
-    }
-
-    if( !breadcrumbs_shutdown( POWER_BREADCRUMB_SHUTDOWN_TIMEOUT_MS ) )
-    {
-        ESP_LOGW( TAG, "power transition cancelled because breadcrumbs did not stop" );
-        return false;
-    }
-
-    if( !log_writer_shutdown( POWER_LOG_FLUSH_TIMEOUT_MS ) )
-    {
-        ESP_LOGW( TAG, "power transition cancelled because logger did not stop" );
-        (void)breadcrumbs_init();
-        return false;
-    }
-
-    return true;
-}
-
 /** @brief Put the LCD into its lowest software-controlled power state before SoC sleep/shutdown. */
 static void prepare_display_for_power_state( void )
 {
@@ -225,31 +180,11 @@ static void restore_display_after_failed_power_off( void )
     display_set_brightness( device_config_get()->brightness_percent );
 }
 
-/** @brief Restart SD background writers after a failed physical power-off request. */
-static void restore_storage_writers_after_failed_power_off( void )
-{
-    if( !media_store_available() )
-    {
-        return;
-    }
-
-    const esp_err_t breadcrumb_result = breadcrumbs_init();
-    if( ESP_OK != breadcrumb_result && ESP_ERR_NOT_SUPPORTED != breadcrumb_result )
-    {
-        ESP_LOGE( TAG, "could not restart breadcrumbs after failed power off" );
-    }
-
-    if( device_config_get()->logging_enabled && ESP_OK != log_writer_init() )
-    {
-        ESP_LOGE( TAG, "could not restart logging after failed power off" );
-    }
-}
-
 /** @brief Enter deep sleep and wake when the active-low user key is pressed. */
 static void enter_sleep( void )
 {
     ESP_LOGI( TAG, "entering deep sleep; user key wakes device" );
-    if( !prepare_for_power_state() )
+    if( !system_lifecycle_prepare( SYSTEM_LIFECYCLE_DEEP_SLEEP ) )
     {
         ESP_LOGW( TAG, "sleep cancelled because persistent state could not be prepared" );
         set_idle_status();
@@ -267,7 +202,7 @@ static void enter_sleep( void )
 /** @brief Perform an orderly physical power-off request. */
 static void power_off( void )
 {
-    if( !prepare_for_power_state() )
+    if( !system_lifecycle_prepare( SYSTEM_LIFECYCLE_POWER_OFF ) )
     {
         set_idle_status();
         return;
@@ -278,7 +213,7 @@ static void power_off( void )
     if( ESP_OK != result )
     {
         ESP_LOGE( TAG, "power off failed: %s", esp_err_to_name( result ) );
-        restore_storage_writers_after_failed_power_off();
+        system_lifecycle_abort( SYSTEM_LIFECYCLE_POWER_OFF );
         restore_display_after_failed_power_off();
         set_idle_status();
     }

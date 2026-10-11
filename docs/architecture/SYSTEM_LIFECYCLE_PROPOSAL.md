@@ -1,6 +1,6 @@
 # Proposed framework startup and system power lifecycle
 
-> **Status: design proposal, not an implemented contract.**
+> **Status: incremental implementation.** Terminal storage quiescence is now coordinated by `system_lifecycle.c`; broader service participation, dependencies, and verified hardware low-power controls are still proposed.
 >
 > This document records the intended lifecycle semantics for review before firmware changes.
 > The [platform architecture](../ARCHITECTURE.md) remains authoritative for current behavior.
@@ -148,3 +148,11 @@ not be interpreted as evidence of power-saving or guaranteed LED behavior.
 - Is recovery from a failed quiesce always possible, or must a degraded-state policy exist?
 - How should a future light-sleep wake map onto `start()` versus an explicit reversible suspend?
 - What happens when the GPS is electrically powered while the ESP32 enters deep sleep?
+
+## Incremental implementation: failure containment
+
+Breadcrumbs now counts consecutive attempted SD-record write failures, resets the streak on a successful write, and at ten failures persists the disabled breadcrumb setting in the existing internal `system/breadcrumbs` record. A missing/unmounted card does not count as ten separate failures just because the application polls repeatedly: writes are skipped while media is unavailable. Manual reenable resets the streak. The change does **not** silently disable unrelated system SD logging.
+
+General policy guidance for other optional features: only count actual failed operations, reset on success, avoid retry storms, prefer media generation/recovery state over elapsed retry counts, emit one diagnostic on terminal disable, and persist an automatic preference change only when the feature can safely be reenabled by the user. Critical services should report degraded state rather than silently opting out. Exact thresholds remain service policy, not a global hard-coded constant.
+
+The first implementation step moves terminal storage-client sequencing from `power.c` into `system_lifecycle.c`, preserving Recorder's veto and writer rollback behavior. Display-idle policy stays unchanged. Asynchronous service registration and GPS power-state control are not yet implemented.

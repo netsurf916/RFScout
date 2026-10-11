@@ -147,6 +147,7 @@ idf_component_register(
         "services/update/ota_boot.c"
         "services/power/battery.c"
         "services/power/power.c"
+        "services/power/system_lifecycle.c"
         "services/power/power_policy.c"
         "services/power/power_policy_view.c"
         "services/display/battery_indicator.c"
