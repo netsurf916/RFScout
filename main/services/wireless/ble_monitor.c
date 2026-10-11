@@ -155,7 +155,7 @@ static void parse_adv( const struct ble_gap_disc_desc *a_description, rf_device_
     }
 }
 
-static void start_scan( void );
+static esp_err_t start_scan( void );
 
 static bool begin_observation_callback( void )
 {
@@ -251,11 +251,11 @@ static int gap_event( struct ble_gap_event *a_event, void *a_argument )
     return 0;
 }
 
-static void start_scan( void )
+static esp_err_t start_scan( void )
 {
     if( !host_synced || !scan_is_requested() || scanning )
     {
-        return;
+        return ESP_OK;
     }
 
     struct ble_gap_disc_params parameters = { .itvl = 0x0040,
@@ -269,12 +269,14 @@ static void start_scan( void )
     if( 0 != result )
     {
         ESP_LOGE( TAG, "scan start failed: %d", result );
+        return ESP_FAIL;
     }
     else
     {
         scanning = true;
         ESP_LOGI( TAG, "passive BLE monitor enabled" );
     }
+    return ESP_OK;
 }
 
 static void on_sync( void )
@@ -318,8 +320,27 @@ esp_err_t ble_monitor_start( void )
     portENTER_CRITICAL( &callback_lock );
     scan_requested = true;
     portEXIT_CRITICAL( &callback_lock );
-    start_scan();
-    return ESP_OK;
+    /* A pending host sync is not proof that passive scanning started. */
+    const TickType_t started = xTaskGetTickCount();
+    while( !host_synced && ( xTaskGetTickCount() - started ) < pdMS_TO_TICKS( 2000U ) )
+    {
+        vTaskDelay( pdMS_TO_TICKS( 10U ) );
+    }
+    if( !host_synced )
+    {
+        portENTER_CRITICAL( &callback_lock );
+        scan_requested = false;
+        portEXIT_CRITICAL( &callback_lock );
+        return ESP_ERR_TIMEOUT;
+    }
+    const esp_err_t result = start_scan();
+    if( ESP_OK != result )
+    {
+        portENTER_CRITICAL( &callback_lock );
+        scan_requested = false;
+        portEXIT_CRITICAL( &callback_lock );
+    }
+    return result;
 }
 
 esp_err_t ble_monitor_stop( void )
