@@ -326,7 +326,7 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
         policy_desired_interval_ms = (int)interval;
         policy_speed_since_us = 0;
         policy_state = GPS_POLICY_ACTIVE;
-        ESP_LOGI( TAG, "GPS CASIC CFG-RATE query succeeded; adaptive 1/2 Hz control enabled (3 mph threshold)" );
+        ESP_LOGI( TAG, "GPS CASIC CFG-RATE query succeeded; adaptive 1/2/3/4 Hz control enabled" );
         policy_log_event( "rate_detected", 0, (int)interval );
     }
     else if( 0x06U == a_class && 0x04U == a_id &&
@@ -445,8 +445,9 @@ static void policy_poll( int64_t a_now )
         return;
     }
     const float mph = snapshot.speed_mps * 2.23693629f;
-    /* Until module-specific validation, cap rate at 2 Hz with no output changes. */
-    const int target = mph >= 3.0f ? 500 : 1000;
+    /* Keep the upper bound at 4 Hz while UART remains at the detected 9600 baud.
+       All thresholds use the same stability and cooldown checks below. */
+    const int target = mph >= 12.0f ? 250 : mph >= 7.0f ? 333 : mph >= 3.0f ? 500 : 1000;
     if( target != policy_desired_interval_ms )
     {
         policy_desired_interval_ms = target;
