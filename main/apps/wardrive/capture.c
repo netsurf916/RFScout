@@ -327,7 +327,7 @@ static void enqueue( uint8_t a_source,
     }
 }
 
-static void on_wifi( const uint8_t *a_data, size_t a_length, int8_t a_rssi, uint8_t a_channel )
+void wardrive_on_wifi( const uint8_t *a_data, size_t a_length, int8_t a_rssi, uint8_t a_channel )
 {
     if( config.wifi && a_length >= 2U )
     {
@@ -339,7 +339,7 @@ static void on_wifi( const uint8_t *a_data, size_t a_length, int8_t a_rssi, uint
     }
 }
 
-static void on_ble( const uint8_t *a_data,
+void wardrive_on_ble( const uint8_t *a_data,
                     size_t a_length,
                     const uint8_t a_address[ 6 ],
                     uint8_t a_address_type,
@@ -551,8 +551,6 @@ esp_err_t wardrive_capture_start( const wardrive_config_t *a_config )
         wardrive_capture_stop();
         return ESP_ERR_NO_MEM;
     }
-    radio_monitor_set_raw_observer( on_wifi );
-    ble_monitor_set_raw_observer( on_ble );
     radio_monitor_set_capture_policy(
         true, config.fixed_channel ? config.channel : 0U, config.dwell_ms );
     accepting = true;
@@ -569,8 +567,10 @@ esp_err_t wardrive_capture_start( const wardrive_config_t *a_config )
 void wardrive_capture_stop( void )
 {
     accepting = false;
-    radio_monitor_set_raw_observer( NULL );
-    ble_monitor_set_raw_observer( NULL );
+    /* Stop and drain radio callbacks before releasing capture queues and packet pool. */
+    (void)radio_monitor_stop();
+    (void)ble_monitor_stop();
+    /* Framework owns the consumer bindings across the session lifetime. */
     radio_monitor_set_capture_policy( false, 0U, 0U );
     stopping = true;
     while( capture_task != NULL )
