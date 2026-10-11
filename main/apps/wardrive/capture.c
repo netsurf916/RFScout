@@ -399,26 +399,22 @@ static bool write_packet( const capture_packet_t *a_packet )
     const size_t frame_length = build_radio_packet( a_packet, frame );
     const uint32_t padded = (uint32_t)( ( frame_length + 3U ) & ~3U );
 
-    /* Standard PCAPNG packet comment carries location until a Kismet GPS option
-       encoder is independently validated against reference files. */
-    char comment[ 104 ] = "";
-    size_t comment_size = 0U;
+    /* Kismet PCAPNG binary custom option 2989, PEN 55922, GPS v1.
+       Fixed3_7 maps [-180,+180] degrees to unsigned units of 1e-7 degrees. */
+    uint8_t gps_option[ 24 ] = { 0 };
+    const uint32_t options = a_packet->gps_valid ? 28U : 0U;
     if( a_packet->gps_valid )
     {
-        const int written = snprintf( comment,
-                                      sizeof( comment ),
-                                      "GPS lat=%.7f lon=%.7f fix_age_ms=%lu",
-                                      (double)a_packet->latitude_e7 / 10000000.0,
-                                      (double)a_packet->longitude_e7 / 10000000.0,
-                                      (unsigned long)a_packet->gps_age_ms );
-        if( written > 0 && (size_t)written < sizeof( comment ) )
-        {
-            comment_size = (size_t)written;
-        }
+        le16( gps_option, 2989U );
+        le16( gps_option + 2U, 20U );
+        le32( gps_option + 4U, 55922U );
+        gps_option[ 8 ] = 0x47U;
+        gps_option[ 9 ] = 1U;
+        le16( gps_option + 10U, 16U );
+        le32( gps_option + 12U, 0x06U );
+        le32( gps_option + 16U, (uint32_t)( (int64_t)a_packet->longitude_e7 + 1800000000LL ) );
+        le32( gps_option + 20U, (uint32_t)( (int64_t)a_packet->latitude_e7 + 1800000000LL ) );
     }
-
-    const uint32_t comment_pad = (uint32_t)( ( comment_size + 3U ) & ~3U );
-    const uint32_t options = comment_size > 0U ? ( 4U + comment_pad + 4U ) : 0U;
     const uint32_t length = 32U + padded + options;
     if( length > config.file_limit_bytes - 48U )
     {
@@ -448,14 +444,9 @@ static bool write_packet( const capture_packet_t *a_packet )
     {
         return false;
     }
-    if( comment_size > 0U )
+    if( a_packet->gps_valid )
     {
-        uint8_t opt_header[ 4 ];
-        le16( opt_header, 1U );
-        le16( opt_header + 2U, (uint16_t)comment_size );
-        if( !write_bytes( opt_header, sizeof( opt_header ) ) ||
-            !write_bytes( comment, comment_size ) ||
-            ( comment_pad > comment_size && !write_bytes( zero, comment_pad - comment_size ) ) ||
+        if( !write_bytes( gps_option, sizeof( gps_option ) ) ||
             !write_bytes( zero, sizeof( zero ) ) )
         {
             return false;
