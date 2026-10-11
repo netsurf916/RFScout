@@ -80,6 +80,7 @@ idf_component_register(
         "apps/wifi_ble/ui.c"
         "apps/wifi_ble/wifi_settings_view.c"
         "apps/wifi_ble/observation_store.c"
+        "apps/wifi_ble/surveillance_history.c"
         "apps/wifi_ble/surveillance.c"
         "apps/hotspots/app.c"
         "apps/hotspots/hotspot_table.c"

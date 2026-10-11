@@ -210,3 +210,43 @@ Relevant generated tables live under `main/services/wireless/`. Registry, genera
 ## Current limitations
 
 Current production behavior preserves enough AP/BSSID and frame-role semantics for adaptive scanning, but it does not yet provide the full semantic physical-entity model, AP/client topology and association confidence, probe relationships, stable relationship drill-down, BLE-native deep views, or conservative address-rotation correlation planned for v0.4.0. Randomized addresses therefore remain evidence rather than proof of physical identity.
+
+## Surveillance locations: live receiver bounds and packet journal
+
+The canonical observation store owns every currently active Wi-Fi/BLE identity until its
+configured source timeout. GPS-qualified surveillance packet observations expand the
+**receiver-location** minimum/maximum latitude/longitude bounding box of the live identity.
+These coordinates represent where RFScout received packets, not a verified transmitter position.
+Expiration simply removes the active identity; it does not write a summary to SD.
+
+Each GPS-qualified surveillance packet is separately queued for the append-only
+`locations/surveillance.jsonl` journal, including full MAC, address type, classification,
+receiver latitude/longitude, trusted UTC when available, and observation time. The canonical store emits a compact event to an app-owned sink after releasing its lock.
+The sink only enqueues records into a preallocated PSRAM buffer; queue growth and
+batched SD writes happen from the app poll, never inside radio callbacks.
+The journal is retained for offline analysis. It is not replayed to populate the live UI,
+and legacy bounding-box journal formats are not read or supported. A failed SD append is
+retried while the app session remains active if rollback succeeds. If a partial write cannot
+be safely rolled back, that uncertain batch is discarded; the next write request recovers
+the card after the shared 3-second cooldown and uses a unique
+`locations/surveillance-XXXXXXXX.jsonl` file, preserving the previous file for offline
+inspection. That rotation state survives WiFi/BLE app reentry during the same boot.
+Insufficient PSRAM or unavailable media can still prevent capture. App exit attempts to drain both the writing and pending journal batches when media is healthy; an
+I/O failure stops this bounded final flush. An unsuccessful file close also makes the batch
+ambiguous and forces journal rotation before further writes.
+SD lost/recovered transitions enter System Events without periodic card polling; when there
+are no outstanding writes or other SD requests, mere insertion is not detected until the
+next storage operation.
+
+The surveillance list reads active identities directly from the canonical store and displays
+the distance from the current GPS receiver position to each identity's observed receiver
+bounding box. Without a fresh GPS fix or valid bounds, distance is unknown. Historical-only
+identities are never shown. The rotary switches between the summary and surveillance views. Center press opens
+settings from either view. The surveillance page shows the first six active entries
+without a separate scroll/focus mode.
+
+### Validation
+
+Verify per-packet journal lines, bounding-box expansion, source timeouts, GPS loss,
+SD removal/reinsertion, retry behavior, PSRAM headroom, rotary view switching, and app exit.
+No history replay, proximity reload threshold, or timeout-triggered SD write exists.

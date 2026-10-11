@@ -83,6 +83,46 @@ bool observation_store_observe( rf_device_t *a_observation,
 void observation_store_reevaluate_surveillance( size_t *a_newly_qualified,
                                                 size_t a_count_capacity );
 
+/** @brief Immutable GPS-qualified packet observation for an app-owned persistence sink. */
+typedef struct
+{
+    uint8_t address[ 6 ];
+    uint8_t address_type;
+    surveillance_class_t classification;
+    double latitude;
+    double longitude;
+    int64_t utc_epoch;
+    uint32_t seen_ms;
+} observation_location_event_t;
+
+/** @brief Borrowed packet event, valid only during callback invocation. */
+typedef void ( *observation_location_sink_t )( const observation_location_event_t *a_event );
+
+/** @brief Register the app-owned location journal sink; NULL disables delivery. */
+void observation_store_set_location_sink( observation_location_sink_t a_sink );
+
+/** @brief Compact identity snapshot for history; avoids copying full device records. */
+typedef struct
+{
+    uint8_t address[ 6 ];
+    uint8_t address_type;
+    char vendor[ RFSCOUT_VENDOR_NAME_MAX ];
+    surveillance_class_t surveillance;
+    uint32_t last_seen_ms;
+    bool location_valid;
+    double min_latitude;
+    double max_latitude;
+    double min_longitude;
+    double max_longitude;
+} observation_history_identity_t;
+
+/** @brief Copy only fields needed for surveillance history. */
+size_t observation_store_surveillance_devices( observation_history_identity_t *a_devices,
+                                               size_t a_capacity );
+
+/** @brief Read a single live surveillance device by ordinal under the store lock. */
+bool observation_store_surveillance_get( size_t a_index, observation_history_identity_t *a_device );
+
 /** @brief Clear all live observations while retaining any current app-owned capacity. */
 void observation_store_reset( void );
 

@@ -5,6 +5,7 @@
 */
 
 #include "app_descriptor.h"
+#include "app_manager.h"
 
 #include "app_notification_menu.h"
 #include "ble_monitor.h"
@@ -15,6 +16,7 @@
 #include "platform.h"
 #include "observation_store.h"
 #include "radio_monitor.h"
+#include "surveillance_history.h"
 #include "ui.h"
 #include "wifi_settings_view.h"
 
@@ -23,20 +25,24 @@
 #include <stddef.h>
 
 #define WIFI_RADIO_RETRY_INTERVAL_US 1000000LL
+#define WIFI_JOURNAL_FLUSH_INTERVAL_US 500000LL
 
 #define WIFI_MENU_BACK 0U
-#define WIFI_MENU_RESET 1U
-#define WIFI_MENU_NOTIFICATIONS 2U
-#define WIFI_MENU_EVIDENCE_THRESHOLD 3U
-#define WIFI_MENU_WIFI_TIMEOUT 4U
-#define WIFI_MENU_BLE_TIMEOUT 5U
-#define WIFI_MENU_ITEM_COUNT 6U
+#define WIFI_MENU_APP_LOCK 1U
+#define WIFI_MENU_RESET 2U
+#define WIFI_MENU_NOTIFICATIONS 3U
+#define WIFI_MENU_EVIDENCE_THRESHOLD 4U
+#define WIFI_MENU_WIFI_TIMEOUT 5U
+#define WIFI_MENU_BLE_TIMEOUT 6U
+#define WIFI_MENU_ITEM_COUNT 7U
 
 static const char *TAG = "wifi_ble_app";
 static bool menu_active;
 static bool menu_editing;
+static bool rendered_app_lock;
 static unsigned menu_item;
 static int64_t last_radio_retry_us;
+static int64_t last_journal_flush_us;
 static rfscout_app_notification_menu_t notification_menu;
 
 static void emit_event( rfscout_event_type_t a_type, int32_t a_value )
@@ -46,8 +52,10 @@ static void emit_event( rfscout_event_type_t a_type, int32_t a_value )
 
 static void render_menu( void )
 {
+    rendered_app_lock = app_manager_locked();
     wifi_settings_view_render( menu_item,
                                menu_editing,
+                               app_manager_locked(),
                                notification_preferences_app_enabled( RFSCOUT_APP_WIFI_BT ),
                                device_config_evidence_threshold(),
                                device_config_wifi_timeout_seconds(),
@@ -120,6 +128,12 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
             emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
             return;
         }
+        if( WIFI_MENU_APP_LOCK == menu_item )
+        {
+            (void)app_manager_set_locked( !app_manager_locked() );
+            render_menu();
+            return;
+        }
         if( WIFI_MENU_BACK == menu_item )
         {
             close_menu();
@@ -168,6 +182,7 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
         }
         if( WIFI_MENU_RESET == menu_item )
         {
+            surveillance_history_flush();
             observation_store_reset();
             close_menu();
             emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
@@ -246,7 +261,12 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         menu_active = false;
         menu_editing = false;
         menu_item = WIFI_MENU_BACK;
+        rendered_app_lock = app_manager_locked();
+        ui_set_surveillance_page( false );
+        surveillance_history_open();
+        observation_store_set_location_sink( surveillance_history_record );
         last_radio_retry_us = 0;
+        last_journal_flush_us = 0;
         app_notification_menu_init(
             &notification_menu, RFSCOUT_APP_WIFI_BT, render_menu_callback, NULL );
         return RFSCOUT_APP_RUNTIME_HANDLED;
@@ -262,6 +282,9 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         menu_active = false;
         menu_editing = false;
         menu_item = WIFI_MENU_BACK;
+        observation_store_set_location_sink( NULL );
+        surveillance_history_flush_final();
+        ui_set_surveillance_page( false );
         app_notification_menu_reset( &notification_menu );
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
@@ -275,6 +298,11 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         if( menu_active )
         {
             handle_menu_input( &a_event->input );
+            return RFSCOUT_APP_RUNTIME_HANDLED;
+        }
+        if( RFSCOUT_INPUT_NAVIGATION == a_event->input.type && app_manager_locked() )
+        {
+            ui_set_surveillance_page( !ui_surveillance_page_active() );
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
         if( RFSCOUT_INPUT_SELECT == a_event->input.type )
@@ -291,6 +319,11 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
     if( RFSCOUT_APP_RUNTIME_POLL != a_event->type )
     {
         return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
+
+    if( menu_active && rendered_app_lock != app_manager_locked() )
+    {
+        render_menu();
     }
 
     if( !a_event->activated )
@@ -310,6 +343,11 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
     }
     radio_monitor_set_active_ap_channels( observation_store_wifi_ap_channel_mask() );
     radio_monitor_step();
+    if( a_event->now_us - last_journal_flush_us >= WIFI_JOURNAL_FLUSH_INTERVAL_US )
+    {
+        last_journal_flush_us = a_event->now_us;
+        surveillance_history_flush();
+    }
     if( !menu_active && !app_notification_menu_active( &notification_menu ) )
     {
         ui_poll();

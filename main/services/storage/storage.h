@@ -28,6 +28,13 @@
 esp_err_t storage_init( void );
 
 /**
+ * @brief Dispatch latched mount/loss/recovery events to the system event bus without accessing SD.
+ * @note Call from the main task outside storage arbitration. This is only event delivery;
+ *       it never initiates a card probe, mount, or background retry.
+ */
+void storage_dispatch_events( void );
+
+/**
  * @brief Read cached SD availability, including the shared failure cooldown, without probing.
  * @return True only while storage is mounted and no physical-media loss has been latched.
  */
@@ -38,9 +45,10 @@ bool storage_is_available( void );
  * @return ESP_OK when the mounted card responds or when a filesystem transaction causes this probe
  *         attempt to be deferred, ESP_ERR_INVALID_STATE when no healthy card is mounted, or the
  *         underlying SD/MMC status error when the card disappears or fails.
- * @note A failed physical probe latches the current volume unavailable and emits
- *       RFSCOUT_EVENT_STORAGE_MOUNT_FAILED. The media store may later invalidate handles,
- *       unmount that volume, and retry mounting a replacement card.
+ * @note A failed physical probe latches the current volume unavailable and queues
+ *       RFSCOUT_EVENT_STORAGE_LOST for delivery outside SD arbitration.
+ *       The media store can later invalidate handles, unmount, and remount.
+ *       A successful remount queues RFSCOUT_EVENT_STORAGE_RECOVERED.
  */
 esp_err_t storage_probe_card( void );
 

@@ -48,6 +48,10 @@ typedef enum
     RFSCOUT_EVENT_INPUT_PROVIDER_SELECTED,
     RFSCOUT_EVENT_APP_LOCKED,
     RFSCOUT_EVENT_APP_UNLOCKED,
+    /** An already mounted SD volume stopped responding to media I/O. */
+    RFSCOUT_EVENT_STORAGE_LOST,
+    /** SD storage became usable again after mount failure or media loss. */
+    RFSCOUT_EVENT_STORAGE_RECOVERED,
     RFSCOUT_EVENT_TYPE_COUNT
 } rfscout_event_type_t;
 

@@ -403,3 +403,29 @@ The T-Embed GPIO43/44 pair is shared by GPS UART TX/RX and the nRF24 CE/CSN inte
 Checksum-valid RMC/GGA reception establishes GPS receiver presence independently of fix freshness. Presence expires after the Home-configurable NMEA inactivity timeout (default 5 seconds, 2–30 second range). While GPS is present, nRF24 acquisition is forbidden. After the initial startup detection window, a demand-driven nRF24 probe may temporarily stop an absent GPS provider, claim the pins, then restore GPS monitoring. An active nRF24 session holds the pins until app exit and cannot be preempted by GPS. Stopping the radio must quiesce its worker, power down, detach SPI, release the pins, and restore GPS detection; stopping an unstarted radio must not touch GPS-owned pins. GPS UART polling must never run while nRF24 owns these pins. Connecting or powering a GPS receiver during an active radio session is unsupported and may cause undefined hardware behavior.
 
 This is a software pin-ownership policy, not galvanic isolation: nRF24 CSN remains electrically connected to GPIO44 in power-down. The target hardware must be checked for UART-induced CSN transitions, other SPI traffic, and any unintended radio behavior.
+
+### Surveillance receiver locations and packet journal
+
+The WiFi/BLE application's canonical observation store retains currently active identities
+until their source-specific timeouts. For surveillance-qualified observations with a fresh
+valid GPS fix, each identity expands a receiver-location latitude/longitude bounding box.
+This box records **where RFScout received packets**, not a transmitter's verified position.
+Expired identities are removed without any timeout-triggered storage write.
+
+Each qualified packet with a fresh GPS fix is queued as an individual append-only JSONL
+record in the app-owned `locations/surveillance.jsonl` file. The record contains full MAC,
+address type, classification, receiver latitude/longitude, valid UTC when available, and
+last-seen milliseconds. The app poll batches SD writes outside the observation-store lock;
+a failed batch remains queued for retry during the current app session when rollback succeeds.
+If rollback fails, the uncertain batch is dropped; a later media request uses a new,
+create-only `surveillance-XXXXXXXX.jsonl` journal segment instead of appending after a
+potentially incomplete line. App exit attempts a final flush. Insufficient memory or
+unavailable media can still result in loss; no cross-session queue recovery is promised.
+The storage service records SD mount, loss, and recovery transitions in System Events
+without checking the card when no client requests storage.
+
+The live surveillance view reads the canonical active identities directly, without replaying
+the SD journal or maintaining a second live list. Distance is computed to the nearest point
+of each identity's receiver-observation bounding rectangle. Without a fresh fix or recorded
+bounds, distance is unknown. The journal is for offline analysis, not live proximity replay.
+There is no historical index, journal compaction, or geographic reload threshold.

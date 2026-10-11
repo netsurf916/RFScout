@@ -615,3 +615,13 @@ These are ideas worth preserving, not committed scope or priority.
 - Do not leave future-tense design promises in README, Architecture, app pages, Getting Started, Coding Style, or the release runbook.
 - Keep speculative/vision material here unless a separate technical research document is genuinely needed for a specialized subject.
 - A merged planning-only PR does not mean its feature is implemented; status must distinguish design capture from production code.
+
+### Surveillance receiver-location journal and live view
+
+- [x] Track receiver GPS latitude/longitude bounds on canonical active surveillance identities.
+- [x] Queue individual GPS-qualified surveillance packet observations for append-only JSONL SD writes.
+- [x] Batch journal writes in app poll; remove timeout-triggered persistence and historical replay.
+- [x] Render active surveillance devices directly from the canonical store with receiver-bound distances.
+- [x] Keep rotary view switching and center-click settings access.
+- [ ] Validate SD removal, interrupted writes, low-memory behavior, source-specific aging,
+      GPS freshness, classification threshold changes, and application exit on hardware.

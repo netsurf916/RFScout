@@ -14,16 +14,18 @@
 
 #include <stdio.h>
 
-#define WIFI_SETTINGS_ITEM_COUNT 6U
+#define WIFI_SETTINGS_ITEM_COUNT 7U
 
 void wifi_settings_view_render( unsigned a_selected,
                                 bool a_editing,
+                                bool a_app_locked,
                                 bool a_notifications_enabled,
                                 rfscout_evidence_strength_t a_threshold,
                                 uint16_t a_wifi_timeout_seconds,
                                 uint16_t a_ble_timeout_seconds )
 {
     static const char *labels[ WIFI_SETTINGS_ITEM_COUNT ] = { "Back",
+                                                              "App lock",
                                                               "Reset detections",
                                                               "Notifications",
                                                               "Evidence threshold",
@@ -34,11 +36,15 @@ void wifi_settings_view_render( unsigned a_selected,
     display_clear( theme->background );
     ui_chrome_draw( "WiFi / BLE settings", theme->secondary );
 
-    for( unsigned item = 0U; item < WIFI_SETTINGS_ITEM_COUNT; ++item )
+    /* Keep the selected row visible on compact displays. */
+    const unsigned first = ( a_selected >= 4U ) ? a_selected - 3U : 0U;
+    const unsigned end =
+        ( first + 5U < WIFI_SETTINGS_ITEM_COUNT ) ? first + 5U : WIFI_SETTINGS_ITEM_COUNT;
+    for( unsigned item = first; item < end; ++item )
     {
-        const int y = UI_LAYOUT_MENU_START_Y + (int)item * UI_LAYOUT_MENU_ROW_HEIGHT;
+        const int y = UI_LAYOUT_MENU_START_Y + (int)( item - first ) * UI_LAYOUT_MENU_ROW_HEIGHT;
         const bool active = ( item == a_selected );
-        const bool editable = ( item >= 4U ) && ( item <= 5U );
+        const bool editable = ( item >= 5U ) && ( item <= 6U );
         display_draw_text( UI_LAYOUT_LEFT_X,
                            y,
                            active ? ( a_editing && editable ? "*" : ">" ) : " ",
@@ -49,11 +55,15 @@ void wifi_settings_view_render( unsigned a_selected,
 
         char value[ 16 ];
         value[ 0 ] = '\0';
-        if( 2U == item )
+        if( 1U == item )
+        {
+            snprintf( value, sizeof( value ), "%s", a_app_locked ? "On" : "Off" );
+        }
+        else if( 3U == item )
         {
             snprintf( value, sizeof( value ), "%s", a_notifications_enabled ? "On" : "Off" );
         }
-        else if( 3U == item )
+        else if( 4U == item )
         {
             static const char *names[ RFSCOUT_EVIDENCE_STRENGTH_COUNT ] = {
                 [RFSCOUT_EVIDENCE_STRENGTH_EVERYTHING] = "Everything",
@@ -67,11 +77,11 @@ void wifi_settings_view_render( unsigned a_selected,
                       ( a_threshold < RFSCOUT_EVIDENCE_STRENGTH_COUNT ) ? names[ a_threshold ]
                                                                         : "Possible" );
         }
-        else if( 4U == item )
+        else if( 5U == item )
         {
             snprintf( value, sizeof( value ), "%u s", (unsigned)a_wifi_timeout_seconds );
         }
-        else if( 5U == item )
+        else if( 6U == item )
         {
             snprintf( value, sizeof( value ), "%u s", (unsigned)a_ble_timeout_seconds );
         }

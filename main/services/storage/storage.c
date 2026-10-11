@@ -24,16 +24,83 @@
 #define STORAGE_PROBE_IO_TIMEOUT_MS 250U
 #define STORAGE_FAILURE_COOLDOWN_MS 3000U
 
+#define STORAGE_EVENT_QUEUE_CAPACITY 8U
+
 static const char *TAG = "storage";
 static sdmmc_card_t *card;
 static bool mounted;
 static bool media_lost;
 static StaticSemaphore_t io_mutex_control;
 static SemaphoreHandle_t io_mutex;
-/* Access to this 64-bit timestamp must be synchronized on 32-bit ESP targets.
-   An expired deadline may remain cached: monotonic time cannot reactivate it. */
+/* The 64-bit monotonic retry deadline is synchronized on 32-bit ESP targets. */
 static portMUX_TYPE retry_lock = portMUX_INITIALIZER_UNLOCKED;
 static int64_t retry_after_us;
+
+typedef struct
+{
+    rfscout_event_type_t type;
+    int32_t value;
+} storage_transition_t;
+
+/* Queue real state transitions in order, without performing media I/O or notifying
+   synchronous observers while holding the storage/SPI locks. */
+static storage_transition_t pending_events[ STORAGE_EVENT_QUEUE_CAPACITY ];
+static size_t pending_event_count;
+static portMUX_TYPE event_lock = portMUX_INITIALIZER_UNLOCKED;
+static bool mount_attempt_recorded;
+static bool recovery_confirmation_pending;
+
+static void storage_queue_event( rfscout_event_type_t a_type, esp_err_t a_result )
+{
+    portENTER_CRITICAL( &event_lock );
+    if( pending_event_count == STORAGE_EVENT_QUEUE_CAPACITY )
+    {
+        /* A bounded ring of transitions: retain the newest event on overflow. */
+        for( size_t i = 1U; i < pending_event_count; ++i )
+            pending_events[ i - 1U ] = pending_events[ i ];
+        --pending_event_count;
+    }
+    pending_events[ pending_event_count++ ] =
+        ( storage_transition_t ){ .type = a_type, .value = (int32_t)a_result };
+    portEXIT_CRITICAL( &event_lock );
+}
+
+static void storage_record_mount_result( esp_err_t a_result )
+{
+    if( ESP_OK == a_result )
+    {
+        if( mount_attempt_recorded )
+        {
+            /* Only publish recovery after a real post-mount card status probe. */
+            recovery_confirmation_pending = true;
+        }
+        else
+        {
+            storage_queue_event( RFSCOUT_EVENT_STORAGE_MOUNTED, ESP_OK );
+        }
+        mount_attempt_recorded = true;
+    }
+    else if( !mount_attempt_recorded )
+    {
+        storage_queue_event( RFSCOUT_EVENT_STORAGE_MOUNT_FAILED, a_result );
+        mount_attempt_recorded = true;
+    }
+}
+
+void storage_dispatch_events( void )
+{
+    storage_transition_t events[ STORAGE_EVENT_QUEUE_CAPACITY ];
+    size_t count;
+    portENTER_CRITICAL( &event_lock );
+    count = pending_event_count;
+    for( size_t i = 0U; i < count; ++i )
+        events[ i ] = pending_events[ i ];
+    pending_event_count = 0U;
+    portEXIT_CRITICAL( &event_lock );
+
+    for( size_t i = 0U; i < count; ++i )
+        rfscout_event_emit( events[ i ].type, RFSCOUT_EVENT_SOURCE_SYSTEM, events[ i ].value );
+}
 
 bool storage_retry_delayed( void )
 {
@@ -53,9 +120,11 @@ static void storage_start_cooldown( void )
 void storage_note_media_failure( void )
 {
     /* A failed SD transaction invalidates the mounted card, unlike bus contention. */
-    if( mounted )
+    if( mounted && !media_lost )
     {
         media_lost = true;
+        recovery_confirmation_pending = false;
+        storage_queue_event( RFSCOUT_EVENT_STORAGE_LOST, ESP_ERR_NOT_FOUND );
     }
     storage_start_cooldown();
 }
@@ -128,6 +197,7 @@ esp_err_t storage_init( void )
     if( ESP_OK != bus_result )
     {
         storage_start_cooldown();
+        storage_record_mount_result( bus_result );
         ESP_LOGW( TAG, "shared SPI bus unavailable: %s", esp_err_to_name( bus_result ) );
         return bus_result;
     }
@@ -167,6 +237,7 @@ esp_err_t storage_init( void )
     {
         card = NULL;
         storage_start_cooldown();
+        storage_record_mount_result( result );
         storage_io_release();
         ESP_LOGW( TAG, "SD card unavailable: %s", esp_err_to_name( result ) );
         return result;
@@ -174,6 +245,7 @@ esp_err_t storage_init( void )
 
     mounted = true;
     media_lost = false;
+    storage_record_mount_result( ESP_OK );
     ESP_LOGI( TAG,
               "SD card mounted: %llu MiB",
               (unsigned long long)( ( (uint64_t)card->csd.capacity * card->csd.sector_size ) /
@@ -237,6 +309,11 @@ esp_err_t storage_probe_card( void )
     }
 
     const esp_err_t result = sdmmc_get_status( card );
+    if( ESP_OK == result && recovery_confirmation_pending )
+    {
+        recovery_confirmation_pending = false;
+        storage_queue_event( RFSCOUT_EVENT_STORAGE_RECOVERED, ESP_OK );
+    }
     if( ESP_OK != result )
     {
         storage_note_media_failure();
@@ -246,11 +323,6 @@ esp_err_t storage_probe_card( void )
     }
     storage_io_release();
 
-    if( ESP_OK != result )
-    {
-        rfscout_event_emit(
-            RFSCOUT_EVENT_STORAGE_MOUNT_FAILED, RFSCOUT_EVENT_SOURCE_SYSTEM, (int32_t)result );
-    }
     return result;
 }
 
