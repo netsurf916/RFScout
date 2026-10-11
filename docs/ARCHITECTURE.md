@@ -218,7 +218,7 @@ Durable state uses logical owner/key namespaces:
 
 - `system/config` — ordinary device-wide policy such as display/power behavior, themes, timezone/clock presentation, SD logging, app enablement/startup choice, global audio policy/gains, and alert policy;
 - `app/<persistence_key>/config` — descriptor-confined app preference overrides;
-- `system/time.policy` — bounded Auto/Manual wall-clock policy;
+- Legacy `system/time.policy` entries are ignored; automatic clock synchronization requires no stored mode.
 - `system/breadcrumbs` — breadcrumb enablement/retention policy; and
 - additional bounded `system/*` or app-scoped records owned by their service/application.
 
@@ -249,9 +249,9 @@ The retired monolithic internal `rfscout.json` representation is not authoritati
 
 ## Time, location, and sleep state
 
-`device_time` owns RTC-backed wall-clock validity/source, Auto/Manual policy, timezone conversion, and manual time independently from any location provider.
+`device_time` owns RTC-backed wall-clock validity/source, automatic GPS/NTP synchronization, timezone conversion, and manual time independently from any location provider.
 
-The current T-Embed profile advertises optional external UART GPS on GPIO43/44. A compatible GPS/location provider remains capability-gated. Home infrastructure networking can provide NTP after DHCP; NTP synchronization does not change the stored Auto/Manual policy.
+The current T-Embed profile advertises optional external UART GPS on GPIO43/44. A compatible GPS/location provider remains capability-gated. Home infrastructure networking can provide NTP after DHCP; GPS and NTP update system time automatically; manual time entry is disabled while GPS UTC is fresh.
 
 Deep sleep loses ordinary RAM, so supported profiles keep a small RTC-backed session envelope separate from persistent configuration. Current state preserves active application and input-lock state; menus, edit state, queued sounds, and active Recorder operations are not reconstructed.
 
