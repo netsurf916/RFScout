@@ -83,15 +83,17 @@ typedef struct
 
 #define GPS_POLICY_TIMEOUT_US 2000000LL
 #define GPS_POLICY_MIN_CHANGE_US 30000000LL
-/* PMTK requests are allowed only after a valid NMEA stream locks UART ownership. */
+#define GPS_UBX_MAX_PAYLOAD 128U
+
+/* GP-20U7 advertises u-blox protocol. Only configure a receiver that
+   identifies itself as u-blox 7; leave unidentified modules in NMEA mode. */
 typedef enum
 {
     GPS_POLICY_IDLE = 0,
     GPS_POLICY_WAIT_VERSION,
-    GPS_POLICY_WAIT_OUTPUT,
     GPS_POLICY_WAIT_RATE,
-    GPS_POLICY_WAIT_OUTPUT_ACK,
     GPS_POLICY_ACTIVE,
+    GPS_POLICY_WAIT_ACK,
     GPS_POLICY_UNSUPPORTED
 } gps_policy_state_t;
 
@@ -102,134 +104,162 @@ static int64_t policy_speed_since_us;
 static int policy_desired_interval_ms = 1000;
 static int policy_current_interval_ms = 1000;
 static int policy_pending_interval_ms;
-static bool policy_rate_pending;
-static bool policy_output_acknowledged;
-static char policy_version[ 88 ];
+static uint8_t ubx_frame[ GPS_UBX_MAX_PAYLOAD + 8U ];
+static size_t ubx_length;
+static size_t ubx_expected;
 
-static bool policy_send( const char *a_payload )
+static bool policy_send( uint8_t a_class, uint8_t a_id, const uint8_t *a_payload, size_t a_size )
 {
-    char sentence[ 148 ];
-    uint8_t checksum = 0U;
-    for( const char *cursor = a_payload; '\0' != *cursor; ++cursor )
-    {
-        checksum ^= (uint8_t)*cursor;
-    }
-    const int length =
-        snprintf( sentence, sizeof( sentence ), "$%s*%02X\r\n", a_payload, checksum );
-    if( length <= 0 || (size_t)length >= sizeof( sentence ) )
+    if( a_size > GPS_UBX_MAX_PAYLOAD )
     {
         return false;
     }
-    const int written = uart_write_bytes( GPS_UART, sentence, (size_t)length );
-    ESP_LOGI( TAG, "GPS policy TX %s (%d/%d bytes)", a_payload, written, length );
-    return written == length;
+    uint8_t frame[ GPS_UBX_MAX_PAYLOAD + 8U ] = { 0xB5, 0x62, a_class, a_id,
+                                                 (uint8_t)a_size, (uint8_t)( a_size >> 8U ) };
+    if( a_size > 0U )
+    {
+        memcpy( frame + 6U, a_payload, a_size );
+    }
+    uint8_t ck_a = 0U;
+    uint8_t ck_b = 0U;
+    for( size_t index = 2U; index < a_size + 6U; ++index )
+    {
+        ck_a = (uint8_t)( ck_a + frame[ index ] );
+        ck_b = (uint8_t)( ck_b + ck_a );
+    }
+    frame[ a_size + 6U ] = ck_a;
+    frame[ a_size + 7U ] = ck_b;
+    const int written = uart_write_bytes( GPS_UART, frame, a_size + 8U );
+    ESP_LOGI( TAG, "GPS UBX TX class=%02X id=%02X length=%u bytes=%d",
+              a_class, a_id, (unsigned)a_size, written );
+    return written == (int)( a_size + 8U );
 }
 
 static void policy_begin( void )
 {
     policy_state = GPS_POLICY_WAIT_VERSION;
     policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
-    ESP_LOGI( TAG, "GPS policy probing receiver at %d baud", active_baud );
-    if( !policy_send( "PMTK605" ) )
+    ESP_LOGI( TAG, "GPS GP-20U7 probe: UBX MON-VER at %d baud", active_baud );
+    if( !policy_send( 0x0A, 0x04, NULL, 0U ) )
     {
         policy_state = GPS_POLICY_UNSUPPORTED;
-        ESP_LOGW( TAG, "GPS policy version query failed; generic NMEA only" );
     }
 }
 
-/* Called only for checksum-validated proprietary responses. */
-static void policy_response( const char *a_type, const char *a_fields )
+static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_data, size_t a_size )
 {
-    if( 0 == strcmp( a_type, "PMTK705" ) && GPS_POLICY_WAIT_VERSION == policy_state )
+    if( 0x0A == a_class && 0x04 == a_id && GPS_POLICY_WAIT_VERSION == policy_state )
     {
-        snprintf( policy_version, sizeof( policy_version ), "%s", a_fields );
-        ESP_LOGI( TAG, "GPS receiver PMTK firmware: %s", policy_version );
-        policy_state = GPS_POLICY_WAIT_OUTPUT;
-        policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
-        if( !policy_send( "PMTK414" ) )
+        if( a_size < 40U )
         {
+            ESP_LOGW( TAG, "GPS UBX MON-VER response too short: %u", (unsigned)a_size );
             policy_state = GPS_POLICY_UNSUPPORTED;
+            return;
         }
-    }
-    else if( 0 == strcmp( a_type, "PMTK514" ) && GPS_POLICY_WAIT_OUTPUT == policy_state )
-    {
-        ESP_LOGI( TAG, "GPS existing NMEA configuration: %s", a_fields );
+        char software[ 31 ];
+        char hardware[ 11 ];
+        memcpy( software, a_data, 30U );
+        memcpy( hardware, a_data + 30U, 10U );
+        software[ 30 ] = '\0';
+        hardware[ 10 ] = '\0';
+        ESP_LOGI( TAG, "GPS UBX MON-VER software=%s hardware=%s", software, hardware );
+        /* Restrict configuration to the GP-20U7's expected u-blox 7 generation.
+           Other UBX-capable receivers remain read-only until verified. */
+        if( NULL == strstr( software, "7." ) && NULL == strstr( software, "7 " ) )
+        {
+            ESP_LOGW( TAG, "GPS firmware not identified as u-blox 7; NMEA fallback" );
+            policy_state = GPS_POLICY_UNSUPPORTED;
+            return;
+        }
         policy_state = GPS_POLICY_WAIT_RATE;
         policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
-        if( !policy_send( "PMTK400" ) )
+        (void)policy_send( 0x06, 0x08, NULL, 0U );
+    }
+    else if( 0x06 == a_class && 0x08 == a_id && GPS_POLICY_WAIT_RATE == policy_state &&
+             a_size == 6U )
+    {
+        const unsigned interval = (unsigned)a_data[ 0 ] | ( (unsigned)a_data[ 1 ] << 8U );
+        const unsigned navigation = (unsigned)a_data[ 2 ] | ( (unsigned)a_data[ 3 ] << 8U );
+        ESP_LOGI( TAG, "GPS UBX CFG-RATE measurement=%u ms navigation=%u", interval, navigation );
+        if( 0U == interval || 0U == navigation || interval * navigation > 10000U )
         {
             policy_state = GPS_POLICY_UNSUPPORTED;
+            return;
         }
+        policy_current_interval_ms = (int)( interval * navigation );
+        policy_state = GPS_POLICY_ACTIVE;
+        ESP_LOGI( TAG, "GPS GP-20U7 policy ready: current interval %d ms", policy_current_interval_ms );
     }
-    else if( 0 == strcmp( a_type, "PMTK500" ) && GPS_POLICY_WAIT_RATE == policy_state )
+    else if( 0x05 == a_class && ( 0x01 == a_id || 0x00 == a_id ) &&
+             GPS_POLICY_WAIT_ACK == policy_state && a_size >= 2U &&
+             0x06 == a_data[ 0 ] && 0x08 == a_data[ 1 ] )
     {
-        ESP_LOGI( TAG, "GPS existing fix interval: %s ms", a_fields );
-        const int reported = atoi( a_fields );
-        if( reported >= 100 && reported <= 10000 )
+        if( 0x01 == a_id )
         {
-            policy_current_interval_ms = reported;
+            policy_current_interval_ms = policy_pending_interval_ms;
+            policy_state = GPS_POLICY_ACTIVE;
+            ESP_LOGI( TAG, "GPS UBX CFG-RATE accepted: interval=%d ms", policy_current_interval_ms );
         }
-        /* Keep GGA/RMC each fix, GSA each fix and GSV once per five fixes.
-           This is the MT3337 19-field PMTK314 layout. Never change UART baud. */
-        policy_state = GPS_POLICY_WAIT_OUTPUT_ACK;
-        policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
-        if( !policy_send( "PMTK314,0,1,0,1,1,5,0,0,0,0,0,0,0,0,0,0,0,0,0" ) )
+        else
         {
             policy_state = GPS_POLICY_UNSUPPORTED;
+            ESP_LOGW( TAG, "GPS UBX CFG-RATE rejected; retaining generic NMEA" );
         }
     }
-    else if( 0 == strcmp( a_type, "PMTK001" ) )
+}
+
+static void ubx_feed( uint8_t a_byte )
+{
+    if( 0U == ubx_length && 0xB5 != a_byte )
     {
-        int command = 0;
-        int result = 0;
-        if( 2 == sscanf( a_fields, "%d,%d", &command, &result ) )
+        return;
+    }
+    if( 1U == ubx_length && 0x62 != a_byte )
+    {
+        ubx_length = 0U;
+        return;
+    }
+    ubx_frame[ ubx_length++ ] = a_byte;
+    if( 6U == ubx_length )
+    {
+        const size_t payload = (size_t)ubx_frame[ 4 ] | ( (size_t)ubx_frame[ 5 ] << 8U );
+        if( payload > GPS_UBX_MAX_PAYLOAD )
         {
-            ESP_LOGI( TAG, "GPS PMTK acknowledgment command=%d result=%d", command, result );
-            if( 314 == command && GPS_POLICY_WAIT_OUTPUT_ACK == policy_state )
-            {
-                policy_output_acknowledged = 3 == result;
-                policy_state =
-                    policy_output_acknowledged ? GPS_POLICY_ACTIVE : GPS_POLICY_UNSUPPORTED;
-                ESP_LOGI( TAG,
-                          "GPS policy NMEA configuration %s",
-                          policy_output_acknowledged ? "accepted"
-                                                     : "rejected; adaptive rate disabled" );
-            }
-            if( 220 == command && policy_rate_pending )
-            {
-                if( 3 == result )
-                {
-                    policy_current_interval_ms = policy_pending_interval_ms;
-                }
-                ESP_LOGI( TAG,
-                          "GPS policy update interval result=%d configured=%d ms",
-                          result,
-                          policy_current_interval_ms );
-                policy_rate_pending = false;
-                if( 3 != result )
-                {
-                    policy_state = GPS_POLICY_UNSUPPORTED;
-                    ESP_LOGW( TAG, "GPS policy rate rejected; adaptive changes disabled" );
-                }
-            }
+            ESP_LOGW( TAG, "GPS UBX response larger than parser buffer: %u", (unsigned)payload );
+            ubx_length = 0U;
+            return;
         }
+        ubx_expected = payload + 8U;
+    }
+    if( ubx_expected >= 8U && ubx_length == ubx_expected )
+    {
+        uint8_t ck_a = 0U;
+        uint8_t ck_b = 0U;
+        for( size_t index = 2U; index + 2U < ubx_length; ++index )
+        {
+            ck_a = (uint8_t)( ck_a + ubx_frame[ index ] );
+            ck_b = (uint8_t)( ck_b + ck_a );
+        }
+        if( ck_a == ubx_frame[ ubx_length - 2U ] && ck_b == ubx_frame[ ubx_length - 1U ] )
+        {
+            policy_response( ubx_frame[ 2 ], ubx_frame[ 3 ], ubx_frame + 6U,
+                             ubx_length - 8U );
+        }
+        else
+        {
+            ESP_LOGW( TAG, "GPS UBX response checksum invalid" );
+        }
+        ubx_length = 0U;
+        ubx_expected = 0U;
     }
 }
 
 static void policy_poll( int64_t a_now )
 {
-    if( GPS_POLICY_WAIT_VERSION <= policy_state && GPS_POLICY_WAIT_OUTPUT_ACK >= policy_state &&
-        a_now >= policy_deadline_us )
+    if( ( GPS_POLICY_WAIT_VERSION == policy_state || GPS_POLICY_WAIT_RATE == policy_state ||
+          GPS_POLICY_WAIT_ACK == policy_state ) && a_now >= policy_deadline_us )
     {
-        ESP_LOGW( TAG, "GPS policy response timeout state=%d; retaining NMEA", (int)policy_state );
-        policy_state = GPS_POLICY_UNSUPPORTED;
-    }
-    if( policy_rate_pending && a_now - policy_last_change_us >= GPS_POLICY_TIMEOUT_US )
-    {
-        ESP_LOGW( TAG,
-                  "GPS policy rate acknowledgment timeout for %d ms; retaining last confirmed rate",
-                  policy_pending_interval_ms );
-        policy_rate_pending = false;
+        ESP_LOGW( TAG, "GPS UBX policy timeout state=%d; generic NMEA retained", (int)policy_state );
         policy_state = GPS_POLICY_UNSUPPORTED;
     }
     if( GPS_POLICY_ACTIVE != policy_state || !snapshot.speed_valid ||
@@ -238,19 +268,16 @@ static void policy_poll( int64_t a_now )
         policy_speed_since_us = 0;
         return;
     }
-    /* Speed hysteresis: 1 Hz below 3 mph, 2 Hz above 3, 5 Hz above 10,
-       10 Hz only above 35 mph. Downshift requires a longer stable interval. */
+    /* GP-20U7 is specified at 1 Hz. At 9600 baud, limit experimental
+       adaptive operation to 2 Hz; higher speeds require hardware validation. */
     const float mph = snapshot.speed_mps * 2.23693629f;
-    const int target = mph >= 35.0f && active_baud >= 38400   ? 100
-                       : mph >= 10.0f && active_baud >= 19200 ? 200
-                       : mph >= 3.0f                          ? 500
-                                                              : 1000;
+    const int target = mph >= 3.0f ? 500 : 1000;
     if( target != policy_desired_interval_ms )
     {
         policy_desired_interval_ms = target;
         policy_speed_since_us = a_now;
     }
-    if( target == policy_current_interval_ms || policy_rate_pending )
+    if( target == policy_current_interval_ms )
     {
         return;
     }
@@ -264,14 +291,14 @@ static void policy_poll( int64_t a_now )
     {
         return;
     }
-    char payload[ 32 ];
-    snprintf( payload, sizeof( payload ), "PMTK220,%d", target );
-    if( policy_send( payload ) )
+    const uint8_t rate[ 6 ] = { (uint8_t)target, (uint8_t)( target >> 8U ), 1U, 0U, 1U, 0U };
+    if( policy_send( 0x06, 0x08, rate, sizeof( rate ) ) )
     {
         policy_pending_interval_ms = target;
-        policy_rate_pending = true;
         policy_last_change_us = a_now;
-        ESP_LOGI( TAG, "GPS policy requested %d ms fix interval at %.1f mph", target, (double)mph );
+        policy_state = GPS_POLICY_WAIT_ACK;
+        policy_deadline_us = a_now + GPS_POLICY_TIMEOUT_US;
+        ESP_LOGI( TAG, "GPS GP-20U7 requested %d ms at %.1f mph", target, (double)mph );
     }
 }
 
@@ -673,11 +700,6 @@ static void parse_line( char *a_line )
     }
     *comma = '\0';
     const size_t type_length = strlen( payload );
-    if( 0 == strncmp( payload, "PMTK", 4U ) )
-    {
-        policy_response( payload, comma + 1 );
-        return;
-    }
     if( type_length >= 3U && 0 == strcmp( payload + type_length - 3U, "RMC" ) )
     {
         lock_active_baud();
@@ -735,8 +757,8 @@ esp_err_t gps_init( void )
     satellites_updated_us = 0;
     baud_locked = false;
     policy_state = GPS_POLICY_IDLE;
-    policy_rate_pending = false;
-    policy_output_acknowledged = false;
+    ubx_length = 0U;
+    ubx_expected = 0U;
     policy_last_change_us = 0;
     policy_speed_since_us = 0;
     policy_desired_interval_ms = 1000;
@@ -881,7 +903,6 @@ void gps_poll( void )
         receiver_detected = false;
         baud_locked = false;
         policy_state = GPS_POLICY_IDLE;
-        policy_rate_pending = false;
         snapshot.available = false;
         snapshot.location_valid = false;
         snapshot.time_valid = false;
