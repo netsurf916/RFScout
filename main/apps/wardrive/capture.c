@@ -323,9 +323,8 @@ static size_t build_radio_packet( const capture_packet_t *a_packet, uint8_t *a_o
         memset( a_output, 0, 13U );
         le16( a_output + 2U, 13U );
         le32( a_output + 4U, ( 1U << 3U ) | ( 1U << 5U ) );
-        const uint16_t frequency = a_packet->channel == 14U
-                                       ? 2484U
-                                       : (uint16_t)( 2407U + a_packet->channel * 5U );
+        const uint16_t frequency =
+            a_packet->channel == 14U ? 2484U : (uint16_t)( 2407U + a_packet->channel * 5U );
         le16( a_output + 8U, frequency );
         le16( a_output + 10U, 0x0080U );
         a_output[ 12 ] = (uint8_t)a_packet->rssi;
@@ -337,8 +336,8 @@ static size_t build_radio_packet( const capture_packet_t *a_packet, uint8_t *a_o
        from NimBLE's exposed report fields; payload is kept byte-for-byte. */
     const size_t event_size = (size_t)a_packet->length + 12U;
     memset( a_output, 0, 19U );
-    a_output[ 3 ] = 1U; /* received */
-    a_output[ 4 ] = 4U; /* HCI event packet */
+    a_output[ 3 ] = 1U;    /* received */
+    a_output[ 4 ] = 4U;    /* HCI event packet */
     a_output[ 5 ] = 0x3EU; /* LE meta event */
     a_output[ 6 ] = (uint8_t)event_size;
     a_output[ 7 ] = 2U; /* LE Advertising Report */
@@ -407,8 +406,7 @@ static bool write_packet( const capture_packet_t *a_packet )
     le32( header + 20U, (uint32_t)frame_length );
     le32( header + 24U, (uint32_t)frame_length );
     uint8_t zero[ 4 ] = { 0 };
-    if( !write_bytes( header, sizeof( header ) ) ||
-        !write_bytes( frame, frame_length ) ||
+    if( !write_bytes( header, sizeof( header ) ) || !write_bytes( frame, frame_length ) ||
         ( padded > frame_length && !write_bytes( zero, padded - frame_length ) ) )
     {
         return false;
@@ -420,8 +418,7 @@ static bool write_packet( const capture_packet_t *a_packet )
         le16( opt_header + 2U, (uint16_t)comment_size );
         if( !write_bytes( opt_header, sizeof( opt_header ) ) ||
             !write_bytes( comment, comment_size ) ||
-            ( comment_pad > comment_size &&
-              !write_bytes( zero, comment_pad - comment_size ) ) ||
+            ( comment_pad > comment_size && !write_bytes( zero, comment_pad - comment_size ) ) ||
             !write_bytes( zero, sizeof( zero ) ) )
         {
             return false;
@@ -480,7 +477,7 @@ esp_err_t wardrive_capture_start( const wardrive_config_t *a_config )
         return ESP_ERR_INVALID_STATE;
     }
     config = *a_config;
-    stats = (wardrive_stats_t){ 0 };
+    stats = ( wardrive_stats_t ){ 0 };
     stopping = false;
     accepting = false;
     capture_files_t files = { 0 };
@@ -488,10 +485,9 @@ esp_err_t wardrive_capture_start( const wardrive_config_t *a_config )
     {
         next_segment = files.found ? files.newest + 1U : 0U;
     }
-    packet_pool = heap_caps_calloc( CAPTURE_QUEUE_COUNT, sizeof( *packet_pool ),
-                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
-    writer_frame = heap_caps_malloc( CAPTURE_MAX_FRAME + 20U,
-                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
+    packet_pool = heap_caps_calloc(
+        CAPTURE_QUEUE_COUNT, sizeof( *packet_pool ), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
+    writer_frame = heap_caps_malloc( CAPTURE_MAX_FRAME + 20U, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
     pending_queue = xQueueCreate( CAPTURE_QUEUE_COUNT, sizeof( capture_packet_t * ) );
     free_queue = xQueueCreate( CAPTURE_QUEUE_COUNT, sizeof( capture_packet_t * ) );
     if( packet_pool == NULL || writer_frame == NULL || pending_queue == NULL || free_queue == NULL )
@@ -504,8 +500,8 @@ esp_err_t wardrive_capture_start( const wardrive_config_t *a_config )
         capture_packet_t *packet = &packet_pool[ i ];
         (void)xQueueSend( free_queue, &packet, 0U );
     }
-    if( pdPASS != xTaskCreate( writer_main, "wardrive_writer", CAPTURE_TASK_STACK, NULL,
-                              2U, &capture_task ) )
+    if( pdPASS !=
+        xTaskCreate( writer_main, "wardrive_writer", CAPTURE_TASK_STACK, NULL, 2U, &capture_task ) )
     {
         wardrive_capture_stop();
         return ESP_ERR_NO_MEM;
@@ -516,8 +512,11 @@ esp_err_t wardrive_capture_start( const wardrive_config_t *a_config )
         true, config.fixed_channel ? config.channel : 0U, config.dwell_ms );
     accepting = true;
     stats.recording = true;
-    ESP_LOGI( TAG, "capture started: Wi-Fi=%u BLE=%u file=%lu max_files=%u",
-              config.wifi, config.ble, (unsigned long)config.file_limit_bytes,
+    ESP_LOGI( TAG,
+              "capture started: Wi-Fi=%u BLE=%u file=%lu max_files=%u",
+              config.wifi,
+              config.ble,
+              (unsigned long)config.file_limit_bytes,
               (unsigned)config.max_files );
     return ESP_OK;
 }
