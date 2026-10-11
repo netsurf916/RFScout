@@ -568,8 +568,15 @@ void wardrive_capture_stop( void )
 {
     accepting = false;
     /* Stop and drain radio callbacks before releasing capture queues and packet pool. */
-    (void)radio_monitor_stop();
-    (void)ble_monitor_stop();
+    const esp_err_t wifi_stop = radio_monitor_stop();
+    const esp_err_t ble_stop = ble_monitor_stop();
+    if( ESP_OK != wifi_stop || ESP_OK != ble_stop )
+    {
+        /* Never free capture buffers while a provider may still be invoking a consumer. */
+        ESP_LOGE( TAG, "radio callback quiescence failed; preserving capture memory" );
+        stats.storage_error = true;
+        return;
+    }
     /* Framework owns the consumer bindings across the session lifetime. */
     radio_monitor_set_capture_policy( false, 0U, 0U );
     stopping = true;
