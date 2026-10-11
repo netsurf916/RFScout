@@ -293,8 +293,9 @@ static void on_sync( void )
     }
     else
     {
+        /* The caller waiting in ble_monitor_start() owns initial scan startup.
+           Do not race it from the NimBLE host synchronization callback. */
         host_synced = true;
-        start_scan();
     }
 }
 
