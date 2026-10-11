@@ -1262,7 +1262,7 @@ static bool time_menu_input( bool a_pressed, int a_delta )
             accepted = commit_manual_time();
         }
         if( TIME_MENU_TIMEZONE == time_selected_item ||
-            ( RFSCOUT_TIME_MODE_MANUAL == device_time_mode() &&
+            ( !device_time_gps_available() &&
               time_selected_item >= TIME_MENU_YEAR ) )
         {
             time_editing = !time_editing;
