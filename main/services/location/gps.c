@@ -102,6 +102,9 @@ static gps_policy_state_t policy_state;
 static int64_t policy_deadline_us;
 static int64_t policy_last_change_us;
 static int64_t policy_speed_since_us;
+static double policy_filtered_speed_mps;
+static int64_t policy_filtered_speed_updated_us;
+static bool policy_filtered_speed_valid;
 static int policy_desired_interval_ms = 1000;
 static int policy_current_interval_ms = 1000;
 static int policy_pending_interval_ms;
@@ -438,13 +441,13 @@ static void policy_poll( int64_t a_now )
             policy_state = GPS_POLICY_UNSUPPORTED;
         }
     }
-    if( GPS_POLICY_ACTIVE != policy_state || !snapshot.speed_valid ||
-        a_now - speed_updated_us > (int64_t)GPS_FIX_STALE_MS * 1000LL )
+    if( GPS_POLICY_ACTIVE != policy_state || !policy_filtered_speed_valid ||
+        a_now - policy_filtered_speed_updated_us > (int64_t)GPS_FIX_STALE_MS * 1000LL )
     {
         policy_speed_since_us = 0;
         return;
     }
-    const float mph = snapshot.speed_mps * 2.23693629f;
+    const float mph = (float)( policy_filtered_speed_mps * 2.23693629 );
     /* Keep the upper bound at 4 Hz while UART remains at the detected 9600 baud.
        All thresholds use the same stability and cooldown checks below. */
     const int target = mph >= 12.0f ? 250 : mph >= 7.0f ? 333 : mph >= 3.0f ? 500 : 1000;
@@ -784,6 +787,24 @@ static void parse_rmc( char *a_payload )
     {
         snapshot.speed_mps = (float)( speed_knots * 0.514444 );
         speed_updated_us = esp_timer_get_time();
+        /* 0.9 old + 0.1 new at 1 Hz, normalized for faster NMEA intervals. */
+        if( !policy_filtered_speed_valid ||
+            speed_updated_us - policy_filtered_speed_updated_us >
+                (int64_t)GPS_FIX_STALE_MS * 1000LL )
+        {
+            policy_filtered_speed_mps = speed_knots * 0.514444;
+        }
+        else
+        {
+            const double elapsed_seconds =
+                (double)( speed_updated_us - policy_filtered_speed_updated_us ) / 1000000.0;
+            const double retention = pow( 0.9, elapsed_seconds );
+            policy_filtered_speed_mps =
+                retention * policy_filtered_speed_mps +
+                ( 1.0 - retention ) * speed_knots * 0.514444;
+        }
+        policy_filtered_speed_updated_us = speed_updated_us;
+        policy_filtered_speed_valid = true;
     }
     if( valid_position && valid_speed )
     {
@@ -939,6 +960,9 @@ esp_err_t gps_init( void )
     casic_expected = 0U;
     policy_last_change_us = 0;
     policy_speed_since_us = 0;
+    policy_filtered_speed_mps = 0.0;
+    policy_filtered_speed_updated_us = 0;
+    policy_filtered_speed_valid = false;
     policy_desired_interval_ms = 1000;
     policy_current_interval_ms = 1000;
     receiver_detected = false;
