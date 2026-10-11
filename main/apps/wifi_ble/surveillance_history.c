@@ -4,6 +4,7 @@
     SPDX-License-Identifier: MIT
 */
 #include "surveillance_history.h"
+#include "surveillance.h"
 #include "app_session.h"
 #include "media_store.h"
 
@@ -74,21 +75,39 @@ void surveillance_history_record( const observation_location_event_t *a_event )
     xSemaphoreGive( history_lock );
 }
 
+/* Wi-Fi records use type zero; BLE public addresses share that value. */
+static const char *address_type_name( uint8_t a_type )
+{
+    switch( a_type )
+    {
+        case 0U:
+            return "public_or_wifi";
+        case 1U:
+            return "random";
+        case 2U:
+            return "public_identity";
+        case 3U:
+            return "random_identity";
+        default:
+            return "unknown";
+    }
+}
+
 static esp_err_t append_point( const rfscout_media_file_t *a_file, const history_point_t *a_point )
 {
     char line[ 256 ];
     const int length = snprintf( line,
                                  sizeof( line ),
-                                 "{\"type\":%u,\"mac\":\"%02X%02X%02X%02X%02X%02X\",\"class\":%u,"
+                                 "{\"type\":\"%s\",\"mac\":\"%02X%02X%02X%02X%02X%02X\",\"class\":\"%s\","
                                  "\"lat\":%.7f,\"lon\":%.7f,\"utc\":%lld,\"seen\":%lu}\n",
-                                 (unsigned)a_point->address_type,
+                                 address_type_name( a_point->address_type ),
                                  a_point->address[ 0 ],
                                  a_point->address[ 1 ],
                                  a_point->address[ 2 ],
                                  a_point->address[ 3 ],
                                  a_point->address[ 4 ],
                                  a_point->address[ 5 ],
-                                 (unsigned)a_point->classification,
+                                 surveillance_name( a_point->classification ),
                                  a_point->latitude,
                                  a_point->longitude,
                                  (long long)a_point->utc_epoch,
