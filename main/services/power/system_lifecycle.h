@@ -3,7 +3,8 @@
 #ifndef _RFSCOUT_SYSTEM_LIFECYCLE_H_
 #define _RFSCOUT_SYSTEM_LIFECYCLE_H_
 #include <stdbool.h>
-typedef enum {
+typedef enum
+{
     SYSTEM_LIFECYCLE_DEEP_SLEEP = 0,
     SYSTEM_LIFECYCLE_POWER_OFF
 } system_lifecycle_target_t;
