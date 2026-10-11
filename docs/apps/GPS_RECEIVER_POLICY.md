@@ -20,7 +20,7 @@ Hardware confirmed responses: CFG-PRT (06/00) and CFG-RATE (06/04), with initial
 
 Generic NMEA position/time reception remains available when CASIC discovery or rate adjustment is unsupported. The UART remains at its detected baud (9600 on the tested module).
 
-These diagnostics are currently serial ESP-IDF logs, not separately stored as structured SD events.
+One-off discovery and rate-change transitions are also recorded as JSON lines with `type=gps_policy` in the normal SD log (`logs/rfscout-*.log`), regardless of the active app. Events include `transport_detected`, `rate_detected`, `rate_requested`, `rate_write_ack`, `rate_verified`, `rate_verify_mismatch`, `rate_write_rejected`, `rate_timeout`, and discovery/query failures; fields include `requested_ms`, `actual_ms`, and `baud`. Packet hex dumps remain serial-only. SD logging is asynchronous and best-effort; allow time for log flushing before removing power or the SD card.
 
 ## References
 
