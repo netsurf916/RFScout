@@ -206,6 +206,11 @@ static void policy_response( const char *a_type, const char *a_fields )
                           result,
                           policy_current_interval_ms );
                 policy_rate_pending = false;
+                if( 3 != result )
+                {
+                    policy_state = GPS_POLICY_UNSUPPORTED;
+                    ESP_LOGW( TAG, "GPS policy rate rejected; adaptive changes disabled" );
+                }
             }
         }
     }
@@ -255,7 +260,8 @@ static void policy_poll( int64_t a_now )
         policy_speed_since_us = a_now;
     }
     if( a_now - policy_speed_since_us < stable_us ||
-        a_now - policy_last_change_us < GPS_POLICY_MIN_CHANGE_US )
+        ( 0 != policy_last_change_us &&
+          a_now - policy_last_change_us < GPS_POLICY_MIN_CHANGE_US ) )
     {
         return;
     }
