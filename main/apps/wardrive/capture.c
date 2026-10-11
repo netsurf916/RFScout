@@ -4,6 +4,7 @@
 #include "ble_monitor.h"
 #include "device_time.h"
 #include "gps.h"
+#include "log_writer.h"
 #include "media_store.h"
 #include "radio_monitor.h"
 
@@ -24,7 +25,6 @@
 #define CAPTURE_FILE_MIN ( 1024U * 1024U )
 #define CAPTURE_FILE_MAX ( 128U * 1024U * 1024U )
 #define CAPTURE_GPS_MAX_AGE_MS 5000U
-#define CAPTURE_FREESPACE_RESERVE ( 1024ULL * 1024ULL )
 
 typedef struct
 {
@@ -194,7 +194,7 @@ static bool open_segment( void )
     }
     uint64_t free_bytes = 0U;
     if( ESP_OK != media_store_space( NULL, &free_bytes ) ||
-        free_bytes <= CAPTURE_FREESPACE_RESERVE )
+        free_bytes < RFSCOUT_LOG_FREE_RESERVE + config.file_limit_bytes )
     {
         return false;
     }
