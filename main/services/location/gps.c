@@ -364,6 +364,18 @@ static void policy_scan_step( int64_t a_now )
     }
     if( policy_current_interval_ms != policy_scan_restore_ms )
     {
+        const int restore_index = policy_rate_index( policy_scan_restore_ms );
+        if( restore_index >= 0 && 2U == policy_rate_support[ restore_index ] )
+        {
+            policy_rate_scan = false;
+            policy_speed_since_us = 0;
+            policy_last_change_us = a_now;
+            ESP_LOGW( TAG, "GPS CASIC rate scan completed without restore: %d ms rejected",
+                      policy_scan_restore_ms );
+            policy_log_event( "rate_scan_restore_rejected", policy_scan_restore_ms,
+                              policy_current_interval_ms );
+            return;
+        }
         if( !policy_request_rate( policy_scan_restore_ms, a_now ) )
         {
             policy_rate_scan = false;
@@ -476,7 +488,20 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
             policy_state = GPS_POLICY_ACTIVE;
             if( policy_rate_scan )
             {
-                policy_scan_next_us = esp_timer_get_time() + GPS_POLICY_PROBE_RETRY_DELAY_US;
+                if( policy_scan_index >= GPS_RATE_CANDIDATES &&
+                    policy_pending_interval_ms == policy_scan_restore_ms )
+                {
+                    policy_rate_scan = false;
+                    policy_speed_since_us = 0;
+                    ESP_LOGW( TAG, "GPS CASIC rate scan restore rejected; keeping %d ms",
+                              policy_current_interval_ms );
+                    policy_log_event( "rate_scan_restore_rejected", policy_scan_restore_ms,
+                                      policy_current_interval_ms );
+                }
+                else
+                {
+                    policy_scan_next_us = esp_timer_get_time() + GPS_POLICY_PROBE_RETRY_DELAY_US;
+                }
             }
             else
             {
@@ -1433,6 +1458,17 @@ void gps_poll( void )
     int64_t nmea_timeout_us = (int64_t)device_config_get()->gps_timeout_seconds * 1000000LL;
     /* A receiver reporting a slow but valid update interval must retain UART
        ownership long enough for the next fix and any initial rate correction. */
+    if( ( GPS_POLICY_WAIT_VERSION == policy_state || GPS_POLICY_WAIT_RATE == policy_state ) &&
+        policy_deadline_us > last_nmea_us )
+    {
+        /* Discovery and its bounded retries must not lose the UART to the
+           ordinary NMEA inactivity timeout while CASIC is responding. */
+        const int64_t discovery_timeout_us = policy_deadline_us - last_nmea_us + 1000000LL;
+        if( discovery_timeout_us > nmea_timeout_us )
+        {
+            nmea_timeout_us = discovery_timeout_us;
+        }
+    }
     if( GPS_POLICY_ACTIVE == policy_state && policy_current_interval_ms > 0 )
     {
         const int64_t receiver_timeout_us =
