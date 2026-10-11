@@ -6,8 +6,11 @@ On first valid NMEA traffic, RFScout probes the receiver with read-only CASIC MO
 
 ## Adaptive rate
 
-- Below 3 mph, target 1000 ms (1 Hz), after 20 seconds of stable lower speed.
-- At or above 3 mph, target 500 ms (2 Hz), after 5 seconds of stable higher speed.
+- Below 3 mph: 1000 ms (1 Hz).
+- 3 to below 7 mph: 500 ms (2 Hz).
+- 7 to below 12 mph: 333 ms (~3 Hz).
+- At or above 12 mph: 250 ms (4 Hz). This is the temporary upper bound at 9600-baud UART.
+- Increasing the rate requires 5 seconds at the new target speed tier; decreasing it requires 20 seconds. Intermediate tiers can be skipped when speed rises quickly.
 - Allow at least 30 seconds between attempted changes.
 - Require a successful CFG-RATE write ACK, then query CFG-RATE again to verify the receiver's effective interval. A rejection, readback mismatch, or timeout disables further automatic writes until GPS service reactivation.
 - Do not persist configuration, switch UART baud rates, reset the receiver, or change NMEA sentence selection.
@@ -16,7 +19,7 @@ On first valid NMEA traffic, RFScout probes the receiver with read-only CASIC MO
 
 Initial discovery is deliberately verbose because it occurs once per GPS activation. Serial logs include bounded hexadecimal CASIC TX/RX frames, calculated/received checksums, UART TX drain results, NAK command identifiers, CFG-RATE detection, rate-change requests, write ACKs, and rate readback verification.
 
-Hardware confirmed responses: CFG-PRT (06/00) and CFG-RATE (06/04), with initial interval 1000 ms. To test the switch to 2 Hz, sustain speed above 3 mph for at least five seconds and look for a requested interval of 500 ms, ACK, and verified readback of 500 ms. Reduce speed below 3 mph for at least 20 seconds to test return to 1000 ms. The 30-second cooldown may extend either transition.
+Hardware confirmed responses: CFG-PRT (06/00) and CFG-RATE (06/04), with initial interval 1000 ms. For a scooter test, hold above 3, 7, and 12 mph long enough to trigger 500, 333, and 250 ms requests, respectively. Each requires a write ACK followed by matching CFG-RATE readback. Lower speed for 20 seconds to test downward changes; the 30-second cooldown may delay or skip intermediate steps. Review `gps_policy` SD records rather than depending on a live serial connection.
 
 Generic NMEA position/time reception remains available when CASIC discovery or rate adjustment is unsupported. The UART remains at its detected baud (9600 on the tested module).
 
