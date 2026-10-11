@@ -139,7 +139,7 @@ bool device_time_format_clock( char *a_buffer, size_t a_capacity )
     {
         return false;
     }
-    const char *format = device_config_get()->clock_24h ? "%H:%M" : "%I:%M%p";
+    const char *format = device_config_get()->clock_24h ? "%H:%M:%S" : "%I:%M:%S%p";
     return 0U != strftime( a_buffer, a_capacity, format, &local );
 }
 
