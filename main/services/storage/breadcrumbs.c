@@ -36,7 +36,9 @@
 #define BREADCRUMB_SHUTDOWN_POLL_MS 20U
 #define BREADCRUMB_FILENAME_LENGTH 16U
 #define BREADCRUMB_FILENAME_CAPACITY ( BREADCRUMB_FILENAME_LENGTH + 1U )
-#define BREADCRUMB_CSV_HEADER "timestamp_utc,latitude_deg,longitude_deg,speed_mph,filtered_speed_mph,current_rate_ms,target_rate_ms\n"
+#define BREADCRUMB_CSV_HEADER                                                                      \
+    "timestamp_utc,latitude_deg,longitude_deg,speed_mph,filtered_speed_mph,current_rate_ms,"       \
+    "target_rate_ms\n"
 #define BREADCRUMB_CSV_HEADER_LENGTH ( sizeof( BREADCRUMB_CSV_HEADER ) - 1U )
 #define BREADCRUMB_LINE_MAX 192U
 
@@ -534,8 +536,8 @@ void breadcrumbs_poll( void )
     float filtered_speed_mps = 0.0f;
     int current_rate_ms = 0;
     int target_rate_ms = 0;
-    const bool rate_valid = gps_rate_diagnostics_get(
-        &filtered_speed_mps, &current_rate_ms, &target_rate_ms );
+    const bool rate_valid =
+        gps_rate_diagnostics_get( &filtered_speed_mps, &current_rate_ms, &target_rate_ms );
     const breadcrumb_record_t record = {
         .utc_epoch = gps.utc_epoch,
         .latitude_deg = gps.latitude_deg,
