@@ -77,8 +77,16 @@ def validate(path: Path) -> dict[str, int]:
                             break
                         if opt + length > end_options:
                             raise ValueError(f"Invalid packet option at {pos}")
-                        if code == 1 and data[opt:opt + length].startswith(b"GPS lat="):
-                            stats["gps"] += 1
+                        if code == 2989 and length >= 20:
+                            pen = struct.unpack_from("<I", data, opt)[0]
+                            magic, version, gps_len, fields = struct.unpack_from("<BBHI", data, opt + 4)
+                            if pen == 55922:
+                                if magic != 0x47 or version != 1 or gps_len != 16 or fields != 0x06 or length != 20:
+                                    raise ValueError(f"Invalid Kismet GPS option at {pos}")
+                                lon, lat = struct.unpack_from("<II", data, opt + 12)
+                                if lon > 3600000000 or lat > 3600000000:
+                                    raise ValueError(f"Invalid Kismet GPS coordinates at {pos}")
+                                stats["gps"] += 1
                         opt += (length + 3) & ~3
                 pos += total
             if not stats["sections"] or not stats["interfaces"]:
