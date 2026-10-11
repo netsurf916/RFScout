@@ -385,6 +385,8 @@ static void act_on_selection( void )
             }
             if( ESP_OK != last_error )
             {
+                (void)radio_monitor_stop();
+                (void)ble_monitor_stop();
                 ESP_LOGW( TAG, "capture start failed: %s", esp_err_to_name( last_error ) );
             }
         }
@@ -411,6 +413,12 @@ static void act_on_selection( void )
                 {
                     wardrive_capture_update_gps();
                 }
+            }
+            if( ESP_OK != last_error )
+            {
+                (void)radio_monitor_stop();
+                (void)ble_monitor_stop();
+                ESP_LOGW( TAG, "capture restart failed: %s", esp_err_to_name( last_error ) );
             }
         }
         refresh_space();
