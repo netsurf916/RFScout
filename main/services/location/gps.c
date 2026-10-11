@@ -83,7 +83,7 @@ typedef struct
 
 #define GPS_POLICY_TIMEOUT_US 2000000LL
 #define GPS_POLICY_MIN_CHANGE_US 30000000LL
-#define GPS_UBX_MAX_PAYLOAD 128U
+#define GPS_UBX_MAX_PAYLOAD 256U
 
 /* GP-20U7 advertises u-blox protocol. Only configure a receiver that
    identifies itself as u-blox 7; leave unidentified modules in NMEA mode. */
