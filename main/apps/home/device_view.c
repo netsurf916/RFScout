@@ -1255,6 +1255,13 @@ static bool time_menu_input( bool a_pressed, int a_delta )
             return false;
         }
 
+        /* Refresh from the live clock when entering manual edit mode. GPS may
+           have synchronized time while this menu remained open. */
+        if( !time_editing && time_selected_item >= TIME_MENU_YEAR )
+        {
+            refresh_edited_time();
+        }
+
         bool accepted = true;
         if( time_editing && time_selected_item >= TIME_MENU_YEAR )
         {
