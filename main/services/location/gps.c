@@ -83,10 +83,9 @@ typedef struct
 
 #define GPS_POLICY_TIMEOUT_US 2000000LL
 #define GPS_POLICY_MIN_CHANGE_US 30000000LL
-#define GPS_UBX_MAX_PAYLOAD 256U
+#define GPS_CASIC_MAX_PAYLOAD 128U
 
-/* GP-20U7 advertises u-blox protocol. Only configure a receiver that
-   identifies itself as u-blox 7; leave unidentified modules in NMEA mode. */
+/* HT1818Z3G5L: CASIC binary protocol. Keep generic NMEA on any failure. */
 typedef enum
 {
     GPS_POLICY_IDLE = 0,
@@ -104,42 +103,51 @@ static int64_t policy_speed_since_us;
 static int policy_desired_interval_ms = 1000;
 static int policy_current_interval_ms = 1000;
 static int policy_pending_interval_ms;
-static uint8_t ubx_frame[ GPS_UBX_MAX_PAYLOAD + 8U ];
-static size_t ubx_length;
-static size_t ubx_expected;
+static uint8_t casic_frame[ GPS_CASIC_MAX_PAYLOAD + 10U ];
+static size_t casic_length;
+static size_t casic_expected;
+
+static uint32_t casic_checksum( uint8_t a_class, uint8_t a_id, const uint8_t *a_data, size_t a_size )
+{
+    uint32_t sum = ( (uint32_t)a_class << 24U ) | ( (uint32_t)a_id << 16U ) |
+                   (uint32_t)a_size;
+    for( size_t index = 0U; index < a_size; index += 4U )
+    {
+        sum += (uint32_t)a_data[ index ] | ( (uint32_t)a_data[ index + 1U ] << 8U ) |
+               ( (uint32_t)a_data[ index + 2U ] << 16U ) |
+               ( (uint32_t)a_data[ index + 3U ] << 24U );
+    }
+    return sum;
+}
 
 static bool policy_send( uint8_t a_class, uint8_t a_id, const uint8_t *a_payload, size_t a_size )
 {
-    if( a_size > GPS_UBX_MAX_PAYLOAD )
+    if( a_size > GPS_CASIC_MAX_PAYLOAD || 0U != ( a_size & 3U ) )
     {
         return false;
     }
-    uint8_t frame[ GPS_UBX_MAX_PAYLOAD + 8U ] = { 0xB5, 0x62, a_class, a_id,
-                                                 (uint8_t)a_size, (uint8_t)( a_size >> 8U ) };
+    uint8_t frame[ GPS_CASIC_MAX_PAYLOAD + 10U ] = { 0xBA, 0xCE, (uint8_t)a_size,
+                                                      (uint8_t)( a_size >> 8U ), a_class, a_id };
     if( a_size > 0U )
     {
         memcpy( frame + 6U, a_payload, a_size );
     }
-    uint8_t ck_a = 0U;
-    uint8_t ck_b = 0U;
-    for( size_t index = 2U; index < a_size + 6U; ++index )
+    const uint32_t checksum = casic_checksum( a_class, a_id, frame + 6U, a_size );
+    for( size_t index = 0U; index < 4U; ++index )
     {
-        ck_a = (uint8_t)( ck_a + frame[ index ] );
-        ck_b = (uint8_t)( ck_b + ck_a );
+        frame[ a_size + 6U + index ] = (uint8_t)( checksum >> ( 8U * index ) );
     }
-    frame[ a_size + 6U ] = ck_a;
-    frame[ a_size + 7U ] = ck_b;
-    const int written = uart_write_bytes( GPS_UART, frame, a_size + 8U );
-    ESP_LOGI( TAG, "GPS UBX TX class=%02X id=%02X length=%u bytes=%d",
+    const int written = uart_write_bytes( GPS_UART, frame, a_size + 10U );
+    ESP_LOGI( TAG, "GPS CASIC TX class=%02X id=%02X payload=%u bytes=%d",
               a_class, a_id, (unsigned)a_size, written );
-    return written == (int)( a_size + 8U );
+    return written == (int)( a_size + 10U );
 }
 
 static void policy_begin( void )
 {
     policy_state = GPS_POLICY_WAIT_VERSION;
     policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
-    ESP_LOGI( TAG, "GPS GP-20U7 probe: UBX MON-VER at %d baud", active_baud );
+    ESP_LOGI( TAG, "GPS HT1818Z3G5L probe: CASIC MON-VER at %d baud", active_baud );
     if( !policy_send( 0x0A, 0x04, NULL, 0U ) )
     {
         policy_state = GPS_POLICY_UNSUPPORTED;
@@ -150,109 +158,103 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
 {
     if( 0x0A == a_class && 0x04 == a_id && GPS_POLICY_WAIT_VERSION == policy_state )
     {
-        if( a_size < 40U )
+        if( 64U != a_size )
         {
-            ESP_LOGW( TAG, "GPS UBX MON-VER response too short: %u", (unsigned)a_size );
+            ESP_LOGW( TAG, "GPS CASIC MON-VER invalid length=%u", (unsigned)a_size );
             policy_state = GPS_POLICY_UNSUPPORTED;
             return;
         }
-        char software[ 31 ];
-        char hardware[ 11 ];
-        memcpy( software, a_data, 30U );
-        memcpy( hardware, a_data + 30U, 10U );
-        software[ 30 ] = '\0';
-        hardware[ 10 ] = '\0';
-        ESP_LOGI( TAG, "GPS UBX MON-VER software=%s hardware=%s", software, hardware );
-        /* Restrict configuration to the GP-20U7's expected u-blox 7 generation.
-           Other UBX-capable receivers remain read-only until verified. */
-        if( NULL == strstr( software, "7." ) && NULL == strstr( software, "7 " ) )
-        {
-            ESP_LOGW( TAG, "GPS firmware not identified as u-blox 7; NMEA fallback" );
-            policy_state = GPS_POLICY_UNSUPPORTED;
-            return;
-        }
+        char software[ 33 ];
+        char hardware[ 33 ];
+        memcpy( software, a_data, 32U );
+        memcpy( hardware, a_data + 32U, 32U );
+        software[ 32 ] = '\0';
+        hardware[ 32 ] = '\0';
+        ESP_LOGI( TAG, "GPS CASIC MON-VER software=%s hardware=%s", software, hardware );
         policy_state = GPS_POLICY_WAIT_RATE;
         policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
-        (void)policy_send( 0x06, 0x08, NULL, 0U );
+        if( !policy_send( 0x06, 0x04, NULL, 0U ) )
+        {
+            policy_state = GPS_POLICY_UNSUPPORTED;
+        }
     }
-    else if( 0x06 == a_class && 0x08 == a_id && GPS_POLICY_WAIT_RATE == policy_state &&
-             a_size == 6U )
+    else if( 0x06 == a_class && 0x04 == a_id && GPS_POLICY_WAIT_RATE == policy_state &&
+             4U == a_size )
     {
         const unsigned interval = (unsigned)a_data[ 0 ] | ( (unsigned)a_data[ 1 ] << 8U );
-        const unsigned navigation = (unsigned)a_data[ 2 ] | ( (unsigned)a_data[ 3 ] << 8U );
-        ESP_LOGI( TAG, "GPS UBX CFG-RATE measurement=%u ms navigation=%u", interval, navigation );
-        if( 0U == interval || 0U == navigation || interval * navigation > 10000U )
+        ESP_LOGI( TAG, "GPS CASIC CFG-RATE interval=%u ms", interval );
+        if( interval < 100U || interval > 10000U )
         {
             policy_state = GPS_POLICY_UNSUPPORTED;
             return;
         }
-        policy_current_interval_ms = (int)( interval * navigation );
+        policy_current_interval_ms = (int)interval;
         policy_state = GPS_POLICY_ACTIVE;
-        ESP_LOGI( TAG, "GPS GP-20U7 policy ready: current interval %d ms", policy_current_interval_ms );
     }
     else if( 0x05 == a_class && ( 0x01 == a_id || 0x00 == a_id ) &&
-             GPS_POLICY_WAIT_ACK == policy_state && a_size >= 2U &&
-             0x06 == a_data[ 0 ] && 0x08 == a_data[ 1 ] )
+             GPS_POLICY_WAIT_ACK == policy_state && 4U == a_size &&
+             0x06 == a_data[ 0 ] && 0x04 == a_data[ 1 ] )
     {
         if( 0x01 == a_id )
         {
             policy_current_interval_ms = policy_pending_interval_ms;
             policy_state = GPS_POLICY_ACTIVE;
-            ESP_LOGI( TAG, "GPS UBX CFG-RATE accepted: interval=%d ms", policy_current_interval_ms );
+            ESP_LOGI( TAG, "GPS CASIC CFG-RATE accepted: interval=%d ms", policy_current_interval_ms );
         }
         else
         {
             policy_state = GPS_POLICY_UNSUPPORTED;
-            ESP_LOGW( TAG, "GPS UBX CFG-RATE rejected; retaining generic NMEA" );
+            ESP_LOGW( TAG, "GPS CASIC CFG-RATE rejected; adaptive control disabled" );
         }
     }
 }
 
-static void ubx_feed( uint8_t a_byte )
+static void casic_feed( uint8_t a_byte )
 {
-    if( 0U == ubx_length && 0xB5 != a_byte )
+    if( 0U == casic_length && 0xBA != a_byte )
     {
         return;
     }
-    if( 1U == ubx_length && 0x62 != a_byte )
+    if( 1U == casic_length && 0xCE != a_byte )
     {
-        ubx_length = 0U;
-        ubx_expected = 0U;
+        casic_length = 0U;
+        casic_expected = 0U;
         return;
     }
-    ubx_frame[ ubx_length++ ] = a_byte;
-    if( 6U == ubx_length )
+    casic_frame[ casic_length++ ] = a_byte;
+    if( 4U == casic_length )
     {
-        const size_t payload = (size_t)ubx_frame[ 4 ] | ( (size_t)ubx_frame[ 5 ] << 8U );
-        if( payload > GPS_UBX_MAX_PAYLOAD )
+        const size_t payload = (size_t)casic_frame[ 2 ] | ( (size_t)casic_frame[ 3 ] << 8U );
+        if( payload > GPS_CASIC_MAX_PAYLOAD || 0U != ( payload & 3U ) )
         {
-            ESP_LOGW( TAG, "GPS UBX response larger than parser buffer: %u", (unsigned)payload );
-            ubx_length = 0U;
-            ubx_expected = 0U;
+            ESP_LOGW( TAG, "GPS CASIC invalid payload size=%u", (unsigned)payload );
+            casic_length = 0U;
+            casic_expected = 0U;
             return;
         }
-        ubx_expected = payload + 8U;
+        casic_expected = payload + 10U;
     }
-    if( ubx_expected >= 8U && ubx_length == ubx_expected )
+    if( casic_expected >= 10U && casic_length == casic_expected )
     {
-        uint8_t ck_a = 0U;
-        uint8_t ck_b = 0U;
-        for( size_t index = 2U; index + 2U < ubx_length; ++index )
+        const size_t payload = casic_length - 10U;
+        const uint32_t expected = casic_checksum( casic_frame[ 4 ], casic_frame[ 5 ],
+                                                  casic_frame + 6U, payload );
+        uint32_t received = 0U;
+        for( size_t index = 0U; index < 4U; ++index )
         {
-            ck_a = (uint8_t)( ck_a + ubx_frame[ index ] );
-            ck_b = (uint8_t)( ck_b + ck_a );
+            received |= (uint32_t)casic_frame[ 6U + payload + index ] << ( 8U * index );
         }
-        if( ck_a == ubx_frame[ ubx_length - 2U ] && ck_b == ubx_frame[ ubx_length - 1U ] )
+        if( expected == received )
         {
-            policy_response( ubx_frame[ 2 ], ubx_frame[ 3 ], ubx_frame + 6U,
-                             ubx_length - 8U );
+            policy_response( casic_frame[ 4 ], casic_frame[ 5 ], casic_frame + 6U, payload );
         }
         else
         {
-            ESP_LOGW( TAG, "GPS UBX response checksum invalid" );
+            ESP_LOGW( TAG, "GPS CASIC checksum mismatch class=%02X id=%02X",
+                      casic_frame[ 4 ], casic_frame[ 5 ] );
         }
-        ubx_length = 0U;
-        ubx_expected = 0U;
+        casic_length = 0U;
+        casic_expected = 0U;
     }
 }
 
@@ -261,7 +263,7 @@ static void policy_poll( int64_t a_now )
     if( ( GPS_POLICY_WAIT_VERSION == policy_state || GPS_POLICY_WAIT_RATE == policy_state ||
           GPS_POLICY_WAIT_ACK == policy_state ) && a_now >= policy_deadline_us )
     {
-        ESP_LOGW( TAG, "GPS UBX policy timeout state=%d; generic NMEA retained", (int)policy_state );
+        ESP_LOGW( TAG, "GPS CASIC policy timeout state=%d; generic NMEA retained", (int)policy_state );
         policy_state = GPS_POLICY_UNSUPPORTED;
     }
     if( GPS_POLICY_ACTIVE != policy_state || !snapshot.speed_valid ||
@@ -270,9 +272,8 @@ static void policy_poll( int64_t a_now )
         policy_speed_since_us = 0;
         return;
     }
-    /* GP-20U7 is specified at 1 Hz. At 9600 baud, limit experimental
-       adaptive operation to 2 Hz; higher speeds require hardware validation. */
     const float mph = snapshot.speed_mps * 2.23693629f;
+    /* Until module-specific validation, cap rate at 2 Hz with no output changes. */
     const int target = mph >= 3.0f ? 500 : 1000;
     if( target != policy_desired_interval_ms )
     {
@@ -293,14 +294,14 @@ static void policy_poll( int64_t a_now )
     {
         return;
     }
-    const uint8_t rate[ 6 ] = { (uint8_t)target, (uint8_t)( target >> 8U ), 1U, 0U, 1U, 0U };
-    if( policy_send( 0x06, 0x08, rate, sizeof( rate ) ) )
+    const uint8_t rate[ 4 ] = { (uint8_t)target, (uint8_t)( target >> 8U ), 0U, 0U };
+    if( policy_send( 0x06, 0x04, rate, sizeof( rate ) ) )
     {
         policy_pending_interval_ms = target;
         policy_last_change_us = a_now;
         policy_state = GPS_POLICY_WAIT_ACK;
         policy_deadline_us = a_now + GPS_POLICY_TIMEOUT_US;
-        ESP_LOGI( TAG, "GPS GP-20U7 requested %d ms at %.1f mph", target, (double)mph );
+        ESP_LOGI( TAG, "GPS HT1818Z3G5L requested %d ms at %.1f mph", target, (double)mph );
     }
 }
 
@@ -759,8 +760,8 @@ esp_err_t gps_init( void )
     satellites_updated_us = 0;
     baud_locked = false;
     policy_state = GPS_POLICY_IDLE;
-    ubx_length = 0U;
-    ubx_expected = 0U;
+    casic_length = 0U;
+    casic_expected = 0U;
     policy_last_change_us = 0;
     policy_speed_since_us = 0;
     policy_desired_interval_ms = 1000;
@@ -869,9 +870,9 @@ void gps_poll( void )
     for( int index = 0; index < received; ++index )
     {
         const char value = (char)buffer[ index ];
-        if( 0U != ubx_length || 0xB5 == (uint8_t)value )
+        if( 0U != casic_length || 0xBA == (uint8_t)value )
         {
-            ubx_feed( (uint8_t)value );
+            casic_feed( (uint8_t)value );
             continue;
         }
         if( '\n' == value )
