@@ -19,7 +19,7 @@
 #include <sys/time.h>
 
 #define CAPTURE_QUEUE_COUNT 48U
-#define CAPTURE_MAX_FRAME 2304U
+#define CAPTURE_MAX_FRAME 4096U
 #define CAPTURE_TASK_STACK 4096U
 #define CAPTURE_FILE_MIN ( 1024U * 1024U )
 #define CAPTURE_FILE_MAX ( 128U * 1024U * 1024U )
@@ -51,6 +51,7 @@ static const char *TAG = "wardrive";
 static QueueHandle_t pending_queue;
 static QueueHandle_t free_queue;
 static capture_packet_t *packet_pool;
+static uint8_t *writer_frame;
 static TaskHandle_t capture_task;
 static volatile bool accepting;
 static volatile bool stopping;
@@ -256,7 +257,7 @@ static void enqueue( uint8_t a_source,
         __atomic_add_fetch( &stats.received_ble, 1U, __ATOMIC_RELAXED );
     }
     capture_packet_t *packet = NULL;
-    if( NULL == a_data || a_length > CAPTURE_MAX_FRAME ||
+    if( ( NULL == a_data && a_length > 0U ) || a_length > CAPTURE_MAX_FRAME ||
         pdTRUE != xQueueReceive( free_queue, &packet, 0U ) )
     {
         __atomic_add_fetch( &stats.dropped, 1U, __ATOMIC_RELAXED );
@@ -273,7 +274,10 @@ static void enqueue( uint8_t a_source,
     {
         memcpy( packet->address, a_address, sizeof( packet->address ) );
     }
-    memcpy( packet->payload, a_data, a_length );
+    if( a_length > 0U )
+    {
+        memcpy( packet->payload, a_data, a_length );
+    }
     if( pdTRUE != xQueueSend( pending_queue, &packet, 0U ) )
     {
         (void)xQueueSend( free_queue, &packet, 0U );
@@ -302,6 +306,11 @@ static void on_ble( const uint8_t *a_data,
 {
     if( config.ble )
     {
+        if( a_length > 243U )
+        {
+            __atomic_add_fetch( &stats.dropped, 1U, __ATOMIC_RELAXED );
+            return;
+        }
         enqueue( 2U, a_data, a_length, a_rssi, 0U, a_address, a_address_type, a_event_type );
     }
 }
@@ -345,7 +354,7 @@ static size_t build_radio_packet( const capture_packet_t *a_packet, uint8_t *a_o
 
 static bool write_packet( const capture_packet_t *a_packet )
 {
-    uint8_t frame[ CAPTURE_MAX_FRAME + 20U ];
+    uint8_t *frame = writer_frame;
     const size_t frame_length = build_radio_packet( a_packet, frame );
     const uint32_t padded = (uint32_t)( ( frame_length + 3U ) & ~3U );
 
@@ -481,9 +490,11 @@ esp_err_t wardrive_capture_start( const wardrive_config_t *a_config )
     }
     packet_pool = heap_caps_calloc( CAPTURE_QUEUE_COUNT, sizeof( *packet_pool ),
                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
+    writer_frame = heap_caps_malloc( CAPTURE_MAX_FRAME + 20U,
+                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
     pending_queue = xQueueCreate( CAPTURE_QUEUE_COUNT, sizeof( capture_packet_t * ) );
     free_queue = xQueueCreate( CAPTURE_QUEUE_COUNT, sizeof( capture_packet_t * ) );
-    if( packet_pool == NULL || pending_queue == NULL || free_queue == NULL )
+    if( packet_pool == NULL || writer_frame == NULL || pending_queue == NULL || free_queue == NULL )
     {
         wardrive_capture_stop();
         return ESP_ERR_NO_MEM;
@@ -534,6 +545,8 @@ void wardrive_capture_stop( void )
     }
     heap_caps_free( packet_pool );
     packet_pool = NULL;
+    heap_caps_free( writer_frame );
+    writer_frame = NULL;
     stats.recording = false;
 }
 
