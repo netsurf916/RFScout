@@ -61,6 +61,7 @@ static volatile bool shutdown_requested;
 static volatile bool writer_stopped;
 static volatile bool io_error;
 static volatile bool flush_requested;
+static bool first_flush_logged;
 
 static const rfscout_memory_owner_t log_owner = {
     .owner_class = RFSCOUT_MEMORY_OWNER_PLATFORM,
@@ -821,6 +822,12 @@ static bool flush_buffer( void )
     if( !close_segment() )
     {
         success = false;
+    }
+    if( success && !first_flush_logged )
+    {
+        ESP_LOGI( TAG, "SD log flush completed: %u bytes written and synced",
+                  (unsigned)burst_size );
+        first_flush_logged = true;
     }
 
     xSemaphoreTake( buffer_lock, portMAX_DELAY );
