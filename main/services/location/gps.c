@@ -113,8 +113,12 @@ static bool policy_filtered_speed_valid;
 static int policy_desired_interval_ms = 1000;
 static int policy_current_interval_ms = 1000;
 static int policy_pending_interval_ms;
-static const int policy_rates_ms[] = { 250, 333, 500, 1000 };
-static uint8_t policy_rate_support[ 4 ]; /* 0 unknown, 1 verified, 2 rejected */
+/* Interval candidates in milliseconds: 100 through 1000 in 100 ms steps. */
+#define GPS_RATE_MIN_MS 100
+#define GPS_RATE_MAX_MS 1000
+#define GPS_RATE_STEP_MS 100
+#define GPS_RATE_CANDIDATES 10U
+static uint8_t policy_rate_support[ GPS_RATE_CANDIDATES ]; /* 0 unknown, 1 verified, 2 rejected */
 static bool policy_rate_scan;
 static unsigned policy_scan_index;
 static int policy_scan_restore_ms;
@@ -267,14 +271,12 @@ static bool policy_begin_baud_switch( void )
 
 static int policy_rate_index( int a_ms )
 {
-    for( unsigned index = 0U; index < 4U; ++index )
+    if( a_ms < GPS_RATE_MIN_MS || a_ms > GPS_RATE_MAX_MS ||
+        0 != ( a_ms - GPS_RATE_MIN_MS ) % GPS_RATE_STEP_MS )
     {
-        if( policy_rates_ms[ index ] == a_ms )
-        {
-            return (int)index;
-        }
+        return -1;
     }
-    return -1;
+    return ( a_ms - GPS_RATE_MIN_MS ) / GPS_RATE_STEP_MS;
 }
 
 static void policy_mark_rate( int a_ms, uint8_t a_support )
@@ -288,11 +290,12 @@ static void policy_mark_rate( int a_ms, uint8_t a_support )
 
 static int policy_supported_target( int a_target )
 {
-    for( unsigned index = 0U; index < 4U; ++index )
+    for( int candidate = a_target; candidate <= GPS_RATE_MAX_MS; candidate += GPS_RATE_STEP_MS )
     {
-        if( policy_rates_ms[ index ] >= a_target && 2U != policy_rate_support[ index ] )
+        const int index = policy_rate_index( candidate );
+        if( index >= 0 && 2U != policy_rate_support[ index ] )
         {
-            return policy_rates_ms[ index ];
+            return candidate;
         }
     }
     return policy_current_interval_ms;
@@ -323,10 +326,10 @@ static void policy_scan_step( int64_t a_now )
     {
         return;
     }
-    while( policy_scan_index < 4U )
+    while( policy_scan_index < GPS_RATE_CANDIDATES )
     {
         const unsigned index = policy_scan_index++;
-        const int candidate = policy_rates_ms[ index ];
+        const int candidate = GPS_RATE_MIN_MS + (int)index * GPS_RATE_STEP_MS;
         if( candidate == policy_current_interval_ms || 2U == policy_rate_support[ index ] )
         {
             continue;
@@ -704,7 +707,11 @@ static void policy_poll( int64_t a_now )
         return;
     }
     const float mph = (float)( policy_filtered_speed_mps * 2.23693629 );
-    const int desired = mph >= 12.0f ? 250 : mph >= 7.0f ? 333 : mph >= 3.0f ? 500 : 1000;
+    /* Map 0..20 mph to 1000..200 ms, and faster travel to 100 ms.
+       Quantization keeps changes meaningful and bounded. */
+    const float bounded_mph = fmaxf( 0.0f, fminf( mph, 22.5f ) );
+    const int desired = GPS_RATE_MAX_MS -
+                        (int)( bounded_mph / 2.5f ) * GPS_RATE_STEP_MS;
     const int target = policy_supported_target( desired );
     if( target != policy_desired_interval_ms )
     {
