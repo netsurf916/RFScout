@@ -142,6 +142,7 @@ static bool write_interface( uint16_t a_link_type )
     le32( block, 1U );
     le32( block + 4U, sizeof( block ) );
     le16( block + 8U, a_link_type );
+    le32( block + 12U, CAPTURE_MAX_FRAME + 20U );
     le32( block + 16U, sizeof( block ) );
     return write_bytes( block, sizeof( block ) );
 }
