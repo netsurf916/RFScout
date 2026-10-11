@@ -216,6 +216,8 @@ static const char *startup_app_name( rfscout_app_id_t a_app )
             return "Audio Spectrum";
         case RFSCOUT_APP_GPS:
             return "GPS";
+        case RFSCOUT_APP_WARDRIVE:
+            return "Wardriving";
         case RFSCOUT_APP_DEVICE:
         case RFSCOUT_APP_COUNT:
         default:
