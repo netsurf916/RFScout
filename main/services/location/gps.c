@@ -288,17 +288,40 @@ static void policy_mark_rate( int a_ms, uint8_t a_support )
     }
 }
 
-static int policy_supported_target( int a_target )
+/* Build speed buckets from verified receiver intervals, slowest first.
+   Keep stationary GPS at the slowest rate, and use the fastest rate by 15 mph.
+   Intermediate transitions are evenly distributed across that speed range. */
+static int policy_supported_target( float a_mph )
 {
-    for( int candidate = a_target; candidate <= GPS_RATE_MAX_MS; candidate += GPS_RATE_STEP_MS )
+    int supported[ GPS_RATE_CANDIDATES ];
+    unsigned count = 0U;
+    for( int candidate = GPS_RATE_MAX_MS; candidate >= GPS_RATE_MIN_MS;
+         candidate -= GPS_RATE_STEP_MS )
     {
         const int index = policy_rate_index( candidate );
-        if( index >= 0 && 2U != policy_rate_support[ index ] )
+        if( index >= 0 && 1U == policy_rate_support[ index ] )
         {
-            return candidate;
+            supported[ count++ ] = candidate;
         }
     }
-    return policy_current_interval_ms;
+    if( 0U == count )
+    {
+        return policy_current_interval_ms;
+    }
+    unsigned bucket = 0U;
+    for( unsigned index = 1U; index < count; ++index )
+    {
+        const float threshold = count == 2U
+                                    ? 3.0f
+                                    : 3.0f + 12.0f * (float)( index - 1U ) /
+                                                 (float)( count - 2U );
+        if( a_mph < threshold )
+        {
+            break;
+        }
+        bucket = index;
+    }
+    return supported[ bucket ];
 }
 
 static bool policy_request_rate( int a_ms, int64_t a_now )
@@ -457,7 +480,7 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
             else
             {
                 policy_speed_since_us = 0;
-                policy_desired_interval_ms = policy_supported_target( policy_pending_interval_ms );
+                policy_desired_interval_ms = policy_current_interval_ms;
             }
         }
         return;
@@ -724,12 +747,7 @@ static void policy_poll( int64_t a_now )
         return;
     }
     const float mph = (float)( policy_filtered_speed_mps * 2.23693629 );
-    /* Map 0..20 mph to 1000..200 ms, and faster travel to 100 ms.
-       Quantization keeps changes meaningful and bounded. */
-    const float bounded_mph = fmaxf( 0.0f, fminf( mph, 22.5f ) );
-    const int desired = GPS_RATE_MAX_MS -
-                        (int)( bounded_mph / 2.5f ) * GPS_RATE_STEP_MS;
-    const int target = policy_supported_target( desired );
+    const int target = policy_supported_target( mph );
     if( target != policy_desired_interval_ms )
     {
         policy_desired_interval_ms = target;
