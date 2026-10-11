@@ -1,22 +1,24 @@
-# GP-20U7 receiver discovery and rate policy
+# HT1818Z3G5L CASIC receiver probe and rate policy
 
-RFScout targets the [GP-20U7 hardware](https://cdn.sparkfun.com/datasheets/GPS/GP-20U7.pdf), which advertises NMEA 0183 and u-blox binary protocol. Its published default is 9600 baud and **1 Hz** navigation output; higher update rates are not guaranteed by that module datasheet.
+The physical module marking is HT1818Z3G5L (HTZN TTL), rather than the previously assumed GP-20U7 or MTK receiver. A published example using the exact module reports 9600 baud and one NMEA position cycle per second. The CASIC protocol specification documents binary MON-VER (class 0A, ID 04, 64-byte software/hardware response), CFG-RATE (class 06, ID 04, four-byte interval response/set), and ACK/NACK (class 05). **Module-specific binary protocol support and maximum rate remain to be confirmed on hardware.**
 
-Once checksum-valid NMEA has established UART ownership, the provider transmits one read-only UBX MON-VER (0A/04) poll. It parses checksum-validated UBX responses separately from NMEA. The software/hardware identifiers are logged. Only firmware identifying as u-blox generation 7 is allowed to progress to UBX CFG-RATE (06/08) query and experimental rate control. Other devices, unsupported versions, invalid messages and timeouts retain generic NMEA behavior.
+After checksum-valid NMEA locks the UART, the provider sends exactly one read-only CASIC MON-VER query. CASIC frames use header BA CE, a little-endian payload length, and a little-endian additive 32-bit checksum over class, ID, length and 32-bit payload words. Responses are parsed independently of NMEA. On valid MON-VER, the provider logs 32-byte firmware/hardware identifiers and queries CFG-RATE. Only successful replies enable adaptive control. An unidentified receiver keeps generic NMEA operation.
 
-On positive identification and CFG-RATE response, the first pass logs the current measurement interval and navigation divider. Speed above 3 mph sustained for 5 seconds requests 2 Hz (500 ms); below 3 mph sustained for 20 seconds returns to 1 Hz. At least 30 seconds elapses between successful requests. Rejected or unanswered commands disable further changes during that UART activation. The 2 Hz ceiling deliberately respects the module's 9600-baud default; 5/10 Hz and changes to NMEA sentence structure are deferred until actual GP-20U7 hardware response, UART bandwidth and output are validated.
+To minimize risk while awaiting validation, 1 Hz below 3 mph and at most 2 Hz above 3 mph are attempted after 20-second/5-second stable-speed hysteresis, respectively. At least 30 seconds separates configuration attempts. Rejected or unanswered commands disable further adjustment until UART service reactivation. Changes affect the running session only: no persistent configuration save, UART baud change, sentence-output change, assistance, or reset is sent.
 
-No PMTK commands, persistent config-save, baud-rate changes, receiver resets or time/position assistance are sent. Neither generic UART arbitration nor receiver-independent location snapshots change.
+## Hardware test checkpoints
 
-## Serial log checkpoints
-
+Capture serial ESP-IDF logs from startup:
 - `GPS NMEA detected at 9600 baud`
-- `GPS GP-20U7 probe: UBX MON-VER at 9600 baud`
-- `GPS UBX TX class=0A id=04 ...`
-- `GPS UBX MON-VER software=... hardware=...`
-- `GPS UBX CFG-RATE measurement=... navigation=...`
-- `GPS GP-20U7 policy ready: current interval ...`
-- `GPS GP-20U7 requested ...`
-- `GPS UBX CFG-RATE accepted...`, rejected or timeout
+- `GPS HT1818Z3G5L probe: CASIC MON-VER at 9600 baud`
+- `GPS CASIC TX class=0A id=04 ...`
+- `GPS CASIC MON-VER software=... hardware=...` (if recognized)
+- `GPS CASIC CFG-RATE interval=... ms` (if supported)
+- `GPS HT1818Z3G5L requested ...` and `GPS CASIC CFG-RATE accepted...` (only after movement and successful probing)
+- `GPS CASIC policy timeout...` / checksum warnings / rejection as applicable
 
-These diagnostics currently go to serial/ESP-IDF logs; this PR does not yet add structured SD logging. Test candidate firmware with serial capture, both at rest and in motion. Before enabling more aggressive rates, verify receiver capability rather than assuming all u-blox implementations are equivalent.
+This PR does not yet write these protocol diagnostics to the SD log. Firmware and protocol support remain hypotheses until the module responds.
+
+## References
+- CASIC multi-mode GNSS protocol specification, sections 2.2, 2.14.1, 2.11.5
+- HT1818Z3G5L UART/NMEA usage example: https://www.cnblogs.com/excellentHellen/articles/17176131.html
