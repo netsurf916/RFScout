@@ -29,11 +29,14 @@ inactive, the UI reports that state instead of attempting to take over the pins.
 
 The shared GPS service detects NMEA at the receiver's existing UART baud (9600 on the tested HT1818Z3G5L). It probes CASIC read-only commands; this receiver NAKs MON-VER/MON-HW but answers CFG-PRT and CFG-RATE. CASIC commands use a four-second response deadline. Timed-out discovery probes and the initial read-only CFG-RATE query are retried twice before giving up, because the receiver may already be producing higher-rate NMEA traffic on a 9600-baud link. Retries are recorded in the main SD log. A valid CFG-RATE interval enables adaptive updates; otherwise generic NMEA operation continues.
 
-The adaptive policy uses update intervals rather than fixed Hz tiers. Candidate
-intervals run from 1000 ms down to 100 ms in 100 ms increments. A 0 mph
-filtered speed maps to 1000 ms; approximately every 2.5 mph maps to the next
-faster interval, reaching 100 ms at 22.5 mph. The receiver may reject some
-intervals, so the nearest slower non-rejected interval is selected.
+The adaptive policy characterizes receiver update intervals from 1000 ms down to
+100 ms in 100 ms steps and builds speed buckets from only the ACK/readback-verified
+intervals. The slowest verified rate is used below 3 mph; the fastest is selected
+at 15 mph and above. When three or more rates are supported, intermediate
+thresholds are spaced evenly between 3 and 15 mph. For example, a receiver
+supporting 1000, 500, 200, and 100 ms switches at 3, 9, and 15 mph.
+If only one rate is verified, it stays fixed. Rejected intervals are excluded
+from bucket generation, including after a later runtime rejection.
 
 Rate increases require 5 seconds in a higher tier, decreases require 20 seconds, and at least 30 seconds separates changes. The rate policy uses a separate exponentially smoothed GPS speed estimate (90% previous/10% new at 1 Hz, adjusted for each sample interval), without changing displayed raw speed or trip calculations. After 115200-baud NMEA verification, firmware probes the ten candidate update intervals from 100 through 1000 ms, then restores the original verified interval before enabling speed-driven changes. This is a bounded startup characterization, but it can take noticeably longer than the previous four-rate scan. Every probe requires an ACK and readback. Explicitly rejected intervals are cached as unsupported for the GPS service session; the policy then selects the fastest non-rejected interval no faster than the speed target. A rejection no longer disables other verified rates. Ambiguous timeouts and readback mismatches still stop automatic adjustments rather than assuming a receiver rate. After confirming CASIC support and the initial rate, firmware attempts a session-only transition to 115200 baud when a matching CFG-PRT UART profile is available. It preserves the profile's protocol/mode fields, keeps ownership of the shared UART pins while waiting for fresh checksum-valid NMEA at the new baud, and resumes baud discovery only if the dedicated eight-second verification deadline expires. No configuration-save command, sentence-output change, or persistent receiver configuration is sent.
 
