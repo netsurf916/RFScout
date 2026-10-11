@@ -1,6 +1,6 @@
 # Wardriving packet capture (design)
 
-Status: design proposal; implementation pending. This app is separate from Wi-Fi/BLE observation and classification.
+Status: **experimental implementation in PR #102**. The app is separate from Wi-Fi/BLE observation and classification. ESP-IDF CI, Wireshark packet decoding, hardware capture quality, and card-failure recovery are not yet fully validated.
 
 ## Output format
 
@@ -10,8 +10,8 @@ Use **PCAPNG** for one mixed-source capture file on the SD card:
 - Enhanced Packet Blocks (EPBs) store timestamps, captured/original lengths, raw bytes, and interface IDs.
 - For Wi-Fi, record unmodified 802.11 bytes exposed by `wifi_promiscuous_pkt_t.payload`, with a standards-compliant Radiotap header synthesized from available RX metadata (channel/frequency, signal in dBm, and only fields actually known). Do not invent FCS or claim visibility into unsupported packets.
 - For BLE, preserve the raw advertisement bytes, advertiser address/type, reported RSSI, event type, and available PHY/channel metadata. Select an existing libpcap Bluetooth LE link type matching the actual representation (for example, Bluetooth LE LL with PHDR only if the required pseudoheader can be correctly filled); otherwise choose a suitable supported representation and document precisely which controller-level bytes are missing. Do not label an advertising report as a complete on-air LL frame.
-- When a **valid GPS position fix** is fresh, encode per-packet location as a compatible PCAPNG GPS custom option; refer to Kismet's documented approach, but use Kismet's enterprise number only if implementing its format exactly. When GPS is missing or stale, omit packet GPS options (never emit 0,0 as an invented position).
-- Clock-invalid captures must use monotonic timestamps with an explicitly documented capture-local convention, or defer creation until wall time is valid. Do not silently present boot-relative time as Unix epoch.
+- When a **valid GPS position fix** is fresh, include a per-packet location annotation. The current candidate writes a standard PCAPNG packet-comment option containing decimal latitude/longitude and fix age, sampled from a cached fix at packet reception. Kismet's binary GPS custom option is a future interoperability improvement and must not be claimed as implemented. When GPS is missing or stale, omit packet GPS options (never emit 0,0 as an invented position).
+- The current candidate refuses to start capture until RFScout's system clock is valid (GPS, NTP, retained or manually set). This avoids falsely interpreting boot-relative times as Unix epochs. Relative-only captures could be implemented later with explicitly defined metadata.
 - Store loss counters, capture totals, supported interface/link type information and channel-hop decisions in an inspectable session manifest or PCAPNG custom metadata; count RX enqueue drops, writer failures, and channel coverage separately.
 
 References:
@@ -52,7 +52,7 @@ The app provides an on-device Settings menu using RFScout's standard trackball n
 | Fixed channel | Select one supported Wi-Fi channel; capture continuously there until changed or stopped. |
 | BLE scan | Passive advertising with duplicate filtering disabled; coexistence scheduling remains controller-driven. BLE frequency/channel is not user-fixable through the current NimBLE scanning API. |
 
-Changes to capture source, channel mode, channel set or dwell while recording should apply at a safe boundary and be recorded in capture/session metadata, including hop transitions. Use a separate raw Wi-Fi capture policy rather than altering the existing observation app's scan behavior.
+Changes to capture source, channel mode, channel set or dwell while recording currently close the active segment, apply the revised radio policy, and start a new capture segment. Explicit policy-change metadata within the file remains a follow-up. Use a separate raw Wi-Fi capture policy rather than altering the existing observation app's scan behavior.
 
 ### Capture content
 
@@ -80,7 +80,7 @@ These are **two primary rotation knobs**: per-file cap and retained-file count; 
 
 Rotation is by completed segment order: finalize and close the current PCAPNG file before opening the next, then delete the oldest **Wardriving-owned** segment if retaining the new segment would exceed the configured count. Never rotate or delete RFScout JSON logs, other applications' files, or unrelated SD contents. A new segment always begins with its own Section Header and interface descriptions; do not split a PCAPNG block across segments. If one packet cannot fit inside an otherwise empty segment, report a record-too-large error and drop it rather than bypassing the cap.
 
-If the card is unavailable, below required reserve, read-only, or write/close fails, surface the problem prominently and stop or pause capture without an unbounded RAM backlog. Resume in a fresh valid segment on media recovery. Settings reductions should not indiscriminately delete files while browsing the menu; apply retention pruning on capture start or rotation with the user-visible policy clearly displayed.
+If the card is unavailable, below required reserve, read-only, or write/close fails, surface the problem prominently and stop capture without an unbounded RAM backlog. The current candidate requires an explicit restart after media recovery; automatic recovery with fresh-segment resume is still pending. Settings reductions should not indiscriminately delete files while browsing the menu; apply retention pruning on capture start or rotation with the user-visible policy clearly displayed.
 
 ### Menu presentation
 
@@ -150,4 +150,4 @@ Acceptance requires host-side PCAPNG structure tests, Wireshark decode of both i
 4. Add tests for PCAPNG block length/alignment, multi-interface IDs, packet truncation, GPS option encoding, no-GPS capture, rotation count/size limits, source selection, channel policy, space reserve, and write failures.
 5. Validate on hardware at different traffic levels; confirm files open in Wireshark and GPS location is recoverable with compatible tooling.
 
-**This document is not the implementation.** Resolve BLE packet framing and Kismet GPS interoperability with actual fixture tests before declaring capture compatibility.
+**Current candidate status:** app registration, radio raw hooks, bounded PSRAM queue, PCAPNG writer, basic capture UI, app-scoped settings, uniform/fixed Wi-Fi policy, packet filters, and SD rotation are implemented on the PR branch. BLE HCI event framing, GPS option interoperability, time-source behavior, performance, storage recovery, and strict size-boundary handling still need hardware and file-format validation. Do not merge solely on the basis of this design.
