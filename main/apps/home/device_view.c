@@ -516,7 +516,9 @@ static void draw_row( int a_y, unsigned a_item )
 static void draw_time_row( int a_y, unsigned a_item )
 {
     const bool active = time_selected_item == a_item;
-    const uint16_t color = active ? COLOR_SELECTED : COLOR_TEXT;
+    const uint16_t color = ( a_item >= TIME_MENU_YEAR && device_time_gps_available() )
+                               ? COLOR_DIM
+                               : ( active ? COLOR_SELECTED : COLOR_TEXT );
     const char *label = "";
     char value[ 48 ] = "";
     switch( a_item )
@@ -602,7 +604,7 @@ static void draw_time_row( int a_y, unsigned a_item )
     display_draw_text( UI_LAYOUT_LABEL_X, a_y, label, color, 1U );
     if( '\0' != value[ 0 ] )
     {
-        display_draw_text( 214, a_y, value, active ? COLOR_ACCENT : COLOR_DIM, 1U );
+        display_draw_text( 214, a_y, value, color, 1U );
     }
 }
 
@@ -635,7 +637,7 @@ static void render_time_menu( void )
               item_count,
               time_editing
                   ? "TURN CHANGE / CENTER DONE"
-                  : ( TIME_MENU_MODE == time_selected_item ? "CENTER CYCLE"
+                  : ( TIME_MENU_MODE == time_selected_item ? "READ ONLY"
                                                            : "TURN SELECT / CENTER ENTER" ) );
     display_draw_text(
         UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, footer, time_editing ? COLOR_ACCENT : COLOR_DIM, 1U );
