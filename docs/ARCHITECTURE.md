@@ -84,6 +84,12 @@ Two platform cases remain intentionally distinct:
 - **Mounted SD media after physical loss** — the storage probe latches the current volume unavailable. A subsequent media-store probe invalidates pooled file handles under storage arbitration, unmounts the lost volume, and attempts a fresh mount. Stateful clients must detect a changed media generation and rebuild volume-specific state.
 
 
+### Declarative wireless callback binding
+
+Application descriptors declare either raw packet consumers or normalized observation consumers for each wireless provider. Application modules do not register or unregister callbacks directly. The session manager installs stable framework dispatchers into the Wi-Fi and BLE monitors, routes delivery only to the active application's declared consumer, and clears its dispatch bindings when the session closes.
+
+A raw consumer suppresses normalized observation parsing for that provider; Wardriving receives raw packet views while WiFi/BLE receives observations. These views are borrowed only for the duration of the callback. Radio stop must quiesce all in-flight callbacks before the application frees capture queues or buffers. Transition abort restores the original session and its service state rather than attaching destination consumers early.
+
 ## Application lifecycle, views, and resource sessions
 
 Every active app has a temporary **resource session**, including apps that currently allocate no dynamic PSRAM. The same session owns the app's managed `rfscout_view_t`.
