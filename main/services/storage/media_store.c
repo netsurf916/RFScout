@@ -44,7 +44,6 @@ static const char *TAG = "media_store";
 static media_slot_t slots[ MEDIA_SLOT_COUNT ];
 static uint32_t next_serial;
 static uint32_t media_generation;
-static bool time_sync_diagnostic_logged;
 static bool time_invalid_diagnostic_logged;
 
 /** @brief Translate a filesystem errno into the documented media-store error vocabulary. */
@@ -692,23 +691,10 @@ esp_err_t media_sync( const rfscout_media_file_t *a_file )
     {
         result = errno_result( errno );
     }
-    else if( !time_sync_diagnostic_logged )
+    else if( !time_invalid_diagnostic_logged )
     {
         time_t epoch = 0;
-        if( device_time_now( &epoch ) )
-        {
-            struct stat info;
-            if( 0 == fstat( fileno( slot->file ), &info ) )
-            {
-                ESP_LOGI( TAG,
-                          "FatFs sync timestamp: clock=%lld mtime=%lld delta=%lld sec",
-                          (long long)epoch,
-                          (long long)info.st_mtime,
-                          (long long)( epoch - info.st_mtime ) );
-                time_sync_diagnostic_logged = true;
-            }
-        }
-        else if( !time_invalid_diagnostic_logged )
+        if( !device_time_now( &epoch ) )
         {
             ESP_LOGI( TAG,
                       "FatFs sync succeeded but system clock is not valid: epoch=%lld",
