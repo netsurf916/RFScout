@@ -87,7 +87,6 @@ static bool storage_participating;
 
 static void restore_quiesced( void )
 {
-    if( storage_participating && media_store_available() )
     {
         while( quiesced_count > 0U )
         {
