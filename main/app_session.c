@@ -325,6 +325,7 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
         {
             return ESP_ERR_INVALID_STATE;
         }
+        bind_session_consumers( NULL );
         release_view();
         reset_session_state();
         session_app = RFSCOUT_APP_COUNT;
@@ -338,6 +339,7 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
     const esp_err_t init_result = init_selected_services();
     if( ESP_OK != init_result )
     {
+        bind_session_consumers( NULL );
         reset_session_state();
         session_app = RFSCOUT_APP_COUNT;
         return init_result;
@@ -346,6 +348,7 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
     const esp_err_t view_result = acquire_view();
     if( ESP_OK != view_result )
     {
+        bind_session_consumers( NULL );
         reset_session_state();
         session_app = RFSCOUT_APP_COUNT;
         return view_result;
