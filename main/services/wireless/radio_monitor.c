@@ -288,7 +288,9 @@ static void promiscuous( void *a_buffer, wifi_promiscuous_pkt_type_t a_type )
     portEXIT_CRITICAL( &callback_lock );
     if( NULL != raw_callback )
     {
-        raw_callback( packet->payload, packet->rx_ctrl.sig_len, packet->rx_ctrl.rssi,
+        raw_callback( packet->payload,
+                      packet->rx_ctrl.sig_len,
+                      packet->rx_ctrl.rssi,
                       packet->rx_ctrl.channel );
         portENTER_CRITICAL( &callback_lock );
         --raw_callbacks_inflight;
@@ -339,10 +341,12 @@ static esp_err_t configure_promiscuous_filters( void )
     }
 
     wifi_promiscuous_filter_t control_filter = {
-        .filter_mask = capture_policy ? WIFI_PROMIS_CTRL_FILTER_MASK_ALL :
-                       WIFI_PROMIS_CTRL_FILTER_MASK_BAR | WIFI_PROMIS_CTRL_FILTER_MASK_BA |
-                       WIFI_PROMIS_CTRL_FILTER_MASK_PSPOLL | WIFI_PROMIS_CTRL_FILTER_MASK_RTS |
-                       WIFI_PROMIS_CTRL_FILTER_MASK_CFEND | WIFI_PROMIS_CTRL_FILTER_MASK_CFENDACK,
+        .filter_mask =
+            capture_policy
+                ? WIFI_PROMIS_CTRL_FILTER_MASK_ALL
+                : WIFI_PROMIS_CTRL_FILTER_MASK_BAR | WIFI_PROMIS_CTRL_FILTER_MASK_BA |
+                      WIFI_PROMIS_CTRL_FILTER_MASK_PSPOLL | WIFI_PROMIS_CTRL_FILTER_MASK_RTS |
+                      WIFI_PROMIS_CTRL_FILTER_MASK_CFEND | WIFI_PROMIS_CTRL_FILTER_MASK_CFENDACK,
     };
     return esp_wifi_set_promiscuous_ctrl_filter( &control_filter );
 }
