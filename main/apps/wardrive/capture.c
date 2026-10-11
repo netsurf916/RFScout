@@ -67,6 +67,8 @@ static rfscout_media_file_t output;
 static bool output_open;
 static uint32_t next_segment;
 static uint32_t current_bytes;
+static int64_t capture_monotonic_origin_us;
+static uint64_t capture_epoch_origin_us;
 static portMUX_TYPE gps_lock = portMUX_INITIALIZER_UNLOCKED;
 static int64_t gps_updated_us;
 static bool gps_fix_valid;
@@ -259,9 +261,9 @@ static bool open_segment( void )
 
 static uint64_t timestamp_now( void )
 {
-    struct timeval now;
-    (void)gettimeofday( &now, NULL );
-    return (uint64_t)now.tv_sec * 1000000ULL + (uint64_t)now.tv_usec;
+    /* Anchor UTC once; later GPS/NTP wall-clock corrections cannot reorder packets. */
+    return capture_epoch_origin_us +
+           (uint64_t)( esp_timer_get_time() - capture_monotonic_origin_us );
 }
 
 static void enqueue( uint8_t a_source,
@@ -518,6 +520,14 @@ esp_err_t wardrive_capture_start( const wardrive_config_t *a_config )
     {
         return ESP_ERR_INVALID_STATE;
     }
+    struct timeval initial_time;
+    if( 0 != gettimeofday( &initial_time, NULL ) )
+    {
+        return ESP_FAIL;
+    }
+    capture_monotonic_origin_us = esp_timer_get_time();
+    capture_epoch_origin_us =
+        (uint64_t)initial_time.tv_sec * 1000000ULL + (uint64_t)initial_time.tv_usec;
     config = *a_config;
     stats = ( wardrive_stats_t ){ 0 };
     stopping = false;
@@ -553,8 +563,13 @@ esp_err_t wardrive_capture_start( const wardrive_config_t *a_config )
         wardrive_capture_stop();
         return ESP_ERR_NO_MEM;
     }
-    radio_monitor_set_capture_policy(
+    const esp_err_t policy_result = radio_monitor_set_capture_policy(
         true, config.fixed_channel ? config.channel : 0U, config.dwell_ms );
+    if( ESP_OK != policy_result )
+    {
+        wardrive_capture_stop();
+        return policy_result;
+    }
     accepting = true;
     stats.recording = true;
     ESP_LOGI( TAG,
