@@ -329,7 +329,8 @@ static esp_err_t configure_promiscuous_filters( void )
     }
 
     wifi_promiscuous_filter_t control_filter = {
-        .filter_mask = WIFI_PROMIS_CTRL_FILTER_MASK_BAR | WIFI_PROMIS_CTRL_FILTER_MASK_BA |
+        .filter_mask = capture_policy ? WIFI_PROMIS_CTRL_FILTER_MASK_ALL :
+                       WIFI_PROMIS_CTRL_FILTER_MASK_BAR | WIFI_PROMIS_CTRL_FILTER_MASK_BA |
                        WIFI_PROMIS_CTRL_FILTER_MASK_PSPOLL | WIFI_PROMIS_CTRL_FILTER_MASK_RTS |
                        WIFI_PROMIS_CTRL_FILTER_MASK_CFEND | WIFI_PROMIS_CTRL_FILTER_MASK_CFENDACK,
     };
@@ -461,6 +462,10 @@ void radio_monitor_set_capture_policy( bool a_enabled,
     capture_policy = a_enabled;
     capture_fixed_channel = a_fixed_channel <= RFSCOUT_WIFI_CHANNEL_MAX ? a_fixed_channel : 0U;
     capture_dwell_ms = a_dwell_ms > 0U ? a_dwell_ms : 200U;
+    if( running )
+    {
+        (void)configure_promiscuous_filters();
+    }
     if( capture_policy && capture_fixed_channel > 0U && running )
     {
         channel = capture_fixed_channel;
