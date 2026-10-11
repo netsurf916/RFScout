@@ -15,6 +15,8 @@
 
 #include "esp_log.h"
 
+#include <stddef.h>
+
 #define SYSTEM_LOG_DRAIN_MS 3000U
 #define SYSTEM_BREADCRUMB_DRAIN_MS 3000U
 #define SYSTEM_RECORDER_DRAIN_MS 5000U
