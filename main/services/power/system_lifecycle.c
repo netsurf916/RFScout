@@ -63,7 +63,7 @@ static void breadcrumbs_restore( void )
 
 static void logging_restore( void )
 {
-    if( device_config_get()->logging_enabled )
+    if( media_store_available() && device_config_get()->logging_enabled )
     {
         const esp_err_t result = log_writer_init();
         if( ESP_OK != result )
@@ -87,17 +87,15 @@ static bool storage_participating;
 
 static void restore_quiesced( void )
 {
+    /* Always call hooks: a service may need to clear its quiesced state even without SD. */
+    while( quiesced_count > 0U )
     {
-        while( quiesced_count > 0U )
+        --quiesced_count;
+        if( NULL != participants[ quiesced_count ].abort )
         {
-            --quiesced_count;
-            if( NULL != participants[ quiesced_count ].abort )
-            {
-                participants[ quiesced_count ].abort();
-            }
+            participants[ quiesced_count ].abort();
         }
     }
-    quiesced_count = 0U;
     storage_participating = false;
 }
 
