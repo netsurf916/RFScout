@@ -149,14 +149,13 @@ static void policy_log_event( const char *a_event, int a_requested_ms, int a_act
     {
         return;
     }
-    const bool ok = log_str( &record, "event", a_event ) &&
-                    log_int( &record, "baud", active_baud ) &&
-                    log_int( &record, "requested_ms", a_requested_ms ) &&
-                    log_int( &record, "actual_ms", a_actual_ms ) &&
-                    log_bool( &record, "speed_valid", policy_filtered_speed_valid ) &&
-                    ( !policy_filtered_speed_valid ||
-                      log_double( &record, "filtered_speed_mph",
-                                  policy_filtered_speed_mps * 2.23693629 ) );
+    const bool ok =
+        log_str( &record, "event", a_event ) && log_int( &record, "baud", active_baud ) &&
+        log_int( &record, "requested_ms", a_requested_ms ) &&
+        log_int( &record, "actual_ms", a_actual_ms ) &&
+        log_bool( &record, "speed_valid", policy_filtered_speed_valid ) &&
+        ( !policy_filtered_speed_valid ||
+          log_double( &record, "filtered_speed_mph", policy_filtered_speed_mps * 2.23693629 ) );
     if( ok )
     {
         (void)log_end( &record );
@@ -205,8 +204,8 @@ static bool policy_send( uint8_t a_class, uint8_t a_id, const uint8_t *a_payload
     }
     if( written != (int)( a_size + 10U ) )
     {
-        ESP_LOGW( TAG, "GPS CASIC command %02X/%02X send failed (%d bytes)", a_class, a_id,
-                  written );
+        ESP_LOGW(
+            TAG, "GPS CASIC command %02X/%02X send failed (%d bytes)", a_class, a_id, written );
     }
     return written == (int)( a_size + 10U );
 }
@@ -219,8 +218,7 @@ static void policy_offer_baud_switch( const uint8_t *a_data, size_t a_size )
     {
         return;
     }
-    const uint32_t reported_baud = (uint32_t)a_data[ 4 ] |
-                                   ( (uint32_t)a_data[ 5 ] << 8U ) |
+    const uint32_t reported_baud = (uint32_t)a_data[ 4 ] | ( (uint32_t)a_data[ 5 ] << 8U ) |
                                    ( (uint32_t)a_data[ 6 ] << 16U ) |
                                    ( (uint32_t)a_data[ 7 ] << 24U );
     if( reported_baud != (uint32_t)active_baud || a_data[ 0 ] > 1U )
@@ -311,10 +309,8 @@ static int policy_supported_target( float a_mph )
     unsigned bucket = 0U;
     for( unsigned index = 1U; index < count; ++index )
     {
-        const float threshold = count == 2U
-                                    ? 3.0f
-                                    : 3.0f + 12.0f * (float)( index - 1U ) /
-                                                 (float)( count - 2U );
+        const float threshold =
+            count == 2U ? 3.0f : 3.0f + 12.0f * (float)( index - 1U ) / (float)( count - 2U );
         if( a_mph < threshold )
         {
             break;
@@ -335,17 +331,19 @@ static bool policy_request_rate( int a_ms, int64_t a_now )
     policy_last_change_us = a_now;
     policy_state = GPS_POLICY_WAIT_ACK;
     policy_deadline_us = a_now + GPS_POLICY_TIMEOUT_US;
-    policy_log_event( policy_rate_scan ? "rate_probe" : "rate_requested",
-                      a_ms, policy_current_interval_ms );
-    ESP_LOGI( TAG, "GPS CASIC %s %d -> %d ms", policy_rate_scan ? "probing" : "requesting",
-              policy_current_interval_ms, a_ms );
+    policy_log_event(
+        policy_rate_scan ? "rate_probe" : "rate_requested", a_ms, policy_current_interval_ms );
+    ESP_LOGI( TAG,
+              "GPS CASIC %s %d -> %d ms",
+              policy_rate_scan ? "probing" : "requesting",
+              policy_current_interval_ms,
+              a_ms );
     return true;
 }
 
 static void policy_scan_step( int64_t a_now )
 {
-    if( !policy_rate_scan || GPS_POLICY_ACTIVE != policy_state ||
-        a_now < policy_scan_next_us )
+    if( !policy_rate_scan || GPS_POLICY_ACTIVE != policy_state || a_now < policy_scan_next_us )
     {
         return;
     }
@@ -375,8 +373,8 @@ static void policy_scan_step( int64_t a_now )
     policy_rate_scan = false;
     policy_speed_since_us = 0;
     policy_last_change_us = a_now;
-    ESP_LOGI( TAG, "GPS CASIC startup rate scan complete; restored %d ms",
-              policy_current_interval_ms );
+    ESP_LOGI(
+        TAG, "GPS CASIC startup rate scan complete; restored %d ms", policy_current_interval_ms );
     policy_log_event( "rate_scan_complete", 0, policy_current_interval_ms );
 }
 
@@ -399,8 +397,10 @@ static void policy_start_probe( void )
     policy_state = GPS_POLICY_WAIT_VERSION;
     policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
     ESP_LOGI( TAG, "GPS CASIC checking %s", policy_probe_names[ policy_probe_index ] );
-    if( !policy_send( policy_probe_classes[ policy_probe_index ], policy_probe_ids[ policy_probe_index ],
-                      NULL, 0U ) )
+    if( !policy_send( policy_probe_classes[ policy_probe_index ],
+                      policy_probe_ids[ policy_probe_index ],
+                      NULL,
+                      0U ) )
     {
         policy_state = GPS_POLICY_UNSUPPORTED;
     }
@@ -448,8 +448,7 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
     {
         const uint8_t rejected_class = a_data[ 0 ];
         const uint8_t rejected_id = a_data[ 1 ];
-        ESP_LOGI( TAG, "GPS CASIC command %02X/%02X unsupported", rejected_class,
-                  rejected_id );
+        ESP_LOGI( TAG, "GPS CASIC command %02X/%02X unsupported", rejected_class, rejected_id );
         if( GPS_POLICY_WAIT_VERSION == policy_state &&
             rejected_class == policy_probe_classes[ policy_probe_index ] &&
             rejected_id == policy_probe_ids[ policy_probe_index ] )
