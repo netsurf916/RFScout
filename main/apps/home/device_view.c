@@ -78,8 +78,7 @@
 #define TIME_MENU_DAY 5U
 #define TIME_MENU_HOUR 6U
 #define TIME_MENU_MINUTE 7U
-#define TIME_MENU_AUTO_COUNT 3U
-#define TIME_MENU_MANUAL_COUNT 8U
+#define TIME_MENU_COUNT 8U
 
 #define POWER_MENU_BACK 0U
 #define POWER_MENU_SHORT_PRESS 1U
@@ -117,8 +116,7 @@ static unsigned device_item_count( void )
 
 static unsigned time_menu_item_count( void )
 {
-    return RFSCOUT_TIME_MODE_MANUAL == device_time_mode() ? TIME_MENU_MANUAL_COUNT
-                                                          : TIME_MENU_AUTO_COUNT;
+    return TIME_MENU_COUNT;
 }
 
 static void emit_device_event( rfscout_event_type_t a_type, int32_t a_value )
@@ -381,7 +379,7 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             snprintf( a_value,
                       a_capacity,
                       "%s",
-                      RFSCOUT_TIME_MODE_AUTO == device_time_mode() ? "Auto" : "Manual" );
+                      device_time_gps_available() ? "GPS" : "Clock" );
             break;
         case DEVICE_ITEM_STARTUP:
             snprintf( a_value, a_capacity, "%s", startup_app_name( config->startup_app ) );
