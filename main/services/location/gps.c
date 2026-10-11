@@ -83,6 +83,8 @@ typedef struct
 } gps_trip_record_t;
 
 #define GPS_POLICY_TIMEOUT_US 2000000LL
+#define GPS_POLICY_PROBE_RETRY_LIMIT 2U
+#define GPS_POLICY_PROBE_RETRY_DELAY_US 300000LL
 #define GPS_POLICY_MIN_CHANGE_US 30000000LL
 #define GPS_CASIC_MAX_PAYLOAD 128U
 
@@ -112,6 +114,8 @@ static uint8_t casic_frame[ GPS_CASIC_MAX_PAYLOAD + 10U ];
 static size_t casic_length;
 static size_t casic_expected;
 static unsigned policy_probe_index;
+static unsigned policy_probe_retries;
+static int64_t policy_probe_retry_at_us;
 static const uint8_t policy_probe_ids[] = { 0x04U, 0x09U, 0x00U };
 static const uint8_t policy_probe_classes[] = { 0x0AU, 0x0AU, 0x06U };
 static const char *const policy_probe_names[] = { "MON-VER", "MON-HW", "CFG-PRT" };
@@ -213,6 +217,8 @@ static void policy_start_probe( void )
 
 static void policy_next_probe( void )
 {
+    policy_probe_retries = 0U;
+    policy_probe_retry_at_us = 0;
     if( policy_probe_index + 1U < sizeof( policy_probe_ids ) )
     {
         ++policy_probe_index;
@@ -229,6 +235,8 @@ static void policy_next_probe( void )
 static void policy_begin( void )
 {
     policy_probe_index = 0U;
+    policy_probe_retries = 0U;
+    policy_probe_retry_at_us = 0;
     ESP_LOGI( TAG, "GPS receiver detected at %d baud; checking CASIC support", active_baud );
     policy_log_event( "receiver_detected", 0, 0 );
     policy_start_probe();
@@ -408,15 +416,35 @@ static void casic_feed( uint8_t a_byte )
 
 static void policy_poll( int64_t a_now )
 {
+    if( GPS_POLICY_WAIT_VERSION == policy_state && 0 != policy_probe_retry_at_us &&
+        a_now >= policy_probe_retry_at_us )
+    {
+        policy_probe_retry_at_us = 0;
+        policy_start_probe();
+    }
     if( ( GPS_POLICY_WAIT_VERSION == policy_state || GPS_POLICY_WAIT_RATE == policy_state ||
           GPS_POLICY_WAIT_ACK == policy_state || GPS_POLICY_VERIFY_RATE == policy_state ) &&
         a_now >= policy_deadline_us )
     {
         if( GPS_POLICY_WAIT_VERSION == policy_state )
         {
-            ESP_LOGW( TAG, "GPS CASIC %s timeout; trying next read-only probe",
-                      policy_probe_names[ policy_probe_index ] );
-            policy_next_probe();
+            if( policy_probe_retries < GPS_POLICY_PROBE_RETRY_LIMIT )
+            {
+                ++policy_probe_retries;
+                ESP_LOGW( TAG, "GPS CASIC %s timeout; retry %u/%u",
+                          policy_probe_names[ policy_probe_index ], policy_probe_retries,
+                          GPS_POLICY_PROBE_RETRY_LIMIT );
+                policy_log_event( "discovery_retry", (int)policy_probe_index,
+                                  (int)policy_probe_retries );
+                policy_probe_retry_at_us = a_now + GPS_POLICY_PROBE_RETRY_DELAY_US;
+                policy_deadline_us = policy_probe_retry_at_us + GPS_POLICY_TIMEOUT_US;
+            }
+            else
+            {
+                ESP_LOGW( TAG, "GPS CASIC %s unavailable after retries",
+                          policy_probe_names[ policy_probe_index ] );
+                policy_next_probe();
+            }
         }
         else
         {
@@ -948,6 +976,8 @@ esp_err_t gps_init( void )
     casic_expected = 0U;
     policy_last_change_us = 0;
     policy_speed_since_us = 0;
+    policy_probe_retries = 0U;
+    policy_probe_retry_at_us = 0;
     policy_filtered_speed_mps = 0.0;
     policy_filtered_speed_updated_us = 0;
     policy_filtered_speed_valid = false;
