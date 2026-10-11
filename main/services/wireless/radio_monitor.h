@@ -43,6 +43,8 @@ esp_err_t radio_monitor_stop( void );
 
 /** @brief Return whether the app currently requests Wi-Fi observation delivery. */
 bool radio_monitor_is_active( void );
+/** @brief Last configured Wi-Fi channel, for capture UI. */
+uint8_t radio_monitor_channel( void );
 
 /**
  * @brief Supply the canonical-store projection of channels with retained AP/BSSID evidence.
