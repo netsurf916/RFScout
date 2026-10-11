@@ -12,6 +12,8 @@
 
 #include "app_view.h"
 #include "input.h"
+#include "radio_monitor.h"
+#include "ble_monitor.h"
 
 #include "esp_err.h"
 
@@ -31,6 +33,7 @@ typedef enum
     RFSCOUT_APP_THERMAL,
     RFSCOUT_APP_AUDIO_SPECTRUM,
     RFSCOUT_APP_GPS,
+    RFSCOUT_APP_WARDRIVE,
     RFSCOUT_APP_COUNT
 } rfscout_app_id_t;
 
@@ -91,6 +94,15 @@ typedef enum
 typedef rfscout_app_runtime_result_t ( *rfscout_app_runtime_handler_t )(
     const rfscout_app_runtime_event_t *a_event );
 
+/** Statically declared, session-owned wireless consumers. */
+typedef struct
+{
+    radio_observation_fn wifi_observation;
+    radio_raw_frame_fn wifi_raw;
+    ble_observation_fn ble_observation;
+    ble_raw_adv_fn ble_raw;
+} rfscout_app_consumers_t;
+
 /**
  * @brief Self-contained metadata and runtime contract exported by each compiled-in app module.
  * @details Probe implementations may use platform/service APIs but must leave hardware inactive.
@@ -113,6 +125,7 @@ typedef struct
     esp_err_t ( *probe )( void );
     bool requires_activation;
     uint32_t services;
+    rfscout_app_consumers_t consumers;
     rfscout_app_runtime_handler_t runtime;
     esp_err_t ( *prepare_leave )( void );
 } rfscout_app_descriptor_t;

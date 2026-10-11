@@ -13,7 +13,18 @@
 #include "rf_observation.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
+
+/** @brief Raw 802.11 frame view; valid only for callback duration. */
+typedef void ( *radio_raw_frame_fn )( const uint8_t *a_bytes,
+                                      size_t a_length,
+                                      int8_t a_rssi,
+                                      uint8_t a_channel );
+void radio_monitor_set_raw_observer( radio_raw_frame_fn a_callback );
+/** @brief Configure uniform capture hopping or a fixed channel; reset when leaving capture. */
+esp_err_t
+radio_monitor_set_capture_policy( bool a_enabled, uint8_t a_fixed_channel, uint32_t a_dwell_ms );
 
 typedef void ( *radio_observation_fn )( rf_device_t *a_observation );
 
@@ -31,6 +42,8 @@ esp_err_t radio_monitor_stop( void );
 
 /** @brief Return whether the app currently requests Wi-Fi observation delivery. */
 bool radio_monitor_is_active( void );
+/** @brief Last configured Wi-Fi channel, for capture UI. */
+uint8_t radio_monitor_channel( void );
 
 /**
  * @brief Supply the canonical-store projection of channels with retained AP/BSSID evidence.

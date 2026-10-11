@@ -50,6 +50,11 @@ typedef struct
 
 static const char *TAG = "radio_monitor";
 static radio_observation_fn sink;
+static radio_raw_frame_fn raw_sink;
+static uint32_t raw_callbacks_inflight;
+static bool capture_policy;
+static uint8_t capture_fixed_channel;
+static uint32_t capture_dwell_ms = 200U;
 static uint8_t channel = WIFI_MIN_CHANNEL;
 static int64_t last_hop_us;
 static uint16_t active_ap_channel_mask;
@@ -273,6 +278,29 @@ static void promiscuous( void *a_buffer, wifi_promiscuous_pkt_type_t a_type )
     }
 
     const wifi_promiscuous_pkt_t *packet = a_buffer;
+    radio_raw_frame_fn raw_callback;
+    portENTER_CRITICAL( &callback_lock );
+    raw_callback = raw_sink;
+    if( NULL != raw_callback )
+    {
+        ++raw_callbacks_inflight;
+    }
+    portEXIT_CRITICAL( &callback_lock );
+    if( NULL != raw_callback )
+    {
+        raw_callback( packet->payload,
+                      packet->rx_ctrl.sig_len,
+                      packet->rx_ctrl.rssi,
+                      packet->rx_ctrl.channel );
+        portENTER_CRITICAL( &callback_lock );
+        --raw_callbacks_inflight;
+        portEXIT_CRITICAL( &callback_lock );
+    }
+    if( NULL != raw_callback )
+    {
+        end_observation_callback();
+        return;
+    }
     wifi_frame_info_t frame;
     if( parse_wifi_frame( packet->payload, packet->rx_ctrl.sig_len, &frame ) )
     {
@@ -318,9 +346,12 @@ static esp_err_t configure_promiscuous_filters( void )
     }
 
     wifi_promiscuous_filter_t control_filter = {
-        .filter_mask = WIFI_PROMIS_CTRL_FILTER_MASK_BAR | WIFI_PROMIS_CTRL_FILTER_MASK_BA |
-                       WIFI_PROMIS_CTRL_FILTER_MASK_PSPOLL | WIFI_PROMIS_CTRL_FILTER_MASK_RTS |
-                       WIFI_PROMIS_CTRL_FILTER_MASK_CFEND | WIFI_PROMIS_CTRL_FILTER_MASK_CFENDACK,
+        .filter_mask =
+            capture_policy
+                ? WIFI_PROMIS_CTRL_FILTER_MASK_ALL
+                : WIFI_PROMIS_CTRL_FILTER_MASK_BAR | WIFI_PROMIS_CTRL_FILTER_MASK_BA |
+                      WIFI_PROMIS_CTRL_FILTER_MASK_PSPOLL | WIFI_PROMIS_CTRL_FILTER_MASK_RTS |
+                      WIFI_PROMIS_CTRL_FILTER_MASK_CFEND | WIFI_PROMIS_CTRL_FILTER_MASK_CFENDACK,
     };
     return esp_wifi_set_promiscuous_ctrl_filter( &control_filter );
 }
@@ -332,9 +363,18 @@ static int64_t channel_dwell_us( uint8_t a_channel )
         return WIFI_DISCOVERY_DWELL_US;
     }
 
+    if( capture_policy )
+    {
+        return (int64_t)capture_dwell_ms * 1000LL;
+    }
     const uint16_t channel_bit = (uint16_t)( 1U << ( a_channel - WIFI_MIN_CHANNEL ) );
     return ( 0U != ( active_ap_channel_mask & channel_bit ) ) ? WIFI_ACTIVE_DWELL_US
                                                               : WIFI_DISCOVERY_DWELL_US;
+}
+
+uint8_t radio_monitor_channel( void )
+{
+    return channel;
 }
 
 bool radio_monitor_is_active( void )
@@ -431,11 +471,56 @@ esp_err_t radio_monitor_stop( void )
     }
 
     active_ap_channel_mask = 0U;
+    capture_policy = false;
     if( was_running )
     {
         ESP_LOGI( TAG, "Wi-Fi monitor stopped for inactive app" );
     }
     return stop_result;
+}
+
+esp_err_t
+radio_monitor_set_capture_policy( bool a_enabled, uint8_t a_fixed_channel, uint32_t a_dwell_ms )
+{
+    capture_policy = a_enabled;
+    capture_fixed_channel = a_fixed_channel <= RFSCOUT_WIFI_CHANNEL_MAX ? a_fixed_channel : 0U;
+    capture_dwell_ms = a_dwell_ms > 0U ? a_dwell_ms : 200U;
+    esp_err_t result = ESP_OK;
+    if( running )
+    {
+        result = configure_promiscuous_filters();
+    }
+    if( ESP_OK == result && capture_policy && capture_fixed_channel > 0U && running )
+    {
+        result = esp_wifi_set_channel( capture_fixed_channel, WIFI_SECOND_CHAN_NONE );
+        if( ESP_OK == result )
+        {
+            channel = capture_fixed_channel;
+        }
+    }
+    last_hop_us = esp_timer_get_time();
+    return result;
+}
+
+void radio_monitor_set_raw_observer( radio_raw_frame_fn a_callback )
+{
+    portENTER_CRITICAL( &callback_lock );
+    raw_sink = a_callback;
+    portEXIT_CRITICAL( &callback_lock );
+    if( NULL == a_callback )
+    {
+        while( true )
+        {
+            portENTER_CRITICAL( &callback_lock );
+            const bool idle = 0U == raw_callbacks_inflight;
+            portEXIT_CRITICAL( &callback_lock );
+            if( idle )
+            {
+                break;
+            }
+            vTaskDelay( pdMS_TO_TICKS( 1U ) );
+        }
+    }
 }
 
 void radio_monitor_set_observer( radio_observation_fn a_callback )
@@ -449,11 +534,6 @@ esp_err_t radio_monitor_init( void )
     {
         return ESP_OK;
     }
-    if( NULL == sink )
-    {
-        return ESP_ERR_INVALID_STATE;
-    }
-
     esp_err_t result = wifi_core_init();
     if( ESP_OK != result )
     {
@@ -488,6 +568,10 @@ void radio_monitor_step( void )
         return;
     }
 
+    if( capture_policy && capture_fixed_channel > 0U )
+    {
+        return;
+    }
     const int64_t now = esp_timer_get_time();
     if( ( now - last_hop_us ) < channel_dwell_us( channel ) )
     {

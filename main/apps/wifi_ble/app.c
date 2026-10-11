@@ -355,6 +355,8 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
     return RFSCOUT_APP_RUNTIME_HANDLED;
 }
 
+extern void rfscout_observation_consume( rf_device_t *a_observation );
+
 const rfscout_app_descriptor_t rfscout_wifi_ble_app = {
     .id = RFSCOUT_APP_WIFI_BT,
     .name = "WiFi / BT",
@@ -363,5 +365,10 @@ const rfscout_app_descriptor_t rfscout_wifi_ble_app = {
     .probe = NULL,
     .requires_activation = true,
     .services = RFSCOUT_APP_SERVICE_WIFI_MONITOR | RFSCOUT_APP_SERVICE_BLE_MONITOR,
+    .consumers =
+        {
+            .wifi_observation = rfscout_observation_consume,
+            .ble_observation = rfscout_observation_consume,
+        },
     .runtime = wifi_ble_runtime,
 };
