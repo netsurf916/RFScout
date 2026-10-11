@@ -24,6 +24,8 @@
 #include <string.h>
 #include <time.h>
 
+/* Disable after consecutive storage-write failures; success resets the streak. */
+#define BREADCRUMB_FAILURE_LIMIT 10U
 #define BREADCRUMB_COLLECTION "breadcrumbs"
 #define BREADCRUMB_SETTINGS_KEY "breadcrumbs"
 #define BREADCRUMB_SETTINGS_VERSION 1U
@@ -72,6 +74,7 @@ static volatile bool trim_requested;
 static volatile bool shutdown_requested;
 static volatile bool worker_quiesced;
 static bool settings_loaded;
+static uint8_t consecutive_write_failures;
 static volatile bool enabled;
 static volatile uint16_t file_limit = RFSCOUT_BREADCRUMB_FILE_LIMIT_DEFAULT;
 static rfscout_media_collection_t collection;
@@ -335,14 +338,14 @@ static bool prepare_append( const rfscout_media_file_t *a_file, bool a_empty_fil
 }
 
 /** @brief Append one record; caller holds write_mutex so disable cannot race a write. */
-static void write_record_locked( const breadcrumb_record_t *a_record )
+static bool write_record_locked( const breadcrumb_record_t *a_record )
 {
     char name[ BREADCRUMB_FILENAME_CAPACITY ];
     char timestamp[ 32 ];
     if( !format_bucket_name( a_record->utc_epoch, name ) ||
         !format_timestamp( a_record->utc_epoch, timestamp, sizeof( timestamp ) ) )
     {
-        return;
+        return false;
     }
 
     rfscout_media_entry_t entry;
@@ -351,7 +354,7 @@ static void write_record_locked( const breadcrumb_record_t *a_record )
     if( new_file && ESP_ERR_NOT_FOUND != stat_result )
     {
         ESP_LOGE( TAG, "breadcrumb size query failed: %s", esp_err_to_name( stat_result ) );
-        return;
+        return false;
     }
 
     breadcrumb_header_status_t header_status = BREADCRUMB_HEADER_VALID;
@@ -361,7 +364,7 @@ static void write_record_locked( const breadcrumb_record_t *a_record )
         if( BREADCRUMB_HEADER_IO_ERROR == header_status )
         {
             ESP_LOGE( TAG, "breadcrumb header read failed" );
-            return;
+            return false;
         }
     }
 
@@ -380,7 +383,7 @@ static void write_record_locked( const breadcrumb_record_t *a_record )
     if( ESP_OK != open_result )
     {
         ESP_LOGE( TAG, "breadcrumb append open failed: %s", esp_err_to_name( open_result ) );
-        return;
+        return false;
     }
 
     const bool empty_file = new_file || recreate_file || 0U == entry.size_bytes;
@@ -422,6 +425,7 @@ static void write_record_locked( const breadcrumb_record_t *a_record )
     {
         trim_files();
     }
+    return success;
 }
 
 static void write_record( const breadcrumb_record_t *a_record )
@@ -433,7 +437,31 @@ static void write_record( const breadcrumb_record_t *a_record )
     (void)xSemaphoreTake( write_mutex, portMAX_DELAY );
     if( enabled )
     {
-        write_record_locked( a_record );
+        const bool success = write_record_locked( a_record );
+        if( success )
+        {
+            consecutive_write_failures = 0U;
+        }
+        else if( consecutive_write_failures < BREADCRUMB_FAILURE_LIMIT )
+        {
+            ++consecutive_write_failures;
+            if( BREADCRUMB_FAILURE_LIMIT == consecutive_write_failures )
+            {
+                ESP_LOGW( TAG, "disabling breadcrumbs after %u consecutive write failures",
+                          (unsigned)consecutive_write_failures );
+                const esp_err_t result = persist_settings( false, file_limit );
+                if( ESP_OK == result )
+                {
+                    enabled = false;
+                    (void)xQueueReset( queue );
+                }
+                else
+                {
+                    ESP_LOGE( TAG, "cannot persist automatic breadcrumb disable: %s",
+                              esp_err_to_name( result ) );
+                }
+            }
+        }
     }
     (void)xSemaphoreGive( write_mutex );
 }
@@ -496,6 +524,7 @@ esp_err_t breadcrumbs_init( void )
 
     last_capture_us = 0;
     last_queued_utc = 0;
+    consecutive_write_failures = 0U;
     trim_requested = false;
     shutdown_requested = false;
     worker_quiesced = false;
@@ -514,7 +543,8 @@ esp_err_t breadcrumbs_init( void )
 
 void breadcrumbs_poll( void )
 {
-    if( NULL == queue || shutdown_requested || !enabled || !gps_available() )
+    if( NULL == queue || shutdown_requested || !enabled || !gps_available() ||
+        !media_store_available() )
     {
         return;
     }
@@ -579,6 +609,7 @@ esp_err_t breadcrumbs_set_enabled( bool a_enabled )
     if( ESP_OK == result )
     {
         enabled = a_enabled;
+        consecutive_write_failures = 0U;
         last_capture_us = 0;
         last_queued_utc = 0;
         if( !a_enabled && NULL != queue )
