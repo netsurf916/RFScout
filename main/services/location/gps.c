@@ -128,7 +128,11 @@ static void policy_log_event( const char *a_event, int a_requested_ms, int a_act
     const bool ok = log_str( &record, "event", a_event ) &&
                     log_int( &record, "baud", active_baud ) &&
                     log_int( &record, "requested_ms", a_requested_ms ) &&
-                    log_int( &record, "actual_ms", a_actual_ms );
+                    log_int( &record, "actual_ms", a_actual_ms ) &&
+                    log_bool( &record, "speed_valid", policy_filtered_speed_valid ) &&
+                    ( !policy_filtered_speed_valid ||
+                      log_double( &record, "filtered_speed_mph",
+                                  policy_filtered_speed_mps * 2.23693629 ) );
     if( ok )
     {
         (void)log_end( &record );
