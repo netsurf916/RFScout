@@ -376,10 +376,7 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             snprintf( a_value, a_capacity, "%us", (unsigned)config->gps_timeout_seconds );
             break;
         case DEVICE_ITEM_TIME:
-            snprintf( a_value,
-                      a_capacity,
-                      "%s",
-                      device_time_gps_available() ? "GPS" : "Clock" );
+            snprintf( a_value, a_capacity, "%s", device_time_gps_available() ? "GPS" : "Clock" );
             break;
         case DEVICE_ITEM_STARTUP:
             snprintf( a_value, a_capacity, "%s", startup_app_name( config->startup_app ) );
@@ -1264,8 +1261,7 @@ static bool time_menu_input( bool a_pressed, int a_delta )
             accepted = commit_manual_time();
         }
         if( TIME_MENU_TIMEZONE == time_selected_item ||
-            ( !device_time_gps_available() &&
-              time_selected_item >= TIME_MENU_YEAR ) )
+            ( !device_time_gps_available() && time_selected_item >= TIME_MENU_YEAR ) )
         {
             time_editing = !time_editing;
             if( accepted )
