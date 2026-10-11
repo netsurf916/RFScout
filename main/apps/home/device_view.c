@@ -526,21 +526,35 @@ static void draw_time_row( int a_y, unsigned a_item )
             break;
         case TIME_MENU_MODE:
         {
-            label = "Mode";
+            label = "Source";
             rfscout_time_status_t status;
             device_time_status( &status );
-            if( RFSCOUT_TIME_MODE_MANUAL == status.mode )
+            const char *source = "Waiting";
+            if( device_time_gps_available() )
             {
-                snprintf( value, sizeof( value ), "Manual" );
+                source = "GPS";
             }
-            else if( status.valid && RFSCOUT_TIME_SOURCE_GPS == status.source )
+            else if( status.valid )
             {
-                snprintf( value, sizeof( value ), "Auto / GPS" );
+                switch( status.source )
+                {
+                    case RFSCOUT_TIME_SOURCE_NTP:
+                        source = "NTP";
+                        break;
+                    case RFSCOUT_TIME_SOURCE_MANUAL:
+                        source = "Manual";
+                        break;
+                    case RFSCOUT_TIME_SOURCE_RETAINED:
+                        source = "Retained";
+                        break;
+                    case RFSCOUT_TIME_SOURCE_GPS:
+                        source = "GPS (stale)";
+                        break;
+                    default:
+                        break;
+                }
             }
-            else
-            {
-                snprintf( value, sizeof( value ), "Auto / Waiting" );
-            }
+            snprintf( value, sizeof( value ), "%s", source );
             break;
         }
         case TIME_MENU_TIMEZONE:
