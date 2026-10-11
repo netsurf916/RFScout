@@ -38,7 +38,7 @@ The shared GPS service detects NMEA at the receiver's existing UART baud (9600 o
 
 Rate increases require 5 seconds in a higher tier, decreases require 20 seconds, and at least 30 seconds separates changes. The rate policy uses a separate exponentially smoothed GPS speed estimate (90% previous/10% new at 1 Hz, adjusted for each sample interval), without changing displayed raw speed or trip calculations. A CFG-RATE write must be acknowledged and verified by readback; rejection, mismatch, or timeout stops automatic adjustments for that GPS session. Settings are volatile; firmware does not change UART baud, sentence output, or persistent receiver configuration.
 
-Startup CASIC packet traces remain in serial logging. Rate transitions and failures are also recorded asynchronously in the normal SD logs as `gps_policy` JSON records (requested/actual milliseconds and baud), even when the GPS app is not open. Allow time to flush SD logs before power-off. Higher-rate behavior still requires moving hardware validation.
+Serial logs summarize CASIC discovery, initial configuration, rate changes, and errors without routine raw packet dumps. The normal SD logs record `gps_policy` JSON events for receiver detection, protocol confirmation, initial rate, rate requests, acknowledgments, verified changes, and failures. Records include baud, requested/actual interval, and filtered speed when available, independent of the active app. Allow time to flush SD logs before power-off. Higher-rate behavior still requires moving hardware validation.
 
 ## Planned diagnostics
 
