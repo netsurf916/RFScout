@@ -50,7 +50,7 @@ static esp_err_t last_error;
 
 static wardrive_config_t defaults( void )
 {
-    return (wardrive_config_t){
+    return ( wardrive_config_t ){
         .wifi = true,
         .ble = true,
         .fixed_channel = false,
@@ -72,10 +72,9 @@ static void load_settings( void )
         length == sizeof( stored ) && stored.magic == CAPTURE_SETTINGS_MAGIC &&
         stored.version == CAPTURE_SETTINGS_VERSION && stored.options.max_files > 0U &&
         stored.options.file_limit_bytes >= 1024U * 1024U &&
-        stored.options.file_limit_bytes <= 128U * 1024U * 1024U &&
-        stored.options.channel >= 1U && stored.options.channel <= 14U &&
-        stored.options.dwell_ms >= 50U && stored.options.dwell_ms <= 5000U &&
-        ( stored.options.wifi || stored.options.ble ) )
+        stored.options.file_limit_bytes <= 128U * 1024U * 1024U && stored.options.channel >= 1U &&
+        stored.options.channel <= 14U && stored.options.dwell_ms >= 50U &&
+        stored.options.dwell_ms <= 5000U && ( stored.options.wifi || stored.options.ble ) )
     {
         options = stored.options;
     }
@@ -121,30 +120,45 @@ static void draw_overview( void )
     wardrive_stats_t stats;
     wardrive_capture_stats( &stats );
     rfscout_gps_snapshot_t gps = { 0 };
-    const bool fixed = gps_snapshot_get( &gps ) && gps.location_valid &&
-                       gps.location_age_ms <= 5000U;
+    const bool fixed =
+        gps_snapshot_get( &gps ) && gps.location_valid && gps.location_age_ms <= 5000U;
     char line[ 72 ];
 
     display_clear( theme->background );
     ui_chrome_draw( "WARDRIVING", theme->secondary );
-    (void)snprintf( line, sizeof( line ), "STATE: %s",
-                    stats.storage_error ? "SD ERROR" : stats.recording ? "RECORDING" : "STOPPED" );
+    (void)snprintf( line,
+                    sizeof( line ),
+                    "STATE: %s",
+                    stats.storage_error ? "SD ERROR"
+                    : stats.recording   ? "RECORDING"
+                                        : "STOPPED" );
     display_draw_text( 8, 27, line, stats.storage_error ? theme->warning : theme->text, 1U );
-    (void)snprintf( line, sizeof( line ), "RADIO: %s%s%s", options.wifi ? "Wi-Fi" : "",
-                    options.wifi && options.ble ? " + " : "", options.ble ? "BLE" : "" );
+    (void)snprintf( line,
+                    sizeof( line ),
+                    "RADIO: %s%s%s",
+                    options.wifi ? "Wi-Fi" : "",
+                    options.wifi && options.ble ? " + " : "",
+                    options.ble ? "BLE" : "" );
     display_draw_text( 8, 47, line, theme->text, 1U );
-    (void)snprintf( line, sizeof( line ), "CHANNEL: %s",
-                    options.fixed_channel ? "FIXED" : "SCANNING" );
+    (void)snprintf(
+        line, sizeof( line ), "CHANNEL: %s", options.fixed_channel ? "FIXED" : "SCANNING" );
     display_draw_text( 8, 65, line, theme->info, 1U );
     (void)snprintf( line, sizeof( line ), "GPS: %s", fixed ? "FIX" : "NO FIX" );
     display_draw_text( 202, 65, line, fixed ? theme->success : theme->warning, 1U );
-    (void)snprintf( line, sizeof( line ), "Wi-Fi: %lu   BLE: %lu",
-                    (unsigned long)stats.received_wifi, (unsigned long)stats.received_ble );
+    (void)snprintf( line,
+                    sizeof( line ),
+                    "Wi-Fi: %lu   BLE: %lu",
+                    (unsigned long)stats.received_wifi,
+                    (unsigned long)stats.received_ble );
     display_draw_text( 8, 88, line, theme->text, 1U );
-    (void)snprintf( line, sizeof( line ), "SAVED: %lu  DROPPED: %lu",
-                    (unsigned long)stats.written, (unsigned long)stats.dropped );
+    (void)snprintf( line,
+                    sizeof( line ),
+                    "SAVED: %lu  DROPPED: %lu",
+                    (unsigned long)stats.written,
+                    (unsigned long)stats.dropped );
     display_draw_text( 8, 108, line, theme->text, 1U );
-    (void)snprintf( line, sizeof( line ), "WRITTEN: %lu KiB", (unsigned long)( stats.bytes / 1024U ) );
+    (void)snprintf(
+        line, sizeof( line ), "WRITTEN: %lu KiB", (unsigned long)( stats.bytes / 1024U ) );
     display_draw_text( 8, 128, line, theme->info, 1U );
     display_draw_text( 8, 152, "CENTER: SETTINGS", theme->secondary, 1U );
     (void)display_present();
@@ -164,9 +178,12 @@ static void describe_setting( unsigned a_index, const char **a_label, char *a_va
         }
         case MENU_SOURCES:
             label = "Sources";
-            (void)snprintf( a_value, a_size, "%s", options.wifi && options.ble
-                                                      ? "Both"
-                                                      : options.wifi ? "Wi-Fi" : "BLE" );
+            (void)snprintf( a_value,
+                            a_size,
+                            "%s",
+                            options.wifi && options.ble ? "Both"
+                            : options.wifi              ? "Wi-Fi"
+                                                        : "BLE" );
             break;
         case MENU_MODE:
             label = "Wi-Fi mode";
@@ -182,10 +199,13 @@ static void describe_setting( unsigned a_index, const char **a_label, char *a_va
             break;
         case MENU_PACKETS:
             label = "Wi-Fi frames";
-            (void)snprintf( a_value, a_size, "%s",
-                            options.wifi_types == 1U ? "Mgmt" :
-                            options.wifi_types == 2U ? "Ctrl" :
-                            options.wifi_types == 4U ? "Data" : "All" );
+            (void)snprintf( a_value,
+                            a_size,
+                            "%s",
+                            options.wifi_types == 1U   ? "Mgmt"
+                            : options.wifi_types == 2U ? "Ctrl"
+                            : options.wifi_types == 4U ? "Data"
+                                                       : "All" );
             break;
         case MENU_GPS:
             label = "GPS metadata";
@@ -193,7 +213,9 @@ static void describe_setting( unsigned a_index, const char **a_label, char *a_va
             break;
         case MENU_SIZE:
             label = "Max file";
-            (void)snprintf( a_value, a_size, "%lu MiB",
+            (void)snprintf( a_value,
+                            a_size,
+                            "%lu MiB",
                             (unsigned long)( options.file_limit_bytes / ( 1024U * 1024U ) ) );
             break;
         case MENU_FILES:
@@ -228,8 +250,9 @@ static void draw_menu( void )
         const bool disabled = ( item >= MENU_MODE && item <= MENU_PACKETS && !options.wifi ) ||
                               ( item == MENU_CHANNEL && !options.fixed_channel ) ||
                               ( item == MENU_DWELL && options.fixed_channel );
-        const uint16_t color = disabled ? theme->secondary :
-                               item == selected ? theme->info : theme->text;
+        const uint16_t color = disabled           ? theme->secondary
+                               : item == selected ? theme->info
+                                                  : theme->text;
         display_draw_text( 8, 26 + (int)i * 20, item == selected ? ">" : " ", color, 1U );
         display_draw_text( 22, 26 + (int)i * 20, label, color, 1U );
         if( value[ 0 ] != 0 )
@@ -239,7 +262,9 @@ static void draw_menu( void )
     }
     char line[ 64 ];
     const uint64_t limit = (uint64_t)options.file_limit_bytes * options.max_files;
-    (void)snprintf( line, sizeof( line ), "CAP %luM USED %luM FREE %luM",
+    (void)snprintf( line,
+                    sizeof( line ),
+                    "CAP %luM USED %luM FREE %luM",
                     (unsigned long)( limit / 1048576U ),
                     (unsigned long)( stored_bytes / 1048576U ),
                     (unsigned long)( free_bytes / 1048576U ) );
@@ -285,7 +310,8 @@ static void modify_setting( unsigned a_item, int a_direction )
     }
     else if( a_item == MENU_CHANNEL && options.wifi && options.fixed_channel )
     {
-        options.channel = (uint8_t)( ( options.channel + ( a_direction > 0 ? 0U : 12U ) ) % 14U + 1U );
+        options.channel =
+            (uint8_t)( ( options.channel + ( a_direction > 0 ? 0U : 12U ) ) % 14U + 1U );
     }
     else if( a_item == MENU_DWELL && options.wifi && !options.fixed_channel )
     {
