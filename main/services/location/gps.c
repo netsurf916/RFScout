@@ -110,7 +110,7 @@ static size_t casic_expected;
 static uint32_t
 casic_checksum( uint8_t a_class, uint8_t a_id, const uint8_t *a_data, size_t a_size )
 {
-    uint32_t sum = ( (uint32_t)a_class << 24U ) | ( (uint32_t)a_id << 16U ) | (uint32_t)a_size;
+    uint32_t sum = ( (uint32_t)a_id << 24U ) | ( (uint32_t)a_class << 16U ) | (uint32_t)a_size;
     for( size_t index = 0U; index < a_size; index += 4U )
     {
         sum += (uint32_t)a_data[ index ] | ( (uint32_t)a_data[ index + 1U ] << 8U ) |
