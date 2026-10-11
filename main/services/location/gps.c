@@ -173,6 +173,17 @@ static bool policy_send( uint8_t a_class, uint8_t a_id, const uint8_t *a_payload
     return written == (int)( a_size + 10U );
 }
 
+static void policy_query_rate( void )
+{
+    policy_state = GPS_POLICY_WAIT_RATE;
+    policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
+    ESP_LOGI( TAG, "GPS CASIC probing CFG-RATE (read-only)" );
+    if( !policy_send( 0x06U, 0x04U, NULL, 0U ) )
+    {
+        policy_state = GPS_POLICY_UNSUPPORTED;
+    }
+}
+
 static void policy_start_probe( void )
 {
     policy_state = GPS_POLICY_WAIT_VERSION;
@@ -186,10 +197,24 @@ static void policy_start_probe( void )
     }
 }
 
+static void policy_next_probe( void )
+{
+    if( policy_probe_index + 1U < sizeof( policy_probe_ids ) )
+    {
+        ++policy_probe_index;
+        policy_start_probe();
+    }
+    else
+    {
+        ESP_LOGW( TAG, "GPS CASIC discovery exhausted; generic NMEA retained" );
+        policy_state = GPS_POLICY_UNSUPPORTED;
+    }
+}
+
 static void policy_begin( void )
 {
     policy_probe_index = 0U;
-    ESP_LOGI( TAG, "GPS HT1818Z3G5L probe: CASIC MON-VER at %d baud", active_baud );
+    ESP_LOGI( TAG, "GPS HT1818Z3G5L probe: CASIC at %d baud", active_baud );
     policy_start_probe();
 }
 
@@ -197,70 +222,89 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
 {
     ESP_LOGI( TAG, "GPS CASIC valid RX class=%02X id=%02X payload=%u probe=%s", a_class, a_id,
               (unsigned)a_size, policy_probe_names[ policy_probe_index ] );
-    if( GPS_POLICY_WAIT_VERSION == policy_state && policy_probe_index > 0U &&
+
+    if( 0x05U == a_class && 0x00U == a_id && 4U == a_size )
+    {
+        const uint8_t rejected_class = a_data[ 0 ];
+        const uint8_t rejected_id = a_data[ 1 ];
+        ESP_LOGW( TAG, "GPS CASIC NAK command=%02X/%02X state=%d", rejected_class, rejected_id,
+                  (int)policy_state );
+        if( GPS_POLICY_WAIT_VERSION == policy_state &&
+            rejected_class == policy_probe_classes[ policy_probe_index ] &&
+            rejected_id == policy_probe_ids[ policy_probe_index ] )
+        {
+            policy_next_probe();
+        }
+        else if( GPS_POLICY_WAIT_RATE == policy_state && 0x06U == rejected_class &&
+                 0x04U == rejected_id )
+        {
+            ESP_LOGW( TAG, "GPS CASIC CFG-RATE poll rejected; rate control disabled" );
+            policy_state = GPS_POLICY_UNSUPPORTED;
+        }
+        else if( GPS_POLICY_WAIT_ACK == policy_state && 0x06U == rejected_class &&
+                 0x04U == rejected_id )
+        {
+            ESP_LOGW( TAG, "GPS CASIC CFG-RATE write rejected; rate control disabled" );
+            policy_state = GPS_POLICY_UNSUPPORTED;
+        }
+        return;
+    }
+
+    if( GPS_POLICY_WAIT_VERSION == policy_state &&
         a_class == policy_probe_classes[ policy_probe_index ] &&
         a_id == policy_probe_ids[ policy_probe_index ] )
     {
-        ESP_LOGI( TAG, "GPS CASIC %s answered; retaining NMEA, rate control disabled",
-                  policy_probe_names[ policy_probe_index ] );
-        policy_state = GPS_POLICY_UNSUPPORTED;
-        return;
-    }
-    if( 0x05U == a_class && 0x00U == a_id && GPS_POLICY_WAIT_VERSION == policy_state )
-    {
-        ESP_LOGW( TAG, "GPS CASIC probe NAK received; continuing read-only probes on timeout" );
-    }
-    if( 0x0A == a_class && 0x04 == a_id && GPS_POLICY_WAIT_VERSION == policy_state )
-    {
-        if( 64U != a_size )
+        if( 0U == policy_probe_index && 64U == a_size )
         {
-            ESP_LOGW( TAG, "GPS CASIC MON-VER invalid length=%u", (unsigned)a_size );
-            policy_state = GPS_POLICY_UNSUPPORTED;
-            return;
+            char software[ 33 ];
+            char hardware[ 33 ];
+            memcpy( software, a_data, 32U );
+            memcpy( hardware, a_data + 32U, 32U );
+            software[ 32 ] = '\0';
+            hardware[ 32 ] = '\0';
+            ESP_LOGI( TAG, "GPS CASIC MON-VER software=%s hardware=%s", software, hardware );
+            policy_query_rate();
         }
-        char software[ 33 ];
-        char hardware[ 33 ];
-        memcpy( software, a_data, 32U );
-        memcpy( hardware, a_data + 32U, 32U );
-        software[ 32 ] = '\0';
-        hardware[ 32 ] = '\0';
-        ESP_LOGI( TAG, "GPS CASIC MON-VER software=%s hardware=%s", software, hardware );
-        policy_state = GPS_POLICY_WAIT_RATE;
-        policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
-        if( !policy_send( 0x06, 0x04, NULL, 0U ) )
+        else if( 2U == policy_probe_index && 8U == a_size )
         {
-            policy_state = GPS_POLICY_UNSUPPORTED;
+            ESP_LOGI( TAG, "GPS CASIC CFG-PRT answered; CASIC transport confirmed" );
+            policy_query_rate();
+        }
+        else if( 1U == policy_probe_index )
+        {
+            ESP_LOGI( TAG, "GPS CASIC MON-HW answered; CASIC transport confirmed" );
+            policy_query_rate();
+        }
+        else
+        {
+            ESP_LOGW( TAG, "GPS CASIC unexpected %s payload=%u; trying next probe",
+                      policy_probe_names[ policy_probe_index ], (unsigned)a_size );
+            policy_next_probe();
         }
     }
-    else if( 0x06 == a_class && 0x04 == a_id && GPS_POLICY_WAIT_RATE == policy_state &&
+    else if( 0x06U == a_class && 0x04U == a_id && GPS_POLICY_WAIT_RATE == policy_state &&
              4U == a_size )
     {
         const unsigned interval = (unsigned)a_data[ 0 ] | ( (unsigned)a_data[ 1 ] << 8U );
         ESP_LOGI( TAG, "GPS CASIC CFG-RATE interval=%u ms", interval );
         if( interval < 100U || interval > 10000U )
         {
+            ESP_LOGW( TAG, "GPS CASIC implausible update interval; rate control disabled" );
             policy_state = GPS_POLICY_UNSUPPORTED;
             return;
         }
         policy_current_interval_ms = (int)interval;
+        policy_desired_interval_ms = (int)interval;
+        policy_speed_since_us = 0;
         policy_state = GPS_POLICY_ACTIVE;
+        ESP_LOGI( TAG, "GPS CASIC CFG-RATE query succeeded; adaptive control enabled" );
     }
-    else if( 0x05 == a_class && ( 0x01 == a_id || 0x00 == a_id ) &&
-             GPS_POLICY_WAIT_ACK == policy_state && 4U == a_size && 0x06 == a_data[ 0 ] &&
-             0x04 == a_data[ 1 ] )
+    else if( 0x05U == a_class && 0x01U == a_id && GPS_POLICY_WAIT_ACK == policy_state &&
+             4U == a_size && 0x06U == a_data[ 0 ] && 0x04U == a_data[ 1 ] )
     {
-        if( 0x01 == a_id )
-        {
-            policy_current_interval_ms = policy_pending_interval_ms;
-            policy_state = GPS_POLICY_ACTIVE;
-            ESP_LOGI(
-                TAG, "GPS CASIC CFG-RATE accepted: interval=%d ms", policy_current_interval_ms );
-        }
-        else
-        {
-            policy_state = GPS_POLICY_UNSUPPORTED;
-            ESP_LOGW( TAG, "GPS CASIC CFG-RATE rejected; adaptive control disabled" );
-        }
+        policy_current_interval_ms = policy_pending_interval_ms;
+        policy_state = GPS_POLICY_ACTIVE;
+        ESP_LOGI( TAG, "GPS CASIC CFG-RATE accepted: interval=%d ms", policy_current_interval_ms );
     }
 }
 
@@ -324,13 +368,11 @@ static void policy_poll( int64_t a_now )
           GPS_POLICY_WAIT_ACK == policy_state ) &&
         a_now >= policy_deadline_us )
     {
-        if( GPS_POLICY_WAIT_VERSION == policy_state &&
-            policy_probe_index + 1U < sizeof( policy_probe_ids ) )
+        if( GPS_POLICY_WAIT_VERSION == policy_state )
         {
             ESP_LOGW( TAG, "GPS CASIC %s timeout; trying next read-only probe",
                       policy_probe_names[ policy_probe_index ] );
-            ++policy_probe_index;
-            policy_start_probe();
+            policy_next_probe();
         }
         else
         {
