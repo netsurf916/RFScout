@@ -1430,8 +1430,20 @@ void gps_poll( void )
     }
     /* Baud negotiation temporarily interrupts NMEA. Do not release shared pins
        or restart discovery until the dedicated switch deadline expires. */
+    int64_t nmea_timeout_us = (int64_t)device_config_get()->gps_timeout_seconds * 1000000LL;
+    /* A receiver reporting a slow but valid update interval must retain UART
+       ownership long enough for the next fix and any initial rate correction. */
+    if( GPS_POLICY_ACTIVE == policy_state && policy_current_interval_ms > 0 )
+    {
+        const int64_t receiver_timeout_us =
+            (int64_t)policy_current_interval_ms * 2000LL + 1000000LL;
+        if( receiver_timeout_us > nmea_timeout_us )
+        {
+            nmea_timeout_us = receiver_timeout_us;
+        }
+    }
     if( GPS_POLICY_WAIT_BAUD != policy_state && receiver_detected &&
-        ( now - last_nmea_us ) / 1000000LL >= (int64_t)device_config_get()->gps_timeout_seconds )
+        now - last_nmea_us >= nmea_timeout_us )
     {
         receiver_detected = false;
         baud_locked = false;
