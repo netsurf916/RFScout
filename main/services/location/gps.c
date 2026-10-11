@@ -1035,7 +1035,8 @@ static void parse_line( char *a_line )
         lock_active_baud();
         last_nmea_us = esp_timer_get_time();
         snapshot.available = true;
-        if( GPS_POLICY_WAIT_BAUD == policy_state )
+        if( GPS_POLICY_WAIT_BAUD == policy_state &&
+            esp_timer_get_time() - policy_baud_switch_us >= 100000LL )
         {
             ESP_LOGI( TAG, "GPS UART confirmed at %d baud", active_baud );
             policy_log_event( "baud_verified", GPS_BAUD_MAX, active_baud );
@@ -1048,7 +1049,8 @@ static void parse_line( char *a_line )
         lock_active_baud();
         last_nmea_us = esp_timer_get_time();
         snapshot.available = true;
-        if( GPS_POLICY_WAIT_BAUD == policy_state )
+        if( GPS_POLICY_WAIT_BAUD == policy_state &&
+            esp_timer_get_time() - policy_baud_switch_us >= 100000LL )
         {
             ESP_LOGI( TAG, "GPS UART confirmed at %d baud", active_baud );
             policy_log_event( "baud_verified", GPS_BAUD_MAX, active_baud );
