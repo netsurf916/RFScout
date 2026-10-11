@@ -495,6 +495,13 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
     }
     if( RFSCOUT_APP_RUNTIME_POLL == a_event->type )
     {
+        wardrive_stats_t capture_status;
+        wardrive_capture_stats( &capture_status );
+        if( capture_status.storage_error )
+        {
+            /* Terminate receivers and drain buffers on terminal writer failure. */
+            wardrive_capture_stop();
+        }
         if( a_event->now_us - last_gps_refresh_us >= CAPTURE_GPS_REFRESH_US )
         {
             last_gps_refresh_us = a_event->now_us;
