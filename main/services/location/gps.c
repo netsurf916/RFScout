@@ -82,7 +82,8 @@ typedef struct
     double distance_m;
 } gps_trip_record_t;
 
-#define GPS_POLICY_TIMEOUT_US 2000000LL
+/* Receiver CASIC responses can exceed two seconds under live NMEA traffic. */
+#define GPS_POLICY_TIMEOUT_US 4000000LL
 #define GPS_POLICY_PROBE_RETRY_LIMIT 2U
 #define GPS_POLICY_PROBE_RETRY_DELAY_US 300000LL
 #define GPS_POLICY_MIN_CHANGE_US 30000000LL
