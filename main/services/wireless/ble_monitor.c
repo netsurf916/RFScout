@@ -38,6 +38,7 @@ static const char *TAG = "ble_monitor";
 static uint8_t own_addr_type;
 static ble_observation_fn sink;
 static ble_raw_adv_fn raw_sink;
+static uint32_t raw_callbacks_inflight;
 static bool initialized;
 static bool host_synced;
 static bool scan_requested;
@@ -205,14 +206,22 @@ static int gap_event( struct ble_gap_event *a_event, void *a_argument )
     {
         if( begin_observation_callback() )
         {
-            if( NULL != raw_sink )
+            ble_raw_adv_fn raw_callback;
+            portENTER_CRITICAL( &callback_lock );
+            raw_callback = raw_sink;
+            if( NULL != raw_callback )
             {
-                raw_sink( a_event->disc.data,
-                          a_event->disc.length_data,
-                          a_event->disc.addr.val,
-                          a_event->disc.addr.type,
-                          a_event->disc.event_type,
-                          a_event->disc.rssi );
+                ++raw_callbacks_inflight;
+            }
+            portEXIT_CRITICAL( &callback_lock );
+            if( NULL != raw_callback )
+            {
+                raw_callback( a_event->disc.data, a_event->disc.length_data,
+                              a_event->disc.addr.val, a_event->disc.addr.type,
+                              a_event->disc.event_type, a_event->disc.rssi );
+                portENTER_CRITICAL( &callback_lock );
+                --raw_callbacks_inflight;
+                portEXIT_CRITICAL( &callback_lock );
             }
             rf_device_t observation;
             parse_adv( &a_event->disc, &observation );
@@ -341,7 +350,23 @@ esp_err_t ble_monitor_stop( void )
 
 void ble_monitor_set_raw_observer( ble_raw_adv_fn a_callback )
 {
+    portENTER_CRITICAL( &callback_lock );
     raw_sink = a_callback;
+    portEXIT_CRITICAL( &callback_lock );
+    if( NULL == a_callback )
+    {
+        while( true )
+        {
+            portENTER_CRITICAL( &callback_lock );
+            const bool idle = 0U == raw_callbacks_inflight;
+            portEXIT_CRITICAL( &callback_lock );
+            if( idle )
+            {
+                break;
+            }
+            vTaskDelay( pdMS_TO_TICKS( 1U ) );
+        }
+    }
 }
 
 void ble_monitor_set_observer( ble_observation_fn a_callback )
