@@ -84,7 +84,6 @@ typedef struct
 
 #define GPS_POLICY_TIMEOUT_US 2000000LL
 #define GPS_POLICY_MIN_CHANGE_US 30000000LL
-#define GPS_POSITION_LOG_INTERVAL_US 5000000LL
 #define GPS_CASIC_MAX_PAYLOAD 128U
 
 /* HT1818Z3G5L: CASIC binary protocol. Keep generic NMEA on any failure. */
@@ -106,7 +105,6 @@ static int64_t policy_speed_since_us;
 static double policy_filtered_speed_mps;
 static int64_t policy_filtered_speed_updated_us;
 static bool policy_filtered_speed_valid;
-static int64_t policy_last_position_log_us;
 static int policy_desired_interval_ms = 1000;
 static int policy_current_interval_ms = 1000;
 static int policy_pending_interval_ms;
@@ -138,34 +136,6 @@ static void policy_log_event( const char *a_event, int a_requested_ms, int a_act
     if( ok )
     {
         (void)log_end( &record );
-    }
-}
-
-/* Sample the same filtered value used by rate selection alongside position.
-   Keep this diagnostic bounded: never write on each NMEA update. */
-static void policy_log_position( int64_t a_now, double a_latitude, double a_longitude,
-                                 double a_raw_speed_mps )
-{
-    if( 0 != policy_last_position_log_us &&
-        a_now - policy_last_position_log_us < GPS_POSITION_LOG_INTERVAL_US )
-    {
-        return;
-    }
-    rfscout_log_record_t record;
-    if( !log_begin( &record, "gps_position" ) )
-    {
-        return;
-    }
-    const bool ok = log_double( &record, "latitude_deg", a_latitude ) &&
-                    log_double( &record, "longitude_deg", a_longitude ) &&
-                    log_double( &record, "speed_mph", a_raw_speed_mps * 2.23693629 ) &&
-                    log_double( &record, "filtered_speed_mph",
-                                policy_filtered_speed_mps * 2.23693629 ) &&
-                    log_int( &record, "current_rate_ms", policy_current_interval_ms ) &&
-                    log_int( &record, "target_rate_ms", policy_desired_interval_ms );
-    if( ok && log_end( &record ) )
-    {
-        policy_last_position_log_us = a_now;
     }
 }
 
@@ -827,8 +797,6 @@ static void parse_rmc( char *a_payload )
     if( valid_position && valid_speed )
     {
         trip_observe( latitude, longitude, (double)snapshot.speed_mps );
-        policy_log_position( speed_updated_us, latitude, longitude,
-                             (double)snapshot.speed_mps );
     }
     else
     {
@@ -983,7 +951,6 @@ esp_err_t gps_init( void )
     policy_filtered_speed_mps = 0.0;
     policy_filtered_speed_updated_us = 0;
     policy_filtered_speed_valid = false;
-    policy_last_position_log_us = 0;
     policy_desired_interval_ms = 1000;
     policy_current_interval_ms = 1000;
     receiver_detected = false;
@@ -1227,4 +1194,28 @@ esp_err_t gps_trip_reset( void )
     trip_last_checkpoint_us = esp_timer_get_time();
     portEXIT_CRITICAL( &snapshot_mux );
     return ESP_OK;
+}
+
+bool gps_rate_diagnostics_get( float *a_filtered_speed_mps, int *a_current_interval_ms,
+                               int *a_target_interval_ms )
+{
+    if( !policy_filtered_speed_valid ||
+        esp_timer_get_time() - policy_filtered_speed_updated_us >
+            (int64_t)GPS_FIX_STALE_MS * 1000LL )
+    {
+        return false;
+    }
+    if( NULL != a_filtered_speed_mps )
+    {
+        *a_filtered_speed_mps = (float)policy_filtered_speed_mps;
+    }
+    if( NULL != a_current_interval_ms )
+    {
+        *a_current_interval_ms = policy_current_interval_ms;
+    }
+    if( NULL != a_target_interval_ms )
+    {
+        *a_target_interval_ms = policy_desired_interval_ms;
+    }
+    return true;
 }
