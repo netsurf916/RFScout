@@ -187,11 +187,25 @@ void status_bar_draw_state( const rfscout_status_bar_state_t *a_state )
         x -= STATUS_BAR_ICON_GAP;
     }
 
-    const int clock_width = (int)strlen( a_state->clock ) * 6;
-    if( clock_width > 0 )
+    /* A seconds clock can overlap the title when four indicators are present.
+       Drop just the seconds when the available status region cannot contain it. */
+    char clock[ RFSCOUT_STATUS_CLOCK_MAX ];
+    memcpy( clock, a_state->clock, sizeof( clock ) );
+    clock[ sizeof( clock ) - 1U ] = '\0';
+    int clock_width = (int)strlen( clock ) * 6;
+    if( clock_width > 0 && x - STATUS_BAR_CLOCK_GAP - clock_width < STATUS_BAR_LEFT_X )
+    {
+        /* Both 24-hour HH:MM:SS and 12-hour HH:MM:SSAM have seconds at [5..7]. */
+        if( strlen( clock ) >= 8U && ':' == clock[ 5 ] )
+        {
+            memmove( clock + 5, clock + 8, strlen( clock + 8 ) + 1U );
+            clock_width = (int)strlen( clock ) * 6;
+        }
+    }
+    if( clock_width > 0 && x - STATUS_BAR_CLOCK_GAP - clock_width >= STATUS_BAR_LEFT_X )
     {
         x -= STATUS_BAR_CLOCK_GAP + clock_width;
-        display_draw_text( x, STATUS_BAR_ICON_Y + 3, a_state->clock, theme->info, 1U );
+        display_draw_text( x, STATUS_BAR_ICON_Y + 3, clock, theme->info, 1U );
     }
 
     last_state = *a_state;
