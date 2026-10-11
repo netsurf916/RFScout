@@ -217,6 +217,7 @@ static void ubx_feed( uint8_t a_byte )
     if( 1U == ubx_length && 0x62 != a_byte )
     {
         ubx_length = 0U;
+        ubx_expected = 0U;
         return;
     }
     ubx_frame[ ubx_length++ ] = a_byte;
@@ -227,6 +228,7 @@ static void ubx_feed( uint8_t a_byte )
         {
             ESP_LOGW( TAG, "GPS UBX response larger than parser buffer: %u", (unsigned)payload );
             ubx_length = 0U;
+            ubx_expected = 0U;
             return;
         }
         ubx_expected = payload + 8U;
@@ -867,6 +869,11 @@ void gps_poll( void )
     for( int index = 0; index < received; ++index )
     {
         const char value = (char)buffer[ index ];
+        if( 0U != ubx_length || 0xB5 == (uint8_t)value )
+        {
+            ubx_feed( (uint8_t)value );
+            continue;
+        }
         if( '\n' == value )
         {
             line[ line_length ] = '\0';
