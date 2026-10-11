@@ -318,6 +318,12 @@ static void policy_begin( void )
 
 static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_data, size_t a_size )
 {
+    /* CFG-PRT may emit multiple port profiles. Retain the one matching
+       the live UART even if its response arrives after discovery advanced. */
+    if( 0x06U == a_class && 0x00U == a_id && 8U == a_size )
+    {
+        policy_offer_baud_switch( a_data, a_size );
+    }
     if( 0x05U == a_class && 0x00U == a_id && 4U == a_size )
     {
         const uint8_t rejected_class = a_data[ 0 ];
@@ -368,7 +374,6 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
         else if( 2U == policy_probe_index && 8U == a_size )
         {
             ESP_LOGI( TAG, "GPS CASIC CFG-PRT answered; CASIC transport confirmed" );
-            policy_offer_baud_switch( a_data, a_size );
             policy_log_event( "transport_detected", 0, 0 );
             policy_query_rate();
         }
