@@ -825,8 +825,8 @@ static bool flush_buffer( void )
     }
     if( success && !first_flush_logged )
     {
-        ESP_LOGI( TAG, "SD log flush completed: %u bytes written and synced",
-                  (unsigned)burst_size );
+        ESP_LOGI(
+            TAG, "SD log flush completed: %u bytes written and synced", (unsigned)burst_size );
         first_flush_logged = true;
     }
 
