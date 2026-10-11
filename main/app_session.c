@@ -59,38 +59,48 @@ static bool ready_to_reclaim;
 /* Stable provider hooks; applications never register with wireless drivers. */
 static void wifi_observation_dispatch( rf_device_t *a_observation )
 {
-    const rfscout_app_descriptor_t *app = app_framework_descriptor( __atomic_load_n( &session_app, __ATOMIC_ACQUIRE ) );
+    const rfscout_app_descriptor_t *app =
+        app_framework_descriptor( __atomic_load_n( &session_app, __ATOMIC_ACQUIRE ) );
     if( !__atomic_load_n( &close_in_progress, __ATOMIC_ACQUIRE ) && app && app->consumers.wifi_observation )
         app->consumers.wifi_observation( a_observation );
 }
 
 static void ble_observation_dispatch( rf_device_t *a_observation )
 {
-    const rfscout_app_descriptor_t *app = app_framework_descriptor( __atomic_load_n( &session_app, __ATOMIC_ACQUIRE ) );
+    const rfscout_app_descriptor_t *app =
+        app_framework_descriptor( __atomic_load_n( &session_app, __ATOMIC_ACQUIRE ) );
     if( !__atomic_load_n( &close_in_progress, __ATOMIC_ACQUIRE ) && app && app->consumers.ble_observation )
         app->consumers.ble_observation( a_observation );
 }
 
 static void wifi_raw_dispatch( const uint8_t *bytes, size_t length, int8_t rssi, uint8_t channel )
 {
-    const rfscout_app_descriptor_t *app = app_framework_descriptor( __atomic_load_n( &session_app, __ATOMIC_ACQUIRE ) );
+    const rfscout_app_descriptor_t *app =
+        app_framework_descriptor( __atomic_load_n( &session_app, __ATOMIC_ACQUIRE ) );
     if( !__atomic_load_n( &close_in_progress, __ATOMIC_ACQUIRE ) && app && app->consumers.wifi_raw )
         app->consumers.wifi_raw( bytes, length, rssi, channel );
 }
 
-static void ble_raw_dispatch( const uint8_t *bytes, size_t length, const uint8_t address[6],
-                              uint8_t address_type, uint8_t event_type, int8_t rssi )
+static void ble_raw_dispatch( const uint8_t *bytes,
+                              size_t length,
+                              const uint8_t address[ 6 ],
+                              uint8_t address_type,
+                              uint8_t event_type,
+                              int8_t rssi )
 {
-    const rfscout_app_descriptor_t *app = app_framework_descriptor( __atomic_load_n( &session_app, __ATOMIC_ACQUIRE ) );
+    const rfscout_app_descriptor_t *app =
+        app_framework_descriptor( __atomic_load_n( &session_app, __ATOMIC_ACQUIRE ) );
     if( !__atomic_load_n( &close_in_progress, __ATOMIC_ACQUIRE ) && app && app->consumers.ble_raw )
         app->consumers.ble_raw( bytes, length, address, address_type, event_type, rssi );
 }
 
 static void bind_session_consumers( const rfscout_app_descriptor_t *app )
 {
-    radio_monitor_set_observer( app && app->consumers.wifi_observation ? wifi_observation_dispatch : NULL );
+    radio_monitor_set_observer( app && app->consumers.wifi_observation ? wifi_observation_dispatch
+                                                                       : NULL );
     radio_monitor_set_raw_observer( app && app->consumers.wifi_raw ? wifi_raw_dispatch : NULL );
-    ble_monitor_set_observer( app && app->consumers.ble_observation ? ble_observation_dispatch : NULL );
+    ble_monitor_set_observer( app && app->consumers.ble_observation ? ble_observation_dispatch
+                                                                    : NULL );
     ble_monitor_set_raw_observer( app && app->consumers.ble_raw ? ble_raw_dispatch : NULL );
 }
 
