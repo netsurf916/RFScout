@@ -310,7 +310,6 @@ static void policy_begin( void )
     policy_rate_query_retries = 0U;
     policy_rate_query_retry_at_us = 0;
     policy_uart_config_valid = false;
-    policy_baud_attempted = false;
     ESP_LOGI( TAG, "GPS receiver detected at %d baud; checking CASIC support", active_baud );
     policy_log_event( "receiver_detected", 0, 0 );
     policy_start_probe();
@@ -501,7 +500,8 @@ static void policy_poll( int64_t a_now )
     {
         ESP_LOGW( TAG, "GPS no NMEA at %d baud; returning to discovery", active_baud );
         policy_log_event( "baud_fallback", policy_baud_previous, active_baud );
-        policy_state = GPS_POLICY_UNSUPPORTED;
+        policy_state = GPS_POLICY_IDLE;
+        policy_baud_attempted = true;
         baud_locked = false;
         receiver_detected = false;
         baud_probe_started_us = a_now - (int64_t)GPS_BAUD_PROBE_MS * 1000LL;
