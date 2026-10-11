@@ -213,6 +213,13 @@ static void policy_poll( int64_t a_now )
         ESP_LOGW( TAG, "GPS policy response timeout state=%d; retaining NMEA", (int)policy_state );
         policy_state = GPS_POLICY_UNSUPPORTED;
     }
+    if( policy_rate_pending && a_now - policy_last_change_us >= GPS_POLICY_TIMEOUT_US )
+    {
+        ESP_LOGW( TAG, "GPS policy rate acknowledgment timeout for %d ms; retaining last confirmed rate",
+                  policy_pending_interval_ms );
+        policy_rate_pending = false;
+        policy_state = GPS_POLICY_UNSUPPORTED;
+    }
     if( GPS_POLICY_ACTIVE != policy_state || !snapshot.speed_valid ||
         a_now - speed_updated_us > (int64_t)GPS_FIX_STALE_MS * 1000LL )
     {
@@ -222,7 +229,9 @@ static void policy_poll( int64_t a_now )
     /* Speed hysteresis: 1 Hz below 3 mph, 2 Hz above 3, 5 Hz above 10,
        10 Hz only above 35 mph. Downshift requires a longer stable interval. */
     const float mph = snapshot.speed_mps * 2.23693629f;
-    const int target = mph >= 35.0f ? 100 : mph >= 10.0f ? 200 : mph >= 3.0f ? 500 : 1000;
+    const int target = mph >= 35.0f && active_baud >= 38400 ? 100
+                       : mph >= 10.0f && active_baud >= 19200 ? 200
+                       : mph >= 3.0f ? 500 : 1000;
     if( target != policy_desired_interval_ms )
     {
         policy_desired_interval_ms = target;
