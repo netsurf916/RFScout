@@ -23,7 +23,7 @@ typedef void ( *radio_raw_frame_fn )( const uint8_t *a_bytes,
                                       uint8_t a_channel );
 void radio_monitor_set_raw_observer( radio_raw_frame_fn a_callback );
 /** @brief Configure uniform capture hopping or a fixed channel; reset when leaving capture. */
-void radio_monitor_set_capture_policy( bool a_enabled,
+esp_err_t radio_monitor_set_capture_policy( bool a_enabled,
                                        uint8_t a_fixed_channel,
                                        uint32_t a_dwell_ms );
 
