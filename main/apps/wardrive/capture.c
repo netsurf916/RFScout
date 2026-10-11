@@ -219,10 +219,8 @@ static void close_segment( void )
 
 static bool open_segment( void )
 {
-    if( !prune_files( config.max_files - 1U ) )
-    {
-        return false;
-    }
+    /* Never discard previous recordings unless a replacement can be created.
+       The reserve must hold before creating and validating a new segment. */
     uint64_t free_bytes = 0U;
     if( ESP_OK != media_store_space( NULL, &free_bytes ) ||
         free_bytes < RFSCOUT_LOG_FREE_RESERVE + config.file_limit_bytes )
@@ -255,6 +253,12 @@ static bool open_segment( void )
     {
         close_segment();
         return false;
+    }
+    /* Retention is best-effort after the replacement is usable. A failed prune
+       must not abort capture after deleting only some older recordings. */
+    if( !prune_files( config.max_files ) )
+    {
+        ESP_LOGW( TAG, "capture retention cleanup incomplete; continuing recording" );
     }
     return true;
 }
