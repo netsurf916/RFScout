@@ -517,7 +517,15 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
         policy_state = GPS_POLICY_ACTIVE;
         ESP_LOGI( TAG, "GPS adaptive rate enabled: current=%u ms", interval );
         policy_log_event( "rate_detected", 0, (int)interval );
-        (void)policy_begin_baud_switch();
+        if( !policy_begin_baud_switch() && GPS_BAUD_MAX == active_baud &&
+            !policy_rate_scan )
+        {
+            policy_rate_scan = true;
+            policy_scan_index = 0U;
+            policy_scan_restore_ms = policy_current_interval_ms;
+            policy_scan_next_us = esp_timer_get_time() + GPS_POLICY_PROBE_RETRY_DELAY_US;
+            ESP_LOGI( TAG, "GPS CASIC probing supported rates at %d baud", active_baud );
+        }
     }
     else if( 0x06U == a_class && 0x04U == a_id &&
              GPS_POLICY_VERIFY_RATE == policy_state && 4U == a_size )
