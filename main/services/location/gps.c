@@ -113,6 +113,12 @@ static bool policy_filtered_speed_valid;
 static int policy_desired_interval_ms = 1000;
 static int policy_current_interval_ms = 1000;
 static int policy_pending_interval_ms;
+static const int policy_rates_ms[] = { 250, 333, 500, 1000 };
+static uint8_t policy_rate_support[ 4 ]; /* 0 unknown, 1 verified, 2 rejected */
+static bool policy_rate_scan;
+static unsigned policy_scan_index;
+static int policy_scan_restore_ms;
+static int64_t policy_scan_next_us;
 static uint8_t policy_uart_config[ 8 ];
 static bool policy_uart_config_valid;
 static int64_t policy_baud_switch_us;
@@ -259,6 +265,95 @@ static bool policy_begin_baud_switch( void )
     return true;
 }
 
+static int policy_rate_index( int a_ms )
+{
+    for( unsigned index = 0U; index < 4U; ++index )
+    {
+        if( policy_rates_ms[ index ] == a_ms )
+        {
+            return (int)index;
+        }
+    }
+    return -1;
+}
+
+static void policy_mark_rate( int a_ms, uint8_t a_support )
+{
+    const int index = policy_rate_index( a_ms );
+    if( index >= 0 )
+    {
+        policy_rate_support[ index ] = a_support;
+    }
+}
+
+static int policy_supported_target( int a_target )
+{
+    for( unsigned index = 0U; index < 4U; ++index )
+    {
+        if( policy_rates_ms[ index ] >= a_target && 2U != policy_rate_support[ index ] )
+        {
+            return policy_rates_ms[ index ];
+        }
+    }
+    return policy_current_interval_ms;
+}
+
+static bool policy_request_rate( int a_ms, int64_t a_now )
+{
+    const uint8_t rate[ 4 ] = { (uint8_t)a_ms, (uint8_t)( a_ms >> 8U ), 0U, 0U };
+    if( !policy_send( 0x06U, 0x04U, rate, sizeof( rate ) ) )
+    {
+        return false;
+    }
+    policy_pending_interval_ms = a_ms;
+    policy_last_change_us = a_now;
+    policy_state = GPS_POLICY_WAIT_ACK;
+    policy_deadline_us = a_now + GPS_POLICY_TIMEOUT_US;
+    policy_log_event( policy_rate_scan ? "rate_probe" : "rate_requested",
+                      a_ms, policy_current_interval_ms );
+    ESP_LOGI( TAG, "GPS CASIC %s %d -> %d ms", policy_rate_scan ? "probing" : "requesting",
+              policy_current_interval_ms, a_ms );
+    return true;
+}
+
+static void policy_scan_step( int64_t a_now )
+{
+    if( !policy_rate_scan || GPS_POLICY_ACTIVE != policy_state ||
+        a_now < policy_scan_next_us )
+    {
+        return;
+    }
+    while( policy_scan_index < 4U )
+    {
+        const unsigned index = policy_scan_index++;
+        const int candidate = policy_rates_ms[ index ];
+        if( candidate == policy_current_interval_ms || 2U == policy_rate_support[ index ] )
+        {
+            continue;
+        }
+        if( !policy_request_rate( candidate, a_now ) )
+        {
+            policy_rate_scan = false;
+            ESP_LOGW( TAG, "GPS CASIC rate scan stopped on send failure" );
+        }
+        return;
+    }
+    if( policy_current_interval_ms != policy_scan_restore_ms )
+    {
+        if( !policy_request_rate( policy_scan_restore_ms, a_now ) )
+        {
+            policy_rate_scan = false;
+        }
+        return;
+    }
+    policy_rate_scan = false;
+    policy_speed_since_us = 0;
+    policy_last_change_us = a_now;
+    ESP_LOGI( TAG, "GPS CASIC startup rate scan complete; restored %d ms",
+              policy_current_interval_ms );
+    policy_log_event( "rate_scan_complete", 0, policy_current_interval_ms );
+}
+
 static void policy_query_rate( void )
 {
     policy_rate_query_retries = 0U;
@@ -346,10 +441,21 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
         else if( GPS_POLICY_WAIT_ACK == policy_state && 0x06U == rejected_class &&
                  0x04U == rejected_id )
         {
-            ESP_LOGW( TAG, "GPS CASIC CFG-RATE write rejected; rate control disabled" );
+            ESP_LOGW( TAG, "GPS CASIC CFG-RATE %d ms rejected; retaining %d ms",
+                      policy_pending_interval_ms, policy_current_interval_ms );
             policy_log_event( "rate_write_rejected", policy_pending_interval_ms,
                               policy_current_interval_ms );
-            policy_state = GPS_POLICY_UNSUPPORTED;
+            policy_mark_rate( policy_pending_interval_ms, 2U );
+            policy_state = GPS_POLICY_ACTIVE;
+            if( policy_rate_scan )
+            {
+                policy_scan_next_us = esp_timer_get_time() + GPS_POLICY_PROBE_RETRY_DELAY_US;
+            }
+            else
+            {
+                policy_speed_since_us = 0;
+                policy_desired_interval_ms = policy_supported_target( policy_pending_interval_ms );
+            }
         }
         return;
     }
@@ -402,6 +508,7 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
             return;
         }
         policy_current_interval_ms = (int)interval;
+        policy_mark_rate( (int)interval, 1U );
         policy_desired_interval_ms = (int)interval;
         policy_speed_since_us = 0;
         policy_state = GPS_POLICY_ACTIVE;
@@ -423,7 +530,12 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
             return;
         }
         policy_current_interval_ms = (int)interval;
+        policy_mark_rate( (int)interval, 1U );
         policy_state = GPS_POLICY_ACTIVE;
+        if( policy_rate_scan )
+        {
+            policy_scan_next_us = esp_timer_get_time() + GPS_POLICY_PROBE_RETRY_DELAY_US;
+        }
         policy_log_event( "rate_verified", policy_pending_interval_ms, (int)interval );
         ESP_LOGI( TAG, "GPS CASIC update rate verified at %u Hz (%u ms)",
                   interval > 0U ? 1000U / interval : 0U, interval );
@@ -580,6 +692,11 @@ static void policy_poll( int64_t a_now )
             policy_state = GPS_POLICY_UNSUPPORTED;
         }
     }
+    if( policy_rate_scan )
+    {
+        policy_scan_step( a_now );
+        return;
+    }
     if( GPS_POLICY_ACTIVE != policy_state || !policy_filtered_speed_valid ||
         a_now - policy_filtered_speed_updated_us > (int64_t)GPS_FIX_STALE_MS * 1000LL )
     {
@@ -587,9 +704,8 @@ static void policy_poll( int64_t a_now )
         return;
     }
     const float mph = (float)( policy_filtered_speed_mps * 2.23693629 );
-    /* Keep the upper bound at 4 Hz while UART remains at the detected 9600 baud.
-       All thresholds use the same stability and cooldown checks below. */
-    const int target = mph >= 12.0f ? 250 : mph >= 7.0f ? 333 : mph >= 3.0f ? 500 : 1000;
+    const int desired = mph >= 12.0f ? 250 : mph >= 7.0f ? 333 : mph >= 3.0f ? 500 : 1000;
+    const int target = policy_supported_target( desired );
     if( target != policy_desired_interval_ms )
     {
         policy_desired_interval_ms = target;
@@ -609,17 +725,7 @@ static void policy_poll( int64_t a_now )
     {
         return;
     }
-    const uint8_t rate[ 4 ] = { (uint8_t)target, (uint8_t)( target >> 8U ), 0U, 0U };
-    if( policy_send( 0x06, 0x04, rate, sizeof( rate ) ) )
-    {
-        policy_pending_interval_ms = target;
-        policy_last_change_us = a_now;
-        policy_state = GPS_POLICY_WAIT_ACK;
-        policy_deadline_us = a_now + GPS_POLICY_TIMEOUT_US;
-        policy_log_event( "rate_requested", target, policy_current_interval_ms );
-        ESP_LOGI( TAG, "GPS HT1818Z3G5L rate change requested %d -> %d ms at %.1f mph",
-                  policy_current_interval_ms, target, (double)mph );
-    }
+    (void)policy_request_rate( target, a_now );
 }
 
 static bool trip_loaded;
@@ -1033,6 +1139,11 @@ static void policy_confirm_baud( void )
     ESP_LOGI( TAG, "GPS UART confirmed at %d baud", active_baud );
     policy_log_event( "baud_verified", GPS_BAUD_MAX, active_baud );
     policy_state = GPS_POLICY_ACTIVE;
+    policy_rate_scan = true;
+    policy_scan_index = 0U;
+    policy_scan_restore_ms = policy_current_interval_ms;
+    policy_scan_next_us = esp_timer_get_time() + GPS_POLICY_PROBE_RETRY_DELAY_US;
+    ESP_LOGI( TAG, "GPS CASIC probing supported rates at %d baud", active_baud );
 }
 
 static void parse_line( char *a_line )
@@ -1114,6 +1225,11 @@ esp_err_t gps_init( void )
     casic_expected = 0U;
     policy_last_change_us = 0;
     policy_speed_since_us = 0;
+    memset( policy_rate_support, 0, sizeof( policy_rate_support ) );
+    policy_rate_scan = false;
+    policy_scan_index = 0U;
+    policy_scan_restore_ms = 1000;
+    policy_scan_next_us = 0;
     policy_probe_retries = 0U;
     policy_probe_retry_at_us = 0;
     policy_rate_query_retries = 0U;
