@@ -78,7 +78,8 @@
 #define TIME_MENU_DAY 5U
 #define TIME_MENU_HOUR 6U
 #define TIME_MENU_MINUTE 7U
-#define TIME_MENU_COUNT 8U
+#define TIME_MENU_SECOND 8U
+#define TIME_MENU_COUNT 9U
 
 #define POWER_MENU_BACK 0U
 #define POWER_MENU_SHORT_PRESS 1U
@@ -513,7 +514,8 @@ static void draw_row( int a_y, unsigned a_item )
 static void draw_time_row( int a_y, unsigned a_item )
 {
     const bool active = time_selected_item == a_item;
-    const uint16_t color = ( a_item >= TIME_MENU_YEAR && device_time_gps_available() )
+    const uint16_t color = ( ( a_item == TIME_MENU_SECOND ||
+                               ( a_item >= TIME_MENU_YEAR && device_time_gps_available() ) ) )
                                ? COLOR_DIM
                                : ( active ? COLOR_SELECTED : COLOR_TEXT );
     const char *label = "";
@@ -585,6 +587,10 @@ static void draw_time_row( int a_y, unsigned a_item )
         case TIME_MENU_MINUTE:
             label = "Minute";
             snprintf( value, sizeof( value ), "%02d", edited_time.tm_min );
+            break;
+        case TIME_MENU_SECOND:
+            label = "Second";
+            snprintf( value, sizeof( value ), "%02d", edited_time.tm_sec );
             break;
         default:
             break;
@@ -1248,7 +1254,8 @@ static bool time_menu_input( bool a_pressed, int a_delta )
             render_time_menu();
             return false;
         }
-        if( time_selected_item >= TIME_MENU_YEAR && device_time_gps_available() )
+        if( time_selected_item == TIME_MENU_SECOND ||
+            ( time_selected_item >= TIME_MENU_YEAR && device_time_gps_available() ) )
         {
             time_editing = false;
             render_time_menu();
@@ -1268,7 +1275,8 @@ static bool time_menu_input( bool a_pressed, int a_delta )
             accepted = commit_manual_time();
         }
         if( TIME_MENU_TIMEZONE == time_selected_item ||
-            ( !device_time_gps_available() && time_selected_item >= TIME_MENU_YEAR ) )
+            ( !device_time_gps_available() && time_selected_item >= TIME_MENU_YEAR &&
+              time_selected_item <= TIME_MENU_MINUTE ) )
         {
             time_editing = !time_editing;
             if( accepted )
@@ -1753,6 +1761,17 @@ bool device_view_input( const rfscout_input_event_t *a_input )
 
 void device_view_poll( int64_t a_now_us )
 {
+    if( time_menu_open && !time_editing )
+    {
+        static time_t last_menu_second;
+        const time_t now = time( NULL );
+        if( now != last_menu_second )
+        {
+            last_menu_second = now;
+            refresh_edited_time();
+            render_time_menu();
+        }
+    }
     if( network_menu_open )
     {
         network_menu_poll( a_now_us );
