@@ -25,6 +25,17 @@ searching for a fix. The platform GPS UART uses pins shared with nRF24; this app
 does not override the platform's established arbitration rules. With the GPS provider
 inactive, the UI reports that state instead of attempting to take over the pins.
 
+## Supported receiver configuration
+
+RFScout supports GPS receivers configured to emit valid NMEA position/speed updates
+at **1 Hz or faster** (an interval of 1000 ms or less). Configure slower receivers
+to at least 1 Hz before using them with RFScout. Receivers reporting an initial
+update interval greater than 1000 ms are outside the supported configuration,
+including for adaptive-rate discovery, speed-sample freshness, and UART baud-switch
+verification. The firmware does not guarantee reliable detection, baud negotiation,
+or adaptive upshifts from such slow initial configurations. This requirement is
+independent of the time required to obtain a GPS position fix.
+
 ## Receiver rate management
 
 The shared GPS service detects NMEA at the receiver's existing UART baud (9600 on the tested HT1818Z3G5L). It probes CASIC read-only commands; this receiver NAKs MON-VER/MON-HW but answers CFG-PRT and CFG-RATE. CASIC commands use a four-second response deadline. Timed-out discovery probes and the initial read-only CFG-RATE query are retried twice before giving up, because the receiver may already be producing higher-rate NMEA traffic on a 9600-baud link. Retries are recorded in the main SD log. A valid CFG-RATE interval enables adaptive updates; otherwise generic NMEA operation continues.
