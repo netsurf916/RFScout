@@ -126,7 +126,7 @@ static void draw_overview( void )
     char line[ 72 ];
 
     display_clear( theme->background );
-    ui_chrome_draw( "WARDIVING", theme->secondary );
+    ui_chrome_draw( "WARDRIVING", theme->secondary );
     (void)snprintf( line, sizeof( line ), "STATE: %s",
                     stats.storage_error ? "SD ERROR" : stats.recording ? "RECORDING" : "STOPPED" );
     display_draw_text( 8, 27, line, stats.storage_error ? theme->warning : theme->text, 1U );
@@ -239,9 +239,10 @@ static void draw_menu( void )
     }
     char line[ 64 ];
     const uint64_t limit = (uint64_t)options.file_limit_bytes * options.max_files;
-    (void)snprintf( line, sizeof( line ), "CAP %lu MiB USED %lu MiB",
+    (void)snprintf( line, sizeof( line ), "CAP %luM USED %luM FREE %luM",
                     (unsigned long)( limit / 1048576U ),
-                    (unsigned long)( stored_bytes / 1048576U ) );
+                    (unsigned long)( stored_bytes / 1048576U ),
+                    (unsigned long)( free_bytes / 1048576U ) );
     display_draw_text( 8, 151, line, theme->secondary, 1U );
     (void)display_present();
 }
@@ -348,6 +349,7 @@ static void act_on_selection( void )
         }
         else
         {
+            wardrive_capture_stop();
             apply_radio();
             last_error = wardrive_capture_start( &options );
             if( ESP_OK != last_error )
