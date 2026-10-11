@@ -340,11 +340,11 @@ void wardrive_on_wifi( const uint8_t *a_data, size_t a_length, int8_t a_rssi, ui
 }
 
 void wardrive_on_ble( const uint8_t *a_data,
-                    size_t a_length,
-                    const uint8_t a_address[ 6 ],
-                    uint8_t a_address_type,
-                    uint8_t a_event_type,
-                    int8_t a_rssi )
+                      size_t a_length,
+                      const uint8_t a_address[ 6 ],
+                      uint8_t a_address_type,
+                      uint8_t a_event_type,
+                      int8_t a_rssi )
 {
     if( config.ble )
     {
