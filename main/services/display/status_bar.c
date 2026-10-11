@@ -91,20 +91,15 @@ static void draw_gps_icon( int a_x, bool a_fix_valid )
     const ui_theme_palette_t *theme = ui_theme_get();
     const uint16_t color = a_fix_valid ? theme->success : theme->warning;
 
-    /* Compact satellite dish: reflector, feed arm, stand, and signal arcs. */
-    display_fill_rect( a_x + 1, y + 5, 1, 3, color );
-    display_fill_rect( a_x + 2, y + 8, 1, 2, color );
-    display_fill_rect( a_x + 3, y + 10, 3, 1, color );
-    display_fill_rect( a_x + 4, y + 7, 1, 3, color );
-    display_fill_rect( a_x + 5, y + 6, 2, 1, color );
-    display_fill_rect( a_x + 6, y + 11, 1, 2, color );
-    display_fill_rect( a_x + 4, y + 13, 5, 1, color );
-    display_fill_rect( a_x + 7, y + 4, 1, 1, color );
-    display_fill_rect( a_x + 8, y + 3, 1, 2, color );
-    display_fill_rect( a_x + 9, y + 5, 1, 1, color );
-    display_fill_rect( a_x + 9, y + 1, 1, 1, color );
-    display_fill_rect( a_x + 10, y + 2, 1, 2, color );
-    display_fill_rect( a_x + 11, y + 4, 1, 2, color );
+    /* Satellite silhouette: central bus, two solar arrays and antenna. */
+    display_fill_rect( a_x + 4, y + 5, 4, 5, color );
+    display_fill_rect( a_x, y + 4, 3, 7, color );
+    display_fill_rect( a_x + 9, y + 4, 3, 7, color );
+    display_fill_rect( a_x + 3, y + 7, 1, 1, color );
+    display_fill_rect( a_x + 8, y + 7, 1, 1, color );
+    display_fill_rect( a_x + 5, y + 3, 1, 2, color );
+    display_fill_rect( a_x + 6, y + 2, 2, 1, color );
+    display_fill_rect( a_x + 5, y + 10, 2, 2, color );
 }
 
 static bool status_equal( const rfscout_status_bar_state_t *a_left,
