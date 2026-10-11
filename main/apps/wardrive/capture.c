@@ -36,6 +36,10 @@ typedef struct
     uint8_t address[ 6 ];
     uint8_t address_type;
     uint8_t event_type;
+    bool gps_valid;
+    int32_t latitude_e7;
+    int32_t longitude_e7;
+    uint32_t gps_age_ms;
     uint8_t payload[ CAPTURE_MAX_FRAME ];
 } capture_packet_t;
 
@@ -62,6 +66,30 @@ static rfscout_media_file_t output;
 static bool output_open;
 static uint32_t next_segment;
 static uint32_t current_bytes;
+static portMUX_TYPE gps_lock = portMUX_INITIALIZER_UNLOCKED;
+static int64_t gps_updated_us;
+static bool gps_fix_valid;
+static int32_t gps_latitude_e7;
+static int32_t gps_longitude_e7;
+static uint32_t gps_fix_age_ms;
+
+void wardrive_capture_update_gps( void )
+{
+    rfscout_gps_snapshot_t gps = { 0 };
+    const bool available = gps_snapshot_get( &gps ) && gps.location_valid &&
+                           gps.location_age_ms <= CAPTURE_GPS_MAX_AGE_MS;
+    portENTER_CRITICAL( &gps_lock );
+    gps_fix_valid = available;
+    if( available )
+    {
+        gps_latitude_e7 = (int32_t)( gps.latitude_deg * 10000000.0 );
+        gps_longitude_e7 = (int32_t)( gps.longitude_deg * 10000000.0 );
+        gps_fix_age_ms = gps.location_age_ms;
+    }
+    gps_updated_us = esp_timer_get_time();
+    portEXIT_CRITICAL( &gps_lock );
+}
+
 
 static void le16( uint8_t *a_dst, uint16_t a_value )
 {
@@ -270,6 +298,20 @@ static void enqueue( uint8_t a_source,
     packet->channel = a_channel;
     packet->address_type = a_address_type;
     packet->event_type = a_event_type;
+    const int64_t arrival_us = esp_timer_get_time();
+    portENTER_CRITICAL( &gps_lock );
+    const int64_t elapsed_us = arrival_us - gps_updated_us;
+    packet->gps_valid = config.gps_metadata && gps_fix_valid && elapsed_us >= 0 &&
+                        elapsed_us <= 1000000LL &&
+                        gps_fix_age_ms + (uint32_t)( elapsed_us / 1000LL ) <=
+                            CAPTURE_GPS_MAX_AGE_MS;
+    if( packet->gps_valid )
+    {
+        packet->latitude_e7 = gps_latitude_e7;
+        packet->longitude_e7 = gps_longitude_e7;
+        packet->gps_age_ms = gps_fix_age_ms + (uint32_t)( elapsed_us / 1000LL );
+    }
+    portEXIT_CRITICAL( &gps_lock );
     if( NULL != a_address )
     {
         memcpy( packet->address, a_address, sizeof( packet->address ) );
@@ -361,22 +403,17 @@ static bool write_packet( const capture_packet_t *a_packet )
        encoder is independently validated against reference files. */
     char comment[ 104 ] = "";
     size_t comment_size = 0U;
-    if( config.gps_metadata )
+    if( a_packet->gps_valid )
     {
-        rfscout_gps_snapshot_t gps;
-        if( gps_snapshot_get( &gps ) && gps.location_valid &&
-            gps.location_age_ms <= CAPTURE_GPS_MAX_AGE_MS )
+        const int written = snprintf( comment,
+                                      sizeof( comment ),
+                                      "GPS lat=%.7f lon=%.7f fix_age_ms=%lu",
+                                      (double)a_packet->latitude_e7 / 10000000.0,
+                                      (double)a_packet->longitude_e7 / 10000000.0,
+                                      (unsigned long)a_packet->gps_age_ms );
+        if( written > 0 && (size_t)written < sizeof( comment ) )
         {
-            const int written = snprintf( comment,
-                                          sizeof( comment ),
-                                          "GPS lat=%.7f lon=%.7f fix_age_ms=%lu",
-                                          gps.latitude_deg,
-                                          gps.longitude_deg,
-                                          (unsigned long)gps.location_age_ms );
-            if( written > 0 && (size_t)written < sizeof( comment ) )
-            {
-                comment_size = (size_t)written;
-            }
+            comment_size = (size_t)written;
         }
     }
 
@@ -469,6 +506,10 @@ esp_err_t wardrive_capture_start( const wardrive_config_t *a_config )
         a_config->file_limit_bytes > CAPTURE_FILE_MAX || a_config->max_files == 0U )
     {
         return ESP_ERR_INVALID_ARG;
+    }
+    if( !device_time_now( NULL ) )
+    {
+        return ESP_ERR_INVALID_STATE;
     }
     if( ESP_OK != media_app_collection( "captures", &collection ) )
     {
