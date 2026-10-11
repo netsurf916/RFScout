@@ -114,7 +114,8 @@ static bool policy_send( const char *a_payload )
     {
         checksum ^= (uint8_t)*cursor;
     }
-    const int length = snprintf( sentence, sizeof( sentence ), "$%s*%02X\r\n", a_payload, checksum );
+    const int length =
+        snprintf( sentence, sizeof( sentence ), "$%s*%02X\r\n", a_payload, checksum );
     if( length <= 0 || (size_t)length >= sizeof( sentence ) )
     {
         return false;
@@ -187,9 +188,12 @@ static void policy_response( const char *a_type, const char *a_fields )
             if( 314 == command && GPS_POLICY_WAIT_OUTPUT_ACK == policy_state )
             {
                 policy_output_acknowledged = 3 == result;
-                policy_state = policy_output_acknowledged ? GPS_POLICY_ACTIVE : GPS_POLICY_UNSUPPORTED;
-                ESP_LOGI( TAG, "GPS policy NMEA configuration %s",
-                          policy_output_acknowledged ? "accepted" : "rejected; adaptive rate disabled" );
+                policy_state =
+                    policy_output_acknowledged ? GPS_POLICY_ACTIVE : GPS_POLICY_UNSUPPORTED;
+                ESP_LOGI( TAG,
+                          "GPS policy NMEA configuration %s",
+                          policy_output_acknowledged ? "accepted"
+                                                     : "rejected; adaptive rate disabled" );
             }
             if( 220 == command && policy_rate_pending )
             {
@@ -197,8 +201,10 @@ static void policy_response( const char *a_type, const char *a_fields )
                 {
                     policy_current_interval_ms = policy_pending_interval_ms;
                 }
-                ESP_LOGI( TAG, "GPS policy update interval result=%d configured=%d ms",
-                          result, policy_current_interval_ms );
+                ESP_LOGI( TAG,
+                          "GPS policy update interval result=%d configured=%d ms",
+                          result,
+                          policy_current_interval_ms );
                 policy_rate_pending = false;
             }
         }
@@ -207,15 +213,16 @@ static void policy_response( const char *a_type, const char *a_fields )
 
 static void policy_poll( int64_t a_now )
 {
-    if( GPS_POLICY_WAIT_VERSION <= policy_state &&
-        GPS_POLICY_WAIT_OUTPUT_ACK >= policy_state && a_now >= policy_deadline_us )
+    if( GPS_POLICY_WAIT_VERSION <= policy_state && GPS_POLICY_WAIT_OUTPUT_ACK >= policy_state &&
+        a_now >= policy_deadline_us )
     {
         ESP_LOGW( TAG, "GPS policy response timeout state=%d; retaining NMEA", (int)policy_state );
         policy_state = GPS_POLICY_UNSUPPORTED;
     }
     if( policy_rate_pending && a_now - policy_last_change_us >= GPS_POLICY_TIMEOUT_US )
     {
-        ESP_LOGW( TAG, "GPS policy rate acknowledgment timeout for %d ms; retaining last confirmed rate",
+        ESP_LOGW( TAG,
+                  "GPS policy rate acknowledgment timeout for %d ms; retaining last confirmed rate",
                   policy_pending_interval_ms );
         policy_rate_pending = false;
         policy_state = GPS_POLICY_UNSUPPORTED;
@@ -229,9 +236,10 @@ static void policy_poll( int64_t a_now )
     /* Speed hysteresis: 1 Hz below 3 mph, 2 Hz above 3, 5 Hz above 10,
        10 Hz only above 35 mph. Downshift requires a longer stable interval. */
     const float mph = snapshot.speed_mps * 2.23693629f;
-    const int target = mph >= 35.0f && active_baud >= 38400 ? 100
+    const int target = mph >= 35.0f && active_baud >= 38400   ? 100
                        : mph >= 10.0f && active_baud >= 19200 ? 200
-                       : mph >= 3.0f ? 500 : 1000;
+                       : mph >= 3.0f                          ? 500
+                                                              : 1000;
     if( target != policy_desired_interval_ms )
     {
         policy_desired_interval_ms = target;
