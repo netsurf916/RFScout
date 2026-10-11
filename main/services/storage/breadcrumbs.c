@@ -34,17 +34,22 @@
 #define BREADCRUMB_TASK_PRIORITY 2U
 #define BREADCRUMB_WORKER_POLL_MS 500U
 #define BREADCRUMB_SHUTDOWN_POLL_MS 20U
-#define BREADCRUMB_FILENAME_LENGTH 15U
+#define BREADCRUMB_FILENAME_LENGTH 16U
 #define BREADCRUMB_FILENAME_CAPACITY ( BREADCRUMB_FILENAME_LENGTH + 1U )
-#define BREADCRUMB_CSV_HEADER "timestamp_utc,latitude_deg,longitude_deg\n"
+#define BREADCRUMB_CSV_HEADER "timestamp_utc,latitude_deg,longitude_deg,speed_mph,filtered_speed_mph,current_rate_ms,target_rate_ms\n"
 #define BREADCRUMB_CSV_HEADER_LENGTH ( sizeof( BREADCRUMB_CSV_HEADER ) - 1U )
-#define BREADCRUMB_LINE_MAX 96U
+#define BREADCRUMB_LINE_MAX 192U
 
 typedef struct
 {
     time_t utc_epoch;
     double latitude_deg;
     double longitude_deg;
+    float speed_mph;
+    float filtered_speed_mph;
+    int current_rate_ms;
+    int target_rate_ms;
+    bool rate_valid;
 } breadcrumb_record_t;
 
 typedef enum
@@ -133,7 +138,7 @@ static void load_settings( void )
 static bool breadcrumb_filename_valid( const char *a_name )
 {
     if( NULL == a_name || BREADCRUMB_FILENAME_LENGTH != strlen( a_name ) ||
-        0 != strcmp( &a_name[ 11 ], ".csv" ) )
+        0 != strcmp( &a_name[ 11 ], "2.csv" ) )
     {
         return false;
     }
@@ -270,7 +275,7 @@ static bool format_bucket_name( time_t a_utc_epoch,
         return false;
     }
     a_filename[ 10 ] = (char)( '0' + ( utc.tm_min / 10 ) );
-    memcpy( &a_filename[ 11 ], ".csv", 5U );
+    memcpy( &a_filename[ 11 ], "2.csv", 6U );
     return breadcrumb_filename_valid( a_filename );
 }
 
@@ -382,10 +387,14 @@ static void write_record_locked( const breadcrumb_record_t *a_record )
     char line[ BREADCRUMB_LINE_MAX ];
     const int length = snprintf( line,
                                  sizeof( line ),
-                                 "%s,%.7f,%.7f\n",
+                                 "%s,%.7f,%.7f,%.2f,%.2f,%d,%d\n",
                                  timestamp,
                                  a_record->latitude_deg,
-                                 a_record->longitude_deg );
+                                 a_record->longitude_deg,
+                                 (double)a_record->speed_mph,
+                                 a_record->rate_valid ? (double)a_record->filtered_speed_mph : 0.0,
+                                 a_record->rate_valid ? a_record->current_rate_ms : 0,
+                                 a_record->rate_valid ? a_record->target_rate_ms : 0 );
     if( success && ( length < 0 || (size_t)length >= sizeof( line ) ) )
     {
         success = false;
@@ -522,10 +531,20 @@ void breadcrumbs_poll( void )
         return;
     }
 
+    float filtered_speed_mps = 0.0f;
+    int current_rate_ms = 0;
+    int target_rate_ms = 0;
+    const bool rate_valid = gps_rate_diagnostics_get(
+        &filtered_speed_mps, &current_rate_ms, &target_rate_ms );
     const breadcrumb_record_t record = {
         .utc_epoch = gps.utc_epoch,
         .latitude_deg = gps.latitude_deg,
         .longitude_deg = gps.longitude_deg,
+        .speed_mph = gps.speed_valid ? gps.speed_mps * 2.23693629f : 0.0f,
+        .filtered_speed_mph = filtered_speed_mps * 2.23693629f,
+        .current_rate_ms = current_rate_ms,
+        .target_rate_ms = target_rate_ms,
+        .rate_valid = rate_valid,
     };
     if( pdTRUE == xQueueSend( queue, &record, 0U ) )
     {
