@@ -296,6 +296,11 @@ static void promiscuous( void *a_buffer, wifi_promiscuous_pkt_type_t a_type )
         --raw_callbacks_inflight;
         portEXIT_CRITICAL( &callback_lock );
     }
+    if( NULL != raw_callback )
+    {
+        end_observation_callback();
+        return;
+    }
     wifi_frame_info_t frame;
     if( parse_wifi_frame( packet->payload, packet->rx_ctrl.sig_len, &frame ) )
     {
