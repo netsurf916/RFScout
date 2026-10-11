@@ -61,6 +61,8 @@ static volatile bool shutdown_requested;
 static volatile bool writer_stopped;
 static volatile bool io_error;
 static volatile bool flush_requested;
+static bool first_flush_logged;
+static bool closed_file_mtime_logged;
 
 static const rfscout_memory_owner_t log_owner = {
     .owner_class = RFSCOUT_MEMORY_OWNER_PLATFORM,
@@ -362,6 +364,32 @@ static bool close_segment( void )
         success = false;
     }
     active_open = false;
+    if( success && !closed_file_mtime_logged )
+    {
+        time_t now = 0;
+        if( device_time_now( &now ) )
+        {
+            char name[ LOG_SEGMENT_NAME_MAX ];
+            rfscout_media_entry_t entry;
+            segment_name( active_slot, name, sizeof( name ) );
+            const esp_err_t stat_result = media_stat( &log_collection, name, &entry );
+            if( ESP_OK == stat_result )
+            {
+                ESP_LOGI( TAG,
+                          "FatFs closed-file timestamp: clock=%lld mtime=%lld delta=%lld sec",
+                          (long long)now,
+                          (long long)entry.modified_time,
+                          (long long)( (int64_t)now - entry.modified_time ) );
+                closed_file_mtime_logged = true;
+            }
+            else
+            {
+                ESP_LOGW(
+                    TAG, "FatFs closed-file stat failed: %s", esp_err_to_name( stat_result ) );
+                closed_file_mtime_logged = true;
+            }
+        }
+    }
     return success;
 }
 
@@ -821,6 +849,12 @@ static bool flush_buffer( void )
     if( !close_segment() )
     {
         success = false;
+    }
+    if( success && !first_flush_logged )
+    {
+        ESP_LOGI(
+            TAG, "SD log flush completed: %u bytes written and synced", (unsigned)burst_size );
+        first_flush_logged = true;
     }
 
     xSemaphoreTake( buffer_lock, portMAX_DELAY );

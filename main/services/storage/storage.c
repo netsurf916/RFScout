@@ -17,9 +17,14 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_vfs_fat.h"
+#include "ff.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "sdmmc_cmd.h"
+
+#if FF_FS_NORTC != 0
+#error RFScout requires FatFs timestamps from the ESP-IDF system clock
+#endif
 
 #define STORAGE_PROBE_IO_TIMEOUT_MS 250U
 #define STORAGE_FAILURE_COOLDOWN_MS 3000U

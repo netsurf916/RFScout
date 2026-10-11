@@ -10,6 +10,7 @@
 
 #include "app_framework.h"
 #include "app_session.h"
+#include "device_time.h"
 #include "storage.h"
 #include "storage_internal.h"
 
@@ -43,6 +44,7 @@ static const char *TAG = "media_store";
 static media_slot_t slots[ MEDIA_SLOT_COUNT ];
 static uint32_t next_serial;
 static uint32_t media_generation;
+static bool time_invalid_diagnostic_logged;
 
 /** @brief Translate a filesystem errno into the documented media-store error vocabulary. */
 static esp_err_t errno_result( int a_errno )
@@ -688,6 +690,17 @@ esp_err_t media_sync( const rfscout_media_file_t *a_file )
     else if( 0 != fflush( slot->file ) || 0 != fsync( fileno( slot->file ) ) )
     {
         result = errno_result( errno );
+    }
+    else if( !time_invalid_diagnostic_logged )
+    {
+        time_t epoch = 0;
+        if( !device_time_now( &epoch ) )
+        {
+            ESP_LOGI( TAG,
+                      "FatFs sync succeeded but system clock is not valid: epoch=%lld",
+                      (long long)epoch );
+            time_invalid_diagnostic_logged = true;
+        }
     }
 
     storage_io_release();

@@ -38,3 +38,7 @@ CONFIG_MBEDTLS_DEFAULT_CERTIFICATE_BUNDLE=y
 # Remove local paths and build timestamps so release images can be reproduced
 # from the same source and ESP-IDF/toolchain inputs.
 CONFIG_APP_REPRODUCIBLE_BUILD=y
+
+# Keep FatFs metadata on the system clock, with normal explicit sync points.
+# Actual FatFs RTC support is asserted in storage.c (FF_FS_NORTC == 0).
+CONFIG_FATFS_IMMEDIATE_FSYNC=n

@@ -78,8 +78,8 @@
 #define TIME_MENU_DAY 5U
 #define TIME_MENU_HOUR 6U
 #define TIME_MENU_MINUTE 7U
-#define TIME_MENU_AUTO_COUNT 3U
-#define TIME_MENU_MANUAL_COUNT 8U
+#define TIME_MENU_SECOND 8U
+#define TIME_MENU_COUNT 9U
 
 #define POWER_MENU_BACK 0U
 #define POWER_MENU_SHORT_PRESS 1U
@@ -117,8 +117,7 @@ static unsigned device_item_count( void )
 
 static unsigned time_menu_item_count( void )
 {
-    return RFSCOUT_TIME_MODE_MANUAL == device_time_mode() ? TIME_MENU_MANUAL_COUNT
-                                                          : TIME_MENU_AUTO_COUNT;
+    return TIME_MENU_COUNT;
 }
 
 static void emit_device_event( rfscout_event_type_t a_type, int32_t a_value )
@@ -378,10 +377,7 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             snprintf( a_value, a_capacity, "%us", (unsigned)config->gps_timeout_seconds );
             break;
         case DEVICE_ITEM_TIME:
-            snprintf( a_value,
-                      a_capacity,
-                      "%s",
-                      RFSCOUT_TIME_MODE_AUTO == device_time_mode() ? "Auto" : "Manual" );
+            snprintf( a_value, a_capacity, "%s", device_time_gps_available() ? "GPS" : "Clock" );
             break;
         case DEVICE_ITEM_STARTUP:
             snprintf( a_value, a_capacity, "%s", startup_app_name( config->startup_app ) );
@@ -518,7 +514,10 @@ static void draw_row( int a_y, unsigned a_item )
 static void draw_time_row( int a_y, unsigned a_item )
 {
     const bool active = time_selected_item == a_item;
-    const uint16_t color = active ? COLOR_SELECTED : COLOR_TEXT;
+    const uint16_t color = ( ( a_item == TIME_MENU_SECOND ||
+                               ( a_item >= TIME_MENU_YEAR && device_time_gps_available() ) ) )
+                               ? COLOR_DIM
+                               : ( active ? COLOR_SELECTED : COLOR_TEXT );
     const char *label = "";
     char value[ 48 ] = "";
     switch( a_item )
@@ -528,21 +527,35 @@ static void draw_time_row( int a_y, unsigned a_item )
             break;
         case TIME_MENU_MODE:
         {
-            label = "Mode";
+            label = "Source";
             rfscout_time_status_t status;
             device_time_status( &status );
-            if( RFSCOUT_TIME_MODE_MANUAL == status.mode )
+            const char *source = "Waiting";
+            if( device_time_gps_available() )
             {
-                snprintf( value, sizeof( value ), "Manual" );
+                source = "GPS";
             }
-            else if( status.valid && RFSCOUT_TIME_SOURCE_GPS == status.source )
+            else if( status.valid )
             {
-                snprintf( value, sizeof( value ), "Auto / GPS" );
+                switch( status.source )
+                {
+                    case RFSCOUT_TIME_SOURCE_NTP:
+                        source = "NTP";
+                        break;
+                    case RFSCOUT_TIME_SOURCE_MANUAL:
+                        source = "Manual";
+                        break;
+                    case RFSCOUT_TIME_SOURCE_RETAINED:
+                        source = "Retained";
+                        break;
+                    case RFSCOUT_TIME_SOURCE_GPS:
+                        source = "GPS (stale)";
+                        break;
+                    default:
+                        break;
+                }
             }
-            else
-            {
-                snprintf( value, sizeof( value ), "Auto / Waiting" );
-            }
+            snprintf( value, sizeof( value ), "%s", source );
             break;
         }
         case TIME_MENU_TIMEZONE:
@@ -575,6 +588,10 @@ static void draw_time_row( int a_y, unsigned a_item )
             label = "Minute";
             snprintf( value, sizeof( value ), "%02d", edited_time.tm_min );
             break;
+        case TIME_MENU_SECOND:
+            label = "Second";
+            snprintf( value, sizeof( value ), "%02d", edited_time.tm_sec );
+            break;
         default:
             break;
     }
@@ -590,7 +607,7 @@ static void draw_time_row( int a_y, unsigned a_item )
     display_draw_text( UI_LAYOUT_LABEL_X, a_y, label, color, 1U );
     if( '\0' != value[ 0 ] )
     {
-        display_draw_text( 214, a_y, value, active ? COLOR_ACCENT : COLOR_DIM, 1U );
+        display_draw_text( 214, a_y, value, color, 1U );
     }
 }
 
@@ -623,7 +640,7 @@ static void render_time_menu( void )
               item_count,
               time_editing
                   ? "TURN CHANGE / CENTER DONE"
-                  : ( TIME_MENU_MODE == time_selected_item ? "CENTER CYCLE"
+                  : ( TIME_MENU_MODE == time_selected_item ? "READ ONLY"
                                                            : "TURN SELECT / CENTER ENTER" ) );
     display_draw_text(
         UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, footer, time_editing ? COLOR_ACCENT : COLOR_DIM, 1U );
@@ -1220,29 +1237,6 @@ static bool commit_manual_time( void )
     return true;
 }
 
-static void toggle_time_mode( void )
-{
-    const rfscout_time_mode_t old_mode = device_time_mode();
-    const rfscout_time_mode_t new_mode =
-        RFSCOUT_TIME_MODE_AUTO == old_mode ? RFSCOUT_TIME_MODE_MANUAL : RFSCOUT_TIME_MODE_AUTO;
-    const esp_err_t result = device_time_set_mode( new_mode );
-    if( ESP_OK != result )
-    {
-        save_error = true;
-        emit_device_event( RFSCOUT_EVENT_ERROR, (int32_t)result );
-        return;
-    }
-    save_error = false;
-    if( RFSCOUT_TIME_MODE_MANUAL == new_mode )
-    {
-        refresh_edited_time();
-    }
-    log_config_change( "time.mode",
-                       RFSCOUT_TIME_MODE_AUTO == old_mode ? "auto" : "manual",
-                       RFSCOUT_TIME_MODE_AUTO == new_mode ? "auto" : "manual" );
-    emit_device_event( RFSCOUT_EVENT_NAVIGATE, 1 );
-}
-
 static bool time_menu_input( bool a_pressed, int a_delta )
 {
     if( a_pressed )
@@ -1257,13 +1251,22 @@ static bool time_menu_input( bool a_pressed, int a_delta )
         }
         if( TIME_MENU_MODE == time_selected_item && !time_editing )
         {
-            toggle_time_mode();
-            if( time_selected_item >= time_menu_item_count() )
-            {
-                time_selected_item = time_menu_item_count() - 1U;
-            }
             render_time_menu();
             return false;
+        }
+        if( time_selected_item == TIME_MENU_SECOND ||
+            ( time_selected_item >= TIME_MENU_YEAR && device_time_gps_available() ) )
+        {
+            time_editing = false;
+            render_time_menu();
+            return false;
+        }
+
+        /* Refresh from the live clock when entering manual edit mode. GPS may
+           have synchronized time while this menu remained open. */
+        if( !time_editing && time_selected_item >= TIME_MENU_YEAR )
+        {
+            refresh_edited_time();
         }
 
         bool accepted = true;
@@ -1272,8 +1275,8 @@ static bool time_menu_input( bool a_pressed, int a_delta )
             accepted = commit_manual_time();
         }
         if( TIME_MENU_TIMEZONE == time_selected_item ||
-            ( RFSCOUT_TIME_MODE_MANUAL == device_time_mode() &&
-              time_selected_item >= TIME_MENU_YEAR ) )
+            ( !device_time_gps_available() && time_selected_item >= TIME_MENU_YEAR &&
+              time_selected_item <= TIME_MENU_MINUTE ) )
         {
             time_editing = !time_editing;
             if( accepted )
@@ -1292,6 +1295,12 @@ static bool time_menu_input( bool a_pressed, int a_delta )
     }
     if( time_editing )
     {
+        if( time_selected_item >= TIME_MENU_YEAR && device_time_gps_available() )
+        {
+            time_editing = false;
+            render_time_menu();
+            return false;
+        }
         if( TIME_MENU_TIMEZONE == time_selected_item )
         {
             adjust_timezone( a_delta );
@@ -1752,6 +1761,29 @@ bool device_view_input( const rfscout_input_event_t *a_input )
 
 void device_view_poll( int64_t a_now_us )
 {
+    if( time_menu_open )
+    {
+        /* GPS may take over while a manual edit is in progress. Cancel before
+           its freshness expires so stale editor fields cannot overwrite GPS time. */
+        if( time_editing && time_selected_item >= TIME_MENU_YEAR &&
+            time_selected_item <= TIME_MENU_MINUTE && device_time_gps_available() )
+        {
+            time_editing = false;
+            refresh_edited_time();
+            render_time_menu();
+        }
+        if( !time_editing )
+        {
+            static time_t last_menu_second;
+            const time_t now = time( NULL );
+            if( now != last_menu_second )
+            {
+                last_menu_second = now;
+                refresh_edited_time();
+                render_time_menu();
+            }
+        }
+    }
     if( network_menu_open )
     {
         network_menu_poll( a_now_us );
