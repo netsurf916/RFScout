@@ -20,16 +20,16 @@
 #define CAPTURE_GPS_REFRESH_US 250000LL
 #define CAPTURE_SETTINGS_MAGIC 0x57445256U
 #define CAPTURE_SETTINGS_VERSION 1U
-#define MENU_START 0U
-#define MENU_SOURCES 1U
-#define MENU_MODE 2U
-#define MENU_CHANNEL 3U
-#define MENU_DWELL 4U
-#define MENU_PACKETS 5U
-#define MENU_GPS 6U
-#define MENU_SIZE 7U
-#define MENU_FILES 8U
-#define MENU_BACK 9U
+#define MENU_BACK 0U
+#define MENU_START 1U
+#define MENU_SOURCES 2U
+#define MENU_MODE 3U
+#define MENU_CHANNEL 4U
+#define MENU_DWELL 5U
+#define MENU_PACKETS 6U
+#define MENU_GPS 7U
+#define MENU_SIZE 8U
+#define MENU_FILES 9U
 #define MENU_ITEMS 10U
 
 typedef struct
@@ -426,7 +426,7 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
     {
         load_settings();
         menu_open = false;
-        selected = MENU_START;
+        selected = MENU_BACK;
         last_draw_us = 0;
         last_gps_refresh_us = 0;
         last_error = ESP_OK;
