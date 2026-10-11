@@ -361,17 +361,19 @@ static size_t build_radio_packet( const capture_packet_t *a_packet, uint8_t *a_o
 {
     if( 1U == a_packet->source )
     {
-        /* Radiotap: channel frequency and dBm antenna signal, no invented FCS. */
-        memset( a_output, 0, 13U );
-        le16( a_output + 2U, 13U );
-        le32( a_output + 4U, ( 1U << 3U ) | ( 1U << 5U ) );
+        /* ESP32-S3 sig_len includes the trailing four-byte FCS. Declare this in
+           Radiotap Flags so decoders do not mistake the FCS for payload. */
+        memset( a_output, 0, 15U );
+        le16( a_output + 2U, 15U );
+        le32( a_output + 4U, ( 1U << 1U ) | ( 1U << 3U ) | ( 1U << 5U ) );
+        a_output[ 8 ] = 0x10U; /* IEEE 802.11 FCS included */
         const uint16_t frequency =
             a_packet->channel == 14U ? 2484U : (uint16_t)( 2407U + a_packet->channel * 5U );
-        le16( a_output + 8U, frequency );
-        le16( a_output + 10U, 0x0080U );
-        a_output[ 12 ] = (uint8_t)a_packet->rssi;
-        memcpy( a_output + 13U, a_packet->payload, a_packet->length );
-        return (size_t)a_packet->length + 13U;
+        le16( a_output + 10U, frequency );
+        le16( a_output + 12U, 0x0080U );
+        a_output[ 14 ] = (uint8_t)a_packet->rssi;
+        memcpy( a_output + 15U, a_packet->payload, a_packet->length );
+        return (size_t)a_packet->length + 15U;
     }
 
     /* HCI H4 event with direction pseudoheader, reconstructing an LE advertising report
