@@ -88,6 +88,7 @@ typedef struct
 #define GPS_POLICY_PROBE_RETRY_DELAY_US 300000LL
 #define GPS_POLICY_MIN_CHANGE_US 30000000LL
 #define GPS_CASIC_MAX_PAYLOAD 128U
+#define GPS_BAUD_SWITCH_TIMEOUT_US 5000000LL
 
 /* HT1818Z3G5L: CASIC binary protocol. Keep generic NMEA on any failure. */
 typedef enum
@@ -98,6 +99,7 @@ typedef enum
     GPS_POLICY_ACTIVE,
     GPS_POLICY_WAIT_ACK,
     GPS_POLICY_VERIFY_RATE,
+    GPS_POLICY_WAIT_BAUD,
     GPS_POLICY_UNSUPPORTED
 } gps_policy_state_t;
 
@@ -111,6 +113,11 @@ static bool policy_filtered_speed_valid;
 static int policy_desired_interval_ms = 1000;
 static int policy_current_interval_ms = 1000;
 static int policy_pending_interval_ms;
+static uint8_t policy_uart_config[ 8 ];
+static bool policy_uart_config_valid;
+static int64_t policy_baud_switch_us;
+static int policy_baud_previous;
+static bool policy_baud_attempted;
 static uint8_t casic_frame[ GPS_CASIC_MAX_PAYLOAD + 10U ];
 static size_t casic_length;
 static size_t casic_expected;
@@ -194,6 +201,64 @@ static bool policy_send( uint8_t a_class, uint8_t a_id, const uint8_t *a_payload
     return written == (int)( a_size + 10U );
 }
 
+/* Switch only the UART profile that matches our detected baud. A read-only
+   discovery response may contain other receiver ports with unrelated settings. */
+static void policy_offer_baud_switch( const uint8_t *a_data, size_t a_size )
+{
+    if( 8U != a_size || GPS_BAUD_MAX == active_baud || policy_baud_attempted )
+    {
+        return;
+    }
+    const uint32_t reported_baud = (uint32_t)a_data[ 4 ] |
+                                   ( (uint32_t)a_data[ 5 ] << 8U ) |
+                                   ( (uint32_t)a_data[ 6 ] << 16U ) |
+                                   ( (uint32_t)a_data[ 7 ] << 24U );
+    if( reported_baud != (uint32_t)active_baud || a_data[ 0 ] > 1U )
+    {
+        return;
+    }
+    memcpy( policy_uart_config, a_data, sizeof( policy_uart_config ) );
+    policy_uart_config_valid = true;
+    ESP_LOGI( TAG, "GPS CASIC selected UART port %u at %d baud", a_data[ 0 ], active_baud );
+}
+
+static bool policy_begin_baud_switch( void )
+{
+    if( !policy_uart_config_valid || policy_baud_attempted || GPS_BAUD_MAX == active_baud )
+    {
+        return false;
+    }
+    policy_baud_attempted = true;
+    policy_baud_previous = active_baud;
+    policy_uart_config[ 4 ] = (uint8_t)GPS_BAUD_MAX;
+    policy_uart_config[ 5 ] = (uint8_t)( GPS_BAUD_MAX >> 8U );
+    policy_uart_config[ 6 ] = (uint8_t)( GPS_BAUD_MAX >> 16U );
+    policy_uart_config[ 7 ] = (uint8_t)( GPS_BAUD_MAX >> 24U );
+    ESP_LOGI( TAG, "GPS switching UART from %d to %d baud", active_baud, GPS_BAUD_MAX );
+    policy_log_event( "baud_change_requested", GPS_BAUD_MAX, active_baud );
+    if( !policy_send( 0x06U, 0x00U, policy_uart_config, sizeof( policy_uart_config ) ) )
+    {
+        ESP_LOGW( TAG, "GPS UART baud request failed; staying at %d", active_baud );
+        policy_log_event( "baud_change_failed", GPS_BAUD_MAX, active_baud );
+        return false;
+    }
+    if( ESP_OK != uart_set_baudrate( GPS_UART, GPS_BAUD_MAX ) )
+    {
+        ESP_LOGW( TAG, "GPS UART could not switch to %d; baud probing resumes", GPS_BAUD_MAX );
+        policy_log_event( "baud_change_failed", GPS_BAUD_MAX, active_baud );
+        return false;
+    }
+    active_baud = GPS_BAUD_MAX;
+    (void)uart_flush_input( GPS_UART );
+    casic_length = 0U;
+    casic_expected = 0U;
+    line_length = 0U;
+    policy_baud_switch_us = esp_timer_get_time();
+    policy_deadline_us = policy_baud_switch_us + GPS_BAUD_SWITCH_TIMEOUT_US;
+    policy_state = GPS_POLICY_WAIT_BAUD;
+    return true;
+}
+
 static void policy_query_rate( void )
 {
     policy_rate_query_retries = 0U;
@@ -244,6 +309,8 @@ static void policy_begin( void )
     policy_probe_retry_at_us = 0;
     policy_rate_query_retries = 0U;
     policy_rate_query_retry_at_us = 0;
+    policy_uart_config_valid = false;
+    policy_baud_attempted = false;
     ESP_LOGI( TAG, "GPS receiver detected at %d baud; checking CASIC support", active_baud );
     policy_log_event( "receiver_detected", 0, 0 );
     policy_start_probe();
@@ -301,6 +368,7 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
         else if( 2U == policy_probe_index && 8U == a_size )
         {
             ESP_LOGI( TAG, "GPS CASIC CFG-PRT answered; CASIC transport confirmed" );
+            policy_offer_baud_switch( a_data, a_size );
             policy_log_event( "transport_detected", 0, 0 );
             policy_query_rate();
         }
@@ -335,6 +403,7 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
         policy_state = GPS_POLICY_ACTIVE;
         ESP_LOGI( TAG, "GPS adaptive rate enabled: current=%u ms", interval );
         policy_log_event( "rate_detected", 0, (int)interval );
+        (void)policy_begin_baud_switch();
     }
     else if( 0x06U == a_class && 0x04U == a_id &&
              GPS_POLICY_VERIFY_RATE == policy_state && 4U == a_size )
@@ -423,6 +492,18 @@ static void casic_feed( uint8_t a_byte )
 
 static void policy_poll( int64_t a_now )
 {
+    if( GPS_POLICY_WAIT_BAUD == policy_state && a_now >= policy_deadline_us )
+    {
+        ESP_LOGW( TAG, "GPS no NMEA at %d baud; returning to discovery", active_baud );
+        policy_log_event( "baud_fallback", policy_baud_previous, active_baud );
+        policy_state = GPS_POLICY_UNSUPPORTED;
+        baud_locked = false;
+        receiver_detected = false;
+        baud_probe_started_us = a_now - (int64_t)GPS_BAUD_PROBE_MS * 1000LL;
+        snapshot.available = false;
+        snapshot.location_valid = false;
+        policy_uart_config_valid = false;
+    }
     if( GPS_POLICY_WAIT_RATE == policy_state && 0 != policy_rate_query_retry_at_us &&
         a_now >= policy_rate_query_retry_at_us )
     {
@@ -949,6 +1030,12 @@ static void parse_line( char *a_line )
         lock_active_baud();
         last_nmea_us = esp_timer_get_time();
         snapshot.available = true;
+        if( GPS_POLICY_WAIT_BAUD == policy_state )
+        {
+            ESP_LOGI( TAG, "GPS UART confirmed at %d baud", active_baud );
+            policy_log_event( "baud_verified", GPS_BAUD_MAX, active_baud );
+            policy_state = GPS_POLICY_ACTIVE;
+        }
         parse_rmc( comma + 1 );
     }
     else if( type_length >= 3U && 0 == strcmp( payload + type_length - 3U, "GGA" ) )
@@ -956,6 +1043,12 @@ static void parse_line( char *a_line )
         lock_active_baud();
         last_nmea_us = esp_timer_get_time();
         snapshot.available = true;
+        if( GPS_POLICY_WAIT_BAUD == policy_state )
+        {
+            ESP_LOGI( TAG, "GPS UART confirmed at %d baud", active_baud );
+            policy_log_event( "baud_verified", GPS_BAUD_MAX, active_baud );
+            policy_state = GPS_POLICY_ACTIVE;
+        }
         parse_gga( comma + 1 );
     }
 }
@@ -1009,6 +1102,10 @@ esp_err_t gps_init( void )
     policy_probe_retry_at_us = 0;
     policy_rate_query_retries = 0U;
     policy_rate_query_retry_at_us = 0;
+    policy_uart_config_valid = false;
+    policy_baud_attempted = false;
+    policy_baud_switch_us = 0;
+    policy_baud_previous = 0;
     policy_filtered_speed_mps = 0.0;
     policy_filtered_speed_updated_us = 0;
     policy_filtered_speed_valid = false;
