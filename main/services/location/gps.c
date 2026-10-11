@@ -609,6 +609,15 @@ static void casic_feed( uint8_t a_byte )
     }
 }
 
+static bool trip_loaded;
+static double trip_total_m;
+static double trip_saved_m;
+static bool trip_anchor_valid;
+static double trip_anchor_latitude;
+static double trip_anchor_longitude;
+static int64_t trip_anchor_us;
+static int64_t trip_last_checkpoint_us;
+
 static void policy_poll( int64_t a_now )
 {
     if( GPS_POLICY_WAIT_BAUD == policy_state && a_now >= policy_deadline_us )
@@ -734,15 +743,6 @@ static void policy_poll( int64_t a_now )
     }
     (void)policy_request_rate( target, a_now );
 }
-
-static bool trip_loaded;
-static double trip_total_m;
-static double trip_saved_m;
-static bool trip_anchor_valid;
-static double trip_anchor_latitude;
-static double trip_anchor_longitude;
-static int64_t trip_anchor_us;
-static int64_t trip_last_checkpoint_us;
 
 static void trip_load( void )
 {
