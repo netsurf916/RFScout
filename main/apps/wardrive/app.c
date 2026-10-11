@@ -142,8 +142,9 @@ static void draw_overview( void )
                     options.wifi && options.ble ? " + " : "",
                     options.ble ? "BLE" : "" );
     display_draw_text( 8, 47, line, theme->text, 1U );
-    (void)snprintf(
-        line, sizeof( line ), "CHANNEL: %s", options.fixed_channel ? "FIXED" : "SCANNING" );
+    (void)snprintf( line, sizeof( line ), "CH: %u %s",
+                    (unsigned)radio_monitor_channel(),
+                    options.fixed_channel ? "FIXED" : "SCAN" );
     display_draw_text( 8, 65, line, theme->info, 1U );
     (void)snprintf( line, sizeof( line ), "GPS: %s", fixed ? "FIX" : "NO FIX" );
     display_draw_text( 202, 65, line, fixed ? theme->success : theme->warning, 1U );
