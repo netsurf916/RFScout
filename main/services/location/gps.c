@@ -260,8 +260,7 @@ static void policy_poll( int64_t a_now )
         policy_speed_since_us = a_now;
     }
     if( a_now - policy_speed_since_us < stable_us ||
-        ( 0 != policy_last_change_us &&
-          a_now - policy_last_change_us < GPS_POLICY_MIN_CHANGE_US ) )
+        ( 0 != policy_last_change_us && a_now - policy_last_change_us < GPS_POLICY_MIN_CHANGE_US ) )
     {
         return;
     }
