@@ -51,6 +51,7 @@ typedef struct
 static const char *TAG = "radio_monitor";
 static radio_observation_fn sink;
 static radio_raw_frame_fn raw_sink;
+static uint32_t raw_callbacks_inflight;
 static bool capture_policy;
 static uint8_t capture_fixed_channel;
 static uint32_t capture_dwell_ms = 200U;
@@ -277,12 +278,21 @@ static void promiscuous( void *a_buffer, wifi_promiscuous_pkt_type_t a_type )
     }
 
     const wifi_promiscuous_pkt_t *packet = a_buffer;
-    if( NULL != raw_sink )
+    radio_raw_frame_fn raw_callback;
+    portENTER_CRITICAL( &callback_lock );
+    raw_callback = raw_sink;
+    if( NULL != raw_callback )
     {
-        raw_sink( packet->payload,
-                  packet->rx_ctrl.sig_len,
-                  packet->rx_ctrl.rssi,
-                  packet->rx_ctrl.channel );
+        ++raw_callbacks_inflight;
+    }
+    portEXIT_CRITICAL( &callback_lock );
+    if( NULL != raw_callback )
+    {
+        raw_callback( packet->payload, packet->rx_ctrl.sig_len, packet->rx_ctrl.rssi,
+                      packet->rx_ctrl.channel );
+        portENTER_CRITICAL( &callback_lock );
+        --raw_callbacks_inflight;
+        portEXIT_CRITICAL( &callback_lock );
     }
     wifi_frame_info_t frame;
     if( parse_wifi_frame( packet->payload, packet->rx_ctrl.sig_len, &frame ) )
@@ -476,7 +486,23 @@ void radio_monitor_set_capture_policy( bool a_enabled,
 
 void radio_monitor_set_raw_observer( radio_raw_frame_fn a_callback )
 {
+    portENTER_CRITICAL( &callback_lock );
     raw_sink = a_callback;
+    portEXIT_CRITICAL( &callback_lock );
+    if( NULL == a_callback )
+    {
+        while( true )
+        {
+            portENTER_CRITICAL( &callback_lock );
+            const bool idle = 0U == raw_callbacks_inflight;
+            portEXIT_CRITICAL( &callback_lock );
+            if( idle )
+            {
+                break;
+            }
+            vTaskDelay( pdMS_TO_TICKS( 1U ) );
+        }
+    }
 }
 
 void radio_monitor_set_observer( radio_observation_fn a_callback )
