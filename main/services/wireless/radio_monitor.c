@@ -50,6 +50,7 @@ typedef struct
 
 static const char *TAG = "radio_monitor";
 static radio_observation_fn sink;
+static radio_raw_frame_fn raw_sink;
 static uint8_t channel = WIFI_MIN_CHANNEL;
 static int64_t last_hop_us;
 static uint16_t active_ap_channel_mask;
@@ -273,6 +274,11 @@ static void promiscuous( void *a_buffer, wifi_promiscuous_pkt_type_t a_type )
     }
 
     const wifi_promiscuous_pkt_t *packet = a_buffer;
+    if( NULL != raw_sink )
+    {
+        raw_sink( packet->payload, packet->rx_ctrl.sig_len, packet->rx_ctrl.rssi,
+                  packet->rx_ctrl.channel );
+    }
     wifi_frame_info_t frame;
     if( parse_wifi_frame( packet->payload, packet->rx_ctrl.sig_len, &frame ) )
     {
@@ -436,6 +442,11 @@ esp_err_t radio_monitor_stop( void )
         ESP_LOGI( TAG, "Wi-Fi monitor stopped for inactive app" );
     }
     return stop_result;
+}
+
+void radio_monitor_set_raw_observer( radio_raw_frame_fn a_callback )
+{
+    raw_sink = a_callback;
 }
 
 void radio_monitor_set_observer( radio_observation_fn a_callback )
