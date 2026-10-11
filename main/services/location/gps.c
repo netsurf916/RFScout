@@ -96,6 +96,9 @@ typedef enum
     GPS_POLICY_IDLE = 0,
     GPS_POLICY_WAIT_VERSION,
     GPS_POLICY_WAIT_RATE,
+    GPS_POLICY_WAIT_TIMEPULSE,
+    GPS_POLICY_WAIT_TIMEPULSE_ACK,
+    GPS_POLICY_VERIFY_TIMEPULSE,
     GPS_POLICY_ACTIVE,
     GPS_POLICY_WAIT_ACK,
     GPS_POLICY_VERIFY_RATE,
@@ -405,6 +408,18 @@ static void policy_query_rate( void )
     }
 }
 
+/* Read/modify/write the existing time-pulse profile without guessing timing fields. */
+static void policy_query_timepulse( void )
+{
+    policy_state = GPS_POLICY_WAIT_TIMEPULSE;
+    policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
+    if( !policy_send( 0x06U, 0x03U, NULL, 0U ) )
+    {
+        ESP_LOGW( TAG, "GPS CFG-TP query failed; retaining receiver defaults" );
+        policy_query_rate();
+    }
+}
+
 static void policy_start_probe( void )
 {
     policy_state = GPS_POLICY_WAIT_VERSION;
@@ -462,9 +477,18 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
         const uint8_t rejected_class = a_data[ 0 ];
         const uint8_t rejected_id = a_data[ 1 ];
         ESP_LOGI( TAG, "GPS CASIC command %02X/%02X unsupported", rejected_class, rejected_id );
-        if( GPS_POLICY_WAIT_VERSION == policy_state &&
-            rejected_class == policy_probe_classes[ policy_probe_index ] &&
-            rejected_id == policy_probe_ids[ policy_probe_index ] )
+        if( ( GPS_POLICY_WAIT_TIMEPULSE == policy_state ||
+              GPS_POLICY_WAIT_TIMEPULSE_ACK == policy_state ||
+              GPS_POLICY_VERIFY_TIMEPULSE == policy_state ) &&
+            0x06U == rejected_class && 0x03U == rejected_id )
+        {
+            ESP_LOGW( TAG, "GPS CFG-TP rejected; leaving time pulse state unconfirmed" );
+            policy_log_event( "timepulse_rejected", 0, 0 );
+            policy_query_rate();
+        }
+        else if( GPS_POLICY_WAIT_VERSION == policy_state &&
+                 rejected_class == policy_probe_classes[ policy_probe_index ] &&
+                 rejected_id == policy_probe_ids[ policy_probe_index ] )
         {
             policy_next_probe();
         }
@@ -529,19 +553,19 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
             hardware[ 32 ] = '\0';
             ESP_LOGI( TAG, "GPS CASIC identified: software=%s hardware=%s", software, hardware );
             policy_log_event( "transport_detected", 0, 0 );
-            policy_query_rate();
+            policy_query_timepulse();
         }
         else if( 2U == policy_probe_index && 8U == a_size )
         {
             ESP_LOGI( TAG, "GPS CASIC CFG-PRT answered; CASIC transport confirmed" );
             policy_log_event( "transport_detected", 0, 0 );
-            policy_query_rate();
+            policy_query_timepulse();
         }
         else if( 1U == policy_probe_index )
         {
             ESP_LOGI( TAG, "GPS CASIC transport confirmed through MON-HW" );
             policy_log_event( "transport_detected", 0, 0 );
-            policy_query_rate();
+            policy_query_timepulse();
         }
         else
         {
@@ -551,6 +575,57 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
                       (unsigned)a_size );
             policy_next_probe();
         }
+    }
+    else if( 0x06U == a_class && 0x03U == a_id && GPS_POLICY_WAIT_TIMEPULSE == policy_state &&
+             16U == a_size )
+    {
+        if( 0U != a_data[ 8 ] )
+        {
+            uint8_t timepulse[ 16 ];
+            memcpy( timepulse, a_data, sizeof( timepulse ) );
+            timepulse[ 8 ] = 0U;
+            if( policy_send( 0x06U, 0x03U, timepulse, sizeof( timepulse ) ) )
+            {
+                ESP_LOGI( TAG, "GPS time-pulse disable requested; awaiting ACK" );
+                policy_log_event( "timepulse_disable_requested", 0, 0 );
+                policy_state = GPS_POLICY_WAIT_TIMEPULSE_ACK;
+                policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
+            }
+            else
+            {
+                ESP_LOGW( TAG, "GPS time-pulse disable send failed; NMEA unaffected" );
+            }
+        }
+        else
+        {
+            ESP_LOGI( TAG, "GPS time pulse already disabled; no write required" );
+            policy_log_event( "timepulse_already_disabled", 0, 0 );
+        }
+        if( GPS_POLICY_WAIT_TIMEPULSE == policy_state )
+        {
+            policy_query_rate();
+        }
+    }
+    else if( 0x05U == a_class && 0x01U == a_id && GPS_POLICY_WAIT_TIMEPULSE_ACK == policy_state &&
+             4U == a_size && 0x06U == a_data[ 0 ] && 0x03U == a_data[ 1 ] )
+    {
+        ESP_LOGI( TAG, "GPS CFG-TP disable acknowledged; checking readback" );
+        policy_state = GPS_POLICY_VERIFY_TIMEPULSE;
+        policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
+        if( !policy_send( 0x06U, 0x03U, NULL, 0U ) )
+        {
+            ESP_LOGW( TAG, "GPS CFG-TP readback request failed" );
+            policy_query_rate();
+        }
+    }
+    else if( 0x06U == a_class && 0x03U == a_id && GPS_POLICY_VERIFY_TIMEPULSE == policy_state &&
+             16U == a_size )
+    {
+        const bool disabled = 0U == a_data[ 8 ];
+        ESP_LOGI( TAG, "GPS CFG-TP readback: %s", disabled ? "disabled" : "still enabled" );
+        policy_log_event(
+            disabled ? "timepulse_verified_disabled" : "timepulse_verify_failed", 0, a_data[ 8 ] );
+        policy_query_rate();
     }
     else if( 0x06U == a_class && 0x04U == a_id && GPS_POLICY_WAIT_RATE == policy_state &&
              4U == a_size )
@@ -725,7 +800,9 @@ static void policy_poll( int64_t a_now )
         policy_probe_retry_at_us = 0;
         policy_start_probe();
     }
-    if( ( GPS_POLICY_WAIT_VERSION == policy_state || GPS_POLICY_WAIT_RATE == policy_state ||
+    if( ( GPS_POLICY_WAIT_VERSION == policy_state || GPS_POLICY_WAIT_TIMEPULSE == policy_state ||
+          GPS_POLICY_WAIT_TIMEPULSE_ACK == policy_state ||
+          GPS_POLICY_VERIFY_TIMEPULSE == policy_state || GPS_POLICY_WAIT_RATE == policy_state ||
           GPS_POLICY_WAIT_ACK == policy_state || GPS_POLICY_VERIFY_RATE == policy_state ) &&
         a_now >= policy_deadline_us )
     {
@@ -751,6 +828,14 @@ static void policy_poll( int64_t a_now )
                           policy_probe_names[ policy_probe_index ] );
                 policy_next_probe();
             }
+        }
+        else if( GPS_POLICY_WAIT_TIMEPULSE == policy_state ||
+                 GPS_POLICY_WAIT_TIMEPULSE_ACK == policy_state ||
+                 GPS_POLICY_VERIFY_TIMEPULSE == policy_state )
+        {
+            ESP_LOGW( TAG, "GPS CFG-TP query/ack/verification timeout; continuing initialization" );
+            policy_log_event( "timepulse_timeout", 0, 0 );
+            policy_query_rate();
         }
         else if( GPS_POLICY_WAIT_RATE == policy_state &&
                  policy_rate_query_retries < GPS_POLICY_PROBE_RETRY_LIMIT )
@@ -1461,7 +1546,9 @@ void gps_poll( void )
     int64_t nmea_timeout_us = (int64_t)device_config_get()->gps_timeout_seconds * 1000000LL;
     /* A receiver reporting a slow but valid update interval must retain UART
        ownership long enough for the next fix and any initial rate correction. */
-    if( ( GPS_POLICY_WAIT_VERSION == policy_state || GPS_POLICY_WAIT_RATE == policy_state ) &&
+    if( ( GPS_POLICY_WAIT_VERSION == policy_state || GPS_POLICY_WAIT_TIMEPULSE == policy_state ||
+          GPS_POLICY_WAIT_TIMEPULSE_ACK == policy_state ||
+          GPS_POLICY_VERIFY_TIMEPULSE == policy_state || GPS_POLICY_WAIT_RATE == policy_state ) &&
         policy_deadline_us > last_nmea_us )
     {
         /* Discovery and its bounded retries must not lose the UART to the
