@@ -14,11 +14,22 @@
 #include "rf_observation.h"
 
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 /**
  * @brief Callback invoked when passive BLE scanning produces an observation.
  * @param a_observation Mutable observation populated from the received BLE advertisement.
  */
+/** @brief NimBLE advertising-report view; bytes valid only during the callback. */
+typedef void ( *ble_raw_adv_fn )( const uint8_t *a_bytes,
+                                  size_t a_length,
+                                  const uint8_t a_address[ 6 ],
+                                  uint8_t a_address_type,
+                                  uint8_t a_event_type,
+                                  int8_t a_rssi );
+void ble_monitor_set_raw_observer( ble_raw_adv_fn a_callback );
+
 typedef void ( *ble_observation_fn )( rf_device_t *a_observation );
 
 /** @brief Bind the platform observation sink used while scanning is active. */
