@@ -14,7 +14,7 @@ The normal view is **LIVE** and follows current history.
 
 Pressing the center control enters **BROWSE**, which captures a stable snapshot of the current ring. Rotary navigation scrolls that snapshot without incoming events moving the user's selection. Center exits browse mode.
 
-The view displays compact severity/source markers and current semantic event text.
+The view displays compact severity/source markers and current semantic event text. The footer also shows live system uptime in days, hours, minutes, and seconds, in both LIVE and BROWSE modes; a reboot resets that counter.
 
 ## Current event sources
 

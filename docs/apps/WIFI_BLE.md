@@ -221,7 +221,7 @@ Expiration simply removes the active identity; it does not write a summary to SD
 
 Each GPS-qualified surveillance packet is separately queued for the append-only
 `locations/surveillance.jsonl` journal, including full MAC, address type, classification,
-receiver latitude/longitude, trusted UTC when available, and observation time. The canonical store emits a compact event to an app-owned sink after releasing its lock.
+receiver latitude/longitude, trusted UTC when available, and observation time. The `type` and `class` fields now use readable labels (for example, `public_or_wifi` and `Camera / doorbell`) rather than numeric enum codes. Existing journals are not rewritten; newly appended records use the readable representation. The canonical store emits a compact event to an app-owned sink after releasing its lock.
 The sink only enqueues records into a preallocated PSRAM buffer; queue growth and
 batched SD writes happen from the app poll, never inside radio callbacks.
 The journal is retained for offline analysis. It is not replayed to populate the live UI,

@@ -57,4 +57,11 @@ double gps_trip_distance_m( void );
 /** @brief Clear the trip odometer and persist the reset in internal flash. */
 esp_err_t gps_trip_reset( void );
 
+/** @brief Fresh filtered speed and current/target update intervals for diagnostic breadcrumbs.
+ * @return false when filtered speed is unavailable or stale.
+ */
+bool gps_rate_diagnostics_get( float *a_filtered_speed_mps,
+                               int *a_current_interval_ms,
+                               int *a_target_interval_ms );
+
 #endif // _RFSCOUT_GPS_H_

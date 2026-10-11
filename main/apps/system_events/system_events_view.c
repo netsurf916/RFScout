@@ -15,6 +15,8 @@
 #include "ui_layout.h"
 #include "ui_theme.h"
 
+#include "esp_timer.h"
+
 #include <stdio.h>
 
 #define SYSTEM_EVENTS_VISIBLE_ROWS 4U
@@ -282,19 +284,34 @@ void system_events_view_render( void )
         }
     }
 
+    const uint64_t uptime_seconds = (uint64_t)esp_timer_get_time() / 1000000ULL;
+    const unsigned long days = (unsigned long)( uptime_seconds / 86400ULL );
+    const unsigned long hours = (unsigned long)( ( uptime_seconds / 3600ULL ) % 24ULL );
+    const unsigned long minutes = (unsigned long)( ( uptime_seconds / 60ULL ) % 60ULL );
+    const unsigned long seconds = (unsigned long)( uptime_seconds % 60ULL );
     char footer[ 72 ];
     if( browsing )
     {
         const size_t first = ( 0U == count ) ? 0U : browse_offset + 1U;
         snprintf( footer,
                   sizeof( footer ),
-                  "BROWSE %u/%u  TURN: SCROLL  CENTER: APPS",
+                  "UP %lud %02lu:%02lu:%02lu BROWSE %u/%u",
+                  days,
+                  hours,
+                  minutes,
+                  seconds,
                   (unsigned)first,
                   (unsigned)count );
     }
     else
     {
-        snprintf( footer, sizeof( footer ), "LIVE  TURN: APPS  CENTER: BROWSE" );
+        snprintf( footer,
+                  sizeof( footer ),
+                  "UP %lud %02lu:%02lu:%02lu LIVE CENTER: BROWSE",
+                  days,
+                  hours,
+                  minutes,
+                  seconds );
     }
     display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, footer, theme->secondary, 1U );
     (void)display_present();
