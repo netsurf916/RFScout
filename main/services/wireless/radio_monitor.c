@@ -479,9 +479,8 @@ esp_err_t radio_monitor_stop( void )
     return stop_result;
 }
 
-esp_err_t radio_monitor_set_capture_policy( bool a_enabled,
-                                            uint8_t a_fixed_channel,
-                                            uint32_t a_dwell_ms )
+esp_err_t
+radio_monitor_set_capture_policy( bool a_enabled, uint8_t a_fixed_channel, uint32_t a_dwell_ms )
 {
     capture_policy = a_enabled;
     capture_fixed_channel = a_fixed_channel <= RFSCOUT_WIFI_CHANNEL_MAX ? a_fixed_channel : 0U;
