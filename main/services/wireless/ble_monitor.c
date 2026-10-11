@@ -207,9 +207,12 @@ static int gap_event( struct ble_gap_event *a_event, void *a_argument )
         {
             if( NULL != raw_sink )
             {
-                raw_sink( a_event->disc.data, a_event->disc.length_data,
-                          a_event->disc.addr.val, a_event->disc.addr.type,
-                          a_event->disc.event_type, a_event->disc.rssi );
+                raw_sink( a_event->disc.data,
+                          a_event->disc.length_data,
+                          a_event->disc.addr.val,
+                          a_event->disc.addr.type,
+                          a_event->disc.event_type,
+                          a_event->disc.rssi );
             }
             rf_device_t observation;
             parse_adv( &a_event->disc, &observation );
