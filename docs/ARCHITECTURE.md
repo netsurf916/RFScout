@@ -2,6 +2,8 @@
 
 This is the canonical platform reference for RFScout's **implemented** shared architecture. The [README](../README.md) is the product/current-state anchor, application behavior lives under [`docs/apps/`](apps/), and future design or release planning belongs only in [ROADMAP.md](ROADMAP.md).
 
+> **Design discussion:** [Proposed framework startup and system power lifecycle](architecture/SYSTEM_LIFECYCLE_PROPOSAL.md) documents future semantics; this page describes currently implemented behavior.
+
 ## Documentation and ownership boundary
 
 Platform documentation answers questions about shared contracts: board/profile legality, application lifecycle, resource ownership, memory, persistence, input/presentation, power, storage, audio, networking, and OTA.
