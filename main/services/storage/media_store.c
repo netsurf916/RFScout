@@ -45,6 +45,7 @@ static media_slot_t slots[ MEDIA_SLOT_COUNT ];
 static uint32_t next_serial;
 static uint32_t media_generation;
 static bool time_sync_diagnostic_logged;
+static bool time_invalid_diagnostic_logged;
 
 /** @brief Translate a filesystem errno into the documented media-store error vocabulary. */
 static esp_err_t errno_result( int a_errno )
@@ -706,6 +707,13 @@ esp_err_t media_sync( const rfscout_media_file_t *a_file )
                           (long long)( epoch - info.st_mtime ) );
                 time_sync_diagnostic_logged = true;
             }
+        }
+        else if( !time_invalid_diagnostic_logged )
+        {
+            ESP_LOGI( TAG,
+                      "FatFs sync succeeded but system clock is not valid: epoch=%lld",
+                      (long long)epoch );
+            time_invalid_diagnostic_logged = true;
         }
     }
 
