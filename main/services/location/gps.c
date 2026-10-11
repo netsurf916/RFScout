@@ -507,6 +507,14 @@ static void policy_poll( int64_t a_now )
         baud_probe_started_us = a_now - (int64_t)GPS_BAUD_PROBE_MS * 1000LL;
         snapshot.available = false;
         snapshot.location_valid = false;
+        snapshot.time_valid = false;
+        snapshot.altitude_valid = false;
+        snapshot.speed_valid = false;
+        snapshot.satellites_valid = false;
+        trip_anchor_valid = false;
+        casic_length = 0U;
+        casic_expected = 0U;
+        line_length = 0U;
         policy_uart_config_valid = false;
     }
     if( GPS_POLICY_WAIT_RATE == policy_state && 0 != policy_rate_query_retry_at_us &&
@@ -1014,6 +1022,19 @@ static void lock_active_baud( void )
     }
 }
 
+/* Only checksum-valid NMEA received after the UART switch completes can
+   verify the new link. This transition keeps GPS ownership throughout. */
+static void policy_confirm_baud( void )
+{
+    if( GPS_POLICY_WAIT_BAUD != policy_state )
+    {
+        return;
+    }
+    ESP_LOGI( TAG, "GPS UART confirmed at %d baud", active_baud );
+    policy_log_event( "baud_verified", GPS_BAUD_MAX, active_baud );
+    policy_state = GPS_POLICY_ACTIVE;
+}
+
 static void parse_line( char *a_line )
 {
     if( !checksum_valid( a_line ) )
@@ -1035,13 +1056,7 @@ static void parse_line( char *a_line )
         lock_active_baud();
         last_nmea_us = esp_timer_get_time();
         snapshot.available = true;
-        if( GPS_POLICY_WAIT_BAUD == policy_state &&
-            esp_timer_get_time() - policy_baud_switch_us >= 100000LL )
-        {
-            ESP_LOGI( TAG, "GPS UART confirmed at %d baud", active_baud );
-            policy_log_event( "baud_verified", GPS_BAUD_MAX, active_baud );
-            policy_state = GPS_POLICY_ACTIVE;
-        }
+        policy_confirm_baud();
         parse_rmc( comma + 1 );
     }
     else if( type_length >= 3U && 0 == strcmp( payload + type_length - 3U, "GGA" ) )
@@ -1049,13 +1064,7 @@ static void parse_line( char *a_line )
         lock_active_baud();
         last_nmea_us = esp_timer_get_time();
         snapshot.available = true;
-        if( GPS_POLICY_WAIT_BAUD == policy_state &&
-            esp_timer_get_time() - policy_baud_switch_us >= 100000LL )
-        {
-            ESP_LOGI( TAG, "GPS UART confirmed at %d baud", active_baud );
-            policy_log_event( "baud_verified", GPS_BAUD_MAX, active_baud );
-            policy_state = GPS_POLICY_ACTIVE;
-        }
+        policy_confirm_baud();
         parse_gga( comma + 1 );
     }
 }
@@ -1257,7 +1266,9 @@ void gps_poll( void )
     {
         initial_probe_complete = true;
     }
-    if( receiver_detected &&
+    /* Baud negotiation temporarily interrupts NMEA. Do not release shared pins
+       or restart discovery until the dedicated switch deadline expires. */
+    if( GPS_POLICY_WAIT_BAUD != policy_state && receiver_detected &&
         ( now - last_nmea_us ) / 1000000LL >= (int64_t)device_config_get()->gps_timeout_seconds )
     {
         receiver_detected = false;
