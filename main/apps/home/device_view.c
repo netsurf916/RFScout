@@ -1761,15 +1761,27 @@ bool device_view_input( const rfscout_input_event_t *a_input )
 
 void device_view_poll( int64_t a_now_us )
 {
-    if( time_menu_open && !time_editing )
+    if( time_menu_open )
     {
-        static time_t last_menu_second;
-        const time_t now = time( NULL );
-        if( now != last_menu_second )
+        /* GPS may take over while a manual edit is in progress. Cancel before
+           its freshness expires so stale editor fields cannot overwrite GPS time. */
+        if( time_editing && time_selected_item >= TIME_MENU_YEAR &&
+            time_selected_item <= TIME_MENU_MINUTE && device_time_gps_available() )
         {
-            last_menu_second = now;
+            time_editing = false;
             refresh_edited_time();
             render_time_menu();
+        }
+        if( !time_editing )
+        {
+            static time_t last_menu_second;
+            const time_t now = time( NULL );
+            if( now != last_menu_second )
+            {
+                last_menu_second = now;
+                refresh_edited_time();
+                render_time_menu();
+            }
         }
     }
     if( network_menu_open )
