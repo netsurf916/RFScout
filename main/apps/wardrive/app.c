@@ -390,11 +390,19 @@ static void act_on_selection( void )
     {
         wardrive_stats_t stats;
         wardrive_capture_stats( &stats );
-        if( !stats.recording )
+        const bool restart = stats.recording;
+        if( restart )
         {
-            modify_setting( selected, 1 );
-            draw_menu();
+            wardrive_capture_stop();
         }
+        modify_setting( selected, 1 );
+        if( restart )
+        {
+            apply_radio();
+            last_error = wardrive_capture_start( &options );
+        }
+        refresh_space();
+        draw_menu();
     }
 }
 
