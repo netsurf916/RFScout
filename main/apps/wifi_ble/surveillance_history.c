@@ -96,22 +96,23 @@ static const char *address_type_name( uint8_t a_type )
 static esp_err_t append_point( const rfscout_media_file_t *a_file, const history_point_t *a_point )
 {
     char line[ 256 ];
-    const int length = snprintf( line,
-                                 sizeof( line ),
-                                 "{\"type\":\"%s\",\"mac\":\"%02X%02X%02X%02X%02X%02X\",\"class\":\"%s\","
-                                 "\"lat\":%.7f,\"lon\":%.7f,\"utc\":%lld,\"seen\":%lu}\n",
-                                 address_type_name( a_point->address_type ),
-                                 a_point->address[ 0 ],
-                                 a_point->address[ 1 ],
-                                 a_point->address[ 2 ],
-                                 a_point->address[ 3 ],
-                                 a_point->address[ 4 ],
-                                 a_point->address[ 5 ],
-                                 surveillance_name( a_point->classification ),
-                                 a_point->latitude,
-                                 a_point->longitude,
-                                 (long long)a_point->utc_epoch,
-                                 (unsigned long)a_point->seen_ms );
+    const int length =
+        snprintf( line,
+                  sizeof( line ),
+                  "{\"type\":\"%s\",\"mac\":\"%02X%02X%02X%02X%02X%02X\",\"class\":\"%s\","
+                  "\"lat\":%.7f,\"lon\":%.7f,\"utc\":%lld,\"seen\":%lu}\n",
+                  address_type_name( a_point->address_type ),
+                  a_point->address[ 0 ],
+                  a_point->address[ 1 ],
+                  a_point->address[ 2 ],
+                  a_point->address[ 3 ],
+                  a_point->address[ 4 ],
+                  a_point->address[ 5 ],
+                  surveillance_name( a_point->classification ),
+                  a_point->latitude,
+                  a_point->longitude,
+                  (long long)a_point->utc_epoch,
+                  (unsigned long)a_point->seen_ms );
     if( length < 0 || (size_t)length >= sizeof( line ) )
         return ESP_ERR_INVALID_SIZE;
     return media_write( a_file, line, (size_t)length );
