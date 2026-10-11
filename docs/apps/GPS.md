@@ -25,6 +25,21 @@ searching for a fix. The platform GPS UART uses pins shared with nRF24; this app
 does not override the platform's established arbitration rules. With the GPS provider
 inactive, the UI reports that state instead of attempting to take over the pins.
 
+## Receiver rate management
+
+The shared GPS service detects NMEA at the receiver's existing UART baud (9600 on the tested HT1818Z3G5L). It probes CASIC read-only commands; this receiver NAKs MON-VER/MON-HW but answers CFG-PRT and CFG-RATE. A valid CFG-RATE interval enables adaptive updates; otherwise generic NMEA operation continues.
+
+| Speed | Requested update interval |
+| --- | --- |
+| Under 3 mph | 1000 ms (1 Hz) |
+| 3–7 mph | 500 ms (2 Hz) |
+| 7–12 mph | 333 ms (~3 Hz) |
+| 12+ mph | 250 ms (4 Hz maximum) |
+
+Rate increases require 5 seconds in a higher tier, decreases require 20 seconds, and at least 30 seconds separates changes. A CFG-RATE write must be acknowledged and verified by readback; rejection, mismatch, or timeout stops automatic adjustments for that GPS session. Settings are volatile; firmware does not change UART baud, sentence output, or persistent receiver configuration.
+
+Startup CASIC packet traces remain in serial logging. Rate transitions and failures are also recorded asynchronously in the normal SD logs as `gps_policy` JSON records (requested/actual milliseconds and baud), even when the GPS app is not open. Allow time to flush SD logs before power-off. Higher-rate behavior still requires moving hardware validation.
+
 ## Planned diagnostics
 
 - Parse NMEA GSV to expose satellites in view (separately from GGA satellites used).
