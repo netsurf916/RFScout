@@ -1,24 +1,28 @@
-# HT1818Z3G5L CASIC receiver probe and rate policy
+# HT1818Z3G5L CASIC receiver discovery and adaptive rate policy
 
-The physical module marking is HT1818Z3G5L (HTZN TTL), rather than the previously assumed GP-20U7 or MTK receiver. A published example using the exact module reports 9600 baud and one NMEA position cycle per second. The CASIC protocol specification documents binary MON-VER (class 0A, ID 04, 64-byte software/hardware response), CFG-RATE (class 06, ID 04, four-byte interval response/set), and ACK/NACK (class 05). **Module-specific binary protocol support and maximum rate remain to be confirmed on hardware.**
+The receiver is identified physically as HT1818Z3G5L (HTZN TTL). It provides NMEA data at 9600 baud; hardware logs confirm bidirectional CASIC binary communication.
 
-After checksum-valid NMEA locks the UART, the provider sends exactly one read-only CASIC MON-VER query. CASIC frames use header BA CE, a little-endian payload length, and a little-endian additive 32-bit checksum over class, ID, length and 32-bit payload words. Responses are parsed independently of NMEA. On valid MON-VER, the provider logs 32-byte firmware/hardware identifiers and queries CFG-RATE. Only successful replies enable adaptive control. An unidentified receiver keeps generic NMEA operation.
+On first valid NMEA traffic, RFScout probes the receiver with read-only CASIC MON-VER, MON-HW, and CFG-PRT commands. Matching NAKs immediately advance discovery. On the tested module MON-VER and MON-HW return NAK, whereas CFG-PRT responds successfully. A valid CFG-PRT response enables a read-only CFG-RATE poll. Only a valid, plausible CFG-RATE reply enables adaptive update-rate control.
 
-To minimize risk while awaiting validation, 1 Hz below 3 mph and at most 2 Hz above 3 mph are attempted after 20-second/5-second stable-speed hysteresis, respectively. At least 30 seconds separates configuration attempts. Rejected or unanswered commands disable further adjustment until UART service reactivation. Changes affect the running session only: no persistent configuration save, UART baud change, sentence-output change, assistance, or reset is sent.
+## Adaptive rate
 
-## Hardware test checkpoints
+- Below 3 mph, target 1000 ms (1 Hz), after 20 seconds of stable lower speed.
+- At or above 3 mph, target 500 ms (2 Hz), after 5 seconds of stable higher speed.
+- Allow at least 30 seconds between attempted changes.
+- Require a successful CFG-RATE write ACK, then query CFG-RATE again to verify the receiver's effective interval. A rejection, readback mismatch, or timeout disables further automatic writes until GPS service reactivation.
+- Do not persist configuration, switch UART baud rates, reset the receiver, or change NMEA sentence selection.
 
-Capture serial ESP-IDF logs from startup:
-- `GPS NMEA detected at 9600 baud`
-- `GPS HT1818Z3G5L probe: CASIC MON-VER at 9600 baud`
-- `GPS CASIC TX class=0A id=04 ...`
-- `GPS CASIC MON-VER software=... hardware=...` (if recognized)
-- `GPS CASIC CFG-RATE interval=... ms` (if supported)
-- `GPS HT1818Z3G5L requested ...` and `GPS CASIC CFG-RATE accepted...` (only after movement and successful probing)
-- `GPS CASIC policy timeout...` / checksum warnings / rejection as applicable
+## Hardware diagnostics
 
-This PR does not yet write these protocol diagnostics to the SD log. Firmware and protocol support remain hypotheses until the module responds.
+Initial discovery is deliberately verbose because it occurs once per GPS activation. Serial logs include bounded hexadecimal CASIC TX/RX frames, calculated/received checksums, UART TX drain results, NAK command identifiers, CFG-RATE detection, rate-change requests, write ACKs, and rate readback verification.
+
+Hardware confirmed responses: CFG-PRT (06/00) and CFG-RATE (06/04), with initial interval 1000 ms. To test the switch to 2 Hz, sustain speed above 3 mph for at least five seconds and look for a requested interval of 500 ms, ACK, and verified readback of 500 ms. Reduce speed below 3 mph for at least 20 seconds to test return to 1000 ms. The 30-second cooldown may extend either transition.
+
+Generic NMEA position/time reception remains available when CASIC discovery or rate adjustment is unsupported. The UART remains at its detected baud (9600 on the tested module).
+
+These diagnostics are currently serial ESP-IDF logs, not separately stored as structured SD events.
 
 ## References
-- CASIC multi-mode GNSS protocol specification, sections 2.2, 2.14.1, 2.11.5
-- HT1818Z3G5L UART/NMEA usage example: https://www.cnblogs.com/excellentHellen/articles/17176131.html
+
+- CASIC multi-mode GNSS binary protocol specification (CFG-PRT, CFG-RATE, ACK-ACK/ACK-NAK).
+- HT1818Z3G5L usage example: https://www.cnblogs.com/excellentHellen/articles/17176131.html
