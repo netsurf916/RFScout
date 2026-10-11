@@ -17,6 +17,7 @@
 #include <string.h>
 
 #define CAPTURE_REFRESH_US 500000LL
+#define CAPTURE_GPS_REFRESH_US 250000LL
 #define CAPTURE_SETTINGS_MAGIC 0x57445256U
 #define CAPTURE_SETTINGS_VERSION 1U
 #define MENU_START 0U
@@ -44,6 +45,7 @@ static wardrive_config_t options;
 static unsigned selected;
 static bool menu_open;
 static int64_t last_draw_us;
+static int64_t last_gps_refresh_us;
 static uint64_t stored_bytes;
 static uint64_t free_bytes;
 static esp_err_t last_error;
@@ -272,24 +274,15 @@ static void draw_menu( void )
     (void)display_present();
 }
 
-static void apply_radio( void )
+static esp_err_t apply_radio( void )
 {
-    if( options.wifi )
+    esp_err_t result = options.wifi ? radio_monitor_start() : radio_monitor_stop();
+    if( ESP_OK != result )
     {
-        (void)radio_monitor_start();
+        return result;
     }
-    else
-    {
-        (void)radio_monitor_stop();
-    }
-    if( options.ble )
-    {
-        (void)ble_monitor_start();
-    }
-    else
-    {
-        (void)ble_monitor_stop();
-    }
+    result = options.ble ? ble_monitor_start() : ble_monitor_stop();
+    return result;
 }
 
 static void modify_setting( unsigned a_item, int a_direction )
@@ -376,8 +369,15 @@ static void act_on_selection( void )
         else
         {
             wardrive_capture_stop();
-            apply_radio();
-            last_error = wardrive_capture_start( &options );
+            last_error = apply_radio();
+            if( ESP_OK == last_error )
+            {
+                last_error = wardrive_capture_start( &options );
+                if( ESP_OK == last_error )
+                {
+                    wardrive_capture_update_gps();
+                }
+            }
             if( ESP_OK != last_error )
             {
                 ESP_LOGW( TAG, "capture start failed: %s", esp_err_to_name( last_error ) );
@@ -398,8 +398,15 @@ static void act_on_selection( void )
         modify_setting( selected, 1 );
         if( restart )
         {
-            apply_radio();
-            last_error = wardrive_capture_start( &options );
+            last_error = apply_radio();
+            if( ESP_OK == last_error )
+            {
+                last_error = wardrive_capture_start( &options );
+                if( ESP_OK == last_error )
+                {
+                    wardrive_capture_update_gps();
+                }
+            }
         }
         refresh_space();
         draw_menu();
@@ -418,6 +425,7 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
         menu_open = false;
         selected = MENU_START;
         last_draw_us = 0;
+        last_gps_refresh_us = 0;
         last_error = ESP_OK;
         draw_overview();
         return RFSCOUT_APP_RUNTIME_HANDLED;
@@ -466,6 +474,11 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
     }
     if( RFSCOUT_APP_RUNTIME_POLL == a_event->type )
     {
+        if( a_event->now_us - last_gps_refresh_us >= CAPTURE_GPS_REFRESH_US )
+        {
+            last_gps_refresh_us = a_event->now_us;
+            wardrive_capture_update_gps();
+        }
         if( a_event->activated && options.wifi && radio_monitor_is_active() )
         {
             radio_monitor_step();
