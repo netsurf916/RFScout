@@ -384,8 +384,8 @@ static bool close_segment( void )
             }
             else
             {
-                ESP_LOGW( TAG, "FatFs closed-file stat failed: %s",
-                          esp_err_to_name( stat_result ) );
+                ESP_LOGW(
+                    TAG, "FatFs closed-file stat failed: %s", esp_err_to_name( stat_result ) );
                 closed_file_mtime_logged = true;
             }
         }
