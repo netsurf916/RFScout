@@ -1246,11 +1246,12 @@ static bool time_menu_input( bool a_pressed, int a_delta )
         }
         if( TIME_MENU_MODE == time_selected_item && !time_editing )
         {
-            toggle_time_mode();
-            if( time_selected_item >= time_menu_item_count() )
-            {
-                time_selected_item = time_menu_item_count() - 1U;
-            }
+            render_time_menu();
+            return false;
+        }
+        if( time_selected_item >= TIME_MENU_YEAR && device_time_gps_available() )
+        {
+            time_editing = false;
             render_time_menu();
             return false;
         }
