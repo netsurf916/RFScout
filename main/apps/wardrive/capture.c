@@ -22,6 +22,7 @@
 #define CAPTURE_QUEUE_COUNT 48U
 #define CAPTURE_MAX_FRAME 4096U
 #define CAPTURE_TASK_STACK 4096U
+#define CAPTURE_SYNC_INTERVAL_US 10000000LL
 #define CAPTURE_FILE_MIN ( 1024U * 1024U )
 #define CAPTURE_FILE_MAX ( 128U * 1024U * 1024U )
 #define CAPTURE_GPS_MAX_AGE_MS 5000U
@@ -472,6 +473,7 @@ static bool write_packet( const capture_packet_t *a_packet )
 static void writer_main( void *a_context )
 {
     (void)a_context;
+    int64_t last_sync_us = esp_timer_get_time();
     while( !stats.storage_error )
     {
         capture_packet_t *packet = NULL;
@@ -482,6 +484,15 @@ static void writer_main( void *a_context )
                 stats.storage_error = true;
             }
             (void)xQueueSend( free_queue, &packet, 0U );
+        }
+        const int64_t now_us = esp_timer_get_time();
+        if( output_open && now_us - last_sync_us >= CAPTURE_SYNC_INTERVAL_US )
+        {
+            if( ESP_OK != media_sync( &output ) )
+            {
+                stats.storage_error = true;
+            }
+            last_sync_us = now_us;
         }
         if( stopping && 0U == uxQueueMessagesWaiting( pending_queue ) )
         {
