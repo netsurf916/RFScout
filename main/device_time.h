@@ -25,32 +25,23 @@ typedef enum
     RFSCOUT_TIME_SOURCE_NTP,
 } rfscout_time_source_t;
 
-typedef enum
-{
-    RFSCOUT_TIME_MODE_AUTO = 0,
-    RFSCOUT_TIME_MODE_MANUAL,
-} rfscout_time_mode_t;
-
 typedef struct
 {
     bool valid;
     rfscout_time_source_t source;
-    rfscout_time_mode_t mode;
     time_t epoch;
 } rfscout_time_status_t;
 
 /** @brief Initialize timezone, synchronization policy, and wall-clock validity. */
 esp_err_t device_time_init( void );
-/** @brief Set the wall clock manually; this also selects and persists Manual mode. */
+/** @brief Set the wall clock manually when GPS time is unavailable. */
 esp_err_t device_time_set_epoch( time_t a_epoch );
-/** @brief Offer a fix-valid GPS UTC epoch; accepted only while Auto mode is selected. */
+/** @brief Accept GPS UTC automatically and track its freshness. */
 esp_err_t device_time_offer_gps( time_t a_epoch );
-/** @brief Apply an explicit network time synchronization without changing the user's time mode. */
+/** @brief Apply an explicit network time synchronization without changing user settings. */
 esp_err_t device_time_offer_ntp( time_t a_epoch );
-/** @brief Change and persist the automatic/manual synchronization policy. */
-esp_err_t device_time_set_mode( rfscout_time_mode_t a_mode );
-/** @brief Return the current synchronization policy. */
-rfscout_time_mode_t device_time_mode( void );
+/** @brief Whether valid GPS UTC arrived within the last five seconds. */
+bool device_time_gps_available( void );
 /** @brief Return the current epoch only when RFScout considers wall time valid. */
 bool device_time_now( time_t *a_epoch );
 /** @brief Copy current wall-clock validity/source/policy state. */
