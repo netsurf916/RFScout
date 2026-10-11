@@ -368,6 +368,8 @@ static void act_on_selection( void )
         if( stats.recording )
         {
             wardrive_capture_stop();
+            (void)radio_monitor_stop();
+            (void)ble_monitor_stop();
         }
         else
         {
@@ -430,7 +432,15 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
         last_draw_us = 0;
         last_gps_refresh_us = 0;
         last_error = ESP_OK;
+        (void)radio_monitor_stop();
+        (void)ble_monitor_stop();
         draw_overview();
+        return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
+    if( RFSCOUT_APP_RUNTIME_ACTIVATE == a_event->type )
+    {
+        (void)radio_monitor_stop();
+        (void)ble_monitor_stop();
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
     if( RFSCOUT_APP_RUNTIME_LEAVE == a_event->type )
