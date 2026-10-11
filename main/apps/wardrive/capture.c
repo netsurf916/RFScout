@@ -150,7 +150,8 @@ static bool prune_files( uint32_t a_allowed )
     for( unsigned tries = 0U; tries < 512U; ++tries )
     {
         capture_files_t files = { 0 };
-        if( ESP_OK != media_list( &collection, visit_capture, &files ) )
+        const esp_err_t result = media_list( &collection, visit_capture, &files );
+        if( ESP_OK != result && ESP_ERR_NOT_FOUND != result )
         {
             return false;
         }
@@ -282,9 +283,13 @@ static void enqueue( uint8_t a_source,
 
 static void on_wifi( const uint8_t *a_data, size_t a_length, int8_t a_rssi, uint8_t a_channel )
 {
-    if( config.wifi )
+    if( config.wifi && a_length >= 2U )
     {
-        enqueue( 1U, a_data, a_length, a_rssi, a_channel, NULL, 0U, 0U );
+        const uint8_t type = ( a_data[ 0 ] >> 2U ) & 3U;
+        if( type <= 2U && 0U != ( config.wifi_types & ( 1U << type ) ) )
+        {
+            enqueue( 1U, a_data, a_length, a_rssi, a_channel, NULL, 0U, 0U );
+        }
     }
 }
 
