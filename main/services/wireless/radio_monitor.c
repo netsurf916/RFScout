@@ -279,7 +279,9 @@ static void promiscuous( void *a_buffer, wifi_promiscuous_pkt_type_t a_type )
     const wifi_promiscuous_pkt_t *packet = a_buffer;
     if( NULL != raw_sink )
     {
-        raw_sink( packet->payload, packet->rx_ctrl.sig_len, packet->rx_ctrl.rssi,
+        raw_sink( packet->payload,
+                  packet->rx_ctrl.sig_len,
+                  packet->rx_ctrl.rssi,
                   packet->rx_ctrl.channel );
     }
     wifi_frame_info_t frame;
@@ -452,7 +454,8 @@ esp_err_t radio_monitor_stop( void )
     return stop_result;
 }
 
-void radio_monitor_set_capture_policy( bool a_enabled, uint8_t a_fixed_channel,
+void radio_monitor_set_capture_policy( bool a_enabled,
+                                       uint8_t a_fixed_channel,
                                        uint32_t a_dwell_ms )
 {
     capture_policy = a_enabled;
