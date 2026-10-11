@@ -11,6 +11,7 @@
 #include "app_manager.h"
 #include "cc1101.h"
 #include "hotspots_app.h"
+#include "gps.h"
 #include "log_writer.h"
 #include "mlx90640.h"
 #include "nrf24.h"
@@ -39,6 +40,7 @@ static const char *app_name( rfscout_app_id_t a_app )
         [RFSCOUT_APP_AUDIO] = "RECORDER",
         [RFSCOUT_APP_THERMAL] = "THERMAL",
         [RFSCOUT_APP_AUDIO_SPECTRUM] = "AUDIO_SPECTRUM",
+        [RFSCOUT_APP_GPS] = "GPS",
     };
 
     return ( ( a_app >= 0 ) && ( a_app < RFSCOUT_APP_COUNT ) ) ? names[ a_app ] : "UNKNOWN";
@@ -167,6 +169,29 @@ static void write_periodic_record( rfscout_app_id_t a_app )
             success = log_bool( &record, "detected", mlx90640_is_detected() );
             break;
 
+        case RFSCOUT_APP_GPS:
+        {
+            rfscout_gps_snapshot_t gps = { 0 };
+            const bool receiver_present = gps_snapshot_get( &gps );
+            success = log_bool( &record, "uart_active", gps_available() ) &&
+                      log_bool( &record, "receiver", receiver_present ) &&
+                      log_bool( &record, "fix", receiver_present && gps.location_valid ) &&
+                      log_double( &record, "trip_m", gps_trip_distance_m() );
+            if( success && receiver_present && gps.speed_valid )
+            {
+                success = log_double( &record, "speed_mps", gps.speed_mps );
+            }
+            if( success && receiver_present && gps.altitude_valid )
+            {
+                success = log_double( &record, "altitude_m", gps.altitude_m );
+            }
+            if( success && receiver_present && gps.satellites_valid )
+            {
+                success = log_uint( &record, "satellites_used", gps.satellites );
+            }
+            break;
+        }
+
         case RFSCOUT_APP_HOTSPOTS:
         {
             hotspots_app_counts_t counts;
@@ -180,7 +205,8 @@ static void write_periodic_record( rfscout_app_id_t a_app )
         }
 
         default:
-            success = false;
+            /* Never abandon a begun log record with the writer mutex held. */
+            success = log_str( &record, "status", "unsupported" );
             break;
     }
 

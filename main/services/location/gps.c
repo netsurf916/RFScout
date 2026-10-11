@@ -10,6 +10,7 @@
 #include "board.h"
 #include "device_config.h"
 #include "device_time.h"
+#include "persistent_store.h"
 
 #include "driver/gpio.h"
 #include "driver/uart.h"
@@ -36,6 +37,16 @@ static const int GPS_BAUD_RATES[] = {
 #define GPS_LINE_MAX 128
 #define GPS_FIX_STALE_MS 5000U
 #define GPS_TIME_STALE_MS 5000U
+#define GPS_TRIP_STORE_KEY "gps/trip_distance"
+#define GPS_TRIP_STORE_VERSION 1U
+#define GPS_TRIP_MIN_STEP_M 5.0
+#define GPS_TRIP_MIN_SPEED_MPS 0.7
+#define GPS_TRIP_MAX_SPEED_MPS 100.0
+#define GPS_TRIP_MAX_GAP_US 10000000LL
+#define GPS_TRIP_CHECKPOINT_INTERVAL_US 300000000LL
+#define GPS_TRIP_CHECKPOINT_DISTANCE_M 250.0
+#define GPS_EARTH_RADIUS_M 6371000.0
+#define GPS_RADIANS_PER_DEGREE 0.017453292519943295
 
 static const char *TAG = "gps";
 static bool initialized;
@@ -52,11 +63,111 @@ static size_t line_length;
 static rfscout_gps_snapshot_t snapshot;
 static int64_t location_updated_us;
 static int64_t time_updated_us;
+static int64_t altitude_updated_us;
+static int64_t speed_updated_us;
+static int64_t satellites_updated_us;
 static portMUX_TYPE snapshot_mux = portMUX_INITIALIZER_UNLOCKED;
 static rfscout_gps_snapshot_t published_snapshot;
 static int64_t published_location_us;
 static int64_t published_time_us;
 static bool published_initialized;
+
+/* System-owned trip odometer survives app changes and temporary nRF24 GPS suspension.
+   Flash checkpoints are deliberately sparse to avoid writes on each NMEA fix. */
+typedef struct
+{
+    uint32_t version;
+    double distance_m;
+} gps_trip_record_t;
+
+static bool trip_loaded;
+static double trip_total_m;
+static double trip_saved_m;
+static bool trip_anchor_valid;
+static double trip_anchor_latitude;
+static double trip_anchor_longitude;
+static int64_t trip_anchor_us;
+static int64_t trip_last_checkpoint_us;
+
+static void trip_load( void )
+{
+    if( trip_loaded )
+    {
+        return;
+    }
+    trip_loaded = true;
+    gps_trip_record_t stored = { 0 };
+    size_t length = 0U;
+    if( ESP_OK == system_store_read( GPS_TRIP_STORE_KEY, &stored, sizeof( stored ), &length ) &&
+        sizeof( stored ) == length && GPS_TRIP_STORE_VERSION == stored.version &&
+        isfinite( stored.distance_m ) && stored.distance_m >= 0.0 )
+    {
+        trip_total_m = stored.distance_m;
+    }
+    trip_saved_m = trip_total_m;
+    trip_last_checkpoint_us = esp_timer_get_time();
+}
+
+static void trip_checkpoint( int64_t a_now_us )
+{
+    if( trip_total_m - trip_saved_m < GPS_TRIP_CHECKPOINT_DISTANCE_M ||
+        a_now_us - trip_last_checkpoint_us < GPS_TRIP_CHECKPOINT_INTERVAL_US )
+    {
+        return;
+    }
+    trip_last_checkpoint_us = a_now_us;
+    const gps_trip_record_t record = { .version = GPS_TRIP_STORE_VERSION,
+                                       .distance_m = trip_total_m };
+    if( ESP_OK == system_store_write( GPS_TRIP_STORE_KEY, &record, sizeof( record ) ) )
+    {
+        trip_saved_m = record.distance_m;
+    }
+}
+
+/* Count accepted RMC positions only: GGA and RMC can describe the same fix.
+   Require movement reported by the receiver and reject jitter, jumps and fix gaps. */
+static void trip_observe( double a_latitude, double a_longitude, double a_speed_mps )
+{
+    const int64_t now = esp_timer_get_time();
+    if( a_speed_mps < GPS_TRIP_MIN_SPEED_MPS || a_speed_mps > GPS_TRIP_MAX_SPEED_MPS )
+    {
+        trip_anchor_valid = false;
+        return;
+    }
+    if( !trip_anchor_valid || now <= trip_anchor_us || now - trip_anchor_us > GPS_TRIP_MAX_GAP_US )
+    {
+        trip_anchor_valid = true;
+        trip_anchor_latitude = a_latitude;
+        trip_anchor_longitude = a_longitude;
+        trip_anchor_us = now;
+        return;
+    }
+
+    const double lat1 = trip_anchor_latitude * GPS_RADIANS_PER_DEGREE;
+    const double lat2 = a_latitude * GPS_RADIANS_PER_DEGREE;
+    const double half_lat = ( lat2 - lat1 ) / 2.0;
+    const double half_lon = ( a_longitude - trip_anchor_longitude ) * GPS_RADIANS_PER_DEGREE / 2.0;
+    const double haversine = sin( half_lat ) * sin( half_lat ) +
+                             cos( lat1 ) * cos( lat2 ) * sin( half_lon ) * sin( half_lon );
+    const double bounded = fmin( 1.0, fmax( 0.0, haversine ) );
+    const double step_m = 2.0 * GPS_EARTH_RADIUS_M * asin( sqrt( bounded ) );
+    if( step_m < GPS_TRIP_MIN_STEP_M )
+    {
+        return;
+    }
+
+    const double elapsed_seconds = (double)( now - trip_anchor_us ) / 1000000.0;
+    trip_anchor_latitude = a_latitude;
+    trip_anchor_longitude = a_longitude;
+    trip_anchor_us = now;
+    if( step_m > GPS_TRIP_MAX_SPEED_MPS * elapsed_seconds + 15.0 )
+    {
+        return;
+    }
+    trip_total_m += step_m;
+    snapshot.trip_distance_m = trip_total_m;
+    trip_checkpoint( now );
+}
 
 static void publish_snapshot( void )
 {
@@ -249,13 +360,16 @@ static void parse_rmc( char *a_payload )
     const size_t count = split_fields( a_payload, fields, 16U );
     if( count < 9U || 'A' != fields[ 1 ][ 0 ] )
     {
+        snapshot.speed_valid = false;
+        trip_anchor_valid = false;
         return;
     }
 
     double latitude;
     double longitude;
-    if( nmea_coordinate( fields[ 2 ], fields[ 3 ][ 0 ], true, &latitude ) &&
-        nmea_coordinate( fields[ 4 ], fields[ 5 ][ 0 ], false, &longitude ) )
+    const bool valid_position = nmea_coordinate( fields[ 2 ], fields[ 3 ][ 0 ], true, &latitude ) &&
+                                nmea_coordinate( fields[ 4 ], fields[ 5 ][ 0 ], false, &longitude );
+    if( valid_position )
     {
         snapshot.latitude_deg = latitude;
         snapshot.longitude_deg = longitude;
@@ -264,9 +378,20 @@ static void parse_rmc( char *a_payload )
     }
 
     double speed_knots;
-    if( parse_double_field( fields[ 6 ], &speed_knots ) && speed_knots >= 0.0 )
+    const bool valid_speed = parse_double_field( fields[ 6 ], &speed_knots ) && speed_knots >= 0.0;
+    snapshot.speed_valid = valid_speed;
+    if( valid_speed )
     {
         snapshot.speed_mps = (float)( speed_knots * 0.514444 );
+        speed_updated_us = esp_timer_get_time();
+    }
+    if( valid_position && valid_speed )
+    {
+        trip_observe( latitude, longitude, (double)snapshot.speed_mps );
+    }
+    else
+    {
+        trip_anchor_valid = false;
     }
 
     time_t epoch;
@@ -286,6 +411,8 @@ static void parse_gga( char *a_payload )
     long fix_quality;
     if( count < 9U || !parse_int_field( fields[ 5 ], &fix_quality ) || fix_quality <= 0 )
     {
+        snapshot.altitude_valid = false;
+        snapshot.satellites_valid = false;
         return;
     }
 
@@ -301,16 +428,20 @@ static void parse_gga( char *a_payload )
     }
 
     long satellites;
-    if( parse_int_field( fields[ 6 ], &satellites ) )
+    snapshot.satellites_valid = parse_int_field( fields[ 6 ], &satellites );
+    if( snapshot.satellites_valid )
     {
         snapshot.satellites =
             (uint8_t)( satellites < 0 ? 0 : ( satellites > 255 ? 255 : satellites ) );
+        satellites_updated_us = esp_timer_get_time();
     }
 
     double altitude;
-    if( parse_double_field( fields[ 8 ], &altitude ) )
+    snapshot.altitude_valid = parse_double_field( fields[ 8 ], &altitude );
+    if( snapshot.altitude_valid )
     {
         snapshot.altitude_m = (float)altitude;
+        altitude_updated_us = esp_timer_get_time();
     }
 }
 
@@ -353,6 +484,7 @@ static void parse_line( char *a_line )
     else if( type_length >= 3U && 0 == strcmp( payload + type_length - 3U, "GGA" ) )
     {
         lock_active_baud();
+        last_nmea_us = esp_timer_get_time();
         snapshot.available = true;
         parse_gga( comma + 1 );
     }
@@ -387,10 +519,16 @@ esp_err_t gps_init( void )
     {
         return ESP_OK;
     }
+    trip_load();
     memset( &snapshot, 0, sizeof( snapshot ) );
+    snapshot.trip_distance_m = trip_total_m;
+    trip_anchor_valid = false;
     line_length = 0U;
     location_updated_us = 0;
     time_updated_us = 0;
+    altitude_updated_us = 0;
+    speed_updated_us = 0;
+    satellites_updated_us = 0;
     baud_locked = false;
     receiver_detected = false;
     last_nmea_us = 0;
@@ -466,6 +604,7 @@ esp_err_t gps_stop( void )
             return rx_result;
         }
         initialized = false;
+        trip_anchor_valid = false;
         publish_snapshot();
     }
     return result;
@@ -483,6 +622,9 @@ bool gps_probe_complete( void )
 
 void gps_poll( void )
 {
+    /* The odometer is platform state, not UART state. When nRF24 owns the shared
+       pins, continue time-based flash checkpoints without probing the receiver. */
+    trip_checkpoint( esp_timer_get_time() );
     if( !initialized )
     {
         return;
@@ -530,6 +672,10 @@ void gps_poll( void )
         snapshot.available = false;
         snapshot.location_valid = false;
         snapshot.time_valid = false;
+        snapshot.altitude_valid = false;
+        snapshot.speed_valid = false;
+        snapshot.satellites_valid = false;
+        trip_anchor_valid = false;
         baud_probe_started_us = now;
         ESP_LOGI( TAG, "GPS NMEA timeout; shared pins eligible for radio acquisition" );
     }
@@ -542,6 +688,20 @@ void gps_poll( void )
     if( snapshot.time_valid && ( now - time_updated_us ) / 1000LL > (int64_t)GPS_TIME_STALE_MS )
     {
         snapshot.time_valid = false;
+    }
+    if( snapshot.altitude_valid &&
+        ( now - altitude_updated_us ) / 1000LL > (int64_t)GPS_FIX_STALE_MS )
+    {
+        snapshot.altitude_valid = false;
+    }
+    if( snapshot.speed_valid && ( now - speed_updated_us ) / 1000LL > (int64_t)GPS_FIX_STALE_MS )
+    {
+        snapshot.speed_valid = false;
+    }
+    if( snapshot.satellites_valid &&
+        ( now - satellites_updated_us ) / 1000LL > (int64_t)GPS_FIX_STALE_MS )
+    {
+        snapshot.satellites_valid = false;
     }
     publish_snapshot();
 }
@@ -574,4 +734,34 @@ bool gps_snapshot_get( rfscout_gps_snapshot_t *a_snapshot )
 bool gps_available( void )
 {
     return initialized;
+}
+
+double gps_trip_distance_m( void )
+{
+    portENTER_CRITICAL( &snapshot_mux );
+    const double distance = published_snapshot.trip_distance_m;
+    portEXIT_CRITICAL( &snapshot_mux );
+    return distance;
+}
+
+esp_err_t gps_trip_reset( void )
+{
+    /* Commit the reset before changing RAM so failure cannot resurrect a stale
+       trip total at the next boot after showing zero on the current screen. */
+    const gps_trip_record_t record = { .version = GPS_TRIP_STORE_VERSION, .distance_m = 0.0 };
+    const esp_err_t result = system_store_write( GPS_TRIP_STORE_KEY, &record, sizeof( record ) );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
+    portENTER_CRITICAL( &snapshot_mux );
+    trip_total_m = 0.0;
+    trip_saved_m = 0.0;
+    trip_anchor_valid = false;
+    snapshot.trip_distance_m = 0.0;
+    published_snapshot.trip_distance_m = 0.0;
+    trip_last_checkpoint_us = esp_timer_get_time();
+    portEXIT_CRITICAL( &snapshot_mux );
+    return ESP_OK;
 }

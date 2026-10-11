@@ -17,6 +17,7 @@ Application pages own app-specific UI, interpretation, settings, and current lim
 - [Recorder](apps/RECORDER.md)
 - [Audio Spectrum](apps/AUDIO_SPECTRUM.md)
 - [Thermal](apps/THERMAL.md)
+- [GPS](apps/GPS.md)
 
 ## Board, app, and service boundaries
 

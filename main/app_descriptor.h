@@ -30,6 +30,7 @@ typedef enum
     RFSCOUT_APP_AUDIO,
     RFSCOUT_APP_THERMAL,
     RFSCOUT_APP_AUDIO_SPECTRUM,
+    RFSCOUT_APP_GPS,
     RFSCOUT_APP_COUNT
 } rfscout_app_id_t;
 
