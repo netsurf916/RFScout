@@ -34,3 +34,5 @@ typedef struct
 esp_err_t wardrive_capture_start( const wardrive_config_t *a_config );
 void wardrive_capture_stop( void );
 void wardrive_capture_stats( wardrive_stats_t *a_stats );
+/** @brief Refresh cached GPS once per UI poll, outside time-critical radio callbacks. */
+void wardrive_capture_update_gps( void );
