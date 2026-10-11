@@ -115,6 +115,8 @@ static size_t casic_length;
 static size_t casic_expected;
 static unsigned policy_probe_index;
 static unsigned policy_probe_retries;
+static unsigned policy_rate_query_retries;
+static int64_t policy_rate_query_retry_at_us;
 static int64_t policy_probe_retry_at_us;
 static const uint8_t policy_probe_ids[] = { 0x04U, 0x09U, 0x00U };
 static const uint8_t policy_probe_classes[] = { 0x0AU, 0x0AU, 0x06U };
@@ -193,6 +195,8 @@ static bool policy_send( uint8_t a_class, uint8_t a_id, const uint8_t *a_payload
 
 static void policy_query_rate( void )
 {
+    policy_rate_query_retries = 0U;
+    policy_rate_query_retry_at_us = 0;
     policy_state = GPS_POLICY_WAIT_RATE;
     policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
     ESP_LOGI( TAG, "GPS CASIC reading initial update rate" );
@@ -237,6 +241,8 @@ static void policy_begin( void )
     policy_probe_index = 0U;
     policy_probe_retries = 0U;
     policy_probe_retry_at_us = 0;
+    policy_rate_query_retries = 0U;
+    policy_rate_query_retry_at_us = 0;
     ESP_LOGI( TAG, "GPS receiver detected at %d baud; checking CASIC support", active_baud );
     policy_log_event( "receiver_detected", 0, 0 );
     policy_start_probe();
@@ -416,6 +422,17 @@ static void casic_feed( uint8_t a_byte )
 
 static void policy_poll( int64_t a_now )
 {
+    if( GPS_POLICY_WAIT_RATE == policy_state && 0 != policy_rate_query_retry_at_us &&
+        a_now >= policy_rate_query_retry_at_us )
+    {
+        policy_rate_query_retry_at_us = 0;
+        policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
+        ESP_LOGI( TAG, "GPS CASIC retrying initial update-rate query" );
+        if( !policy_send( 0x06U, 0x04U, NULL, 0U ) )
+        {
+            policy_state = GPS_POLICY_UNSUPPORTED;
+        }
+    }
     if( GPS_POLICY_WAIT_VERSION == policy_state && 0 != policy_probe_retry_at_us &&
         a_now >= policy_probe_retry_at_us )
     {
@@ -445,6 +462,17 @@ static void policy_poll( int64_t a_now )
                           policy_probe_names[ policy_probe_index ] );
                 policy_next_probe();
             }
+        }
+        else if( GPS_POLICY_WAIT_RATE == policy_state &&
+                 policy_rate_query_retries < GPS_POLICY_PROBE_RETRY_LIMIT )
+        {
+            ++policy_rate_query_retries;
+            ESP_LOGW( TAG, "GPS CASIC rate query timeout; retry %u/%u",
+                      policy_rate_query_retries, GPS_POLICY_PROBE_RETRY_LIMIT );
+            policy_log_event( "rate_query_retry", (int)policy_rate_query_retries,
+                              policy_current_interval_ms );
+            policy_rate_query_retry_at_us = a_now + GPS_POLICY_PROBE_RETRY_DELAY_US;
+            policy_deadline_us = policy_rate_query_retry_at_us + GPS_POLICY_TIMEOUT_US;
         }
         else
         {
@@ -978,6 +1006,8 @@ esp_err_t gps_init( void )
     policy_speed_since_us = 0;
     policy_probe_retries = 0U;
     policy_probe_retry_at_us = 0;
+    policy_rate_query_retries = 0U;
+    policy_rate_query_retry_at_us = 0;
     policy_filtered_speed_mps = 0.0;
     policy_filtered_speed_updated_us = 0;
     policy_filtered_speed_valid = false;
