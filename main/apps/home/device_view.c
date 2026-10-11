@@ -1284,6 +1284,12 @@ static bool time_menu_input( bool a_pressed, int a_delta )
     }
     if( time_editing )
     {
+        if( time_selected_item >= TIME_MENU_YEAR && device_time_gps_available() )
+        {
+            time_editing = false;
+            render_time_menu();
+            return false;
+        }
         if( TIME_MENU_TIMEZONE == time_selected_item )
         {
             adjust_timezone( a_delta );
