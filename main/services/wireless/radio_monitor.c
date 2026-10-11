@@ -51,6 +51,9 @@ typedef struct
 static const char *TAG = "radio_monitor";
 static radio_observation_fn sink;
 static radio_raw_frame_fn raw_sink;
+static bool capture_policy;
+static uint8_t capture_fixed_channel;
+static uint32_t capture_dwell_ms = 200U;
 static uint8_t channel = WIFI_MIN_CHANNEL;
 static int64_t last_hop_us;
 static uint16_t active_ap_channel_mask;
@@ -338,6 +341,10 @@ static int64_t channel_dwell_us( uint8_t a_channel )
         return WIFI_DISCOVERY_DWELL_US;
     }
 
+    if( capture_policy )
+    {
+        return (int64_t)capture_dwell_ms * 1000LL;
+    }
     const uint16_t channel_bit = (uint16_t)( 1U << ( a_channel - WIFI_MIN_CHANNEL ) );
     return ( 0U != ( active_ap_channel_mask & channel_bit ) ) ? WIFI_ACTIVE_DWELL_US
                                                               : WIFI_DISCOVERY_DWELL_US;
@@ -437,11 +444,26 @@ esp_err_t radio_monitor_stop( void )
     }
 
     active_ap_channel_mask = 0U;
+    capture_policy = false;
     if( was_running )
     {
         ESP_LOGI( TAG, "Wi-Fi monitor stopped for inactive app" );
     }
     return stop_result;
+}
+
+void radio_monitor_set_capture_policy( bool a_enabled, uint8_t a_fixed_channel,
+                                       uint32_t a_dwell_ms )
+{
+    capture_policy = a_enabled;
+    capture_fixed_channel = a_fixed_channel <= RFSCOUT_WIFI_CHANNEL_MAX ? a_fixed_channel : 0U;
+    capture_dwell_ms = a_dwell_ms > 0U ? a_dwell_ms : 200U;
+    if( capture_policy && capture_fixed_channel > 0U && running )
+    {
+        channel = capture_fixed_channel;
+        (void)esp_wifi_set_channel( channel, WIFI_SECOND_CHAN_NONE );
+    }
+    last_hop_us = esp_timer_get_time();
 }
 
 void radio_monitor_set_raw_observer( radio_raw_frame_fn a_callback )
@@ -499,6 +521,10 @@ void radio_monitor_step( void )
         return;
     }
 
+    if( capture_policy && capture_fixed_channel > 0U )
+    {
+        return;
+    }
     const int64_t now = esp_timer_get_time();
     if( ( now - last_hop_us ) < channel_dwell_us( channel ) )
     {
