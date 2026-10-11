@@ -21,6 +21,7 @@
 #include "freertos/portmacro.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -79,6 +80,178 @@ typedef struct
     uint32_t version;
     double distance_m;
 } gps_trip_record_t;
+
+#define GPS_POLICY_TIMEOUT_US 2000000LL
+#define GPS_POLICY_MIN_CHANGE_US 30000000LL
+/* PMTK requests are allowed only after a valid NMEA stream locks UART ownership. */
+typedef enum
+{
+    GPS_POLICY_IDLE = 0,
+    GPS_POLICY_WAIT_VERSION,
+    GPS_POLICY_WAIT_OUTPUT,
+    GPS_POLICY_WAIT_RATE,
+    GPS_POLICY_WAIT_OUTPUT_ACK,
+    GPS_POLICY_ACTIVE,
+    GPS_POLICY_UNSUPPORTED
+} gps_policy_state_t;
+
+static gps_policy_state_t policy_state;
+static int64_t policy_deadline_us;
+static int64_t policy_last_change_us;
+static int64_t policy_speed_since_us;
+static int policy_desired_interval_ms = 1000;
+static int policy_current_interval_ms = 1000;
+static int policy_pending_interval_ms;
+static bool policy_rate_pending;
+static bool policy_output_acknowledged;
+static char policy_version[ 88 ];
+
+static bool policy_send( const char *a_payload )
+{
+    char sentence[ 148 ];
+    uint8_t checksum = 0U;
+    for( const char *cursor = a_payload; '\0' != *cursor; ++cursor )
+    {
+        checksum ^= (uint8_t)*cursor;
+    }
+    const int length = snprintf( sentence, sizeof( sentence ), "$%s*%02X\r\n", a_payload, checksum );
+    if( length <= 0 || (size_t)length >= sizeof( sentence ) )
+    {
+        return false;
+    }
+    const int written = uart_write_bytes( GPS_UART, sentence, (size_t)length );
+    ESP_LOGI( TAG, "GPS policy TX %s (%d/%d bytes)", a_payload, written, length );
+    return written == length;
+}
+
+static void policy_begin( void )
+{
+    policy_state = GPS_POLICY_WAIT_VERSION;
+    policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
+    ESP_LOGI( TAG, "GPS policy probing receiver at %d baud", active_baud );
+    if( !policy_send( "PMTK605" ) )
+    {
+        policy_state = GPS_POLICY_UNSUPPORTED;
+        ESP_LOGW( TAG, "GPS policy version query failed; generic NMEA only" );
+    }
+}
+
+/* Called only for checksum-validated proprietary responses. */
+static void policy_response( const char *a_type, const char *a_fields )
+{
+    if( 0 == strcmp( a_type, "PMTK705" ) && GPS_POLICY_WAIT_VERSION == policy_state )
+    {
+        snprintf( policy_version, sizeof( policy_version ), "%s", a_fields );
+        ESP_LOGI( TAG, "GPS receiver PMTK firmware: %s", policy_version );
+        policy_state = GPS_POLICY_WAIT_OUTPUT;
+        policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
+        if( !policy_send( "PMTK414" ) )
+        {
+            policy_state = GPS_POLICY_UNSUPPORTED;
+        }
+    }
+    else if( 0 == strcmp( a_type, "PMTK514" ) && GPS_POLICY_WAIT_OUTPUT == policy_state )
+    {
+        ESP_LOGI( TAG, "GPS existing NMEA configuration: %s", a_fields );
+        policy_state = GPS_POLICY_WAIT_RATE;
+        policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
+        if( !policy_send( "PMTK400" ) )
+        {
+            policy_state = GPS_POLICY_UNSUPPORTED;
+        }
+    }
+    else if( 0 == strcmp( a_type, "PMTK500" ) && GPS_POLICY_WAIT_RATE == policy_state )
+    {
+        ESP_LOGI( TAG, "GPS existing fix interval: %s ms", a_fields );
+        const int reported = atoi( a_fields );
+        if( reported >= 100 && reported <= 10000 )
+        {
+            policy_current_interval_ms = reported;
+        }
+        /* Keep GGA/RMC each fix, GSA each fix and GSV once per five fixes.
+           This is the MT3337 19-field PMTK314 layout. Never change UART baud. */
+        policy_state = GPS_POLICY_WAIT_OUTPUT_ACK;
+        policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
+        if( !policy_send( "PMTK314,0,1,0,1,1,5,0,0,0,0,0,0,0,0,0,0,0,0,0" ) )
+        {
+            policy_state = GPS_POLICY_UNSUPPORTED;
+        }
+    }
+    else if( 0 == strcmp( a_type, "PMTK001" ) )
+    {
+        int command = 0;
+        int result = 0;
+        if( 2 == sscanf( a_fields, "%d,%d", &command, &result ) )
+        {
+            ESP_LOGI( TAG, "GPS PMTK acknowledgment command=%d result=%d", command, result );
+            if( 314 == command && GPS_POLICY_WAIT_OUTPUT_ACK == policy_state )
+            {
+                policy_output_acknowledged = 3 == result;
+                policy_state = policy_output_acknowledged ? GPS_POLICY_ACTIVE : GPS_POLICY_UNSUPPORTED;
+                ESP_LOGI( TAG, "GPS policy NMEA configuration %s",
+                          policy_output_acknowledged ? "accepted" : "rejected; adaptive rate disabled" );
+            }
+            if( 220 == command && policy_rate_pending )
+            {
+                if( 3 == result )
+                {
+                    policy_current_interval_ms = policy_pending_interval_ms;
+                }
+                ESP_LOGI( TAG, "GPS policy update interval result=%d configured=%d ms",
+                          result, policy_current_interval_ms );
+                policy_rate_pending = false;
+            }
+        }
+    }
+}
+
+static void policy_poll( int64_t a_now )
+{
+    if( GPS_POLICY_WAIT_VERSION <= policy_state &&
+        GPS_POLICY_WAIT_OUTPUT_ACK >= policy_state && a_now >= policy_deadline_us )
+    {
+        ESP_LOGW( TAG, "GPS policy response timeout state=%d; retaining NMEA", (int)policy_state );
+        policy_state = GPS_POLICY_UNSUPPORTED;
+    }
+    if( GPS_POLICY_ACTIVE != policy_state || !snapshot.speed_valid ||
+        a_now - speed_updated_us > (int64_t)GPS_FIX_STALE_MS * 1000LL )
+    {
+        policy_speed_since_us = 0;
+        return;
+    }
+    /* Speed hysteresis: 1 Hz below 3 mph, 2 Hz above 3, 5 Hz above 10,
+       10 Hz only above 35 mph. Downshift requires a longer stable interval. */
+    const float mph = snapshot.speed_mps * 2.23693629f;
+    const int target = mph >= 35.0f ? 100 : mph >= 10.0f ? 200 : mph >= 3.0f ? 500 : 1000;
+    if( target != policy_desired_interval_ms )
+    {
+        policy_desired_interval_ms = target;
+        policy_speed_since_us = a_now;
+    }
+    if( target == policy_current_interval_ms || policy_rate_pending )
+    {
+        return;
+    }
+    const int64_t stable_us = target < policy_current_interval_ms ? 5000000LL : 20000000LL;
+    if( 0 == policy_speed_since_us )
+    {
+        policy_speed_since_us = a_now;
+    }
+    if( a_now - policy_speed_since_us < stable_us ||
+        a_now - policy_last_change_us < GPS_POLICY_MIN_CHANGE_US )
+    {
+        return;
+    }
+    char payload[ 32 ];
+    snprintf( payload, sizeof( payload ), "PMTK220,%d", target );
+    if( policy_send( payload ) )
+    {
+        policy_pending_interval_ms = target;
+        policy_rate_pending = true;
+        policy_last_change_us = a_now;
+        ESP_LOGI( TAG, "GPS policy requested %d ms fix interval at %.1f mph", target, (double)mph );
+    }
+}
 
 static bool trip_loaded;
 static double trip_total_m;
@@ -456,6 +629,10 @@ static void lock_active_baud( void )
     last_nmea_us = esp_timer_get_time();
     initial_probe_complete = true;
     ESP_LOGI( TAG, "GPS NMEA detected at %d baud", active_baud );
+    if( GPS_POLICY_IDLE == policy_state )
+    {
+        policy_begin();
+    }
 }
 
 static void parse_line( char *a_line )
@@ -474,6 +651,11 @@ static void parse_line( char *a_line )
     }
     *comma = '\0';
     const size_t type_length = strlen( payload );
+    if( 0 == strncmp( payload, "PMTK", 4U ) )
+    {
+        policy_response( payload, comma + 1 );
+        return;
+    }
     if( type_length >= 3U && 0 == strcmp( payload + type_length - 3U, "RMC" ) )
     {
         lock_active_baud();
@@ -530,6 +712,13 @@ esp_err_t gps_init( void )
     speed_updated_us = 0;
     satellites_updated_us = 0;
     baud_locked = false;
+    policy_state = GPS_POLICY_IDLE;
+    policy_rate_pending = false;
+    policy_output_acknowledged = false;
+    policy_last_change_us = 0;
+    policy_speed_since_us = 0;
+    policy_desired_interval_ms = 1000;
+    policy_current_interval_ms = 1000;
     receiver_detected = false;
     last_nmea_us = 0;
     /* Preserve the completed startup window across temporary radio ownership. */
@@ -669,6 +858,8 @@ void gps_poll( void )
     {
         receiver_detected = false;
         baud_locked = false;
+        policy_state = GPS_POLICY_IDLE;
+        policy_rate_pending = false;
         snapshot.available = false;
         snapshot.location_valid = false;
         snapshot.time_valid = false;
@@ -680,6 +871,7 @@ void gps_poll( void )
         ESP_LOGI( TAG, "GPS NMEA timeout; shared pins eligible for radio acquisition" );
     }
     probe_next_baud( now );
+    policy_poll( now );
     if( snapshot.location_valid &&
         ( now - location_updated_us ) / 1000LL > (int64_t)GPS_FIX_STALE_MS )
     {
