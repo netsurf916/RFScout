@@ -90,7 +90,6 @@ void wardrive_capture_update_gps( void )
     portEXIT_CRITICAL( &gps_lock );
 }
 
-
 static void le16( uint8_t *a_dst, uint16_t a_value )
 {
     a_dst[ 0 ] = (uint8_t)a_value;
@@ -301,10 +300,9 @@ static void enqueue( uint8_t a_source,
     const int64_t arrival_us = esp_timer_get_time();
     portENTER_CRITICAL( &gps_lock );
     const int64_t elapsed_us = arrival_us - gps_updated_us;
-    packet->gps_valid = config.gps_metadata && gps_fix_valid && elapsed_us >= 0 &&
-                        elapsed_us <= 1000000LL &&
-                        gps_fix_age_ms + (uint32_t)( elapsed_us / 1000LL ) <=
-                            CAPTURE_GPS_MAX_AGE_MS;
+    packet->gps_valid =
+        config.gps_metadata && gps_fix_valid && elapsed_us >= 0 && elapsed_us <= 1000000LL &&
+        gps_fix_age_ms + (uint32_t)( elapsed_us / 1000LL ) <= CAPTURE_GPS_MAX_AGE_MS;
     if( packet->gps_valid )
     {
         packet->latitude_e7 = gps_latitude_e7;
@@ -490,8 +488,8 @@ static void writer_main( void *a_context )
             break;
         }
     }
-    __atomic_add_fetch( &stats.dropped, (uint32_t)uxQueueMessagesWaiting( pending_queue ),
-                        __ATOMIC_RELAXED );
+    __atomic_add_fetch(
+        &stats.dropped, (uint32_t)uxQueueMessagesWaiting( pending_queue ), __ATOMIC_RELAXED );
     close_segment();
     accepting = false;
     stats.recording = false;
