@@ -130,6 +130,19 @@ Shared platform services use consistent lifecycle names:
 
 Do not add alternate lifecycle synonyms such as `prepare`, `resume`, or `recover` when the common vocabulary is sufficient. A `start()` function must not be required merely to initialize reusable infrastructure; move that work to idempotent `init()` instead.
 
+## Optional feature failure-containment policy
+
+Service and driver owners must define failure behavior for optional, repeatedly attempted work. The framework does **not** impose a universal retry count or automatically disable every failing service.
+
+- Identify which operations constitute meaningful failures; do not count idle polls, unavailable prerequisites, or skipped work as repeated attempts.
+- Choose and document an appropriate threshold or alternative backoff/circuit-breaker policy for the feature. A successful operation should normally reset a consecutive-failure streak.
+- Respect shared media/device availability and existing recovery cooldowns to avoid log spam, busy loops, and redundant I/O retries.
+- When an optional feature can safely be disabled after persistent errors, make the change through its normal persisted setting API, report the reason once in diagnostics/system events, and provide an explicit user-controlled recovery path.
+- Do not silently disable critical safety, storage integrity, or system services. Surface degraded status or abort unsafe operations instead.
+- Consider transient faults, device removal/reinsertion, reboot persistence, manual reenable, and internal-storage failure in tests and documentation.
+
+For example, the breadcrumb writer uses a service-specific threshold of ten consecutive attempted write failures, resets the streak after success, and persists its own disabled setting. This threshold is **not** a platform-wide default.
+
 ## Documentation maintenance
 
 Documentation ownership is deliberate:
