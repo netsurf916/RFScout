@@ -437,10 +437,6 @@ static bool write_packet( const capture_packet_t *a_packet )
 static void writer_main( void *a_context )
 {
     (void)a_context;
-    if( !open_segment() )
-    {
-        stats.storage_error = true;
-    }
     while( !stats.storage_error )
     {
         capture_packet_t *packet = NULL;
@@ -457,6 +453,8 @@ static void writer_main( void *a_context )
             break;
         }
     }
+    __atomic_add_fetch( &stats.dropped, (uint32_t)uxQueueMessagesWaiting( pending_queue ),
+                        __ATOMIC_RELAXED );
     close_segment();
     accepting = false;
     stats.recording = false;
@@ -500,6 +498,11 @@ esp_err_t wardrive_capture_start( const wardrive_config_t *a_config )
         capture_packet_t *packet = &packet_pool[ i ];
         (void)xQueueSend( free_queue, &packet, 0U );
     }
+    if( !open_segment() )
+    {
+        wardrive_capture_stop();
+        return ESP_ERR_NOT_FOUND;
+    }
     if( pdPASS !=
         xTaskCreate( writer_main, "wardrive_writer", CAPTURE_TASK_STACK, NULL, 2U, &capture_task ) )
     {
@@ -542,6 +545,7 @@ void wardrive_capture_stop( void )
         vQueueDelete( free_queue );
         free_queue = NULL;
     }
+    close_segment();
     heap_caps_free( packet_pool );
     packet_pool = NULL;
     heap_caps_free( writer_frame );
