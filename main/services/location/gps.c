@@ -106,6 +106,26 @@ static int policy_pending_interval_ms;
 static uint8_t casic_frame[ GPS_CASIC_MAX_PAYLOAD + 10U ];
 static size_t casic_length;
 static size_t casic_expected;
+static unsigned policy_probe_index;
+static const uint8_t policy_probe_ids[] = { 0x04U, 0x09U, 0x00U };
+static const uint8_t policy_probe_classes[] = { 0x0AU, 0x0AU, 0x06U };
+static const char *const policy_probe_names[] = { "MON-VER", "MON-HW", "CFG-PRT" };
+
+static void casic_log_bytes( const char *a_direction, const uint8_t *a_bytes, size_t a_length )
+{
+    char hex[ 3U * 24U + 1U ];
+    const size_t count = a_length < 24U ? a_length : 24U;
+    size_t offset = 0U;
+    for( size_t index = 0U; index < count; ++index )
+    {
+        offset += (size_t)snprintf( hex + offset, sizeof( hex ) - offset, "%02X%s", a_bytes[ index ],
+                                   index + 1U < count ? " " : "" );
+    }
+    hex[ offset ] = '\0';
+    ESP_LOGI( TAG, "GPS CASIC %s len=%u first=%s%s", a_direction, (unsigned)a_length, hex,
+              a_length > count ? " ..." : "" );
+}
+
 
 static uint32_t
 casic_checksum( uint8_t a_class, uint8_t a_id, const uint8_t *a_data, size_t a_size )
@@ -137,7 +157,13 @@ static bool policy_send( uint8_t a_class, uint8_t a_id, const uint8_t *a_payload
     {
         frame[ a_size + 6U + index ] = (uint8_t)( checksum >> ( 8U * index ) );
     }
+    casic_log_bytes( "TX raw", frame, a_size + 10U );
     const int written = uart_write_bytes( GPS_UART, frame, a_size + 10U );
+    if( written == (int)( a_size + 10U ) )
+    {
+        const esp_err_t completed = uart_wait_tx_done( GPS_UART, pdMS_TO_TICKS( 200 ) );
+        ESP_LOGI( TAG, "GPS CASIC UART TX drained: %s", esp_err_to_name( completed ) );
+    }
     ESP_LOGI( TAG,
               "GPS CASIC TX class=%02X id=%02X payload=%u bytes=%d",
               a_class,
@@ -147,19 +173,43 @@ static bool policy_send( uint8_t a_class, uint8_t a_id, const uint8_t *a_payload
     return written == (int)( a_size + 10U );
 }
 
-static void policy_begin( void )
+static void policy_start_probe( void )
 {
     policy_state = GPS_POLICY_WAIT_VERSION;
     policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
-    ESP_LOGI( TAG, "GPS HT1818Z3G5L probe: CASIC MON-VER at %d baud", active_baud );
-    if( !policy_send( 0x0A, 0x04, NULL, 0U ) )
+    ESP_LOGI( TAG, "GPS CASIC read-only probe %s at %d baud", policy_probe_names[ policy_probe_index ],
+              active_baud );
+    if( !policy_send( policy_probe_classes[ policy_probe_index ], policy_probe_ids[ policy_probe_index ],
+                      NULL, 0U ) )
     {
         policy_state = GPS_POLICY_UNSUPPORTED;
     }
 }
 
+static void policy_begin( void )
+{
+    policy_probe_index = 0U;
+    ESP_LOGI( TAG, "GPS HT1818Z3G5L probe: CASIC MON-VER at %d baud", active_baud );
+    policy_start_probe();
+}
+
 static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_data, size_t a_size )
 {
+    ESP_LOGI( TAG, "GPS CASIC valid RX class=%02X id=%02X payload=%u probe=%s", a_class, a_id,
+              (unsigned)a_size, policy_probe_names[ policy_probe_index ] );
+    if( GPS_POLICY_WAIT_VERSION == policy_state && policy_probe_index > 0U &&
+        a_class == policy_probe_classes[ policy_probe_index ] &&
+        a_id == policy_probe_ids[ policy_probe_index ] )
+    {
+        ESP_LOGI( TAG, "GPS CASIC %s answered; retaining NMEA, rate control disabled",
+                  policy_probe_names[ policy_probe_index ] );
+        policy_state = GPS_POLICY_UNSUPPORTED;
+        return;
+    }
+    if( 0x05U == a_class && 0x00U == a_id && GPS_POLICY_WAIT_VERSION == policy_state )
+    {
+        ESP_LOGW( TAG, "GPS CASIC probe NAK received; continuing read-only probes on timeout" );
+    }
     if( 0x0A == a_class && 0x04 == a_id && GPS_POLICY_WAIT_VERSION == policy_state )
     {
         if( 64U != a_size )
@@ -249,6 +299,9 @@ static void casic_feed( uint8_t a_byte )
         {
             received |= (uint32_t)casic_frame[ 6U + payload + index ] << ( 8U * index );
         }
+        casic_log_bytes( "RX raw", casic_frame, casic_length );
+        ESP_LOGI( TAG, "GPS CASIC RX checksum expected=%08lX received=%08lX",
+                  (unsigned long)expected, (unsigned long)received );
         if( expected == received )
         {
             policy_response( casic_frame[ 4 ], casic_frame[ 5 ], casic_frame + 6U, payload );
@@ -271,9 +324,20 @@ static void policy_poll( int64_t a_now )
           GPS_POLICY_WAIT_ACK == policy_state ) &&
         a_now >= policy_deadline_us )
     {
-        ESP_LOGW(
-            TAG, "GPS CASIC policy timeout state=%d; generic NMEA retained", (int)policy_state );
-        policy_state = GPS_POLICY_UNSUPPORTED;
+        if( GPS_POLICY_WAIT_VERSION == policy_state &&
+            policy_probe_index + 1U < sizeof( policy_probe_ids ) )
+        {
+            ESP_LOGW( TAG, "GPS CASIC %s timeout; trying next read-only probe",
+                      policy_probe_names[ policy_probe_index ] );
+            ++policy_probe_index;
+            policy_start_probe();
+        }
+        else
+        {
+            ESP_LOGW( TAG, "GPS CASIC policy timeout state=%d; generic NMEA retained",
+                      (int)policy_state );
+            policy_state = GPS_POLICY_UNSUPPORTED;
+        }
     }
     if( GPS_POLICY_ACTIVE != policy_state || !snapshot.speed_valid ||
         a_now - speed_updated_us > (int64_t)GPS_FIX_STALE_MS * 1000LL )
