@@ -370,10 +370,11 @@ static void policy_scan_step( int64_t a_now )
             policy_rate_scan = false;
             policy_speed_since_us = 0;
             policy_last_change_us = a_now;
-            ESP_LOGW( TAG, "GPS CASIC rate scan completed without restore: %d ms rejected",
+            ESP_LOGW( TAG,
+                      "GPS CASIC rate scan completed without restore: %d ms rejected",
                       policy_scan_restore_ms );
-            policy_log_event( "rate_scan_restore_rejected", policy_scan_restore_ms,
-                              policy_current_interval_ms );
+            policy_log_event(
+                "rate_scan_restore_rejected", policy_scan_restore_ms, policy_current_interval_ms );
             return;
         }
         if( !policy_request_rate( policy_scan_restore_ms, a_now ) )
@@ -493,9 +494,11 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
                 {
                     policy_rate_scan = false;
                     policy_speed_since_us = 0;
-                    ESP_LOGW( TAG, "GPS CASIC rate scan restore rejected; keeping %d ms",
+                    ESP_LOGW( TAG,
+                              "GPS CASIC rate scan restore rejected; keeping %d ms",
                               policy_current_interval_ms );
-                    policy_log_event( "rate_scan_restore_rejected", policy_scan_restore_ms,
+                    policy_log_event( "rate_scan_restore_rejected",
+                                      policy_scan_restore_ms,
                                       policy_current_interval_ms );
                 }
                 else
