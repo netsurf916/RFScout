@@ -522,9 +522,10 @@ const rfscout_app_descriptor_t rfscout_wardrive_app = {
     .probe = NULL,
     .requires_activation = true,
     .services = RFSCOUT_APP_SERVICE_WIFI_MONITOR | RFSCOUT_APP_SERVICE_BLE_MONITOR,
-    .consumers = {
-        .wifi_raw = wardrive_on_wifi,
-        .ble_raw = wardrive_on_ble,
-    },
+    .consumers =
+        {
+            .wifi_raw = wardrive_on_wifi,
+            .ble_raw = wardrive_on_ble,
+        },
     .runtime = wardrive_runtime,
 };
