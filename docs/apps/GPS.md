@@ -27,7 +27,7 @@ inactive, the UI reports that state instead of attempting to take over the pins.
 
 ## Receiver rate management
 
-The shared GPS service detects NMEA at the receiver's existing UART baud (9600 on the tested HT1818Z3G5L). It probes CASIC read-only commands; this receiver NAKs MON-VER/MON-HW but answers CFG-PRT and CFG-RATE. A valid CFG-RATE interval enables adaptive updates; otherwise generic NMEA operation continues.
+The shared GPS service detects NMEA at the receiver's existing UART baud (9600 on the tested HT1818Z3G5L). It probes CASIC read-only commands; this receiver NAKs MON-VER/MON-HW but answers CFG-PRT and CFG-RATE. Timed-out CASIC discovery probes are retried twice before moving on, because the receiver may already be producing higher-rate NMEA traffic on a 9600-baud link. Retries are recorded in the main SD log. A valid CFG-RATE interval enables adaptive updates; otherwise generic NMEA operation continues.
 
 | Speed | Requested update interval |
 | --- | --- |
