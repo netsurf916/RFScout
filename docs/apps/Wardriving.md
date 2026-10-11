@@ -103,6 +103,45 @@ Wardriving
 
 Disable or dim Wi-Fi controls when Wi-Fi is off, and show the fixed-channel picker only in Fixed channel mode. Capacity and free-space values refresh when the menu opens or settings change, without rescanning the card on every UI frame. The on-device UI should state whether recording is currently active and whether policy changes take immediate effect.
 
+## Runtime behavior and application lifecycle
+
+The app is a passive capture utility, distinct from the Wi-Fi/BLE surveillance classifier. Its primary screen shows recording state (Stopped, Recording, Paused for media, or Error), current source selection, Wi-Fi channel and hop progress, fresh GPS fix status, packet and byte counters, drops, active PCAPNG filename, SD free space, and estimated retention ceiling. Pressing Start opens a new capture session; Stop drains the bounded writer queue, finalizes the current PCAPNG file, releases the radio service requests and returns to Stopped. Neither switching away from this app nor entering Settings should leave unmanaged radio or media resources behind.
+
+Capture may start without GPS; the app records frames without location options until a fresh valid fix is available. Timestamp and GPS validity are separate: a GPS receiver may be present without a fix, and an NTP-synchronized clock does not imply location. System-time changes during capture must preserve a coherent timestamp convention and be recorded as session metadata. When the SD card disappears, the writer stops accepting packets, drops or drains pending frames according to a bounded policy, and reports media unavailable. Insertion may start a new segment after the storage service recovers; never append blindly to a damaged or partially written segment.
+
+Radio settings are applied only to the Wardriving capture session, not to the existing RFScout Wi-Fi/BLE observation app. On start, enable only selected sources; on stop, quiesce callbacks and wait for in-flight deliveries before reclaiming queues. When capture settings change, update receiver policies atomically at a safe boundary and annotate the change. The UI can remain responsive while capture is active; UI drawing, menu navigation, and SD reads must not block radio callbacks.
+
+## Capture pipeline and ownership
+
+1. **Wi-Fi receive callback:** Copy the complete driver-exposed 802.11 payload and actual RX control metadata into a preallocated bounded queue. Retain frame type, channel/frequency where available, RSSI, reported length, and monotonic arrival timestamp. Do not perform filesystem I/O, PCAPNG encoding, or expensive parsing in this callback.
+2. **BLE discovery callback:** Copy the advertising report data before the NimBLE event lifetime ends, including advertiser address/type, advertising-event type and RSSI. Record only controller-exposed metadata; do not synthesize absent PHY/channel data. Disable host duplicate filtering, though controller scheduling and reports remain hardware-dependent.
+3. **Time/location snapshot:** Associate a contemporaneous system timestamp and GPS fix with each accepted queue entry; only include location when fix-valid and younger than a documented freshness threshold. Record which coordinate source and accuracy fields are truly available.
+4. **Writer task:** Drain packets in bounded batches, serialize PCAPNG blocks with correct 32-bit alignment and interface IDs, and write through RFScout's media-store arbitration. On allocation or queue pressure, drop the new packet, increment counters, and keep receiver callbacks nonblocking.
+5. **Rotation and finalization:** Flush blocks, close the file, and open a fully self-describing new section/interface set before the next packet. Enforce per-file and file-count policies while preserving the global SD reserve. Only delete segments owned by this app.
+6. **Cleanup:** On stop, card failure, or app transition, prevent new queue entries, quiesce both radio callbacks, synchronize/close any active segment, free app-scoped PSRAM buffers, and report final loss/storage statistics. App lifecycle must not rely on cleanup by another application.
+
+The capture metadata must distinguish **packets observed by a driver**, **packets accepted into the queue**, **packets committed to disk**, and **packets dropped**. Counts are estimates of delivered packets, never claims about all over-the-air traffic. Record failures separately for Wi-Fi queue overflow, BLE queue overflow, record-too-large, SD writer failures, and storage interruption.
+
+## PCAPNG interoperability and file integrity
+
+Use one Section Header Block plus distinct Interface Description Blocks for Wi-Fi and BLE in each segment. The Wi-Fi interface uses an 802.11 link type plus a valid Radiotap prefix; the BLE interface uses a verified libpcap link type consistent with the NimBLE report representation. Each Enhanced Packet Block references the corresponding interface ID and includes captured versus original lengths, timestamp, and applicable radio metadata. A segment is independently readable when copied off the SD card.
+
+Per-packet GPS is optional and represented using an existing compatible PCAPNG option only after byte-for-byte interoperability has been tested. Do not use another project's enterprise number for a different binary layout. GPS position, speed, fix-validity, and precision/accuracy are separate from clock-sync validity. GPS-disabled or GPS-unavailable packets remain valid PCAPNG packets with no fabricated coordinates.
+
+The writer never splits an individual PCAPNG block across segments. A segment cap accounts for headers and packet-block overhead, and oversized records are dropped with a counter. Write failures mark the segment suspect and notify the UI; the app must not silently report dropped data as captured. Files stay in a Wardriving-owned media collection and follow stable, monotonically incrementing segment naming, independent of the JSON system log sequence. Settings and retention operations must avoid traversing or modifying other apps' directories.
+
+## Menu semantics and storage estimates
+
+Use RFScout's ordinary trackball conventions: turn to select, press center to edit/confirm, and Back to return. Nonapplicable controls are dimmed rather than allowing changes with no effect. Source selection defaults to Both; Wi-Fi defaults to round-robin scan across the supported 2.4 GHz channels with 200 ms dwell. Fixed-channel mode stays on the selected channel. Wi-Fi packet filtering defaults to all available classes. BLE remains passive, no host-level duplicate suppression. GPS metadata defaults to attaching only when position is valid and fresh.
+
+Maximum file size and maximum retained file count define a retention ceiling using checked integer arithmetic: `ceiling_bytes = per_file_cap_bytes * max_files`. Display the value as readable MiB/GiB next to **actual usage** and **currently available SD space**. The ceiling is not a forecast of data volume; real consumption depends on traffic and runtime. A configuration that cannot fit given current space and the reserved-free requirement should be flagged clearly, but should not cause other files to be deleted. Smaller retention settings take effect at the next documented pruning point, without surprise deletions just from browsing the menu.
+
+## Design boundaries and test matrix
+
+This app does not associate with access points, transmit discovery traffic, decrypt protected Wi-Fi traffic, reconstruct unavailable BLE link-layer packets, or claim lossless reception across multiple channels. ESP32-S3 is 2.4 GHz-only. Concurrent Wi-Fi, BLE and SD operations contend for resources and some missed traffic is unavoidable.
+
+Acceptance requires host-side PCAPNG structure tests, Wireshark decode of both interface types, location-option fixture verification, boot-without-time handling, GPS fix acquisition/loss, fixed-channel and round-robin hopping, mixed and single-source capture, saturated queue/drop accounting, rotation exactly at size/count boundaries, card removal/reinsertion, SD-full handling, and application-switch shutdown without leaked handles. Record measured capture loss under high traffic and document any driver restrictions uncovered by hardware testing.
+
 ## Implementation and acceptance plan
 
 1. Prove Wi-Fi raw frame tap and BLE raw advertising event preservation without breaking existing apps.
