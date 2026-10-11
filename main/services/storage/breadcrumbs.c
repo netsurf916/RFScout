@@ -447,7 +447,8 @@ static void write_record( const breadcrumb_record_t *a_record )
             ++consecutive_write_failures;
             if( BREADCRUMB_FAILURE_LIMIT == consecutive_write_failures )
             {
-                ESP_LOGW( TAG, "disabling breadcrumbs after %u consecutive write failures",
+                ESP_LOGW( TAG,
+                          "disabling breadcrumbs after %u consecutive write failures",
                           (unsigned)consecutive_write_failures );
                 const esp_err_t result = persist_settings( false, file_limit );
                 if( ESP_OK == result )
@@ -457,7 +458,8 @@ static void write_record( const breadcrumb_record_t *a_record )
                 }
                 else
                 {
-                    ESP_LOGE( TAG, "cannot persist automatic breadcrumb disable: %s",
+                    ESP_LOGE( TAG,
+                              "cannot persist automatic breadcrumb disable: %s",
                               esp_err_to_name( result ) );
                 }
             }
