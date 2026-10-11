@@ -284,7 +284,7 @@ static void log_observation_event( observation_store_event_t a_event,
     }
 }
 
-static void on_observation( rf_device_t *a_observation )
+void rfscout_observation_consume( rf_device_t *a_observation )
 {
     if( NULL == a_observation )
     {
@@ -470,8 +470,6 @@ void app_main( void )
     {
         ESP_LOGW( TAG, "breadcrumb recorder unavailable: %s", esp_err_to_name( result ) );
     }
-    radio_monitor_set_observer( on_observation );
-    ble_monitor_set_observer( on_observation );
 
     ESP_ERROR_CHECK( app_manager_init() );
     /* App discovery probes nRF24 first, then leaves its shared pins inactive for GPS. */

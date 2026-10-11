@@ -18,6 +18,7 @@
 #include "nrf24_activity.h"
 #include "recorder.h"
 #include "system_events.h"
+#include "apps/wardrive/capture.h"
 
 #include "esp_timer.h"
 
@@ -41,6 +42,7 @@ static const char *app_name( rfscout_app_id_t a_app )
         [RFSCOUT_APP_THERMAL] = "THERMAL",
         [RFSCOUT_APP_AUDIO_SPECTRUM] = "AUDIO_SPECTRUM",
         [RFSCOUT_APP_GPS] = "GPS",
+        [RFSCOUT_APP_WARDRIVE] = "WARDRIVE",
     };
 
     return ( ( a_app >= 0 ) && ( a_app < RFSCOUT_APP_COUNT ) ) ? names[ a_app ] : "UNKNOWN";
@@ -189,6 +191,21 @@ static void write_periodic_record( rfscout_app_id_t a_app )
             {
                 success = log_uint( &record, "satellites_used", gps.satellites );
             }
+            break;
+        }
+
+        case RFSCOUT_APP_WARDRIVE:
+        {
+            wardrive_stats_t stats = { 0 };
+            wardrive_capture_stats( &stats );
+            success = log_bool( &record, "recording", stats.recording ) &&
+                      log_bool( &record, "storage_error", stats.storage_error ) &&
+                      log_uint( &record, "wifi_packets", stats.received_wifi ) &&
+                      log_uint( &record, "ble_packets", stats.received_ble ) &&
+                      log_uint( &record, "written_packets", stats.written ) &&
+                      log_uint( &record, "dropped_packets", stats.dropped ) &&
+                      log_uint( &record, "files", stats.files ) &&
+                      log_uint( &record, "bytes_written", stats.bytes );
             break;
         }
 
