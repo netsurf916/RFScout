@@ -367,6 +367,11 @@ static int64_t channel_dwell_us( uint8_t a_channel )
                                                               : WIFI_DISCOVERY_DWELL_US;
 }
 
+uint8_t radio_monitor_channel( void )
+{
+    return channel;
+}
+
 bool radio_monitor_is_active( void )
 {
     bool result;
