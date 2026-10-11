@@ -37,6 +37,7 @@
 static const char *TAG = "ble_monitor";
 static uint8_t own_addr_type;
 static ble_observation_fn sink;
+static ble_raw_adv_fn raw_sink;
 static bool initialized;
 static bool host_synced;
 static bool scan_requested;
@@ -204,6 +205,12 @@ static int gap_event( struct ble_gap_event *a_event, void *a_argument )
     {
         if( begin_observation_callback() )
         {
+            if( NULL != raw_sink )
+            {
+                raw_sink( a_event->disc.data, a_event->disc.length_data,
+                          a_event->disc.addr.val, a_event->disc.addr.type,
+                          a_event->disc.event_type, a_event->disc.rssi );
+            }
             rf_device_t observation;
             parse_adv( &a_event->disc, &observation );
             if( NULL != sink )
@@ -327,6 +334,11 @@ esp_err_t ble_monitor_stop( void )
 
     ESP_LOGI( TAG, "BLE scan stopped for inactive app" );
     return ESP_OK;
+}
+
+void ble_monitor_set_raw_observer( ble_raw_adv_fn a_callback )
+{
+    raw_sink = a_callback;
 }
 
 void ble_monitor_set_observer( ble_observation_fn a_callback )
