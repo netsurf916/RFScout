@@ -1232,29 +1232,6 @@ static bool commit_manual_time( void )
     return true;
 }
 
-static void toggle_time_mode( void )
-{
-    const rfscout_time_mode_t old_mode = device_time_mode();
-    const rfscout_time_mode_t new_mode =
-        RFSCOUT_TIME_MODE_AUTO == old_mode ? RFSCOUT_TIME_MODE_MANUAL : RFSCOUT_TIME_MODE_AUTO;
-    const esp_err_t result = device_time_set_mode( new_mode );
-    if( ESP_OK != result )
-    {
-        save_error = true;
-        emit_device_event( RFSCOUT_EVENT_ERROR, (int32_t)result );
-        return;
-    }
-    save_error = false;
-    if( RFSCOUT_TIME_MODE_MANUAL == new_mode )
-    {
-        refresh_edited_time();
-    }
-    log_config_change( "time.mode",
-                       RFSCOUT_TIME_MODE_AUTO == old_mode ? "auto" : "manual",
-                       RFSCOUT_TIME_MODE_AUTO == new_mode ? "auto" : "manual" );
-    emit_device_event( RFSCOUT_EVENT_NAVIGATE, 1 );
-}
-
 static bool time_menu_input( bool a_pressed, int a_delta )
 {
     if( a_pressed )
