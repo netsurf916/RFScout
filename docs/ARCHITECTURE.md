@@ -218,7 +218,7 @@ Durable state uses logical owner/key namespaces:
 
 - `system/config` — ordinary device-wide policy such as display/power behavior, themes, timezone/clock presentation, SD logging, app enablement/startup choice, global audio policy/gains, and alert policy;
 - `app/<persistence_key>/config` — descriptor-confined app preference overrides;
-- Legacy `system/time.policy` entries are ignored; automatic clock synchronization requires no stored mode.
+- legacy `system/time.policy` records from earlier firmware are ignored (automatic time sync needs no stored mode);
 - `system/breadcrumbs` — breadcrumb enablement/retention policy; and
 - additional bounded `system/*` or app-scoped records owned by their service/application.
 
