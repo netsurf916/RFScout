@@ -24,8 +24,7 @@ static int64_t last_gps_time_us;
 
 bool device_time_gps_available( void )
 {
-    return last_gps_time_us > 0 &&
-           esp_timer_get_time() - last_gps_time_us <= DEVICE_GPS_FRESH_US;
+    return last_gps_time_us > 0 && esp_timer_get_time() - last_gps_time_us <= DEVICE_GPS_FRESH_US;
 }
 
 static esp_err_t set_epoch( time_t a_epoch, rfscout_time_source_t a_source )
