@@ -93,6 +93,7 @@ typedef enum
     GPS_POLICY_WAIT_RATE,
     GPS_POLICY_ACTIVE,
     GPS_POLICY_WAIT_ACK,
+    GPS_POLICY_VERIFY_RATE,
     GPS_POLICY_UNSUPPORTED
 } gps_policy_state_t;
 
@@ -235,8 +236,9 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
         {
             policy_next_probe();
         }
-        else if( GPS_POLICY_WAIT_RATE == policy_state && 0x06U == rejected_class &&
-                 0x04U == rejected_id )
+        else if( ( GPS_POLICY_WAIT_RATE == policy_state ||
+                   GPS_POLICY_VERIFY_RATE == policy_state ) &&
+                 0x06U == rejected_class && 0x04U == rejected_id )
         {
             ESP_LOGW( TAG, "GPS CASIC CFG-RATE poll rejected; rate control disabled" );
             policy_state = GPS_POLICY_UNSUPPORTED;
@@ -297,14 +299,36 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
         policy_desired_interval_ms = (int)interval;
         policy_speed_since_us = 0;
         policy_state = GPS_POLICY_ACTIVE;
-        ESP_LOGI( TAG, "GPS CASIC CFG-RATE query succeeded; adaptive control enabled" );
+        ESP_LOGI( TAG, "GPS CASIC CFG-RATE query succeeded; adaptive 1/2 Hz control enabled (3 mph threshold)" );
+    }
+    else if( 0x06U == a_class && 0x04U == a_id &&
+             GPS_POLICY_VERIFY_RATE == policy_state && 4U == a_size )
+    {
+        const unsigned interval = (unsigned)a_data[ 0 ] | ( (unsigned)a_data[ 1 ] << 8U );
+        ESP_LOGI( TAG, "GPS CASIC CFG-RATE readback=%u ms requested=%d ms", interval,
+                  policy_pending_interval_ms );
+        if( interval != (unsigned)policy_pending_interval_ms )
+        {
+            ESP_LOGW( TAG, "GPS CASIC rate change did not take effect; adaptive control disabled" );
+            policy_state = GPS_POLICY_UNSUPPORTED;
+            return;
+        }
+        policy_current_interval_ms = (int)interval;
+        policy_state = GPS_POLICY_ACTIVE;
+        ESP_LOGI( TAG, "GPS CASIC update rate verified at %u Hz (%u ms)",
+                  interval > 0U ? 1000U / interval : 0U, interval );
     }
     else if( 0x05U == a_class && 0x01U == a_id && GPS_POLICY_WAIT_ACK == policy_state &&
              4U == a_size && 0x06U == a_data[ 0 ] && 0x04U == a_data[ 1 ] )
     {
-        policy_current_interval_ms = policy_pending_interval_ms;
-        policy_state = GPS_POLICY_ACTIVE;
-        ESP_LOGI( TAG, "GPS CASIC CFG-RATE accepted: interval=%d ms", policy_current_interval_ms );
+        ESP_LOGI( TAG, "GPS CASIC CFG-RATE write acknowledged: requested=%d ms; verifying",
+                  policy_pending_interval_ms );
+        policy_state = GPS_POLICY_VERIFY_RATE;
+        policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
+        if( !policy_send( 0x06U, 0x04U, NULL, 0U ) )
+        {
+            policy_state = GPS_POLICY_UNSUPPORTED;
+        }
     }
 }
 
@@ -365,7 +389,7 @@ static void casic_feed( uint8_t a_byte )
 static void policy_poll( int64_t a_now )
 {
     if( ( GPS_POLICY_WAIT_VERSION == policy_state || GPS_POLICY_WAIT_RATE == policy_state ||
-          GPS_POLICY_WAIT_ACK == policy_state ) &&
+          GPS_POLICY_WAIT_ACK == policy_state || GPS_POLICY_VERIFY_RATE == policy_state ) &&
         a_now >= policy_deadline_us )
     {
         if( GPS_POLICY_WAIT_VERSION == policy_state )
@@ -416,7 +440,8 @@ static void policy_poll( int64_t a_now )
         policy_last_change_us = a_now;
         policy_state = GPS_POLICY_WAIT_ACK;
         policy_deadline_us = a_now + GPS_POLICY_TIMEOUT_US;
-        ESP_LOGI( TAG, "GPS HT1818Z3G5L requested %d ms at %.1f mph", target, (double)mph );
+        ESP_LOGI( TAG, "GPS HT1818Z3G5L rate change requested %d -> %d ms at %.1f mph",
+                  policy_current_interval_ms, target, (double)mph );
     }
 }
 
