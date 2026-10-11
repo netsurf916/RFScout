@@ -41,6 +41,7 @@ static const char *app_name( rfscout_app_id_t a_app )
         [RFSCOUT_APP_THERMAL] = "THERMAL",
         [RFSCOUT_APP_AUDIO_SPECTRUM] = "AUDIO_SPECTRUM",
         [RFSCOUT_APP_GPS] = "GPS",
+        [RFSCOUT_APP_WARDRIVE] = "WARDRIVE",
     };
 
     return ( ( a_app >= 0 ) && ( a_app < RFSCOUT_APP_COUNT ) ) ? names[ a_app ] : "UNKNOWN";
