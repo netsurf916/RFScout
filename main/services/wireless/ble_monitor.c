@@ -226,6 +226,11 @@ static int gap_event( struct ble_gap_event *a_event, void *a_argument )
                 --raw_callbacks_inflight;
                 portEXIT_CRITICAL( &callback_lock );
             }
+            if( NULL != raw_callback )
+            {
+                end_observation_callback();
+                return 0;
+            }
             rf_device_t observation;
             parse_adv( &a_event->disc, &observation );
             if( NULL != sink )
