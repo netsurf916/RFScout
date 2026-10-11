@@ -7,6 +7,7 @@
 
 #include "memory_manager.h"
 
+#include "esp_debug_helpers.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -325,7 +326,14 @@ bool memory_manager_free( rfscout_memory_owner_t a_owner, void *a_pointer )
     }
     xSemaphoreGive( manager_lock );
 
-    ESP_LOGE( TAG, "free rejected for untracked pointer %p", a_pointer );
+    ESP_LOGE( TAG,
+              "free rejected for untracked pointer %p caller=%p owner_class=%d app=%d operation=%u",
+              a_pointer,
+              __builtin_return_address( 0 ),
+              (int)a_owner.owner_class,
+              (int)a_owner.app,
+              (unsigned)a_owner.operation );
+    esp_backtrace_print( 8 );
     return false;
 }
 
