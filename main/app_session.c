@@ -55,6 +55,45 @@ static uint32_t session_generation;
 static uint32_t session_services;
 static bool close_in_progress;
 static bool ready_to_reclaim;
+
+/* Stable provider hooks; applications never register with wireless drivers. */
+static void wifi_observation_dispatch( rf_device_t *a_observation )
+{
+    const rfscout_app_descriptor_t *app = app_framework_descriptor( session_app );
+    if( !close_in_progress && app && app->consumers.wifi_observation )
+        app->consumers.wifi_observation( a_observation );
+}
+
+static void ble_observation_dispatch( rf_device_t *a_observation )
+{
+    const rfscout_app_descriptor_t *app = app_framework_descriptor( session_app );
+    if( !close_in_progress && app && app->consumers.ble_observation )
+        app->consumers.ble_observation( a_observation );
+}
+
+static void wifi_raw_dispatch( const uint8_t *bytes, size_t length, int8_t rssi, uint8_t channel )
+{
+    const rfscout_app_descriptor_t *app = app_framework_descriptor( session_app );
+    if( !close_in_progress && app && app->consumers.wifi_raw )
+        app->consumers.wifi_raw( bytes, length, rssi, channel );
+}
+
+static void ble_raw_dispatch( const uint8_t *bytes, size_t length, const uint8_t address[6],
+                              uint8_t address_type, uint8_t event_type, int8_t rssi )
+{
+    const rfscout_app_descriptor_t *app = app_framework_descriptor( session_app );
+    if( !close_in_progress && app && app->consumers.ble_raw )
+        app->consumers.ble_raw( bytes, length, address, address_type, event_type, rssi );
+}
+
+static void bind_session_consumers( const rfscout_app_descriptor_t *app )
+{
+    radio_monitor_set_observer( app && app->consumers.wifi_observation ? wifi_observation_dispatch : NULL );
+    radio_monitor_set_raw_observer( app && app->consumers.wifi_raw ? wifi_raw_dispatch : NULL );
+    ble_monitor_set_observer( app && app->consumers.ble_observation ? ble_observation_dispatch : NULL );
+    ble_monitor_set_raw_observer( app && app->consumers.ble_raw ? ble_raw_dispatch : NULL );
+}
+
 static esp_err_t stop_cc1101( void )
 {
     return cc1101_stop() ? ESP_OK : ESP_ERR_TIMEOUT;
@@ -294,6 +333,7 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
     session_app = a_app;
     reset_session_state();
     session_services = descriptor->services;
+    bind_session_consumers( descriptor );
 
     const esp_err_t init_result = init_selected_services();
     if( ESP_OK != init_result )
@@ -447,6 +487,7 @@ void app_session_commit_close( void )
         return;
     }
 
+    bind_session_consumers( NULL );
     release_view();
     reset_session_state();
     session_app = RFSCOUT_APP_COUNT;
