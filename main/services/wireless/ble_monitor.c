@@ -216,9 +216,12 @@ static int gap_event( struct ble_gap_event *a_event, void *a_argument )
             portEXIT_CRITICAL( &callback_lock );
             if( NULL != raw_callback )
             {
-                raw_callback( a_event->disc.data, a_event->disc.length_data,
-                              a_event->disc.addr.val, a_event->disc.addr.type,
-                              a_event->disc.event_type, a_event->disc.rssi );
+                raw_callback( a_event->disc.data,
+                              a_event->disc.length_data,
+                              a_event->disc.addr.val,
+                              a_event->disc.addr.type,
+                              a_event->disc.event_type,
+                              a_event->disc.rssi );
                 portENTER_CRITICAL( &callback_lock );
                 --raw_callbacks_inflight;
                 portEXIT_CRITICAL( &callback_lock );
