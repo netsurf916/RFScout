@@ -107,10 +107,10 @@ static uint8_t casic_frame[ GPS_CASIC_MAX_PAYLOAD + 10U ];
 static size_t casic_length;
 static size_t casic_expected;
 
-static uint32_t casic_checksum( uint8_t a_class, uint8_t a_id, const uint8_t *a_data, size_t a_size )
+static uint32_t
+casic_checksum( uint8_t a_class, uint8_t a_id, const uint8_t *a_data, size_t a_size )
 {
-    uint32_t sum = ( (uint32_t)a_class << 24U ) | ( (uint32_t)a_id << 16U ) |
-                   (uint32_t)a_size;
+    uint32_t sum = ( (uint32_t)a_class << 24U ) | ( (uint32_t)a_id << 16U ) | (uint32_t)a_size;
     for( size_t index = 0U; index < a_size; index += 4U )
     {
         sum += (uint32_t)a_data[ index ] | ( (uint32_t)a_data[ index + 1U ] << 8U ) |
@@ -126,8 +126,8 @@ static bool policy_send( uint8_t a_class, uint8_t a_id, const uint8_t *a_payload
     {
         return false;
     }
-    uint8_t frame[ GPS_CASIC_MAX_PAYLOAD + 10U ] = { 0xBA, 0xCE, (uint8_t)a_size,
-                                                      (uint8_t)( a_size >> 8U ), a_class, a_id };
+    uint8_t frame[ GPS_CASIC_MAX_PAYLOAD + 10U ] = {
+        0xBA, 0xCE, (uint8_t)a_size, (uint8_t)( a_size >> 8U ), a_class, a_id };
     if( a_size > 0U )
     {
         memcpy( frame + 6U, a_payload, a_size );
@@ -138,8 +138,12 @@ static bool policy_send( uint8_t a_class, uint8_t a_id, const uint8_t *a_payload
         frame[ a_size + 6U + index ] = (uint8_t)( checksum >> ( 8U * index ) );
     }
     const int written = uart_write_bytes( GPS_UART, frame, a_size + 10U );
-    ESP_LOGI( TAG, "GPS CASIC TX class=%02X id=%02X payload=%u bytes=%d",
-              a_class, a_id, (unsigned)a_size, written );
+    ESP_LOGI( TAG,
+              "GPS CASIC TX class=%02X id=%02X payload=%u bytes=%d",
+              a_class,
+              a_id,
+              (unsigned)a_size,
+              written );
     return written == (int)( a_size + 10U );
 }
 
@@ -192,14 +196,15 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
         policy_state = GPS_POLICY_ACTIVE;
     }
     else if( 0x05 == a_class && ( 0x01 == a_id || 0x00 == a_id ) &&
-             GPS_POLICY_WAIT_ACK == policy_state && 4U == a_size &&
-             0x06 == a_data[ 0 ] && 0x04 == a_data[ 1 ] )
+             GPS_POLICY_WAIT_ACK == policy_state && 4U == a_size && 0x06 == a_data[ 0 ] &&
+             0x04 == a_data[ 1 ] )
     {
         if( 0x01 == a_id )
         {
             policy_current_interval_ms = policy_pending_interval_ms;
             policy_state = GPS_POLICY_ACTIVE;
-            ESP_LOGI( TAG, "GPS CASIC CFG-RATE accepted: interval=%d ms", policy_current_interval_ms );
+            ESP_LOGI(
+                TAG, "GPS CASIC CFG-RATE accepted: interval=%d ms", policy_current_interval_ms );
         }
         else
         {
@@ -237,8 +242,8 @@ static void casic_feed( uint8_t a_byte )
     if( casic_expected >= 10U && casic_length == casic_expected )
     {
         const size_t payload = casic_length - 10U;
-        const uint32_t expected = casic_checksum( casic_frame[ 4 ], casic_frame[ 5 ],
-                                                  casic_frame + 6U, payload );
+        const uint32_t expected =
+            casic_checksum( casic_frame[ 4 ], casic_frame[ 5 ], casic_frame + 6U, payload );
         uint32_t received = 0U;
         for( size_t index = 0U; index < 4U; ++index )
         {
@@ -250,8 +255,10 @@ static void casic_feed( uint8_t a_byte )
         }
         else
         {
-            ESP_LOGW( TAG, "GPS CASIC checksum mismatch class=%02X id=%02X",
-                      casic_frame[ 4 ], casic_frame[ 5 ] );
+            ESP_LOGW( TAG,
+                      "GPS CASIC checksum mismatch class=%02X id=%02X",
+                      casic_frame[ 4 ],
+                      casic_frame[ 5 ] );
         }
         casic_length = 0U;
         casic_expected = 0U;
@@ -261,9 +268,11 @@ static void casic_feed( uint8_t a_byte )
 static void policy_poll( int64_t a_now )
 {
     if( ( GPS_POLICY_WAIT_VERSION == policy_state || GPS_POLICY_WAIT_RATE == policy_state ||
-          GPS_POLICY_WAIT_ACK == policy_state ) && a_now >= policy_deadline_us )
+          GPS_POLICY_WAIT_ACK == policy_state ) &&
+        a_now >= policy_deadline_us )
     {
-        ESP_LOGW( TAG, "GPS CASIC policy timeout state=%d; generic NMEA retained", (int)policy_state );
+        ESP_LOGW(
+            TAG, "GPS CASIC policy timeout state=%d; generic NMEA retained", (int)policy_state );
         policy_state = GPS_POLICY_UNSUPPORTED;
     }
     if( GPS_POLICY_ACTIVE != policy_state || !snapshot.speed_valid ||
