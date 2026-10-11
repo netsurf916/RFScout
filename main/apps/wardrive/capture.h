@@ -4,6 +4,7 @@
 #include "esp_err.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 typedef struct
@@ -30,6 +31,12 @@ typedef struct
     bool recording;
     bool storage_error;
 } wardrive_stats_t;
+
+void wardrive_on_wifi( const uint8_t *a_data, size_t a_length, int8_t a_rssi,
+                       uint8_t a_channel );
+void wardrive_on_ble( const uint8_t *a_data, size_t a_length,
+                      const uint8_t a_address[ 6 ], uint8_t a_address_type,
+                      uint8_t a_event_type, int8_t a_rssi );
 
 esp_err_t wardrive_capture_start( const wardrive_config_t *a_config );
 void wardrive_capture_stop( void );
