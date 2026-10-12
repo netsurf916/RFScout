@@ -169,8 +169,8 @@ esp_err_t board_profile_detect( void )
     static const uint8_t TEMBED_SIGNATURES[] = { 0x6B, 0x55 };
     if( !probe_fingerprint( 8, 18, TEMBED_SIGNATURES, sizeof( TEMBED_SIGNATURES ) ) )
     {
-        ESP_LOGE( TAG, "no supported hardware profile detected" );
-        return ESP_ERR_NOT_FOUND;
+        ESP_LOGW( TAG, "no recognized board fingerprint; retaining GPIO-safe unknown profile" );
+        return ESP_OK;
     }
 
     active_profile = &tembed_profile;
