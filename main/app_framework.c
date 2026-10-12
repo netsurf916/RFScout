@@ -72,10 +72,6 @@ static void retain_availability( rfscout_app_id_t a_app, rfscout_app_availabilit
 
 static bool profile_supports_services( uint32_t a_services )
 {
-    if( ( 0U != ( a_services & RFSCOUT_APP_SERVICE_CC1101 ) ) && !RFSCOUT_BOARD_HAS_CC1101 )
-    {
-        return false;
-    }
     if( ( 0U != ( a_services & RFSCOUT_APP_SERVICE_NRF24 ) ) && !RFSCOUT_BOARD_HAS_NRF24 )
     {
         return false;
