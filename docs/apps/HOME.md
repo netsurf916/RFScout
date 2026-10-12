@@ -19,7 +19,7 @@ Current settings include:
 - 12/24-hour clock presentation;
 - GPS NMEA inactivity timeout (2–30 seconds, default 5 seconds) for shared GPS/nRF24 pins;
 - Auto/Manual time policy, timezone, and manual date/time fields;
-- preferred startup application and per-app enablement grouped under **Device Settings → Apps**, preserving each application's existing toggle and stored preference;
+- per-app enablement grouped under **Device Settings → Apps**, preserving existing toggles; preferred startup application remains a system-wide control in **Device Settings**;
 - SD logging to the `system/logs` media collection;
 - supported power-button actions and protective power policy;
 - breadcrumb recording to the `system/breadcrumbs` media collection and retained breadcrumb-file count;
