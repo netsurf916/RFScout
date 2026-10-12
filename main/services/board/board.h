@@ -24,13 +24,10 @@ typedef enum
 
 typedef enum
 {
-    RFSCOUT_BOARD_CAP_CC1101 = 1U << 0,
-    RFSCOUT_BOARD_CAP_NRF24 = 1U << 1,
     RFSCOUT_BOARD_CAP_GPS = 1U << 3,
     RFSCOUT_BOARD_CAP_ROTARY_ENCODER = 1U << 7,
     RFSCOUT_BOARD_CAP_PDM_MIC = 1U << 8,
     RFSCOUT_BOARD_CAP_SPEAKER = 1U << 9,
-    RFSCOUT_BOARD_CAP_SD = 1U << 10,
     RFSCOUT_BOARD_CAP_SCREEN_OFF = 1U << 11,
     RFSCOUT_BOARD_CAP_DEEP_SLEEP = 1U << 12,
     RFSCOUT_BOARD_CAP_POWER_OFF = 1U << 13,
@@ -117,15 +114,12 @@ bool board_profile_selected( void );
 bool board_profile_has( rfscout_board_capability_t a_capability );
 
 #define RFSCOUT_BOARD_NAME ( board_profile()->name )
-#define RFSCOUT_BOARD_HAS_CC1101 ( board_profile_has( RFSCOUT_BOARD_CAP_CC1101 ) )
-#define RFSCOUT_BOARD_HAS_NRF24 ( board_profile_has( RFSCOUT_BOARD_CAP_NRF24 ) )
 #define RFSCOUT_BOARD_HAS_GPS ( board_profile_has( RFSCOUT_BOARD_CAP_GPS ) )
 #define RFSCOUT_BOARD_HAS_ROTARY_ENCODER ( board_profile_has( RFSCOUT_BOARD_CAP_ROTARY_ENCODER ) )
 #define RFSCOUT_BOARD_HAS_PDM_MIC ( board_profile_has( RFSCOUT_BOARD_CAP_PDM_MIC ) )
 #define RFSCOUT_BOARD_HAS_SPEAKER ( board_profile_has( RFSCOUT_BOARD_CAP_SPEAKER ) )
 #define RFSCOUT_BOARD_HAS_INTERNAL_TEMPERATURE                                                     \
     ( board_profile_has( RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE ) )
-#define RFSCOUT_BOARD_HAS_SD ( board_profile_has( RFSCOUT_BOARD_CAP_SD ) )
 #define RFSCOUT_BOARD_CAN_SCREEN_OFF ( board_profile_has( RFSCOUT_BOARD_CAP_SCREEN_OFF ) )
 #define RFSCOUT_BOARD_CAN_DEEP_SLEEP ( board_profile_has( RFSCOUT_BOARD_CAP_DEEP_SLEEP ) )
 #define RFSCOUT_BOARD_CAN_POWER_OFF ( board_profile_has( RFSCOUT_BOARD_CAP_POWER_OFF ) )
