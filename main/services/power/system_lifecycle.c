@@ -161,11 +161,6 @@ void system_lifecycle_poll( void )
         logger_restart_pending = false;
         return;
     }
-    if( ESP_OK != media_store_probe() )
-    {
-        logger_retry_after_us = esp_timer_get_time() + 3000000LL;
-        return;
-    }
     const esp_err_t result = log_writer_init();
     if( ESP_OK == result )
     {
