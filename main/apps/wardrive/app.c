@@ -68,7 +68,6 @@ static void observe_wifi( const uint8_t *a_data, size_t a_length, int8_t a_rssi,
     {
         const unsigned channel = a_channel - 1U;
         __atomic_add_fetch( &activity_pending[ channel ], 1U, __ATOMIC_RELAXED );
-
     }
     wardrive_on_wifi( a_data, a_length, a_rssi, a_channel );
 }
