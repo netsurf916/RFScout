@@ -13,12 +13,16 @@
 #include "esp_err.h"
 
 #include <stdint.h>
+#include <stdbool.h>
 
 /** @brief Initialize the global display-idle state from current configuration. */
 esp_err_t display_idle_init( void );
 
 /** @brief Poll user activity and apply dim/off/wake transitions. */
 void display_idle_poll( void );
+
+/** @brief Consume residual wake gesture input before dispatch to applications. */
+bool display_idle_input_should_wake( void );
 
 /**
  * @brief Request immediate entry into the normal display-off state.
