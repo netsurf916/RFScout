@@ -783,6 +783,7 @@ const rfscout_app_descriptor_t rfscout_wardrive_app = {
     .probe = NULL,
     .requires_activation = true,
     .prepare_leave = prepare_leave,
+    .transition_denial_message = "STOP CAPTURE FIRST",
     .services = RFSCOUT_APP_SERVICE_WIFI_MONITOR | RFSCOUT_APP_SERVICE_BLE_MONITOR,
     .consumers =
         {
