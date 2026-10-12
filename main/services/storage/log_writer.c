@@ -67,6 +67,7 @@ static volatile bool flush_requested;
 static bool first_flush_logged;
 static bool closed_file_mtime_logged;
 static unsigned consecutive_flush_failures;
+static volatile bool disable_request_pending;
 
 static const rfscout_memory_owner_t log_owner = {
     .owner_class = RFSCOUT_MEMORY_OWNER_PLATFORM,
@@ -906,13 +907,12 @@ static void writer_task_main( void *a_argument )
             }
             else if( ++consecutive_flush_failures >= LOG_FAILURE_LIMIT )
             {
-                ESP_LOGW( TAG, "disabling SD logging after %u failed flushes",
+                ESP_LOGW( TAG,
+                          "disabling SD logging after %u failed flushes",
                           (unsigned)consecutive_flush_failures );
                 accepting = false;
-                (void)device_config_set_logging_enabled( false );
-                rfscout_event_emit( RFSCOUT_EVENT_STORAGE_SERVICE_DISABLED,
-                                    RFSCOUT_EVENT_SOURCE_SYSTEM,
-                                    2 );
+                /* Configuration mutation and notifications belong to the main task. */
+                __atomic_store_n( &disable_request_pending, true, __ATOMIC_RELEASE );
                 break;
             }
             xSemaphoreTake( buffer_lock, portMAX_DELAY );
@@ -945,6 +945,7 @@ esp_err_t log_writer_init( void )
 
     io_error = false;
     consecutive_flush_failures = 0U;
+    __atomic_store_n( &disable_request_pending, false, __ATOMIC_RELEASE );
     active_open = false;
     if( !media_store_available() )
     {
@@ -1020,4 +1021,18 @@ bool log_writer_shutdown( uint32_t a_timeout_ms )
 bool log_writer_has_error( void )
 {
     return io_error;
+}
+
+void log_writer_process_disable_request( void )
+{
+    if( !__atomic_exchange_n( &disable_request_pending, false, __ATOMIC_ACQ_REL ) )
+    {
+        return;
+    }
+    if( device_config_get()->logging_enabled )
+    {
+        (void)device_config_set_logging_enabled( false );
+        rfscout_event_emit(
+            RFSCOUT_EVENT_STORAGE_SERVICE_DISABLED, RFSCOUT_EVENT_SOURCE_SYSTEM, 2 );
+    }
 }
