@@ -63,6 +63,7 @@ static uint32_t activity_station_ids[ ACTIVITY_CHANNELS ][ ACTIVITY_IDENTITIES ]
 static uint32_t activity_aps[ ACTIVITY_CHANNELS ];
 static uint32_t activity_stations[ ACTIVITY_CHANNELS ];
 static unsigned activity_cursor;
+static unsigned activity_samples;
 static int64_t activity_last_tick_us;
 
 /* One hash slot and one compare-exchange at most; never scan a full table in the
@@ -159,6 +160,10 @@ static void activity_tick( int64_t a_now_us )
         activity_ble_rate[ activity_cursor ] =
             __atomic_exchange_n( &activity_ble_pending, 0U, __ATOMIC_RELAXED );
         activity_cursor = ( activity_cursor + 1U ) % ACTIVITY_SECONDS;
+        if( activity_samples < ACTIVITY_SECONDS )
+        {
+            ++activity_samples;
+        }
         activity_last_tick_us += 1000000LL;
     }
 }
@@ -303,16 +308,27 @@ static void draw_overview( void )
                     current, options.fixed_channel ? "FIXED" : "SCAN" );
     display_draw_text( 60, 146, line, theme->info, 1U );
 
-    display_draw_text( 163, 25, options.wifi && options.ble ? "WIFI + BLE / SEC"
-                                                        : "PACKETS/SEC",
+    display_draw_text( 163, 25, "PKT/s NOW / AVG",
                        theme->secondary, 1U );
     /* The header reports the latest completed second, not the graph's peak. */
     const unsigned latest = ( activity_cursor + ACTIVITY_SECONDS - 1U ) % ACTIVITY_SECONDS;
     const uint32_t current_rate =
         ( options.wifi ? activity_rate[ latest ] : 0U ) +
         ( options.ble ? activity_ble_rate[ latest ] : 0U );
-    (void)snprintf( line, sizeof( line ), "%lu", (unsigned long)current_rate );
-    display_draw_text( 274, 25, line, theme->text, 1U );
+    uint64_t rate_sum = 0U;
+    for( unsigned i = 0U; i < ACTIVITY_SECONDS; ++i )
+    {
+        rate_sum += ( options.wifi ? activity_rate[ i ] : 0U ) +
+                    ( options.ble ? activity_ble_rate[ i ] : 0U );
+    }
+    const uint32_t average_rate =
+        activity_samples > 0U ? (uint32_t)( rate_sum / activity_samples ) : 0U;
+    (void)snprintf( line,
+                    sizeof( line ),
+                    "%lu / %lu",
+                    (unsigned long)current_rate,
+                    (unsigned long)average_rate );
+    display_draw_text( 258, 25, line, theme->text, 1U );
     for( unsigned i = 0U; i < ACTIVITY_SECONDS; ++i )
     {
         const unsigned slot = ( activity_cursor + i ) % ACTIVITY_SECONDS;
@@ -648,6 +664,7 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
         memset( activity_aps, 0, sizeof( activity_aps ) );
         memset( activity_stations, 0, sizeof( activity_stations ) );
         activity_cursor = 0U;
+        activity_samples = 0U;
         activity_last_tick_us = 0;
         memset( activity_ap_ids, 0, sizeof( activity_ap_ids ) );
         memset( activity_station_ids, 0, sizeof( activity_station_ids ) );
