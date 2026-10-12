@@ -48,7 +48,7 @@ idf.py set-target esp32s3
 idf.py build
 ```
 
-RFScout builds one ESP32-S3 image and validates the supported T-Embed board profile at runtime. The first build resolves managed components declared in `main/idf_component.yml`. The generated `managed_components/` directory and `dependencies.lock` are ignored; ESP-IDF may regenerate them locally as part of dependency resolution.
+RFScout builds one ESP32-S3 image. Startup attempts known passive display/input transport candidates in cached-first order; the CC1101 Plus mapping is hardware validated, and the SI4732 mapping is experimental pending hardware validation. A missing battery-management chip does not imply a missing ESP32 or radio. The first build resolves managed components declared in `main/idf_component.yml`. The generated `managed_components/` directory and `dependencies.lock` are ignored; ESP-IDF may regenerate them locally as part of dependency resolution.
 
 If major build configuration changes, regenerate the local build tree:
 
@@ -112,7 +112,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 
 Exit the monitor with **Ctrl+]**.
 
-The supported hardware is the LILYGO T-Embed CC1101 Plus. If automatic flashing does not enter the ESP32-S3 ROM bootloader, use the T-Embed BOOT mechanism while connecting/resetting it.
+The hardware-validated target is the LILYGO T-Embed CC1101 Plus. The T-Embed SI4732 transport candidate is experimental and may require further bring-up. If automatic flashing does not enter the ESP32-S3 ROM bootloader, use the T-Embed BOOT mechanism while connecting/resetting it.
 
 ## Browser flashing development builds and releases
 
