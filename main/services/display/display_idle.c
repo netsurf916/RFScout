@@ -20,6 +20,7 @@
 
 #define DISPLAY_IDLE_US_PER_SECOND 1000000LL
 #define DISPLAY_IDLE_US_PER_MILLISECOND 1000LL
+#define DISPLAY_IDLE_WAKE_GUARD_US 200000LL
 #define DISPLAY_IDLE_DIM_DIVISOR 4U
 #define DISPLAY_IDLE_DIM_MIN_PERCENT 1U
 #define DISPLAY_IDLE_PIXEL_SHIFT_FALLBACK_SECONDS 120U
@@ -41,6 +42,7 @@ static int64_t attention_until_us;
 static int64_t pixel_shift_last_advance_us;
 static bool attention_restore_pending;
 static bool off_requested;
+static int64_t wake_guard_until_us;
 
 static void reset_pixel_shift( int64_t a_now_us )
 {
@@ -190,6 +192,7 @@ esp_err_t display_idle_init( void )
     pixel_shift_last_advance_us = last_activity_us;
     attention_restore_pending = false;
     off_requested = false;
+    wake_guard_until_us = 0;
     display_pixel_shift_reset();
     const esp_err_t result = display_exit_low_power();
     display_set_brightness( device_config_get()->brightness_percent );
@@ -252,6 +255,29 @@ esp_err_t display_idle_request_attention( uint32_t a_duration_ms )
     return wake_display( "system event" ) ? ESP_OK : ESP_FAIL;
 }
 
+bool display_idle_input_should_wake( void )
+{
+    const int64_t now_us = esp_timer_get_time();
+    if( DISPLAY_IDLE_ACTIVE != state )
+    {
+        /* An edge can arrive after display_idle_poll but before input_get.
+           Wake first even in this race, never dispatch navigation in the dark. */
+        input_consume_wake();
+        wake_guard_until_us = now_us + DISPLAY_IDLE_WAKE_GUARD_US;
+        cancel_attention_restore();
+        reset_pixel_shift( now_us );
+        last_activity_us = now_us;
+        (void)wake_display( "user activity" );
+        return true;
+    }
+    if( now_us < wake_guard_until_us )
+    {
+        input_consume_wake();
+        return true;
+    }
+    return false;
+}
+
 void display_idle_poll( void )
 {
     const int64_t now_us = esp_timer_get_time();
@@ -262,6 +288,7 @@ void display_idle_poll( void )
         reset_pixel_shift( now_us );
         if( DISPLAY_IDLE_ACTIVE != state )
         {
+            wake_guard_until_us = now_us + DISPLAY_IDLE_WAKE_GUARD_US;
             input_consume_wake();
             if( RFSCOUT_BOARD_USER_KEY_PIN >= 0 )
             {

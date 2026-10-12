@@ -17,6 +17,8 @@
 #include <string.h>
 
 #define CAPTURE_REFRESH_US 500000LL
+#define ACTIVITY_CHANNELS 14U
+#define ACTIVITY_SECONDS 74U
 #define CAPTURE_GPS_REFRESH_US 250000LL
 #define CAPTURE_SETTINGS_MAGIC 0x57445256U
 #define CAPTURE_SETTINGS_VERSION 1U
@@ -49,6 +51,103 @@ static int64_t last_gps_refresh_us;
 static uint64_t stored_bytes;
 static uint64_t free_bytes;
 static esp_err_t last_error;
+static uint32_t activity_pending[ ACTIVITY_CHANNELS ];
+static uint32_t activity_history[ ACTIVITY_SECONDS ][ ACTIVITY_CHANNELS ];
+static uint32_t activity_totals[ ACTIVITY_CHANNELS ];
+static uint32_t activity_rate[ ACTIVITY_SECONDS ];
+static uint32_t activity_ble_pending;
+static uint32_t activity_ble_rate[ ACTIVITY_SECONDS ];
+static unsigned activity_cursor;
+static unsigned activity_samples;
+static int64_t activity_last_tick_us;
+
+static void observe_wifi( const uint8_t *a_data, size_t a_length, int8_t a_rssi, uint8_t a_channel )
+{
+    if( options.wifi && NULL != a_data && a_length >= 2U && a_channel >= 1U &&
+        a_channel <= ACTIVITY_CHANNELS )
+    {
+        const unsigned channel = a_channel - 1U;
+        __atomic_add_fetch( &activity_pending[ channel ], 1U, __ATOMIC_RELAXED );
+    }
+    wardrive_on_wifi( a_data, a_length, a_rssi, a_channel );
+}
+
+/* Account for BLE in constant time before forwarding the original capture event. */
+static void observe_ble( const uint8_t *a_data,
+                         size_t a_length,
+                         const uint8_t a_address[ 6 ],
+                         uint8_t a_address_type,
+                         uint8_t a_event_type,
+                         int8_t a_rssi )
+{
+    if( options.ble && NULL != a_data )
+    {
+        __atomic_add_fetch( &activity_ble_pending, 1U, __ATOMIC_RELAXED );
+    }
+    wardrive_on_ble( a_data, a_length, a_address, a_address_type, a_event_type, a_rssi );
+}
+
+/* Main-task one-second rollover; callbacks only increment atomic accumulators. */
+static void activity_tick( int64_t a_now_us )
+{
+    if( 0 == activity_last_tick_us )
+    {
+        activity_last_tick_us = a_now_us;
+        return;
+    }
+    const uint64_t elapsed = (uint64_t)( a_now_us - activity_last_tick_us ) / 1000000ULL;
+    if( 0U == elapsed )
+    {
+        return;
+    }
+    /* Keep only buckets still inside the window. Counts gathered across a poll
+       stall have no individual timestamps, so apportion them over elapsed time
+       rather than assigning the entire interval to the oldest missed second. */
+    uint32_t pending[ ACTIVITY_CHANNELS ];
+    for( unsigned channel = 0U; channel < ACTIVITY_CHANNELS; ++channel )
+    {
+        pending[ channel ] =
+            __atomic_exchange_n( &activity_pending[ channel ], 0U, __ATOMIC_RELAXED );
+    }
+    const uint32_t ble_pending = __atomic_exchange_n( &activity_ble_pending, 0U, __ATOMIC_RELAXED );
+    const unsigned steps = elapsed < ACTIVITY_SECONDS ? (unsigned)elapsed : ACTIVITY_SECONDS;
+    const uint64_t first = elapsed - steps;
+    if( elapsed > ACTIVITY_SECONDS )
+    {
+        /* All prior history has expired; start with the oldest retained bucket. */
+        memset( activity_history, 0, sizeof( activity_history ) );
+        memset( activity_totals, 0, sizeof( activity_totals ) );
+        memset( activity_rate, 0, sizeof( activity_rate ) );
+        memset( activity_ble_rate, 0, sizeof( activity_ble_rate ) );
+        activity_cursor = 0U;
+        activity_samples = 0U;
+    }
+    for( unsigned step = 0U; step < steps; ++step )
+    {
+        const uint64_t offset = first + step;
+        uint32_t rate = 0U;
+        for( unsigned channel = 0U; channel < ACTIVITY_CHANNELS; ++channel )
+        {
+            activity_totals[ channel ] -= activity_history[ activity_cursor ][ channel ];
+            const uint32_t count =
+                (uint32_t)( (uint64_t)pending[ channel ] * ( offset + 1U ) / elapsed -
+                            (uint64_t)pending[ channel ] * offset / elapsed );
+            activity_history[ activity_cursor ][ channel ] = count;
+            activity_totals[ channel ] += count;
+            rate += count;
+        }
+        activity_rate[ activity_cursor ] = rate;
+        activity_ble_rate[ activity_cursor ] =
+            (uint32_t)( (uint64_t)ble_pending * ( offset + 1U ) / elapsed -
+                        (uint64_t)ble_pending * offset / elapsed );
+        activity_cursor = ( activity_cursor + 1U ) % ACTIVITY_SECONDS;
+        if( activity_samples < ACTIVITY_SECONDS )
+        {
+            ++activity_samples;
+        }
+    }
+    activity_last_tick_us += (int64_t)( elapsed * 1000000ULL );
+}
 
 static wardrive_config_t defaults( void )
 {
@@ -116,6 +215,22 @@ static void refresh_space( void )
     (void)media_store_space( NULL, &free_bytes );
 }
 
+static void format_packet_rate( char *a_buffer, size_t a_size, uint32_t a_rate )
+{
+    if( a_rate >= 1000000U )
+    {
+        (void)snprintf( a_buffer, a_size, "%.1fM", (double)a_rate / 1000000.0 );
+    }
+    else if( a_rate >= 10000U )
+    {
+        (void)snprintf( a_buffer, a_size, "%.1fk", (double)a_rate / 1000.0 );
+    }
+    else
+    {
+        (void)snprintf( a_buffer, a_size, "%lu", (unsigned long)a_rate );
+    }
+}
+
 static void draw_overview( void )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
@@ -124,48 +239,171 @@ static void draw_overview( void )
     rfscout_gps_snapshot_t gps = { 0 };
     const bool fixed =
         gps_snapshot_get( &gps ) && gps.location_valid && gps.location_age_ms <= 5000U;
+    const unsigned current = radio_monitor_channel();
     char line[ 72 ];
+    uint32_t peak_rate = 1U;
+    uint32_t peak_channel = 1U;
+    for( unsigned i = 0U; i < ACTIVITY_SECONDS; ++i )
+    {
+        const uint32_t wifi = options.wifi ? activity_rate[ i ] : 0U;
+        const uint32_t ble = options.ble ? activity_ble_rate[ i ] : 0U;
+        const uint64_t combined = (uint64_t)wifi + ble;
+        if( combined > peak_rate )
+        {
+            peak_rate = (uint32_t)combined;
+        }
+    }
+    for( unsigned i = 0U; i < ACTIVITY_CHANNELS; ++i )
+    {
+        if( activity_totals[ i ] > peak_channel )
+        {
+            peak_channel = activity_totals[ i ];
+        }
+    }
 
     display_clear( theme->background );
+    /* ui_chrome preserves the platform status region above y=20 (clock, SD,
+       battery and other system icons); the dashboard is confined below it. */
     ui_chrome_draw( "WARDRIVING", theme->secondary );
-    (void)snprintf( line,
-                    sizeof( line ),
-                    "STATE: %s",
-                    stats.storage_error ? "SD ERROR"
-                    : stats.recording   ? "RECORDING"
-                                        : "STOPPED" );
-    display_draw_text( 8, 27, line, stats.storage_error ? theme->warning : theme->text, 1U );
-    (void)snprintf( line,
-                    sizeof( line ),
-                    "RADIO: %s%s%s",
-                    options.wifi ? "Wi-Fi" : "",
-                    options.wifi && options.ble ? " + " : "",
-                    options.ble ? "BLE" : "" );
-    display_draw_text( 8, 47, line, theme->text, 1U );
-    (void)snprintf( line,
-                    sizeof( line ),
-                    "CH: %u %s",
-                    (unsigned)radio_monitor_channel(),
-                    options.fixed_channel ? "FIXED" : "SCAN" );
-    display_draw_text( 8, 65, line, theme->info, 1U );
-    (void)snprintf( line, sizeof( line ), "GPS: %s", fixed ? "FIX" : "NO FIX" );
-    display_draw_text( 202, 65, line, fixed ? theme->success : theme->warning, 1U );
-    (void)snprintf( line,
-                    sizeof( line ),
-                    "Wi-Fi: %lu   BLE: %lu",
-                    (unsigned long)stats.received_wifi,
-                    (unsigned long)stats.received_ble );
-    display_draw_text( 8, 88, line, theme->text, 1U );
-    (void)snprintf( line,
-                    sizeof( line ),
-                    "SAVED: %lu  DROPPED: %lu",
-                    (unsigned long)stats.written,
-                    (unsigned long)stats.dropped );
-    display_draw_text( 8, 108, line, theme->text, 1U );
+    display_fill_rect( 156, 23, 1, 140, theme->secondary );
+    display_fill_rect( 8, 82, 142, 1, theme->secondary );
+    display_fill_rect( 8, 124, 142, 1, theme->secondary );
+    display_fill_rect( 163, 93, 149, 1, theme->secondary );
+
+    display_draw_text( 8, 26, "GPS POSITION", theme->secondary, 1U );
+    display_draw_text(
+        111, 26, fixed ? "FIX" : "NO FIX", fixed ? theme->success : theme->warning, 1U );
+    if( fixed )
+    {
+        (void)snprintf( line, sizeof( line ), "%.6f", gps.latitude_deg );
+        display_draw_text( 8, 42, line, theme->text, 1U );
+        (void)snprintf( line, sizeof( line ), "%.6f", gps.longitude_deg );
+        display_draw_text( 8, 58, line, theme->text, 1U );
+    }
+    else
+    {
+        display_draw_text( 8, 42, "--.------", theme->secondary, 1U );
+        display_draw_text( 8, 58, "--.------", theme->secondary, 1U );
+    }
+    display_draw_text( 8, 88, "WIFI", theme->secondary, 1U );
+    display_draw_text( 84, 88, "BLE", theme->secondary, 1U );
+    (void)snprintf( line, sizeof( line ), "%lu", (unsigned long)stats.received_wifi );
+    display_draw_text( 8, 103, line, theme->info, 1U );
+    (void)snprintf( line, sizeof( line ), "%lu", (unsigned long)stats.received_ble );
+    display_draw_text( 84, 103, line, theme->info, 1U );
+    /* Fixed-width compact counts keep both labels inside their 72px columns. */
+    const uint32_t saved = stats.written;
+    const uint32_t dropped = stats.dropped;
+    if( saved >= 1000000U )
+    {
+        (void)snprintf( line, sizeof( line ), "SAVE %.1fM", (double)saved / 1000000.0 );
+    }
+    else if( saved >= 10000U )
+    {
+        (void)snprintf( line, sizeof( line ), "SAVE %.1fk", (double)saved / 1000.0 );
+    }
+    else
+    {
+        (void)snprintf( line, sizeof( line ), "SAVE %lu", (unsigned long)saved );
+    }
+    display_draw_text( 8, 130, line, theme->success, 1U );
+    if( dropped >= 1000000U )
+    {
+        (void)snprintf( line, sizeof( line ), "DROP %.1fM", (double)dropped / 1000000.0 );
+    }
+    else if( dropped >= 10000U )
+    {
+        (void)snprintf( line, sizeof( line ), "DROP %.1fk", (double)dropped / 1000.0 );
+    }
+    else
+    {
+        (void)snprintf( line, sizeof( line ), "DROP %lu", (unsigned long)dropped );
+    }
+    display_draw_text( 81, 130, line, dropped ? theme->warning : theme->text, 1U );
+    display_draw_text( 8,
+                       146,
+                       stats.storage_error ? "SD ERROR"
+                       : stats.recording   ? "REC"
+                                           : "STOP",
+                       stats.storage_error ? theme->error
+                       : stats.recording   ? theme->success
+                                           : theme->secondary,
+                       1U );
     (void)snprintf(
-        line, sizeof( line ), "WRITTEN: %lu KiB", (unsigned long)( stats.bytes / 1024U ) );
-    display_draw_text( 8, 128, line, theme->info, 1U );
-    display_draw_text( 8, 152, "CENTER: SETTINGS", theme->secondary, 1U );
+        line, sizeof( line ), "CH %u %s", current, options.fixed_channel ? "FIXED" : "SCAN" );
+    display_draw_text( 60, 146, line, theme->info, 1U );
+
+    /* The header reports the latest completed second, not the graph's peak. */
+    const unsigned latest = ( activity_cursor + ACTIVITY_SECONDS - 1U ) % ACTIVITY_SECONDS;
+    const uint32_t current_rate = ( options.wifi ? activity_rate[ latest ] : 0U ) +
+                                  ( options.ble ? activity_ble_rate[ latest ] : 0U );
+    uint64_t rate_sum = 0U;
+    for( unsigned i = 0U; i < ACTIVITY_SECONDS; ++i )
+    {
+        rate_sum += ( options.wifi ? activity_rate[ i ] : 0U ) +
+                    ( options.ble ? activity_ble_rate[ i ] : 0U );
+    }
+    const uint32_t average_rate =
+        activity_samples > 0U ? (uint32_t)( rate_sum / activity_samples ) : 0U;
+    char latest_text[ 16 ];
+    char average_text[ 16 ];
+    format_packet_rate( latest_text, sizeof( latest_text ), current_rate );
+    format_packet_rate( average_text, sizeof( average_text ), average_rate );
+    (void)snprintf( line, sizeof( line ), "PKT/s: %s (%s avg)", latest_text, average_text );
+    display_draw_text( 163, 25, line, theme->text, 1U );
+    for( unsigned i = 0U; i < ACTIVITY_SECONDS; ++i )
+    {
+        const unsigned slot = ( activity_cursor + i ) % ACTIVITY_SECONDS;
+        const uint32_t wifi = options.wifi ? activity_rate[ slot ] : 0U;
+        const uint32_t ble = options.ble ? activity_ble_rate[ slot ] : 0U;
+        const uint64_t combined = (uint64_t)wifi + ble;
+        const int wifi_height = (int)( (uint64_t)wifi * 46U / peak_rate );
+        const int total_height = (int)( combined * 46U / peak_rate );
+        const int x = 164 + (int)i * 2;
+        if( options.wifi && options.ble )
+        {
+            if( wifi_height > 0 )
+            {
+                display_fill_rect( x, 89 - wifi_height, 2, wifi_height, theme->info );
+            }
+            if( total_height > wifi_height )
+            {
+                display_fill_rect(
+                    x, 89 - total_height, 2, total_height - wifi_height, theme->accent );
+            }
+        }
+        else if( total_height > 0 )
+        {
+            display_fill_rect( x,
+                               89 - total_height,
+                               2,
+                               total_height,
+                               combined * 4U >= (uint64_t)peak_rate * 3U ? theme->warning
+                                                                         : theme->info );
+        }
+    }
+    display_draw_text( 163, 95, "CHANNELS / LAST 74s", theme->secondary, 1U );
+    for( unsigned i = 0U; i < ACTIVITY_CHANNELS; ++i )
+    {
+        const int x = 164 + (int)i * 11;
+        const uint32_t value = activity_totals[ i ];
+        const int height = (int)( (uint64_t)value * 37U / peak_channel );
+        if( height > 0 )
+        {
+            const uint16_t color = i + 1U == current                 ? theme->success
+                                   : value * 4U >= peak_channel * 3U ? theme->warning
+                                                                     : theme->info;
+            display_fill_rect( x, 146 - height, 8, height, color );
+        }
+    }
+    /* Separate the channel bars from their labels without obscuring either. */
+    display_fill_rect( 163, 147, 149, 1, theme->secondary );
+    for( unsigned i = 0U; i < ACTIVITY_CHANNELS; i += 2U )
+    {
+        const int x = 164 + (int)i * 11;
+        (void)snprintf( line, sizeof( line ), "%u", i + 1U );
+        display_draw_text( x, 149, line, theme->text, 1U );
+    }
     (void)display_present();
 }
 
@@ -390,8 +628,20 @@ static void act_on_selection( void )
                 ESP_LOGW( TAG, "capture start failed: %s", esp_err_to_name( last_error ) );
             }
         }
-        refresh_space();
-        draw_menu();
+        /* Starting capture returns to the live dashboard; leave failed starts
+           in settings so the user can adjust the configuration. */
+        wardrive_stats_t updated;
+        wardrive_capture_stats( &updated );
+        if( !stats.recording && updated.recording )
+        {
+            menu_open = false;
+            draw_overview();
+        }
+        else
+        {
+            refresh_space();
+            draw_menu();
+        }
     }
     else
     {
@@ -426,6 +676,14 @@ static void act_on_selection( void )
     }
 }
 
+static esp_err_t prepare_leave( void )
+{
+    wardrive_stats_t stats;
+    wardrive_capture_stats( &stats );
+    /* Like Recorder, never interrupt a capture through app navigation. */
+    return stats.recording ? ESP_ERR_INVALID_STATE : ESP_OK;
+}
+
 static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_event_t *a_event )
 {
     if( NULL == a_event )
@@ -436,6 +694,15 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
     {
         load_settings();
         menu_open = false;
+        memset( activity_pending, 0, sizeof( activity_pending ) );
+        memset( activity_history, 0, sizeof( activity_history ) );
+        memset( activity_totals, 0, sizeof( activity_totals ) );
+        memset( activity_rate, 0, sizeof( activity_rate ) );
+        memset( activity_ble_rate, 0, sizeof( activity_ble_rate ) );
+        __atomic_store_n( &activity_ble_pending, 0U, __ATOMIC_RELAXED );
+        activity_cursor = 0U;
+        activity_samples = 0U;
+        activity_last_tick_us = 0;
         selected = MENU_BACK;
         last_draw_us = 0;
         last_gps_refresh_us = 0;
@@ -485,6 +752,7 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
             draw_menu();
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
+
         if( RFSCOUT_INPUT_LONG_PRESS == a_event->input.type && menu_open )
         {
             menu_open = false;
@@ -495,6 +763,7 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
     }
     if( RFSCOUT_APP_RUNTIME_POLL == a_event->type )
     {
+        activity_tick( a_event->now_us );
         wardrive_stats_t capture_status;
         wardrive_capture_stats( &capture_status );
         if( capture_status.storage_error )
@@ -528,11 +797,13 @@ const rfscout_app_descriptor_t rfscout_wardrive_app = {
     .probe_policy = RFSCOUT_APP_PROBE_NONE,
     .probe = NULL,
     .requires_activation = true,
+    .prepare_leave = prepare_leave,
+    .transition_denial_message = "STOP CAPTURE FIRST",
     .services = RFSCOUT_APP_SERVICE_WIFI_MONITOR | RFSCOUT_APP_SERVICE_BLE_MONITOR,
     .consumers =
         {
-            .wifi_raw = wardrive_on_wifi,
-            .ble_raw = wardrive_on_ble,
+            .wifi_raw = observe_wifi,
+            .ble_raw = observe_ble,
         },
     .runtime = wardrive_runtime,
 };

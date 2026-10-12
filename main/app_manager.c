@@ -12,6 +12,7 @@
 #include "app_session.h"
 #include "device_config.h"
 #include "display.h"
+#include "display_idle.h"
 #include "event.h"
 #include "input.h"
 #include "session_state.h"
@@ -178,7 +179,16 @@ static bool transition_to_app( rfscout_app_id_t a_destination, bool a_report_abo
                        previous,
                        a_destination,
                        esp_timer_get_time() - transition_started );
-        if( a_report_abort )
+        /* A semantic app veto is expected navigation feedback, not a system fault. */
+        const bool intentional_veto =
+            diagnostics->outcome == RFSCOUT_APP_TRANSITION_ABORTED_PREPARE &&
+            diagnostics->error == ESP_ERR_INVALID_STATE && NULL != source_descriptor &&
+            NULL != source_descriptor->transition_denial_message;
+        if( intentional_veto && a_report_abort )
+        {
+            display_transition_notice_show( source_descriptor->transition_denial_message );
+        }
+        else if( a_report_abort )
         {
             rfscout_event_emit(
                 RFSCOUT_EVENT_ERROR, (uint8_t)previous, (int32_t)diagnostics->error );
@@ -200,6 +210,7 @@ static bool transition_to_app( rfscout_app_id_t a_destination, bool a_report_abo
         }
         (void)app_manager_set_locked( false );
         active_app = RFSCOUT_APP_DEVICE;
+        display_transition_notice_clear();
         enter_app( active_app );
         log_lifecycle(
             "transition-recover", previous, active_app, esp_timer_get_time() - transition_started );
@@ -213,6 +224,7 @@ static bool transition_to_app( rfscout_app_id_t a_destination, bool a_report_abo
 
     (void)app_manager_set_locked( false );
     active_app = a_destination;
+    display_transition_notice_clear();
     enter_app( active_app );
     log_lifecycle( "transition", previous, active_app, esp_timer_get_time() - transition_started );
     if( ESP_OK != diagnostics->error )
@@ -350,6 +362,7 @@ bool app_manager_select( rfscout_app_id_t a_app )
 
 void app_manager_poll( void )
 {
+    display_transition_notice_poll();
     /* Hot-plug hardware is probed at startup and whenever navigation explicitly checks an app's
        availability. There is deliberately no background sweep of inactive apps. */
     const int64_t now_us = esp_timer_get_time();
@@ -357,6 +370,10 @@ void app_manager_poll( void )
     rfscout_input_event_t input;
     if( input_get( &input ) )
     {
+        if( display_idle_input_should_wake() )
+        {
+            return;
+        }
         if( RFSCOUT_INPUT_GLOBAL_HOLD == input.type )
         {
             if( RFSCOUT_HOLD_SHORTCUT_APP_LOCK == device_config_hold_shortcut() )
