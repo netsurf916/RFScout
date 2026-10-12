@@ -210,6 +210,7 @@ static bool transition_to_app( rfscout_app_id_t a_destination, bool a_report_abo
         }
         (void)app_manager_set_locked( false );
         active_app = RFSCOUT_APP_DEVICE;
+        display_transition_notice_clear();
         enter_app( active_app );
         log_lifecycle(
             "transition-recover", previous, active_app, esp_timer_get_time() - transition_started );
@@ -223,6 +224,7 @@ static bool transition_to_app( rfscout_app_id_t a_destination, bool a_report_abo
 
     (void)app_manager_set_locked( false );
     active_app = a_destination;
+    display_transition_notice_clear();
     enter_app( active_app );
     log_lifecycle( "transition", previous, active_app, esp_timer_get_time() - transition_started );
     if( ESP_OK != diagnostics->error )
