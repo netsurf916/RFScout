@@ -59,9 +59,8 @@ static uint32_t activity_ap_ids[ ACTIVITY_CHANNELS ][ ACTIVITY_IDENTITIES ];
 static uint32_t activity_station_ids[ ACTIVITY_CHANNELS ][ ACTIVITY_IDENTITIES ];
 
 /* Fixed-size approximate identity sets; collisions can undercount transmitters. */
-static void observe_identity( uint32_t a_ids[ ACTIVITY_IDENTITIES ],
-                              uint32_t *a_count,
-                              const uint8_t *a_mac )
+static void
+observe_identity( uint32_t a_ids[ ACTIVITY_IDENTITIES ], uint32_t *a_count, const uint8_t *a_mac )
 {
     uint32_t hash = 2166136261U;
     for( unsigned i = 0U; i < 6U; ++i )
@@ -89,11 +88,10 @@ static void observe_identity( uint32_t a_ids[ ACTIVITY_IDENTITIES ],
     }
 }
 
-static void observe_wifi(
-    const uint8_t *a_data, size_t a_length, int8_t a_rssi, uint8_t a_channel )
+static void observe_wifi( const uint8_t *a_data, size_t a_length, int8_t a_rssi, uint8_t a_channel )
 {
-    if( options.wifi && a_data != NULL && a_length >= 24U &&
-        a_channel >= 1U && a_channel <= ACTIVITY_CHANNELS )
+    if( options.wifi && a_data != NULL && a_length >= 24U && a_channel >= 1U &&
+        a_channel <= ACTIVITY_CHANNELS )
     {
         const unsigned i = a_channel - 1U;
         const uint8_t type = ( a_data[ 0 ] >> 2U ) & 3U;
@@ -106,9 +104,7 @@ static void observe_wifi(
         else if( ( type == 0U && ( subtype == 4U || subtype == 0U || subtype == 2U ) ) ||
                  ( type == 2U && ( a_data[ 1 ] & 3U ) == 1U ) )
         {
-            observe_identity( activity_station_ids[ i ],
-                              &activity_stations[ i ],
-                              a_data + 10U );
+            observe_identity( activity_station_ids[ i ], &activity_stations[ i ], a_data + 10U );
         }
     }
     wardrive_on_wifi( a_data, a_length, a_rssi, a_channel );
@@ -150,8 +146,8 @@ static void draw_activity( void )
         const int height = (int)( (uint64_t)frames[ i ] * 69U / peak );
         if( height > 0 )
         {
-            display_fill_rect( x, 128 - height, 13, height,
-                               i + 1U == current ? theme->success : theme->info );
+            display_fill_rect(
+                x, 128 - height, 13, height, i + 1U == current ? theme->success : theme->info );
         }
         (void)snprintf( line, sizeof( line ), "%u", i + 1U );
         display_draw_text( x, 132, line, theme->text, 1U );
@@ -159,8 +155,6 @@ static void draw_activity( void )
     display_draw_text( 8, 153, "NAV: OVERVIEW CENTER: SETTINGS", theme->secondary, 1U );
     (void)display_present();
 }
-
-
 
 static wardrive_config_t defaults( void )
 {
