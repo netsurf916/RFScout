@@ -204,6 +204,7 @@ static void on_event( const rfscout_event_t *a_event, void *a_context )
             break;
         case RFSCOUT_EVENT_STORAGE_MOUNT_FAILED:
         case RFSCOUT_EVENT_STORAGE_LOST:
+        case RFSCOUT_EVENT_STORAGE_SERVICE_DISABLED:
         case RFSCOUT_EVENT_WARNING:
             frequency = FEEDBACK_WARNING_HZ;
             duration = FEEDBACK_WARNING_MS;
