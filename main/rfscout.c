@@ -396,7 +396,6 @@ void app_main( void )
     ESP_ERROR_CHECK( observation_store_init() );
     observation_store_set_event_callback( log_observation_event, NULL );
     ESP_ERROR_CHECK( system_events_init() );
-    ESP_ERROR_CHECK( input_init() );
     if( RFSCOUT_BOARD_USER_KEY_PIN >= 0 )
     {
         ESP_ERROR_CHECK( power_init() );
@@ -467,6 +466,16 @@ void app_main( void )
         ESP_LOGW( TAG, "breadcrumb recorder unavailable: %s", esp_err_to_name( result ) );
     }
 
+    /* Establish the active physical display before selecting its semantic input wiring. */
+    ESP_ERROR_CHECK( display_init() );
+    const rfscout_display_info_t *display = display_info();
+    if( NULL != display )
+    {
+        rfscout_event_emit( RFSCOUT_EVENT_DISPLAY_PROVIDER_SELECTED,
+                            RFSCOUT_EVENT_SOURCE_SYSTEM,
+                            (int32_t)display->provider );
+    }
+    ESP_ERROR_CHECK( input_init() );
     ESP_ERROR_CHECK( app_manager_init() );
     board_profile_remember();
     /* App discovery probes nRF24 first, then leaves its shared pins inactive for GPS. */
