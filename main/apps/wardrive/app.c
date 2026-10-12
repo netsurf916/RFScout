@@ -103,16 +103,14 @@ static void observe_wifi( const uint8_t *a_data, size_t a_length, int8_t a_rssi,
             const uint8_t subtype = a_data[ 0 ] >> 4U;
             if( type == 0U && ( subtype == 8U || subtype == 5U ) )
             {
-                observe_identity( activity_ap_ids[ channel ],
-                                  &activity_aps[ channel ],
-                                  a_data + 10U );
+                observe_identity(
+                    activity_ap_ids[ channel ], &activity_aps[ channel ], a_data + 10U );
             }
             else if( ( type == 0U && ( subtype == 4U || subtype == 0U || subtype == 2U ) ) ||
                      ( type == 2U && ( a_data[ 1 ] & 3U ) == 1U ) )
             {
-                observe_identity( activity_station_ids[ channel ],
-                                  &activity_stations[ channel ],
-                                  a_data + 10U );
+                observe_identity(
+                    activity_station_ids[ channel ], &activity_stations[ channel ], a_data + 10U );
             }
         }
     }
@@ -171,8 +169,11 @@ static void draw_activity( void )
             peak_channel = activity_totals[ i ];
         }
     }
-    (void)snprintf( line, sizeof( line ), "60s %lu frames  PEAK %lu/s",
-                    (unsigned long)total, (unsigned long)peak_rate );
+    (void)snprintf( line,
+                    sizeof( line ),
+                    "60s %lu frames  PEAK %lu/s",
+                    (unsigned long)total,
+                    (unsigned long)peak_rate );
     display_draw_text( 8, 26, line, theme->text, 1U );
     /* 60 chronological bars, 5 pixels each, scaled to the reserved height. */
     for( unsigned i = 0U; i < ACTIVITY_SECONDS; ++i )
@@ -185,16 +186,18 @@ static void draw_activity( void )
         }
     }
     display_draw_text( 8, 85, "PACKETS/SEC   -60s -> NOW", theme->secondary, 1U );
-    (void)snprintf( line, sizeof( line ), "CHANNELS (60s)  CH %u  AP~%lu STA~%lu",
-                    current,
-                    (unsigned long)( current >= 1U && current <= ACTIVITY_CHANNELS
-                                         ? __atomic_load_n( &activity_aps[ current - 1U ],
-                                                            __ATOMIC_RELAXED )
-                                         : 0U ),
-                    (unsigned long)( current >= 1U && current <= ACTIVITY_CHANNELS
-                                         ? __atomic_load_n( &activity_stations[ current - 1U ],
-                                                            __ATOMIC_RELAXED )
-                                         : 0U ) );
+    (void)snprintf(
+        line,
+        sizeof( line ),
+        "CHANNELS (60s)  CH %u  AP~%lu STA~%lu",
+        current,
+        (unsigned long)( current >= 1U && current <= ACTIVITY_CHANNELS
+                             ? __atomic_load_n( &activity_aps[ current - 1U ], __ATOMIC_RELAXED )
+                             : 0U ),
+        (unsigned long)( current >= 1U && current <= ACTIVITY_CHANNELS
+                             ? __atomic_load_n( &activity_stations[ current - 1U ],
+                                                __ATOMIC_RELAXED )
+                             : 0U ) );
     display_draw_text( 8, 100, line, theme->text, 1U );
     for( unsigned i = 0U; i < ACTIVITY_CHANNELS; ++i )
     {
