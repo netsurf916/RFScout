@@ -36,7 +36,7 @@ Board detection and provider probing are separate:
 
 The current T-Embed fingerprint uses the early I2C path and onboard BQ25896/BQ27220 presence. The temporary detection bus is deleted before normal shared-I2C initialization.
 
-Unknown or ambiguous hardware is a deliberate recovery state: RFScout leaves ordinary board GPIO/peripherals untouched and remains awake for recovery flashing.
+Unknown or ambiguous hardware is a **nonfatal discovery state**: RFScout records the unknown profile, reports the result over serial, leaves board GPIO/peripherals untouched, and remains awake for recovery flashing. The full UI cannot run without known display/input pin assignments. This does not assume that missing I2C charger/gauge fingerprints imply missing radios; a future verified board profile is still required before touching board-specific pins. The bootloader's `waiting for download` message occurs before firmware execution and is unrelated to RFScout profile discovery.
 
 ### Current T-Embed profile
 
