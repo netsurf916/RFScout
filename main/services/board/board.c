@@ -9,10 +9,14 @@
 
 #include "driver/i2c_master.h"
 #include "esp_log.h"
+#include "nvs.h"
 
 #include <stddef.h>
 
 #define BOARD_DETECT_TIMEOUT_MS 20
+#define BOARD_HINT_NAMESPACE "hardware"
+#define BOARD_HINT_KEY "display"
+#define BOARD_HINT_VERSION 1U
 
 static const char *TAG = "board";
 
@@ -132,6 +136,63 @@ static const rfscout_board_profile_t tembed_profile = {
     .gps_rx_pin = 44,
 };
 
+static const rfscout_board_profile_t si4732_profile = {
+    .id = RFSCOUT_BOARD_TEMBED_SI4732,
+    .target_id = "t-embed-si4732",
+    .name = "LILYGO T-Embed SI4732",
+    .capabilities = RFSCOUT_BOARD_CAP_ROTARY_ENCODER | RFSCOUT_BOARD_CAP_SCREEN_OFF |
+                    RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE,
+    .power_enable_pin = 46,
+    .user_key_pin = -1,
+    .spi_mosi_pin = 11,
+    .spi_miso_pin = -1,
+    .spi_sclk_pin = 12,
+    .display_cs_pin = 10,
+    .display_dc_pin = 13,
+    .display_reset_pin = 9,
+    .display_backlight_pin = 15,
+    .display_width = 320,
+    .display_height = 170,
+    .display_native_width = 170,
+    .display_native_height = 320,
+    .display_x_gap = 0,
+    .display_y_gap = 35,
+    .display_swap_xy = true,
+    .display_mirror_x = false,
+    .display_mirror_y = true,
+    .display_invert_color = true,
+    .backlight_type = RFSCOUT_BACKLIGHT_PWM,
+    .sd_cs_pin = -1,
+    .cc1101_cs_pin = -1,
+    .cc1101_gdo2_pin = -1,
+    .cc1101_gdo0_pin = -1,
+    .cc1101_switch_1_pin = -1,
+    .cc1101_switch_0_pin = -1,
+    .nrf24_cs_pin = -1,
+    .nrf24_ce_pin = -1,
+    .i2c_sda_pin = 18,
+    .i2c_scl_pin = 8,
+    .encoder_a_pin = 2,
+    .encoder_b_pin = 1,
+    .encoder_key_pin = 0,
+    .speaker_lrclk_pin = -1,
+    .speaker_bclk_pin = -1,
+    .speaker_data_pin = -1,
+    .battery_type = RFSCOUT_BATTERY_NONE,
+    .pn532_i2c_address = 0,
+    .mlx90640_i2c_address = 0,
+    .bq27220_i2c_address = 0,
+    .bq25896_i2c_address = 0,
+    .pn532_reset_pin = -1,
+    .pn532_irq_pin = -1,
+    .ir_enable_pin = -1,
+    .ir_rx_pin = -1,
+    .mic_data_pin = -1,
+    .mic_clock_pin = -1,
+    .gps_tx_pin = -1,
+    .gps_rx_pin = -1,
+};
+
 static const rfscout_board_profile_t *active_profile = &unknown_profile;
 
 static bool probe_fingerprint( int a_sda, int a_scl, const uint8_t *a_addresses, size_t a_count )
@@ -159,6 +220,59 @@ static bool probe_fingerprint( int a_sda, int a_scl, const uint8_t *a_addresses,
     return found;
 }
 
+/** @brief Read the last discovered transport, never as proof of attached hardware. */
+static uint8_t preferred_profile( void )
+{
+    nvs_handle_t handle;
+    uint8_t candidate = 0U;
+    if( ESP_OK == nvs_open( BOARD_HINT_NAMESPACE, NVS_READONLY, &handle ) )
+    {
+        uint32_t hint = 0U;
+        if( ESP_OK == nvs_get_u32( handle, BOARD_HINT_KEY, &hint ) &&
+            BOARD_HINT_VERSION == ( hint >> 16 ) )
+        {
+            candidate = (uint8_t)hint;
+        }
+        nvs_close( handle );
+    }
+    return candidate;
+}
+
+/** @brief Persist only a changed verified display candidate. */
+static void remember_profile( uint8_t a_candidate )
+{
+    if( preferred_profile() == a_candidate )
+    {
+        return;
+    }
+    nvs_handle_t handle;
+    if( ESP_OK == nvs_open( BOARD_HINT_NAMESPACE, NVS_READWRITE, &handle ) )
+    {
+        const uint32_t hint = ( BOARD_HINT_VERSION << 16 ) | a_candidate;
+        if( ESP_OK == nvs_set_u32( handle, BOARD_HINT_KEY, hint ) )
+        {
+            (void)nvs_commit( handle );
+        }
+        nvs_close( handle );
+    }
+}
+
+/** @brief Only passive known-safe I2C probes precede board GPIO configuration. */
+static bool candidate_present( uint8_t a_candidate )
+{
+    static const uint8_t TEMBED_SIGNATURES[] = { 0x6B, 0x55 };
+    static const uint8_t SI4732_ADDRESSES[] = { 0x11, 0x63 };
+    switch( a_candidate )
+    {
+        case RFSCOUT_BOARD_TEMBED_CC1101_PLUS:
+            return probe_fingerprint( 8, 18, TEMBED_SIGNATURES, sizeof( TEMBED_SIGNATURES ) );
+        case RFSCOUT_BOARD_TEMBED_SI4732:
+            return probe_fingerprint( 18, 8, SI4732_ADDRESSES, sizeof( SI4732_ADDRESSES ) );
+        default:
+            return false;
+    }
+}
+
 esp_err_t board_profile_detect( void )
 {
     if( RFSCOUT_BOARD_UNKNOWN != active_profile->id )
@@ -166,15 +280,36 @@ esp_err_t board_profile_detect( void )
         return ESP_OK;
     }
 
-    static const uint8_t TEMBED_SIGNATURES[] = { 0x6B, 0x55 };
-    if( !probe_fingerprint( 8, 18, TEMBED_SIGNATURES, sizeof( TEMBED_SIGNATURES ) ) )
+    const uint8_t preferred = preferred_profile();
+    const uint8_t order[] = { preferred, RFSCOUT_BOARD_TEMBED_CC1101_PLUS,
+                              RFSCOUT_BOARD_TEMBED_SI4732 };
+    ESP_LOGI( TAG, "POST: begin passive discovery cached=%u", (unsigned)preferred );
+    for( size_t index = 0U; index < sizeof( order ); ++index )
     {
-        ESP_LOGW( TAG, "no recognized board fingerprint; retaining GPIO-safe unknown profile" );
+        const uint8_t candidate = order[ index ];
+        if( index > 0U && candidate == preferred )
+        {
+            continue;
+        }
+        if( candidate != RFSCOUT_BOARD_TEMBED_CC1101_PLUS &&
+            candidate != RFSCOUT_BOARD_TEMBED_SI4732 )
+        {
+            continue;
+        }
+        const bool found = candidate_present( candidate );
+        ESP_LOGI( TAG, "POST: candidate=%u responsive=%u", (unsigned)candidate, found ? 1U : 0U );
+        if( !found )
+        {
+            continue;
+        }
+        active_profile = ( RFSCOUT_BOARD_TEMBED_SI4732 == candidate ) ? &si4732_profile
+                                                                       : &tembed_profile;
+        remember_profile( candidate );
+        ESP_LOGI( TAG, "POST: selected transport=%s (verify providers on demand)",
+                  active_profile->name );
         return ESP_OK;
     }
-
-    active_profile = &tembed_profile;
-    ESP_LOGI( TAG, "selected hardware profile: %s", active_profile->name );
+    ESP_LOGW( TAG, "POST: no known transport verified; GPIO-safe diagnostic mode" );
     return ESP_OK;
 }
 
