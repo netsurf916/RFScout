@@ -271,6 +271,8 @@ Terminal sleep/power-off preparation flushes dirty configuration and quiesces re
 
 SD is removable/bulk storage for recordings, logs, breadcrumbs, captures, and future explicit transfer packages. Internal configuration must remain usable without an SD card.
 
+Optional SD-backed services attempt their ordinary storage operations while enabled, subject to the shared failure cooldown. A service may disable itself after its documented failure threshold, and that transition must produce a single system warning popup naming the affected service. Disabling an optional service must not disable unrelated recording or global storage. No service may turn its periodic update loop into an automatic card-reinsertion probe. A later explicit storage request may recover the media, but auto-disabled features remain disabled until re-enabled by policy or the user.
+
 The storage service owns SD mount/recovery. A failed mount, card-health probe, or media I/O operation starts a shared three-second cooldown. Storage requests during that period fail immediately without accessing the card. The first request after the cooldown may attempt one synchronous recovery; no timer, background retry, or status display triggers recovery. A replacement volume invalidates existing handles, and clients discard optional data rather than queueing retries.
 
 ### Media store contract
