@@ -309,8 +309,11 @@ static void draw_overview( void )
                                                                      : theme->info;
             display_fill_rect( x, 146 - height, 8, height, color );
         }
-        (void)snprintf( line, sizeof( line ), "%u", i + 1U );
-        display_draw_text( x, 149, line, theme->text, 1U );
+        if( 0U == ( i % 2U ) )
+        {
+            (void)snprintf( line, sizeof( line ), "%u", i + 1U );
+            display_draw_text( x, 149, line, theme->text, 1U );
+        }
     }
     (void)display_present();
 }
