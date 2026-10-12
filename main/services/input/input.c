@@ -178,10 +178,14 @@ static void initialize_button_state( void )
 static esp_err_t install_rotary_provider( void )
 {
     primary_button_pin = RFSCOUT_BOARD_ENCODER_KEY_PIN;
-    gpio_config_t inputs = { .pin_bit_mask = ( 1ULL << RFSCOUT_BOARD_ENCODER_A_PIN ) |
-                                             ( 1ULL << RFSCOUT_BOARD_ENCODER_B_PIN ) |
-                                             ( 1ULL << RFSCOUT_BOARD_ENCODER_KEY_PIN ) |
-                                             ( 1ULL << RFSCOUT_BOARD_USER_KEY_PIN ),
+    uint64_t input_mask = ( 1ULL << RFSCOUT_BOARD_ENCODER_A_PIN ) |
+                          ( 1ULL << RFSCOUT_BOARD_ENCODER_B_PIN ) |
+                          ( 1ULL << RFSCOUT_BOARD_ENCODER_KEY_PIN );
+    if( RFSCOUT_BOARD_USER_KEY_PIN >= 0 )
+    {
+        input_mask |= 1ULL << RFSCOUT_BOARD_USER_KEY_PIN;
+    }
+    gpio_config_t inputs = { .pin_bit_mask = input_mask,
                              .mode = GPIO_MODE_INPUT,
                              .pull_up_en = GPIO_PULLUP_ENABLE,
                              .intr_type = GPIO_INTR_DISABLE };
