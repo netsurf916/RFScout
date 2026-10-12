@@ -12,6 +12,7 @@
 #include "app_session.h"
 #include "device_config.h"
 #include "display.h"
+#include "display_idle.h"
 #include "event.h"
 #include "input.h"
 #include "session_state.h"
@@ -367,6 +368,10 @@ void app_manager_poll( void )
     rfscout_input_event_t input;
     if( input_get( &input ) )
     {
+        if( display_idle_input_should_wake() )
+        {
+            return;
+        }
         if( RFSCOUT_INPUT_GLOBAL_HOLD == input.type )
         {
             if( RFSCOUT_HOLD_SHORTCUT_APP_LOCK == device_config_hold_shortcut() )
