@@ -328,28 +328,28 @@ static void draw_overview( void )
     const uint32_t dropped = stats.dropped;
     if( saved >= 1000000U )
     {
-        (void)snprintf( line, sizeof( line ), "S %.1fM", (double)saved / 1000000.0 );
+        (void)snprintf( line, sizeof( line ), "SAVE %.1fM", (double)saved / 1000000.0 );
     }
     else if( saved >= 10000U )
     {
-        (void)snprintf( line, sizeof( line ), "S %.1fk", (double)saved / 1000.0 );
+        (void)snprintf( line, sizeof( line ), "SAVE %.1fk", (double)saved / 1000.0 );
     }
     else
     {
-        (void)snprintf( line, sizeof( line ), "S %lu", (unsigned long)saved );
+        (void)snprintf( line, sizeof( line ), "SAVE %lu", (unsigned long)saved );
     }
     display_draw_text( 8, 130, line, theme->success, 1U );
     if( dropped >= 1000000U )
     {
-        (void)snprintf( line, sizeof( line ), "D %.1fM", (double)dropped / 1000000.0 );
+        (void)snprintf( line, sizeof( line ), "DROP %.1fM", (double)dropped / 1000000.0 );
     }
     else if( dropped >= 10000U )
     {
-        (void)snprintf( line, sizeof( line ), "D %.1fk", (double)dropped / 1000.0 );
+        (void)snprintf( line, sizeof( line ), "DROP %.1fk", (double)dropped / 1000.0 );
     }
     else
     {
-        (void)snprintf( line, sizeof( line ), "D %lu", (unsigned long)dropped );
+        (void)snprintf( line, sizeof( line ), "DROP %lu", (unsigned long)dropped );
     }
     display_draw_text( 81, 130, line, dropped ? theme->warning : theme->text, 1U );
     display_draw_text( 8,
