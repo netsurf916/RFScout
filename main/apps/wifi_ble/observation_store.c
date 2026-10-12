@@ -1008,14 +1008,12 @@ void observation_store_clear_source( rf_source_t a_source )
         if( device->last_source == a_source )
         {
             device->last_source =
-                ( 0U != ( device->source_mask & RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) )
-                    ? RF_SOURCE_WIFI
-                    : RF_SOURCE_BLE;
+                ( 0U != ( device->source_mask & RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) ) ? RF_SOURCE_WIFI
+                                                                                    : RF_SOURCE_BLE;
         }
-        device->last_seen_ms =
-            ( device->wifi_last_seen_ms > device->ble_last_seen_ms )
-                ? device->wifi_last_seen_ms
-                : device->ble_last_seen_ms;
+        device->last_seen_ms = ( device->wifi_last_seen_ms > device->ble_last_seen_ms )
+                                   ? device->wifi_last_seen_ms
+                                   : device->ble_last_seen_ms;
         ++i;
     }
 
