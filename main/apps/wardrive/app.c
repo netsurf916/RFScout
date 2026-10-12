@@ -19,7 +19,7 @@
 #define CAPTURE_REFRESH_US 500000LL
 #define ACTIVITY_CHANNELS 14U
 #define ACTIVITY_IDENTITIES 64U
-#define ACTIVITY_SECONDS 60U
+#define ACTIVITY_SECONDS 74U
 #define CAPTURE_GPS_REFRESH_US 250000LL
 #define CAPTURE_SETTINGS_MAGIC 0x57445256U
 #define CAPTURE_SETTINGS_VERSION 1U
@@ -283,10 +283,6 @@ static void draw_overview( void )
     display_draw_text( 163, 25, "PACKETS/SEC", theme->secondary, 1U );
     (void)snprintf( line, sizeof( line ), "%lu", (unsigned long)peak_rate );
     display_draw_text( 274, 25, line, theme->text, 1U );
-    for( unsigned guide = 0U; guide < 3U; ++guide )
-    {
-        display_fill_rect( 163, 43 + (int)guide * 16, 149, 1, theme->secondary );
-    }
     for( unsigned i = 0U; i < ACTIVITY_SECONDS; ++i )
     {
         const unsigned slot = ( activity_cursor + i ) % ACTIVITY_SECONDS;
@@ -295,10 +291,12 @@ static void draw_overview( void )
         if( height > 0 )
         {
             display_fill_rect( 164 + (int)i * 2, 89 - height, 2, height,
-                               value * 4U >= peak_rate * 3U ? theme->warning : theme->info );
+                               (uint64_t)value * 4U >= (uint64_t)peak_rate * 3U
+                                   ? theme->warning
+                                   : theme->info );
         }
     }
-    display_draw_text( 163, 95, "CHANNELS / LAST 60s", theme->secondary, 1U );
+    display_draw_text( 163, 95, "CHANNELS / LAST 74s", theme->secondary, 1U );
     for( unsigned i = 0U; i < ACTIVITY_CHANNELS; ++i )
     {
         const int x = 164 + (int)i * 11;
