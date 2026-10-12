@@ -581,8 +581,13 @@ void breadcrumbs_poll( void )
         (void)xSemaphoreGive( write_mutex );
     }
 
-    if( NULL == queue || shutdown_requested || !enabled || !gps_available() ||
-        !media_store_available() )
+    if( NULL == queue || shutdown_requested || !enabled || !gps_available() )
+    {
+        return;
+    }
+    /* Probe also attempts remount when availability was latched false. The media
+       store enforces the shared failure cooldown, so repeated polls stay cheap. */
+    if( !media_store_available() && ESP_OK != media_store_probe() )
     {
         return;
     }
