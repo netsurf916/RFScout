@@ -460,6 +460,11 @@ esp_err_t radio_monitor_stop( void )
             portENTER_CRITICAL( &callback_lock );
             running = true;
             portEXIT_CRITICAL( &callback_lock );
+            const esp_err_t restore_result = esp_wifi_set_promiscuous( true );
+            if( ESP_OK != restore_result )
+            {
+                ESP_LOGE( TAG, "Wi-Fi capture restore failed: %s", esp_err_to_name( restore_result ) );
+            }
             ESP_LOGW( TAG, "Wi-Fi driver stop failed: %s", esp_err_to_name( stop_result ) );
         }
     }
