@@ -19,6 +19,7 @@ typedef enum
 {
     RFSCOUT_BOARD_UNKNOWN = 0,
     RFSCOUT_BOARD_TEMBED_CC1101_PLUS,
+    RFSCOUT_BOARD_TEMBED_SI4732,
 } rfscout_board_id_t;
 
 typedef enum
