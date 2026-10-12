@@ -151,8 +151,7 @@ void system_lifecycle_abort( system_lifecycle_target_t a_target )
 
 void system_lifecycle_poll( void )
 {
-    if( !logger_restart_pending ||
-        esp_timer_get_time() < logger_retry_after_us )
+    if( !logger_restart_pending || esp_timer_get_time() < logger_retry_after_us )
     {
         return;
     }
