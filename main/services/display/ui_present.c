@@ -104,12 +104,20 @@ void display_transition_notice_show( const char *a_message )
     display_invalidate();
 }
 
+void display_transition_notice_clear( void )
+{
+    if( 0 != transition_notice_expires_us )
+    {
+        transition_notice_expires_us = 0;
+        display_invalidate();
+    }
+}
+
 void display_transition_notice_poll( void )
 {
     if( 0 != transition_notice_expires_us && esp_timer_get_time() >= transition_notice_expires_us )
     {
-        transition_notice_expires_us = 0;
-        display_invalidate();
+        display_transition_notice_clear();
     }
 }
 
