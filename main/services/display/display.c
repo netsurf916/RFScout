@@ -171,6 +171,7 @@ static esp_err_t apply_board_st7789_init( esp_lcd_panel_io_handle_t a_io )
     switch( board_profile()->id )
     {
         case RFSCOUT_BOARD_TEMBED_CC1101_PLUS:
+        case RFSCOUT_BOARD_TEMBED_SI4732:
             return apply_st7789_init_sequence( a_io,
                                                tembed_st7789_init,
                                                sizeof( tembed_st7789_init ) /
