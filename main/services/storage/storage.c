@@ -188,6 +188,10 @@ void storage_io_release( void )
 
 esp_err_t storage_init( void )
 {
+    if( RFSCOUT_BOARD_SD_CS_PIN < 0 )
+    {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
     if( storage_retry_delayed() )
     {
         return ESP_ERR_NOT_FOUND;
