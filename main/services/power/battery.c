@@ -358,9 +358,17 @@ esp_err_t battery_init( void )
                 RFSCOUT_BOARD_BQ25896_I2C_ADDRESS, "BQ25896 charger", &charger_device );
         }
     }
-    else
+    if( RFSCOUT_BOARD_TEMBED_SI4732 == board_profile()->id )
     {
-        result = init_analog_battery();
+        const esp_err_t analog_result = init_analog_battery();
+        if( ESP_OK != analog_result )
+        {
+            ESP_LOGW( TAG, "analog voltage unavailable: %s", esp_err_to_name( analog_result ) );
+        }
+        if( ESP_OK != result && ESP_OK == analog_result )
+        {
+            result = ESP_OK;
+        }
     }
     if( ESP_OK != result )
     {
