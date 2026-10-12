@@ -14,7 +14,7 @@
 
 #include <stdio.h>
 
-#define WIFI_SETTINGS_ITEM_COUNT 7U
+#define WIFI_SETTINGS_ITEM_COUNT 9U
 
 void wifi_settings_view_render( unsigned a_selected,
                                 bool a_editing,
@@ -22,7 +22,9 @@ void wifi_settings_view_render( unsigned a_selected,
                                 bool a_notifications_enabled,
                                 rfscout_evidence_strength_t a_threshold,
                                 uint16_t a_wifi_timeout_seconds,
-                                uint16_t a_ble_timeout_seconds )
+                                uint16_t a_ble_timeout_seconds,
+                                bool a_wifi_enabled,
+                                bool a_ble_enabled )
 {
     static const char *labels[ WIFI_SETTINGS_ITEM_COUNT ] = { "Back",
                                                               "App lock",
@@ -30,7 +32,9 @@ void wifi_settings_view_render( unsigned a_selected,
                                                               "Notifications",
                                                               "Evidence threshold",
                                                               "WiFi timeout",
-                                                              "BLE timeout" };
+                                                              "BLE timeout",
+                                                              "WiFi capture",
+                                                              "BLE capture" };
     const ui_theme_palette_t *theme = ui_theme_get();
 
     display_clear( theme->background );
@@ -84,6 +88,15 @@ void wifi_settings_view_render( unsigned a_selected,
         else if( 6U == item )
         {
             snprintf( value, sizeof( value ), "%u s", (unsigned)a_ble_timeout_seconds );
+        }
+
+        else if( 7U == item )
+        {
+            snprintf( value, sizeof( value ), "%s", a_wifi_enabled ? "On" : "Off" );
+        }
+        else if( 8U == item )
+        {
+            snprintf( value, sizeof( value ), "%s", a_ble_enabled ? "On" : "Off" );
         }
 
         if( '\0' != value[ 0 ] )
