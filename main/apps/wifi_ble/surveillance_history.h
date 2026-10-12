@@ -12,6 +12,9 @@
 /** @brief Reset pending journal state on app entry. */
 void surveillance_history_open( void );
 
+/** @brief Release session-owned journal buffers after final flush, before session reclamation. */
+void surveillance_history_close( void );
+
 /** @brief Capture one GPS-qualified packet observation without SD I/O. */
 void surveillance_history_record( const observation_location_event_t *a_event );
 

@@ -57,6 +57,23 @@ void surveillance_history_open( void )
     xSemaphoreGive( history_lock );
 }
 
+void surveillance_history_close( void )
+{
+    if( NULL == history_lock )
+        return;
+    xSemaphoreTake( history_lock, portMAX_DELAY );
+    if( NULL != pending )
+        (void)app_session_free( pending );
+    if( NULL != writing )
+        (void)app_session_free( writing );
+    pending = NULL;
+    pending_count = 0U;
+    pending_capacity = 0U;
+    writing = NULL;
+    writing_count = 0U;
+    xSemaphoreGive( history_lock );
+}
+
 void surveillance_history_record( const observation_location_event_t *a_event )
 {
     if( NULL == history_lock || NULL == a_event )
