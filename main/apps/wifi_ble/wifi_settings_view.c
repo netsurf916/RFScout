@@ -60,8 +60,12 @@ void wifi_settings_view_render( unsigned a_selected,
         value[ 0 ] = '\0';
         if( 1U == item )
         {
-            snprintf( value, sizeof( value ), "%s", a_wifi_enabled && a_ble_enabled ? "Both"
-                                                    : a_wifi_enabled ? "Wi-Fi" : "BLE" );
+            snprintf( value,
+                      sizeof( value ),
+                      "%s",
+                      a_wifi_enabled && a_ble_enabled ? "Both"
+                      : a_wifi_enabled                ? "Wi-Fi"
+                                                      : "BLE" );
         }
         else if( 2U == item )
         {
@@ -79,8 +83,11 @@ void wifi_settings_view_render( unsigned a_selected,
                 [RFSCOUT_EVIDENCE_STRENGTH_PROBABLE] = "Probable",
                 [RFSCOUT_EVIDENCE_STRENGTH_DISTINCTIVE] = "Distinctive",
             };
-            snprintf( value, sizeof( value ), "%s",
-                      ( a_threshold < RFSCOUT_EVIDENCE_STRENGTH_COUNT ) ? names[ a_threshold ] : "Possible" );
+            snprintf( value,
+                      sizeof( value ),
+                      "%s",
+                      ( a_threshold < RFSCOUT_EVIDENCE_STRENGTH_COUNT ) ? names[ a_threshold ]
+                                                                        : "Possible" );
         }
         else if( 6U == item )
         {
