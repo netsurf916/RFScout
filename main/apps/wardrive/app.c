@@ -355,11 +355,14 @@ static void draw_overview( void )
                                                                      : theme->info;
             display_fill_rect( x, 146 - height, 8, height, color );
         }
-        if( 0U == ( i % 2U ) )
-        {
-            (void)snprintf( line, sizeof( line ), "%u", i + 1U );
-            display_draw_text( x, 149, line, theme->text, 1U );
-        }
+    }
+    /* Separate the channel bars from their labels without obscuring either. */
+    display_fill_rect( 163, 147, 149, 1, theme->secondary );
+    for( unsigned i = 0U; i < ACTIVITY_CHANNELS; i += 2U )
+    {
+        const int x = 164 + (int)i * 11;
+        (void)snprintf( line, sizeof( line ), "%u", i + 1U );
+        display_draw_text( x, 149, line, theme->text, 1U );
     }
     (void)display_present();
 }
