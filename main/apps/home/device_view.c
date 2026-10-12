@@ -109,10 +109,18 @@ static unsigned time_selected_item;
 static bool time_editing;
 static bool network_menu_open;
 static bool ota_menu_open;
+static bool apps_menu_open;
 
-static unsigned device_item_count( void )
+static bool app_enable_item( unsigned a_item )
 {
-    return DEVICE_ITEM_BASE_COUNT;
+    return DEVICE_ITEM_SYSTEM_EVENTS == a_item ||
+           ( a_item >= DEVICE_ITEM_WIFI && a_item <= DEVICE_ITEM_AUDIO_SPECTRUM ) ||
+           DEVICE_ITEM_GPS == a_item;
+}
+
+static bool main_menu_hidden_item( unsigned a_item )
+{
+    return app_enable_item( a_item ) && DEVICE_ITEM_SYSTEM_EVENTS != a_item;
 }
 
 static unsigned time_menu_item_count( void )
@@ -244,7 +252,8 @@ static bool item_direct_toggle( unsigned a_item )
 {
     return ( DEVICE_ITEM_BREADCRUMBS == a_item ) || ( DEVICE_ITEM_AUDIO_POLICY == a_item ) ||
            ( DEVICE_ITEM_ALERT_MODE == a_item ) || ( DEVICE_ITEM_CLOCK_FORMAT == a_item ) ||
-           ( DEVICE_ITEM_SYSTEM_EVENTS == a_item ) || ( DEVICE_ITEM_WIFI == a_item ) ||
+           ( apps_menu_open && DEVICE_ITEM_SYSTEM_EVENTS == a_item ) ||
+           ( DEVICE_ITEM_WIFI == a_item ) ||
            ( DEVICE_ITEM_HOTSPOTS == a_item ) || ( DEVICE_ITEM_CC1101 == a_item ) ||
            ( DEVICE_ITEM_NRF24 == a_item ) || ( DEVICE_ITEM_AUDIO == a_item ) ||
            ( DEVICE_ITEM_THERMAL == a_item ) || ( DEVICE_ITEM_AUDIO_SPECTRUM == a_item ) ||
@@ -291,7 +300,7 @@ static const char *item_label( unsigned a_item )
         case DEVICE_ITEM_STARTUP:
             return "Startup app";
         case DEVICE_ITEM_SYSTEM_EVENTS:
-            return "System Events";
+            return apps_menu_open ? "System Events" : "Apps";
         case DEVICE_ITEM_NETWORK:
             return "Network";
         case DEVICE_ITEM_OTA:
@@ -498,7 +507,14 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
 static void draw_row( int a_y, unsigned a_item )
 {
     char value[ 48 ];
-    item_value( a_item, value, sizeof( value ) );
+    if( DEVICE_ITEM_SYSTEM_EVENTS == a_item && !apps_menu_open )
+    {
+        value[ 0 ] = '\0';
+    }
+    else
+    {
+        item_value( a_item, value, sizeof( value ) );
+    }
     const bool active = selected_item == a_item;
     const uint16_t color = active ? COLOR_SELECTED : COLOR_TEXT;
     if( active )
@@ -779,18 +795,50 @@ void device_view_render( void )
         return;
     }
 
-    const unsigned item_count = device_item_count();
     display_clear( COLOR_BACKGROUND );
-    ui_chrome_draw( "DEVICE SETTINGS", COLOR_DIM );
-    const unsigned page_start = ( selected_item / DEVICE_ROWS_PER_PAGE ) * DEVICE_ROWS_PER_PAGE;
+    ui_chrome_draw( apps_menu_open ? "APP ENABLEMENT" : "DEVICE SETTINGS", COLOR_DIM );
+    unsigned items[ DEVICE_ITEM_BASE_COUNT ];
+    unsigned visible = 0U;
+    if( apps_menu_open )
+    {
+        items[ visible++ ] = DEVICE_ITEM_BACK;
+        items[ visible++ ] = DEVICE_ITEM_SYSTEM_EVENTS;
+        for( unsigned item = DEVICE_ITEM_WIFI; item <= DEVICE_ITEM_AUDIO_SPECTRUM; ++item )
+        {
+            items[ visible++ ] = item;
+        }
+        items[ visible++ ] = DEVICE_ITEM_GPS;
+    }
+    else
+    {
+        for( unsigned item = 0U; item < DEVICE_ITEM_BASE_COUNT; ++item )
+        {
+            if( !main_menu_hidden_item( item ) )
+            {
+                items[ visible++ ] = item;
+            }
+        }
+    }
+    unsigned selected_position = 0U;
+    for( unsigned i = 0U; i < visible; ++i )
+    {
+        if( items[ i ] == selected_item )
+        {
+            selected_position = i;
+            break;
+        }
+    }
+    const unsigned page_start =
+        ( selected_position / DEVICE_ROWS_PER_PAGE ) * DEVICE_ROWS_PER_PAGE;
     for( unsigned row = 0U; row < DEVICE_ROWS_PER_PAGE; ++row )
     {
-        const unsigned item = page_start + row;
-        if( item >= item_count )
+        const unsigned position = page_start + row;
+        if( position >= visible )
         {
             break;
         }
-        draw_row( UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT, item );
+        draw_row( UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT,
+                  items[ position ] );
     }
 
     const char *hint = editing
@@ -799,7 +847,7 @@ void device_view_render( void )
                                                                    : "TURN SELECT / CENTER ENTER" );
     char footer[ 64 ];
     snprintf(
-        footer, sizeof( footer ), "%u/%u  %s", (unsigned)( selected_item + 1U ), item_count, hint );
+        footer, sizeof( footer ), "%u/%u  %s", selected_position + 1U, visible, hint );
     display_draw_text(
         UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, footer, editing ? COLOR_ACCENT : COLOR_DIM, 1U );
     if( save_error )
@@ -822,27 +870,46 @@ void device_view_enter( void )
     time_editing = false;
     network_menu_open = false;
     ota_menu_open = false;
+    apps_menu_open = false;
     refresh_edited_time();
     device_view_render();
 }
 
 static void move_selection( int a_delta )
 {
-    const int item_count = (int)device_item_count();
-    int item = (int)selected_item + ( ( a_delta > 0 ) ? 1 : -1 );
-    if( item < 0 )
+    unsigned items[ DEVICE_ITEM_BASE_COUNT ];
+    unsigned count = 0U;
+    if( apps_menu_open )
     {
-        item = item_count - 1;
+        items[ count++ ] = DEVICE_ITEM_BACK;
+        items[ count++ ] = DEVICE_ITEM_SYSTEM_EVENTS;
+        for( unsigned item = DEVICE_ITEM_WIFI; item <= DEVICE_ITEM_AUDIO_SPECTRUM; ++item )
+        {
+            items[ count++ ] = item;
+        }
+        items[ count++ ] = DEVICE_ITEM_GPS;
     }
-    if( item >= item_count )
+    else
     {
-        item = 0;
+        for( unsigned item = 0U; item < DEVICE_ITEM_BASE_COUNT; ++item )
+        {
+            if( !main_menu_hidden_item( item ) )
+            {
+                items[ count++ ] = item;
+            }
+        }
     }
-    if( (unsigned)item != selected_item )
+    unsigned index = 0U;
+    for( unsigned i = 0U; i < count; ++i )
     {
-        selected_item = (unsigned)item;
-        emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
+        if( selected_item == items[ i ] )
+        {
+            index = i;
+            break;
+        }
     }
+    selected_item = items[ ( index + ( a_delta > 0 ? 1U : count - 1U ) ) % count ];
+    emit_device_event( RFSCOUT_EVENT_NAVIGATE, a_delta > 0 ? 1 : -1 );
 }
 
 static void move_time_selection( int a_delta )
@@ -1681,8 +1748,22 @@ bool device_view_input( const rfscout_input_event_t *a_input )
     {
         if( ( DEVICE_ITEM_BACK == selected_item ) && !editing )
         {
+            if( apps_menu_open )
+            {
+                apps_menu_open = false;
+                selected_item = DEVICE_ITEM_SYSTEM_EVENTS;
+                device_view_render();
+                return false;
+            }
             emit_device_event( RFSCOUT_EVENT_BACK, 0 );
             return true;
+        }
+        if( ( DEVICE_ITEM_SYSTEM_EVENTS == selected_item ) && !editing && !apps_menu_open )
+        {
+            apps_menu_open = true;
+            selected_item = DEVICE_ITEM_BACK;
+            device_view_render();
+            return false;
         }
         if( ( DEVICE_ITEM_NETWORK == selected_item ) && !editing )
         {

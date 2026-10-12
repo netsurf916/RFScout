@@ -17,6 +17,8 @@
 #include <string.h>
 
 #define CAPTURE_REFRESH_US 500000LL
+#define ACTIVITY_CHANNELS 14U
+#define ACTIVITY_IDENTITIES 64U
 #define CAPTURE_GPS_REFRESH_US 250000LL
 #define CAPTURE_SETTINGS_MAGIC 0x57445256U
 #define CAPTURE_SETTINGS_VERSION 1U
@@ -49,6 +51,116 @@ static int64_t last_gps_refresh_us;
 static uint64_t stored_bytes;
 static uint64_t free_bytes;
 static esp_err_t last_error;
+static bool activity_page;
+static uint32_t activity_frames[ ACTIVITY_CHANNELS ];
+static uint32_t activity_aps[ ACTIVITY_CHANNELS ];
+static uint32_t activity_stations[ ACTIVITY_CHANNELS ];
+static uint32_t activity_ap_ids[ ACTIVITY_CHANNELS ][ ACTIVITY_IDENTITIES ];
+static uint32_t activity_station_ids[ ACTIVITY_CHANNELS ][ ACTIVITY_IDENTITIES ];
+
+/* Fixed-size approximate identity sets; collisions can undercount transmitters. */
+static void observe_identity( uint32_t a_ids[ ACTIVITY_IDENTITIES ],
+                              uint32_t *a_count,
+                              const uint8_t *a_mac )
+{
+    uint32_t hash = 2166136261U;
+    for( unsigned i = 0U; i < 6U; ++i )
+    {
+        hash = ( hash ^ a_mac[ i ] ) * 16777619U;
+    }
+    if( hash == 0U )
+    {
+        hash = 1U;
+    }
+    for( unsigned i = 0U; i < ACTIVITY_IDENTITIES; ++i )
+    {
+        uint32_t *slot = &a_ids[ ( hash + i ) % ACTIVITY_IDENTITIES ];
+        uint32_t previous = 0U;
+        if( __atomic_compare_exchange_n(
+                slot, &previous, hash, false, __ATOMIC_RELAXED, __ATOMIC_RELAXED ) )
+        {
+            __atomic_add_fetch( a_count, 1U, __ATOMIC_RELAXED );
+            return;
+        }
+        if( previous == hash )
+        {
+            return;
+        }
+    }
+}
+
+static void observe_wifi(
+    const uint8_t *a_data, size_t a_length, int8_t a_rssi, uint8_t a_channel )
+{
+    if( options.wifi && a_data != NULL && a_length >= 24U &&
+        a_channel >= 1U && a_channel <= ACTIVITY_CHANNELS )
+    {
+        const unsigned i = a_channel - 1U;
+        const uint8_t type = ( a_data[ 0 ] >> 2U ) & 3U;
+        const uint8_t subtype = a_data[ 0 ] >> 4U;
+        __atomic_add_fetch( &activity_frames[ i ], 1U, __ATOMIC_RELAXED );
+        if( type == 0U && ( subtype == 8U || subtype == 5U ) )
+        {
+            observe_identity( activity_ap_ids[ i ], &activity_aps[ i ], a_data + 10U );
+        }
+        else if( ( type == 0U && ( subtype == 4U || subtype == 0U || subtype == 2U ) ) ||
+                 ( type == 2U && ( a_data[ 1 ] & 3U ) == 1U ) )
+        {
+            observe_identity( activity_station_ids[ i ],
+                              &activity_stations[ i ],
+                              a_data + 10U );
+        }
+    }
+    wardrive_on_wifi( a_data, a_length, a_rssi, a_channel );
+}
+
+static void draw_activity( void )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    uint32_t frames[ ACTIVITY_CHANNELS ];
+    uint32_t peak = 1U;
+    for( unsigned i = 0U; i < ACTIVITY_CHANNELS; ++i )
+    {
+        frames[ i ] = __atomic_load_n( &activity_frames[ i ], __ATOMIC_RELAXED );
+        if( frames[ i ] > peak )
+        {
+            peak = frames[ i ];
+        }
+    }
+    display_clear( theme->background );
+    ui_chrome_draw( "CHANNEL ACTIVITY", theme->secondary );
+    const unsigned current = radio_monitor_channel();
+    char line[ 72 ];
+    if( current >= 1U && current <= ACTIVITY_CHANNELS )
+    {
+        const unsigned i = current - 1U;
+        (void)snprintf( line,
+                        sizeof( line ),
+                        "CH %u AP~%lu STA~%lu PKT %lu",
+                        current,
+                        (unsigned long)__atomic_load_n( &activity_aps[ i ], __ATOMIC_RELAXED ),
+                        (unsigned long)__atomic_load_n( &activity_stations[ i ], __ATOMIC_RELAXED ),
+                        (unsigned long)frames[ i ] );
+        display_draw_text( 8, 27, line, theme->text, 1U );
+    }
+    display_draw_text( 8, 44, "FRAMES SEEN (NOT AIRTIME)", theme->secondary, 1U );
+    for( unsigned i = 0U; i < ACTIVITY_CHANNELS; ++i )
+    {
+        const int x = 9 + (int)i * 22;
+        const int height = (int)( (uint64_t)frames[ i ] * 69U / peak );
+        if( height > 0 )
+        {
+            display_fill_rect( x, 128 - height, 13, height,
+                               i + 1U == current ? theme->success : theme->info );
+        }
+        (void)snprintf( line, sizeof( line ), "%u", i + 1U );
+        display_draw_text( x, 132, line, theme->text, 1U );
+    }
+    display_draw_text( 8, 153, "NAV: OVERVIEW CENTER: SETTINGS", theme->secondary, 1U );
+    (void)display_present();
+}
+
+
 
 static wardrive_config_t defaults( void )
 {
@@ -165,7 +277,7 @@ static void draw_overview( void )
     (void)snprintf(
         line, sizeof( line ), "WRITTEN: %lu KiB", (unsigned long)( stats.bytes / 1024U ) );
     display_draw_text( 8, 128, line, theme->info, 1U );
-    display_draw_text( 8, 152, "CENTER: SETTINGS", theme->secondary, 1U );
+    display_draw_text( 8, 152, "NAV: CHANNELS CENTER: SETTINGS", theme->secondary, 1U );
     (void)display_present();
 }
 
@@ -436,6 +548,12 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
     {
         load_settings();
         menu_open = false;
+        activity_page = false;
+        memset( activity_frames, 0, sizeof( activity_frames ) );
+        memset( activity_aps, 0, sizeof( activity_aps ) );
+        memset( activity_stations, 0, sizeof( activity_stations ) );
+        memset( activity_ap_ids, 0, sizeof( activity_ap_ids ) );
+        memset( activity_station_ids, 0, sizeof( activity_station_ids ) );
         selected = MENU_BACK;
         last_draw_us = 0;
         last_gps_refresh_us = 0;
@@ -485,6 +603,19 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
             draw_menu();
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
+        if( RFSCOUT_INPUT_NAVIGATION == a_event->input.type && !menu_open )
+        {
+            activity_page = !activity_page;
+            if( activity_page )
+            {
+                draw_activity();
+            }
+            else
+            {
+                draw_overview();
+            }
+            return RFSCOUT_APP_RUNTIME_HANDLED;
+        }
         if( RFSCOUT_INPUT_LONG_PRESS == a_event->input.type && menu_open )
         {
             menu_open = false;
@@ -514,7 +645,14 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
         if( !menu_open && ( a_event->now_us - last_draw_us >= CAPTURE_REFRESH_US ) )
         {
             last_draw_us = a_event->now_us;
-            draw_overview();
+            if( activity_page )
+            {
+                draw_activity();
+            }
+            else
+            {
+                draw_overview();
+            }
         }
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
@@ -531,7 +669,7 @@ const rfscout_app_descriptor_t rfscout_wardrive_app = {
     .services = RFSCOUT_APP_SERVICE_WIFI_MONITOR | RFSCOUT_APP_SERVICE_BLE_MONITOR,
     .consumers =
         {
-            .wifi_raw = wardrive_on_wifi,
+            .wifi_raw = observe_wifi,
             .ble_raw = wardrive_on_ble,
         },
     .runtime = wardrive_runtime,

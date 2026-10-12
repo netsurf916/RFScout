@@ -103,6 +103,10 @@ Wardriving
 
 Disable or dim Wi-Fi controls when Wi-Fi is off, and show the fixed-channel picker only in Fixed channel mode. Capacity and free-space values refresh when the menu opens or settings change, without rescanning the card on every UI frame. The on-device UI should state whether recording is currently active and whether policy changes take immediate effect.
 
+## Channel activity view
+
+On the Wardriving overview, turn the trackball to switch to a live channel-activity histogram. The bars show **session-cumulative driver-delivered Wi-Fi frames** for channels 1-14, not airtime utilization or traffic that occurred while tuned elsewhere. The currently tuned channel also shows approximate distinct AP and station transmitters based on management frames and ToDS frames. These bounded estimates can undercount due to unseen frames, hash collisions or capacity, and can overcount when devices randomize their MAC addresses. Activity comparisons are meaningful primarily after similar dwell time on the compared channels. The view does not change the underlying raw packet capture policy.
+
 ## Runtime behavior and application lifecycle
 
 The app is a passive capture utility, distinct from the Wi-Fi/BLE surveillance classifier. Its primary screen shows recording state (Stopped, Recording, Paused for media, or Error), current source selection, Wi-Fi channel and hop progress, fresh GPS fix status, packet and byte counters, drops, active PCAPNG filename, SD free space, and estimated retention ceiling. Pressing Start opens a new capture session; Stop drains the bounded writer queue, finalizes the current PCAPNG file, releases the radio service requests and returns to Stopped. Neither switching away from this app nor entering Settings should leave unmanaged radio or media resources behind.
