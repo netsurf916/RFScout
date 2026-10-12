@@ -657,6 +657,14 @@ static void act_on_selection( void )
     }
 }
 
+static esp_err_t prepare_leave( void )
+{
+    wardrive_stats_t stats;
+    wardrive_capture_stats( &stats );
+    /* Like Recorder, never interrupt a capture through app navigation. */
+    return stats.recording ? ESP_ERR_INVALID_STATE : ESP_OK;
+}
+
 static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_event_t *a_event )
 {
     if( NULL == a_event )
@@ -774,6 +782,7 @@ const rfscout_app_descriptor_t rfscout_wardrive_app = {
     .probe_policy = RFSCOUT_APP_PROBE_NONE,
     .probe = NULL,
     .requires_activation = true,
+    .prepare_leave = prepare_leave,
     .services = RFSCOUT_APP_SERVICE_WIFI_MONITOR | RFSCOUT_APP_SERVICE_BLE_MONITOR,
     .consumers =
         {
