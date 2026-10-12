@@ -22,6 +22,8 @@ void wifi_settings_view_render( unsigned a_selected,
                                 bool a_notifications_enabled,
                                 rfscout_evidence_strength_t a_threshold,
                                 uint16_t a_wifi_timeout_seconds,
-                                uint16_t a_ble_timeout_seconds );
+                                uint16_t a_ble_timeout_seconds,
+                                bool a_wifi_enabled,
+                                bool a_ble_enabled );
 
 #endif // _RFSCOUT_WIFI_SETTINGS_VIEW_H_
