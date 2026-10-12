@@ -14,6 +14,7 @@
 #include "notification.h"
 #include "notification_preferences.h"
 #include "platform.h"
+#include "persistent_store.h"
 #include "observation_store.h"
 #include "radio_monitor.h"
 #include "surveillance_history.h"
@@ -34,7 +35,21 @@
 #define WIFI_MENU_EVIDENCE_THRESHOLD 4U
 #define WIFI_MENU_WIFI_TIMEOUT 5U
 #define WIFI_MENU_BLE_TIMEOUT 6U
-#define WIFI_MENU_ITEM_COUNT 7U
+#define WIFI_MENU_WIFI_SOURCE 7U
+#define WIFI_MENU_BLE_SOURCE 8U
+#define WIFI_MENU_ITEM_COUNT 9U
+
+#define WIFI_SOURCE_SETTINGS_MAGIC 0x57425352U
+
+typedef struct
+{
+    uint32_t magic;
+    uint8_t wifi;
+    uint8_t ble;
+} wifi_source_settings_t;
+
+static bool wifi_enabled = true;
+static bool ble_enabled = true;
 
 static const char *TAG = "wifi_ble_app";
 static bool menu_active;
@@ -59,7 +74,9 @@ static void render_menu( void )
                                notification_preferences_app_enabled( RFSCOUT_APP_WIFI_BT ),
                                device_config_evidence_threshold(),
                                device_config_wifi_timeout_seconds(),
-                               device_config_ble_timeout_seconds() );
+                               device_config_ble_timeout_seconds(),
+                               wifi_enabled,
+                               ble_enabled );
 }
 
 static void render_menu_callback( void *a_context )
@@ -68,10 +85,39 @@ static void render_menu_callback( void *a_context )
     render_menu();
 }
 
+static void save_sources( void )
+{
+    const wifi_source_settings_t settings = {
+        .magic = WIFI_SOURCE_SETTINGS_MAGIC,
+        .wifi = wifi_enabled,
+        .ble = ble_enabled,
+    };
+    const esp_err_t result = app_store_write( "sources.settings", &settings, sizeof( settings ) );
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG, "Source settings save failed: %s", esp_err_to_name( result ) );
+    }
+}
+
+static void load_sources( void )
+{
+    wifi_source_settings_t settings;
+    size_t length = 0U;
+    wifi_enabled = true;
+    ble_enabled = true;
+    if( ESP_OK == app_store_read( "sources.settings", &settings, sizeof( settings ), &length ) &&
+        sizeof( settings ) == length && WIFI_SOURCE_SETTINGS_MAGIC == settings.magic &&
+        ( settings.wifi || settings.ble ) )
+    {
+        wifi_enabled = settings.wifi;
+        ble_enabled = settings.ble;
+    }
+}
+
 static void start_collectors( void )
 {
     esp_err_t result;
-    if( !radio_monitor_is_active() )
+    if( wifi_enabled && !radio_monitor_is_active() )
     {
         result = radio_monitor_start();
         if( ESP_OK != result )
@@ -79,7 +125,7 @@ static void start_collectors( void )
             ESP_LOGW( TAG, "Wi-Fi monitor start failed: %s; retrying", esp_err_to_name( result ) );
         }
     }
-    if( !ble_monitor_is_active() )
+    if( ble_enabled && !ble_monitor_is_active() )
     {
         result = ble_monitor_start();
         if( ESP_OK != result )
@@ -124,6 +170,30 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
         if( menu_editing )
         {
             menu_editing = false;
+            render_menu();
+            emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
+            return;
+        }
+        if( WIFI_MENU_WIFI_SOURCE == menu_item || WIFI_MENU_BLE_SOURCE == menu_item )
+        {
+            if( WIFI_MENU_WIFI_SOURCE == menu_item && ( !wifi_enabled || ble_enabled ) )
+            {
+                wifi_enabled = !wifi_enabled;
+                if( !wifi_enabled )
+                {
+                    (void)radio_monitor_stop();
+                }
+            }
+            else if( WIFI_MENU_BLE_SOURCE == menu_item && ( !ble_enabled || wifi_enabled ) )
+            {
+                ble_enabled = !ble_enabled;
+                if( !ble_enabled )
+                {
+                    (void)ble_monitor_stop();
+                }
+            }
+            save_sources();
+            start_collectors();
             render_menu();
             emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
             return;
@@ -261,6 +331,7 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         menu_active = false;
         menu_editing = false;
         menu_item = WIFI_MENU_BACK;
+        load_sources();
         rendered_app_lock = app_manager_locked();
         ui_set_surveillance_page( false );
         surveillance_history_open();
@@ -336,14 +407,18 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
 
-    if( ( !radio_monitor_is_active() || !ble_monitor_is_active() ) &&
+    if( ( ( wifi_enabled && !radio_monitor_is_active() ) ||
+          ( ble_enabled && !ble_monitor_is_active() ) ) &&
         ( a_event->now_us - last_radio_retry_us >= WIFI_RADIO_RETRY_INTERVAL_US ) )
     {
         last_radio_retry_us = a_event->now_us;
         start_collectors();
     }
-    radio_monitor_set_active_ap_channels( observation_store_wifi_ap_channel_mask() );
-    radio_monitor_step();
+    if( wifi_enabled )
+    {
+        radio_monitor_set_active_ap_channels( observation_store_wifi_ap_channel_mask() );
+        radio_monitor_step();
+    }
     if( a_event->now_us - last_journal_flush_us >= WIFI_JOURNAL_FLUSH_INTERVAL_US )
     {
         last_journal_flush_us = a_event->now_us;
