@@ -43,9 +43,6 @@
 #define BQ25896_CHARGE_FAST 2U
 #define BQ25896_CHARGE_DONE 3U
 #define BATTERY_CURRENT_ACTIVE_MA 30
-#define BATTERY_ADC_CHANNEL ADC_CHANNEL_3
-#define BATTERY_ADC_DIVIDER_NUMERATOR 18U
-#define BATTERY_ADC_DIVIDER_DENOMINATOR 10U
 
 static const char *TAG = "battery";
 static i2c_master_dev_handle_t gauge_device;
@@ -55,6 +52,7 @@ static int64_t last_poll_us;
 static bool initialized;
 static adc_oneshot_unit_handle_t analog_unit;
 static adc_cali_handle_t analog_calibration;
+static adc_channel_t analog_channel;
 
 static esp_err_t
 read_register_u8( i2c_master_dev_handle_t a_device, uint8_t a_register, uint8_t *a_value )
@@ -250,19 +248,27 @@ static void refresh_i2c_battery( battery_status_t *a_status )
 /** @brief Configure only the documented SI4732 GPIO4 analog battery input. */
 static esp_err_t init_analog_battery( void )
 {
-    if( RFSCOUT_BOARD_TEMBED_SI4732 != board_profile()->id )
+    if( RFSCOUT_BOARD_BATTERY_ADC_PIN < 0 ||
+        0U == RFSCOUT_BOARD_BATTERY_ADC_DIVIDER_DENOMINATOR )
     {
         return ESP_ERR_NOT_SUPPORTED;
     }
-    const adc_oneshot_unit_init_cfg_t unit_config = { .unit_id = ADC_UNIT_1 };
-    esp_err_t result = adc_oneshot_new_unit( &unit_config, &analog_unit );
+    adc_unit_t unit;
+    esp_err_t result =
+        adc_oneshot_io_to_channel( RFSCOUT_BOARD_BATTERY_ADC_PIN, &unit, &analog_channel );
+    if( ESP_OK != result || ADC_UNIT_1 != unit )
+    {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    const adc_oneshot_unit_init_cfg_t unit_config = { .unit_id = unit };
+    result = adc_oneshot_new_unit( &unit_config, &analog_unit );
     if( ESP_OK != result )
     {
         return result;
     }
     const adc_oneshot_chan_cfg_t channel_config = { .atten = ADC_ATTEN_DB_12,
                                                     .bitwidth = ADC_BITWIDTH_DEFAULT };
-    result = adc_oneshot_config_channel( analog_unit, BATTERY_ADC_CHANNEL, &channel_config );
+    result = adc_oneshot_config_channel( analog_unit, analog_channel, &channel_config );
     if( ESP_OK != result )
     {
         (void)adc_oneshot_del_unit( analog_unit );
@@ -271,7 +277,7 @@ static esp_err_t init_analog_battery( void )
     }
     const adc_cali_curve_fitting_config_t calibration_config = {
         .unit_id = ADC_UNIT_1,
-        .chan = BATTERY_ADC_CHANNEL,
+        .chan = analog_channel,
         .atten = ADC_ATTEN_DB_12,
         .bitwidth = ADC_BITWIDTH_DEFAULT,
     };
@@ -293,15 +299,15 @@ static void refresh_analog_battery( battery_status_t *a_status )
     }
     int raw = 0;
     int millivolts = 0;
-    if( ESP_OK != adc_oneshot_read( analog_unit, BATTERY_ADC_CHANNEL, &raw ) ||
+    if( ESP_OK != adc_oneshot_read( analog_unit, analog_channel, &raw ) ||
         ESP_OK != adc_cali_raw_to_voltage( analog_calibration, raw, &millivolts ) ||
         millivolts <= 0 )
     {
         return;
     }
     a_status->voltage_mv = (uint16_t)( ( (uint32_t)millivolts *
-                                        BATTERY_ADC_DIVIDER_NUMERATOR ) /
-                                      BATTERY_ADC_DIVIDER_DENOMINATOR );
+                                        RFSCOUT_BOARD_BATTERY_ADC_DIVIDER_NUMERATOR ) /
+                                      RFSCOUT_BOARD_BATTERY_ADC_DIVIDER_DENOMINATOR );
     a_status->available = true;
 }
 
@@ -324,7 +330,8 @@ void battery_refresh( void )
     next.current_ma = 0;
     next.voltage_mv = 0;
 
-    if( RFSCOUT_BATTERY_I2C_GAUGE_CHARGER == RFSCOUT_BOARD_BATTERY_TYPE )
+    if( ( 0U != RFSCOUT_BOARD_BQ27220_I2C_ADDRESS ||
+         0U != RFSCOUT_BOARD_BQ25896_I2C_ADDRESS ) )
     {
         refresh_i2c_battery( &next );
     }
@@ -347,7 +354,8 @@ esp_err_t battery_init( void )
     charger_device = NULL;
 
     esp_err_t result = ESP_OK;
-    if( RFSCOUT_BATTERY_I2C_GAUGE_CHARGER == RFSCOUT_BOARD_BATTERY_TYPE )
+    if( ( 0U != RFSCOUT_BOARD_BQ27220_I2C_ADDRESS ||
+         0U != RFSCOUT_BOARD_BQ25896_I2C_ADDRESS ) )
     {
         result = board_i2c_init();
         if( ESP_OK == result )
@@ -358,7 +366,7 @@ esp_err_t battery_init( void )
                 RFSCOUT_BOARD_BQ25896_I2C_ADDRESS, "BQ25896 charger", &charger_device );
         }
     }
-    if( RFSCOUT_BOARD_TEMBED_SI4732 == board_profile()->id )
+    if( RFSCOUT_BOARD_BATTERY_ADC_PIN >= 0 )
     {
         const esp_err_t analog_result = init_analog_battery();
         if( ESP_OK != analog_result )
@@ -407,15 +415,11 @@ bool battery_get_status( battery_status_t *a_status )
 
 bool battery_external_power_telemetry_expected( void )
 {
-    return RFSCOUT_BATTERY_I2C_GAUGE_CHARGER == RFSCOUT_BOARD_BATTERY_TYPE;
+    return cached_status.charger_fresh;
 }
 
 esp_err_t battery_shutdown( void )
 {
-    if( RFSCOUT_BATTERY_I2C_GAUGE_CHARGER != RFSCOUT_BOARD_BATTERY_TYPE )
-    {
-        return ESP_ERR_NOT_SUPPORTED;
-    }
     if( NULL == charger_device )
     {
         return ESP_ERR_NOT_FOUND;
