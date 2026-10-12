@@ -609,8 +609,20 @@ static void act_on_selection( void )
                 ESP_LOGW( TAG, "capture start failed: %s", esp_err_to_name( last_error ) );
             }
         }
-        refresh_space();
-        draw_menu();
+        /* Starting capture returns to the live dashboard; leave failed starts
+           in settings so the user can adjust the configuration. */
+        wardrive_stats_t updated;
+        wardrive_capture_stats( &updated );
+        if( !stats.recording && updated.recording )
+        {
+            menu_open = false;
+            draw_overview();
+        }
+        else
+        {
+            refresh_space();
+            draw_menu();
+        }
     }
     else
     {
