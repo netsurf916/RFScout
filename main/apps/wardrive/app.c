@@ -306,7 +306,12 @@ static void draw_overview( void )
     display_draw_text( 163, 25, options.wifi && options.ble ? "WIFI + BLE / SEC"
                                                         : "PACKETS/SEC",
                        theme->secondary, 1U );
-    (void)snprintf( line, sizeof( line ), "%lu", (unsigned long)peak_rate );
+    /* The header reports the latest completed second, not the graph's peak. */
+    const unsigned latest = ( activity_cursor + ACTIVITY_SECONDS - 1U ) % ACTIVITY_SECONDS;
+    const uint32_t current_rate =
+        ( options.wifi ? activity_rate[ latest ] : 0U ) +
+        ( options.ble ? activity_ble_rate[ latest ] : 0U );
+    (void)snprintf( line, sizeof( line ), "%lu", (unsigned long)current_rate );
     display_draw_text( 274, 25, line, theme->text, 1U );
     for( unsigned i = 0U; i < ACTIVITY_SECONDS; ++i )
     {
