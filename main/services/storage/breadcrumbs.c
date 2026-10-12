@@ -574,8 +574,7 @@ void breadcrumbs_poll( void )
                 }
                 else
                 {
-                    disable_persist_retry_us =
-                        esp_timer_get_time() + BREADCRUMB_PERSIST_RETRY_US;
+                    disable_persist_retry_us = esp_timer_get_time() + BREADCRUMB_PERSIST_RETRY_US;
                 }
             }
         }

@@ -12,4 +12,6 @@ typedef enum
 bool system_lifecycle_prepare( system_lifecycle_target_t a_target );
 /** Recover writers after a failed hardware transition. */
 void system_lifecycle_abort( system_lifecycle_target_t a_target );
+/** Restart a quiesced logger after SD media becomes available again. */
+void system_lifecycle_poll( void );
 #endif

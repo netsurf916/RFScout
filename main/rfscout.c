@@ -31,6 +31,7 @@
 #include "oui_database.h"
 #include "platform.h"
 #include "power.h"
+#include "system_lifecycle.h"
 #include "power_policy.h"
 #include "radio_monitor.h"
 #include "status_bar.h"
@@ -525,6 +526,7 @@ void app_main( void )
         observation_store_housekeeping();
         app_manager_poll();
         storage_dispatch_events();
+        system_lifecycle_poll();
         system_events_poll();
         status_bar_poll();
         battery_indicator_poll();
