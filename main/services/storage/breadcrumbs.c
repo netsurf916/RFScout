@@ -459,9 +459,8 @@ static void write_record( const breadcrumb_record_t *a_record )
                 /* Contain this session even if internal flash persistence fails. */
                 enabled = false;
                 (void)xQueueReset( queue );
-                rfscout_event_emit( RFSCOUT_EVENT_STORAGE_SERVICE_DISABLED,
-                                    RFSCOUT_EVENT_SOURCE_SYSTEM,
-                                    1 );
+                rfscout_event_emit(
+                    RFSCOUT_EVENT_STORAGE_SERVICE_DISABLED, RFSCOUT_EVENT_SOURCE_SYSTEM, 1 );
                 const esp_err_t result = persist_settings( false, file_limit );
                 if( ESP_OK != result )
                 {
