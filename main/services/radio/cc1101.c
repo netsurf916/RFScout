@@ -592,8 +592,7 @@ static esp_err_t apply_selected_mode( void )
 esp_err_t cc1101_probe( void )
 {
     if( RFSCOUT_BOARD_CC1101_CS_PIN < 0 || RFSCOUT_BOARD_SPI_MISO_PIN < 0 ||
-        RFSCOUT_BOARD_CC1101_SWITCH_0_PIN < 0 ||
-        RFSCOUT_BOARD_CC1101_SWITCH_1_PIN < 0 )
+        RFSCOUT_BOARD_CC1101_SWITCH_0_PIN < 0 || RFSCOUT_BOARD_CC1101_SWITCH_1_PIN < 0 )
     {
         return ESP_ERR_NOT_SUPPORTED;
     }
