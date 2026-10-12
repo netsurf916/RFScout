@@ -531,6 +531,8 @@ void app_main( void )
         status_bar_poll();
         battery_indicator_poll();
 
+        log_writer_process_disable_request();
+
         /* Setting changes are persisted immediately in the normal case. If persistence fails,
            retain the dirty record but retry at a bounded cadence rather than hammering flash. */
         persist_config_if_due();
