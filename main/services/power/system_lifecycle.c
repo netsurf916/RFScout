@@ -23,6 +23,8 @@
 #define SYSTEM_RECORDER_DRAIN_MS 5000U
 
 static const char *TAG = "system_lifecycle";
+static bool logger_restart_pending;
+static int64_t logger_retry_after_us;
 
 typedef struct
 {
@@ -82,8 +84,6 @@ static const system_lifecycle_participant_t participants[] = {
 
 static size_t quiesced_count;
 static bool storage_participating;
-static bool logger_restart_pending;
-static int64_t logger_retry_after_us;
 
 static void restore_quiesced( void )
 {
@@ -151,7 +151,7 @@ void system_lifecycle_abort( system_lifecycle_target_t a_target )
 
 void system_lifecycle_poll( void )
 {
-    if( !logger_restart_pending || !media_store_available() ||
+    if( !logger_restart_pending ||
         esp_timer_get_time() < logger_retry_after_us )
     {
         return;
@@ -159,6 +159,11 @@ void system_lifecycle_poll( void )
     if( !device_config_get()->logging_enabled )
     {
         logger_restart_pending = false;
+        return;
+    }
+    if( ESP_OK != media_store_probe() )
+    {
+        logger_retry_after_us = esp_timer_get_time() + 3000000LL;
         return;
     }
     const esp_err_t result = log_writer_init();
