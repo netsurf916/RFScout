@@ -19,6 +19,7 @@
 #define CAPTURE_REFRESH_US 500000LL
 #define ACTIVITY_CHANNELS 14U
 #define ACTIVITY_IDENTITIES 64U
+#define ACTIVITY_SECONDS 60U
 #define CAPTURE_GPS_REFRESH_US 250000LL
 #define CAPTURE_SETTINGS_MAGIC 0x57445256U
 #define CAPTURE_SETTINGS_VERSION 1U
@@ -52,13 +53,19 @@ static uint64_t stored_bytes;
 static uint64_t free_bytes;
 static esp_err_t last_error;
 static bool activity_page;
-static uint32_t activity_frames[ ACTIVITY_CHANNELS ];
-static uint32_t activity_aps[ ACTIVITY_CHANNELS ];
-static uint32_t activity_stations[ ACTIVITY_CHANNELS ];
+static uint32_t activity_pending[ ACTIVITY_CHANNELS ];
+static uint32_t activity_history[ ACTIVITY_SECONDS ][ ACTIVITY_CHANNELS ];
+static uint32_t activity_totals[ ACTIVITY_CHANNELS ];
+static uint32_t activity_rate[ ACTIVITY_SECONDS ];
 static uint32_t activity_ap_ids[ ACTIVITY_CHANNELS ][ ACTIVITY_IDENTITIES ];
 static uint32_t activity_station_ids[ ACTIVITY_CHANNELS ][ ACTIVITY_IDENTITIES ];
+static uint32_t activity_aps[ ACTIVITY_CHANNELS ];
+static uint32_t activity_stations[ ACTIVITY_CHANNELS ];
+static unsigned activity_cursor;
+static int64_t activity_last_tick_us;
 
-/* Fixed-size approximate identity sets; collisions can undercount transmitters. */
+/* One hash slot and one compare-exchange at most; never scan a full table in the
+   promiscuous driver callback. These are lower-bound sampled identity counts. */
 static void
 observe_identity( uint32_t a_ids[ ACTIVITY_IDENTITIES ], uint32_t *a_count, const uint8_t *a_mac )
 {
@@ -67,90 +74,139 @@ observe_identity( uint32_t a_ids[ ACTIVITY_IDENTITIES ], uint32_t *a_count, cons
     {
         hash = ( hash ^ a_mac[ i ] ) * 16777619U;
     }
-    if( hash == 0U )
+    if( 0U == hash )
     {
         hash = 1U;
     }
-    for( unsigned i = 0U; i < ACTIVITY_IDENTITIES; ++i )
+    uint32_t expected = 0U;
+    if( __atomic_compare_exchange_n( &a_ids[ hash % ACTIVITY_IDENTITIES ],
+                                     &expected,
+                                     hash,
+                                     false,
+                                     __ATOMIC_RELAXED,
+                                     __ATOMIC_RELAXED ) )
     {
-        uint32_t *slot = &a_ids[ ( hash + i ) % ACTIVITY_IDENTITIES ];
-        uint32_t previous = 0U;
-        if( __atomic_compare_exchange_n(
-                slot, &previous, hash, false, __ATOMIC_RELAXED, __ATOMIC_RELAXED ) )
-        {
-            __atomic_add_fetch( a_count, 1U, __ATOMIC_RELAXED );
-            return;
-        }
-        if( previous == hash )
-        {
-            return;
-        }
+        __atomic_add_fetch( a_count, 1U, __ATOMIC_RELAXED );
     }
 }
 
 static void observe_wifi( const uint8_t *a_data, size_t a_length, int8_t a_rssi, uint8_t a_channel )
 {
-    if( options.wifi && a_data != NULL && a_length >= 24U && a_channel >= 1U &&
+    if( options.wifi && NULL != a_data && a_length >= 2U && a_channel >= 1U &&
         a_channel <= ACTIVITY_CHANNELS )
     {
-        const unsigned i = a_channel - 1U;
-        const uint8_t type = ( a_data[ 0 ] >> 2U ) & 3U;
-        const uint8_t subtype = a_data[ 0 ] >> 4U;
-        __atomic_add_fetch( &activity_frames[ i ], 1U, __ATOMIC_RELAXED );
-        if( type == 0U && ( subtype == 8U || subtype == 5U ) )
+        const unsigned channel = a_channel - 1U;
+        __atomic_add_fetch( &activity_pending[ channel ], 1U, __ATOMIC_RELAXED );
+        if( a_length >= 24U )
         {
-            observe_identity( activity_ap_ids[ i ], &activity_aps[ i ], a_data + 10U );
-        }
-        else if( ( type == 0U && ( subtype == 4U || subtype == 0U || subtype == 2U ) ) ||
-                 ( type == 2U && ( a_data[ 1 ] & 3U ) == 1U ) )
-        {
-            observe_identity( activity_station_ids[ i ], &activity_stations[ i ], a_data + 10U );
+            const uint8_t type = ( a_data[ 0 ] >> 2U ) & 3U;
+            const uint8_t subtype = a_data[ 0 ] >> 4U;
+            if( type == 0U && ( subtype == 8U || subtype == 5U ) )
+            {
+                observe_identity( activity_ap_ids[ channel ],
+                                  &activity_aps[ channel ],
+                                  a_data + 10U );
+            }
+            else if( ( type == 0U && ( subtype == 4U || subtype == 0U || subtype == 2U ) ) ||
+                     ( type == 2U && ( a_data[ 1 ] & 3U ) == 1U ) )
+            {
+                observe_identity( activity_station_ids[ channel ],
+                                  &activity_stations[ channel ],
+                                  a_data + 10U );
+            }
         }
     }
     wardrive_on_wifi( a_data, a_length, a_rssi, a_channel );
 }
 
+/* Main-task one-second rollover; callbacks only increment atomic accumulators. */
+static void activity_tick( int64_t a_now_us )
+{
+    if( 0 == activity_last_tick_us )
+    {
+        activity_last_tick_us = a_now_us;
+        return;
+    }
+    while( a_now_us - activity_last_tick_us >= 1000000LL )
+    {
+        uint32_t rate = 0U;
+        for( unsigned channel = 0U; channel < ACTIVITY_CHANNELS; ++channel )
+        {
+            const uint32_t expired = activity_history[ activity_cursor ][ channel ];
+            activity_totals[ channel ] -= expired;
+            const uint32_t count =
+                __atomic_exchange_n( &activity_pending[ channel ], 0U, __ATOMIC_RELAXED );
+            activity_history[ activity_cursor ][ channel ] = count;
+            activity_totals[ channel ] += count;
+            rate += count;
+        }
+        activity_rate[ activity_cursor ] = rate;
+        activity_cursor = ( activity_cursor + 1U ) % ACTIVITY_SECONDS;
+        activity_last_tick_us += 1000000LL;
+    }
+}
+
 static void draw_activity( void )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
-    uint32_t frames[ ACTIVITY_CHANNELS ];
-    uint32_t peak = 1U;
-    for( unsigned i = 0U; i < ACTIVITY_CHANNELS; ++i )
-    {
-        frames[ i ] = __atomic_load_n( &activity_frames[ i ], __ATOMIC_RELAXED );
-        if( frames[ i ] > peak )
-        {
-            peak = frames[ i ];
-        }
-    }
     display_clear( theme->background );
     ui_chrome_draw( "CHANNEL ACTIVITY", theme->secondary );
     const unsigned current = radio_monitor_channel();
     char line[ 72 ];
-    if( current >= 1U && current <= ACTIVITY_CHANNELS )
+    uint32_t peak_rate = 1U;
+    uint32_t peak_channel = 1U;
+    uint32_t total = 0U;
+    for( unsigned i = 0U; i < ACTIVITY_SECONDS; ++i )
     {
-        const unsigned i = current - 1U;
-        (void)snprintf( line,
-                        sizeof( line ),
-                        "CH %u AP~%lu STA~%lu PKT %lu",
-                        current,
-                        (unsigned long)__atomic_load_n( &activity_aps[ i ], __ATOMIC_RELAXED ),
-                        (unsigned long)__atomic_load_n( &activity_stations[ i ], __ATOMIC_RELAXED ),
-                        (unsigned long)frames[ i ] );
-        display_draw_text( 8, 27, line, theme->text, 1U );
+        if( activity_rate[ i ] > peak_rate )
+        {
+            peak_rate = activity_rate[ i ];
+        }
     }
-    display_draw_text( 8, 44, "FRAMES SEEN (NOT AIRTIME)", theme->secondary, 1U );
+    for( unsigned i = 0U; i < ACTIVITY_CHANNELS; ++i )
+    {
+        total += activity_totals[ i ];
+        if( activity_totals[ i ] > peak_channel )
+        {
+            peak_channel = activity_totals[ i ];
+        }
+    }
+    (void)snprintf( line, sizeof( line ), "60s %lu frames  PEAK %lu/s",
+                    (unsigned long)total, (unsigned long)peak_rate );
+    display_draw_text( 8, 26, line, theme->text, 1U );
+    /* 60 chronological bars, 5 pixels each, scaled to the reserved height. */
+    for( unsigned i = 0U; i < ACTIVITY_SECONDS; ++i )
+    {
+        const unsigned slot = ( activity_cursor + i ) % ACTIVITY_SECONDS;
+        const int height = (int)( (uint64_t)activity_rate[ slot ] * 38U / peak_rate );
+        if( height > 0 )
+        {
+            display_fill_rect( 9 + (int)i * 5, 81 - height, 4, height, theme->info );
+        }
+    }
+    display_draw_text( 8, 85, "PACKETS/SEC   -60s -> NOW", theme->secondary, 1U );
+    (void)snprintf( line, sizeof( line ), "CHANNELS (60s)  CH %u  AP~%lu STA~%lu",
+                    current,
+                    (unsigned long)( current >= 1U && current <= ACTIVITY_CHANNELS
+                                         ? __atomic_load_n( &activity_aps[ current - 1U ],
+                                                            __ATOMIC_RELAXED )
+                                         : 0U ),
+                    (unsigned long)( current >= 1U && current <= ACTIVITY_CHANNELS
+                                         ? __atomic_load_n( &activity_stations[ current - 1U ],
+                                                            __ATOMIC_RELAXED )
+                                         : 0U ) );
+    display_draw_text( 8, 100, line, theme->text, 1U );
     for( unsigned i = 0U; i < ACTIVITY_CHANNELS; ++i )
     {
         const int x = 9 + (int)i * 22;
-        const int height = (int)( (uint64_t)frames[ i ] * 69U / peak );
+        const int height = (int)( (uint64_t)activity_totals[ i ] * 25U / peak_channel );
         if( height > 0 )
         {
             display_fill_rect(
-                x, 128 - height, 13, height, i + 1U == current ? theme->success : theme->info );
+                x, 132 - height, 13, height, i + 1U == current ? theme->success : theme->info );
         }
         (void)snprintf( line, sizeof( line ), "%u", i + 1U );
-        display_draw_text( x, 132, line, theme->text, 1U );
+        display_draw_text( x, 135, line, theme->text, 1U );
     }
     display_draw_text( 8, 153, "NAV: OVERVIEW CENTER: SETTINGS", theme->secondary, 1U );
     (void)display_present();
@@ -543,9 +599,14 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
         load_settings();
         menu_open = false;
         activity_page = false;
-        memset( activity_frames, 0, sizeof( activity_frames ) );
+        memset( activity_pending, 0, sizeof( activity_pending ) );
+        memset( activity_history, 0, sizeof( activity_history ) );
+        memset( activity_totals, 0, sizeof( activity_totals ) );
+        memset( activity_rate, 0, sizeof( activity_rate ) );
         memset( activity_aps, 0, sizeof( activity_aps ) );
         memset( activity_stations, 0, sizeof( activity_stations ) );
+        activity_cursor = 0U;
+        activity_last_tick_us = 0;
         memset( activity_ap_ids, 0, sizeof( activity_ap_ids ) );
         memset( activity_station_ids, 0, sizeof( activity_station_ids ) );
         selected = MENU_BACK;
@@ -627,6 +688,7 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
     }
     if( RFSCOUT_APP_RUNTIME_POLL == a_event->type )
     {
+        activity_tick( a_event->now_us );
         wardrive_stats_t capture_status;
         wardrive_capture_stats( &capture_status );
         if( capture_status.storage_error )
