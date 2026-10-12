@@ -46,6 +46,8 @@ A display and usable input are the minimum requirements for the interactive inte
 
 Battery monitoring is optional. Available I2C charge/gauge devices should be probed independently; a board with a calibrated battery ADC can provide voltage as an alternative, without inventing charging state or state-of-charge information. The T-Embed SI4732 is a target for a minimal display/input mapping plus independent SI4732 provider/app support, not a new special startup mode. GPIO4 is a possible SI4732 voltage input according to vendor board documentation, but confirm its actual divider/wiring before enabling ADC sampling.
 
+The CC1101 application has no board-capability prefilter: its existing on-demand identity probe decides whether the radio is present. SPI transport pins and chip select must still come from verified, configured wiring. This is a transport prerequisite, not a board model assertion. Do not attempt unbounded chip-select enumeration or initialize invalid GPIOs. The remaining board-gated providers should be audited separately rather than removing their safety checks indiscriminately.
+
 The current serial-only unknown-profile behavior is an interim safety guard; it does not meet the eventual display-first startup requirement. Removing the fingerprint alone does not establish a safe display pin map, so finish the common UI path only after validating the actual display/input configuration.
 
 ### Current T-Embed profile
