@@ -468,6 +468,7 @@ void app_main( void )
     }
 
     ESP_ERROR_CHECK( app_manager_init() );
+    board_profile_remember();
     /* App discovery probes nRF24 first, then leaves its shared pins inactive for GPS. */
     result = gps_init();
     if( ( ESP_OK != result ) && ( ESP_ERR_NOT_SUPPORTED != result ) )
