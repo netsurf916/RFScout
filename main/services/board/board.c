@@ -309,13 +309,20 @@ esp_err_t board_profile_detect( void )
         }
         active_profile =
             ( RFSCOUT_BOARD_TEMBED_SI4732 == candidate ) ? &si4732_profile : &tembed_profile;
-        remember_profile( candidate );
         ESP_LOGI(
             TAG, "POST: selected transport=%s (verify providers on demand)", active_profile->name );
         return ESP_OK;
     }
     ESP_LOGW( TAG, "POST: no known transport verified; GPIO-safe diagnostic mode" );
     return ESP_OK;
+}
+
+void board_profile_remember( void )
+{
+    if( board_profile_selected() )
+    {
+        remember_profile( (uint8_t)active_profile->id );
+    }
 }
 
 const rfscout_board_profile_t *board_profile( void )
