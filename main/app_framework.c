@@ -183,6 +183,33 @@ esp_err_t app_framework_init( void )
         }
         (void)probe_descriptor( descriptor );
     }
+
+    unsigned available_count = 0U;
+    unsigned unavailable_count = 0U;
+    unsigned deferred_count = 0U;
+    for( int app = 0; app < RFSCOUT_APP_COUNT; ++app )
+    {
+        const rfscout_app_descriptor_t *descriptor = rfscout_app_registry[ app ];
+        const rfscout_app_availability_t state = availability[ app ];
+        if( RFSCOUT_APP_AVAILABILITY_AVAILABLE == state )
+        {
+            ++available_count;
+        }
+        else if( RFSCOUT_APP_AVAILABILITY_UNAVAILABLE == state )
+        {
+            ++unavailable_count;
+        }
+        else
+        {
+            ++deferred_count;
+        }
+        ESP_LOGI( TAG, "POST: app=%s availability=%s", descriptor->name,
+                  ( RFSCOUT_APP_AVAILABILITY_AVAILABLE == state )    ? "available"
+                  : ( RFSCOUT_APP_AVAILABILITY_UNAVAILABLE == state ) ? "unavailable"
+                                                                      : "deferred" );
+    }
+    ESP_LOGI( TAG, "POST: apps available=%u unavailable=%u deferred=%u", available_count,
+              unavailable_count, deferred_count );
     return ESP_OK;
 }
 
