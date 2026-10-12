@@ -253,12 +253,11 @@ static bool item_direct_toggle( unsigned a_item )
     return ( DEVICE_ITEM_BREADCRUMBS == a_item ) || ( DEVICE_ITEM_AUDIO_POLICY == a_item ) ||
            ( DEVICE_ITEM_ALERT_MODE == a_item ) || ( DEVICE_ITEM_CLOCK_FORMAT == a_item ) ||
            ( apps_menu_open && DEVICE_ITEM_SYSTEM_EVENTS == a_item ) ||
-           ( DEVICE_ITEM_WIFI == a_item ) ||
-           ( DEVICE_ITEM_HOTSPOTS == a_item ) || ( DEVICE_ITEM_CC1101 == a_item ) ||
-           ( DEVICE_ITEM_NRF24 == a_item ) || ( DEVICE_ITEM_AUDIO == a_item ) ||
-           ( DEVICE_ITEM_THERMAL == a_item ) || ( DEVICE_ITEM_AUDIO_SPECTRUM == a_item ) ||
-           ( DEVICE_ITEM_GPS == a_item ) || ( DEVICE_ITEM_LOGGING == a_item ) ||
-           ( DEVICE_ITEM_HOLD_SHORTCUT == a_item );
+           ( DEVICE_ITEM_WIFI == a_item ) || ( DEVICE_ITEM_HOTSPOTS == a_item ) ||
+           ( DEVICE_ITEM_CC1101 == a_item ) || ( DEVICE_ITEM_NRF24 == a_item ) ||
+           ( DEVICE_ITEM_AUDIO == a_item ) || ( DEVICE_ITEM_THERMAL == a_item ) ||
+           ( DEVICE_ITEM_AUDIO_SPECTRUM == a_item ) || ( DEVICE_ITEM_GPS == a_item ) ||
+           ( DEVICE_ITEM_LOGGING == a_item ) || ( DEVICE_ITEM_HOLD_SHORTCUT == a_item );
 }
 
 static bool item_editable( unsigned a_item )
@@ -828,8 +827,7 @@ void device_view_render( void )
             break;
         }
     }
-    const unsigned page_start =
-        ( selected_position / DEVICE_ROWS_PER_PAGE ) * DEVICE_ROWS_PER_PAGE;
+    const unsigned page_start = ( selected_position / DEVICE_ROWS_PER_PAGE ) * DEVICE_ROWS_PER_PAGE;
     for( unsigned row = 0U; row < DEVICE_ROWS_PER_PAGE; ++row )
     {
         const unsigned position = page_start + row;
@@ -846,8 +844,7 @@ void device_view_render( void )
                            : ( item_direct_toggle( selected_item ) ? "CENTER CYCLE"
                                                                    : "TURN SELECT / CENTER ENTER" );
     char footer[ 64 ];
-    snprintf(
-        footer, sizeof( footer ), "%u/%u  %s", selected_position + 1U, visible, hint );
+    snprintf( footer, sizeof( footer ), "%u/%u  %s", selected_position + 1U, visible, hint );
     display_draw_text(
         UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, footer, editing ? COLOR_ACCENT : COLOR_DIM, 1U );
     if( save_error )
