@@ -8,6 +8,7 @@
 #include "breadcrumbs.h"
 
 #include "gps.h"
+#include "event.h"
 #include "media_store.h"
 #include "persistent_store.h"
 
@@ -458,6 +459,9 @@ static void write_record( const breadcrumb_record_t *a_record )
                 /* Contain this session even if internal flash persistence fails. */
                 enabled = false;
                 (void)xQueueReset( queue );
+                rfscout_event_emit( RFSCOUT_EVENT_STORAGE_SERVICE_DISABLED,
+                                    RFSCOUT_EVENT_SOURCE_SYSTEM,
+                                    1 );
                 const esp_err_t result = persist_settings( false, file_limit );
                 if( ESP_OK != result )
                 {
@@ -585,13 +589,6 @@ void breadcrumbs_poll( void )
     {
         return;
     }
-    /* Probe also attempts remount when availability was latched false. The media
-       store enforces the shared failure cooldown, so repeated polls stay cheap. */
-    if( !media_store_available() && ESP_OK != media_store_probe() )
-    {
-        return;
-    }
-
     const int64_t now_us = esp_timer_get_time();
     if( 0 != last_capture_us && ( now_us - last_capture_us ) < BREADCRUMB_INTERVAL_US )
     {
