@@ -510,6 +510,8 @@ void app_main( void )
 
     while( true )
     {
+        /* Commit worker-requested service disables before any terminal power transition. */
+        log_writer_process_disable_request();
         input_poll();
         display_idle_poll();
         gps_poll();
@@ -530,8 +532,6 @@ void app_main( void )
         system_events_poll();
         status_bar_poll();
         battery_indicator_poll();
-
-        log_writer_process_disable_request();
 
         /* Setting changes are persisted immediately in the normal case. If persistence fails,
            retain the dirty record but retry at a bounded cadence rather than hammering flash. */
