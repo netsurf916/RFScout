@@ -186,8 +186,7 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
             }
             if( enabled )
             {
-                const esp_err_t result =
-                    wifi_source ? radio_monitor_stop() : ble_monitor_stop();
+                const esp_err_t result = wifi_source ? radio_monitor_stop() : ble_monitor_stop();
                 if( ESP_OK != result )
                 {
                     ESP_LOGW( TAG, "Collector stop failed: %s", esp_err_to_name( result ) );
