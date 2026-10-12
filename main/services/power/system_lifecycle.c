@@ -14,6 +14,7 @@
 #include "recorder.h"
 
 #include "esp_log.h"
+#include "esp_timer.h"
 
 #include <stddef.h>
 
@@ -66,6 +67,7 @@ static void logging_restore( void )
     if( device_config_get()->logging_enabled )
     {
         logger_restart_pending = true;
+        logger_retry_after_us = 0;
     }
 }
 
@@ -81,6 +83,7 @@ static const system_lifecycle_participant_t participants[] = {
 static size_t quiesced_count;
 static bool storage_participating;
 static bool logger_restart_pending;
+static int64_t logger_retry_after_us;
 
 static void restore_quiesced( void )
 {
@@ -148,7 +151,8 @@ void system_lifecycle_abort( system_lifecycle_target_t a_target )
 
 void system_lifecycle_poll( void )
 {
-    if( !logger_restart_pending || !media_store_available() )
+    if( !logger_restart_pending || !media_store_available() ||
+        esp_timer_get_time() < logger_retry_after_us )
     {
         return;
     }
@@ -164,6 +168,7 @@ void system_lifecycle_poll( void )
     }
     else
     {
+        logger_retry_after_us = esp_timer_get_time() + 30000000LL;
         ESP_LOGW( TAG, "logger recovery deferred: %s", esp_err_to_name( result ) );
     }
 }
