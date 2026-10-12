@@ -8,6 +8,8 @@
 #include "log_writer.h"
 
 #include "device_time.h"
+#include "device_config.h"
+#include "event.h"
 #include "gps.h"
 #include "media_store.h"
 #include "storage_internal.h"
@@ -25,6 +27,7 @@
 #include <string.h>
 #include <time.h>
 
+#define LOG_FAILURE_LIMIT 10U
 #define LOG_BUFFER_INITIAL 512U
 #define LOG_BUFFER_MAX 4096U
 #define LOG_FLUSH_THRESHOLD 3328U
@@ -63,6 +66,7 @@ static volatile bool io_error;
 static volatile bool flush_requested;
 static bool first_flush_logged;
 static bool closed_file_mtime_logged;
+static unsigned consecutive_flush_failures;
 
 static const rfscout_memory_owner_t log_owner = {
     .owner_class = RFSCOUT_MEMORY_OWNER_PLATFORM,
@@ -896,7 +900,21 @@ static void writer_task_main( void *a_argument )
 
         if( should_flush )
         {
-            (void)flush_buffer();
+            if( flush_buffer() )
+            {
+                consecutive_flush_failures = 0U;
+            }
+            else if( ++consecutive_flush_failures >= LOG_FAILURE_LIMIT )
+            {
+                ESP_LOGW( TAG, "disabling SD logging after %u failed flushes",
+                          (unsigned)consecutive_flush_failures );
+                accepting = false;
+                (void)device_config_set_logging_enabled( false );
+                rfscout_event_emit( RFSCOUT_EVENT_STORAGE_SERVICE_DISABLED,
+                                    RFSCOUT_EVENT_SOURCE_SYSTEM,
+                                    2 );
+                break;
+            }
             xSemaphoreTake( buffer_lock, portMAX_DELAY );
             const bool empty = 0U == buffer_used;
             xSemaphoreGive( buffer_lock );
@@ -926,6 +944,7 @@ esp_err_t log_writer_init( void )
     }
 
     io_error = false;
+    consecutive_flush_failures = 0U;
     active_open = false;
     if( !media_store_available() )
     {
