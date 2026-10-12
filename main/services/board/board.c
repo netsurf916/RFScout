@@ -61,11 +61,11 @@ static const rfscout_board_profile_t unknown_profile = {
     .speaker_lrclk_pin = -1,
     .speaker_bclk_pin = -1,
     .speaker_data_pin = -1,
-    .battery_type = RFSCOUT_BATTERY_NONE,
+    .battery_type = RFSCOUT_BATTERY_I2C_GAUGE_CHARGER,
     .pn532_i2c_address = 0,
     .mlx90640_i2c_address = 0,
-    .bq27220_i2c_address = 0,
-    .bq25896_i2c_address = 0,
+    .bq27220_i2c_address = 0x55,
+    .bq25896_i2c_address = 0x6B,
     .pn532_reset_pin = -1,
     .pn532_irq_pin = -1,
     .ir_enable_pin = -1,
@@ -261,7 +261,7 @@ static void remember_profile( uint8_t a_candidate )
 static bool candidate_present( uint8_t a_candidate )
 {
     static const uint8_t TEMBED_SIGNATURES[] = { 0x6B, 0x55 };
-    static const uint8_t SI4732_ADDRESSES[] = { 0x11, 0x63 };
+    static const uint8_t SI4732_ADDRESSES[] = { 0x6B, 0x55, 0x11, 0x63 };
     switch( a_candidate )
     {
         case RFSCOUT_BOARD_TEMBED_CC1101_PLUS:
