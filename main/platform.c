@@ -39,6 +39,12 @@ esp_err_t platform_init( void )
         return result;
     }
 
+    if( !board_profile_selected() )
+    {
+        ESP_LOGW( TAG, "unknown board: skipping board-specific GPIO setup" );
+        return ESP_OK;
+    }
+
     uint64_t output_mask = 0U;
     add_output_pin( &output_mask, RFSCOUT_BOARD_POWER_ENABLE_PIN );
     add_output_pin( &output_mask, RFSCOUT_BOARD_DISPLAY_CS_PIN );
