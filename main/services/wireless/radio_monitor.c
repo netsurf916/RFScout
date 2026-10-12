@@ -454,6 +454,14 @@ esp_err_t radio_monitor_stop( void )
     {
         (void)esp_wifi_set_promiscuous( false );
         stop_result = esp_wifi_stop();
+        if( ESP_OK != stop_result )
+        {
+            /* Preserve the running state so a later stop can retry the driver. */
+            portENTER_CRITICAL( &callback_lock );
+            running = true;
+            portEXIT_CRITICAL( &callback_lock );
+            ESP_LOGW( TAG, "Wi-Fi driver stop failed: %s", esp_err_to_name( stop_result ) );
+        }
     }
 
     const TickType_t started = xTaskGetTickCount();
