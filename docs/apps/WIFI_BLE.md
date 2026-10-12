@@ -12,7 +12,7 @@ The normalized live observation store grows in app-owned PSRAM instead of enforc
 
 ### Passive collection behavior
 
-After the shared delayed-activation interval, the application starts both collectors. If either collector is unexpectedly not running, the app retries startup at one-second intervals while it remains active.
+After the shared delayed-activation interval, the application starts the enabled collectors. The settings menu offers independent **WiFi capture** and **BLE capture** On/Off controls, matching Wardriving source selection. Both are enabled by default and the selection is persisted in app-scoped settings. At least one source must remain enabled. Turning a source off stops its collector immediately; turning it on starts the collector while the app is active. Only enabled collectors are retried at one-second intervals. Existing observations from a disabled source remain subject to their normal retention timeout.
 
 The Wi-Fi collector uses ESP32 promiscuous receive mode with no station association and always covers channels **1-14**. Channel dwell is adaptive: channels without retained AP/BSSID evidence use a **120 ms** discovery dwell, while channels with at least one retained AP/BSSID identity use a **350 ms** observation dwell. Every channel remains in the scan cycle; observed infrastructure changes only how long RFScout lingers there.
 
