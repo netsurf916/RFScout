@@ -156,8 +156,7 @@ static void activity_tick( int64_t a_now_us )
         pending[ channel ] =
             __atomic_exchange_n( &activity_pending[ channel ], 0U, __ATOMIC_RELAXED );
     }
-    const uint32_t ble_pending =
-        __atomic_exchange_n( &activity_ble_pending, 0U, __ATOMIC_RELAXED );
+    const uint32_t ble_pending = __atomic_exchange_n( &activity_ble_pending, 0U, __ATOMIC_RELAXED );
     const unsigned steps = elapsed < ACTIVITY_SECONDS ? (unsigned)elapsed : ACTIVITY_SECONDS;
     const uint64_t first = elapsed - steps;
     if( elapsed > ACTIVITY_SECONDS )
