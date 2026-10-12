@@ -198,6 +198,14 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
                     return;
                 }
             }
+            if( wifi_enabled && !next_wifi )
+            {
+                observation_store_clear_source( RF_SOURCE_WIFI );
+            }
+            if( ble_enabled && !next_ble )
+            {
+                observation_store_clear_source( RF_SOURCE_BLE );
+            }
             wifi_enabled = next_wifi;
             ble_enabled = next_ble;
             save_sources();
