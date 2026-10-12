@@ -145,7 +145,7 @@ static const rfscout_board_profile_t si4732_profile = {
     .name = "LILYGO T-Embed SI4732",
     .capabilities = RFSCOUT_BOARD_CAP_ROTARY_ENCODER | RFSCOUT_BOARD_CAP_SCREEN_OFF |
                     RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE,
-    .power_enable_pin = 46,
+    .power_enable_pin = -1,
     .user_key_pin = -1,
     .spi_mosi_pin = 11,
     .spi_miso_pin = -1,
