@@ -106,8 +106,7 @@ void display_transition_notice_show( const char *a_message )
 
 void display_transition_notice_poll( void )
 {
-    if( 0 != transition_notice_expires_us &&
-        esp_timer_get_time() >= transition_notice_expires_us )
+    if( 0 != transition_notice_expires_us && esp_timer_get_time() >= transition_notice_expires_us )
     {
         transition_notice_expires_us = 0;
         display_invalidate();
