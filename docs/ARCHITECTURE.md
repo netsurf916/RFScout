@@ -2,6 +2,8 @@
 
 This is the canonical platform reference for RFScout's **implemented** shared architecture. The [README](../README.md) is the product/current-state anchor, application behavior lives under [`docs/apps/`](apps/), and future design or release planning belongs only in [ROADMAP.md](ROADMAP.md).
 
+> **Design discussion:** [Proposed framework startup and system power lifecycle](architecture/SYSTEM_LIFECYCLE_PROPOSAL.md) documents future semantics; this page describes currently implemented behavior.
+
 ## Documentation and ownership boundary
 
 Platform documentation answers questions about shared contracts: board/profile legality, application lifecycle, resource ownership, memory, persistence, input/presentation, power, storage, audio, networking, and OTA.
@@ -83,12 +85,6 @@ Two platform cases remain intentionally distinct:
 - **Board profile / mandatory UI providers** — these establish the hardware identity and minimum environment needed to run RFScout safely; failure is a platform startup/recovery condition, not an optional app being unavailable.
 - **Mounted SD media after physical loss** — the storage probe latches the current volume unavailable. A subsequent media-store probe invalidates pooled file handles under storage arbitration, unmounts the lost volume, and attempts a fresh mount. Stateful clients must detect a changed media generation and rebuild volume-specific state.
 
-
-### Declarative wireless callback binding
-
-Application descriptors declare either raw packet consumers or normalized observation consumers for each wireless provider. Application modules do not register or unregister callbacks directly. The session manager installs stable framework dispatchers into the Wi-Fi and BLE monitors, routes delivery only to the active application's declared consumer, and clears its dispatch bindings when the session closes.
-
-A raw consumer suppresses normalized observation parsing for that provider; Wardriving receives raw packet views while WiFi/BLE receives observations. These views are borrowed only for the duration of the callback. Radio stop must quiesce all in-flight callbacks before the application frees capture queues or buffers. Transition abort restores the original session and its service state rather than attaching destination consumers early.
 
 ## Application lifecycle, views, and resource sessions
 
@@ -274,6 +270,8 @@ Terminal sleep/power-off preparation flushes dirty configuration and quiesces re
 ## SD storage and logging
 
 SD is removable/bulk storage for recordings, logs, breadcrumbs, captures, and future explicit transfer packages. Internal configuration must remain usable without an SD card.
+
+Optional SD-backed services attempt their ordinary storage operations while enabled, subject to the shared failure cooldown. A service may disable itself after its documented failure threshold, and that transition must produce a single system warning popup naming the affected service. Disabling an optional service must not disable unrelated recording or global storage. No service may turn its periodic update loop into an automatic card-reinsertion probe. A later explicit storage request may recover the media, but auto-disabled features remain disabled until re-enabled by policy or the user.
 
 The storage service owns SD mount/recovery. A failed mount, card-health probe, or media I/O operation starts a shared three-second cooldown. Storage requests during that period fail immediately without accessing the card. The first request after the cooldown may attempt one synchronous recovery; no timer, background retry, or status display triggers recovery. A replacement volume invalidates existing handles, and clients discard optional data rather than queueing retries.
 

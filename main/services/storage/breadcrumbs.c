@@ -8,6 +8,7 @@
 #include "breadcrumbs.h"
 
 #include "gps.h"
+#include "event.h"
 #include "media_store.h"
 #include "persistent_store.h"
 
@@ -24,6 +25,10 @@
 #include <string.h>
 #include <time.h>
 
+/* Disable after consecutive storage-write failures; success resets the streak. */
+#define BREADCRUMB_FAILURE_LIMIT 10U
+#define BREADCRUMB_PERSIST_RETRY_LIMIT 3U
+#define BREADCRUMB_PERSIST_RETRY_US 30000000LL
 #define BREADCRUMB_COLLECTION "breadcrumbs"
 #define BREADCRUMB_SETTINGS_KEY "breadcrumbs"
 #define BREADCRUMB_SETTINGS_VERSION 1U
@@ -72,6 +77,10 @@ static volatile bool trim_requested;
 static volatile bool shutdown_requested;
 static volatile bool worker_quiesced;
 static bool settings_loaded;
+static uint8_t consecutive_write_failures;
+static uint8_t disable_persist_attempts;
+static int64_t disable_persist_retry_us;
+static bool disable_persist_pending;
 static volatile bool enabled;
 static volatile uint16_t file_limit = RFSCOUT_BREADCRUMB_FILE_LIMIT_DEFAULT;
 static rfscout_media_collection_t collection;
@@ -335,14 +344,14 @@ static bool prepare_append( const rfscout_media_file_t *a_file, bool a_empty_fil
 }
 
 /** @brief Append one record; caller holds write_mutex so disable cannot race a write. */
-static void write_record_locked( const breadcrumb_record_t *a_record )
+static bool write_record_locked( const breadcrumb_record_t *a_record )
 {
     char name[ BREADCRUMB_FILENAME_CAPACITY ];
     char timestamp[ 32 ];
     if( !format_bucket_name( a_record->utc_epoch, name ) ||
         !format_timestamp( a_record->utc_epoch, timestamp, sizeof( timestamp ) ) )
     {
-        return;
+        return false;
     }
 
     rfscout_media_entry_t entry;
@@ -351,7 +360,7 @@ static void write_record_locked( const breadcrumb_record_t *a_record )
     if( new_file && ESP_ERR_NOT_FOUND != stat_result )
     {
         ESP_LOGE( TAG, "breadcrumb size query failed: %s", esp_err_to_name( stat_result ) );
-        return;
+        return false;
     }
 
     breadcrumb_header_status_t header_status = BREADCRUMB_HEADER_VALID;
@@ -361,7 +370,7 @@ static void write_record_locked( const breadcrumb_record_t *a_record )
         if( BREADCRUMB_HEADER_IO_ERROR == header_status )
         {
             ESP_LOGE( TAG, "breadcrumb header read failed" );
-            return;
+            return false;
         }
     }
 
@@ -380,7 +389,7 @@ static void write_record_locked( const breadcrumb_record_t *a_record )
     if( ESP_OK != open_result )
     {
         ESP_LOGE( TAG, "breadcrumb append open failed: %s", esp_err_to_name( open_result ) );
-        return;
+        return false;
     }
 
     const bool empty_file = new_file || recreate_file || 0U == entry.size_bytes;
@@ -422,6 +431,7 @@ static void write_record_locked( const breadcrumb_record_t *a_record )
     {
         trim_files();
     }
+    return success;
 }
 
 static void write_record( const breadcrumb_record_t *a_record )
@@ -433,7 +443,36 @@ static void write_record( const breadcrumb_record_t *a_record )
     (void)xSemaphoreTake( write_mutex, portMAX_DELAY );
     if( enabled )
     {
-        write_record_locked( a_record );
+        const bool success = write_record_locked( a_record );
+        if( success )
+        {
+            consecutive_write_failures = 0U;
+        }
+        else if( consecutive_write_failures < BREADCRUMB_FAILURE_LIMIT )
+        {
+            ++consecutive_write_failures;
+            if( BREADCRUMB_FAILURE_LIMIT == consecutive_write_failures )
+            {
+                ESP_LOGW( TAG,
+                          "disabling breadcrumbs after %u consecutive write failures",
+                          (unsigned)consecutive_write_failures );
+                /* Contain this session even if internal flash persistence fails. */
+                enabled = false;
+                (void)xQueueReset( queue );
+                rfscout_event_emit(
+                    RFSCOUT_EVENT_STORAGE_SERVICE_DISABLED, RFSCOUT_EVENT_SOURCE_SYSTEM, 1 );
+                const esp_err_t result = persist_settings( false, file_limit );
+                if( ESP_OK != result )
+                {
+                    disable_persist_pending = true;
+                    disable_persist_attempts = 0U;
+                    disable_persist_retry_us = esp_timer_get_time() + BREADCRUMB_PERSIST_RETRY_US;
+                    ESP_LOGE( TAG,
+                              "cannot persist automatic breadcrumb disable: %s",
+                              esp_err_to_name( result ) );
+                }
+            }
+        }
     }
     (void)xSemaphoreGive( write_mutex );
 }
@@ -496,6 +535,9 @@ esp_err_t breadcrumbs_init( void )
 
     last_capture_us = 0;
     last_queued_utc = 0;
+    consecutive_write_failures = 0U;
+    disable_persist_pending = false;
+    disable_persist_attempts = 0U;
     trim_requested = false;
     shutdown_requested = false;
     worker_quiesced = false;
@@ -514,11 +556,38 @@ esp_err_t breadcrumbs_init( void )
 
 void breadcrumbs_poll( void )
 {
+    if( disable_persist_pending && NULL != write_mutex &&
+        esp_timer_get_time() >= disable_persist_retry_us &&
+        pdTRUE == xSemaphoreTake( write_mutex, 0U ) )
+    {
+        if( disable_persist_pending )
+        {
+            const esp_err_t result = persist_settings( false, file_limit );
+            if( ESP_OK == result )
+            {
+                disable_persist_pending = false;
+            }
+            else
+            {
+                ++disable_persist_attempts;
+                if( disable_persist_attempts >= BREADCRUMB_PERSIST_RETRY_LIMIT )
+                {
+                    disable_persist_pending = false;
+                    ESP_LOGE( TAG, "breadcrumb auto-disable persistence retries exhausted" );
+                }
+                else
+                {
+                    disable_persist_retry_us = esp_timer_get_time() + BREADCRUMB_PERSIST_RETRY_US;
+                }
+            }
+        }
+        (void)xSemaphoreGive( write_mutex );
+    }
+
     if( NULL == queue || shutdown_requested || !enabled || !gps_available() )
     {
         return;
     }
-
     const int64_t now_us = esp_timer_get_time();
     if( 0 != last_capture_us && ( now_us - last_capture_us ) < BREADCRUMB_INTERVAL_US )
     {
@@ -563,31 +632,31 @@ bool breadcrumbs_enabled( void )
 esp_err_t breadcrumbs_set_enabled( bool a_enabled )
 {
     load_settings();
-    if( enabled == a_enabled )
-    {
-        return ESP_OK;
-    }
-
-    /* Disabling waits for any in-progress append so no record lands after the setting changes. */
-    const bool hold_writes = !a_enabled && NULL != write_mutex;
-    if( hold_writes )
+    if( NULL != write_mutex )
     {
         (void)xSemaphoreTake( write_mutex, portMAX_DELAY );
     }
 
-    const esp_err_t result = persist_settings( a_enabled, file_limit );
-    if( ESP_OK == result )
+    esp_err_t result = ESP_OK;
+    if( enabled != a_enabled || disable_persist_pending )
     {
-        enabled = a_enabled;
-        last_capture_us = 0;
-        last_queued_utc = 0;
-        if( !a_enabled && NULL != queue )
+        result = persist_settings( a_enabled, file_limit );
+        if( ESP_OK == result )
         {
-            (void)xQueueReset( queue );
+            enabled = a_enabled;
+            disable_persist_pending = false;
+            disable_persist_attempts = 0U;
+            consecutive_write_failures = 0U;
+            last_capture_us = 0;
+            last_queued_utc = 0;
+            if( !a_enabled && NULL != queue )
+            {
+                (void)xQueueReset( queue );
+            }
         }
     }
 
-    if( hold_writes )
+    if( NULL != write_mutex )
     {
         (void)xSemaphoreGive( write_mutex );
     }
@@ -607,15 +676,27 @@ esp_err_t breadcrumbs_set_file_limit( uint16_t a_file_limit )
     {
         return ESP_ERR_INVALID_ARG;
     }
-    if( file_limit == a_file_limit )
+    if( NULL != write_mutex )
     {
-        return ESP_OK;
+        (void)xSemaphoreTake( write_mutex, portMAX_DELAY );
     }
-    const esp_err_t result = persist_settings( enabled, a_file_limit );
-    if( ESP_OK == result )
+
+    esp_err_t result = ESP_OK;
+    if( file_limit != a_file_limit || disable_persist_pending )
     {
-        file_limit = a_file_limit;
-        request_trim();
+        result = persist_settings( enabled, a_file_limit );
+        if( ESP_OK == result )
+        {
+            file_limit = a_file_limit;
+            disable_persist_pending = false;
+            disable_persist_attempts = 0U;
+            request_trim();
+        }
+    }
+
+    if( NULL != write_mutex )
+    {
+        (void)xSemaphoreGive( write_mutex );
     }
     return result;
 }

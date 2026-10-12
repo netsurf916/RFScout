@@ -52,6 +52,8 @@ typedef enum
     RFSCOUT_EVENT_STORAGE_LOST,
     /** SD storage became usable again after mount failure or media loss. */
     RFSCOUT_EVENT_STORAGE_RECOVERED,
+    /** Optional SD-backed service disabled itself after repeated failures. */
+    RFSCOUT_EVENT_STORAGE_SERVICE_DISABLED,
     RFSCOUT_EVENT_TYPE_COUNT
 } rfscout_event_type_t;
 
