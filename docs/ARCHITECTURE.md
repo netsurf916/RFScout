@@ -38,6 +38,14 @@ The current T-Embed fingerprint uses the early I2C path and onboard BQ25896/BQ27
 
 Unknown or ambiguous hardware is a **nonfatal discovery state**: RFScout records the unknown profile, reports the result over serial, leaves board GPIO/peripherals untouched, and remains awake for recovery flashing. The full UI cannot run without known display/input pin assignments. This does not assume that missing I2C charger/gauge fingerprints imply missing radios; a future verified board profile is still required before touching board-specific pins. The bootloader's `waiting for download` message occurs before firmware execution and is unrelated to RFScout profile discovery.
 
+### Startup compatibility policy (target design)
+
+Board identity and peripheral availability are separate. A missing I2C charge controller or fuel gauge must not reject a platform with verified display/input wiring. A supported board's minimal startup contract is usable display plus basic input; other peripherals are optional and probed by their owners. The existing nonfatal unknown-profile serial diagnostic is an interim safe state, **not yet** a usable UI on an unidentified board: SPI display controllers cannot be safely enumerated without a known wiring map.
+
+The LILYGO T-Embed SI4732 is the next explicit profile target. Its advertised ESP32-S3, 320x170 ST7789V display, rotary controls, Wi-Fi/BLE, and SD can provide baseline app functionality once SI4732-specific GPIO assignments have been verified against its schematic. Its battery-voltage ADC input is advertised as GPIO4; analog telemetry needs a per-board resistor-divider calibration and charge-state semantics, and must not be inferred from unrelated CC1101 Plus pins. SI4732 radio support is a separate opt-in provider/app and must not be mistaken for CC1101 availability. GPS, microphone, speaker, and power-latch behavior require independent wiring validation before enabling.
+
+Desired startup sequence: select a **verified** wiring profile through a safe discriminator or explicit build-time choice; initialize and validate the display; initialize semantic input; treat any charger/gauge, ADC battery measurement, radio, storage, and audio availability as independent optional providers; start the common application framework even if these optional probes fail. Preserve a GPIO-safe serial-only mode for hardware with no validated profile, and report the actual reason for UI startup failure without classifying absent optional battery ICs as a fatal board failure.
+
 ### Current T-Embed profile
 
 The hardware-validated profile owns the current 320x170 ST7789 display, rotary/center input, CC1101, nRF24, PDM microphone, speaker, SD, battery/charger telemetry, internal-temperature protection, display low-power behavior, deep sleep, and physical power-off semantics.
