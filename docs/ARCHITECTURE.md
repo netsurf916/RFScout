@@ -23,7 +23,7 @@ Application pages own app-specific UI, interpretation, settings, and current lim
 
 ## Board, app, and service boundaries
 
-RFScout's ESP32-S3 firmware selects a **known display/input transport configuration** rather than requiring a battery-management chip to establish board identity. The currently validated interactive target is the T-Embed CC1101 Plus. The T-Embed SI4732 pinout is an experimental candidate based on LILYGO's reference firmware, and still requires hardware testing.
+RFScout's ESP32-S3 firmware selects a **known display/input transport configuration** rather than requiring a battery-management chip to establish board identity. The currently validated interactive target is the T-Embed CC1101 Plus. The T-Embed SI4732 pinout is an experimental candidate based on LILYGO's reference firmware, and still requires hardware testing. Its example firmware drives GPIO46 as a power control, but RFScout deliberately avoids configuring that ESP32-S3 strapping/input-only pin as an output; power-latch behavior still needs hardware validation.
 
 Early startup reads a versioned NVS preference, then performs a bounded passive I2C discovery pass. It tries the cached transport candidate first, then the known CC1101 Plus and SI4732 layouts. The candidates use their documented SDA/SCL wiring and known addresses; the temporary discovery bus is deleted after each attempt. A responsive signature selects the corresponding display/input pin configuration; the changed preference is committed to NVS only after display and framework initialization succeed. The saved hint is **never** proof of currently present hardware; every boot probes again. No raw GPIO structures or ephemeral presence flags are persisted.
 
