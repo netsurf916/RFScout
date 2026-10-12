@@ -956,6 +956,73 @@ void observation_store_reset( void )
     xSemaphoreGive( store_lock );
 }
 
+void observation_store_clear_source( rf_source_t a_source )
+{
+    if( ( NULL == store_lock ) ||
+        ( ( RF_SOURCE_WIFI != a_source ) && ( RF_SOURCE_BLE != a_source ) ) )
+    {
+        return;
+    }
+
+    const uint32_t source_bit = RF_SOURCE_BIT( a_source );
+    xSemaphoreTake( store_lock, portMAX_DELAY );
+    synchronize_session_store();
+
+    size_t i = 0U;
+    while( i < device_count )
+    {
+        rf_device_t *device = &devices[ i ];
+        if( 0U == ( device->source_mask & source_bit ) )
+        {
+            ++i;
+            continue;
+        }
+
+        if( ( RF_SOURCE_WIFI == a_source ) && has_active_wifi_ap_role( device ) )
+        {
+            adjust_wifi_ap_channel_count( device->wifi_channel, -1 );
+        }
+        device->source_mask &= ~source_bit;
+        if( RF_SOURCE_WIFI == a_source )
+        {
+            device->wifi_is_ap = false;
+            device->wifi_channel = 0U;
+            device->wifi_last_seen_ms = 0U;
+        }
+        else
+        {
+            device->ble_last_seen_ms = 0U;
+        }
+
+        if( 0U == device->source_mask )
+        {
+            --device_count;
+            if( i != device_count )
+            {
+                devices[ i ] = devices[ device_count ];
+            }
+            memset( &devices[ device_count ], 0, sizeof( devices[ device_count ] ) );
+            continue;
+        }
+
+        if( device->last_source == a_source )
+        {
+            device->last_source =
+                ( 0U != ( device->source_mask & RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) )
+                    ? RF_SOURCE_WIFI
+                    : RF_SOURCE_BLE;
+        }
+        device->last_seen_ms =
+            ( device->wifi_last_seen_ms > device->ble_last_seen_ms )
+                ? device->wifi_last_seen_ms
+                : device->ble_last_seen_ms;
+        ++i;
+    }
+
+    rebuild_identity_index();
+    xSemaphoreGive( store_lock );
+}
+
 void observation_store_housekeeping( void )
 {
     if( NULL == store_lock )
