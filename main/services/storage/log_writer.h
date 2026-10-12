@@ -67,6 +67,9 @@ bool log_end( rfscout_log_record_t *a_record );
 /** Flush buffered records, close the active file, and stop the writer task. */
 bool log_writer_shutdown( uint32_t a_timeout_ms );
 
+/** Apply a worker-requested logging disable on the main task, before saving configuration. */
+void log_writer_process_disable_request( void );
+
 /** Return sticky SD logging I/O-error state. */
 bool log_writer_has_error( void );
 
