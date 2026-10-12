@@ -52,7 +52,6 @@ static int64_t last_gps_refresh_us;
 static uint64_t stored_bytes;
 static uint64_t free_bytes;
 static esp_err_t last_error;
-static bool activity_page;
 static uint32_t activity_pending[ ACTIVITY_CHANNELS ];
 static uint32_t activity_history[ ACTIVITY_SECONDS ][ ACTIVITY_CHANNELS ];
 static uint32_t activity_totals[ ACTIVITY_CHANNELS ];
@@ -144,77 +143,6 @@ static void activity_tick( int64_t a_now_us )
     }
 }
 
-static void draw_activity( void )
-{
-    const ui_theme_palette_t *theme = ui_theme_get();
-    display_clear( theme->background );
-    ui_chrome_draw( "CHANNEL ACTIVITY", theme->secondary );
-    const unsigned current = radio_monitor_channel();
-    char line[ 72 ];
-    uint32_t peak_rate = 1U;
-    uint32_t peak_channel = 1U;
-    uint32_t total = 0U;
-    for( unsigned i = 0U; i < ACTIVITY_SECONDS; ++i )
-    {
-        if( activity_rate[ i ] > peak_rate )
-        {
-            peak_rate = activity_rate[ i ];
-        }
-    }
-    for( unsigned i = 0U; i < ACTIVITY_CHANNELS; ++i )
-    {
-        total += activity_totals[ i ];
-        if( activity_totals[ i ] > peak_channel )
-        {
-            peak_channel = activity_totals[ i ];
-        }
-    }
-    (void)snprintf( line,
-                    sizeof( line ),
-                    "60s %lu frames  PEAK %lu/s",
-                    (unsigned long)total,
-                    (unsigned long)peak_rate );
-    display_draw_text( 8, 26, line, theme->text, 1U );
-    /* 60 chronological bars, 5 pixels each, scaled to the reserved height. */
-    for( unsigned i = 0U; i < ACTIVITY_SECONDS; ++i )
-    {
-        const unsigned slot = ( activity_cursor + i ) % ACTIVITY_SECONDS;
-        const int height = (int)( (uint64_t)activity_rate[ slot ] * 38U / peak_rate );
-        if( height > 0 )
-        {
-            display_fill_rect( 9 + (int)i * 5, 81 - height, 4, height, theme->info );
-        }
-    }
-    display_draw_text( 8, 85, "PACKETS/SEC   -60s -> NOW", theme->secondary, 1U );
-    (void)snprintf(
-        line,
-        sizeof( line ),
-        "CHANNELS (60s)  CH %u  AP~%lu STA~%lu",
-        current,
-        (unsigned long)( current >= 1U && current <= ACTIVITY_CHANNELS
-                             ? __atomic_load_n( &activity_aps[ current - 1U ], __ATOMIC_RELAXED )
-                             : 0U ),
-        (unsigned long)( current >= 1U && current <= ACTIVITY_CHANNELS
-                             ? __atomic_load_n( &activity_stations[ current - 1U ],
-                                                __ATOMIC_RELAXED )
-                             : 0U ) );
-    display_draw_text( 8, 100, line, theme->text, 1U );
-    for( unsigned i = 0U; i < ACTIVITY_CHANNELS; ++i )
-    {
-        const int x = 9 + (int)i * 22;
-        const int height = (int)( (uint64_t)activity_totals[ i ] * 25U / peak_channel );
-        if( height > 0 )
-        {
-            display_fill_rect(
-                x, 132 - height, 13, height, i + 1U == current ? theme->success : theme->info );
-        }
-        (void)snprintf( line, sizeof( line ), "%u", i + 1U );
-        display_draw_text( x, 135, line, theme->text, 1U );
-    }
-    display_draw_text( 8, 153, "NAV: OVERVIEW CENTER: SETTINGS", theme->secondary, 1U );
-    (void)display_present();
-}
-
 static wardrive_config_t defaults( void )
 {
     return ( wardrive_config_t ){
@@ -289,48 +217,103 @@ static void draw_overview( void )
     rfscout_gps_snapshot_t gps = { 0 };
     const bool fixed =
         gps_snapshot_get( &gps ) && gps.location_valid && gps.location_age_ms <= 5000U;
+    const unsigned current = radio_monitor_channel();
     char line[ 72 ];
+    uint32_t peak_rate = 1U;
+    uint32_t peak_channel = 1U;
+    for( unsigned i = 0U; i < ACTIVITY_SECONDS; ++i )
+    {
+        if( activity_rate[ i ] > peak_rate )
+        {
+            peak_rate = activity_rate[ i ];
+        }
+    }
+    for( unsigned i = 0U; i < ACTIVITY_CHANNELS; ++i )
+    {
+        if( activity_totals[ i ] > peak_channel )
+        {
+            peak_channel = activity_totals[ i ];
+        }
+    }
 
     display_clear( theme->background );
+    /* ui_chrome preserves the platform status region above y=20 (clock, SD,
+       battery and other system icons); the dashboard is confined below it. */
     ui_chrome_draw( "WARDRIVING", theme->secondary );
-    (void)snprintf( line,
-                    sizeof( line ),
-                    "STATE: %s",
-                    stats.storage_error ? "SD ERROR"
-                    : stats.recording   ? "RECORDING"
-                                        : "STOPPED" );
-    display_draw_text( 8, 27, line, stats.storage_error ? theme->warning : theme->text, 1U );
-    (void)snprintf( line,
-                    sizeof( line ),
-                    "RADIO: %s%s%s",
-                    options.wifi ? "Wi-Fi" : "",
-                    options.wifi && options.ble ? " + " : "",
-                    options.ble ? "BLE" : "" );
-    display_draw_text( 8, 47, line, theme->text, 1U );
-    (void)snprintf( line,
-                    sizeof( line ),
-                    "CH: %u %s",
-                    (unsigned)radio_monitor_channel(),
-                    options.fixed_channel ? "FIXED" : "SCAN" );
-    display_draw_text( 8, 65, line, theme->info, 1U );
-    (void)snprintf( line, sizeof( line ), "GPS: %s", fixed ? "FIX" : "NO FIX" );
-    display_draw_text( 202, 65, line, fixed ? theme->success : theme->warning, 1U );
-    (void)snprintf( line,
-                    sizeof( line ),
-                    "Wi-Fi: %lu   BLE: %lu",
-                    (unsigned long)stats.received_wifi,
-                    (unsigned long)stats.received_ble );
-    display_draw_text( 8, 88, line, theme->text, 1U );
-    (void)snprintf( line,
-                    sizeof( line ),
-                    "SAVED: %lu  DROPPED: %lu",
-                    (unsigned long)stats.written,
-                    (unsigned long)stats.dropped );
-    display_draw_text( 8, 108, line, theme->text, 1U );
-    (void)snprintf(
-        line, sizeof( line ), "WRITTEN: %lu KiB", (unsigned long)( stats.bytes / 1024U ) );
-    display_draw_text( 8, 128, line, theme->info, 1U );
-    display_draw_text( 8, 152, "NAV: CHANNELS CENTER: SETTINGS", theme->secondary, 1U );
+    display_fill_rect( 156, 23, 1, 140, theme->secondary );
+    display_fill_rect( 8, 82, 142, 1, theme->secondary );
+    display_fill_rect( 8, 124, 142, 1, theme->secondary );
+    display_fill_rect( 163, 93, 149, 1, theme->secondary );
+
+    display_draw_text( 8, 26, "GPS POSITION", theme->secondary, 1U );
+    display_draw_text( 111, 26, fixed ? "FIX" : "NO FIX",
+                       fixed ? theme->success : theme->warning, 1U );
+    if( fixed )
+    {
+        (void)snprintf( line, sizeof( line ), "%.6f", gps.latitude_deg );
+        display_draw_text( 8, 42, line, theme->text, 1U );
+        (void)snprintf( line, sizeof( line ), "%.6f", gps.longitude_deg );
+        display_draw_text( 8, 58, line, theme->text, 1U );
+    }
+    else
+    {
+        display_draw_text( 8, 42, "--.------", theme->secondary, 1U );
+        display_draw_text( 8, 58, "--.------", theme->secondary, 1U );
+    }
+    display_draw_text( 8, 88, "WIFI", theme->secondary, 1U );
+    display_draw_text( 84, 88, "BLE", theme->secondary, 1U );
+    (void)snprintf( line, sizeof( line ), "%lu", (unsigned long)stats.received_wifi );
+    display_draw_text( 8, 103, line, theme->info, 1U );
+    (void)snprintf( line, sizeof( line ), "%lu", (unsigned long)stats.received_ble );
+    display_draw_text( 84, 103, line, theme->info, 1U );
+    (void)snprintf( line, sizeof( line ), "SAVE %lu", (unsigned long)stats.written );
+    display_draw_text( 8, 130, line, theme->success, 1U );
+    (void)snprintf( line, sizeof( line ), "DROP %lu", (unsigned long)stats.dropped );
+    display_draw_text( 81, 130, line, stats.dropped ? theme->warning : theme->text, 1U );
+    display_draw_text( 8, 146,
+                       stats.storage_error ? "SD ERROR" : stats.recording ? "REC" : "STOP",
+                       stats.storage_error ? theme->error
+                       : stats.recording   ? theme->success
+                                           : theme->secondary,
+                       1U );
+    (void)snprintf( line, sizeof( line ), "CH %u %s",
+                    current, options.fixed_channel ? "FIXED" : "SCAN" );
+    display_draw_text( 60, 146, line, theme->info, 1U );
+
+    display_draw_text( 163, 25, "PACKETS/SEC", theme->secondary, 1U );
+    (void)snprintf( line, sizeof( line ), "%lu", (unsigned long)peak_rate );
+    display_draw_text( 274, 25, line, theme->text, 1U );
+    for( unsigned guide = 0U; guide < 3U; ++guide )
+    {
+        display_fill_rect( 163, 43 + (int)guide * 16, 149, 1, theme->secondary );
+    }
+    for( unsigned i = 0U; i < ACTIVITY_SECONDS; ++i )
+    {
+        const unsigned slot = ( activity_cursor + i ) % ACTIVITY_SECONDS;
+        const uint32_t value = activity_rate[ slot ];
+        const int height = (int)( (uint64_t)value * 46U / peak_rate );
+        if( height > 0 )
+        {
+            display_fill_rect( 164 + (int)i * 2, 89 - height, 2, height,
+                               value * 4U >= peak_rate * 3U ? theme->warning : theme->info );
+        }
+    }
+    display_draw_text( 163, 95, "CHANNELS / LAST 60s", theme->secondary, 1U );
+    for( unsigned i = 0U; i < ACTIVITY_CHANNELS; ++i )
+    {
+        const int x = 164 + (int)i * 11;
+        const uint32_t value = activity_totals[ i ];
+        const int height = (int)( (uint64_t)value * 37U / peak_channel );
+        if( height > 0 )
+        {
+            const uint16_t color = i + 1U == current ? theme->success
+                                   : value * 4U >= peak_channel * 3U ? theme->warning
+                                                                     : theme->info;
+            display_fill_rect( x, 146 - height, 8, height, color );
+        }
+        (void)snprintf( line, sizeof( line ), "%u", i + 1U );
+        display_draw_text( x, 149, line, theme->text, 1U );
+    }
     (void)display_present();
 }
 
@@ -601,7 +584,6 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
     {
         load_settings();
         menu_open = false;
-        activity_page = false;
         memset( activity_pending, 0, sizeof( activity_pending ) );
         memset( activity_history, 0, sizeof( activity_history ) );
         memset( activity_totals, 0, sizeof( activity_totals ) );
@@ -661,30 +643,11 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
             draw_menu();
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
-        if( RFSCOUT_INPUT_NAVIGATION == a_event->input.type && !menu_open )
-        {
-            activity_page = !activity_page;
-            if( activity_page )
-            {
-                draw_activity();
-            }
-            else
-            {
-                draw_overview();
-            }
-            return RFSCOUT_APP_RUNTIME_HANDLED;
-        }
+ 
         if( RFSCOUT_INPUT_LONG_PRESS == a_event->input.type && menu_open )
         {
             menu_open = false;
-            if( activity_page )
-            {
-                draw_activity();
-            }
-            else
-            {
-                draw_overview();
-            }
+            draw_overview();
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
         return RFSCOUT_APP_RUNTIME_IGNORED;
@@ -711,14 +674,7 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
         if( !menu_open && ( a_event->now_us - last_draw_us >= CAPTURE_REFRESH_US ) )
         {
             last_draw_us = a_event->now_us;
-            if( activity_page )
-            {
-                draw_activity();
-            }
-            else
-            {
-                draw_overview();
-            }
+            draw_overview();
         }
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
