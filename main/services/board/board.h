@@ -109,6 +109,8 @@ typedef struct
 } rfscout_board_profile_t;
 
 esp_err_t board_profile_detect( void );
+/** @brief Persist the verified startup transport after mandatory initialization succeeds. */
+void board_profile_remember( void );
 const rfscout_board_profile_t *board_profile( void );
 bool board_profile_selected( void );
 bool board_profile_has( rfscout_board_capability_t a_capability );
