@@ -142,29 +142,59 @@ static void activity_tick( int64_t a_now_us )
         activity_last_tick_us = a_now_us;
         return;
     }
-    while( a_now_us - activity_last_tick_us >= 1000000LL )
+    const uint64_t elapsed = (uint64_t)( a_now_us - activity_last_tick_us ) / 1000000ULL;
+    if( 0U == elapsed )
     {
+        return;
+    }
+    /* Keep only buckets still inside the window. Counts gathered across a poll
+       stall have no individual timestamps, so apportion them over elapsed time
+       rather than assigning the entire interval to the oldest missed second. */
+    uint32_t pending[ ACTIVITY_CHANNELS ];
+    for( unsigned channel = 0U; channel < ACTIVITY_CHANNELS; ++channel )
+    {
+        pending[ channel ] =
+            __atomic_exchange_n( &activity_pending[ channel ], 0U, __ATOMIC_RELAXED );
+    }
+    const uint32_t ble_pending =
+        __atomic_exchange_n( &activity_ble_pending, 0U, __ATOMIC_RELAXED );
+    const unsigned steps = elapsed < ACTIVITY_SECONDS ? (unsigned)elapsed : ACTIVITY_SECONDS;
+    const uint64_t first = elapsed - steps;
+    if( elapsed > ACTIVITY_SECONDS )
+    {
+        /* All prior history has expired; start with the oldest retained bucket. */
+        memset( activity_history, 0, sizeof( activity_history ) );
+        memset( activity_totals, 0, sizeof( activity_totals ) );
+        memset( activity_rate, 0, sizeof( activity_rate ) );
+        memset( activity_ble_rate, 0, sizeof( activity_ble_rate ) );
+        activity_cursor = 0U;
+        activity_samples = 0U;
+    }
+    for( unsigned step = 0U; step < steps; ++step )
+    {
+        const uint64_t offset = first + step;
         uint32_t rate = 0U;
         for( unsigned channel = 0U; channel < ACTIVITY_CHANNELS; ++channel )
         {
-            const uint32_t expired = activity_history[ activity_cursor ][ channel ];
-            activity_totals[ channel ] -= expired;
+            activity_totals[ channel ] -= activity_history[ activity_cursor ][ channel ];
             const uint32_t count =
-                __atomic_exchange_n( &activity_pending[ channel ], 0U, __ATOMIC_RELAXED );
+                (uint32_t)( (uint64_t)pending[ channel ] * ( offset + 1U ) / elapsed -
+                            (uint64_t)pending[ channel ] * offset / elapsed );
             activity_history[ activity_cursor ][ channel ] = count;
             activity_totals[ channel ] += count;
             rate += count;
         }
         activity_rate[ activity_cursor ] = rate;
         activity_ble_rate[ activity_cursor ] =
-            __atomic_exchange_n( &activity_ble_pending, 0U, __ATOMIC_RELAXED );
+            (uint32_t)( (uint64_t)ble_pending * ( offset + 1U ) / elapsed -
+                        (uint64_t)ble_pending * offset / elapsed );
         activity_cursor = ( activity_cursor + 1U ) % ACTIVITY_SECONDS;
         if( activity_samples < ACTIVITY_SECONDS )
         {
             ++activity_samples;
         }
-        activity_last_tick_us += 1000000LL;
     }
+    activity_last_tick_us += (int64_t)( elapsed * 1000000ULL );
 }
 
 static wardrive_config_t defaults( void )
@@ -293,10 +323,35 @@ static void draw_overview( void )
     display_draw_text( 8, 103, line, theme->info, 1U );
     (void)snprintf( line, sizeof( line ), "%lu", (unsigned long)stats.received_ble );
     display_draw_text( 84, 103, line, theme->info, 1U );
-    (void)snprintf( line, sizeof( line ), "SAVE %lu", (unsigned long)stats.written );
+    /* Fixed-width compact counts keep both labels inside their 72px columns. */
+    const uint32_t saved = stats.written;
+    const uint32_t dropped = stats.dropped;
+    if( saved >= 1000000U )
+    {
+        (void)snprintf( line, sizeof( line ), "S %.1fM", (double)saved / 1000000.0 );
+    }
+    else if( saved >= 10000U )
+    {
+        (void)snprintf( line, sizeof( line ), "S %.1fk", (double)saved / 1000.0 );
+    }
+    else
+    {
+        (void)snprintf( line, sizeof( line ), "S %lu", (unsigned long)saved );
+    }
     display_draw_text( 8, 130, line, theme->success, 1U );
-    (void)snprintf( line, sizeof( line ), "DROP %lu", (unsigned long)stats.dropped );
-    display_draw_text( 81, 130, line, stats.dropped ? theme->warning : theme->text, 1U );
+    if( dropped >= 1000000U )
+    {
+        (void)snprintf( line, sizeof( line ), "D %.1fM", (double)dropped / 1000000.0 );
+    }
+    else if( dropped >= 10000U )
+    {
+        (void)snprintf( line, sizeof( line ), "D %.1fk", (double)dropped / 1000.0 );
+    }
+    else
+    {
+        (void)snprintf( line, sizeof( line ), "D %lu", (unsigned long)dropped );
+    }
+    display_draw_text( 81, 130, line, dropped ? theme->warning : theme->text, 1U );
     display_draw_text( 8,
                        146,
                        stats.storage_error ? "SD ERROR"
