@@ -38,6 +38,12 @@ The current T-Embed fingerprint uses the early I2C path and onboard BQ25896/BQ27
 
 Unknown or ambiguous hardware is a deliberate recovery state: RFScout leaves ordinary board GPIO/peripherals untouched and remains awake for recovery flashing.
 
+### Experimental SI4732 T-Embed board profile
+
+The SI4732 T-Embed uses a separate known pin configuration: ST7789 SPI MOSI=11/SCLK=12/CS=10/DC=13/RESET=9/backlight=15, rotary GPIO2/GPIO1 and center GPIO0. Its I2C is SDA=18/SCL=8. Early detection tries the existing CC1101 Plus charger/gauge fingerprint first, then acknowledges the documented SI4732 I2C address (0x11 or 0x63) using a temporary bus. The latter is only a **candidate signature** and does not perform a SI4732 part-ID/firmware verification. The radio may be reset or unpowered at boot, so detection requires hardware validation and may still fail on the target board.
+
+No CC1101, nRF24, SD, microphone, speaker, external sensors, GPS, charger or shutdown-control GPIOs are assumed available on this initial profile. GPIO46 is deliberately not driven as an output. The existing board-profile design remains in place; optional peripheral capabilities are not inferred from the SI4732's presence. Only the two known profiles are supported, and unidentified hardware retains the existing safe behavior.
+
 ### Current T-Embed profile
 
 The hardware-validated profile owns the current 320x170 ST7789 display, rotary/center input, CC1101, nRF24, PDM microphone, speaker, SD, battery/charger telemetry, internal-temperature protection, display low-power behavior, deep sleep, and physical power-off semantics.
