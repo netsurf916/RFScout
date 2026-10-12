@@ -18,7 +18,6 @@
 
 #define CAPTURE_REFRESH_US 500000LL
 #define ACTIVITY_CHANNELS 14U
-#define ACTIVITY_IDENTITIES 64U
 #define ACTIVITY_SECONDS 74U
 #define CAPTURE_GPS_REFRESH_US 250000LL
 #define CAPTURE_SETTINGS_MAGIC 0x57445256U
@@ -58,39 +57,9 @@ static uint32_t activity_totals[ ACTIVITY_CHANNELS ];
 static uint32_t activity_rate[ ACTIVITY_SECONDS ];
 static uint32_t activity_ble_pending;
 static uint32_t activity_ble_rate[ ACTIVITY_SECONDS ];
-static uint32_t activity_ap_ids[ ACTIVITY_CHANNELS ][ ACTIVITY_IDENTITIES ];
-static uint32_t activity_station_ids[ ACTIVITY_CHANNELS ][ ACTIVITY_IDENTITIES ];
-static uint32_t activity_aps[ ACTIVITY_CHANNELS ];
-static uint32_t activity_stations[ ACTIVITY_CHANNELS ];
 static unsigned activity_cursor;
 static unsigned activity_samples;
 static int64_t activity_last_tick_us;
-
-/* One hash slot and one compare-exchange at most; never scan a full table in the
-   promiscuous driver callback. These are lower-bound sampled identity counts. */
-static void
-observe_identity( uint32_t a_ids[ ACTIVITY_IDENTITIES ], uint32_t *a_count, const uint8_t *a_mac )
-{
-    uint32_t hash = 2166136261U;
-    for( unsigned i = 0U; i < 6U; ++i )
-    {
-        hash = ( hash ^ a_mac[ i ] ) * 16777619U;
-    }
-    if( 0U == hash )
-    {
-        hash = 1U;
-    }
-    uint32_t expected = 0U;
-    if( __atomic_compare_exchange_n( &a_ids[ hash % ACTIVITY_IDENTITIES ],
-                                     &expected,
-                                     hash,
-                                     false,
-                                     __ATOMIC_RELAXED,
-                                     __ATOMIC_RELAXED ) )
-    {
-        __atomic_add_fetch( a_count, 1U, __ATOMIC_RELAXED );
-    }
-}
 
 static void observe_wifi( const uint8_t *a_data, size_t a_length, int8_t a_rssi, uint8_t a_channel )
 {
@@ -99,22 +68,7 @@ static void observe_wifi( const uint8_t *a_data, size_t a_length, int8_t a_rssi,
     {
         const unsigned channel = a_channel - 1U;
         __atomic_add_fetch( &activity_pending[ channel ], 1U, __ATOMIC_RELAXED );
-        if( a_length >= 24U )
-        {
-            const uint8_t type = ( a_data[ 0 ] >> 2U ) & 3U;
-            const uint8_t subtype = a_data[ 0 ] >> 4U;
-            if( type == 0U && ( subtype == 8U || subtype == 5U ) )
-            {
-                observe_identity(
-                    activity_ap_ids[ channel ], &activity_aps[ channel ], a_data + 10U );
-            }
-            else if( ( type == 0U && ( subtype == 4U || subtype == 0U || subtype == 2U ) ) ||
-                     ( type == 2U && ( a_data[ 1 ] & 3U ) == 1U ) )
-            {
-                observe_identity(
-                    activity_station_ids[ channel ], &activity_stations[ channel ], a_data + 10U );
-            }
-        }
+
     }
     wardrive_on_wifi( a_data, a_length, a_rssi, a_channel );
 }
@@ -747,13 +701,9 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
         memset( activity_rate, 0, sizeof( activity_rate ) );
         memset( activity_ble_rate, 0, sizeof( activity_ble_rate ) );
         __atomic_store_n( &activity_ble_pending, 0U, __ATOMIC_RELAXED );
-        memset( activity_aps, 0, sizeof( activity_aps ) );
-        memset( activity_stations, 0, sizeof( activity_stations ) );
         activity_cursor = 0U;
         activity_samples = 0U;
         activity_last_tick_us = 0;
-        memset( activity_ap_ids, 0, sizeof( activity_ap_ids ) );
-        memset( activity_station_ids, 0, sizeof( activity_station_ids ) );
         selected = MENU_BACK;
         last_draw_us = 0;
         last_gps_refresh_us = 0;
