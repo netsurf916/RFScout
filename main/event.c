@@ -51,6 +51,7 @@ rfscout_audio_category_t rfscout_event_audio_category( rfscout_event_type_t a_ty
         case RFSCOUT_EVENT_ERROR:
         case RFSCOUT_EVENT_STORAGE_MOUNT_FAILED:
         case RFSCOUT_EVENT_STORAGE_LOST:
+        case RFSCOUT_EVENT_STORAGE_SERVICE_DISABLED:
             return RFSCOUT_AUDIO_CATEGORY_ALERT;
         case RFSCOUT_EVENT_THEME_CHANGED:
         case RFSCOUT_EVENT_AUDIO_POLICY_CHANGED:
