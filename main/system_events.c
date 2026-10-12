@@ -186,7 +186,10 @@ static void render_event( const rfscout_event_t *a_event,
             break;
         case RFSCOUT_EVENT_STORAGE_SERVICE_DISABLED:
             snprintf( a_title, a_title_size, "STORAGE DISABLED" );
-            snprintf( a_detail, a_detail_size, "%s", a_event->value == 1 ? "BREADCRUMBS OFF" : "LOGGING OFF" );
+            snprintf( a_detail,
+                      a_detail_size,
+                      "%s",
+                      a_event->value == 1 ? "BREADCRUMBS OFF" : "LOGGING OFF" );
             break;
         case RFSCOUT_EVENT_INTERNAL_STORAGE_MOUNTED:
             snprintf( a_title, a_title_size, "INTERNAL STORAGE" );
