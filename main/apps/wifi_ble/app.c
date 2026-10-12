@@ -50,6 +50,7 @@ typedef struct
 
 static bool wifi_enabled = true;
 static bool ble_enabled = true;
+static bool collectors_activated;
 
 static const char *TAG = "wifi_ble_app";
 static bool menu_active;
@@ -176,24 +177,36 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
         }
         if( WIFI_MENU_WIFI_SOURCE == menu_item || WIFI_MENU_BLE_SOURCE == menu_item )
         {
-            if( WIFI_MENU_WIFI_SOURCE == menu_item && ( !wifi_enabled || ble_enabled ) )
+            const bool wifi_source = WIFI_MENU_WIFI_SOURCE == menu_item;
+            const bool enabled = wifi_source ? wifi_enabled : ble_enabled;
+            const bool other_enabled = wifi_source ? ble_enabled : wifi_enabled;
+            if( enabled && !other_enabled )
             {
-                wifi_enabled = !wifi_enabled;
-                if( !wifi_enabled )
+                return;
+            }
+            if( enabled )
+            {
+                const esp_err_t result =
+                    wifi_source ? radio_monitor_stop() : ble_monitor_stop();
+                if( ESP_OK != result )
                 {
-                    (void)radio_monitor_stop();
+                    ESP_LOGW( TAG, "Collector stop failed: %s", esp_err_to_name( result ) );
+                    return;
                 }
             }
-            else if( WIFI_MENU_BLE_SOURCE == menu_item && ( !ble_enabled || wifi_enabled ) )
+            if( wifi_source )
             {
-                ble_enabled = !ble_enabled;
-                if( !ble_enabled )
-                {
-                    (void)ble_monitor_stop();
-                }
+                wifi_enabled = !enabled;
+            }
+            else
+            {
+                ble_enabled = !enabled;
             }
             save_sources();
-            start_collectors();
+            if( collectors_activated )
+            {
+                start_collectors();
+            }
             render_menu();
             emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
             return;
@@ -332,6 +345,7 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         menu_editing = false;
         menu_item = WIFI_MENU_BACK;
         load_sources();
+        collectors_activated = false;
         rendered_app_lock = app_manager_locked();
         ui_set_surveillance_page( false );
         surveillance_history_open();
@@ -344,12 +358,14 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
     }
     if( RFSCOUT_APP_RUNTIME_ACTIVATE == a_event->type )
     {
+        collectors_activated = true;
         last_radio_retry_us = a_event->now_us;
         start_collectors();
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
     if( RFSCOUT_APP_RUNTIME_LEAVE == a_event->type )
     {
+        collectors_activated = false;
         menu_active = false;
         menu_editing = false;
         menu_item = WIFI_MENU_BACK;
