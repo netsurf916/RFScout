@@ -29,15 +29,14 @@
 #define WIFI_JOURNAL_FLUSH_INTERVAL_US 500000LL
 
 #define WIFI_MENU_BACK 0U
-#define WIFI_MENU_APP_LOCK 1U
-#define WIFI_MENU_RESET 2U
-#define WIFI_MENU_NOTIFICATIONS 3U
-#define WIFI_MENU_EVIDENCE_THRESHOLD 4U
-#define WIFI_MENU_WIFI_TIMEOUT 5U
-#define WIFI_MENU_BLE_TIMEOUT 6U
-#define WIFI_MENU_WIFI_SOURCE 7U
-#define WIFI_MENU_BLE_SOURCE 8U
-#define WIFI_MENU_ITEM_COUNT 9U
+#define WIFI_MENU_SOURCES 1U
+#define WIFI_MENU_APP_LOCK 2U
+#define WIFI_MENU_RESET 3U
+#define WIFI_MENU_NOTIFICATIONS 4U
+#define WIFI_MENU_EVIDENCE_THRESHOLD 5U
+#define WIFI_MENU_WIFI_TIMEOUT 6U
+#define WIFI_MENU_BLE_TIMEOUT 7U
+#define WIFI_MENU_ITEM_COUNT 8U
 
 #define WIFI_SOURCE_SETTINGS_MAGIC 0x57425352U
 
@@ -175,32 +174,32 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
             emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
             return;
         }
-        if( WIFI_MENU_WIFI_SOURCE == menu_item || WIFI_MENU_BLE_SOURCE == menu_item )
+        if( WIFI_MENU_SOURCES == menu_item )
         {
-            const bool wifi_source = WIFI_MENU_WIFI_SOURCE == menu_item;
-            const bool enabled = wifi_source ? wifi_enabled : ble_enabled;
-            const bool other_enabled = wifi_source ? ble_enabled : wifi_enabled;
-            if( enabled && !other_enabled )
+            const unsigned index = wifi_enabled && ble_enabled ? 0U : wifi_enabled ? 1U : 2U;
+            const unsigned next = ( index + 1U ) % 3U;
+            const bool next_wifi = 2U != next;
+            const bool next_ble = 1U != next;
+            if( wifi_enabled && !next_wifi )
             {
-                return;
-            }
-            if( enabled )
-            {
-                const esp_err_t result = wifi_source ? radio_monitor_stop() : ble_monitor_stop();
+                const esp_err_t result = radio_monitor_stop();
                 if( ESP_OK != result )
                 {
-                    ESP_LOGW( TAG, "Collector stop failed: %s", esp_err_to_name( result ) );
+                    ESP_LOGW( TAG, "Wi-Fi collector stop failed: %s", esp_err_to_name( result ) );
                     return;
                 }
             }
-            if( wifi_source )
+            if( ble_enabled && !next_ble )
             {
-                wifi_enabled = !enabled;
+                const esp_err_t result = ble_monitor_stop();
+                if( ESP_OK != result )
+                {
+                    ESP_LOGW( TAG, "BLE collector stop failed: %s", esp_err_to_name( result ) );
+                    return;
+                }
             }
-            else
-            {
-                ble_enabled = !enabled;
-            }
+            wifi_enabled = next_wifi;
+            ble_enabled = next_ble;
             save_sources();
             if( collectors_activated )
             {
