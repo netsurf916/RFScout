@@ -281,8 +281,8 @@ esp_err_t board_profile_detect( void )
     }
 
     const uint8_t preferred = preferred_profile();
-    const uint8_t order[] = { preferred, RFSCOUT_BOARD_TEMBED_CC1101_PLUS,
-                              RFSCOUT_BOARD_TEMBED_SI4732 };
+    const uint8_t order[] = {
+        preferred, RFSCOUT_BOARD_TEMBED_CC1101_PLUS, RFSCOUT_BOARD_TEMBED_SI4732 };
     ESP_LOGI( TAG, "POST: begin passive discovery cached=%u", (unsigned)preferred );
     for( size_t index = 0U; index < sizeof( order ); ++index )
     {
@@ -302,11 +302,11 @@ esp_err_t board_profile_detect( void )
         {
             continue;
         }
-        active_profile = ( RFSCOUT_BOARD_TEMBED_SI4732 == candidate ) ? &si4732_profile
-                                                                       : &tembed_profile;
+        active_profile =
+            ( RFSCOUT_BOARD_TEMBED_SI4732 == candidate ) ? &si4732_profile : &tembed_profile;
         remember_profile( candidate );
-        ESP_LOGI( TAG, "POST: selected transport=%s (verify providers on demand)",
-                  active_profile->name );
+        ESP_LOGI(
+            TAG, "POST: selected transport=%s (verify providers on demand)", active_profile->name );
         return ESP_OK;
     }
     ESP_LOGW( TAG, "POST: no known transport verified; GPIO-safe diagnostic mode" );
