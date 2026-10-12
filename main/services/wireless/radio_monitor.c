@@ -456,15 +456,27 @@ esp_err_t radio_monitor_stop( void )
         stop_result = esp_wifi_stop();
         if( ESP_OK != stop_result )
         {
-            /* Preserve the running state so a later stop can retry the driver. */
-            portENTER_CRITICAL( &callback_lock );
-            running = true;
-            portEXIT_CRITICAL( &callback_lock );
             const esp_err_t restore_result = esp_wifi_set_promiscuous( true );
-            if( ESP_OK != restore_result )
+            if( ESP_OK == restore_result )
             {
+                /* The failed stop left capture operational; retain its running state. */
+                portENTER_CRITICAL( &callback_lock );
+                running = true;
+                portEXIT_CRITICAL( &callback_lock );
+            }
+            else
+            {
+                /* Never report capture active when restoring reception failed. */
                 ESP_LOGE(
                     TAG, "Wi-Fi capture restore failed: %s", esp_err_to_name( restore_result ) );
+                /* Best-effort cleanup allows the app's normal retry to start afresh. */
+                const esp_err_t cleanup_result = esp_wifi_stop();
+                if( ESP_OK != cleanup_result )
+                {
+                    ESP_LOGW( TAG,
+                              "Wi-Fi cleanup after failed restore failed: %s",
+                              esp_err_to_name( cleanup_result ) );
+                }
             }
             ESP_LOGW( TAG, "Wi-Fi driver stop failed: %s", esp_err_to_name( stop_result ) );
         }
