@@ -262,6 +262,22 @@ static void refresh_space( void )
     (void)media_store_space( NULL, &free_bytes );
 }
 
+static void format_packet_rate( char *a_buffer, size_t a_size, uint32_t a_rate )
+{
+    if( a_rate >= 1000000U )
+    {
+        (void)snprintf( a_buffer, a_size, "%.1fM", (double)a_rate / 1000000.0 );
+    }
+    else if( a_rate >= 10000U )
+    {
+        (void)snprintf( a_buffer, a_size, "%.1fk", (double)a_rate / 1000.0 );
+    }
+    else
+    {
+        (void)snprintf( a_buffer, a_size, "%lu", (unsigned long)a_rate );
+    }
+}
+
 static void draw_overview( void )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
@@ -364,7 +380,6 @@ static void draw_overview( void )
         line, sizeof( line ), "CH %u %s", current, options.fixed_channel ? "FIXED" : "SCAN" );
     display_draw_text( 60, 146, line, theme->info, 1U );
 
-    display_draw_text( 163, 25, "PKT/s NOW / AVG", theme->secondary, 1U );
     /* The header reports the latest completed second, not the graph's peak. */
     const unsigned latest = ( activity_cursor + ACTIVITY_SECONDS - 1U ) % ACTIVITY_SECONDS;
     const uint32_t current_rate = ( options.wifi ? activity_rate[ latest ] : 0U ) +
@@ -377,12 +392,12 @@ static void draw_overview( void )
     }
     const uint32_t average_rate =
         activity_samples > 0U ? (uint32_t)( rate_sum / activity_samples ) : 0U;
-    (void)snprintf( line,
-                    sizeof( line ),
-                    "%lu / %lu",
-                    (unsigned long)current_rate,
-                    (unsigned long)average_rate );
-    display_draw_text( 258, 25, line, theme->text, 1U );
+    char latest_text[ 16 ];
+    char average_text[ 16 ];
+    format_packet_rate( latest_text, sizeof( latest_text ), current_rate );
+    format_packet_rate( average_text, sizeof( average_text ), average_rate );
+    (void)snprintf( line, sizeof( line ), "PKT/s: %s (%s avg)", latest_text, average_text );
+    display_draw_text( 163, 25, line, theme->text, 1U );
     for( unsigned i = 0U; i < ACTIVITY_SECONDS; ++i )
     {
         const unsigned slot = ( activity_cursor + i ) % ACTIVITY_SECONDS;
