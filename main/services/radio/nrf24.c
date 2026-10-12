@@ -269,6 +269,11 @@ static esp_err_t release_radio( void )
 
 esp_err_t nrf24_probe( void )
 {
+    if( RFSCOUT_BOARD_NRF24_CS_PIN < 0 || RFSCOUT_BOARD_NRF24_CE_PIN < 0 ||
+        RFSCOUT_BOARD_SPI_MISO_PIN < 0 )
+    {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
     if( gps_detected() )
     {
         return ESP_ERR_NOT_SUPPORTED;
