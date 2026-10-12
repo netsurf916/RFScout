@@ -93,5 +93,9 @@ esp_err_t display_present( void );
 void display_modal_show( const char *a_title, const char *a_detail );
 /** @brief Clear the app-owned modal overlay. */
 void display_modal_clear( void );
+/** @brief Show a short non-modal app-transition refusal message. */
+void display_transition_notice_show( const char *a_message );
+/** @brief Expire the temporary transition notice and invalidate the display as needed. */
+void display_transition_notice_poll( void );
 
 #endif // _RFSCOUT_DISPLAY_H_
