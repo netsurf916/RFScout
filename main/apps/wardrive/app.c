@@ -56,6 +56,8 @@ static uint32_t activity_pending[ ACTIVITY_CHANNELS ];
 static uint32_t activity_history[ ACTIVITY_SECONDS ][ ACTIVITY_CHANNELS ];
 static uint32_t activity_totals[ ACTIVITY_CHANNELS ];
 static uint32_t activity_rate[ ACTIVITY_SECONDS ];
+static uint32_t activity_ble_pending;
+static uint32_t activity_ble_rate[ ACTIVITY_SECONDS ];
 static uint32_t activity_ap_ids[ ACTIVITY_CHANNELS ][ ACTIVITY_IDENTITIES ];
 static uint32_t activity_station_ids[ ACTIVITY_CHANNELS ][ ACTIVITY_IDENTITIES ];
 static uint32_t activity_aps[ ACTIVITY_CHANNELS ];
@@ -116,6 +118,22 @@ static void observe_wifi( const uint8_t *a_data, size_t a_length, int8_t a_rssi,
     wardrive_on_wifi( a_data, a_length, a_rssi, a_channel );
 }
 
+/* Account for BLE in constant time before forwarding the original capture event. */
+static void observe_ble( const uint8_t *a_data,
+                         size_t a_length,
+                         const uint8_t a_address[ 6 ],
+                         uint8_t a_address_type,
+                         uint8_t a_event_type,
+                         int8_t a_rssi )
+{
+    if( options.ble && NULL != a_data )
+    {
+        __atomic_add_fetch( &activity_ble_pending, 1U, __ATOMIC_RELAXED );
+    }
+    wardrive_on_ble(
+        a_data, a_length, a_address, a_address_type, a_event_type, a_rssi );
+}
+
 /* Main-task one-second rollover; callbacks only increment atomic accumulators. */
 static void activity_tick( int64_t a_now_us )
 {
@@ -138,6 +156,8 @@ static void activity_tick( int64_t a_now_us )
             rate += count;
         }
         activity_rate[ activity_cursor ] = rate;
+        activity_ble_rate[ activity_cursor ] =
+            __atomic_exchange_n( &activity_ble_pending, 0U, __ATOMIC_RELAXED );
         activity_cursor = ( activity_cursor + 1U ) % ACTIVITY_SECONDS;
         activity_last_tick_us += 1000000LL;
     }
@@ -223,9 +243,12 @@ static void draw_overview( void )
     uint32_t peak_channel = 1U;
     for( unsigned i = 0U; i < ACTIVITY_SECONDS; ++i )
     {
-        if( activity_rate[ i ] > peak_rate )
+        const uint32_t wifi = options.wifi ? activity_rate[ i ] : 0U;
+        const uint32_t ble = options.ble ? activity_ble_rate[ i ] : 0U;
+        const uint64_t combined = (uint64_t)wifi + ble;
+        if( combined > peak_rate )
         {
-            peak_rate = activity_rate[ i ];
+            peak_rate = (uint32_t)combined;
         }
     }
     for( unsigned i = 0U; i < ACTIVITY_CHANNELS; ++i )
@@ -280,20 +303,43 @@ static void draw_overview( void )
                     current, options.fixed_channel ? "FIXED" : "SCAN" );
     display_draw_text( 60, 146, line, theme->info, 1U );
 
-    display_draw_text( 163, 25, "PACKETS/SEC", theme->secondary, 1U );
+    display_draw_text( 163, 25, options.wifi && options.ble ? "WIFI + BLE / SEC"
+                                                        : "PACKETS/SEC",
+                       theme->secondary, 1U );
     (void)snprintf( line, sizeof( line ), "%lu", (unsigned long)peak_rate );
     display_draw_text( 274, 25, line, theme->text, 1U );
     for( unsigned i = 0U; i < ACTIVITY_SECONDS; ++i )
     {
         const unsigned slot = ( activity_cursor + i ) % ACTIVITY_SECONDS;
-        const uint32_t value = activity_rate[ slot ];
-        const int height = (int)( (uint64_t)value * 46U / peak_rate );
-        if( height > 0 )
+        const uint32_t wifi = options.wifi ? activity_rate[ slot ] : 0U;
+        const uint32_t ble = options.ble ? activity_ble_rate[ slot ] : 0U;
+        const uint64_t combined = (uint64_t)wifi + ble;
+        const int wifi_height = (int)( (uint64_t)wifi * 46U / peak_rate );
+        const int total_height = (int)( combined * 46U / peak_rate );
+        const int x = 164 + (int)i * 2;
+        if( options.wifi && options.ble )
         {
-            display_fill_rect( 164 + (int)i * 2, 89 - height, 2, height,
-                               (uint64_t)value * 4U >= (uint64_t)peak_rate * 3U
-                                   ? theme->warning
-                                   : theme->info );
+            if( wifi_height > 0 )
+            {
+                display_fill_rect( x, 89 - wifi_height, 2, wifi_height, theme->info );
+            }
+            if( total_height > wifi_height )
+            {
+                display_fill_rect( x,
+                                   89 - total_height,
+                                   2,
+                                   total_height - wifi_height,
+                                   theme->accent );
+            }
+        }
+        else if( total_height > 0 )
+        {
+            display_fill_rect(
+                x,
+                89 - total_height,
+                2,
+                total_height,
+                combined * 4U >= (uint64_t)peak_rate * 3U ? theme->warning : theme->info );
         }
     }
     display_draw_text( 163, 95, "CHANNELS / LAST 74s", theme->secondary, 1U );
@@ -589,6 +635,8 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
         memset( activity_history, 0, sizeof( activity_history ) );
         memset( activity_totals, 0, sizeof( activity_totals ) );
         memset( activity_rate, 0, sizeof( activity_rate ) );
+        memset( activity_ble_rate, 0, sizeof( activity_ble_rate ) );
+        __atomic_store_n( &activity_ble_pending, 0U, __ATOMIC_RELAXED );
         memset( activity_aps, 0, sizeof( activity_aps ) );
         memset( activity_stations, 0, sizeof( activity_stations ) );
         activity_cursor = 0U;
@@ -693,7 +741,7 @@ const rfscout_app_descriptor_t rfscout_wardrive_app = {
     .consumers =
         {
             .wifi_raw = observe_wifi,
-            .ble_raw = wardrive_on_ble,
+            .ble_raw = observe_ble,
         },
     .runtime = wardrive_runtime,
 };
