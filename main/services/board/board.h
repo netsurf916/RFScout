@@ -42,12 +42,6 @@ typedef enum
     RFSCOUT_BACKLIGHT_PWM = 0,
 } rfscout_backlight_type_t;
 
-typedef enum
-{
-    RFSCOUT_BATTERY_NONE = 0,
-    RFSCOUT_BATTERY_I2C_GAUGE_CHARGER,
-} rfscout_battery_type_t;
-
 typedef struct
 {
     rfscout_board_id_t id;
@@ -99,7 +93,9 @@ typedef struct
     int speaker_bclk_pin;
     int speaker_data_pin;
 
-    rfscout_battery_type_t battery_type;
+    int battery_adc_pin;
+    uint8_t battery_adc_divider_numerator;
+    uint8_t battery_adc_divider_denominator;
     uint16_t pn532_i2c_address;
     uint16_t mlx90640_i2c_address;
     uint16_t bq27220_i2c_address;
@@ -170,7 +166,9 @@ bool board_profile_has( rfscout_board_capability_t a_capability );
 #define RFSCOUT_BOARD_SPEAKER_LRCLK_PIN ( board_profile()->speaker_lrclk_pin )
 #define RFSCOUT_BOARD_SPEAKER_BCLK_PIN ( board_profile()->speaker_bclk_pin )
 #define RFSCOUT_BOARD_SPEAKER_DATA_PIN ( board_profile()->speaker_data_pin )
-#define RFSCOUT_BOARD_BATTERY_TYPE ( board_profile()->battery_type )
+#define RFSCOUT_BOARD_BATTERY_ADC_PIN ( board_profile()->battery_adc_pin )
+#define RFSCOUT_BOARD_BATTERY_ADC_DIVIDER_NUMERATOR ( board_profile()->battery_adc_divider_numerator )
+#define RFSCOUT_BOARD_BATTERY_ADC_DIVIDER_DENOMINATOR ( board_profile()->battery_adc_divider_denominator )
 #define RFSCOUT_BOARD_PN532_I2C_ADDRESS ( board_profile()->pn532_i2c_address )
 #define RFSCOUT_BOARD_MLX90640_I2C_ADDRESS ( board_profile()->mlx90640_i2c_address )
 #define RFSCOUT_BOARD_BQ27220_I2C_ADDRESS ( board_profile()->bq27220_i2c_address )
