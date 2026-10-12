@@ -613,7 +613,14 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
         if( RFSCOUT_INPUT_LONG_PRESS == a_event->input.type && menu_open )
         {
             menu_open = false;
-            draw_overview();
+            if( activity_page )
+            {
+                draw_activity();
+            }
+            else
+            {
+                draw_overview();
+            }
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
         return RFSCOUT_APP_RUNTIME_IGNORED;
