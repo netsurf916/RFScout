@@ -128,6 +128,8 @@ typedef struct
     rfscout_app_consumers_t consumers;
     rfscout_app_runtime_handler_t runtime;
     esp_err_t ( *prepare_leave )( void );
+    /** Optional explanation shown only for an intentional prepare_leave veto. */
+    const char *transition_denial_message;
 } rfscout_app_descriptor_t;
 
 #endif // _RFSCOUT_APP_DESCRIPTOR_H_
