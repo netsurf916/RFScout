@@ -188,8 +188,7 @@ static bool transition_to_app( rfscout_app_id_t a_destination, bool a_report_abo
         {
             display_transition_notice_show( source_descriptor->transition_denial_message );
         }
-        else if( a_report_abort &&
-                 diagnostics->outcome == RFSCOUT_APP_TRANSITION_ABORTED_PREPARE )
+        else if( a_report_abort && diagnostics->outcome == RFSCOUT_APP_TRANSITION_ABORTED_PREPARE )
         {
             display_transition_notice_show( "Hardware stop failed - retry or restart" );
             rfscout_event_emit(
