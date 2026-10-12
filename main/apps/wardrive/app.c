@@ -131,8 +131,7 @@ static void observe_ble( const uint8_t *a_data,
     {
         __atomic_add_fetch( &activity_ble_pending, 1U, __ATOMIC_RELAXED );
     }
-    wardrive_on_ble(
-        a_data, a_length, a_address, a_address_type, a_event_type, a_rssi );
+    wardrive_on_ble( a_data, a_length, a_address, a_address_type, a_event_type, a_rssi );
 }
 
 /* Main-task one-second rollover; callbacks only increment atomic accumulators. */
@@ -274,8 +273,8 @@ static void draw_overview( void )
     display_fill_rect( 163, 93, 149, 1, theme->secondary );
 
     display_draw_text( 8, 26, "GPS POSITION", theme->secondary, 1U );
-    display_draw_text( 111, 26, fixed ? "FIX" : "NO FIX",
-                       fixed ? theme->success : theme->warning, 1U );
+    display_draw_text(
+        111, 26, fixed ? "FIX" : "NO FIX", fixed ? theme->success : theme->warning, 1U );
     if( fixed )
     {
         (void)snprintf( line, sizeof( line ), "%.6f", gps.latitude_deg );
@@ -298,23 +297,24 @@ static void draw_overview( void )
     display_draw_text( 8, 130, line, theme->success, 1U );
     (void)snprintf( line, sizeof( line ), "DROP %lu", (unsigned long)stats.dropped );
     display_draw_text( 81, 130, line, stats.dropped ? theme->warning : theme->text, 1U );
-    display_draw_text( 8, 146,
-                       stats.storage_error ? "SD ERROR" : stats.recording ? "REC" : "STOP",
+    display_draw_text( 8,
+                       146,
+                       stats.storage_error ? "SD ERROR"
+                       : stats.recording   ? "REC"
+                                           : "STOP",
                        stats.storage_error ? theme->error
                        : stats.recording   ? theme->success
                                            : theme->secondary,
                        1U );
-    (void)snprintf( line, sizeof( line ), "CH %u %s",
-                    current, options.fixed_channel ? "FIXED" : "SCAN" );
+    (void)snprintf(
+        line, sizeof( line ), "CH %u %s", current, options.fixed_channel ? "FIXED" : "SCAN" );
     display_draw_text( 60, 146, line, theme->info, 1U );
 
-    display_draw_text( 163, 25, "PKT/s NOW / AVG",
-                       theme->secondary, 1U );
+    display_draw_text( 163, 25, "PKT/s NOW / AVG", theme->secondary, 1U );
     /* The header reports the latest completed second, not the graph's peak. */
     const unsigned latest = ( activity_cursor + ACTIVITY_SECONDS - 1U ) % ACTIVITY_SECONDS;
-    const uint32_t current_rate =
-        ( options.wifi ? activity_rate[ latest ] : 0U ) +
-        ( options.ble ? activity_ble_rate[ latest ] : 0U );
+    const uint32_t current_rate = ( options.wifi ? activity_rate[ latest ] : 0U ) +
+                                  ( options.ble ? activity_ble_rate[ latest ] : 0U );
     uint64_t rate_sum = 0U;
     for( unsigned i = 0U; i < ACTIVITY_SECONDS; ++i )
     {
@@ -346,21 +346,18 @@ static void draw_overview( void )
             }
             if( total_height > wifi_height )
             {
-                display_fill_rect( x,
-                                   89 - total_height,
-                                   2,
-                                   total_height - wifi_height,
-                                   theme->accent );
+                display_fill_rect(
+                    x, 89 - total_height, 2, total_height - wifi_height, theme->accent );
             }
         }
         else if( total_height > 0 )
         {
-            display_fill_rect(
-                x,
-                89 - total_height,
-                2,
-                total_height,
-                combined * 4U >= (uint64_t)peak_rate * 3U ? theme->warning : theme->info );
+            display_fill_rect( x,
+                               89 - total_height,
+                               2,
+                               total_height,
+                               combined * 4U >= (uint64_t)peak_rate * 3U ? theme->warning
+                                                                         : theme->info );
         }
     }
     display_draw_text( 163, 95, "CHANNELS / LAST 74s", theme->secondary, 1U );
@@ -371,7 +368,7 @@ static void draw_overview( void )
         const int height = (int)( (uint64_t)value * 37U / peak_channel );
         if( height > 0 )
         {
-            const uint16_t color = i + 1U == current ? theme->success
+            const uint16_t color = i + 1U == current                 ? theme->success
                                    : value * 4U >= peak_channel * 3U ? theme->warning
                                                                      : theme->info;
             display_fill_rect( x, 146 - height, 8, height, color );
@@ -737,7 +734,7 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
             draw_menu();
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
- 
+
         if( RFSCOUT_INPUT_LONG_PRESS == a_event->input.type && menu_open )
         {
             menu_open = false;
