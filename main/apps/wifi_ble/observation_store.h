@@ -133,6 +133,9 @@ void observation_store_reset( void );
  */
 void observation_store_housekeeping( void );
 
+/** @brief Remove observations from a disabled source, preserving other source memberships. */
+void observation_store_clear_source( rf_source_t a_source );
+
 /**
  * @brief Return a bit mask of Wi-Fi channels with retained AP/BSSID evidence.
  * @details Bit 0 represents channel 1. The projection follows canonical Wi-Fi source lifetime.

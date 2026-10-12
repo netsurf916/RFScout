@@ -356,6 +356,7 @@ esp_err_t ble_monitor_stop( void )
         if( ( 0 != result ) && ( BLE_HS_EALREADY != result ) )
         {
             ESP_LOGW( TAG, "scan stop failed: %d", result );
+            return ESP_FAIL;
         }
         scanning = false;
     }
