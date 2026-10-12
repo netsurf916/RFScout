@@ -10,6 +10,9 @@
 #include "board_i2c.h"
 
 #include "driver/i2c_master.h"
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
+#include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 
@@ -40,6 +43,9 @@
 #define BQ25896_CHARGE_FAST 2U
 #define BQ25896_CHARGE_DONE 3U
 #define BATTERY_CURRENT_ACTIVE_MA 30
+#define BATTERY_ADC_CHANNEL ADC_CHANNEL_3
+#define BATTERY_ADC_DIVIDER_NUMERATOR 18U
+#define BATTERY_ADC_DIVIDER_DENOMINATOR 10U
 
 static const char *TAG = "battery";
 static i2c_master_dev_handle_t gauge_device;
@@ -47,6 +53,8 @@ static i2c_master_dev_handle_t charger_device;
 static battery_status_t cached_status;
 static int64_t last_poll_us;
 static bool initialized;
+static adc_oneshot_unit_handle_t analog_unit;
+static adc_cali_handle_t analog_calibration;
 
 static esp_err_t
 read_register_u8( i2c_master_dev_handle_t a_device, uint8_t a_register, uint8_t *a_value )
@@ -239,6 +247,64 @@ static void refresh_i2c_battery( battery_status_t *a_status )
     }
 }
 
+/** @brief Configure only the documented SI4732 GPIO4 analog battery input. */
+static esp_err_t init_analog_battery( void )
+{
+    if( RFSCOUT_BOARD_TEMBED_SI4732 != board_profile()->id )
+    {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    const adc_oneshot_unit_init_cfg_t unit_config = { .unit_id = ADC_UNIT_1 };
+    esp_err_t result = adc_oneshot_new_unit( &unit_config, &analog_unit );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+    const adc_oneshot_chan_cfg_t channel_config = { .atten = ADC_ATTEN_DB_12,
+                                                    .bitwidth = ADC_BITWIDTH_DEFAULT };
+    result = adc_oneshot_config_channel( analog_unit, BATTERY_ADC_CHANNEL, &channel_config );
+    if( ESP_OK != result )
+    {
+        (void)adc_oneshot_del_unit( analog_unit );
+        analog_unit = NULL;
+        return result;
+    }
+    const adc_cali_curve_fitting_config_t calibration_config = {
+        .unit_id = ADC_UNIT_1,
+        .chan = BATTERY_ADC_CHANNEL,
+        .atten = ADC_ATTEN_DB_12,
+        .bitwidth = ADC_BITWIDTH_DEFAULT,
+    };
+    result = adc_cali_create_scheme_curve_fitting( &calibration_config, &analog_calibration );
+    if( ESP_OK != result )
+    {
+        (void)adc_oneshot_del_unit( analog_unit );
+        analog_unit = NULL;
+    }
+    return result;
+}
+
+/** @brief Voltage-only fallback; this never claims percentage or charging state. */
+static void refresh_analog_battery( battery_status_t *a_status )
+{
+    if( NULL == analog_unit || NULL == analog_calibration )
+    {
+        return;
+    }
+    int raw = 0;
+    int millivolts = 0;
+    if( ESP_OK != adc_oneshot_read( analog_unit, BATTERY_ADC_CHANNEL, &raw ) ||
+        ESP_OK != adc_cali_raw_to_voltage( analog_calibration, raw, &millivolts ) ||
+        millivolts <= 0 )
+    {
+        return;
+    }
+    a_status->voltage_mv = (uint16_t)( ( (uint32_t)millivolts *
+                                        BATTERY_ADC_DIVIDER_NUMERATOR ) /
+                                      BATTERY_ADC_DIVIDER_DENOMINATOR );
+    a_status->available = true;
+}
+
 void battery_refresh( void )
 {
     if( !initialized )
@@ -253,10 +319,18 @@ void battery_refresh( void )
     next.gauge_available = false;
     next.charger_available = false;
     next.charger_fresh = false;
+    next.charge_state = BATTERY_CHARGE_UNKNOWN;
+    next.external_power = false;
+    next.current_ma = 0;
+    next.voltage_mv = 0;
 
     if( RFSCOUT_BATTERY_I2C_GAUGE_CHARGER == RFSCOUT_BOARD_BATTERY_TYPE )
     {
         refresh_i2c_battery( &next );
+    }
+    if( !next.gauge_available )
+    {
+        refresh_analog_battery( &next );
     }
     cached_status = next;
 }
@@ -286,7 +360,7 @@ esp_err_t battery_init( void )
     }
     else
     {
-        return ESP_ERR_NOT_SUPPORTED;
+        result = init_analog_battery();
     }
     if( ESP_OK != result )
     {
