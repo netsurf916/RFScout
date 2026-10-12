@@ -274,20 +274,7 @@ esp_err_t app_manager_init( void )
     app_activated = false;
     app_locked = false;
 
-    esp_err_t result = display_init();
-    if( ESP_OK != result )
-    {
-        return result;
-    }
-    const rfscout_display_info_t *display = display_info();
-    if( NULL != display )
-    {
-        rfscout_event_emit( RFSCOUT_EVENT_DISPLAY_PROVIDER_SELECTED,
-                            RFSCOUT_EVENT_SOURCE_SYSTEM,
-                            (int32_t)display->provider );
-    }
-
-    result = app_lifecycle_init();
+    esp_err_t result = app_lifecycle_init();
     if( ESP_OK != result )
     {
         ESP_LOGE(
