@@ -95,6 +95,8 @@ void display_modal_show( const char *a_title, const char *a_detail );
 void display_modal_clear( void );
 /** @brief Show a short non-modal app-transition refusal message. */
 void display_transition_notice_show( const char *a_message );
+/** @brief Clear transition-denial feedback after a committed app switch. */
+void display_transition_notice_clear( void );
 /** @brief Expire the temporary transition notice and invalidate the display as needed. */
 void display_transition_notice_poll( void );
 
