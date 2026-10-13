@@ -1,6 +1,6 @@
 # WiFi / BLE
 
-The WiFi/BLE application is RFScout's passive Wi-Fi and BLE observation surface. Platform lifecycle, memory, and collector ownership are defined in [Platform architecture](../ARCHITECTURE.md); future semantic-entity/topology work belongs in [ROADMAP.md](../ROADMAP.md).
+The WiFi/BLE application passively observes Wi-Fi frames and supports either passive or controller-managed active BLE discovery. Platform lifecycle, memory, and collector ownership are defined in [Platform architecture](../ARCHITECTURE.md); future semantic-entity/topology work belongs in [ROADMAP.md](../ROADMAP.md).
 
 > **Current naming:** the application descriptor and some Device Settings labels still use the older **WiFi / BT** name, while the monitor UI uses **WIFI / BLE**. The roadmap tracks completing that rename.
 
