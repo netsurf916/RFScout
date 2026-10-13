@@ -18,7 +18,7 @@
 #include <string.h>
 
 #define WIFI_DISCOVERY_DWELL_US 120000LL
-#define WIFI_ACTIVE_DWELL_US 350000LL
+#define WIFI_AP_DWELL_BONUS_PERCENT 20U
 #define WIFI_CALLBACK_QUIESCE_TIMEOUT_MS 1000U
 #define WIFI_MIN_CHANNEL 1U
 
@@ -56,6 +56,7 @@ static bool capture_policy;
 static uint8_t capture_fixed_channel;
 static uint32_t capture_dwell_ms = 200U;
 static bool manual_channels;
+static bool ap_dwell_enabled = true;
 static bool shuffled_channels;
 static uint16_t manual_channel_mask;
 static uint32_t manual_dwell_ms = 250U;
@@ -415,6 +416,11 @@ esp_err_t radio_monitor_set_manual_channels( bool a_enabled,
     return ESP_OK;
 }
 
+void radio_monitor_set_ap_dwell_enabled( bool a_enabled )
+{
+    ap_dwell_enabled = a_enabled;
+}
+
 static int64_t channel_dwell_us( uint8_t a_channel )
 {
     if( ( a_channel < WIFI_MIN_CHANNEL ) || ( a_channel > RFSCOUT_WIFI_CHANNEL_MAX ) )
@@ -422,17 +428,18 @@ static int64_t channel_dwell_us( uint8_t a_channel )
         return WIFI_DISCOVERY_DWELL_US;
     }
 
-    if( manual_channels )
-    {
-        return (int64_t)manual_dwell_ms * 1000LL;
-    }
     if( capture_policy )
     {
         return (int64_t)capture_dwell_ms * 1000LL;
     }
+    const int64_t base_dwell_us =
+        manual_channels ? (int64_t)manual_dwell_ms * 1000LL : WIFI_DISCOVERY_DWELL_US;
     const uint16_t channel_bit = (uint16_t)( 1U << ( a_channel - WIFI_MIN_CHANNEL ) );
-    return ( 0U != ( active_ap_channel_mask & channel_bit ) ) ? WIFI_ACTIVE_DWELL_US
-                                                              : WIFI_DISCOVERY_DWELL_US;
+    if( ap_dwell_enabled && ( 0U != ( active_ap_channel_mask & channel_bit ) ) )
+    {
+        return base_dwell_us * ( 100LL + WIFI_AP_DWELL_BONUS_PERCENT ) / 100LL;
+    }
+    return base_dwell_us;
 }
 
 uint8_t radio_monitor_channel( void )
