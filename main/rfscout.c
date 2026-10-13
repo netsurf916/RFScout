@@ -314,20 +314,6 @@ void rfscout_observation_consume( rf_device_t *a_observation )
     if( RF_SOURCE_WIFI == a_observation->last_source &&
         a_observation->wifi_channel_state_changed )
     {
-        ESP_LOGI( TAG,
-                  "AP observation mac=%02X:%02X:%02X:%02X:%02X:%02X ap=%u "
-                  "ap_ch=%u rx_ch=%u seen_mask=0x%04X",
-                  a_observation->address[ 0 ],
-                  a_observation->address[ 1 ],
-                  a_observation->address[ 2 ],
-                  a_observation->address[ 3 ],
-                  a_observation->address[ 4 ],
-                  a_observation->address[ 5 ],
-                  (unsigned)a_observation->wifi_is_ap,
-                  (unsigned)a_observation->wifi_channel,
-                  (unsigned)a_observation->channel,
-                  (unsigned)a_observation->wifi_observed_channel_mask );
-
         rfscout_log_record_t record;
         if( log_begin( &record, "wifi_channel_observation" ) )
         {
