@@ -15,6 +15,10 @@
 #include "notification_preferences.h"
 #include "platform.h"
 #include "persistent_store.h"
+#include "display.h"
+#include "ui_chrome.h"
+#include "ui_theme.h"
+#include <stdio.h>
 #include "observation_store.h"
 #include "radio_monitor.h"
 #include "surveillance_history.h"
@@ -29,33 +33,109 @@
 #define WIFI_JOURNAL_FLUSH_INTERVAL_US 500000LL
 
 #define WIFI_MENU_BACK 0U
-#define WIFI_MENU_SOURCES 1U
-#define WIFI_MENU_APP_LOCK 2U
-#define WIFI_MENU_RESET 3U
-#define WIFI_MENU_NOTIFICATIONS 4U
-#define WIFI_MENU_EVIDENCE_THRESHOLD 5U
-#define WIFI_MENU_WIFI_TIMEOUT 6U
-#define WIFI_MENU_BLE_TIMEOUT 7U
+#define WIFI_MENU_APP_LOCK 1U
+#define WIFI_MENU_RESET 2U
+#define WIFI_MENU_NOTIFICATIONS 3U
+#define WIFI_MENU_EVIDENCE_THRESHOLD 4U
+#define WIFI_MENU_WIFI_TIMEOUT 5U
+#define WIFI_MENU_BLE_TIMEOUT 6U
+#define WIFI_MENU_SOURCES 7U
 #define WIFI_MENU_ITEM_COUNT 8U
 
-#define WIFI_SOURCE_SETTINGS_MAGIC 0x57425352U
 
-typedef struct
-{
-    uint32_t magic;
-    uint8_t wifi;
-    uint8_t ble;
-} wifi_source_settings_t;
-
-static bool wifi_enabled = true;
-static bool ble_enabled = true;
-static bool collectors_activated;
-
-static const char *TAG = "wifi_ble_app";
 static bool menu_active;
 static bool menu_editing;
 static bool rendered_app_lock;
+static const char *TAG = "wifi_ble_app";
 static unsigned menu_item;
+static bool wifi_source = true;
+static bool ble_source = true;
+static bool collectors_activated;
+static bool manual_channels;
+static bool shuffle_channels;
+static bool ble_active_scan;
+static bool ble_dedupe;
+static unsigned ble_duty;
+static const uint16_t ble_intervals[] = { 0x0040U, 0x0080U, 0x00A0U };
+static const uint16_t ble_windows[] = { 0x0040U, 0x0040U, 0x0020U };
+static uint16_t selected_channels = 0x3FFFU;
+static unsigned dwell_choice = 1U;
+static const uint32_t dwell_choices[] = { 100U, 200U, 250U, 500U, 1000U };
+static unsigned radio_page;
+static unsigned radio_selected;
+typedef struct
+{
+    uint32_t magic;
+    uint16_t channels;
+    uint8_t wifi;
+    uint8_t ble;
+    uint8_t manual;
+    uint8_t shuffled;
+    uint8_t dwell;
+    uint8_t ble_active;
+    uint8_t ble_duplicates;
+    uint8_t ble_duty;
+} app_radio_settings_t;
+
+static void load_radio_settings( void )
+{
+    app_radio_settings_t stored;
+    size_t length = 0U;
+    wifi_source = true;
+    ble_source = true;
+    selected_channels = 0x3FFFU;
+    manual_channels = false;
+    shuffle_channels = false;
+    dwell_choice = 1U;
+    ble_active_scan = false;
+    ble_dedupe = false;
+    ble_duty = 0U;
+    /* Preserve previously persisted app source choices on upgrade. */
+    struct { uint32_t magic; uint8_t wifi; uint8_t ble; } legacy;
+    size_t legacy_length = 0U;
+    if( ESP_OK == app_store_read( "sources.settings", &legacy, sizeof( legacy ), &legacy_length ) &&
+        legacy_length == sizeof( legacy ) && legacy.magic == 0x57425352U )
+    {
+        wifi_source = legacy.wifi != 0U;
+        ble_source = legacy.ble != 0U;
+    }
+    if( ESP_OK == app_store_read( "radio.settings", &stored, sizeof( stored ), &length ) &&
+        length == sizeof( stored ) && stored.magic == 0x52575032U && stored.dwell < 5U && stored.ble_duty < 3U )
+    {
+        wifi_source = stored.wifi != 0U;
+        ble_source = stored.ble != 0U;
+        selected_channels = stored.channels & 0x3FFFU;
+        manual_channels = stored.manual != 0U;
+        shuffle_channels = stored.shuffled != 0U;
+        dwell_choice = stored.dwell;
+        ble_active_scan = stored.ble_active != 0U;
+        ble_dedupe = stored.ble_duplicates != 0U;
+        ble_duty = stored.ble_duty;
+    }
+}
+
+static void save_radio_settings( void )
+{
+    const app_radio_settings_t stored = {
+        .magic = 0x52575032U,
+        .channels = selected_channels,
+        .wifi = wifi_source,
+        .ble = ble_source,
+        .manual = manual_channels,
+        .shuffled = shuffle_channels,
+        .dwell = (uint8_t)dwell_choice,
+        .ble_active = ble_active_scan,
+        .ble_duplicates = ble_dedupe,
+        .ble_duty = (uint8_t)ble_duty,
+    };
+    const esp_err_t result = app_store_write( "radio.settings", &stored, sizeof( stored ) );
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG, "radio settings save failed: %s", esp_err_to_name( result ) );
+    }
+}
+
+
 static int64_t last_radio_retry_us;
 static int64_t last_journal_flush_us;
 static rfscout_app_notification_menu_t notification_menu;
@@ -65,8 +145,262 @@ static void emit_event( rfscout_event_type_t a_type, int32_t a_value )
     rfscout_event_emit( a_type, (uint8_t)RFSCOUT_APP_WIFI_BT, a_value );
 }
 
+static void render_menu( void );
+
+static void render_radio_menu( void )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    const bool channels = radio_page == 3U;
+    const bool wifi = radio_page == 1U;
+    const unsigned count = channels ? 15U : radio_page == 0U ? 5U : wifi ? 5U : 4U;
+    const unsigned first = radio_selected >= 4U ? radio_selected - 3U : 0U;
+    display_clear( theme->background );
+    ui_chrome_draw( channels ? "WI-FI CHANNELS" : wifi ? "WI-FI SETTINGS" :
+                        radio_page == 2U ? "BLE SETTINGS" : "SOURCES",
+                    theme->secondary );
+    for( unsigned i = first; i < first + 5U && i < count; ++i )
+    {
+        const char *label = "";
+        char channel_name[ 20 ];
+        char value[ 20 ] = "";
+        if( channels )
+        {
+            if( i > 0U )
+            {
+                (void)snprintf( channel_name, sizeof( channel_name ), "Channel %u", i );
+                label = channel_name;
+                (void)snprintf( value, sizeof( value ), "%s",
+                                ( selected_channels & ( 1U << ( i - 1U ) ) ) ? "On" : "Off" );
+            }
+        }
+        else if( radio_page == 0U )
+        {
+            static const char *names[] = { "Back", "Wi-Fi", "BLE", "Wi-Fi settings", "BLE settings" };
+            label = names[ i ];
+            if( i == 1U || i == 2U )
+            {
+                (void)snprintf( value, sizeof( value ), "%s",
+                                ( i == 1U ? wifi_source : ble_source ) ? "On" : "Off" );
+            }
+        }
+        else if( wifi )
+        {
+            static const char *names[] = { "Back", "Channel policy", "Channels", "Scan order", "Dwell time" };
+            label = names[ i ];
+            if( i == 1U )
+            {
+                (void)snprintf( value, sizeof( value ), "%s", manual_channels ? "Manual" : "Auto" );
+            }
+            else if( i == 3U )
+            {
+                (void)snprintf( value, sizeof( value ), "%s", shuffle_channels ? "Shuffled" : "Sequential" );
+            }
+            else if( i == 4U )
+            {
+                (void)snprintf( value, sizeof( value ), "%lu ms", (unsigned long)dwell_choices[ dwell_choice ] );
+            }
+        }
+        else
+        {
+            static const char *names[] = { "Back", "Discovery", "Duplicate filter", "Scan duty" };
+            label = names[ i ];
+            if( i == 1U )
+            {
+                (void)snprintf( value, sizeof( value ), "%s", ble_active_scan ? "Active" : "Passive" );
+            }
+            else if( i == 2U )
+            {
+                (void)snprintf( value, sizeof( value ), "%s", ble_dedupe ? "On" : "Off" );
+            }
+            else if( i == 3U )
+            {
+                (void)snprintf( value, sizeof( value ), "%s", ble_duty == 0U ? "High" : ble_duty == 1U ? "Medium" : "Low" );
+            }
+        }
+        if( i == 0U )
+        {
+            label = "Back";
+        }
+        const bool inactive = ( radio_page == 0U && i == 3U && !wifi_source ) ||
+                              ( radio_page == 0U && i == 4U && !ble_source ) ||
+                              ( wifi && !manual_channels && i >= 2U );
+        const uint16_t color = inactive ? theme->secondary :
+                               i == radio_selected ? theme->info : theme->text;
+        const int y = 26 + (int)( i - first ) * 20;
+        display_draw_text( 8, y, i == radio_selected ? ">" : " ", color, 1U );
+        display_draw_text( 22, y, label, color, 1U );
+        display_draw_text( 215, y, value, color, 1U );
+    }
+    (void)display_present();
+}
+
+static void handle_radio_menu( const rfscout_input_event_t *a_input )
+{
+    const unsigned count = radio_page == 3U ? 15U : radio_page == 0U ? 5U :
+                           radio_page == 1U ? 5U : 4U;
+    if( a_input->type == RFSCOUT_INPUT_NAVIGATION )
+    {
+        radio_selected = ( radio_selected + ( a_input->value > 0 ? 1U : count - 1U ) ) % count;
+        render_radio_menu();
+        return;
+    }
+    if( a_input->type != RFSCOUT_INPUT_SELECT )
+    {
+        return;
+    }
+    if( radio_selected == 0U )
+    {
+        if( radio_page == 0U )
+        {
+            radio_page = 4U;
+            render_menu();
+            return;
+        }
+        radio_page = radio_page == 3U ? 1U : 0U;
+        radio_selected = 0U;
+        render_radio_menu();
+        return;
+    }
+    if( radio_page == 0U )
+    {
+        if( radio_selected == 1U || radio_selected == 2U )
+        {
+            bool *enabled = radio_selected == 1U ? &wifi_source : &ble_source;
+            const bool next = !*enabled;
+            if( next && radio_selected == 1U )
+            {
+                if( selected_channels == 0U )
+                {
+                    selected_channels = 0x3FFFU;
+                }
+                (void)radio_monitor_set_manual_channels(
+                    manual_channels, selected_channels, shuffle_channels, dwell_choices[ dwell_choice ] );
+            }
+            if( next && radio_selected == 2U )
+            {
+                (void)ble_monitor_set_scan_preferences( ble_active_scan, ble_dedupe,
+                                                       ble_intervals[ ble_duty ], ble_windows[ ble_duty ] );
+            }
+            const esp_err_t result = radio_selected == 1U ?
+                                    ( next && !collectors_activated ? ESP_OK :
+                                      next ? radio_monitor_start() : radio_monitor_stop() ) :
+                                    ( next && !collectors_activated ? ESP_OK :
+                                      next ? ble_monitor_start() : ble_monitor_stop() );
+            if( ESP_OK == result )
+            {
+                *enabled = next;
+                if( !next )
+                {
+                    observation_store_clear_source( radio_selected == 1U ? RF_SOURCE_WIFI : RF_SOURCE_BLE );
+                }
+                save_radio_settings();
+            }
+        }
+        else if( radio_selected == 3U && wifi_source )
+        {
+            radio_page = 1U;
+            radio_selected = 0U;
+        }
+        else if( radio_selected == 4U && ble_source )
+        {
+            radio_page = 2U;
+            radio_selected = 0U;
+        }
+    }
+    else if( radio_page == 3U )
+    {
+        const uint16_t prior_mask = selected_channels;
+        selected_channels ^= (uint16_t)( 1U << ( radio_selected - 1U ) );
+        if( selected_channels == 0U )
+        {
+            if( ESP_OK == radio_monitor_stop() )
+            {
+                wifi_source = false;
+                radio_page = 4U;
+                menu_active = false;
+            }
+            else
+            {
+                selected_channels = prior_mask;
+            }
+        }
+        else
+        {
+            const esp_err_t result = radio_monitor_set_manual_channels(
+                manual_channels, selected_channels, shuffle_channels, dwell_choices[ dwell_choice ] );
+            if( ESP_OK != result )
+            {
+                selected_channels = prior_mask;
+            }
+        }
+        save_radio_settings();
+    }
+    else if( radio_page == 1U )
+    {
+        if( radio_selected == 1U )
+        {
+            manual_channels = !manual_channels;
+        }
+        else if( radio_selected == 2U && manual_channels )
+        {
+            radio_page = 3U;
+            radio_selected = 0U;
+        }
+        else if( radio_selected == 3U && manual_channels )
+        {
+            shuffle_channels = !shuffle_channels;
+        }
+        else if( radio_selected == 4U && manual_channels )
+        {
+            dwell_choice = ( dwell_choice + 1U ) % 5U;
+        }
+        (void)radio_monitor_set_manual_channels(
+            manual_channels, selected_channels, shuffle_channels, dwell_choices[ dwell_choice ] );
+        save_radio_settings();
+    }
+    else if( radio_page == 2U )
+    {
+        const bool was_active = ble_source && ble_monitor_is_active();
+        if( was_active && ESP_OK != ble_monitor_stop() )
+        {
+            render_radio_menu();
+            return;
+        }
+        if( radio_selected == 1U )
+        {
+            ble_active_scan = !ble_active_scan;
+        }
+        else if( radio_selected == 2U )
+        {
+            ble_dedupe = !ble_dedupe;
+        }
+        else if( radio_selected == 3U )
+        {
+            ble_duty = ( ble_duty + 1U ) % 3U;
+        }
+        if( ESP_OK == ble_monitor_set_scan_preferences( ble_active_scan, ble_dedupe,
+                                                       ble_intervals[ ble_duty ], ble_windows[ ble_duty ] ) )
+        {
+            save_radio_settings();
+            if( was_active )
+            {
+                (void)ble_monitor_start();
+            }
+        }
+    }
+    if( menu_active && radio_page != 4U )
+    {
+        render_radio_menu();
+    }
+}
+
 static void render_menu( void )
 {
+    if( radio_page != 4U )
+    {
+        render_radio_menu();
+        return;
+    }
     rendered_app_lock = app_manager_locked();
     wifi_settings_view_render( menu_item,
                                menu_editing,
@@ -74,9 +408,7 @@ static void render_menu( void )
                                notification_preferences_app_enabled( RFSCOUT_APP_WIFI_BT ),
                                device_config_evidence_threshold(),
                                device_config_wifi_timeout_seconds(),
-                               device_config_ble_timeout_seconds(),
-                               wifi_enabled,
-                               ble_enabled );
+                               device_config_ble_timeout_seconds() );
 }
 
 static void render_menu_callback( void *a_context )
@@ -85,49 +417,38 @@ static void render_menu_callback( void *a_context )
     render_menu();
 }
 
-static void save_sources( void )
-{
-    const wifi_source_settings_t settings = {
-        .magic = WIFI_SOURCE_SETTINGS_MAGIC,
-        .wifi = wifi_enabled,
-        .ble = ble_enabled,
-    };
-    const esp_err_t result = app_store_write( "sources.settings", &settings, sizeof( settings ) );
-    if( ESP_OK != result )
-    {
-        ESP_LOGW( TAG, "Source settings save failed: %s", esp_err_to_name( result ) );
-    }
-}
-
-static void load_sources( void )
-{
-    wifi_source_settings_t settings;
-    size_t length = 0U;
-    wifi_enabled = true;
-    ble_enabled = true;
-    if( ESP_OK == app_store_read( "sources.settings", &settings, sizeof( settings ), &length ) &&
-        sizeof( settings ) == length && WIFI_SOURCE_SETTINGS_MAGIC == settings.magic &&
-        ( settings.wifi || settings.ble ) )
-    {
-        wifi_enabled = settings.wifi;
-        ble_enabled = settings.ble;
-    }
-}
-
 static void start_collectors( void )
 {
     esp_err_t result;
-    if( wifi_enabled && !radio_monitor_is_active() )
+    if( !wifi_source && radio_monitor_is_active() )
     {
-        result = radio_monitor_start();
+        (void)radio_monitor_stop();
+    }
+    if( !ble_source && ble_monitor_is_active() )
+    {
+        (void)ble_monitor_stop();
+    }
+    if( wifi_source && !radio_monitor_is_active() )
+    {
+        result = radio_monitor_set_manual_channels(
+            manual_channels, selected_channels, shuffle_channels, dwell_choices[ dwell_choice ] );
+        if( ESP_OK == result )
+        {
+            result = radio_monitor_start();
+        }
         if( ESP_OK != result )
         {
             ESP_LOGW( TAG, "Wi-Fi monitor start failed: %s; retrying", esp_err_to_name( result ) );
         }
     }
-    if( ble_enabled && !ble_monitor_is_active() )
+    if( ble_source && !ble_monitor_is_active() )
     {
-        result = ble_monitor_start();
+        result = ble_monitor_set_scan_preferences(
+            ble_active_scan, ble_dedupe, ble_intervals[ ble_duty ], ble_windows[ ble_duty ] );
+        if( ESP_OK == result )
+        {
+            result = ble_monitor_start();
+        }
         if( ESP_OK != result )
         {
             ESP_LOGW( TAG, "BLE monitor start failed: %s; retrying", esp_err_to_name( result ) );
@@ -145,6 +466,7 @@ static void close_menu( void )
     menu_active = false;
     menu_editing = false;
     menu_item = WIFI_MENU_BACK;
+    radio_page = 4U;
 }
 
 static uint16_t adjust_timeout_seconds( uint16_t a_current, int a_direction )
@@ -165,6 +487,11 @@ static uint16_t adjust_timeout_seconds( uint16_t a_current, int a_direction )
 
 static void handle_menu_input( const rfscout_input_event_t *a_input )
 {
+    if( radio_page != 4U )
+    {
+        handle_radio_menu( a_input );
+        return;
+    }
     if( RFSCOUT_INPUT_SELECT == a_input->type )
     {
         if( menu_editing )
@@ -176,45 +503,9 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
         }
         if( WIFI_MENU_SOURCES == menu_item )
         {
-            const unsigned index = wifi_enabled && ble_enabled ? 0U : wifi_enabled ? 1U : 2U;
-            const unsigned next = ( index + 1U ) % 3U;
-            const bool next_wifi = 2U != next;
-            const bool next_ble = 1U != next;
-            if( wifi_enabled && !next_wifi )
-            {
-                const esp_err_t result = radio_monitor_stop();
-                if( ESP_OK != result )
-                {
-                    ESP_LOGW( TAG, "Wi-Fi collector stop failed: %s", esp_err_to_name( result ) );
-                    return;
-                }
-            }
-            if( ble_enabled && !next_ble )
-            {
-                const esp_err_t result = ble_monitor_stop();
-                if( ESP_OK != result )
-                {
-                    ESP_LOGW( TAG, "BLE collector stop failed: %s", esp_err_to_name( result ) );
-                    return;
-                }
-            }
-            if( wifi_enabled && !next_wifi )
-            {
-                observation_store_clear_source( RF_SOURCE_WIFI );
-            }
-            if( ble_enabled && !next_ble )
-            {
-                observation_store_clear_source( RF_SOURCE_BLE );
-            }
-            wifi_enabled = next_wifi;
-            ble_enabled = next_ble;
-            save_sources();
-            if( collectors_activated )
-            {
-                start_collectors();
-            }
+            radio_page = 0U;
+            radio_selected = 0U;
             render_menu();
-            emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
             return;
         }
         if( WIFI_MENU_APP_LOCK == menu_item )
@@ -347,11 +638,12 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
 
     if( RFSCOUT_APP_RUNTIME_ENTER == a_event->type )
     {
+        load_radio_settings();
+        collectors_activated = false;
         menu_active = false;
+        radio_page = 4U;
         menu_editing = false;
         menu_item = WIFI_MENU_BACK;
-        load_sources();
-        collectors_activated = false;
         rendered_app_lock = app_manager_locked();
         ui_set_surveillance_page( false );
         surveillance_history_open();
@@ -373,6 +665,7 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
     {
         collectors_activated = false;
         menu_active = false;
+        radio_page = 4U;
         menu_editing = false;
         menu_item = WIFI_MENU_BACK;
         observation_store_set_location_sink( NULL );
@@ -380,6 +673,7 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         surveillance_history_close();
         ui_set_surveillance_page( false );
         app_notification_menu_reset( &notification_menu );
+        (void)radio_monitor_set_manual_channels( false, 0U, false, 250U );
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
     if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type )
@@ -429,18 +723,15 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
 
-    if( ( ( wifi_enabled && !radio_monitor_is_active() ) ||
-          ( ble_enabled && !ble_monitor_is_active() ) ) &&
+    if( ( ( wifi_source && !radio_monitor_is_active() ) ||
+          ( ble_source && !ble_monitor_is_active() ) ) &&
         ( a_event->now_us - last_radio_retry_us >= WIFI_RADIO_RETRY_INTERVAL_US ) )
     {
         last_radio_retry_us = a_event->now_us;
         start_collectors();
     }
-    if( wifi_enabled )
-    {
-        radio_monitor_set_active_ap_channels( observation_store_wifi_ap_channel_mask() );
-        radio_monitor_step();
-    }
+    radio_monitor_set_active_ap_channels( observation_store_wifi_ap_channel_mask() );
+    radio_monitor_step();
     if( a_event->now_us - last_journal_flush_us >= WIFI_JOURNAL_FLUSH_INTERVAL_US )
     {
         last_journal_flush_us = a_event->now_us;

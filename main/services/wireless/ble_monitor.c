@@ -41,6 +41,10 @@ static ble_raw_adv_fn raw_sink;
 static uint32_t raw_callbacks_inflight;
 static bool initialized;
 static bool host_synced;
+static bool scan_active_mode;
+static bool scan_filter_duplicates;
+static uint16_t scan_interval = 0x0040U;
+static uint16_t scan_window = 0x0040U;
 static bool scan_requested;
 static bool scanning;
 static portMUX_TYPE callback_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -258,12 +262,12 @@ static esp_err_t start_scan( void )
         return ESP_OK;
     }
 
-    struct ble_gap_disc_params parameters = { .itvl = 0x0040,
-                                              .window = 0x0040,
+    struct ble_gap_disc_params parameters = { .itvl = scan_interval,
+                                              .window = scan_window,
                                               .filter_policy = BLE_HCI_SCAN_FILT_NO_WL,
                                               .limited = 0,
-                                              .passive = 1,
-                                              .filter_duplicates = 0 };
+                                              .passive = scan_active_mode ? 0 : 1,
+                                              .filter_duplicates = scan_filter_duplicates ? 1 : 0 };
 
     const int result = ble_gap_disc( own_addr_type, BLE_HS_FOREVER, &parameters, gap_event, NULL );
     if( 0 != result )
@@ -304,6 +308,26 @@ static void host_task( void *a_argument )
     (void)a_argument;
     nimble_port_run();
     nimble_port_freertos_deinit();
+}
+
+esp_err_t ble_monitor_set_scan_preferences( bool a_active,
+                                            bool a_filter_duplicates,
+                                            uint16_t a_interval,
+                                            uint16_t a_window )
+{
+    if( a_window == 0U || a_interval < a_window || a_interval > 0x4000U )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( scan_is_requested() )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    scan_interval = a_interval;
+    scan_window = a_window;
+    scan_active_mode = a_active;
+    scan_filter_duplicates = a_filter_duplicates;
+    return ESP_OK;
 }
 
 bool ble_monitor_is_active( void )
