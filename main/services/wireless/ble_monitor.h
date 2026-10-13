@@ -39,6 +39,11 @@ void ble_monitor_set_observer( ble_observation_fn a_callback );
 esp_err_t ble_monitor_init( void );
 
 /** @brief Activate passive BLE scanning after framework initialization. */
+/** @brief Configure scan behavior before starting the app-owned BLE session. */
+esp_err_t ble_monitor_set_scan_preferences( bool a_active,
+                                            bool a_filter_duplicates,
+                                            uint16_t a_interval,
+                                            uint16_t a_window );
 esp_err_t ble_monitor_start( void );
 
 /** @brief Stop BLE scanning while another app is active. */

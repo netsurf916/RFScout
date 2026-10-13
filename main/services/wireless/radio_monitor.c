@@ -55,6 +55,14 @@ static uint32_t raw_callbacks_inflight;
 static bool capture_policy;
 static uint8_t capture_fixed_channel;
 static uint32_t capture_dwell_ms = 200U;
+static bool manual_channels;
+static bool shuffled_channels;
+static uint16_t manual_channel_mask;
+static uint32_t manual_dwell_ms = 250U;
+static uint8_t sweep[ 14 ];
+static uint8_t sweep_count;
+static uint8_t sweep_index;
+static uint32_t sweep_rng = 0x9E3779B9U;
 static uint8_t channel = WIFI_MIN_CHANNEL;
 static int64_t last_hop_us;
 static uint16_t active_ap_channel_mask;
@@ -356,6 +364,56 @@ static esp_err_t configure_promiscuous_filters( void )
     return esp_wifi_set_promiscuous_ctrl_filter( &control_filter );
 }
 
+static void rebuild_sweep( void )
+{
+    sweep_count = 0U;
+    sweep_index = 0U;
+    for( uint8_t candidate = WIFI_MIN_CHANNEL; candidate <= RFSCOUT_WIFI_CHANNEL_MAX; ++candidate )
+    {
+        if( ( manual_channel_mask & ( 1U << ( candidate - WIFI_MIN_CHANNEL ) ) ) != 0U )
+        {
+            sweep[ sweep_count++ ] = candidate;
+        }
+    }
+    if( shuffled_channels )
+    {
+        for( unsigned i = sweep_count; i > 1U; --i )
+        {
+            sweep_rng ^= sweep_rng << 13;
+            sweep_rng ^= sweep_rng >> 17;
+            sweep_rng ^= sweep_rng << 5;
+            const unsigned j = sweep_rng % i;
+            const uint8_t tmp = sweep[ i - 1U ];
+            sweep[ i - 1U ] = sweep[ j ];
+            sweep[ j ] = tmp;
+        }
+    }
+}
+
+esp_err_t radio_monitor_set_manual_channels( bool a_enabled,
+                                             uint16_t a_mask,
+                                             bool a_shuffled,
+                                             uint32_t a_dwell_ms )
+{
+    const uint16_t valid_mask = (uint16_t)( ( 1U << RFSCOUT_WIFI_CHANNEL_MAX ) - 1U );
+    if( a_enabled && ( ( a_mask & valid_mask ) == 0U || a_dwell_ms < 50U || a_dwell_ms > 5000U ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    manual_channels = a_enabled;
+    manual_channel_mask = a_mask & valid_mask;
+    shuffled_channels = a_shuffled;
+    manual_dwell_ms = a_dwell_ms;
+    rebuild_sweep();
+    if( !running && manual_channels && sweep_count > 0U )
+    {
+        channel = sweep[ 0 ];
+        sweep_index = 1U;
+    }
+    last_hop_us = 0;
+    return ESP_OK;
+}
+
 static int64_t channel_dwell_us( uint8_t a_channel )
 {
     if( ( a_channel < WIFI_MIN_CHANNEL ) || ( a_channel > RFSCOUT_WIFI_CHANNEL_MAX ) )
@@ -363,6 +421,10 @@ static int64_t channel_dwell_us( uint8_t a_channel )
         return WIFI_DISCOVERY_DWELL_US;
     }
 
+    if( manual_channels )
+    {
+        return (int64_t)manual_dwell_ms * 1000LL;
+    }
     if( capture_policy )
     {
         return (int64_t)capture_dwell_ms * 1000LL;
@@ -604,13 +666,33 @@ void radio_monitor_step( void )
         return;
     }
 
-    ++channel;
-    if( channel > RFSCOUT_WIFI_CHANNEL_MAX )
+    uint8_t next_channel = channel;
+    if( manual_channels )
     {
-        channel = WIFI_MIN_CHANNEL;
+        if( sweep_index >= sweep_count )
+        {
+            rebuild_sweep();
+        }
+        if( sweep_count == 0U )
+        {
+            return;
+        }
+        next_channel = sweep[ sweep_index++ ];
+    }
+    else
+    {
+        ++next_channel;
+        if( next_channel > RFSCOUT_WIFI_CHANNEL_MAX )
+        {
+            next_channel = WIFI_MIN_CHANNEL;
+        }
     }
 
-    const esp_err_t result = esp_wifi_set_channel( channel, WIFI_SECOND_CHAN_NONE );
+    const esp_err_t result = esp_wifi_set_channel( next_channel, WIFI_SECOND_CHAN_NONE );
+    if( ESP_OK == result )
+    {
+        channel = next_channel;
+    }
     if( ESP_OK != result )
     {
         ESP_LOGW( TAG, "unable to switch to channel %u: %s", channel, esp_err_to_name( result ) );

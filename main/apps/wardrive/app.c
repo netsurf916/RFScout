@@ -25,14 +25,11 @@
 #define MENU_BACK 0U
 #define MENU_START 1U
 #define MENU_SOURCES 2U
-#define MENU_MODE 3U
-#define MENU_CHANNEL 4U
-#define MENU_DWELL 5U
-#define MENU_PACKETS 6U
-#define MENU_GPS 7U
-#define MENU_SIZE 8U
-#define MENU_FILES 9U
-#define MENU_ITEMS 10U
+#define MENU_PACKETS 3U
+#define MENU_GPS 4U
+#define MENU_SIZE 5U
+#define MENU_FILES 6U
+#define MENU_ITEMS 7U
 
 typedef struct
 {
@@ -46,6 +43,34 @@ static const char *TAG = "wardrive_app";
 static wardrive_config_t options;
 static unsigned selected;
 static bool menu_open;
+static bool sources_menu_open;
+static unsigned sources_selected;
+static bool wifi_menu_open;
+static bool ble_menu_open;
+static bool channels_menu_open;
+static unsigned radio_selected;
+static uint16_t selected_channels = 0x3FFFU;
+static bool manual_channels;
+static bool shuffle_channels;
+static bool ble_active_scan;
+static bool ble_dedupe;
+static unsigned ble_duty;
+static const uint16_t ble_intervals[] = { 0x0040U, 0x0080U, 0x00A0U };
+static const uint16_t ble_windows[] = { 0x0040U, 0x0040U, 0x0020U };
+static unsigned dwell_choice = 1U;
+static const uint32_t dwell_choices[] = { 100U, 200U, 250U, 500U, 1000U };
+typedef struct
+{
+    uint32_t magic;
+    uint16_t channels;
+    uint8_t manual;
+    uint8_t shuffled;
+    uint8_t dwell_index;
+    uint8_t ble_active;
+    uint8_t ble_duplicates;
+    uint8_t ble_duty;
+} radio_settings_t;
+
 static int64_t last_draw_us;
 static int64_t last_gps_refresh_us;
 static uint64_t stored_bytes;
@@ -175,10 +200,74 @@ static void load_settings( void )
         stored.options.file_limit_bytes >= 1024U * 1024U &&
         stored.options.file_limit_bytes <= 128U * 1024U * 1024U && stored.options.channel >= 1U &&
         stored.options.channel <= 14U && stored.options.dwell_ms >= 50U &&
-        stored.options.dwell_ms <= 5000U && ( stored.options.wifi || stored.options.ble ) )
+        stored.options.dwell_ms <= 5000U )
     {
         options = stored.options;
     }
+}
+
+/* Version 2 keeps the original record size; manual bit 0 selects manual
+   channels, and bit 1 is the authoritative Wi-Fi source enable flag. */
+static void save_radio_settings( void );
+
+static void load_radio_settings( void )
+{
+    radio_settings_t stored;
+    size_t length = 0U;
+    selected_channels = 0x3FFFU;
+    manual_channels = options.fixed_channel;
+    if( manual_channels && options.channel >= 1U && options.channel <= 14U )
+    {
+        selected_channels = (uint16_t)( 1U << ( options.channel - 1U ) );
+    }
+    shuffle_channels = false;
+    dwell_choice = 1U;
+    ble_active_scan = false;
+    ble_dedupe = false;
+    ble_duty = 0U;
+    const bool valid =
+        ESP_OK == app_store_read( "capture.radio", &stored, sizeof( stored ), &length ) &&
+        length == sizeof( stored ) && stored.dwell_index < 5U && stored.ble_duty < 3U &&
+        ( stored.magic == 0x52575031U || stored.magic == 0x52575032U );
+    if( valid )
+    {
+        selected_channels = stored.channels & 0x3FFFU;
+        manual_channels = ( stored.manual & 1U ) != 0U;
+        shuffle_channels = stored.shuffled != 0U;
+        dwell_choice = stored.dwell_index;
+        ble_active_scan = stored.ble_active != 0U;
+        ble_dedupe = stored.ble_duplicates != 0U;
+        ble_duty = stored.ble_duty;
+        if( stored.magic == 0x52575032U )
+        {
+            options.wifi = ( stored.manual & 2U ) != 0U;
+        }
+    }
+    /* Existing radio settings did not own source enablement. Preserve the
+       legacy choice when upgrading and save the authoritative combined record. */
+    if( !valid || stored.magic != 0x52575032U )
+    {
+        if( manual_channels && selected_channels == 0U )
+        {
+            options.wifi = false;
+        }
+        save_radio_settings();
+    }
+}
+
+static void save_radio_settings( void )
+{
+    const radio_settings_t stored = {
+        .magic = 0x52575032U,
+        .channels = selected_channels,
+        .manual = (uint8_t)( ( manual_channels ? 1U : 0U ) | ( options.wifi ? 2U : 0U ) ),
+        .shuffled = shuffle_channels,
+        .dwell_index = (uint8_t)dwell_choice,
+        .ble_active = ble_active_scan,
+        .ble_duplicates = ble_dedupe,
+        .ble_duty = (uint8_t)ble_duty,
+    };
+    last_error = app_store_write( "capture.radio", &stored, sizeof( stored ) );
 }
 
 static void save_settings( void )
@@ -407,19 +496,8 @@ static void describe_setting( unsigned a_index, const char **a_label, char *a_va
                             "%s",
                             options.wifi && options.ble ? "Both"
                             : options.wifi              ? "Wi-Fi"
-                                                        : "BLE" );
-            break;
-        case MENU_MODE:
-            label = "Wi-Fi mode";
-            (void)snprintf( a_value, a_size, "%s", options.fixed_channel ? "Fixed" : "Scan" );
-            break;
-        case MENU_CHANNEL:
-            label = "Channel";
-            (void)snprintf( a_value, a_size, "%u", (unsigned)options.channel );
-            break;
-        case MENU_DWELL:
-            label = "Dwell";
-            (void)snprintf( a_value, a_size, "%lu ms", (unsigned long)options.dwell_ms );
+                            : options.ble               ? "BLE"
+                                                        : "Off" );
             break;
         case MENU_PACKETS:
             label = "Wi-Fi frames";
@@ -455,8 +533,126 @@ static void describe_setting( unsigned a_index, const char **a_label, char *a_va
     *a_label = label;
 }
 
+/* Source selection is a submenu rather than a cycling single-value control.
+ * Wi-Fi and BLE remain independent settings within Wardriving's own profile. */
+static void draw_radio_submenu( void )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    const bool wifi = wifi_menu_open;
+    wardrive_stats_t capture_status;
+    wardrive_capture_stats( &capture_status );
+    display_clear( theme->background );
+    ui_chrome_draw( channels_menu_open ? "WI-FI CHANNELS"
+                    : wifi             ? "WI-FI SETTINGS"
+                                       : "BLE SETTINGS",
+                    theme->secondary );
+    const unsigned items = channels_menu_open ? 15U : wifi ? 5U : 4U;
+    const unsigned visible = 7U;
+    const unsigned first = radio_selected >= visible ? radio_selected - visible + 1U : 0U;
+    for( unsigned item = first; item < first + visible && item < items; ++item )
+    {
+        char label[ 28 ] = "";
+        char value[ 24 ] = "";
+        if( item == 0U )
+        {
+            (void)snprintf( label, sizeof( label ), "Back" );
+        }
+        else if( channels_menu_open )
+        {
+            (void)snprintf( label, sizeof( label ), "Channel %u", item );
+            (void)snprintf( value,
+                            sizeof( value ),
+                            "%s",
+                            selected_channels & ( 1U << ( item - 1U ) ) ? "On" : "Off" );
+        }
+        else if( wifi )
+        {
+            static const char *names[] = {
+                "", "Channel policy", "Channels", "Scan order", "Dwell time" };
+            (void)snprintf( label, sizeof( label ), "%s", names[ item ] );
+            if( item == 1U )
+            {
+                (void)snprintf( value, sizeof( value ), "%s", manual_channels ? "Manual" : "Auto" );
+            }
+            else if( item == 3U )
+            {
+                (void)snprintf(
+                    value, sizeof( value ), "%s", shuffle_channels ? "Shuffled" : "Sequential" );
+            }
+            else if( item == 4U )
+            {
+                (void)snprintf( value,
+                                sizeof( value ),
+                                "%lu ms",
+                                (unsigned long)dwell_choices[ dwell_choice ] );
+            }
+        }
+        else
+        {
+            static const char *names[] = { "", "Discovery", "Duplicate filter", "Scan duty" };
+            (void)snprintf( label, sizeof( label ), "%s", names[ item ] );
+            (void)snprintf( value,
+                            sizeof( value ),
+                            "%s",
+                            item == 1U       ? ( ble_active_scan ? "Active" : "Passive" )
+                            : item == 2U     ? ( ble_dedupe ? "On" : "Off" )
+                            : ble_duty == 0U ? "High"
+                            : ble_duty == 1U ? "Medium"
+                                             : "Low" );
+        }
+        const bool enabled = item == 0U || ( !capture_status.recording &&
+                                             ( !wifi || manual_channels || item < 2U ) );
+        const uint16_t color = !enabled                 ? theme->secondary
+                               : item == radio_selected ? theme->info
+                                                        : theme->text;
+        const int y = 24 + (int)( item - first ) * 18;
+        display_draw_text( 8, y, item == radio_selected ? ">" : " ", color, 1U );
+        display_draw_text( 22, y, label, color, 1U );
+        display_draw_text( 214, y, value, color, 1U );
+    }
+    (void)display_present();
+}
+
+static void draw_sources_menu( void )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    static const char *labels[] = { "Back", "Wi-Fi", "BLE", "Wi-Fi settings", "BLE settings" };
+    wardrive_stats_t capture_status;
+    wardrive_capture_stats( &capture_status );
+    display_clear( theme->background );
+    ui_chrome_draw( "SOURCES", theme->secondary );
+    for( unsigned item = 0U; item < 5U; ++item )
+    {
+        const int y = 26 + (int)item * 20;
+        const bool available = ( item == 0U || !capture_status.recording ) &&
+                               ( item != 3U || options.wifi ) && ( item != 4U || options.ble );
+        const uint16_t color = !available                 ? theme->secondary
+                               : item == sources_selected ? theme->info
+                                                          : theme->text;
+        display_draw_text( 8, y, item == sources_selected ? ">" : " ", color, 1U );
+        display_draw_text( 22, y, labels[ item ], color, 1U );
+        if( item == 1U || item == 2U )
+        {
+            const bool enabled = item == 1U ? options.wifi : options.ble;
+            display_draw_text( 232, y, enabled ? "On" : "Off", color, 1U );
+        }
+    }
+    display_draw_text( 8, 151, "CENTER: TOGGLE / BACK", theme->secondary, 1U );
+    (void)display_present();
+}
+
 static void draw_menu( void )
 {
+    if( wifi_menu_open || ble_menu_open || channels_menu_open )
+    {
+        draw_radio_submenu();
+        return;
+    }
+    if( sources_menu_open )
+    {
+        draw_sources_menu();
+        return;
+    }
     const ui_theme_palette_t *theme = ui_theme_get();
     display_clear( theme->background );
     ui_chrome_draw( "CAPTURE SETTINGS", theme->secondary );
@@ -471,9 +667,7 @@ static void draw_menu( void )
         const char *label;
         char value[ 36 ] = "";
         describe_setting( item, &label, value, sizeof( value ) );
-        const bool disabled = ( item >= MENU_MODE && item <= MENU_PACKETS && !options.wifi ) ||
-                              ( item == MENU_CHANNEL && !options.fixed_channel ) ||
-                              ( item == MENU_DWELL && options.fixed_channel );
+        const bool disabled = ( item == MENU_PACKETS && !options.wifi );
         const uint16_t color = disabled           ? theme->secondary
                                : item == selected ? theme->info
                                                   : theme->text;
@@ -498,10 +692,32 @@ static void draw_menu( void )
 
 static esp_err_t apply_radio( void )
 {
-    esp_err_t result = options.wifi ? radio_monitor_start() : radio_monitor_stop();
+    options.fixed_channel = false;
+    if( options.wifi && manual_channels )
+    {
+        options.dwell_ms = dwell_choices[ dwell_choice ];
+    }
+    esp_err_t result = radio_monitor_set_manual_channels( options.wifi && manual_channels,
+                                                          selected_channels,
+                                                          shuffle_channels,
+                                                          dwell_choices[ dwell_choice ] );
     if( ESP_OK != result )
     {
         return result;
+    }
+    result = options.wifi ? radio_monitor_start() : radio_monitor_stop();
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+    if( options.ble )
+    {
+        result = ble_monitor_set_scan_preferences(
+            ble_active_scan, ble_dedupe, ble_intervals[ ble_duty ], ble_windows[ ble_duty ] );
+        if( ESP_OK != result )
+        {
+            return result;
+        }
     }
     result = options.ble ? ble_monitor_start() : ble_monitor_stop();
     return result;
@@ -511,33 +727,7 @@ static void modify_setting( unsigned a_item, int a_direction )
 {
     static const uint32_t sizes[] = { 4U, 8U, 16U, 32U, 64U, 128U };
     static const uint8_t files[] = { 4U, 8U, 16U, 32U, 64U };
-    static const uint32_t dwells[] = { 100U, 200U, 500U, 1000U };
-    if( a_item == MENU_SOURCES )
-    {
-        unsigned index = options.wifi && options.ble ? 0U : options.wifi ? 1U : 2U;
-        index = ( index + ( a_direction > 0 ? 1U : 2U ) ) % 3U;
-        options.wifi = index != 2U;
-        options.ble = index != 1U;
-    }
-    else if( a_item == MENU_MODE && options.wifi )
-    {
-        options.fixed_channel = !options.fixed_channel;
-    }
-    else if( a_item == MENU_CHANNEL && options.wifi && options.fixed_channel )
-    {
-        options.channel =
-            (uint8_t)( ( options.channel + ( a_direction > 0 ? 0U : 12U ) ) % 14U + 1U );
-    }
-    else if( a_item == MENU_DWELL && options.wifi && !options.fixed_channel )
-    {
-        unsigned i = 0U;
-        while( i + 1U < 4U && dwells[ i ] != options.dwell_ms )
-        {
-            ++i;
-        }
-        options.dwell_ms = dwells[ ( i + ( a_direction > 0 ? 1U : 3U ) ) % 4U ];
-    }
-    else if( a_item == MENU_PACKETS && options.wifi )
+    if( a_item == MENU_PACKETS && options.wifi )
     {
         const uint8_t sequence[] = { 7U, 1U, 4U, 2U };
         unsigned i = 0U;
@@ -574,6 +764,144 @@ static void modify_setting( unsigned a_item, int a_direction )
 
 static void act_on_selection( void )
 {
+    if( wifi_menu_open || ble_menu_open || channels_menu_open )
+    {
+        wardrive_stats_t capture_status;
+        wardrive_capture_stats( &capture_status );
+        if( capture_status.recording && radio_selected != 0U )
+        {
+            draw_menu();
+            return;
+        }
+        if( radio_selected == 0U )
+        {
+            if( channels_menu_open )
+            {
+                channels_menu_open = false;
+                radio_selected = 2U;
+            }
+            else
+            {
+                wifi_menu_open = false;
+                ble_menu_open = false;
+                radio_selected = 0U;
+            }
+        }
+        else if( channels_menu_open )
+        {
+            selected_channels ^= (uint16_t)( 1U << ( radio_selected - 1U ) );
+            if( selected_channels == 0U )
+            {
+                options.wifi = false;
+                save_radio_settings();
+                channels_menu_open = false;
+                wifi_menu_open = false;
+                sources_menu_open = false;
+            }
+            else
+            {
+                save_radio_settings();
+            }
+        }
+        else if( wifi_menu_open )
+        {
+            if( radio_selected == 1U )
+            {
+                manual_channels = !manual_channels;
+            }
+            else if( radio_selected == 2U && manual_channels )
+            {
+                channels_menu_open = true;
+                radio_selected = 0U;
+            }
+            else if( radio_selected == 3U && manual_channels )
+            {
+                shuffle_channels = !shuffle_channels;
+            }
+            else if( radio_selected == 4U && manual_channels )
+            {
+                dwell_choice = ( dwell_choice + 1U ) % 5U;
+            }
+            save_radio_settings();
+        }
+        else if( ble_menu_open )
+        {
+            if( radio_selected == 1U )
+            {
+                ble_active_scan = !ble_active_scan;
+            }
+            else if( radio_selected == 2U )
+            {
+                ble_dedupe = !ble_dedupe;
+            }
+            else if( radio_selected == 3U )
+            {
+                ble_duty = ( ble_duty + 1U ) % 3U;
+            }
+            save_radio_settings();
+        }
+        draw_menu();
+        return;
+    }
+    if( sources_menu_open )
+    {
+        if( sources_selected == 0U )
+        {
+            sources_menu_open = false;
+        }
+        else if( sources_selected >= 3U )
+        {
+            if( sources_selected == 3U && options.wifi )
+            {
+                wifi_menu_open = true;
+                radio_selected = 0U;
+            }
+            else if( sources_selected == 4U && options.ble )
+            {
+                ble_menu_open = true;
+                radio_selected = 0U;
+            }
+        }
+        else
+        {
+            wardrive_stats_t stats;
+            wardrive_capture_stats( &stats );
+            /* Do not change an active recording's radio ownership as a side effect
+             * of browsing a menu. Stop capture explicitly before changing sources. */
+            if( !stats.recording )
+            {
+                if( sources_selected == 1U )
+                {
+                    options.wifi = !options.wifi;
+                }
+                else
+                {
+                    options.ble = !options.ble;
+                }
+                if( options.wifi && selected_channels == 0U )
+                {
+                    selected_channels = 0x3FFFU;
+                }
+                if( sources_selected == 1U )
+                {
+                    save_radio_settings();
+                }
+                else
+                {
+                    save_settings();
+                }
+            }
+        }
+        draw_menu();
+        return;
+    }
+    if( selected == MENU_SOURCES )
+    {
+        sources_menu_open = true;
+        sources_selected = 0U;
+        draw_menu();
+        return;
+    }
     if( selected == MENU_BACK )
     {
         menu_open = false;
@@ -589,6 +917,13 @@ static void act_on_selection( void )
             wardrive_capture_stop();
             (void)radio_monitor_stop();
             (void)ble_monitor_stop();
+        }
+        else if( !options.wifi && !options.ble )
+        {
+            last_error = ESP_ERR_INVALID_STATE;
+            ESP_LOGW( TAG, "cannot start capture: both radio sources disabled" );
+            draw_menu();
+            return;
         }
         else
         {
@@ -674,7 +1009,12 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
     if( RFSCOUT_APP_RUNTIME_ENTER == a_event->type )
     {
         load_settings();
+        load_radio_settings();
         menu_open = false;
+        sources_menu_open = false;
+        wifi_menu_open = false;
+        ble_menu_open = false;
+        channels_menu_open = false;
         memset( activity_pending, 0, sizeof( activity_pending ) );
         memset( activity_history, 0, sizeof( activity_history ) );
         memset( activity_totals, 0, sizeof( activity_totals ) );
@@ -702,6 +1042,7 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
     if( RFSCOUT_APP_RUNTIME_LEAVE == a_event->type )
     {
         wardrive_capture_stop();
+        (void)radio_monitor_set_manual_channels( false, 0U, false, 250U );
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
     if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type )
@@ -722,6 +1063,21 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
         }
         if( RFSCOUT_INPUT_NAVIGATION == a_event->input.type && menu_open )
         {
+            if( wifi_menu_open || ble_menu_open || channels_menu_open )
+            {
+                const unsigned count = channels_menu_open ? 15U : wifi_menu_open ? 5U : 4U;
+                radio_selected =
+                    ( radio_selected + ( a_event->input.value > 0 ? 1U : count - 1U ) ) % count;
+                draw_menu();
+                return RFSCOUT_APP_RUNTIME_HANDLED;
+            }
+            if( sources_menu_open )
+            {
+                sources_selected =
+                    ( sources_selected + ( a_event->input.value > 0 ? 1U : 4U ) ) % 5U;
+                draw_menu();
+                return RFSCOUT_APP_RUNTIME_HANDLED;
+            }
             if( a_event->input.value > 0 )
             {
                 selected = ( selected + 1U ) % MENU_ITEMS;
@@ -736,6 +1092,27 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
 
         if( RFSCOUT_INPUT_LONG_PRESS == a_event->input.type && menu_open )
         {
+            if( wifi_menu_open || ble_menu_open || channels_menu_open )
+            {
+                if( channels_menu_open )
+                {
+                    channels_menu_open = false;
+                }
+                else
+                {
+                    wifi_menu_open = false;
+                    ble_menu_open = false;
+                }
+                radio_selected = 0U;
+                draw_menu();
+                return RFSCOUT_APP_RUNTIME_HANDLED;
+            }
+            if( sources_menu_open )
+            {
+                sources_menu_open = false;
+                draw_menu();
+                return RFSCOUT_APP_RUNTIME_HANDLED;
+            }
             menu_open = false;
             draw_overview();
             return RFSCOUT_APP_RUNTIME_HANDLED;

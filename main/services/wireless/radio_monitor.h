@@ -51,6 +51,12 @@ uint8_t radio_monitor_channel( void );
  */
 void radio_monitor_set_active_ap_channels( uint16_t a_channel_mask );
 
+/** @brief Select a per-app manual Wi-Fi channel set and complete sweep ordering. */
+esp_err_t radio_monitor_set_manual_channels( bool a_enabled,
+                                             uint16_t a_mask,
+                                             bool a_shuffled,
+                                             uint32_t a_dwell_ms );
+
 /** @brief Advance the adaptive channel-hopping state machine when required. */
 void radio_monitor_step( void );
 
