@@ -749,6 +749,9 @@ bool observation_store_observe( rf_device_t *a_observation,
     {
         rf_device_t *device = &devices[ existing_index ];
         const bool was_surveillance = SURVEILLANCE_NONE != device->surveillance;
+        const uint8_t prior_ap_channel = device->wifi_channel;
+        const bool prior_is_ap = device->wifi_is_ap;
+        const uint16_t prior_observed_mask = device->wifi_observed_channel_mask;
 
         surveillance_case_observe( device, a_observation );
         merge_observation( device, a_observation );
@@ -756,6 +759,10 @@ bool observation_store_observe( rf_device_t *a_observation,
         a_observation->wifi_channel = device->wifi_channel;
         a_observation->wifi_is_ap = device->wifi_is_ap;
         a_observation->wifi_observed_channel_mask = device->wifi_observed_channel_mask;
+        a_observation->wifi_channel_state_changed =
+            ( prior_ap_channel != device->wifi_channel ) ||
+            ( prior_is_ap != device->wifi_is_ap ) ||
+            ( prior_observed_mask != device->wifi_observed_channel_mask );
         location_ready = record_receiver_location( device, &gps, &location_event );
 
         const bool became_surveillance =
@@ -797,6 +804,8 @@ bool observation_store_observe( rf_device_t *a_observation,
     rf_device_t *device = &devices[ slot ];
     *device = *a_observation;
     initialize_source_times( device );
+    a_observation->wifi_channel_state_changed =
+        ( 0U != device->wifi_observed_channel_mask ) || device->wifi_is_ap;
     if( 0U != surveillance_evidence_count( device ) )
     {
         surveillance_case_evaluate( device );
