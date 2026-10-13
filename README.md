@@ -2,13 +2,13 @@
 
 RFScout is a handheld **RF situational-awareness** instrument for ESP32-S3. The currently supported hardware profile is the **LILYGO T-Embed CC1101 Plus**. RFScout keeps board identity behind runtime profile/capability boundaries so applications consume semantic services rather than hardware-specific GPIO or peripheral details.
 
-RFScout combines passive Wi-Fi/BLE observation, open-hotspot connectivity checks, receive-only RF activity monitoring, SD-backed audio recording and logging, thermal imaging with an optional MLX90640, semantic input/notifications, persistent device configuration, battery telemetry, and A/B firmware update support.
+RFScout combines passive Wi-Fi observation and configurable passive/active BLE discovery, open-hotspot connectivity checks, receive-only RF activity monitoring, SD-backed audio recording and logging, thermal imaging with an optional MLX90640, semantic input/notifications, persistent device configuration, battery telemetry, and A/B firmware update support.
 
 <p align="center">
   <img src="assets/device.jpg" alt="RFScout running on a LILYGO T-Embed CC1101 Plus" width="800">
 </p>
 
-RFScout is intentionally passive wherever the underlying radio APIs allow it; Hotspots is the one application that deliberately joins (open) networks, and only while it is active. It is designed to answer “what electronic activity is around me?” without requiring continuous raw-packet inspection.
+RFScout passively observes Wi-Fi and does not join networks outside Hotspots or Home-managed infrastructure connections. BLE discovery can be configured as active, in which case the controller transmits scan requests; passive BLE discovery does not. Hotspots deliberately joins eligible open networks only while active. It is designed to answer “what electronic activity is around me?” without requiring continuous raw-packet inspection.
 
 ## Documentation map
 
