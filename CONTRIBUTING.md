@@ -208,8 +208,8 @@ Avoid running the complete ESP-IDF build/flash process as root.
 - [Coding style](#coding-style) — required source/style/module conventions
 - [Platform architecture](docs/ARCHITECTURE.md) — shared lifecycle, service, resource, memory, persistence, hardware, and OTA contracts
 - [Application documentation](docs/apps/) — current app-specific behavior and implementation boundaries
-- [Firmware releases](operations/RELEASING.md) — candidate/release/browser-flasher/OTA publication runbook
-- [Roadmap](ROADMAP.md) — authoritative future planning and active release scope
+- [Firmware releases](docs/operations/RELEASING.md) — candidate/release/browser-flasher/OTA publication runbook
+- [Roadmap](docs/ROADMAP.md) — authoritative future planning and active release scope
 - [README](../README.md) — product/current-state anchor and full documentation map
 
 
