@@ -396,8 +396,7 @@ esp_err_t radio_monitor_set_manual_channels( bool a_enabled,
                                              uint32_t a_dwell_ms )
 {
     const uint16_t valid_mask = (uint16_t)( ( 1U << RFSCOUT_WIFI_CHANNEL_MAX ) - 1U );
-    if( a_enabled && ( ( a_mask & valid_mask ) == 0U || a_dwell_ms < 50U ||
-                       a_dwell_ms > 5000U ) )
+    if( a_enabled && ( ( a_mask & valid_mask ) == 0U || a_dwell_ms < 50U || a_dwell_ms > 5000U ) )
     {
         return ESP_ERR_INVALID_ARG;
     }
