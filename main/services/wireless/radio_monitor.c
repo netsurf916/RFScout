@@ -123,7 +123,11 @@ static void emit_mac( const uint8_t a_mac[ 6 ], int8_t a_rssi, uint8_t a_channel
     observation.source_mask = RF_SOURCE_BIT( RF_SOURCE_WIFI );
     observation.rssi = a_rssi;
     observation.channel = a_channel;
-    observation.wifi_channel = a_channel;
+    observation.wifi_channel = a_is_ap ? a_channel : 0U;
+    observation.wifi_observed_channel_mask =
+        ( a_channel >= 1U && a_channel <= RFSCOUT_WIFI_CHANNEL_MAX )
+            ? (uint16_t)( 1U << ( a_channel - 1U ) )
+            : 0U;
     observation.wifi_is_ap = a_is_ap;
     observation.first_seen_ms = observation.last_seen_ms =
         (uint32_t)( esp_timer_get_time() / 1000ULL );
@@ -206,8 +210,7 @@ static bool parse_wifi_frame( const uint8_t *a_frame, size_t a_length, wifi_fram
 static void
 emit_management_observations( const wifi_frame_info_t *a_info, int8_t a_rssi, uint8_t a_channel )
 {
-    const bool identifies_ap = ( IEEE80211_SUBTYPE_BEACON == a_info->subtype ) ||
-                               ( IEEE80211_SUBTYPE_PROBE_RESPONSE == a_info->subtype );
+    const bool identifies_ap = ( IEEE80211_SUBTYPE_BEACON == a_info->subtype );
     if( identifies_ap && ( NULL != a_info->bssid ) )
     {
         emit_mac( a_info->bssid, a_rssi, a_channel, true );
