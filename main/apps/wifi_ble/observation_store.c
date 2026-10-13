@@ -513,7 +513,7 @@ static bool expire_stale_devices( uint32_t a_now_ms )
             {
                 device->wifi_is_ap = false;
                 device->wifi_channel = 0U;
-            device->wifi_observed_channel_mask = 0U;
+                device->wifi_observed_channel_mask = 0U;
             }
 
             const bool last_source_valid = ( device->last_source >= RF_SOURCE_WIFI ) &&
