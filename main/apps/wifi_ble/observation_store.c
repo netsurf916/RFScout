@@ -12,6 +12,7 @@
 #include "surveillance.h"
 
 #include "esp_timer.h"
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
@@ -28,6 +29,7 @@ static size_t *summary_vendor_slots;
 static size_t summary_vendor_slot_capacity;
 static size_t summary_vendor_count;
 static uint16_t wifi_ap_channel_counts[ RFSCOUT_WIFI_CHANNEL_MAX ];
+static uint32_t diagnostic_ap_expiries;
 static uint32_t store_generation;
 static SemaphoreHandle_t store_lock;
 static observation_location_sink_t location_sink;
@@ -53,6 +55,7 @@ static void synchronize_session_store( void )
     summary_vendor_slot_capacity = 0U;
     summary_vendor_count = 0U;
     memset( wifi_ap_channel_counts, 0, sizeof( wifi_ap_channel_counts ) );
+    diagnostic_ap_expiries = 0U;
     store_generation = generation;
 }
 
@@ -517,6 +520,7 @@ static bool expire_stale_devices( uint32_t a_now_ms )
             if( has_active_wifi_ap_role( device ) )
             {
                 adjust_wifi_ap_channel_count( device->wifi_channel, -1 );
+                ++diagnostic_ap_expiries;
             }
             sources &= ~RF_SOURCE_BIT( RF_SOURCE_WIFI );
         }
@@ -1029,11 +1033,17 @@ void observation_store_housekeeping( void )
     }
     xSemaphoreTake( store_lock, portMAX_DELAY );
     synchronize_session_store();
+    const uint32_t previous_ap_expiries = diagnostic_ap_expiries;
     if( expire_stale_devices( current_time_ms() ) )
     {
         rebuild_identity_index();
     }
+    const uint32_t new_ap_expiries = diagnostic_ap_expiries - previous_ap_expiries;
     xSemaphoreGive( store_lock );
+    if( 0U != new_ap_expiries )
+    {
+        ESP_LOGI( "wifi_ap_diag", "AP observations expired: %u", (unsigned)new_ap_expiries );
+    }
 }
 
 static uint16_t wifi_ap_mask_locked( void )
