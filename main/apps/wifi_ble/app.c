@@ -347,6 +347,7 @@ static void handle_radio_menu( const rfscout_input_event_t *a_input )
             if( ESP_OK == radio_monitor_stop() )
             {
                 wifi_source = false;
+                observation_store_clear_source( RF_SOURCE_WIFI );
                 radio_page = 4U;
                 menu_active = false;
             }
