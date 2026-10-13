@@ -294,31 +294,12 @@ static void draw_overview( void )
     /* Fixed-width compact counts keep both labels inside their 72px columns. */
     const uint32_t saved = stats.written;
     const uint32_t dropped = stats.dropped;
-    if( saved >= 1000000U )
-    {
-        (void)snprintf( line, sizeof( line ), "SAVE %.1fM", (double)saved / 1000000.0 );
-    }
-    else if( saved >= 10000U )
-    {
-        (void)snprintf( line, sizeof( line ), "SAVE %.1fk", (double)saved / 1000.0 );
-    }
-    else
-    {
-        (void)snprintf( line, sizeof( line ), "SAVE %lu", (unsigned long)saved );
-    }
+    char count[ 16 ];
+    format_packet_rate( count, sizeof( count ), saved );
+    (void)snprintf( line, sizeof( line ), "SAVE %s", count );
     display_draw_text( 8, 130, line, theme->success, 1U );
-    if( dropped >= 1000000U )
-    {
-        (void)snprintf( line, sizeof( line ), "DROP %.1fM", (double)dropped / 1000000.0 );
-    }
-    else if( dropped >= 10000U )
-    {
-        (void)snprintf( line, sizeof( line ), "DROP %.1fk", (double)dropped / 1000.0 );
-    }
-    else
-    {
-        (void)snprintf( line, sizeof( line ), "DROP %lu", (unsigned long)dropped );
-    }
+    format_packet_rate( count, sizeof( count ), dropped );
+    (void)snprintf( line, sizeof( line ), "DROP %s", count );
     display_draw_text( 81, 130, line, dropped ? theme->warning : theme->text, 1U );
     display_draw_text( 8,
                        146,
