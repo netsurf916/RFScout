@@ -580,9 +580,9 @@ static void draw_radio_submenu( void )
                                              : "Low" );
         }
         const bool enabled = channels_menu_open || !wifi || manual_channels || item < 2U;
-        const uint16_t color = item == radio_selected ? theme->info
-                               : enabled              ? theme->text
-                                                      : theme->secondary;
+        const uint16_t color = !enabled                ? theme->secondary
+                               : item == radio_selected ? theme->info
+                                                        : theme->text;
         const int y = 24 + (int)( item - first ) * 18;
         display_draw_text( 8, y, item == radio_selected ? ">" : " ", color, 1U );
         display_draw_text( 22, y, label, color, 1U );
@@ -600,7 +600,10 @@ static void draw_sources_menu( void )
     for( unsigned item = 0U; item < 5U; ++item )
     {
         const int y = 26 + (int)item * 20;
-        const uint16_t color = item == sources_selected ? theme->info : theme->text;
+        const bool available = ( item != 3U || options.wifi ) && ( item != 4U || options.ble );
+        const uint16_t color = !available                ? theme->secondary
+                               : item == sources_selected ? theme->info
+                                                          : theme->text;
         display_draw_text( 8, y, item == sources_selected ? ">" : " ", color, 1U );
         display_draw_text( 22, y, labels[ item ], color, 1U );
         if( item == 1U || item == 2U )
