@@ -1036,15 +1036,8 @@ void observation_store_housekeeping( void )
     xSemaphoreGive( store_lock );
 }
 
-uint16_t observation_store_wifi_ap_channel_mask( void )
+static uint16_t wifi_ap_mask_locked( void )
 {
-    if( NULL == store_lock )
-    {
-        return 0U;
-    }
-
-    xSemaphoreTake( store_lock, portMAX_DELAY );
-    synchronize_session_store();
     uint16_t mask = 0U;
     for( uint8_t index = 0U; index < RFSCOUT_WIFI_CHANNEL_MAX; ++index )
     {
@@ -1053,8 +1046,18 @@ uint16_t observation_store_wifi_ap_channel_mask( void )
             mask |= (uint16_t)( 1U << index );
         }
     }
-    xSemaphoreGive( store_lock );
     return mask;
+}
+
+uint16_t observation_store_wifi_ap_channel_mask( void )
+{
+    if( NULL == store_lock )
+        return 0U;
+    xSemaphoreTake( store_lock, portMAX_DELAY );
+    synchronize_session_store();
+    const uint16_t result = wifi_ap_mask_locked();
+    xSemaphoreGive( store_lock );
+    return result;
 }
 
 size_t observation_store_count( void )
@@ -1090,7 +1093,7 @@ size_t observation_store_surveillance_count( void )
     return result;
 }
 
-size_t observation_store_active_surveillance( observation_surveillance_signature_t *a_rows,
+static size_t active_surveillance_locked( observation_surveillance_signature_t *a_rows,
                                               size_t a_capacity,
                                               size_t *a_total_devices )
 {
@@ -1098,14 +1101,6 @@ size_t observation_store_active_surveillance( observation_surveillance_signature
     {
         *a_total_devices = 0U;
     }
-    if( NULL == store_lock )
-    {
-        return 0U;
-    }
-
-    xSemaphoreTake( store_lock, portMAX_DELAY );
-    synchronize_session_store();
-
     size_t total_devices = 0U;
     size_t group_count = 0U;
     const size_t signature_count = surveillance_signature_count();
@@ -1162,8 +1157,6 @@ size_t observation_store_active_surveillance( observation_surveillance_signature
         a_rows[ position ] = group;
     }
 
-    xSemaphoreGive( store_lock );
-
     if( NULL != a_total_devices )
     {
         *a_total_devices = total_devices;
@@ -1171,17 +1164,23 @@ size_t observation_store_active_surveillance( observation_surveillance_signature
     return group_count;
 }
 
-size_t observation_store_summary( observation_store_summary_t *a_summary,
+size_t observation_store_active_surveillance( observation_surveillance_signature_t *a_rows,
+                                              size_t a_capacity,
+                                              size_t *a_total_devices )
+{
+    if( NULL == store_lock )
+        return 0U;
+    xSemaphoreTake( store_lock, portMAX_DELAY );
+    synchronize_session_store();
+    const size_t result = active_surveillance_locked( a_rows, a_capacity, a_total_devices );
+    xSemaphoreGive( store_lock );
+    return result;
+}
+
+static size_t summary_locked( observation_store_summary_t *a_summary,
                                   observation_vendor_count_t *a_vendors,
                                   size_t a_vendor_capacity )
 {
-    if( ( NULL == a_summary ) || ( NULL == store_lock ) )
-    {
-        return 0U;
-    }
-
-    xSemaphoreTake( store_lock, portMAX_DELAY );
-    synchronize_session_store();
     memset( a_summary, 0, sizeof( *a_summary ) );
     a_summary->device_count = device_count;
 
@@ -1216,7 +1215,40 @@ size_t observation_store_summary( observation_store_summary_t *a_summary,
             count_vendor( device->vendor );
         }
     }
-    xSemaphoreGive( store_lock );
-
     return collect_vendors ? select_top_vendors( a_vendors, a_vendor_capacity ) : 0U;
+}
+
+size_t observation_store_summary( observation_store_summary_t *a_summary,
+                                  observation_vendor_count_t *a_vendors,
+                                  size_t a_vendor_capacity )
+{
+    if( NULL == a_summary || NULL == store_lock )
+        return 0U;
+    xSemaphoreTake( store_lock, portMAX_DELAY );
+    synchronize_session_store();
+    const size_t result = summary_locked( a_summary, a_vendors, a_vendor_capacity );
+    xSemaphoreGive( store_lock );
+    return result;
+}
+
+void observation_store_ui_snapshot( observation_ui_snapshot_t *a_snapshot,
+                                   observation_vendor_count_t *a_vendors,
+                                   size_t a_vendor_capacity,
+                                   observation_surveillance_signature_t *a_signatures,
+                                   size_t a_signature_capacity )
+{
+    if( NULL == a_snapshot )
+        return;
+    memset( a_snapshot, 0, sizeof( *a_snapshot ) );
+    if( NULL == store_lock )
+        return;
+
+    xSemaphoreTake( store_lock, portMAX_DELAY );
+    synchronize_session_store();
+    a_snapshot->vendor_count = summary_locked( &a_snapshot->summary, a_vendors, a_vendor_capacity );
+    a_snapshot->signature_count =
+        active_surveillance_locked( a_signatures, a_signature_capacity,
+                                    &a_snapshot->surveillance_count );
+    a_snapshot->ap_channel_mask = wifi_ap_mask_locked();
+    xSemaphoreGive( store_lock );
 }

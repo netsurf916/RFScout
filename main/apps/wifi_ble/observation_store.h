@@ -142,6 +142,22 @@ void observation_store_clear_source( rf_source_t a_source );
  */
 uint16_t observation_store_wifi_ap_channel_mask( void );
 
+/** @brief Copy a coherent UI summary while holding the observation-store lock once. */
+typedef struct
+{
+    observation_store_summary_t summary;
+    uint16_t ap_channel_mask;
+    size_t vendor_count;
+    size_t signature_count;
+    size_t surveillance_count;
+} observation_ui_snapshot_t;
+
+void observation_store_ui_snapshot( observation_ui_snapshot_t *a_snapshot,
+                                   observation_vendor_count_t *a_vendors,
+                                   size_t a_vendor_capacity,
+                                   observation_surveillance_signature_t *a_signatures,
+                                   size_t a_signature_capacity );
+
 /** @brief Return the number of currently active observations. */
 size_t observation_store_count( void );
 
