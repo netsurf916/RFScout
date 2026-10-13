@@ -52,6 +52,7 @@ static unsigned radio_selected;
 static uint16_t selected_channels = 0x3FFFU;
 static bool manual_channels;
 static bool legacy_radio_migration_pending;
+static bool source_settings_sync_pending;
 static bool shuffle_channels;
 static bool ble_active_scan;
 static bool ble_dedupe;
@@ -243,6 +244,13 @@ static void load_radio_settings( void )
     {
         save_radio_settings();
     }
+    /* A zero manual mask is authoritative if the radio record was saved but
+       the legacy source settings write failed. Reconcile on every app entry. */
+    if( manual_channels && selected_channels == 0U && options.wifi )
+    {
+        options.wifi = false;
+        source_settings_sync_pending = true;
+    }
 }
 
 static void save_radio_settings( void )
@@ -266,10 +274,10 @@ static void save_radio_settings( void )
 
 static void save_settings( void )
 {
-    if( legacy_radio_migration_pending )
+    if( legacy_radio_migration_pending || source_settings_sync_pending )
     {
         save_radio_settings();
-        if( legacy_radio_migration_pending )
+        if( ESP_OK != last_error )
         {
             return;
         }
@@ -280,6 +288,10 @@ static void save_settings( void )
         .options = options,
     };
     last_error = app_store_write( "capture.settings", &stored, sizeof( stored ) );
+    if( ESP_OK == last_error )
+    {
+        source_settings_sync_pending = false;
+    }
 }
 
 static bool usage_visitor( const rfscout_media_entry_t *a_entry, void *a_context )
@@ -792,14 +804,18 @@ static void act_on_selection( void )
         else if( channels_menu_open )
         {
             selected_channels ^= (uint16_t)( 1U << ( radio_selected - 1U ) );
-            save_radio_settings();
             if( selected_channels == 0U )
             {
                 options.wifi = false;
+                source_settings_sync_pending = true;
                 save_settings();
                 channels_menu_open = false;
                 wifi_menu_open = false;
                 sources_menu_open = false;
+            }
+            else
+            {
+                save_radio_settings();
             }
         }
         else if( wifi_menu_open )
@@ -880,7 +896,7 @@ static void act_on_selection( void )
                 if( options.wifi && selected_channels == 0U )
                 {
                     selected_channels = 0x3FFFU;
-                    save_radio_settings();
+                    source_settings_sync_pending = true;
                 }
                 save_settings();
             }
@@ -1003,6 +1019,10 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
     {
         load_settings();
         load_radio_settings();
+        if( source_settings_sync_pending )
+        {
+            save_settings();
+        }
         menu_open = false;
         sources_menu_open = false;
         wifi_menu_open = false;
