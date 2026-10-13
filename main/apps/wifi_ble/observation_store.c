@@ -964,6 +964,7 @@ void observation_store_clear_source( rf_source_t a_source )
         {
             device->wifi_is_ap = false;
             device->wifi_channel = 0U;
+            device->wifi_observed_channel_mask = 0U;
             device->wifi_last_seen_ms = 0U;
         }
         else
