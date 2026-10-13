@@ -513,6 +513,7 @@ static bool expire_stale_devices( uint32_t a_now_ms )
             {
                 device->wifi_is_ap = false;
                 device->wifi_channel = 0U;
+            device->wifi_observed_channel_mask = 0U;
             }
 
             const bool last_source_valid = ( device->last_source >= RF_SOURCE_WIFI ) &&
@@ -605,6 +606,7 @@ static void merge_observation( rf_device_t *a_device, const rf_device_t *a_obser
         ( 0U != ( a_observation->source_mask & RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) ) )
     {
         a_device->wifi_last_seen_ms = a_observation->last_seen_ms;
+        a_device->wifi_observed_channel_mask |= a_observation->wifi_observed_channel_mask;
         /*
          * Receiver-reported channels can briefly reflect adjacent channels at a
          * hop boundary. Once AP identity and its channel are established, do
@@ -751,6 +753,9 @@ bool observation_store_observe( rf_device_t *a_observation,
         surveillance_case_observe( device, a_observation );
         merge_observation( device, a_observation );
         copy_case_result( a_observation, device );
+        a_observation->wifi_channel = device->wifi_channel;
+        a_observation->wifi_is_ap = device->wifi_is_ap;
+        a_observation->wifi_observed_channel_mask = device->wifi_observed_channel_mask;
         location_ready = record_receiver_location( device, &gps, &location_event );
 
         const bool became_surveillance =
