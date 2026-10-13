@@ -133,8 +133,8 @@ static void render_summary( void )
     observation_ui_snapshot_t snapshot = { 0 };
     observation_vendor_count_t vendors[ UI_MAX_KNOWN_BRANDS ] = { 0 };
     observation_surveillance_signature_t surveillance_rows[ UI_SURVEILLANCE_MAX_ROWS ] = { 0 };
-    observation_store_ui_snapshot( &snapshot, vendors, UI_MAX_KNOWN_BRANDS,
-                                   surveillance_rows, UI_SURVEILLANCE_MAX_ROWS );
+    observation_store_ui_snapshot(
+        &snapshot, vendors, UI_MAX_KNOWN_BRANDS, surveillance_rows, UI_SURVEILLANCE_MAX_ROWS );
     const observation_store_summary_t summary = snapshot.summary;
     const size_t vendor_count = snapshot.vendor_count;
     const size_t surveillance_count = snapshot.surveillance_count;
