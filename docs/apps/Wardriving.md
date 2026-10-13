@@ -1,6 +1,6 @@
 # Wardriving packet capture
 
-Wardriving is an implemented, independent passive Wi-Fi/BLE PCAPNG capture application. Its dashboard and capture lifecycle are available on `main`. ESP-IDF CI and the basic capture/start/stop/navigation paths have been exercised; Wireshark packet decoding, sustained capture quality, and removable-card failure recovery still need dedicated validation.
+Wardriving is an implemented, independent mixed-source Wi-Fi/BLE PCAPNG capture application; Wi-Fi remains passive while BLE can use controller-managed active discovery. Its dashboard and capture lifecycle are available on `main`. ESP-IDF CI and the basic capture/start/stop/navigation paths have been exercised; Wireshark packet decoding, sustained capture quality, and removable-card failure recovery still need dedicated validation.
 
 ## Output format
 
@@ -31,9 +31,9 @@ Use `media_store` ownership/collection access; card-loss recovery remains a vali
 
 ## Capture policy and limitations
 
-- Passive reception only. No association, injection, or packet transmission.
+- Passive Wi-Fi reception only: no Wi-Fi association, injection, or discovery transmission. BLE active discovery can transmit controller-managed scan requests when selected.
 - Wi-Fi: scan board-supported 2.4 GHz channels 1-14, with configurable fixed or uniform channel dwell. **No simultaneous capture of all channels**. The existing adaptive AP-focused hopping policy is unsuitable for broad packet sampling; Wardriving must choose an explicit independent hop policy.
-- BLE: passive scanning, no duplicate suppression; the controller delivers advertising reports rather than arbitrary Bluetooth traffic. Packet completeness, PHY/channel information, and scan cadence are hardware/host limited and must be disclosed.
+- BLE: selectable passive/active advertising scanning and duplicate filtering; the controller delivers advertising reports rather than arbitrary Bluetooth traffic. Packet completeness, PHY/channel information, and scan cadence are hardware/host limited and must be disclosed.
 - ESP32-S3 cannot receive 5 GHz Wi-Fi. Wi-Fi/BLE coexistence and SD bandwidth impose unavoidable packet loss under load. The integrated UI shows GPS fix, channel, capture state, received packet activity (instantaneous and rolling average), saved/dropped counts, and a rolling 74-second per-channel histogram.
 - Do not decode or filter application payloads in the hot path; preserve captured bytes verbatim insofar as delivered by the hardware driver. Captures may contain sensitive traffic: document retention and handling.
 
@@ -43,16 +43,18 @@ The app provides an on-device Settings menu using RFScout's rotary input and cen
 
 ### Radio
 
-| Control | Values / semantics |
+| Control | Current behavior |
 | --- | --- |
-| Capture sources | **Both** (default), **Wi-Fi only**, **BLE only**. Stop inactive receiver and do not allocate its queue bandwidth. |
-| Wi-Fi mode | **Scan all** (default), **Fixed channel**. Applicable only if Wi-Fi is enabled. |
-| Scan channels | The current capture monitor cycles channels 1–14 when scanning; individually selectable channel masks are not implemented on `main` (planned in PR #111). |
-| Channel dwell | Adjustable dwell interval, initially 200 ms per channel; fixed-channel mode ignores dwell. Uniform round-robin hopping rather than existing AP-weighted adaptive hopping. |
-| Fixed channel | Select one supported Wi-Fi channel; capture continuously there until changed or stopped. |
-| BLE scan | Passive advertising with duplicate filtering disabled; coexistence scheduling remains controller-driven. BLE frequency/channel is not user-fixable through the current NimBLE scanning API. |
+| Sources | Independent Wi-Fi and BLE On/Off switches, with per-source submenus |
+| Wi-Fi channel policy | Auto (uniform coverage) or Manual (selected channel mask) |
+| Channels | Individual channels enabled/disabled in Manual mode |
+| Scan order | Sequential or shuffled complete sweeps in Manual mode |
+| Dwell | 100/200/250/500/1000 ms presets in Manual mode |
+| BLE Discovery | Passive (default) or Active (controller-managed scan requests) |
+| BLE Duplicate filter | Off/On |
+| BLE Scan duty | High/Medium/Low |
 
-Selecting a capture setting while recording stops the current capture and attempts to restart with the changed configuration. This is not guaranteed to continue in the same session or preserve all queued packets if storage fails. Explicit policy-change metadata within the file remains a follow-up. Use a separate raw Wi-Fi capture policy rather than altering the existing observation app's scan behavior.
+Disabling the final Manual channel disables Wardriving's Wi-Fi source. Reenabling that source from an empty channel mask restores the configured channel set. Wardriving source settings are app-local and separate from the WiFi/BLE observation app. Wi-Fi active discovery is not implemented.
 
 ### Capture content
 
@@ -84,7 +86,7 @@ If the card is unavailable, below required reserve, read-only, or write/close fa
 
 ### Current menu presentation
 
-The implemented top-level menu consists of Back, Start/Stop capture, Sources (Both/Wi-Fi/BLE), Wi-Fi mode (Scan/Fixed), Channel, Dwell, Wi-Fi frames, GPS metadata, Max file, and Max files. Sources and Wi-Fi options cycle through their values with the center button. Channel is applicable only in Fixed mode and Dwell only in Scan mode; nonapplicable rows are dimmed. Storage usage/free-space numbers appear in the footer. This is the menu implemented on `main`; hierarchical source/channel selection is being developed separately in PR #111.
+The implemented top-level capture settings menu contains Back, Start/Stop capture, Sources, Wi-Fi frame filtering, GPS metadata, maximum file size, and maximum file count. Sources opens Wi-Fi and BLE On/Off settings, their respective radio submenus, and individual channel selection in Manual Wi-Fi mode. Nonapplicable controls are dimmed.
 
 ## Wardriving instrument dashboard
 
@@ -121,7 +123,7 @@ The writer never splits an individual PCAPNG block across segments. A segment ca
 
 ## Menu semantics and storage estimates
 
-Use RFScout's ordinary trackball conventions: turn to select, press center to edit/confirm, and Back to return. Nonapplicable controls are dimmed rather than allowing changes with no effect. Source selection defaults to Both; Wi-Fi defaults to round-robin scan across the supported 2.4 GHz channels with 200 ms dwell. Fixed-channel mode stays on the selected channel. Wi-Fi packet filtering defaults to all available classes. BLE remains passive, no host-level duplicate suppression. GPS metadata defaults to attaching only when position is valid and fresh.
+Use RFScout's ordinary trackball conventions: turn to select, press center to edit/confirm, and Back to return. Nonapplicable controls are dimmed. Both sources are enabled by default; Wi-Fi Auto uses uniform coverage. Wi-Fi packet filtering defaults to all available classes. BLE discovery defaults to Passive with duplicate filtering off. GPS metadata defaults to attaching only when position is valid and fresh.
 
 Maximum file size and maximum retained file count define a retention ceiling using checked integer arithmetic: `ceiling_bytes = per_file_cap_bytes * max_files`. Display the value as readable MiB/GiB next to **actual usage** and **currently available SD space**. The ceiling is not a forecast of data volume; real consumption depends on traffic and runtime. The implementation checks available media space during capture operations. Preflight headroom estimates and every error presentation path need hardware validation. Smaller retention settings take effect at the next documented pruning point, without surprise deletions just from browsing the menu.
 

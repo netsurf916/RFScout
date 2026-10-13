@@ -63,3 +63,8 @@ Serial logs summarize CASIC discovery, initial configuration, rate changes, and 
 - Add fix type and GPS UTC as supported by receiver messages. Per-satellite information is intentionally out of scope.
 
 Hardware validation and ESP-IDF CI are required before treating this application as complete.
+
+
+## Status indicator
+
+The system GPS indicator uses a compact satellite silhouette: warning when detected without a fresh fix, success with a fresh position fix, and no indicator when the receiver is absent.

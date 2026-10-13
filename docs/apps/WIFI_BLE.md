@@ -10,17 +10,17 @@ The application requires delayed activation and declares both the Wi-Fi monitor 
 
 The normalized live observation store grows in app-owned PSRAM instead of enforcing the former fixed 1000-item limit. Collector ingestion uses an identity index rather than linearly rescanning the entire collection for every callback.
 
-### Passive collection behavior
+### Current collection behavior
 
-After the shared delayed-activation interval, the application starts the enabled collectors. The settings menu has one **Sources** control near the top, cycling **Both → Wi-Fi → BLE → Both**, matching Wardriving. Both are enabled by default and the selection is persisted in app-scoped settings. At least one source must remain enabled. Turning a source off stops its collector immediately; turning it on starts the collector while the app is active. Only enabled collectors are retried at one-second intervals. Disabling a source immediately removes its observations; identities also observed by an enabled source retain that source's membership and evidence. Wi-Fi AP channel counts are cleared for Wi-Fi memberships removed this way.
+After delayed activation, the application starts its enabled collectors. A nested **Sources** menu has separate Wi-Fi and BLE On/Off controls and per-source settings, persisted independently for this application. Turning a source off stops the corresponding collector and removes only that source's retained observations; identity records still supported by the other source remain. Wi-Fi AP channel counts are reconciled when Wi-Fi memberships are removed. The menu supports both sources disabled; it does not silently reenable the other source.
 
-The Wi-Fi collector uses ESP32 promiscuous receive mode with no station association and always covers channels **1-14**. Channel dwell is adaptive: channels without retained AP/BSSID evidence use a **120 ms** discovery dwell, while channels with at least one retained AP/BSSID identity use a **350 ms** observation dwell. Every channel remains in the scan cycle; observed infrastructure changes only how long RFScout lingers there.
+The Wi-Fi collector uses ESP32 promiscuous reception without association. Wi-Fi settings offer **Auto** (adaptive AP-focused hopping) or **Manual** (channel-by-channel enablement, sequential/shuffled complete sweeps, selectable dwell times). Auto favors channels with retained AP evidence while still covering eligible channels; Manual uses the selected mask. Disabling the final selected Manual channel also disables this app's Wi-Fi source. Reenabling Wi-Fi from an empty mask restores the configured channel set. Active Wi-Fi Probe Request discovery is not implemented.
 
 AP/BSSID role is derived from 802.11 semantics rather than vendor identity. Beacon and Probe Response frames establish AP/BSSID evidence, and ordinary infrastructure data or PS-Poll traffic can reinforce that role. The canonical observation store maintains per-channel AP counts as a projection of retained Wi-Fi membership. Counts move when an observed AP changes channel and disappear when that identity's Wi-Fi membership expires or the store is reset, even if another source such as BLE keeps the canonical identity alive.
 
 The collector interprets management, data, and selected useful control frames before emitting observations. Data direction is used to distinguish wireless client/AP addresses from distribution-system addresses. Selected control reception includes PS-Poll, RTS, Block Ack Request, Block Ack, CF-End, and CF-End+ACK. One-address ACK/CTS traffic is not currently admitted because its identity value is limited relative to callback volume. Multicast/group addresses remain discarded.
 
-The BLE collector performs **passive** NimBLE scanning with duplicate filtering disabled so repeated advertisements can refresh liveness and contribute newly observed evidence. Its scan interval and scan window are both **40 ms**, requesting continuous passive scan coverage while ESP-IDF arbitrates the shared 2.4 GHz radio between Wi-Fi and BLE coexistence slices. It normalizes:
+The BLE collector uses NimBLE advertising scanning, with a **Discovery: Passive/Active** selection, optional duplicate filtering, and High/Medium/Low scan-duty presets. Passive is the default; active discovery lets the controller transmit scan requests to scannable advertisers. The High default requests a 40 ms interval and 40 ms window, subject to Wi-Fi/BLE coexistence arbitration. It normalizes:
 
 - public/random BLE address plus address type;
 - RSSI;
@@ -30,7 +30,7 @@ The BLE collector performs **passive** NimBLE scanning with duplicate filtering 
 - manufacturer company ID and bounded manufacturer payload; and
 - the current Open Drone ID marker described below.
 
-Neither collector actively associates, pairs, probes, injects, or requests application data.
+Wi-Fi observation never associates or transmits discovery probes; BLE active discovery may transmit controller-managed scan requests, but does not pair or request application data.
 
 On app exit, the platform first stops both collectors and waits for in-flight observation callbacks to drain. Only after that service-close gate succeeds may app-session PSRAM be reclaimed.
 
