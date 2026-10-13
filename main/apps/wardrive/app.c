@@ -520,6 +520,8 @@ static void draw_radio_submenu( void )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     const bool wifi = wifi_menu_open;
+    wardrive_stats_t capture_status;
+    wardrive_capture_stats( &capture_status );
     display_clear( theme->background );
     ui_chrome_draw( channels_menu_open ? "WI-FI CHANNELS"
                     : wifi             ? "WI-FI SETTINGS"
@@ -579,8 +581,9 @@ static void draw_radio_submenu( void )
                             : ble_duty == 1U ? "Medium"
                                              : "Low" );
         }
-        const bool enabled = channels_menu_open || !wifi || manual_channels || item < 2U;
-        const uint16_t color = !enabled                ? theme->secondary
+        const bool enabled = item == 0U ||
+                             ( !capture_status.recording && ( !wifi || manual_channels || item < 2U ) );
+        const uint16_t color = !enabled                 ? theme->secondary
                                : item == radio_selected ? theme->info
                                                         : theme->text;
         const int y = 24 + (int)( item - first ) * 18;
@@ -595,13 +598,16 @@ static void draw_sources_menu( void )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     static const char *labels[] = { "Back", "Wi-Fi", "BLE", "Wi-Fi settings", "BLE settings" };
+    wardrive_stats_t capture_status;
+    wardrive_capture_stats( &capture_status );
     display_clear( theme->background );
     ui_chrome_draw( "SOURCES", theme->secondary );
     for( unsigned item = 0U; item < 5U; ++item )
     {
         const int y = 26 + (int)item * 20;
-        const bool available = ( item != 3U || options.wifi ) && ( item != 4U || options.ble );
-        const uint16_t color = !available                ? theme->secondary
+        const bool available = ( item == 0U || !capture_status.recording ) &&
+                               ( item != 3U || options.wifi ) && ( item != 4U || options.ble );
+        const uint16_t color = !available                 ? theme->secondary
                                : item == sources_selected ? theme->info
                                                           : theme->text;
         display_draw_text( 8, y, item == sources_selected ? ">" : " ", color, 1U );
