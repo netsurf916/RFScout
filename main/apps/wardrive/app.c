@@ -223,8 +223,8 @@ static void load_radio_settings( void )
     ble_dedupe = false;
     ble_duty = 0U;
     if( ESP_OK == app_store_read( "capture.radio", &stored, sizeof( stored ), &length ) &&
-        length == sizeof( stored ) && stored.magic == 0x52575031U &&
-        stored.dwell_index < 5U && stored.ble_duty < 3U )
+        length == sizeof( stored ) && stored.magic == 0x52575031U && stored.dwell_index < 5U &&
+        stored.ble_duty < 3U )
     {
         selected_channels = stored.channels & 0x3FFFU;
         manual_channels = stored.manual != 0U;
@@ -521,7 +521,10 @@ static void draw_radio_submenu( void )
     const ui_theme_palette_t *theme = ui_theme_get();
     const bool wifi = wifi_menu_open;
     display_clear( theme->background );
-    ui_chrome_draw( channels_menu_open ? "WI-FI CHANNELS" : wifi ? "WI-FI SETTINGS" : "BLE SETTINGS", theme->secondary );
+    ui_chrome_draw( channels_menu_open ? "WI-FI CHANNELS"
+                    : wifi             ? "WI-FI SETTINGS"
+                                       : "BLE SETTINGS",
+                    theme->secondary );
     const unsigned items = channels_menu_open ? 15U : wifi ? 5U : 4U;
     const unsigned first = radio_selected >= 4U ? radio_selected - 3U : 0U;
     for( unsigned item = first; item < first + 5U && item < items; ++item )
@@ -535,11 +538,15 @@ static void draw_radio_submenu( void )
         else if( channels_menu_open )
         {
             (void)snprintf( label, sizeof( label ), "Channel %u", item );
-            (void)snprintf( value, sizeof( value ), "%s", selected_channels & ( 1U << ( item - 1U ) ) ? "On" : "Off" );
+            (void)snprintf( value,
+                            sizeof( value ),
+                            "%s",
+                            selected_channels & ( 1U << ( item - 1U ) ) ? "On" : "Off" );
         }
         else if( wifi )
         {
-            static const char *names[] = { "", "Channel policy", "Channels", "Scan order", "Dwell time" };
+            static const char *names[] = {
+                "", "Channel policy", "Channels", "Scan order", "Dwell time" };
             (void)snprintf( label, sizeof( label ), "%s", names[ item ] );
             if( item == 1U )
             {
@@ -547,24 +554,34 @@ static void draw_radio_submenu( void )
             }
             else if( item == 3U )
             {
-                (void)snprintf( value, sizeof( value ), "%s", shuffle_channels ? "Shuffled" : "Sequential" );
+                (void)snprintf(
+                    value, sizeof( value ), "%s", shuffle_channels ? "Shuffled" : "Sequential" );
             }
             else if( item == 4U )
             {
-                (void)snprintf( value, sizeof( value ), "%lu ms", (unsigned long)dwell_choices[ dwell_choice ] );
+                (void)snprintf( value,
+                                sizeof( value ),
+                                "%lu ms",
+                                (unsigned long)dwell_choices[ dwell_choice ] );
             }
         }
         else
         {
             static const char *names[] = { "", "Discovery", "Duplicate filter", "Scan duty" };
             (void)snprintf( label, sizeof( label ), "%s", names[ item ] );
-            (void)snprintf( value, sizeof( value ), "%s",
-                             item == 1U ? ( ble_active_scan ? "Active" : "Passive" ) :
-                             item == 2U ? ( ble_dedupe ? "On" : "Off" ) :
-                             ble_duty == 0U ? "High" : ble_duty == 1U ? "Medium" : "Low" );
+            (void)snprintf( value,
+                            sizeof( value ),
+                            "%s",
+                            item == 1U       ? ( ble_active_scan ? "Active" : "Passive" )
+                            : item == 2U     ? ( ble_dedupe ? "On" : "Off" )
+                            : ble_duty == 0U ? "High"
+                            : ble_duty == 1U ? "Medium"
+                                             : "Low" );
         }
         const bool enabled = channels_menu_open || !wifi || manual_channels || item < 3U;
-        const uint16_t color = item == radio_selected ? theme->info : enabled ? theme->text : theme->secondary;
+        const uint16_t color = item == radio_selected ? theme->info
+                               : enabled              ? theme->text
+                                                      : theme->secondary;
         const int y = 26 + (int)( item - first ) * 20;
         display_draw_text( 8, y, item == radio_selected ? ">" : " ", color, 1U );
         display_draw_text( 22, y, label, color, 1U );
@@ -651,9 +668,10 @@ static esp_err_t apply_radio( void )
     {
         options.dwell_ms = dwell_choices[ dwell_choice ];
     }
-    esp_err_t result = radio_monitor_set_manual_channels(
-        options.wifi && manual_channels, selected_channels, shuffle_channels,
-        dwell_choices[ dwell_choice ] );
+    esp_err_t result = radio_monitor_set_manual_channels( options.wifi && manual_channels,
+                                                          selected_channels,
+                                                          shuffle_channels,
+                                                          dwell_choices[ dwell_choice ] );
     if( ESP_OK != result )
     {
         return result;
@@ -665,8 +683,8 @@ static esp_err_t apply_radio( void )
     }
     if( options.ble )
     {
-        result = ble_monitor_set_scan_preferences( ble_active_scan, ble_dedupe,
-                                                   ble_intervals[ ble_duty ], ble_windows[ ble_duty ] );
+        result = ble_monitor_set_scan_preferences(
+            ble_active_scan, ble_dedupe, ble_intervals[ ble_duty ], ble_windows[ ble_duty ] );
         if( ESP_OK != result )
         {
             return result;
@@ -1010,14 +1028,15 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
             if( wifi_menu_open || ble_menu_open || channels_menu_open )
             {
                 const unsigned count = channels_menu_open ? 15U : wifi_menu_open ? 5U : 4U;
-                radio_selected = ( radio_selected + ( a_event->input.value > 0 ? 1U : count - 1U ) ) % count;
+                radio_selected =
+                    ( radio_selected + ( a_event->input.value > 0 ? 1U : count - 1U ) ) % count;
                 draw_menu();
                 return RFSCOUT_APP_RUNTIME_HANDLED;
             }
             if( sources_menu_open )
             {
-                sources_selected = ( sources_selected +
-                                     ( a_event->input.value > 0 ? 1U : 4U ) ) % 5U;
+                sources_selected =
+                    ( sources_selected + ( a_event->input.value > 0 ? 1U : 4U ) ) % 5U;
                 draw_menu();
                 return RFSCOUT_APP_RUNTIME_HANDLED;
             }
