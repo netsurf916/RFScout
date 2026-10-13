@@ -52,6 +52,7 @@ static bool wifi_source = true;
 static bool ble_source = true;
 static bool collectors_activated;
 static bool manual_channels;
+static bool ap_dwell_enabled = true;
 static bool shuffle_channels;
 static bool ble_active_scan;
 static bool ble_dedupe;
@@ -85,6 +86,7 @@ static void load_radio_settings( void )
     ble_source = true;
     selected_channels = 0x3FFFU;
     manual_channels = false;
+    ap_dwell_enabled = true;
     shuffle_channels = false;
     dwell_choice = 1U;
     ble_active_scan = false;
@@ -118,6 +120,17 @@ static void load_radio_settings( void )
         ble_dedupe = stored.ble_duplicates != 0U;
         ble_duty = stored.ble_duty;
     }
+    uint8_t stored_ap_dwell = 1U;
+    size_t ap_dwell_length = 0U;
+    if( ESP_OK == app_store_read( "ap_dwell.settings",
+                                  &stored_ap_dwell,
+                                  sizeof( stored_ap_dwell ),
+                                  &ap_dwell_length ) &&
+        sizeof( stored_ap_dwell ) == ap_dwell_length )
+    {
+        ap_dwell_enabled = 0U != stored_ap_dwell;
+    }
+    radio_monitor_set_ap_dwell_enabled( ap_dwell_enabled );
 }
 
 static void save_radio_settings( void )
@@ -135,6 +148,13 @@ static void save_radio_settings( void )
         .ble_duty = (uint8_t)ble_duty,
     };
     const esp_err_t result = app_store_write( "radio.settings", &stored, sizeof( stored ) );
+    const uint8_t ap_dwell_setting = ap_dwell_enabled ? 1U : 0U;
+    const esp_err_t ap_dwell_result =
+        app_store_write( "ap_dwell.settings", &ap_dwell_setting, sizeof( ap_dwell_setting ) );
+    if( ESP_OK != ap_dwell_result )
+    {
+        ESP_LOGW( TAG, "AP dwell setting save failed: %s", esp_err_to_name( ap_dwell_result ) );
+    }
     if( ESP_OK != result )
     {
         ESP_LOGW( TAG, "radio settings save failed: %s", esp_err_to_name( result ) );
@@ -157,7 +177,7 @@ static void render_radio_menu( void )
     const ui_theme_palette_t *theme = ui_theme_get();
     const bool channels = radio_page == 3U;
     const bool wifi = radio_page == 1U;
-    const unsigned count = channels ? 15U : radio_page == 0U ? 5U : wifi ? 5U : 4U;
+    const unsigned count = channels ? 15U : radio_page == 0U ? 5U : wifi ? 6U : 4U;
     const unsigned visible = 7U;
     const unsigned first = radio_selected >= visible ? radio_selected - visible + 1U : 0U;
     display_clear( theme->background );
@@ -199,7 +219,7 @@ static void render_radio_menu( void )
         else if( wifi )
         {
             static const char *names[] = {
-                "Back", "Channel policy", "Channels", "Scan order", "Dwell time" };
+                "Back", "Channel policy", "Channels", "Scan order", "Dwell time", "AP dwell boost" };
             label = names[ i ];
             if( i == 1U )
             {
@@ -216,6 +236,10 @@ static void render_radio_menu( void )
                                 sizeof( value ),
                                 "%lu ms",
                                 (unsigned long)dwell_choices[ dwell_choice ] );
+            }
+            else if( i == 5U )
+            {
+                (void)snprintf( value, sizeof( value ), "%s", ap_dwell_enabled ? "On" : "Off" );
             }
         }
         else
@@ -247,7 +271,7 @@ static void render_radio_menu( void )
         }
         const bool inactive = ( radio_page == 0U && i == 3U && !wifi_source ) ||
                               ( radio_page == 0U && i == 4U && !ble_source ) ||
-                              ( wifi && !manual_channels && i >= 2U );
+                              ( wifi && !manual_channels && i >= 2U && i <= 4U );
         const uint16_t color = inactive              ? theme->secondary
                                : i == radio_selected ? theme->info
                                                      : theme->text;
@@ -263,7 +287,7 @@ static void handle_radio_menu( const rfscout_input_event_t *a_input )
 {
     const unsigned count = radio_page == 3U   ? 15U
                            : radio_page == 0U ? 5U
-                           : radio_page == 1U ? 5U
+                           : radio_page == 1U ? 6U
                                               : 4U;
     if( a_input->type == RFSCOUT_INPUT_NAVIGATION )
     {
@@ -390,6 +414,11 @@ static void handle_radio_menu( const rfscout_input_event_t *a_input )
         else if( radio_selected == 4U && manual_channels )
         {
             dwell_choice = ( dwell_choice + 1U ) % 5U;
+        }
+        else if( radio_selected == 5U )
+        {
+            ap_dwell_enabled = !ap_dwell_enabled;
+            radio_monitor_set_ap_dwell_enabled( ap_dwell_enabled );
         }
         (void)radio_monitor_set_manual_channels(
             manual_channels, selected_channels, shuffle_channels, dwell_choices[ dwell_choice ] );
