@@ -20,6 +20,8 @@ This README is the main anchor for **what RFScout contains today**. Detailed cur
 | Development | [Contributing](CONTRIBUTING.md) | Development environment, build/flash workflow, and contributor ramp-up |
 | Platform | [Platform architecture](docs/ARCHITECTURE.md) | Board/profile model, app lifecycle, services, memory, persistence, UI/input, power, storage, and OTA invariants |
 | Applications | [Home](docs/apps/HOME.md), [System Events](docs/apps/SYSTEM_EVENTS.md), [WiFi / BLE](docs/apps/WIFI_BLE.md), [Hotspots](docs/apps/HOTSPOTS.md), [CC1101](docs/apps/CC1101.md), [nRF24](docs/apps/NRF24.md), [Recorder](docs/apps/RECORDER.md), [Audio Spectrum](docs/apps/AUDIO_SPECTRUM.md), [Thermal](docs/apps/THERMAL.md), [GPS](docs/apps/GPS.md), [Wardriving](docs/apps/Wardriving.md) | Implemented application behavior, controls, data interpretation, dependencies, lifecycle, and current limitations |
+| Hardware | [T-Embed CC1101 Plus](docs/hardware/T_EMBED_CC1101_PLUS.md) | Supported board identity, wiring, optional peripherals, and hardware limitations |
+| Validation | [Release acceptance](docs/RELEASE_VALIDATION.md) | Repeatable hardware acceptance checklist for implemented features |
 | Planning | [Roadmap](docs/ROADMAP.md) | **Authoritative future planning**, active release scope, unfinished work, and brainstorming |
 | Operations | [Firmware releases](docs/operations/RELEASING.md) | Candidate, release, browser-flasher, OTA-catalog, and publication runbook |
 

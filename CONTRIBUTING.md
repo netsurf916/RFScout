@@ -376,3 +376,7 @@ Changes that alter application behavior, controls, supported hardware, logging, 
 
 Do not describe planned behavior as implemented in README, Architecture, or an app page. Conversely, once behavior is implemented, move its lasting factual description out of roadmap design prose and into the appropriate current-state document; git history and pull requests remain the implementation history.
 
+
+## Release stabilization
+
+Before preparing a release, run the [hardware acceptance checklist](docs/RELEASE_VALIDATION.md) against the exact release candidate. CI establishes build/format/packaging success only; it cannot verify device-specific radio coexistence, removable-media behavior, or OTA rollback. Proposed features and refactors belong exclusively in [ROADMAP](docs/ROADMAP.md).

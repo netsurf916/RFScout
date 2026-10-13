@@ -24,7 +24,7 @@ Application pages own app-specific UI, interpretation, settings, and current lim
 
 ## Board, app, and service boundaries
 
-RFScout currently supports one runtime hardware profile, **LILYGO T-Embed CC1101 Plus**, while preserving the profile/capability abstraction for future boards.
+RFScout currently supports one runtime hardware profile, **[LILYGO T-Embed CC1101 Plus](hardware/T_EMBED_CC1101_PLUS.md)**, while preserving the profile/capability abstraction for future boards.
 
 A runtime profile owns physical facts and expected capabilities: GPIO assignments, buses, display geometry, peripheral addresses, control pins, and which semantic providers RFScout is prepared to initialize. Applications depend on services/capabilities rather than board names or IDs.
 
