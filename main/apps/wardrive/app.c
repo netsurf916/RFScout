@@ -51,6 +51,7 @@ static bool channels_menu_open;
 static unsigned radio_selected;
 static uint16_t selected_channels = 0x3FFFU;
 static bool manual_channels;
+static bool legacy_radio_migration_pending;
 static bool shuffle_channels;
 static bool ble_active_scan;
 static bool ble_dedupe;
@@ -206,11 +207,14 @@ static void load_settings( void )
     }
 }
 
+static void save_radio_settings( void );
+
 static void load_radio_settings( void )
 {
     radio_settings_t stored;
     size_t length = 0U;
     selected_channels = 0x3FFFU;
+    legacy_radio_migration_pending = options.fixed_channel;
     /* Migrate legacy fixed-channel captures when no independent radio profile exists. */
     manual_channels = options.fixed_channel;
     if( manual_channels && options.channel >= 1U && options.channel <= 14U )
@@ -233,6 +237,11 @@ static void load_radio_settings( void )
         ble_active_scan = stored.ble_active != 0U;
         ble_dedupe = stored.ble_duplicates != 0U;
         ble_duty = stored.ble_duty;
+        legacy_radio_migration_pending = false;
+    }
+    if( legacy_radio_migration_pending )
+    {
+        save_radio_settings();
     }
 }
 
@@ -249,10 +258,22 @@ static void save_radio_settings( void )
         .ble_duty = (uint8_t)ble_duty,
     };
     last_error = app_store_write( "capture.radio", &stored, sizeof( stored ) );
+    if( ESP_OK == last_error )
+    {
+        legacy_radio_migration_pending = false;
+    }
 }
 
 static void save_settings( void )
 {
+    if( legacy_radio_migration_pending )
+    {
+        save_radio_settings();
+        if( legacy_radio_migration_pending )
+        {
+            return;
+        }
+    }
     const saved_settings_t stored = {
         .magic = CAPTURE_SETTINGS_MAGIC,
         .version = CAPTURE_SETTINGS_VERSION,
@@ -581,8 +602,8 @@ static void draw_radio_submenu( void )
                             : ble_duty == 1U ? "Medium"
                                              : "Low" );
         }
-        const bool enabled = item == 0U ||
-                             ( !capture_status.recording && ( !wifi || manual_channels || item < 2U ) );
+        const bool enabled = item == 0U || ( !capture_status.recording &&
+                                             ( !wifi || manual_channels || item < 2U ) );
         const uint16_t color = !enabled                 ? theme->secondary
                                : item == radio_selected ? theme->info
                                                         : theme->text;
