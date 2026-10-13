@@ -210,7 +210,7 @@ Avoid running the complete ESP-IDF build/flash process as root.
 - [Application documentation](docs/apps/) — current app-specific behavior and implementation boundaries
 - [Firmware releases](docs/operations/RELEASING.md) — candidate/release/browser-flasher/OTA publication runbook
 - [Roadmap](docs/ROADMAP.md) — authoritative future planning and active release scope
-- [README](../README.md) — product/current-state anchor and full documentation map
+- [README](README.md) — product/current-state anchor and full documentation map
 
 
 ---
