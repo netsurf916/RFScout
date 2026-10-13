@@ -278,7 +278,7 @@ static esp_err_t start_scan( void )
     else
     {
         scanning = true;
-        ESP_LOGI( TAG, "passive BLE monitor enabled" );
+        ESP_LOGI( TAG, "%s BLE monitor enabled", scan_active_mode ? "active" : "passive" );
     }
     return ESP_OK;
 }
