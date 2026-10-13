@@ -157,14 +157,15 @@ static void render_radio_menu( void )
     const bool channels = radio_page == 3U;
     const bool wifi = radio_page == 1U;
     const unsigned count = channels ? 15U : radio_page == 0U ? 5U : wifi ? 5U : 4U;
-    const unsigned first = radio_selected >= 4U ? radio_selected - 3U : 0U;
+    const unsigned visible = 7U;
+    const unsigned first = radio_selected >= visible ? radio_selected - visible + 1U : 0U;
     display_clear( theme->background );
     ui_chrome_draw( channels           ? "WI-FI CHANNELS"
                     : wifi             ? "WI-FI SETTINGS"
                     : radio_page == 2U ? "BLE SETTINGS"
                                        : "SOURCES",
                     theme->secondary );
-    for( unsigned i = first; i < first + 5U && i < count; ++i )
+    for( unsigned i = first; i < first + visible && i < count; ++i )
     {
         const char *label = "";
         char channel_name[ 20 ];
@@ -249,7 +250,7 @@ static void render_radio_menu( void )
         const uint16_t color = inactive              ? theme->secondary
                                : i == radio_selected ? theme->info
                                                      : theme->text;
-        const int y = 26 + (int)( i - first ) * 20;
+        const int y = 24 + (int)( i - first ) * 18;
         display_draw_text( 8, y, i == radio_selected ? ">" : " ", color, 1U );
         display_draw_text( 22, y, label, color, 1U );
         display_draw_text( 215, y, value, color, 1U );
