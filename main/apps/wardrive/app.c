@@ -578,7 +578,7 @@ static void draw_radio_submenu( void )
                             : ble_duty == 1U ? "Medium"
                                              : "Low" );
         }
-        const bool enabled = channels_menu_open || !wifi || manual_channels || item < 3U;
+        const bool enabled = channels_menu_open || !wifi || manual_channels || item < 2U;
         const uint16_t color = item == radio_selected ? theme->info
                                : enabled              ? theme->text
                                                       : theme->secondary;
