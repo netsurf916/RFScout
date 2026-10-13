@@ -760,8 +760,7 @@ bool observation_store_observe( rf_device_t *a_observation,
         a_observation->wifi_is_ap = device->wifi_is_ap;
         a_observation->wifi_observed_channel_mask = device->wifi_observed_channel_mask;
         a_observation->wifi_channel_state_changed =
-            ( prior_ap_channel != device->wifi_channel ) ||
-            ( prior_is_ap != device->wifi_is_ap ) ||
+            ( prior_ap_channel != device->wifi_channel ) || ( prior_is_ap != device->wifi_is_ap ) ||
             ( prior_observed_mask != device->wifi_observed_channel_mask );
         location_ready = record_receiver_location( device, &gps, &location_event );
 
@@ -1214,10 +1213,10 @@ size_t observation_store_summary( observation_store_summary_t *a_summary,
 }
 
 void observation_store_ui_snapshot( observation_ui_snapshot_t *a_snapshot,
-                                   observation_vendor_count_t *a_vendors,
-                                   size_t a_vendor_capacity,
-                                   observation_surveillance_signature_t *a_signatures,
-                                   size_t a_signature_capacity )
+                                    observation_vendor_count_t *a_vendors,
+                                    size_t a_vendor_capacity,
+                                    observation_surveillance_signature_t *a_signatures,
+                                    size_t a_signature_capacity )
 {
     if( NULL == a_snapshot )
     {
@@ -1231,8 +1230,7 @@ void observation_store_ui_snapshot( observation_ui_snapshot_t *a_snapshot,
 
     xSemaphoreTake( store_lock, portMAX_DELAY );
     synchronize_session_store();
-    a_snapshot->vendor_count =
-        summary_locked( &a_snapshot->summary, a_vendors, a_vendor_capacity );
+    a_snapshot->vendor_count = summary_locked( &a_snapshot->summary, a_vendors, a_vendor_capacity );
     a_snapshot->signature_count = active_surveillance_locked(
         a_signatures, a_signature_capacity, &a_snapshot->surveillance_count );
     a_snapshot->ap_channel_mask = wifi_ap_mask_locked();

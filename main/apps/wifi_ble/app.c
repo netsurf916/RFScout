@@ -218,8 +218,12 @@ static void render_radio_menu( void )
         }
         else if( wifi )
         {
-            static const char *names[] = {
-                "Back", "Channel policy", "Channels", "Scan order", "Dwell time", "AP dwell boost" };
+            static const char *names[] = { "Back",
+                                           "Channel policy",
+                                           "Channels",
+                                           "Scan order",
+                                           "Dwell time",
+                                           "AP dwell boost" };
             label = names[ i ];
             if( i == 1U )
             {
