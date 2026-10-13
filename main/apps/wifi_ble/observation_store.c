@@ -12,7 +12,6 @@
 #include "surveillance.h"
 
 #include "esp_timer.h"
-#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
@@ -28,8 +27,6 @@ static size_t summary_vendor_capacity;
 static size_t *summary_vendor_slots;
 static size_t summary_vendor_slot_capacity;
 static size_t summary_vendor_count;
-static uint16_t wifi_ap_channel_counts[ RFSCOUT_WIFI_CHANNEL_MAX ];
-static uint32_t diagnostic_ap_expiries;
 static uint32_t store_generation;
 static SemaphoreHandle_t store_lock;
 static observation_location_sink_t location_sink;
@@ -54,8 +51,6 @@ static void synchronize_session_store( void )
     summary_vendor_slots = NULL;
     summary_vendor_slot_capacity = 0U;
     summary_vendor_count = 0U;
-    memset( wifi_ap_channel_counts, 0, sizeof( wifi_ap_channel_counts ) );
-    diagnostic_ap_expiries = 0U;
     store_generation = generation;
 }
 
@@ -440,43 +435,6 @@ static bool has_active_wifi_ap_role( const rf_device_t *a_device )
            ( a_device->wifi_channel <= RFSCOUT_WIFI_CHANNEL_MAX );
 }
 
-static void adjust_wifi_ap_channel_count( uint8_t a_channel, int a_delta )
-{
-    if( ( a_channel < 1U ) || ( a_channel > RFSCOUT_WIFI_CHANNEL_MAX ) )
-    {
-        return;
-    }
-
-    uint16_t *count = &wifi_ap_channel_counts[ a_channel - 1U ];
-    if( a_delta > 0 )
-    {
-        if( UINT16_MAX != *count )
-        {
-            ++( *count );
-        }
-    }
-    else if( ( a_delta < 0 ) && ( 0U != *count ) )
-    {
-        --( *count );
-    }
-}
-
-static void
-update_wifi_ap_projection( bool a_was_ap, uint8_t a_old_channel, const rf_device_t *a_device )
-{
-    const bool is_ap = has_active_wifi_ap_role( a_device );
-    const uint8_t new_channel = is_ap ? a_device->wifi_channel : 0U;
-
-    if( a_was_ap && ( !is_ap || ( a_old_channel != new_channel ) ) )
-    {
-        adjust_wifi_ap_channel_count( a_old_channel, -1 );
-    }
-    if( is_ap && ( !a_was_ap || ( a_old_channel != new_channel ) ) )
-    {
-        adjust_wifi_ap_channel_count( new_channel, 1 );
-    }
-}
-
 static void initialize_source_times( rf_device_t *a_device )
 {
     if( ( 0U != ( a_device->source_mask & RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) ) &&
@@ -517,11 +475,6 @@ static bool expire_stale_devices( uint32_t a_now_ms )
             ( (uint32_t)( a_now_ms - device->wifi_last_seen_ms ) >= wifi_timeout_ms );
         if( wifi_expired )
         {
-            if( has_active_wifi_ap_role( device ) )
-            {
-                adjust_wifi_ap_channel_count( device->wifi_channel, -1 );
-                ++diagnostic_ap_expiries;
-            }
             sources &= ~RF_SOURCE_BIT( RF_SOURCE_WIFI );
         }
         if( ( 0U != ( sources & RF_SOURCE_BIT( RF_SOURCE_BLE ) ) ) &&
@@ -605,7 +558,6 @@ esp_err_t observation_store_init( void )
     summary_vendor_slots = NULL;
     summary_vendor_slot_capacity = 0U;
     summary_vendor_count = 0U;
-    memset( wifi_ap_channel_counts, 0, sizeof( wifi_ap_channel_counts ) );
     store_generation = app_session_generation();
     event_callback = NULL;
     event_context = NULL;
@@ -790,12 +742,9 @@ bool observation_store_observe( rf_device_t *a_observation,
     {
         rf_device_t *device = &devices[ existing_index ];
         const bool was_surveillance = SURVEILLANCE_NONE != device->surveillance;
-        const bool was_wifi_ap = has_active_wifi_ap_role( device );
-        const uint8_t old_wifi_channel = device->wifi_channel;
 
         surveillance_case_observe( device, a_observation );
         merge_observation( device, a_observation );
-        update_wifi_ap_projection( was_wifi_ap, old_wifi_channel, device );
         copy_case_result( a_observation, device );
         location_ready = record_receiver_location( device, &gps, &location_event );
 
@@ -838,7 +787,6 @@ bool observation_store_observe( rf_device_t *a_observation,
     rf_device_t *device = &devices[ slot ];
     *device = *a_observation;
     initialize_source_times( device );
-    update_wifi_ap_projection( false, 0U, device );
     if( 0U != surveillance_evidence_count( device ) )
     {
         surveillance_case_evaluate( device );
@@ -967,7 +915,6 @@ void observation_store_reset( void )
         memset( identity_index, 0, identity_index_capacity * sizeof( *identity_index ) );
     }
     device_count = 0U;
-    memset( wifi_ap_channel_counts, 0, sizeof( wifi_ap_channel_counts ) );
     xSemaphoreGive( store_lock );
 }
 
@@ -993,10 +940,6 @@ void observation_store_clear_source( rf_source_t a_source )
             continue;
         }
 
-        if( ( RF_SOURCE_WIFI == a_source ) && has_active_wifi_ap_role( device ) )
-        {
-            adjust_wifi_ap_channel_count( device->wifi_channel, -1 );
-        }
         device->source_mask &= ~source_bit;
         if( RF_SOURCE_WIFI == a_source )
         {
@@ -1044,27 +987,21 @@ void observation_store_housekeeping( void )
     }
     xSemaphoreTake( store_lock, portMAX_DELAY );
     synchronize_session_store();
-    const uint32_t previous_ap_expiries = diagnostic_ap_expiries;
     if( expire_stale_devices( current_time_ms() ) )
     {
         rebuild_identity_index();
     }
-    const uint32_t new_ap_expiries = diagnostic_ap_expiries - previous_ap_expiries;
     xSemaphoreGive( store_lock );
-    if( 0U != new_ap_expiries )
-    {
-        ESP_LOGI( "wifi_ap_diag", "AP observations expired: %u", (unsigned)new_ap_expiries );
-    }
 }
 
 static uint16_t wifi_ap_mask_locked( void )
 {
     uint16_t mask = 0U;
-    for( uint8_t index = 0U; index < RFSCOUT_WIFI_CHANNEL_MAX; ++index )
+    for( size_t i = 0U; i < device_count; ++i )
     {
-        if( 0U != wifi_ap_channel_counts[ index ] )
+        if( has_active_wifi_ap_role( &devices[ i ] ) )
         {
-            mask |= (uint16_t)( 1U << index );
+            mask |= (uint16_t)( 1U << ( devices[ i ].wifi_channel - 1U ) );
         }
     }
     return mask;
