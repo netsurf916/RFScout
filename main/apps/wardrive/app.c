@@ -526,8 +526,9 @@ static void draw_radio_submenu( void )
                                        : "BLE SETTINGS",
                     theme->secondary );
     const unsigned items = channels_menu_open ? 15U : wifi ? 5U : 4U;
-    const unsigned first = radio_selected >= 4U ? radio_selected - 3U : 0U;
-    for( unsigned item = first; item < first + 5U && item < items; ++item )
+    const unsigned visible = 7U;
+    const unsigned first = radio_selected >= visible ? radio_selected - visible + 1U : 0U;
+    for( unsigned item = first; item < first + visible && item < items; ++item )
     {
         char label[ 28 ] = "";
         char value[ 24 ] = "";
@@ -582,7 +583,7 @@ static void draw_radio_submenu( void )
         const uint16_t color = item == radio_selected ? theme->info
                                : enabled              ? theme->text
                                                       : theme->secondary;
-        const int y = 26 + (int)( item - first ) * 20;
+        const int y = 24 + (int)( item - first ) * 18;
         display_draw_text( 8, y, item == radio_selected ? ">" : " ", color, 1U );
         display_draw_text( 22, y, label, color, 1U );
         display_draw_text( 214, y, value, color, 1U );
