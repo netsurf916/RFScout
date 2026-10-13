@@ -631,7 +631,7 @@ These are ideas worth preserving, not committed scope or priority.
 
 ## Planned active Wi-Fi discovery policy (design only; not implemented)
 
-Active Wi-Fi discovery is an **opportunistic supplement** to continuous passive promiscuous packet capture, never a replacement for raw 802.11 capture or a mutually exclusive Passive/Active operating mode. The proposed policy is **enabled** in this design profile, but active Wi-Fi firmware, menu controls, persistence and scheduler do **not** yet exist in PR #111. Existing firmware continues passive Wi-Fi capture only. When implementing, retain a passive-only default for existing installations unless users explicitly opt into transmitting Probe Requests; the On value below is the requested design configuration, not a deployed default.
+Active Wi-Fi discovery is an **opportunistic supplement** to continuous passive promiscuous packet capture, never a replacement for raw 802.11 capture or a mutually exclusive Passive/Active operating mode. The proposed policy is **enabled** in this design profile, but active Wi-Fi firmware, menu controls, persistence and scheduler are **not** implemented on `main`. Existing firmware continues passive Wi-Fi capture only. When implementing, retain a passive-only default for existing installations unless users explicitly opt into transmitting Probe Requests; the On value below is the requested design configuration, not a deployed default.
 
 ### Conditional Wi-Fi menu
 
