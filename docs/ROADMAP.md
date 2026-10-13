@@ -625,3 +625,192 @@ These are ideas worth preserving, not committed scope or priority.
 - [x] Keep rotary view switching and center-click settings access.
 - [ ] Validate SD removal, interrupted writes, low-memory behavior, source-specific aging,
       GPS freshness, classification threshold changes, and application exit on hardware.
+
+
+## Future Wi-Fi active discovery (design only)
+
+## Planned active Wi-Fi discovery policy (design only; not implemented)
+
+Active Wi-Fi discovery is an **opportunistic supplement** to continuous passive promiscuous packet capture, never a replacement for raw 802.11 capture or a mutually exclusive Passive/Active operating mode. The proposed policy is **enabled** in this design profile, but active Wi-Fi firmware, menu controls, persistence and scheduler are **not** implemented on `main`. Existing firmware continues passive Wi-Fi capture only. When implementing, retain a passive-only default for existing installations unless users explicitly opt into transmitting Probe Requests; the On value below is the requested design configuration, not a deployed default.
+
+### Conditional Wi-Fi menu
+
+```text
+Wi-Fi settings
+  Channel policy            Auto / Manual
+  Channels                  [Manual only]
+  Scan order                [Manual only]
+  Dwell time                [Manual only]
+  Active discovery          On                 [Off / On]
+  Active scanning policy    >                  [visible when On]
+    Use GPS                 On                 [Off / On]
+    Minimum distance        50 m               [GPS On]
+    Stationary duration     10 sec             [GPS On]
+    GPS unavailable         Timed fallback     [GPS On; Timed / Skip]
+    Minimum interval        120 sec            [GPS Off OR Timed fallback]
+    Active duty ceiling     10%                [always shown]
+    Back
+```
+
+Hide inapplicable controls rather than leaving selectable controls that have no effect. The timed interval setting remains saved when GPS is enabled, even if normally hidden: it governs the configured GPS-unavailable fallback. Keep a bounded number of visible rows and scroll to the selection on the RFScout screen. Source gating continues to apply: these menus are unavailable while that app's Wi-Fi source is disabled. Wardriving must also prevent changes during a recording.
+
+### Policy inputs and defaults
+
+| Setting | Requested design profile | Behavior |
+| --- | --- | --- |
+| Active discovery | **On** | Authorize occasional wildcard active AP discovery; passive capture remains primary |
+| Use GPS | **On** | Prefer location-triggered active discovery with valid, accurate fixes |
+| Minimum displacement | **50 m** | Distance from the last completed active scan's accepted location, not consecutive fixes |
+| Stationary duration | **10 sec** | Stable stationary interval after sufficient movement |
+| GPS unavailable | **Timed fallback** | Use the timed eligibility rule if reliable GPS data is unavailable |
+| Minimum timed interval | **120 sec** | Earliest possible subsequent active burst under the timed policy; not an obligation to scan |
+| Active duty ceiling | **10%** | Hard upper bound on the fraction of elapsed wall-clock time occupied by active scans, including startup/transition cost |
+
+The duty ceiling applies with **or without GPS**; GPS does not bypass it. Limit each burst's duration and channel coverage, and consider smaller channel batches so passive receive gaps remain short. Enforce the radio's configured regulatory domain for active transmissions. A change of scan policy never resets or expands Wardriving's retained PCAPNG packet count; active discovery results are marked separately from raw captured frames.
+
+### Proposed scheduler state machine
+
+```text
+DISABLED
+  Active discovery Off -> remain passive; no active scans
+  Active discovery On  -> PASSIVE_CAPTURE
+
+PASSIVE_CAPTURE
+  Continue normal channel hopping, observation, and raw packet capture
+  At a safe passive sweep boundary -> CHECK_ELIGIBILITY
+
+CHECK_ELIGIBILITY
+  Wi-Fi source disabled / app owns no radio / recording policy disallows -> PASSIVE_CAPTURE
+  GPS On and reliable fix:
+    Require displacement >= 50 m from the last *completed* active scan location
+    AND stationary for >= 10 sec
+  GPS On but unusable fix:
+    Timed fallback -> require >= 120 sec since last completed active burst
+    Skip -> PASSIVE_CAPTURE
+  GPS Off:
+    Require >= 120 sec since last completed active burst
+  In every case: enforce <= 10% rolling active duty budget,
+    minimum cooldown, permitted channels, and capture priority
+  Not eligible -> PASSIVE_CAPTURE
+  Eligible -> PREPARE_ACTIVE_BURST
+
+PREPARE_ACTIVE_BURST
+  Pause the framework's passive channel-hop scheduler at a safe boundary
+  Coordinate sole Wi-Fi scan ownership with connection/OTA services
+  Configure native ESP-IDF STA active scan without SSID/BSSID targeting
+  Setup/ownership failure -> RECOVER_PASSIVE
+
+ACTIVE_BURST
+  Native ESP-IDF scan transmits wildcard Probe Requests on allowed channels
+  Respect bounded channel batch, duration, timeout and cancellation
+  Collect AP records separately; do not label scan records as captured frames
+  Completion / timeout / error / app exit -> RECOVER_PASSIVE
+
+RECOVER_PASSIVE
+  Stop/cancel scan as needed; restore promiscuous reception and hop ownership
+  Reconcile scan-discovered AP observations with source provenance
+  Update cooldown/budget, and store last scan location only after success
+  If recovery fails, surface radio failure rather than claiming capture resumed
+  Successful restoration -> PASSIVE_CAPTURE
+  App exit or source disabled -> DISABLED
+```
+
+The first eligible burst may occur only after a meaningful passive capture window, never immediately on menu activation. Prevent concurrent ESP-IDF scans, avoid hand-crafted directed probes, and do not invoke active scanning in the promiscuous RX callback. Stationary detection must use multiple GPS samples and position-accuracy uncertainty, not only a speed field, to prevent GPS jitter from generating repeated scans. If a previously scanned location cannot be established, require an initial stationary confirmation plus cooldown before the first GPS-triggered burst. If the system is receiving substantial raw packet traffic, defer active discovery when practical while retaining a bounded retry/deferral policy. An active scan interrupts full-fidelity passive coverage even when promiscuous mode remains technically available during STA scanning; record these gaps if capture-session metadata permits.
+
+
+
+## Future framework and power lifecycle coordination (design only)
+
+## Proposed coordinated transition
+
+The power manager requests a **target**; a single framework coordinator performs the transition.
+The coordinator tracks phase, target, deadlines, and the services already affected.
+
+1. **Prepare**: ask participating services whether the requested target is safe. An active
+   recorder may veto. This phase should avoid irreversible operations.
+2. **Quiesce**: in dependency order, stop acquisition and asynchronous callbacks, drain and
+   flush writers, persist required state, and make peripherals safe. Return a completion result,
+   not merely a fire-and-forget notification.
+3. **Commit**: store supported session resume metadata, place presentation hardware in its
+   required state, configure wake sources, and invoke the board-specific deep-sleep,
+   power-off, or reboot operation.
+4. **Abort / rollback**: if preparation or quiescence fails, restore any affected components
+   in reverse dependency order where possible; report partial failure and do not proceed to
+   sleep with unflushed data. A failed physical power-off must also restore interactive
+   display and storage behavior.
+
+A possible *illustrative*, not committed, interface is:
+
+```c
+typedef enum {
+    SYSTEM_TARGET_DEEP_SLEEP,
+    SYSTEM_TARGET_POWER_OFF,
+    SYSTEM_TARGET_RESTART
+} system_target_t;
+
+typedef struct {
+    esp_err_t (*prepare)(system_target_t target);
+    esp_err_t (*quiesce)(system_target_t target);
+    esp_err_t (*abort)(system_target_t target);
+} system_lifecycle_ops_t;
+```
+
+Precise ownership, callback signature, registration, asynchronous completion,
+timeout policy, error propagation and dependency declarations must be settled
+before implementation. Do **not** add a second application lifecycle or treat
+the example above as an ABI.
+
+### Why not only use system events?
+
+State notifications such as *sleep requested*, *shutting down*, or *transition aborted*
+are useful for diagnostics and observability. But broadcasts cannot guarantee that
+storage was flushed or peripheral activity stopped. Operations requiring confirmation
+must run through the coordinator; notifications may describe their outcome.
+
+## CASIC GPS candidate behavior
+
+The current GPS service uses NMEA for fixes and CASIC commands for receiver policy,
+including baud and navigation update-rate configuration. Potential CASIC-controlled
+navigation stop/start belongs to the GPS service implementation, **not** `power.c`.
+
+Before introducing receiver control:
+
+- Verify the HT1818Z3G5L's exact supported command, response/ACK and stop/wake semantics
+  from module documentation and on-device tests. Do not conflate a navigation stop command
+  with a verified low-current sleep state.
+- Determine whether wake is UART-command-driven, requires a reset/power cycle, or depends
+  on receiver wiring. The installed configuration has no separate power-control line.
+- Measure receiver current in active, stopped, and restarted states. Document whether
+  backup data and fast reacquisition survive each transition.
+- Preserve GPS/NMEA presence detection, GPS-versus-nRF24 UART ownership/arbitration,
+  the baud-probing sequence and valid-fix requirements.
+- On failed or unsupported CASIC commands, maintain safe generic NMEA behavior; never
+  block system shutdown indefinitely waiting for GPS.
+- On ordinary app switches, retain system GPS service ownership unless the framework's
+  service policy specifically requires stopping it.
+
+Time-pulse LED experiments belong to a separate GPS configuration change and should
+not be interpreted as evidence of power-saving or guaranteed LED behavior.
+
+## Implementation strategy (future work)
+
+1. Agree on these semantics and the relationship to existing `app_session` transitions.
+2. Inventory every system-owned service and existing shutdown-veto/flush contract.
+3. Introduce coordinator tests for ordering, veto, timeout, failure and rollback, including
+   failed physical power-off, unavailable SD media, and Recorder activity.
+4. Migrate existing `power.c` cleanup into registered participants without changing
+   display-only idle or hardware-capability gating.
+5. Add an optional GPS participant; only then introduce validated CASIC stop/start commands.
+6. Treat resumable light sleep as a separate design decision; avoid introducing a
+   general-purpose `resume()` lifecycle method prematurely.
+
+## Open design questions
+
+- Should services register static dependencies, or should board profiles provide the order?
+- How are long-running asynchronous drains signaled and cancelled within a bounded deadline?
+- Which service failures should veto sleep, and which should only be logged?
+- Is recovery from a failed quiesce always possible, or must a degraded-state policy exist?
+- How should a future light-sleep wake map onto `start()` versus an explicit reversible suspend?
+- What happens when the GPS is electrically powered while the ESP32 enters deep sleep?
+
+
