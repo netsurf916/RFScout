@@ -92,3 +92,8 @@ The small deep-sleep RTC envelope preserves active-app and input-lock session st
 ## Current limitations
 
 Home does not yet expose the richer memory/lifecycle diagnostics planned for v0.4.0. Shared capability/status presentation is also intentionally limited to the current application-availability and service state exposed by the implemented menus.
+
+
+## Current OTA and station privacy behavior
+
+The Update view displays the connected network SSID from the shared network session using menu-owned storage. Infrastructure Wi-Fi connections initiated by the shared network session request a new locally administered unicast station MAC for each connection attempt. The MAC remains stable during one connection. If applying a randomized address fails, the connection attempt fails rather than silently falling back to the factory/current MAC. This policy does not apply to passive Wi-Fi capture.

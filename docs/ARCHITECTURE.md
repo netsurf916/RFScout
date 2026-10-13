@@ -2,7 +2,7 @@
 
 This is the canonical platform reference for RFScout's **implemented** shared architecture. The [README](../README.md) is the product/current-state anchor, application behavior lives under [`docs/apps/`](apps/), and future design or release planning belongs only in [ROADMAP.md](ROADMAP.md).
 
-> **Design discussion:** [Proposed framework startup and system power lifecycle](architecture/SYSTEM_LIFECYCLE_PROPOSAL.md) documents future semantics; this page describes currently implemented behavior.
+> This page describes implemented behavior. Future lifecycle proposals live only in [ROADMAP.md](ROADMAP.md).
 
 ## Documentation and ownership boundary
 
@@ -20,10 +20,11 @@ Application pages own app-specific UI, interpretation, settings, and current lim
 - [Audio Spectrum](apps/AUDIO_SPECTRUM.md)
 - [Thermal](apps/THERMAL.md)
 - [GPS](apps/GPS.md)
+- [Wardriving](apps/Wardriving.md)
 
 ## Board, app, and service boundaries
 
-RFScout currently supports one runtime hardware profile, **LILYGO T-Embed CC1101 Plus**, while preserving the profile/capability abstraction for future boards.
+RFScout currently supports one runtime hardware profile, **[LILYGO T-Embed CC1101 Plus](hardware/T_EMBED_CC1101_PLUS.md)**, while preserving the profile/capability abstraction for future boards.
 
 A runtime profile owns physical facts and expected capabilities: GPIO assignments, buses, display geometry, peripheral addresses, control pins, and which semantic providers RFScout is prepared to initialize. Applications depend on services/capabilities rather than board names or IDs.
 
@@ -434,3 +435,8 @@ the SD journal or maintaining a second live list. Distance is computed to the ne
 of each identity's receiver-observation bounding rectangle. Without a fresh fix or recorded
 bounds, distance is unknown. The journal is for offline analysis, not live proximity replay.
 There is no historical index, journal compaction, or geographic reload threshold.
+
+
+## Current radio-scan ownership
+
+Wi-Fi passive capture uses the framework's promiscuous receiver and hop scheduler. WiFi/BLE and Wardriving configure independent app-local Auto/Manual channel selections; manual selection supports an individual-channel mask, sequential/shuffled complete sweeps, and dwell presets. BLE uses NimBLE advertising discovery with independently selected passive/active mode, duplicate filtering, and scan-duty presets. An active BLE scan may issue scan requests to scannable advertisers, but it does not perform Wi-Fi station discovery. Native active Wi-Fi discovery is **not implemented**. See [WiFi/BLE](apps/WIFI_BLE.md), [Wardriving](apps/Wardriving.md), and [ROADMAP](ROADMAP.md).

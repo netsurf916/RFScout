@@ -2,13 +2,13 @@
 
 RFScout is a handheld **RF situational-awareness** instrument for ESP32-S3. The currently supported hardware profile is the **LILYGO T-Embed CC1101 Plus**. RFScout keeps board identity behind runtime profile/capability boundaries so applications consume semantic services rather than hardware-specific GPIO or peripheral details.
 
-RFScout combines passive Wi-Fi/BLE observation, open-hotspot connectivity checks, receive-only RF activity monitoring, SD-backed audio recording and logging, thermal imaging with an optional MLX90640, semantic input/notifications, persistent device configuration, battery telemetry, and A/B firmware update support.
+RFScout combines passive Wi-Fi observation and configurable passive/active BLE discovery, open-hotspot connectivity checks, receive-only RF activity monitoring, SD-backed audio recording and logging, thermal imaging with an optional MLX90640, semantic input/notifications, persistent device configuration, battery telemetry, and A/B firmware update support.
 
 <p align="center">
   <img src="assets/device.jpg" alt="RFScout running on a LILYGO T-Embed CC1101 Plus" width="800">
 </p>
 
-RFScout is intentionally passive wherever the underlying radio APIs allow it; Hotspots is the one application that deliberately joins (open) networks, and only while it is active. It is designed to answer “what electronic activity is around me?” without requiring continuous raw-packet inspection.
+RFScout passively observes Wi-Fi and does not join networks outside Hotspots or Home-managed infrastructure connections. BLE discovery can be configured as active, in which case the controller transmits scan requests; passive BLE discovery does not. Hotspots deliberately joins eligible open networks only while active. It is designed to answer “what electronic activity is around me?” without requiring continuous raw-packet inspection.
 
 ## Documentation map
 
@@ -17,10 +17,11 @@ This README is the main anchor for **what RFScout contains today**. Detailed cur
 | Area | Document | Purpose |
 | --- | --- | --- |
 | Product | **README.md** | Current supported hardware, applications, major behavior, and navigation to the rest of the documentation |
-| Development | [Getting started](docs/GETTING_STARTED.md) | Development environment, build/flash workflow, and contributor ramp-up |
-| Development policy | [Coding style](docs/CODING_STYLE.md) | Required source, formatting, module-boundary, and documentation conventions |
+| Development | [Contributing](CONTRIBUTING.md) | Development environment, build/flash workflow, and contributor ramp-up |
 | Platform | [Platform architecture](docs/ARCHITECTURE.md) | Board/profile model, app lifecycle, services, memory, persistence, UI/input, power, storage, and OTA invariants |
 | Applications | [Home](docs/apps/HOME.md), [System Events](docs/apps/SYSTEM_EVENTS.md), [WiFi / BLE](docs/apps/WIFI_BLE.md), [Hotspots](docs/apps/HOTSPOTS.md), [CC1101](docs/apps/CC1101.md), [nRF24](docs/apps/NRF24.md), [Recorder](docs/apps/RECORDER.md), [Audio Spectrum](docs/apps/AUDIO_SPECTRUM.md), [Thermal](docs/apps/THERMAL.md), [GPS](docs/apps/GPS.md), [Wardriving](docs/apps/Wardriving.md) | Implemented application behavior, controls, data interpretation, dependencies, lifecycle, and current limitations |
+| Hardware | [T-Embed CC1101 Plus](docs/hardware/T_EMBED_CC1101_PLUS.md) | Supported board identity, wiring, optional peripherals, and hardware limitations |
+| Validation | [Release acceptance](docs/RELEASE_VALIDATION.md) | Repeatable hardware acceptance checklist for implemented features |
 | Planning | [Roadmap](docs/ROADMAP.md) | **Authoritative future planning**, active release scope, unfinished work, and brainstorming |
 | Operations | [Firmware releases](docs/operations/RELEASING.md) | Candidate, release, browser-flasher, OTA-catalog, and publication runbook |
 
@@ -32,13 +33,15 @@ Top-level application order is:
 
 1. **System Events** — optional and disabled by default; bounded read-only system-event history
 2. **Home / Device Settings** — always available; device policy, networking, firmware update, and global settings
-3. **WiFi / BT** — passive Wi-Fi/BLE observation; the monitor UI already presents itself as **WiFi / BLE**, while some current descriptor/settings labels retain the older name
+3. **WiFi / BT** — passive Wi-Fi observation and configurable passive/active BLE discovery; the monitor UI already presents itself as **WiFi / BLE**, while some current descriptor/settings labels retain the older name
 4. **Hotspots** — realtime open/OWE access-point view that joins eligible networks to check NTP and verified HTTPS connectivity; no storage or location
 5. **CC1101** — receive-only sub-GHz RSSI sweeps and conservative signal-shape classification
 6. **nRF24** — receive-only 2.4 GHz RPD activity scanning plus surfaces for separately validated Enhanced ShockBurst observations
 7. **Recorder** — SD-backed 16-bit mono WAV recording, post-processing, browsing, deletion, and playback
 8. **Thermal** — optional MLX90640 relative-IR heat-map application
 9. **Audio Spectrum** — live microphone spectrum/FFT application without an SD dependency
+10. **GPS** — live GPS diagnostics and trip-odometer controls
+11. **Wardriving** — mixed Wi-Fi/BLE PCAPNG recording with configurable channel and source policies
 
 Disabled or unavailable apps are skipped. Home is always available and is the default/fallback startup target. Applications receive a managed view, semantic input, and platform-owned services rather than board-specific handles.
 
@@ -66,7 +69,7 @@ idf.py build
 idf.py flash monitor
 ```
 
-For a complete development setup, generated-data workflow, formatting commands, CI expectations, browser flashing, and troubleshooting, start with [Getting started](docs/GETTING_STARTED.md). Contributors should also read [Coding style](docs/CODING_STYLE.md) before changing source.
+For a complete development setup, generated-data workflow, formatting commands, CI expectations, browser flashing, and troubleshooting, start with [Contributing](CONTRIBUTING.md); coding style is included there.
 
 ## Releases
 
