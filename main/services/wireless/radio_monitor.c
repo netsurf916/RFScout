@@ -224,19 +224,20 @@ emit_management_observations( const wifi_frame_info_t *a_info, int8_t a_rssi, ui
     }
 }
 
+/* Data and control BSSIDs are identity evidence, not authoritative AP-channel evidence. */
 static void
 emit_data_observations( const wifi_frame_info_t *a_info, int8_t a_rssi, uint8_t a_channel )
 {
     if( a_info->to_ds && !a_info->from_ds )
     {
         emit_mac( a_info->transmitter, a_rssi, a_channel, false );
-        emit_mac( a_info->bssid, a_rssi, a_channel, true );
+        emit_mac( a_info->bssid, a_rssi, a_channel, false );
         return;
     }
 
     if( !a_info->to_ds && a_info->from_ds )
     {
-        emit_mac( a_info->bssid, a_rssi, a_channel, true );
+        emit_mac( a_info->bssid, a_rssi, a_channel, false );
         emit_mac( a_info->receiver, a_rssi, a_channel, false );
         return;
     }
@@ -253,7 +254,7 @@ emit_control_observations( const wifi_frame_info_t *a_info, int8_t a_rssi, uint8
 {
     if( IEEE80211_SUBTYPE_PS_POLL == a_info->subtype )
     {
-        emit_mac( a_info->bssid, a_rssi, a_channel, true );
+        emit_mac( a_info->bssid, a_rssi, a_channel, false );
         emit_mac( a_info->transmitter, a_rssi, a_channel, false );
         return;
     }
@@ -261,7 +262,7 @@ emit_control_observations( const wifi_frame_info_t *a_info, int8_t a_rssi, uint8
     if( ( IEEE80211_SUBTYPE_CF_END == a_info->subtype ) ||
         ( IEEE80211_SUBTYPE_CF_END_ACK == a_info->subtype ) )
     {
-        emit_mac( a_info->bssid, a_rssi, a_channel, true );
+        emit_mac( a_info->bssid, a_rssi, a_channel, false );
         emit_mac( a_info->receiver, a_rssi, a_channel, false );
         return;
     }
