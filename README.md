@@ -67,7 +67,7 @@ idf.py build
 idf.py flash monitor
 ```
 
-For a complete development setup, generated-data workflow, formatting commands, CI expectations, browser flashing, and troubleshooting, start with [Contributing](CONTRIBUTING.md). Contributors should also read [Coding style](docs/CODING_STYLE.md) before changing source.
+For a complete development setup, generated-data workflow, formatting commands, CI expectations, browser flashing, and troubleshooting, start with [Contributing](CONTRIBUTING.md); coding style is included there.
 
 ## Releases
 
