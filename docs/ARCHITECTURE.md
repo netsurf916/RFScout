@@ -250,6 +250,42 @@ A missing record means compiled defaults. Malformed/unsupported owned records fa
 
 The retired monolithic internal `rfscout.json` representation is not authoritative or migrated forward as an editable interchange format.
 
+## Visual presentation
+
+`ui_theme` owns four persisted semantic palettes: Indoor, Outdoor, Night, and Pixel Quest. Their
+existing numeric IDs and config names are stable; Pixel Quest is appended as `pixel_quest` and is
+the compiled default for missing/invalid system configuration. Valid saved themes are not replaced
+on upgrade. Theme changes use the existing config/event path and remain independent from audio.
+
+Pixel Quest supplies original fixed 8×8 silhouettes and integer-scale pixel art through `ui_game`.
+The widgets allocate no retained memory or workers. All apps use the same `ui_chrome` header,
+including Home, System Events, WiFi/BLE and surveillance, Hotspots, CC1101 discovery/receive,
+nRF24 spectrum/packets, Recorder, Thermal, Audio Spectrum, GPS, and Wardriving. Nested Home
+network/update/time/power/app menus, radio/source/channel settings, and notification settings
+inherit the same chrome and explicit menu markers. Device names and packet text are never
+reinterpreted as selection markers.
+
+The title icon occupies x=6–21 and the bounded title ends before the status region at x=142.
+The game header's divider occupies y=20–21; menu selection bands clamp to y≥22, and the footer
+rule occupies y=168–169. Existing data origins and rotary/Select/Long Press/Hold semantics remain
+unchanged. The selection triangle becomes a hollow diamond while editing. In other themes,
+these menu helpers render the original textual markers and graphs retain continuous columns.
+
+Radio/audio graph gaps decorate the existing columns without quantizing their height, moving
+peaks, or changing source measurements. Battery urgency, unavailable states, lock distinctions,
+and charging presentation remain semantic. Thermal's literal image pixels continue to bypass
+palette translation; its relative-IR/calibration warnings remain visible.
+
+Global dialogs use a double pixel border contained entirely inside the existing 236×70 saved
+rectangle. Long titles reduce their integer font scale; long detail lines wrap into two lines.
+Power overlays keep their existing priority over app modals and system notifications. The shared
+presentation service restores the complete saved framebuffer rectangle after flushing the popup;
+no themed frame/shadow draws outside that backup region.
+
+The [host preview command](../CONTRIBUTING.md#host-ui-previews) compiles production C views and
+extracts the production driver's drawing primitives and font, with deterministic mocked services.
+Its images verify presentation only, not RF acquisition or target-hardware performance.
+
 ## Time, location, and sleep state
 
 `device_time` owns RTC-backed wall-clock validity/source, automatic GPS/NTP synchronization, timezone conversion, and manual time independently from any location provider.

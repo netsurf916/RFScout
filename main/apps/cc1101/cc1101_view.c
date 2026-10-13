@@ -8,6 +8,7 @@
 
 #include "display.h"
 #include "ui_chrome.h"
+#include "ui_game.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
 
@@ -84,6 +85,11 @@ void cc1101_view_discovery( const int8_t *a_rssi,
 
     const int graph_x = UI_LAYOUT_LEFT_X;
     const int graph_width = RFSCOUT_DISPLAY_WIDTH - ( UI_LAYOUT_LEFT_X * 2 );
+    if( ui_game_active() )
+    {
+        ui_game_draw_panel(
+            graph_x - 2, GRAPH_TOP - 2, graph_width + 4, GRAPH_HEIGHT + 5, theme->divider );
+    }
     display_fill_rect( graph_x, GRAPH_TOP + GRAPH_HEIGHT, graph_width, 1, theme->divider );
 
     if( ( NULL != a_rssi ) && ( a_count > 0U ) )
@@ -105,7 +111,7 @@ void cc1101_view_discovery( const int8_t *a_rssi,
             const int height = level * ( GRAPH_HEIGHT - 2 ) / 80;
             if( height > 0 )
             {
-                display_fill_rect(
+                ui_game_draw_column(
                     x, GRAPH_TOP + GRAPH_HEIGHT - height, 2, height, theme->graph_primary );
             }
         }
@@ -387,7 +393,7 @@ void cc1101_view_menu( unsigned a_selected,
             ( active && a_editing && a_limit_reached ) ? theme->warning : theme->selected;
         const char *marker = active ? ( action ? ">" : ( a_editing ? "*" : ">" ) ) : " ";
 
-        display_draw_text( UI_LAYOUT_LEFT_X, y, marker, active ? accent : theme->divider, 1U );
+        ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X, y, marker, active ? accent : theme->divider );
         display_draw_text(
             UI_LAYOUT_LABEL_X, y, labels[ index ], active ? theme->text : theme->divider, 1U );
 

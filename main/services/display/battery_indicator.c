@@ -10,6 +10,7 @@
 #include "battery.h"
 #include "display.h"
 #include "ui_theme.h"
+#include "ui_game.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -119,6 +120,12 @@ static void draw_battery_fill( const battery_status_t *a_status, uint16_t a_colo
     const int inner_y = BATTERY_INDICATOR_BODY_Y + 2;
     const int inner_width = BATTERY_INDICATOR_BODY_WIDTH - 4;
     const int inner_height = BATTERY_INDICATOR_BODY_HEIGHT - 4;
+    if( ui_game_active() )
+    {
+        ui_game_draw_meter(
+            inner_x, inner_y, inner_width, inner_height, a_status->percentage, 100U, a_color );
+        return;
+    }
     int fill_width = ( (int)a_status->percentage * inner_width + 99 ) / 100;
 
     if( fill_width > inner_width )

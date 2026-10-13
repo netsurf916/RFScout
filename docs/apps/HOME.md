@@ -6,6 +6,8 @@ Home is RFScout's always-available landing application and the fallback when ano
 
 Home provides the low-allocation device/settings surface. Turning the rotary control from the landing view navigates applications; the center control opens Device Settings.
 
+Pixel Quest renders the landing view as an original pixel-console title screen, with **TURN: EXPLORE APPS** and **CENTER: DEVICE SETTINGS** hints. The other themes retain the RFScout bitmap logo and existing control affordances. The theme choice is persisted independently of audio policy.
+
 The Home descriptor requires no activation delay and owns the temporary infrastructure-network and OTA services used by its nested **Network** and **Update** menus.
 
 ## Device Settings
@@ -13,7 +15,7 @@ The Home descriptor requires no activation delay and owns the temporary infrastr
 Current settings include:
 
 - brightness and automatic dim/screen-off timing;
-- Indoor / Outdoor / Night visual theme;
+- Pixel Quest / Indoor / Outdoor / Night visual theme (Pixel Quest is the fresh/default preference);
 - independent Normal / Quiet audio policy;
 - UI, Event, and Alert presentation volumes;
 - 12/24-hour clock presentation;

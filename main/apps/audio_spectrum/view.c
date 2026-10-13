@@ -9,6 +9,7 @@
 #include "display.h"
 #include "recorder.h"
 #include "ui_chrome.h"
+#include "ui_game.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
 
@@ -154,6 +155,15 @@ void audio_spectrum_view_render( void )
               (unsigned)recorder_monitor_range_db() );
     display_draw_text( UI_LAYOUT_LEFT_X, 34, range_line, theme->text, 1U );
 
+    if( ui_game_active() )
+    {
+        ui_game_draw_panel( AUDIO_SPECTRUM_GRAPH_X - 2,
+                            AUDIO_SPECTRUM_GRAPH_Y - 2,
+                            AUDIO_SPECTRUM_GRAPH_W + 6,
+                            AUDIO_SPECTRUM_GRAPH_H + 6,
+                            theme->divider );
+    }
+
     if( count > 0U )
     {
         for( size_t index = 0U; index < count; ++index )
@@ -163,11 +173,11 @@ void audio_spectrum_view_render( void )
             const int height = (int)bins[ index ] * AUDIO_SPECTRUM_GRAPH_H / 100;
             if( height > 0 )
             {
-                display_fill_rect( x,
-                                   AUDIO_SPECTRUM_GRAPH_Y + AUDIO_SPECTRUM_GRAPH_H - height,
-                                   2,
-                                   height,
-                                   theme->graph_primary );
+                ui_game_draw_column( x,
+                                     AUDIO_SPECTRUM_GRAPH_Y + AUDIO_SPECTRUM_GRAPH_H - height,
+                                     2,
+                                     height,
+                                     theme->graph_primary );
             }
         }
         draw_peak_labels( bins, count );

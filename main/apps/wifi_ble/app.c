@@ -17,6 +17,7 @@
 #include "persistent_store.h"
 #include "display.h"
 #include "ui_chrome.h"
+#include "ui_game.h"
 #include "ui_theme.h"
 #include <stdio.h>
 #include "observation_store.h"
@@ -275,7 +276,7 @@ static void render_radio_menu( void )
                                : i == radio_selected ? theme->info
                                                      : theme->text;
         const int y = 24 + (int)( i - first ) * 18;
-        display_draw_text( 8, y, i == radio_selected ? ">" : " ", color, 1U );
+        ui_game_draw_menu_marker( 8, y, i == radio_selected ? ">" : " ", color );
         display_draw_text( 22, y, label, color, 1U );
         display_draw_text( 215, y, value, color, 1U );
     }

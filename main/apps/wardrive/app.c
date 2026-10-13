@@ -9,6 +9,7 @@
 #include "persistent_store.h"
 #include "radio_monitor.h"
 #include "ui_chrome.h"
+#include "ui_game.h"
 #include "ui_theme.h"
 
 #include "esp_log.h"
@@ -434,22 +435,22 @@ static void draw_overview( void )
         {
             if( wifi_height > 0 )
             {
-                display_fill_rect( x, 89 - wifi_height, 2, wifi_height, theme->info );
+                ui_game_draw_column( x, 89 - wifi_height, 2, wifi_height, theme->info );
             }
             if( total_height > wifi_height )
             {
-                display_fill_rect(
+                ui_game_draw_column(
                     x, 89 - total_height, 2, total_height - wifi_height, theme->accent );
             }
         }
         else if( total_height > 0 )
         {
-            display_fill_rect( x,
-                               89 - total_height,
-                               2,
-                               total_height,
-                               combined * 4U >= (uint64_t)peak_rate * 3U ? theme->warning
-                                                                         : theme->info );
+            ui_game_draw_column( x,
+                                 89 - total_height,
+                                 2,
+                                 total_height,
+                                 combined * 4U >= (uint64_t)peak_rate * 3U ? theme->warning
+                                                                           : theme->info );
         }
     }
     display_draw_text( 163, 95, "CHANNELS / LAST 74s", theme->secondary, 1U );
@@ -463,7 +464,7 @@ static void draw_overview( void )
             const uint16_t color = i + 1U == current                 ? theme->success
                                    : value * 4U >= peak_channel * 3U ? theme->warning
                                                                      : theme->info;
-            display_fill_rect( x, 146 - height, 8, height, color );
+            ui_game_draw_column( x, 146 - height, 8, height, color );
         }
     }
     /* Separate the channel bars from their labels without obscuring either. */
@@ -606,7 +607,7 @@ static void draw_radio_submenu( void )
                                : item == radio_selected ? theme->info
                                                         : theme->text;
         const int y = 24 + (int)( item - first ) * 18;
-        display_draw_text( 8, y, item == radio_selected ? ">" : " ", color, 1U );
+        ui_game_draw_menu_marker( 8, y, item == radio_selected ? ">" : " ", color );
         display_draw_text( 22, y, label, color, 1U );
         display_draw_text( 214, y, value, color, 1U );
     }
@@ -629,7 +630,7 @@ static void draw_sources_menu( void )
         const uint16_t color = !available                 ? theme->secondary
                                : item == sources_selected ? theme->info
                                                           : theme->text;
-        display_draw_text( 8, y, item == sources_selected ? ">" : " ", color, 1U );
+        ui_game_draw_menu_marker( 8, y, item == sources_selected ? ">" : " ", color );
         display_draw_text( 22, y, labels[ item ], color, 1U );
         if( item == 1U || item == 2U )
         {
@@ -671,7 +672,7 @@ static void draw_menu( void )
         const uint16_t color = disabled           ? theme->secondary
                                : item == selected ? theme->info
                                                   : theme->text;
-        display_draw_text( 8, 26 + (int)i * 20, item == selected ? ">" : " ", color, 1U );
+        ui_game_draw_menu_marker( 8, 26 + (int)i * 20, item == selected ? ">" : " ", color );
         display_draw_text( 22, 26 + (int)i * 20, label, color, 1U );
         if( value[ 0 ] != 0 )
         {

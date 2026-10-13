@@ -93,6 +93,25 @@ idf.py -DRFSCOUT_FORMAT_CHECK=OFF build
 
 That bypass does not change CI policy.
 
+## Host UI previews
+
+On a Linux host with Python 3 and a C compiler (`cc`, or `CC`), render deterministic 320×170
+presentation fixtures without ESP-IDF or image-library dependencies:
+
+```sh
+python3 tools/render_ui_preview.py --output-dir build/ui-preview
+python3 -m unittest discover -s tests -p 'test_*.py'
+```
+
+The preview tool compiles production shared chrome/theme/popup code and representative production
+app views, using the actual LCD font and framebuffer drawing functions extracted from `display.c`.
+It writes portable PPM images with simulated service data/status widgets. Host checks cover stable
+theme IDs/config-name round trips, title/status separation, menu/header separation, graph heights,
+zero/clamped meter inputs, and modal/system-popup framebuffer restoration, including long text.
+The test suite runs these checks in ordinary formatting/packaging CI. They complement the ESP-IDF
+build and [target hardware acceptance](docs/RELEASE_VALIDATION.md); they do not emulate radios,
+storage, input timing, or the physical LCD.
+
 ## Flash and monitor locally
 
 Connect a supported RFScout ESP32-S3 board over USB. ESP-IDF can usually discover the serial port automatically:

@@ -9,6 +9,7 @@
 #include "display.h"
 #include "gps.h"
 #include "ui_chrome.h"
+#include "ui_game.h"
 #include "ui_theme.h"
 
 #include <stdio.h>
@@ -22,6 +23,12 @@ void gps_view_render( bool a_reset_prompt, bool a_reset_yes, bool a_reset_failed
 
     display_clear( theme->background );
     ui_chrome_draw( "GPS", theme->secondary );
+
+    if( ui_game_active() )
+    {
+        ui_game_draw_panel(
+            4, a_reset_prompt ? 34 : 23, 312, a_reset_prompt ? 94 : 112, theme->divider );
+    }
 
     if( a_reset_prompt )
     {

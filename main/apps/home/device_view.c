@@ -24,6 +24,7 @@
 #include "power.h"
 #include "power_policy_view.h"
 #include "ui_chrome.h"
+#include "ui_game.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
 
@@ -518,8 +519,8 @@ static void draw_row( int a_y, unsigned a_item )
     const uint16_t color = active ? COLOR_SELECTED : COLOR_TEXT;
     if( active )
     {
-        display_draw_text(
-            UI_LAYOUT_LEFT_X, a_y, ( editing && item_editable( a_item ) ) ? ">*" : ">", color, 1U );
+        ui_game_draw_menu_marker(
+            UI_LAYOUT_LEFT_X, a_y, ( editing && item_editable( a_item ) ) ? ">*" : ">", color );
     }
     display_draw_text( UI_LAYOUT_LABEL_X, a_y, item_label( a_item ), color, 1U );
     if( '\0' != value[ 0 ] )
@@ -615,11 +616,10 @@ static void draw_time_row( int a_y, unsigned a_item )
 
     if( active )
     {
-        display_draw_text( UI_LAYOUT_LEFT_X,
-                           a_y,
-                           time_editing && a_item >= TIME_MENU_TIMEZONE ? ">*" : ">",
-                           color,
-                           1U );
+        ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X,
+                                  a_y,
+                                  time_editing && a_item >= TIME_MENU_TIMEZONE ? ">*" : ">",
+                                  color );
     }
     display_draw_text( UI_LAYOUT_LABEL_X, a_y, label, color, 1U );
     if( '\0' != value[ 0 ] )
@@ -689,7 +689,7 @@ draw_power_menu_row( int a_y, unsigned a_item, const char *a_label, const char *
     const uint16_t color = active ? COLOR_SELECTED : COLOR_TEXT;
     if( active )
     {
-        display_draw_text( UI_LAYOUT_LEFT_X, a_y, ">", color, 1U );
+        ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X, a_y, ">", color );
     }
     display_draw_text( UI_LAYOUT_LABEL_X, a_y, a_label, color, 1U );
     if( NULL != a_value )
