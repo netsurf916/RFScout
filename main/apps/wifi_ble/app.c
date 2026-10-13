@@ -31,7 +31,6 @@
 
 #define WIFI_RADIO_RETRY_INTERVAL_US 1000000LL
 #define WIFI_JOURNAL_FLUSH_INTERVAL_US 500000LL
-#define WIFI_AP_DIAGNOSTIC_INTERVAL_US 5000000LL
 
 #define WIFI_MENU_BACK 0U
 #define WIFI_MENU_APP_LOCK 1U
@@ -801,27 +800,16 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
     radio_monitor_set_active_ap_channels( ap_mask );
     radio_monitor_step();
 
-    /* Diagnostic only: compare actual AP visibility with the scanner's current channel. */
+    /* Report only actual changes to the retained 14-channel AP state. */
     static uint16_t previous_ap_mask;
-    static int64_t previous_ap_log_us;
-    static bool ap_diagnostic_initialized;
-    if( !ap_diagnostic_initialized || ( ap_mask != previous_ap_mask ) ||
-        ( a_event->now_us - previous_ap_log_us >= WIFI_AP_DIAGNOSTIC_INTERVAL_US ) )
+    if( ap_mask != previous_ap_mask )
     {
         ESP_LOGI( TAG,
-                  "AP scan: mask=0x%04X prev=0x%04X changed=0x%04X channel=%u wifi=%u ble=%u "
-                  "wifi_running=%u ble_running=%u",
-                  (unsigned)ap_mask,
+                  "AP channels: 0x%04X -> 0x%04X changed=0x%04X",
                   (unsigned)previous_ap_mask,
-                  (unsigned)( ap_mask ^ previous_ap_mask ),
-                  (unsigned)radio_monitor_channel(),
-                  (unsigned)wifi_source,
-                  (unsigned)ble_source,
-                  (unsigned)radio_monitor_is_active(),
-                  (unsigned)ble_monitor_is_active() );
+                  (unsigned)ap_mask,
+                  (unsigned)( previous_ap_mask ^ ap_mask ) );
         previous_ap_mask = ap_mask;
-        previous_ap_log_us = a_event->now_us;
-        ap_diagnostic_initialized = true;
     }
     if( a_event->now_us - last_journal_flush_us >= WIFI_JOURNAL_FLUSH_INTERVAL_US )
     {
