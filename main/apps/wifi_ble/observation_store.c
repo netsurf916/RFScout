@@ -485,7 +485,7 @@ static void initialize_source_times( rf_device_t *a_device )
         a_device->wifi_last_seen_ms = a_device->last_seen_ms;
     }
     if( ( 0U != ( a_device->source_mask & RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) ) &&
-        ( 0U == a_device->wifi_channel ) )
+        a_device->wifi_is_ap && ( 0U == a_device->wifi_channel ) )
     {
         a_device->wifi_channel = (uint8_t)a_device->channel;
     }
@@ -653,10 +653,21 @@ static void merge_observation( rf_device_t *a_device, const rf_device_t *a_obser
         ( 0U != ( a_observation->source_mask & RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) ) )
     {
         a_device->wifi_last_seen_ms = a_observation->last_seen_ms;
-        a_device->wifi_channel = ( 0U != a_observation->wifi_channel )
-                                     ? a_observation->wifi_channel
-                                     : (uint8_t)a_observation->channel;
-        a_device->wifi_is_ap = a_device->wifi_is_ap || a_observation->wifi_is_ap;
+        /*
+         * Only explicit AP evidence may establish or move the AP channel.
+         * Other frames can mention the same BSSID while tuned elsewhere.
+         */
+        if( a_observation->wifi_is_ap )
+        {
+            const uint8_t ap_channel = ( 0U != a_observation->wifi_channel )
+                                           ? a_observation->wifi_channel
+                                           : (uint8_t)a_observation->channel;
+            if( ( ap_channel >= 1U ) && ( ap_channel <= RFSCOUT_WIFI_CHANNEL_MAX ) )
+            {
+                a_device->wifi_channel = ap_channel;
+                a_device->wifi_is_ap = true;
+            }
+        }
     }
     if( ( RF_SOURCE_BLE == a_observation->last_source ) ||
         ( 0U != ( a_observation->source_mask & RF_SOURCE_BIT( RF_SOURCE_BLE ) ) ) )
