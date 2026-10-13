@@ -17,42 +17,25 @@
 static const char *TAG = "ui_theme";
 static rfscout_theme_id_t active_theme = RFSCOUT_THEME_PIXEL_QUEST;
 
-#define PALETTE_INDOOR                                                                             \
-    { .background = 0x0000U,                                                                       \
-      .text = 0xFFFFU,                                                                             \
-      .secondary = 0xC618U,                                                                        \
-      .divider = 0x8410U,                                                                          \
-      .accent = 0xFC00U,                                                                           \
-      .selected = 0xFC00U,                                                                         \
-      .info = 0xA514U,                                                                             \
-      .normal = 0xFFFFU,                                                                           \
-      .success = 0xC618U,                                                                          \
-      .warning = 0xFFE1U,                                                                          \
-      .error = 0xF800U,                                                                            \
-      .graph_primary = 0xFC00U,                                                                    \
-      .graph_peak = 0xFFFFU,                                                                       \
-      .logo_primary = 0xFC00U,                                                                     \
-      .logo_secondary = 0xFFFFU }
-
-#define PALETTE_NIGHT                                                                              \
-    { .background = 0x0000U,                                                                       \
-      .text = 0xFBE0U,                                                                             \
-      .secondary = 0xFA20U,                                                                        \
-      .divider = 0x7800U,                                                                          \
-      .accent = 0xF840U,                                                                           \
-      .selected = 0xFC40U,                                                                         \
-      .info = 0xFA20U,                                                                             \
-      .normal = 0xFBE0U,                                                                           \
-      .success = 0xFA40U,                                                                          \
-      .warning = 0xFFE1U,                                                                          \
-      .error = 0xF800U,                                                                            \
-      .graph_primary = 0xF840U,                                                                    \
-      .graph_peak = 0xFC40U,                                                                       \
-      .logo_primary = 0xF840U,                                                                     \
-      .logo_secondary = 0xFC40U }
-
 static const ui_theme_palette_t palettes[ RFSCOUT_THEME_COUNT ] = {
-    [RFSCOUT_THEME_INDOOR] = PALETTE_INDOOR,
+    [RFSCOUT_THEME_INDOOR] =
+        {
+            .background = 0x0000U,
+            .text = 0xFFFFU,
+            .secondary = 0xC618U,
+            .divider = 0x8410U,
+            .accent = 0xFC00U,
+            .selected = 0xFC00U,
+            .info = 0xA514U,
+            .normal = 0xFFFFU,
+            .success = 0xC618U,
+            .warning = 0xFFE1U,
+            .error = 0xF800U,
+            .graph_primary = 0xFC00U,
+            .graph_peak = 0xFFFFU,
+            .logo_primary = 0xFC00U,
+            .logo_secondary = 0xFFFFU,
+        },
     [RFSCOUT_THEME_OUTDOOR] =
         {
             .background = 0x0000U,
@@ -71,7 +54,24 @@ static const ui_theme_palette_t palettes[ RFSCOUT_THEME_COUNT ] = {
             .logo_primary = 0xFC00U,
             .logo_secondary = 0xFFFFU,
         },
-    [RFSCOUT_THEME_NIGHT] = PALETTE_NIGHT,
+    [RFSCOUT_THEME_NIGHT] =
+        {
+            .background = 0x0000U,
+            .text = 0xFBE0U,
+            .secondary = 0xFA20U,
+            .divider = 0x7800U,
+            .accent = 0xF840U,
+            .selected = 0xFC40U,
+            .info = 0xFA20U,
+            .normal = 0xFBE0U,
+            .success = 0xFA40U,
+            .warning = 0xFFE1U,
+            .error = 0xF800U,
+            .graph_primary = 0xF840U,
+            .graph_peak = 0xFC40U,
+            .logo_primary = 0xF840U,
+            .logo_secondary = 0xFC40U,
+        },
     [RFSCOUT_THEME_PIXEL_QUEST] =
         {
             .background = 0x0865U,
