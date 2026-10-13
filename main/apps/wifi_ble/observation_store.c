@@ -606,8 +606,10 @@ static void merge_observation( rf_device_t *a_device, const rf_device_t *a_obser
     {
         a_device->wifi_last_seen_ms = a_observation->last_seen_ms;
         /*
-         * Only explicit AP evidence may establish or move the AP channel.
-         * Other frames can mention the same BSSID while tuned elsewhere.
+         * Receiver-reported channels can briefly reflect adjacent channels at a
+         * hop boundary. Once AP identity and its channel are established, do
+         * not reassign the AP for each later beacon/probe response. A genuine
+         * AP channel migration needs separate, corroborated evidence.
          */
         if( a_observation->wifi_is_ap )
         {
@@ -616,7 +618,10 @@ static void merge_observation( rf_device_t *a_device, const rf_device_t *a_obser
                                            : (uint8_t)a_observation->channel;
             if( ( ap_channel >= 1U ) && ( ap_channel <= RFSCOUT_WIFI_CHANNEL_MAX ) )
             {
-                a_device->wifi_channel = ap_channel;
+                if( !has_active_wifi_ap_role( a_device ) )
+                {
+                    a_device->wifi_channel = ap_channel;
+                }
                 a_device->wifi_is_ap = true;
             }
         }
