@@ -51,8 +51,6 @@ static bool channels_menu_open;
 static unsigned radio_selected;
 static uint16_t selected_channels = 0x3FFFU;
 static bool manual_channels;
-static bool legacy_radio_migration_pending;
-static bool source_settings_sync_pending;
 static bool shuffle_channels;
 static bool ble_active_scan;
 static bool ble_dedupe;
@@ -208,6 +206,8 @@ static void load_settings( void )
     }
 }
 
+/* Version 2 keeps the original record size; manual bit 0 selects manual
+   channels, and bit 1 is the authoritative Wi-Fi source enable flag. */
 static void save_radio_settings( void );
 
 static void load_radio_settings( void )
@@ -215,8 +215,6 @@ static void load_radio_settings( void )
     radio_settings_t stored;
     size_t length = 0U;
     selected_channels = 0x3FFFU;
-    legacy_radio_migration_pending = options.fixed_channel;
-    /* Migrate legacy fixed-channel captures when no independent radio profile exists. */
     manual_channels = options.fixed_channel;
     if( manual_channels && options.channel >= 1U && options.channel <= 14U )
     {
@@ -227,38 +225,41 @@ static void load_radio_settings( void )
     ble_active_scan = false;
     ble_dedupe = false;
     ble_duty = 0U;
-    if( ESP_OK == app_store_read( "capture.radio", &stored, sizeof( stored ), &length ) &&
-        length == sizeof( stored ) && stored.magic == 0x52575031U && stored.dwell_index < 5U &&
-        stored.ble_duty < 3U )
+    const bool valid = ESP_OK == app_store_read( "capture.radio", &stored, sizeof( stored ), &length ) &&
+                       length == sizeof( stored ) && stored.dwell_index < 5U && stored.ble_duty < 3U &&
+                       ( stored.magic == 0x52575031U || stored.magic == 0x52575032U );
+    if( valid )
     {
         selected_channels = stored.channels & 0x3FFFU;
-        manual_channels = stored.manual != 0U;
+        manual_channels = ( stored.manual & 1U ) != 0U;
         shuffle_channels = stored.shuffled != 0U;
         dwell_choice = stored.dwell_index;
         ble_active_scan = stored.ble_active != 0U;
         ble_dedupe = stored.ble_duplicates != 0U;
         ble_duty = stored.ble_duty;
-        legacy_radio_migration_pending = false;
+        if( stored.magic == 0x52575032U )
+        {
+            options.wifi = ( stored.manual & 2U ) != 0U;
+        }
     }
-    if( legacy_radio_migration_pending )
+    /* Existing radio settings did not own source enablement. Preserve the
+       legacy choice when upgrading and save the authoritative combined record. */
+    if( !valid || stored.magic != 0x52575032U )
     {
+        if( manual_channels && selected_channels == 0U )
+        {
+            options.wifi = false;
+        }
         save_radio_settings();
-    }
-    /* A zero manual mask is authoritative if the radio record was saved but
-       the legacy source settings write failed. Reconcile on every app entry. */
-    if( manual_channels && selected_channels == 0U && options.wifi )
-    {
-        options.wifi = false;
-        source_settings_sync_pending = true;
     }
 }
 
 static void save_radio_settings( void )
 {
     const radio_settings_t stored = {
-        .magic = 0x52575031U,
+        .magic = 0x52575032U,
         .channels = selected_channels,
-        .manual = manual_channels,
+        .manual = (uint8_t)( ( manual_channels ? 1U : 0U ) | ( options.wifi ? 2U : 0U ) ),
         .shuffled = shuffle_channels,
         .dwell_index = (uint8_t)dwell_choice,
         .ble_active = ble_active_scan,
@@ -266,32 +267,16 @@ static void save_radio_settings( void )
         .ble_duty = (uint8_t)ble_duty,
     };
     last_error = app_store_write( "capture.radio", &stored, sizeof( stored ) );
-    if( ESP_OK == last_error )
-    {
-        legacy_radio_migration_pending = false;
-    }
 }
 
 static void save_settings( void )
 {
-    if( legacy_radio_migration_pending || source_settings_sync_pending )
-    {
-        save_radio_settings();
-        if( ESP_OK != last_error )
-        {
-            return;
-        }
-    }
     const saved_settings_t stored = {
         .magic = CAPTURE_SETTINGS_MAGIC,
         .version = CAPTURE_SETTINGS_VERSION,
         .options = options,
     };
     last_error = app_store_write( "capture.settings", &stored, sizeof( stored ) );
-    if( ESP_OK == last_error )
-    {
-        source_settings_sync_pending = false;
-    }
 }
 
 static bool usage_visitor( const rfscout_media_entry_t *a_entry, void *a_context )
@@ -807,8 +792,7 @@ static void act_on_selection( void )
             if( selected_channels == 0U )
             {
                 options.wifi = false;
-                source_settings_sync_pending = true;
-                save_settings();
+                save_radio_settings();
                 channels_menu_open = false;
                 wifi_menu_open = false;
                 sources_menu_open = false;
@@ -896,9 +880,15 @@ static void act_on_selection( void )
                 if( options.wifi && selected_channels == 0U )
                 {
                     selected_channels = 0x3FFFU;
-                    source_settings_sync_pending = true;
                 }
-                save_settings();
+                if( sources_selected == 1U )
+                {
+                    save_radio_settings();
+                }
+                else
+                {
+                    save_settings();
+                }
             }
         }
         draw_menu();
@@ -1019,10 +1009,6 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
     {
         load_settings();
         load_radio_settings();
-        if( source_settings_sync_pending )
-        {
-            save_settings();
-        }
         menu_open = false;
         sources_menu_open = false;
         wifi_menu_open = false;
