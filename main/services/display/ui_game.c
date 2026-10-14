@@ -30,7 +30,7 @@ static const uint8_t icons[ UI_GAME_ICON_COUNT ][ 8 ] = {
 
 bool ui_game_active( void )
 {
-    return RFSCOUT_THEME_PIXEL_QUEST == ui_theme_current();
+    return RFSCOUT_STYLE_PIXEL_QUEST == ui_style_current();
 }
 
 void ui_game_draw_icon(
