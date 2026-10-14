@@ -27,7 +27,7 @@
 #define UI_REFRESH_INTERVAL_US 100000LL
 #define UI_SURVEILLANCE_MAX_ROWS 8U
 #define UI_VENDOR_X 10
-#define UI_VENDOR_FIRST_Y 77
+#define UI_VENDOR_FIRST_Y 42
 #define UI_VENDOR_ROW_HEIGHT 10
 #define UI_SURVEILLANCE_X 166
 #define UI_SURVEILLANCE_FIRST_Y 77
@@ -89,27 +89,23 @@ static void render_summary( void )
     display_clear( theme->background );
     ui_chrome_draw( "WIFI / BLE", theme->secondary );
     /* Keep system-owned status glyphs above y=22, and use the #115 panel style. */
-    draw_dashboard_panel( 4, 24, 312, 34 );
-    draw_dashboard_panel( 4, 62, 152, 70 );
+    draw_dashboard_panel( 4, 24, 152, 108 );
+    draw_dashboard_panel( 160, 24, 156, 34 );
     draw_dashboard_panel( 160, 62, 156, 70 );
     draw_dashboard_panel( 4, 136, 312, 28 );
 
     char line[ 64 ];
-    (void)snprintf( line, sizeof( line ), "DEV %u", (unsigned)summary.device_count );
-    display_draw_text( 10, 29, line, theme->normal, 1U );
-    (void)snprintf( line,
-                    sizeof( line ),
-                    "WIFI %u BLE %u",
-                    (unsigned)summary.wifi_count,
-                    (unsigned)summary.ble_count );
-    display_draw_text( 10, 42, line, theme->info, 1U );
+    (void)snprintf( line, sizeof( line ), "WIFI %u", (unsigned)summary.wifi_count );
+    display_draw_text( 166, 29, line, theme->info, 1U );
+    (void)snprintf( line, sizeof( line ), "BLE %u", (unsigned)summary.ble_count );
+    display_draw_text( 166, 42, line, theme->info, 1U );
     (void)snprintf( line, sizeof( line ), "UNKNOWN %u", (unsigned)summary.unknown_count );
-    display_draw_text( 168, 29, line, theme->info, 1U );
+    display_draw_text( 239, 29, line, theme->info, 1U );
     (void)snprintf( line, sizeof( line ), "RANDOM %u", (unsigned)summary.random_count );
-    display_draw_text( 168, 42, line, theme->info, 1U );
+    display_draw_text( 239, 42, line, theme->info, 1U );
 
-    display_draw_text( 10, 66, "TOP VENDORS", theme->secondary, 1U );
-    const size_t vendor_rows = snapshot.vendor_count < 5U ? snapshot.vendor_count : 5U;
+    display_draw_text( 10, 29, "TOP VENDORS", theme->secondary, 1U );
+    const size_t vendor_rows = snapshot.vendor_count < UI_MAX_KNOWN_BRANDS ? snapshot.vendor_count : UI_MAX_KNOWN_BRANDS;
     for( size_t i = 0U; i < vendor_rows; ++i )
     {
         (void)snprintf( line,
