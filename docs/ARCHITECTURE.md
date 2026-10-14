@@ -281,6 +281,8 @@ Power overlays keep their existing priority over app modals and system notificat
 presentation service restores the complete saved framebuffer rectangle after flushing the popup;
 no themed frame/shadow draws outside that backup region.
 
+WiFi/BLE now uses bounded, theme-aware instruments for its coherent observation snapshot: identity/source counts, vendor/UNKNOWN/RANDOM summaries, surveillance signatures, and AP channel evidence. Pixel Quest retains its clipped-corner instrument primitive; legacy themes use semantic surface-filled rectangular borders. These panels change presentation only, not observation ownership or radio collection. Wardriving is adjacent to WiFi/BLE in the explicit navigation order while persisted numeric application IDs remain unchanged.
+
 The scanner palette uses cyan instrument frames and amber controls on a dark navy surface.
 Home places the original Scout inside a reticle above two fixed command panels. Shared panels
 use clipped corners and short brackets; the footer uses quiet endcaps. Dense instruments retain their data
