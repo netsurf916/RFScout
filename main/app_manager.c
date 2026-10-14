@@ -113,21 +113,44 @@ static void activate_app_if_ready( int64_t a_now_us )
     log_lifecycle( "activate", active_app, active_app, esp_timer_get_time() - started );
 }
 
+/** @brief Navigation order is independent of stable persisted application IDs. */
+static const rfscout_app_id_t navigation_order[ RFSCOUT_APP_COUNT ] = {
+    RFSCOUT_APP_SYSTEM_EVENTS,
+    RFSCOUT_APP_DEVICE,
+    RFSCOUT_APP_WIFI_BT,
+    RFSCOUT_APP_WARDRIVE,
+    RFSCOUT_APP_HOTSPOTS,
+    RFSCOUT_APP_CC1101,
+    RFSCOUT_APP_NRF24,
+    RFSCOUT_APP_AUDIO,
+    RFSCOUT_APP_THERMAL,
+    RFSCOUT_APP_AUDIO_SPECTRUM,
+    RFSCOUT_APP_GPS,
+};
+
 static rfscout_app_id_t next_available_app( int a_direction )
 {
-    int next = (int)active_app;
+    int position = 0;
+    for( int i = 0; i < RFSCOUT_APP_COUNT; ++i )
+    {
+        if( navigation_order[ i ] == active_app )
+        {
+            position = i;
+            break;
+        }
+    }
     for( int attempts = 0; attempts < RFSCOUT_APP_COUNT; ++attempts )
     {
-        next += a_direction;
-        if( next < 0 )
+        position += a_direction;
+        if( position < 0 )
         {
-            next = RFSCOUT_APP_COUNT - 1;
+            position = RFSCOUT_APP_COUNT - 1;
         }
-        else if( next >= RFSCOUT_APP_COUNT )
+        else if( position >= RFSCOUT_APP_COUNT )
         {
-            next = 0;
+            position = 0;
         }
-        const rfscout_app_id_t candidate = (rfscout_app_id_t)next;
+        const rfscout_app_id_t candidate = navigation_order[ position ];
         if( app_available( candidate ) )
         {
             return candidate;
