@@ -16,6 +16,7 @@
 #include "media_store.h"
 #include "mlx90640.h"
 #include "ui_theme.h"
+#include "ui_game.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -91,15 +92,7 @@ static void draw_gps_icon( int a_x, bool a_fix_valid )
     const ui_theme_palette_t *theme = ui_theme_get();
     const uint16_t color = a_fix_valid ? theme->success : theme->warning;
 
-    /* Satellite silhouette: central bus, two solar arrays and antenna. */
-    display_fill_rect( a_x + 4, y + 5, 4, 5, color );
-    display_fill_rect( a_x, y + 4, 3, 7, color );
-    display_fill_rect( a_x + 9, y + 4, 3, 7, color );
-    display_fill_rect( a_x + 3, y + 7, 1, 1, color );
-    display_fill_rect( a_x + 8, y + 7, 1, 1, color );
-    display_fill_rect( a_x + 5, y + 3, 1, 2, color );
-    display_fill_rect( a_x + 6, y + 2, 2, 1, color );
-    display_fill_rect( a_x + 5, y + 10, 2, 2, color );
+    ui_game_draw_gps_satellite( a_x, y, color );
 }
 
 static bool status_equal( const rfscout_status_bar_state_t *a_left,

@@ -32,10 +32,10 @@
 #define UI_SURVEILLANCE_X 166
 #define UI_SURVEILLANCE_FIRST_Y 77
 #define UI_SURVEILLANCE_ROW_HEIGHT 10
-#define UI_CHANNEL_GRID_X 11
-#define UI_CHANNEL_GRID_TOP_Y 151
+#define UI_CHANNEL_GRID_X 12
+#define UI_CHANNEL_GRID_TOP_Y 150
 #define UI_CHANNEL_GRID_CELL_WIDTH 20
-#define UI_CHANNEL_GRID_CELL_HEIGHT 10
+#define UI_CHANNEL_GRID_CELL_HEIGHT 12
 #define UI_CHANNEL_GRID_COLUMN_STEP 21
 
 static const char *TAG = "ui";
@@ -64,17 +64,20 @@ static void draw_channel_box( unsigned a_channel, uint16_t a_active_channel_mask
     const int x = UI_CHANNEL_GRID_X + (int)index * UI_CHANNEL_GRID_COLUMN_STEP;
     const int y = UI_CHANNEL_GRID_TOP_Y;
     const bool active = 0U != ( a_active_channel_mask & (uint16_t)( 1U << index ) );
-    const uint16_t color = active ? theme->warning : theme->info;
+    const uint16_t color = active ? theme->accent : theme->divider;
+    const uint16_t label_color = active ? theme->accent : theme->secondary;
 
-    display_fill_rect( x, y, UI_CHANNEL_GRID_CELL_WIDTH - 2, 1, color );
+    display_fill_rect( x, y, UI_CHANNEL_GRID_CELL_WIDTH, 1, color );
     display_fill_rect(
-        x, y + UI_CHANNEL_GRID_CELL_HEIGHT - 1, UI_CHANNEL_GRID_CELL_WIDTH - 2, 1, color );
+        x, y + UI_CHANNEL_GRID_CELL_HEIGHT - 1, UI_CHANNEL_GRID_CELL_WIDTH, 1, color );
     display_fill_rect( x, y, 1, UI_CHANNEL_GRID_CELL_HEIGHT, color );
     display_fill_rect(
-        x + UI_CHANNEL_GRID_CELL_WIDTH - 3, y, 1, UI_CHANNEL_GRID_CELL_HEIGHT, color );
+        x + UI_CHANNEL_GRID_CELL_WIDTH - 1, y, 1, UI_CHANNEL_GRID_CELL_HEIGHT, color );
     char label[ 3 ];
     (void)snprintf( label, sizeof( label ), "%u", a_channel );
-    display_draw_text( x + ( a_channel < 10U ? 6 : 3 ), y + 2, label, color, 1U );
+    const int text_width = a_channel < 10U ? 6 : 12;
+    display_draw_text(
+        x + ( UI_CHANNEL_GRID_CELL_WIDTH - text_width ) / 2, y + 2, label, label_color, 1U );
 }
 
 static double live_receiver_distance( const observation_history_identity_t *a_device,
@@ -237,15 +240,16 @@ static void render_summary( void )
         }
         (void)snprintf( line,
                         sizeof( line ),
-                        "%-9.9s %2u %s",
+                        "%-9.9s %2u",
                         surveillance_signature_label( signatures[ row ].signature ),
-                        (unsigned)signatures[ row ].count,
-                        distance );
-        display_draw_text( UI_SURVEILLANCE_X,
-                           UI_SURVEILLANCE_FIRST_Y + (int)row * UI_SURVEILLANCE_ROW_HEIGHT,
-                           line,
-                           theme->warning,
-                           1U );
+                        (unsigned)signatures[ row ].count );
+        const int row_y = UI_SURVEILLANCE_FIRST_Y + (int)row * UI_SURVEILLANCE_ROW_HEIGHT;
+        display_draw_text( UI_SURVEILLANCE_X, row_y, line, theme->warning, 1U );
+        if( distance[ 0 ] != '\0' )
+        {
+            const int distance_x = 309 - (int)strlen( distance ) * 6;
+            display_draw_text( distance_x, row_y, distance, theme->info, 1U );
+        }
     }
     if( snapshot.signature_count > shown )
     {
