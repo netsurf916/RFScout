@@ -27,17 +27,16 @@
 #define UI_REFRESH_INTERVAL_US 100000LL
 #define UI_SURVEILLANCE_MAX_ROWS 8U
 #define UI_VENDOR_X 10
-#define UI_VENDOR_FIRST_Y 79
+#define UI_VENDOR_FIRST_Y 77
 #define UI_VENDOR_ROW_HEIGHT 10
 #define UI_SURVEILLANCE_X 166
-#define UI_SURVEILLANCE_FIRST_Y 79
+#define UI_SURVEILLANCE_FIRST_Y 77
 #define UI_SURVEILLANCE_ROW_HEIGHT 10
-#define UI_CHANNEL_GRID_X 166
-#define UI_CHANNEL_GRID_TOP_Y 140
+#define UI_CHANNEL_GRID_X 11
+#define UI_CHANNEL_GRID_TOP_Y 151
 #define UI_CHANNEL_GRID_CELL_WIDTH 20
 #define UI_CHANNEL_GRID_CELL_HEIGHT 10
-#define UI_CHANNEL_GRID_ROW_STEP 12
-#define UI_CHANNEL_GRID_COLUMNS 7U
+#define UI_CHANNEL_GRID_COLUMN_STEP 21
 
 static const char *TAG = "ui";
 static int64_t last_refresh_us;
@@ -63,10 +62,8 @@ static void draw_channel_box( unsigned a_channel, uint16_t a_active_channel_mask
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     const unsigned index = a_channel - 1U;
-    const unsigned column = index % UI_CHANNEL_GRID_COLUMNS;
-    const unsigned row = index / UI_CHANNEL_GRID_COLUMNS;
-    const int x = UI_CHANNEL_GRID_X + (int)column * UI_CHANNEL_GRID_CELL_WIDTH;
-    const int y = UI_CHANNEL_GRID_TOP_Y + (int)row * UI_CHANNEL_GRID_ROW_STEP;
+    const int x = UI_CHANNEL_GRID_X + (int)index * UI_CHANNEL_GRID_COLUMN_STEP;
+    const int y = UI_CHANNEL_GRID_TOP_Y;
     const bool active = 0U != ( a_active_channel_mask & (uint16_t)( 1U << index ) );
     const uint16_t color = active ? theme->warning : theme->info;
 
@@ -92,22 +89,27 @@ static void render_summary( void )
     display_clear( theme->background );
     ui_chrome_draw( "WIFI / BLE", theme->secondary );
     /* Keep system-owned status glyphs above y=22, and use the #115 panel style. */
-    draw_dashboard_panel( 4, 24, 312, 30 );
-    draw_dashboard_panel( 4, 58, 152, 106 );
-    draw_dashboard_panel( 160, 58, 156, 62 );
-    draw_dashboard_panel( 160, 124, 156, 40 );
+    draw_dashboard_panel( 4, 24, 312, 34 );
+    draw_dashboard_panel( 4, 62, 152, 70 );
+    draw_dashboard_panel( 160, 62, 156, 70 );
+    draw_dashboard_panel( 4, 136, 312, 28 );
 
     char line[ 64 ];
+    (void)snprintf( line, sizeof( line ), "DEV %u", (unsigned)summary.device_count );
+    display_draw_text( 10, 29, line, theme->normal, 1U );
     (void)snprintf( line,
                     sizeof( line ),
-                    "DEV %u    WIFI %u    BLE %u",
-                    (unsigned)summary.device_count,
+                    "WIFI %u BLE %u",
                     (unsigned)summary.wifi_count,
                     (unsigned)summary.ble_count );
-    display_draw_text( 10, 34, line, theme->normal, 1U );
+    display_draw_text( 10, 42, line, theme->info, 1U );
+    (void)snprintf( line, sizeof( line ), "UNKNOWN %u", (unsigned)summary.unknown_count );
+    display_draw_text( 168, 29, line, theme->info, 1U );
+    (void)snprintf( line, sizeof( line ), "RANDOM %u", (unsigned)summary.random_count );
+    display_draw_text( 168, 42, line, theme->info, 1U );
 
-    display_draw_text( 10, 63, "OBSERVATIONS", theme->secondary, 1U );
-    const size_t vendor_rows = snapshot.vendor_count < 6U ? snapshot.vendor_count : 6U;
+    display_draw_text( 10, 66, "TOP VENDORS", theme->secondary, 1U );
+    const size_t vendor_rows = snapshot.vendor_count < 5U ? snapshot.vendor_count : 5U;
     for( size_t i = 0U; i < vendor_rows; ++i )
     {
         (void)snprintf( line,
@@ -121,25 +123,14 @@ static void render_summary( void )
                            theme->normal,
                            1U );
     }
-    (void)snprintf( line,
-                    sizeof( line ),
-                    "UNKNOWN %u",
-                    (unsigned)summary.unknown_count );
-    display_draw_text( UI_VENDOR_X, 143, line, theme->info, 1U );
-    (void)snprintf( line,
-                    sizeof( line ),
-                    "RANDOM %u",
-                    (unsigned)summary.random_count );
-    display_draw_text( UI_VENDOR_X, 154, line, theme->info, 1U );
-
     (void)snprintf( line, sizeof( line ), "SURVEILLANCE %u", (unsigned)snapshot.surveillance_count );
     display_draw_text( UI_SURVEILLANCE_X,
-                       63,
+                       66,
                        line,
                        theme->secondary,
                        1U );
-    /* Reserve the fourth row for overflow when more than four signatures are active. */
-    const size_t shown = snapshot.signature_count > 4U ? 3U : snapshot.signature_count;
+    /* Reserve the fifth row for overflow when more than five signatures are active. */
+    const size_t shown = snapshot.signature_count > 5U ? 4U : snapshot.signature_count;
     for( size_t row = 0U; row < shown; ++row )
     {
         (void)snprintf( line,
@@ -159,10 +150,10 @@ static void render_summary( void )
                         sizeof( line ),
                         "+%u MORE",
                         (unsigned)( snapshot.signature_count - shown ) );
-        display_draw_text( UI_SURVEILLANCE_X, 109, line, theme->info, 1U );
+        display_draw_text( UI_SURVEILLANCE_X, 117, line, theme->info, 1U );
     }
 
-    display_draw_text( UI_CHANNEL_GRID_X, 129, "AP CHANNELS", theme->secondary, 1U );
+    display_draw_text( UI_CHANNEL_GRID_X, 139, "AP CHANNELS", theme->secondary, 1U );
     for( unsigned channel = 1U; channel <= RFSCOUT_WIFI_CHANNEL_MAX; ++channel )
     {
         draw_channel_box( channel, snapshot.ap_channel_mask );
