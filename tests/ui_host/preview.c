@@ -248,6 +248,31 @@ static void check_overlay_restoration( bool a_modal )
     display_modal_clear();
 }
 
+/** @brief App-specific label colors must not change the shared blue navigation/edit cursor. */
+static void check_menu_cursor( void )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    const uint16_t colors[] = { theme->info, theme->selected, theme->accent, theme->secondary };
+    const char *markers[] = { ">", "*", ">*" };
+    uint16_t reference[ 320 * 16 ];
+    uint16_t candidate[ 320 * 16 ];
+    for( unsigned marker = 0U; marker < 3U; ++marker )
+    {
+        display_clear( theme->background );
+        ui_game_draw_menu_marker( 8, 30, markers[ marker ], theme->info );
+        assert( ESP_OK == display_read_rect( 0, 26, 320, 16, reference, 320U * 16U ) );
+        assert( pixels[ 27U * 320U + 4U ] == theme->info );
+        assert( pixels[ 31U * 320U + 12U ] == theme->info );
+        for( unsigned color = 0U; color < 4U; ++color )
+        {
+            display_clear( theme->background );
+            ui_game_draw_menu_marker( 8, 30, markers[ marker ], colors[ color ] );
+            assert( ESP_OK == display_read_rect( 0, 26, 320, 16, candidate, 320U * 16U ) );
+            assert( 0 == memcmp( reference, candidate, sizeof( reference ) ) );
+        }
+    }
+}
+
 /** @brief Instrument frames, icons, and energy meters must not modify neighboring app pixels. */
 static void check_hud_bounds( void )
 {
@@ -377,6 +402,7 @@ int main( int a_argc, char **a_argv )
     assert( a_argc == 2 );
     assert( ESP_OK == ui_theme_init() );
     checks();
+    check_menu_cursor();
     check_hud_bounds();
     check_battery_states();
     display_clear( 0 );

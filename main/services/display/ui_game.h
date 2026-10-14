@@ -39,6 +39,7 @@ ui_game_icon_t ui_game_icon_for_title( const char *a_title );
 /** @brief Draw a filled instrument panel with clipped corners entirely inside the supplied rectangle. */
 void ui_game_draw_panel( int a_x, int a_y, int a_width, int a_height, uint16_t a_border );
 /** @brief Draw a selection/edit marker and console row band, or the ordinary text marker.
+ * Pixel Quest uses one blue cursor color across apps; a_color applies to other themes.
  * @param a_marker Borrowed existing menu marker (">", "*", ">*", or " "); never retained.
  */
 void ui_game_draw_menu_marker( int a_x, int a_y, const char *a_marker, uint16_t a_color );

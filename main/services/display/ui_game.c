@@ -167,8 +167,8 @@ void ui_game_draw_menu_marker( int a_x, int a_y, const char *a_marker, uint16_t 
     const int top = a_y - 3 < 22 ? 22 : a_y - 3;
     const int height = a_y + 10 - top;
     display_fill_rect_raw( 4, top, RFSCOUT_DISPLAY_WIDTH - 8, height, theme->surface );
-    display_fill_rect_raw( 4, top, 2, height, editing ? theme->accent : a_color );
-    const uint16_t tab_color = editing ? theme->accent : a_color;
+    display_fill_rect_raw( 4, top, 2, height, theme->info );
+    const uint16_t tab_color = theme->info;
     display_fill_rect_raw( 4, top, 8, 1, tab_color );
     display_fill_rect_raw( 4, a_y + 9, 8, 1, tab_color );
     display_fill_rect_raw( RFSCOUT_DISPLAY_WIDTH - 12, top, 8, 1, tab_color );
@@ -179,7 +179,7 @@ void ui_game_draw_menu_marker( int a_x, int a_y, const char *a_marker, uint16_t 
         const int half = row <= 3 ? row : 6 - row;
         const int x = editing ? a_x + 5 - half : a_x + 3;
         const int width = editing ? half * 2 + 1 : half * 2 + 2;
-        display_fill_rect_raw( x, a_y + row, width, 1, a_color );
+        display_fill_rect_raw( x, a_y + row, width, 1, tab_color );
     }
     if( editing )
     {

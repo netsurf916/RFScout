@@ -268,7 +268,7 @@ reinterpreted as selection markers.
 The title icon occupies x=6–21 and the bounded title ends before the status region at x=142.
 The game header's divider occupies y=20–21; menu selection bands clamp to y≥22, and the footer
 endcaps occupy y=168. Existing data origins and rotary/Select/Long Press/Hold semantics remain
-unchanged. Short corner tabs identify the selected row within its existing band. The selection triangle becomes a hollow diamond while editing. In other themes,
+unchanged. Blue cursor glyphs and corner tabs identify the selected row consistently across apps within its existing band. The selection triangle becomes a hollow diamond while editing. In other themes,
 these menu helpers render the original textual markers and graphs retain continuous columns.
 
 Radio/audio graph gaps decorate the existing columns without quantizing their height, moving
