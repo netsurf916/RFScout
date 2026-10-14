@@ -222,8 +222,36 @@ static size_t platform_service_count( void )
 
 static bool service_selected( const app_session_service_t *a_service );
 
-static esp_err_t init_selected_services( void )
+static esp_err_t rollback_initialized_services( uint32_t a_initialized )
 {
+    esp_err_t first_error = ESP_OK;
+    for( size_t i = platform_service_count(); i > 0U; --i )
+    {
+        app_session_service_t *service = &platform_services[ i - 1U ];
+        if( 0U == ( a_initialized & service->capability ) || NULL == service->stop )
+        {
+            continue;
+        }
+        const esp_err_t result = service->stop();
+        if( ESP_OK != result )
+        {
+            ESP_LOGE( TAG,
+                      "app=%d service=%s initialization rollback failed: %s",
+                      (int)session_app,
+                      service->name,
+                      esp_err_to_name( result ) );
+            if( ESP_OK == first_error )
+            {
+                first_error = result;
+            }
+        }
+    }
+    return first_error;
+}
+
+static esp_err_t init_selected_services( uint32_t *a_initialized )
+{
+    *a_initialized = 0U;
     for( size_t i = 0U; i < platform_service_count(); ++i )
     {
         app_session_service_t *service = &platform_services[ i ];
@@ -242,6 +270,7 @@ static esp_err_t init_selected_services( void )
                       esp_err_to_name( result ) );
             return result;
         }
+        *a_initialized |= service->capability;
     }
     return ESP_OK;
 }
@@ -332,15 +361,13 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
         {
             return ESP_OK;
         }
-        if( ( 0U != memory_manager_app_allocation_count( session_app ) ) || close_in_progress ||
-            ready_to_reclaim )
-        {
-            return ESP_ERR_INVALID_STATE;
-        }
-        bind_session_consumers( NULL );
-        release_view();
-        reset_session_state();
-        __atomic_store_n( &session_app, RFSCOUT_APP_COUNT, __ATOMIC_RELEASE );
+        /* Only the lifecycle coordinator may retire an existing session. A session without
+           managed allocations can still own active workers, hardware, and media handles. */
+        ESP_LOGE( TAG,
+                  "refusing implicit app-session replacement from=%d to=%d",
+                  (int)session_app,
+                  (int)a_app );
+        return ESP_ERR_INVALID_STATE;
     }
 
     __atomic_store_n( &session_app, a_app, __ATOMIC_RELEASE );
@@ -348,22 +375,25 @@ esp_err_t app_session_ensure( rfscout_app_id_t a_app )
     session_services = descriptor->services;
     bind_session_consumers( descriptor );
 
-    const esp_err_t init_result = init_selected_services();
+    uint32_t initialized_services = RFSCOUT_APP_SERVICE_NONE;
+    const esp_err_t init_result = init_selected_services( &initialized_services );
     if( ESP_OK != init_result )
     {
+        const esp_err_t rollback_result = rollback_initialized_services( initialized_services );
         bind_session_consumers( NULL );
         reset_session_state();
         __atomic_store_n( &session_app, RFSCOUT_APP_COUNT, __ATOMIC_RELEASE );
-        return init_result;
+        return ESP_OK == rollback_result ? init_result : rollback_result;
     }
 
     const esp_err_t view_result = acquire_view();
     if( ESP_OK != view_result )
     {
+        const esp_err_t rollback_result = rollback_initialized_services( initialized_services );
         bind_session_consumers( NULL );
         reset_session_state();
         __atomic_store_n( &session_app, RFSCOUT_APP_COUNT, __ATOMIC_RELEASE );
-        return view_result;
+        return ESP_OK == rollback_result ? view_result : rollback_result;
     }
     advance_generation();
     return ESP_OK;
