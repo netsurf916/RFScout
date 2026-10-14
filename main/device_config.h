@@ -79,6 +79,8 @@ typedef struct
     bool clock_24h;
     uint8_t gps_timeout_seconds;
     rfscout_theme_id_t theme;
+    rfscout_style_id_t style;
+    rfscout_colors_id_t colors;
     rfscout_audio_policy_id_t audio_policy;
     uint8_t audio_interaction_gain_percent;
     uint8_t audio_notification_gain_percent;
@@ -120,6 +122,10 @@ esp_err_t device_config_set_gps_timeout_seconds( uint8_t a_seconds );
 esp_err_t device_config_set_clock_24h( bool a_enabled );
 rfscout_theme_id_t device_config_theme( void );
 esp_err_t device_config_set_theme( rfscout_theme_id_t a_theme );
+rfscout_style_id_t device_config_style( void );
+rfscout_colors_id_t device_config_colors( void );
+esp_err_t device_config_set_style( rfscout_style_id_t a_style );
+esp_err_t device_config_set_colors( rfscout_colors_id_t a_colors );
 rfscout_audio_policy_id_t device_config_audio_policy( void );
 esp_err_t device_config_set_audio_policy( rfscout_audio_policy_id_t a_policy );
 esp_err_t device_config_set_audio_gains( uint8_t a_interaction_percent,

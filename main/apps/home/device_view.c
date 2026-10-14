@@ -36,34 +36,35 @@
 #define DEVICE_ITEM_BRIGHTNESS 1U
 #define DEVICE_ITEM_DIM_TIMEOUT 2U
 #define DEVICE_ITEM_OFF_TIMEOUT 3U
-#define DEVICE_ITEM_THEME 4U
-#define DEVICE_ITEM_AUDIO_POLICY 5U
-#define DEVICE_ITEM_UI_VOLUME 6U
-#define DEVICE_ITEM_EVENT_VOLUME 7U
-#define DEVICE_ITEM_ALERT_MODE 8U
-#define DEVICE_ITEM_ALERT_VOLUME 9U
-#define DEVICE_ITEM_CLOCK_FORMAT 10U
-#define DEVICE_ITEM_TIME 11U
-#define DEVICE_ITEM_STARTUP 12U
-#define DEVICE_ITEM_SYSTEM_EVENTS 13U
-#define DEVICE_ITEM_NETWORK 14U
-#define DEVICE_ITEM_OTA 15U
-#define DEVICE_ITEM_WIFI 16U
-#define DEVICE_ITEM_HOTSPOTS 17U
-#define DEVICE_ITEM_CC1101 18U
-#define DEVICE_ITEM_NRF24 19U
-#define DEVICE_ITEM_AUDIO 20U
-#define DEVICE_ITEM_THERMAL 21U
-#define DEVICE_ITEM_AUDIO_SPECTRUM 22U
-#define DEVICE_ITEM_LOGGING 23U
-#define DEVICE_ITEM_POWER_BUTTON 24U
-#define DEVICE_ITEM_POWER_POLICY 25U
-#define DEVICE_ITEM_BREADCRUMBS 26U
-#define DEVICE_ITEM_BREADCRUMB_FILES 27U
-#define DEVICE_ITEM_HOLD_SHORTCUT 28U
-#define DEVICE_ITEM_GPS_TIMEOUT 29U
-#define DEVICE_ITEM_GPS 30U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 31U
+#define DEVICE_ITEM_STYLE 4U
+#define DEVICE_ITEM_COLORS 5U
+#define DEVICE_ITEM_AUDIO_POLICY 6U
+#define DEVICE_ITEM_UI_VOLUME 7U
+#define DEVICE_ITEM_EVENT_VOLUME 8U
+#define DEVICE_ITEM_ALERT_MODE 9U
+#define DEVICE_ITEM_ALERT_VOLUME 10U
+#define DEVICE_ITEM_CLOCK_FORMAT 11U
+#define DEVICE_ITEM_TIME 12U
+#define DEVICE_ITEM_STARTUP 13U
+#define DEVICE_ITEM_SYSTEM_EVENTS 14U
+#define DEVICE_ITEM_NETWORK 15U
+#define DEVICE_ITEM_OTA 16U
+#define DEVICE_ITEM_WIFI 17U
+#define DEVICE_ITEM_HOTSPOTS 18U
+#define DEVICE_ITEM_CC1101 19U
+#define DEVICE_ITEM_NRF24 20U
+#define DEVICE_ITEM_AUDIO 21U
+#define DEVICE_ITEM_THERMAL 22U
+#define DEVICE_ITEM_AUDIO_SPECTRUM 23U
+#define DEVICE_ITEM_LOGGING 24U
+#define DEVICE_ITEM_POWER_BUTTON 25U
+#define DEVICE_ITEM_POWER_POLICY 26U
+#define DEVICE_ITEM_BREADCRUMBS 27U
+#define DEVICE_ITEM_BREADCRUMB_FILES 28U
+#define DEVICE_ITEM_HOLD_SHORTCUT 29U
+#define DEVICE_ITEM_GPS_TIMEOUT 30U
+#define DEVICE_ITEM_GPS 31U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 32U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
 #define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_GPS + 1U )
@@ -281,8 +282,10 @@ static const char *item_label( unsigned a_item )
             return "Dim after";
         case DEVICE_ITEM_OFF_TIMEOUT:
             return "Screen off";
-        case DEVICE_ITEM_THEME:
-            return "Theme";
+        case DEVICE_ITEM_STYLE:
+            return "Style";
+        case DEVICE_ITEM_COLORS:
+            return "Colors";
         case DEVICE_ITEM_AUDIO_POLICY:
             return "Audio policy";
         case DEVICE_ITEM_UI_VOLUME:
@@ -360,8 +363,11 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
         case DEVICE_ITEM_OFF_TIMEOUT:
             format_timeout( config->display_off_timeout_seconds, a_value, a_capacity );
             break;
-        case DEVICE_ITEM_THEME:
-            snprintf( a_value, a_capacity, "%s", ui_theme_display_name( ui_theme_current() ) );
+        case DEVICE_ITEM_STYLE:
+            snprintf( a_value, a_capacity, "%s", ui_style_display_name( ui_style_current() ) );
+            break;
+        case DEVICE_ITEM_COLORS:
+            snprintf( a_value, a_capacity, "%s", ui_colors_display_name( ui_colors_current() ) );
             break;
         case DEVICE_ITEM_AUDIO_POLICY:
             snprintf(
@@ -1016,28 +1022,39 @@ static void adjust_display_timeout( bool a_off_timeout, int a_delta )
     }
 }
 
-static void adjust_theme( int a_delta )
+static void adjust_style( int a_delta )
 {
-    const rfscout_theme_id_t old_theme = ui_theme_current();
-    int theme = (int)old_theme + ( ( a_delta > 0 ) ? 1 : -1 );
-    if( theme < 0 )
+    const rfscout_style_id_t previous = ui_style_current();
+    const rfscout_style_id_t next =
+        (rfscout_style_id_t)( ( (int)previous + ( a_delta > 0 ? 1 : RFSCOUT_STYLE_COUNT - 1 ) ) %
+                              RFSCOUT_STYLE_COUNT );
+    if( previous != next && ESP_OK == ui_style_set( next ) )
     {
-        theme = RFSCOUT_THEME_COUNT - 1;
-    }
-    if( theme >= RFSCOUT_THEME_COUNT )
-    {
-        theme = 0;
-    }
-    const rfscout_theme_id_t new_theme = (rfscout_theme_id_t)theme;
-    if( ( new_theme != old_theme ) && ( ESP_OK == ui_theme_set( new_theme ) ) )
-    {
-        log_config_change( "display.theme",
-                           ui_theme_display_name( old_theme ),
-                           ui_theme_display_name( new_theme ) );
+        log_config_change(
+            "display.style", ui_style_display_name( previous ), ui_style_display_name( next ) );
         save_error = false;
-        emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
+        emit_device_event( RFSCOUT_EVENT_NAVIGATE, a_delta > 0 ? 1 : -1 );
     }
-    else if( new_theme != old_theme )
+    else if( previous != next )
+    {
+        save_error = true;
+    }
+}
+
+static void adjust_colors( int a_delta )
+{
+    const rfscout_colors_id_t previous = ui_colors_current();
+    const rfscout_colors_id_t next =
+        (rfscout_colors_id_t)( ( (int)previous + ( a_delta > 0 ? 1 : RFSCOUT_COLORS_COUNT - 1 ) ) %
+                               RFSCOUT_COLORS_COUNT );
+    if( previous != next && ESP_OK == ui_colors_set( next ) )
+    {
+        log_config_change(
+            "display.colors", ui_colors_display_name( previous ), ui_colors_display_name( next ) );
+        save_error = false;
+        emit_device_event( RFSCOUT_EVENT_NAVIGATE, a_delta > 0 ? 1 : -1 );
+    }
+    else if( previous != next )
     {
         save_error = true;
     }
@@ -1560,9 +1577,13 @@ static void adjust_selected( int a_delta )
     {
         adjust_display_timeout( true, a_delta );
     }
-    else if( DEVICE_ITEM_THEME == selected_item )
+    else if( DEVICE_ITEM_STYLE == selected_item )
     {
-        adjust_theme( a_delta );
+        adjust_style( a_delta );
+    }
+    else if( DEVICE_ITEM_COLORS == selected_item )
+    {
+        adjust_colors( a_delta );
     }
     else if( DEVICE_ITEM_AUDIO_POLICY == selected_item )
     {

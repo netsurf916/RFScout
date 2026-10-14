@@ -240,6 +240,8 @@ static void set_defaults( void )
     config.clock_24h = false;
     config.gps_timeout_seconds = RFSCOUT_GPS_TIMEOUT_DEFAULT_SECONDS;
     config.theme = RFSCOUT_THEME_PIXEL_QUEST;
+    config.style = RFSCOUT_STYLE_PIXEL_QUEST;
+    config.colors = RFSCOUT_COLORS_DEFAULT;
     config.audio_policy = RFSCOUT_AUDIO_POLICY_NORMAL;
     config.audio_interaction_gain_percent = CONFIG_AUDIO_INTERACTION_GAIN_DEFAULT_PERCENT;
     config.audio_notification_gain_percent = CONFIG_AUDIO_NOTIFICATION_GAIN_DEFAULT_PERCENT;
@@ -345,6 +347,22 @@ static void load_display( const cJSON *a_root )
         {
             config.theme = parsed;
         }
+    }
+    /* Read legacy combined theme first, then let explicit preferences override it. */
+    config.style = config.theme == RFSCOUT_THEME_PIXEL_QUEST ? RFSCOUT_STYLE_PIXEL_QUEST
+                                                             : RFSCOUT_STYLE_SIMPLE;
+    config.colors = config.theme == RFSCOUT_THEME_OUTDOOR ? RFSCOUT_COLORS_OUTDOOR
+                    : config.theme == RFSCOUT_THEME_NIGHT ? RFSCOUT_COLORS_NIGHT
+                                                          : RFSCOUT_COLORS_DEFAULT;
+    const cJSON *style = cJSON_GetObjectItemCaseSensitive( display, "style" );
+    if( cJSON_IsString( style ) && NULL != style->valuestring )
+    {
+        (void)ui_style_from_config_name( style->valuestring, &config.style );
+    }
+    const cJSON *colors = cJSON_GetObjectItemCaseSensitive( display, "colors" );
+    if( cJSON_IsString( colors ) && NULL != colors->valuestring )
+    {
+        (void)ui_colors_from_config_name( colors->valuestring, &config.colors );
     }
 }
 
@@ -939,7 +957,8 @@ static cJSON *build_system_record( void )
     cJSON_AddNumberToObject( display, "dim_timeout_seconds", config.display_dim_timeout_seconds );
     cJSON_AddNumberToObject( display, "off_timeout_seconds", config.display_off_timeout_seconds );
     cJSON_AddBoolToObject( display, "clock_24h", config.clock_24h );
-    cJSON_AddStringToObject( display, "theme", ui_theme_config_name( config.theme ) );
+    cJSON_AddStringToObject( display, "style", ui_style_config_name( config.style ) );
+    cJSON_AddStringToObject( display, "colors", ui_colors_config_name( config.colors ) );
 
     cJSON *gps = cJSON_AddObjectToObject( root, "gps" );
     cJSON_AddNumberToObject( gps, "inactivity_seconds", config.gps_timeout_seconds );
@@ -1093,6 +1112,44 @@ esp_err_t device_config_set_theme( rfscout_theme_id_t a_theme )
     if( config.theme != a_theme )
     {
         config.theme = a_theme;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+rfscout_style_id_t device_config_style( void )
+{
+    return config.style;
+}
+
+rfscout_colors_id_t device_config_colors( void )
+{
+    return config.colors;
+}
+
+esp_err_t device_config_set_style( rfscout_style_id_t a_style )
+{
+    if( a_style >= RFSCOUT_STYLE_COUNT )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( config.style != a_style )
+    {
+        config.style = a_style;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+esp_err_t device_config_set_colors( rfscout_colors_id_t a_colors )
+{
+    if( a_colors >= RFSCOUT_COLORS_COUNT )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( config.colors != a_colors )
+    {
+        config.colors = a_colors;
         config_dirty = true;
     }
     return ESP_OK;

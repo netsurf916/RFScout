@@ -36,6 +36,8 @@ static uint16_t presented[ DISPLAY_PIXEL_COUNT ];
 static uint16_t *framebuffer = pixels;
 static bool display_dirty;
 static rfscout_theme_id_t preference = RFSCOUT_THEME_PIXEL_QUEST;
+static rfscout_style_id_t style_preference = RFSCOUT_STYLE_PIXEL_QUEST;
+static rfscout_colors_id_t colors_preference = RFSCOUT_COLORS_DEFAULT;
 static power_status_t power_status;
 static rfscout_system_event_notification_t notification;
 static rfscout_recorder_state_t recording_state;
@@ -78,6 +80,24 @@ esp_err_t device_config_set_theme( rfscout_theme_id_t a_theme )
 rfscout_theme_id_t device_config_theme( void )
 {
     return preference;
+}
+rfscout_style_id_t device_config_style( void )
+{
+    return style_preference;
+}
+rfscout_colors_id_t device_config_colors( void )
+{
+    return colors_preference;
+}
+esp_err_t device_config_set_style( rfscout_style_id_t a_style )
+{
+    style_preference = a_style;
+    return ESP_OK;
+}
+esp_err_t device_config_set_colors( rfscout_colors_id_t a_colors )
+{
+    colors_preference = a_colors;
+    return ESP_OK;
 }
 esp_err_t device_config_save( void )
 {
@@ -248,6 +268,46 @@ static void check_overlay_restoration( bool a_modal )
                 assert( presented[ i ] == pixels[ i ] );
         }
     display_modal_clear();
+}
+
+/** @brief Every geometry/palette combination is independently selectable. */
+static void check_style_color_combinations( void )
+{
+    for( unsigned style = 0U; style < RFSCOUT_STYLE_COUNT; ++style )
+    {
+        assert( ESP_OK == ui_style_set( (rfscout_style_id_t)style ) );
+        for( unsigned colors = 0U; colors < RFSCOUT_COLORS_COUNT; ++colors )
+        {
+            assert( ESP_OK == ui_colors_set( (rfscout_colors_id_t)colors ) );
+            assert( ui_game_active() == ( style == RFSCOUT_STYLE_PIXEL_QUEST ) );
+            assert( ui_colors_current() == colors );
+            assert( ui_theme_get() == ui_theme_palette( colors == RFSCOUT_COLORS_NIGHT
+                                                        ? RFSCOUT_THEME_NIGHT
+                                                        : colors == RFSCOUT_COLORS_OUTDOOR
+                                                            ? RFSCOUT_THEME_OUTDOOR
+                                                            : RFSCOUT_THEME_PIXEL_QUEST ) );
+            display_clear( ui_theme_get()->background );
+            ui_chrome_draw( "A VERY LONG TITLE", ui_theme_get()->text );
+            if( style == RFSCOUT_STYLE_PIXEL_QUEST )
+            {
+                for( int x = 0; x < 26; ++x )
+                {
+                    assert( pixels[ 20 * 320 + x ] == ui_theme_get()->divider );
+                    assert( pixels[ 21 * 320 + x ] == ui_theme_get()->divider );
+                }
+            }
+            for( int y = 0; y < 20; ++y )
+            {
+                for( int x = 142; x < 188; ++x )
+                {
+                    assert( pixels[ y * 320 + x ] == ui_theme_get()->background );
+                }
+            }
+        }
+    }
+    assert( ESP_ERR_INVALID_ARG == ui_style_set( (rfscout_style_id_t)RFSCOUT_STYLE_COUNT ) );
+    assert( ESP_ERR_INVALID_ARG == ui_colors_set( (rfscout_colors_id_t)RFSCOUT_COLORS_COUNT ) );
+    assert( ESP_OK == ui_theme_set( RFSCOUT_THEME_PIXEL_QUEST ) );
 }
 
 /** @brief Header titles must stay left of global status for every persisted theme. */
@@ -431,6 +491,7 @@ int main( int a_argc, char **a_argv )
     assert( a_argc == 2 );
     assert( ESP_OK == ui_theme_init() );
     checks();
+    check_style_color_combinations();
     check_header_titles();
     check_audio_peak_labels();
     check_menu_cursor();

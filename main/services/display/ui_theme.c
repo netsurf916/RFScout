@@ -16,6 +16,8 @@
 
 static const char *TAG = "ui_theme";
 static rfscout_theme_id_t active_theme = RFSCOUT_THEME_PIXEL_QUEST;
+static rfscout_style_id_t active_style = RFSCOUT_STYLE_PIXEL_QUEST;
+static rfscout_colors_id_t active_colors = RFSCOUT_COLORS_DEFAULT;
 
 static const ui_theme_palette_t palettes[ RFSCOUT_THEME_COUNT ] = {
     [RFSCOUT_THEME_INDOOR] =
@@ -35,24 +37,28 @@ static const ui_theme_palette_t palettes[ RFSCOUT_THEME_COUNT ] = {
             .graph_peak = 0xFFFFU,
             .logo_primary = 0xFC00U,
             .logo_secondary = 0xFFFFU,
+            .surface = 0x1082U,
+            .shadow = 0x0000U,
         },
     [RFSCOUT_THEME_OUTDOOR] =
         {
             .background = 0x0000U,
             .text = 0xFFFFU,
             .secondary = 0xFFFFU,
-            .divider = 0xC618U,
-            .accent = 0xFC00U,
-            .selected = 0xFC00U,
-            .info = 0xC618U,
+            .divider = 0xA75FU,
+            .accent = 0x07FFU,
+            .selected = 0xFFE0U,
+            .info = 0xB7FFU,
             .normal = 0xFFFFU,
             .success = 0xFFFFU,
             .warning = 0xFFE1U,
             .error = 0xF800U,
-            .graph_primary = 0xFC00U,
+            .graph_primary = 0x07FFU,
             .graph_peak = 0xFFFFU,
-            .logo_primary = 0xFC00U,
+            .logo_primary = 0x07FFU,
             .logo_secondary = 0xFFFFU,
+            .surface = 0x0843U,
+            .shadow = 0x0000U,
         },
     [RFSCOUT_THEME_NIGHT] =
         {
@@ -65,12 +71,14 @@ static const ui_theme_palette_t palettes[ RFSCOUT_THEME_COUNT ] = {
             .info = 0xFA20U,
             .normal = 0xFBE0U,
             .success = 0xFA40U,
-            .warning = 0xFFE1U,
+            .warning = 0xFC40U,
             .error = 0xF800U,
             .graph_primary = 0xF840U,
             .graph_peak = 0xFC40U,
             .logo_primary = 0xF840U,
             .logo_secondary = 0xFC40U,
+            .surface = 0x2000U,
+            .shadow = 0x0000U,
         },
     [RFSCOUT_THEME_PIXEL_QUEST] =
         {
@@ -97,6 +105,8 @@ static const ui_theme_palette_t palettes[ RFSCOUT_THEME_COUNT ] = {
 esp_err_t ui_theme_init( void )
 {
     active_theme = device_config_theme();
+    active_style = device_config_style();
+    active_colors = device_config_colors();
     return ESP_OK;
 }
 
@@ -112,6 +122,13 @@ esp_err_t ui_theme_set( rfscout_theme_id_t a_theme )
         return result;
     }
     active_theme = a_theme;
+    active_style =
+        a_theme == RFSCOUT_THEME_PIXEL_QUEST ? RFSCOUT_STYLE_PIXEL_QUEST : RFSCOUT_STYLE_SIMPLE;
+    active_colors = a_theme == RFSCOUT_THEME_NIGHT     ? RFSCOUT_COLORS_NIGHT
+                    : a_theme == RFSCOUT_THEME_OUTDOOR ? RFSCOUT_COLORS_OUTDOOR
+                                                       : RFSCOUT_COLORS_DEFAULT;
+    (void)device_config_set_style( active_style );
+    (void)device_config_set_colors( active_colors );
     ESP_LOGI( TAG, "theme=%s", ui_theme_config_name( a_theme ) );
     rfscout_event_emit(
         RFSCOUT_EVENT_THEME_CHANGED, RFSCOUT_EVENT_SOURCE_SYSTEM, (int32_t)a_theme );
@@ -144,7 +161,113 @@ const ui_theme_palette_t *ui_theme_palette( rfscout_theme_id_t a_theme )
 
 const ui_theme_palette_t *ui_theme_get( void )
 {
-    return ui_theme_palette( active_theme );
+    return ui_theme_palette( active_colors == RFSCOUT_COLORS_NIGHT ? RFSCOUT_THEME_NIGHT
+                             : active_colors == RFSCOUT_COLORS_OUTDOOR
+                                 ? RFSCOUT_THEME_OUTDOOR
+                                 : RFSCOUT_THEME_PIXEL_QUEST );
+}
+
+rfscout_style_id_t ui_style_current( void )
+{
+    return active_style;
+}
+
+rfscout_colors_id_t ui_colors_current( void )
+{
+    return active_colors;
+}
+
+static esp_err_t persist_visual_preference( void )
+{
+    rfscout_event_emit( RFSCOUT_EVENT_THEME_CHANGED, RFSCOUT_EVENT_SOURCE_SYSTEM, 0 );
+    const esp_err_t result = device_config_save();
+    return result == ESP_ERR_INVALID_STATE ? ESP_OK : result;
+}
+
+esp_err_t ui_style_set( rfscout_style_id_t a_style )
+{
+    if( a_style >= RFSCOUT_STYLE_COUNT )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const esp_err_t result = device_config_set_style( a_style );
+    if( result != ESP_OK )
+    {
+        return result;
+    }
+    active_style = a_style;
+    return persist_visual_preference();
+}
+
+esp_err_t ui_colors_set( rfscout_colors_id_t a_colors )
+{
+    if( a_colors >= RFSCOUT_COLORS_COUNT )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const esp_err_t result = device_config_set_colors( a_colors );
+    if( result != ESP_OK )
+    {
+        return result;
+    }
+    active_colors = a_colors;
+    return persist_visual_preference();
+}
+
+const char *ui_style_config_name( rfscout_style_id_t a_style )
+{
+    return a_style == RFSCOUT_STYLE_PIXEL_QUEST ? "pixel_quest" : "simple";
+}
+
+const char *ui_colors_config_name( rfscout_colors_id_t a_colors )
+{
+    static const char *names[] = { "default", "outdoor", "night" };
+    return a_colors < RFSCOUT_COLORS_COUNT ? names[ a_colors ] : names[ 0 ];
+}
+
+const char *ui_style_display_name( rfscout_style_id_t a_style )
+{
+    return a_style == RFSCOUT_STYLE_PIXEL_QUEST ? "Pixel Quest" : "Simple";
+}
+
+const char *ui_colors_display_name( rfscout_colors_id_t a_colors )
+{
+    static const char *names[] = { "Default", "Outdoor", "Night" };
+    return a_colors < RFSCOUT_COLORS_COUNT ? names[ a_colors ] : names[ 0 ];
+}
+
+bool ui_style_from_config_name( const char *a_name, rfscout_style_id_t *a_style )
+{
+    if( NULL == a_name || NULL == a_style )
+    {
+        return false;
+    }
+    for( unsigned i = 0U; i < RFSCOUT_STYLE_COUNT; ++i )
+    {
+        if( 0 == strcasecmp( a_name, ui_style_config_name( (rfscout_style_id_t)i ) ) )
+        {
+            *a_style = (rfscout_style_id_t)i;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ui_colors_from_config_name( const char *a_name, rfscout_colors_id_t *a_colors )
+{
+    if( NULL == a_name || NULL == a_colors )
+    {
+        return false;
+    }
+    for( unsigned i = 0U; i < RFSCOUT_COLORS_COUNT; ++i )
+    {
+        if( 0 == strcasecmp( a_name, ui_colors_config_name( (rfscout_colors_id_t)i ) ) )
+        {
+            *a_colors = (rfscout_colors_id_t)i;
+            return true;
+        }
+    }
+    return false;
 }
 
 uint16_t ui_theme_resolve_legacy_color( uint16_t a_color )
