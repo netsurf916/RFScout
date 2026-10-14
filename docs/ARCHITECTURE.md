@@ -281,6 +281,8 @@ Power overlays keep their existing priority over app modals and system notificat
 presentation service restores the complete saved framebuffer rectangle after flushing the popup;
 no themed frame/shadow draws outside that backup region.
 
+Wardriving uses four instrument panels within its fixed app area. The Pixel Quest panels reuse the clipped-corner primitive; the three retained themes use semantic surface fills and rectangular divider borders. GPS/status and Wi-Fi/BLE counts occupy the upper row, with independently scaled packet-rate and Wi-Fi-channel activity charts along the lower row. The platform status bar remains outside app drawing, and the dashboard has no influence on capture or channel sampling semantics.
+
 The scanner palette uses cyan instrument frames and amber controls on a dark navy surface.
 Home places the original Scout inside a reticle above two fixed command panels. Shared panels
 use clipped corners and short brackets; the footer uses quiet endcaps. Dense instruments retain their data
