@@ -130,6 +130,8 @@ bool battery_get_status( battery_status_t *a_status )
     return true;
 }
 void audio_spectrum_view_render( void );
+static uint8_t audio_peak_level = 93U;
+
 size_t recorder_monitor_bins( uint8_t *a_bins, size_t a_capacity )
 {
     const size_t count = a_capacity < 64U ? a_capacity : 64U;
@@ -137,7 +139,7 @@ size_t recorder_monitor_bins( uint8_t *a_bins, size_t a_capacity )
         a_bins[ i ] = (uint8_t)( 15U + ( i * 17U % 45U ) );
     if( count > 36U )
     {
-        a_bins[ 13 ] = 93U;
+        a_bins[ 13 ] = audio_peak_level;
         a_bins[ 35 ] = 82U;
     }
     return count;
@@ -246,6 +248,33 @@ static void check_overlay_restoration( bool a_modal )
                 assert( presented[ i ] == pixels[ i ] );
         }
     display_modal_clear();
+}
+
+/** @brief Header titles must stay left of global status for every persisted theme. */
+static void check_header_titles( void )
+{
+    for( unsigned id = 0U; id < RFSCOUT_THEME_COUNT; ++id )
+    {
+        assert( ESP_OK == ui_theme_set( (rfscout_theme_id_t)id ) );
+        display_clear( 0 );
+        ui_chrome_draw( "AN EXTREMELY LONG APPLICATION TITLE", ui_theme_get()->text );
+        for( int y = 0; y < 20; ++y )
+            for( int x = 142; x < 188; ++x )
+                assert( pixels[ y * 320 + x ] == ui_theme_get()->background );
+    }
+    assert( ESP_OK == ui_theme_set( RFSCOUT_THEME_PIXEL_QUEST ) );
+}
+
+/** @brief Full-scale audio peaks must leave readable space above their top. */
+static void check_audio_peak_labels( void )
+{
+    audio_peak_level = 100U;
+    audio_spectrum_view_render();
+    for( int y = 32; y < 41; ++y )
+        for( int x = 8; x < 312; ++x )
+            assert( pixels[ y * 320 + x ] != ui_theme_get()->graph_primary );
+    assert( pixels[ 41 * 320 + 69 ] == ui_theme_get()->graph_primary );
+    audio_peak_level = 93U;
 }
 
 /** @brief App-specific label colors must not change the shared blue navigation/edit cursor. */
@@ -402,6 +431,8 @@ int main( int a_argc, char **a_argv )
     assert( a_argc == 2 );
     assert( ESP_OK == ui_theme_init() );
     checks();
+    check_header_titles();
+    check_audio_peak_labels();
     check_menu_cursor();
     check_hud_bounds();
     check_battery_states();

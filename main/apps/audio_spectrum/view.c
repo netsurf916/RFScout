@@ -16,9 +16,12 @@
 #include <stdio.h>
 
 #define AUDIO_SPECTRUM_GRAPH_X 8
-#define AUDIO_SPECTRUM_GRAPH_Y 32
+#define AUDIO_SPECTRUM_PLOT_Y 32
+#define AUDIO_SPECTRUM_PLOT_H ( RFSCOUT_DISPLAY_HEIGHT - 42 )
+#define AUDIO_SPECTRUM_LABEL_H 9
+#define AUDIO_SPECTRUM_GRAPH_Y ( AUDIO_SPECTRUM_PLOT_Y + AUDIO_SPECTRUM_LABEL_H )
 #define AUDIO_SPECTRUM_GRAPH_W ( RFSCOUT_DISPLAY_WIDTH - 16 )
-#define AUDIO_SPECTRUM_GRAPH_H ( RFSCOUT_DISPLAY_HEIGHT - 42 )
+#define AUDIO_SPECTRUM_GRAPH_H ( AUDIO_SPECTRUM_PLOT_H - AUDIO_SPECTRUM_LABEL_H )
 #define AUDIO_SPECTRUM_PEAK_MIN_PERCENT 60U
 #define AUDIO_SPECTRUM_MAX_PEAK_LABELS 3U
 #define AUDIO_SPECTRUM_LABEL_WIDTH 36
@@ -130,9 +133,9 @@ static void draw_peak_labels( const uint8_t *a_bins, size_t a_count )
 
         const int height = (int)peaks[ index ].level * AUDIO_SPECTRUM_GRAPH_H / 100;
         int y = AUDIO_SPECTRUM_GRAPH_Y + AUDIO_SPECTRUM_GRAPH_H - height - 9;
-        if( y < AUDIO_SPECTRUM_GRAPH_Y )
+        if( y < AUDIO_SPECTRUM_PLOT_Y )
         {
-            y = AUDIO_SPECTRUM_GRAPH_Y;
+            y = AUDIO_SPECTRUM_PLOT_Y;
         }
         display_draw_text( x_text, y, label, theme->text, 1U );
         label_x[ drawn++ ] = x_text;
@@ -150,9 +153,9 @@ void audio_spectrum_view_render( void )
     if( ui_game_active() )
     {
         ui_game_draw_panel( AUDIO_SPECTRUM_GRAPH_X - 4,
-                            AUDIO_SPECTRUM_GRAPH_Y - 4,
+                            AUDIO_SPECTRUM_PLOT_Y - 4,
                             AUDIO_SPECTRUM_GRAPH_W + 8,
-                            AUDIO_SPECTRUM_GRAPH_H + 8,
+                            AUDIO_SPECTRUM_PLOT_H + 8,
                             theme->divider );
     }
 
