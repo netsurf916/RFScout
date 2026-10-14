@@ -256,7 +256,7 @@ static void check_header_titles( void )
     for( unsigned id = 0U; id < RFSCOUT_THEME_COUNT; ++id )
     {
         assert( ESP_OK == ui_theme_set( (rfscout_theme_id_t)id ) );
-        display_clear( 0 );
+        display_clear( ui_theme_get()->background );
         ui_chrome_draw( "AN EXTREMELY LONG APPLICATION TITLE", ui_theme_get()->text );
         for( int y = 0; y < 20; ++y )
             for( int x = 142; x < 188; ++x )
