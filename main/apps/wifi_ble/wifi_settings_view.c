@@ -9,6 +9,7 @@
 
 #include "display.h"
 #include "ui_chrome.h"
+#include "ui_game.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
 
@@ -46,11 +47,10 @@ void wifi_settings_view_render( unsigned a_selected,
         const int y = UI_LAYOUT_MENU_START_Y + (int)( item - first ) * UI_LAYOUT_MENU_ROW_HEIGHT;
         const bool active = ( item == a_selected );
         const bool editable = ( item >= 5U ) && ( item <= 6U );
-        display_draw_text( UI_LAYOUT_LEFT_X,
-                           y,
-                           active ? ( a_editing && editable ? "*" : ">" ) : " ",
-                           active ? theme->selected : theme->divider,
-                           1U );
+        ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X,
+                                  y,
+                                  active ? ( a_editing && editable ? "*" : ">" ) : " ",
+                                  active ? theme->selected : theme->divider );
         display_draw_text(
             UI_LAYOUT_LABEL_X, y, labels[ item ], active ? theme->text : theme->divider, 1U );
 

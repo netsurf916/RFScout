@@ -9,16 +9,16 @@
 #include "display.h"
 #include "recorder.h"
 #include "ui_chrome.h"
-#include "ui_layout.h"
+#include "ui_game.h"
 #include "ui_theme.h"
 
 #include <stddef.h>
 #include <stdio.h>
 
-#define AUDIO_SPECTRUM_GRAPH_X UI_LAYOUT_LEFT_X
-#define AUDIO_SPECTRUM_GRAPH_Y 57
-#define AUDIO_SPECTRUM_GRAPH_W 224
-#define AUDIO_SPECTRUM_GRAPH_H 68
+#define AUDIO_SPECTRUM_GRAPH_X 8
+#define AUDIO_SPECTRUM_GRAPH_Y 32
+#define AUDIO_SPECTRUM_GRAPH_W ( RFSCOUT_DISPLAY_WIDTH - 16 )
+#define AUDIO_SPECTRUM_GRAPH_H ( RFSCOUT_DISPLAY_HEIGHT - 42 )
 #define AUDIO_SPECTRUM_PEAK_MIN_PERCENT 60U
 #define AUDIO_SPECTRUM_MAX_PEAK_LABELS 3U
 #define AUDIO_SPECTRUM_LABEL_WIDTH 36
@@ -147,12 +147,14 @@ void audio_spectrum_view_render( void )
 
     uint8_t bins[ RFSCOUT_RECORDER_MONITOR_BINS ];
     const size_t count = recorder_monitor_bins( bins, sizeof( bins ) );
-    char range_line[ 48 ];
-    snprintf( range_line,
-              sizeof( range_line ),
-              "LIVE MIC   AUTO %u dB",
-              (unsigned)recorder_monitor_range_db() );
-    display_draw_text( UI_LAYOUT_LEFT_X, 34, range_line, theme->text, 1U );
+    if( ui_game_active() )
+    {
+        ui_game_draw_panel( AUDIO_SPECTRUM_GRAPH_X - 4,
+                            AUDIO_SPECTRUM_GRAPH_Y - 4,
+                            AUDIO_SPECTRUM_GRAPH_W + 8,
+                            AUDIO_SPECTRUM_GRAPH_H + 8,
+                            theme->divider );
+    }
 
     if( count > 0U )
     {
@@ -160,21 +162,21 @@ void audio_spectrum_view_render( void )
         {
             const int x =
                 AUDIO_SPECTRUM_GRAPH_X + (int)( index * (size_t)AUDIO_SPECTRUM_GRAPH_W / count );
+            const int next_x = AUDIO_SPECTRUM_GRAPH_X +
+                               (int)( ( index + 1U ) * (size_t)AUDIO_SPECTRUM_GRAPH_W / count );
+            const int width = next_x - x > 1 ? next_x - x - 1 : 1;
             const int height = (int)bins[ index ] * AUDIO_SPECTRUM_GRAPH_H / 100;
             if( height > 0 )
             {
-                display_fill_rect( x,
-                                   AUDIO_SPECTRUM_GRAPH_Y + AUDIO_SPECTRUM_GRAPH_H - height,
-                                   2,
-                                   height,
-                                   theme->graph_primary );
+                ui_game_draw_column( x,
+                                     AUDIO_SPECTRUM_GRAPH_Y + AUDIO_SPECTRUM_GRAPH_H - height,
+                                     width,
+                                     height,
+                                     theme->graph_primary );
             }
         }
         draw_peak_labels( bins, count );
     }
 
-    display_draw_text( UI_LAYOUT_LEFT_X, 132, "HIGHPASS + DC BLOCK", theme->secondary, 1U );
-    display_draw_text(
-        UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN: CHANGE APP", theme->secondary, 1U );
     (void)display_present();
 }

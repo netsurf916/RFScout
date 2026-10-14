@@ -16,6 +16,7 @@ This is a repeatable **validation procedure for implemented behavior**, not a fe
 | SD handling | Remove/reinsert outside and during active logging/capture; verify errors and recovery without corruption | Untested |
 | Audio | Recorder start/stop/playback and Audio Spectrum transition; verify no resource leakage | Untested |
 | System UI | Input lock, application lock, status icon changes, display idle/wake and power button | Untested |
+| Visual themes | Select Pixel Quest and each legacy theme; visit every app, nested settings, channel/source menus, and dialogs; verify title/status separation, editing cursors, battery/charging/locks, dense rows, thermal colors, idle/wake, and persisted selection after reboot | Untested |
 | Networking | Home Wi-Fi connection, randomized station MAC, NTP/HTTPS probe, Hotspots exit cleanup | Untested |
 | OTA | Candidate update, reboot confirmation and rollback behavior; verify release identity and SHA | Untested |
 | Power | Screen-off, deep sleep, physical power-off and return where supported | Untested |

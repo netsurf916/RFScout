@@ -1,6 +1,6 @@
 /**
     home_landing.c : RFScout branded Home landing screen
-    Description: Renders the canonical RFScout logo from the generated compact LCD bitmap.
+    Description: Renders the Pixel Quest title screen or the canonical compact LCD logo.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -11,6 +11,7 @@
 #include "home_logo_bitmap.h"
 #include "ui_chrome.h"
 #include "ui_theme.h"
+#include "ui_game.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -99,7 +100,14 @@ void device_view_landing( void )
     const ui_theme_palette_t *theme = ui_theme_get();
     display_clear( theme->background );
     ui_chrome_draw( "HOME", theme->secondary );
-    draw_home_bitmap();
-    draw_home_controls();
+    if( ui_game_active() )
+    {
+        ui_game_draw_home();
+    }
+    else
+    {
+        draw_home_bitmap();
+        draw_home_controls();
+    }
     (void)display_present();
 }

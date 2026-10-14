@@ -15,14 +15,17 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/** @brief Stable persisted theme identifiers; append new themes to preserve existing IDs. */
 typedef enum
 {
     RFSCOUT_THEME_INDOOR = 0,
     RFSCOUT_THEME_OUTDOOR,
     RFSCOUT_THEME_NIGHT,
+    RFSCOUT_THEME_PIXEL_QUEST,
     RFSCOUT_THEME_COUNT
 } rfscout_theme_id_t;
 
+/** @brief Semantic RGB565 colors shared by all application views. */
 typedef struct
 {
     uint16_t background;
@@ -40,9 +43,11 @@ typedef struct
     uint16_t graph_peak;
     uint16_t logo_primary;
     uint16_t logo_secondary;
+    uint16_t surface;
+    uint16_t shadow;
 } ui_theme_palette_t;
 
-/** @brief Load the persisted theme preference, defaulting to Indoor. */
+/** @brief Load the persisted theme preference, defaulting to Pixel Quest for fresh configurations. */
 esp_err_t ui_theme_init( void );
 /** @brief Persist and activate one visual theme immediately. */
 esp_err_t ui_theme_set( rfscout_theme_id_t a_theme );

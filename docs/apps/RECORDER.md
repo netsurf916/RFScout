@@ -74,3 +74,7 @@ Recording and playback files are app-owned media handles. The audio-capture sess
 ## Current limitations
 
 Generalizing effective-rate/calibration telemetry into the shared `audio_capture` API, bounded clock/rate correction, generalized microphone input gain, and broader app-owned PSRAM scratch separation remain roadmap work. Recorder-specific whole-recording post-processing stays separate from the shared capture provider.
+
+## Pixel Quest presentation
+
+Pixel Quest adds a static cassette icon and instrument panel. During playback, the existing volume percentage also fills a segmented energy meter; it represents playback volume, not recording duration or progress. Recording, saving, browsing, deletion, and navigation controls retain their existing semantics.

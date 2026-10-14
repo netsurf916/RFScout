@@ -8,6 +8,7 @@
 
 #include "display.h"
 #include "ui_chrome.h"
+#include "ui_game.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
 
@@ -141,7 +142,7 @@ void hotspots_view_browser( const hotspots_view_row_t *a_rows,
         const uint16_t label_color = active ? theme->selected : theme->text;
         if( active )
         {
-            display_draw_text( UI_LAYOUT_LEFT_X, y, ">", label_color, 1U );
+            ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X, y, ">", label_color );
         }
 
         if( HOTSPOTS_BROWSER_ITEM_BACK == item )
@@ -224,7 +225,7 @@ void hotspots_view_detail( const hotspots_view_detail_t *a_detail, unsigned a_se
             active ? theme->selected : ( enabled ? theme->text : theme->divider );
         if( active )
         {
-            display_draw_text( UI_LAYOUT_LEFT_X, y, ">", color, 1U );
+            ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X, y, ">", color );
         }
         display_draw_text( UI_LAYOUT_LABEL_X, y, actions[ action ], color, 1U );
     }

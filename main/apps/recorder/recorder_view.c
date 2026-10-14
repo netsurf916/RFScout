@@ -10,6 +10,7 @@
 #include "display.h"
 #include "recorder.h"
 #include "ui_chrome.h"
+#include "ui_game.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
 
@@ -35,6 +36,11 @@ void recorder_view_landing( const char *a_playback_name, uint8_t a_playback_volu
     display_clear( theme->background );
     ui_chrome_draw( "RECORDER", theme->secondary );
 
+    if( ui_game_active() )
+    {
+        ui_game_draw_panel( 4, 26, 312, 108, theme->divider );
+        ui_game_draw_icon( UI_GAME_ICON_TAPE, 254, 34, 5U, theme->info );
+    }
     const rfscout_recorder_state_t state = recorder_state();
     char line[ 80 ];
     if( RFSCOUT_RECORDER_RECORDING == state )
@@ -77,6 +83,11 @@ void recorder_view_landing( const char *a_playback_name, uint8_t a_playback_volu
                            1U );
         snprintf( line, sizeof( line ), "VOLUME: %u%%", (unsigned)a_playback_volume );
         display_draw_text( UI_LAYOUT_LEFT_X, 94, line, theme->divider, 1U );
+        if( ui_game_active() )
+        {
+            ui_game_draw_meter(
+                UI_LAYOUT_LEFT_X, 113, 180, 12, a_playback_volume, 100U, theme->success );
+        }
         display_draw_text( UI_LAYOUT_LEFT_X,
                            UI_LAYOUT_FOOTER_Y,
                            "CENTER: STOP  TURN: VOLUME",
@@ -178,11 +189,14 @@ void recorder_view_browser( unsigned a_selected,
                       (unsigned long)( recording->duration_seconds / 60U ),
                       (unsigned long)( recording->duration_seconds % 60U ) );
         }
-        display_draw_text( UI_LAYOUT_LEFT_X,
-                           38 + (int)row * 18,
-                           line,
-                           selected ? theme->selected : theme->text,
-                           1U );
+        const int y = 38 + (int)row * 18;
+        if( ui_game_active() )
+        {
+            ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X, y, selected ? ">" : " ", theme->selected );
+            line[ 0 ] = ' ';
+        }
+        display_draw_text(
+            UI_LAYOUT_LEFT_X, y, line, selected ? theme->selected : theme->text, 1U );
     }
 
     display_draw_text( UI_LAYOUT_LEFT_X,
