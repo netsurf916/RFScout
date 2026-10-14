@@ -288,6 +288,14 @@ static void check_style_color_combinations( void )
                                                             : RFSCOUT_THEME_PIXEL_QUEST ) );
             display_clear( ui_theme_get()->background );
             ui_chrome_draw( "A VERY LONG TITLE", ui_theme_get()->text );
+            if( style == RFSCOUT_STYLE_PIXEL_QUEST )
+            {
+                for( int x = 0; x < 26; ++x )
+                {
+                    assert( pixels[ 20 * 320 + x ] == ui_theme_get()->divider );
+                    assert( pixels[ 21 * 320 + x ] == ui_theme_get()->divider );
+                }
+            }
             for( int y = 0; y < 20; ++y )
             {
                 for( int x = 142; x < 188; ++x )
