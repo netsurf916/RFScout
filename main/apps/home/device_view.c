@@ -1030,9 +1030,8 @@ static void adjust_style( int a_delta )
                               RFSCOUT_STYLE_COUNT );
     if( previous != next && ESP_OK == ui_style_set( next ) )
     {
-        log_config_change( "display.style",
-                           ui_style_display_name( previous ),
-                           ui_style_display_name( next ) );
+        log_config_change(
+            "display.style", ui_style_display_name( previous ), ui_style_display_name( next ) );
         save_error = false;
         emit_device_event( RFSCOUT_EVENT_NAVIGATE, a_delta > 0 ? 1 : -1 );
     }
@@ -1050,9 +1049,8 @@ static void adjust_colors( int a_delta )
                                RFSCOUT_COLORS_COUNT );
     if( previous != next && ESP_OK == ui_colors_set( next ) )
     {
-        log_config_change( "display.colors",
-                           ui_colors_display_name( previous ),
-                           ui_colors_display_name( next ) );
+        log_config_change(
+            "display.colors", ui_colors_display_name( previous ), ui_colors_display_name( next ) );
         save_error = false;
         emit_device_event( RFSCOUT_EVENT_NAVIGATE, a_delta > 0 ? 1 : -1 );
     }
