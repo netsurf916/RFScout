@@ -57,6 +57,9 @@ esp_err_t radio_monitor_set_manual_channels( bool a_enabled,
                                              bool a_shuffled,
                                              uint32_t a_dwell_ms );
 
+/** @brief Toggle a 20 percent dwell bonus on channels with retained AP evidence. */
+void radio_monitor_set_ap_dwell_enabled( bool a_enabled );
+
 /** @brief Advance the adaptive channel-hopping state machine when required. */
 void radio_monitor_step( void );
 

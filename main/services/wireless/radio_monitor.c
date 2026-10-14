@@ -18,7 +18,7 @@
 #include <string.h>
 
 #define WIFI_DISCOVERY_DWELL_US 120000LL
-#define WIFI_ACTIVE_DWELL_US 350000LL
+#define WIFI_AP_DWELL_BONUS_PERCENT 20U
 #define WIFI_CALLBACK_QUIESCE_TIMEOUT_MS 1000U
 #define WIFI_MIN_CHANNEL 1U
 
@@ -56,6 +56,7 @@ static bool capture_policy;
 static uint8_t capture_fixed_channel;
 static uint32_t capture_dwell_ms = 200U;
 static bool manual_channels;
+static bool ap_dwell_enabled = true;
 static bool shuffled_channels;
 static uint16_t manual_channel_mask;
 static uint32_t manual_dwell_ms = 250U;
@@ -122,7 +123,11 @@ static void emit_mac( const uint8_t a_mac[ 6 ], int8_t a_rssi, uint8_t a_channel
     observation.source_mask = RF_SOURCE_BIT( RF_SOURCE_WIFI );
     observation.rssi = a_rssi;
     observation.channel = a_channel;
-    observation.wifi_channel = a_channel;
+    observation.wifi_channel = a_is_ap ? a_channel : 0U;
+    observation.wifi_observed_channel_mask =
+        ( a_channel >= 1U && a_channel <= RFSCOUT_WIFI_CHANNEL_MAX )
+            ? (uint16_t)( 1U << ( a_channel - 1U ) )
+            : 0U;
     observation.wifi_is_ap = a_is_ap;
     observation.first_seen_ms = observation.last_seen_ms =
         (uint32_t)( esp_timer_get_time() / 1000ULL );
@@ -205,8 +210,7 @@ static bool parse_wifi_frame( const uint8_t *a_frame, size_t a_length, wifi_fram
 static void
 emit_management_observations( const wifi_frame_info_t *a_info, int8_t a_rssi, uint8_t a_channel )
 {
-    const bool identifies_ap = ( IEEE80211_SUBTYPE_BEACON == a_info->subtype ) ||
-                               ( IEEE80211_SUBTYPE_PROBE_RESPONSE == a_info->subtype );
+    const bool identifies_ap = ( IEEE80211_SUBTYPE_BEACON == a_info->subtype );
     if( identifies_ap && ( NULL != a_info->bssid ) )
     {
         emit_mac( a_info->bssid, a_rssi, a_channel, true );
@@ -224,19 +228,20 @@ emit_management_observations( const wifi_frame_info_t *a_info, int8_t a_rssi, ui
     }
 }
 
+/* Data and control BSSIDs are identity evidence, not authoritative AP-channel evidence. */
 static void
 emit_data_observations( const wifi_frame_info_t *a_info, int8_t a_rssi, uint8_t a_channel )
 {
     if( a_info->to_ds && !a_info->from_ds )
     {
         emit_mac( a_info->transmitter, a_rssi, a_channel, false );
-        emit_mac( a_info->bssid, a_rssi, a_channel, true );
+        emit_mac( a_info->bssid, a_rssi, a_channel, false );
         return;
     }
 
     if( !a_info->to_ds && a_info->from_ds )
     {
-        emit_mac( a_info->bssid, a_rssi, a_channel, true );
+        emit_mac( a_info->bssid, a_rssi, a_channel, false );
         emit_mac( a_info->receiver, a_rssi, a_channel, false );
         return;
     }
@@ -253,7 +258,7 @@ emit_control_observations( const wifi_frame_info_t *a_info, int8_t a_rssi, uint8
 {
     if( IEEE80211_SUBTYPE_PS_POLL == a_info->subtype )
     {
-        emit_mac( a_info->bssid, a_rssi, a_channel, true );
+        emit_mac( a_info->bssid, a_rssi, a_channel, false );
         emit_mac( a_info->transmitter, a_rssi, a_channel, false );
         return;
     }
@@ -261,7 +266,7 @@ emit_control_observations( const wifi_frame_info_t *a_info, int8_t a_rssi, uint8
     if( ( IEEE80211_SUBTYPE_CF_END == a_info->subtype ) ||
         ( IEEE80211_SUBTYPE_CF_END_ACK == a_info->subtype ) )
     {
-        emit_mac( a_info->bssid, a_rssi, a_channel, true );
+        emit_mac( a_info->bssid, a_rssi, a_channel, false );
         emit_mac( a_info->receiver, a_rssi, a_channel, false );
         return;
     }
@@ -414,6 +419,11 @@ esp_err_t radio_monitor_set_manual_channels( bool a_enabled,
     return ESP_OK;
 }
 
+void radio_monitor_set_ap_dwell_enabled( bool a_enabled )
+{
+    ap_dwell_enabled = a_enabled;
+}
+
 static int64_t channel_dwell_us( uint8_t a_channel )
 {
     if( ( a_channel < WIFI_MIN_CHANNEL ) || ( a_channel > RFSCOUT_WIFI_CHANNEL_MAX ) )
@@ -421,17 +431,18 @@ static int64_t channel_dwell_us( uint8_t a_channel )
         return WIFI_DISCOVERY_DWELL_US;
     }
 
-    if( manual_channels )
-    {
-        return (int64_t)manual_dwell_ms * 1000LL;
-    }
     if( capture_policy )
     {
         return (int64_t)capture_dwell_ms * 1000LL;
     }
+    const int64_t base_dwell_us =
+        manual_channels ? (int64_t)manual_dwell_ms * 1000LL : WIFI_DISCOVERY_DWELL_US;
     const uint16_t channel_bit = (uint16_t)( 1U << ( a_channel - WIFI_MIN_CHANNEL ) );
-    return ( 0U != ( active_ap_channel_mask & channel_bit ) ) ? WIFI_ACTIVE_DWELL_US
-                                                              : WIFI_DISCOVERY_DWELL_US;
+    if( ap_dwell_enabled && ( 0U != ( active_ap_channel_mask & channel_bit ) ) )
+    {
+        return base_dwell_us * ( 100LL + WIFI_AP_DWELL_BONUS_PERCENT ) / 100LL;
+    }
+    return base_dwell_us;
 }
 
 uint8_t radio_monitor_channel( void )

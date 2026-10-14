@@ -130,20 +130,22 @@ static void draw_surveillance_rows( const observation_surveillance_signature_t *
 static void render_summary( void )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
-    observation_store_summary_t summary = { 0 };
+    observation_ui_snapshot_t snapshot = { 0 };
     observation_vendor_count_t vendors[ UI_MAX_KNOWN_BRANDS ] = { 0 };
-    const size_t vendor_count = observation_store_summary( &summary, vendors, UI_MAX_KNOWN_BRANDS );
     observation_surveillance_signature_t surveillance_rows[ UI_SURVEILLANCE_MAX_ROWS ] = { 0 };
-    size_t surveillance_count = 0U;
-    const size_t active_signature_count = observation_store_active_surveillance(
-        surveillance_rows, UI_SURVEILLANCE_MAX_ROWS, &surveillance_count );
+    observation_store_ui_snapshot(
+        &snapshot, vendors, UI_MAX_KNOWN_BRANDS, surveillance_rows, UI_SURVEILLANCE_MAX_ROWS );
+    const observation_store_summary_t summary = snapshot.summary;
+    const size_t vendor_count = snapshot.vendor_count;
+    const size_t surveillance_count = snapshot.surveillance_count;
+    const size_t active_signature_count = snapshot.signature_count;
     const size_t surveillance_row_capacity = ( active_signature_count > UI_SURVEILLANCE_MAX_ROWS )
                                                  ? ( UI_SURVEILLANCE_MAX_ROWS - 1U )
                                                  : UI_SURVEILLANCE_MAX_ROWS;
     const size_t surveillance_row_count = ( active_signature_count < surveillance_row_capacity )
                                               ? active_signature_count
                                               : surveillance_row_capacity;
-    const uint16_t active_ap_channel_mask = observation_store_wifi_ap_channel_mask();
+    const uint16_t active_ap_channel_mask = snapshot.ap_channel_mask;
 
     display_clear( theme->background );
     ui_chrome_draw( "WIFI / BLE", theme->secondary );

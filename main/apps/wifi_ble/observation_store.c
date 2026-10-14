@@ -27,7 +27,6 @@ static size_t summary_vendor_capacity;
 static size_t *summary_vendor_slots;
 static size_t summary_vendor_slot_capacity;
 static size_t summary_vendor_count;
-static uint16_t wifi_ap_channel_counts[ RFSCOUT_WIFI_CHANNEL_MAX ];
 static uint32_t store_generation;
 static SemaphoreHandle_t store_lock;
 static observation_location_sink_t location_sink;
@@ -52,7 +51,6 @@ static void synchronize_session_store( void )
     summary_vendor_slots = NULL;
     summary_vendor_slot_capacity = 0U;
     summary_vendor_count = 0U;
-    memset( wifi_ap_channel_counts, 0, sizeof( wifi_ap_channel_counts ) );
     store_generation = generation;
 }
 
@@ -437,43 +435,6 @@ static bool has_active_wifi_ap_role( const rf_device_t *a_device )
            ( a_device->wifi_channel <= RFSCOUT_WIFI_CHANNEL_MAX );
 }
 
-static void adjust_wifi_ap_channel_count( uint8_t a_channel, int a_delta )
-{
-    if( ( a_channel < 1U ) || ( a_channel > RFSCOUT_WIFI_CHANNEL_MAX ) )
-    {
-        return;
-    }
-
-    uint16_t *count = &wifi_ap_channel_counts[ a_channel - 1U ];
-    if( a_delta > 0 )
-    {
-        if( UINT16_MAX != *count )
-        {
-            ++( *count );
-        }
-    }
-    else if( ( a_delta < 0 ) && ( 0U != *count ) )
-    {
-        --( *count );
-    }
-}
-
-static void
-update_wifi_ap_projection( bool a_was_ap, uint8_t a_old_channel, const rf_device_t *a_device )
-{
-    const bool is_ap = has_active_wifi_ap_role( a_device );
-    const uint8_t new_channel = is_ap ? a_device->wifi_channel : 0U;
-
-    if( a_was_ap && ( !is_ap || ( a_old_channel != new_channel ) ) )
-    {
-        adjust_wifi_ap_channel_count( a_old_channel, -1 );
-    }
-    if( is_ap && ( !a_was_ap || ( a_old_channel != new_channel ) ) )
-    {
-        adjust_wifi_ap_channel_count( new_channel, 1 );
-    }
-}
-
 static void initialize_source_times( rf_device_t *a_device )
 {
     if( ( 0U != ( a_device->source_mask & RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) ) &&
@@ -482,7 +443,7 @@ static void initialize_source_times( rf_device_t *a_device )
         a_device->wifi_last_seen_ms = a_device->last_seen_ms;
     }
     if( ( 0U != ( a_device->source_mask & RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) ) &&
-        ( 0U == a_device->wifi_channel ) )
+        a_device->wifi_is_ap && ( 0U == a_device->wifi_channel ) )
     {
         a_device->wifi_channel = (uint8_t)a_device->channel;
     }
@@ -514,10 +475,6 @@ static bool expire_stale_devices( uint32_t a_now_ms )
             ( (uint32_t)( a_now_ms - device->wifi_last_seen_ms ) >= wifi_timeout_ms );
         if( wifi_expired )
         {
-            if( has_active_wifi_ap_role( device ) )
-            {
-                adjust_wifi_ap_channel_count( device->wifi_channel, -1 );
-            }
             sources &= ~RF_SOURCE_BIT( RF_SOURCE_WIFI );
         }
         if( ( 0U != ( sources & RF_SOURCE_BIT( RF_SOURCE_BLE ) ) ) &&
@@ -556,6 +513,7 @@ static bool expire_stale_devices( uint32_t a_now_ms )
             {
                 device->wifi_is_ap = false;
                 device->wifi_channel = 0U;
+                device->wifi_observed_channel_mask = 0U;
             }
 
             const bool last_source_valid = ( device->last_source >= RF_SOURCE_WIFI ) &&
@@ -601,7 +559,6 @@ esp_err_t observation_store_init( void )
     summary_vendor_slots = NULL;
     summary_vendor_slot_capacity = 0U;
     summary_vendor_count = 0U;
-    memset( wifi_ap_channel_counts, 0, sizeof( wifi_ap_channel_counts ) );
     store_generation = app_session_generation();
     event_callback = NULL;
     event_context = NULL;
@@ -649,10 +606,27 @@ static void merge_observation( rf_device_t *a_device, const rf_device_t *a_obser
         ( 0U != ( a_observation->source_mask & RF_SOURCE_BIT( RF_SOURCE_WIFI ) ) ) )
     {
         a_device->wifi_last_seen_ms = a_observation->last_seen_ms;
-        a_device->wifi_channel = ( 0U != a_observation->wifi_channel )
-                                     ? a_observation->wifi_channel
-                                     : (uint8_t)a_observation->channel;
-        a_device->wifi_is_ap = a_device->wifi_is_ap || a_observation->wifi_is_ap;
+        a_device->wifi_observed_channel_mask |= a_observation->wifi_observed_channel_mask;
+        /*
+         * Receiver-reported channels can briefly reflect adjacent channels at a
+         * hop boundary. Once AP identity and its channel are established, do
+         * not reassign the AP for each later beacon/probe response. A genuine
+         * AP channel migration needs separate, corroborated evidence.
+         */
+        if( a_observation->wifi_is_ap )
+        {
+            const uint8_t ap_channel = ( 0U != a_observation->wifi_channel )
+                                           ? a_observation->wifi_channel
+                                           : (uint8_t)a_observation->channel;
+            if( ( ap_channel >= 1U ) && ( ap_channel <= RFSCOUT_WIFI_CHANNEL_MAX ) )
+            {
+                if( !has_active_wifi_ap_role( a_device ) )
+                {
+                    a_device->wifi_channel = ap_channel;
+                }
+                a_device->wifi_is_ap = true;
+            }
+        }
     }
     if( ( RF_SOURCE_BLE == a_observation->last_source ) ||
         ( 0U != ( a_observation->source_mask & RF_SOURCE_BIT( RF_SOURCE_BLE ) ) ) )
@@ -775,13 +749,19 @@ bool observation_store_observe( rf_device_t *a_observation,
     {
         rf_device_t *device = &devices[ existing_index ];
         const bool was_surveillance = SURVEILLANCE_NONE != device->surveillance;
-        const bool was_wifi_ap = has_active_wifi_ap_role( device );
-        const uint8_t old_wifi_channel = device->wifi_channel;
+        const uint8_t prior_ap_channel = device->wifi_channel;
+        const bool prior_is_ap = device->wifi_is_ap;
+        const uint16_t prior_observed_mask = device->wifi_observed_channel_mask;
 
         surveillance_case_observe( device, a_observation );
         merge_observation( device, a_observation );
-        update_wifi_ap_projection( was_wifi_ap, old_wifi_channel, device );
         copy_case_result( a_observation, device );
+        a_observation->wifi_channel = device->wifi_channel;
+        a_observation->wifi_is_ap = device->wifi_is_ap;
+        a_observation->wifi_observed_channel_mask = device->wifi_observed_channel_mask;
+        a_observation->wifi_channel_state_changed =
+            ( prior_ap_channel != device->wifi_channel ) || ( prior_is_ap != device->wifi_is_ap ) ||
+            ( prior_observed_mask != device->wifi_observed_channel_mask );
         location_ready = record_receiver_location( device, &gps, &location_event );
 
         const bool became_surveillance =
@@ -823,7 +803,8 @@ bool observation_store_observe( rf_device_t *a_observation,
     rf_device_t *device = &devices[ slot ];
     *device = *a_observation;
     initialize_source_times( device );
-    update_wifi_ap_projection( false, 0U, device );
+    a_observation->wifi_channel_state_changed =
+        ( 0U != device->wifi_observed_channel_mask ) || device->wifi_is_ap;
     if( 0U != surveillance_evidence_count( device ) )
     {
         surveillance_case_evaluate( device );
@@ -952,7 +933,6 @@ void observation_store_reset( void )
         memset( identity_index, 0, identity_index_capacity * sizeof( *identity_index ) );
     }
     device_count = 0U;
-    memset( wifi_ap_channel_counts, 0, sizeof( wifi_ap_channel_counts ) );
     xSemaphoreGive( store_lock );
 }
 
@@ -978,15 +958,12 @@ void observation_store_clear_source( rf_source_t a_source )
             continue;
         }
 
-        if( ( RF_SOURCE_WIFI == a_source ) && has_active_wifi_ap_role( device ) )
-        {
-            adjust_wifi_ap_channel_count( device->wifi_channel, -1 );
-        }
         device->source_mask &= ~source_bit;
         if( RF_SOURCE_WIFI == a_source )
         {
             device->wifi_is_ap = false;
             device->wifi_channel = 0U;
+            device->wifi_observed_channel_mask = 0U;
             device->wifi_last_seen_ms = 0U;
         }
         else
@@ -1036,25 +1013,30 @@ void observation_store_housekeeping( void )
     xSemaphoreGive( store_lock );
 }
 
+static uint16_t wifi_ap_mask_locked( void )
+{
+    uint16_t mask = 0U;
+    for( size_t i = 0U; i < device_count; ++i )
+    {
+        if( has_active_wifi_ap_role( &devices[ i ] ) )
+        {
+            mask |= (uint16_t)( 1U << ( devices[ i ].wifi_channel - 1U ) );
+        }
+    }
+    return mask;
+}
+
 uint16_t observation_store_wifi_ap_channel_mask( void )
 {
     if( NULL == store_lock )
     {
         return 0U;
     }
-
     xSemaphoreTake( store_lock, portMAX_DELAY );
     synchronize_session_store();
-    uint16_t mask = 0U;
-    for( uint8_t index = 0U; index < RFSCOUT_WIFI_CHANNEL_MAX; ++index )
-    {
-        if( 0U != wifi_ap_channel_counts[ index ] )
-        {
-            mask |= (uint16_t)( 1U << index );
-        }
-    }
+    const uint16_t result = wifi_ap_mask_locked();
     xSemaphoreGive( store_lock );
-    return mask;
+    return result;
 }
 
 size_t observation_store_count( void )
@@ -1090,22 +1072,14 @@ size_t observation_store_surveillance_count( void )
     return result;
 }
 
-size_t observation_store_active_surveillance( observation_surveillance_signature_t *a_rows,
-                                              size_t a_capacity,
-                                              size_t *a_total_devices )
+static size_t active_surveillance_locked( observation_surveillance_signature_t *a_rows,
+                                          size_t a_capacity,
+                                          size_t *a_total_devices )
 {
     if( NULL != a_total_devices )
     {
         *a_total_devices = 0U;
     }
-    if( NULL == store_lock )
-    {
-        return 0U;
-    }
-
-    xSemaphoreTake( store_lock, portMAX_DELAY );
-    synchronize_session_store();
-
     size_t total_devices = 0U;
     size_t group_count = 0U;
     const size_t signature_count = surveillance_signature_count();
@@ -1162,8 +1136,6 @@ size_t observation_store_active_surveillance( observation_surveillance_signature
         a_rows[ position ] = group;
     }
 
-    xSemaphoreGive( store_lock );
-
     if( NULL != a_total_devices )
     {
         *a_total_devices = total_devices;
@@ -1171,17 +1143,23 @@ size_t observation_store_active_surveillance( observation_surveillance_signature
     return group_count;
 }
 
-size_t observation_store_summary( observation_store_summary_t *a_summary,
-                                  observation_vendor_count_t *a_vendors,
-                                  size_t a_vendor_capacity )
+size_t observation_store_active_surveillance( observation_surveillance_signature_t *a_rows,
+                                              size_t a_capacity,
+                                              size_t *a_total_devices )
 {
-    if( ( NULL == a_summary ) || ( NULL == store_lock ) )
-    {
+    if( NULL == store_lock )
         return 0U;
-    }
-
     xSemaphoreTake( store_lock, portMAX_DELAY );
     synchronize_session_store();
+    const size_t result = active_surveillance_locked( a_rows, a_capacity, a_total_devices );
+    xSemaphoreGive( store_lock );
+    return result;
+}
+
+static size_t summary_locked( observation_store_summary_t *a_summary,
+                              observation_vendor_count_t *a_vendors,
+                              size_t a_vendor_capacity )
+{
     memset( a_summary, 0, sizeof( *a_summary ) );
     a_summary->device_count = device_count;
 
@@ -1216,7 +1194,45 @@ size_t observation_store_summary( observation_store_summary_t *a_summary,
             count_vendor( device->vendor );
         }
     }
-    xSemaphoreGive( store_lock );
-
     return collect_vendors ? select_top_vendors( a_vendors, a_vendor_capacity ) : 0U;
+}
+
+size_t observation_store_summary( observation_store_summary_t *a_summary,
+                                  observation_vendor_count_t *a_vendors,
+                                  size_t a_vendor_capacity )
+{
+    if( ( NULL == a_summary ) || ( NULL == store_lock ) )
+    {
+        return 0U;
+    }
+    xSemaphoreTake( store_lock, portMAX_DELAY );
+    synchronize_session_store();
+    const size_t result = summary_locked( a_summary, a_vendors, a_vendor_capacity );
+    xSemaphoreGive( store_lock );
+    return result;
+}
+
+void observation_store_ui_snapshot( observation_ui_snapshot_t *a_snapshot,
+                                    observation_vendor_count_t *a_vendors,
+                                    size_t a_vendor_capacity,
+                                    observation_surveillance_signature_t *a_signatures,
+                                    size_t a_signature_capacity )
+{
+    if( NULL == a_snapshot )
+    {
+        return;
+    }
+    memset( a_snapshot, 0, sizeof( *a_snapshot ) );
+    if( NULL == store_lock )
+    {
+        return;
+    }
+
+    xSemaphoreTake( store_lock, portMAX_DELAY );
+    synchronize_session_store();
+    a_snapshot->vendor_count = summary_locked( &a_snapshot->summary, a_vendors, a_vendor_capacity );
+    a_snapshot->signature_count = active_surveillance_locked(
+        a_signatures, a_signature_capacity, &a_snapshot->surveillance_count );
+    a_snapshot->ap_channel_mask = wifi_ap_mask_locked();
+    xSemaphoreGive( store_lock );
 }

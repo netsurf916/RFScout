@@ -73,6 +73,8 @@ typedef struct
     uint32_t wifi_last_seen_ms;
     uint32_t ble_last_seen_ms;
     uint8_t wifi_channel;
+    uint16_t wifi_observed_channel_mask; /* bit 0 = channel 1; includes spillover */
+    bool wifi_channel_state_changed;     /* observation result: AP/channel/mask changed */
     bool wifi_is_ap;
     surveillance_class_t surveillance;
     surveillance_signature_id_t surveillance_signature;
