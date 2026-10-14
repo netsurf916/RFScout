@@ -265,14 +265,14 @@ network/update/time/power/app menus, radio/source/channel settings, and notifica
 inherit the same chrome and explicit menu markers. Device names and packet text are never
 reinterpreted as selection markers.
 
-The title icon occupies x=6–21 and the bounded title ends before the status region at x=142.
+The title icon occupies x=6–21 and the bounded title ends before the status region at x=142. Every theme bounds long titles to that same status boundary.
 The game header's divider occupies y=20–21; menu selection bands clamp to y≥22, and the footer
 endcaps occupy y=168. Existing data origins and rotary/Select/Long Press/Hold semantics remain
 unchanged. Blue cursor glyphs and corner tabs identify the selected row consistently across apps within its existing band. The selection triangle becomes a hollow diamond while editing. In other themes,
 these menu helpers render the original textual markers and graphs retain continuous columns.
 
 Radio/audio graph gaps decorate the columns without quantizing their height, moving
-peaks, or changing source measurements. Audio Spectrum uses a centered 304×128 plot below the header; its automatic range follows the measured floor/peak without a fixed span clamp. Segmented battery and Recorder playback-volume meters preserve proportional fill, with dim unlit capacity cells. Zero/unknown/charging battery states leave the capacity cells unlit; the existing percentage/unknown text and charging bolt remain visible. Battery urgency, unavailable states, lock distinctions, and charging presentation remain semantic. Thermal's literal image pixels continue to bypass
+peaks, or changing source measurements. Audio Spectrum uses a centered 304×128 plot below the header, with nine pixels reserved above the bars for peak labels; its automatic range follows the measured floor/peak without a fixed span clamp. Segmented battery and Recorder playback-volume meters preserve proportional fill, with dim unlit capacity cells. Zero/unknown/charging battery states leave the capacity cells unlit; the existing percentage/unknown text and charging bolt remain visible. Battery urgency, unavailable states, lock distinctions, and charging presentation remain semantic. Thermal's literal image pixels continue to bypass
 palette translation; its relative-IR/calibration warnings remain visible.
 
 Global dialogs use clipped corners and short colored brackets contained entirely inside the existing 236×70 saved
@@ -280,6 +280,8 @@ rectangle. Long titles reduce their integer font scale; long detail lines wrap i
 Power overlays keep their existing priority over app modals and system notifications. The shared
 presentation service restores the complete saved framebuffer rectangle after flushing the popup;
 no themed frame/shadow draws outside that backup region.
+
+Wardriving uses four instrument panels within its fixed app area. The Pixel Quest panels reuse the clipped-corner primitive; the three retained themes use semantic surface fills and rectangular divider borders. GPS/recording/channel status and a combined Wi-Fi/BLE/SAVE/DROP counter panel occupy a compact upper row, with taller independently scaled packet-rate and Wi-Fi-channel activity charts along the lower row. The platform status bar remains outside app drawing, and the dashboard has no influence on capture or channel sampling semantics.
 
 WiFi/BLE uses four bounded, theme-aware instruments in three bands for its coherent observation snapshot: a full-height vendor panel on the left, compact stacked WIFI/BLE and UNKNOWN/RANDOM counts at the upper right, surveillance signatures below those counts, and a full-width single-row 14-channel AP-evidence matrix at the bottom. Pixel Quest retains its clipped-corner instrument primitive; legacy themes use semantic surface-filled rectangular borders. These panels change presentation only, not observation ownership or radio collection. Wardriving is adjacent to WiFi/BLE in the explicit navigation order while persisted numeric application IDs remain unchanged.
 
@@ -474,9 +476,10 @@ unavailable media can still result in loss; no cross-session queue recovery is p
 The storage service records SD mount, loss, and recovery transitions in System Events
 without checking the card when no client requests storage.
 
-The live surveillance view reads the canonical active identities directly, without replaying
-the SD journal or maintaining a second live list. Distance is computed to the nearest point
-of each identity's receiver-observation bounding rectangle. Without a fresh fix or recorded
+The WiFi/BLE dashboard's surveillance signature rows show the nearest available distance
+among retained identities with that signature, without replaying the SD journal or
+maintaining a second live list. Distance is computed to the nearest point of each
+identity's receiver-observation bounding rectangle. Without a fresh fix or recorded
 bounds, distance is unknown. The journal is for offline analysis, not live proximity replay.
 There is no historical index, journal compaction, or geographic reload threshold.
 
