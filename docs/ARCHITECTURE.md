@@ -252,10 +252,7 @@ The retired monolithic internal `rfscout.json` representation is not authoritati
 
 ## Visual presentation
 
-`ui_theme` owns four persisted semantic palettes: Indoor, Outdoor, Night, and Pixel Quest. Their
-existing numeric IDs and config names are stable; Pixel Quest is appended as `pixel_quest` and is
-the compiled default for missing/invalid system configuration. Valid saved themes are not replaced
-on upgrade. Theme changes use the existing config/event path and remain independent from audio.
+\`ui_theme\` exposes two independent persisted dimensions: **Style** (Simple, Pixel Quest) controls pixel-console geometry and artwork, while **Colors** (Default, Outdoor, Night) selects semantic RGB565 colors for either style. Outdoor increases contrast for daylight viewing; Night uses red-family indicators. New configurations start with Pixel Quest + Default. Existing combined \"display.theme\" preferences are migrated on load (Indoor to Simple/Default, Outdoor to Simple/Outdoor, Night to Simple/Night, Pixel Quest to Pixel Quest/Default); explicit saved style/color preferences override legacy values. Both preferences save through the device configuration and theme-change notification path, independently of audio policy.
 
 Pixel Quest supplies original fixed 8×8 silhouettes and integer-scale pixel art through `ui_game`.
 The widgets allocate no retained memory or workers. All apps use the same `ui_chrome` header,
