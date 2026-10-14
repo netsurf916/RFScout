@@ -40,7 +40,6 @@
 
 static const char *TAG = "ui";
 static int64_t last_refresh_us;
-static bool surveillance_page;
 
 /** @brief Theme-aware instrument frame; preserve the Pixel Quest clipped-corner language. */
 static void draw_dashboard_panel( int a_x, int a_y, int a_width, int a_height )
@@ -74,6 +73,93 @@ static void draw_channel_box( unsigned a_channel, uint16_t a_active_channel_mask
     char label[ 3 ];
     (void)snprintf( label, sizeof( label ), "%u", a_channel );
     display_draw_text( x + ( a_channel < 10U ? 6 : 3 ), y + 2, label, color, 1U );
+}
+
+static double live_receiver_distance( const observation_history_identity_t *a_device,
+                                      double a_latitude,
+                                      double a_longitude )
+{
+    double lat = a_latitude;
+    double lon = a_longitude;
+    if( lat < a_device->min_latitude )
+        lat = a_device->min_latitude;
+    if( lat > a_device->max_latitude )
+        lat = a_device->max_latitude;
+    const double west = a_device->min_longitude;
+    const double east = a_device->max_longitude;
+    const bool inside = west <= east ? lon >= west && lon <= east : lon >= west || lon <= east;
+    if( !inside )
+    {
+        double to_west = fabs( lon - west );
+        double to_east = fabs( lon - east );
+        if( to_west > 180.0 )
+            to_west = 360.0 - to_west;
+        if( to_east > 180.0 )
+            to_east = 360.0 - to_east;
+        lon = to_west <= to_east ? west : east;
+    }
+    const double dy = ( a_latitude - lat ) * 0.017453292519943295;
+    double delta_lon = fabs( a_longitude - lon );
+    if( delta_lon > 180.0 )
+        delta_lon = 360.0 - delta_lon;
+    const double dx = delta_lon * 0.017453292519943295 * cos( a_latitude * 0.017453292519943295 );
+    return 6371000.0 * sqrt( dx * dx + dy * dy );
+}
+
+/** @brief Recompute nearest known signature distances at most once per second. */
+static void surveillance_distances( const observation_surveillance_signature_t *a_rows,
+                                    size_t a_count,
+                                    const rfscout_gps_snapshot_t *a_gps,
+                                    double *a_meters,
+                                    bool *a_valid )
+{
+    static int64_t last_update_us;
+    static surveillance_signature_id_t cached_signatures[ 5 ];
+    static double cached_meters[ 5 ];
+    static bool cached_valid[ 5 ];
+    const int64_t now_us = esp_timer_get_time();
+    bool refresh = ( 0 == last_update_us ) || ( now_us - last_update_us >= 1000000LL );
+    for( size_t row = 0U; row < a_count; ++row )
+    {
+        if( cached_signatures[ row ] != a_rows[ row ].signature )
+        {
+            refresh = true;
+        }
+    }
+    if( refresh )
+    {
+        for( size_t row = 0U; row < a_count; ++row )
+        {
+            cached_signatures[ row ] = a_rows[ row ].signature;
+            cached_valid[ row ] = false;
+        }
+        const size_t total = observation_store_surveillance_devices( NULL, 0U );
+        for( size_t index = 0U; index < total; ++index )
+        {
+            observation_history_identity_t device = { 0 };
+            if( !observation_store_surveillance_get( index, &device ) || !device.location_valid )
+            {
+                continue;
+            }
+            const double meters =
+                live_receiver_distance( &device, a_gps->latitude_deg, a_gps->longitude_deg );
+            for( size_t row = 0U; row < a_count; ++row )
+            {
+                if( device.signature == a_rows[ row ].signature &&
+                    ( !cached_valid[ row ] || meters < cached_meters[ row ] ) )
+                {
+                    cached_meters[ row ] = meters;
+                    cached_valid[ row ] = true;
+                }
+            }
+        }
+        last_update_us = now_us;
+    }
+    for( size_t row = 0U; row < a_count; ++row )
+    {
+        a_meters[ row ] = cached_meters[ row ];
+        a_valid[ row ] = cached_valid[ row ];
+    }
 }
 
 static void render_summary( void )
@@ -127,13 +213,36 @@ static void render_summary( void )
                        1U );
     /* Reserve the fifth row for overflow when more than five signatures are active. */
     const size_t shown = snapshot.signature_count > 5U ? 4U : snapshot.signature_count;
+    rfscout_gps_snapshot_t gps = { 0 };
+    const bool has_fix =
+        gps_snapshot_get( &gps ) && gps.location_valid && gps.location_age_ms <= 5000U;
+    double nearest_meters[ 5 ] = { 0 };
+    bool nearest_valid[ 5 ] = { false };
+    if( has_fix && shown > 0U )
+    {
+        surveillance_distances( signatures, shown, &gps, nearest_meters, nearest_valid );
+    }
+
     for( size_t row = 0U; row < shown; ++row )
     {
+        char distance[ 8 ] = "";
+        if( has_fix && nearest_valid[ row ] )
+        {
+            if( nearest_meters[ row ] >= 1000.0 )
+            {
+                (void)snprintf( distance, sizeof( distance ), "%.1fkm", nearest_meters[ row ] / 1000.0 );
+            }
+            else
+            {
+                (void)snprintf( distance, sizeof( distance ), "%.0fm", nearest_meters[ row ] );
+            }
+        }
         (void)snprintf( line,
                         sizeof( line ),
-                        "%-14.14s %3u",
+                        "%-9.9s %2u %s",
                         surveillance_signature_label( signatures[ row ].signature ),
-                        (unsigned)signatures[ row ].count );
+                        (unsigned)signatures[ row ].count,
+                        distance );
         display_draw_text( UI_SURVEILLANCE_X,
                            UI_SURVEILLANCE_FIRST_Y + (int)row * UI_SURVEILLANCE_ROW_HEIGHT,
                            line,
@@ -160,92 +269,6 @@ static void render_summary( void )
     }
 }
 
-void ui_set_surveillance_page( bool a_enabled )
-{
-    surveillance_page = a_enabled;
-    last_refresh_us = 0;
-}
-
-bool ui_surveillance_page_active( void )
-{
-    return surveillance_page;
-}
-
-static double live_receiver_distance( const observation_history_identity_t *a_device,
-                                      double a_latitude,
-                                      double a_longitude )
-{
-    double lat = a_latitude;
-    double lon = a_longitude;
-    if( lat < a_device->min_latitude )
-        lat = a_device->min_latitude;
-    if( lat > a_device->max_latitude )
-        lat = a_device->max_latitude;
-    const double west = a_device->min_longitude;
-    const double east = a_device->max_longitude;
-    const bool inside = west <= east ? lon >= west && lon <= east : lon >= west || lon <= east;
-    if( !inside )
-    {
-        double to_west = fabs( lon - west );
-        double to_east = fabs( lon - east );
-        if( to_west > 180.0 )
-            to_west = 360.0 - to_west;
-        if( to_east > 180.0 )
-            to_east = 360.0 - to_east;
-        lon = to_west <= to_east ? west : east;
-    }
-    const double dy = ( a_latitude - lat ) * 0.017453292519943295;
-    double delta_lon = fabs( a_longitude - lon );
-    if( delta_lon > 180.0 )
-        delta_lon = 360.0 - delta_lon;
-    const double dx = delta_lon * 0.017453292519943295 * cos( a_latitude * 0.017453292519943295 );
-    return 6371000.0 * sqrt( dx * dx + dy * dy );
-}
-
-static void render_surveillance_page( void )
-{
-    const ui_theme_palette_t *theme = ui_theme_get();
-    rfscout_gps_snapshot_t gps = { 0 };
-    const bool has_fix =
-        gps_snapshot_get( &gps ) && gps.location_valid && gps.location_age_ms <= 5000U;
-    const size_t count = observation_store_surveillance_devices( NULL, 0U );
-
-    display_clear( theme->background );
-    ui_chrome_draw( "SURVEILLANCE", theme->secondary );
-    char line[ 80 ];
-    snprintf(
-        line, sizeof( line ), "ACTIVE %u  %s", (unsigned)count, has_fix ? "GPS FIX" : "NO FIX" );
-    display_draw_text( UI_LAYOUT_LEFT_X, 25, line, theme->info, 1U );
-
-    for( size_t row = 0U; row < count && row < 6U; ++row )
-    {
-        observation_history_identity_t device = { 0 };
-        if( !observation_store_surveillance_get( row, &device ) )
-            continue;
-        char distance[ 20 ] = "--";
-        if( has_fix && device.location_valid )
-        {
-            const double meters =
-                live_receiver_distance( &device, gps.latitude_deg, gps.longitude_deg );
-            if( meters >= 1000.0 )
-                snprintf( distance, sizeof( distance ), "%.1fkm", meters / 1000.0 );
-            else
-                snprintf( distance, sizeof( distance ), "%.0fm", meters );
-        }
-        snprintf( line,
-                  sizeof( line ),
-                  "%c %02X%02X%02X %-13.13s %s",
-                  ' ',
-                  device.address[ 3 ],
-                  device.address[ 4 ],
-                  device.address[ 5 ],
-                  device.vendor[ 0 ] ? device.vendor : "Unknown",
-                  distance );
-        display_draw_text( UI_LAYOUT_LEFT_X, 43 + (int)row * 17, line, theme->normal, 1U );
-    }
-    (void)display_present();
-}
-
 void ui_poll( void )
 {
     const int64_t now_us = esp_timer_get_time();
@@ -254,12 +277,5 @@ void ui_poll( void )
         return;
     }
     last_refresh_us = now_us;
-    if( surveillance_page )
-    {
-        render_surveillance_page();
-    }
-    else
-    {
-        render_summary();
-    }
+    render_summary();
 }
