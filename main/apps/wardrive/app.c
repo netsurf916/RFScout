@@ -692,6 +692,8 @@ static void draw_menu( void )
 
 static esp_err_t apply_radio( void )
 {
+    /* Wardriving uses uniform dwell; do not inherit the WiFi/BLE AP boost. */
+    radio_monitor_set_ap_dwell_enabled( false );
     options.fixed_channel = false;
     if( options.wifi && manual_channels )
     {
