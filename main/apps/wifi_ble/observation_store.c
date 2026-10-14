@@ -411,6 +411,7 @@ static void copy_history_identity( observation_history_identity_t *a_identity,
     a_identity->address_type = a_device->address_type;
     memcpy( a_identity->vendor, a_device->vendor, sizeof( a_identity->vendor ) );
     a_identity->surveillance = a_device->surveillance;
+    a_identity->signature = a_device->surveillance_signature;
     a_identity->last_seen_ms = a_device->last_seen_ms;
     a_identity->location_valid = a_device->location_valid;
     a_identity->min_latitude = a_device->min_latitude;
