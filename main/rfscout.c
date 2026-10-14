@@ -311,19 +311,19 @@ void rfscout_observation_consume( rf_device_t *a_observation )
         return;
     }
 
-    if( RF_SOURCE_WIFI == a_observation->last_source &&
-        a_observation->wifi_channel_state_changed )
+    if( RF_SOURCE_WIFI == a_observation->last_source && a_observation->wifi_channel_state_changed )
     {
         rfscout_log_record_t record;
         if( log_begin( &record, "wifi_channel_observation" ) )
         {
             const bool logged =
-                log_hex( &record, "mac", a_observation->address, sizeof( a_observation->address ) ) &&
+                log_hex(
+                    &record, "mac", a_observation->address, sizeof( a_observation->address ) ) &&
                 log_bool( &record, "is_ap", a_observation->wifi_is_ap ) &&
                 log_uint( &record, "ap_channel", a_observation->wifi_channel ) &&
                 log_uint( &record, "rx_channel", a_observation->channel ) &&
-                log_uint( &record, "observed_channel_mask",
-                          a_observation->wifi_observed_channel_mask );
+                log_uint(
+                    &record, "observed_channel_mask", a_observation->wifi_observed_channel_mask );
             if( logged )
             {
                 (void)log_end( &record );
