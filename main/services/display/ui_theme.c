@@ -122,9 +122,11 @@ esp_err_t ui_theme_set( rfscout_theme_id_t a_theme )
         return result;
     }
     active_theme = a_theme;
-    active_style = a_theme == RFSCOUT_THEME_PIXEL_QUEST ? RFSCOUT_STYLE_PIXEL_QUEST : RFSCOUT_STYLE_SIMPLE;
-    active_colors = a_theme == RFSCOUT_THEME_NIGHT ? RFSCOUT_COLORS_NIGHT
-                  : a_theme == RFSCOUT_THEME_OUTDOOR ? RFSCOUT_COLORS_OUTDOOR : RFSCOUT_COLORS_DEFAULT;
+    active_style =
+        a_theme == RFSCOUT_THEME_PIXEL_QUEST ? RFSCOUT_STYLE_PIXEL_QUEST : RFSCOUT_STYLE_SIMPLE;
+    active_colors = a_theme == RFSCOUT_THEME_NIGHT     ? RFSCOUT_COLORS_NIGHT
+                    : a_theme == RFSCOUT_THEME_OUTDOOR ? RFSCOUT_COLORS_OUTDOOR
+                                                       : RFSCOUT_COLORS_DEFAULT;
     (void)device_config_set_style( active_style );
     (void)device_config_set_colors( active_colors );
     ESP_LOGI( TAG, "theme=%s", ui_theme_config_name( a_theme ) );
@@ -160,8 +162,9 @@ const ui_theme_palette_t *ui_theme_palette( rfscout_theme_id_t a_theme )
 const ui_theme_palette_t *ui_theme_get( void )
 {
     return ui_theme_palette( active_colors == RFSCOUT_COLORS_NIGHT ? RFSCOUT_THEME_NIGHT
-                             : active_colors == RFSCOUT_COLORS_OUTDOOR ? RFSCOUT_THEME_OUTDOOR
-                                                                       : RFSCOUT_THEME_PIXEL_QUEST );
+                             : active_colors == RFSCOUT_COLORS_OUTDOOR
+                                 ? RFSCOUT_THEME_OUTDOOR
+                                 : RFSCOUT_THEME_PIXEL_QUEST );
 }
 
 rfscout_style_id_t ui_style_current( void )
