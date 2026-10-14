@@ -10,6 +10,7 @@
 #include "gps.h"
 #include "ui_chrome.h"
 #include "ui_game.h"
+#include "ui_layout.h"
 #include "ui_theme.h"
 
 #include <stdio.h>
@@ -42,22 +43,27 @@ void gps_view_render( bool a_menu_open, bool a_reset_selected, bool a_reset_fail
     char text[ 64 ];
 
     display_clear( theme->background );
-    ui_chrome_draw( "GPS", theme->secondary );
+    ui_chrome_draw( a_menu_open ? "GPS SETTINGS" : "GPS", theme->secondary );
 
     if( a_menu_open )
     {
-        draw_gps_panel( 24, 39, 272, 91 );
-        display_draw_text( 35, 48, "GPS SETTINGS", theme->secondary, 1U );
-        display_draw_text( 40,
-                           72,
-                           a_reset_selected ? "  Back" : "> Back",
-                           a_reset_selected ? theme->text : theme->selected,
-                           2U );
-        display_draw_text( 40,
-                           99,
-                           a_reset_selected ? "> Reset trip" : "  Reset trip",
-                           a_reset_selected ? theme->selected : theme->text,
-                           2U );
+        static const char *labels[] = { "Back", "Reset trip" };
+        for( unsigned item = 0U; item < 2U; ++item )
+        {
+            const int y = UI_LAYOUT_MENU_START_Y + (int)item * UI_LAYOUT_MENU_ROW_HEIGHT;
+            const bool selected = ( item == ( a_reset_selected ? 1U : 0U ) );
+            ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X,
+                                      y,
+                                      selected ? ">" : " ",
+                                      selected ? theme->selected : theme->divider );
+            display_draw_text( UI_LAYOUT_LABEL_X,
+                               y,
+                               labels[ item ],
+                               selected ? theme->text : theme->divider,
+                               1U );
+        }
+        display_draw_text(
+            UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN: SELECT  CENTER: ACT", theme->secondary, 1U );
         (void)display_present();
         return;
     }
