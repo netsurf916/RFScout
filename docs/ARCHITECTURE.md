@@ -283,6 +283,8 @@ no themed frame/shadow draws outside that backup region.
 
 Wardriving uses four instrument panels within its fixed app area. The Pixel Quest panels reuse the clipped-corner primitive; the three retained themes use semantic surface fills and rectangular divider borders. GPS/recording/channel status and a combined Wi-Fi/BLE/SAVE/DROP counter panel occupy a compact upper row, with taller independently scaled packet-rate and Wi-Fi-channel activity charts along the lower row. The platform status bar remains outside app drawing, and the dashboard has no influence on capture or channel sampling semantics.
 
+WiFi/BLE uses four bounded, theme-aware instruments in three bands for its coherent observation snapshot: a full-height vendor panel on the left, compact stacked WIFI/BLE and UNKNOWN/RANDOM counts at the upper right, surveillance signatures below those counts, and a full-width single-row 14-channel AP-evidence matrix at the bottom. Pixel Quest retains its clipped-corner instrument primitive; legacy themes use semantic surface-filled rectangular borders. These panels change presentation only, not observation ownership or radio collection. Wardriving is adjacent to WiFi/BLE in the explicit navigation order while persisted numeric application IDs remain unchanged.
+
 The scanner palette uses cyan instrument frames and amber controls on a dark navy surface.
 Home places the original Scout inside a reticle above two fixed command panels. Shared panels
 use clipped corners and short brackets; the footer uses quiet endcaps. Dense instruments retain their data
@@ -474,9 +476,10 @@ unavailable media can still result in loss; no cross-session queue recovery is p
 The storage service records SD mount, loss, and recovery transitions in System Events
 without checking the card when no client requests storage.
 
-The live surveillance view reads the canonical active identities directly, without replaying
-the SD journal or maintaining a second live list. Distance is computed to the nearest point
-of each identity's receiver-observation bounding rectangle. Without a fresh fix or recorded
+The WiFi/BLE dashboard's surveillance signature rows show the nearest available distance
+among retained identities with that signature, without replaying the SD journal or
+maintaining a second live list. Distance is computed to the nearest point of each
+identity's receiver-observation bounding rectangle. Without a fresh fix or recorded
 bounds, distance is unknown. The journal is for offline analysis, not live proximity replay.
 There is no historical index, journal compaction, or geographic reload threshold.
 

@@ -12,6 +12,7 @@
 #include "observation_store.h"
 #include "surveillance.h"
 #include "ui_chrome.h"
+#include "ui_game.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
 
@@ -24,178 +25,56 @@
 
 #define UI_MAX_KNOWN_BRANDS 8U
 #define UI_REFRESH_INTERVAL_US 100000LL
-#define UI_LIST_START_Y 43
-#define UI_LIST_ROW_HEIGHT 12
-#define UI_STATIC_DIVIDER_Y 139
-#define UI_UNKNOWN_ROW_Y 146
-#define UI_RANDOM_ROW_Y 158
-#define UI_COLUMN_DIVIDER_X 198
-#define UI_SURVEILLANCE_X 205
-#define UI_SURVEILLANCE_LABEL_WIDTH 14
 #define UI_SURVEILLANCE_MAX_ROWS 8U
-#define UI_CHANNEL_GRID_X ( UI_COLUMN_DIVIDER_X + 5 )
-#define UI_CHANNEL_GRID_TOP_Y 143
-#define UI_CHANNEL_GRID_CELL_WIDTH 16
-#define UI_CHANNEL_GRID_CELL_HEIGHT 12
-#define UI_CHANNEL_GRID_ROW_STEP 14
-#define UI_CHANNEL_GRID_COLUMNS 7U
+#define UI_VENDOR_X 10
+#define UI_VENDOR_FIRST_Y 42
+#define UI_VENDOR_ROW_HEIGHT 10
+#define UI_SURVEILLANCE_X 166
+#define UI_SURVEILLANCE_FIRST_Y 77
+#define UI_SURVEILLANCE_ROW_HEIGHT 10
+#define UI_CHANNEL_GRID_X 11
+#define UI_CHANNEL_GRID_TOP_Y 151
+#define UI_CHANNEL_GRID_CELL_WIDTH 20
+#define UI_CHANNEL_GRID_CELL_HEIGHT 10
+#define UI_CHANNEL_GRID_COLUMN_STEP 21
 
 static const char *TAG = "ui";
 static int64_t last_refresh_us;
-static bool surveillance_page;
-static void draw_static_rows( size_t a_unknown_count, size_t a_random_count )
+
+/** @brief Theme-aware instrument frame; preserve the Pixel Quest clipped-corner language. */
+static void draw_dashboard_panel( int a_x, int a_y, int a_width, int a_height )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
-    display_fill_rect( 5, UI_STATIC_DIVIDER_Y, UI_COLUMN_DIVIDER_X - 10, 1, theme->divider );
-
-    char line[ 64 ];
-    snprintf( line, sizeof( line ), "%-27.27s %3u", "UNKNOWN", (unsigned)a_unknown_count );
-    display_draw_text( UI_LAYOUT_LEFT_X, UI_UNKNOWN_ROW_Y, line, theme->info, 1 );
-
-    snprintf( line, sizeof( line ), "%-27.27s %3u", "RANDOM", (unsigned)a_random_count );
-    display_draw_text( UI_LAYOUT_LEFT_X, UI_RANDOM_ROW_Y, line, theme->info, 1 );
+    if( ui_game_active() )
+    {
+        ui_game_draw_panel( a_x, a_y, a_width, a_height, theme->divider );
+        return;
+    }
+    display_fill_rect( a_x, a_y, a_width, a_height, theme->surface );
+    display_fill_rect( a_x, a_y, a_width, 1, theme->divider );
+    display_fill_rect( a_x, a_y + a_height - 1, a_width, 1, theme->divider );
+    display_fill_rect( a_x, a_y, 1, a_height, theme->divider );
+    display_fill_rect( a_x + a_width - 1, a_y, 1, a_height, theme->divider );
 }
 
 static void draw_channel_box( unsigned a_channel, uint16_t a_active_channel_mask )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     const unsigned index = a_channel - 1U;
-    const unsigned column = index % UI_CHANNEL_GRID_COLUMNS;
-    const unsigned row = index / UI_CHANNEL_GRID_COLUMNS;
-    const int x = UI_CHANNEL_GRID_X + (int)column * UI_CHANNEL_GRID_CELL_WIDTH;
-    const int y = UI_CHANNEL_GRID_TOP_Y + (int)row * UI_CHANNEL_GRID_ROW_STEP;
+    const int x = UI_CHANNEL_GRID_X + (int)index * UI_CHANNEL_GRID_COLUMN_STEP;
+    const int y = UI_CHANNEL_GRID_TOP_Y;
     const bool active = 0U != ( a_active_channel_mask & (uint16_t)( 1U << index ) );
     const uint16_t color = active ? theme->warning : theme->info;
 
-    display_fill_rect( x, y, UI_CHANNEL_GRID_CELL_WIDTH, 1, color );
+    display_fill_rect( x, y, UI_CHANNEL_GRID_CELL_WIDTH - 2, 1, color );
     display_fill_rect(
-        x, y + UI_CHANNEL_GRID_CELL_HEIGHT - 1, UI_CHANNEL_GRID_CELL_WIDTH, 1, color );
+        x, y + UI_CHANNEL_GRID_CELL_HEIGHT - 1, UI_CHANNEL_GRID_CELL_WIDTH - 2, 1, color );
     display_fill_rect( x, y, 1, UI_CHANNEL_GRID_CELL_HEIGHT, color );
     display_fill_rect(
-        x + UI_CHANNEL_GRID_CELL_WIDTH - 1, y, 1, UI_CHANNEL_GRID_CELL_HEIGHT, color );
-
+        x + UI_CHANNEL_GRID_CELL_WIDTH - 3, y, 1, UI_CHANNEL_GRID_CELL_HEIGHT, color );
     char label[ 3 ];
-    snprintf( label, sizeof( label ), "%u", a_channel );
-    const int label_width = ( a_channel < 10U ) ? 6 : 12;
-    const int label_x = x + ( UI_CHANNEL_GRID_CELL_WIDTH - label_width ) / 2;
-    display_draw_text( label_x, y + 3, label, color, 1U );
-}
-
-static void draw_channel_grid( uint16_t a_active_channel_mask )
-{
-    const ui_theme_palette_t *theme = ui_theme_get();
-    display_fill_rect( UI_CHANNEL_GRID_X,
-                       UI_STATIC_DIVIDER_Y,
-                       RFSCOUT_DISPLAY_WIDTH - UI_CHANNEL_GRID_X - 5,
-                       1,
-                       theme->divider );
-
-    for( unsigned channel = 1U; channel <= RFSCOUT_WIFI_CHANNEL_MAX; ++channel )
-    {
-        draw_channel_box( channel, a_active_channel_mask );
-    }
-}
-
-static void draw_surveillance_rows( const observation_surveillance_signature_t *a_rows,
-                                    size_t a_row_count,
-                                    size_t a_active_signature_count )
-{
-    const ui_theme_palette_t *theme = ui_theme_get();
-    int y = UI_LIST_START_Y;
-    for( size_t row = 0U; row < a_row_count; ++row )
-    {
-        char line[ 32 ];
-        snprintf( line,
-                  sizeof( line ),
-                  "%-*.*s %3u",
-                  UI_SURVEILLANCE_LABEL_WIDTH,
-                  UI_SURVEILLANCE_LABEL_WIDTH,
-                  surveillance_signature_label( a_rows[ row ].signature ),
-                  (unsigned)a_rows[ row ].count );
-        display_draw_text( UI_SURVEILLANCE_X, y, line, theme->warning, 1 );
-        y += UI_LIST_ROW_HEIGHT;
-    }
-
-    if( a_active_signature_count > a_row_count )
-    {
-        char line[ 32 ];
-        snprintf( line,
-                  sizeof( line ),
-                  "+%u MORE",
-                  (unsigned)( a_active_signature_count - a_row_count ) );
-        display_draw_text( UI_SURVEILLANCE_X, y, line, theme->info, 1 );
-    }
-}
-
-static void render_summary( void )
-{
-    const ui_theme_palette_t *theme = ui_theme_get();
-    observation_ui_snapshot_t snapshot = { 0 };
-    observation_vendor_count_t vendors[ UI_MAX_KNOWN_BRANDS ] = { 0 };
-    observation_surveillance_signature_t surveillance_rows[ UI_SURVEILLANCE_MAX_ROWS ] = { 0 };
-    observation_store_ui_snapshot(
-        &snapshot, vendors, UI_MAX_KNOWN_BRANDS, surveillance_rows, UI_SURVEILLANCE_MAX_ROWS );
-    const observation_store_summary_t summary = snapshot.summary;
-    const size_t vendor_count = snapshot.vendor_count;
-    const size_t surveillance_count = snapshot.surveillance_count;
-    const size_t active_signature_count = snapshot.signature_count;
-    const size_t surveillance_row_capacity = ( active_signature_count > UI_SURVEILLANCE_MAX_ROWS )
-                                                 ? ( UI_SURVEILLANCE_MAX_ROWS - 1U )
-                                                 : UI_SURVEILLANCE_MAX_ROWS;
-    const size_t surveillance_row_count = ( active_signature_count < surveillance_row_capacity )
-                                              ? active_signature_count
-                                              : surveillance_row_capacity;
-    const uint16_t active_ap_channel_mask = snapshot.ap_channel_mask;
-
-    display_clear( theme->background );
-    ui_chrome_draw( "WIFI / BLE", theme->secondary );
-
-    char line[ 64 ];
-    snprintf( line,
-              sizeof( line ),
-              "DEV %u   WIFI %u   BLE %u",
-              (unsigned)summary.device_count,
-              (unsigned)summary.wifi_count,
-              (unsigned)summary.ble_count );
-    display_draw_text( UI_LAYOUT_LEFT_X, 25, line, theme->normal, 1 );
-
-    snprintf( line, sizeof( line ), "SURVEILLANCE %u", (unsigned)surveillance_count );
-    display_draw_text(
-        210, 25, line, ( 0U == surveillance_count ) ? theme->info : theme->warning, 1 );
-
-    display_fill_rect( 5, 36, 310, 1, theme->divider );
-    const rfscout_view_t *view = display_app_view();
-    const int view_height = ( NULL != view ) ? (int)view->height : UI_RANDOM_ROW_Y + 12;
-    display_fill_rect( UI_COLUMN_DIVIDER_X, 36, 1, view_height - 36, theme->divider );
-
-    int y = UI_LIST_START_Y;
-    for( size_t i = 0U; i < vendor_count; ++i )
-    {
-        snprintf(
-            line, sizeof( line ), "%-27.27s %3u", vendors[ i ].name, (unsigned)vendors[ i ].count );
-        display_draw_text( UI_LAYOUT_LEFT_X, y, line, theme->warning, 1 );
-        y += UI_LIST_ROW_HEIGHT;
-    }
-
-    draw_static_rows( summary.unknown_count, summary.random_count );
-    draw_surveillance_rows( surveillance_rows, surveillance_row_count, active_signature_count );
-    draw_channel_grid( active_ap_channel_mask );
-
-    if( ESP_OK != display_present() )
-    {
-        ESP_LOGW( TAG, "LCD refresh failed" );
-    }
-}
-
-void ui_set_surveillance_page( bool a_enabled )
-{
-    surveillance_page = a_enabled;
-    last_refresh_us = 0;
-}
-
-bool ui_surveillance_page_active( void )
-{
-    return surveillance_page;
+    (void)snprintf( label, sizeof( label ), "%u", a_channel );
+    display_draw_text( x + ( a_channel < 10U ? 6 : 3 ), y + 2, label, color, 1U );
 }
 
 static double live_receiver_distance( const observation_history_identity_t *a_device,
@@ -229,48 +108,161 @@ static double live_receiver_distance( const observation_history_identity_t *a_de
     return 6371000.0 * sqrt( dx * dx + dy * dy );
 }
 
-static void render_surveillance_page( void )
+/** @brief Recompute nearest known signature distances at most once per second. */
+static void surveillance_distances( const observation_surveillance_signature_t *a_rows,
+                                    size_t a_count,
+                                    const rfscout_gps_snapshot_t *a_gps,
+                                    double *a_meters,
+                                    bool *a_valid )
+{
+    static int64_t last_update_us;
+    static surveillance_signature_id_t cached_signatures[ 5 ];
+    static double cached_meters[ 5 ];
+    static bool cached_valid[ 5 ];
+    const int64_t now_us = esp_timer_get_time();
+    bool refresh = ( 0 == last_update_us ) || ( now_us - last_update_us >= 1000000LL );
+    for( size_t row = 0U; row < a_count; ++row )
+    {
+        if( cached_signatures[ row ] != a_rows[ row ].signature )
+        {
+            refresh = true;
+        }
+    }
+    if( refresh )
+    {
+        for( size_t row = 0U; row < a_count; ++row )
+        {
+            cached_signatures[ row ] = a_rows[ row ].signature;
+            cached_valid[ row ] = false;
+        }
+        const size_t total = observation_store_surveillance_devices( NULL, 0U );
+        for( size_t index = 0U; index < total; ++index )
+        {
+            observation_history_identity_t device = { 0 };
+            if( !observation_store_surveillance_get( index, &device ) || !device.location_valid )
+            {
+                continue;
+            }
+            const double meters =
+                live_receiver_distance( &device, a_gps->latitude_deg, a_gps->longitude_deg );
+            for( size_t row = 0U; row < a_count; ++row )
+            {
+                if( device.signature == a_rows[ row ].signature &&
+                    ( !cached_valid[ row ] || meters < cached_meters[ row ] ) )
+                {
+                    cached_meters[ row ] = meters;
+                    cached_valid[ row ] = true;
+                }
+            }
+        }
+        last_update_us = now_us;
+    }
+    for( size_t row = 0U; row < a_count; ++row )
+    {
+        a_meters[ row ] = cached_meters[ row ];
+        a_valid[ row ] = cached_valid[ row ];
+    }
+}
+
+static void render_summary( void )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
+    observation_ui_snapshot_t snapshot = { 0 };
+    observation_vendor_count_t vendors[ UI_MAX_KNOWN_BRANDS ] = { 0 };
+    observation_surveillance_signature_t signatures[ UI_SURVEILLANCE_MAX_ROWS ] = { 0 };
+    observation_store_ui_snapshot(
+        &snapshot, vendors, UI_MAX_KNOWN_BRANDS, signatures, UI_SURVEILLANCE_MAX_ROWS );
+    const observation_store_summary_t summary = snapshot.summary;
+
+    display_clear( theme->background );
+    ui_chrome_draw( "WIFI / BLE", theme->secondary );
+    /* Keep system-owned status glyphs above y=22, and use the #115 panel style. */
+    draw_dashboard_panel( 4, 24, 152, 108 );
+    draw_dashboard_panel( 160, 24, 156, 34 );
+    draw_dashboard_panel( 160, 62, 156, 70 );
+    draw_dashboard_panel( 4, 136, 312, 28 );
+
+    char line[ 64 ];
+    (void)snprintf( line, sizeof( line ), "WIFI %u", (unsigned)summary.wifi_count );
+    display_draw_text( 166, 29, line, theme->info, 1U );
+    (void)snprintf( line, sizeof( line ), "BLE %u", (unsigned)summary.ble_count );
+    display_draw_text( 166, 42, line, theme->info, 1U );
+    (void)snprintf( line, sizeof( line ), "UNKNOWN %u", (unsigned)summary.unknown_count );
+    display_draw_text( 239, 29, line, theme->info, 1U );
+    (void)snprintf( line, sizeof( line ), "RANDOM %u", (unsigned)summary.random_count );
+    display_draw_text( 239, 42, line, theme->info, 1U );
+
+    display_draw_text( 10, 29, "TOP VENDORS", theme->secondary, 1U );
+    const size_t vendor_rows =
+        snapshot.vendor_count < UI_MAX_KNOWN_BRANDS ? snapshot.vendor_count : UI_MAX_KNOWN_BRANDS;
+    for( size_t i = 0U; i < vendor_rows; ++i )
+    {
+        (void)snprintf(
+            line, sizeof( line ), "%-15.15s %4u", vendors[ i ].name, (unsigned)vendors[ i ].count );
+        display_draw_text( UI_VENDOR_X,
+                           UI_VENDOR_FIRST_Y + (int)i * UI_VENDOR_ROW_HEIGHT,
+                           line,
+                           theme->normal,
+                           1U );
+    }
+    (void)snprintf(
+        line, sizeof( line ), "SURVEILLANCE %u", (unsigned)snapshot.surveillance_count );
+    display_draw_text( UI_SURVEILLANCE_X, 66, line, theme->secondary, 1U );
+    /* Reserve the fifth row for overflow when more than five signatures are active. */
+    const size_t shown = snapshot.signature_count > 5U ? 4U : snapshot.signature_count;
     rfscout_gps_snapshot_t gps = { 0 };
     const bool has_fix =
         gps_snapshot_get( &gps ) && gps.location_valid && gps.location_age_ms <= 5000U;
-    const size_t count = observation_store_surveillance_devices( NULL, 0U );
-
-    display_clear( theme->background );
-    ui_chrome_draw( "SURVEILLANCE", theme->secondary );
-    char line[ 80 ];
-    snprintf(
-        line, sizeof( line ), "ACTIVE %u  %s", (unsigned)count, has_fix ? "GPS FIX" : "NO FIX" );
-    display_draw_text( UI_LAYOUT_LEFT_X, 25, line, theme->info, 1U );
-
-    for( size_t row = 0U; row < count && row < 6U; ++row )
+    double nearest_meters[ 5 ] = { 0 };
+    bool nearest_valid[ 5 ] = { false };
+    if( has_fix && shown > 0U )
     {
-        observation_history_identity_t device = { 0 };
-        if( !observation_store_surveillance_get( row, &device ) )
-            continue;
-        char distance[ 20 ] = "--";
-        if( has_fix && device.location_valid )
-        {
-            const double meters =
-                live_receiver_distance( &device, gps.latitude_deg, gps.longitude_deg );
-            if( meters >= 1000.0 )
-                snprintf( distance, sizeof( distance ), "%.1fkm", meters / 1000.0 );
-            else
-                snprintf( distance, sizeof( distance ), "%.0fm", meters );
-        }
-        snprintf( line,
-                  sizeof( line ),
-                  "%c %02X%02X%02X %-13.13s %s",
-                  ' ',
-                  device.address[ 3 ],
-                  device.address[ 4 ],
-                  device.address[ 5 ],
-                  device.vendor[ 0 ] ? device.vendor : "Unknown",
-                  distance );
-        display_draw_text( UI_LAYOUT_LEFT_X, 43 + (int)row * 17, line, theme->normal, 1U );
+        surveillance_distances( signatures, shown, &gps, nearest_meters, nearest_valid );
     }
-    (void)display_present();
+
+    for( size_t row = 0U; row < shown; ++row )
+    {
+        char distance[ 8 ] = "";
+        if( has_fix && nearest_valid[ row ] )
+        {
+            if( nearest_meters[ row ] >= 1000.0 )
+            {
+                (void)snprintf(
+                    distance, sizeof( distance ), "%.1fkm", nearest_meters[ row ] / 1000.0 );
+            }
+            else
+            {
+                (void)snprintf( distance, sizeof( distance ), "%.0fm", nearest_meters[ row ] );
+            }
+        }
+        (void)snprintf( line,
+                        sizeof( line ),
+                        "%-9.9s %2u %s",
+                        surveillance_signature_label( signatures[ row ].signature ),
+                        (unsigned)signatures[ row ].count,
+                        distance );
+        display_draw_text( UI_SURVEILLANCE_X,
+                           UI_SURVEILLANCE_FIRST_Y + (int)row * UI_SURVEILLANCE_ROW_HEIGHT,
+                           line,
+                           theme->warning,
+                           1U );
+    }
+    if( snapshot.signature_count > shown )
+    {
+        (void)snprintf(
+            line, sizeof( line ), "+%u MORE", (unsigned)( snapshot.signature_count - shown ) );
+        display_draw_text( UI_SURVEILLANCE_X, 117, line, theme->info, 1U );
+    }
+
+    display_draw_text( UI_CHANNEL_GRID_X, 139, "AP CHANNELS", theme->secondary, 1U );
+    for( unsigned channel = 1U; channel <= RFSCOUT_WIFI_CHANNEL_MAX; ++channel )
+    {
+        draw_channel_box( channel, snapshot.ap_channel_mask );
+    }
+    if( ESP_OK != display_present() )
+    {
+        ESP_LOGW( TAG, "LCD refresh failed" );
+    }
 }
 
 void ui_poll( void )
@@ -281,12 +273,5 @@ void ui_poll( void )
         return;
     }
     last_refresh_us = now_us;
-    if( surveillance_page )
-    {
-        render_surveillance_page();
-    }
-    else
-    {
-        render_summary();
-    }
+    render_summary();
 }
