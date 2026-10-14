@@ -271,8 +271,8 @@ endcaps occupy y=168. Existing data origins and rotary/Select/Long Press/Hold se
 unchanged. Blue cursor glyphs and corner tabs identify the selected row consistently across apps within its existing band. The selection triangle becomes a hollow diamond while editing. In other themes,
 these menu helpers render the original textual markers and graphs retain continuous columns.
 
-Radio/audio graph gaps decorate the existing columns without quantizing their height, moving
-peaks, or changing source measurements. Segmented battery and Recorder playback-volume meters preserve proportional fill, with dim unlit capacity cells. Zero/unknown/charging battery states leave the capacity cells unlit; the existing percentage/unknown text and charging bolt remain visible. Battery urgency, unavailable states, lock distinctions, and charging presentation remain semantic. Thermal's literal image pixels continue to bypass
+Radio/audio graph gaps decorate the columns without quantizing their height, moving
+peaks, or changing source measurements. Audio Spectrum uses a centered 304×128 plot below the header; its automatic range follows the measured floor/peak without a fixed span clamp. Segmented battery and Recorder playback-volume meters preserve proportional fill, with dim unlit capacity cells. Zero/unknown/charging battery states leave the capacity cells unlit; the existing percentage/unknown text and charging bolt remain visible. Battery urgency, unavailable states, lock distinctions, and charging presentation remain semantic. Thermal's literal image pixels continue to bypass
 palette translation; its relative-IR/calibration warnings remain visible.
 
 Global dialogs use clipped corners and short colored brackets contained entirely inside the existing 236×70 saved

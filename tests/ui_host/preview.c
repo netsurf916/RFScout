@@ -146,7 +146,7 @@ uint32_t recorder_monitor_bin_frequency_hz( size_t a_bin )
 {
     return (uint32_t)a_bin * 125U;
 }
-uint8_t recorder_monitor_range_db( void )
+float recorder_monitor_range_db( void )
 {
     return 52U;
 }
@@ -414,6 +414,17 @@ int main( int a_argc, char **a_argv )
         5U, true, false, true, RFSCOUT_EVIDENCE_STRENGTH_PROBABLE, 60U, 60U );
     save( a_argv[ 1 ], "settings" );
     audio_spectrum_view_render();
+    /* The spectrum reaches both sides while retaining equal gutters and a quiet bottom edge. */
+    bool left_bar = false;
+    bool right_bar = false;
+    for( int y = 32; y < 160; ++y )
+    {
+        left_bar |= pixels[ y * 320 + 8 ] == ui_theme_get()->graph_primary;
+        right_bar |= pixels[ y * 320 + 310 ] == ui_theme_get()->graph_primary;
+    }
+    assert( left_bar && right_bar );
+    for( int x = 0; x < 320; ++x )
+        assert( pixels[ 165 * 320 + x ] == ui_theme_get()->background );
     save( a_argv[ 1 ], "audio" );
     gps_view_render( false, false, false );
     save( a_argv[ 1 ], "gps" );

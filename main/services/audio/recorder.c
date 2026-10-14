@@ -46,7 +46,6 @@
 #define RECORDER_MONITOR_TASK_STACK 6144U
 #define RECORDER_MONITOR_TASK_PRIORITY 3U
 #define RECORDER_MONITOR_FIRST_FFT_BIN 1U
-#define RECORDER_MONITOR_MIN_RANGE_DB 18.0f
 #define RECORDER_MONITOR_HEADROOM_DB 3.0f
 #define RECORDER_MONITOR_RANGE_SMOOTH 0.05f
 
@@ -82,7 +81,7 @@ static uint8_t monitor_spectrum[ RFSCOUT_RECORDER_MONITOR_BINS ];
 static bool monitor_range_initialized;
 static float monitor_floor_db;
 static float monitor_ceiling_db;
-static volatile uint8_t monitor_range_db;
+static volatile float monitor_range_db;
 static volatile uint32_t monitor_sample_rate_hz = RFSCOUT_RECORDER_SAMPLE_RATE;
 static rfscout_audio_highpass_t monitor_highpass;
 static float monitor_fft_frame[ RECORDER_MONITOR_FFT_SIZE ];
@@ -844,11 +843,7 @@ static void compute_monitor_fft( const float *a_samples )
 
     const float floor_target = sorted[ RFSCOUT_RECORDER_MONITOR_BINS / 4U ];
     const float peak_target = sorted[ RFSCOUT_RECORDER_MONITOR_BINS - 1U ];
-    float ceiling_target = peak_target + RECORDER_MONITOR_HEADROOM_DB;
-    if( ceiling_target < floor_target + RECORDER_MONITOR_MIN_RANGE_DB )
-    {
-        ceiling_target = floor_target + RECORDER_MONITOR_MIN_RANGE_DB;
-    }
+    const float ceiling_target = peak_target + RECORDER_MONITOR_HEADROOM_DB;
 
     if( !monitor_range_initialized )
     {
@@ -868,16 +863,10 @@ static void compute_monitor_fft( const float *a_samples )
             monitor_ceiling_db +=
                 ( ceiling_target - monitor_ceiling_db ) * RECORDER_MONITOR_RANGE_SMOOTH;
         }
-        if( monitor_ceiling_db < monitor_floor_db + RECORDER_MONITOR_MIN_RANGE_DB )
-        {
-            monitor_ceiling_db = monitor_floor_db + RECORDER_MONITOR_MIN_RANGE_DB;
-        }
     }
 
     const float span = monitor_ceiling_db - monitor_floor_db;
-    const int rounded_span = (int)( span + 0.5f );
-    monitor_range_db =
-        (uint8_t)( rounded_span < 1 ? 1 : ( rounded_span > 255 ? 255 : rounded_span ) );
+    monitor_range_db = span;
     for( size_t bin = 0U; bin < RFSCOUT_RECORDER_MONITOR_BINS; ++bin )
     {
         int level =
@@ -974,7 +963,7 @@ esp_err_t recorder_start_monitor( void )
     monitor_range_initialized = false;
     monitor_floor_db = 0.0f;
     monitor_ceiling_db = 0.0f;
-    monitor_range_db = (uint8_t)RECORDER_MONITOR_MIN_RANGE_DB;
+    monitor_range_db = 0.0f;
     monitor_sample_rate_hz = RFSCOUT_RECORDER_SAMPLE_RATE;
     audio_highpass_reset( &monitor_highpass );
     monitor_fft_frame_count = 0U;
@@ -1030,7 +1019,7 @@ uint32_t recorder_monitor_bin_frequency_hz( size_t a_bin )
                        (uint64_t)monitor_sample_rate_hz / RECORDER_MONITOR_FFT_SIZE );
 }
 
-uint8_t recorder_monitor_range_db( void )
+float recorder_monitor_range_db( void )
 {
     return monitor_range_db;
 }

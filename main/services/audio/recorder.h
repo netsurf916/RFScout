@@ -86,8 +86,8 @@ size_t recorder_monitor_bins( uint8_t *a_bins, size_t a_capacity );
 /** @brief Return the center frequency of a displayed spectrum bin using measured PCM throughput. */
 uint32_t recorder_monitor_bin_frequency_hz( size_t a_bin );
 
-/** @brief Return the current automatic spectrum display span in dB. */
-uint8_t recorder_monitor_range_db( void );
+/** @brief Return the current automatic spectrum display span in dB without a fixed range clamp. */
+float recorder_monitor_range_db( void );
 
 /** @brief Start asynchronous playback of one enumerated recording. */
 esp_err_t recorder_start_playback( size_t a_index, uint8_t a_volume_percent );

@@ -164,7 +164,7 @@ static void write_periodic_record( rfscout_app_id_t a_app )
 
         case RFSCOUT_APP_AUDIO_SPECTRUM:
             success = log_uint( &record, "state", recorder_state() ) &&
-                      log_uint( &record, "range_db", recorder_monitor_range_db() );
+                      log_double( &record, "range_db", recorder_monitor_range_db() );
             break;
 
         case RFSCOUT_APP_THERMAL:

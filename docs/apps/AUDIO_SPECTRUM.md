@@ -21,7 +21,7 @@ Audio Spectrum consumes raw capture PCM through the shared provider and applies 
 - FFT/bin presentation; and
 - up to three strong local peak-frequency labels.
 
-The display identifies the live microphone and current automatic dB range. Spectrum analysis does not apply Recorder's whole-recording normalization path.
+The spectrum fills a centered plot below the shared header, with up to three peak-frequency labels. Redundant microphone, automatic-range, filter-status, and navigation text are omitted. Automatic fit follows the measured floor and peak without a fixed minimum/maximum dB span, retaining 3 dB peak headroom and the existing smoothing. Silent input remains finite; range telemetry uses a floating-point dB value without the former 8-bit cap. Spectrum analysis does not apply Recorder's whole-recording normalization path.
 
 ## Sample-rate interpretation
 
