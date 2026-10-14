@@ -39,13 +39,11 @@ void ui_chrome_draw( const char *a_title, uint16_t a_title_color )
     }
     if( NULL != a_title )
     {
-        char bounded_title[ 20 ];
-        const char *title = a_title;
-        if( game )
-        {
-            snprintf( bounded_title, sizeof( bounded_title ), "%s", a_title );
-            title = bounded_title;
-        }
+        char bounded_title[ 24 ];
+        const int title_capacity =
+            ( UI_CHROME_STATUS_SAFE_X - title_x ) / UI_CHROME_FONT_CELL_WIDTH;
+        snprintf( bounded_title, sizeof( bounded_title ), "%.*s", title_capacity, a_title );
+        const char *title = bounded_title;
         const size_t title_length = strlen( title );
         const int large_width =
             (int)title_length * UI_CHROME_FONT_CELL_WIDTH * (int)UI_CHROME_TITLE_SCALE_LARGE;
