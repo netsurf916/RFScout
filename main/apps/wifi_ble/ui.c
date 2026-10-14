@@ -67,9 +67,11 @@ static void draw_channel_box( unsigned a_channel, uint16_t a_active_channel_mask
     const uint16_t color = active ? theme->warning : theme->info;
 
     display_fill_rect( x, y, UI_CHANNEL_GRID_CELL_WIDTH - 2, 1, color );
-    display_fill_rect( x, y + UI_CHANNEL_GRID_CELL_HEIGHT - 1, UI_CHANNEL_GRID_CELL_WIDTH - 2, 1, color );
+    display_fill_rect(
+        x, y + UI_CHANNEL_GRID_CELL_HEIGHT - 1, UI_CHANNEL_GRID_CELL_WIDTH - 2, 1, color );
     display_fill_rect( x, y, 1, UI_CHANNEL_GRID_CELL_HEIGHT, color );
-    display_fill_rect( x + UI_CHANNEL_GRID_CELL_WIDTH - 3, y, 1, UI_CHANNEL_GRID_CELL_HEIGHT, color );
+    display_fill_rect(
+        x + UI_CHANNEL_GRID_CELL_WIDTH - 3, y, 1, UI_CHANNEL_GRID_CELL_HEIGHT, color );
     char label[ 3 ];
     (void)snprintf( label, sizeof( label ), "%u", a_channel );
     display_draw_text( x + ( a_channel < 10U ? 6 : 3 ), y + 2, label, color, 1U );
@@ -191,26 +193,21 @@ static void render_summary( void )
     display_draw_text( 239, 42, line, theme->info, 1U );
 
     display_draw_text( 10, 29, "TOP VENDORS", theme->secondary, 1U );
-    const size_t vendor_rows = snapshot.vendor_count < UI_MAX_KNOWN_BRANDS ? snapshot.vendor_count : UI_MAX_KNOWN_BRANDS;
+    const size_t vendor_rows =
+        snapshot.vendor_count < UI_MAX_KNOWN_BRANDS ? snapshot.vendor_count : UI_MAX_KNOWN_BRANDS;
     for( size_t i = 0U; i < vendor_rows; ++i )
     {
-        (void)snprintf( line,
-                        sizeof( line ),
-                        "%-15.15s %4u",
-                        vendors[ i ].name,
-                        (unsigned)vendors[ i ].count );
+        (void)snprintf(
+            line, sizeof( line ), "%-15.15s %4u", vendors[ i ].name, (unsigned)vendors[ i ].count );
         display_draw_text( UI_VENDOR_X,
                            UI_VENDOR_FIRST_Y + (int)i * UI_VENDOR_ROW_HEIGHT,
                            line,
                            theme->normal,
                            1U );
     }
-    (void)snprintf( line, sizeof( line ), "SURVEILLANCE %u", (unsigned)snapshot.surveillance_count );
-    display_draw_text( UI_SURVEILLANCE_X,
-                       66,
-                       line,
-                       theme->secondary,
-                       1U );
+    (void)snprintf(
+        line, sizeof( line ), "SURVEILLANCE %u", (unsigned)snapshot.surveillance_count );
+    display_draw_text( UI_SURVEILLANCE_X, 66, line, theme->secondary, 1U );
     /* Reserve the fifth row for overflow when more than five signatures are active. */
     const size_t shown = snapshot.signature_count > 5U ? 4U : snapshot.signature_count;
     rfscout_gps_snapshot_t gps = { 0 };
@@ -230,7 +227,8 @@ static void render_summary( void )
         {
             if( nearest_meters[ row ] >= 1000.0 )
             {
-                (void)snprintf( distance, sizeof( distance ), "%.1fkm", nearest_meters[ row ] / 1000.0 );
+                (void)snprintf(
+                    distance, sizeof( distance ), "%.1fkm", nearest_meters[ row ] / 1000.0 );
             }
             else
             {
@@ -251,10 +249,8 @@ static void render_summary( void )
     }
     if( snapshot.signature_count > shown )
     {
-        (void)snprintf( line,
-                        sizeof( line ),
-                        "+%u MORE",
-                        (unsigned)( snapshot.signature_count - shown ) );
+        (void)snprintf(
+            line, sizeof( line ), "+%u MORE", (unsigned)( snapshot.signature_count - shown ) );
         display_draw_text( UI_SURVEILLANCE_X, 117, line, theme->info, 1U );
     }
 
