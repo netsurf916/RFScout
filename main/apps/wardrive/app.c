@@ -321,6 +321,22 @@ static void format_packet_rate( char *a_buffer, size_t a_size, uint32_t a_rate )
     }
 }
 
+/** @brief Draw a semantic instrument surface for all four persisted visual themes. */
+static void draw_instrument_panel( int a_x, int a_y, int a_width, int a_height )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    if( ui_game_active() )
+    {
+        ui_game_draw_panel( a_x, a_y, a_width, a_height, theme->divider );
+        return;
+    }
+    display_fill_rect( a_x, a_y, a_width, a_height, theme->surface );
+    display_fill_rect( a_x, a_y, a_width, 1, theme->divider );
+    display_fill_rect( a_x, a_y + a_height - 1, a_width, 1, theme->divider );
+    display_fill_rect( a_x, a_y, 1, a_height, theme->divider );
+    display_fill_rect( a_x + a_width - 1, a_y, 1, a_height, theme->divider );
+}
+
 static void draw_overview( void )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
@@ -331,6 +347,7 @@ static void draw_overview( void )
         gps_snapshot_get( &gps ) && gps.location_valid && gps.location_age_ms <= 5000U;
     const unsigned current = radio_monitor_channel();
     char line[ 72 ];
+    char count[ 16 ];
     uint32_t peak_rate = 1U;
     uint32_t peak_channel = 1U;
     for( unsigned i = 0U; i < ACTIVITY_SECONDS; ++i )
@@ -352,56 +369,62 @@ static void draw_overview( void )
     }
 
     display_clear( theme->background );
-    /* ui_chrome preserves the platform status region above y=20 (clock, SD,
-       battery and other system icons); the dashboard is confined below it. */
+    /* The platform owns y=0..21, including time, SD, and battery indicators. */
     ui_chrome_draw( "WARDRIVING", theme->secondary );
-    display_fill_rect( 156, 23, 1, 140, theme->secondary );
-    display_fill_rect( 8, 66, 142, 1, theme->secondary );
-    display_fill_rect( 8, 108, 142, 1, theme->secondary );
-    display_fill_rect( 163, 93, 149, 1, theme->secondary );
+    draw_instrument_panel( 4, 24, 152, 56 );
+    draw_instrument_panel( 160, 24, 156, 56 );
+    draw_instrument_panel( 4, 84, 152, 80 );
+    draw_instrument_panel( 160, 84, 156, 80 );
 
-    display_draw_text( 8, 26, "GPS POSITION", theme->secondary, 1U );
+    display_draw_text( 10, 29, "GPS POSITION", theme->secondary, 1U );
     display_draw_text(
-        111, 26, fixed ? "FIX" : "NO FIX", fixed ? theme->success : theme->warning, 1U );
+        115, 29, fixed ? "FIX" : "NO FIX", fixed ? theme->success : theme->warning, 1U );
     if( fixed )
     {
         (void)snprintf( line, sizeof( line ), "%.6f %.6f", gps.latitude_deg, gps.longitude_deg );
-        display_draw_text( 8, 42, line, theme->text, 1U );
+        display_draw_text( 10, 42, line, theme->text, 1U );
     }
     else
     {
-        display_draw_text( 8, 42, "--.------ ---.------", theme->secondary, 1U );
+        display_draw_text( 10, 42, "--.------ ---.------", theme->secondary, 1U );
     }
-    display_draw_text( 8, 72, "WIFI", theme->secondary, 1U );
-    display_draw_text( 84, 72, "BLE", theme->secondary, 1U );
-    (void)snprintf( line, sizeof( line ), "%lu", (unsigned long)stats.received_wifi );
-    display_draw_text( 8, 87, line, theme->info, 1U );
-    (void)snprintf( line, sizeof( line ), "%lu", (unsigned long)stats.received_ble );
-    display_draw_text( 84, 87, line, theme->info, 1U );
-    /* Fixed-width compact counts keep both labels inside their 72px columns. */
-    const uint32_t saved = stats.written;
-    const uint32_t dropped = stats.dropped;
-    char count[ 16 ];
-    format_packet_rate( count, sizeof( count ), saved );
-    (void)snprintf( line, sizeof( line ), "SAVE %s", count );
-    display_draw_text( 8, 114, line, theme->success, 1U );
-    format_packet_rate( count, sizeof( count ), dropped );
-    (void)snprintf( line, sizeof( line ), "DROP %s", count );
-    display_draw_text( 81, 114, line, dropped ? theme->warning : theme->text, 1U );
-    display_draw_text( 8,
-                       130,
-                       stats.storage_error ? "SD ERROR"
-                       : stats.recording   ? "REC"
-                                           : "STOP",
-                       stats.storage_error ? theme->error
-                       : stats.recording   ? theme->success
-                                           : theme->secondary,
-                       1U );
+
+    /* A filled dot means recording; a hollow dot means stopped. An error takes priority. */
+    if( stats.storage_error )
+    {
+        display_draw_text( 10, 56, "!", theme->error, 1U );
+        display_draw_text( 21, 56, "SD ERROR", theme->error, 1U );
+    }
+    else
+    {
+        const uint16_t indicator = stats.recording ? theme->success : theme->secondary;
+        display_fill_rect( 11, 59, 5, 5, indicator );
+        if( !stats.recording )
+        {
+            display_fill_rect( 12, 60, 3, 3, theme->surface );
+        }
+        display_draw_text( 21, 56, stats.recording ? "REC" : "STOP", indicator, 1U );
+    }
     (void)snprintf(
         line, sizeof( line ), "CH %u %s", current, options.fixed_channel ? "FIXED" : "SCAN" );
-    display_draw_text( 60, 130, line, theme->info, 1U );
+    display_draw_text( 70, 56, line, theme->info, 1U );
 
-    /* The header reports the latest completed second, not the graph's peak. */
+    format_packet_rate( count, sizeof( count ), stats.written );
+    (void)snprintf( line, sizeof( line ), "SAVE %s", count );
+    display_draw_text( 10, 69, line, theme->success, 1U );
+    format_packet_rate( count, sizeof( count ), stats.dropped );
+    (void)snprintf( line, sizeof( line ), "DROP %s", count );
+    display_draw_text( 83, 69, line, stats.dropped ? theme->warning : theme->text, 1U );
+
+    display_draw_text( 166, 29, "PACKET COUNTS", theme->secondary, 1U );
+    display_draw_text( 166, 44, "WIFI", theme->secondary, 1U );
+    display_draw_text( 244, 44, "BLE", theme->secondary, 1U );
+    format_packet_rate( count, sizeof( count ), stats.received_wifi );
+    display_draw_text( 166, 60, count, theme->info, 1U );
+    format_packet_rate( count, sizeof( count ), stats.received_ble );
+    display_draw_text( 244, 60, count, theme->accent, 1U );
+
+    /* Latest completed one-second bucket and arithmetic mean of the filled window. */
     const unsigned latest = ( activity_cursor + ACTIVITY_SECONDS - 1U ) % ACTIVITY_SECONDS;
     const uint32_t current_rate = ( options.wifi ? activity_rate[ latest ] : 0U ) +
                                   ( options.ble ? activity_ble_rate[ latest ] : 0U );
@@ -417,60 +440,62 @@ static void draw_overview( void )
     char average_text[ 16 ];
     format_packet_rate( latest_text, sizeof( latest_text ), current_rate );
     format_packet_rate( average_text, sizeof( average_text ), average_rate );
-    (void)snprintf( line, sizeof( line ), "PKT/s: %s (%s avg)", latest_text, average_text );
-    display_draw_text( 163, 25, line, theme->text, 1U );
+
+    display_draw_text( 10, 89, "PACKET ACTIVITY", theme->secondary, 1U );
+    (void)snprintf( line, sizeof( line ), "%s/s AVG %s", latest_text, average_text );
+    display_draw_text( 10, 102, line, theme->text, 1U );
+    /* 74 buckets use two horizontal pixels each; plot baseline remains inside the panel. */
     for( unsigned i = 0U; i < ACTIVITY_SECONDS; ++i )
     {
         const unsigned slot = ( activity_cursor + i ) % ACTIVITY_SECONDS;
         const uint32_t wifi = options.wifi ? activity_rate[ slot ] : 0U;
         const uint32_t ble = options.ble ? activity_ble_rate[ slot ] : 0U;
         const uint64_t combined = (uint64_t)wifi + ble;
-        const int wifi_height = (int)( (uint64_t)wifi * 46U / peak_rate );
-        const int total_height = (int)( combined * 46U / peak_rate );
-        const int x = 164 + (int)i * 2;
+        const int wifi_height = (int)( (uint64_t)wifi * 37U / peak_rate );
+        const int total_height = (int)( combined * 37U / peak_rate );
+        const int x = 6 + (int)i * 2;
         if( options.wifi && options.ble )
         {
             if( wifi_height > 0 )
             {
-                ui_game_draw_column( x, 89 - wifi_height, 2, wifi_height, theme->info );
+                ui_game_draw_column( x, 155 - wifi_height, 1, wifi_height, theme->info );
             }
             if( total_height > wifi_height )
             {
                 ui_game_draw_column(
-                    x, 89 - total_height, 2, total_height - wifi_height, theme->accent );
+                    x, 155 - total_height, 1, total_height - wifi_height, theme->accent );
             }
         }
         else if( total_height > 0 )
         {
             ui_game_draw_column( x,
-                                 89 - total_height,
-                                 2,
+                                 155 - total_height,
+                                 1,
                                  total_height,
                                  combined * 4U >= (uint64_t)peak_rate * 3U ? theme->warning
                                                                            : theme->info );
         }
     }
-    display_draw_text( 163, 95, "CHANNELS / LAST 74s", theme->secondary, 1U );
+    display_draw_text( 166, 89, "CHANNEL ACTIVITY", theme->secondary, 1U );
+    display_draw_text( 166, 102, "LAST 74s", theme->text, 1U );
     for( unsigned i = 0U; i < ACTIVITY_CHANNELS; ++i )
     {
-        const int x = 164 + (int)i * 11;
+        const int x = 165 + (int)i * 10;
         const uint32_t value = activity_totals[ i ];
-        const int height = (int)( (uint64_t)value * 37U / peak_channel );
+        const int height = (int)( (uint64_t)value * 38U / peak_channel );
         if( height > 0 )
         {
             const uint16_t color = i + 1U == current                 ? theme->success
                                    : value * 4U >= peak_channel * 3U ? theme->warning
                                                                      : theme->info;
-            ui_game_draw_column( x, 146 - height, 8, height, color );
+            ui_game_draw_column( x, 153 - height, 7, height, color );
         }
     }
-    /* Separate the channel bars from their labels without obscuring either. */
-    display_fill_rect( 163, 147, 149, 1, theme->secondary );
     for( unsigned i = 0U; i < ACTIVITY_CHANNELS; i += 2U )
     {
-        const int x = 164 + (int)i * 11;
+        const int x = 165 + (int)i * 10;
         (void)snprintf( line, sizeof( line ), "%u", i + 1U );
-        display_draw_text( x, 149, line, theme->text, 1U );
+        display_draw_text( x, 154, line, theme->text, 1U );
     }
     (void)display_present();
 }
