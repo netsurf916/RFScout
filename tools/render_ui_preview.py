@@ -77,6 +77,10 @@ static inline void *heap_caps_malloc(size_t n, unsigned caps) { (void)caps; retu
 #include "ui_theme.h"
 esp_err_t device_config_set_theme(rfscout_theme_id_t);
 rfscout_theme_id_t device_config_theme(void);
+esp_err_t device_config_set_style(rfscout_style_id_t);
+rfscout_style_id_t device_config_style(void);
+esp_err_t device_config_set_colors(rfscout_colors_id_t);
+rfscout_colors_id_t device_config_colors(void);
 esp_err_t device_config_save(void);
 typedef enum { RFSCOUT_EVIDENCE_STRENGTH_EVERYTHING, RFSCOUT_EVIDENCE_STRENGTH_POSSIBLE,
 RFSCOUT_EVIDENCE_STRENGTH_PROBABLE, RFSCOUT_EVIDENCE_STRENGTH_DISTINCTIVE,
