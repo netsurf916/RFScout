@@ -36,20 +36,9 @@ On app exit, the platform first stops both collectors and waits for in-flight ob
 
 ## Current presentation
 
-The primary display shows:
+The primary 320×170 WiFi/BLE summary uses four compact, bounded instruments below the global platform status region. A full-width top panel summarizes retained canonical device identities and their Wi-Fi/BLE source memberships. Beneath it, the large left panel lists up to seven leading known vendors and always preserves the UNKNOWN and RANDOM totals. The upper-right panel shows active surveillance signature counts (with a `+N MORE` indicator for overflow), and the lower-right panel contains the full 7-by-2 matrix of Wi-Fi channels 1–14. As in Wardriving, Pixel Quest uses the clipped-corner instrument primitive introduced in #115; Indoor, Outdoor, and Night use rectangular panels with semantic theme surfaces and borders. The previously used long dividing lines are removed. Global clock/SD/battery widgets remain platform-owned.
 
-- total retained observation count;
-- Wi-Fi and BLE source counts;
-- most common known vendors;
-- unresolved globally administered addresses as **UNKNOWN**;
-- locally administered/private/randomized addresses as **RANDOM**; and
-- currently active surveillance signatures/counts.
-
-Both the ordinary summary and surveillance presentation are projections of the same canonical active observation collection.
-
-The lower summary area keeps the existing UNKNOWN and RANDOM counts in the left column. The right column mirrors the same horizontal divider and uses the space below it for a fixed 7-by-2 channel matrix covering Wi-Fi channels 1-14. Every channel cell is identical in size; channels with retained AP/BSSID evidence use the theme warning color, matching the vendor list, while inactive channels use the theme info color, matching UNKNOWN/RANDOM. Surveillance rows remain above that divider and use the existing overflow summary when more signatures are active than fit.
-
-The current primary count is still based on canonical observation/address records. It is **not yet** the semantic physical-entity model planned for v0.4.0.
+An active AP/BSSID channel cell uses the warning palette, while inactive cells use info. Channel cells are the canonical snapshot projection of retained AP evidence, **not** a packet-rate graph or simultaneous reception indicator. The counts above them are observation identities, **not** raw received packet totals, and the semantic physical-entity model remains future work. The separate surveillance detail page and existing app-lock/rotary behavior remain unchanged. The summary always renders from one coherent `observation_store_ui_snapshot`; no collector or surveillance classification logic changes.
 
 ### Identity and merge semantics
 
