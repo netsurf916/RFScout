@@ -27,13 +27,13 @@
 #define UI_REFRESH_INTERVAL_US 100000LL
 #define UI_SURVEILLANCE_MAX_ROWS 8U
 #define UI_VENDOR_X 10
-#define UI_VENDOR_FIRST_Y 70
+#define UI_VENDOR_FIRST_Y 79
 #define UI_VENDOR_ROW_HEIGHT 10
 #define UI_SURVEILLANCE_X 166
-#define UI_SURVEILLANCE_FIRST_Y 70
+#define UI_SURVEILLANCE_FIRST_Y 79
 #define UI_SURVEILLANCE_ROW_HEIGHT 10
 #define UI_CHANNEL_GRID_X 166
-#define UI_CHANNEL_GRID_TOP_Y 137
+#define UI_CHANNEL_GRID_TOP_Y 140
 #define UI_CHANNEL_GRID_CELL_WIDTH 20
 #define UI_CHANNEL_GRID_CELL_HEIGHT 10
 #define UI_CHANNEL_GRID_ROW_STEP 12
@@ -106,8 +106,8 @@ static void render_summary( void )
                     (unsigned)summary.ble_count );
     display_draw_text( 10, 34, line, theme->normal, 1U );
 
-    display_draw_text( 10, 62, "OBSERVATIONS", theme->secondary, 1U );
-    const size_t vendor_rows = snapshot.vendor_count < 7U ? snapshot.vendor_count : 7U;
+    display_draw_text( 10, 63, "OBSERVATIONS", theme->secondary, 1U );
+    const size_t vendor_rows = snapshot.vendor_count < 6U ? snapshot.vendor_count : 6U;
     for( size_t i = 0U; i < vendor_rows; ++i )
     {
         (void)snprintf( line,
@@ -118,14 +118,14 @@ static void render_summary( void )
         display_draw_text( UI_VENDOR_X,
                            UI_VENDOR_FIRST_Y + (int)i * UI_VENDOR_ROW_HEIGHT,
                            line,
-                           theme->warning,
+                           theme->normal,
                            1U );
     }
     (void)snprintf( line,
                     sizeof( line ),
                     "UNKNOWN %u",
                     (unsigned)summary.unknown_count );
-    display_draw_text( UI_VENDOR_X, 144, line, theme->info, 1U );
+    display_draw_text( UI_VENDOR_X, 143, line, theme->info, 1U );
     (void)snprintf( line,
                     sizeof( line ),
                     "RANDOM %u",
@@ -134,11 +134,12 @@ static void render_summary( void )
 
     (void)snprintf( line, sizeof( line ), "SURVEILLANCE %u", (unsigned)snapshot.surveillance_count );
     display_draw_text( UI_SURVEILLANCE_X,
-                       62,
+                       63,
                        line,
-                       snapshot.surveillance_count ? theme->warning : theme->info,
+                       theme->secondary,
                        1U );
-    const size_t shown = snapshot.signature_count < 4U ? snapshot.signature_count : 4U;
+    /* Reserve the fourth row for overflow when more than four signatures are active. */
+    const size_t shown = snapshot.signature_count > 4U ? 3U : snapshot.signature_count;
     for( size_t row = 0U; row < shown; ++row )
     {
         (void)snprintf( line,
@@ -158,10 +159,10 @@ static void render_summary( void )
                         sizeof( line ),
                         "+%u MORE",
                         (unsigned)( snapshot.signature_count - shown ) );
-        display_draw_text( UI_SURVEILLANCE_X, 111, line, theme->info, 1U );
+        display_draw_text( UI_SURVEILLANCE_X, 109, line, theme->info, 1U );
     }
 
-    display_draw_text( UI_CHANNEL_GRID_X, 127, "AP CHANNELS", theme->secondary, 1U );
+    display_draw_text( UI_CHANNEL_GRID_X, 129, "AP CHANNELS", theme->secondary, 1U );
     for( unsigned channel = 1U; channel <= RFSCOUT_WIFI_CHANNEL_MAX; ++channel )
     {
         draw_channel_box( channel, snapshot.ap_channel_mask );
