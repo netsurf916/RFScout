@@ -17,13 +17,13 @@
 
 static const char *TAG = "gps_app";
 static int64_t last_refresh_us;
-static bool reset_prompt;
-static bool reset_yes;
+static bool menu_open;
+static bool reset_selected;
 static bool reset_failed;
 
 static void render( void )
 {
-    gps_view_render( reset_prompt, reset_yes, reset_failed );
+    gps_view_render( menu_open, reset_selected, reset_failed );
 }
 
 static rfscout_app_runtime_result_t gps_runtime( const rfscout_app_runtime_event_t *a_event )
@@ -36,8 +36,8 @@ static rfscout_app_runtime_result_t gps_runtime( const rfscout_app_runtime_event
     if( RFSCOUT_APP_RUNTIME_ENTER == a_event->type )
     {
         last_refresh_us = 0;
-        reset_prompt = false;
-        reset_yes = false;
+        menu_open = false;
+        reset_selected = false;
         reset_failed = false;
         render();
         return RFSCOUT_APP_RUNTIME_HANDLED;
@@ -56,19 +56,19 @@ static rfscout_app_runtime_result_t gps_runtime( const rfscout_app_runtime_event
 
     if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type )
     {
-        if( reset_prompt )
+        if( menu_open )
         {
             if( RFSCOUT_INPUT_NAVIGATION == a_event->input.type )
             {
-                reset_yes = !reset_yes;
+                reset_selected = !reset_selected;
             }
             else if( RFSCOUT_INPUT_LONG_PRESS == a_event->input.type )
             {
-                reset_prompt = false;
+                menu_open = false;
             }
             else if( RFSCOUT_INPUT_SELECT == a_event->input.type )
             {
-                if( reset_yes )
+                if( reset_selected )
                 {
                     const esp_err_t result = gps_trip_reset();
                     reset_failed = ESP_OK != result;
@@ -78,15 +78,15 @@ static rfscout_app_runtime_result_t gps_runtime( const rfscout_app_runtime_event
                             TAG, "trip reset could not be saved: %s", esp_err_to_name( result ) );
                     }
                 }
-                reset_prompt = false;
+                menu_open = false;
             }
             render();
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
         if( RFSCOUT_INPUT_SELECT == a_event->input.type )
         {
-            reset_prompt = true;
-            reset_yes = false;
+            menu_open = true;
+            reset_selected = false;
             reset_failed = false;
             render();
             return RFSCOUT_APP_RUNTIME_HANDLED;
