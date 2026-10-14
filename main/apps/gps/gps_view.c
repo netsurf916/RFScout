@@ -56,14 +56,14 @@ void gps_view_render( bool a_menu_open, bool a_reset_selected, bool a_reset_fail
                                       y,
                                       selected ? ">" : " ",
                                       selected ? theme->selected : theme->divider );
-            display_draw_text( UI_LAYOUT_LABEL_X,
-                               y,
-                               labels[ item ],
-                               selected ? theme->text : theme->divider,
-                               1U );
+            display_draw_text(
+                UI_LAYOUT_LABEL_X, y, labels[ item ], selected ? theme->text : theme->divider, 1U );
         }
-        display_draw_text(
-            UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN: SELECT  CENTER: ACT", theme->secondary, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X,
+                           UI_LAYOUT_FOOTER_Y,
+                           "TURN: SELECT  CENTER: ACT",
+                           theme->secondary,
+                           1U );
         (void)display_present();
         return;
     }
