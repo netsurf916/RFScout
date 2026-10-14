@@ -716,7 +716,6 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         menu_editing = false;
         menu_item = WIFI_MENU_BACK;
         rendered_app_lock = app_manager_locked();
-        ui_set_surveillance_page( false );
         surveillance_history_open();
         observation_store_set_location_sink( surveillance_history_record );
         last_radio_retry_us = 0;
@@ -742,7 +741,6 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         observation_store_set_location_sink( NULL );
         surveillance_history_flush_final();
         surveillance_history_close();
-        ui_set_surveillance_page( false );
         app_notification_menu_reset( &notification_menu );
         (void)radio_monitor_set_manual_channels( false, 0U, false, 250U );
         return RFSCOUT_APP_RUNTIME_HANDLED;
@@ -757,11 +755,6 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         if( menu_active )
         {
             handle_menu_input( &a_event->input );
-            return RFSCOUT_APP_RUNTIME_HANDLED;
-        }
-        if( RFSCOUT_INPUT_NAVIGATION == a_event->input.type && app_manager_locked() )
-        {
-            ui_set_surveillance_page( !ui_surveillance_page_active() );
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
         if( RFSCOUT_INPUT_SELECT == a_event->input.type )
