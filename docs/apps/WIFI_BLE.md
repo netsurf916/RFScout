@@ -229,15 +229,10 @@ SD lost/recovered transitions enter System Events without periodic card polling;
 are no outstanding writes or other SD requests, mere insertion is not detected until the
 next storage operation.
 
-The surveillance list reads active identities directly from the canonical store and displays
-the distance from the current GPS receiver position to each identity's observed receiver
-bounding box. Without a fresh GPS fix or valid bounds, distance is unknown. Historical-only
-identities are never shown. The rotary switches between the summary and surveillance views. Center press opens
-settings from either view. The surveillance page shows the first six active entries
-without a separate scroll/focus mode.
+The primary surveillance signature panel now shows the distance to the nearest location-qualified retained identity for each visible signature when the receiver has a fresh GPS fix. Distances use the existing observed receiver bounding-box approximation and refresh at most once per second, not on every LCD redraw. No separate surveillance device page or rotary view-switching mode remains; center press still opens settings. Historical-only identities are excluded.
 
 ### Validation
 
 Verify per-packet journal lines, bounding-box expansion, source timeouts, GPS loss,
-SD removal/reinsertion, retry behavior, PSRAM headroom, rotary view switching, and app exit.
+SD removal/reinsertion, retry behavior, PSRAM headroom, in-panel signature distances, absent/stale GPS behavior, and app exit.
 No history replay, proximity reload threshold, or timeout-triggered SD write exists.
