@@ -18,7 +18,6 @@
 /** @brief Render the WiFi/BT action and retention menu. */
 void wifi_settings_view_render( unsigned a_selected,
                                 bool a_editing,
-                                bool a_app_locked,
                                 bool a_notifications_enabled,
                                 rfscout_evidence_strength_t a_threshold,
                                 uint16_t a_wifi_timeout_seconds,
