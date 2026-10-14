@@ -153,10 +153,10 @@ typedef struct
 } observation_ui_snapshot_t;
 
 void observation_store_ui_snapshot( observation_ui_snapshot_t *a_snapshot,
-                                   observation_vendor_count_t *a_vendors,
-                                   size_t a_vendor_capacity,
-                                   observation_surveillance_signature_t *a_signatures,
-                                   size_t a_signature_capacity );
+                                    observation_vendor_count_t *a_vendors,
+                                    size_t a_vendor_capacity,
+                                    observation_surveillance_signature_t *a_signatures,
+                                    size_t a_signature_capacity );
 
 /** @brief Return the number of currently active observations. */
 size_t observation_store_count( void );
