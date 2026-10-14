@@ -485,9 +485,10 @@ static void draw_overview( void )
         const int height = (int)( (uint64_t)value * 47U / peak_channel );
         if( height > 0 )
         {
-            const uint16_t color = i + 1U == current                 ? theme->success
-                                   : (uint64_t)value * 4U >= (uint64_t)peak_channel * 3U ? theme->warning
-                                                                     : theme->info;
+            const uint16_t color = i + 1U == current ? theme->success
+                                   : (uint64_t)value * 4U >= (uint64_t)peak_channel * 3U
+                                       ? theme->warning
+                                       : theme->info;
             ui_game_draw_column( x, 153 - height, 7, height, color );
         }
     }
