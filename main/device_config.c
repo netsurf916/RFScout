@@ -239,7 +239,7 @@ static void set_defaults( void )
     config.logging_enabled = true;
     config.clock_24h = false;
     config.gps_timeout_seconds = RFSCOUT_GPS_TIMEOUT_DEFAULT_SECONDS;
-    config.theme = RFSCOUT_THEME_INDOOR;
+    config.theme = RFSCOUT_THEME_PIXEL_QUEST;
     config.audio_policy = RFSCOUT_AUDIO_POLICY_NORMAL;
     config.audio_interaction_gain_percent = CONFIG_AUDIO_INTERACTION_GAIN_DEFAULT_PERCENT;
     config.audio_notification_gain_percent = CONFIG_AUDIO_NOTIFICATION_GAIN_DEFAULT_PERCENT;

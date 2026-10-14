@@ -10,6 +10,7 @@
 #include "battery.h"
 #include "display.h"
 #include "ui_theme.h"
+#include "ui_game.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -49,7 +50,7 @@ static uint16_t indicator_color( const battery_status_t *a_status )
     {
         return theme->warning;
     }
-    return theme->normal;
+    return ui_game_active() ? theme->success : theme->normal;
 }
 
 /** @brief Draw a compact transparent lightning bolt inside the empty battery body. */
@@ -166,8 +167,26 @@ static void draw_status( const battery_status_t *a_status )
     const int text_x = BATTERY_INDICATOR_BODY_X - BATTERY_INDICATOR_TEXT_GAP - text_width;
     display_draw_text( text_x, 7, percentage, color, 1 );
 
-    draw_battery_outline( color );
-    draw_battery_fill( a_status, color );
+    if( ui_game_active() )
+    {
+        const unsigned level =
+            a_status->available && BATTERY_CHARGE_CHARGING != a_status->charge_state
+                ? a_status->percentage
+                : 0U;
+        draw_battery_outline( color );
+        ui_game_draw_meter( BATTERY_INDICATOR_BODY_X + 2,
+                            BATTERY_INDICATOR_BODY_Y + 2,
+                            BATTERY_INDICATOR_BODY_WIDTH - 4,
+                            BATTERY_INDICATOR_BODY_HEIGHT - 4,
+                            level,
+                            100U,
+                            color );
+    }
+    else
+    {
+        draw_battery_outline( color );
+        draw_battery_fill( a_status, color );
+    }
 
     if( BATTERY_CHARGE_CHARGING == a_status->charge_state )
     {

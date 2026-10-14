@@ -9,6 +9,7 @@
 
 #include "power.h"
 #include "system_events.h"
+#include "ui_game.h"
 #include "ui_theme.h"
 
 #include "esp_heap_caps.h"
@@ -42,9 +43,38 @@ static int centered_x( const char *a_text, unsigned a_scale )
     return GLOBAL_OVERLAY_X + ( GLOBAL_OVERLAY_WIDTH - width ) / 2;
 }
 
+/** @brief Fit a borrowed popup line inside the saved overlay rectangle. */
+static void draw_overlay_line( int a_y, const char *a_text, uint16_t a_color, unsigned a_scale )
+{
+    while( a_scale > 1U && text_width( a_text, a_scale ) > GLOBAL_OVERLAY_WIDTH - 20 )
+    {
+        --a_scale;
+    }
+    const size_t line_capacity = ( GLOBAL_OVERLAY_WIDTH - 20 ) / 6;
+    if( 1U == a_scale && strlen( a_text ) > line_capacity )
+    {
+        char line[ 37 ];
+        snprintf( line, sizeof( line ), "%.*s", (int)line_capacity, a_text );
+        display_draw_text( centered_x( line, 1U ), a_y, line, a_color, 1U );
+        snprintf( line, sizeof( line ), "%s", a_text + line_capacity );
+        display_draw_text( centered_x( line, 1U ), a_y + 10, line, a_color, 1U );
+        return;
+    }
+    display_draw_text( centered_x( a_text, a_scale ), a_y, a_text, a_color, a_scale );
+}
+
 static void draw_overlay_frame( uint16_t a_border_color )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
+    if( ui_game_active() )
+    {
+        ui_game_draw_panel( GLOBAL_OVERLAY_X,
+                            GLOBAL_OVERLAY_Y,
+                            GLOBAL_OVERLAY_WIDTH,
+                            GLOBAL_OVERLAY_HEIGHT,
+                            a_border_color );
+        return;
+    }
     display_fill_rect( GLOBAL_OVERLAY_X,
                        GLOBAL_OVERLAY_Y,
                        GLOBAL_OVERLAY_WIDTH,
@@ -125,20 +155,18 @@ static void draw_transition_notice( void )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     draw_overlay_frame( theme->warning );
-    display_draw_text(
-        centered_x( "NAVIGATION BLOCKED", 1U ), 63, "NAVIGATION BLOCKED", theme->warning, 1U );
-    display_draw_text(
-        centered_x( transition_message, 1U ), 88, transition_message, theme->text, 1U );
+    draw_overlay_line( 63, "NAVIGATION BLOCKED", theme->warning, 1U );
+    draw_overlay_line( 88, transition_message, theme->text, 1U );
 }
 
 static void draw_modal_overlay( void )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     draw_overlay_frame( theme->accent );
-    display_draw_text( centered_x( modal_title, 2U ), 63, modal_title, theme->accent, 2U );
+    draw_overlay_line( 63, modal_title, theme->accent, 2U );
     if( '\0' != modal_detail[ 0 ] )
     {
-        display_draw_text( centered_x( modal_detail, 2U ), 88, modal_detail, theme->text, 2U );
+        draw_overlay_line( 88, modal_detail, theme->text, 2U );
     }
 }
 
@@ -150,26 +178,24 @@ static void draw_power_overlay( const power_status_t *a_status )
     const char *message = ( '\0' != a_status->message[ 0 ] ) ? a_status->message : "POWER ACTION";
     if( '\0' != a_status->detail[ 0 ] )
     {
-        display_draw_text( centered_x( message, 2U ),
-                           63,
+        draw_overlay_line( 63,
                            message,
                            ( POWER_HOLD_EXECUTING == a_status->state ) ? theme->error
                                                                        : theme->warning,
                            2U );
-        display_draw_text(
-            centered_x( a_status->detail, 2U ), 88, a_status->detail, theme->error, 2U );
+        draw_overlay_line( 88, a_status->detail, theme->error, 2U );
         return;
     }
     if( POWER_HOLD_EXECUTING == a_status->state )
     {
-        display_draw_text( centered_x( message, 2U ), 77, message, theme->error, 2U );
+        draw_overlay_line( 77, message, theme->error, 2U );
         return;
     }
 
-    display_draw_text( centered_x( message, 2U ), 63, message, theme->warning, 2U );
+    draw_overlay_line( 63, message, theme->warning, 2U );
     char countdown[ 4 ];
     snprintf( countdown, sizeof( countdown ), "%u", (unsigned)a_status->seconds_remaining );
-    display_draw_text( centered_x( countdown, 3U ), 88, countdown, theme->error, 3U );
+    draw_overlay_line( 88, countdown, theme->error, 3U );
 }
 
 static void draw_system_event_overlay( const rfscout_system_event_notification_t *a_notification )
@@ -186,12 +212,10 @@ static void draw_system_event_overlay( const rfscout_system_event_notification_t
     }
     draw_overlay_frame( border );
 
-    display_draw_text(
-        centered_x( a_notification->title, 2U ), 63, a_notification->title, border, 2U );
+    draw_overlay_line( 63, a_notification->title, border, 2U );
     if( '\0' != a_notification->detail[ 0 ] )
     {
-        display_draw_text(
-            centered_x( a_notification->detail, 2U ), 88, a_notification->detail, theme->text, 2U );
+        draw_overlay_line( 88, a_notification->detail, theme->text, 2U );
     }
 }
 

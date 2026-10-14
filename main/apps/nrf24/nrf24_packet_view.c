@@ -10,6 +10,7 @@
 #include "display.h"
 #include "nrf24_activity.h"
 #include "ui_chrome.h"
+#include "ui_game.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
 
@@ -128,11 +129,10 @@ size_t nrf24_packet_view_list( unsigned a_selected )
         const bool active = ( item == selected );
         if( 0U == item )
         {
-            display_draw_text( UI_LAYOUT_LEFT_X,
-                               y,
-                               active ? ">" : " ",
-                               active ? theme->selected : theme->divider,
-                               1U );
+            ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X,
+                                      y,
+                                      active ? ">" : " ",
+                                      active ? theme->selected : theme->divider );
             display_draw_text(
                 UI_LAYOUT_LABEL_X, y, "BACK", active ? theme->text : theme->divider, 1U );
             continue;
@@ -149,11 +149,8 @@ size_t nrf24_packet_view_list( unsigned a_selected )
                   bitrate_name( packet->bitrate ),
                   address,
                   (unsigned)packet->payload_len );
-        display_draw_text( UI_LAYOUT_LEFT_X,
-                           y,
-                           active ? ">" : " ",
-                           active ? theme->selected : theme->divider,
-                           1U );
+        ui_game_draw_menu_marker(
+            UI_LAYOUT_LEFT_X, y, active ? ">" : " ", active ? theme->selected : theme->divider );
         display_draw_text( UI_LAYOUT_LABEL_X, y, line, active ? theme->text : theme->divider, 1U );
     }
 

@@ -13,6 +13,7 @@
 #include "notification.h"
 #include "notification_preferences.h"
 #include "ui_chrome.h"
+#include "ui_game.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
 
@@ -70,11 +71,10 @@ void notification_settings_view_render( rfscout_app_id_t a_app,
         const int y = UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT;
         const bool active = ( item == a_selected );
         const uint16_t foreground = active ? theme->text : theme->secondary;
-        display_draw_text( UI_LAYOUT_LEFT_X,
-                           y,
-                           active ? ( a_editing ? "*" : ">" ) : " ",
-                           active ? theme->selected : theme->divider,
-                           1U );
+        ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X,
+                                  y,
+                                  active ? ( a_editing ? "*" : ">" ) : " ",
+                                  active ? theme->selected : theme->divider );
 
         if( NOTIFICATION_SETTINGS_BACK == item )
         {

@@ -282,7 +282,7 @@ Every current application receives an explicit v0.4.0 review rather than treatin
 
 Implemented behavior:
 
-- visual themes are Indoor, Outdoor, and Night;
+- visual themes are Indoor, Outdoor, Night, and Pixel Quest; the shared current presentation contract is documented in [Architecture](ARCHITECTURE.md#visual-presentation);
 - Audio Policy is independently Normal or Quiet;
 - Quiet suppresses incidental UI/event feedback and audible detection notifications without mutating saved notification configuration;
 - explicitly requested content audio such as Recorder playback is not suppressed by Quiet;

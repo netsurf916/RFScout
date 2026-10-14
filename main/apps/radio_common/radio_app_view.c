@@ -10,6 +10,7 @@
 #include "display.h"
 #include "nrf24_activity.h"
 #include "ui_chrome.h"
+#include "ui_game.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
 
@@ -110,6 +111,11 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
     const int graph_x = UI_LAYOUT_LEFT_X;
     const int graph_width = APP_COLUMN_DIVIDER_X - UI_LAYOUT_LEFT_X - 6;
     const size_t span = (size_t)( a_high_channel - a_low_channel ) + 1U;
+    if( ui_game_active() )
+    {
+        ui_game_draw_panel(
+            graph_x - 2, APP_GRAPH_Y - 2, graph_width + 4, NRF24_GRAPH_HEIGHT + 5, theme->divider );
+    }
     display_fill_rect( graph_x, APP_GRAPH_Y + NRF24_GRAPH_HEIGHT, graph_width, 1, theme->divider );
 
     if( NULL != a_fast )
@@ -128,7 +134,7 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
 
             if( height > 0 )
             {
-                display_fill_rect(
+                ui_game_draw_column(
                     x, APP_GRAPH_Y + NRF24_GRAPH_HEIGHT - height, 2, height, theme->graph_primary );
             }
         }
@@ -215,8 +221,8 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
             marker = action ? ">" : ( a_editing ? "*" : ">" );
         }
 
-        display_draw_text(
-            UI_LAYOUT_LEFT_X, y, marker, active ? theme->selected : theme->divider, 1U );
+        ui_game_draw_menu_marker(
+            UI_LAYOUT_LEFT_X, y, marker, active ? theme->selected : theme->divider );
         display_draw_text(
             UI_LAYOUT_LABEL_X, y, labels[ i ], active ? theme->text : theme->divider, 1U );
 

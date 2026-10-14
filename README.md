@@ -47,6 +47,23 @@ Disabled or unavailable apps are skipped. Home is always available and is the de
 
 See the linked app pages in the [documentation map](#documentation-map) for detailed current behavior.
 
+## Pixel Quest visual theme
+
+RFScout includes **Pixel Quest**, an original 8-bit console-inspired theme across every application,
+nested settings view, and shared popup. It combines a navy/cyan/amber palette, pixel app icons,
+clipped-corner instrument panels, compact selection tabs, segmented graphs, and battery/volume energy cells.
+Home becomes a pixel scanner console with the original Scout in a targeting reticle and two command panels for the actual rotary/center controls.
+
+Fresh/default configurations use Pixel Quest. Existing saved Indoor, Outdoor, and Night preferences
+remain intact; select **Home → Device Settings → Theme → Pixel Quest** to enable it after an upgrade.
+Visual themes remain independent from audio policy. Scientific values, thermal image colors,
+application order, input semantics, and acquisition behavior keep their existing meaning.
+
+![Pixel Quest firmware view previews with simulated data](docs/assets/pixel-quest-preview.png)
+
+See [Architecture](docs/ARCHITECTURE.md#visual-presentation) for shared presentation contracts and
+[Contributing](CONTRIBUTING.md#host-ui-previews) for reproducible host rendering.
+
 ## Platform overview
 
 The current supported runtime profile is the **LILYGO T-Embed CC1101 Plus**. A minimal early fingerprint selects the immutable profile before ordinary board GPIO/peripheral initialization. Unknown hardware remains awake and inert for recovery flashing.

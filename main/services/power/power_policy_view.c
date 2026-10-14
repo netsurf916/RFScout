@@ -14,6 +14,7 @@
 #include "log_writer.h"
 #include "power.h"
 #include "ui_chrome.h"
+#include "ui_game.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
 
@@ -98,7 +99,7 @@ static void draw_row( int a_y, unsigned a_item, const char *a_label, const char 
     const uint16_t color = active ? theme->selected : theme->text;
     if( active )
     {
-        display_draw_text( UI_LAYOUT_LEFT_X, a_y, ">", color, 1U );
+        ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X, a_y, ">", color );
     }
     display_draw_text( UI_LAYOUT_LABEL_X, a_y, a_label, color, 1U );
     if( NULL != a_value )
