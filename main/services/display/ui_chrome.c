@@ -32,7 +32,6 @@ void ui_chrome_draw( const char *a_title, uint16_t a_title_color )
         const ui_theme_palette_t *theme = ui_theme_get();
         ui_game_draw_icon( ui_game_icon_for_title( a_title ), 6, 3, 2U, theme->accent );
         display_fill_rect_raw( 0, 20, RFSCOUT_DISPLAY_WIDTH, 2, theme->divider );
-        display_fill_rect_raw( 0, 20, 26, 2, theme->accent );
         display_fill_rect_raw( 6, RFSCOUT_DISPLAY_HEIGHT - 2, 12, 1, theme->divider );
         display_fill_rect_raw(
             RFSCOUT_DISPLAY_WIDTH - 18, RFSCOUT_DISPLAY_HEIGHT - 2, 12, 1, theme->divider );
