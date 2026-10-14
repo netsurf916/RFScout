@@ -495,7 +495,7 @@ int main( int a_argc, char **a_argv )
     display_present();
     save( a_argv[ 1 ], "home" );
     wifi_settings_view_render(
-        5U, true, false, true, RFSCOUT_EVIDENCE_STRENGTH_PROBABLE, 60U, 60U );
+        4U, true, true, RFSCOUT_EVIDENCE_STRENGTH_PROBABLE, 60U, 60U );
     save( a_argv[ 1 ], "settings" );
     audio_spectrum_view_render();
     /* The spectrum reaches both sides while retaining equal gutters and a quiet bottom edge. */

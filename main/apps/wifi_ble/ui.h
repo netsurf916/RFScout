@@ -12,12 +12,6 @@
 
 #include <stdbool.h>
 
-/** @brief Switch between summary and live surveillance list. */
-void ui_set_surveillance_page( bool a_enabled );
-
-/** @brief Return whether the surveillance list is displayed. */
-bool ui_surveillance_page_active( void );
-
 /** @brief Refresh the WiFi/BLE display when its update interval has elapsed. */
 void ui_poll( void );
 

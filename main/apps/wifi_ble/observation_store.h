@@ -108,6 +108,7 @@ typedef struct
     uint8_t address_type;
     char vendor[ RFSCOUT_VENDOR_NAME_MAX ];
     surveillance_class_t surveillance;
+    surveillance_signature_id_t signature;
     uint32_t last_seen_ms;
     bool location_valid;
     double min_latitude;

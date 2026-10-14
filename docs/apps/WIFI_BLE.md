@@ -36,20 +36,11 @@ On app exit, the platform first stops both collectors and waits for in-flight ob
 
 ## Current presentation
 
-The primary display shows:
+The 320×170 WiFi/BLE summary uses four theme-aware instrument panels beneath the platform-owned status header. The large left panel begins directly below that header and gives **TOP VENDORS** room for up to eight entries. The compact top-right statistics panel uses two rows: **WIFI** above **BLE** on the left, and **UNKNOWN** above **RANDOM** on the right; the redundant total DEV count is omitted. Counts represent retained canonical observations and source memberships, not captured packet rates or necessarily distinct physical devices.
 
-- total retained observation count;
-- Wi-Fi and BLE source counts;
-- most common known vendors;
-- unresolved globally administered addresses as **UNKNOWN**;
-- locally administered/private/randomized addresses as **RANDOM**; and
-- currently active surveillance signatures/counts.
+The middle-right **SURVEILLANCE** panel shows up to five signature rows, or four plus a `+N MORE` overflow row. Muted secondary colors distinguish headings, normal text presents ordinary vendor data, and warning color highlights surveillance signatures. The full-width bottom panel displays all 14 Wi-Fi channels in **one horizontal row**. Active AP/BSSID-evidence cells use the warning palette; inactive cells use info. The channel matrix reflects retained AP evidence, not simultaneous on-air occupancy or packet rate.
 
-Both the ordinary summary and surveillance presentation are projections of the same canonical active observation collection.
-
-The lower summary area keeps the existing UNKNOWN and RANDOM counts in the left column. The right column mirrors the same horizontal divider and uses the space below it for a fixed 7-by-2 channel matrix covering Wi-Fi channels 1-14. Every channel cell is identical in size; channels with retained AP/BSSID evidence use the theme warning color, matching the vendor list, while inactive channels use the theme info color, matching UNKNOWN/RANDOM. Surveillance rows remain above that divider and use the existing overflow summary when more signatures are active than fit.
-
-The current primary count is still based on canonical observation/address records. It is **not yet** the semantic physical-entity model planned for v0.4.0.
+Pixel Quest uses the clipped-corner panels introduced in #115; Indoor, Outdoor, and Night use theme surface colors and rectangular divider borders. Panel headings retain padding from their first data rows. The global status region remains untouched. Surveillance signature rows optionally include the approximate distance to the nearest currently retained location-qualified device of that signature when a fresh GPS fix exists. The distance measures the current receiver position against each observed device's stored location bounds, not live range or signal-derived proximity; it is omitted when GPS or location evidence is unavailable. The former separate surveillance device/distance page and its locked-navigation toggle are removed. The WiFi/BLE Settings menu also omits the now-unused App lock control; global application lock behavior remains a platform concern. All content comes from one coherent `observation_store_ui_snapshot`, with no change to collector or classification logic.
 
 ### Identity and merge semantics
 
@@ -238,15 +229,10 @@ SD lost/recovered transitions enter System Events without periodic card polling;
 are no outstanding writes or other SD requests, mere insertion is not detected until the
 next storage operation.
 
-The surveillance list reads active identities directly from the canonical store and displays
-the distance from the current GPS receiver position to each identity's observed receiver
-bounding box. Without a fresh GPS fix or valid bounds, distance is unknown. Historical-only
-identities are never shown. The rotary switches between the summary and surveillance views. Center press opens
-settings from either view. The surveillance page shows the first six active entries
-without a separate scroll/focus mode.
+The primary surveillance signature panel now shows the distance to the nearest location-qualified retained identity for each visible signature when the receiver has a fresh GPS fix. Distances use the existing observed receiver bounding-box approximation and refresh at most once per second, not on every LCD redraw. No separate surveillance device page or rotary view-switching mode remains; center press still opens settings. Historical-only identities are excluded.
 
 ### Validation
 
 Verify per-packet journal lines, bounding-box expansion, source timeouts, GPS loss,
-SD removal/reinsertion, retry behavior, PSRAM headroom, rotary view switching, and app exit.
+SD removal/reinsertion, retry behavior, PSRAM headroom, in-panel signature distances, absent/stale GPS behavior, and app exit.
 No history replay, proximity reload threshold, or timeout-triggered SD write exists.
