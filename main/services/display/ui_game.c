@@ -56,6 +56,18 @@ void ui_game_draw_icon(
     }
 }
 
+void ui_game_draw_gps_satellite( int a_x, int a_y, uint16_t a_color )
+{
+    display_fill_rect( a_x + 4, a_y + 5, 4, 5, a_color );
+    display_fill_rect( a_x, a_y + 4, 3, 7, a_color );
+    display_fill_rect( a_x + 9, a_y + 4, 3, 7, a_color );
+    display_fill_rect( a_x + 3, a_y + 7, 1, 1, a_color );
+    display_fill_rect( a_x + 8, a_y + 7, 1, 1, a_color );
+    display_fill_rect( a_x + 5, a_y + 3, 1, 2, a_color );
+    display_fill_rect( a_x + 6, a_y + 2, 2, 1, a_color );
+    display_fill_rect( a_x + 5, a_y + 10, 2, 2, a_color );
+}
+
 ui_game_icon_t ui_game_icon_for_title( const char *a_title )
 {
     if( NULL == a_title )

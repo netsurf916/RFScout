@@ -34,6 +34,8 @@ bool ui_game_active( void );
 /** @brief Draw one original 8x8 icon at integer scale; invalid icons/scales draw nothing. */
 void ui_game_draw_icon(
     ui_game_icon_t a_icon, int a_x, int a_y, unsigned a_scale, uint16_t a_color );
+/** @brief Draw the shared 12x14 GPS satellite used by app chrome and the status bar. */
+void ui_game_draw_gps_satellite( int a_x, int a_y, uint16_t a_color );
 /** @brief Choose an app icon from a borrowed, non-retained chrome title. */
 ui_game_icon_t ui_game_icon_for_title( const char *a_title );
 /** @brief Draw a filled instrument panel with clipped corners entirely inside the supplied rectangle. */
