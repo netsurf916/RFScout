@@ -705,7 +705,7 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         radio_page = 4U;
         menu_editing = false;
         menu_item = WIFI_MENU_BACK;
-            surveillance_history_open();
+        surveillance_history_open();
         observation_store_set_location_sink( surveillance_history_record );
         last_radio_retry_us = 0;
         last_journal_flush_us = 0;
