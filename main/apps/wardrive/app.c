@@ -356,8 +356,8 @@ static void draw_overview( void )
        battery and other system icons); the dashboard is confined below it. */
     ui_chrome_draw( "WARDRIVING", theme->secondary );
     display_fill_rect( 156, 23, 1, 140, theme->secondary );
-    display_fill_rect( 8, 82, 142, 1, theme->secondary );
-    display_fill_rect( 8, 124, 142, 1, theme->secondary );
+    display_fill_rect( 8, 66, 142, 1, theme->secondary );
+    display_fill_rect( 8, 108, 142, 1, theme->secondary );
     display_fill_rect( 163, 93, 149, 1, theme->secondary );
 
     display_draw_text( 8, 26, "GPS POSITION", theme->secondary, 1U );
@@ -365,34 +365,31 @@ static void draw_overview( void )
         111, 26, fixed ? "FIX" : "NO FIX", fixed ? theme->success : theme->warning, 1U );
     if( fixed )
     {
-        (void)snprintf( line, sizeof( line ), "%.6f", gps.latitude_deg );
+        (void)snprintf( line, sizeof( line ), "%.6f %.6f", gps.latitude_deg, gps.longitude_deg );
         display_draw_text( 8, 42, line, theme->text, 1U );
-        (void)snprintf( line, sizeof( line ), "%.6f", gps.longitude_deg );
-        display_draw_text( 8, 58, line, theme->text, 1U );
     }
     else
     {
-        display_draw_text( 8, 42, "--.------", theme->secondary, 1U );
-        display_draw_text( 8, 58, "--.------", theme->secondary, 1U );
+        display_draw_text( 8, 42, "--.------ ---.------", theme->secondary, 1U );
     }
-    display_draw_text( 8, 88, "WIFI", theme->secondary, 1U );
-    display_draw_text( 84, 88, "BLE", theme->secondary, 1U );
+    display_draw_text( 8, 72, "WIFI", theme->secondary, 1U );
+    display_draw_text( 84, 72, "BLE", theme->secondary, 1U );
     (void)snprintf( line, sizeof( line ), "%lu", (unsigned long)stats.received_wifi );
-    display_draw_text( 8, 103, line, theme->info, 1U );
+    display_draw_text( 8, 87, line, theme->info, 1U );
     (void)snprintf( line, sizeof( line ), "%lu", (unsigned long)stats.received_ble );
-    display_draw_text( 84, 103, line, theme->info, 1U );
+    display_draw_text( 84, 87, line, theme->info, 1U );
     /* Fixed-width compact counts keep both labels inside their 72px columns. */
     const uint32_t saved = stats.written;
     const uint32_t dropped = stats.dropped;
     char count[ 16 ];
     format_packet_rate( count, sizeof( count ), saved );
     (void)snprintf( line, sizeof( line ), "SAVE %s", count );
-    display_draw_text( 8, 130, line, theme->success, 1U );
+    display_draw_text( 8, 114, line, theme->success, 1U );
     format_packet_rate( count, sizeof( count ), dropped );
     (void)snprintf( line, sizeof( line ), "DROP %s", count );
-    display_draw_text( 81, 130, line, dropped ? theme->warning : theme->text, 1U );
+    display_draw_text( 81, 114, line, dropped ? theme->warning : theme->text, 1U );
     display_draw_text( 8,
-                       146,
+                       130,
                        stats.storage_error ? "SD ERROR"
                        : stats.recording   ? "REC"
                                            : "STOP",
@@ -402,7 +399,7 @@ static void draw_overview( void )
                        1U );
     (void)snprintf(
         line, sizeof( line ), "CH %u %s", current, options.fixed_channel ? "FIXED" : "SCAN" );
-    display_draw_text( 60, 146, line, theme->info, 1U );
+    display_draw_text( 60, 130, line, theme->info, 1U );
 
     /* The header reports the latest completed second, not the graph's peak. */
     const unsigned latest = ( activity_cursor + ACTIVITY_SECONDS - 1U ) % ACTIVITY_SECONDS;

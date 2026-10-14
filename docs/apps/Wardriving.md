@@ -39,7 +39,7 @@ Use `media_store` ownership/collection access; card-loss recovery remains a vali
 
 ## App menu and configurable policies
 
-The app provides an on-device Settings menu using RFScout's rotary input and center-button selection. The capture overview shows GPS position/fix, scan channel/mode, recording state, packet activity, saved/dropped counts and channel-activity graphs; the settings footer shows allocated capture usage and free SD space. Settings are persisted as app-scoped preferences (no global radio-policy changes).
+The app provides an on-device Settings menu using RFScout's rotary input and center-button selection. The GPS block shows latitude then longitude on one line at six decimal places, with paired placeholders for a missing/stale fix. The capture overview shows GPS position/fix, scan channel/mode, recording state, packet activity, saved/dropped counts and channel-activity graphs; the settings footer shows allocated capture usage and free SD space. Settings are persisted as app-scoped preferences (no global radio-policy changes).
 
 ### Radio
 
