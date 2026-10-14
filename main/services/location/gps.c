@@ -776,6 +776,7 @@ static void policy_poll( int64_t a_now )
         snapshot.time_valid = false;
         snapshot.altitude_valid = false;
         snapshot.speed_valid = false;
+        snapshot.track_valid = false;
         snapshot.satellites_valid = false;
         trip_anchor_valid = false;
         casic_length = 0U;
@@ -1170,6 +1171,7 @@ static void parse_rmc( char *a_payload )
     if( count < 9U || 'A' != fields[ 1 ][ 0 ] )
     {
         snapshot.speed_valid = false;
+        snapshot.track_valid = false;
         trip_anchor_valid = false;
         return;
     }
@@ -1184,6 +1186,14 @@ static void parse_rmc( char *a_payload )
         snapshot.longitude_deg = longitude;
         snapshot.location_valid = true;
         location_updated_us = esp_timer_get_time();
+    }
+
+    double course_deg;
+    snapshot.track_valid = valid_position && parse_double_field( fields[ 7 ], &course_deg ) &&
+                           course_deg >= 0.0 && course_deg < 360.0;
+    if( snapshot.track_valid )
+    {
+        snapshot.track_deg = (float)course_deg;
     }
 
     double speed_knots;
@@ -1579,6 +1589,7 @@ void gps_poll( void )
         snapshot.time_valid = false;
         snapshot.altitude_valid = false;
         snapshot.speed_valid = false;
+        snapshot.track_valid = false;
         snapshot.satellites_valid = false;
         trip_anchor_valid = false;
         baud_probe_started_us = now;
@@ -1603,6 +1614,7 @@ void gps_poll( void )
     if( snapshot.speed_valid && ( now - speed_updated_us ) / 1000LL > (int64_t)GPS_FIX_STALE_MS )
     {
         snapshot.speed_valid = false;
+        snapshot.track_valid = false;
     }
     if( snapshot.satellites_valid &&
         ( now - satellites_updated_us ) / 1000LL > (int64_t)GPS_FIX_STALE_MS )

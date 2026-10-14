@@ -25,6 +25,9 @@ typedef struct
     /** Per-sentence freshness: GGA altitude, RMC speed and GGA satellites used. */
     bool altitude_valid;
     bool speed_valid;
+    /** True when fresh RMC course over ground is available (not compass orientation). */
+    bool track_valid;
+    float track_deg;
     bool satellites_valid;
     double latitude_deg;
     double longitude_deg;

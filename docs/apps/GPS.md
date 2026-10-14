@@ -7,15 +7,21 @@ position history to SD. Its descriptor has no exclusive service dependencies.
 
 ## Current display
 
-- Receiver status distinguishes an inactive UART from a receiver without valid NMEA and a receiver with/without a fresh position fix.
-- A fresh fix displays latitude, longitude and fix age; altitude (meters) is shown only with recent GGA data, and speed (km/h) only with recent RMC data. Missing or stale source fields display `--` rather than a fabricated zero or an old value.
+The 320×170 app surface now uses four semantic, theme-aware instruments beneath the global status strip: a **Fix** panel for latitude/longitude, altitude, fix freshness/age and receiver status; a **Motion** panel for cumulative trip distance and current velocity; a **Satellites** panel for GGA satellites used; and a larger **Ground Track** panel showing a prominent compass direction and numeric degrees.
+
+Ground track comes directly from the RMC **course-over-ground** field, not inferred from screen updates or an electronic compass. It is shown only for a fresh position fix, fresh receiver motion and speed of at least 0.7 m/s, to avoid unstable headings while stationary. When unavailable, both indicators show placeholders. The heading is direction of travel, not the direction the physical device faces. In Pixel Quest style, panels use clipped-corner frames; Simple style uses rectangular semantic frames, and both use the active theme colors. The center/select button opens the standard app-style GPS Settings list, using the same compact row spacing, selection marker, and footer as other app menus; both Back and Reset trip return to the dashboard. There is no reset instruction on the dashboard.
+
+## Telemetry validity and trip behavior
+
+- The Fix panel distinguishes an inactive UART from a receiver with no fresh position fix; the satellite panel reports independently fresh GGA satellite information.
+- A fresh fix displays latitude, longitude and fix age; altitude (meters) is shown only with recent GGA data, and speed (km/h) only with recent RMC data. Missing or stale source fields display `--` rather than fabricated zeros or old values.
 - The existing GGA satellite field is the number of satellites **used in the fix**, not all satellites in view. Its value also expires independently when GGA data stops arriving.
 - When the fix becomes stale, the app hides position and motion values rather than displaying them as live.
 - The GPS service maintains a resettable trip odometer from plausible, moving RMC fixes while the receiver is active, even when the GPS application is not open.
 - The trip counter ignores stationary jitter, implausible position jumps, and gaps in fix reception. It cannot reconstruct distance traveled without valid GPS fixes.
-- Select opens a trip-reset confirmation. Rotate to YES and select to reset; long-press cancels. A reset is written immediately to internal flash.
+- Select opens GPS Settings with **Back** and **Reset trip**. Rotate to choose an entry; select either entry to return to the dashboard. Choosing Reset trip commits the reset to internal flash before updating the in-memory odometer; long-press closes the menu without resetting.
 - The distance is checkpointed to internal flash once at least 250 m of new movement **and** five minutes since the previous checkpoint are reached, including while stationary or when nRF24 has temporarily suspended the GPS UART. A sudden power loss can discard the most recent uncheckpointed distance; SD media is never used.
-- The display refreshes twice per second. Normal global navigation applies outside the reset confirmation.
+- The display refreshes twice per second. Normal global navigation applies outside the GPS Settings menu.
 - GPS app periodic SD telemetry includes receiver/fix state, trip distance, and fresh speed/altitude/satellites-used values when available. The normal passive-app audio feedback policy applies.
 
 ## Receiver and radio interaction
