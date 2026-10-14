@@ -83,6 +83,11 @@ void recorder_view_landing( const char *a_playback_name, uint8_t a_playback_volu
                            1U );
         snprintf( line, sizeof( line ), "VOLUME: %u%%", (unsigned)a_playback_volume );
         display_draw_text( UI_LAYOUT_LEFT_X, 94, line, theme->divider, 1U );
+        if( ui_game_active() )
+        {
+            ui_game_draw_meter(
+                UI_LAYOUT_LEFT_X, 113, 180, 12, a_playback_volume, 100U, theme->success );
+        }
         display_draw_text( UI_LAYOUT_LEFT_X,
                            UI_LAYOUT_FOOTER_Y,
                            "CENTER: STOP  TURN: VOLUME",

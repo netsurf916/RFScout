@@ -107,7 +107,7 @@ The preview tool compiles production shared chrome/theme/popup code and represen
 app views, using the actual LCD font and framebuffer drawing functions extracted from `display.c`.
 It writes portable PPM images with simulated service data/status widgets. Host checks cover stable
 theme IDs/config-name round trips, title/status separation, menu/header separation, graph heights,
-zero/clamped meter inputs, and modal/system-popup framebuffer restoration, including long text.
+zero/clamped meter inputs, clipping of partial brick tiles and pipes, unknown/zero/charging battery presentation, and modal/system-popup framebuffer restoration, including long text.
 The test suite runs these checks in ordinary formatting/packaging CI. They complement the ESP-IDF
 build and [target hardware acceptance](docs/RELEASE_VALIDATION.md); they do not emulate radios,
 storage, input timing, or the physical LCD.

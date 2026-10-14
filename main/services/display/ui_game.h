@@ -36,14 +36,18 @@ void ui_game_draw_icon(
     ui_game_icon_t a_icon, int a_x, int a_y, unsigned a_scale, uint16_t a_color );
 /** @brief Choose an app icon from a borrowed, non-retained chrome title. */
 ui_game_icon_t ui_game_icon_for_title( const char *a_title );
+/** @brief Draw staggered brick tiles, clipped to the supplied rectangle; Pixel Quest only. */
+void ui_game_draw_bricks( int a_x, int a_y, int a_width, int a_height );
+/** @brief Draw a shaded upright pipe entirely inside the supplied rectangle; Pixel Quest only. */
+void ui_game_draw_pipe( int a_x, int a_y, int a_width, int a_height );
 /** @brief Draw a filled double-border panel entirely inside the supplied rectangle. */
 void ui_game_draw_panel( int a_x, int a_y, int a_width, int a_height, uint16_t a_border );
 /** @brief Draw a selection/edit marker and console row band, or the ordinary text marker.
  * @param a_marker Borrowed existing menu marker (">", "*", ">*", or " "); never retained.
  */
 void ui_game_draw_menu_marker( int a_x, int a_y, const char *a_marker, uint16_t a_color );
-/** @brief Draw a proportional meter with pixel gaps in Pixel Quest, continuous in other themes.
- * @param a_value Current value, clamped to a_maximum; zero maximum draws an empty meter.
+/** @brief Draw a proportional pipe meter in Pixel Quest, continuous in other themes.
+ * @param a_value Current value, clamped to a_maximum; zero maximum draws an empty cavity (the decorative pipe lip remains visible).
  */
 void ui_game_draw_meter( int a_x,
                          int a_y,

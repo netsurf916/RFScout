@@ -17,6 +17,7 @@ DISPLAY = ROOT / "main/services/display"
 SOURCES = [
     "services/display/ui_theme.c", "services/display/ui_game.c",
     "services/display/ui_chrome.c", "services/display/ui_present.c",
+    "services/display/battery_indicator.c", "services/display/display_mask.c",
     "apps/audio_spectrum/view.c", "apps/gps/gps_view.c",
     "apps/recorder/recorder_view.c", "apps/hotspots/hotspots_view.c",
     "apps/ota/ota_view.c", "apps/cc1101/cc1101_view.c",
@@ -44,6 +45,10 @@ def build_and_render(output_dir: Path) -> None:
     with tempfile.TemporaryDirectory(prefix="rfscout-ui-") as temporary:
         temp = Path(temporary)
         shims = {
+            "host_string.h": """#pragma once
+#include <stddef.h>
+size_t strlcpy(char *, const char *, size_t);
+""",
             "esp_err.h": """#pragma once
 #include <stddef.h>
 typedef int esp_err_t;
@@ -92,7 +97,8 @@ RFSCOUT_EVIDENCE_STRENGTH_COUNT } rfscout_evidence_strength_t;
         (temp / "preview.c").write_text(host)
         includes = sorted({path.parent for path in (ROOT / "main").rglob("*.h")})
         command = [os.environ.get("CC", "cc"), "-std=c11", "-Wall", "-Wextra", "-Werror",
-                   "-ffunction-sections", "-fdata-sections", "-I", str(temp)]
+                   "-ffunction-sections", "-fdata-sections", "-I", str(temp),
+                   "-include", str(temp / "host_string.h")]
         for path in includes:
             command.extend(["-I", str(path)])
         command.extend([str(temp / "preview.c")])

@@ -51,8 +51,8 @@ See the linked app pages in the [documentation map](#documentation-map) for deta
 
 RFScout includes **Pixel Quest**, an original 8-bit console-inspired theme across every application,
 nested settings view, and shared popup. It combines a navy/coral/gold palette, pixel app icons,
-cartridge-style panels, selection/edit cursors, and segmented graphs and battery meters.
-Home becomes a compact game title screen with the actual rotary/center controls.
+cartridge-style panels, brick selection platforms, segmented graphs, and pipe-shaped battery/volume meters.
+Home becomes a compact game title scene with a brick floor, floating tiles, upright pipes, and the actual rotary/center controls.
 
 Fresh/default configurations use Pixel Quest. Existing saved Indoor, Outdoor, and Night preferences
 remain intact; select **Home → Device Settings → Theme → Pixel Quest** to enable it after an upgrade.

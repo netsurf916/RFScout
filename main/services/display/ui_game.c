@@ -106,6 +106,75 @@ ui_game_icon_t ui_game_icon_for_title( const char *a_title )
     return UI_GAME_ICON_SCOUT;
 }
 
+/** @brief Blend two RGB565 colors without channel bleed. */
+static uint16_t blend_color( uint16_t a_left, uint16_t a_right )
+{
+    const unsigned red = ( ( a_left >> 11 ) + ( a_right >> 11 ) ) / 2U;
+    const unsigned green = ( ( ( a_left >> 5 ) & 63U ) + ( ( a_right >> 5 ) & 63U ) ) / 2U;
+    const unsigned blue = ( ( a_left & 31U ) + ( a_right & 31U ) ) / 2U;
+    return (uint16_t)( ( red << 11 ) | ( green << 5 ) | blue );
+}
+
+/** @brief Clip one tile feature to its caller's rectangle, including partial edge tiles. */
+static void fill_tile_feature( int a_x,
+                               int a_y,
+                               int a_width,
+                               int a_height,
+                               int a_left,
+                               int a_top,
+                               int a_feature_width,
+                               int a_feature_height,
+                               uint16_t a_color )
+{
+    const int left = a_left < 0 ? 0 : a_left;
+    const int top = a_top < 0 ? 0 : a_top;
+    const int right = a_left + a_feature_width < a_width ? a_left + a_feature_width : a_width;
+    const int bottom = a_top + a_feature_height < a_height ? a_top + a_feature_height : a_height;
+    display_fill_rect_raw( a_x + left, a_y + top, right - left, bottom - top, a_color );
+}
+
+void ui_game_draw_bricks( int a_x, int a_y, int a_width, int a_height )
+{
+    if( !ui_game_active() || a_width <= 0 || a_height <= 0 )
+    {
+        return;
+    }
+    const ui_theme_palette_t *theme = ui_theme_get();
+    const uint16_t face = blend_color( theme->accent, theme->selected );
+    const uint16_t light = blend_color( face, theme->text );
+    const uint16_t shade = blend_color( face, theme->shadow );
+    display_fill_rect_raw( a_x, a_y, a_width, a_height, theme->shadow );
+    for( int row = 0; row < a_height; row += 8 )
+    {
+        const int offset = ( ( row / 8 ) & 1 ) * 8;
+        for( int column = -offset; column < a_width; column += 16 )
+        {
+            fill_tile_feature( a_x, a_y, a_width, a_height, column, row, 15, 7, face );
+            fill_tile_feature( a_x, a_y, a_width, a_height, column + 1, row + 1, 13, 1, light );
+            fill_tile_feature( a_x, a_y, a_width, a_height, column + 1, row + 2, 1, 4, light );
+            fill_tile_feature( a_x, a_y, a_width, a_height, column + 1, row + 6, 13, 1, shade );
+        }
+    }
+}
+
+void ui_game_draw_pipe( int a_x, int a_y, int a_width, int a_height )
+{
+    if( !ui_game_active() || a_width < 8 || a_height < 8 )
+    {
+        return;
+    }
+    const ui_theme_palette_t *theme = ui_theme_get();
+    const uint16_t light = blend_color( theme->success, theme->text );
+    const uint16_t shade = blend_color( theme->success, theme->shadow );
+    /* The rim is wider than the stem; unpainted corners remain transparent. */
+    display_fill_rect_raw( a_x + 2, a_y + 4, a_width - 4, a_height - 4, shade );
+    display_fill_rect_raw( a_x + 3, a_y + 5, a_width - 6, a_height - 6, theme->success );
+    display_fill_rect_raw( a_x + 4, a_y + 6, 2, a_height - 7, light );
+    display_fill_rect_raw( a_x, a_y, a_width, 6, shade );
+    display_fill_rect_raw( a_x + 1, a_y + 1, a_width - 2, 4, theme->success );
+    display_fill_rect_raw( a_x + 1, a_y + 1, a_width - 2, 1, light );
+}
+
 void ui_game_draw_panel( int a_x, int a_y, int a_width, int a_height, uint16_t a_border )
 {
     if( a_width < 12 || a_height < 12 )
@@ -121,6 +190,7 @@ void ui_game_draw_panel( int a_x, int a_y, int a_width, int a_height, uint16_t a
     /* Cut corners stay inside the caller's saved overlay rectangle. */
     display_fill_rect_raw( a_x, a_y, 2, 2, theme->background );
     display_fill_rect_raw( a_x + a_width - 4, a_y, 2, 2, theme->background );
+    ui_game_draw_bricks( a_x + 2, a_y + a_height - 2, a_width - 4, 2 );
 }
 
 void ui_game_draw_menu_marker( int a_x, int a_y, const char *a_marker, uint16_t a_color )
@@ -140,7 +210,7 @@ void ui_game_draw_menu_marker( int a_x, int a_y, const char *a_marker, uint16_t 
     const int height = a_y + 10 - top;
     display_fill_rect_raw( 4, top, RFSCOUT_DISPLAY_WIDTH - 8, height, theme->surface );
     display_fill_rect_raw( 4, top, 2, height, editing ? theme->accent : a_color );
-    display_fill_rect_raw( 6, a_y + 9, RFSCOUT_DISPLAY_WIDTH - 12, 1, theme->divider );
+    ui_game_draw_bricks( 6, a_y + 7, RFSCOUT_DISPLAY_WIDTH - 12, 3 );
     for( int row = 0; row < 7; ++row )
     {
         const int half = row <= 3 ? row : 6 - row;
@@ -170,19 +240,29 @@ void ui_game_draw_meter( int a_x,
     {
         a_value = a_maximum;
     }
+    const ui_theme_palette_t *theme = ui_theme_get();
+    if( ui_game_active() && a_width >= 8 && a_height >= 6 )
+    {
+        const uint16_t light = blend_color( a_color, theme->text );
+        const uint16_t shade = blend_color( a_color, theme->shadow );
+        const int inner_width = a_width - 5;
+        const int filled =
+            0U == a_maximum ? 0 : (int)( (uint64_t)a_value * (unsigned)inner_width / a_maximum );
+        display_fill_rect_raw( a_x, a_y, a_width, a_height, theme->background );
+        display_fill_rect_raw( a_x + 2, a_y + 1, a_width - 2, a_height - 2, shade );
+        display_fill_rect_raw( a_x + 4, a_y + 2, inner_width, a_height - 4, theme->background );
+        display_fill_rect_raw( a_x + 4, a_y + 2, filled, a_height - 4, a_color );
+        display_fill_rect_raw( a_x + 4, a_y + 1, inner_width, 1, light );
+        /* The fixed lip is decoration; only the inner cavity represents the value. */
+        display_fill_rect_raw( a_x, a_y, 4, a_height, shade );
+        display_fill_rect_raw( a_x + 1, a_y + 1, 2, a_height - 2, a_color );
+        display_fill_rect_raw( a_x + 1, a_y + 1, 1, a_height - 2, light );
+        return;
+    }
     const int filled =
         0U == a_maximum ? 0 : (int)( (uint64_t)a_value * (unsigned)a_width / a_maximum );
-    const ui_theme_palette_t *theme = ui_theme_get();
     display_fill_rect_raw( a_x, a_y, a_width, a_height, theme->background );
     display_fill_rect_raw( a_x, a_y, filled, a_height, a_color );
-    if( ui_game_active() )
-    {
-        for( int x = 4; x < a_width; x += 6 )
-        {
-            const int gap = a_width - x < 2 ? a_width - x : 2;
-            display_fill_rect_raw( a_x + x, a_y, gap, a_height, theme->background );
-        }
-    }
 }
 
 void ui_game_draw_column( int a_x, int a_y, int a_width, int a_height, uint16_t a_color )
@@ -211,8 +291,8 @@ void ui_game_draw_home( void )
     ui_game_draw_panel( 28, 106, 264, 38, theme->divider );
     display_draw_text( 42, 114, "TURN: EXPLORE APPS", theme->info, 1U );
     display_draw_text( 42, 130, "CENTER: DEVICE SETTINGS", theme->selected, 1U );
-    for( int x = 24; x < 298; x += 12 )
-    {
-        display_fill_rect_raw( x, 149, 10, 3, theme->divider );
-    }
+    ui_game_draw_bricks( 240, 63, 48, 8 );
+    ui_game_draw_pipe( 26, 88, 44, 18 );
+    ui_game_draw_pipe( 268, 82, 24, 24 );
+    ui_game_draw_bricks( 24, 147, 272, 8 );
 }

@@ -268,12 +268,11 @@ reinterpreted as selection markers.
 The title icon occupies x=6–21 and the bounded title ends before the status region at x=142.
 The game header's divider occupies y=20–21; menu selection bands clamp to y≥22, and the footer
 rule occupies y=168–169. Existing data origins and rotary/Select/Long Press/Hold semantics remain
-unchanged. The selection triangle becomes a hollow diamond while editing. In other themes,
+unchanged. A three-pixel brick platform sits below the selected row’s text. The selection triangle becomes a hollow diamond while editing. In other themes,
 these menu helpers render the original textual markers and graphs retain continuous columns.
 
 Radio/audio graph gaps decorate the existing columns without quantizing their height, moving
-peaks, or changing source measurements. Battery urgency, unavailable states, lock distinctions,
-and charging presentation remain semantic. Thermal's literal image pixels continue to bypass
+peaks, or changing source measurements. Pipe-shaped battery and Recorder playback-volume meters use a fixed decorative lip and a proportional inner cavity. Zero/unknown/charging battery states keep the cavity empty; the existing percentage/unknown text and charging bolt remain visible. Battery urgency, unavailable states, lock distinctions, and charging presentation remain semantic. Thermal's literal image pixels continue to bypass
 palette translation; its relative-IR/calibration warnings remain visible.
 
 Global dialogs use a double pixel border contained entirely inside the existing 236×70 saved
@@ -282,9 +281,16 @@ Power overlays keep their existing priority over app modals and system notificat
 presentation service restores the complete saved framebuffer rectangle after flushing the popup;
 no themed frame/shadow draws outside that backup region.
 
+Brick tiles are staggered 16×8 pixel cells with shaded faces and clipped partial edge tiles.
+Home uses full-height floor/floating tiles and upright pipes; panels and the global footer use
+only a two-pixel brick edge within their existing bounds. Dense instruments retain their data
+origins, graph extents, and Thermal image area. These motifs are static and allocation-free;
+they add no animation timers or acquisition work. Application windows remain the existing
+fixed 320×170 managed view; no flexible-window or app-resizing contract is introduced.
+
 The [host preview command](../CONTRIBUTING.md#host-ui-previews) compiles production C views and
 extracts the production driver's drawing primitives and font, with deterministic mocked services.
-Its images verify presentation only, not RF acquisition or target-hardware performance.
+The production battery widget also runs against simulated gauge/charger states to check empty cavities and the charging bolt. Its images verify presentation only, not RF acquisition or target-hardware performance.
 
 ## Time, location, and sleep state
 

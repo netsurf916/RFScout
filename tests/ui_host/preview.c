@@ -22,6 +22,8 @@
 #include "radio_app_view.h"
 #include "nrf24_activity.h"
 #include "wifi_settings_view.h"
+#include "battery.h"
+#include "battery_indicator.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -37,6 +39,8 @@ static rfscout_theme_id_t preference = RFSCOUT_THEME_PIXEL_QUEST;
 static power_status_t power_status;
 static rfscout_system_event_notification_t notification;
 static rfscout_recorder_state_t recording_state;
+static battery_status_t battery_fixture = {
+    .available = true, .percentage = 75U, .charge_state = BATTERY_CHARGE_DISCHARGING };
 static int64_t now = 123456000;
 static const rfscout_board_profile_t profile = { .display_width = 320, .display_height = 170 };
 
@@ -107,10 +111,23 @@ void status_bar_draw( void )
 {
     display_draw_text( 188, 7, "17:46 SD", ui_theme_get()->info, 1U );
 }
-void battery_indicator_draw( void )
+/** @brief Host replacement for ESP-IDF's bounded string copy. */
+size_t strlcpy( char *a_destination, const char *a_source, size_t a_capacity )
 {
-    display_draw_text( 254, 7, "75%", ui_theme_get()->text, 1U );
-    ui_game_draw_meter( 282, 5, 26, 12, 75U, 100U, ui_theme_get()->success );
+    if( 0U != a_capacity )
+    {
+        snprintf( a_destination, a_capacity, "%s", a_source );
+    }
+    return strlen( a_source );
+}
+void battery_poll( void )
+{
+    /* Fixture data is already current; the host owns no gauge/charger hardware. */
+}
+bool battery_get_status( battery_status_t *a_status )
+{
+    *a_status = battery_fixture;
+    return true;
 }
 void audio_spectrum_view_render( void );
 size_t recorder_monitor_bins( uint8_t *a_bins, size_t a_capacity )
@@ -231,6 +248,84 @@ static void check_overlay_restoration( bool a_modal )
     display_modal_clear();
 }
 
+/** @brief Decorations must not modify neighboring app pixels, including partial brick tiles. */
+static void check_terrain_bounds( void )
+{
+    for( unsigned fixture = 0U; fixture < 3U; ++fixture )
+    {
+        for( size_t i = 0U; i < DISPLAY_PIXEL_COUNT; ++i )
+        {
+            pixels[ i ] = (uint16_t)i;
+        }
+        if( 0U == fixture )
+        {
+            ui_game_draw_bricks( 17, 38, 29, 13 );
+        }
+        else if( 1U == fixture )
+        {
+            ui_game_draw_pipe( 17, 38, 29, 13 );
+        }
+        else
+        {
+            ui_game_draw_meter( 17, 38, 29, 13, 50U, 100U, ui_theme_get()->success );
+        }
+        for( int y = 0; y < 170; ++y )
+        {
+            for( int x = 0; x < 320; ++x )
+            {
+                if( x < 17 || x >= 46 || y < 38 || y >= 51 )
+                {
+                    const size_t pixel = (size_t)y * 320U + (unsigned)x;
+                    assert( pixels[ pixel ] == (uint16_t)pixel );
+                }
+            }
+        }
+    }
+    uint16_t full_meter[ 32 * 12 ];
+    uint16_t clamped_meter[ 32 * 12 ];
+    ui_game_draw_meter( 17, 38, 32, 12, 100U, 100U, ui_theme_get()->success );
+    assert( ESP_OK == display_read_rect( 17, 38, 32, 12, full_meter, 32U * 12U ) );
+    ui_game_draw_meter( 17, 38, 32, 12, 500U, 100U, ui_theme_get()->success );
+    assert( ESP_OK == display_read_rect( 17, 38, 32, 12, clamped_meter, 32U * 12U ) );
+    assert( 0 == memcmp( full_meter, clamped_meter, sizeof( full_meter ) ) );
+}
+
+/** @brief Unknown/zero/charging battery states keep meaningful cavity and bolt presentation. */
+static void check_battery_states( void )
+{
+    for( unsigned state = 0U; state < 3U; ++state )
+    {
+        battery_fixture = ( battery_status_t ){
+            .available = 0U != state,
+            .percentage = 2U == state ? 75U : 0U,
+            .charge_state = 2U == state ? BATTERY_CHARGE_CHARGING : BATTERY_CHARGE_UNKNOWN };
+        display_clear( 0 );
+        battery_indicator_draw();
+        unsigned bolt_pixels = 0U;
+        for( int y = 6; y < 16; ++y )
+        {
+            for( int x = 286; x < 309; ++x )
+            {
+                const uint16_t pixel = pixels[ y * 320 + x ];
+                if( 2U == state && x >= 292 && x < 300 )
+                {
+                    bolt_pixels += pixel == ui_theme_get()->warning ? 1U : 0U;
+                }
+                else
+                {
+                    assert( pixel == ui_theme_get()->background );
+                }
+            }
+        }
+        if( 2U == state )
+        {
+            assert( bolt_pixels > 0U );
+        }
+    }
+    battery_fixture = ( battery_status_t ){
+        .available = true, .percentage = 75U, .charge_state = BATTERY_CHARGE_DISCHARGING };
+}
+
 static void checks( void )
 {
     assert( 0 == RFSCOUT_THEME_INDOOR && 1 == RFSCOUT_THEME_OUTDOOR && 2 == RFSCOUT_THEME_NIGHT );
@@ -265,8 +360,11 @@ static void checks( void )
     ui_game_draw_meter( 20, 40, 24, 10, 500U, 100U, ui_theme_get()->success );
     assert( pixels[ 40 * 320 + 43 ] == ui_theme_get()->background );
     ui_game_draw_meter( 20, 40, 24, 10, 1U, 0U, ui_theme_get()->success );
-    for( int x = 20; x < 44; ++x )
-        assert( pixels[ 40 * 320 + x ] == ui_theme_get()->background );
+    /* The fixed pipe lip remains visible; its zero-value cavity must be empty. */
+    for( int x = 24; x < 43; ++x )
+    {
+        assert( pixels[ 42 * 320 + x ] == ui_theme_get()->background );
+    }
     display_clear( 0 );
     ui_game_draw_icon( (ui_game_icon_t)-1, 0, 0, 1U, 0xFFFFU );
     for( size_t i = 0; i < DISPLAY_PIXEL_COUNT; ++i )
@@ -278,6 +376,8 @@ int main( int a_argc, char **a_argv )
     assert( a_argc == 2 );
     assert( ESP_OK == ui_theme_init() );
     checks();
+    check_terrain_bounds();
+    check_battery_states();
     display_clear( 0 );
     ui_chrome_draw( "HOME", 0 );
     ui_game_draw_home();
@@ -293,6 +393,9 @@ int main( int a_argc, char **a_argv )
     recording_state = RFSCOUT_RECORDER_RECORDING;
     recorder_view_landing( NULL, 80U );
     save( a_argv[ 1 ], "recorder" );
+    recording_state = RFSCOUT_RECORDER_PLAYING;
+    recorder_view_landing( "field-0000042.wav", 65U );
+    save( a_argv[ 1 ], "playback" );
     hotspots_view_row_t rows[] = {
         { "FIELD NETWORK", "ONLINE", HOTSPOTS_TONE_GOOD, -42, true },
         { "GUEST", "LIMIT", HOTSPOTS_TONE_LIMITED, -67, true },
