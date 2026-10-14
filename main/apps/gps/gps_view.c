@@ -34,7 +34,7 @@ static unsigned track_sector( float a_degrees )
     return ( (unsigned)( ( a_degrees + 22.5f ) / 45.0f ) ) % 8U;
 }
 
-void gps_view_render( bool a_reset_prompt, bool a_reset_yes, bool a_reset_failed )
+void gps_view_render( bool a_menu_open, bool a_reset_selected, bool a_reset_failed )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     rfscout_gps_snapshot_t gps = { 0 };
@@ -44,19 +44,20 @@ void gps_view_render( bool a_reset_prompt, bool a_reset_yes, bool a_reset_failed
     display_clear( theme->background );
     ui_chrome_draw( "GPS", theme->secondary );
 
-    if( a_reset_prompt )
+    if( a_menu_open )
     {
-        if( ui_game_active() )
-        {
-            ui_game_draw_panel( 4, 34, 312, 94, theme->divider );
-        }
-        (void)snprintf( text, sizeof( text ), "TRIP: %.2f km", gps_trip_distance_m() / 1000.0 );
-        display_draw_text( 8, 44, text, theme->text, 2U );
-        display_draw_text( 8, 82, "RESET TRIP DISTANCE?", theme->warning, 1U );
-        display_draw_text(
-            8, 104, a_reset_yes ? "   NO     [YES]" : "  [NO]     YES", theme->text, 2U );
-        display_draw_text( 8, 135, "ROTATE: CHOOSE  SELECT: OK", theme->info, 1U );
-        display_draw_text( 8, 153, "LONG PRESS: CANCEL", theme->info, 1U );
+        draw_gps_panel( 24, 39, 272, 91 );
+        display_draw_text( 35, 48, "GPS SETTINGS", theme->secondary, 1U );
+        display_draw_text( 40,
+                           72,
+                           a_reset_selected ? "  Back" : "> Back",
+                           a_reset_selected ? theme->text : theme->selected,
+                           2U );
+        display_draw_text( 40,
+                           99,
+                           a_reset_selected ? "> Reset trip" : "  Reset trip",
+                           a_reset_selected ? theme->selected : theme->text,
+                           2U );
         (void)display_present();
         return;
     }
@@ -146,10 +147,9 @@ void gps_view_render( bool a_reset_prompt, bool a_reset_yes, bool a_reset_failed
         display_fill_rect(
             272 + offsets_x[ sector ], 120 + offsets_y[ sector ], 3, 3, theme->accent );
     }
-    display_draw_text( 166,
-                       156,
-                       a_reset_failed ? "RESET NOT SAVED" : "SELECT: RESET TRIP",
-                       a_reset_failed ? theme->warning : theme->info,
-                       1U );
+    if( a_reset_failed )
+    {
+        display_draw_text( 10, 156, "RESET NOT SAVED", theme->warning, 1U );
+    }
     (void)display_present();
 }
