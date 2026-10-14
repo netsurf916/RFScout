@@ -25,6 +25,23 @@ typedef enum
     RFSCOUT_THEME_COUNT
 } rfscout_theme_id_t;
 
+/** @brief Independently selected presentation geometry. */
+typedef enum
+{
+    RFSCOUT_STYLE_SIMPLE = 0,
+    RFSCOUT_STYLE_PIXEL_QUEST,
+    RFSCOUT_STYLE_COUNT
+} rfscout_style_id_t;
+
+/** @brief Independently selected semantic palette. */
+typedef enum
+{
+    RFSCOUT_COLORS_DEFAULT = 0,
+    RFSCOUT_COLORS_OUTDOOR,
+    RFSCOUT_COLORS_NIGHT,
+    RFSCOUT_COLORS_COUNT
+} rfscout_colors_id_t;
+
 /** @brief Semantic RGB565 colors shared by all application views. */
 typedef struct
 {
@@ -57,6 +74,16 @@ rfscout_theme_id_t ui_theme_current( void );
 const ui_theme_palette_t *ui_theme_palette( rfscout_theme_id_t a_theme );
 /** @brief Return the active semantic palette. */
 const ui_theme_palette_t *ui_theme_get( void );
+rfscout_style_id_t ui_style_current( void );
+rfscout_colors_id_t ui_colors_current( void );
+esp_err_t ui_style_set( rfscout_style_id_t a_style );
+esp_err_t ui_colors_set( rfscout_colors_id_t a_colors );
+const char *ui_style_display_name( rfscout_style_id_t a_style );
+const char *ui_colors_display_name( rfscout_colors_id_t a_colors );
+const char *ui_style_config_name( rfscout_style_id_t a_style );
+const char *ui_colors_config_name( rfscout_colors_id_t a_colors );
+bool ui_style_from_config_name( const char *a_name, rfscout_style_id_t *a_style );
+bool ui_colors_from_config_name( const char *a_name, rfscout_colors_id_t *a_colors );
 uint16_t ui_theme_resolve_legacy_color( uint16_t a_color );
 const char *ui_theme_config_name( rfscout_theme_id_t a_theme );
 const char *ui_theme_display_name( rfscout_theme_id_t a_theme );
