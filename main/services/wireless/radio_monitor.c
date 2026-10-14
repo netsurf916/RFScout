@@ -438,8 +438,7 @@ static int64_t channel_dwell_us( uint8_t a_channel )
     const int64_t base_dwell_us =
         manual_channels ? (int64_t)manual_dwell_ms * 1000LL : WIFI_DISCOVERY_DWELL_US;
     const uint16_t channel_bit = (uint16_t)( 1U << ( a_channel - WIFI_MIN_CHANNEL ) );
-    if( !manual_channels && ap_dwell_enabled &&
-        ( 0U != ( active_ap_channel_mask & channel_bit ) ) )
+    if( ap_dwell_enabled && ( 0U != ( active_ap_channel_mask & channel_bit ) ) )
     {
         return base_dwell_us * ( 100LL + WIFI_AP_DWELL_BONUS_PERCENT ) / 100LL;
     }
