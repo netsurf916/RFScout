@@ -352,7 +352,7 @@ static void load_display( const cJSON *a_root )
     config.style = config.theme == RFSCOUT_THEME_PIXEL_QUEST ? RFSCOUT_STYLE_PIXEL_QUEST
                                                              : RFSCOUT_STYLE_SIMPLE;
     config.colors = config.theme == RFSCOUT_THEME_OUTDOOR ? RFSCOUT_COLORS_OUTDOOR
-                  : config.theme == RFSCOUT_THEME_NIGHT   ? RFSCOUT_COLORS_NIGHT
+                    : config.theme == RFSCOUT_THEME_NIGHT ? RFSCOUT_COLORS_NIGHT
                                                           : RFSCOUT_COLORS_DEFAULT;
     const cJSON *style = cJSON_GetObjectItemCaseSensitive( display, "style" );
     if( cJSON_IsString( style ) && NULL != style->valuestring )
