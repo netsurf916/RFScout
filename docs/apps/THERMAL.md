@@ -57,3 +57,7 @@ Each runtime call performs up to four 32-word I2C transfers, rather than one; th
 ## Presentation follow-up
 
 Both live-view panels now use the same Y origin and height. Pixel Quest uses the shared clipped-corner panel primitive, while simpler styles use theme surfaces without leftover rectangular outlines. The displayed 32x24 cells use a small per-frame spatial neighborhood filter to attenuate raw alternating-cell contrast. This is visual smoothing only: it cannot substitute for per-pixel EEPROM calibration and introduces no temporal averaging or additional sensor bus activity.
+
+## Display alignment and shared-bus protection
+
+The shared instrument-panel top is Y=24; the panel gutter and text inset are defined in `ui_layout.h`. Thermal renders its panels and `WAITING FOR FRAME` immediately on app entry, before the MLX90640 finishes acquiring a complete frame. The two global Pixel Quest bottom-edge ornaments were removed from `ui_chrome_draw()` for every view. Thermal now targets an 8 Hz subpage refresh to reduce occupancy of the shared 400 kHz I2C bus, and waits 250 ms before retrying transient failed reads; this is a stability tradeoff with a nominal maximum of four complete two-subpage images per second. I2C hardware timeouts and the reported corrupted battery-indicator backtrace still require hardware regression testing and root-cause investigation.
