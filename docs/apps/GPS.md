@@ -50,7 +50,7 @@ Breadcrumb logging remains a system service even if the GPS app is closed or dis
 
 ## Receiver timepulse and LED ring
 
-**GPS Timepulse** controls the receiver's timepulse output, known on the tested module to drive its flashing indicator. It is a shared, persisted On/Off preference shown in Home and GPS Settings; the GPS service applies it through CASIC CFG-TP read/modify/write and verification. This is distinct from the eight-pixel directional LED ring, which belongs to the foreground GPS application and is cleared/released on exit. Ring enablement, brightness, and color are GPS-app-only settings. Baud probing and automatic receiver update-rate selection remain platform-managed and are not settings menu choices.
+**GPS Timepulse** controls the receiver's timepulse output, known on the tested module to drive its flashing indicator. Configuration is best-effort: an unsupported/rejected/timed-out update is logged, and the receiver's actual state is checked on a subsequent receiver configuration query. The menu's persisted desired state may temporarily differ from the hardware until that query; no separate persistence-recovery or indefinite retry loop is added. It is a shared, persisted On/Off preference shown in Home and GPS Settings; the GPS service applies it through CASIC CFG-TP read/modify/write and verification. This is distinct from the eight-pixel directional LED ring, which belongs to the foreground GPS application and is cleared/released on exit. Ring enablement, brightness, and color are GPS-app-only settings. Baud probing and automatic receiver update-rate selection remain platform-managed and are not settings menu choices.
 
 ## Receiver rate management
 
