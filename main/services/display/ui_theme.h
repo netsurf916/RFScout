@@ -15,13 +15,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/** @brief Stable persisted theme identifiers; append new themes to preserve existing IDs. */
+/** @brief Palette identifiers; style is selected independently. */
 typedef enum
 {
-    RFSCOUT_THEME_INDOOR = 0,
+    RFSCOUT_THEME_DEFAULT = 0,
     RFSCOUT_THEME_OUTDOOR,
     RFSCOUT_THEME_NIGHT,
-    RFSCOUT_THEME_PIXEL_QUEST,
     RFSCOUT_THEME_COUNT
 } rfscout_theme_id_t;
 
@@ -64,13 +63,36 @@ typedef struct
     uint16_t shadow;
 } ui_theme_palette_t;
 
+/** Theme-resolved foreground and background pair; reverse for inverse video. */
+typedef struct
+{
+    uint16_t fg;
+    uint16_t bg;
+} ui_color_pair_t;
+
+typedef enum
+{
+    UI_COLOR_PAIR_NORMAL = 0,
+    UI_COLOR_PAIR_SECONDARY,
+    UI_COLOR_PAIR_SURFACE,
+    UI_COLOR_PAIR_SELECTED,
+    UI_COLOR_PAIR_WARNING,
+    UI_COLOR_PAIR_ERROR
+} ui_color_pair_id_t;
+
+ui_color_pair_t ui_theme_pair( ui_color_pair_id_t a_pair );
+static inline ui_color_pair_t ui_color_pair_reverse( ui_color_pair_t a_pair )
+{
+    return ( ui_color_pair_t ){ .fg = a_pair.bg, .bg = a_pair.fg };
+}
+
 /** @brief Load the persisted theme preference, defaulting to Pixel Quest for fresh configurations. */
 esp_err_t ui_theme_init( void );
 /** @brief Persist and activate one visual theme immediately. */
 esp_err_t ui_theme_set( rfscout_theme_id_t a_theme );
 /** @brief Return the active visual theme identifier. */
 rfscout_theme_id_t ui_theme_current( void );
-/** @brief Return the palette for one theme, falling back to Indoor for invalid IDs. */
+/** @brief Return the palette for one theme, falling back to Default for invalid IDs. */
 const ui_theme_palette_t *ui_theme_palette( rfscout_theme_id_t a_theme );
 /** @brief Return the active semantic palette. */
 const ui_theme_palette_t *ui_theme_get( void );
@@ -84,7 +106,6 @@ const char *ui_style_config_name( rfscout_style_id_t a_style );
 const char *ui_colors_config_name( rfscout_colors_id_t a_colors );
 bool ui_style_from_config_name( const char *a_name, rfscout_style_id_t *a_style );
 bool ui_colors_from_config_name( const char *a_name, rfscout_colors_id_t *a_colors );
-uint16_t ui_theme_resolve_legacy_color( uint16_t a_color );
 const char *ui_theme_config_name( rfscout_theme_id_t a_theme );
 const char *ui_theme_display_name( rfscout_theme_id_t a_theme );
 bool ui_theme_from_config_name( const char *a_name, rfscout_theme_id_t *a_theme );

@@ -265,9 +265,9 @@ void ui_game_draw_home( void )
     display_draw_text( 108, 73, "PIXEL QUEST", theme->selected, 1U );
     display_draw_text( 108, 88, "RF FIELD INSTRUMENT", theme->secondary, 1U );
     ui_game_draw_panel( 12, 116, 144, 40, theme->accent );
-    ui_game_draw_panel( 164, 116, 144, 40, theme->selected );
+    ui_game_draw_panel( 164, 116, 144, 40, theme->accent );
     display_draw_text( 24, 125, "TURN", theme->accent, 1U );
     display_draw_text( 24, 141, "EXPLORE APPS", theme->text, 1U );
-    display_draw_text( 176, 125, "CENTER", theme->selected, 1U );
+    display_draw_text( 176, 125, "CENTER", theme->accent, 1U );
     display_draw_text( 176, 141, "DEVICE SETTINGS", theme->text, 1U );
 }

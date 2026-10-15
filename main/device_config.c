@@ -40,6 +40,7 @@ static bool config_dirty;
 static const char *app_config_name( rfscout_app_id_t a_app )
 {
     static const char *names[ RFSCOUT_APP_COUNT ] = {
+        [RFSCOUT_APP_DIAGNOSTICS] = "diagnostics",
         [RFSCOUT_APP_SYSTEM_EVENTS] = "system_events",
         [RFSCOUT_APP_DEVICE] = "device",
         [RFSCOUT_APP_WIFI_BT] = "wifi_bt",
@@ -239,7 +240,7 @@ static void set_defaults( void )
     config.logging_enabled = true;
     config.clock_24h = false;
     config.gps_timeout_seconds = RFSCOUT_GPS_TIMEOUT_DEFAULT_SECONDS;
-    config.theme = RFSCOUT_THEME_PIXEL_QUEST;
+    config.theme = RFSCOUT_THEME_DEFAULT;
     config.style = RFSCOUT_STYLE_PIXEL_QUEST;
     config.colors = RFSCOUT_COLORS_DEFAULT;
     config.audio_policy = RFSCOUT_AUDIO_POLICY_NORMAL;
@@ -261,6 +262,7 @@ static void set_defaults( void )
         config.notification_app_enabled[ index ] =
             policy->notifications_supported && policy->notifications_enabled_default;
     }
+    config.apps_enabled[ RFSCOUT_APP_DIAGNOSTICS ] = false;
     config.apps_enabled[ RFSCOUT_APP_SYSTEM_EVENTS ] = false;
     config.apps_enabled[ RFSCOUT_APP_DEVICE ] = true;
 
@@ -348,9 +350,11 @@ static void load_display( const cJSON *a_root )
             config.theme = parsed;
         }
     }
-    /* Read legacy combined theme first, then let explicit preferences override it. */
-    config.style = config.theme == RFSCOUT_THEME_PIXEL_QUEST ? RFSCOUT_STYLE_PIXEL_QUEST
-                                                             : RFSCOUT_STYLE_SIMPLE;
+    /* Migrate persisted combined-theme names; explicit style/colors still override these. */
+    const char *legacy_theme = cJSON_IsString( theme ) ? theme->valuestring : NULL;
+    config.style = NULL != legacy_theme && 0 == strcasecmp( legacy_theme, "pixel_quest" )
+                       ? RFSCOUT_STYLE_PIXEL_QUEST
+                       : RFSCOUT_STYLE_SIMPLE;
     config.colors = config.theme == RFSCOUT_THEME_OUTDOOR ? RFSCOUT_COLORS_OUTDOOR
                     : config.theme == RFSCOUT_THEME_NIGHT ? RFSCOUT_COLORS_NIGHT
                                                           : RFSCOUT_COLORS_DEFAULT;

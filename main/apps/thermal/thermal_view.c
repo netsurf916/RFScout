@@ -124,31 +124,36 @@ static int32_t spatial_sample( int a_x, int a_y )
     return sum / weight;
 }
 
+/** @brief Use the same subtle Simple-style outline as other instrument panels. */
+static void draw_thermal_panel( int a_x, int a_width, const ui_theme_palette_t *a_theme )
+{
+    if( ui_game_active() )
+    {
+        ui_game_draw_panel( a_x, THERMAL_PANEL_Y, a_width, THERMAL_PANEL_HEIGHT, a_theme->divider );
+        return;
+    }
+
+    display_fill_rect_raw( a_x, THERMAL_PANEL_Y, a_width, THERMAL_PANEL_HEIGHT, a_theme->surface );
+    display_fill_rect_raw( a_x, THERMAL_PANEL_Y, a_width, 1, a_theme->divider );
+    display_fill_rect_raw(
+        a_x, THERMAL_PANEL_Y + THERMAL_PANEL_HEIGHT - 1, a_width, 1, a_theme->divider );
+    display_fill_rect_raw( a_x, THERMAL_PANEL_Y, 1, THERMAL_PANEL_HEIGHT, a_theme->divider );
+    display_fill_rect_raw(
+        a_x + a_width - 1, THERMAL_PANEL_Y, 1, THERMAL_PANEL_HEIGHT, a_theme->divider );
+}
+
+static void draw_thermal_panels( const ui_theme_palette_t *a_theme )
+{
+    draw_thermal_panel( UI_LAYOUT_PANEL_LEFT_X, 196, a_theme );
+    draw_thermal_panel( THERMAL_PANEL_X, THERMAL_PANEL_WIDTH, a_theme );
+}
+
 void thermal_view_enter( void )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     display_clear( theme->background );
     ui_chrome_draw( "THERMAL", theme->secondary );
-    if( ui_game_active() )
-    {
-        ui_game_draw_panel(
-            UI_LAYOUT_PANEL_LEFT_X, THERMAL_PANEL_Y, 196, THERMAL_PANEL_HEIGHT, theme->divider );
-        ui_game_draw_panel( THERMAL_PANEL_X,
-                            THERMAL_PANEL_Y,
-                            THERMAL_PANEL_WIDTH,
-                            THERMAL_PANEL_HEIGHT,
-                            theme->divider );
-    }
-    else
-    {
-        display_fill_rect_raw(
-            UI_LAYOUT_PANEL_LEFT_X, THERMAL_PANEL_Y, 196, THERMAL_PANEL_HEIGHT, theme->surface );
-        display_fill_rect_raw( THERMAL_PANEL_X,
-                               THERMAL_PANEL_Y,
-                               THERMAL_PANEL_WIDTH,
-                               THERMAL_PANEL_HEIGHT,
-                               theme->surface );
-    }
+    draw_thermal_panels( theme );
     display_draw_text( THERMAL_INFO_X,
                        THERMAL_PANEL_Y + UI_LAYOUT_PANEL_TITLE_INSET_Y,
                        "IR INTENSITY",
@@ -204,28 +209,8 @@ esp_err_t thermal_view_render( void )
     const int32_t display_minimum = (int32_t)frame.minimum - margin;
     const int32_t display_maximum = (int32_t)frame.maximum + margin;
 
-    /* Both surfaces share an exact baseline and height. Use the existing
-       clipped-corner panel primitive rather than drawing legacy box edges. */
-    if( ui_game_active() )
-    {
-        ui_game_draw_panel(
-            UI_LAYOUT_PANEL_LEFT_X, THERMAL_PANEL_Y, 196, THERMAL_PANEL_HEIGHT, theme->divider );
-        ui_game_draw_panel( THERMAL_PANEL_X,
-                            THERMAL_PANEL_Y,
-                            THERMAL_PANEL_WIDTH,
-                            THERMAL_PANEL_HEIGHT,
-                            theme->divider );
-    }
-    else
-    {
-        display_fill_rect_raw(
-            UI_LAYOUT_PANEL_LEFT_X, THERMAL_PANEL_Y, 196, THERMAL_PANEL_HEIGHT, theme->surface );
-        display_fill_rect_raw( THERMAL_PANEL_X,
-                               THERMAL_PANEL_Y,
-                               THERMAL_PANEL_WIDTH,
-                               THERMAL_PANEL_HEIGHT,
-                               theme->surface );
-    }
+    /* Both surfaces share a baseline and height in either display style. */
+    draw_thermal_panels( theme );
 
     /* One filled rectangle per native sensor cell. This avoids thousands of
        individual-pixel draws, interpolation artifacts and false spatial detail. */

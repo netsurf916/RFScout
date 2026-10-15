@@ -16,10 +16,6 @@
 
 #include <stdio.h>
 
-#define BG 0x0000U
-#define SUBDUED 0x03F0U
-#define DIM 0x7BEFU
-#define YELLOW 0xFFE0U
 #define APP_COLUMN_DIVIDER_X 198
 #define APP_RIGHT_COLUMN_X 205
 #define APP_SUMMARY_Y 30
@@ -87,8 +83,8 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
                                     size_t a_device_count )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
-    display_clear( BG );
-    ui_chrome_draw( "nRF24", SUBDUED );
+    display_clear( theme->background );
+    ui_chrome_draw( "nRF24", theme->secondary );
 
     char line[ 64 ];
     snprintf( line,
@@ -98,12 +94,13 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
               (unsigned)a_high_channel,
               (unsigned)( 2400U + a_low_channel ),
               (unsigned)( 2400U + a_high_channel ) );
-    display_draw_text( UI_LAYOUT_LEFT_X, APP_SUMMARY_Y, line, DIM, 1U );
+    display_draw_text( UI_LAYOUT_LEFT_X, APP_SUMMARY_Y, line, theme->secondary, 1U );
 
     if( !a_detected )
     {
-        display_draw_text( UI_LAYOUT_LEFT_X, 70, "nRF24 NOT DETECTED", YELLOW, 1U );
-        display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: SETTINGS", SUBDUED, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 70, "nRF24 NOT DETECTED", theme->warning, 1U );
+        display_draw_text(
+            UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: SETTINGS", theme->secondary, 1U );
         (void)display_present();
         return;
     }
@@ -199,8 +196,8 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
     const ui_theme_palette_t *theme = ui_theme_get();
     const unsigned first = ui_layout_menu_window_start( a_selected, NRF24_MENU_ITEM_COUNT );
 
-    display_clear( BG );
-    ui_chrome_draw( "nRF24 SETTINGS", SUBDUED );
+    display_clear( theme->background );
+    ui_chrome_draw( "nRF24 SETTINGS", theme->secondary );
 
     char value[ 32 ];
     for( unsigned row = 0U; row < UI_LAYOUT_MENU_VISIBLE_ROWS; ++row )
@@ -256,8 +253,9 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
         {
             if( active && a_editing )
             {
-                display_fill_rect( 126, y - 3, 174, 15, theme->selected );
-                display_draw_text( 130, y, value, BG, 1U );
+                const ui_color_pair_t colors = ui_theme_pair( UI_COLOR_PAIR_SELECTED );
+                display_fill_rect( 126, y - 3, 174, 15, colors.bg );
+                display_draw_text( 130, y, value, colors.fg, 1U );
             }
             else
             {

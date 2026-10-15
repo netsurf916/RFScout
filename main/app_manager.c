@@ -115,6 +115,7 @@ static void activate_app_if_ready( int64_t a_now_us )
 
 /** @brief Navigation order is independent of stable persisted application IDs. */
 static const rfscout_app_id_t navigation_order[ RFSCOUT_APP_COUNT ] = {
+    RFSCOUT_APP_DIAGNOSTICS,
     RFSCOUT_APP_SYSTEM_EVENTS,
     RFSCOUT_APP_DEVICE,
     RFSCOUT_APP_WIFI_BT,
@@ -123,9 +124,9 @@ static const rfscout_app_id_t navigation_order[ RFSCOUT_APP_COUNT ] = {
     RFSCOUT_APP_CC1101,
     RFSCOUT_APP_NRF24,
     RFSCOUT_APP_AUDIO,
-    RFSCOUT_APP_THERMAL,
     RFSCOUT_APP_AUDIO_SPECTRUM,
     RFSCOUT_APP_GPS,
+    RFSCOUT_APP_THERMAL,
 };
 
 static rfscout_app_id_t next_available_app( int a_direction )
@@ -297,11 +298,8 @@ esp_err_t app_manager_init( void )
     app_activated = false;
     app_locked = false;
 
-    esp_err_t result = display_init();
-    if( ESP_OK != result )
-    {
-        return result;
-    }
+    /* Display hardware and idle policy are initialized by system startup. */
+    esp_err_t result = ESP_OK;
     const rfscout_display_info_t *display = display_info();
     if( NULL != display )
     {

@@ -472,7 +472,7 @@ void app_main( void )
     if( ESP_OK != result )
     {
         ESP_LOGW(
-            TAG, "theme persistence unavailable; using Indoor: %s", esp_err_to_name( result ) );
+            TAG, "theme persistence unavailable; using Default: %s", esp_err_to_name( result ) );
     }
 
     alert_set_mode( device_config_get()->alert_mode );
@@ -492,6 +492,11 @@ void app_main( void )
         ESP_LOGW( TAG, "breadcrumb recorder unavailable: %s", esp_err_to_name( result ) );
     }
 
+    /* Display hardware precedes idle policy; both precede startup app ENTER. */
+    ESP_ERROR_CHECK( display_init() );
+    display_set_brightness( device_config_get()->brightness_percent );
+    ESP_ERROR_CHECK( display_idle_init() );
+
     ESP_ERROR_CHECK( app_manager_init() );
     /* App discovery probes nRF24 first, then leaves its shared pins inactive for GPS. */
     result = gps_init();
@@ -500,8 +505,6 @@ void app_main( void )
         ESP_LOGW( TAG, "GPS service unavailable: %s", esp_err_to_name( result ) );
     }
     system_events_poll();
-    display_set_brightness( device_config_get()->brightness_percent );
-    ESP_ERROR_CHECK( display_idle_init() );
 
     /*
      * Confirm a newly installed image only after mandatory common startup has succeeded.
