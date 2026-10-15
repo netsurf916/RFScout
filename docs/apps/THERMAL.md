@@ -18,9 +18,9 @@ The MLX90640 native sensor resolution is **32x24**.
 
 Current presentation:
 
-- interpolates the native frame for the 320x170 LCD;
+- draws the 32x24 native cells at a fixed 6x6 scale, avoiding false interpolation detail and reducing drawing calls from 27,648 to 768 rectangles per complete frame;
 - uses an Inferno-like relative palette;
-- slowly adapts the display min/max range to reduce frame-to-frame color pumping;
+- lightly smooths both sensor samples and the relative display range to balance responsiveness against color pumping;
 - shows frame-relative minimum, maximum, and center values; and
 - bypasses theme color translation for literal thermal image pixels while keeping chrome/labels theme-aware.
 
@@ -32,4 +32,4 @@ RFScout does **not** currently present the displayed frame values as calibrated 
 
 ## Current limitations
 
-Current behavior does not yet include calibrated absolute temperature, invalid-pixel filtering, user-lockable range, retained history/statistics, or higher-quality upscaling beyond the existing interpolation path.
+Current behavior does not yet include calibrated absolute temperature, invalid-pixel filtering, user-lockable range, or retained history/statistics. The image intentionally retains visible native pixels instead of implying greater sensor resolution through interpolation. Acquisition is polled every 30 ms while active, but complete-frame rate remains limited by sensor subpage delivery and shared I2C transfers; the UI change does not claim additional sensor frames.
