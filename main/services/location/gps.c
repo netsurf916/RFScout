@@ -107,6 +107,8 @@ typedef enum
 } gps_policy_state_t;
 
 static gps_policy_state_t policy_state;
+static bool policy_timepulse_pending;
+static bool policy_timepulse_runtime;
 static int64_t policy_deadline_us;
 static int64_t policy_last_change_us;
 static int64_t policy_speed_since_us;
@@ -409,6 +411,21 @@ static void policy_query_rate( void )
 }
 
 /* Read/modify/write the existing time-pulse profile without guessing timing fields. */
+static void policy_query_rate( void );
+
+static void policy_timepulse_finish( void )
+{
+    if( policy_timepulse_runtime )
+    {
+        policy_timepulse_runtime = false;
+        policy_state = GPS_POLICY_ACTIVE;
+    }
+    else
+    {
+        policy_query_rate();
+    }
+}
+
 static void policy_query_timepulse( void )
 {
     policy_state = GPS_POLICY_WAIT_TIMEPULSE;
@@ -416,15 +433,15 @@ static void policy_query_timepulse( void )
     if( !policy_send( 0x06U, 0x03U, NULL, 0U ) )
     {
         ESP_LOGW( TAG, "GPS CFG-TP query failed; retaining receiver defaults" );
-        policy_query_rate();
+        policy_timepulse_finish();
     }
 }
 
 void gps_timepulse_apply( void )
 {
-    if( receiver_detected && GPS_POLICY_ACTIVE == policy_state )
+    if( receiver_detected )
     {
-        policy_query_timepulse();
+        policy_timepulse_pending = true;
     }
 }
 
@@ -612,7 +629,7 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
         }
         if( GPS_POLICY_WAIT_TIMEPULSE == policy_state )
         {
-            policy_query_rate();
+            policy_timepulse_finish();
         }
     }
     else if( 0x05U == a_class && 0x01U == a_id && GPS_POLICY_WAIT_TIMEPULSE_ACK == policy_state &&
@@ -624,7 +641,7 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
         if( !policy_send( 0x06U, 0x03U, NULL, 0U ) )
         {
             ESP_LOGW( TAG, "GPS CFG-TP readback request failed" );
-            policy_query_rate();
+            policy_timepulse_finish();
         }
     }
     else if( 0x06U == a_class && 0x03U == a_id && GPS_POLICY_VERIFY_TIMEPULSE == policy_state &&
@@ -636,7 +653,7 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
         policy_log_event( matches ? "timepulse_verified" : "timepulse_verify_failed",
                           expected ? 1 : 0,
                           a_data[ 8 ] );
-        policy_query_rate();
+        policy_timepulse_finish();
     }
     else if( 0x06U == a_class && 0x04U == a_id && GPS_POLICY_WAIT_RATE == policy_state &&
              4U == a_size )
@@ -773,6 +790,12 @@ static int64_t trip_last_checkpoint_us;
 
 static void policy_poll( int64_t a_now )
 {
+    if( policy_timepulse_pending && receiver_detected && GPS_POLICY_ACTIVE == policy_state )
+    {
+        policy_timepulse_pending = false;
+        policy_timepulse_runtime = true;
+        policy_query_timepulse();
+    }
     if( GPS_POLICY_WAIT_BAUD == policy_state && a_now >= policy_deadline_us )
     {
         ESP_LOGW( TAG, "GPS no NMEA at %d baud; returning to discovery", active_baud );
@@ -847,7 +870,7 @@ static void policy_poll( int64_t a_now )
         {
             ESP_LOGW( TAG, "GPS CFG-TP query/ack/verification timeout; continuing initialization" );
             policy_log_event( "timepulse_timeout", 0, 0 );
-            policy_query_rate();
+            policy_timepulse_finish();
         }
         else if( GPS_POLICY_WAIT_RATE == policy_state &&
                  policy_rate_query_retries < GPS_POLICY_PROBE_RETRY_LIMIT )
