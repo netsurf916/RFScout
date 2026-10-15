@@ -210,12 +210,10 @@ static void sample_charger( battery_status_t *a_status, bool *a_sampled )
     const esp_err_t result = read_register_u8( charger_device, BQ25896_REG_STATUS, &status );
     if( ESP_OK == result )
     {
-        const uint8_t bus_status =
-            ( status >> BQ25896_BUS_STATUS_SHIFT ) & BQ25896_BUS_STATUS_MASK;
+        const uint8_t bus_status = ( status >> BQ25896_BUS_STATUS_SHIFT ) & BQ25896_BUS_STATUS_MASK;
         const bool valid_input =
             BQ25896_BUS_NO_INPUT != bus_status && BQ25896_BUS_OTG != bus_status;
-        a_status->external_power =
-            valid_input || ( 0U != ( status & BQ25896_POWER_GOOD_BIT ) );
+        a_status->external_power = valid_input || ( 0U != ( status & BQ25896_POWER_GOOD_BIT ) );
         a_status->charge_state = charger_charge_state( status, a_status->external_power );
         a_status->charger_available = true;
         a_status->charger_fresh = true;
