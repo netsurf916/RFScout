@@ -14,11 +14,6 @@
 
 #include <stdio.h>
 
-#define BG 0x0000U
-#define SUBDUED 0x03F0U
-#define TEXT 0xBDF7U
-#define DIM 0x7BEFU
-#define YELLOW 0xFFE0U
 #define CC1101_MENU_ITEM_COUNT 9U
 #define GRAPH_TOP 48
 #define GRAPH_HEIGHT 88
@@ -58,12 +53,12 @@ void cc1101_view_discovery( const int8_t *a_rssi,
                             bool a_app_locked )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
-    display_clear( BG );
-    ui_chrome_draw( "CC1101 / DISCOVERY", SUBDUED );
+    display_clear( theme->background );
+    ui_chrome_draw( "CC1101 / DISCOVERY", theme->secondary );
 
     if( !a_detected || ( NULL == a_config ) )
     {
-        display_draw_text( UI_LAYOUT_LEFT_X, 70, "CC1101 NOT DETECTED", YELLOW, 1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, 70, "CC1101 NOT DETECTED", theme->warning, 1U );
         (void)display_present();
         return;
     }
@@ -81,7 +76,7 @@ void cc1101_view_discovery( const int8_t *a_rssi,
               low,
               high,
               (unsigned long)a_config->step_khz );
-    display_draw_text( UI_LAYOUT_LEFT_X, 30, line, DIM, 1U );
+    display_draw_text( UI_LAYOUT_LEFT_X, 30, line, theme->secondary, 1U );
 
     const int graph_x = UI_LAYOUT_LEFT_X;
     const int graph_width = RFSCOUT_DISPLAY_WIDTH - ( UI_LAYOUT_LEFT_X * 2 );
@@ -123,7 +118,7 @@ void cc1101_view_discovery( const int8_t *a_rssi,
                        UI_LAYOUT_FOOTER_Y,
                        a_app_locked ? "TURN: VIEWS  CENTER: SETTINGS"
                                     : "TURN: APPS  LONG PRESS: VIEW  CENTER: SETTINGS",
-                       SUBDUED,
+                       theme->secondary,
                        1U );
     (void)display_present();
 }
@@ -313,8 +308,8 @@ void cc1101_view_receive( cc1101_view_mode_t a_view,
                           bool a_app_locked )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
-    display_clear( BG );
-    ui_chrome_draw( "CC1101 / RECEIVE", SUBDUED );
+    display_clear( theme->background );
+    ui_chrome_draw( "CC1101 / RECEIVE", theme->secondary );
 
     char frequency[ 20 ];
     char line[ 72 ];
@@ -347,7 +342,7 @@ void cc1101_view_receive( cc1101_view_mode_t a_view,
                        UI_LAYOUT_FOOTER_Y,
                        a_app_locked ? "TURN: VIEWS  CENTER: SETTINGS"
                                     : "TURN: APPS  LONG PRESS: VIEW  CENTER: SETTINGS",
-                       SUBDUED,
+                       theme->secondary,
                        1U );
     (void)display_present();
 }
@@ -374,8 +369,8 @@ void cc1101_view_menu( unsigned a_selected,
     const ui_theme_palette_t *theme = ui_theme_get();
     const unsigned first = ui_layout_menu_window_start( a_selected, CC1101_MENU_ITEM_COUNT );
 
-    display_clear( BG );
-    ui_chrome_draw( "CC1101 SETTINGS", SUBDUED );
+    display_clear( theme->background );
+    ui_chrome_draw( "CC1101 SETTINGS", theme->secondary );
 
     char value[ 36 ];
     for( unsigned row = 0U; row < UI_LAYOUT_MENU_VISIBLE_ROWS; ++row )
