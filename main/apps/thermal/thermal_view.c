@@ -131,18 +131,31 @@ void thermal_view_enter( void )
     ui_chrome_draw( "THERMAL", theme->secondary );
     if( ui_game_active() )
     {
-        ui_game_draw_panel( UI_LAYOUT_PANEL_LEFT_X, THERMAL_PANEL_Y, 196, THERMAL_PANEL_HEIGHT, theme->divider );
-        ui_game_draw_panel( THERMAL_PANEL_X, THERMAL_PANEL_Y, THERMAL_PANEL_WIDTH, THERMAL_PANEL_HEIGHT, theme->divider );
+        ui_game_draw_panel(
+            UI_LAYOUT_PANEL_LEFT_X, THERMAL_PANEL_Y, 196, THERMAL_PANEL_HEIGHT, theme->divider );
+        ui_game_draw_panel( THERMAL_PANEL_X,
+                            THERMAL_PANEL_Y,
+                            THERMAL_PANEL_WIDTH,
+                            THERMAL_PANEL_HEIGHT,
+                            theme->divider );
     }
     else
     {
-        display_fill_rect_raw( UI_LAYOUT_PANEL_LEFT_X, THERMAL_PANEL_Y, 196, THERMAL_PANEL_HEIGHT, theme->surface );
-        display_fill_rect_raw( THERMAL_PANEL_X, THERMAL_PANEL_Y, THERMAL_PANEL_WIDTH, THERMAL_PANEL_HEIGHT, theme->surface );
+        display_fill_rect_raw(
+            UI_LAYOUT_PANEL_LEFT_X, THERMAL_PANEL_Y, 196, THERMAL_PANEL_HEIGHT, theme->surface );
+        display_fill_rect_raw( THERMAL_PANEL_X,
+                               THERMAL_PANEL_Y,
+                               THERMAL_PANEL_WIDTH,
+                               THERMAL_PANEL_HEIGHT,
+                               theme->surface );
     }
-    display_draw_text( THERMAL_INFO_X, THERMAL_PANEL_Y + UI_LAYOUT_PANEL_TITLE_INSET_Y,
-                       "IR INTENSITY", theme->secondary, 1U );
-    display_draw_text( THERMAL_IMAGE_X + 30, THERMAL_IMAGE_Y + 52,
-                       "WAITING FOR FRAME", theme->secondary, 1U );
+    display_draw_text( THERMAL_INFO_X,
+                       THERMAL_PANEL_Y + UI_LAYOUT_PANEL_TITLE_INSET_Y,
+                       "IR INTENSITY",
+                       theme->secondary,
+                       1U );
+    display_draw_text(
+        THERMAL_IMAGE_X + 30, THERMAL_IMAGE_Y + 52, "WAITING FOR FRAME", theme->secondary, 1U );
     (void)display_present();
 }
 
@@ -195,7 +208,8 @@ esp_err_t thermal_view_render( void )
        clipped-corner panel primitive rather than drawing legacy box edges. */
     if( ui_game_active() )
     {
-        ui_game_draw_panel( UI_LAYOUT_PANEL_LEFT_X, THERMAL_PANEL_Y, 196, THERMAL_PANEL_HEIGHT, theme->divider );
+        ui_game_draw_panel(
+            UI_LAYOUT_PANEL_LEFT_X, THERMAL_PANEL_Y, 196, THERMAL_PANEL_HEIGHT, theme->divider );
         ui_game_draw_panel( THERMAL_PANEL_X,
                             THERMAL_PANEL_Y,
                             THERMAL_PANEL_WIDTH,
@@ -204,7 +218,8 @@ esp_err_t thermal_view_render( void )
     }
     else
     {
-        display_fill_rect_raw( UI_LAYOUT_PANEL_LEFT_X, THERMAL_PANEL_Y, 196, THERMAL_PANEL_HEIGHT, theme->surface );
+        display_fill_rect_raw(
+            UI_LAYOUT_PANEL_LEFT_X, THERMAL_PANEL_Y, 196, THERMAL_PANEL_HEIGHT, theme->surface );
         display_fill_rect_raw( THERMAL_PANEL_X,
                                THERMAL_PANEL_Y,
                                THERMAL_PANEL_WIDTH,
@@ -284,9 +299,15 @@ void thermal_view_menu( unsigned a_selected, bool a_locked, bool a_keep_awake )
                            a_selected == index ? theme->selected : theme->text,
                            1U );
     }
-    display_draw_text( 251, UI_LAYOUT_MENU_START_Y + UI_LAYOUT_MENU_ROW_HEIGHT,
-                       a_locked ? "ON" : "OFF", theme->info, 1U );
-    display_draw_text( 251, UI_LAYOUT_MENU_START_Y + 2 * UI_LAYOUT_MENU_ROW_HEIGHT,
-                       a_keep_awake ? "ON" : "OFF", theme->info, 1U );
+    display_draw_text( 251,
+                       UI_LAYOUT_MENU_START_Y + UI_LAYOUT_MENU_ROW_HEIGHT,
+                       a_locked ? "ON" : "OFF",
+                       theme->info,
+                       1U );
+    display_draw_text( 251,
+                       UI_LAYOUT_MENU_START_Y + 2 * UI_LAYOUT_MENU_ROW_HEIGHT,
+                       a_keep_awake ? "ON" : "OFF",
+                       theme->info,
+                       1U );
     (void)display_present();
 }
