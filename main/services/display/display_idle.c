@@ -193,7 +193,8 @@ esp_err_t display_idle_init( void )
     pixel_shift_last_advance_us = last_activity_us;
     attention_restore_pending = false;
     off_requested = false;
-    /* Foreground app may have requested keep-awake before display_idle_init(). */
+    /* Display policy initializes before any application enters its runtime. */
+    keep_awake = false;
     wake_guard_until_us = 0;
     display_pixel_shift_reset();
     const esp_err_t result = display_exit_low_power();
