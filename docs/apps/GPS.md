@@ -1,15 +1,17 @@
 # GPS diagnostics
 
-The GPS application is a read-only presentation of receiver telemetry from the shared
-GPS location service. Its only state-changing action resets the service's trip odometer.
-It neither opens a UART nor acquires the shared GPS/nRF24 pins and does not write
-position history to SD. Its descriptor has no exclusive service dependencies.
+The GPS application presents receiver telemetry from the shared GPS location
+service and provides a settings menu for trip reset and GPS-related preferences.
+It neither opens a UART nor acquires the shared GPS/nRF24 pins and does not itself
+write position history to SD. Its descriptor has no exclusive service dependencies.
 
 ## Current display
 
 The 320×170 app surface now uses four semantic, theme-aware instruments beneath the global status strip: a **Fix** panel for latitude/longitude, altitude, fix freshness/age and receiver status; a **Motion** panel for cumulative trip distance and current velocity; a **Satellites** panel for GGA satellites used; and a larger **Ground Track** panel showing a prominent compass direction and numeric degrees.
 
-Ground track comes directly from the RMC **course-over-ground** field, not inferred from screen updates or an electronic compass. It is shown only for a fresh position fix, fresh receiver motion and speed of at least 0.7 m/s, to avoid unstable headings while stationary. When unavailable, both indicators show placeholders. The heading is direction of travel, not the direction the physical device faces. In Pixel Quest style, panels use clipped-corner frames; Simple style uses rectangular semantic frames, and both use the active theme colors. The center/select button opens GPS Settings with trip reset, GPS-app-only directional LED options, stay-awake, shared breadcrumb enablement/retention and inactivity timeout, and receiver GPS Timepulse. Back returns to the dashboard. There is no reset instruction on the dashboard.
+Ground track comes directly from the RMC **course-over-ground** field, not inferred from screen updates or an electronic compass. It is shown only for a fresh position fix, fresh receiver motion and speed of at least 0.7 m/s, to avoid unstable headings while stationary. When unavailable, both indicators show placeholders. The heading is direction of travel, not the direction the physical device faces. In Pixel Quest style, panels use clipped-corner frames; Simple style uses rectangular semantic frames, and both use the active theme colors. The center/select button opens GPS Settings with trip reset, GPS-app-only directional LED options, stay-awake, shared breadcrumb enablement/retention and inactivity timeout, and receiver GPS Timepulse. Back returns to the dashboard. Trip reset is only available through GPS Settings;
+there is no reset instruction or reset-failure helper text on the dashboard.
+Menu action errors are shown in the settings footer instead.
 
 ## Telemetry validity and trip behavior
 
