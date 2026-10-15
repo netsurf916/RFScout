@@ -117,3 +117,40 @@ esp_err_t led_ring_clear( void )
     memset( frame, 0, sizeof( frame ) );
     return NULL == channel ? ESP_OK : led_ring_show();
 }
+
+esp_err_t led_ring_deinit( void )
+{
+    if( NULL == channel )
+    {
+        memset( frame, 0, sizeof( frame ) );
+        brightness_percent = 20U;
+        return ESP_OK;
+    }
+    const esp_err_t clear_result = led_ring_clear();
+    if( ESP_OK != clear_result )
+    {
+        /* Keep ownership on failure rather than allowing another app to inherit lit LEDs. */
+        return clear_result;
+    }
+    esp_err_t result = rmt_disable( channel );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+    if( NULL != encoder )
+    {
+        result = rmt_del_encoder( encoder );
+        if( ESP_OK != result )
+        {
+            return result;
+        }
+        encoder = NULL;
+    }
+    result = rmt_del_channel( channel );
+    if( ESP_OK == result )
+    {
+        channel = NULL;
+        brightness_percent = 20U;
+    }
+    return result;
+}
