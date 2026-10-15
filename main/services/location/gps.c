@@ -633,8 +633,9 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
         const bool expected = device_config_get()->gps_timepulse_enabled;
         const bool matches = ( 0U != a_data[ 8 ] ) == expected;
         ESP_LOGI( TAG, "GPS CFG-TP readback: %s", matches ? "verified" : "mismatch" );
-        policy_log_event(
-            matches ? "timepulse_verified" : "timepulse_verify_failed", expected ? 1 : 0, a_data[ 8 ] );
+        policy_log_event( matches ? "timepulse_verified" : "timepulse_verify_failed",
+                          expected ? 1 : 0,
+                          a_data[ 8 ] );
         policy_query_rate();
     }
     else if( 0x06U == a_class && 0x04U == a_id && GPS_POLICY_WAIT_RATE == policy_state &&
