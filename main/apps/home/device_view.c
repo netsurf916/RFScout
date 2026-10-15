@@ -127,7 +127,9 @@ static bool app_enable_item( unsigned a_item )
 
 static bool main_menu_hidden_item( unsigned a_item )
 {
-    return app_enable_item( a_item ) && DEVICE_ITEM_SYSTEM_EVENTS != a_item;
+    return ( app_enable_item( a_item ) && DEVICE_ITEM_SYSTEM_EVENTS != a_item ) ||
+           DEVICE_ITEM_GPS_LED_BRIGHTNESS == a_item || DEVICE_ITEM_GPS_LED_COLOR == a_item ||
+           DEVICE_ITEM_GPS_KEEP_AWAKE == a_item;
 }
 
 static unsigned time_menu_item_count( void )
@@ -348,7 +350,7 @@ static const char *item_label( unsigned a_item )
         case DEVICE_ITEM_GPS_TIMEOUT:
             return "GPS timeout";
         case DEVICE_ITEM_GPS_LED_ENABLE:
-            return "GPS LEDs";
+            return "GPS Timepulse";
         case DEVICE_ITEM_GPS_LED_BRIGHTNESS:
             return "GPS LED level";
         case DEVICE_ITEM_GPS_LED_COLOR:
@@ -413,7 +415,7 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             snprintf( a_value, a_capacity, "%us", (unsigned)config->gps_timeout_seconds );
             break;
         case DEVICE_ITEM_GPS_LED_ENABLE:
-            snprintf( a_value, a_capacity, "%s", on_off( config->gps_led_enabled ) );
+            snprintf( a_value, a_capacity, "%s", on_off( config->gps_timepulse_enabled ) );
             break;
         case DEVICE_ITEM_GPS_LED_BRIGHTNESS:
             snprintf( a_value, a_capacity, "%u%%", (unsigned)config->gps_led_brightness );
@@ -1710,53 +1712,14 @@ static void adjust_selected( int a_delta )
     {
         adjust_breadcrumb_file_limit( a_delta );
     }
-    else if( DEVICE_ITEM_GPS_LED_ENABLE == selected_item ||
-             DEVICE_ITEM_GPS_LED_BRIGHTNESS == selected_item ||
-             DEVICE_ITEM_GPS_LED_COLOR == selected_item ||
-             DEVICE_ITEM_GPS_KEEP_AWAKE == selected_item )
+    else if( DEVICE_ITEM_GPS_LED_ENABLE == selected_item )
     {
-        static const uint32_t led_colors[] = {
-            0x00FF00U, 0xFF0000U, 0x0000FFU, 0xFFFFFFU, 0xFF8000U, 0x00FFFFU };
-        bool enabled = config->gps_led_enabled;
-        uint8_t brightness = config->gps_led_brightness;
-        uint32_t rgb = config->gps_led_rgb;
-        esp_err_t result;
-        if( DEVICE_ITEM_GPS_KEEP_AWAKE == selected_item )
+        if( ESP_OK == device_config_set_gps_timepulse( !config->gps_timepulse_enabled ) )
         {
-            result = device_config_set_gps_keep_awake( !config->gps_keep_awake );
-        }
-        else
-        {
-            if( DEVICE_ITEM_GPS_LED_ENABLE == selected_item )
+            if( ESP_OK != device_config_save() )
             {
-                enabled = !enabled;
+                save_error = true;
             }
-            else if( DEVICE_ITEM_GPS_LED_BRIGHTNESS == selected_item )
-            {
-                brightness = (uint8_t)( ( brightness + 10U ) % 110U );
-            }
-            else
-            {
-                unsigned next = 0U;
-                for( unsigned i = 0U; i < sizeof( led_colors ) / sizeof( led_colors[ 0 ] ); ++i )
-                {
-                    if( rgb == led_colors[ i ] )
-                    {
-                        next = ( i + 1U ) % ( sizeof( led_colors ) / sizeof( led_colors[ 0 ] ) );
-                        break;
-                    }
-                }
-                rgb = led_colors[ next ];
-            }
-            result = device_config_set_gps_led( enabled, brightness, rgb );
-        }
-        if( ESP_OK == result )
-        {
-            result = device_config_save();
-        }
-        if( ESP_OK != result )
-        {
-            save_error = true;
         }
     }
     else if( DEVICE_ITEM_HOLD_SHORTCUT == selected_item )
