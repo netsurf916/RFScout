@@ -15,13 +15,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/** @brief Stable persisted theme identifiers; append new themes to preserve existing IDs. */
+/** @brief Palette identifiers; style is selected independently. */
 typedef enum
 {
-    RFSCOUT_THEME_INDOOR = 0,
+    RFSCOUT_THEME_DEFAULT = 0,
     RFSCOUT_THEME_OUTDOOR,
     RFSCOUT_THEME_NIGHT,
-    RFSCOUT_THEME_PIXEL_QUEST,
     RFSCOUT_THEME_COUNT
 } rfscout_theme_id_t;
 
@@ -93,7 +92,7 @@ esp_err_t ui_theme_init( void );
 esp_err_t ui_theme_set( rfscout_theme_id_t a_theme );
 /** @brief Return the active visual theme identifier. */
 rfscout_theme_id_t ui_theme_current( void );
-/** @brief Return the palette for one theme, falling back to Indoor for invalid IDs. */
+/** @brief Return the palette for one theme, falling back to Default for invalid IDs. */
 const ui_theme_palette_t *ui_theme_palette( rfscout_theme_id_t a_theme );
 /** @brief Return the active semantic palette. */
 const ui_theme_palette_t *ui_theme_get( void );
