@@ -152,6 +152,11 @@ esp_err_t mlx90640_probe( void )
         ESP_LOGI(
             TAG, "MLX90640 detected at I2C address 0x%02X", RFSCOUT_BOARD_MLX90640_I2C_ADDRESS );
     }
+    if( !detected )
+    {
+        consecutive_read_failures = 0U;
+        mlx90640_discard_partial_frame();
+    }
     detected = true;
     return ESP_OK;
 }
@@ -201,6 +206,7 @@ esp_err_t mlx90640_read_frame( mlx90640_frame_t *a_frame )
     a_frame->frame_valid = false;
     if( !board_i2c_ready() )
     {
+        mlx90640_discard_partial_frame();
         return ESP_ERR_NOT_FINISHED;
     }
     if( !detected || ( NULL == device ) )
