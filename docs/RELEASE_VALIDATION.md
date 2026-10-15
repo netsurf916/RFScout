@@ -22,3 +22,12 @@ This is a repeatable **validation procedure for implemented behavior**, not a fe
 | Power | Screen-off, deep sleep, physical power-off and return where supported | Untested |
 
 Passing CI does **not** mark any hardware item passed. Run formatting, packaging tests, and ESP-IDF build for the exact release commit independently. Hardware discrepancies should be reported with logs, steps to reproduce, and whether a cold reboot is required.
+
+## Lifecycle failure-injection acceptance
+
+- With an active resource session that owns no managed allocations, request `app_session_ensure()` for another application: verify rejection without changing the active session, consumers, view, or services.
+- Inject an initialization failure after one or more selected services initialize: verify reverse-order `stop()` calls, no ENTER into the failed destination, and successful subsequent session creation.
+- Inject managed-view initialization failure after successful service initialization: verify initialized services are stopped and the manager takes the documented Home recovery path.
+- Inject an unsuccessful initialization rollback stop: verify diagnostics expose the cleanup failure, the degraded session remains owned, and Home fallback cannot acquire another session. Restart is required before further navigation.
+- Inject an aborted close where a persistent service fails to restart: verify the original app state remains allocated and failure is surfaced rather than silently implying a clean restoration.
+- Check that committed memory/media-handle invariant failures remain distinct in transition diagnostics even when navigation has already committed.
