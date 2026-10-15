@@ -19,15 +19,15 @@
 
 #include <stdio.h>
 
-#define THERMAL_IMAGE_X 4
-#define THERMAL_IMAGE_Y 36
+#define THERMAL_IMAGE_X ( UI_LAYOUT_PANEL_LEFT_X + 4 )
+#define THERMAL_IMAGE_Y ( THERMAL_PANEL_Y + 8 )
 #define THERMAL_IMAGE_WIDTH 192
 #define THERMAL_IMAGE_HEIGHT 120
 #define THERMAL_INFO_X ( THERMAL_PANEL_X + UI_LAYOUT_PANEL_TEXT_INSET_X )
 #define THERMAL_PANEL_X 201
 #define THERMAL_PANEL_Y UI_LAYOUT_PANEL_TOP_Y
 #define THERMAL_PANEL_WIDTH 115
-#define THERMAL_PANEL_HEIGHT 142
+#define THERMAL_PANEL_HEIGHT ( UI_LAYOUT_PANEL_BOTTOM_Y - THERMAL_PANEL_Y )
 #define THERMAL_CELL_WIDTH ( THERMAL_IMAGE_WIDTH / MLX90640_WIDTH )
 #define THERMAL_CELL_HEIGHT ( THERMAL_IMAGE_HEIGHT / MLX90640_HEIGHT )
 #define THERMAL_RANGE_MARGIN_DENOMINATOR 16
@@ -127,7 +127,19 @@ static int32_t spatial_sample( int a_x, int a_y )
 
 void thermal_view_enter( void )
 {
-    /* The image is independently auto-scaled for each complete frame. */
+    const ui_theme_palette_t *theme = ui_theme_get();
+    display_clear( theme->background );
+    ui_chrome_draw( "THERMAL", theme->secondary );
+    if( ui_game_active() )
+    {
+        ui_game_draw_panel( UI_LAYOUT_PANEL_LEFT_X, THERMAL_PANEL_Y, 193, THERMAL_PANEL_HEIGHT, theme->divider );
+        ui_game_draw_panel( THERMAL_PANEL_X, THERMAL_PANEL_Y, THERMAL_PANEL_WIDTH, THERMAL_PANEL_HEIGHT, theme->divider );
+    }
+    display_draw_text( THERMAL_INFO_X, THERMAL_PANEL_Y + UI_LAYOUT_PANEL_TITLE_INSET_Y,
+                       "IR INTENSITY", theme->secondary, 1U );
+    display_draw_text( THERMAL_IMAGE_X + 30, THERMAL_IMAGE_Y + 52,
+                       "WAITING FOR FRAME", theme->secondary, 1U );
+    (void)display_present();
 }
 
 esp_err_t thermal_view_render( void )
@@ -179,7 +191,7 @@ esp_err_t thermal_view_render( void )
        clipped-corner panel primitive rather than drawing legacy box edges. */
     if( ui_game_active() )
     {
-        ui_game_draw_panel( 2, THERMAL_PANEL_Y, 196, THERMAL_PANEL_HEIGHT, theme->divider );
+        ui_game_draw_panel( UI_LAYOUT_PANEL_LEFT_X, THERMAL_PANEL_Y, 193, THERMAL_PANEL_HEIGHT, theme->divider );
         ui_game_draw_panel( THERMAL_PANEL_X,
                             THERMAL_PANEL_Y,
                             THERMAL_PANEL_WIDTH,
@@ -188,7 +200,7 @@ esp_err_t thermal_view_render( void )
     }
     else
     {
-        display_fill_rect_raw( 2, THERMAL_PANEL_Y, 196, THERMAL_PANEL_HEIGHT, theme->surface );
+        display_fill_rect_raw( UI_LAYOUT_PANEL_LEFT_X, THERMAL_PANEL_Y, 193, THERMAL_PANEL_HEIGHT, theme->surface );
         display_fill_rect_raw( THERMAL_PANEL_X,
                                THERMAL_PANEL_Y,
                                THERMAL_PANEL_WIDTH,
