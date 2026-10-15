@@ -4,8 +4,11 @@
 The T-Embed CC1101 Plus exposes eight WS2812 LEDs on GPIO14. Implement a board-owned
 ESP-IDF RMT driver and an app-facing API for indexed RGB color, intensity, clear and
 atomic frame updates. Keep GPIO/RMT specifics out of GPS and other applications.
-GPS owns the foreground LED lease and clears it on leave; other applications must
-not accidentally inherit stale navigation indications. Do not confuse course-over-
+GPS owns the foreground LED lease. Its `prepare_leave` hook clears and releases
+the ring before app navigation commits. If release fails (after one bounded retry
+for an RMT timeout), the app transition is vetoed instead of allowing another
+app to inherit a latched GPS navigation pixel. No extra LED ownership state
+machine is needed; the common app lifecycle already supplies this boundary. Do not confuse course-over-
 ground with device/compass heading.
 
 ## GPS behavior and settings
@@ -90,8 +93,9 @@ this PR and retain a serial log. **Do not merge on CI alone.**
 7. **Failures:** Disconnect the module, repeat app transitions, and inspect
    logs for bounded CFG-TP errors, graceful NMEA behavior, and safe LED
    cleanup. Record any LED/RMT timeout or persistent illuminated pixel.
-   A persistent hardware transport failure still requires investigation;
-   the software cannot guarantee physical blanking in all fault states.
+   A persistent hardware transport failure must block an ordinary app switch
+   until the ring can be safely blanked/released; power failure and physical
+   wiring defects cannot be solved in software.
 
 Capture: board revision, module model/firmware, flash build SHA, selected
 color/intensity, observed LED mapping, receiver rate, serial log excerpts,
