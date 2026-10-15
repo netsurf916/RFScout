@@ -20,6 +20,7 @@
 #define MLX90640_CONTROL_REGISTER 0x800DU
 #define MLX90640_PIXEL_START_REGISTER 0x0400U
 #define MLX90640_WORDS_PER_TRANSFER 32U
+#define MLX90640_TRANSFERS_PER_POLL 4U
 #define MLX90640_READ_FAILURE_RETRY_COUNT 3U
 #define MLX90640_STATUS_NEW_DATA 0x0008U
 #define MLX90640_STATUS_SUBPAGE 0x0001U
@@ -251,26 +252,33 @@ esp_err_t mlx90640_read_frame( mlx90640_frame_t *a_frame )
         return ESP_ERR_NOT_FINISHED;
     }
 
-    uint16_t words[ MLX90640_WORDS_PER_TRANSFER ];
-    const size_t remaining = MLX90640_PIXEL_COUNT - read_offset;
-    const size_t count =
-        remaining < MLX90640_WORDS_PER_TRANSFER ? remaining : MLX90640_WORDS_PER_TRANSFER;
-    const esp_err_t result =
-        read_words( MLX90640_PIXEL_START_REGISTER + (uint16_t)read_offset, words, count );
-    if( ESP_OK != result )
+    /* Four short transactions per poll: no single long bus operation,
+       but only six polling opportunities per 768-word subpage. */
+    for( unsigned transfer = 0U;
+         transfer < MLX90640_TRANSFERS_PER_POLL && read_offset < MLX90640_PIXEL_COUNT;
+         ++transfer )
     {
-        return read_failed( result );
-    }
-
-    for( size_t index = 0U; index < count; ++index )
-    {
-        const size_t pixel = read_offset + index;
-        if( pixel_in_subpage( pixel, current_subpage, current_chess_mode ) )
+        uint16_t words[ MLX90640_WORDS_PER_TRANSFER ];
+        const size_t remaining = MLX90640_PIXEL_COUNT - read_offset;
+        const size_t count =
+            remaining < MLX90640_WORDS_PER_TRANSFER ? remaining : MLX90640_WORDS_PER_TRANSFER;
+        const esp_err_t result =
+            read_words( MLX90640_PIXEL_START_REGISTER + (uint16_t)read_offset, words, count );
+        if( ESP_OK != result )
         {
-            merged_pixels[ pixel ] = (int16_t)words[ index ];
+            return read_failed( result );
         }
+
+        for( size_t index = 0U; index < count; ++index )
+        {
+            const size_t pixel = read_offset + index;
+            if( pixel_in_subpage( pixel, current_subpage, current_chess_mode ) )
+            {
+                merged_pixels[ pixel ] = (int16_t)words[ index ];
+            }
+        }
+        read_offset += count;
     }
-    read_offset += count;
     if( read_offset < MLX90640_PIXEL_COUNT )
     {
         return ESP_ERR_NOT_FINISHED;
