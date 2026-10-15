@@ -29,7 +29,6 @@
 #define THERMAL_RANGE_OLD_WEIGHT 1
 #define THERMAL_RANGE_DIVISOR 2
 
-
 static const char *TAG = "thermal_view";
 static mlx90640_frame_t frame;
 static int32_t display_minimum;
