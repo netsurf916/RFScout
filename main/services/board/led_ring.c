@@ -19,6 +19,7 @@ static rfscout_led_color_t frame[ RFSCOUT_LED_RING_COUNT ];
 static uint8_t brightness_percent = 20U;
 /* RMT may retain the payload until the transaction finishes, including on timeout. */
 static uint8_t tx_data[ RFSCOUT_LED_RING_COUNT * 3U ];
+static bool tx_pending;
 
 bool led_ring_available( void )
 {
@@ -86,6 +87,15 @@ esp_err_t led_ring_show( void )
     {
         return ESP_ERR_INVALID_STATE;
     }
+    if( tx_pending )
+    {
+        const esp_err_t wait = rmt_tx_wait_all_done( channel, 100U );
+        if( ESP_OK != wait )
+        {
+            return wait;
+        }
+        tx_pending = false;
+    }
     for( unsigned index = 0U; index < RFSCOUT_LED_RING_COUNT; ++index )
     {
         const rfscout_led_color_t c = frame[ index ];
@@ -97,8 +107,13 @@ esp_err_t led_ring_show( void )
     esp_err_t result = rmt_transmit( channel, encoder, tx_data, sizeof( tx_data ), &transmit );
     if( ESP_OK == result )
     {
+        tx_pending = true;
         result = rmt_tx_wait_all_done( channel, 100U );
-        esp_rom_delay_us( 80U );
+        if( ESP_OK == result )
+        {
+            tx_pending = false;
+            esp_rom_delay_us( 80U );
+        }
     }
     return result;
 }
