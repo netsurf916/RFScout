@@ -297,11 +297,8 @@ esp_err_t app_manager_init( void )
     app_activated = false;
     app_locked = false;
 
-    esp_err_t result = display_init();
-    if( ESP_OK != result )
-    {
-        return result;
-    }
+    /* Display hardware and idle policy are initialized by system startup. */
+    esp_err_t result = ESP_OK;
     const rfscout_display_info_t *display = display_info();
     if( NULL != display )
     {
