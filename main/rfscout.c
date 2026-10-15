@@ -492,7 +492,8 @@ void app_main( void )
         ESP_LOGW( TAG, "breadcrumb recorder unavailable: %s", esp_err_to_name( result ) );
     }
 
-    /* Initialize display policy before the startup app's ENTER callback. */
+    /* Display hardware precedes idle policy; both precede startup app ENTER. */
+    ESP_ERROR_CHECK( display_init() );
     display_set_brightness( device_config_get()->brightness_percent );
     ESP_ERROR_CHECK( display_idle_init() );
 
