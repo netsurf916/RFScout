@@ -33,6 +33,7 @@ static const char *app_name( rfscout_app_id_t a_app )
 {
     static const char *names[ RFSCOUT_APP_COUNT ] = {
         [RFSCOUT_APP_SYSTEM_EVENTS] = "SYSTEM_EVENTS",
+        [RFSCOUT_APP_DIAGNOSTICS] = "diagnostics",
         [RFSCOUT_APP_DEVICE] = "DEVICE",
         [RFSCOUT_APP_WIFI_BT] = "WIFI_BT",
         [RFSCOUT_APP_HOTSPOTS] = "HOTSPOTS",
