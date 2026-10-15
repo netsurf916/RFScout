@@ -22,6 +22,8 @@ typedef struct
 
 /** Initialize on-demand; unsupported boards return ESP_ERR_NOT_SUPPORTED. */
 esp_err_t led_ring_init( void );
+/** Blank the ring and release the RMT channel and encoder at application exit. */
+esp_err_t led_ring_deinit( void );
 /** Replace a single LED without changing the other cached pixels. */
 esp_err_t led_ring_set( unsigned a_index, rfscout_led_color_t a_color );
 /** Set global intensity (0..100 percent), then repaint the cached frame. */
