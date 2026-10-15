@@ -33,7 +33,9 @@
 #define BREADCRUMB_SETTINGS_KEY "breadcrumbs"
 #define BREADCRUMB_SETTINGS_VERSION 1U
 #define BREADCRUMB_SETTINGS_SIZE 4U
-#define BREADCRUMB_INTERVAL_US 5000000LL
+#define BREADCRUMB_FALLBACK_INTERVAL_US 5000000LL
+/* CSV timestamps have whole-second precision; never write multiple records per UTC second. */
+#define BREADCRUMB_MIN_INTERVAL_US 1000000LL
 #define BREADCRUMB_QUEUE_DEPTH 4U
 #define BREADCRUMB_TASK_STACK 4096U
 #define BREADCRUMB_TASK_PRIORITY 2U
@@ -588,12 +590,27 @@ void breadcrumbs_poll( void )
     {
         return;
     }
+    float filtered_speed_mps = 0.0f;
+    int current_rate_ms = 0;
+    int target_rate_ms = 0;
+    const bool rate_valid =
+        gps_rate_diagnostics_get( &filtered_speed_mps, &current_rate_ms, &target_rate_ms );
+    /* Follow verified receiver cadence, not a requested target. The current CSV
+       timestamp and dedup contract permit at most one record per UTC second. */
+    int64_t interval_us = BREADCRUMB_FALLBACK_INTERVAL_US;
+    if( rate_valid && current_rate_ms >= 100 && current_rate_ms <= 1000 )
+    {
+        interval_us = (int64_t)current_rate_ms * 1000LL;
+        if( interval_us < BREADCRUMB_MIN_INTERVAL_US )
+        {
+            interval_us = BREADCRUMB_MIN_INTERVAL_US;
+        }
+    }
     const int64_t now_us = esp_timer_get_time();
-    if( 0 != last_capture_us && ( now_us - last_capture_us ) < BREADCRUMB_INTERVAL_US )
+    if( 0 != last_capture_us && ( now_us - last_capture_us ) < interval_us )
     {
         return;
     }
-    last_capture_us = now_us;
 
     rfscout_gps_snapshot_t gps;
     if( !gps_snapshot_get( &gps ) || !gps.location_valid || !gps.time_valid ||
@@ -601,12 +618,7 @@ void breadcrumbs_poll( void )
     {
         return;
     }
-
-    float filtered_speed_mps = 0.0f;
-    int current_rate_ms = 0;
-    int target_rate_ms = 0;
-    const bool rate_valid =
-        gps_rate_diagnostics_get( &filtered_speed_mps, &current_rate_ms, &target_rate_ms );
+    last_capture_us = now_us;
     const breadcrumb_record_t record = {
         .utc_epoch = gps.utc_epoch,
         .latitude_deg = gps.latitude_deg,
