@@ -17,6 +17,8 @@ static rmt_channel_handle_t channel;
 static rmt_encoder_handle_t encoder;
 static rfscout_led_color_t frame[ RFSCOUT_LED_RING_COUNT ];
 static uint8_t brightness_percent = 20U;
+/* RMT may retain the payload until the transaction finishes, including on timeout. */
+static uint8_t tx_data[ RFSCOUT_LED_RING_COUNT * 3U ];
 
 bool led_ring_available( void )
 {
@@ -84,16 +86,15 @@ esp_err_t led_ring_show( void )
     {
         return ESP_ERR_INVALID_STATE;
     }
-    uint8_t data[ RFSCOUT_LED_RING_COUNT * 3U ];
     for( unsigned index = 0U; index < RFSCOUT_LED_RING_COUNT; ++index )
     {
         const rfscout_led_color_t c = frame[ index ];
-        data[ index * 3U ] = (uint8_t)( ( (unsigned)c.green * brightness_percent ) / 100U );
-        data[ index * 3U + 1U ] = (uint8_t)( ( (unsigned)c.red * brightness_percent ) / 100U );
-        data[ index * 3U + 2U ] = (uint8_t)( ( (unsigned)c.blue * brightness_percent ) / 100U );
+        tx_data[ index * 3U ] = (uint8_t)( ( (unsigned)c.green * brightness_percent ) / 100U );
+        tx_data[ index * 3U + 1U ] = (uint8_t)( ( (unsigned)c.red * brightness_percent ) / 100U );
+        tx_data[ index * 3U + 2U ] = (uint8_t)( ( (unsigned)c.blue * brightness_percent ) / 100U );
     }
     const rmt_transmit_config_t transmit = { .loop_count = 0 };
-    esp_err_t result = rmt_transmit( channel, encoder, data, sizeof( data ), &transmit );
+    esp_err_t result = rmt_transmit( channel, encoder, tx_data, sizeof( tx_data ), &transmit );
     if( ESP_OK == result )
     {
         result = rmt_tx_wait_all_done( channel, 100U );
