@@ -85,8 +85,7 @@ diagnostics_runtime( const rfscout_app_runtime_event_t *a_event )
         diagnostics_render();
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
-    if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type &&
-        RFSCOUT_INPUT_SELECT == a_event->input.type )
+    if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type && RFSCOUT_INPUT_SELECT == a_event->input.type )
     {
         show_theme_palette = !show_theme_palette;
         diagnostics_render();
