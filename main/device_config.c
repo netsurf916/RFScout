@@ -240,6 +240,7 @@ static void set_defaults( void )
     config.logging_enabled = true;
     config.clock_24h = false;
     config.gps_timeout_seconds = RFSCOUT_GPS_TIMEOUT_DEFAULT_SECONDS;
+    config.gps_timepulse_enabled = true;
     config.gps_led_enabled = false;
     config.gps_led_brightness = 20U;
     config.gps_led_rgb = 0x00FF00U;
@@ -383,6 +384,8 @@ static void load_gps( const cJSON *a_root )
     {
         config.gps_timeout_seconds = (uint8_t)timeout->valueint;
     }
+    config.gps_timepulse_enabled =
+        json_bool( gps, "timepulse_enabled", config.gps_timepulse_enabled );
     config.gps_led_enabled = json_bool( gps, "led_enabled", config.gps_led_enabled );
     config.gps_keep_awake = json_bool( gps, "keep_awake", config.gps_keep_awake );
     const cJSON *brightness = cJSON_GetObjectItemCaseSensitive( gps, "led_brightness" );
@@ -982,6 +985,7 @@ static cJSON *build_system_record( void )
 
     cJSON *gps = cJSON_AddObjectToObject( root, "gps" );
     cJSON_AddNumberToObject( gps, "inactivity_seconds", config.gps_timeout_seconds );
+    cJSON_AddBoolToObject( gps, "timepulse_enabled", config.gps_timepulse_enabled );
     cJSON_AddBoolToObject( gps, "led_enabled", config.gps_led_enabled );
     cJSON_AddNumberToObject( gps, "led_brightness", config.gps_led_brightness );
     cJSON_AddNumberToObject( gps, "led_rgb", config.gps_led_rgb );
@@ -1283,6 +1287,16 @@ esp_err_t device_config_set_gps_timeout_seconds( uint8_t a_seconds )
     if( config.gps_timeout_seconds != a_seconds )
     {
         config.gps_timeout_seconds = a_seconds;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+esp_err_t device_config_set_gps_timepulse( bool a_enabled )
+{
+    if( config.gps_timepulse_enabled != a_enabled )
+    {
+        config.gps_timepulse_enabled = a_enabled;
         config_dirty = true;
     }
     return ESP_OK;
