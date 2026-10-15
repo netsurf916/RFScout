@@ -420,6 +420,14 @@ static void policy_query_timepulse( void )
     }
 }
 
+void gps_timepulse_apply( void )
+{
+    if( receiver_detected && GPS_POLICY_ACTIVE == policy_state )
+    {
+        policy_query_timepulse();
+    }
+}
+
 static void policy_start_probe( void )
 {
     policy_state = GPS_POLICY_WAIT_VERSION;
