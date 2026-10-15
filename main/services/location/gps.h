@@ -59,6 +59,8 @@ bool gps_available( void );
 double gps_trip_distance_m( void );
 /** @brief Clear the trip odometer and persist the reset in internal flash. */
 esp_err_t gps_trip_reset( void );
+/** Apply the persisted receiver timepulse preference when CASIC is ready. */
+void gps_timepulse_apply( void );
 
 /** @brief Fresh filtered speed and current/target update intervals for diagnostic breadcrumbs.
  * @return false when filtered speed is unavailable or stale.
