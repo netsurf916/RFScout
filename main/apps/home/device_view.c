@@ -64,7 +64,8 @@
 #define DEVICE_ITEM_HOLD_SHORTCUT 29U
 #define DEVICE_ITEM_GPS_TIMEOUT 30U
 #define DEVICE_ITEM_GPS 31U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 32U
+#define DEVICE_ITEM_DIAGNOSTICS 32U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 33U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
 #define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_GPS + 1U )
@@ -115,7 +116,7 @@ static bool apps_menu_open;
 
 static bool app_enable_item( unsigned a_item )
 {
-    return DEVICE_ITEM_SYSTEM_EVENTS == a_item ||
+    return DEVICE_ITEM_DIAGNOSTICS == a_item || DEVICE_ITEM_SYSTEM_EVENTS == a_item ||
            ( a_item >= DEVICE_ITEM_WIFI && a_item <= DEVICE_ITEM_AUDIO_SPECTRUM ) ||
            DEVICE_ITEM_GPS == a_item;
 }
@@ -208,6 +209,8 @@ static const char *startup_app_name( rfscout_app_id_t a_app )
 {
     switch( a_app )
     {
+        case RFSCOUT_APP_DIAGNOSTICS:
+            return "Diagnostics";
         case RFSCOUT_APP_SYSTEM_EVENTS:
             return "System Events";
         case RFSCOUT_APP_WIFI_BT:
@@ -254,7 +257,8 @@ static bool item_direct_toggle( unsigned a_item )
 {
     return ( DEVICE_ITEM_BREADCRUMBS == a_item ) || ( DEVICE_ITEM_AUDIO_POLICY == a_item ) ||
            ( DEVICE_ITEM_ALERT_MODE == a_item ) || ( DEVICE_ITEM_CLOCK_FORMAT == a_item ) ||
-           ( apps_menu_open && DEVICE_ITEM_SYSTEM_EVENTS == a_item ) ||
+           ( apps_menu_open && ( DEVICE_ITEM_DIAGNOSTICS == a_item ||
+                                  DEVICE_ITEM_SYSTEM_EVENTS == a_item ) ) ||
            ( DEVICE_ITEM_WIFI == a_item ) || ( DEVICE_ITEM_HOTSPOTS == a_item ) ||
            ( DEVICE_ITEM_CC1101 == a_item ) || ( DEVICE_ITEM_NRF24 == a_item ) ||
            ( DEVICE_ITEM_AUDIO == a_item ) || ( DEVICE_ITEM_THERMAL == a_item ) ||
@@ -302,6 +306,8 @@ static const char *item_label( unsigned a_item )
             return "Time";
         case DEVICE_ITEM_STARTUP:
             return "Startup app";
+        case DEVICE_ITEM_DIAGNOSTICS:
+            return "Diagnostics";
         case DEVICE_ITEM_SYSTEM_EVENTS:
             return apps_menu_open ? "System Events" : "Apps";
         case DEVICE_ITEM_NETWORK:
@@ -398,6 +404,12 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             break;
         case DEVICE_ITEM_STARTUP:
             snprintf( a_value, a_capacity, "%s", startup_app_name( config->startup_app ) );
+            break;
+        case DEVICE_ITEM_DIAGNOSTICS:
+            snprintf( a_value,
+                      a_capacity,
+                      "%s",
+                      on_off( config->apps_enabled[ RFSCOUT_APP_DIAGNOSTICS ] ) );
             break;
         case DEVICE_ITEM_SYSTEM_EVENTS:
             snprintf( a_value,
@@ -807,6 +819,7 @@ void device_view_render( void )
     if( apps_menu_open )
     {
         items[ visible++ ] = DEVICE_ITEM_BACK;
+        items[ visible++ ] = DEVICE_ITEM_DIAGNOSTICS;
         items[ visible++ ] = DEVICE_ITEM_SYSTEM_EVENTS;
         for( unsigned item = DEVICE_ITEM_WIFI; item <= DEVICE_ITEM_AUDIO_SPECTRUM; ++item )
         {
@@ -885,6 +898,7 @@ static void move_selection( int a_delta )
     if( apps_menu_open )
     {
         items[ count++ ] = DEVICE_ITEM_BACK;
+        items[ count++ ] = DEVICE_ITEM_DIAGNOSTICS;
         items[ count++ ] = DEVICE_ITEM_SYSTEM_EVENTS;
         for( unsigned item = DEVICE_ITEM_WIFI; item <= DEVICE_ITEM_AUDIO_SPECTRUM; ++item )
         {
@@ -1618,6 +1632,10 @@ static void adjust_selected( int a_delta )
     else if( DEVICE_ITEM_STARTUP == selected_item )
     {
         adjust_startup_app( a_delta );
+    }
+    else if( DEVICE_ITEM_DIAGNOSTICS == selected_item )
+    {
+        toggle_app( RFSCOUT_APP_DIAGNOSTICS, "apps.diagnostics" );
     }
     else if( DEVICE_ITEM_SYSTEM_EVENTS == selected_item )
     {
