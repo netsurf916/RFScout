@@ -177,6 +177,27 @@ rfscout_colors_id_t ui_colors_current( void )
     return active_colors;
 }
 
+ui_color_pair_t ui_theme_pair( ui_color_pair_id_t a_pair )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    switch( a_pair )
+    {
+        case UI_COLOR_PAIR_SECONDARY:
+            return (ui_color_pair_t){ .fg = theme->secondary, .bg = theme->background };
+        case UI_COLOR_PAIR_SURFACE:
+            return (ui_color_pair_t){ .fg = theme->text, .bg = theme->surface };
+        case UI_COLOR_PAIR_SELECTED:
+            return (ui_color_pair_t){ .fg = theme->background, .bg = theme->selected };
+        case UI_COLOR_PAIR_WARNING:
+            return (ui_color_pair_t){ .fg = theme->warning, .bg = theme->background };
+        case UI_COLOR_PAIR_ERROR:
+            return (ui_color_pair_t){ .fg = theme->error, .bg = theme->background };
+        case UI_COLOR_PAIR_NORMAL:
+        default:
+            return (ui_color_pair_t){ .fg = theme->text, .bg = theme->background };
+    }
+}
+
 static esp_err_t persist_visual_preference( void )
 {
     rfscout_event_emit( RFSCOUT_EVENT_THEME_CHANGED, RFSCOUT_EVENT_SOURCE_SYSTEM, 0 );
@@ -268,39 +289,6 @@ bool ui_colors_from_config_name( const char *a_name, rfscout_colors_id_t *a_colo
         }
     }
     return false;
-}
-
-uint16_t ui_theme_resolve_legacy_color( uint16_t a_color )
-{
-    const ui_theme_palette_t *theme = ui_theme_get();
-    switch( a_color )
-    {
-        case 0x0000U:
-            return theme->background;
-        case 0xFFFFU:
-        case 0xBDF7U:
-            return theme->normal;
-        case 0x7BEFU:
-        case 0x8410U:
-        case 0x03F0U:
-            return ( 0x8410U == a_color ) ? theme->divider : theme->secondary;
-        case 0xFC00U:
-            return theme->accent;
-        case 0xFFE0U:
-        case 0xFFE1U:
-        case 0xFD20U:
-            return theme->warning;
-        case 0xF800U:
-        case 0xF81FU:
-            return theme->error;
-        case 0x03E0U:
-        case 0x07E0U:
-            return theme->success;
-        case 0x07FFU:
-            return theme->info;
-        default:
-            return a_color;
-    }
 }
 
 const char *ui_theme_config_name( rfscout_theme_id_t a_theme )
