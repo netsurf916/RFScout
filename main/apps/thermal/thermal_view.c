@@ -23,11 +23,11 @@
 #define THERMAL_IMAGE_Y 36
 #define THERMAL_IMAGE_WIDTH 192
 #define THERMAL_IMAGE_HEIGHT 120
-#define THERMAL_INFO_X 204
+#define THERMAL_INFO_X ( THERMAL_PANEL_X + UI_LAYOUT_PANEL_TEXT_INSET_X )
 #define THERMAL_PANEL_X 201
-#define THERMAL_PANEL_Y 30
+#define THERMAL_PANEL_Y UI_LAYOUT_PANEL_TOP_Y
 #define THERMAL_PANEL_WIDTH 115
-#define THERMAL_PANEL_HEIGHT 136
+#define THERMAL_PANEL_HEIGHT 142
 #define THERMAL_CELL_WIDTH ( THERMAL_IMAGE_WIDTH / MLX90640_WIDTH )
 #define THERMAL_CELL_HEIGHT ( THERMAL_IMAGE_HEIGHT / MLX90640_HEIGHT )
 #define THERMAL_RANGE_MARGIN_DENOMINATOR 16
@@ -223,15 +223,15 @@ esp_err_t thermal_view_render( void )
                        theme->text );
 
     char text[ 24 ];
-    display_draw_text( THERMAL_INFO_X + 6, 32, "IR INTENSITY", theme->accent, 1 );
+    display_draw_text( THERMAL_INFO_X,\n                       THERMAL_PANEL_Y + UI_LAYOUT_PANEL_TITLE_INSET_Y,\n                       "IR INTENSITY",\n                       theme->secondary,\n                       1U );
     snprintf( text, sizeof( text ), "MAX %6d", (int)frame.maximum );
-    display_draw_text( THERMAL_INFO_X + 6, 56, text, theme->text, 1 );
+    display_draw_text( THERMAL_INFO_X, 56, text, theme->text, 1 );
     snprintf( text, sizeof( text ), "MIN %6d", (int)frame.minimum );
-    display_draw_text( THERMAL_INFO_X + 6, 74, text, theme->text, 1 );
+    display_draw_text( THERMAL_INFO_X, 74, text, theme->text, 1 );
     snprintf( text, sizeof( text ), "CTR %6d", (int)frame.center );
-    display_draw_text( THERMAL_INFO_X + 6, 92, text, theme->text, 1 );
-    display_draw_text( THERMAL_INFO_X + 6, 128, "32x24 LIVE", theme->info, 1 );
-    display_draw_text( THERMAL_INFO_X + 6, 144, "RAW IR DATA", theme->secondary, 1 );
+    display_draw_text( THERMAL_INFO_X, 92, text, theme->text, 1 );
+    display_draw_text( THERMAL_INFO_X, 128, "32x24 LIVE", theme->info, 1 );
+    display_draw_text( THERMAL_INFO_X, 144, "RAW IR DATA", theme->secondary, 1 );
 
     const esp_err_t present = display_present();
     if( ESP_OK != present )
