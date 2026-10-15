@@ -52,3 +52,47 @@ Host tests cover sector math, no-fix LED blanking, RMT frame construction,
 setting persistence, rate clamp/freshness/dedup, and legacy CSV compatibility;
 ESP-IDF and formatting CI green. Hardware checks validate LED index order, color
 channel order, intensity, GNSS hotplug, screen sleep, and SD sampling under motion.
+
+## Hardware test procedure (PR #126)
+
+Preconditions: use the supported T-Embed CC1101 Plus with the tested CASIC
+GPS module and an SD card if checking breadcrumbs. Flash a CI-built image of
+this PR and retain a serial log. **Do not merge on CI alone.**
+
+1. **Startup / ownership:** Boot with GPS attached; confirm valid NMEA and
+   GPS display. Open GPS, then leave for Home and another app repeatedly.
+   The eight-LED ring must go dark at each exit and other apps must not
+   inherit a GPS direction pixel. Repeat with GPS LED guidance disabled.
+2. **LED mapping:** Enable LED guidance in GPS Settings, set brightness low,
+   and change the six color presets. With safe, known motion/course, record
+   which physical index lights for N/NE/E/SE/S/SW/W/NW. Ground track is
+   **direction of motion**, not where the enclosure faces; do not use a static
+   hand-rotation test to infer heading. Verify stationary/no-fix blanks the
+   ring. Check 0% and 100% intensity and change settings while active.
+3. **Timepulse:** Toggle **GPS Timepulse** in Home and GPS Settings. Confirm
+   both menus share the saved preference. Verify the receiver's own flashing
+   indicator follows the command without interrupting NMEA or retriggering
+   the full rate-probing scan. This is best-effort: the menu shows the saved
+   requested state, **not** independent evidence of the receiver state.
+4. **Background service:** Disable or leave the GPS app. Verify receiver
+   detection and (when enabled) breadcrumb collection continue; verify
+   nRF24 shared-pin ownership rules remain unchanged.
+5. **Breadcrumb cadence:** Collect a log while stationary and while moving
+   through adaptive receiver-rate tiers. With rate unavailable/unverified,
+   expect at most one record per 5 seconds; with a verified fast rate,
+   no more than one record per second. Check fresh fix/UTC validity,
+   duplicate-second suppression, UTC bucket boundaries, CSV column schema,
+   SD removal, and file-count retention. A faster receiver rate does
+   **not** imply subsecond breadcrumb writes.
+6. **GPS settings and trip:** Test Reset trip only from GPS Settings; verify
+   the dashboard contains no reset helper text and the settings footer
+   reports failed actions. Test keep-awake and inactivity timeout.
+7. **Failures:** Disconnect the module, repeat app transitions, and inspect
+   logs for bounded CFG-TP errors, graceful NMEA behavior, and safe LED
+   cleanup. Record any LED/RMT timeout or persistent illuminated pixel.
+   A persistent hardware transport failure still requires investigation;
+   the software cannot guarantee physical blanking in all fault states.
+
+Capture: board revision, module model/firmware, flash build SHA, selected
+color/intensity, observed LED mapping, receiver rate, serial log excerpts,
+sample CSV, expected/actual behavior, and any failures.
