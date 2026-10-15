@@ -529,7 +529,7 @@ void display_clear( uint16_t a_color )
         return;
     }
 
-    const uint16_t color = ui_theme_resolve_legacy_color( a_color );
+    const uint16_t color = a_color;
     for( size_t i = 0; i < DISPLAY_PIXEL_COUNT; ++i )
     {
         framebuffer[ i ] = color;
@@ -539,7 +539,7 @@ void display_clear( uint16_t a_color )
 
 void display_fill_rect( int a_x, int a_y, int a_width, int a_height, uint16_t a_color )
 {
-    display_fill_rect_raw( a_x, a_y, a_width, a_height, ui_theme_resolve_legacy_color( a_color ) );
+    display_fill_rect_raw( a_x, a_y, a_width, a_height, a_color );
 }
 
 void display_draw_text( int a_x, int a_y, const char *a_text, uint16_t a_color, unsigned a_scale )
@@ -553,7 +553,7 @@ void display_draw_text( int a_x, int a_y, const char *a_text, uint16_t a_color, 
         a_scale = 1U;
     }
 
-    const uint16_t color = ui_theme_resolve_legacy_color( a_color );
+    const uint16_t color = a_color;
     const int advance = 6 * (int)a_scale;
     while( '\0' != *a_text )
     {
