@@ -12,7 +12,7 @@
 
 #include <stddef.h>
 
-#define THERMAL_REFRESH_INTERVAL_US 30000LL
+#define THERMAL_REFRESH_INTERVAL_US 50000LL
 
 static bool service_initialized;
 static int64_t last_refresh_us;
