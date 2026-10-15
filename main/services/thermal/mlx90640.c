@@ -19,7 +19,8 @@
 #define MLX90640_STATUS_REGISTER 0x8000U
 #define MLX90640_CONTROL_REGISTER 0x800DU
 #define MLX90640_PIXEL_START_REGISTER 0x0400U
-#define MLX90640_WORDS_PER_TRANSFER 128U
+#define MLX90640_WORDS_PER_TRANSFER 32U
+#define MLX90640_READ_FAILURE_RETRY_COUNT 3U
 #define MLX90640_STATUS_NEW_DATA 0x0008U
 #define MLX90640_STATUS_SUBPAGE 0x0001U
 #define MLX90640_STATUS_CLEAR_VALUE 0x0030U
@@ -37,6 +38,7 @@ static int16_t merged_pixels[ MLX90640_PIXEL_COUNT ];
 static int16_t filtered_pixels[ MLX90640_PIXEL_COUNT ];
 static uint8_t merged_subpages;
 static bool filter_valid;
+static unsigned consecutive_read_failures;
 
 /** @brief Read big-endian 16-bit MLX90640 registers in bounded I2C transfers. */
 static esp_err_t read_words( uint16_t a_register, uint16_t *a_words, size_t a_count )
@@ -171,6 +173,7 @@ esp_err_t mlx90640_init( void )
     filter_valid = false;
     memset( merged_pixels, 0, sizeof( merged_pixels ) );
     memset( filtered_pixels, 0, sizeof( filtered_pixels ) );
+    consecutive_read_failures = 0U;
     return mlx90640_probe();
 }
 
@@ -196,7 +199,12 @@ esp_err_t mlx90640_read_frame( mlx90640_frame_t *a_frame )
     esp_err_t result = read_words( MLX90640_STATUS_REGISTER, &status, 1U );
     if( ESP_OK != result )
     {
-        detected = false;
+        merged_subpages = 0U;
+        filter_valid = false;
+        if( ++consecutive_read_failures >= MLX90640_READ_FAILURE_RETRY_COUNT )
+        {
+            detected = false;
+        }
         return result;
     }
     if( 0U == ( status & MLX90640_STATUS_NEW_DATA ) )
@@ -209,7 +217,12 @@ esp_err_t mlx90640_read_frame( mlx90640_frame_t *a_frame )
     result = write_word( MLX90640_STATUS_REGISTER, MLX90640_STATUS_CLEAR_VALUE );
     if( ESP_OK != result )
     {
-        detected = false;
+        merged_subpages = 0U;
+        filter_valid = false;
+        if( ++consecutive_read_failures >= MLX90640_READ_FAILURE_RETRY_COUNT )
+        {
+            detected = false;
+        }
         return result;
     }
 
@@ -217,7 +230,12 @@ esp_err_t mlx90640_read_frame( mlx90640_frame_t *a_frame )
     result = read_words( MLX90640_CONTROL_REGISTER, &control, 1U );
     if( ESP_OK != result )
     {
-        detected = false;
+        merged_subpages = 0U;
+        filter_valid = false;
+        if( ++consecutive_read_failures >= MLX90640_READ_FAILURE_RETRY_COUNT )
+        {
+            detected = false;
+        }
         return result;
     }
 
@@ -225,7 +243,12 @@ esp_err_t mlx90640_read_frame( mlx90640_frame_t *a_frame )
     result = read_words( MLX90640_PIXEL_START_REGISTER, raw_pixels, MLX90640_PIXEL_COUNT );
     if( ESP_OK != result )
     {
-        detected = false;
+        merged_subpages = 0U;
+        filter_valid = false;
+        if( ++consecutive_read_failures >= MLX90640_READ_FAILURE_RETRY_COUNT )
+        {
+            detected = false;
+        }
         return result;
     }
 
@@ -244,6 +267,7 @@ esp_err_t mlx90640_read_frame( mlx90640_frame_t *a_frame )
         return ESP_ERR_NOT_FINISHED;
     }
 
+    consecutive_read_failures = 0U;
     finalize_frame( a_frame );
 
     /* Require a fresh pair for the next displayed frame. Without resetting
