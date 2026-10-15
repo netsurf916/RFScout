@@ -195,11 +195,20 @@ static void refresh_i2c_battery( battery_status_t *a_status )
             }
             (void)read_register_u16( gauge_device, BQ27220_REG_STATUS, &gauge_status );
         }
-        else if( ESP_OK != gauge_result )
+        else if( ( ESP_OK != gauge_result ) && ( ESP_ERR_INVALID_STATE != gauge_result ) )
         {
             ESP_LOGW( TAG, "BQ27220 no longer responding: %s", esp_err_to_name( gauge_result ) );
             detach_optional_device( &gauge_device );
         }
+    }
+
+    /* A gauge timeout blocks the entire bus: avoid rejecting and detaching a
+       healthy charger merely because its transaction is deferred. */
+    if( !board_i2c_ready() )
+    {
+        a_status->percentage_fresh = false;
+        a_status->charger_fresh = false;
+        return;
     }
 
     bool charger_sampled = false;
@@ -222,7 +231,7 @@ static void refresh_i2c_battery( battery_status_t *a_status )
             a_status->charger_fresh = true;
             charger_sampled = true;
         }
-        else
+        else if( ESP_ERR_INVALID_STATE != charger_result )
         {
             ESP_LOGW( TAG, "BQ25896 no longer responding: %s", esp_err_to_name( charger_result ) );
             detach_optional_device( &charger_device );
@@ -247,6 +256,8 @@ void battery_refresh( void )
     /* Preserve cached battery readings while another client recovers the bus. */
     if( !board_i2c_ready() )
     {
+        cached_status.percentage_fresh = false;
+        cached_status.charger_fresh = false;
         return;
     }
     last_poll_us = esp_timer_get_time();
@@ -260,6 +271,11 @@ void battery_refresh( void )
     if( RFSCOUT_BATTERY_I2C_GAUGE_CHARGER == RFSCOUT_BOARD_BATTERY_TYPE )
     {
         refresh_i2c_battery( &next );
+    }
+    if( !board_i2c_ready() )
+    {
+        next.percentage_fresh = false;
+        next.charger_fresh = false;
     }
     cached_status = next;
 }
