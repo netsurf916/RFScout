@@ -115,6 +115,7 @@ static void activate_app_if_ready( int64_t a_now_us )
 
 /** @brief Navigation order is independent of stable persisted application IDs. */
 static const rfscout_app_id_t navigation_order[ RFSCOUT_APP_COUNT ] = {
+    RFSCOUT_APP_DIAGNOSTICS,
     RFSCOUT_APP_SYSTEM_EVENTS,
     RFSCOUT_APP_DEVICE,
     RFSCOUT_APP_WIFI_BT,
