@@ -579,27 +579,28 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
     else if( 0x06U == a_class && 0x03U == a_id && GPS_POLICY_WAIT_TIMEPULSE == policy_state &&
              16U == a_size )
     {
-        if( 0U != a_data[ 8 ] )
+        const bool desired = device_config_get()->gps_timepulse_enabled;
+        if( ( 0U != a_data[ 8 ] ) != desired )
         {
             uint8_t timepulse[ 16 ];
             memcpy( timepulse, a_data, sizeof( timepulse ) );
-            timepulse[ 8 ] = 0U;
+            timepulse[ 8 ] = desired ? 1U : 0U;
             if( policy_send( 0x06U, 0x03U, timepulse, sizeof( timepulse ) ) )
             {
-                ESP_LOGI( TAG, "GPS time-pulse disable requested; awaiting ACK" );
-                policy_log_event( "timepulse_disable_requested", 0, 0 );
+                ESP_LOGI( TAG, "GPS timepulse change requested; awaiting ACK" );
+                policy_log_event( "timepulse_change_requested", desired ? 1 : 0, 0 );
                 policy_state = GPS_POLICY_WAIT_TIMEPULSE_ACK;
                 policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
             }
             else
             {
-                ESP_LOGW( TAG, "GPS time-pulse disable send failed; NMEA unaffected" );
+                ESP_LOGW( TAG, "GPS timepulse update send failed; NMEA unaffected" );
             }
         }
         else
         {
-            ESP_LOGI( TAG, "GPS time pulse already disabled; no write required" );
-            policy_log_event( "timepulse_already_disabled", 0, 0 );
+            ESP_LOGI( TAG, "GPS timepulse already matches preference; no write required" );
+            policy_log_event( "timepulse_already_configured", desired ? 1 : 0, 0 );
         }
         if( GPS_POLICY_WAIT_TIMEPULSE == policy_state )
         {
@@ -609,7 +610,7 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
     else if( 0x05U == a_class && 0x01U == a_id && GPS_POLICY_WAIT_TIMEPULSE_ACK == policy_state &&
              4U == a_size && 0x06U == a_data[ 0 ] && 0x03U == a_data[ 1 ] )
     {
-        ESP_LOGI( TAG, "GPS CFG-TP disable acknowledged; checking readback" );
+        ESP_LOGI( TAG, "GPS CFG-TP change acknowledged; checking readback" );
         policy_state = GPS_POLICY_VERIFY_TIMEPULSE;
         policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
         if( !policy_send( 0x06U, 0x03U, NULL, 0U ) )
@@ -621,10 +622,11 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
     else if( 0x06U == a_class && 0x03U == a_id && GPS_POLICY_VERIFY_TIMEPULSE == policy_state &&
              16U == a_size )
     {
-        const bool disabled = 0U == a_data[ 8 ];
-        ESP_LOGI( TAG, "GPS CFG-TP readback: %s", disabled ? "disabled" : "still enabled" );
+        const bool expected = device_config_get()->gps_timepulse_enabled;
+        const bool matches = ( 0U != a_data[ 8 ] ) == expected;
+        ESP_LOGI( TAG, "GPS CFG-TP readback: %s", matches ? "verified" : "mismatch" );
         policy_log_event(
-            disabled ? "timepulse_verified_disabled" : "timepulse_verify_failed", 0, a_data[ 8 ] );
+            matches ? "timepulse_verified" : "timepulse_verify_failed", expected ? 1 : 0, a_data[ 8 ] );
         policy_query_rate();
     }
     else if( 0x06U == a_class && 0x04U == a_id && GPS_POLICY_WAIT_RATE == policy_state &&
