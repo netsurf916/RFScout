@@ -54,19 +54,24 @@ static void update_direction_led( void )
     {
         return;
     }
-    last_led_sector = sector;
-    (void)led_ring_clear();
-    if( sector < 0 )
+    if( ESP_OK != led_ring_clear() )
     {
         return;
     }
-    const rfscout_led_color_t color = {
-        .red = (uint8_t)( config->gps_led_rgb >> 16 ),
-        .green = (uint8_t)( config->gps_led_rgb >> 8 ),
-        .blue = (uint8_t)config->gps_led_rgb,
-    };
-    (void)led_ring_set( (unsigned)sector, color );
-    (void)led_ring_show();
+    if( sector >= 0 )
+    {
+        const rfscout_led_color_t color = {
+            .red = (uint8_t)( config->gps_led_rgb >> 16 ),
+            .green = (uint8_t)( config->gps_led_rgb >> 8 ),
+            .blue = (uint8_t)config->gps_led_rgb,
+        };
+        if( ESP_OK != led_ring_set( (unsigned)sector, color ) ||
+            ESP_OK != led_ring_show() )
+        {
+            return;
+        }
+    }
+    last_led_sector = sector;
 }
 
 static void refresh_led_settings( void )
