@@ -38,6 +38,8 @@ esp_err_t mlx90640_probe( void );
 
 /** @brief Initialize the optional MLX90640 by probing its standard address. */
 esp_err_t mlx90640_init( void );
+/** @brief Discard any partially acquired sensor subpages after pausing the app. */
+void mlx90640_discard_partial_frame( void );
 
 /** @brief Return whether the sensor is currently known to be present. */
 bool mlx90640_is_detected( void );
