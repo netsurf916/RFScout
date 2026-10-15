@@ -44,6 +44,7 @@ static rfscout_app_runtime_result_t thermal_runtime( const rfscout_app_runtime_e
     {
         last_refresh_us = 0;
         menu_active = false;
+        mlx90640_discard_partial_frame();
         menu_item = 0U;
         display_idle_set_keep_awake( keep_screen_awake );
         thermal_view_enter();
@@ -51,6 +52,7 @@ static rfscout_app_runtime_result_t thermal_runtime( const rfscout_app_runtime_e
     }
     if( RFSCOUT_APP_RUNTIME_LEAVE == a_event->type )
     {
+        mlx90640_discard_partial_frame();
         display_idle_set_keep_awake( false );
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
@@ -61,6 +63,7 @@ static rfscout_app_runtime_result_t thermal_runtime( const rfscout_app_runtime_e
             if( !menu_active )
             {
                 menu_active = true;
+                mlx90640_discard_partial_frame();
                 menu_item = 0U;
             }
             else if( 0U == menu_item )
@@ -119,7 +122,8 @@ static rfscout_app_runtime_result_t thermal_runtime( const rfscout_app_runtime_e
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
     const esp_err_t result = thermal_view_render();
-    if( ( ESP_OK != result ) && mlx90640_is_detected() )
+    if( ( ESP_OK != result ) && ( ESP_ERR_NOT_FINISHED != result ) &&
+        mlx90640_is_detected() )
     {
         /* Avoid hammering an unhealthy shared I2C bus between other clients. */
         last_refresh_us = a_event->now_us + THERMAL_ERROR_BACKOFF_US;
