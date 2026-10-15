@@ -28,7 +28,6 @@
 #define THERMAL_PANEL_Y UI_LAYOUT_PANEL_TOP_Y
 #define THERMAL_PANEL_WIDTH 112
 #define THERMAL_PANEL_HEIGHT ( UI_LAYOUT_PANEL_BOTTOM_Y - THERMAL_PANEL_Y )
-#define THERMAL_CELL_WIDTH ( THERMAL_IMAGE_WIDTH / MLX90640_WIDTH )
 #define THERMAL_CELL_HEIGHT ( THERMAL_IMAGE_HEIGHT / MLX90640_HEIGHT )
 #define THERMAL_RANGE_MARGIN_DENOMINATOR 16
 
@@ -220,9 +219,11 @@ esp_err_t thermal_view_render( void )
         for( int x = 0; x < MLX90640_WIDTH; ++x )
         {
             const int32_t value = spatial_sample( x, y );
-            display_fill_rect_raw( THERMAL_IMAGE_X + x * THERMAL_CELL_WIDTH,
+            const int cell_left = x * THERMAL_IMAGE_WIDTH / MLX90640_WIDTH;
+            const int cell_right = ( x + 1 ) * THERMAL_IMAGE_WIDTH / MLX90640_WIDTH;
+            display_fill_rect_raw( THERMAL_IMAGE_X + cell_left,
                                    THERMAL_IMAGE_Y + y * THERMAL_CELL_HEIGHT,
-                                   THERMAL_CELL_WIDTH,
+                                   cell_right - cell_left,
                                    THERMAL_CELL_HEIGHT,
                                    palette( value, display_minimum, display_maximum ) );
         }
