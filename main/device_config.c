@@ -386,8 +386,7 @@ static void load_gps( const cJSON *a_root )
     config.gps_led_enabled = json_bool( gps, "led_enabled", config.gps_led_enabled );
     config.gps_keep_awake = json_bool( gps, "keep_awake", config.gps_keep_awake );
     const cJSON *brightness = cJSON_GetObjectItemCaseSensitive( gps, "led_brightness" );
-    if( cJSON_IsNumber( brightness ) && brightness->valueint >= 0 &&
-        brightness->valueint <= 100 )
+    if( cJSON_IsNumber( brightness ) && brightness->valueint >= 0 && brightness->valueint <= 100 )
     {
         config.gps_led_brightness = (uint8_t)brightness->valueint;
     }
