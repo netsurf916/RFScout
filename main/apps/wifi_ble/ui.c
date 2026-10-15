@@ -180,8 +180,8 @@ static void render_summary( void )
     display_clear( theme->background );
     ui_chrome_draw( "WIFI / BLE", theme->secondary );
     /* Keep system-owned status glyphs above y=22, and use the #115 panel style. */
-    draw_dashboard_panel( 4, 24, 152, 108 );
-    draw_dashboard_panel( 160, 24, 156, 34 );
+    draw_dashboard_panel( UI_LAYOUT_PANEL_LEFT_X, UI_LAYOUT_PANEL_TOP_Y, 152, 108 );
+    draw_dashboard_panel( 160, UI_LAYOUT_PANEL_TOP_Y, 156, 34 );
     draw_dashboard_panel( 160, 62, 156, 70 );
     draw_dashboard_panel( 4, 136, 312, 28 );
 
