@@ -32,4 +32,8 @@ RFScout does **not** currently present the displayed frame values as calibrated 
 
 ## Current limitations
 
-Current behavior does not yet include calibrated absolute temperature, invalid-pixel filtering, user-lockable range, or retained history/statistics. The image intentionally retains visible native pixels instead of implying greater sensor resolution through interpolation. Acquisition reads pixels in 128-word I2C blocks (six transfers per subpage instead of 24) to lower transaction overhead on the existing shared 400 kHz bus. Acquisition is polled every 30 ms while active, but complete-frame rate remains limited by sensor subpage delivery and shared I2C transfers; the UI change does not claim additional sensor frames.
+Current behavior does not yet include calibrated absolute temperature, invalid-pixel filtering, user-lockable range, or retained history/statistics. The image intentionally retains visible native pixels instead of implying greater sensor resolution through interpolation. Acquisition reads pixels in 32-word bounded I2C blocks (24 transfers per subpage) to lower transaction overhead on the existing shared 400 kHz bus. Acquisition is polled every 50 ms while active, but complete-frame rate remains limited by sensor subpage delivery and shared I2C transfers; the UI change does not claim additional sensor frames.
+
+## I2C failure handling
+
+A complete-frame read failure discards pending subpage data and allows up to three successive failed acquisitions before treating the sensor as disconnected. This reduces false hot-plug events from transient bus contention; persistent errors still trigger the existing Home fallback. The shared I2C bus, battery devices, and watchdog require device-side validation when an electrical bus hang occurs. Pixel Quest boxes reuse `ui_game_draw_panel` rather than bespoke edges.
