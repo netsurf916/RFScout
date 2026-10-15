@@ -85,6 +85,7 @@ esp_err_t device_config_save(void);
 #include <stdbool.h>
 #include <stdint.h>
 typedef struct {
+    bool gps_timepulse_enabled;
     bool gps_led_enabled;
     uint8_t gps_led_brightness;
     uint32_t gps_led_rgb;
