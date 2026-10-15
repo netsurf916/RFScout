@@ -17,17 +17,18 @@ RGB color, and GPS display keep-awake. Avoid illuminating on stale/no-fix readin
 
 Rework the GPS app's settings menu (Back, Reset trip, LED enable, LED intensity,
 LED color, Stay awake, breadcrumbs enabled/file retention, and GPS inactivity timeout).
-Retain system-owned storage/retention and background breadcrumb capture while moving
-their controls to GPS. The GPS app is a *view of system services*, not their owner.
+Retain system-owned storage/retention and background breadcrumb capture; expose
+those same controls in both Home and GPS, backed by one service-owned setting. The GPS app is a *view of system services*, not their owner.
 
 ## Breadcrumb capture
-The current recorder is fixed at five seconds and suppresses duplicate Unix-second
-timestamps. Its source includes *verified* GPS current update interval, distinct from
-target policy. Derive a bounded recorder interval from verified input cadence, avoid
-duplicate fixes, and use subsecond monotonic acquisition timestamps when output rate
-exceeds 1 Hz. The existing hourly/ten-minute file buckets and file-count retention
-are not a byte cap; monitor SD write amplification and queue depth. Never raise output
-rate solely because a faster rate was requested but not ACK/readback verified.
+Breadcrumb recording automatically adapts between **five seconds and one second**.
+With an unavailable or unverified receiver update cadence, use the conservative
+five-second interval. When a verified receiver rate is available, allow recording
+up to once per second, never more frequently, regardless of how fast the receiver
+itself reports fixes. Do not write duplicate GPS UTC seconds. A valid fresh position
+and GPS UTC are required. This deliberately preserves the existing second-precision
+CSV timestamp format and the existing file-count retention policy (which is not a
+byte cap). Rate increases are automatic, not a user-configurable GPS setting.
 
 ## Receiver controls
 Baud probing, NMEA output and CASIC rate auto-negotiation remain strictly platform-owned
