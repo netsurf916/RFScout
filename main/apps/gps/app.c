@@ -80,6 +80,14 @@ static void refresh_led_settings( void )
             ESP_LOGW( TAG, "LED ring unavailable" );
         }
     }
+    if( !config->gps_led_enabled && led_ready )
+    {
+        if( ESP_OK == led_ring_deinit() )
+        {
+            led_ready = false;
+        }
+        return;
+    }
     if( led_ready )
     {
         (void)led_ring_set_brightness( config->gps_led_brightness );
@@ -200,8 +208,17 @@ static rfscout_app_runtime_result_t gps_runtime( const rfscout_app_runtime_event
     {
         if( led_ready )
         {
-            (void)led_ring_clear();
+            const esp_err_t release = led_ring_deinit();
+            if( ESP_OK != release )
+            {
+                ESP_LOGE( TAG, "LED ring release failed: %s", esp_err_to_name( release ) );
+            }
+            else
+            {
+                led_ready = false;
+            }
         }
+        last_led_sector = -1;
         display_idle_set_keep_awake( false );
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
