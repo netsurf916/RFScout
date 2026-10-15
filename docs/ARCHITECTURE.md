@@ -492,3 +492,7 @@ Application UI must use `ui_theme_get()` semantic colors rather than hardcoded R
 ## Startup application service ordering
 
 The display-idle policy is initialized **before** `app_manager_init()` dispatches the configured startup app's `ENTER` event. This ensures screen-awake requests from Thermal or Audio Spectrum are not cleared by later service initialization. App lifecycle callbacks should only depend on already initialized shared services, and future service dependencies must follow the same ordering rule. Note that platform, device configuration, theme and input initialization precede app entry.
+
+## Opt-in display diagnostics
+
+Diagnostics is a persistent, disabled-by-default application listed immediately before System Events in the navigation order. Enable it from Home > Device Settings > Apps > Diagnostics. Its appended application ID preserves all existing persisted IDs. The first page draws six canonical RGB565 swatches (red, green, blue, orange, cyan, white) with raw, non-theme-translated colors to validate display channel/byte ordering on hardware. Press the center/select control to switch to semantic palette swatches (background, text, accent, logo primary, logo secondary, selected). Turn the encoder to navigate to another application. Diagnostics owns no radio service, and no display-driver RGB565 configuration is altered.
