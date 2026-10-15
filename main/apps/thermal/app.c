@@ -7,6 +7,8 @@
 #include "app_descriptor.h"
 
 #include "app_framework.h"
+#include "app_manager.h"
+#include "display_idle.h"
 #include "mlx90640.h"
 #include "thermal_view.h"
 
@@ -16,6 +18,9 @@
 
 static bool service_initialized;
 static int64_t last_refresh_us;
+static bool menu_active;
+static bool keep_screen_awake = true;
+static unsigned menu_item;
 
 static esp_err_t probe_thermal( void )
 {
@@ -37,8 +42,56 @@ static rfscout_app_runtime_result_t thermal_runtime( const rfscout_app_runtime_e
     if( RFSCOUT_APP_RUNTIME_ENTER == a_event->type )
     {
         last_refresh_us = 0;
+        menu_active = false;
+        menu_item = 0U;
+        display_idle_set_keep_awake( keep_screen_awake );
         thermal_view_enter();
         return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
+    if( RFSCOUT_APP_RUNTIME_LEAVE == a_event->type )
+    {
+        display_idle_set_keep_awake( false );
+        return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
+    if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type )
+    {
+        if( RFSCOUT_INPUT_SELECT == a_event->input.type )
+        {
+            if( !menu_active )
+            {
+                menu_active = true;
+                menu_item = 0U;
+            }
+            else if( 0U == menu_item )
+            {
+                menu_active = false;
+            }
+            else if( 1U == menu_item )
+            {
+                (void)app_manager_set_locked( !app_manager_locked() );
+            }
+            else
+            {
+                keep_screen_awake = !keep_screen_awake;
+                display_idle_set_keep_awake( keep_screen_awake );
+            }
+            if( menu_active )
+            {
+                thermal_view_menu( menu_item, app_manager_locked(), keep_screen_awake );
+            }
+            else
+            {
+                thermal_view_enter();
+            }
+            return RFSCOUT_APP_RUNTIME_HANDLED;
+        }
+        if( menu_active && RFSCOUT_INPUT_NAVIGATION == a_event->input.type )
+        {
+            menu_item = ( menu_item + ( a_event->input.value > 0 ? 1U : 2U ) ) % 3U;
+            thermal_view_menu( menu_item, app_manager_locked(), keep_screen_awake );
+            return RFSCOUT_APP_RUNTIME_HANDLED;
+        }
+        return RFSCOUT_APP_RUNTIME_IGNORED;
     }
     if( RFSCOUT_APP_RUNTIME_POLL != a_event->type )
     {
@@ -60,6 +113,10 @@ static rfscout_app_runtime_result_t thermal_runtime( const rfscout_app_runtime_e
     }
 
     last_refresh_us = a_event->now_us;
+    if( menu_active )
+    {
+        return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
     const esp_err_t result = thermal_view_render();
     if( ( ESP_OK != result ) && ( ESP_ERR_NOT_FINISHED != result ) && !mlx90640_is_detected() )
     {
