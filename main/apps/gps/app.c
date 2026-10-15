@@ -117,7 +117,7 @@ static void select_menu_item( void )
         case 3U:
             result =
                 device_config_set_gps_led( config->gps_led_enabled,
-                                           (uint8_t)( ( config->gps_led_brightness + 10U ) % 110U ),
+                                           (uint8_t)( config->gps_led_brightness >= 90U ? 0U : config->gps_led_brightness + 10U ),
                                            config->gps_led_rgb );
             break;
         case 4U:
