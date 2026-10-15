@@ -198,8 +198,8 @@ static void enter_sleep( void )
     const esp_err_t led_result = led_ring_clear();
     if( ESP_OK != led_result )
     {
-        ESP_LOGW( TAG, "sleep cancelled: LED ring could not clear: %s",
-                  esp_err_to_name( led_result ) );
+        ESP_LOGW(
+            TAG, "sleep cancelled: LED ring could not clear: %s", esp_err_to_name( led_result ) );
         system_lifecycle_abort( SYSTEM_LIFECYCLE_DEEP_SLEEP );
         set_idle_status();
         return;
