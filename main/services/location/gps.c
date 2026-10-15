@@ -801,6 +801,8 @@ static void policy_poll( int64_t a_now )
         ESP_LOGW( TAG, "GPS no NMEA at %d baud; returning to discovery", active_baud );
         policy_log_event( "baud_fallback", policy_baud_previous, active_baud );
         policy_state = GPS_POLICY_IDLE;
+        policy_timepulse_runtime = false;
+        policy_timepulse_pending = false;
         policy_baud_attempted = true;
         baud_locked = false;
         receiver_detected = false;
@@ -1424,6 +1426,8 @@ esp_err_t gps_init( void )
     satellites_updated_us = 0;
     baud_locked = false;
     policy_state = GPS_POLICY_IDLE;
+    policy_timepulse_runtime = false;
+    policy_timepulse_pending = false;
     casic_length = 0U;
     casic_expected = 0U;
     policy_last_change_us = 0;
@@ -1618,6 +1622,8 @@ void gps_poll( void )
         receiver_detected = false;
         baud_locked = false;
         policy_state = GPS_POLICY_IDLE;
+        policy_timepulse_runtime = false;
+        policy_timepulse_pending = false;
         snapshot.available = false;
         snapshot.location_valid = false;
         snapshot.time_valid = false;
@@ -1722,7 +1728,12 @@ bool gps_rate_diagnostics_get( float *a_filtered_speed_mps,
                                int *a_current_interval_ms,
                                int *a_target_interval_ms )
 {
-    if( !policy_filtered_speed_valid || esp_timer_get_time() - policy_filtered_speed_updated_us >
+    if( !receiver_detected || GPS_POLICY_ACTIVE != policy_state || policy_rate_scan ||
+        policy_current_interval_ms < GPS_RATE_MIN_MS ||
+        policy_current_interval_ms > GPS_RATE_MAX_MS ||
+        policy_rate_support[ ( policy_current_interval_ms - GPS_RATE_MIN_MS ) / GPS_RATE_STEP_MS ] !=
+            1U ||
+        !policy_filtered_speed_valid || esp_timer_get_time() - policy_filtered_speed_updated_us >
                                             (int64_t)GPS_FIX_STALE_MS * 1000LL )
     {
         return false;
