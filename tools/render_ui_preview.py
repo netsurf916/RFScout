@@ -82,6 +82,16 @@ rfscout_style_id_t device_config_style(void);
 esp_err_t device_config_set_colors(rfscout_colors_id_t);
 rfscout_colors_id_t device_config_colors(void);
 esp_err_t device_config_save(void);
+#include <stdbool.h>
+#include <stdint.h>
+typedef struct {
+    bool gps_led_enabled;
+    uint8_t gps_led_brightness;
+    uint32_t gps_led_rgb;
+    bool gps_keep_awake;
+    uint8_t gps_timeout_seconds;
+} device_config_t;
+const device_config_t *device_config_get(void);
 typedef enum { RFSCOUT_EVIDENCE_STRENGTH_EVERYTHING, RFSCOUT_EVIDENCE_STRENGTH_POSSIBLE,
 RFSCOUT_EVIDENCE_STRENGTH_PROBABLE, RFSCOUT_EVIDENCE_STRENGTH_DISTINCTIVE,
 RFSCOUT_EVIDENCE_STRENGTH_COUNT } rfscout_evidence_strength_t;
