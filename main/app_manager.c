@@ -123,9 +123,9 @@ static const rfscout_app_id_t navigation_order[ RFSCOUT_APP_COUNT ] = {
     RFSCOUT_APP_CC1101,
     RFSCOUT_APP_NRF24,
     RFSCOUT_APP_AUDIO,
-    RFSCOUT_APP_THERMAL,
     RFSCOUT_APP_AUDIO_SPECTRUM,
     RFSCOUT_APP_GPS,
+    RFSCOUT_APP_THERMAL,
 };
 
 static rfscout_app_id_t next_available_app( int a_direction )
