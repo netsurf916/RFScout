@@ -94,8 +94,12 @@ static void refresh_led_settings( void )
     }
     if( led_ready )
     {
-        (void)led_ring_set_brightness( config->gps_led_brightness );
-        (void)led_ring_clear();
+        if( ESP_OK != led_ring_set_brightness( config->gps_led_brightness ) ||
+            ESP_OK != led_ring_clear() )
+        {
+            /* Keep the old sector state; the next poll retries the output change. */
+            return;
+        }
         last_led_sector = -1;
         update_direction_led();
     }
@@ -220,7 +224,12 @@ static rfscout_app_runtime_result_t gps_runtime( const rfscout_app_runtime_event
     {
         if( led_ready )
         {
-            const esp_err_t release = led_ring_deinit();
+            esp_err_t release = led_ring_deinit();
+            if( ESP_ERR_TIMEOUT == release )
+            {
+                /* One bounded retry after an in-flight RMT frame has had time to finish. */
+                release = led_ring_deinit();
+            }
             if( ESP_OK != release )
             {
                 ESP_LOGE( TAG, "LED ring release failed: %s", esp_err_to_name( release ) );
