@@ -17,6 +17,10 @@
 #define UI_LAYOUT_FOOTER_Y 150
 /** Shared instrument panel origin and text insets (see GPS and Thermal). */
 #define UI_LAYOUT_PANEL_TOP_Y 24
+#define UI_LAYOUT_PANEL_LEFT_X 4
+#define UI_LAYOUT_PANEL_RIGHT_X ( RFSCOUT_DISPLAY_WIDTH - 4 )
+#define UI_LAYOUT_PANEL_GUTTER 4
+#define UI_LAYOUT_PANEL_BOTTOM_Y ( RFSCOUT_DISPLAY_HEIGHT - 6 )
 #define UI_LAYOUT_PANEL_TEXT_INSET_X 6
 #define UI_LAYOUT_PANEL_TITLE_INSET_Y 4
 
