@@ -200,6 +200,30 @@ static void select_menu_item( void )
     refresh_led_settings();
 }
 
+/* App manager invokes this before committing a navigation transition. */
+static esp_err_t gps_prepare_leave( void )
+{
+    if( !led_ready )
+    {
+        return ESP_OK;
+    }
+    esp_err_t result = led_ring_deinit();
+    if( ESP_ERR_TIMEOUT == result )
+    {
+        /* One bounded retry; do not transfer ownership if the LEDs remain lit. */
+        result = led_ring_deinit();
+    }
+    if( ESP_OK == result )
+    {
+        led_ready = false;
+    }
+    else
+    {
+        ESP_LOGE( TAG, "LED ring cleanup blocked app exit: %s", esp_err_to_name( result ) );
+    }
+    return result;
+}
+
 static rfscout_app_runtime_result_t gps_runtime( const rfscout_app_runtime_event_t *a_event )
 {
     if( NULL == a_event )
@@ -223,24 +247,9 @@ static rfscout_app_runtime_result_t gps_runtime( const rfscout_app_runtime_event
     }
     if( RFSCOUT_APP_RUNTIME_LEAVE == a_event->type )
     {
-        if( led_ready )
-        {
-            esp_err_t release = led_ring_deinit();
-            if( ESP_ERR_TIMEOUT == release )
-            {
-                /* One bounded retry after an in-flight RMT frame has had time to finish. */
-                release = led_ring_deinit();
-            }
-            if( ESP_OK != release )
-            {
-                ESP_LOGE( TAG, "LED ring release failed: %s", esp_err_to_name( release ) );
-            }
-            else
-            {
-                led_ready = false;
-            }
-        }
+        /* The prepare hook already cleared and released the LED ring. */
         last_led_sector = -1;
+        led_refresh_pending = false;
         display_idle_set_keep_awake( false );
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
@@ -307,4 +316,6 @@ const rfscout_app_descriptor_t rfscout_gps_app = {
     .requires_activation = false,
     .services = RFSCOUT_APP_SERVICE_NONE,
     .runtime = gps_runtime,
+    .prepare_leave = gps_prepare_leave,
+    .transition_denial_message = "GPS LED ring is busy",
 };
