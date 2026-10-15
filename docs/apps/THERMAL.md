@@ -53,3 +53,7 @@ The displayed sensor values are uncalibrated raw RAM words. Correcting per-pixel
 ## Frame acquisition pacing
 
 Each runtime call performs up to four 32-word I2C transfers, rather than one; that requires six polls per subpage instead of 24 while still yielding to other system work between bursts. The shared bus is configured for 400 kHz. Firmware build and on-device frame-rate characterization are required before claiming a sustained update rate.
+
+## Presentation follow-up
+
+Both live-view panels now use the same Y origin and height. Pixel Quest uses the shared clipped-corner panel primitive, while simpler styles use theme surfaces without leftover rectangular outlines. The displayed 32x24 cells use a small per-frame spatial neighborhood filter to attenuate raw alternating-cell contrast. This is visual smoothing only: it cannot substitute for per-pixel EEPROM calibration and introduces no temporal averaging or additional sensor bus activity.
