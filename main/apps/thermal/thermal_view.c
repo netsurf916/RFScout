@@ -135,6 +135,11 @@ void thermal_view_enter( void )
         ui_game_draw_panel( UI_LAYOUT_PANEL_LEFT_X, THERMAL_PANEL_Y, 196, THERMAL_PANEL_HEIGHT, theme->divider );
         ui_game_draw_panel( THERMAL_PANEL_X, THERMAL_PANEL_Y, THERMAL_PANEL_WIDTH, THERMAL_PANEL_HEIGHT, theme->divider );
     }
+    else
+    {
+        display_fill_rect_raw( UI_LAYOUT_PANEL_LEFT_X, THERMAL_PANEL_Y, 196, THERMAL_PANEL_HEIGHT, theme->surface );
+        display_fill_rect_raw( THERMAL_PANEL_X, THERMAL_PANEL_Y, THERMAL_PANEL_WIDTH, THERMAL_PANEL_HEIGHT, theme->surface );
+    }
     display_draw_text( THERMAL_INFO_X, THERMAL_PANEL_Y + UI_LAYOUT_PANEL_TITLE_INSET_Y,
                        "IR INTENSITY", theme->secondary, 1U );
     display_draw_text( THERMAL_IMAGE_X + 30, THERMAL_IMAGE_Y + 52,
