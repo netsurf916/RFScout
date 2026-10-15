@@ -363,7 +363,7 @@ The media store also exposes an explicit presence probe for navigation dependenc
 
 Rotating logs use `rfscout-00.log` through `rfscout-99.log` in `system/logs`, up to 4 MiB each, while attempting to preserve at least 64 MiB free. The conservative hardware-tested SD baseline remains a FAT-compatible SanDisk card of 32 GB or less.
 
-Breadcrumb recording is independent from the ordinary SD logging toggle and requires fresh valid GPS position **and GPS UTC**. Accepted fixes are sampled at most once every five seconds and bucketed into ten-minute GPS-UTC filenames in `system/breadcrumbs`. Current retention is file-count based.
+Breadcrumb recording is independent from the ordinary SD logging toggle and requires fresh valid GPS position **and GPS UTC**. Accepted fixes are sampled automatically between one and five seconds: five seconds is the conservative fallback, and a verified actual receiver rate can accelerate capture to at most once per second. Duplicate whole-second GPS UTC stamps are suppressed. Samples are bucketed into ten-minute GPS-UTC filenames in `system/breadcrumbs`. Current retention is file-count based, not a per-file byte limit. The Home and GPS menus access the same service-owned recording and retention settings.
 
 ## Firmware image and OTA architecture
 
