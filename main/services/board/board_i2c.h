@@ -13,6 +13,7 @@
 #include "driver/i2c_master.h"
 #include "esp_err.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -21,6 +22,9 @@ esp_err_t board_i2c_init( void );
 
 /** @brief Return the initialized shared I2C bus handle, or NULL when initialization fails. */
 i2c_master_bus_handle_t board_i2c_handle( void );
+
+/** @brief Whether shared I2C clients may transact after a hardware timeout. */
+bool board_i2c_ready( void );
 
 /** @brief Probe one seven-bit address on the shared board I2C bus. */
 esp_err_t board_i2c_probe( uint16_t a_address );
