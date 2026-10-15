@@ -141,10 +141,9 @@ const ui_theme_palette_t *ui_theme_palette( rfscout_theme_id_t a_theme )
 
 const ui_theme_palette_t *ui_theme_get( void )
 {
-    return ui_theme_palette( active_colors == RFSCOUT_COLORS_NIGHT ? RFSCOUT_THEME_NIGHT
-                             : active_colors == RFSCOUT_COLORS_OUTDOOR
-                                 ? RFSCOUT_THEME_OUTDOOR
-                                 : RFSCOUT_THEME_DEFAULT );
+    return ui_theme_palette( active_colors == RFSCOUT_COLORS_NIGHT     ? RFSCOUT_THEME_NIGHT
+                             : active_colors == RFSCOUT_COLORS_OUTDOOR ? RFSCOUT_THEME_OUTDOOR
+                                                                       : RFSCOUT_THEME_DEFAULT );
 }
 
 rfscout_style_id_t ui_style_current( void )
