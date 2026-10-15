@@ -484,3 +484,11 @@ There is no historical index, journal compaction, or geographic reload threshold
 ## Current radio-scan ownership
 
 Wi-Fi passive capture uses the framework's promiscuous receiver and hop scheduler. WiFi/BLE and Wardriving configure independent app-local Auto/Manual channel selections; manual selection supports an individual-channel mask, sequential/shuffled complete sweeps, and dwell presets. BLE uses NimBLE advertising discovery with independently selected passive/active mode, duplicate filtering, and scan-duty presets. An active BLE scan may issue scan requests to scannable advertisers, but it does not perform Wi-Fi station discovery. Native active Wi-Fi discovery is **not implemented**. See [WiFi/BLE](apps/WIFI_BLE.md), [Wardriving](apps/Wardriving.md), and [ROADMAP](ROADMAP.md).
+
+## Semantic presentation colors
+
+Application UI must use `ui_theme_get()` semantic colors rather than hardcoded RGB565 constants for backgrounds, text, title chrome, warning/error labels, or selection highlight regions. The shared `ui_color_pair_t` interface provides foreground/background roles via `ui_theme_pair()` for normal, secondary, surface, selected, warning, and error text; `ui_color_pair_reverse()` swaps the pair for intentional inverse video. Resolve pairs at drawing time so theme updates take effect without per-app state. Selected-row text and fill should come from the *same* selected pair. Literal image data and signal visualization color scales may remain independent of the UI theme when explicitly justified; graphs should otherwise use `graph_primary` / `graph_peak`. The obsolete `ui_theme_resolve_legacy_color()` compatibility translator has been removed; display primitives now render the exact RGB565 color supplied by the caller. Applications must provide semantic palette values explicitly.
+
+## Startup application service ordering
+
+The display-idle policy is initialized **before** `app_manager_init()` dispatches the configured startup app's `ENTER` event. This ensures screen-awake requests from Thermal or Audio Spectrum are not cleared by later service initialization. App lifecycle callbacks should only depend on already initialized shared services, and future service dependencies must follow the same ordering rule. Note that platform, device configuration, theme and input initialization precede app entry.
