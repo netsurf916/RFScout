@@ -398,8 +398,7 @@ static void format_requested_detail( power_action_t a_action,
     snprintf( a_output, a_capacity, "%s IN %u", name, (unsigned)a_seconds_remaining );
 }
 
-static void execute_policy_action( power_action_t a_action,
-                                   power_transition_reason_t a_reason )
+static void execute_policy_action( power_action_t a_action, power_transition_reason_t a_reason )
 {
     if( !power_action_available( a_action ) )
     {
