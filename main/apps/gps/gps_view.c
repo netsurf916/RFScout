@@ -57,7 +57,8 @@ void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_reset_faile
                                         "Stay awake",
                                         "Breadcrumbs",
                                         "Retained files",
-                                        "GPS timeout" };
+                                        "GPS timeout",
+                                        "GPS Timepulse" };
         static const char *color_names[] = { "Green", "Red", "Blue", "White", "Orange", "Cyan" };
         const device_config_t *config = device_config_get();
         const unsigned first = a_menu_item < 5U ? 0U : a_menu_item - 4U;
@@ -112,6 +113,10 @@ void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_reset_faile
                 case 7U:
                     (void)snprintf(
                         text, sizeof( text ), "%u", (unsigned)breadcrumbs_file_limit() );
+                    break;
+                case 9U:
+                    (void)snprintf( text, sizeof( text ), "%s",
+                                    config->gps_timepulse_enabled ? "On" : "Off" );
                     break;
                 case 8U:
                     (void)snprintf(
