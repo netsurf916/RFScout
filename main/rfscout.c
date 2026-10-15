@@ -472,7 +472,7 @@ void app_main( void )
     if( ESP_OK != result )
     {
         ESP_LOGW(
-            TAG, "theme persistence unavailable; using Indoor: %s", esp_err_to_name( result ) );
+            TAG, "theme persistence unavailable; using Default: %s", esp_err_to_name( result ) );
     }
 
     alert_set_mode( device_config_get()->alert_mode );
