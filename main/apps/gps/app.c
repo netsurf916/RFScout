@@ -23,14 +23,14 @@
 static const char *TAG = "gps_app";
 static int64_t last_refresh_us;
 static bool menu_open;
-static bool reset_failed;
+static bool menu_error;
 static unsigned menu_item;
 static int last_led_sector = -1;
 static bool led_ready;
 
 static void render( void )
 {
-    gps_view_render( menu_open, menu_item, reset_failed );
+    gps_view_render( menu_open, menu_item, menu_error );
 }
 
 static void update_direction_led( void )
@@ -105,6 +105,7 @@ static void select_menu_item( void )
 {
     const device_config_t *config = device_config_get();
     esp_err_t result = ESP_OK;
+    menu_error = false;
     switch( menu_item )
     {
         case 0U:
@@ -112,7 +113,6 @@ static void select_menu_item( void )
             return;
         case 1U:
             result = gps_trip_reset();
-            reset_failed = ESP_OK != result;
             break;
         case 2U:
             result = device_config_set_gps_led(
@@ -186,8 +186,8 @@ static void select_menu_item( void )
     }
     if( ESP_OK != result )
     {
-        ESP_LOGW( TAG, "GPS setting could not be saved: %s", esp_err_to_name( result ) );
-        reset_failed = true;
+        ESP_LOGW( TAG, "GPS menu action failed: %s", esp_err_to_name( result ) );
+        menu_error = true;
     }
     if( ESP_OK == result && 9U == menu_item )
     {
@@ -208,7 +208,7 @@ static rfscout_app_runtime_result_t gps_runtime( const rfscout_app_runtime_event
         last_refresh_us = 0;
         menu_open = false;
         menu_item = 0U;
-        reset_failed = false;
+        menu_error = false;
         led_ready = false;
         last_led_sector = -1;
         display_idle_set_keep_awake( device_config_get()->gps_keep_awake );
@@ -278,7 +278,7 @@ static rfscout_app_runtime_result_t gps_runtime( const rfscout_app_runtime_event
         {
             menu_open = true;
             menu_item = 0U;
-            reset_failed = false;
+            menu_error = false;
             render();
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
