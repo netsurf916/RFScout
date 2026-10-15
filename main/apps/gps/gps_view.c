@@ -37,7 +37,7 @@ static unsigned track_sector( float a_degrees )
     return ( (unsigned)( ( a_degrees + 22.5f ) / 45.0f ) ) % 8U;
 }
 
-void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_reset_failed )
+void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_menu_error )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     rfscout_gps_snapshot_t gps = { 0 };
@@ -132,8 +132,8 @@ void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_reset_faile
         }
         display_draw_text( UI_LAYOUT_LEFT_X,
                            UI_LAYOUT_FOOTER_Y,
-                           "TURN: SELECT  CENTER: CHANGE",
-                           theme->secondary,
+                           a_menu_error ? "ACTION FAILED" : "TURN: SELECT  CENTER: CHANGE",
+                           a_menu_error ? theme->warning : theme->secondary,
                            1U );
         (void)display_present();
         return;
@@ -223,10 +223,6 @@ void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_reset_faile
         const unsigned sector = track_sector( gps.track_deg );
         display_fill_rect(
             272 + offsets_x[ sector ], 120 + offsets_y[ sector ], 3, 3, theme->accent );
-    }
-    if( a_reset_failed )
-    {
-        display_draw_text( 10, 156, "RESET NOT SAVED", theme->warning, 1U );
     }
     (void)display_present();
 }
