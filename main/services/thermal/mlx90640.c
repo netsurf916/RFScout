@@ -25,6 +25,8 @@
 #define MLX90640_STATUS_SUBPAGE 0x0001U
 #define MLX90640_STATUS_CLEAR_VALUE 0x0030U
 #define MLX90640_CONTROL_CHESS_MODE 0x1000U
+#define MLX90640_CONTROL_REFRESH_MASK 0x0380U
+#define MLX90640_CONTROL_REFRESH_16HZ 0x0280U
 #define MLX90640_SUBPAGE_MASK_0 0x01U
 #define MLX90640_SUBPAGE_MASK_1 0x02U
 #define MLX90640_SUBPAGE_MASK_BOTH 0x03U
@@ -39,6 +41,7 @@ static size_t read_offset;
 static uint8_t current_subpage;
 static bool current_chess_mode;
 static bool reading_pixels;
+static bool refresh_configured;
 
 /** @brief Read big-endian 16-bit MLX90640 registers in bounded I2C transfers. */
 static esp_err_t read_words( uint16_t a_register, uint16_t *a_words, size_t a_count )
@@ -125,6 +128,7 @@ esp_err_t mlx90640_probe( void )
     if( ESP_OK != result )
     {
         detected = false;
+        refresh_configured = false;
         return result;
     }
 
@@ -153,6 +157,7 @@ esp_err_t mlx90640_init( void )
     merged_subpages = 0U;
     memset( merged_pixels, 0, sizeof( merged_pixels ) );
     consecutive_read_failures = 0U;
+    refresh_configured = false;
     read_offset = 0U;
     reading_pixels = false;
     return mlx90640_probe();
@@ -171,6 +176,7 @@ static esp_err_t read_failed( esp_err_t a_result )
     if( ++consecutive_read_failures >= MLX90640_READ_FAILURE_RETRY_COUNT )
     {
         detected = false;
+        refresh_configured = false;
     }
     return a_result;
 }
@@ -185,6 +191,31 @@ esp_err_t mlx90640_read_frame( mlx90640_frame_t *a_frame )
     if( !detected || ( NULL == device ) )
     {
         return ESP_ERR_INVALID_STATE;
+    }
+
+    if( !refresh_configured )
+    {
+        uint16_t control;
+        esp_err_t result = read_words( MLX90640_CONTROL_REGISTER, &control, 1U );
+        if( ESP_OK != result )
+        {
+            return read_failed( result );
+        }
+        const uint16_t configured = (uint16_t)(
+            ( control & (uint16_t)~MLX90640_CONTROL_REFRESH_MASK ) |
+            MLX90640_CONTROL_REFRESH_16HZ );
+        if( configured != control )
+        {
+            result = write_word( MLX90640_CONTROL_REGISTER, configured );
+            if( ESP_OK != result )
+            {
+                return read_failed( result );
+            }
+        }
+        ESP_LOGI( TAG, "MLX90640 refresh control: 0x%04X -> 0x%04X (16 Hz subpages)",
+                  control, configured );
+        refresh_configured = true;
+        return ESP_ERR_NOT_FINISHED;
     }
 
     if( !reading_pixels )
