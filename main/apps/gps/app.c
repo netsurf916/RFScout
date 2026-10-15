@@ -18,7 +18,7 @@
 #include <stddef.h>
 
 #define GPS_VIEW_REFRESH_INTERVAL_US 500000LL
-#define GPS_MENU_ITEMS 9U
+#define GPS_MENU_ITEMS 10U
 
 static const char *TAG = "gps_app";
 static int64_t last_refresh_us;
@@ -159,6 +159,9 @@ static void select_menu_item( void )
             result = breadcrumbs_set_file_limit( next );
             break;
         }
+        case 9U:
+            result = device_config_set_gps_timepulse( !config->gps_timepulse_enabled );
+            break;
         case 8U:
         {
             uint8_t next = (uint8_t)( config->gps_timeout_seconds + 5U );
@@ -180,6 +183,10 @@ static void select_menu_item( void )
     {
         ESP_LOGW( TAG, "GPS setting could not be saved: %s", esp_err_to_name( result ) );
         reset_failed = true;
+    }
+    if( ESP_OK == result && 9U == menu_item )
+    {
+        gps_timepulse_apply();
     }
     refresh_led_settings();
 }
