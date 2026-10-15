@@ -20,14 +20,14 @@
 #include <stdio.h>
 
 #define THERMAL_IMAGE_X 4
-#define THERMAL_IMAGE_Y 22
+#define THERMAL_IMAGE_Y 36
 #define THERMAL_IMAGE_WIDTH 192
-#define THERMAL_IMAGE_HEIGHT 144
+#define THERMAL_IMAGE_HEIGHT 120
 #define THERMAL_INFO_X 204
-#define THERMAL_PANEL_X 200
-#define THERMAL_PANEL_Y 24
-#define THERMAL_PANEL_WIDTH 116
-#define THERMAL_PANEL_HEIGHT 142
+#define THERMAL_PANEL_X 201
+#define THERMAL_PANEL_Y 30
+#define THERMAL_PANEL_WIDTH 115
+#define THERMAL_PANEL_HEIGHT 136
 #define THERMAL_CELL_WIDTH ( THERMAL_IMAGE_WIDTH / MLX90640_WIDTH )
 #define THERMAL_CELL_HEIGHT ( THERMAL_IMAGE_HEIGHT / MLX90640_HEIGHT )
 #define THERMAL_RANGE_MARGIN_DENOMINATOR 16
@@ -95,6 +95,36 @@ static uint16_t palette( int32_t a_value, int32_t a_minimum, int32_t a_maximum )
     return rgb565( red, green, blue );
 }
 
+/** @brief Suppress alternating raw-pixel pattern spatially, without frame lag. */
+static int32_t spatial_sample( int a_x, int a_y )
+{
+    const int center = a_y * MLX90640_WIDTH + a_x;
+    const int32_t value = frame.pixels[ center ];
+    int32_t sum = value * 4;
+    int weight = 4;
+    if( a_x > 0 )
+    {
+        sum += frame.pixels[ center - 1 ];
+        ++weight;
+    }
+    if( a_x + 1 < MLX90640_WIDTH )
+    {
+        sum += frame.pixels[ center + 1 ];
+        ++weight;
+    }
+    if( a_y > 0 )
+    {
+        sum += frame.pixels[ center - MLX90640_WIDTH ];
+        ++weight;
+    }
+    if( a_y + 1 < MLX90640_HEIGHT )
+    {
+        sum += frame.pixels[ center + MLX90640_WIDTH ];
+        ++weight;
+    }
+    return sum / weight;
+}
+
 void thermal_view_enter( void )
 {
     /* The image is independently auto-scaled for each complete frame. */
@@ -145,15 +175,11 @@ esp_err_t thermal_view_render( void )
     const int32_t display_minimum = (int32_t)frame.minimum - margin;
     const int32_t display_maximum = (int32_t)frame.maximum + margin;
 
-    /* Frame the image and readings with theme-semantic panels. The raw thermal
-       palette stays independent of the configured UI color theme. */
+    /* Both surfaces share an exact baseline and height. Use the existing
+       clipped-corner panel primitive rather than drawing legacy box edges. */
     if( ui_game_active() )
     {
-        ui_game_draw_panel( THERMAL_IMAGE_X - 2,
-                            THERMAL_IMAGE_Y - 2,
-                            THERMAL_IMAGE_WIDTH + 4,
-                            THERMAL_IMAGE_HEIGHT + 4,
-                            theme->divider );
+        ui_game_draw_panel( 2, THERMAL_PANEL_Y, 196, THERMAL_PANEL_HEIGHT, theme->divider );
         ui_game_draw_panel( THERMAL_PANEL_X,
                             THERMAL_PANEL_Y,
                             THERMAL_PANEL_WIDTH,
@@ -162,11 +188,7 @@ esp_err_t thermal_view_render( void )
     }
     else
     {
-        display_fill_rect_raw( THERMAL_IMAGE_X - 2,
-                               THERMAL_IMAGE_Y - 2,
-                               THERMAL_IMAGE_WIDTH + 4,
-                               THERMAL_IMAGE_HEIGHT + 4,
-                               theme->divider );
+        display_fill_rect_raw( 2, THERMAL_PANEL_Y, 196, THERMAL_PANEL_HEIGHT, theme->surface );
         display_fill_rect_raw( THERMAL_PANEL_X,
                                THERMAL_PANEL_Y,
                                THERMAL_PANEL_WIDTH,
@@ -180,7 +202,7 @@ esp_err_t thermal_view_render( void )
     {
         for( int x = 0; x < MLX90640_WIDTH; ++x )
         {
-            const int32_t value = frame.pixels[ y * MLX90640_WIDTH + x ];
+            const int32_t value = spatial_sample( x, y );
             display_fill_rect_raw( THERMAL_IMAGE_X + x * THERMAL_CELL_WIDTH,
                                    THERMAL_IMAGE_Y + y * THERMAL_CELL_HEIGHT,
                                    THERMAL_CELL_WIDTH,
