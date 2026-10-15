@@ -103,6 +103,12 @@ Two platform cases remain intentionally distinct:
 - **Mounted SD media after physical loss** — the storage probe latches the current volume unavailable. A subsequent media-store probe invalidates pooled file handles under storage arbitration, unmounts the lost volume, and attempts a fresh mount. Stateful clients must detect a changed media generation and rebuild volume-specific state.
 
 
+The terminal deep-sleep path also clears the board-owned WS2812 LED ring after
+successful lifecycle preparation and before entering sleep. This is required even
+when the GPS app is foregrounded, because deep sleep does not dispatch an ordinary
+app-leave event. Failure to clear the ring cancels sleep and rolls back terminal
+preparation so a latched navigation pixel is not left powered during sleep.
+
 ## Application lifecycle, views, and resource sessions
 
 Every active app has a temporary **resource session**, including apps that currently allocate no dynamic PSRAM. An existing session cannot be replaced by calling `app_session_ensure()` for another app, even if it has zero managed allocations: only a successful lifecycle close may retire that session and prove service quiescence. During destination setup, successful service initializations are stopped in reverse order if a later initialization or view acquisition fails. A service's `init()` must remain inactive and its `stop()` must safely release initialized-but-inactive state. If any initialization rollback `stop()` fails, the session retains ownership in a degraded state and blocks all subsequent session acquisition (including the same application). Destination recovery then fails closed rather than overlapping uncertain live resources; a restart is required. The same session owns the app's managed `rfscout_view_t`.
