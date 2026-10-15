@@ -234,28 +234,37 @@ static void refresh_i2c_battery( battery_status_t *a_status )
     const bool charger_priority = charger_first;
     charger_first = !charger_first;
 
-    if( NULL == gauge_device && board_i2c_ready() )
-    {
-        (void)attach_optional_device(
-            RFSCOUT_BOARD_BQ27220_I2C_ADDRESS, "BQ27220 fuel gauge", &gauge_device );
-    }
-    if( NULL == charger_device && board_i2c_ready() )
-    {
-        (void)attach_optional_device(
-            RFSCOUT_BOARD_BQ25896_I2C_ADDRESS, "BQ25896 charger", &charger_device );
-    }
-
     bool gauge_sampled = false;
     bool charger_sampled = false;
     uint16_t gauge_status = 0U;
     if( charger_priority )
     {
+        if( NULL == charger_device && board_i2c_ready() )
+        {
+            (void)attach_optional_device(
+                RFSCOUT_BOARD_BQ25896_I2C_ADDRESS, "BQ25896 charger", &charger_device );
+        }
         sample_charger( a_status, &charger_sampled );
+        if( NULL == gauge_device && board_i2c_ready() )
+        {
+            (void)attach_optional_device(
+                RFSCOUT_BOARD_BQ27220_I2C_ADDRESS, "BQ27220 fuel gauge", &gauge_device );
+        }
         sample_gauge( a_status, &gauge_sampled, &gauge_status );
     }
     else
     {
+        if( NULL == gauge_device && board_i2c_ready() )
+        {
+            (void)attach_optional_device(
+                RFSCOUT_BOARD_BQ27220_I2C_ADDRESS, "BQ27220 fuel gauge", &gauge_device );
+        }
         sample_gauge( a_status, &gauge_sampled, &gauge_status );
+        if( NULL == charger_device && board_i2c_ready() )
+        {
+            (void)attach_optional_device(
+                RFSCOUT_BOARD_BQ25896_I2C_ADDRESS, "BQ25896 charger", &charger_device );
+        }
         sample_charger( a_status, &charger_sampled );
     }
     if( !charger_sampled && gauge_sampled )
@@ -292,11 +301,8 @@ void battery_refresh( void )
     {
         refresh_i2c_battery( &next );
     }
-    if( !board_i2c_ready() )
-    {
-        next.percentage_fresh = false;
-        next.charger_fresh = false;
-    }
+    /* A timeout invalidates unobserved values, not a healthy peer's sample
+       already completed during this refresh. */
     cached_status = next;
 }
 
