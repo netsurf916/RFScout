@@ -44,8 +44,8 @@ static void update_direction_led( void )
     rfscout_gps_snapshot_t gps = { 0 };
     int sector = -1;
     if( gps_snapshot_get( &gps ) && gps.location_valid && gps.location_age_ms <= 5000U &&
-        gps.track_valid && gps.speed_valid && gps.speed_mps >= 0.7f &&
-        gps.track_deg >= 0.0f && gps.track_deg < 360.0f )
+        gps.track_valid && gps.speed_valid && gps.speed_mps >= 0.7f && gps.track_deg >= 0.0f &&
+        gps.track_deg < 360.0f )
     {
         /* Indices are logical azimuth sectors; physical ring orientation needs calibration. */
         sector = ( (int)( ( gps.track_deg + 22.5f ) / 45.0f ) ) % 8;
@@ -107,16 +107,15 @@ static void select_menu_item( void )
                 !config->gps_led_enabled, config->gps_led_brightness, config->gps_led_rgb );
             break;
         case 3U:
-            result = device_config_set_gps_led( config->gps_led_enabled,
-                                                 (uint8_t)( ( config->gps_led_brightness + 10U ) %
-                                                            110U ),
-                                                 config->gps_led_rgb );
+            result =
+                device_config_set_gps_led( config->gps_led_enabled,
+                                           (uint8_t)( ( config->gps_led_brightness + 10U ) % 110U ),
+                                           config->gps_led_rgb );
             break;
         case 4U:
         {
             static const uint32_t colors[] = {
-                0x00FF00U, 0xFF0000U, 0x0000FFU, 0xFFFFFFU, 0xFF8000U, 0x00FFFFU
-            };
+                0x00FF00U, 0xFF0000U, 0x0000FFU, 0xFFFFFFU, 0xFF8000U, 0x00FFFFU };
             unsigned next = 0U;
             for( unsigned i = 0U; i < sizeof( colors ) / sizeof( colors[ 0 ] ); ++i )
             {
@@ -224,8 +223,9 @@ static rfscout_app_runtime_result_t gps_runtime( const rfscout_app_runtime_event
         {
             if( RFSCOUT_INPUT_NAVIGATION == a_event->input.type )
             {
-                menu_item = ( menu_item + ( a_event->input.value > 0 ? 1U : GPS_MENU_ITEMS - 1U ) ) %
-                            GPS_MENU_ITEMS;
+                menu_item =
+                    ( menu_item + ( a_event->input.value > 0 ? 1U : GPS_MENU_ITEMS - 1U ) ) %
+                    GPS_MENU_ITEMS;
             }
             else if( RFSCOUT_INPUT_LONG_PRESS == a_event->input.type )
             {
