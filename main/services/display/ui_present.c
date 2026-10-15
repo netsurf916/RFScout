@@ -166,7 +166,10 @@ static void draw_modal_overlay( void )
     draw_overlay_line( 63, modal_title, theme->accent, 2U );
     if( '\0' != modal_detail[ 0 ] )
     {
-        draw_overlay_line( 88, modal_detail, theme->text, 2U );
+        /* OTA progress counts grow while the transfer runs. Keep the detail at a
+           stable size rather than switching from 2x to 1x when it gets longer. */
+        draw_overlay_line(
+            88, modal_detail, theme->text, 0 == strcmp( modal_title, "OTA UPDATE" ) ? 1U : 2U );
     }
 }
 
