@@ -78,6 +78,7 @@ typedef struct
     bool logging_enabled;
     bool clock_24h;
     uint8_t gps_timeout_seconds;
+    bool gps_timepulse_enabled;
     bool gps_led_enabled;
     uint8_t gps_led_brightness;
     uint32_t gps_led_rgb;
@@ -123,6 +124,7 @@ rfscout_hold_shortcut_t device_config_hold_shortcut( void );
 const char *device_config_hold_shortcut_name( rfscout_hold_shortcut_t a_shortcut );
 esp_err_t device_config_set_hold_shortcut( rfscout_hold_shortcut_t a_shortcut );
 esp_err_t device_config_set_gps_timeout_seconds( uint8_t a_seconds );
+esp_err_t device_config_set_gps_timepulse( bool a_enabled );
 esp_err_t device_config_set_gps_led( bool a_enabled, uint8_t a_brightness, uint32_t a_rgb );
 esp_err_t device_config_set_gps_keep_awake( bool a_enabled );
 esp_err_t device_config_set_clock_24h( bool a_enabled );
