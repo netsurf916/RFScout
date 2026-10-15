@@ -15,30 +15,30 @@
 #include <strings.h>
 
 static const char *TAG = "ui_theme";
-static rfscout_theme_id_t active_theme = RFSCOUT_THEME_PIXEL_QUEST;
+static rfscout_theme_id_t active_theme = RFSCOUT_THEME_DEFAULT;
 static rfscout_style_id_t active_style = RFSCOUT_STYLE_PIXEL_QUEST;
 static rfscout_colors_id_t active_colors = RFSCOUT_COLORS_DEFAULT;
 
 static const ui_theme_palette_t palettes[ RFSCOUT_THEME_COUNT ] = {
-    [RFSCOUT_THEME_INDOOR] =
+    [RFSCOUT_THEME_DEFAULT] =
         {
-            .background = 0x0000U,
-            .text = 0xFFFFU,
-            .secondary = 0xC618U,
-            .divider = 0x8410U,
-            .accent = 0xFC00U,
-            .selected = 0xFC00U,
-            .info = 0xA514U,
-            .normal = 0xFFFFU,
-            .success = 0xC618U,
-            .warning = 0xFFE1U,
-            .error = 0xF800U,
-            .graph_primary = 0xFC00U,
-            .graph_peak = 0xFFFFU,
+            .background = 0x0843U,
+            .text = 0xEFFFU,
+            .secondary = 0x8CD3U,
+            .divider = 0x52D0U,
+            .accent = 0x3E7DU,
+            .selected = 0xFD6AU,
+            .info = 0x6F3FU,
+            .normal = 0xEFFFU,
+            .success = 0x87B0U,
+            .warning = 0xFD6AU,
+            .error = 0xFA09U,
+            .graph_primary = 0x3E7DU,
+            .graph_peak = 0xFD6AU,
             .logo_primary = 0xFC00U,
             .logo_secondary = 0xFFFFU,
-            .surface = 0x1082U,
-            .shadow = 0x0000U,
+            .surface = 0x10C6U,
+            .shadow = 0x0001U,
         },
     [RFSCOUT_THEME_OUTDOOR] =
         {
@@ -80,26 +80,6 @@ static const ui_theme_palette_t palettes[ RFSCOUT_THEME_COUNT ] = {
             .surface = 0x2000U,
             .shadow = 0x0000U,
         },
-    [RFSCOUT_THEME_PIXEL_QUEST] =
-        {
-            .background = 0x0843U,
-            .text = 0xEFFFU,
-            .secondary = 0x8CD3U,
-            .divider = 0x52D0U,
-            .accent = 0x3E7DU,
-            .selected = 0xFD6AU,
-            .info = 0x6F3FU,
-            .normal = 0xEFFFU,
-            .success = 0x87B0U,
-            .warning = 0xFD6AU,
-            .error = 0xFA09U,
-            .graph_primary = 0x3E7DU,
-            .graph_peak = 0xFD6AU,
-            .logo_primary = 0x3E7DU,
-            .logo_secondary = 0xFD6AU,
-            .surface = 0x10C6U,
-            .shadow = 0x0001U,
-        },
 };
 
 esp_err_t ui_theme_init( void )
@@ -123,7 +103,7 @@ esp_err_t ui_theme_set( rfscout_theme_id_t a_theme )
     }
     active_theme = a_theme;
     active_style =
-        a_theme == RFSCOUT_THEME_PIXEL_QUEST ? RFSCOUT_STYLE_PIXEL_QUEST : RFSCOUT_STYLE_SIMPLE;
+        a_theme == RFSCOUT_THEME_DEFAULT ? RFSCOUT_STYLE_PIXEL_QUEST : RFSCOUT_STYLE_SIMPLE;
     active_colors = a_theme == RFSCOUT_THEME_NIGHT     ? RFSCOUT_COLORS_NIGHT
                     : a_theme == RFSCOUT_THEME_OUTDOOR ? RFSCOUT_COLORS_OUTDOOR
                                                        : RFSCOUT_COLORS_DEFAULT;
@@ -154,7 +134,7 @@ const ui_theme_palette_t *ui_theme_palette( rfscout_theme_id_t a_theme )
 {
     if( a_theme >= RFSCOUT_THEME_COUNT )
     {
-        a_theme = RFSCOUT_THEME_INDOOR;
+        a_theme = RFSCOUT_THEME_DEFAULT;
     }
     return &palettes[ a_theme ];
 }
@@ -164,7 +144,7 @@ const ui_theme_palette_t *ui_theme_get( void )
     return ui_theme_palette( active_colors == RFSCOUT_COLORS_NIGHT ? RFSCOUT_THEME_NIGHT
                              : active_colors == RFSCOUT_COLORS_OUTDOOR
                                  ? RFSCOUT_THEME_OUTDOOR
-                                 : RFSCOUT_THEME_PIXEL_QUEST );
+                                 : RFSCOUT_THEME_DEFAULT );
 }
 
 rfscout_style_id_t ui_style_current( void )
@@ -293,16 +273,14 @@ bool ui_colors_from_config_name( const char *a_name, rfscout_colors_id_t *a_colo
 
 const char *ui_theme_config_name( rfscout_theme_id_t a_theme )
 {
-    static const char *names[ RFSCOUT_THEME_COUNT ] = {
-        "indoor", "outdoor", "night", "pixel_quest" };
-    return ( a_theme < RFSCOUT_THEME_COUNT ) ? names[ a_theme ] : names[ RFSCOUT_THEME_INDOOR ];
+    static const char *names[ RFSCOUT_THEME_COUNT ] = { "default", "outdoor", "night" };
+    return ( a_theme < RFSCOUT_THEME_COUNT ) ? names[ a_theme ] : names[ RFSCOUT_THEME_DEFAULT ];
 }
 
 const char *ui_theme_display_name( rfscout_theme_id_t a_theme )
 {
-    static const char *names[ RFSCOUT_THEME_COUNT ] = {
-        "Indoor", "Outdoor", "Night", "Pixel Quest" };
-    return ( a_theme < RFSCOUT_THEME_COUNT ) ? names[ a_theme ] : names[ RFSCOUT_THEME_INDOOR ];
+    static const char *names[ RFSCOUT_THEME_COUNT ] = { "Default", "Outdoor", "Night" };
+    return ( a_theme < RFSCOUT_THEME_COUNT ) ? names[ a_theme ] : names[ RFSCOUT_THEME_DEFAULT ];
 }
 
 bool ui_theme_from_config_name( const char *a_name, rfscout_theme_id_t *a_theme )
