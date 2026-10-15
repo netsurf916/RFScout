@@ -48,8 +48,9 @@ static void update_direction_led( void )
         gps.track_valid && gps.speed_valid && gps.speed_mps >= 0.7f && gps.track_deg >= 0.0f &&
         gps.track_deg < 360.0f )
     {
-        /* Indices are logical azimuth sectors; physical ring orientation needs calibration. */
-        sector = ( (int)( ( gps.track_deg + 22.5f ) / 45.0f ) ) % 8;
+        /* Hardware calibration: physical LED index 0 points West, not North.
+           Shift the clockwise azimuth sector two LEDs so North uses index 2. */
+        sector = ( (int)( ( gps.track_deg + 22.5f ) / 45.0f ) + 2 ) % 8;
     }
     if( sector == last_led_sector && !led_refresh_pending )
     {
