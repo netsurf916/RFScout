@@ -26,6 +26,7 @@ static bool menu_open;
 static bool menu_error;
 static unsigned menu_item;
 static int last_led_sector = -1;
+static bool led_refresh_pending;
 static bool led_ready;
 
 static void render( void )
@@ -50,7 +51,7 @@ static void update_direction_led( void )
         /* Indices are logical azimuth sectors; physical ring orientation needs calibration. */
         sector = ( (int)( ( gps.track_deg + 22.5f ) / 45.0f ) ) % 8;
     }
-    if( sector == last_led_sector )
+    if( sector == last_led_sector && !led_refresh_pending )
     {
         return;
     }
@@ -71,6 +72,7 @@ static void update_direction_led( void )
         }
     }
     last_led_sector = sector;
+    led_refresh_pending = false;
 }
 
 static void refresh_led_settings( void )
@@ -94,13 +96,11 @@ static void refresh_led_settings( void )
     }
     if( led_ready )
     {
-        if( ESP_OK != led_ring_set_brightness( config->gps_led_brightness ) ||
-            ESP_OK != led_ring_clear() )
+        led_refresh_pending = true;
+        if( ESP_OK != led_ring_set_brightness( config->gps_led_brightness ) )
         {
-            /* Keep the old sector state; the next poll retries the output change. */
             return;
         }
-        last_led_sector = -1;
         update_direction_led();
     }
 }
@@ -215,6 +215,7 @@ static rfscout_app_runtime_result_t gps_runtime( const rfscout_app_runtime_event
         menu_error = false;
         led_ready = false;
         last_led_sector = -1;
+        led_refresh_pending = false;
         display_idle_set_keep_awake( device_config_get()->gps_keep_awake );
         refresh_led_settings();
         render();
