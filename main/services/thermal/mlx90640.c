@@ -27,8 +27,8 @@
 #define MLX90640_SUBPAGE_MASK_0 0x01U
 #define MLX90640_SUBPAGE_MASK_1 0x02U
 #define MLX90640_SUBPAGE_MASK_BOTH 0x03U
-#define MLX90640_FILTER_OLD_WEIGHT 3
-#define MLX90640_FILTER_DIVISOR 4
+#define MLX90640_FILTER_OLD_WEIGHT 1
+#define MLX90640_FILTER_DIVISOR 2
 
 static const char *TAG = "mlx90640";
 static i2c_master_dev_handle_t device;
