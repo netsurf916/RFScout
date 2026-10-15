@@ -65,8 +65,7 @@ static void update_direction_led( void )
             .green = (uint8_t)( config->gps_led_rgb >> 8 ),
             .blue = (uint8_t)config->gps_led_rgb,
         };
-        if( ESP_OK != led_ring_set( (unsigned)sector, color ) ||
-            ESP_OK != led_ring_show() )
+        if( ESP_OK != led_ring_set( (unsigned)sector, color ) || ESP_OK != led_ring_show() )
         {
             return;
         }
@@ -120,10 +119,11 @@ static void select_menu_item( void )
                 !config->gps_led_enabled, config->gps_led_brightness, config->gps_led_rgb );
             break;
         case 3U:
-            result =
-                device_config_set_gps_led( config->gps_led_enabled,
-                                           (uint8_t)( config->gps_led_brightness >= 90U ? 0U : config->gps_led_brightness + 10U ),
-                                           config->gps_led_rgb );
+            result = device_config_set_gps_led( config->gps_led_enabled,
+                                                (uint8_t)( config->gps_led_brightness >= 90U
+                                                               ? 0U
+                                                               : config->gps_led_brightness + 10U ),
+                                                config->gps_led_rgb );
             break;
         case 4U:
         {
