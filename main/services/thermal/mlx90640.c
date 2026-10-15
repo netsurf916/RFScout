@@ -20,23 +20,29 @@
 #define MLX90640_CONTROL_REGISTER 0x800DU
 #define MLX90640_PIXEL_START_REGISTER 0x0400U
 #define MLX90640_WORDS_PER_TRANSFER 32U
+#define MLX90640_TRANSFERS_PER_POLL 4U
+#define MLX90640_READ_FAILURE_RETRY_COUNT 3U
 #define MLX90640_STATUS_NEW_DATA 0x0008U
 #define MLX90640_STATUS_SUBPAGE 0x0001U
 #define MLX90640_STATUS_CLEAR_VALUE 0x0030U
 #define MLX90640_CONTROL_CHESS_MODE 0x1000U
+#define MLX90640_CONTROL_REFRESH_MASK 0x0380U
+#define MLX90640_CONTROL_REFRESH_8HZ 0x0200U
 #define MLX90640_SUBPAGE_MASK_0 0x01U
 #define MLX90640_SUBPAGE_MASK_1 0x02U
 #define MLX90640_SUBPAGE_MASK_BOTH 0x03U
-#define MLX90640_FILTER_OLD_WEIGHT 3
-#define MLX90640_FILTER_DIVISOR 4
 
 static const char *TAG = "mlx90640";
 static i2c_master_dev_handle_t device;
 static bool detected;
 static int16_t merged_pixels[ MLX90640_PIXEL_COUNT ];
-static int16_t filtered_pixels[ MLX90640_PIXEL_COUNT ];
 static uint8_t merged_subpages;
-static bool filter_valid;
+static unsigned consecutive_read_failures;
+static size_t read_offset;
+static uint8_t current_subpage;
+static bool current_chess_mode;
+static bool reading_pixels;
+static bool refresh_configured;
 
 /** @brief Read big-endian 16-bit MLX90640 registers in bounded I2C transfers. */
 static esp_err_t read_words( uint16_t a_register, uint16_t *a_words, size_t a_count )
@@ -89,32 +95,13 @@ static bool pixel_in_subpage( size_t a_index, uint8_t a_subpage, bool a_chess_mo
     return pattern == (unsigned)a_subpage;
 }
 
-/** @brief Apply a light temporal low-pass filter to one complete native frame. */
-static void filter_frame( void )
-{
-    if( !filter_valid )
-    {
-        memcpy( filtered_pixels, merged_pixels, sizeof( filtered_pixels ) );
-        filter_valid = true;
-        return;
-    }
-
-    for( size_t index = 0U; index < MLX90640_PIXEL_COUNT; ++index )
-    {
-        const int32_t value = ( (int32_t)filtered_pixels[ index ] * MLX90640_FILTER_OLD_WEIGHT ) +
-                              (int32_t)merged_pixels[ index ];
-        filtered_pixels[ index ] = (int16_t)( value / MLX90640_FILTER_DIVISOR );
-    }
-}
-
 /** @brief Recompute display metadata after both alternating subpages are present. */
 static void finalize_frame( mlx90640_frame_t *a_frame )
 {
     int16_t minimum = INT16_MAX;
     int16_t maximum = INT16_MIN;
 
-    filter_frame();
-    memcpy( a_frame->pixels, filtered_pixels, sizeof( filtered_pixels ) );
+    memcpy( a_frame->pixels, merged_pixels, sizeof( merged_pixels ) );
     for( size_t index = 0U; index < MLX90640_PIXEL_COUNT; ++index )
     {
         const int16_t value = a_frame->pixels[ index ];
@@ -141,7 +128,11 @@ esp_err_t mlx90640_probe( void )
     const esp_err_t result = board_i2c_probe( RFSCOUT_BOARD_MLX90640_I2C_ADDRESS );
     if( ESP_OK != result )
     {
-        detected = false;
+        if( ESP_ERR_INVALID_STATE != result )
+        {
+            detected = false;
+            refresh_configured = false;
+        }
         return result;
     }
 
@@ -161,22 +152,49 @@ esp_err_t mlx90640_probe( void )
         ESP_LOGI(
             TAG, "MLX90640 detected at I2C address 0x%02X", RFSCOUT_BOARD_MLX90640_I2C_ADDRESS );
     }
+    if( !detected )
+    {
+        consecutive_read_failures = 0U;
+        mlx90640_discard_partial_frame();
+    }
     detected = true;
     return ESP_OK;
+}
+
+void mlx90640_discard_partial_frame( void )
+{
+    reading_pixels = false;
+    read_offset = 0U;
+    merged_subpages = 0U;
 }
 
 esp_err_t mlx90640_init( void )
 {
     merged_subpages = 0U;
-    filter_valid = false;
     memset( merged_pixels, 0, sizeof( merged_pixels ) );
-    memset( filtered_pixels, 0, sizeof( filtered_pixels ) );
+    consecutive_read_failures = 0U;
+    refresh_configured = false;
+    read_offset = 0U;
+    reading_pixels = false;
     return mlx90640_probe();
 }
 
 bool mlx90640_is_detected( void )
 {
     return detected;
+}
+
+static esp_err_t read_failed( esp_err_t a_result )
+{
+    merged_subpages = 0U;
+    read_offset = 0U;
+    reading_pixels = false;
+    if( ++consecutive_read_failures >= MLX90640_READ_FAILURE_RETRY_COUNT )
+    {
+        detected = false;
+        refresh_configured = false;
+    }
+    return a_result;
 }
 
 esp_err_t mlx90640_read_frame( mlx90640_frame_t *a_frame )
@@ -186,69 +204,119 @@ esp_err_t mlx90640_read_frame( mlx90640_frame_t *a_frame )
         return ESP_ERR_INVALID_ARG;
     }
     a_frame->frame_valid = false;
-
+    if( !board_i2c_ready() )
+    {
+        mlx90640_discard_partial_frame();
+        return ESP_ERR_NOT_FINISHED;
+    }
     if( !detected || ( NULL == device ) )
     {
         return ESP_ERR_INVALID_STATE;
     }
 
-    uint16_t status;
-    esp_err_t result = read_words( MLX90640_STATUS_REGISTER, &status, 1U );
-    if( ESP_OK != result )
+    if( !refresh_configured )
     {
-        detected = false;
-        return result;
+        uint16_t control;
+        esp_err_t result = read_words( MLX90640_CONTROL_REGISTER, &control, 1U );
+        if( ESP_OK != result )
+        {
+            return read_failed( result );
+        }
+        const uint16_t configured =
+            (uint16_t)( ( control & (uint16_t)~MLX90640_CONTROL_REFRESH_MASK ) |
+                        MLX90640_CONTROL_REFRESH_8HZ );
+        if( configured != control )
+        {
+            result = write_word( MLX90640_CONTROL_REGISTER, configured );
+            if( ESP_OK != result )
+            {
+                return read_failed( result );
+            }
+        }
+        ESP_LOGI( TAG,
+                  "MLX90640 refresh control: 0x%04X -> 0x%04X (8 Hz subpages)",
+                  control,
+                  configured );
+        refresh_configured = true;
+        return ESP_ERR_NOT_FINISHED;
     }
-    if( 0U == ( status & MLX90640_STATUS_NEW_DATA ) )
+
+    if( !reading_pixels )
+    {
+        uint16_t status;
+        esp_err_t result = read_words( MLX90640_STATUS_REGISTER, &status, 1U );
+        if( ESP_OK != result )
+        {
+            return read_failed( result );
+        }
+        if( 0U == ( status & MLX90640_STATUS_NEW_DATA ) )
+        {
+            return ESP_ERR_NOT_FINISHED;
+        }
+
+        /* Latch the subpage before clearing ready, then consume pixel words
+           over multiple runtime polls so other I2C clients get CPU time. */
+        current_subpage = (uint8_t)( status & MLX90640_STATUS_SUBPAGE );
+        result = write_word( MLX90640_STATUS_REGISTER, MLX90640_STATUS_CLEAR_VALUE );
+        if( ESP_OK != result )
+        {
+            return read_failed( result );
+        }
+        uint16_t control;
+        result = read_words( MLX90640_CONTROL_REGISTER, &control, 1U );
+        if( ESP_OK != result )
+        {
+            return read_failed( result );
+        }
+        current_chess_mode = 0U != ( control & MLX90640_CONTROL_CHESS_MODE );
+        read_offset = 0U;
+        reading_pixels = true;
+        return ESP_ERR_NOT_FINISHED;
+    }
+
+    /* Four short transactions per poll: no single long bus operation,
+       but only six polling opportunities per 768-word subpage. */
+    for( unsigned transfer = 0U;
+         transfer < MLX90640_TRANSFERS_PER_POLL && read_offset < MLX90640_PIXEL_COUNT;
+         ++transfer )
+    {
+        uint16_t words[ MLX90640_WORDS_PER_TRANSFER ];
+        const size_t remaining = MLX90640_PIXEL_COUNT - read_offset;
+        const size_t count =
+            remaining < MLX90640_WORDS_PER_TRANSFER ? remaining : MLX90640_WORDS_PER_TRANSFER;
+        const esp_err_t result =
+            read_words( MLX90640_PIXEL_START_REGISTER + (uint16_t)read_offset, words, count );
+        if( ESP_OK != result )
+        {
+            return read_failed( result );
+        }
+
+        for( size_t index = 0U; index < count; ++index )
+        {
+            const size_t pixel = read_offset + index;
+            if( pixel_in_subpage( pixel, current_subpage, current_chess_mode ) )
+            {
+                merged_pixels[ pixel ] = (int16_t)words[ index ];
+            }
+        }
+        read_offset += count;
+    }
+    if( read_offset < MLX90640_PIXEL_COUNT )
     {
         return ESP_ERR_NOT_FINISHED;
     }
 
-    const uint8_t subpage = (uint8_t)( status & MLX90640_STATUS_SUBPAGE );
-
-    result = write_word( MLX90640_STATUS_REGISTER, MLX90640_STATUS_CLEAR_VALUE );
-    if( ESP_OK != result )
-    {
-        detected = false;
-        return result;
-    }
-
-    uint16_t control;
-    result = read_words( MLX90640_CONTROL_REGISTER, &control, 1U );
-    if( ESP_OK != result )
-    {
-        detected = false;
-        return result;
-    }
-
-    uint16_t raw_pixels[ MLX90640_PIXEL_COUNT ];
-    result = read_words( MLX90640_PIXEL_START_REGISTER, raw_pixels, MLX90640_PIXEL_COUNT );
-    if( ESP_OK != result )
-    {
-        detected = false;
-        return result;
-    }
-
-    const bool chess_mode = 0U != ( control & MLX90640_CONTROL_CHESS_MODE );
-    for( size_t index = 0U; index < MLX90640_PIXEL_COUNT; ++index )
-    {
-        if( pixel_in_subpage( index, subpage, chess_mode ) )
-        {
-            merged_pixels[ index ] = (int16_t)raw_pixels[ index ];
-        }
-    }
-
-    merged_subpages |= ( 0U == subpage ) ? MLX90640_SUBPAGE_MASK_0 : MLX90640_SUBPAGE_MASK_1;
+    reading_pixels = false;
+    read_offset = 0U;
+    consecutive_read_failures = 0U;
+    merged_subpages |=
+        ( 0U == current_subpage ) ? MLX90640_SUBPAGE_MASK_0 : MLX90640_SUBPAGE_MASK_1;
     if( MLX90640_SUBPAGE_MASK_BOTH != merged_subpages )
     {
         return ESP_ERR_NOT_FINISHED;
     }
 
     finalize_frame( a_frame );
-
-    /* Require a fresh pair for the next displayed frame. Without resetting
-       this mask, a newly arrived half-frame could be rendered together with a
-       stale complementary half and reintroduce checkerboard motion artifacts. */
     merged_subpages = 0U;
     return ESP_OK;
 }

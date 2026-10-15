@@ -18,6 +18,9 @@
 /** @brief Initialize the global display-idle state from current configuration. */
 esp_err_t display_idle_init( void );
 
+/** @brief Suppress automatic dim/off for a foreground visual app. */
+void display_idle_set_keep_awake( bool a_enabled );
+
 /** @brief Poll user activity and apply dim/off/wake transitions. */
 void display_idle_poll( void );
 

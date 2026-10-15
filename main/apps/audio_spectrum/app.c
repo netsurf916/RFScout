@@ -7,6 +7,7 @@
 #include "app_descriptor.h"
 
 #include "recorder.h"
+#include "display_idle.h"
 #include "view.h"
 
 #include "esp_log.h"
@@ -40,6 +41,7 @@ static rfscout_app_runtime_result_t spectrum_runtime( const rfscout_app_runtime_
     {
         monitor_started = false;
         last_refresh_us = 0;
+        display_idle_set_keep_awake( true );
         render();
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
@@ -61,6 +63,7 @@ static rfscout_app_runtime_result_t spectrum_runtime( const rfscout_app_runtime_
 
     if( RFSCOUT_APP_RUNTIME_LEAVE == a_event->type )
     {
+        display_idle_set_keep_awake( false );
         monitor_started = false;
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }

@@ -17,7 +17,6 @@
 #include <string.h>
 
 #define BATTERY_POLL_INTERVAL_US 1000000LL
-#define BATTERY_I2C_TIMEOUT_MS 50
 #define BQ27220_REG_VOLTAGE 0x08U
 #define BQ27220_REG_STATUS 0x0AU
 #define BQ27220_REG_CURRENT 0x0CU
@@ -55,8 +54,7 @@ read_register_u8( i2c_master_dev_handle_t a_device, uint8_t a_register, uint8_t 
     {
         return ESP_ERR_INVALID_ARG;
     }
-    return i2c_master_transmit_receive(
-        a_device, &a_register, 1, a_value, 1, BATTERY_I2C_TIMEOUT_MS );
+    return board_i2c_transmit_receive( a_device, &a_register, 1, a_value, 1 );
 }
 
 static esp_err_t
@@ -67,7 +65,7 @@ write_register_u8( i2c_master_dev_handle_t a_device, uint8_t a_register, uint8_t
         return ESP_ERR_INVALID_ARG;
     }
     const uint8_t data[ 2 ] = { a_register, a_value };
-    return i2c_master_transmit( a_device, data, sizeof( data ), BATTERY_I2C_TIMEOUT_MS );
+    return board_i2c_transmit( a_device, data, sizeof( data ) );
 }
 
 static esp_err_t
@@ -78,8 +76,8 @@ read_register_u16( i2c_master_dev_handle_t a_device, uint8_t a_register, uint16_
         return ESP_ERR_INVALID_ARG;
     }
     uint8_t data[ 2 ];
-    const esp_err_t result = i2c_master_transmit_receive(
-        a_device, &a_register, 1, data, sizeof( data ), BATTERY_I2C_TIMEOUT_MS );
+    const esp_err_t result =
+        board_i2c_transmit_receive( a_device, &a_register, 1, data, sizeof( data ) );
     if( ESP_OK == result )
     {
         *a_value = (uint16_t)data[ 0 ] | ( (uint16_t)data[ 1 ] << 8U );
@@ -157,80 +155,116 @@ static battery_charge_state_t charger_charge_state( uint8_t a_status, bool a_ext
     }
 }
 
+/** @brief Alternate which battery IC gets first access after shared-bus recovery. */
+static bool charger_first;
+
+static void sample_gauge( battery_status_t *a_status, bool *a_sampled, uint16_t *a_gauge_status )
+{
+    if( NULL == gauge_device || !board_i2c_ready() )
+    {
+        return;
+    }
+    uint16_t percentage = 0U;
+    const esp_err_t result =
+        read_register_u16( gauge_device, BQ27220_REG_STATE_OF_CHARGE, &percentage );
+    if( ESP_OK == result && percentage <= 100U )
+    {
+        a_status->percentage = (uint8_t)percentage;
+        a_status->available = true;
+        a_status->percentage_fresh = true;
+        a_status->gauge_available = true;
+        *a_sampled = true;
+        uint16_t voltage_mv = 0U;
+        if( ESP_OK == read_register_u16( gauge_device, BQ27220_REG_VOLTAGE, &voltage_mv ) )
+        {
+            a_status->voltage_mv = voltage_mv;
+        }
+        if( !board_i2c_ready() )
+        {
+            return;
+        }
+        uint16_t current_raw = 0U;
+        if( ESP_OK == read_register_u16( gauge_device, BQ27220_REG_CURRENT, &current_raw ) )
+        {
+            a_status->current_ma = (int16_t)current_raw;
+        }
+        if( board_i2c_ready() )
+        {
+            (void)read_register_u16( gauge_device, BQ27220_REG_STATUS, a_gauge_status );
+        }
+    }
+    else if( ESP_OK != result && ESP_ERR_INVALID_STATE != result )
+    {
+        ESP_LOGW( TAG, "BQ27220 no longer responding: %s", esp_err_to_name( result ) );
+        detach_optional_device( &gauge_device );
+    }
+}
+
+static void sample_charger( battery_status_t *a_status, bool *a_sampled )
+{
+    if( NULL == charger_device || !board_i2c_ready() )
+    {
+        return;
+    }
+    uint8_t status = 0U;
+    const esp_err_t result = read_register_u8( charger_device, BQ25896_REG_STATUS, &status );
+    if( ESP_OK == result )
+    {
+        const uint8_t bus_status = ( status >> BQ25896_BUS_STATUS_SHIFT ) & BQ25896_BUS_STATUS_MASK;
+        const bool valid_input =
+            BQ25896_BUS_NO_INPUT != bus_status && BQ25896_BUS_OTG != bus_status;
+        a_status->external_power = valid_input || ( 0U != ( status & BQ25896_POWER_GOOD_BIT ) );
+        a_status->charge_state = charger_charge_state( status, a_status->external_power );
+        a_status->charger_available = true;
+        a_status->charger_fresh = true;
+        *a_sampled = true;
+    }
+    else if( ESP_ERR_INVALID_STATE != result )
+    {
+        ESP_LOGW( TAG, "BQ25896 no longer responding: %s", esp_err_to_name( result ) );
+        detach_optional_device( &charger_device );
+    }
+}
+
 static void refresh_i2c_battery( battery_status_t *a_status )
 {
-    if( NULL == gauge_device )
-    {
-        (void)attach_optional_device(
-            RFSCOUT_BOARD_BQ27220_I2C_ADDRESS, "BQ27220 fuel gauge", &gauge_device );
-    }
-    if( NULL == charger_device )
-    {
-        (void)attach_optional_device(
-            RFSCOUT_BOARD_BQ25896_I2C_ADDRESS, "BQ25896 charger", &charger_device );
-    }
+    /* A failing peer must not always preempt sampling the healthy device. */
+    const bool charger_priority = charger_first;
+    charger_first = !charger_first;
 
     bool gauge_sampled = false;
-    uint16_t gauge_status = 0;
-    if( NULL != gauge_device )
-    {
-        uint16_t percentage = 0;
-        const esp_err_t gauge_result =
-            read_register_u16( gauge_device, BQ27220_REG_STATE_OF_CHARGE, &percentage );
-        if( ( ESP_OK == gauge_result ) && ( percentage <= 100U ) )
-        {
-            a_status->percentage = (uint8_t)percentage;
-            a_status->available = true;
-            a_status->percentage_fresh = true;
-            a_status->gauge_available = true;
-            gauge_sampled = true;
-
-            uint16_t voltage_mv = 0;
-            if( ESP_OK == read_register_u16( gauge_device, BQ27220_REG_VOLTAGE, &voltage_mv ) )
-            {
-                a_status->voltage_mv = voltage_mv;
-            }
-            uint16_t current_raw = 0;
-            if( ESP_OK == read_register_u16( gauge_device, BQ27220_REG_CURRENT, &current_raw ) )
-            {
-                a_status->current_ma = (int16_t)current_raw;
-            }
-            (void)read_register_u16( gauge_device, BQ27220_REG_STATUS, &gauge_status );
-        }
-        else if( ESP_OK != gauge_result )
-        {
-            ESP_LOGW( TAG, "BQ27220 no longer responding: %s", esp_err_to_name( gauge_result ) );
-            detach_optional_device( &gauge_device );
-        }
-    }
-
     bool charger_sampled = false;
-    if( NULL != charger_device )
+    uint16_t gauge_status = 0U;
+    if( charger_priority )
     {
-        uint8_t charger_status = 0;
-        const esp_err_t charger_result =
-            read_register_u8( charger_device, BQ25896_REG_STATUS, &charger_status );
-        if( ESP_OK == charger_result )
+        if( NULL == charger_device && board_i2c_ready() )
         {
-            const uint8_t bus_status =
-                ( charger_status >> BQ25896_BUS_STATUS_SHIFT ) & BQ25896_BUS_STATUS_MASK;
-            const bool valid_input =
-                ( BQ25896_BUS_NO_INPUT != bus_status ) && ( BQ25896_BUS_OTG != bus_status );
-            a_status->external_power =
-                valid_input || ( 0U != ( charger_status & BQ25896_POWER_GOOD_BIT ) );
-            a_status->charge_state =
-                charger_charge_state( charger_status, a_status->external_power );
-            a_status->charger_available = true;
-            a_status->charger_fresh = true;
-            charger_sampled = true;
+            (void)attach_optional_device(
+                RFSCOUT_BOARD_BQ25896_I2C_ADDRESS, "BQ25896 charger", &charger_device );
         }
-        else
+        sample_charger( a_status, &charger_sampled );
+        if( NULL == gauge_device && board_i2c_ready() )
         {
-            ESP_LOGW( TAG, "BQ25896 no longer responding: %s", esp_err_to_name( charger_result ) );
-            detach_optional_device( &charger_device );
+            (void)attach_optional_device(
+                RFSCOUT_BOARD_BQ27220_I2C_ADDRESS, "BQ27220 fuel gauge", &gauge_device );
         }
+        sample_gauge( a_status, &gauge_sampled, &gauge_status );
     }
-
+    else
+    {
+        if( NULL == gauge_device && board_i2c_ready() )
+        {
+            (void)attach_optional_device(
+                RFSCOUT_BOARD_BQ27220_I2C_ADDRESS, "BQ27220 fuel gauge", &gauge_device );
+        }
+        sample_gauge( a_status, &gauge_sampled, &gauge_status );
+        if( NULL == charger_device && board_i2c_ready() )
+        {
+            (void)attach_optional_device(
+                RFSCOUT_BOARD_BQ25896_I2C_ADDRESS, "BQ25896 charger", &charger_device );
+        }
+        sample_charger( a_status, &charger_sampled );
+    }
     if( !charger_sampled && gauge_sampled )
     {
         a_status->charge_state = gauge_charge_state( gauge_status, a_status->current_ma );
@@ -246,6 +280,13 @@ void battery_refresh( void )
         return;
     }
 
+    /* Preserve cached battery readings while another client recovers the bus. */
+    if( !board_i2c_ready() )
+    {
+        cached_status.percentage_fresh = false;
+        cached_status.charger_fresh = false;
+        return;
+    }
     last_poll_us = esp_timer_get_time();
     battery_status_t next = cached_status;
     next.available = false;
@@ -258,6 +299,8 @@ void battery_refresh( void )
     {
         refresh_i2c_battery( &next );
     }
+    /* A timeout invalidates unobserved values, not a healthy peer's sample
+       already completed during this refresh. */
     cached_status = next;
 }
 

@@ -10,6 +10,7 @@
 #include "radio_monitor.h"
 #include "ui_chrome.h"
 #include "ui_game.h"
+#include "ui_layout.h"
 #include "ui_theme.h"
 
 #include "esp_log.h"
@@ -371,8 +372,8 @@ static void draw_overview( void )
     display_clear( theme->background );
     /* The platform owns y=0..21, including time, SD, and battery indicators. */
     ui_chrome_draw( "WARDRIVING", theme->secondary );
-    draw_instrument_panel( 4, 24, 152, 46 );
-    draw_instrument_panel( 160, 24, 156, 46 );
+    draw_instrument_panel( UI_LAYOUT_PANEL_LEFT_X, UI_LAYOUT_PANEL_TOP_Y, 152, 46 );
+    draw_instrument_panel( 160, UI_LAYOUT_PANEL_TOP_Y, 156, 46 );
     draw_instrument_panel( 4, 74, 152, 90 );
     draw_instrument_panel( 160, 74, 156, 90 );
 

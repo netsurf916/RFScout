@@ -42,6 +42,7 @@ static int64_t attention_until_us;
 static int64_t pixel_shift_last_advance_us;
 static bool attention_restore_pending;
 static bool off_requested;
+static bool keep_awake;
 static int64_t wake_guard_until_us;
 
 static void reset_pixel_shift( int64_t a_now_us )
@@ -192,11 +193,25 @@ esp_err_t display_idle_init( void )
     pixel_shift_last_advance_us = last_activity_us;
     attention_restore_pending = false;
     off_requested = false;
+    /* Foreground app may have requested keep-awake before display_idle_init(). */
     wake_guard_until_us = 0;
     display_pixel_shift_reset();
     const esp_err_t result = display_exit_low_power();
     display_set_brightness( device_config_get()->brightness_percent );
     return result;
+}
+
+void display_idle_set_keep_awake( bool a_enabled )
+{
+    keep_awake = a_enabled;
+    if( keep_awake && !off_requested )
+    {
+        (void)display_idle_request_wake();
+    }
+    if( !keep_awake )
+    {
+        last_activity_us = esp_timer_get_time();
+    }
 }
 
 esp_err_t display_idle_request_off( void )
@@ -326,6 +341,10 @@ void display_idle_poll( void )
     }
 
     const device_config_t *config = device_config_get();
+    if( keep_awake )
+    {
+        return;
+    }
     const int64_t idle_us = now_us - last_activity_us;
     const uint16_t off_seconds = config->display_off_timeout_seconds;
     const uint16_t dim_seconds = config->display_dim_timeout_seconds;

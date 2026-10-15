@@ -1,6 +1,6 @@
 /**
     thermal_view.c : RFScout thermal application view implementation
-    Description: Displays the MLX90640 array as a smoothed relative-IR heat map.
+    Description: Displays the native MLX90640 cells as a responsive relative-IR heat map.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -11,34 +11,28 @@
 #include "display.h"
 #include "mlx90640.h"
 #include "ui_chrome.h"
+#include "ui_game.h"
+#include "ui_layout.h"
 #include "ui_theme.h"
 
 #include "esp_log.h"
 
-#include <limits.h>
 #include <stdio.h>
 
-#define THERMAL_IMAGE_X 4
-#define THERMAL_IMAGE_Y 22
-#define THERMAL_IMAGE_WIDTH 192
-#define THERMAL_IMAGE_HEIGHT 144
-#define THERMAL_INFO_X 204
-#define THERMAL_RANGE_MARGIN_NUMERATOR 1
+#define THERMAL_IMAGE_X ( UI_LAYOUT_PANEL_LEFT_X + 4 )
+#define THERMAL_IMAGE_Y ( THERMAL_PANEL_Y + 8 )
+#define THERMAL_IMAGE_WIDTH 186
+#define THERMAL_IMAGE_HEIGHT 120
+#define THERMAL_INFO_X ( THERMAL_PANEL_X + UI_LAYOUT_PANEL_TEXT_INSET_X )
+#define THERMAL_PANEL_X 204
+#define THERMAL_PANEL_Y UI_LAYOUT_PANEL_TOP_Y
+#define THERMAL_PANEL_WIDTH 112
+#define THERMAL_PANEL_HEIGHT ( UI_LAYOUT_PANEL_BOTTOM_Y - THERMAL_PANEL_Y )
+#define THERMAL_CELL_HEIGHT ( THERMAL_IMAGE_HEIGHT / MLX90640_HEIGHT )
 #define THERMAL_RANGE_MARGIN_DENOMINATOR 16
-#define THERMAL_RANGE_OLD_WEIGHT 3
-#define THERMAL_RANGE_DIVISOR 4
-
-#define COLOR_BLACK 0x0000U
-#define COLOR_WHITE 0xFFFFU
-#define COLOR_GRAY 0x8410U
-#define COLOR_RED 0xF800U
-#define COLOR_SUBDUED_TEAL 0x03F0U
 
 static const char *TAG = "thermal_view";
 static mlx90640_frame_t frame;
-static int32_t display_minimum;
-static int32_t display_maximum;
-static bool display_range_valid;
 
 /** @brief Convert one RGB888 triplet to the display's RGB565 representation. */
 static uint16_t rgb565( uint8_t a_red, uint8_t a_green, uint8_t a_blue )
@@ -100,60 +94,69 @@ static uint16_t palette( int32_t a_value, int32_t a_minimum, int32_t a_maximum )
     return rgb565( red, green, blue );
 }
 
-/** @brief Return a bilinearly interpolated native-frame sample using Q8 coordinates. */
-static int32_t interpolate( uint32_t a_x_q8, uint32_t a_y_q8 )
+/** @brief Suppress alternating raw-pixel pattern spatially, without frame lag. */
+static int32_t spatial_sample( int a_x, int a_y )
 {
-    unsigned x0 = a_x_q8 >> 8;
-    unsigned y0 = a_y_q8 >> 8;
-    const unsigned fx = a_x_q8 & 0xFFU;
-    const unsigned fy = a_y_q8 & 0xFFU;
-
-    if( x0 >= ( MLX90640_WIDTH - 1U ) )
+    const int center = a_y * MLX90640_WIDTH + a_x;
+    const int32_t value = frame.pixels[ center ];
+    int32_t sum = value * 4;
+    int weight = 4;
+    if( a_x > 0 )
     {
-        x0 = MLX90640_WIDTH - 1U;
+        sum += frame.pixels[ center - 1 ];
+        ++weight;
     }
-    if( y0 >= ( MLX90640_HEIGHT - 1U ) )
+    if( a_x + 1 < MLX90640_WIDTH )
     {
-        y0 = MLX90640_HEIGHT - 1U;
+        sum += frame.pixels[ center + 1 ];
+        ++weight;
     }
-
-    const unsigned x1 = ( x0 + 1U < MLX90640_WIDTH ) ? x0 + 1U : x0;
-    const unsigned y1 = ( y0 + 1U < MLX90640_HEIGHT ) ? y0 + 1U : y0;
-    const int32_t p00 = frame.pixels[ y0 * MLX90640_WIDTH + x0 ];
-    const int32_t p10 = frame.pixels[ y0 * MLX90640_WIDTH + x1 ];
-    const int32_t p01 = frame.pixels[ y1 * MLX90640_WIDTH + x0 ];
-    const int32_t p11 = frame.pixels[ y1 * MLX90640_WIDTH + x1 ];
-    const int32_t top = p00 * (int32_t)( 256U - fx ) + p10 * (int32_t)fx;
-    const int32_t bottom = p01 * (int32_t)( 256U - fx ) + p11 * (int32_t)fx;
-    return ( top * (int32_t)( 256U - fy ) + bottom * (int32_t)fy ) >> 16;
-}
-
-/** @brief Slowly adapt the display range to avoid color pumping between frames. */
-static void update_display_range( void )
-{
-    const int32_t span = (int32_t)frame.maximum - (int32_t)frame.minimum;
-    const int32_t margin =
-        ( span > 0 ) ? span * THERMAL_RANGE_MARGIN_NUMERATOR / THERMAL_RANGE_MARGIN_DENOMINATOR : 1;
-    const int32_t target_minimum = (int32_t)frame.minimum - margin;
-    const int32_t target_maximum = (int32_t)frame.maximum + margin;
-
-    if( !display_range_valid )
+    if( a_y > 0 )
     {
-        display_minimum = target_minimum;
-        display_maximum = target_maximum;
-        display_range_valid = true;
-        return;
+        sum += frame.pixels[ center - MLX90640_WIDTH ];
+        ++weight;
     }
-
-    display_minimum =
-        ( display_minimum * THERMAL_RANGE_OLD_WEIGHT + target_minimum ) / THERMAL_RANGE_DIVISOR;
-    display_maximum =
-        ( display_maximum * THERMAL_RANGE_OLD_WEIGHT + target_maximum ) / THERMAL_RANGE_DIVISOR;
+    if( a_y + 1 < MLX90640_HEIGHT )
+    {
+        sum += frame.pixels[ center + MLX90640_WIDTH ];
+        ++weight;
+    }
+    return sum / weight;
 }
 
 void thermal_view_enter( void )
 {
-    display_range_valid = false;
+    const ui_theme_palette_t *theme = ui_theme_get();
+    display_clear( theme->background );
+    ui_chrome_draw( "THERMAL", theme->secondary );
+    if( ui_game_active() )
+    {
+        ui_game_draw_panel(
+            UI_LAYOUT_PANEL_LEFT_X, THERMAL_PANEL_Y, 196, THERMAL_PANEL_HEIGHT, theme->divider );
+        ui_game_draw_panel( THERMAL_PANEL_X,
+                            THERMAL_PANEL_Y,
+                            THERMAL_PANEL_WIDTH,
+                            THERMAL_PANEL_HEIGHT,
+                            theme->divider );
+    }
+    else
+    {
+        display_fill_rect_raw(
+            UI_LAYOUT_PANEL_LEFT_X, THERMAL_PANEL_Y, 196, THERMAL_PANEL_HEIGHT, theme->surface );
+        display_fill_rect_raw( THERMAL_PANEL_X,
+                               THERMAL_PANEL_Y,
+                               THERMAL_PANEL_WIDTH,
+                               THERMAL_PANEL_HEIGHT,
+                               theme->surface );
+    }
+    display_draw_text( THERMAL_INFO_X,
+                       THERMAL_PANEL_Y + UI_LAYOUT_PANEL_TITLE_INSET_Y,
+                       "IR INTENSITY",
+                       theme->secondary,
+                       1U );
+    display_draw_text(
+        THERMAL_IMAGE_X + 30, THERMAL_IMAGE_Y + 52, "WAITING FOR FRAME", theme->secondary, 1U );
+    (void)display_present();
 }
 
 esp_err_t thermal_view_render( void )
@@ -196,25 +199,47 @@ esp_err_t thermal_view_render( void )
         return result;
     }
 
-    update_display_range();
+    const int32_t span = (int32_t)frame.maximum - (int32_t)frame.minimum;
+    const int32_t margin = span > 0 ? span / THERMAL_RANGE_MARGIN_DENOMINATOR : 1;
+    const int32_t display_minimum = (int32_t)frame.minimum - margin;
+    const int32_t display_maximum = (int32_t)frame.maximum + margin;
 
-    /* Render one horizontal line at a time. This is bilinear interpolation of
-       the native 32x24 measurements, not additional sensor resolution. The
-       heat-map pixels are literal sensor imagery and intentionally bypass UI
-       theme translation. */
-    for( int y = 0; y < THERMAL_IMAGE_HEIGHT; ++y )
+    /* Both surfaces share an exact baseline and height. Use the existing
+       clipped-corner panel primitive rather than drawing legacy box edges. */
+    if( ui_game_active() )
     {
-        const uint32_t source_y =
-            (uint32_t)y * ( MLX90640_HEIGHT - 1U ) * 256U / ( THERMAL_IMAGE_HEIGHT - 1U );
-        for( int x = 0; x < THERMAL_IMAGE_WIDTH; ++x )
+        ui_game_draw_panel(
+            UI_LAYOUT_PANEL_LEFT_X, THERMAL_PANEL_Y, 196, THERMAL_PANEL_HEIGHT, theme->divider );
+        ui_game_draw_panel( THERMAL_PANEL_X,
+                            THERMAL_PANEL_Y,
+                            THERMAL_PANEL_WIDTH,
+                            THERMAL_PANEL_HEIGHT,
+                            theme->divider );
+    }
+    else
+    {
+        display_fill_rect_raw(
+            UI_LAYOUT_PANEL_LEFT_X, THERMAL_PANEL_Y, 196, THERMAL_PANEL_HEIGHT, theme->surface );
+        display_fill_rect_raw( THERMAL_PANEL_X,
+                               THERMAL_PANEL_Y,
+                               THERMAL_PANEL_WIDTH,
+                               THERMAL_PANEL_HEIGHT,
+                               theme->surface );
+    }
+
+    /* One filled rectangle per native sensor cell. This avoids thousands of
+       individual-pixel draws, interpolation artifacts and false spatial detail. */
+    for( int y = 0; y < MLX90640_HEIGHT; ++y )
+    {
+        for( int x = 0; x < MLX90640_WIDTH; ++x )
         {
-            const uint32_t source_x =
-                (uint32_t)x * ( MLX90640_WIDTH - 1U ) * 256U / ( THERMAL_IMAGE_WIDTH - 1U );
-            const int32_t value = interpolate( source_x, source_y );
-            display_fill_rect_raw( THERMAL_IMAGE_X + x,
-                                   THERMAL_IMAGE_Y + y,
-                                   1,
-                                   1,
+            const int32_t value = spatial_sample( x, y );
+            const int cell_left = x * THERMAL_IMAGE_WIDTH / MLX90640_WIDTH;
+            const int cell_right = ( x + 1 ) * THERMAL_IMAGE_WIDTH / MLX90640_WIDTH;
+            display_fill_rect_raw( THERMAL_IMAGE_X + cell_left,
+                                   THERMAL_IMAGE_Y + y * THERMAL_CELL_HEIGHT,
+                                   cell_right - cell_left,
+                                   THERMAL_CELL_HEIGHT,
                                    palette( value, display_minimum, display_maximum ) );
         }
     }
@@ -231,15 +256,19 @@ esp_err_t thermal_view_render( void )
                        theme->text );
 
     char text[ 24 ];
-    display_draw_text( THERMAL_INFO_X, 30, "RELATIVE IR", theme->info, 1 );
+    display_draw_text( THERMAL_INFO_X,
+                       THERMAL_PANEL_Y + UI_LAYOUT_PANEL_TITLE_INSET_Y,
+                       "IR INTENSITY",
+                       theme->secondary,
+                       1U );
     snprintf( text, sizeof( text ), "MAX %6d", (int)frame.maximum );
-    display_draw_text( THERMAL_INFO_X, 52, text, theme->text, 1 );
+    display_draw_text( THERMAL_INFO_X, 56, text, theme->text, 1 );
     snprintf( text, sizeof( text ), "MIN %6d", (int)frame.minimum );
-    display_draw_text( THERMAL_INFO_X, 68, text, theme->text, 1 );
+    display_draw_text( THERMAL_INFO_X, 74, text, theme->text, 1 );
     snprintf( text, sizeof( text ), "CTR %6d", (int)frame.center );
-    display_draw_text( THERMAL_INFO_X, 84, text, theme->text, 1 );
-    display_draw_text( THERMAL_INFO_X, 116, "32x24 SENSOR", theme->info, 1 );
-    display_draw_text( THERMAL_INFO_X, 130, "CAL PENDING", theme->info, 1 );
+    display_draw_text( THERMAL_INFO_X, 92, text, theme->text, 1 );
+    display_draw_text( THERMAL_INFO_X, 128, "32x24 LIVE", theme->info, 1 );
+    display_draw_text( THERMAL_INFO_X, 144, "RAW IR DATA", theme->secondary, 1 );
 
     const esp_err_t present = display_present();
     if( ESP_OK != present )
@@ -247,4 +276,38 @@ esp_err_t thermal_view_render( void )
         ESP_LOGW( TAG, "thermal LCD refresh failed" );
     }
     return present;
+}
+
+void thermal_view_menu( unsigned a_selected, bool a_locked, bool a_keep_awake )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    const char *items[] = { "Back", "App lock", "Keep screen awake" };
+    display_clear( theme->background );
+    ui_chrome_draw( "THERMAL / SETTINGS", theme->secondary );
+    if( ui_game_active() )
+    {
+        ui_game_draw_panel( 8, 32, 304, 108, theme->divider );
+    }
+    for( unsigned index = 0U; index < 3U; ++index )
+    {
+        const int y = UI_LAYOUT_MENU_START_Y + (int)index * UI_LAYOUT_MENU_ROW_HEIGHT;
+        ui_game_draw_menu_marker(
+            UI_LAYOUT_LEFT_X + 4, y, a_selected == index ? ">" : " ", theme->selected );
+        display_draw_text( UI_LAYOUT_LABEL_X + 6,
+                           y,
+                           items[ index ],
+                           a_selected == index ? theme->selected : theme->text,
+                           1U );
+    }
+    display_draw_text( 251,
+                       UI_LAYOUT_MENU_START_Y + UI_LAYOUT_MENU_ROW_HEIGHT,
+                       a_locked ? "ON" : "OFF",
+                       theme->info,
+                       1U );
+    display_draw_text( 251,
+                       UI_LAYOUT_MENU_START_Y + 2 * UI_LAYOUT_MENU_ROW_HEIGHT,
+                       a_keep_awake ? "ON" : "OFF",
+                       theme->info,
+                       1U );
+    (void)display_present();
 }

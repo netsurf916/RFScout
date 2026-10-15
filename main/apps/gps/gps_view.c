@@ -69,9 +69,9 @@ void gps_view_render( bool a_menu_open, bool a_reset_selected, bool a_reset_fail
     }
 
     /* Four bounded panels below the platform-owned y=0..21 status region. */
-    draw_gps_panel( 4, 24, 152, 88 );
+    draw_gps_panel( UI_LAYOUT_PANEL_LEFT_X, UI_LAYOUT_PANEL_TOP_Y, 152, 88 );
     draw_gps_panel( 4, 116, 152, 48 );
-    draw_gps_panel( 160, 24, 156, 42 );
+    draw_gps_panel( 160, UI_LAYOUT_PANEL_TOP_Y, 156, 42 );
     draw_gps_panel( 160, 70, 156, 94 );
 
     display_draw_text( 10, 28, "FIX", theme->secondary, 1U );

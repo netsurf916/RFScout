@@ -9,13 +9,31 @@
 #include "board.h"
 
 #include "esp_log.h"
+#include "esp_timer.h"
 
 #define BOARD_I2C_FREQUENCY_HZ 400000U
 #define BOARD_I2C_PROBE_TIMEOUT_MS 50
 #define BOARD_I2C_TRANSFER_TIMEOUT_MS 100
+#define BOARD_I2C_TIMEOUT_COOLDOWN_US 250000LL
 
 static const char *TAG = "board_i2c";
 static i2c_master_bus_handle_t bus_handle;
+static int64_t blocked_until_us;
+
+bool board_i2c_ready( void )
+{
+    return esp_timer_get_time() >= blocked_until_us;
+}
+
+static esp_err_t account_result( esp_err_t a_result )
+{
+    if( ESP_ERR_TIMEOUT == a_result )
+    {
+        blocked_until_us = esp_timer_get_time() + BOARD_I2C_TIMEOUT_COOLDOWN_US;
+        ESP_LOGW( TAG, "shared I2C timed out; pausing bus clients for 250 ms" );
+    }
+    return a_result;
+}
 
 esp_err_t board_i2c_init( void )
 {
@@ -55,7 +73,11 @@ esp_err_t board_i2c_probe( uint16_t a_address )
         return result;
     }
 
-    return i2c_master_probe( bus_handle, a_address, BOARD_I2C_PROBE_TIMEOUT_MS );
+    if( !board_i2c_ready() )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return account_result( i2c_master_probe( bus_handle, a_address, BOARD_I2C_PROBE_TIMEOUT_MS ) );
 }
 
 esp_err_t board_i2c_add_device( uint16_t a_address, i2c_master_dev_handle_t *a_device )
@@ -90,8 +112,12 @@ esp_err_t board_i2c_transmit_receive( i2c_master_dev_handle_t a_device,
         return ESP_ERR_INVALID_ARG;
     }
 
-    return i2c_master_transmit_receive(
-        a_device, a_write, a_write_length, a_read, a_read_length, BOARD_I2C_TRANSFER_TIMEOUT_MS );
+    if( !board_i2c_ready() )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return account_result( i2c_master_transmit_receive(
+        a_device, a_write, a_write_length, a_read, a_read_length, BOARD_I2C_TRANSFER_TIMEOUT_MS ) );
 }
 
 esp_err_t
@@ -102,5 +128,10 @@ board_i2c_transmit( i2c_master_dev_handle_t a_device, const uint8_t *a_data, siz
         return ESP_ERR_INVALID_ARG;
     }
 
-    return i2c_master_transmit( a_device, a_data, a_length, BOARD_I2C_TRANSFER_TIMEOUT_MS );
+    if( !board_i2c_ready() )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return account_result(
+        i2c_master_transmit( a_device, a_data, a_length, BOARD_I2C_TRANSFER_TIMEOUT_MS ) );
 }
