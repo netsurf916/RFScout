@@ -128,8 +128,11 @@ esp_err_t mlx90640_probe( void )
     const esp_err_t result = board_i2c_probe( RFSCOUT_BOARD_MLX90640_I2C_ADDRESS );
     if( ESP_OK != result )
     {
-        detected = false;
-        refresh_configured = false;
+        if( ESP_ERR_INVALID_STATE != result )
+        {
+            detected = false;
+            refresh_configured = false;
+        }
         return result;
     }
 
@@ -151,6 +154,13 @@ esp_err_t mlx90640_probe( void )
     }
     detected = true;
     return ESP_OK;
+}
+
+void mlx90640_discard_partial_frame( void )
+{
+    reading_pixels = false;
+    read_offset = 0U;
+    merged_subpages = 0U;
 }
 
 esp_err_t mlx90640_init( void )
