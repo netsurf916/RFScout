@@ -35,7 +35,7 @@ static uint16_t pixels[ DISPLAY_PIXEL_COUNT ];
 static uint16_t presented[ DISPLAY_PIXEL_COUNT ];
 static uint16_t *framebuffer = pixels;
 static bool display_dirty;
-static rfscout_theme_id_t preference = RFSCOUT_THEME_PIXEL_QUEST;
+static rfscout_theme_id_t preference = RFSCOUT_THEME_DEFAULT;
 static rfscout_style_id_t style_preference = RFSCOUT_STYLE_PIXEL_QUEST;
 static rfscout_colors_id_t colors_preference = RFSCOUT_COLORS_DEFAULT;
 static power_status_t power_status;
@@ -285,7 +285,7 @@ static void check_style_color_combinations( void )
                                                         ? RFSCOUT_THEME_NIGHT
                                                         : colors == RFSCOUT_COLORS_OUTDOOR
                                                             ? RFSCOUT_THEME_OUTDOOR
-                                                            : RFSCOUT_THEME_PIXEL_QUEST ) );
+                                                            : RFSCOUT_THEME_DEFAULT ) );
             display_clear( ui_theme_get()->background );
             ui_chrome_draw( "A VERY LONG TITLE", ui_theme_get()->text );
             if( style == RFSCOUT_STYLE_PIXEL_QUEST )
@@ -307,7 +307,7 @@ static void check_style_color_combinations( void )
     }
     assert( ESP_ERR_INVALID_ARG == ui_style_set( (rfscout_style_id_t)RFSCOUT_STYLE_COUNT ) );
     assert( ESP_ERR_INVALID_ARG == ui_colors_set( (rfscout_colors_id_t)RFSCOUT_COLORS_COUNT ) );
-    assert( ESP_OK == ui_theme_set( RFSCOUT_THEME_PIXEL_QUEST ) );
+    assert( ESP_OK == ui_theme_set( RFSCOUT_THEME_DEFAULT ) );
 }
 
 /** @brief Header titles must stay left of global status for every persisted theme. */
@@ -322,7 +322,7 @@ static void check_header_titles( void )
             for( int x = 142; x < 188; ++x )
                 assert( pixels[ y * 320 + x ] == ui_theme_get()->background );
     }
-    assert( ESP_OK == ui_theme_set( RFSCOUT_THEME_PIXEL_QUEST ) );
+    assert( ESP_OK == ui_theme_set( RFSCOUT_THEME_DEFAULT ) );
 }
 
 /** @brief Full-scale audio peaks must leave readable space above their top. */
@@ -442,7 +442,9 @@ static void check_battery_states( void )
 
 static void checks( void )
 {
-    assert( 0 == RFSCOUT_THEME_INDOOR && 1 == RFSCOUT_THEME_OUTDOOR && 2 == RFSCOUT_THEME_NIGHT );
+    assert( 0 == RFSCOUT_THEME_DEFAULT && 1 == RFSCOUT_THEME_OUTDOOR && 2 == RFSCOUT_THEME_NIGHT );
+    assert( ui_theme_palette( RFSCOUT_THEME_DEFAULT )->logo_primary == 0xFC00U );
+    assert( ui_theme_palette( RFSCOUT_THEME_DEFAULT )->logo_secondary == 0xFFFFU );
     for( unsigned id = 0; id < RFSCOUT_THEME_COUNT; ++id )
     {
         rfscout_theme_id_t parsed;
@@ -455,7 +457,7 @@ static void checks( void )
     }
     assert( ESP_ERR_INVALID_ARG == ui_theme_set( (rfscout_theme_id_t)RFSCOUT_THEME_COUNT ) );
     assert( ESP_ERR_INVALID_ARG == ui_theme_set( (rfscout_theme_id_t)-1 ) );
-    assert( ESP_OK == ui_theme_set( RFSCOUT_THEME_PIXEL_QUEST ) );
+    assert( ESP_OK == ui_theme_set( RFSCOUT_THEME_DEFAULT ) );
     display_clear( ui_theme_get()->background );
     ui_chrome_draw( "AN EXTREMELY LONG APPLICATION TITLE", 0 );
     /* A title must not paint over the status region, including with a long caller title. */
