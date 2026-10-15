@@ -413,7 +413,7 @@ static void check_battery_states( void )
             .available = 0U != state,
             .percentage = 2U == state ? 75U : 0U,
             .charge_state = 2U == state ? BATTERY_CHARGE_CHARGING : BATTERY_CHARGE_UNKNOWN };
-        display_clear( 0 );
+        display_clear( ui_theme_get()->background );
         battery_indicator_draw();
         unsigned bolt_pixels = 0U;
         for( int y = 6; y < 16; ++y )
@@ -456,18 +456,18 @@ static void checks( void )
     assert( ESP_ERR_INVALID_ARG == ui_theme_set( (rfscout_theme_id_t)RFSCOUT_THEME_COUNT ) );
     assert( ESP_ERR_INVALID_ARG == ui_theme_set( (rfscout_theme_id_t)-1 ) );
     assert( ESP_OK == ui_theme_set( RFSCOUT_THEME_PIXEL_QUEST ) );
-    display_clear( 0 );
+    display_clear( ui_theme_get()->background );
     ui_chrome_draw( "AN EXTREMELY LONG APPLICATION TITLE", 0 );
     /* A title must not paint over the status region, including with a long caller title. */
     for( int y = 0; y < 20; ++y )
         for( int x = 142; x < 188; ++x )
             assert( pixels[ y * 320 + x ] == ui_theme_get()->background );
-    display_clear( 0 );
+    display_clear( ui_theme_get()->background );
     ui_chrome_draw( "HOME", 0 );
     uint16_t divider = pixels[ 21 * 320 + 20 ];
     ui_game_draw_menu_marker( 8, 24, ">", ui_theme_get()->selected );
     assert( pixels[ 21 * 320 + 20 ] == divider );
-    display_clear( 0 );
+    display_clear( ui_theme_get()->background );
     ui_game_draw_column( 8, 40, 2, 21, ui_theme_get()->success );
     assert( pixels[ 40 * 320 + 8 ] == ui_theme_get()->success );
     assert( pixels[ 60 * 320 + 8 ] == ui_theme_get()->success );
@@ -480,7 +480,7 @@ static void checks( void )
         assert( pixels[ 42 * 320 + x ] == ui_theme_get()->background ||
                 pixels[ 42 * 320 + x ] == ui_theme_get()->divider );
     }
-    display_clear( 0 );
+    display_clear( ui_theme_get()->background );
     ui_game_draw_icon( (ui_game_icon_t)-1, 0, 0, 1U, 0xFFFFU );
     for( size_t i = 0; i < DISPLAY_PIXEL_COUNT; ++i )
         assert( pixels[ i ] == ui_theme_get()->background );
@@ -497,7 +497,7 @@ int main( int a_argc, char **a_argv )
     check_menu_cursor();
     check_hud_bounds();
     check_battery_states();
-    display_clear( 0 );
+    display_clear( ui_theme_get()->background );
     ui_chrome_draw( "HOME", 0 );
     ui_game_draw_home();
     display_present();
