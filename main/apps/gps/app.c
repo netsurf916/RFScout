@@ -236,6 +236,13 @@ static rfscout_app_runtime_result_t gps_runtime( const rfscout_app_runtime_event
     }
     if( RFSCOUT_APP_RUNTIME_POLL == a_event->type )
     {
+        if( led_ready && !device_config_get()->gps_led_enabled )
+        {
+            if( ESP_OK == led_ring_deinit() )
+            {
+                led_ready = false;
+            }
+        }
         update_direction_led();
         if( 0 == last_refresh_us ||
             a_event->now_us - last_refresh_us >= GPS_VIEW_REFRESH_INTERVAL_US )
