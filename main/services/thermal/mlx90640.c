@@ -189,6 +189,10 @@ esp_err_t mlx90640_read_frame( mlx90640_frame_t *a_frame )
         return ESP_ERR_INVALID_ARG;
     }
     a_frame->frame_valid = false;
+    if( !board_i2c_ready() )
+    {
+        return ESP_ERR_NOT_FINISHED;
+    }
     if( !detected || ( NULL == device ) )
     {
         return ESP_ERR_INVALID_STATE;
@@ -202,9 +206,9 @@ esp_err_t mlx90640_read_frame( mlx90640_frame_t *a_frame )
         {
             return read_failed( result );
         }
-        const uint16_t configured = (uint16_t)(
-            ( control & (uint16_t)~MLX90640_CONTROL_REFRESH_MASK ) |
-            MLX90640_CONTROL_REFRESH_8HZ );
+        const uint16_t configured =
+            (uint16_t)( ( control & (uint16_t)~MLX90640_CONTROL_REFRESH_MASK ) |
+                        MLX90640_CONTROL_REFRESH_8HZ );
         if( configured != control )
         {
             result = write_word( MLX90640_CONTROL_REGISTER, configured );
@@ -213,8 +217,10 @@ esp_err_t mlx90640_read_frame( mlx90640_frame_t *a_frame )
                 return read_failed( result );
             }
         }
-        ESP_LOGI( TAG, "MLX90640 refresh control: 0x%04X -> 0x%04X (8 Hz subpages)",
-                  control, configured );
+        ESP_LOGI( TAG,
+                  "MLX90640 refresh control: 0x%04X -> 0x%04X (8 Hz subpages)",
+                  control,
+                  configured );
         refresh_configured = true;
         return ESP_ERR_NOT_FINISHED;
     }
