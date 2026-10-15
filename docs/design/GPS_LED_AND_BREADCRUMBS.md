@@ -30,10 +30,12 @@ are not a byte cap; monitor SD write amplification and queue depth. Never raise 
 rate solely because a faster rate was requested but not ACK/readback verified.
 
 ## Receiver controls
-Keep baud probing and CASIC rate auto-negotiation enabled by default. Receiver
-PPS/timepulse support is hardware/protocol specific: document and verify the
-actual supported CASIC command and whether the GNSS module's LED wiring exposes it
-before adding a user setting. Do not send speculative receiver configuration packets.
+Baud probing, NMEA output and CASIC rate auto-negotiation remain strictly platform-owned
+and are **not** configurable from the GPS application. The only proposed user-facing
+receiver-hardware setting is its onboard LED flash/output pulse enablement, and that
+must remain unavailable unless the exact receiver command and electrical signal are
+confirmed. That setting is distinct from the RFScout eight-LED direction ring.
+Do not send speculative receiver configuration packets.
 
 ## Acceptance
 Host tests cover sector math, no-fix LED blanking, RMT frame construction,
