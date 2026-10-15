@@ -183,18 +183,18 @@ ui_color_pair_t ui_theme_pair( ui_color_pair_id_t a_pair )
     switch( a_pair )
     {
         case UI_COLOR_PAIR_SECONDARY:
-            return (ui_color_pair_t){ .fg = theme->secondary, .bg = theme->background };
+            return ( ui_color_pair_t ){ .fg = theme->secondary, .bg = theme->background };
         case UI_COLOR_PAIR_SURFACE:
-            return (ui_color_pair_t){ .fg = theme->text, .bg = theme->surface };
+            return ( ui_color_pair_t ){ .fg = theme->text, .bg = theme->surface };
         case UI_COLOR_PAIR_SELECTED:
-            return (ui_color_pair_t){ .fg = theme->background, .bg = theme->selected };
+            return ( ui_color_pair_t ){ .fg = theme->background, .bg = theme->selected };
         case UI_COLOR_PAIR_WARNING:
-            return (ui_color_pair_t){ .fg = theme->warning, .bg = theme->background };
+            return ( ui_color_pair_t ){ .fg = theme->warning, .bg = theme->background };
         case UI_COLOR_PAIR_ERROR:
-            return (ui_color_pair_t){ .fg = theme->error, .bg = theme->background };
+            return ( ui_color_pair_t ){ .fg = theme->error, .bg = theme->background };
         case UI_COLOR_PAIR_NORMAL:
         default:
-            return (ui_color_pair_t){ .fg = theme->text, .bg = theme->background };
+            return ( ui_color_pair_t ){ .fg = theme->text, .bg = theme->background };
     }
 }
 
