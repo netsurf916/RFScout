@@ -1,6 +1,6 @@
 /**
     thermal_view.c : RFScout thermal application view implementation
-    Description: Displays the MLX90640 array as a smoothed relative-IR heat map.
+    Description: Displays the native MLX90640 cells as a responsive relative-IR heat map.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -15,7 +15,6 @@
 
 #include "esp_log.h"
 
-#include <limits.h>
 #include <stdio.h>
 
 #define THERMAL_IMAGE_X 4
@@ -23,16 +22,13 @@
 #define THERMAL_IMAGE_WIDTH 192
 #define THERMAL_IMAGE_HEIGHT 144
 #define THERMAL_INFO_X 204
+#define THERMAL_CELL_WIDTH ( THERMAL_IMAGE_WIDTH / MLX90640_WIDTH )
+#define THERMAL_CELL_HEIGHT ( THERMAL_IMAGE_HEIGHT / MLX90640_HEIGHT )
 #define THERMAL_RANGE_MARGIN_NUMERATOR 1
 #define THERMAL_RANGE_MARGIN_DENOMINATOR 16
-#define THERMAL_RANGE_OLD_WEIGHT 3
-#define THERMAL_RANGE_DIVISOR 4
+#define THERMAL_RANGE_OLD_WEIGHT 1
+#define THERMAL_RANGE_DIVISOR 2
 
-#define COLOR_BLACK 0x0000U
-#define COLOR_WHITE 0xFFFFU
-#define COLOR_GRAY 0x8410U
-#define COLOR_RED 0xF800U
-#define COLOR_SUBDUED_TEAL 0x03F0U
 
 static const char *TAG = "thermal_view";
 static mlx90640_frame_t frame;
@@ -98,34 +94,6 @@ static uint16_t palette( int32_t a_value, int32_t a_minimum, int32_t a_maximum )
         blue = (uint8_t)( 10 + ( local * 210 / 63 ) );
     }
     return rgb565( red, green, blue );
-}
-
-/** @brief Return a bilinearly interpolated native-frame sample using Q8 coordinates. */
-static int32_t interpolate( uint32_t a_x_q8, uint32_t a_y_q8 )
-{
-    unsigned x0 = a_x_q8 >> 8;
-    unsigned y0 = a_y_q8 >> 8;
-    const unsigned fx = a_x_q8 & 0xFFU;
-    const unsigned fy = a_y_q8 & 0xFFU;
-
-    if( x0 >= ( MLX90640_WIDTH - 1U ) )
-    {
-        x0 = MLX90640_WIDTH - 1U;
-    }
-    if( y0 >= ( MLX90640_HEIGHT - 1U ) )
-    {
-        y0 = MLX90640_HEIGHT - 1U;
-    }
-
-    const unsigned x1 = ( x0 + 1U < MLX90640_WIDTH ) ? x0 + 1U : x0;
-    const unsigned y1 = ( y0 + 1U < MLX90640_HEIGHT ) ? y0 + 1U : y0;
-    const int32_t p00 = frame.pixels[ y0 * MLX90640_WIDTH + x0 ];
-    const int32_t p10 = frame.pixels[ y0 * MLX90640_WIDTH + x1 ];
-    const int32_t p01 = frame.pixels[ y1 * MLX90640_WIDTH + x0 ];
-    const int32_t p11 = frame.pixels[ y1 * MLX90640_WIDTH + x1 ];
-    const int32_t top = p00 * (int32_t)( 256U - fx ) + p10 * (int32_t)fx;
-    const int32_t bottom = p01 * (int32_t)( 256U - fx ) + p11 * (int32_t)fx;
-    return ( top * (int32_t)( 256U - fy ) + bottom * (int32_t)fy ) >> 16;
 }
 
 /** @brief Slowly adapt the display range to avoid color pumping between frames. */
@@ -198,23 +166,17 @@ esp_err_t thermal_view_render( void )
 
     update_display_range();
 
-    /* Render one horizontal line at a time. This is bilinear interpolation of
-       the native 32x24 measurements, not additional sensor resolution. The
-       heat-map pixels are literal sensor imagery and intentionally bypass UI
-       theme translation. */
-    for( int y = 0; y < THERMAL_IMAGE_HEIGHT; ++y )
+    /* One filled rectangle per native sensor cell. This avoids thousands of
+       individual-pixel draws, interpolation artifacts and false spatial detail. */
+    for( int y = 0; y < MLX90640_HEIGHT; ++y )
     {
-        const uint32_t source_y =
-            (uint32_t)y * ( MLX90640_HEIGHT - 1U ) * 256U / ( THERMAL_IMAGE_HEIGHT - 1U );
-        for( int x = 0; x < THERMAL_IMAGE_WIDTH; ++x )
+        for( int x = 0; x < MLX90640_WIDTH; ++x )
         {
-            const uint32_t source_x =
-                (uint32_t)x * ( MLX90640_WIDTH - 1U ) * 256U / ( THERMAL_IMAGE_WIDTH - 1U );
-            const int32_t value = interpolate( source_x, source_y );
-            display_fill_rect_raw( THERMAL_IMAGE_X + x,
-                                   THERMAL_IMAGE_Y + y,
-                                   1,
-                                   1,
+            const int32_t value = frame.pixels[ y * MLX90640_WIDTH + x ];
+            display_fill_rect_raw( THERMAL_IMAGE_X + x * THERMAL_CELL_WIDTH,
+                                   THERMAL_IMAGE_Y + y * THERMAL_CELL_HEIGHT,
+                                   THERMAL_CELL_WIDTH,
+                                   THERMAL_CELL_HEIGHT,
                                    palette( value, display_minimum, display_maximum ) );
         }
     }
@@ -231,14 +193,14 @@ esp_err_t thermal_view_render( void )
                        theme->text );
 
     char text[ 24 ];
-    display_draw_text( THERMAL_INFO_X, 30, "RELATIVE IR", theme->info, 1 );
+    display_draw_text( THERMAL_INFO_X, 30, "IR INTENSITY", theme->info, 1 );
     snprintf( text, sizeof( text ), "MAX %6d", (int)frame.maximum );
     display_draw_text( THERMAL_INFO_X, 52, text, theme->text, 1 );
     snprintf( text, sizeof( text ), "MIN %6d", (int)frame.minimum );
     display_draw_text( THERMAL_INFO_X, 68, text, theme->text, 1 );
     snprintf( text, sizeof( text ), "CTR %6d", (int)frame.center );
     display_draw_text( THERMAL_INFO_X, 84, text, theme->text, 1 );
-    display_draw_text( THERMAL_INFO_X, 116, "32x24 SENSOR", theme->info, 1 );
+    display_draw_text( THERMAL_INFO_X, 116, "32x24 LIVE", theme->info, 1 );
     display_draw_text( THERMAL_INFO_X, 130, "CAL PENDING", theme->info, 1 );
 
     const esp_err_t present = display_present();
