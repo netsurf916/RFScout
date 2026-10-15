@@ -29,16 +29,10 @@
 #define THERMAL_PANEL_HEIGHT 142
 #define THERMAL_CELL_WIDTH ( THERMAL_IMAGE_WIDTH / MLX90640_WIDTH )
 #define THERMAL_CELL_HEIGHT ( THERMAL_IMAGE_HEIGHT / MLX90640_HEIGHT )
-#define THERMAL_RANGE_MARGIN_NUMERATOR 1
 #define THERMAL_RANGE_MARGIN_DENOMINATOR 16
-#define THERMAL_RANGE_OLD_WEIGHT 1
-#define THERMAL_RANGE_DIVISOR 2
 
 static const char *TAG = "thermal_view";
 static mlx90640_frame_t frame;
-static int32_t display_minimum;
-static int32_t display_maximum;
-static bool display_range_valid;
 
 /** @brief Convert one RGB888 triplet to the display's RGB565 representation. */
 static uint16_t rgb565( uint8_t a_red, uint8_t a_green, uint8_t a_blue )
@@ -100,32 +94,9 @@ static uint16_t palette( int32_t a_value, int32_t a_minimum, int32_t a_maximum )
     return rgb565( red, green, blue );
 }
 
-/** @brief Slowly adapt the display range to avoid color pumping between frames. */
-static void update_display_range( void )
-{
-    const int32_t span = (int32_t)frame.maximum - (int32_t)frame.minimum;
-    const int32_t margin =
-        ( span > 0 ) ? span * THERMAL_RANGE_MARGIN_NUMERATOR / THERMAL_RANGE_MARGIN_DENOMINATOR : 1;
-    const int32_t target_minimum = (int32_t)frame.minimum - margin;
-    const int32_t target_maximum = (int32_t)frame.maximum + margin;
-
-    if( !display_range_valid )
-    {
-        display_minimum = target_minimum;
-        display_maximum = target_maximum;
-        display_range_valid = true;
-        return;
-    }
-
-    display_minimum =
-        ( display_minimum * THERMAL_RANGE_OLD_WEIGHT + target_minimum ) / THERMAL_RANGE_DIVISOR;
-    display_maximum =
-        ( display_maximum * THERMAL_RANGE_OLD_WEIGHT + target_maximum ) / THERMAL_RANGE_DIVISOR;
-}
-
 void thermal_view_enter( void )
 {
-    display_range_valid = false;
+    /* The image is independently auto-scaled for each complete frame. */
 }
 
 esp_err_t thermal_view_render( void )
@@ -168,7 +139,10 @@ esp_err_t thermal_view_render( void )
         return result;
     }
 
-    update_display_range();
+    const int32_t span = (int32_t)frame.maximum - (int32_t)frame.minimum;
+    const int32_t margin = span > 0 ? span / THERMAL_RANGE_MARGIN_DENOMINATOR : 1;
+    const int32_t display_minimum = (int32_t)frame.minimum - margin;
+    const int32_t display_maximum = (int32_t)frame.maximum + margin;
 
     /* Frame the image and readings with theme-semantic panels. The raw thermal
        palette stays independent of the configured UI color theme. */
