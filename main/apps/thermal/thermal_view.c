@@ -223,7 +223,11 @@ esp_err_t thermal_view_render( void )
                        theme->text );
 
     char text[ 24 ];
-    display_draw_text( THERMAL_INFO_X,\n                       THERMAL_PANEL_Y + UI_LAYOUT_PANEL_TITLE_INSET_Y,\n                       "IR INTENSITY",\n                       theme->secondary,\n                       1U );
+    display_draw_text( THERMAL_INFO_X,
+                       THERMAL_PANEL_Y + UI_LAYOUT_PANEL_TITLE_INSET_Y,
+                       "IR INTENSITY",
+                       theme->secondary,
+                       1U );
     snprintf( text, sizeof( text ), "MAX %6d", (int)frame.maximum );
     display_draw_text( THERMAL_INFO_X, 56, text, theme->text, 1 );
     snprintf( text, sizeof( text ), "MIN %6d", (int)frame.minimum );
