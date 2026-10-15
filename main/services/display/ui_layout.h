@@ -15,6 +15,10 @@
 #define UI_LAYOUT_MENU_ROW_HEIGHT 20
 #define UI_LAYOUT_MENU_VISIBLE_ROWS 6U
 #define UI_LAYOUT_FOOTER_Y 150
+/** Shared instrument panel origin and text insets (see GPS and Thermal). */
+#define UI_LAYOUT_PANEL_TOP_Y 24
+#define UI_LAYOUT_PANEL_TEXT_INSET_X 6
+#define UI_LAYOUT_PANEL_TITLE_INSET_Y 4
 
 /** @brief Return the first item for a standard scrolling menu viewport. */
 static inline unsigned ui_layout_menu_window_start( unsigned a_selected, unsigned a_item_count )
