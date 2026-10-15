@@ -27,7 +27,7 @@
 #define MLX90640_STATUS_CLEAR_VALUE 0x0030U
 #define MLX90640_CONTROL_CHESS_MODE 0x1000U
 #define MLX90640_CONTROL_REFRESH_MASK 0x0380U
-#define MLX90640_CONTROL_REFRESH_16HZ 0x0280U
+#define MLX90640_CONTROL_REFRESH_8HZ 0x0200U
 #define MLX90640_SUBPAGE_MASK_0 0x01U
 #define MLX90640_SUBPAGE_MASK_1 0x02U
 #define MLX90640_SUBPAGE_MASK_BOTH 0x03U
@@ -204,7 +204,7 @@ esp_err_t mlx90640_read_frame( mlx90640_frame_t *a_frame )
         }
         const uint16_t configured = (uint16_t)(
             ( control & (uint16_t)~MLX90640_CONTROL_REFRESH_MASK ) |
-            MLX90640_CONTROL_REFRESH_16HZ );
+            MLX90640_CONTROL_REFRESH_8HZ );
         if( configured != control )
         {
             result = write_word( MLX90640_CONTROL_REGISTER, configured );
@@ -213,7 +213,7 @@ esp_err_t mlx90640_read_frame( mlx90640_frame_t *a_frame )
                 return read_failed( result );
             }
         }
-        ESP_LOGI( TAG, "MLX90640 refresh control: 0x%04X -> 0x%04X (16 Hz subpages)",
+        ESP_LOGI( TAG, "MLX90640 refresh control: 0x%04X -> 0x%04X (8 Hz subpages)",
                   control, configured );
         refresh_configured = true;
         return ESP_ERR_NOT_FINISHED;
