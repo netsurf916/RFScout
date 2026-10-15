@@ -10,13 +10,14 @@
 #include "recorder.h"
 #include "ui_chrome.h"
 #include "ui_game.h"
+#include "ui_layout.h"
 #include "ui_theme.h"
 
 #include <stddef.h>
 #include <stdio.h>
 
 #define AUDIO_SPECTRUM_GRAPH_X 8
-#define AUDIO_SPECTRUM_PLOT_Y 32
+#define AUDIO_SPECTRUM_PLOT_Y ( UI_LAYOUT_PANEL_TOP_Y + 8 )
 #define AUDIO_SPECTRUM_PLOT_H ( RFSCOUT_DISPLAY_HEIGHT - 42 )
 #define AUDIO_SPECTRUM_LABEL_H 9
 #define AUDIO_SPECTRUM_GRAPH_Y ( AUDIO_SPECTRUM_PLOT_Y + AUDIO_SPECTRUM_LABEL_H )
