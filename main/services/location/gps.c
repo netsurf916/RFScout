@@ -1731,10 +1731,11 @@ bool gps_rate_diagnostics_get( float *a_filtered_speed_mps,
     if( !receiver_detected || GPS_POLICY_ACTIVE != policy_state || policy_rate_scan ||
         policy_current_interval_ms < GPS_RATE_MIN_MS ||
         policy_current_interval_ms > GPS_RATE_MAX_MS ||
-        policy_rate_support[ ( policy_current_interval_ms - GPS_RATE_MIN_MS ) / GPS_RATE_STEP_MS ] !=
-            1U ||
-        !policy_filtered_speed_valid || esp_timer_get_time() - policy_filtered_speed_updated_us >
-                                            (int64_t)GPS_FIX_STALE_MS * 1000LL )
+        policy_rate_support[ ( policy_current_interval_ms - GPS_RATE_MIN_MS ) /
+                             GPS_RATE_STEP_MS ] != 1U ||
+        !policy_filtered_speed_valid ||
+        esp_timer_get_time() - policy_filtered_speed_updated_us >
+            (int64_t)GPS_FIX_STALE_MS * 1000LL )
     {
         return false;
     }
