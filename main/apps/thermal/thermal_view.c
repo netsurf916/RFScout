@@ -11,6 +11,7 @@
 #include "display.h"
 #include "mlx90640.h"
 #include "ui_chrome.h"
+#include "ui_game.h"
 #include "ui_theme.h"
 
 #include "esp_log.h"
@@ -171,19 +172,32 @@ esp_err_t thermal_view_render( void )
 
     /* Frame the image and readings with theme-semantic panels. The raw thermal
        palette stays independent of the configured UI color theme. */
-    display_fill_rect_raw(
-        THERMAL_IMAGE_X - 2, THERMAL_IMAGE_Y - 2, THERMAL_IMAGE_WIDTH + 4, THERMAL_IMAGE_HEIGHT + 4,
-        theme->divider );
-    display_fill_rect_raw( THERMAL_PANEL_X, THERMAL_PANEL_Y, THERMAL_PANEL_WIDTH,
-                           THERMAL_PANEL_HEIGHT, theme->surface );
-    display_fill_rect_raw( THERMAL_PANEL_X, THERMAL_PANEL_Y, THERMAL_PANEL_WIDTH, 1,
-                           theme->divider );
-    display_fill_rect_raw( THERMAL_PANEL_X, THERMAL_PANEL_Y, 1, THERMAL_PANEL_HEIGHT,
-                           theme->divider );
-    display_fill_rect_raw( THERMAL_PANEL_X + THERMAL_PANEL_WIDTH - 1, THERMAL_PANEL_Y, 1,
-                           THERMAL_PANEL_HEIGHT, theme->divider );
-    display_fill_rect_raw( THERMAL_PANEL_X, THERMAL_PANEL_Y + THERMAL_PANEL_HEIGHT - 1,
-                           THERMAL_PANEL_WIDTH, 1, theme->divider );
+    if( ui_game_active() )
+    {
+        ui_game_draw_panel( THERMAL_IMAGE_X - 2,
+                            THERMAL_IMAGE_Y - 2,
+                            THERMAL_IMAGE_WIDTH + 4,
+                            THERMAL_IMAGE_HEIGHT + 4,
+                            theme->divider );
+        ui_game_draw_panel( THERMAL_PANEL_X,
+                            THERMAL_PANEL_Y,
+                            THERMAL_PANEL_WIDTH,
+                            THERMAL_PANEL_HEIGHT,
+                            theme->divider );
+    }
+    else
+    {
+        display_fill_rect_raw( THERMAL_IMAGE_X - 2,
+                               THERMAL_IMAGE_Y - 2,
+                               THERMAL_IMAGE_WIDTH + 4,
+                               THERMAL_IMAGE_HEIGHT + 4,
+                               theme->divider );
+        display_fill_rect_raw( THERMAL_PANEL_X,
+                               THERMAL_PANEL_Y,
+                               THERMAL_PANEL_WIDTH,
+                               THERMAL_PANEL_HEIGHT,
+                               theme->surface );
+    }
 
     /* One filled rectangle per native sensor cell. This avoids thousands of
        individual-pixel draws, interpolation artifacts and false spatial detail. */
