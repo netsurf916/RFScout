@@ -115,8 +115,8 @@ void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_reset_faile
                         text, sizeof( text ), "%u", (unsigned)breadcrumbs_file_limit() );
                     break;
                 case 9U:
-                    (void)snprintf( text, sizeof( text ), "%s",
-                                    config->gps_timepulse_enabled ? "On" : "Off" );
+                    (void)snprintf(
+                        text, sizeof( text ), "%s", config->gps_timepulse_enabled ? "On" : "Off" );
                     break;
                 case 8U:
                     (void)snprintf(
