@@ -39,8 +39,9 @@ setting is **GPS Timepulse: On/Off**, controlling the receiver's timing-pulse ou
 rather than naming its onboard LED. The tested receiver's output drives its
 flashing indicator; the GPS service owns its CASIC CFG-TP update and readback.
 Changes are best-effort: command failures are logged, and a later receiver query
-can reconcile the observed hardware state with the displayed preference. The menu
-may show the persisted desired value until that query; do not add indefinite
+can reveal whether hardware matches the stored preference. The current menu
+shows the persisted desired value, not an observed hardware state; displaying
+readback status would require additional UI wiring. Do not add indefinite
 retry loops or deferred-persistence recovery just for the timepulse.
 It is distinct from the eight-LED direction ring, whose enable/color/brightness
 controls belong only in the foreground GPS application.
