@@ -84,7 +84,7 @@ typedef enum
 ui_color_pair_t ui_theme_pair( ui_color_pair_id_t a_pair );
 static inline ui_color_pair_t ui_color_pair_reverse( ui_color_pair_t a_pair )
 {
-    return (ui_color_pair_t){ .fg = a_pair.bg, .bg = a_pair.fg };
+    return ( ui_color_pair_t ){ .fg = a_pair.bg, .bg = a_pair.fg };
 }
 
 /** @brief Load the persisted theme preference, defaulting to Pixel Quest for fresh configurations. */
