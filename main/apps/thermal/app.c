@@ -122,8 +122,7 @@ static rfscout_app_runtime_result_t thermal_runtime( const rfscout_app_runtime_e
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
     const esp_err_t result = thermal_view_render();
-    if( ( ESP_OK != result ) && ( ESP_ERR_NOT_FINISHED != result ) &&
-        mlx90640_is_detected() )
+    if( ( ESP_OK != result ) && ( ESP_ERR_NOT_FINISHED != result ) && mlx90640_is_detected() )
     {
         /* Avoid hammering an unhealthy shared I2C bus between other clients. */
         last_refresh_us = a_event->now_us + THERMAL_ERROR_BACKOFF_US;
