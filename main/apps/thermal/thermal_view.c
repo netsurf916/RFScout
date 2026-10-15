@@ -12,6 +12,7 @@
 #include "mlx90640.h"
 #include "ui_chrome.h"
 #include "ui_game.h"
+#include "ui_layout.h"
 #include "ui_theme.h"
 
 #include "esp_log.h"
@@ -216,4 +217,32 @@ esp_err_t thermal_view_render( void )
         ESP_LOGW( TAG, "thermal LCD refresh failed" );
     }
     return present;
+}
+
+void thermal_view_menu( unsigned a_selected, bool a_locked, bool a_keep_awake )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    const char *items[] = { "Back", "App lock", "Keep screen awake" };
+    display_clear( theme->background );
+    ui_chrome_draw( "THERMAL / SETTINGS", theme->secondary );
+    if( ui_game_active() )
+    {
+        ui_game_draw_panel( 8, 32, 304, 108, theme->divider );
+    }
+    for( unsigned index = 0U; index < 3U; ++index )
+    {
+        const int y = UI_LAYOUT_MENU_START_Y + (int)index * UI_LAYOUT_MENU_ROW_HEIGHT;
+        ui_game_draw_menu_marker(
+            UI_LAYOUT_LEFT_X + 4, y, a_selected == index ? ">" : " ", theme->selected );
+        display_draw_text( UI_LAYOUT_LABEL_X + 6,
+                           y,
+                           items[ index ],
+                           a_selected == index ? theme->selected : theme->text,
+                           1U );
+    }
+    display_draw_text( 251, UI_LAYOUT_MENU_START_Y + UI_LAYOUT_MENU_ROW_HEIGHT,
+                       a_locked ? "ON" : "OFF", theme->info, 1U );
+    display_draw_text( 251, UI_LAYOUT_MENU_START_Y + 2 * UI_LAYOUT_MENU_ROW_HEIGHT,
+                       a_keep_awake ? "ON" : "OFF", theme->info, 1U );
+    (void)display_present();
 }
