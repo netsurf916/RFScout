@@ -10,6 +10,7 @@
 #include "app_manager.h"
 #include "battery.h"
 #include "board.h"
+#include "board_i2c.h"
 #include "breadcrumbs.h"
 #include "device_config.h"
 #include "display.h"
@@ -200,7 +201,7 @@ static void enter_sleep( void )
 }
 
 /** @brief Perform an orderly physical power-off request. */
-static void power_off( void )
+static void power_off( bool a_thermal_fallback )
 {
     if( !system_lifecycle_prepare( SYSTEM_LIFECYCLE_POWER_OFF ) )
     {
@@ -215,6 +216,12 @@ static void power_off( void )
         ESP_LOGE( TAG, "power off failed: %s", esp_err_to_name( result ) );
         system_lifecycle_abort( SYSTEM_LIFECYCLE_POWER_OFF );
         restore_display_after_failed_power_off();
+        if( a_thermal_fallback && power_action_available( POWER_ACTION_SLEEP ) )
+        {
+            ESP_LOGW( TAG, "thermal power-off unavailable; falling back to deep sleep" );
+            enter_sleep();
+            return;
+        }
         set_idle_status();
     }
 }
@@ -249,7 +256,7 @@ static void execute_action( power_action_t a_action, bool a_long_press )
             set_power_status(
                 POWER_HOLD_EXECUTING, a_action, POWER_TRANSITION_NONE, 0U, "POWERING OFF...", "" );
             (void)display_present();
-            power_off();
+            power_off( false );
             return;
         case POWER_ACTION_COUNT:
         default:
@@ -391,7 +398,8 @@ static void format_requested_detail( power_action_t a_action,
     snprintf( a_output, a_capacity, "%s IN %u", name, (unsigned)a_seconds_remaining );
 }
 
-static void execute_policy_action( power_action_t a_action )
+static void execute_policy_action( power_action_t a_action,
+                                   power_transition_reason_t a_reason )
 {
     if( !power_action_available( a_action ) )
     {
@@ -408,7 +416,7 @@ static void execute_policy_action( power_action_t a_action )
             enter_sleep();
             return;
         case POWER_ACTION_POWER_OFF:
-            power_off();
+            power_off( POWER_TRANSITION_HIGH_TEMPERATURE == a_reason );
             return;
         case POWER_ACTION_NONE:
         case POWER_ACTION_COUNT:
@@ -430,7 +438,8 @@ static power_action_t resolve_policy_action_at_execution( power_transition_reaso
 
     battery_refresh();
     battery_status_t battery;
-    if( !battery_get_status( &battery ) || !battery.charger_fresh || battery.external_power )
+    if( !board_i2c_ready() || !battery_get_status( &battery ) || !battery.charger_fresh ||
+        battery.external_power )
     {
         ESP_LOGW( TAG, "thermal power-off no longer has confirmed removable power; using sleep" );
         return POWER_ACTION_SLEEP;
@@ -461,7 +470,7 @@ static void update_requested_transition( int64_t a_now_us )
         requested_transition_message[ 0 ] = '\0';
         set_power_status( POWER_HOLD_EXECUTING, action, reason, 0U, message, detail );
         (void)display_present();
-        execute_policy_action( action );
+        execute_policy_action( action, reason );
         return;
     }
 
