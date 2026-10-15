@@ -13,6 +13,7 @@
 #include "audio_policy.h"
 #include "breadcrumbs.h"
 #include "device_config.h"
+#include "gps.h"
 #include "device_time.h"
 #include "display.h"
 #include "event.h"
@@ -1719,6 +1720,10 @@ static void adjust_selected( int a_delta )
             if( ESP_OK != device_config_save() )
             {
                 save_error = true;
+            }
+            else
+            {
+                gps_timepulse_apply();
             }
         }
     }
