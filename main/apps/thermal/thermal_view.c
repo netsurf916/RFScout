@@ -22,6 +22,10 @@
 #define THERMAL_IMAGE_WIDTH 192
 #define THERMAL_IMAGE_HEIGHT 144
 #define THERMAL_INFO_X 204
+#define THERMAL_PANEL_X 200
+#define THERMAL_PANEL_Y 24
+#define THERMAL_PANEL_WIDTH 116
+#define THERMAL_PANEL_HEIGHT 142
 #define THERMAL_CELL_WIDTH ( THERMAL_IMAGE_WIDTH / MLX90640_WIDTH )
 #define THERMAL_CELL_HEIGHT ( THERMAL_IMAGE_HEIGHT / MLX90640_HEIGHT )
 #define THERMAL_RANGE_MARGIN_NUMERATOR 1
@@ -165,6 +169,22 @@ esp_err_t thermal_view_render( void )
 
     update_display_range();
 
+    /* Frame the image and readings with theme-semantic panels. The raw thermal
+       palette stays independent of the configured UI color theme. */
+    display_fill_rect_raw(
+        THERMAL_IMAGE_X - 2, THERMAL_IMAGE_Y - 2, THERMAL_IMAGE_WIDTH + 4, THERMAL_IMAGE_HEIGHT + 4,
+        theme->divider );
+    display_fill_rect_raw( THERMAL_PANEL_X, THERMAL_PANEL_Y, THERMAL_PANEL_WIDTH,
+                           THERMAL_PANEL_HEIGHT, theme->surface );
+    display_fill_rect_raw( THERMAL_PANEL_X, THERMAL_PANEL_Y, THERMAL_PANEL_WIDTH, 1,
+                           theme->divider );
+    display_fill_rect_raw( THERMAL_PANEL_X, THERMAL_PANEL_Y, 1, THERMAL_PANEL_HEIGHT,
+                           theme->divider );
+    display_fill_rect_raw( THERMAL_PANEL_X + THERMAL_PANEL_WIDTH - 1, THERMAL_PANEL_Y, 1,
+                           THERMAL_PANEL_HEIGHT, theme->divider );
+    display_fill_rect_raw( THERMAL_PANEL_X, THERMAL_PANEL_Y + THERMAL_PANEL_HEIGHT - 1,
+                           THERMAL_PANEL_WIDTH, 1, theme->divider );
+
     /* One filled rectangle per native sensor cell. This avoids thousands of
        individual-pixel draws, interpolation artifacts and false spatial detail. */
     for( int y = 0; y < MLX90640_HEIGHT; ++y )
@@ -192,15 +212,15 @@ esp_err_t thermal_view_render( void )
                        theme->text );
 
     char text[ 24 ];
-    display_draw_text( THERMAL_INFO_X, 30, "IR INTENSITY", theme->info, 1 );
+    display_draw_text( THERMAL_INFO_X + 6, 32, "IR INTENSITY", theme->accent, 1 );
     snprintf( text, sizeof( text ), "MAX %6d", (int)frame.maximum );
-    display_draw_text( THERMAL_INFO_X, 52, text, theme->text, 1 );
+    display_draw_text( THERMAL_INFO_X + 6, 56, text, theme->text, 1 );
     snprintf( text, sizeof( text ), "MIN %6d", (int)frame.minimum );
-    display_draw_text( THERMAL_INFO_X, 68, text, theme->text, 1 );
+    display_draw_text( THERMAL_INFO_X + 6, 74, text, theme->text, 1 );
     snprintf( text, sizeof( text ), "CTR %6d", (int)frame.center );
-    display_draw_text( THERMAL_INFO_X, 84, text, theme->text, 1 );
-    display_draw_text( THERMAL_INFO_X, 116, "32x24 LIVE", theme->info, 1 );
-    display_draw_text( THERMAL_INFO_X, 130, "CAL PENDING", theme->info, 1 );
+    display_draw_text( THERMAL_INFO_X + 6, 92, text, theme->text, 1 );
+    display_draw_text( THERMAL_INFO_X + 6, 128, "32x24 LIVE", theme->info, 1 );
+    display_draw_text( THERMAL_INFO_X + 6, 144, "RAW IR DATA", theme->secondary, 1 );
 
     const esp_err_t present = display_present();
     if( ESP_OK != present )
