@@ -124,6 +124,7 @@ idf_component_register(
         "platform.c"
         "session_state.c"
         "services/board/board.c"
+        "services/board/led_ring.c"
         "services/board/board_spi.c"
         "services/board/board_i2c.c"
         "services/input/input.c"
