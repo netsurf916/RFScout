@@ -17,7 +17,6 @@
 #include <string.h>
 
 #define BATTERY_POLL_INTERVAL_US 1000000LL
-#define BATTERY_I2C_TIMEOUT_MS 50
 #define BQ27220_REG_VOLTAGE 0x08U
 #define BQ27220_REG_STATUS 0x0AU
 #define BQ27220_REG_CURRENT 0x0CU
@@ -55,8 +54,7 @@ read_register_u8( i2c_master_dev_handle_t a_device, uint8_t a_register, uint8_t 
     {
         return ESP_ERR_INVALID_ARG;
     }
-    return i2c_master_transmit_receive(
-        a_device, &a_register, 1, a_value, 1, BATTERY_I2C_TIMEOUT_MS );
+    return board_i2c_transmit_receive( a_device, &a_register, 1, a_value, 1 );
 }
 
 static esp_err_t
@@ -67,7 +65,7 @@ write_register_u8( i2c_master_dev_handle_t a_device, uint8_t a_register, uint8_t
         return ESP_ERR_INVALID_ARG;
     }
     const uint8_t data[ 2 ] = { a_register, a_value };
-    return i2c_master_transmit( a_device, data, sizeof( data ), BATTERY_I2C_TIMEOUT_MS );
+    return board_i2c_transmit( a_device, data, sizeof( data ) );
 }
 
 static esp_err_t
@@ -78,8 +76,8 @@ read_register_u16( i2c_master_dev_handle_t a_device, uint8_t a_register, uint16_
         return ESP_ERR_INVALID_ARG;
     }
     uint8_t data[ 2 ];
-    const esp_err_t result = i2c_master_transmit_receive(
-        a_device, &a_register, 1, data, sizeof( data ), BATTERY_I2C_TIMEOUT_MS );
+    const esp_err_t result =
+        board_i2c_transmit_receive( a_device, &a_register, 1, data, sizeof( data ) );
     if( ESP_OK == result )
     {
         *a_value = (uint16_t)data[ 0 ] | ( (uint16_t)data[ 1 ] << 8U );
@@ -246,6 +244,11 @@ void battery_refresh( void )
         return;
     }
 
+    /* Preserve cached battery readings while another client recovers the bus. */
+    if( !board_i2c_ready() )
+    {
+        return;
+    }
     last_poll_us = esp_timer_get_time();
     battery_status_t next = cached_status;
     next.available = false;
