@@ -16,9 +16,11 @@ on directional mapping. Default LED guidance off. Persist enabled, 0-100% bright
 RGB color, and GPS display keep-awake. Avoid illuminating on stale/no-fix readings.
 
 Rework the GPS app's settings menu (Back, Reset trip, LED enable, LED intensity,
-LED color, Stay awake, breadcrumbs enabled/file retention, and GPS inactivity timeout).
+LED color, Stay awake, breadcrumbs enabled/file retention, GPS inactivity timeout,
+and GPS Timepulse).
 Retain system-owned storage/retention and background breadcrumb capture; expose
-those same controls in both Home and GPS, backed by one service-owned setting. The GPS app is a *view of system services*, not their owner.
+those same controls in both Home and GPS, backed by service-owned settings.
+The GPS app is a *view of system services*, not their owner.
 
 ## Breadcrumb capture
 Breadcrumb recording automatically adapts between **five seconds and one second**.
@@ -32,9 +34,10 @@ byte cap). Rate increases are automatic, not a user-configurable GPS setting.
 
 ## Receiver controls
 Baud probing, NMEA output and CASIC rate auto-negotiation remain strictly platform-owned
-and are **not** configurable from the GPS application. The proposed shared Home/GPS setting is **GPS Timepulse: On/Off**, controlling the
-receiver's timing-pulse output rather than naming its onboard LED. Keep the setting
-unavailable until the exact receiver command and electrical signal are confirmed.
+and are **not** configurable from the GPS application. The shared Home/GPS
+setting is **GPS Timepulse: On/Off**, controlling the receiver's timing-pulse output
+rather than naming its onboard LED. The tested receiver's output drives its
+flashing indicator; the GPS service owns its CASIC CFG-TP update and readback.
 It is distinct from the eight-LED direction ring, whose enable/color/brightness
 controls belong only in the foreground GPS application.
 Do not send speculative receiver configuration packets.
