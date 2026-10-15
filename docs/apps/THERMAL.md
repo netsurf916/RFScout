@@ -37,3 +37,7 @@ Current behavior does not yet include calibrated absolute temperature, invalid-p
 ## I2C failure handling
 
 A complete-frame read failure discards pending subpage data and allows up to three successive failed acquisitions before treating the sensor as disconnected. This reduces false hot-plug events from transient bus contention; persistent errors still trigger the existing Home fallback. The shared I2C bus, battery devices, and watchdog require device-side validation when an electrical bus hang occurs. Pixel Quest boxes reuse `ui_game_draw_panel` rather than bespoke edges.
+
+## Incremental acquisition
+
+The MLX90640 provider now performs at most one 32-word pixel transfer per runtime poll, yielding to other system work between transfers. A complete image is published only after both subpages are captured. Temporal pixel averaging and display-range averaging have been removed to favor immediate scene response. The poll interval is 5 ms; achievable display frame rate remains constrained by sensor conversion and shared-bus timing. These changes do not constitute a general-purpose I2C scheduler.
