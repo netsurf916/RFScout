@@ -15,6 +15,7 @@
 #include <stddef.h>
 
 #define THERMAL_REFRESH_INTERVAL_US 1000LL
+#define THERMAL_ERROR_BACKOFF_US 250000LL
 
 static bool service_initialized;
 static int64_t last_refresh_us;
@@ -118,6 +119,11 @@ static rfscout_app_runtime_result_t thermal_runtime( const rfscout_app_runtime_e
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
     const esp_err_t result = thermal_view_render();
+    if( ( ESP_OK != result ) && mlx90640_is_detected() )
+    {
+        /* Avoid hammering an unhealthy shared I2C bus between other clients. */
+        last_refresh_us = a_event->now_us + THERMAL_ERROR_BACKOFF_US;
+    }
     if( ( ESP_OK != result ) && ( ESP_ERR_NOT_FINISHED != result ) && !mlx90640_is_detected() )
     {
         app_framework_report_availability( RFSCOUT_APP_THERMAL,
