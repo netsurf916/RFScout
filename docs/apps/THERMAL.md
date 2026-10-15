@@ -41,3 +41,15 @@ A complete-frame read failure discards pending subpage data and allows up to thr
 ## Incremental acquisition
 
 The MLX90640 provider now performs at most one 32-word pixel transfer per runtime poll, yielding to other system work between transfers. A complete image is published only after both subpages are captured. The sensor's 0x800D refresh field is set to 16 Hz subpages (instead of the 2 Hz factory default) on first active acquisition, preserving other control bits. Temporal pixel averaging and display-range averaging have been removed to favor immediate scene response. The poll interval is 1 ms; achievable display frame rate remains constrained by sensor conversion and shared-bus timing. These changes do not constitute a general-purpose I2C scheduler.
+
+## Local display settings
+
+Press Select in Thermal to open its app-local menu: Back, App lock, and Keep screen awake (default On). The latter temporarily suppresses inactivity dim/off while Thermal is foreground; explicit power button actions remain authoritative. The override is released on exit. Audio Spectrum also retains an awake display while running; its local toggle remains follow-up work.
+
+## Raw-pixel checkerboard
+
+The displayed sensor values are uncalibrated raw RAM words. Correcting per-pixel offset/gain and subpage residual patterns requires MLX90640 EEPROM calibration and an actual temperature or compensated-radiance pipeline. Alternating subpage assembly alone cannot eliminate pixel-to-pixel offsets; no synthetic spatial averaging is applied in this change.
+
+## Frame acquisition pacing
+
+Each runtime call performs up to four 32-word I2C transfers, rather than one; that requires six polls per subpage instead of 24 while still yielding to other system work between bursts. The shared bus is configured for 400 kHz. Firmware build and on-device frame-rate characterization are required before claiming a sustained update rate.
