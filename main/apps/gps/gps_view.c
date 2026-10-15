@@ -7,6 +7,8 @@
 #include "gps_view.h"
 
 #include "display.h"
+#include "device_config.h"
+#include "breadcrumbs.h"
 #include "gps.h"
 #include "ui_chrome.h"
 #include "ui_game.h"
@@ -35,7 +37,7 @@ static unsigned track_sector( float a_degrees )
     return ( (unsigned)( ( a_degrees + 22.5f ) / 45.0f ) ) % 8U;
 }
 
-void gps_view_render( bool a_menu_open, bool a_reset_selected, bool a_reset_failed )
+void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_reset_failed )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     rfscout_gps_snapshot_t gps = { 0 };
@@ -47,23 +49,72 @@ void gps_view_render( bool a_menu_open, bool a_reset_selected, bool a_reset_fail
 
     if( a_menu_open )
     {
-        static const char *labels[] = { "Back", "Reset trip" };
-        for( unsigned item = 0U; item < 2U; ++item )
+        static const char *labels[] = {
+            "Back", "Reset trip", "LED guidance", "LED brightness", "LED color",
+            "Stay awake", "Breadcrumbs", "Retained files", "GPS timeout"
+        };
+        static const char *color_names[] = { "Green", "Red", "Blue", "White", "Orange", "Cyan" };
+        const device_config_t *config = device_config_get();
+        const unsigned first = a_menu_item < 5U ? 0U : a_menu_item - 4U;
+        for( unsigned row = 0U; row < 5U; ++row )
         {
-            const int y = UI_LAYOUT_MENU_START_Y + (int)item * UI_LAYOUT_MENU_ROW_HEIGHT;
-            const bool selected = ( item == ( a_reset_selected ? 1U : 0U ) );
-            ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X,
-                                      y,
-                                      selected ? ">" : " ",
+            const unsigned item = first + row;
+            if( item >= sizeof( labels ) / sizeof( labels[ 0 ] ) )
+            {
+                break;
+            }
+            const int y = UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT;
+            const bool selected = item == a_menu_item;
+            ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X, y, selected ? ">" : " ",
                                       selected ? theme->selected : theme->divider );
-            display_draw_text(
-                UI_LAYOUT_LABEL_X, y, labels[ item ], selected ? theme->text : theme->divider, 1U );
+            display_draw_text( UI_LAYOUT_LABEL_X, y, labels[ item ],
+                               selected ? theme->text : theme->divider, 1U );
+            text[ 0 ] = '\0';
+            switch( item )
+            {
+                case 2U:
+                    (void)snprintf( text, sizeof( text ), "%s", config->gps_led_enabled ? "On" : "Off" );
+                    break;
+                case 3U:
+                    (void)snprintf( text, sizeof( text ), "%u%%", (unsigned)config->gps_led_brightness );
+                    break;
+                case 4U:
+                {
+                    static const uint32_t colors[] = {
+                        0x00FF00U, 0xFF0000U, 0x0000FFU, 0xFFFFFFU, 0xFF8000U, 0x00FFFFU
+                    };
+                    for( unsigned i = 0U; i < sizeof( colors ) / sizeof( colors[ 0 ] ); ++i )
+                    {
+                        if( colors[ i ] == config->gps_led_rgb )
+                        {
+                            (void)snprintf( text, sizeof( text ), "%s", color_names[ i ] );
+                            break;
+                        }
+                    }
+                    break;
+                }
+                case 5U:
+                    (void)snprintf( text, sizeof( text ), "%s", config->gps_keep_awake ? "On" : "Off" );
+                    break;
+                case 6U:
+                    (void)snprintf( text, sizeof( text ), "%s", breadcrumbs_enabled() ? "On" : "Off" );
+                    break;
+                case 7U:
+                    (void)snprintf( text, sizeof( text ), "%u", (unsigned)breadcrumbs_file_limit() );
+                    break;
+                case 8U:
+                    (void)snprintf( text, sizeof( text ), "%us", (unsigned)config->gps_timeout_seconds );
+                    break;
+                default:
+                    break;
+            }
+            if( '\0' != text[ 0 ] )
+            {
+                display_draw_text( 224, y, text, selected ? theme->accent : theme->secondary, 1U );
+            }
         }
-        display_draw_text( UI_LAYOUT_LEFT_X,
-                           UI_LAYOUT_FOOTER_Y,
-                           "TURN: SELECT  CENTER: ACT",
-                           theme->secondary,
-                           1U );
+        display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y,
+                           "TURN: SELECT  CENTER: CHANGE", theme->secondary, 1U );
         (void)display_present();
         return;
     }
