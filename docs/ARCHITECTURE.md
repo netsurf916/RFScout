@@ -22,6 +22,22 @@ Application pages own app-specific UI, interpretation, settings, and current lim
 - [GPS](apps/GPS.md)
 - [Wardriving](apps/Wardriving.md)
 
+## Shared contracts and exceptions
+
+Shared platform behavior is the default across all applications, including dialogs,
+modal text sizing, input conventions, display-idle transitions, and other common
+UI components. **An application-specific deviation must not be introduced without
+explicit permission from the project owner.** A bug report or a suspected
+workaround is not, by itself, permission to change the shared contract.
+
+Every explicitly approved deviation **must be documented in this architecture
+page** before or alongside implementation, identifying the affected application
+or component, the shared behavior it differs from, the reason for the exception,
+its intended scope, and any relevant validation or removal conditions. App-specific
+documentation may link to that entry but does not replace it. When permission
+has not been granted, investigate and fix the shared implementation instead
+of silently introducing an exception.
+
 ## Board, app, and service boundaries
 
 RFScout currently supports one runtime hardware profile, **[LILYGO T-Embed CC1101 Plus](hardware/T_EMBED_CC1101_PLUS.md)**, while preserving the profile/capability abstraction for future boards.
