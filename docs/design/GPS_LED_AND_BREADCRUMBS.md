@@ -31,10 +31,11 @@ rate solely because a faster rate was requested but not ACK/readback verified.
 
 ## Receiver controls
 Baud probing, NMEA output and CASIC rate auto-negotiation remain strictly platform-owned
-and are **not** configurable from the GPS application. The only proposed user-facing
-receiver-hardware setting is its onboard LED flash/output pulse enablement, and that
-must remain unavailable unless the exact receiver command and electrical signal are
-confirmed. That setting is distinct from the RFScout eight-LED direction ring.
+and are **not** configurable from the GPS application. The proposed shared Home/GPS setting is **GPS Timepulse: On/Off**, controlling the
+receiver's timing-pulse output rather than naming its onboard LED. Keep the setting
+unavailable until the exact receiver command and electrical signal are confirmed.
+It is distinct from the eight-LED direction ring, whose enable/color/brightness
+controls belong only in the foreground GPS application.
 Do not send speculative receiver configuration packets.
 
 ## Acceptance
