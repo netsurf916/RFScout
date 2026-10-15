@@ -13,9 +13,9 @@ ground with device/compass heading.
 
 ## GPS behavior and settings
 Map validated RMC ground track into eight azimuth sectors N, NE, E, SE, S, SW, W,
-NW, only when a fresh fix, valid track, and sufficient speed are present. The eight
-physical LED index-to-azimuth positions must be confirmed on hardware before relying
-on directional mapping. Default LED guidance off. Persist enabled, 0-100% brightness,
+NW, only when a fresh fix, valid track, and sufficient speed are present. Hardware testing established that physical LED index 0 points West rather than North;
+the GPS app offsets the logical heading sector by +2 LEDs (90 degrees) so North
+uses index 2. Verify the remaining directions while moving. Default LED guidance off. Persist enabled, 0-100% brightness,
 RGB color, and GPS display keep-awake. Avoid illuminating on stale/no-fix readings.
 
 Rework the GPS app's settings menu (Back, Reset trip, LED enable, LED intensity,
