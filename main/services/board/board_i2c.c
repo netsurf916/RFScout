@@ -35,7 +35,6 @@ static esp_err_t account_result( esp_err_t a_result )
     return a_result;
 }
 
-
 esp_err_t board_i2c_init( void )
 {
     if( NULL != bus_handle )
@@ -133,5 +132,6 @@ board_i2c_transmit( i2c_master_dev_handle_t a_device, const uint8_t *a_data, siz
     {
         return ESP_ERR_INVALID_STATE;
     }
-    return account_result( i2c_master_transmit( a_device, a_data, a_length, BOARD_I2C_TRANSFER_TIMEOUT_MS ) );
+    return account_result(
+        i2c_master_transmit( a_device, a_data, a_length, BOARD_I2C_TRANSFER_TIMEOUT_MS ) );
 }
