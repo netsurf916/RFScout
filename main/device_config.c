@@ -40,6 +40,7 @@ static bool config_dirty;
 static const char *app_config_name( rfscout_app_id_t a_app )
 {
     static const char *names[ RFSCOUT_APP_COUNT ] = {
+        [RFSCOUT_APP_DIAGNOSTICS] = "diagnostics",
         [RFSCOUT_APP_SYSTEM_EVENTS] = "system_events",
         [RFSCOUT_APP_DEVICE] = "device",
         [RFSCOUT_APP_WIFI_BT] = "wifi_bt",
@@ -261,6 +262,7 @@ static void set_defaults( void )
         config.notification_app_enabled[ index ] =
             policy->notifications_supported && policy->notifications_enabled_default;
     }
+    config.apps_enabled[ RFSCOUT_APP_DIAGNOSTICS ] = false;
     config.apps_enabled[ RFSCOUT_APP_SYSTEM_EVENTS ] = false;
     config.apps_enabled[ RFSCOUT_APP_DEVICE ] = true;
 
