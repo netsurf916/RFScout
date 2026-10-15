@@ -509,7 +509,7 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
         {
             ESP_LOGW( TAG, "GPS CFG-TP rejected; leaving time pulse state unconfirmed" );
             policy_log_event( "timepulse_rejected", 0, 0 );
-            policy_query_rate();
+            policy_timepulse_finish();
         }
         else if( GPS_POLICY_WAIT_VERSION == policy_state &&
                  rejected_class == policy_probe_classes[ policy_probe_index ] &&
