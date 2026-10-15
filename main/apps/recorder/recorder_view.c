@@ -38,7 +38,7 @@ void recorder_view_landing( const char *a_playback_name, uint8_t a_playback_volu
 
     if( ui_game_active() )
     {
-        ui_game_draw_panel( 4, 26, 312, 108, theme->divider );
+        ui_game_draw_panel( UI_LAYOUT_PANEL_LEFT_X, UI_LAYOUT_PANEL_TOP_Y, 312, 110, theme->divider );
         ui_game_draw_icon( UI_GAME_ICON_TAPE, 254, 34, 5U, theme->info );
     }
     const rfscout_recorder_state_t state = recorder_state();
