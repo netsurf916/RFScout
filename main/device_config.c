@@ -351,8 +351,7 @@ static void load_display( const cJSON *a_root )
         }
     }
     /* Migrate persisted combined-theme names; explicit style/colors still override these. */
-    const char *legacy_theme =
-        cJSON_IsString( theme ) ? theme->valuestring : NULL;
+    const char *legacy_theme = cJSON_IsString( theme ) ? theme->valuestring : NULL;
     config.style = NULL != legacy_theme && 0 == strcasecmp( legacy_theme, "pixel_quest" )
                        ? RFSCOUT_STYLE_PIXEL_QUEST
                        : RFSCOUT_STYLE_SIMPLE;
