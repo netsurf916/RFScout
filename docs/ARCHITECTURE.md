@@ -22,6 +22,22 @@ Application pages own app-specific UI, interpretation, settings, and current lim
 - [GPS](apps/GPS.md)
 - [Wardriving](apps/Wardriving.md)
 
+## Shared contracts and exceptions
+
+Shared platform behavior is the default across all applications, including dialogs,
+modal text sizing, input conventions, display-idle transitions, and other common
+UI components. **An application-specific deviation must not be introduced without
+explicit permission from the project owner.** A bug report or a suspected
+workaround is not, by itself, permission to change the shared contract.
+
+Every explicitly approved deviation **must be documented in this architecture
+page** before or alongside implementation, identifying the affected application
+or component, the shared behavior it differs from, the reason for the exception,
+its intended scope, and any relevant validation or removal conditions. App-specific
+documentation may link to that entry but does not replace it. When permission
+has not been granted, investigate and fix the shared implementation instead
+of silently introducing an exception.
+
 ## Board, app, and service boundaries
 
 RFScout currently supports one runtime hardware profile, **[LILYGO T-Embed CC1101 Plus](hardware/T_EMBED_CC1101_PLUS.md)**, while preserving the profile/capability abstraction for future boards.
@@ -86,6 +102,12 @@ Two platform cases remain intentionally distinct:
 - **Board profile / mandatory UI providers** — these establish the hardware identity and minimum environment needed to run RFScout safely; failure is a platform startup/recovery condition, not an optional app being unavailable.
 - **Mounted SD media after physical loss** — the storage probe latches the current volume unavailable. A subsequent media-store probe invalidates pooled file handles under storage arbitration, unmounts the lost volume, and attempts a fresh mount. Stateful clients must detect a changed media generation and rebuild volume-specific state.
 
+
+The terminal deep-sleep path also clears the board-owned WS2812 LED ring after
+successful lifecycle preparation and before entering sleep. This is required even
+when the GPS app is foregrounded, because deep sleep does not dispatch an ordinary
+app-leave event. Failure to clear the ring cancels sleep and rolls back terminal
+preparation so a latched navigation pixel is not left powered during sleep.
 
 ## Application lifecycle, views, and resource sessions
 
@@ -363,7 +385,7 @@ The media store also exposes an explicit presence probe for navigation dependenc
 
 Rotating logs use `rfscout-00.log` through `rfscout-99.log` in `system/logs`, up to 4 MiB each, while attempting to preserve at least 64 MiB free. The conservative hardware-tested SD baseline remains a FAT-compatible SanDisk card of 32 GB or less.
 
-Breadcrumb recording is independent from the ordinary SD logging toggle and requires fresh valid GPS position **and GPS UTC**. Accepted fixes are sampled at most once every five seconds and bucketed into ten-minute GPS-UTC filenames in `system/breadcrumbs`. Current retention is file-count based.
+Breadcrumb recording is independent from the ordinary SD logging toggle and requires fresh valid GPS position **and GPS UTC**. Accepted fixes are sampled automatically between one and five seconds: five seconds is the conservative fallback, and a verified actual receiver rate can accelerate capture to at most once per second. Duplicate whole-second GPS UTC stamps are suppressed. Samples are bucketed into ten-minute GPS-UTC filenames in `system/breadcrumbs`. Current retention is file-count based, not a per-file byte limit. The Home and GPS menus access the same service-owned recording and retention settings.
 
 ## Firmware image and OTA architecture
 

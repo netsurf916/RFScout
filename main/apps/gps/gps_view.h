@@ -10,6 +10,6 @@
 #include <stdbool.h>
 
 /** @brief Render available GPS receiver telemetry without owning the UART provider. */
-void gps_view_render( bool a_menu_open, bool a_reset_selected, bool a_reset_failed );
+void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_menu_error );
 
 #endif // _RFSCOUT_GPS_VIEW_H_

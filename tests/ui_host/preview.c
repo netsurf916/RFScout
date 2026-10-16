@@ -103,6 +103,25 @@ esp_err_t device_config_save( void )
 {
     return ESP_OK;
 }
+static const device_config_t gps_config_fixture = {
+    .gps_led_enabled = false,
+    .gps_led_brightness = 20U,
+    .gps_led_rgb = 0x00FF00U,
+    .gps_keep_awake = true,
+    .gps_timeout_seconds = 30U,
+};
+const device_config_t *device_config_get( void )
+{
+    return &gps_config_fixture;
+}
+bool breadcrumbs_enabled( void )
+{
+    return false;
+}
+uint16_t breadcrumbs_file_limit( void )
+{
+    return 144U;
+}
 const char *esp_err_to_name( esp_err_t a_error )
 {
     (void)a_error;

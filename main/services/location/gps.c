@@ -107,6 +107,8 @@ typedef enum
 } gps_policy_state_t;
 
 static gps_policy_state_t policy_state;
+static bool policy_timepulse_pending;
+static bool policy_timepulse_runtime;
 static int64_t policy_deadline_us;
 static int64_t policy_last_change_us;
 static int64_t policy_speed_since_us;
@@ -409,6 +411,21 @@ static void policy_query_rate( void )
 }
 
 /* Read/modify/write the existing time-pulse profile without guessing timing fields. */
+static void policy_query_rate( void );
+
+static void policy_timepulse_finish( void )
+{
+    if( policy_timepulse_runtime )
+    {
+        policy_timepulse_runtime = false;
+        policy_state = GPS_POLICY_ACTIVE;
+    }
+    else
+    {
+        policy_query_rate();
+    }
+}
+
 static void policy_query_timepulse( void )
 {
     policy_state = GPS_POLICY_WAIT_TIMEPULSE;
@@ -416,7 +433,15 @@ static void policy_query_timepulse( void )
     if( !policy_send( 0x06U, 0x03U, NULL, 0U ) )
     {
         ESP_LOGW( TAG, "GPS CFG-TP query failed; retaining receiver defaults" );
-        policy_query_rate();
+        policy_timepulse_finish();
+    }
+}
+
+void gps_timepulse_apply( void )
+{
+    if( receiver_detected )
+    {
+        policy_timepulse_pending = true;
     }
 }
 
@@ -484,7 +509,7 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
         {
             ESP_LOGW( TAG, "GPS CFG-TP rejected; leaving time pulse state unconfirmed" );
             policy_log_event( "timepulse_rejected", 0, 0 );
-            policy_query_rate();
+            policy_timepulse_finish();
         }
         else if( GPS_POLICY_WAIT_VERSION == policy_state &&
                  rejected_class == policy_probe_classes[ policy_probe_index ] &&
@@ -579,53 +604,56 @@ static void policy_response( uint8_t a_class, uint8_t a_id, const uint8_t *a_dat
     else if( 0x06U == a_class && 0x03U == a_id && GPS_POLICY_WAIT_TIMEPULSE == policy_state &&
              16U == a_size )
     {
-        if( 0U != a_data[ 8 ] )
+        const bool desired = device_config_get()->gps_timepulse_enabled;
+        if( ( 0U != a_data[ 8 ] ) != desired )
         {
             uint8_t timepulse[ 16 ];
             memcpy( timepulse, a_data, sizeof( timepulse ) );
-            timepulse[ 8 ] = 0U;
+            timepulse[ 8 ] = desired ? 1U : 0U;
             if( policy_send( 0x06U, 0x03U, timepulse, sizeof( timepulse ) ) )
             {
-                ESP_LOGI( TAG, "GPS time-pulse disable requested; awaiting ACK" );
-                policy_log_event( "timepulse_disable_requested", 0, 0 );
+                ESP_LOGI( TAG, "GPS timepulse change requested; awaiting ACK" );
+                policy_log_event( "timepulse_change_requested", desired ? 1 : 0, 0 );
                 policy_state = GPS_POLICY_WAIT_TIMEPULSE_ACK;
                 policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
             }
             else
             {
-                ESP_LOGW( TAG, "GPS time-pulse disable send failed; NMEA unaffected" );
+                ESP_LOGW( TAG, "GPS timepulse update send failed; NMEA unaffected" );
             }
         }
         else
         {
-            ESP_LOGI( TAG, "GPS time pulse already disabled; no write required" );
-            policy_log_event( "timepulse_already_disabled", 0, 0 );
+            ESP_LOGI( TAG, "GPS timepulse already matches preference; no write required" );
+            policy_log_event( "timepulse_already_configured", desired ? 1 : 0, 0 );
         }
         if( GPS_POLICY_WAIT_TIMEPULSE == policy_state )
         {
-            policy_query_rate();
+            policy_timepulse_finish();
         }
     }
     else if( 0x05U == a_class && 0x01U == a_id && GPS_POLICY_WAIT_TIMEPULSE_ACK == policy_state &&
              4U == a_size && 0x06U == a_data[ 0 ] && 0x03U == a_data[ 1 ] )
     {
-        ESP_LOGI( TAG, "GPS CFG-TP disable acknowledged; checking readback" );
+        ESP_LOGI( TAG, "GPS CFG-TP change acknowledged; checking readback" );
         policy_state = GPS_POLICY_VERIFY_TIMEPULSE;
         policy_deadline_us = esp_timer_get_time() + GPS_POLICY_TIMEOUT_US;
         if( !policy_send( 0x06U, 0x03U, NULL, 0U ) )
         {
             ESP_LOGW( TAG, "GPS CFG-TP readback request failed" );
-            policy_query_rate();
+            policy_timepulse_finish();
         }
     }
     else if( 0x06U == a_class && 0x03U == a_id && GPS_POLICY_VERIFY_TIMEPULSE == policy_state &&
              16U == a_size )
     {
-        const bool disabled = 0U == a_data[ 8 ];
-        ESP_LOGI( TAG, "GPS CFG-TP readback: %s", disabled ? "disabled" : "still enabled" );
-        policy_log_event(
-            disabled ? "timepulse_verified_disabled" : "timepulse_verify_failed", 0, a_data[ 8 ] );
-        policy_query_rate();
+        const bool expected = device_config_get()->gps_timepulse_enabled;
+        const bool matches = ( 0U != a_data[ 8 ] ) == expected;
+        ESP_LOGI( TAG, "GPS CFG-TP readback: %s", matches ? "verified" : "mismatch" );
+        policy_log_event( matches ? "timepulse_verified" : "timepulse_verify_failed",
+                          expected ? 1 : 0,
+                          a_data[ 8 ] );
+        policy_timepulse_finish();
     }
     else if( 0x06U == a_class && 0x04U == a_id && GPS_POLICY_WAIT_RATE == policy_state &&
              4U == a_size )
@@ -762,11 +790,19 @@ static int64_t trip_last_checkpoint_us;
 
 static void policy_poll( int64_t a_now )
 {
+    if( policy_timepulse_pending && receiver_detected && GPS_POLICY_ACTIVE == policy_state )
+    {
+        policy_timepulse_pending = false;
+        policy_timepulse_runtime = true;
+        policy_query_timepulse();
+    }
     if( GPS_POLICY_WAIT_BAUD == policy_state && a_now >= policy_deadline_us )
     {
         ESP_LOGW( TAG, "GPS no NMEA at %d baud; returning to discovery", active_baud );
         policy_log_event( "baud_fallback", policy_baud_previous, active_baud );
         policy_state = GPS_POLICY_IDLE;
+        policy_timepulse_runtime = false;
+        policy_timepulse_pending = false;
         policy_baud_attempted = true;
         baud_locked = false;
         receiver_detected = false;
@@ -836,7 +872,7 @@ static void policy_poll( int64_t a_now )
         {
             ESP_LOGW( TAG, "GPS CFG-TP query/ack/verification timeout; continuing initialization" );
             policy_log_event( "timepulse_timeout", 0, 0 );
-            policy_query_rate();
+            policy_timepulse_finish();
         }
         else if( GPS_POLICY_WAIT_RATE == policy_state &&
                  policy_rate_query_retries < GPS_POLICY_PROBE_RETRY_LIMIT )
@@ -1390,6 +1426,8 @@ esp_err_t gps_init( void )
     satellites_updated_us = 0;
     baud_locked = false;
     policy_state = GPS_POLICY_IDLE;
+    policy_timepulse_runtime = false;
+    policy_timepulse_pending = false;
     casic_length = 0U;
     casic_expected = 0U;
     policy_last_change_us = 0;
@@ -1584,6 +1622,8 @@ void gps_poll( void )
         receiver_detected = false;
         baud_locked = false;
         policy_state = GPS_POLICY_IDLE;
+        policy_timepulse_runtime = false;
+        policy_timepulse_pending = false;
         snapshot.available = false;
         snapshot.location_valid = false;
         snapshot.time_valid = false;
@@ -1688,8 +1728,14 @@ bool gps_rate_diagnostics_get( float *a_filtered_speed_mps,
                                int *a_current_interval_ms,
                                int *a_target_interval_ms )
 {
-    if( !policy_filtered_speed_valid || esp_timer_get_time() - policy_filtered_speed_updated_us >
-                                            (int64_t)GPS_FIX_STALE_MS * 1000LL )
+    if( !receiver_detected || GPS_POLICY_ACTIVE != policy_state || policy_rate_scan ||
+        policy_current_interval_ms < GPS_RATE_MIN_MS ||
+        policy_current_interval_ms > GPS_RATE_MAX_MS ||
+        policy_rate_support[ ( policy_current_interval_ms - GPS_RATE_MIN_MS ) /
+                             GPS_RATE_STEP_MS ] != 1U ||
+        !policy_filtered_speed_valid ||
+        esp_timer_get_time() - policy_filtered_speed_updated_us >
+            (int64_t)GPS_FIX_STALE_MS * 1000LL )
     {
         return false;
     }

@@ -25,7 +25,8 @@ Current settings include:
 - per-app enablement grouped under **Device Settings → Apps**, preserving existing toggles; preferred startup application remains a system-wide control in **Device Settings**;
 - SD logging to the `system/logs` media collection;
 - supported power-button actions and protective power policy;
-- breadcrumb recording to the `system/breadcrumbs` media collection and retained breadcrumb-file count;
+- breadcrumb recording to the `system/breadcrumbs` media collection and retained breadcrumb-file count (the same system-owned controls are also available in GPS Settings; sampling adapts from five seconds down to one second at most);
+- GPS Timepulse On/Off (shared with GPS Settings): controls the receiver timing-pulse output, which drives the flashing indicator on the tested module; this is **not** the foreground GPS app's eight-LED directional ring;
 - global Hold shortcut selection between **Input Lock** and **App Lock**; and
 - application notification preferences exposed through the relevant app settings.
 

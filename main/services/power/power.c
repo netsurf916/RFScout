@@ -13,6 +13,7 @@
 #include "board_i2c.h"
 #include "breadcrumbs.h"
 #include "device_config.h"
+#include "led_ring.h"
 #include "display.h"
 #include "display_idle.h"
 #include "log_writer.h"
@@ -188,6 +189,18 @@ static void enter_sleep( void )
     if( !system_lifecycle_prepare( SYSTEM_LIFECYCLE_DEEP_SLEEP ) )
     {
         ESP_LOGW( TAG, "sleep cancelled because persistent state could not be prepared" );
+        set_idle_status();
+        return;
+    }
+
+    /* Deep sleep bypasses app leave hooks; blank the shared WS2812 ring before
+       the CPU sleeps so a latched GPS direction pixel does not remain powered. */
+    const esp_err_t led_result = led_ring_clear();
+    if( ESP_OK != led_result )
+    {
+        ESP_LOGW(
+            TAG, "sleep cancelled: LED ring could not clear: %s", esp_err_to_name( led_result ) );
+        system_lifecycle_abort( SYSTEM_LIFECYCLE_DEEP_SLEEP );
         set_idle_status();
         return;
     }

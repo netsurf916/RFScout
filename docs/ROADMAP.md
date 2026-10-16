@@ -789,7 +789,7 @@ Before introducing receiver control:
 - On ordinary app switches, retain system GPS service ownership unless the framework's
   service policy specifically requires stopping it.
 
-Time-pulse LED experiments belong to a separate GPS configuration change and should
+Receiver timepulse configuration belongs to GPS Timepulse (service-owned, shared Home/GPS On/Off); directional ring configuration is GPS-app-only. Future experiments should
 not be interpreted as evidence of power-saving or guaranteed LED behavior.
 
 ## Implementation strategy (future work)
