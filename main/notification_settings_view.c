@@ -16,6 +16,7 @@
 #include "ui_game.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
+#include "ui_menu.h"
 
 #include <stdio.h>
 
@@ -70,7 +71,8 @@ void notification_settings_view_render( rfscout_app_id_t a_app,
 
         const int y = UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT;
         const bool active = ( item == a_selected );
-        const uint16_t foreground = active ? theme->text : theme->secondary;
+        const uint16_t foreground =
+            ui_menu_label_color( ( ui_menu_state_t ){ .selected = active, .available = true } );
         ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X,
                                   y,
                                   active ? ( a_editing ? "*" : ">" ) : " ",

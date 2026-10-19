@@ -97,6 +97,10 @@ idf.py -DRFSCOUT_FORMAT_CHECK=OFF build
 
 That bypass does not change CI policy.
 
+## Shared UI contribution rules
+
+Before adding a menu or reusable icon, consult the shared menu/icon contract in [Architecture](docs/ARCHITECTURE.md#shared-menu-and-icon-contract). Use `ui_menu` for focus, editing and availability colors; do not equate an OFF setting with unavailable or use the divider color for ordinary selectable labels. Place reusable icon art in `ui_icon` rather than duplicating pixel geometry. Preserve action guards independently of drawing, validate both styles/all color configurations, and update existing documentation rather than introducing parallel app or service pages.
+
 ## Host UI previews
 
 On a Linux host with Python 3 and a C compiler (`cc`, or `CC`), render deterministic 320×170

@@ -274,6 +274,17 @@ The retired monolithic internal `rfscout.json` representation is not authoritati
 
 ## Visual presentation
 
+### Shared menu and icon contract
+
+Applications retain ownership of menu contents, value formatting, current focus, edit mode, and action availability. The shared presentation layer owns the visual mapping of those states. Normal available labels use the normal theme foreground, focused available labels use selected styling, and values use subordinate/value styling. An OFF configuration value is not a disabled action. An unavailable or locked action keeps unavailable styling even when focused; selection must not make it appear executable. Status colors (warning, error, success, info) describe operational facts, not navigation focus. Do not use structural divider color for ordinary menu labels or reassign info to mean selected.
+
+`ui_menu` exposes a small state contract with independent `selected`, `editing`, `available`, and `locked` flags. It resolves label/value colors and markers using `ui_theme`. Callers must not override unavailable styling with selection colors. Where a restriction is an actual lock, the shared padlock artwork may accompany the control; lack of hardware, media, or network is unavailable, not locked. The shared renderer never enables an action, and applications continue to guard actions in their input handlers. Both Simple and Pixel Quest retain the established marker semantics and platform chrome boundaries.
+
+`ui_icon` owns shared immutable pixel artwork and the common status glyph geometry (including input lock, application lock, SD, thermal, GPS, and Pixel Quest title icons). Existing `ui_game` icon functions delegate to the same centralized artwork. Drawing uses the display framebuffer primitives, requires no allocations, workers, or lifecycle service, and never calls `display_present()`. A caller chooses whether an icon is shown and supplies semantic state/color and placement. Existing status-bar lock meanings remain distinct. Icon geometry must remain bounded by the intended drawing region, with host previews/tests and hardware display review for changes.
+
+The shared palette remains RGB565 color authority; menu roles are resolved centrally rather than creating a duplicate stored palette. An additional theme color is warranted only when visual contrast testing demonstrates a distinct semantic role cannot be represented adequately by existing colors.
+
+
 `ui_theme` exposes two independent persisted dimensions: **Style** (Simple, Pixel Quest) controls pixel-console geometry and artwork, while **Colors** (Default, Outdoor, Night) selects semantic RGB565 colors for either style. Outdoor increases contrast for daylight viewing; Night uses red-family indicators. New configurations start with Pixel Quest + Default. Existing combined `display.theme` preferences are migrated on load (Indoor to Simple/Default, Outdoor to Simple/Outdoor, Night to Simple/Night, Pixel Quest to Pixel Quest/Default); explicit saved style/color preferences override legacy values. Both preferences save through the device configuration and theme-change notification path, independently of audio policy.
 
 Pixel Quest supplies original fixed 8×8 silhouettes and integer-scale pixel art through `ui_game`.

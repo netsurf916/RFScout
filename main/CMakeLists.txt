@@ -160,6 +160,8 @@ idf_component_register(
         "services/display/status_bar.c"
         "services/display/ui_chrome.c"
         "services/display/ui_game.c"
+        "services/display/ui_icon.c"
+        "services/display/ui_menu.c"
         "services/display/ui_theme.c"
         "services/display/display.c"
         "services/display/display_provider.c"

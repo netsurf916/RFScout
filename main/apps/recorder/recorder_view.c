@@ -13,6 +13,7 @@
 #include "ui_game.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
+#include "ui_menu.h"
 
 #include "esp_timer.h"
 
@@ -197,7 +198,11 @@ void recorder_view_browser( unsigned a_selected,
             line[ 0 ] = ' ';
         }
         display_draw_text(
-            UI_LAYOUT_LEFT_X, y, line, selected ? theme->selected : theme->text, 1U );
+            UI_LAYOUT_LEFT_X,
+            y,
+            line,
+            ui_menu_label_color( ( ui_menu_state_t ){ .selected = selected, .available = true } ),
+            1U );
     }
 
     display_draw_text( UI_LAYOUT_LEFT_X,

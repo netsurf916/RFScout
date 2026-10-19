@@ -11,6 +11,7 @@
 #include "ui_game.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
+#include "ui_menu.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -139,7 +140,8 @@ void hotspots_view_browser( const hotspots_view_row_t *a_rows,
         }
         const int y = UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT;
         const bool active = item == a_selected;
-        const uint16_t label_color = active ? theme->selected : theme->text;
+        const uint16_t label_color =
+            ui_menu_label_color( ( ui_menu_state_t ){ .selected = active, .available = true } );
         if( active )
         {
             ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X, y, ">", label_color );
@@ -222,7 +224,7 @@ void hotspots_view_detail( const hotspots_view_detail_t *a_detail, unsigned a_se
         const bool enabled =
             ( HOTSPOTS_DETAIL_ACTION_RECHECK != action ) || a_detail->recheck_available;
         const uint16_t color =
-            active ? theme->selected : ( enabled ? theme->text : theme->divider );
+            ui_menu_label_color( ( ui_menu_state_t ){ .selected = active, .available = enabled } );
         if( active )
         {
             ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X, y, ">", color );

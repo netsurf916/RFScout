@@ -28,6 +28,7 @@
 #include "ui_game.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
+#include "ui_menu.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -562,7 +563,8 @@ static void draw_row( int a_y, unsigned a_item )
         item_value( a_item, value, sizeof( value ) );
     }
     const bool active = selected_item == a_item;
-    const uint16_t color = active ? COLOR_SELECTED : COLOR_TEXT;
+    const uint16_t color =
+        ui_menu_label_color( ( ui_menu_state_t ){ .selected = active, .available = true } );
     if( active )
     {
         ui_game_draw_menu_marker(
@@ -732,7 +734,8 @@ static void
 draw_power_menu_row( int a_y, unsigned a_item, const char *a_label, const char *a_value )
 {
     const bool active = power_selected_item == a_item;
-    const uint16_t color = active ? COLOR_SELECTED : COLOR_TEXT;
+    const uint16_t color =
+        ui_menu_label_color( ( ui_menu_state_t ){ .selected = active, .available = true } );
     if( active )
     {
         ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X, a_y, ">", color );

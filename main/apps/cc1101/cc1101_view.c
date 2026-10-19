@@ -11,6 +11,7 @@
 #include "ui_game.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
+#include "ui_menu.h"
 
 #include <stdio.h>
 
@@ -390,7 +391,11 @@ void cc1101_view_menu( unsigned a_selected,
 
         ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X, y, marker, active ? accent : theme->divider );
         display_draw_text(
-            UI_LAYOUT_LABEL_X, y, labels[ index ], active ? theme->text : theme->divider, 1U );
+            UI_LAYOUT_LABEL_X,
+            y,
+            labels[ index ],
+            ui_menu_label_color( ( ui_menu_state_t ){ .selected = active, .available = true } ),
+            1U );
 
         value[ 0 ] = '\0';
         if( 1U == index )

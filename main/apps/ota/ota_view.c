@@ -11,6 +11,7 @@
 #include "ui_game.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
+#include "ui_menu.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -37,9 +38,9 @@ static unsigned menu_window_start( unsigned a_selected, unsigned a_count )
 static void draw_menu_row_at(
     int a_y, unsigned a_item, unsigned a_selected, const char *a_label, const char *a_value )
 {
-    const ui_theme_palette_t *theme = ui_theme_get();
     const bool active = a_item == a_selected;
-    const uint16_t color = active ? theme->selected : theme->text;
+    const ui_menu_state_t state = { .selected = active, .available = true };
+    const uint16_t color = ui_menu_label_color( state );
     if( active )
     {
         ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X, a_y, ">", color );
@@ -47,7 +48,7 @@ static void draw_menu_row_at(
     display_draw_text( UI_LAYOUT_LABEL_X, a_y, a_label, color, 1U );
     if( NULL != a_value && '\0' != a_value[ 0 ] )
     {
-        display_draw_text( 242, a_y, a_value, active ? theme->accent : theme->secondary, 1U );
+        display_draw_text( 242, a_y, a_value, ui_menu_value_color( state ), 1U );
     }
 }
 
