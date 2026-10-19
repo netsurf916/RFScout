@@ -171,3 +171,7 @@ idf_component_register(
     PRIV_REQUIRES app_update bootloader_support bt cjson esp_app_format esp_driver_ledc esp_driver_rmt esp_driver_tsens esp_http_client esp_partition mbedtls
     REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_timer driver esp_driver_i2c esp_driver_i2s esp_driver_pcnt esp_driver_uart esp_lcd fatfs sdmmc
 )
+
+# Enforce warning-free compilation for RFScout-owned sources only. Do not
+# propagate -Werror to ESP-IDF, managed third-party components, or consumers.
+target_compile_options(${COMPONENT_LIB} PRIVATE -Werror)
