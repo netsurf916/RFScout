@@ -73,6 +73,10 @@ python3 tools/update_surveillance.py
 
 Generated `.inc` tables should be changed through their generators rather than hand edited.
 
+## Compiler warnings
+
+RFScout-maintained firmware C code is compiled with `-Werror`: compiler warnings are build failures. The option is scoped to the RFScout `main` component and does not affect ESP-IDF or third-party components. Fix warnings at their source rather than adding broad diagnostic suppressions. This policy does not enable additional warning classes; compiler/ESP-IDF baseline warning selection remains unchanged. Both local `idf.py build` and firmware CI enforce this policy.
+
 ## Formatting
 
 Normal local builds check modified/staged/untracked hand-maintained C/header files. Useful commands are:
