@@ -205,7 +205,8 @@ void ui_game_draw_column( int a_x, int a_y, int a_width, int a_height, uint16_t 
     if( ui_game_active() )
     {
         /* Gaps do not quantize the measured height or move the actual top. */
-        for( int row = 3; row < a_height; row += 4 )
+        /* The baseline pixel stays filled even when a brick gap would land there. */
+        for( int row = 3; row < a_height - 1; row += 4 )
         {
             display_fill_rect_raw( a_x, a_y + row, a_width, 1, ui_theme_get()->background );
         }
