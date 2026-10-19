@@ -378,7 +378,7 @@ def main() -> int:
 
     releases_entries = release_entries(args.site_dir, releases)
     candidates_entries = candidate_entries(args.site_dir, args.candidate_root, candidates)
-    entries = deduplicate(candidates_entries + releases_entries)
+    entries = deduplicate(ota_catalog_priority(releases_entries + candidates_entries))
 
     write_json(args.site_dir / "catalog.json", {"schema_version": 1, "builds": entries})
     build_ota_catalog(args.site_dir, entries)
