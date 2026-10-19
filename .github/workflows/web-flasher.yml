@@ -66,11 +66,15 @@ jobs:
             <<< "$main_runs")
           main_count=$(jq 'length' <<< "$main_matching")
           main_pending=$(jq '[.[] | select(.status != "completed")] | length' <<< "$main_matching")
+          main_success=$(jq '[.[] | select(.status == "completed" and .conclusion == "success")] | length' <<< "$main_matching")
           if [[ "$main_count" -eq 0 ]]; then
             echo "Deferring Pages refresh: current main $main_sha has no Build and formatting run yet"
             ready=false
           elif [[ "$main_pending" -ne 0 ]]; then
             echo "Deferring Pages refresh: current main $main_sha is still building"
+            ready=false
+          elif [[ "$main_success" -eq 0 ]]; then
+            echo "Deferring Pages refresh: current main $main_sha has no successful completed CI run"
             ready=false
           fi
 
