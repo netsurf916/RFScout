@@ -628,9 +628,8 @@ static void draw_radio_submenu( void )
         }
         const bool enabled = item == 0U || ( !capture_status.recording &&
                                              ( !wifi || manual_channels || item < 2U ) );
-        const uint16_t color = !enabled                 ? theme->secondary
-                               : item == radio_selected ? theme->selected
-                                                        : theme->text;
+        const uint16_t color = ui_menu_label_color(
+            ( ui_menu_state_t ){ .selected = item == radio_selected, .available = enabled } );
         const int y = 24 + (int)( item - first ) * 18;
         ui_game_draw_menu_marker( 8, y, item == radio_selected ? ">" : " ", color );
         display_draw_text( 22, y, label, color, 1U );
@@ -652,9 +651,8 @@ static void draw_sources_menu( void )
         const int y = 26 + (int)item * 20;
         const bool available = ( item == 0U || !capture_status.recording ) &&
                                ( item != 3U || options.wifi ) && ( item != 4U || options.ble );
-        const uint16_t color = !available                 ? theme->secondary
-                               : item == sources_selected ? theme->selected
-                                                          : theme->text;
+        const uint16_t color = ui_menu_label_color(
+            ( ui_menu_state_t ){ .selected = item == sources_selected, .available = available } );
         ui_game_draw_menu_marker( 8, y, item == sources_selected ? ">" : " ", color );
         display_draw_text( 22, y, labels[ item ], color, 1U );
         if( item == 1U || item == 2U )
