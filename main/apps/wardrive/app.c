@@ -1101,11 +1101,13 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
         /* A writer failure can arrive after the last poll but before navigation. */
         wardrive_stats_t capture_status = { 0 };
         wardrive_capture_stats( &capture_status );
-        if( capture_status.storage_error )
+        const bool terminal_failure = capture_status.storage_error;
+        wardrive_capture_stop();
+        wardrive_capture_stats( &capture_status );
+        if( terminal_failure || capture_status.storage_error )
         {
             report_terminal_capture_error( &capture_status );
         }
-        wardrive_capture_stop();
         (void)radio_monitor_set_manual_channels( false, 0U, false, 250U );
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
@@ -1190,9 +1192,10 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
         wardrive_capture_stats( &capture_status );
         if( capture_status.storage_error )
         {
-            report_terminal_capture_error( &capture_status );
-            /* Terminate receivers and drain buffers on terminal writer failure. */
+            /* Drain the writer before emitting final session counters. */
             wardrive_capture_stop();
+            wardrive_capture_stats( &capture_status );
+            report_terminal_capture_error( &capture_status );
         }
         if( a_event->now_us - last_gps_refresh_us >= CAPTURE_GPS_REFRESH_US )
         {
