@@ -126,6 +126,7 @@ saved_networks_create_profile( const char *a_ssid, const char *a_password, uint3
     {
         return ESP_ERR_INVALID_ARG;
     }
+    *a_profile_id = 0U;
     esp_err_t result = ota_networks_load( &networks );
     if( ESP_OK == result )
     {
@@ -134,6 +135,11 @@ saved_networks_create_profile( const char *a_ssid, const char *a_password, uint3
     if( ESP_OK == result )
     {
         result = ota_networks_save( &networks );
+    }
+    if( ESP_OK != result )
+    {
+        /* A profile ID is valid only after durable persistence succeeds. */
+        *a_profile_id = 0U;
     }
     ota_networks_clear_runtime( &networks );
     return result;
