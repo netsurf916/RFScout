@@ -113,6 +113,8 @@ Radio settings are applied only to the Wardriving capture session, not to the ex
 
 The current counters distinguish received Wi-Fi/BLE observations, written packets and aggregate dropped packets. They do not yet expose all queue, storage and record-size failure categories separately. Counts refer to driver-delivered observations, not all over-the-air traffic.
 
+During an active capture, capture-affecting settings are unavailable and cannot be changed via input. Stop capture explicitly before adjusting packet filters, GPS metadata, segment size, file retention, radio sources, or radio scan settings; changing configuration never implicitly stops and restarts recording. Menu navigation and the explicit Stop control remain available. If radio provider shutdown is incomplete, the existing runtime poll retries cleanup without releasing in-use buffers.
+
 ## Terminal storage-error telemetry
 
 The application logging coordinator emits a single best-effort `wardrive_capture_error` JSONL event when Wardriving first exposes a terminal `storage_error` state during a capture session. The event includes the app, a generic `terminal_storage_error` failure label, recording state, Wi-Fi/BLE received totals, written and dropped packet totals, segment count, and session bytes written. It supplements (rather than replaces) once-per-second `telemetry` records; it does not imply that the underlying SD failure was a physical card fault.
