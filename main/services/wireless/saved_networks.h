@@ -26,9 +26,9 @@
 /** Resolve only an already associated BSSID with the exact observed auth mode. */
 esp_err_t saved_networks_password_for_bss( const uint8_t a_bssid[ 6 ],
                                            const char *a_ssid,
-                                          int32_t a_auth_mode,
+                                           int32_t a_auth_mode,
                                            char *a_password,
-                                          size_t a_capacity );
+                                           size_t a_capacity );
 
 /** Non-secret candidate identity; callers select a profile by stable ID. */
 typedef struct
@@ -47,13 +47,12 @@ esp_err_t saved_networks_candidates( const char *a_ssid,
                                      size_t *a_count );
 /** Resolve a previously associated BSSID without loading any password. */
 esp_err_t saved_networks_known_bss_profile( const char *a_ssid,
-                                             const uint8_t a_bssid[ 6 ],
+                                            const uint8_t a_bssid[ 6 ],
                                              int32_t a_auth_mode,
-                                             uint32_t *a_profile_id );
+                                            uint32_t *a_profile_id );
 /** Retrieve an explicitly chosen profile's password. */
-esp_err_t saved_networks_password_for_profile( uint32_t a_profile_id,
-                                                char *a_password,
-                                               size_t a_capacity );
+esp_err_t
+saved_networks_password_for_profile( uint32_t a_profile_id, char *a_password, size_t a_capacity );
 
 esp_err_t
 saved_networks_password_for_ssid( const char *a_ssid, char *a_password, size_t a_capacity );
@@ -68,8 +67,8 @@ esp_err_t
 saved_networks_create_profile( const char *a_ssid, const char *a_password, uint32_t *a_profile_id );
 /** Associate an explicitly chosen profile after successful authentication. */
 esp_err_t saved_networks_associate_profile_bssid( uint32_t a_profile_id,
-                                                 const uint8_t a_bssid[ 6 ],
-                                                 int32_t a_auth_mode );
+                                                const uint8_t a_bssid[ 6 ],
+                                                  int32_t a_auth_mode );
 
 esp_err_t saved_networks_save( const char *a_ssid, const char *a_password );
 
