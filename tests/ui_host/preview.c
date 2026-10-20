@@ -552,7 +552,7 @@ int main( int a_argc, char **a_argv )
         { "GUEST", "LIMIT", HOTSPOTS_TONE_LIMITED, -67, true },
         { "CAFE", "NEW", HOTSPOTS_TONE_NEUTRAL, -73, true },
     };
-    hotspots_view_browser( rows, 3U, 2U, false, "CENTER: INSPECT" );
+    hotspots_view_browser( rows, 3U, 3U, false, false, "CENTER: INSPECT" );
     save( a_argv[ 1 ], "hotspots" );
     ota_view_render_update_main( "0.3.0", "0.3.1 available", "FIELD NETWORK", 2U, true, true, "" );
     save( a_argv[ 1 ], "update" );

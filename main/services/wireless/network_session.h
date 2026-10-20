@@ -44,6 +44,9 @@ esp_err_t network_session_init( void );
 
 esp_err_t network_session_begin_saved( const char *a_ssid, const char *a_password );
 esp_err_t network_session_begin_bss( const rfscout_wifi_station_bss_t *a_bss );
+/** @brief Begin secured association pinned to a discovered BSSID; caller owns password. */
+esp_err_t network_session_begin_secured_bss( const rfscout_wifi_station_bss_t *a_bss,
+                                             const char *a_password );
 void network_session_poll( int64_t a_now_us );
 void network_session_status( rfscout_network_session_status_t *a_status );
 bool network_session_has_lan( void );

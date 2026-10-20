@@ -71,6 +71,7 @@ typedef struct
 {
     rfscout_wifi_station_bss_t bss;
     bool visible;
+    bool credential_available; /**< secured AP: matched saved credentials in latest scan */
     uint8_t missed_scans;
     hotspot_status_t status;
     bool retry_gate_active;
@@ -78,7 +79,9 @@ typedef struct
     bool manual_requested;
     uint16_t attempts;
     bool has_result;
-    hotspot_result_t last;
+    hotspot_result_t last; /**< Most recent attempt, including a later failure. */
+    bool has_success;
+    hotspot_result_t success; /**< Last validated green/yellow result, retained after failure. */
 } hotspot_entry_t;
 
 /** @brief Growable app-session table of eligible BSSIDs plus last-scan environment counts. */
@@ -93,7 +96,7 @@ typedef struct
     uint32_t scans_completed;
 } hotspot_table_t;
 
-/** @brief Return whether a scanned BSSID can be checked without credentials. */
+/** @brief Return whether a scanned BSSID has a usable named SSID for observation. */
 bool hotspot_bss_eligible( const rfscout_wifi_station_bss_t *a_bss );
 
 /** @brief Empty the table; storage is app-session memory reclaimed with the session. */

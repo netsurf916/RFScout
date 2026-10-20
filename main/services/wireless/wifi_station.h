@@ -58,6 +58,8 @@ typedef struct
     int8_t rssi;
     uint8_t channel;
     rfscout_wifi_station_security_t security;
+    /** Exact ESP-IDF wifi_auth_mode_t observed in passive scan (not the coarse security class). */
+    int32_t auth_mode;
 } rfscout_wifi_station_bss_t;
 
 /** @brief IPv4 configuration of the current station connection, in network byte order. */
@@ -120,6 +122,16 @@ rfscout_wifi_station_connect( const char *a_ssid, const char *a_password, bool a
  */
 esp_err_t rfscout_wifi_station_connect_open_bss( const rfscout_wifi_station_bss_t *a_bss,
                                                  bool a_randomize_mac );
+
+/**
+ * @brief Connect to a specifically observed secured BSSID using a saved password.
+ * @details Requires an observed secured BSSID and a WPA2-or-stronger station policy.
+ *          This must never roam to a different BSSID with the same SSID.
+ *          Credentials are caller-owned and are not retained by this API.
+ */
+esp_err_t rfscout_wifi_station_connect_secured_bss( const rfscout_wifi_station_bss_t *a_bss,
+                                                    const char *a_password,
+                                                    bool a_randomize_mac );
 
 /**
  * @brief Start SNTP on the current connection.

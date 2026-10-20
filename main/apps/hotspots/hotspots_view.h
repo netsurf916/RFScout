@@ -21,8 +21,9 @@
 
 /** Fixed browser rows preceding the access-point rows. */
 #define HOTSPOTS_BROWSER_ITEM_BACK 0U
-#define HOTSPOTS_BROWSER_ITEM_AUTO 1U
-#define HOTSPOTS_BROWSER_FIXED_ITEMS 2U
+#define HOTSPOTS_BROWSER_ITEM_LOCK 1U
+#define HOTSPOTS_BROWSER_ITEM_AUTO 2U
+#define HOTSPOTS_BROWSER_FIXED_ITEMS 3U
 
 /** @brief Semantic color role for a status tag. */
 typedef enum
@@ -66,10 +67,11 @@ void hotspots_view_landing( const hotspots_view_row_t *a_rows,
                             size_t a_count,
                             const char *a_footer );
 
-/** @brief Render the browser: Back, Auto check, then one row per access point. */
+/** @brief Render the browser: Back, App lock, Auto check, then one row per access point. */
 void hotspots_view_browser( const hotspots_view_row_t *a_rows,
                             size_t a_count,
                             unsigned a_selected,
+                            bool a_app_locked,
                             bool a_auto_enabled,
                             const char *a_footer );
 

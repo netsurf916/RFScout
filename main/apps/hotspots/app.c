@@ -1,12 +1,13 @@
 /**
     apps/hotspots/app.c : Hotspots application descriptor and runtime
-    Description: Alternates passive scans with bounded open/OWE connectivity checks
+    Description: Alternates passive scans with bounded credential-aware connectivity checks
                  (join, NTP, verified HTTPS) and presents the realtime result table.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
 
 #include "app_descriptor.h"
+#include "app_manager.h"
 
 #include "app_session.h"
 #include "connectivity_probe.h"
@@ -16,6 +17,8 @@
 #include "hotspots_view.h"
 #include "log_writer.h"
 #include "network_session.h"
+#include "ota_networks.h"
+#include "saved_networks.h"
 #include "wifi_station.h"
 
 #include "esp_log.h"
@@ -411,26 +414,28 @@ static void render_detail( const hotspot_entry_t *a_entry )
     }
     describe_last_attempt( a_entry, last, sizeof( last ) );
 
+    /* Show validated network details even when the latest recheck failed. */
+    const hotspot_result_t *evidence = a_entry->has_success ? &a_entry->success : &a_entry->last;
     char client[ 20 ];
     char gateway[ 20 ];
     char netmask[ 20 ];
     char dns_primary[ 20 ];
     char dns_backup[ 20 ];
-    format_ipv4( a_entry->last.address, client, sizeof( client ) );
-    format_ipv4( a_entry->last.gateway, gateway, sizeof( gateway ) );
-    format_ipv4( a_entry->last.netmask, netmask, sizeof( netmask ) );
-    format_ipv4( a_entry->last.dns_primary, dns_primary, sizeof( dns_primary ) );
-    format_ipv4( a_entry->last.dns_backup, dns_backup, sizeof( dns_backup ) );
+    format_ipv4( evidence->address, client, sizeof( client ) );
+    format_ipv4( evidence->gateway, gateway, sizeof( gateway ) );
+    format_ipv4( evidence->netmask, netmask, sizeof( netmask ) );
+    format_ipv4( evidence->dns_primary, dns_primary, sizeof( dns_primary ) );
+    format_ipv4( evidence->dns_backup, dns_backup, sizeof( dns_backup ) );
     snprintf( addresses, sizeof( addresses ), "IP %s  GW %s", client, gateway );
     snprintf( network, sizeof( network ), "Mask %s", netmask );
     snprintf( dns, sizeof( dns ), "DNS %s / %s", dns_primary, dns_backup );
-    if( '\0' != a_entry->last.public_ip[ 0 ] )
+    if( '\0' != evidence->public_ip[ 0 ] )
     {
         snprintf( egress,
                   sizeof( egress ),
                   "Public %s (%s)",
-                  a_entry->last.public_ip,
-                  ( '\0' != a_entry->last.colo[ 0 ] ) ? a_entry->last.colo : "?" );
+                  evidence->public_ip,
+                  ( '\0' != evidence->colo[ 0 ] ) ? evidence->colo : "?" );
     }
     else
     {
@@ -449,7 +454,9 @@ static void render_detail( const hotspot_entry_t *a_entry )
         .network = network,
         .dns = dns,
         .egress = egress,
-        .recheck_available = a_entry->visible,
+        .recheck_available =
+            a_entry->visible && ( RFSCOUT_WIFI_STATION_SECURITY_SECURED != a_entry->bss.security ||
+                                  a_entry->credential_available ),
     };
     hotspots_view_detail( &detail, detail_action );
 }
@@ -502,7 +509,8 @@ static void render( int64_t a_now_us )
     if( HOTSPOTS_MODE_BROWSER == mode )
     {
         resolve_browser_selection( row_count );
-        hotspots_view_browser( row_buffer, row_count, browser_selected, auto_enabled, footer );
+        hotspots_view_browser(
+            row_buffer, row_count, browser_selected, app_manager_locked(), auto_enabled, footer );
         return;
     }
     hotspots_view_landing( row_buffer, row_count, footer );
@@ -582,7 +590,21 @@ static void start_attempt( hotspot_entry_t *a_entry, int64_t a_now_us )
     phase_deadline_us = 0;
     render_due = true;
 
-    const esp_err_t result = network_session_begin_bss( &attempt_bss );
+    esp_err_t result;
+    if( RFSCOUT_WIFI_STATION_SECURITY_SECURED == attempt_bss.security )
+    {
+        char password[ OTA_NETWORK_PASSWORD_MAX_LENGTH + 1U ] = { 0 };
+        result = saved_networks_password_for_ssid( attempt_bss.ssid, password, sizeof( password ) );
+        if( ESP_OK == result )
+        {
+            result = network_session_begin_secured_bss( &attempt_bss, password );
+        }
+        memset( password, 0, sizeof( password ) );
+    }
+    else
+    {
+        result = network_session_begin_bss( &attempt_bss );
+    }
     if( ESP_OK != result )
     {
         ESP_LOGW( TAG, "could not start association: %s", esp_err_to_name( result ) );
@@ -604,6 +626,18 @@ static void complete_scan( int64_t a_now_us )
         if( ESP_OK != hotspot_table_apply_scan( &table, scan_buffer, count ) )
         {
             ESP_LOGW( TAG, "access-point table could not grow; some networks are not shown" );
+        }
+    }
+    /* Legacy Home/OTA credentials lack auth-mode identity. Keep secured APs
+       visible but ineligible until explicitly compatible profiles are supported. */
+    for( size_t index = 0U; index < table.count; ++index )
+    {
+        hotspot_entry_t *entry = &table.entries[ index ];
+        const bool secured = RFSCOUT_WIFI_STATION_SECURITY_SECURED == entry->bss.security;
+        entry->credential_available = !secured;
+        if( !entry->credential_available )
+        {
+            entry->manual_requested = false;
         }
     }
     phase = HOTSPOTS_PHASE_CHECK;
@@ -807,6 +841,12 @@ static void handle_browser_input( const rfscout_input_event_t *a_input )
         emit_event( RFSCOUT_EVENT_BACK, 0 );
         return;
     }
+    if( HOTSPOTS_BROWSER_ITEM_LOCK == browser_selected )
+    {
+        const bool locked = app_manager_set_locked( !app_manager_locked() );
+        ESP_LOGI( TAG, "application navigation %s", locked ? "locked" : "unlocked" );
+        return;
+    }
     if( HOTSPOTS_BROWSER_ITEM_AUTO == browser_selected )
     {
         auto_enabled = !auto_enabled;
@@ -845,7 +885,10 @@ static void handle_detail_input( const rfscout_input_event_t *a_input )
     }
 
     hotspot_entry_t *entry = hotspot_table_find( &table, selected_bssid );
-    if( ( NULL != entry ) && entry->visible && !entry_is_attempt_target( entry ) )
+    if( ( NULL != entry ) && entry->visible &&
+        ( RFSCOUT_WIFI_STATION_SECURITY_SECURED != entry->bss.security ||
+          entry->credential_available ) &&
+        !entry_is_attempt_target( entry ) )
     {
         entry->manual_requested = true;
         emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );

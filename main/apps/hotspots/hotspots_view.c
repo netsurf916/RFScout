@@ -121,6 +121,7 @@ void hotspots_view_landing( const hotspots_view_row_t *a_rows,
 void hotspots_view_browser( const hotspots_view_row_t *a_rows,
                             size_t a_count,
                             unsigned a_selected,
+                            bool a_app_locked,
                             bool a_auto_enabled,
                             const char *a_footer )
 {
@@ -140,8 +141,8 @@ void hotspots_view_browser( const hotspots_view_row_t *a_rows,
         }
         const int y = UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT;
         const bool active = item == a_selected;
-        const uint16_t label_color =
-            ui_menu_label_color( ( ui_menu_state_t ){ .selected = active, .available = true } );
+        const ui_menu_state_t state = { .selected = active, .available = true };
+        const uint16_t label_color = ui_menu_label_color( state );
         if( active )
         {
             ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X, y, ">", label_color );
@@ -152,13 +153,20 @@ void hotspots_view_browser( const hotspots_view_row_t *a_rows,
             display_draw_text( UI_LAYOUT_LABEL_X, y, "Back", label_color, 1U );
             continue;
         }
+        if( HOTSPOTS_BROWSER_ITEM_LOCK == item )
+        {
+            display_draw_text( UI_LAYOUT_LABEL_X, y, "App lock", label_color, 1U );
+            display_draw_text(
+                HOTSPOTS_TAG_X, y, a_app_locked ? "On" : "Off", ui_menu_value_color( state ), 1U );
+            continue;
+        }
         if( HOTSPOTS_BROWSER_ITEM_AUTO == item )
         {
             display_draw_text( UI_LAYOUT_LABEL_X, y, "Auto check", label_color, 1U );
             display_draw_text( HOTSPOTS_TAG_X,
                                y,
                                a_auto_enabled ? "On" : "Off",
-                               active ? theme->accent : theme->secondary,
+                               ui_menu_value_color( state ),
                                1U );
             continue;
         }
@@ -167,7 +175,8 @@ void hotspots_view_browser( const hotspots_view_row_t *a_rows,
         draw_clipped( UI_LAYOUT_LABEL_X,
                       y,
                       entry->ssid,
-                      active ? theme->selected : ( entry->visible ? theme->text : theme->divider ),
+                      ui_menu_label_color(
+                          ( ui_menu_state_t ){ .selected = active, .available = entry->visible } ),
                       HOTSPOTS_SSID_MAX_CHARS - 3U );
         draw_row_columns( y, entry );
     }

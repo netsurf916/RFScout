@@ -8,6 +8,7 @@
 #include "ota_networks.h"
 
 #include "persistent_store.h"
+#include "app_descriptor.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -48,8 +49,11 @@ esp_err_t ota_networks_load( ota_network_list_t *a_networks )
 
     memset( &record_buffer, 0, sizeof( record_buffer ) );
     size_t length = 0U;
-    const esp_err_t result =
-        app_store_read( OTA_NETWORK_RECORD_KEY, &record_buffer, sizeof( record_buffer ), &length );
+    const esp_err_t result = persistent_store_app_read( RFSCOUT_APP_DEVICE,
+                                                        OTA_NETWORK_RECORD_KEY,
+                                                        &record_buffer,
+                                                        sizeof( record_buffer ),
+                                                        &length );
     if( ESP_ERR_NOT_FOUND == result )
     {
         return ESP_OK;
@@ -105,8 +109,8 @@ esp_err_t ota_networks_save( const ota_network_list_t *a_networks )
     memcpy( record_buffer.entries,
             a_networks->entries,
             a_networks->count * sizeof( record_buffer.entries[ 0 ] ) );
-    const esp_err_t result =
-        app_store_write( OTA_NETWORK_RECORD_KEY, &record_buffer, sizeof( record_buffer ) );
+    const esp_err_t result = persistent_store_app_write(
+        RFSCOUT_APP_DEVICE, OTA_NETWORK_RECORD_KEY, &record_buffer, sizeof( record_buffer ) );
     memset( &record_buffer, 0, sizeof( record_buffer ) );
     return result;
 }

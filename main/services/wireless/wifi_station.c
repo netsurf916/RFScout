@@ -275,6 +275,7 @@ static void collect_scan_results( void )
         output->rssi = record->rssi;
         output->channel = record->primary;
         output->security = security_class( record->authmode );
+        output->auth_mode = (int32_t)record->authmode;
     }
 
     scan_result_count = 0U;
@@ -742,6 +743,90 @@ esp_err_t rfscout_wifi_station_connect_open_bss( const rfscout_wifi_station_bss_
 
     stop_ntp_sync();
 
+    portENTER_CRITICAL( &state_lock );
+    disconnect_requested = false;
+    status.disconnect_reason = 0;
+    memset( status.ssid, 0, sizeof( status.ssid ) );
+    memcpy( status.ssid, a_bss->ssid, ssid_length );
+    status.ntp_syncing = false;
+    status.ntp_synced = false;
+    status.state = RFSCOUT_WIFI_STATION_CONNECTING;
+    portEXIT_CRITICAL( &state_lock );
+
+    result = esp_wifi_connect();
+    if( ESP_OK != result )
+    {
+        set_state( RFSCOUT_WIFI_STATION_FAILED, (int32_t)result );
+    }
+    return result;
+}
+
+esp_err_t rfscout_wifi_station_connect_secured_bss( const rfscout_wifi_station_bss_t *a_bss,
+                                                    const char *a_password,
+                                                    bool a_randomize_mac )
+{
+    if( !initialized )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if( NULL == a_bss || NULL == a_password ||
+        RFSCOUT_WIFI_STATION_SECURITY_SECURED != a_bss->security ||
+        ( WIFI_AUTH_WPA2_PSK != a_bss->auth_mode && WIFI_AUTH_WPA2_WPA3_PSK != a_bss->auth_mode &&
+          WIFI_AUTH_WPA3_PSK != a_bss->auth_mode ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const size_t ssid_length = strnlen( a_bss->ssid, RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH + 1U );
+    const size_t password_length =
+        strnlen( a_password, RFSCOUT_WIFI_STATION_PASSWORD_MAX_LENGTH + 1U );
+    if( 0U == ssid_length || ssid_length > RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH ||
+        password_length < 8U || password_length > RFSCOUT_WIFI_STATION_PASSWORD_MAX_LENGTH ||
+        0U == a_bss->channel )
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
+    if( RFSCOUT_WIFI_STATION_SCANNING == current.state ||
+        RFSCOUT_WIFI_STATION_SEARCHING == current.state ||
+        RFSCOUT_WIFI_STATION_CONNECTING == current.state ||
+        RFSCOUT_WIFI_STATION_DISCONNECTING == current.state ||
+        RFSCOUT_WIFI_STATION_CONNECTED == current.state )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t result = ensure_started();
+    if( ESP_OK == result && a_randomize_mac )
+    {
+        result = restart_with_random_mac();
+    }
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
+    wifi_config_t config = { 0 };
+    memcpy( config.sta.ssid, a_bss->ssid, ssid_length );
+    memcpy( config.sta.password, a_password, password_length );
+    memcpy( config.sta.bssid, a_bss->bssid, sizeof( config.sta.bssid ) );
+    config.sta.bssid_set = true;
+    config.sta.channel = a_bss->channel;
+    config.sta.scan_method = WIFI_FAST_SCAN;
+    /* A WPA3-only observation must never be accepted under a WPA2 minimum. */
+    config.sta.threshold.authmode =
+        ( WIFI_AUTH_WPA3_PSK == a_bss->auth_mode ) ? WIFI_AUTH_WPA3_PSK : WIFI_AUTH_WPA2_PSK;
+    config.sta.failure_retry_cnt = 0U;
+
+    result = esp_wifi_set_config( WIFI_IF_STA, &config );
+    memset( &config, 0, sizeof( config ) );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
+    stop_ntp_sync();
     portENTER_CRITICAL( &state_lock );
     disconnect_requested = false;
     status.disconnect_reason = 0;

@@ -151,6 +151,30 @@ esp_err_t network_session_begin_bss( const rfscout_wifi_station_bss_t *a_bss )
     return result;
 }
 
+esp_err_t network_session_begin_secured_bss( const rfscout_wifi_station_bss_t *a_bss,
+                                             const char *a_password )
+{
+    if( !initialized )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if( NULL == a_bss || NULL == a_password ||
+        RFSCOUT_WIFI_STATION_SECURITY_SECURED != a_bss->security )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    esp_err_t result = prepare_begin( a_bss->ssid );
+    if( ESP_OK == result )
+    {
+        result = rfscout_wifi_station_connect_secured_bss( a_bss, a_password, true );
+    }
+    if( ESP_OK != result )
+    {
+        fail_session( result, 0 );
+    }
+    return result;
+}
+
 void network_session_poll( int64_t a_now_us )
 {
     if( RFSCOUT_NETWORK_SESSION_IDLE == status.state ||
