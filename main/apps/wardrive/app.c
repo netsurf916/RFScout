@@ -1205,7 +1205,7 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
         activity_tick( a_event->now_us );
         wardrive_stats_t capture_status;
         wardrive_capture_stats( &capture_status );
-        if( capture_status.storage_error )
+        if( capture_status.storage_error || wardrive_capture_stop_pending() )
         {
             /* Drain the writer before emitting final session counters. */
             wardrive_capture_stop();
