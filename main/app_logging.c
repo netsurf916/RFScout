@@ -9,16 +9,8 @@
 
 #include "app_lifecycle.h"
 #include "app_manager.h"
-#include "cc1101.h"
-#include "hotspots_app.h"
-#include "gps.h"
+#include "app_framework.h"
 #include "log_writer.h"
-#include "mlx90640.h"
-#include "nrf24.h"
-#include "nrf24_activity.h"
-#include "recorder.h"
-#include "system_events.h"
-#include "apps/wardrive/capture.h"
 
 #include "esp_timer.h"
 
@@ -94,141 +86,17 @@ static void write_transition_record( const rfscout_app_transition_diagnostics_t 
 
 static void write_periodic_record( rfscout_app_id_t a_app )
 {
-    if( ( RFSCOUT_APP_WIFI_BT == a_app ) || ( RFSCOUT_APP_DEVICE == a_app ) ||
-        ( a_app >= RFSCOUT_APP_COUNT ) )
+    const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
+    if( NULL == descriptor || NULL == descriptor->telemetry )
     {
         return;
     }
-
     rfscout_log_record_t record;
     if( !log_begin( &record, "telemetry" ) || !log_str( &record, "app", app_name( a_app ) ) )
     {
         return;
     }
-
-    bool success = true;
-    switch( a_app )
-    {
-        case RFSCOUT_APP_SYSTEM_EVENTS:
-            success = log_uint( &record, "retained", system_events_history_count() );
-            break;
-
-        case RFSCOUT_APP_CC1101:
-        {
-            cc1101_scan_config_t scan;
-            cc1101_receive_config_t receive;
-            cc1101_capture_stats_t stats;
-            cc1101_scan_config( &scan );
-            cc1101_receive_config( &receive );
-            cc1101_capture_stats( &stats );
-
-            const cc1101_acquisition_mode_t mode = cc1101_acquisition_mode();
-            success = log_uint( &record, "mode", mode ) &&
-                      log_bool( &record, "detected", cc1101_is_detected() );
-
-            if( success && ( CC1101_ACQUISITION_RECEIVE == mode ) )
-            {
-                success = log_uint( &record, "frequency_khz", receive.frequency_khz ) &&
-                          log_uint( &record, "preset", receive.preset ) &&
-                          log_uint( &record, "captures", stats.captures_completed ) &&
-                          log_uint( &record, "truncated", stats.captures_truncated ) &&
-                          log_uint( &record, "overruns", stats.capture_overruns ) &&
-                          log_uint( &record, "errors", stats.capture_errors );
-            }
-            else if( success )
-            {
-                success = log_uint( &record, "low_khz", scan.low_khz ) &&
-                          log_uint( &record, "high_khz", scan.high_khz ) &&
-                          log_uint( &record, "step_khz", scan.step_khz );
-            }
-            break;
-        }
-
-        case RFSCOUT_APP_NRF24:
-        {
-            const nrf24_scan_config_t *config = nrf24_config();
-            nrf24_fingerprint_t fingerprints[ NRF24_FINGERPRINT_MAX ];
-            const size_t count = nrf24_activity_fingerprints( fingerprints, NRF24_FINGERPRINT_MAX );
-            success = log_uint( &record, "low_channel", config->low_channel ) &&
-                      log_uint( &record, "high_channel", config->high_channel ) &&
-                      log_uint( &record, "dwell_us", config->dwell_us ) &&
-                      log_uint( &record, "likely", count ) &&
-                      log_bool( &record, "detected", nrf24_is_detected() );
-            break;
-        }
-
-        case RFSCOUT_APP_AUDIO:
-            success = log_uint( &record, "state", recorder_state() ) &&
-                      log_uint( &record, "files", recorder_file_count() ) &&
-                      log_uint( &record, "bytes", recorder_recorded_bytes() );
-            break;
-
-        case RFSCOUT_APP_AUDIO_SPECTRUM:
-            success = log_uint( &record, "state", recorder_state() ) &&
-                      log_double( &record, "range_db", recorder_monitor_range_db() );
-            break;
-
-        case RFSCOUT_APP_THERMAL:
-            success = log_bool( &record, "detected", mlx90640_is_detected() );
-            break;
-
-        case RFSCOUT_APP_GPS:
-        {
-            rfscout_gps_snapshot_t gps = { 0 };
-            const bool receiver_present = gps_snapshot_get( &gps );
-            success = log_bool( &record, "uart_active", gps_available() ) &&
-                      log_bool( &record, "receiver", receiver_present ) &&
-                      log_bool( &record, "fix", receiver_present && gps.location_valid ) &&
-                      log_double( &record, "trip_m", gps_trip_distance_m() );
-            if( success && receiver_present && gps.speed_valid )
-            {
-                success = log_double( &record, "speed_mps", gps.speed_mps );
-            }
-            if( success && receiver_present && gps.altitude_valid )
-            {
-                success = log_double( &record, "altitude_m", gps.altitude_m );
-            }
-            if( success && receiver_present && gps.satellites_valid )
-            {
-                success = log_uint( &record, "satellites_used", gps.satellites );
-            }
-            break;
-        }
-
-        case RFSCOUT_APP_WARDRIVE:
-        {
-            wardrive_stats_t stats = { 0 };
-            wardrive_capture_stats( &stats );
-            success = log_bool( &record, "recording", stats.recording ) &&
-                      log_bool( &record, "storage_error", stats.storage_error ) &&
-                      log_uint( &record, "wifi_packets", stats.received_wifi ) &&
-                      log_uint( &record, "ble_packets", stats.received_ble ) &&
-                      log_uint( &record, "written_packets", stats.written ) &&
-                      log_uint( &record, "dropped_packets", stats.dropped ) &&
-                      log_uint( &record, "files", stats.files ) &&
-                      log_uint( &record, "bytes_written", stats.bytes );
-            break;
-        }
-
-        case RFSCOUT_APP_HOTSPOTS:
-        {
-            hotspots_app_counts_t counts;
-            hotspots_app_counts( &counts );
-            success = log_uint( &record, "visible", counts.visible ) &&
-                      log_uint( &record, "green", counts.green ) &&
-                      log_uint( &record, "yellow", counts.yellow ) &&
-                      log_uint( &record, "red", counts.red ) &&
-                      log_uint( &record, "checks", counts.checks );
-            break;
-        }
-
-        default:
-            /* Never abandon a begun log record with the writer mutex held. */
-            success = log_str( &record, "status", "unsupported" );
-            break;
-    }
-
-    if( success )
+    if( descriptor->telemetry( &record ) )
     {
         (void)log_end( &record );
     }
@@ -263,6 +131,8 @@ void app_logging_poll( void )
     const int64_t now = esp_timer_get_time();
     if( current != last_app )
     {
+        /* A terminal capture error survives app switches; only a cleared
+           capture error state starts a new logging opportunity. */
         write_lifecycle_record( last_app, "exit" );
         write_lifecycle_record( current, "enter" );
         last_app = current;

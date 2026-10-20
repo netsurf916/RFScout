@@ -308,6 +308,29 @@ static rfscout_app_runtime_result_t gps_runtime( const rfscout_app_runtime_event
     return RFSCOUT_APP_RUNTIME_HANDLED;
 }
 
+static bool app_telemetry( rfscout_log_record_t *a_record )
+{
+    rfscout_gps_snapshot_t gps = { 0 };
+    const bool receiver_present = gps_snapshot_get( &gps );
+    bool success = log_bool( a_record, "uart_active", gps_available() ) &&
+                   log_bool( a_record, "receiver", receiver_present ) &&
+                   log_bool( a_record, "fix", receiver_present && gps.location_valid ) &&
+                   log_double( a_record, "trip_m", gps_trip_distance_m() );
+    if( success && receiver_present && gps.speed_valid )
+    {
+        success = log_double( a_record, "speed_mps", gps.speed_mps );
+    }
+    if( success && receiver_present && gps.altitude_valid )
+    {
+        success = log_double( a_record, "altitude_m", gps.altitude_m );
+    }
+    if( success && receiver_present && gps.satellites_valid )
+    {
+        success = log_uint( a_record, "satellites_used", gps.satellites );
+    }
+    return success;
+}
+
 const rfscout_app_descriptor_t rfscout_gps_app = {
     .id = RFSCOUT_APP_GPS,
     .name = "GPS",
@@ -317,6 +340,7 @@ const rfscout_app_descriptor_t rfscout_gps_app = {
     .requires_activation = false,
     .services = RFSCOUT_APP_SERVICE_NONE,
     .runtime = gps_runtime,
+    .telemetry = app_telemetry,
     .prepare_leave = gps_prepare_leave,
     .transition_denial_message = "GPS LED ring is busy",
 };

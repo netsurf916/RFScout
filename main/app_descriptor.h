@@ -11,6 +11,7 @@
 #define _RFSCOUT_APP_DESCRIPTOR_H_
 
 #include "app_view.h"
+#include "log_writer.h"
 #include "input.h"
 #include "radio_monitor.h"
 #include "ble_monitor.h"
@@ -128,6 +129,8 @@ typedef struct
     uint32_t services;
     rfscout_app_consumers_t consumers;
     rfscout_app_runtime_handler_t runtime;
+    /** Optional active-app periodic telemetry callback, invoked on the main task. */
+    bool ( *telemetry )( rfscout_log_record_t *a_record );
     esp_err_t ( *prepare_leave )( void );
     /** Optional explanation shown only for an intentional prepare_leave veto. */
     const char *transition_denial_message;

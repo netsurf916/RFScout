@@ -136,6 +136,12 @@ static rfscout_app_runtime_result_t thermal_runtime( const rfscout_app_runtime_e
     return RFSCOUT_APP_RUNTIME_HANDLED;
 }
 
+static bool app_telemetry( rfscout_log_record_t *a_record )
+{
+    bool success = log_bool( a_record, "detected", mlx90640_is_detected() );
+    return success;
+}
+
 const rfscout_app_descriptor_t rfscout_thermal_app = {
     .id = RFSCOUT_APP_THERMAL,
     .name = "Thermal",
@@ -145,4 +151,5 @@ const rfscout_app_descriptor_t rfscout_thermal_app = {
     .requires_activation = true,
     .services = RFSCOUT_APP_SERVICE_NONE,
     .runtime = thermal_runtime,
+    .telemetry = app_telemetry,
 };

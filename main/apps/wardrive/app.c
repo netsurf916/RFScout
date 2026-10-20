@@ -6,6 +6,7 @@
 #include "display.h"
 #include "gps.h"
 #include "media_store.h"
+#include "log_writer.h"
 #include "persistent_store.h"
 #include "radio_monitor.h"
 #include "ui_chrome.h"
@@ -79,6 +80,7 @@ static int64_t last_gps_refresh_us;
 static uint64_t stored_bytes;
 static uint64_t free_bytes;
 static esp_err_t last_error;
+static bool terminal_error_reported;
 static uint32_t activity_pending[ ACTIVITY_CHANNELS ];
 static uint32_t activity_history[ ACTIVITY_SECONDS ][ ACTIVITY_CHANNELS ];
 static uint32_t activity_totals[ ACTIVITY_CHANNELS ];
@@ -88,6 +90,33 @@ static uint32_t activity_ble_rate[ ACTIVITY_SECONDS ];
 static unsigned activity_cursor;
 static unsigned activity_samples;
 static int64_t activity_last_tick_us;
+
+static void report_terminal_capture_error( const wardrive_stats_t *a_stats )
+{
+    if( terminal_error_reported )
+    {
+        return;
+    }
+    terminal_error_reported = true;
+    rfscout_log_record_t record;
+    if( !log_begin( &record, "wardrive_capture_error" ) )
+    {
+        return;
+    }
+    const bool success = log_str( &record, "app", "WARDRIVE" ) &&
+                         log_str( &record, "failure", "terminal_storage_error" ) &&
+                         log_bool( &record, "recording", a_stats->recording ) &&
+                         log_uint( &record, "wifi_packets", a_stats->received_wifi ) &&
+                         log_uint( &record, "ble_packets", a_stats->received_ble ) &&
+                         log_uint( &record, "written_packets", a_stats->written ) &&
+                         log_uint( &record, "dropped_packets", a_stats->dropped ) &&
+                         log_uint( &record, "files", a_stats->files ) &&
+                         log_uint( &record, "bytes_written", a_stats->bytes );
+    if( success )
+    {
+        (void)log_end( &record );
+    }
+}
 
 static void observe_wifi( const uint8_t *a_data, size_t a_length, int8_t a_rssi, uint8_t a_channel )
 {
@@ -960,6 +989,7 @@ static void act_on_selection( void )
                 last_error = wardrive_capture_start( &options );
                 if( ESP_OK == last_error )
                 {
+                    terminal_error_reported = false;
                     wardrive_capture_update_gps();
                 }
             }
@@ -1003,6 +1033,7 @@ static void act_on_selection( void )
                 last_error = wardrive_capture_start( &options );
                 if( ESP_OK == last_error )
                 {
+                    terminal_error_reported = false;
                     wardrive_capture_update_gps();
                 }
             }
@@ -1067,6 +1098,13 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
     }
     if( RFSCOUT_APP_RUNTIME_LEAVE == a_event->type )
     {
+        /* A writer failure can arrive after the last poll but before navigation. */
+        wardrive_stats_t capture_status = { 0 };
+        wardrive_capture_stats( &capture_status );
+        if( capture_status.storage_error )
+        {
+            report_terminal_capture_error( &capture_status );
+        }
         wardrive_capture_stop();
         (void)radio_monitor_set_manual_channels( false, 0U, false, 250U );
         return RFSCOUT_APP_RUNTIME_HANDLED;
@@ -1152,6 +1190,7 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
         wardrive_capture_stats( &capture_status );
         if( capture_status.storage_error )
         {
+            report_terminal_capture_error( &capture_status );
             /* Terminate receivers and drain buffers on terminal writer failure. */
             wardrive_capture_stop();
         }
@@ -1174,6 +1213,21 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
     return RFSCOUT_APP_RUNTIME_HANDLED;
 }
 
+static bool app_telemetry( rfscout_log_record_t *a_record )
+{
+    wardrive_stats_t stats = { 0 };
+    wardrive_capture_stats( &stats );
+    bool success = log_bool( a_record, "recording", stats.recording ) &&
+                   log_bool( a_record, "storage_error", stats.storage_error ) &&
+                   log_uint( a_record, "wifi_packets", stats.received_wifi ) &&
+                   log_uint( a_record, "ble_packets", stats.received_ble ) &&
+                   log_uint( a_record, "written_packets", stats.written ) &&
+                   log_uint( a_record, "dropped_packets", stats.dropped ) &&
+                   log_uint( a_record, "files", stats.files ) &&
+                   log_uint( a_record, "bytes_written", stats.bytes );
+    return success;
+}
+
 const rfscout_app_descriptor_t rfscout_wardrive_app = {
     .id = RFSCOUT_APP_WARDRIVE,
     .name = "Wardriving",
@@ -1190,4 +1244,5 @@ const rfscout_app_descriptor_t rfscout_wardrive_app = {
             .ble_raw = observe_ble,
         },
     .runtime = wardrive_runtime,
+    .telemetry = app_telemetry,
 };

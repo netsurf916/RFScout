@@ -365,6 +365,14 @@ static rfscout_app_runtime_result_t recorder_runtime( const rfscout_app_runtime_
     return RFSCOUT_APP_RUNTIME_HANDLED;
 }
 
+static bool app_telemetry( rfscout_log_record_t *a_record )
+{
+    bool success = log_uint( a_record, "state", recorder_state() ) &&
+                   log_uint( a_record, "files", recorder_file_count() ) &&
+                   log_uint( a_record, "bytes", recorder_recorded_bytes() );
+    return success;
+}
+
 const rfscout_app_descriptor_t rfscout_recorder_app = {
     .id = RFSCOUT_APP_AUDIO,
     .name = "Recorder",
@@ -374,6 +382,7 @@ const rfscout_app_descriptor_t rfscout_recorder_app = {
     .requires_activation = false,
     .services = RFSCOUT_APP_SERVICE_AUDIO_CAPTURE,
     .runtime = recorder_runtime,
+    .telemetry = app_telemetry,
     .prepare_leave = prepare_leave,
     .transition_denial_message = "STOP RECORDING FIRST",
 };
