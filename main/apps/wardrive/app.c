@@ -735,9 +735,9 @@ static void draw_menu( void )
         const char *label;
         char value[ 36 ] = "";
         describe_setting( item, &label, value, sizeof( value ) );
-        const bool disabled = ( item == MENU_PACKETS && !options.wifi ) ||
-                              ( capture_busy && item != MENU_BACK && item != MENU_START &&
-                                item != MENU_SOURCES );
+        const bool disabled =
+            ( item == MENU_PACKETS && !options.wifi ) ||
+            ( capture_busy && item != MENU_BACK && item != MENU_START && item != MENU_SOURCES );
         const uint16_t color = ui_menu_label_color(
             ( ui_menu_state_t ){ .selected = item == selected, .available = !disabled } );
         ui_game_draw_menu_marker( 8, 26 + (int)i * 20, item == selected ? ">" : " ", color );
@@ -1102,8 +1102,7 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
         const bool terminal_failure = capture_status.storage_error;
         wardrive_capture_stop();
         wardrive_capture_stats( &capture_status );
-        if( wardrive_capture_finalized() &&
-            ( terminal_failure || capture_status.storage_error ) )
+        if( wardrive_capture_finalized() && ( terminal_failure || capture_status.storage_error ) )
         {
             report_terminal_capture_error( &capture_status );
         }
