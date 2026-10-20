@@ -52,7 +52,7 @@ The app provides an on-device Settings menu using RFScout's rotary input and cen
 | Dwell | 100/200/250/500/1000 ms presets in Manual mode |
 | BLE Discovery | Passive (default) or Active (controller-managed scan requests) |
 | BLE Duplicate filter | Off/On |
-| BLE Scan duty | High/Medium/Low |
+| BLE Scan duty | High/Medium/Low; **Medium** is the default for new/uninitialized Wardriving settings (50% requested scan window). Existing saved choices are preserved. |
 
 Disabling the final Manual channel disables Wardriving's Wi-Fi source. Reenabling that source from an empty channel mask restores the configured channel set. Wardriving source settings are app-local and separate from the WiFi/BLE observation app. Wi-Fi active discovery is not implemented.
 
