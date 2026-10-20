@@ -633,8 +633,8 @@ bool wardrive_capture_stop_pending( void )
 
 bool wardrive_capture_finalized( void )
 {
-    return !accepting && NULL == capture_task && NULL == packet_pool &&
-           NULL == pending_queue && NULL == free_queue;
+    return !accepting && NULL == capture_task && NULL == packet_pool && NULL == pending_queue &&
+           NULL == free_queue;
 }
 
 void wardrive_capture_stats( wardrive_stats_t *a_stats )
