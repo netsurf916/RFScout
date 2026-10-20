@@ -227,7 +227,8 @@ static void load_radio_settings( void )
     dwell_choice = 1U;
     ble_active_scan = false;
     ble_dedupe = false;
-    ble_duty = 0U;
+    /* Prefer a balanced scan window for new settings; preserve saved selections. */
+    ble_duty = 1U;
     const bool valid =
         ESP_OK == app_store_read( "capture.radio", &stored, sizeof( stored ), &length ) &&
         length == sizeof( stored ) && stored.dwell_index < 5U && stored.ble_duty < 3U &&
