@@ -15,6 +15,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 /**
  * @brief Copy a saved credential for a known SSID into caller-owned memory.
@@ -22,6 +23,13 @@
  *          returns ESP_ERR_NOT_FOUND; a storage error is propagated. The caller must erase
  *          the password buffer as soon as association ends. Never log its contents.
  */
+/** Resolve only an already associated BSSID with the exact observed auth mode. */
+esp_err_t saved_networks_password_for_bss( const uint8_t a_bssid[ 6 ],
+                                           const char *a_ssid,
+                                           int32_t a_auth_mode,
+                                           char *a_password,
+                                           size_t a_capacity );
+
 esp_err_t
 saved_networks_password_for_ssid( const char *a_ssid, char *a_password, size_t a_capacity );
 

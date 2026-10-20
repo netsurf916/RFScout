@@ -594,7 +594,11 @@ static void start_attempt( hotspot_entry_t *a_entry, int64_t a_now_us )
     if( RFSCOUT_WIFI_STATION_SECURITY_SECURED == attempt_bss.security )
     {
         char password[ OTA_NETWORK_PASSWORD_MAX_LENGTH + 1U ] = { 0 };
-        result = saved_networks_password_for_ssid( attempt_bss.ssid, password, sizeof( password ) );
+        result = saved_networks_password_for_bss( attempt_bss.bssid,
+                                                   attempt_bss.ssid,
+                                                   attempt_bss.auth_mode,
+                                                   password,
+                                                   sizeof( password ) );
         if( ESP_OK == result )
         {
             result = network_session_begin_secured_bss( &attempt_bss, password );
@@ -628,13 +632,21 @@ static void complete_scan( int64_t a_now_us )
             ESP_LOGW( TAG, "access-point table could not grow; some networks are not shown" );
         }
     }
-    /* Legacy Home/OTA credentials lack auth-mode identity. Keep secured APs
-       visible but ineligible until explicitly compatible profiles are supported. */
+    /* A secured candidate is eligible only for an exact, previously associated
+       BSSID with matching SSID and concrete authentication mode. */
     for( size_t index = 0U; index < table.count; ++index )
     {
         hotspot_entry_t *entry = &table.entries[ index ];
         const bool secured = RFSCOUT_WIFI_STATION_SECURITY_SECURED == entry->bss.security;
         entry->credential_available = !secured;
+        if( secured )
+        {
+            char password[ OTA_NETWORK_PASSWORD_MAX_LENGTH + 1U ] = { 0 };
+            entry->credential_available = ESP_OK == saved_networks_password_for_bss(
+                entry->bss.bssid, entry->bss.ssid, entry->bss.auth_mode,
+                password, sizeof( password ) );
+            memset( password, 0, sizeof( password ) );
+        }
         if( !entry->credential_available )
         {
             entry->manual_requested = false;
