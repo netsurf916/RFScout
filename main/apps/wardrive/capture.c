@@ -60,6 +60,7 @@ static uint8_t *writer_frame;
 static TaskHandle_t capture_task;
 static volatile bool accepting;
 static volatile bool stopping;
+static bool stop_pending;
 static wardrive_config_t config;
 static wardrive_stats_t stats;
 static rfscout_media_collection_t collection;
@@ -535,6 +536,7 @@ esp_err_t wardrive_capture_start( const wardrive_config_t *a_config )
     config = *a_config;
     stats = ( wardrive_stats_t ){ 0 };
     stopping = false;
+    stop_pending = false;
     accepting = false;
     capture_files_t files = { 0 };
     if( ESP_OK == media_list( &collection, visit_capture, &files ) )
@@ -588,6 +590,7 @@ esp_err_t wardrive_capture_start( const wardrive_config_t *a_config )
 void wardrive_capture_stop( void )
 {
     accepting = false;
+    stop_pending = true;
     /* Stop and drain radio callbacks before releasing capture queues and packet pool. */
     const esp_err_t wifi_stop = radio_monitor_stop();
     const esp_err_t ble_stop = ble_monitor_stop();
@@ -620,6 +623,12 @@ void wardrive_capture_stop( void )
     heap_caps_free( writer_frame );
     writer_frame = NULL;
     stats.recording = false;
+    stop_pending = false;
+}
+
+bool wardrive_capture_stop_pending( void )
+{
+    return stop_pending;
 }
 
 bool wardrive_capture_finalized( void )
