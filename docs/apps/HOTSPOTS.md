@@ -77,6 +77,12 @@ Status column values:
 
 When SD logging is enabled, each finished check writes one `type:"hotspot"` record with the BSSID, channel, RSSI, security, outcome, failing stage, NTP result, and HTTP status. SSIDs, client addresses, and public IPs are not logged. The periodic telemetry record reports counts of visible, green, yellow, and red access points.
 
+## Planned credential-profile evolution (PR #122)
+
+The current shipped behavior above is not yet this design. The planned shared Home/OTA/Hotspots credential model uses **stable profile IDs, not unique SSIDs**, and stores a bounded per-profile BSSID history with separate observed, successfully associated and characterized states. Different places advertising the same SSID may use different saved passwords and security policies, without collisions or replacement. Legacy SSID/password records will migrate compatibly into profiles with initially unknown BSSIDs; no second credential store or Hotspots-owned password cache will be created.
+
+When deciding which saved credentials to use, RFScout first looks for a known BSSID with matching SSID/security, then evaluates profiles with the same SSID using observed BSSID overlap and, where available, fresh GPS coverage. GPS is supplementary evidence only: all core discovery, saved-network operations and checks must operate without it. When selection remains ambiguous, the user picks a profile; an unknown BSSID must not silently inherit credentials merely because its SSID matches. Successful new associations grow the selected profile's BSSID membership and optionally its learned spatial coverage, while connectivity-test results are recorded separately. Auth-mode mismatches and downgrade cases remain subject to explicit compatibility checks. These are **planned requirements**, not current guarantees; secured automatic checking remains restricted until implemented and validated.
+
 ## Current limitations
 
 - Yellow does not distinguish captive portals, DNS filtering, or blocked NTP from other restrictions.

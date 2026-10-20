@@ -109,6 +109,14 @@ when the GPS app is foregrounded, because deep sleep does not dispatch an ordina
 app-leave event. Failure to clear the ring cancels sleep and rolls back terminal
 preparation so a latched navigation pixel is not left powered during sleep.
 
+## Planned shared network-profile identity (PR #122)
+
+**Design target, not implemented functionality.** RFScout will deliberately depart from Hotspotter's SSID-keyed credentials by supporting multiple independently identified profiles with the same SSID. Home/OTA and Hotspots must continue to share one authoritative credential store, using a versioned backward-compatible migration from existing SSID/password records. Each profile has a stable internal ID, optional user label, SSID, credential and expected authentication policy, plus a bounded collection of associated BSSID observations (last seen, observed authentication mode, and whether connection/characterization succeeded). Credentials must never be copied into observation history or SD journal records.
+
+Select a profile using a previously associated BSSID and compatible authentication policy first; for a new BSSID consider same-SSID profile candidates, concurrent observations with known BSSIDs, and optionally fresh GPS proximity. Matching SSIDs in distinct places may resolve to different saved profiles; an ambiguous match must be presented for selection rather than silently choosing a password. A BSSID observation by itself is not proof of trust; track observed and successfully associated BSSIDs separately. A successful association can add the BSSID to its chosen profile; connectivity/HTTPS characterization success is a distinct outcome. Automatic candidate admission must be explicit policy, not an implicit result of an SSID match. Retain the currently fail-closed secured auto-check behavior until profile selection and authentication compatibility are implemented and tested.
+
+GPS coordinates and learned profile coverage are **optional evidence**, never prerequisites for credential lookup, candidate discovery, association, characterization, or history. With valid location, use bounded/accuracy-aware coverage to improve ambiguous profile selection and gradually learn coverage from successful associations; without GPS, use BSSID history, observed overlap, security compatibility and explicit selection. Avoid using one growing bounding box as the sole proof of network identity. Keep this profile-selection layer separate from Hotspots' independent network-characterization/grouping evidence (gateway, subnet and gateway MAC), and defer rogue-AP classification to a future capability.
+
 ## Application lifecycle, views, and resource sessions
 
 Descriptors provide an optional `telemetry` callback. Core schedules it for the active app and owns structured record framing; apps own their metric fields. Terminal events such as Wardriving storage failures are emitted by the owning app on the runtime event path, not inferred by core polling.
