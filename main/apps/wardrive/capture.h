@@ -43,5 +43,7 @@ void wardrive_on_ble( const uint8_t *a_data,
 esp_err_t wardrive_capture_start( const wardrive_config_t *a_config );
 void wardrive_capture_stop( void );
 void wardrive_capture_stats( wardrive_stats_t *a_stats );
+/** @brief True only after the writer and radio consumers are quiesced and buffers released. */
+bool wardrive_capture_finalized( void );
 /** @brief Refresh cached GPS once per UI poll, outside time-critical radio callbacks. */
 void wardrive_capture_update_gps( void );
