@@ -301,6 +301,24 @@ esp_err_t ota_networks_associate_bssid( ota_network_list_t *a_networks,
     {
         return ESP_ERR_INVALID_ARG;
     }
+    /* A BSSID may not be trusted by two credential profiles: automatic
+       selection must never choose an arbitrary secret for the same AP. */
+    for( size_t index = 0U; index < a_networks->count; ++index )
+    {
+        const ota_network_t *other = &a_networks->entries[ index ];
+        if( other->profile_id == a_profile_id )
+        {
+            continue;
+        }
+        for( size_t b = 0U; b < other->bssid_count; ++b )
+        {
+            if( other->bssids[ b ].associated &&
+                0 == memcmp( other->bssids[ b ].address, a_bssid, 6U ) )
+            {
+                return ESP_ERR_INVALID_STATE;
+            }
+        }
+    }
     for( size_t index = 0U; index < a_networks->count; ++index )
     {
         ota_network_t *entry = &a_networks->entries[ index ];
