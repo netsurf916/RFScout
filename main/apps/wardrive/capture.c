@@ -595,7 +595,6 @@ void wardrive_capture_stop( void )
     {
         /* Never free capture buffers while a provider may still be invoking a consumer. */
         ESP_LOGE( TAG, "radio callback quiescence failed; preserving capture memory" );
-        stats.storage_error = true;
         return;
     }
     /* Framework owns the consumer bindings across the session lifetime. */
@@ -621,6 +620,12 @@ void wardrive_capture_stop( void )
     heap_caps_free( writer_frame );
     writer_frame = NULL;
     stats.recording = false;
+}
+
+bool wardrive_capture_finalized( void )
+{
+    return !accepting && NULL == capture_task && NULL == packet_pool &&
+           NULL == pending_queue && NULL == free_queue;
 }
 
 void wardrive_capture_stats( wardrive_stats_t *a_stats )
