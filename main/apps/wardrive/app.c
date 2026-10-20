@@ -721,6 +721,9 @@ static void draw_menu( void )
     const ui_theme_palette_t *theme = ui_theme_get();
     display_clear( theme->background );
     ui_chrome_draw( "CAPTURE SETTINGS", theme->secondary );
+    wardrive_stats_t capture_status = { 0 };
+    wardrive_capture_stats( &capture_status );
+    const bool capture_busy = capture_status.recording || wardrive_capture_stop_pending();
     const unsigned page = selected / 6U;
     for( unsigned i = 0U; i < 6U; ++i )
     {
@@ -732,7 +735,9 @@ static void draw_menu( void )
         const char *label;
         char value[ 36 ] = "";
         describe_setting( item, &label, value, sizeof( value ) );
-        const bool disabled = ( item == MENU_PACKETS && !options.wifi );
+        const bool disabled = ( item == MENU_PACKETS && !options.wifi ) ||
+                              ( capture_busy && item != MENU_BACK && item != MENU_START &&
+                                item != MENU_SOURCES );
         const uint16_t color = ui_menu_label_color(
             ( ui_menu_state_t ){ .selected = item == selected, .available = !disabled } );
         ui_game_draw_menu_marker( 8, 26 + (int)i * 20, item == selected ? ">" : " ", color );
@@ -1030,33 +1035,12 @@ static void act_on_selection( void )
     }
     else
     {
-        wardrive_stats_t stats;
+        wardrive_stats_t stats = { 0 };
         wardrive_capture_stats( &stats );
-        const bool restart = stats.recording;
-        if( restart )
+        if( !stats.recording && !wardrive_capture_stop_pending() &&
+            ( selected != MENU_PACKETS || options.wifi ) )
         {
-            wardrive_capture_stop();
-            report_stopped_capture_error();
-        }
-        modify_setting( selected, 1 );
-        if( restart )
-        {
-            last_error = apply_radio();
-            if( ESP_OK == last_error )
-            {
-                last_error = wardrive_capture_start( &options );
-                if( ESP_OK == last_error )
-                {
-                    terminal_error_reported = false;
-                    wardrive_capture_update_gps();
-                }
-            }
-            if( ESP_OK != last_error )
-            {
-                (void)radio_monitor_stop();
-                (void)ble_monitor_stop();
-                ESP_LOGW( TAG, "capture restart failed: %s", esp_err_to_name( last_error ) );
-            }
+            modify_setting( selected, 1 );
         }
         refresh_space();
         draw_menu();
