@@ -45,5 +45,7 @@ void wardrive_capture_stop( void );
 void wardrive_capture_stats( wardrive_stats_t *a_stats );
 /** @brief True only after the writer and radio consumers are quiesced and buffers released. */
 bool wardrive_capture_finalized( void );
+/** @brief A stop was requested but radio callbacks have not yet quiesced. */
+bool wardrive_capture_stop_pending( void );
 /** @brief Refresh cached GPS once per UI poll, outside time-critical radio callbacks. */
 void wardrive_capture_update_gps( void );
