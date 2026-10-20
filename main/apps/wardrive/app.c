@@ -123,7 +123,7 @@ static void report_stopped_capture_error( void )
 {
     wardrive_stats_t stopped = { 0 };
     wardrive_capture_stats( &stopped );
-    if( stopped.storage_error )
+    if( wardrive_capture_finalized() && stopped.storage_error )
     {
         report_terminal_capture_error( &stopped );
     }
@@ -1118,7 +1118,8 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
         const bool terminal_failure = capture_status.storage_error;
         wardrive_capture_stop();
         wardrive_capture_stats( &capture_status );
-        if( terminal_failure || capture_status.storage_error )
+        if( wardrive_capture_finalized() &&
+            ( terminal_failure || capture_status.storage_error ) )
         {
             report_terminal_capture_error( &capture_status );
         }
@@ -1209,7 +1210,7 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
             /* Drain the writer before emitting final session counters. */
             wardrive_capture_stop();
             wardrive_capture_stats( &capture_status );
-            report_terminal_capture_error( &capture_status );
+            report_stopped_capture_error();
         }
         if( a_event->now_us - last_gps_refresh_us >= CAPTURE_GPS_REFRESH_US )
         {
