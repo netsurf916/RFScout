@@ -118,6 +118,17 @@ static void report_terminal_capture_error( const wardrive_stats_t *a_stats )
     }
 }
 
+/** @brief Report any terminal error after the writer has finished draining. */
+static void report_stopped_capture_error( void )
+{
+    wardrive_stats_t stopped = { 0 };
+    wardrive_capture_stats( &stopped );
+    if( stopped.storage_error )
+    {
+        report_terminal_capture_error( &stopped );
+    }
+}
+
 static void observe_wifi( const uint8_t *a_data, size_t a_length, int8_t a_rssi, uint8_t a_channel )
 {
     if( options.wifi && NULL != a_data && a_length >= 2U && a_channel >= 1U &&
@@ -970,6 +981,7 @@ static void act_on_selection( void )
         if( stats.recording )
         {
             wardrive_capture_stop();
+            report_stopped_capture_error();
             (void)radio_monitor_stop();
             (void)ble_monitor_stop();
         }
@@ -983,6 +995,7 @@ static void act_on_selection( void )
         else
         {
             wardrive_capture_stop();
+            report_stopped_capture_error();
             last_error = apply_radio();
             if( ESP_OK == last_error )
             {
@@ -1023,6 +1036,7 @@ static void act_on_selection( void )
         if( restart )
         {
             wardrive_capture_stop();
+            report_stopped_capture_error();
         }
         modify_setting( selected, 1 );
         if( restart )
