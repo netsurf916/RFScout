@@ -48,7 +48,7 @@ esp_err_t saved_networks_candidates( const char *a_ssid,
 /** Resolve a previously associated BSSID without loading any password. */
 esp_err_t saved_networks_known_bss_profile( const char *a_ssid,
                                             const uint8_t a_bssid[ 6 ],
-                                             int32_t a_auth_mode,
+                                            int32_t a_auth_mode,
                                             uint32_t *a_profile_id );
 /** Retrieve an explicitly chosen profile's password. */
 esp_err_t
@@ -67,7 +67,7 @@ esp_err_t
 saved_networks_create_profile( const char *a_ssid, const char *a_password, uint32_t *a_profile_id );
 /** Associate an explicitly chosen profile after successful authentication. */
 esp_err_t saved_networks_associate_profile_bssid( uint32_t a_profile_id,
-                                                const uint8_t a_bssid[ 6 ],
+                                                  const uint8_t a_bssid[ 6 ],
                                                   int32_t a_auth_mode );
 
 esp_err_t saved_networks_save( const char *a_ssid, const char *a_password );
