@@ -118,3 +118,45 @@ esp_err_t saved_networks_password_for_bss( const uint8_t a_bssid[ 6 ],
     ota_networks_clear_runtime( &networks );
     return result;
 }
+
+esp_err_t saved_networks_create_profile( const char *a_ssid,
+                                          const char *a_password,
+                                          uint32_t *a_profile_id )
+{
+    if( NULL == a_ssid || NULL == a_password || NULL == a_profile_id )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    esp_err_t result = ota_networks_load( &networks );
+    if( ESP_OK == result )
+    {
+        result = ota_networks_create_profile( &networks, a_ssid, a_password, a_profile_id );
+    }
+    if( ESP_OK == result )
+    {
+        result = ota_networks_save( &networks );
+    }
+    ota_networks_clear_runtime( &networks );
+    return result;
+}
+
+esp_err_t saved_networks_associate_profile_bssid( uint32_t a_profile_id,
+                                                   const uint8_t a_bssid[ 6 ],
+                                                   int32_t a_auth_mode )
+{
+    if( NULL == a_bssid )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    esp_err_t result = ota_networks_load( &networks );
+    if( ESP_OK == result )
+    {
+        result = ota_networks_associate_bssid( &networks, a_profile_id, a_bssid, a_auth_mode );
+    }
+    if( ESP_OK == result )
+    {
+        result = ota_networks_save( &networks );
+    }
+    ota_networks_clear_runtime( &networks );
+    return result;
+}

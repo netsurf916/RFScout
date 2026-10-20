@@ -59,6 +59,11 @@ esp_err_t ota_networks_associate_bssid( ota_network_list_t *a_networks,
                                        uint32_t a_profile_id,
                                        const uint8_t a_bssid[ 6 ],
                                        int32_t a_auth_mode );
+/** Create a distinct profile even when another saved profile has the same SSID. */
+esp_err_t ota_networks_create_profile( ota_network_list_t *a_networks,
+                                       const char *a_ssid,
+                                       const char *a_password,
+                                       uint32_t *a_profile_id );
 esp_err_t ota_networks_forget( ota_network_list_t *a_networks, size_t a_index );
 void ota_networks_clear_runtime( ota_network_list_t *a_networks );
 

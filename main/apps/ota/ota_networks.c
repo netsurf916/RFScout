@@ -219,6 +219,41 @@ ota_networks_upsert( ota_network_list_t *a_networks, const char *a_ssid, const c
     return ESP_OK;
 }
 
+esp_err_t ota_networks_create_profile( ota_network_list_t *a_networks,
+                                       const char *a_ssid,
+                                       const char *a_password,
+                                       uint32_t *a_profile_id )
+{
+    if( NULL == a_networks || NULL == a_ssid || NULL == a_password ||
+        NULL == a_profile_id || a_networks->count >= OTA_NETWORK_MAX_COUNT )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const size_t ssid_length = strnlen( a_ssid, OTA_NETWORK_SSID_MAX_LENGTH + 1U );
+    const size_t password_length = strnlen( a_password, OTA_NETWORK_PASSWORD_MAX_LENGTH + 1U );
+    if( ssid_length == 0U || ssid_length > OTA_NETWORK_SSID_MAX_LENGTH ||
+        password_length > OTA_NETWORK_PASSWORD_MAX_LENGTH )
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    uint32_t id = 1U;
+    for( size_t i = 0U; i < a_networks->count; ++i )
+    {
+        if( a_networks->entries[ i ].profile_id >= id )
+        {
+            id = a_networks->entries[ i ].profile_id + 1U;
+        }
+    }
+    ota_network_t *entry = &a_networks->entries[ a_networks->count++ ];
+    memset( entry, 0, sizeof( *entry ) );
+    memcpy( entry->ssid, a_ssid, ssid_length );
+    memcpy( entry->password, a_password, password_length );
+    entry->profile_id = id;
+    entry->auth_mode = OTA_NETWORK_AUTH_UNKNOWN;
+    *a_profile_id = id;
+    return ESP_OK;
+}
+
 int ota_networks_find_bssid( const ota_network_list_t *a_networks,
                              const char *a_ssid,
                              const uint8_t a_bssid[ 6 ],

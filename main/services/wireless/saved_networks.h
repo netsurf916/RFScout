@@ -38,6 +38,15 @@ saved_networks_password_for_ssid( const char *a_ssid, char *a_password, size_t a
  * @details Writes storage before returning success; no independent Hotspots credential cache.
  *          This operation does not create a separate profile database.
  */
+/** Explicitly create a separate profile; legacy SSID upsert stays supported. */
+esp_err_t saved_networks_create_profile( const char *a_ssid,
+                                          const char *a_password,
+                                          uint32_t *a_profile_id );
+/** Associate an explicitly chosen profile after successful authentication. */
+esp_err_t saved_networks_associate_profile_bssid( uint32_t a_profile_id,
+                                                   const uint8_t a_bssid[ 6 ],
+                                                   int32_t a_auth_mode );
+
 esp_err_t saved_networks_save( const char *a_ssid, const char *a_password );
 
 /** @brief Remove one SSID from the authoritative saved networks record. */
