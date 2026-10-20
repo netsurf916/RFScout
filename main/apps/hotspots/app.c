@@ -642,8 +642,10 @@ static void complete_scan( int64_t a_now_us )
         if( secured )
         {
             uint32_t profile_id = 0U;
-            entry->credential_available = ESP_OK == saved_networks_known_bss_profile(
-                entry->bss.ssid, entry->bss.bssid, entry->bss.auth_mode, &profile_id );
+            entry->credential_available =
+                ESP_OK ==
+                saved_networks_known_bss_profile(
+                    entry->bss.ssid, entry->bss.bssid, entry->bss.auth_mode, &profile_id );
         }
         if( !entry->credential_available )
         {
