@@ -42,9 +42,7 @@ void ui_menu_draw_marker( int a_x, int a_y, ui_menu_state_t a_state )
     }
     if( a_state.locked )
     {
-        ui_icon_draw_lock( a_x + ( UI_LAYOUT_MENU_LOCK_X - UI_LAYOUT_LEFT_X ),
-                           a_y - 2,
-                           false,
-                           color );
+        ui_icon_draw_lock(
+            a_x + ( UI_LAYOUT_MENU_LOCK_X - UI_LAYOUT_LEFT_X ), a_y - 2, false, color );
     }
 }
