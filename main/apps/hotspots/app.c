@@ -641,14 +641,9 @@ static void complete_scan( int64_t a_now_us )
         entry->credential_available = !secured;
         if( secured )
         {
-            char password[ OTA_NETWORK_PASSWORD_MAX_LENGTH + 1U ] = { 0 };
-            entry->credential_available =
-                ESP_OK == saved_networks_password_for_bss( entry->bss.bssid,
-                                                           entry->bss.ssid,
-                                                           entry->bss.auth_mode,
-                                                           password,
-                                                           sizeof( password ) );
-            memset( password, 0, sizeof( password ) );
+            uint32_t profile_id = 0U;
+            entry->credential_available = ESP_OK == saved_networks_known_bss_profile(
+                entry->bss.ssid, entry->bss.bssid, entry->bss.auth_mode, &profile_id );
         }
         if( !entry->credential_available )
         {

@@ -85,9 +85,9 @@ esp_err_t saved_networks_forget( const char *a_ssid )
 
 esp_err_t saved_networks_password_for_bss( const uint8_t a_bssid[ 6 ],
                                            const char *a_ssid,
-                                           int32_t a_auth_mode,
+                                          int32_t a_auth_mode,
                                            char *a_password,
-                                           size_t a_capacity )
+                                          size_t a_capacity )
 {
     if( NULL == a_bssid || NULL == a_ssid || NULL == a_password || a_capacity == 0U )
     {
@@ -140,8 +140,8 @@ saved_networks_create_profile( const char *a_ssid, const char *a_password, uint3
 }
 
 esp_err_t saved_networks_associate_profile_bssid( uint32_t a_profile_id,
-                                                  const uint8_t a_bssid[ 6 ],
-                                                  int32_t a_auth_mode )
+                                                 const uint8_t a_bssid[ 6 ],
+                                                 int32_t a_auth_mode )
 {
     if( NULL == a_bssid )
     {
@@ -161,11 +161,11 @@ esp_err_t saved_networks_associate_profile_bssid( uint32_t a_profile_id,
 }
 
 esp_err_t saved_networks_candidates( const char *a_ssid,
-                                      const uint8_t a_bssid[ 6 ],
-                                      int32_t a_auth_mode,
-                                      saved_network_candidate_t *a_results,
-                                      size_t a_capacity,
-                                      size_t *a_count )
+                                     const uint8_t a_bssid[ 6 ],
+                                     int32_t a_auth_mode,
+                                     saved_network_candidate_t *a_results,
+                                     size_t a_capacity,
+                                     size_t *a_count )
 {
     if( NULL == a_ssid || NULL == a_count || ( a_capacity != 0U && NULL == a_results ) )
     {
@@ -222,7 +222,7 @@ esp_err_t saved_networks_candidates( const char *a_ssid,
 
 esp_err_t saved_networks_password_for_profile( uint32_t a_profile_id,
                                                 char *a_password,
-                                                size_t a_capacity )
+                                               size_t a_capacity )
 {
     if( 0U == a_profile_id || NULL == a_password || 0U == a_capacity )
     {
@@ -250,6 +250,33 @@ esp_err_t saved_networks_password_for_profile( uint32_t a_profile_id,
                 result = ESP_OK;
             }
             break;
+        }
+    }
+    ota_networks_clear_runtime( &networks );
+    return result;
+}
+
+esp_err_t saved_networks_known_bss_profile( const char *a_ssid,
+                                             const uint8_t a_bssid[ 6 ],
+                                             int32_t a_auth_mode,
+                                             uint32_t *a_profile_id )
+{
+    if( NULL == a_ssid || NULL == a_bssid || NULL == a_profile_id )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *a_profile_id = 0U;
+    esp_err_t result = ota_networks_load( &networks );
+    if( ESP_OK == result )
+    {
+        const int index = ota_networks_find_bssid( &networks, a_ssid, a_bssid, a_auth_mode );
+        if( index < 0 )
+        {
+            result = ESP_ERR_NOT_FOUND;
+        }
+        else
+        {
+            *a_profile_id = networks.entries[ index ].profile_id;
         }
     }
     ota_networks_clear_runtime( &networks );
