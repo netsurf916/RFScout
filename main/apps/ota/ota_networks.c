@@ -202,7 +202,7 @@ ota_networks_upsert( ota_network_list_t *a_networks, const char *a_ssid, const c
     ota_network_t *network = &a_networks->entries[ index ];
     /* Re-saving the same credential must not discard learned auth/BSSID identity.
        Changing the secret invalidates that evidence and requires re-association. */
-    if( network->profile_id != 0U &&
+    if( network->profile_id != 0U && NULL != a_password &&
         strlen( network->password ) == password_length &&
         0 == memcmp( network->password, a_password, password_length ) )
     {
