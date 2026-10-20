@@ -119,9 +119,8 @@ esp_err_t saved_networks_password_for_bss( const uint8_t a_bssid[ 6 ],
     return result;
 }
 
-esp_err_t saved_networks_create_profile( const char *a_ssid,
-                                          const char *a_password,
-                                          uint32_t *a_profile_id )
+esp_err_t
+saved_networks_create_profile( const char *a_ssid, const char *a_password, uint32_t *a_profile_id )
 {
     if( NULL == a_ssid || NULL == a_password || NULL == a_profile_id )
     {
@@ -141,8 +140,8 @@ esp_err_t saved_networks_create_profile( const char *a_ssid,
 }
 
 esp_err_t saved_networks_associate_profile_bssid( uint32_t a_profile_id,
-                                                   const uint8_t a_bssid[ 6 ],
-                                                   int32_t a_auth_mode )
+                                                  const uint8_t a_bssid[ 6 ],
+                                                  int32_t a_auth_mode )
 {
     if( NULL == a_bssid )
     {

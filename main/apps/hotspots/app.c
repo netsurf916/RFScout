@@ -595,10 +595,10 @@ static void start_attempt( hotspot_entry_t *a_entry, int64_t a_now_us )
     {
         char password[ OTA_NETWORK_PASSWORD_MAX_LENGTH + 1U ] = { 0 };
         result = saved_networks_password_for_bss( attempt_bss.bssid,
-                                                   attempt_bss.ssid,
-                                                   attempt_bss.auth_mode,
-                                                   password,
-                                                   sizeof( password ) );
+                                                  attempt_bss.ssid,
+                                                  attempt_bss.auth_mode,
+                                                  password,
+                                                  sizeof( password ) );
         if( ESP_OK == result )
         {
             result = network_session_begin_secured_bss( &attempt_bss, password );
@@ -642,9 +642,12 @@ static void complete_scan( int64_t a_now_us )
         if( secured )
         {
             char password[ OTA_NETWORK_PASSWORD_MAX_LENGTH + 1U ] = { 0 };
-            entry->credential_available = ESP_OK == saved_networks_password_for_bss(
-                entry->bss.bssid, entry->bss.ssid, entry->bss.auth_mode,
-                password, sizeof( password ) );
+            entry->credential_available =
+                ESP_OK == saved_networks_password_for_bss( entry->bss.bssid,
+                                                           entry->bss.ssid,
+                                                           entry->bss.auth_mode,
+                                                           password,
+                                                           sizeof( password ) );
             memset( password, 0, sizeof( password ) );
         }
         if( !entry->credential_available )

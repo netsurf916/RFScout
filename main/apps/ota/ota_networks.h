@@ -19,7 +19,7 @@
 #define OTA_NETWORK_SSID_MAX_LENGTH 32U
 #define OTA_NETWORK_PASSWORD_MAX_LENGTH 64U
 #define OTA_NETWORK_BSSID_MAX_COUNT 8U
-#define OTA_NETWORK_AUTH_UNKNOWN (-1)
+#define OTA_NETWORK_AUTH_UNKNOWN ( -1 )
 
 typedef struct
 {
@@ -56,9 +56,9 @@ int ota_networks_find_bssid( const ota_network_list_t *a_networks,
                              int32_t a_auth_mode );
 /** Remember a successful BSSID association for one stable profile. */
 esp_err_t ota_networks_associate_bssid( ota_network_list_t *a_networks,
-                                       uint32_t a_profile_id,
-                                       const uint8_t a_bssid[ 6 ],
-                                       int32_t a_auth_mode );
+                                        uint32_t a_profile_id,
+                                        const uint8_t a_bssid[ 6 ],
+                                        int32_t a_auth_mode );
 /** Create a distinct profile even when another saved profile has the same SSID. */
 esp_err_t ota_networks_create_profile( ota_network_list_t *a_networks,
                                        const char *a_ssid,

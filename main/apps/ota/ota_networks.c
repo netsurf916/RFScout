@@ -105,7 +105,8 @@ esp_err_t ota_networks_load( ota_network_list_t *a_networks )
              length == sizeof( record_buffer ) )
     {
         a_networks->count = record_buffer.count;
-        memcpy( a_networks->entries, record_buffer.entries,
+        memcpy( a_networks->entries,
+                record_buffer.entries,
                 a_networks->count * sizeof( a_networks->entries[ 0 ] ) );
         for( size_t index = 0U; index < a_networks->count; ++index )
         {
@@ -224,8 +225,8 @@ esp_err_t ota_networks_create_profile( ota_network_list_t *a_networks,
                                        const char *a_password,
                                        uint32_t *a_profile_id )
 {
-    if( NULL == a_networks || NULL == a_ssid || NULL == a_password ||
-        NULL == a_profile_id || a_networks->count >= OTA_NETWORK_MAX_COUNT )
+    if( NULL == a_networks || NULL == a_ssid || NULL == a_password || NULL == a_profile_id ||
+        a_networks->count >= OTA_NETWORK_MAX_COUNT )
     {
         return ESP_ERR_INVALID_ARG;
     }
@@ -272,8 +273,7 @@ int ota_networks_find_bssid( const ota_network_list_t *a_networks,
         }
         for( size_t b = 0U; b < entry->bssid_count; ++b )
         {
-            if( entry->bssids[ b ].associated &&
-                entry->bssids[ b ].auth_mode == a_auth_mode &&
+            if( entry->bssids[ b ].associated && entry->bssids[ b ].auth_mode == a_auth_mode &&
                 0 == memcmp( entry->bssids[ b ].address, a_bssid, 6U ) )
             {
                 return (int)index;
@@ -284,9 +284,9 @@ int ota_networks_find_bssid( const ota_network_list_t *a_networks,
 }
 
 esp_err_t ota_networks_associate_bssid( ota_network_list_t *a_networks,
-                                       uint32_t a_profile_id,
-                                       const uint8_t a_bssid[ 6 ],
-                                       int32_t a_auth_mode )
+                                        uint32_t a_profile_id,
+                                        const uint8_t a_bssid[ 6 ],
+                                        int32_t a_auth_mode )
 {
     if( NULL == a_networks || NULL == a_bssid || a_profile_id == 0U ||
         a_auth_mode == OTA_NETWORK_AUTH_UNKNOWN )
