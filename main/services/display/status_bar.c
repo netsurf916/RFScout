@@ -17,6 +17,7 @@
 #include "mlx90640.h"
 #include "ui_theme.h"
 #include "ui_game.h"
+#include "ui_icon.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -36,54 +37,22 @@ static rfscout_status_bar_state_t last_state;
 
 static void draw_lock_icon( int a_x )
 {
-    const int y = STATUS_BAR_ICON_Y;
-    const ui_theme_palette_t *theme = ui_theme_get();
-    display_fill_rect( a_x + 3, y + 1, 6, 1, theme->warning );
-    display_fill_rect( a_x + 2, y + 2, 1, 4, theme->warning );
-    display_fill_rect( a_x + 9, y + 2, 1, 4, theme->warning );
-    display_fill_rect( a_x + 1, y + 6, 10, 7, theme->warning );
-    display_fill_rect( a_x + 5, y + 8, 2, 3, theme->background );
+    ui_icon_draw_lock( a_x, STATUS_BAR_ICON_Y, false, ui_theme_get()->warning );
 }
 
 static void draw_app_lock_icon( int a_x )
 {
-    const int y = STATUS_BAR_ICON_Y;
-    const ui_theme_palette_t *theme = ui_theme_get();
-    display_fill_rect( a_x + 3, y + 1, 6, 1, theme->accent );
-    display_fill_rect( a_x + 2, y + 2, 1, 4, theme->accent );
-    display_fill_rect( a_x + 9, y + 2, 1, 4, theme->accent );
-    display_fill_rect( a_x + 1, y + 6, 10, 7, theme->accent );
-    display_draw_text( a_x + 3, y + 7, "A", theme->background, 1U );
+    ui_icon_draw_lock( a_x, STATUS_BAR_ICON_Y, true, ui_theme_get()->accent );
 }
 
 static void draw_sd_icon( int a_x, uint16_t a_color, bool a_error )
 {
-    const int y = STATUS_BAR_ICON_Y;
-    const ui_theme_palette_t *theme = ui_theme_get();
-    display_fill_rect( a_x, y + 2, 1, 11, a_color );
-    display_fill_rect( a_x + 1, y + 1, 8, 1, a_color );
-    display_fill_rect( a_x + 9, y + 2, 2, 1, a_color );
-    display_fill_rect( a_x + 11, y + 3, 1, 10, a_color );
-    display_fill_rect( a_x, y + 12, 12, 1, a_color );
-    display_fill_rect( a_x + 2, y + 4, 2, 3, a_color );
-    display_fill_rect( a_x + 5, y + 4, 2, 3, a_color );
-    display_fill_rect( a_x + 8, y + 4, 2, 3, a_color );
-    if( a_error )
-    {
-        display_fill_rect( a_x + 3, y + 8, 6, 3, theme->background );
-        display_fill_rect( a_x + 5, y + 8, 2, 2, a_color );
-        display_fill_rect( a_x + 5, y + 11, 2, 1, a_color );
-    }
+    ui_icon_draw_sd( a_x, STATUS_BAR_ICON_Y, a_color, a_error );
 }
 
 static void draw_thermal_icon( int a_x )
 {
-    const int y = STATUS_BAR_ICON_Y;
-    const ui_theme_palette_t *theme = ui_theme_get();
-    display_fill_rect( a_x + 1, y + 3, 11, 8, theme->info );
-    display_fill_rect( a_x + 3, y + 1, 5, 2, theme->info );
-    display_fill_rect( a_x + 3, y + 5, 7, 4, theme->background );
-    display_fill_rect( a_x + 5, y + 5, 3, 4, theme->info );
+    ui_icon_draw_thermal( a_x, STATUS_BAR_ICON_Y, ui_theme_get()->info );
 }
 
 static void draw_gps_icon( int a_x, bool a_fix_valid )

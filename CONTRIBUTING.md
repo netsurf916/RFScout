@@ -97,6 +97,16 @@ idf.py -DRFSCOUT_FORMAT_CHECK=OFF build
 
 That bypass does not change CI policy.
 
+## Application menu drawing
+
+Application menu renderers must use the shared `ui_menu.h` state API; do not pick theme colors directly for normal/selected/unavailable menu labels. Build an `ui_menu_state_t` with independent `.selected`, `.editing`, `.available`, and `.locked` fields (always set `.available = true` for ordinary interactive rows). Use `ui_menu_label_color(state)` for labels and `ui_menu_value_color(state)` for values. `ui_menu_draw_marker(x, y, state)` provides the shared focus/edit marker and the lock glyph when appropriate. Where an existing view requires different geometry, preserve its menu layout and use the shared color resolver. Retain editing-value highlighting required by the existing UX contract. An OFF feature is still available when users can toggle it; only action prerequisites change `.available`. The application continues to own selection, editing, guarding invalid actions, and any explanation for unavailability.
+
+When adding a menu, inspect related menus in Home, GPS, radio settings, and Hotspots for presentation consistency. Non-menu data visualizations, channel activity heatmaps, status colors, and divider lines are not menu rows and keep their established theme semantics. Run the existing host preview/unit tests and ESP-IDF build; no new testing framework is required.
+
+## Shared UI contribution rules
+
+Before adding a menu or reusable icon, consult the shared menu/icon contract in [Architecture](docs/ARCHITECTURE.md#shared-menu-and-icon-contract). Use `ui_menu` for focus, editing and availability colors; do not equate an OFF setting with unavailable or use the divider color for ordinary selectable labels. Place reusable icon art in `ui_icon` rather than duplicating pixel geometry. Preserve action guards independently of drawing, validate both styles/all color configurations, and update existing documentation rather than introducing parallel app or service pages.
+
 ## Host UI previews
 
 On a Linux host with Python 3 and a C compiler (`cc`, or `CC`), render deterministic 320×170

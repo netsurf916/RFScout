@@ -12,6 +12,7 @@
 #include "ui_game.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
+#include "ui_menu.h"
 
 #include <stdio.h>
 
@@ -50,7 +51,11 @@ void wifi_settings_view_render( unsigned a_selected,
                                   active ? ( a_editing && editable ? "*" : ">" ) : " ",
                                   active ? theme->selected : theme->divider );
         display_draw_text(
-            UI_LAYOUT_LABEL_X, y, labels[ item ], active ? theme->text : theme->divider, 1U );
+            UI_LAYOUT_LABEL_X,
+            y,
+            labels[ item ],
+            ui_menu_label_color( ( ui_menu_state_t ){ .selected = active, .available = true } ),
+            1U );
 
         char value[ 16 ];
         value[ 0 ] = '\0';

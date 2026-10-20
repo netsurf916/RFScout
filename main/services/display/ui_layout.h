@@ -8,7 +8,9 @@
 #pragma once
 
 #define UI_LAYOUT_LEFT_X 6
-#define UI_LAYOUT_LABEL_X 22
+#define UI_LAYOUT_MENU_LOCK_X ( UI_LAYOUT_LEFT_X + 12 )
+/* Fixed lock-icon slot keeps every row label aligned, locked or not. */
+#define UI_LAYOUT_LABEL_X ( UI_LAYOUT_MENU_LOCK_X + 16 )
 #define UI_LAYOUT_TITLE_X UI_LAYOUT_LEFT_X
 #define UI_LAYOUT_TITLE_Y 5
 #define UI_LAYOUT_MENU_START_Y 38

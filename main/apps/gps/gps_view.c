@@ -13,6 +13,7 @@
 #include "ui_chrome.h"
 #include "ui_game.h"
 #include "ui_layout.h"
+#include "ui_menu.h"
 #include "ui_theme.h"
 
 #include <stdio.h>
@@ -71,12 +72,13 @@ void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_menu_error 
             }
             const int y = UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT;
             const bool selected = item == a_menu_item;
+            const ui_menu_state_t menu_state = { .selected = selected, .available = true };
             ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X,
                                       y,
                                       selected ? ">" : " ",
                                       selected ? theme->selected : theme->divider );
             display_draw_text(
-                UI_LAYOUT_LABEL_X, y, labels[ item ], selected ? theme->text : theme->divider, 1U );
+                UI_LAYOUT_LABEL_X, y, labels[ item ], ui_menu_label_color( menu_state ), 1U );
             text[ 0 ] = '\0';
             switch( item )
             {
@@ -127,7 +129,7 @@ void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_menu_error 
             }
             if( '\0' != text[ 0 ] )
             {
-                display_draw_text( 224, y, text, selected ? theme->accent : theme->secondary, 1U );
+                display_draw_text( 224, y, text, ui_menu_value_color( menu_state ), 1U );
             }
         }
         display_draw_text( UI_LAYOUT_LEFT_X,

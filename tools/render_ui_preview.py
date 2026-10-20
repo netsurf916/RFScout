@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DISPLAY = ROOT / "main/services/display"
 SOURCES = [
     "services/display/ui_theme.c", "services/display/ui_game.c",
+    "services/display/ui_icon.c", "services/display/ui_menu.c",
     "services/display/ui_chrome.c", "services/display/ui_present.c",
     "services/display/battery_indicator.c", "services/display/display_mask.c",
     "apps/audio_spectrum/view.c", "apps/gps/gps_view.c",

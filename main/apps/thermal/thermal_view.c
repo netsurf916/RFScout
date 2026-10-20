@@ -14,6 +14,7 @@
 #include "ui_game.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
+#include "ui_menu.h"
 
 #include "esp_log.h"
 
@@ -281,7 +282,8 @@ void thermal_view_menu( unsigned a_selected, bool a_locked, bool a_keep_awake )
         display_draw_text( UI_LAYOUT_LABEL_X + 6,
                            y,
                            items[ index ],
-                           a_selected == index ? theme->selected : theme->text,
+                           ui_menu_label_color( ( ui_menu_state_t ){
+                               .selected = a_selected == index, .available = true } ),
                            1U );
     }
     display_draw_text( 251,
