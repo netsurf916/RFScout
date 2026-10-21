@@ -797,9 +797,7 @@ static void draw_gps_prompt( void )
     display_draw_text( 12, 53, "Choose capture behavior:", theme->secondary, 1U );
     for( unsigned i = 0U; i < 3U; ++i )
     {
-        const ui_menu_state_t state = {
-            .selected = i == gps_choice_selected, .available = true
-        };
+        const ui_menu_state_t state = { .selected = i == gps_choice_selected, .available = true };
         const uint16_t color = ui_menu_label_color( state );
         ui_menu_draw_marker( 12, 77 + (int)i * 22, state );
         display_draw_text( 28, 77 + (int)i * 22, choices[ i ], color, 1U );
