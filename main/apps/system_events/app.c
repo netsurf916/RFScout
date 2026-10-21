@@ -7,6 +7,7 @@
 #include "app_descriptor.h"
 
 #include "event.h"
+#include "system_events.h"
 #include "system_events_view.h"
 
 #include <stddef.h>
@@ -70,6 +71,12 @@ system_events_runtime( const rfscout_app_runtime_event_t *a_event )
     return RFSCOUT_APP_RUNTIME_IGNORED;
 }
 
+static bool app_telemetry( rfscout_log_record_t *a_record )
+{
+    bool success = log_uint( a_record, "retained", system_events_history_count() );
+    return success;
+}
+
 const rfscout_app_descriptor_t rfscout_system_events_app = {
     .id = RFSCOUT_APP_SYSTEM_EVENTS,
     .name = "System Events",
@@ -79,4 +86,5 @@ const rfscout_app_descriptor_t rfscout_system_events_app = {
     .requires_activation = false,
     .services = RFSCOUT_APP_SERVICE_NONE,
     .runtime = system_events_runtime,
+    .telemetry = app_telemetry,
 };

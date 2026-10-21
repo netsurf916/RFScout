@@ -113,6 +113,14 @@ Radio settings are applied only to the Wardriving capture session, not to the ex
 
 The current counters distinguish received Wi-Fi/BLE observations, written packets and aggregate dropped packets. They do not yet expose all queue, storage and record-size failure categories separately. Counts refer to driver-delivered observations, not all over-the-air traffic.
 
+During an active capture, capture-affecting settings are unavailable and cannot be changed via input. Stop capture explicitly before adjusting packet filters, GPS metadata, segment size, file retention, radio sources, or radio scan settings; changing configuration never implicitly stops and restarts recording. Menu navigation and the explicit Stop control remain available. If radio provider shutdown is incomplete, the existing runtime poll retries cleanup without releasing in-use buffers.
+
+## Terminal storage-error telemetry
+
+The application logging coordinator emits a single best-effort `wardrive_capture_error` JSONL event when Wardriving first exposes a terminal `storage_error` state during a capture session. The event includes the app, a generic `terminal_storage_error` failure label, recording state, Wi-Fi/BLE received totals, written and dropped packet totals, segment count, and session bytes written. It supplements (rather than replaces) once-per-second `telemetry` records; it does not imply that the underlying SD failure was a physical card fault.
+
+The event is queued through the existing asynchronous `log_writer` and **is not guaranteed to survive an SD/storage failure**. It deliberately performs no filesystem I/O in the radio callbacks or Wardriving writer and does not bypass the existing `media_store` abstraction. The current boolean cannot distinguish media writes, periodic sync, close, free-space checks, media-health transitions, or lifecycle cleanup errors. A deeper design investigation is needed to identify safe, central storage/media-store failure hooks that preserve the original `esp_err_t`, operation, file/offset and media generation without deadlocking SD arbitration, flooding logs, or depending on a failed SD card for persistence.
+
 ## PCAPNG interoperability and file integrity
 
 Use one Section Header Block plus distinct Interface Description Blocks for Wi-Fi and BLE in each segment. The Wi-Fi interface uses an 802.11 link type plus a valid Radiotap prefix; the BLE interface uses a verified libpcap link type consistent with the NimBLE report representation. Each Enhanced Packet Block references the corresponding interface ID and includes captured versus original lengths, timestamp, and applicable radio metadata. A segment is independently readable when copied off the SD card.

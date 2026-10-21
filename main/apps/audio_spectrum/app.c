@@ -95,6 +95,13 @@ static rfscout_app_runtime_result_t spectrum_runtime( const rfscout_app_runtime_
     return RFSCOUT_APP_RUNTIME_HANDLED;
 }
 
+static bool app_telemetry( rfscout_log_record_t *a_record )
+{
+    bool success = log_uint( a_record, "state", recorder_state() ) &&
+                   log_double( a_record, "range_db", recorder_monitor_range_db() );
+    return success;
+}
+
 const rfscout_app_descriptor_t rfscout_audio_spectrum_app = {
     .id = RFSCOUT_APP_AUDIO_SPECTRUM,
     .name = "Audio Spectrum",
@@ -104,5 +111,6 @@ const rfscout_app_descriptor_t rfscout_audio_spectrum_app = {
     .requires_activation = true,
     .services = RFSCOUT_APP_SERVICE_AUDIO_CAPTURE,
     .runtime = spectrum_runtime,
+    .telemetry = app_telemetry,
     .prepare_leave = NULL,
 };

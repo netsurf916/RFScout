@@ -610,6 +610,37 @@ static rfscout_app_runtime_result_t cc1101_runtime( const rfscout_app_runtime_ev
     return RFSCOUT_APP_RUNTIME_HANDLED;
 }
 
+static bool app_telemetry( rfscout_log_record_t *a_record )
+{
+    cc1101_scan_config_t scan;
+    cc1101_receive_config_t receive;
+    cc1101_capture_stats_t stats;
+    cc1101_scan_config( &scan );
+    cc1101_receive_config( &receive );
+    cc1101_capture_stats( &stats );
+
+    const cc1101_acquisition_mode_t mode = cc1101_acquisition_mode();
+    bool success = log_uint( a_record, "mode", mode ) &&
+                   log_bool( a_record, "detected", cc1101_is_detected() );
+
+    if( success && ( CC1101_ACQUISITION_RECEIVE == mode ) )
+    {
+        success = log_uint( a_record, "frequency_khz", receive.frequency_khz ) &&
+                  log_uint( a_record, "preset", receive.preset ) &&
+                  log_uint( a_record, "captures", stats.captures_completed ) &&
+                  log_uint( a_record, "truncated", stats.captures_truncated ) &&
+                  log_uint( a_record, "overruns", stats.capture_overruns ) &&
+                  log_uint( a_record, "errors", stats.capture_errors );
+    }
+    else if( success )
+    {
+        success = log_uint( a_record, "low_khz", scan.low_khz ) &&
+                  log_uint( a_record, "high_khz", scan.high_khz ) &&
+                  log_uint( a_record, "step_khz", scan.step_khz );
+    }
+    return success;
+}
+
 const rfscout_app_descriptor_t rfscout_cc1101_app = {
     .id = RFSCOUT_APP_CC1101,
     .name = "CC1101",
@@ -619,4 +650,5 @@ const rfscout_app_descriptor_t rfscout_cc1101_app = {
     .requires_activation = true,
     .services = RFSCOUT_APP_SERVICE_CC1101,
     .runtime = cc1101_runtime,
+    .telemetry = app_telemetry,
 };

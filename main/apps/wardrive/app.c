@@ -6,6 +6,7 @@
 #include "display.h"
 #include "gps.h"
 #include "media_store.h"
+#include "log_writer.h"
 #include "persistent_store.h"
 #include "radio_monitor.h"
 #include "ui_chrome.h"
@@ -79,6 +80,7 @@ static int64_t last_gps_refresh_us;
 static uint64_t stored_bytes;
 static uint64_t free_bytes;
 static esp_err_t last_error;
+static bool terminal_error_reported;
 static uint32_t activity_pending[ ACTIVITY_CHANNELS ];
 static uint32_t activity_history[ ACTIVITY_SECONDS ][ ACTIVITY_CHANNELS ];
 static uint32_t activity_totals[ ACTIVITY_CHANNELS ];
@@ -88,6 +90,44 @@ static uint32_t activity_ble_rate[ ACTIVITY_SECONDS ];
 static unsigned activity_cursor;
 static unsigned activity_samples;
 static int64_t activity_last_tick_us;
+
+static void report_terminal_capture_error( const wardrive_stats_t *a_stats )
+{
+    if( terminal_error_reported )
+    {
+        return;
+    }
+    terminal_error_reported = true;
+    rfscout_log_record_t record;
+    if( !log_begin( &record, "wardrive_capture_error" ) )
+    {
+        return;
+    }
+    const bool success = log_str( &record, "app", "WARDRIVE" ) &&
+                         log_str( &record, "failure", "terminal_storage_error" ) &&
+                         log_bool( &record, "recording", a_stats->recording ) &&
+                         log_uint( &record, "wifi_packets", a_stats->received_wifi ) &&
+                         log_uint( &record, "ble_packets", a_stats->received_ble ) &&
+                         log_uint( &record, "written_packets", a_stats->written ) &&
+                         log_uint( &record, "dropped_packets", a_stats->dropped ) &&
+                         log_uint( &record, "files", a_stats->files ) &&
+                         log_uint( &record, "bytes_written", a_stats->bytes );
+    if( success )
+    {
+        (void)log_end( &record );
+    }
+}
+
+/** @brief Report any terminal error after the writer has finished draining. */
+static void report_stopped_capture_error( void )
+{
+    wardrive_stats_t stopped = { 0 };
+    wardrive_capture_stats( &stopped );
+    if( wardrive_capture_finalized() && stopped.storage_error )
+    {
+        report_terminal_capture_error( &stopped );
+    }
+}
 
 static void observe_wifi( const uint8_t *a_data, size_t a_length, int8_t a_rssi, uint8_t a_channel )
 {
@@ -681,6 +721,9 @@ static void draw_menu( void )
     const ui_theme_palette_t *theme = ui_theme_get();
     display_clear( theme->background );
     ui_chrome_draw( "CAPTURE SETTINGS", theme->secondary );
+    wardrive_stats_t capture_status = { 0 };
+    wardrive_capture_stats( &capture_status );
+    const bool capture_busy = capture_status.recording || wardrive_capture_stop_pending();
     const unsigned page = selected / 6U;
     for( unsigned i = 0U; i < 6U; ++i )
     {
@@ -692,7 +735,9 @@ static void draw_menu( void )
         const char *label;
         char value[ 36 ] = "";
         describe_setting( item, &label, value, sizeof( value ) );
-        const bool disabled = ( item == MENU_PACKETS && !options.wifi );
+        const bool disabled =
+            ( item == MENU_PACKETS && !options.wifi ) ||
+            ( capture_busy && item != MENU_BACK && item != MENU_START && item != MENU_SOURCES );
         const uint16_t color = ui_menu_label_color(
             ( ui_menu_state_t ){ .selected = item == selected, .available = !disabled } );
         ui_game_draw_menu_marker( 8, 26 + (int)i * 20, item == selected ? ">" : " ", color );
@@ -941,6 +986,7 @@ static void act_on_selection( void )
         if( stats.recording )
         {
             wardrive_capture_stop();
+            report_stopped_capture_error();
             (void)radio_monitor_stop();
             (void)ble_monitor_stop();
         }
@@ -954,12 +1000,14 @@ static void act_on_selection( void )
         else
         {
             wardrive_capture_stop();
+            report_stopped_capture_error();
             last_error = apply_radio();
             if( ESP_OK == last_error )
             {
                 last_error = wardrive_capture_start( &options );
                 if( ESP_OK == last_error )
                 {
+                    terminal_error_reported = false;
                     wardrive_capture_update_gps();
                 }
             }
@@ -987,31 +1035,12 @@ static void act_on_selection( void )
     }
     else
     {
-        wardrive_stats_t stats;
+        wardrive_stats_t stats = { 0 };
         wardrive_capture_stats( &stats );
-        const bool restart = stats.recording;
-        if( restart )
+        if( !stats.recording && !wardrive_capture_stop_pending() &&
+            ( selected != MENU_PACKETS || options.wifi ) )
         {
-            wardrive_capture_stop();
-        }
-        modify_setting( selected, 1 );
-        if( restart )
-        {
-            last_error = apply_radio();
-            if( ESP_OK == last_error )
-            {
-                last_error = wardrive_capture_start( &options );
-                if( ESP_OK == last_error )
-                {
-                    wardrive_capture_update_gps();
-                }
-            }
-            if( ESP_OK != last_error )
-            {
-                (void)radio_monitor_stop();
-                (void)ble_monitor_stop();
-                ESP_LOGW( TAG, "capture restart failed: %s", esp_err_to_name( last_error ) );
-            }
+            modify_setting( selected, 1 );
         }
         refresh_space();
         draw_menu();
@@ -1067,7 +1096,16 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
     }
     if( RFSCOUT_APP_RUNTIME_LEAVE == a_event->type )
     {
+        /* A writer failure can arrive after the last poll but before navigation. */
+        wardrive_stats_t capture_status = { 0 };
+        wardrive_capture_stats( &capture_status );
+        const bool terminal_failure = capture_status.storage_error;
         wardrive_capture_stop();
+        wardrive_capture_stats( &capture_status );
+        if( wardrive_capture_finalized() && ( terminal_failure || capture_status.storage_error ) )
+        {
+            report_terminal_capture_error( &capture_status );
+        }
         (void)radio_monitor_set_manual_channels( false, 0U, false, 250U );
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
@@ -1150,10 +1188,12 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
         activity_tick( a_event->now_us );
         wardrive_stats_t capture_status;
         wardrive_capture_stats( &capture_status );
-        if( capture_status.storage_error )
+        if( capture_status.storage_error || wardrive_capture_stop_pending() )
         {
-            /* Terminate receivers and drain buffers on terminal writer failure. */
+            /* Drain the writer before emitting final session counters. */
             wardrive_capture_stop();
+            wardrive_capture_stats( &capture_status );
+            report_stopped_capture_error();
         }
         if( a_event->now_us - last_gps_refresh_us >= CAPTURE_GPS_REFRESH_US )
         {
@@ -1174,6 +1214,21 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
     return RFSCOUT_APP_RUNTIME_HANDLED;
 }
 
+static bool app_telemetry( rfscout_log_record_t *a_record )
+{
+    wardrive_stats_t stats = { 0 };
+    wardrive_capture_stats( &stats );
+    bool success = log_bool( a_record, "recording", stats.recording ) &&
+                   log_bool( a_record, "storage_error", stats.storage_error ) &&
+                   log_uint( a_record, "wifi_packets", stats.received_wifi ) &&
+                   log_uint( a_record, "ble_packets", stats.received_ble ) &&
+                   log_uint( a_record, "written_packets", stats.written ) &&
+                   log_uint( a_record, "dropped_packets", stats.dropped ) &&
+                   log_uint( a_record, "files", stats.files ) &&
+                   log_uint( a_record, "bytes_written", stats.bytes );
+    return success;
+}
+
 const rfscout_app_descriptor_t rfscout_wardrive_app = {
     .id = RFSCOUT_APP_WARDRIVE,
     .name = "Wardriving",
@@ -1190,4 +1245,5 @@ const rfscout_app_descriptor_t rfscout_wardrive_app = {
             .ble_raw = observe_ble,
         },
     .runtime = wardrive_runtime,
+    .telemetry = app_telemetry,
 };

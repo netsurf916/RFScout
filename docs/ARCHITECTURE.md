@@ -111,6 +111,9 @@ preparation so a latched navigation pixel is not left powered during sleep.
 
 ## Application lifecycle, views, and resource sessions
 
+Descriptors provide an optional `telemetry` callback. Core schedules it for the active app and owns structured record framing; apps own their metric fields. Terminal events such as Wardriving storage failures are emitted by the owning app on the runtime event path, not inferred by core polling.
+
+
 Every active app has a temporary **resource session**, including apps that currently allocate no dynamic PSRAM. An existing session cannot be replaced by calling `app_session_ensure()` for another app, even if it has zero managed allocations: only a successful lifecycle close may retire that session and prove service quiescence. During destination setup, successful service initializations are stopped in reverse order if a later initialization or view acquisition fails. A service's `init()` must remain inactive and its `stop()` must safely release initialized-but-inactive state. If any initialization rollback `stop()` fails, the session retains ownership in a degraded state and blocks all subsequent session acquisition (including the same application). Destination recovery then fails closed rather than overlapping uncertain live resources; a restart is required. The same session owns the app's managed `rfscout_view_t`.
 
 Application lock deliberately sits **above** this lifecycle boundary. Locking/unlocking the active application does not enter, leave, reactivate, quiesce, reclaim, or otherwise mutate its resource session; it only changes whether unhandled rotary input is permitted to request a different application.

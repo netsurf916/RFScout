@@ -374,6 +374,19 @@ static rfscout_app_runtime_result_t nrf24_runtime( const rfscout_app_runtime_eve
     return RFSCOUT_APP_RUNTIME_HANDLED;
 }
 
+static bool app_telemetry( rfscout_log_record_t *a_record )
+{
+    const nrf24_scan_config_t *config = nrf24_config();
+    nrf24_fingerprint_t fingerprints[ NRF24_FINGERPRINT_MAX ];
+    const size_t count = nrf24_activity_fingerprints( fingerprints, NRF24_FINGERPRINT_MAX );
+    bool success = log_uint( a_record, "low_channel", config->low_channel ) &&
+                   log_uint( a_record, "high_channel", config->high_channel ) &&
+                   log_uint( a_record, "dwell_us", config->dwell_us ) &&
+                   log_uint( a_record, "likely", count ) &&
+                   log_bool( a_record, "detected", nrf24_is_detected() );
+    return success;
+}
+
 const rfscout_app_descriptor_t rfscout_nrf24_app = {
     .id = RFSCOUT_APP_NRF24,
     .name = "nRF24",
@@ -383,4 +396,5 @@ const rfscout_app_descriptor_t rfscout_nrf24_app = {
     .requires_activation = true,
     .services = RFSCOUT_APP_SERVICE_NRF24,
     .runtime = nrf24_runtime,
+    .telemetry = app_telemetry,
 };

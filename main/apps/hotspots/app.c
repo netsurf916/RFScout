@@ -948,6 +948,18 @@ void hotspots_app_counts( hotspots_app_counts_t *a_counts )
     a_counts->checks = checks_completed;
 }
 
+static bool app_telemetry( rfscout_log_record_t *a_record )
+{
+    hotspots_app_counts_t counts;
+    hotspots_app_counts( &counts );
+    bool success = log_uint( a_record, "visible", counts.visible ) &&
+                   log_uint( a_record, "green", counts.green ) &&
+                   log_uint( a_record, "yellow", counts.yellow ) &&
+                   log_uint( a_record, "red", counts.red ) &&
+                   log_uint( a_record, "checks", counts.checks );
+    return success;
+}
+
 const rfscout_app_descriptor_t rfscout_hotspots_app = {
     .id = RFSCOUT_APP_HOTSPOTS,
     .name = "Hotspots",
@@ -957,4 +969,5 @@ const rfscout_app_descriptor_t rfscout_hotspots_app = {
     .requires_activation = true,
     .services = RFSCOUT_APP_SERVICE_NETWORK_SESSION | RFSCOUT_APP_SERVICE_CONNECTIVITY_PROBE,
     .runtime = hotspots_runtime,
+    .telemetry = app_telemetry,
 };
