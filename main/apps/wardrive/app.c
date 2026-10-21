@@ -98,7 +98,6 @@ static bool gps_receiver_present( void )
     return gps_detected();
 }
 
-
 static uint32_t activity_pending[ ACTIVITY_CHANNELS ];
 static uint32_t activity_history[ ACTIVITY_SECONDS ][ ACTIVITY_CHANNELS ];
 static uint32_t activity_totals[ ACTIVITY_CHANNELS ];
@@ -785,6 +784,50 @@ static void draw_menu( void )
     (void)display_present();
 }
 
+static esp_err_t apply_radio( void );
+
+static void draw_gps_prompt( void )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    static const char *choices[] = { "Start anyway", "Wait for fix", "Cancel" };
+    display_clear( theme->background );
+    ui_chrome_draw( "GPS NOT READY", theme->warning );
+    display_draw_text( 12, 37, "Time / location unavailable", theme->text, 1U );
+    display_draw_text( 12, 53, "Choose capture behavior:", theme->secondary, 1U );
+    for( unsigned i = 0U; i < 3U; ++i )
+    {
+        const uint16_t color = ui_menu_label_color(
+            ( ui_menu_state_t ){ .selected = i == gps_choice_selected, .available = true } );
+        ui_game_draw_menu_marker(
+            12, 77 + (int)i * 22, i == gps_choice_selected ? ">" : " ", color );
+        display_draw_text( 28, 77 + (int)i * 22, choices[ i ], color, 1U );
+    }
+    (void)display_present();
+}
+
+static esp_err_t start_capture_now( void )
+{
+    wardrive_capture_stop();
+    report_stopped_capture_error();
+    esp_err_t result = apply_radio();
+    if( ESP_OK == result )
+    {
+        result = wardrive_capture_start( &options );
+        if( ESP_OK == result )
+        {
+            terminal_error_reported = false;
+            wardrive_capture_update_gps();
+        }
+    }
+    if( ESP_OK != result )
+    {
+        (void)radio_monitor_stop();
+        (void)ble_monitor_stop();
+        ESP_LOGW( TAG, "capture start failed: %s", esp_err_to_name( result ) );
+    }
+    return result;
+}
+
 static esp_err_t apply_radio( void )
 {
     /* Wardriving uses uniform dwell; do not inherit the WiFi/BLE AP boost. */
@@ -863,7 +906,32 @@ static void act_on_selection( void )
 {
     if( gps_prompt_open )
     {
-        draw_gps_prompt();
+        gps_prompt_open = false;
+        if( gps_choice_selected == 1U )
+        {
+            capture_waiting_for_gps = true;
+        }
+        else if( gps_choice_selected == 0U )
+        {
+            last_error = start_capture_now();
+            if( ESP_OK == last_error )
+            {
+                menu_open = false;
+            }
+        }
+        if( menu_open )
+        {
+            draw_menu();
+        }
+        else
+        {
+            draw_overview();
+        }
+        return;
+    }
+    if( capture_waiting_for_gps && selected != MENU_START )
+    {
+        draw_menu();
         return;
     }
 
