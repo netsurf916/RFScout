@@ -1200,6 +1200,8 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
     }
     if( RFSCOUT_APP_RUNTIME_LEAVE == a_event->type )
     {
+        capture_waiting_for_gps = false;
+        gps_prompt_open = false;
         /* A writer failure can arrive after the last poll but before navigation. */
         wardrive_stats_t capture_status = { 0 };
         wardrive_capture_stats( &capture_status );
@@ -1318,9 +1320,13 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
                 menu_open = false;
             }
             if( menu_open )
+            {
                 draw_menu();
+            }
             else
+            {
                 draw_overview();
+            }
         }
 
         wardrive_stats_t capture_status;
