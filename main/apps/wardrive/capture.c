@@ -517,22 +517,21 @@ esp_err_t wardrive_capture_start( const wardrive_config_t *a_config )
     {
         return ESP_ERR_INVALID_ARG;
     }
-    if( !device_time_now( NULL ) )
-    {
-        return ESP_ERR_INVALID_STATE;
-    }
     if( ESP_OK != media_app_collection( "captures", &collection ) )
     {
         return ESP_ERR_INVALID_STATE;
     }
-    struct timeval initial_time;
-    if( 0 != gettimeofday( &initial_time, NULL ) )
+    /* Preserve packet intervals even without a trustworthy wall clock. A capture\n       without UTC uses a synthetic epoch, never re-anchored mid-recording. */
+    const bool utc_valid = device_time_now( NULL );
+    struct timeval initial_time = { 0 };
+    if( utc_valid && 0 != gettimeofday( &initial_time, NULL ) )
     {
         return ESP_FAIL;
     }
     capture_monotonic_origin_us = esp_timer_get_time();
     capture_epoch_origin_us =
-        (uint64_t)initial_time.tv_sec * 1000000ULL + (uint64_t)initial_time.tv_usec;
+        utc_valid ? (uint64_t)initial_time.tv_sec * 1000000ULL + (uint64_t)initial_time.tv_usec
+                  : 0U;
     config = *a_config;
     stats = ( wardrive_stats_t ){ 0 };
     stopping = false;
