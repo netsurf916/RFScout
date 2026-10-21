@@ -95,7 +95,8 @@ static bool gps_fix_ready( void )
 static bool gps_receiver_present( void )
 {
     /* UART availability is not receiver presence; require validated NMEA traffic. */
-    return gps_detected();
+    /* Do not classify a configured receiver as absent until the initial probe finishes. */
+    return gps_detected() || ( gps_available() && !gps_probe_complete() );
 }
 
 static uint32_t activity_pending[ ACTIVITY_CHANNELS ];
