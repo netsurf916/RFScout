@@ -797,10 +797,11 @@ static void draw_gps_prompt( void )
     display_draw_text( 12, 53, "Choose capture behavior:", theme->secondary, 1U );
     for( unsigned i = 0U; i < 3U; ++i )
     {
-        const uint16_t color = ui_menu_label_color(
-            ( ui_menu_state_t ){ .selected = i == gps_choice_selected, .available = true } );
-        ui_game_draw_menu_marker(
-            12, 77 + (int)i * 22, i == gps_choice_selected ? ">" : " ", color );
+        const ui_menu_state_t state = {
+            .selected = i == gps_choice_selected, .available = true
+        };
+        const uint16_t color = ui_menu_label_color( state );
+        ui_menu_draw_marker( 12, 77 + (int)i * 22, state );
         display_draw_text( 28, 77 + (int)i * 22, choices[ i ], color, 1U );
     }
     (void)display_present();
@@ -1312,7 +1313,8 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
     if( RFSCOUT_APP_RUNTIME_POLL == a_event->type )
     {
         activity_tick( a_event->now_us );
-        if( capture_waiting_for_gps && gps_fix_ready() )
+        if( capture_waiting_for_gps &&
+            ( gps_fix_ready() || ( gps_probe_complete() && !gps_detected() ) ) )
         {
             capture_waiting_for_gps = false;
             last_error = start_capture_now();
