@@ -133,7 +133,7 @@ static bool write_section( void )
     static const char relative_comment[] = "RFScout timestamps: relative only; no UTC anchor";
     const uint32_t comment_length = capture_utc_anchored ? 0U : sizeof( relative_comment ) - 1U;
     const uint32_t padded_comment = ( comment_length + 3U ) & ~3U;
-    const uint32_t total_length = 28U + ( comment_length ? 4U + padded_comment : 0U );
+    const uint32_t total_length = 28U + ( comment_length ? 8U + padded_comment : 0U );
     uint8_t block[ 28 ] = { 0 };
     le32( block, 0x0A0D0D0AU );
     le32( block + 4U, total_length );
@@ -154,12 +154,14 @@ static bool write_section( void )
     le16( option_header, 1U );
     le16( option_header + 2U, (uint16_t)comment_length );
     const uint8_t padding[ 3 ] = { 0 };
+    const uint8_t end_of_options[ 4 ] = { 0 };
     uint8_t trailer[ 4 ];
     le32( trailer, total_length );
     return write_bytes( option_header, sizeof( option_header ) ) &&
            write_bytes( relative_comment, comment_length ) &&
            ( padded_comment == comment_length ||
              write_bytes( padding, padded_comment - comment_length ) ) &&
+           write_bytes( end_of_options, sizeof( end_of_options ) ) &&
            write_bytes( trailer, sizeof( trailer ) );
 }
 
