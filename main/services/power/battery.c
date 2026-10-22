@@ -276,17 +276,16 @@ static esp_err_t charger_inspect_and_manage( void )
         return result;
     }
     /* Preserve all safety-timer and charge-enable settings. */
-    charger_timer_policy = ( timer & (uint8_t)~BQ25896_WATCHDOG_MASK ) |
-                           BQ25896_WATCHDOG_40S;
+    charger_timer_policy = ( timer & (uint8_t)~BQ25896_WATCHDOG_MASK ) | BQ25896_WATCHDOG_40S;
     charger_charge_policy = control & (uint8_t)~BQ25896_WATCHDOG_RESET_BIT;
     charger_policy_valid = true;
-    result = write_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL,
-                                charger_timer_policy );
+    result = write_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL, charger_timer_policy );
     if( ESP_OK != result )
     {
         return result;
     }
-    result = write_register_u8( charger_device, BQ25896_REG_CHARGE_CONTROL,
+    result = write_register_u8( charger_device,
+                                BQ25896_REG_CHARGE_CONTROL,
                                 charger_charge_policy | BQ25896_WATCHDOG_RESET_BIT );
     if( ESP_OK == result )
     {
@@ -315,7 +314,8 @@ static void charger_controller_poll( void )
         esp_err_t result = read_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL, &timer );
         if( ESP_OK == result && charger_policy_valid && timer == charger_timer_policy )
         {
-            result = write_register_u8( charger_device, BQ25896_REG_CHARGE_CONTROL,
+            result = write_register_u8( charger_device,
+                                        BQ25896_REG_CHARGE_CONTROL,
                                         charger_charge_policy | BQ25896_WATCHDOG_RESET_BIT );
             if( ESP_OK == result )
             {
@@ -323,8 +323,7 @@ static void charger_controller_poll( void )
                 return;
             }
         }
-        ESP_LOGW( TAG, "BQ25896 configuration/watchdog lost: %s",
-                  esp_err_to_name( result ) );
+        ESP_LOGW( TAG, "BQ25896 configuration/watchdog lost: %s", esp_err_to_name( result ) );
         charger_controller = CHARGER_CONTROLLER_RECOVERY;
         charger_retry_after_us = now + CHARGER_RETRY_US;
         return;
@@ -387,13 +386,16 @@ static void sample_charger( battery_status_t *a_status, bool *a_sampled )
                 read_register_u8( charger_device, BQ25896_REG_FAULT, &a_status->charger_faults ) )
         {
             a_status->charger_details_fresh = true;
-            if( ESP_OK != read_register_u8( charger_device, BQ25896_REG_DPM_STATUS,
+            if( ESP_OK != read_register_u8( charger_device,
+                                            BQ25896_REG_DPM_STATUS,
                                             &a_status->charger_dpm_status ) ||
-                ESP_OK != read_register_u8( charger_device, BQ25896_REG_ADC_VBUS,
-                                            &a_status->charger_adc_vbus ) ||
-                ESP_OK != read_register_u8( charger_device, BQ25896_REG_ADC_CHARGE_CURRENT,
+                ESP_OK != read_register_u8(
+                              charger_device, BQ25896_REG_ADC_VBUS, &a_status->charger_adc_vbus ) ||
+                ESP_OK != read_register_u8( charger_device,
+                                            BQ25896_REG_ADC_CHARGE_CURRENT,
                                             &a_status->charger_adc_charge_current ) ||
-                ESP_OK != read_register_u8( charger_device, BQ25896_REG_ADC_SYSTEM_VOLTAGE,
+                ESP_OK != read_register_u8( charger_device,
+                                            BQ25896_REG_ADC_SYSTEM_VOLTAGE,
                                             &a_status->charger_adc_system_voltage ) )
             {
                 a_status->charger_details_fresh = false;
@@ -401,8 +403,7 @@ static void sample_charger( battery_status_t *a_status, bool *a_sampled )
             /* REG0C first exposes latched history; the second read reports
                present faults. Do not mistake old watchdog events for current ones. */
             uint8_t current_faults = 0U;
-            if( ESP_OK == read_register_u8( charger_device, BQ25896_REG_FAULT,
-                                            &current_faults ) )
+            if( ESP_OK == read_register_u8( charger_device, BQ25896_REG_FAULT, &current_faults ) )
             {
                 if( 0U != ( a_status->charger_faults & BQ25896_WATCHDOG_FAULT_BIT ) )
                 {
