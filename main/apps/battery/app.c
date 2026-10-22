@@ -71,42 +71,47 @@ static void battery_render( void )
         display_draw_text( 10, 30, "CHARGER DIAGNOSTICS", theme->secondary, 1U );
         if( status.charger_details_fresh )
         {
-            const unsigned charge_phase =
-                ( status.charger_status_register >> 3U ) & 3U;
-            const unsigned input_source =
-                ( status.charger_status_register >> 5U ) & 7U;
-            const unsigned input_limit_ma =
-                100U + 50U * ( status.charger_input_control & 0x3FU );
-            const unsigned fast_charge_ma =
-                64U * ( status.charger_current_control & 0x7FU );
+            const unsigned charge_phase = ( status.charger_status_register >> 3U ) & 3U;
+            const unsigned input_source = ( status.charger_status_register >> 5U ) & 7U;
+            const unsigned input_limit_ma = 100U + 50U * ( status.charger_input_control & 0x3FU );
+            const unsigned fast_charge_ma = 64U * ( status.charger_current_control & 0x7FU );
             const unsigned regulation_mv =
                 3840U + 16U * ( ( status.charger_voltage_control >> 2U ) & 0x3FU );
             const unsigned termination_ma =
                 64U + 64U * ( status.charger_precharge_control & 0x0FU );
-            snprintf( text, sizeof( text ), "PHASE %u  INPUT %u  PG %u",
-                      charge_phase, input_source,
+            snprintf( text,
+                      sizeof( text ),
+                      "PHASE %u  INPUT %u  PG %u",
+                      charge_phase,
+                      input_source,
                       ( status.charger_status_register & 0x04U ) ? 1U : 0U );
             display_draw_text( 10, 48, text, theme->text, 1U );
-            snprintf( text, sizeof( text ), "ILIM %u mA  ICHG %u mA",
-                      input_limit_ma, fast_charge_ma );
+            snprintf(
+                text, sizeof( text ), "ILIM %u mA  ICHG %u mA", input_limit_ma, fast_charge_ma );
             display_draw_text( 10, 64, text, theme->text, 1U );
-            snprintf( text, sizeof( text ), "VREG %u mV  ITERM %u mA",
-                      regulation_mv, termination_ma );
+            snprintf(
+                text, sizeof( text ), "VREG %u mV  ITERM %u mA", regulation_mv, termination_ma );
             display_draw_text( 10, 80, text, theme->text, 1U );
-            snprintf( text, sizeof( text ), "VBUS %u mV  IADC %u mA",
+            snprintf( text,
+                      sizeof( text ),
+                      "VBUS %u mV  IADC %u mA",
                       2600U + 100U * ( status.charger_adc_vbus & 0x7FU ),
                       50U * ( status.charger_adc_charge_current & 0x7FU ) );
             display_draw_text( 10, 96, text, theme->text, 1U );
-            snprintf( text, sizeof( text ), "VSYS %u mV  DPM %02X",
+            snprintf( text,
+                      sizeof( text ),
+                      "VSYS %u mV  DPM %02X",
                       2304U + 20U * ( status.charger_adc_system_voltage & 0x7FU ),
                       (unsigned)status.charger_dpm_status );
             display_draw_text( 10, 112, text, theme->text, 1U );
-            snprintf( text, sizeof( text ), "FAULT %02X  CTRL %u  TIMER %02X",
+            snprintf( text,
+                      sizeof( text ),
+                      "FAULT %02X  CTRL %u  TIMER %02X",
                       (unsigned)status.charger_faults,
                       (unsigned)status.charger_controller_state,
                       (unsigned)status.charger_timer_control );
-            display_draw_text( 10, 128, text,
-                               status.charger_faults ? theme->warning : theme->text, 1U );
+            display_draw_text(
+                10, 128, text, status.charger_faults ? theme->warning : theme->text, 1U );
         }
         else
         {
@@ -252,8 +257,7 @@ static rfscout_app_runtime_result_t battery_runtime( const rfscout_app_runtime_e
         battery_render();
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
-    if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type &&
-        RFSCOUT_INPUT_SELECT == a_event->input.type )
+    if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type && RFSCOUT_INPUT_SELECT == a_event->input.type )
     {
         details_page = !details_page;
         battery_render();
