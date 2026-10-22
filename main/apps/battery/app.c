@@ -89,7 +89,8 @@ static void battery_render( void )
                                status.percentage_fresh ? theme->success : theme->warning );
         }
         const device_config_t *config = device_config_get();
-        if( NULL != config && config->low_battery_threshold_percent <= 100U )
+        if( NULL != config && POWER_ACTION_NONE != config->low_battery_action &&
+            config->low_battery_threshold_percent <= 100U )
         {
             const int marker = x + 4 +
                 ( (int)config->low_battery_threshold_percent * ( width - 8 ) ) / 100;
