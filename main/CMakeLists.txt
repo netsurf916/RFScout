@@ -181,4 +181,11 @@ idf_component_register(
 
 # Enforce warning-free compilation for RFScout-owned sources only. Do not
 # propagate -Werror to ESP-IDF, managed third-party components, or consumers.
-target_compile_options(${COMPONENT_LIB} PRIVATE -Werror)
+# ESP-IDF downgrades the unused-* classes with -Wno-error=...; restore them here
+# (later options win). deprecated-declarations stays a warning so ESP-IDF API
+# deprecations do not break the build on an IDF update.
+target_compile_options(${COMPONENT_LIB} PRIVATE
+    -Werror
+    -Werror=unused-function
+    -Werror=unused-variable
+    -Werror=unused-but-set-variable)

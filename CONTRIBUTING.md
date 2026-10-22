@@ -75,7 +75,7 @@ Generated `.inc` tables should be changed through their generators rather than h
 
 ## Compiler warnings
 
-RFScout-maintained firmware C code is compiled with `-Werror`: compiler warnings are build failures. The option is scoped to the RFScout `main` component and does not affect ESP-IDF or third-party components. Fix warnings at their source rather than adding broad diagnostic suppressions. This policy does not enable additional warning classes; compiler/ESP-IDF baseline warning selection remains unchanged. Both local `idf.py build` and firmware CI enforce this policy.
+RFScout-maintained firmware C code is compiled with `-Werror`: compiler warnings are build failures. The option is scoped to the RFScout `main` component and does not affect ESP-IDF or third-party components. ESP-IDF's global options downgrade unused-function, unused-variable and unused-but-set-variable with `-Wno-error=...`, so the component restores them explicitly with `-Werror=...`; only `deprecated-declarations` remains a warning, so ESP-IDF API deprecations do not break builds after an IDF update. Fix warnings at their source rather than adding broad diagnostic suppressions. This policy does not enable additional warning classes; compiler/ESP-IDF baseline warning selection remains unchanged. Both local `idf.py build` and firmware CI enforce this policy.
 
 ## Formatting
 
