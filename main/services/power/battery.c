@@ -207,17 +207,21 @@ static void sample_gauge( battery_status_t *a_status, bool *a_sampled, uint16_t 
         }
         /* The extended snapshot is valid only when every field was sampled. */
         if( board_i2c_ready() &&
-            ESP_OK == read_register_u16( gauge_device, BQ27220_REG_REMAINING_CAPACITY,
+            ESP_OK == read_register_u16( gauge_device,
+                                         BQ27220_REG_REMAINING_CAPACITY,
                                          &a_status->remaining_capacity_mah ) &&
-            ESP_OK == read_register_u16( gauge_device, BQ27220_REG_FULL_CAPACITY,
-                                         &a_status->full_capacity_mah ) &&
-            ESP_OK == read_register_u16( gauge_device, BQ27220_REG_DESIGN_CAPACITY,
+            ESP_OK == read_register_u16(
+                          gauge_device, BQ27220_REG_FULL_CAPACITY, &a_status->full_capacity_mah ) &&
+            ESP_OK == read_register_u16( gauge_device,
+                                         BQ27220_REG_DESIGN_CAPACITY,
                                          &a_status->design_capacity_mah ) &&
-            ESP_OK == read_register_u16( gauge_device, BQ27220_REG_CYCLE_COUNT,
-                                         &a_status->cycle_count ) &&
-            ESP_OK == read_register_u16( gauge_device, BQ27220_REG_STATE_OF_HEALTH,
+            ESP_OK == read_register_u16(
+                          gauge_device, BQ27220_REG_CYCLE_COUNT, &a_status->cycle_count ) &&
+            ESP_OK == read_register_u16( gauge_device,
+                                         BQ27220_REG_STATE_OF_HEALTH,
                                          &a_status->state_of_health_percent ) &&
-            ESP_OK == read_register_u16( gauge_device, BQ27220_REG_TEMPERATURE,
+            ESP_OK == read_register_u16( gauge_device,
+                                         BQ27220_REG_TEMPERATURE,
                                          &a_status->temperature_decikelvin ) )
         {
             a_status->gauge_details_fresh = true;
@@ -249,20 +253,26 @@ static void sample_charger( battery_status_t *a_status, bool *a_sampled )
         a_status->charger_fresh = true;
         *a_sampled = true;
         if( board_i2c_ready() &&
-            ESP_OK == read_register_u8( charger_device, BQ25896_REG_INPUT_CONTROL,
+            ESP_OK == read_register_u8( charger_device,
+                                        BQ25896_REG_INPUT_CONTROL,
                                         &a_status->charger_input_control ) &&
-            ESP_OK == read_register_u8( charger_device, BQ25896_REG_CHARGE_CONTROL,
+            ESP_OK == read_register_u8( charger_device,
+                                        BQ25896_REG_CHARGE_CONTROL,
                                         &a_status->charger_charge_control ) &&
-            ESP_OK == read_register_u8( charger_device, BQ25896_REG_CURRENT_CONTROL,
+            ESP_OK == read_register_u8( charger_device,
+                                        BQ25896_REG_CURRENT_CONTROL,
                                         &a_status->charger_current_control ) &&
-            ESP_OK == read_register_u8( charger_device, BQ25896_REG_PRECHARGE_CONTROL,
+            ESP_OK == read_register_u8( charger_device,
+                                        BQ25896_REG_PRECHARGE_CONTROL,
                                         &a_status->charger_precharge_control ) &&
-            ESP_OK == read_register_u8( charger_device, BQ25896_REG_VOLTAGE_CONTROL,
+            ESP_OK == read_register_u8( charger_device,
+                                        BQ25896_REG_VOLTAGE_CONTROL,
                                         &a_status->charger_voltage_control ) &&
-            ESP_OK == read_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL,
+            ESP_OK == read_register_u8( charger_device,
+                                        BQ25896_REG_TIMER_CONTROL,
                                         &a_status->charger_timer_control ) &&
-            ESP_OK == read_register_u8( charger_device, BQ25896_REG_FAULT,
-                                        &a_status->charger_faults ) )
+            ESP_OK ==
+                read_register_u8( charger_device, BQ25896_REG_FAULT, &a_status->charger_faults ) )
         {
             a_status->charger_details_fresh = true;
         }
