@@ -370,11 +370,51 @@ static esp_err_t charger_inspect_and_manage( void )
     }
     if( ESP_OK == result )
     {
+        result = charger_verify_policy();
+    }
+    if( ESP_OK == result )
+    {
         charger_last_watchdog_us = esp_timer_get_time();
         charger_controller = CHARGER_CONTROLLER_MANAGED;
         ESP_LOGI( TAG, "BQ25896 board charging policy active, 40s watchdog" );
     }
     return result;
+}
+
+static esp_err_t charger_verify_policy( void )
+{
+    uint8_t timer = 0U;
+    uint8_t precharge = 0U;
+    uint8_t input = 0U;
+    uint8_t current = 0U;
+    uint8_t voltage = 0U;
+    uint8_t control = 0U;
+    uint8_t adc = 0U;
+    esp_err_t result = read_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL, &timer );
+    if( ESP_OK == result )
+        result = read_register_u8( charger_device, BQ25896_REG_PRECHARGE_CONTROL, &precharge );
+    if( ESP_OK == result )
+        result = read_register_u8( charger_device, BQ25896_REG_INPUT_CONTROL, &input );
+    if( ESP_OK == result )
+        result = read_register_u8( charger_device, BQ25896_REG_CURRENT_CONTROL, &current );
+    if( ESP_OK == result )
+        result = read_register_u8( charger_device, BQ25896_REG_VOLTAGE_CONTROL, &voltage );
+    if( ESP_OK == result )
+        result = read_register_u8( charger_device, BQ25896_REG_CHARGE_CONTROL, &control );
+    if( ESP_OK == result )
+        result = read_register_u8( charger_device, BQ25896_REG_ADC_CONTROL, &adc );
+    if( ESP_OK != result )
+        return result;
+    if( !charger_policy_valid || timer != charger_timer_policy ||
+        precharge != charger_precharge_policy || input != charger_input_policy ||
+        current != charger_current_policy || voltage != charger_voltage_policy ||
+        ( control & ( BQ25896_OTG_ENABLE_BIT | BQ25896_CHARGE_ENABLE_BIT ) ) !=
+            BQ25896_CHARGE_ENABLE_BIT ||
+        0U == ( adc & BQ25896_ADC_CONTINUOUS_BIT ) )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return ESP_OK;
 }
 
 static void charger_controller_poll( void )
@@ -391,31 +431,8 @@ static void charger_controller_poll( void )
         {
             return;
         }
-        uint8_t timer = 0U;
-        uint8_t precharge = 0U;
-        uint8_t input = 0U;
-        uint8_t current = 0U;
-        uint8_t voltage = 0U;
-        esp_err_t result = read_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL, &timer );
+        esp_err_t result = charger_verify_policy();
         if( ESP_OK == result )
-        {
-            result = read_register_u8( charger_device, BQ25896_REG_PRECHARGE_CONTROL, &precharge );
-        }
-        if( ESP_OK == result )
-        {
-            result = read_register_u8( charger_device, BQ25896_REG_INPUT_CONTROL, &input );
-        }
-        if( ESP_OK == result )
-        {
-            result = read_register_u8( charger_device, BQ25896_REG_CURRENT_CONTROL, &current );
-        }
-        if( ESP_OK == result )
-        {
-            result = read_register_u8( charger_device, BQ25896_REG_VOLTAGE_CONTROL, &voltage );
-        }
-        if( ESP_OK == result && charger_policy_valid && timer == charger_timer_policy &&
-            precharge == charger_precharge_policy && input == charger_input_policy &&
-            current == charger_current_policy && voltage == charger_voltage_policy )
         {
             result = write_register_u8( charger_device,
                                         BQ25896_REG_CHARGE_CONTROL,
