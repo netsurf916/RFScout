@@ -27,6 +27,7 @@ typedef struct
 {
     bool available;
     bool percentage_fresh;
+    bool electrical_fresh;
     bool gauge_available;
     bool charger_available;
     bool charger_fresh;
