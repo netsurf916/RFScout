@@ -21,11 +21,24 @@
 #define BQ27220_REG_STATUS 0x0AU
 #define BQ27220_REG_CURRENT 0x0CU
 #define BQ27220_REG_STATE_OF_CHARGE 0x2CU
+#define BQ27220_REG_TEMPERATURE 0x06U
+#define BQ27220_REG_REMAINING_CAPACITY 0x10U
+#define BQ27220_REG_FULL_CAPACITY 0x12U
+#define BQ27220_REG_CYCLE_COUNT 0x2AU
+#define BQ27220_REG_STATE_OF_HEALTH 0x2EU
+#define BQ27220_REG_DESIGN_CAPACITY 0x3CU
 #define BQ27220_STATUS_DISCHARGING 0x0001U
 #define BQ27220_STATUS_FULL 0x0200U
 
 #define BQ25896_REG_POWER_PATH 0x09U
 #define BQ25896_REG_STATUS 0x0BU
+#define BQ25896_REG_INPUT_CONTROL 0x00U
+#define BQ25896_REG_CHARGE_CONTROL 0x03U
+#define BQ25896_REG_CURRENT_CONTROL 0x04U
+#define BQ25896_REG_PRECHARGE_CONTROL 0x05U
+#define BQ25896_REG_VOLTAGE_CONTROL 0x06U
+#define BQ25896_REG_TIMER_CONTROL 0x07U
+#define BQ25896_REG_FAULT 0x0CU
 #define BQ25896_BATFET_DISABLE_BIT 0x20U
 #define BQ25896_BUS_STATUS_SHIFT 5U
 #define BQ25896_BUS_STATUS_MASK 0x07U
@@ -192,6 +205,23 @@ static void sample_gauge( battery_status_t *a_status, bool *a_sampled, uint16_t 
         {
             (void)read_register_u16( gauge_device, BQ27220_REG_STATUS, a_gauge_status );
         }
+        /* The extended snapshot is valid only when every field was sampled. */
+        if( board_i2c_ready() &&
+            ESP_OK == read_register_u16( gauge_device, BQ27220_REG_REMAINING_CAPACITY,
+                                         &a_status->remaining_capacity_mah ) &&
+            ESP_OK == read_register_u16( gauge_device, BQ27220_REG_FULL_CAPACITY,
+                                         &a_status->full_capacity_mah ) &&
+            ESP_OK == read_register_u16( gauge_device, BQ27220_REG_DESIGN_CAPACITY,
+                                         &a_status->design_capacity_mah ) &&
+            ESP_OK == read_register_u16( gauge_device, BQ27220_REG_CYCLE_COUNT,
+                                         &a_status->cycle_count ) &&
+            ESP_OK == read_register_u16( gauge_device, BQ27220_REG_STATE_OF_HEALTH,
+                                         &a_status->state_of_health_percent ) &&
+            ESP_OK == read_register_u16( gauge_device, BQ27220_REG_TEMPERATURE,
+                                         &a_status->temperature_decikelvin ) )
+        {
+            a_status->gauge_details_fresh = true;
+        }
     }
     else if( ESP_OK != result && ESP_ERR_INVALID_STATE != result )
     {
@@ -218,6 +248,24 @@ static void sample_charger( battery_status_t *a_status, bool *a_sampled )
         a_status->charger_available = true;
         a_status->charger_fresh = true;
         *a_sampled = true;
+        if( board_i2c_ready() &&
+            ESP_OK == read_register_u8( charger_device, BQ25896_REG_INPUT_CONTROL,
+                                        &a_status->charger_input_control ) &&
+            ESP_OK == read_register_u8( charger_device, BQ25896_REG_CHARGE_CONTROL,
+                                        &a_status->charger_charge_control ) &&
+            ESP_OK == read_register_u8( charger_device, BQ25896_REG_CURRENT_CONTROL,
+                                        &a_status->charger_current_control ) &&
+            ESP_OK == read_register_u8( charger_device, BQ25896_REG_PRECHARGE_CONTROL,
+                                        &a_status->charger_precharge_control ) &&
+            ESP_OK == read_register_u8( charger_device, BQ25896_REG_VOLTAGE_CONTROL,
+                                        &a_status->charger_voltage_control ) &&
+            ESP_OK == read_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL,
+                                        &a_status->charger_timer_control ) &&
+            ESP_OK == read_register_u8( charger_device, BQ25896_REG_FAULT,
+                                        &a_status->charger_faults ) )
+        {
+            a_status->charger_details_fresh = true;
+        }
     }
     else if( ESP_ERR_INVALID_STATE != result )
     {
@@ -285,6 +333,8 @@ void battery_refresh( void )
     {
         cached_status.percentage_fresh = false;
         cached_status.charger_fresh = false;
+        cached_status.gauge_details_fresh = false;
+        cached_status.charger_details_fresh = false;
         return;
     }
     last_poll_us = esp_timer_get_time();
@@ -294,6 +344,8 @@ void battery_refresh( void )
     next.gauge_available = false;
     next.charger_available = false;
     next.charger_fresh = false;
+    next.gauge_details_fresh = false;
+    next.charger_details_fresh = false;
 
     if( RFSCOUT_BATTERY_I2C_GAUGE_CHARGER == RFSCOUT_BOARD_BATTERY_TYPE )
     {
