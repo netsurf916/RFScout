@@ -307,13 +307,12 @@ static esp_err_t charger_inspect_and_manage( void )
     {
         return result;
     }
-    charger_precharge_policy =
-        ( (uint8_t)( ( policy->precharge_current_ma / 64U - 1U ) << 4U ) ) |
-        (uint8_t)( policy->termination_current_ma / 64U - 1U );
-    charger_input_policy = ( input & 0x80U ) |
-                           (uint8_t)( ( policy->input_current_ma - 100U ) / 50U );
-    charger_current_policy = ( current & 0x80U ) |
-                             (uint8_t)( policy->fast_charge_current_ma / 64U );
+    charger_precharge_policy = ( (uint8_t)( ( policy->precharge_current_ma / 64U - 1U ) << 4U ) ) |
+                               (uint8_t)( policy->termination_current_ma / 64U - 1U );
+    charger_input_policy =
+        ( input & 0x80U ) | (uint8_t)( ( policy->input_current_ma - 100U ) / 50U );
+    charger_current_policy =
+        ( current & 0x80U ) | (uint8_t)( policy->fast_charge_current_ma / 64U );
     charger_voltage_policy = ( voltage & 0x03U ) |
                              (uint8_t)( ( ( policy->regulation_voltage_mv - 3840U ) / 16U ) << 2U );
     charger_timer_policy = ( timer & (uint8_t)~BQ25896_WATCHDOG_MASK ) | BQ25896_WATCHDOG_40S;
@@ -322,23 +321,28 @@ static esp_err_t charger_inspect_and_manage( void )
     result = write_register_u8( charger_device, BQ25896_REG_INPUT_CONTROL, charger_input_policy );
     if( ESP_OK == result )
     {
-        result = write_register_u8( charger_device, BQ25896_REG_CURRENT_CONTROL, charger_current_policy );
+        result = write_register_u8(
+            charger_device, BQ25896_REG_CURRENT_CONTROL, charger_current_policy );
     }
     if( ESP_OK == result )
     {
-        result = write_register_u8( charger_device, BQ25896_REG_VOLTAGE_CONTROL, charger_voltage_policy );
+        result = write_register_u8(
+            charger_device, BQ25896_REG_VOLTAGE_CONTROL, charger_voltage_policy );
     }
     if( ESP_OK == result )
     {
-        result = write_register_u8( charger_device, BQ25896_REG_PRECHARGE_CONTROL, charger_precharge_policy );
+        result = write_register_u8(
+            charger_device, BQ25896_REG_PRECHARGE_CONTROL, charger_precharge_policy );
     }
     if( ESP_OK == result )
     {
-        result = write_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL, charger_timer_policy );
+        result =
+            write_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL, charger_timer_policy );
     }
     if( ESP_OK == result )
     {
-        result = write_register_u8( charger_device, BQ25896_REG_CHARGE_CONTROL,
+        result = write_register_u8( charger_device,
+                                    BQ25896_REG_CHARGE_CONTROL,
                                     charger_charge_policy | BQ25896_WATCHDOG_RESET_BIT );
     }
     if( ESP_OK == result )
