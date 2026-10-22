@@ -27,3 +27,17 @@ A GPS without a fix can still hold UART priority. A valid, fresh position fix is
 The display, SD card, CC1101 and nRF24 share SPI resources; use the board SPI arbitration rather than direct uncoordinated transfers. Wi-Fi and BLE share ESP32-S3 2.4 GHz airtime. The ESP32-S3 does not provide 5 GHz Wi-Fi reception. Storage, radio callbacks, and streaming workflows must respect the platform's session ownership and teardown rules.
 
 The runtime supports deep sleep, screen off, and physical power-off with distinct behavior. See [Architecture](../ARCHITECTURE.md) and [Home](../apps/HOME.md). Optional hardware failure does not imply that the entire board is unsupported.
+
+## Battery diagnostics application (implementation contract)
+
+The optional Battery application is disabled by default and appears in navigation between System Events and Home when enabled. Existing persisted application IDs must remain stable; navigation order is independent of those IDs. Enablement follows the normal application configuration and availability mechanism. The app is read-only for the initial diagnostic release.
+
+The application consumes a snapshot from the shared battery/power service. It must not directly access I2C, charger/gauge registers, board pins, or the power policy. The service owns the BQ27220 gauge and BQ25896 charger, including probing, recovery, rate limiting, register decoding, data freshness, and faults. Each metric must distinguish unsupported, unavailable, stale, and valid states; no cached reading may be silently presented as live telemetry.
+
+The dashboard should show state of charge, measured voltage, signed current, charging phase, external-power state, and gauge/charger availability. Further pages should display remaining/full/design capacity, state of health, cycle count, temperature and time estimates when supported, plus charger configuration (charge enable, charge current, termination current, regulation voltage, recharge threshold, input limits, watchdog/safety timer) and decoded fault/thermal states. Unsupported metrics are shown as unavailable rather than guessed. Record a read-only raw-register snapshot with timestamps to support troubleshooting, especially discrepancies between charger termination and gauge SOC.
+
+Use the active UI theme palette for normal, success, warning, error, and unavailable values. Battery silhouette, fill, current direction, and charging-flow illustrations must use existing shared display drawing primitives and adapt to theme changes. The app must preserve normal navigation, screen refresh, and resource ownership semantics. Do not interpret the reported gauge percentage as a charger-programmed SOC cutoff; BQ25896 regulation/termination is voltage/current based.
+
+Do not write charging configuration or reset gauge learning data in this diagnostic release. Future charging controls require battery-specific validated limits, explicit user confirmation, safety review, and tests for watchdog reset and device power-cycle behavior. Validate gauge register definitions against the exact BQ27220 technical reference before implementing capacity/health reads.
+
+Tests should cover decoded register values, faults, stale telemetry, I2C recovery, app enablement defaults, navigation placement, and theme-independent semantic colors. Keep application documentation consolidated with the existing Home and hardware pages.
