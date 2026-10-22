@@ -17,6 +17,13 @@ bool hotspot_bss_eligible( const rfscout_wifi_station_bss_t *a_bss )
     return ( NULL != a_bss ) && ( '\0' != a_bss->ssid[ 0 ] );
 }
 
+bool hotspot_entry_checkable( const hotspot_entry_t *a_entry )
+{
+    return NULL != a_entry && hotspot_bss_eligible( &a_entry->bss ) &&
+           ( a_entry->credential_available ||
+             ( a_entry->manual_requested && 0U != a_entry->manual_profile_id ) );
+}
+
 void hotspot_table_reset( hotspot_table_t *a_table )
 {
     if( NULL == a_table )
@@ -162,9 +169,7 @@ esp_err_t hotspot_table_apply_scan( hotspot_table_t *a_table,
 
 bool hotspot_auto_pending( const hotspot_entry_t *a_entry )
 {
-    return ( NULL != a_entry ) && hotspot_bss_eligible( &a_entry->bss ) &&
-           ( RFSCOUT_WIFI_STATION_SECURITY_SECURED != a_entry->bss.security ||
-             a_entry->credential_available ) &&
+    return ( NULL != a_entry ) && hotspot_entry_checkable( a_entry ) &&
            ( HOTSPOT_STATUS_GREEN != a_entry->status ) &&
            ( HOTSPOT_STATUS_YELLOW != a_entry->status );
 }
@@ -189,9 +194,7 @@ bool hotspot_table_manual_pending( const hotspot_table_t *a_table )
     for( size_t index = 0U; index < a_table->count; ++index )
     {
         const hotspot_entry_t *entry = &a_table->entries[ index ];
-        if( entry->manual_requested && entry->visible &&
-            ( RFSCOUT_WIFI_STATION_SECURITY_SECURED != entry->bss.security ||
-              entry->credential_available ) )
+        if( entry->manual_requested && entry->visible && hotspot_entry_checkable( entry ) )
         {
             return true;
         }
@@ -209,9 +212,7 @@ hotspot_entry_t *hotspot_table_next_candidate( hotspot_table_t *a_table, bool a_
     for( size_t index = 0U; index < a_table->count; ++index )
     {
         hotspot_entry_t *entry = &a_table->entries[ index ];
-        if( entry->manual_requested && entry->visible && hotspot_bss_eligible( &entry->bss ) &&
-            ( RFSCOUT_WIFI_STATION_SECURITY_SECURED != entry->bss.security ||
-              entry->credential_available ) )
+        if( entry->manual_requested && entry->visible && hotspot_entry_checkable( entry ) )
         {
             return entry;
         }

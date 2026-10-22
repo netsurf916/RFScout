@@ -468,6 +468,206 @@ bool persistent_store_is_available( void )
     return available;
 }
 
+esp_err_t persistent_store_space( size_t *a_total_bytes, size_t *a_used_bytes )
+{
+    size_t total = 0U;
+    size_t used = 0U;
+    const esp_err_t result =
+        available ? esp_littlefs_info( "storage", &total, &used ) : ESP_ERR_INVALID_STATE;
+    if( NULL != a_total_bytes )
+    {
+        *a_total_bytes = total;
+    }
+    if( NULL != a_used_bytes )
+    {
+        *a_used_bytes = used;
+    }
+    return result;
+}
+
+/**
+ * @brief Count, or delete, the regular files directly inside one scope directory.
+ * @details Deletion rescans after each unlink rather than unlinking under an open directory
+ *          iterator. A cleared app scope directory is removed too. Caller holds the store lock.
+ */
+static esp_err_t scope_walk(
+    const char *a_path, bool a_clear, bool a_remove_dir, size_t *a_records, size_t *a_bytes )
+{
+    bool rescan = true;
+    while( rescan )
+    {
+        rescan = false;
+        DIR *directory = opendir( a_path );
+        if( NULL == directory )
+        {
+            return ( ENOENT == errno ) ? ESP_OK : ESP_FAIL;
+        }
+        char path[ PERSISTENT_PATH_MAX ];
+        struct stat info;
+        struct dirent *entry = NULL;
+        while( NULL != ( entry = readdir( directory ) ) )
+        {
+            const int length = snprintf( path, sizeof( path ), "%s/%s", a_path, entry->d_name );
+            if( length < 0 || length >= (int)sizeof( path ) || 0 != stat( path, &info ) ||
+                !S_ISREG( info.st_mode ) )
+            {
+                continue;
+            }
+            ++*a_records;
+            *a_bytes += (size_t)info.st_size;
+            if( a_clear )
+            {
+                rescan = true;
+                break;
+            }
+        }
+        closedir( directory );
+        if( rescan && 0 != unlink( path ) )
+        {
+            return ESP_FAIL;
+        }
+    }
+    if( a_clear && a_remove_dir && 0 != rmdir( a_path ) && ENOENT != errno )
+    {
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+/** @brief Return whether an app-root directory name belongs to no compiled application. */
+static bool scope_unused( const char *a_name )
+{
+    char scope[ PERSISTENT_PATH_MAX ];
+    for( int app = 0; app < (int)RFSCOUT_APP_COUNT; ++app )
+    {
+        if( ESP_OK == app_scope( (rfscout_app_id_t)app, scope ) &&
+            0 == strcmp( scope + sizeof( PERSISTENT_APP_ROOT ), a_name ) )
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+/** @brief Count, or delete, every app scope directory that no compiled app owns. */
+static esp_err_t unused_walk( bool a_clear, size_t *a_records, size_t *a_bytes )
+{
+    bool rescan = true;
+    while( rescan )
+    {
+        rescan = false;
+        DIR *directory = opendir( PERSISTENT_APP_ROOT );
+        if( NULL == directory )
+        {
+            return ( ENOENT == errno ) ? ESP_OK : ESP_FAIL;
+        }
+        esp_err_t result = ESP_OK;
+        char path[ PERSISTENT_PATH_MAX ];
+        struct stat info;
+        struct dirent *entry = NULL;
+        while( ESP_OK == result && NULL != ( entry = readdir( directory ) ) )
+        {
+            const int length =
+                snprintf( path, sizeof( path ), "%s/%s", PERSISTENT_APP_ROOT, entry->d_name );
+            if( length < 0 || length >= (int)sizeof( path ) || 0 != stat( path, &info ) ||
+                !S_ISDIR( info.st_mode ) || !scope_unused( entry->d_name ) )
+            {
+                continue;
+            }
+            if( a_clear )
+            {
+                rescan = true;
+                break;
+            }
+            result = scope_walk( path, false, false, a_records, a_bytes );
+        }
+        closedir( directory );
+        if( ESP_OK == result && rescan )
+        {
+            result = scope_walk( path, true, true, a_records, a_bytes );
+        }
+        if( ESP_OK != result )
+        {
+            return result;
+        }
+    }
+    return ESP_OK;
+}
+
+/** @brief Count, or delete, one owner scope's records; caller holds the store lock. */
+static esp_err_t scope_apply( persistent_scope_t a_scope,
+                              rfscout_app_id_t a_app,
+                              bool a_clear,
+                              size_t *a_records,
+                              size_t *a_bytes )
+{
+    char scope[ PERSISTENT_PATH_MAX ];
+    esp_err_t result = ESP_OK;
+    switch( a_scope )
+    {
+        case PERSISTENT_SCOPE_SYSTEM:
+            return scope_walk( PERSISTENT_SYSTEM_ROOT, a_clear, false, a_records, a_bytes );
+        case PERSISTENT_SCOPE_APP:
+            result = app_scope( a_app, scope );
+            return ( ESP_OK == result ) ? scope_walk( scope, a_clear, true, a_records, a_bytes )
+                                        : result;
+        case PERSISTENT_SCOPE_UNUSED:
+            return unused_walk( a_clear, a_records, a_bytes );
+        case PERSISTENT_SCOPE_ALL:
+            result = scope_apply( PERSISTENT_SCOPE_SYSTEM, a_app, a_clear, a_records, a_bytes );
+            for( int app = 0; ESP_OK == result && app < (int)RFSCOUT_APP_COUNT; ++app )
+            {
+                result = scope_apply(
+                    PERSISTENT_SCOPE_APP, (rfscout_app_id_t)app, a_clear, a_records, a_bytes );
+            }
+            return ( ESP_OK == result ) ? unused_walk( a_clear, a_records, a_bytes ) : result;
+        default:
+            return ESP_ERR_INVALID_ARG;
+    }
+}
+
+static esp_err_t scope_locked( persistent_scope_t a_scope,
+                               rfscout_app_id_t a_app,
+                               bool a_clear,
+                               size_t *a_records,
+                               size_t *a_bytes )
+{
+    if( !available || !store_lock() )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const esp_err_t result = scope_apply( a_scope, a_app, a_clear, a_records, a_bytes );
+    store_unlock();
+    return result;
+}
+
+esp_err_t persistent_store_usage( persistent_scope_t a_scope,
+                                  rfscout_app_id_t a_app,
+                                  size_t *a_records,
+                                  size_t *a_bytes )
+{
+    if( NULL == a_records || NULL == a_bytes )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *a_records = 0U;
+    *a_bytes = 0U;
+    return scope_locked( a_scope, a_app, false, a_records, a_bytes );
+}
+
+esp_err_t persistent_store_clear( persistent_scope_t a_scope, rfscout_app_id_t a_app )
+{
+    size_t records = 0U;
+    size_t bytes = 0U;
+    const esp_err_t result = scope_locked( a_scope, a_app, true, &records, &bytes );
+    ESP_LOGW( TAG,
+              "cleared %u internal record(s) from scope %d: %s",
+              (unsigned)records,
+              (int)a_scope,
+              esp_err_to_name( result ) );
+    return result;
+}
+
 esp_err_t system_store_write( const char *a_key, const void *a_data, size_t a_length )
 {
     return record_write( PERSISTENT_SYSTEM_ROOT, false, a_key, a_data, a_length );

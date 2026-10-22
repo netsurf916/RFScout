@@ -12,11 +12,14 @@
 #include "app_session.h"
 #include "connectivity_probe.h"
 #include "event.h"
+#include "gps.h"
+#include "hotspot_history.h"
 #include "hotspot_table.h"
 #include "hotspots_app.h"
 #include "hotspots_view.h"
 #include "log_writer.h"
 #include "network_session.h"
+#include "persistent_store.h"
 #include "saved_networks.h"
 #include "wifi_station.h"
 
@@ -34,6 +37,21 @@
 #define HOTSPOTS_RENDER_INTERVAL_US 500000LL
 #define HOTSPOTS_FOOTER_MAX 64U
 #define HOTSPOTS_DETAIL_LINE_MAX 64U
+#define HOTSPOTS_SETTINGS_KEY "settings"
+#define HOTSPOTS_SETTINGS_MAGIC 0x48535331U
+#define HOTSPOTS_FIX_MAX_AGE_MS 5000U
+
+/** Distances (m) within which a profile's known BSSID makes a new BSSID a candidate; 0 is Off. */
+static const uint16_t MATCH_DISTANCE_OPTIONS[] = { 0U, 50U, 100U, 200U, 500U };
+#define MATCH_DISTANCE_DEFAULT_INDEX 2U
+#define MATCH_DISTANCE_OPTION_COUNT                                                                \
+    ( sizeof( MATCH_DISTANCE_OPTIONS ) / sizeof( MATCH_DISTANCE_OPTIONS[ 0 ] ) )
+
+typedef struct
+{
+    uint32_t magic;
+    uint8_t match_distance_index;
+} hotspots_settings_t;
 
 /** @brief Scheduler phase: alternating passive scan and check window, plus check stages. */
 typedef enum
@@ -77,6 +95,9 @@ static hotspot_result_t attempt_result;
 static size_t checks_completed;
 
 static bool auto_enabled;
+static hotspots_settings_t settings;
+/** Profile used by the running secured attempt; learned outcomes are recorded against it. */
+static uint32_t attempt_profile_id;
 static hotspots_mode_t mode;
 static unsigned browser_selected;
 static uint8_t selected_bssid[ 6 ];
@@ -272,10 +293,24 @@ static void format_footer( char *a_footer, size_t a_capacity )
         snprintf( a_footer, a_capacity, "STARTING..." );
         return;
     }
+    char label[ 16 ];
+    if( !hotspot_history_ready() )
+    {
+        snprintf( label, sizeof( label ), "LOAD %u%%", (unsigned)hotspot_history_progress() );
+    }
+    else
+    {
+        snprintf( label,
+                  sizeof( label ),
+                  "%s%s",
+                  ( HOTSPOTS_PHASE_SCANNING == phase ) ? "SCAN"
+                                                       : ( auto_enabled ? "AUTO" : "MANUAL" ),
+                  hotspot_history_degraded() ? " SD!" : "" );
+    }
     snprintf( a_footer,
               a_capacity,
               "%s OPEN %u OWE %u SECURED %u",
-              ( HOTSPOTS_PHASE_SCANNING == phase ) ? "SCAN" : ( auto_enabled ? "AUTO" : "MANUAL" ),
+              label,
               (unsigned)table.open_count,
               (unsigned)table.owe_count,
               (unsigned)table.secured_count );
@@ -543,12 +578,39 @@ static void log_result( void )
     }
 }
 
+/** @brief Teach the profile used by a secured check whether this BSSID accepted it. */
+static void record_profile_outcome( bool a_joined )
+{
+    if( 0U == attempt_profile_id )
+    {
+        return;
+    }
+    const bool rejected =
+        !a_joined && rfscout_wifi_station_reason_auth_rejected( attempt_result.disconnect_reason );
+    if( a_joined || rejected )
+    {
+        const esp_err_t result = saved_networks_record_bssid(
+            attempt_profile_id,
+            attempt_bss.bssid,
+            attempt_bss.auth_mode,
+            a_joined ? SAVED_NETWORK_BSSID_ASSOCIATED : SAVED_NETWORK_BSSID_REJECTED );
+        if( ESP_OK != result )
+        {
+            ESP_LOGW( TAG, "could not record BSSID outcome: %s", esp_err_to_name( result ) );
+        }
+    }
+    attempt_profile_id = 0U;
+}
+
 /** @brief Close one check: leave the network, record the result, and settle before continuing. */
 static void finish_attempt( hotspot_status_t a_outcome,
                             hotspot_stage_t a_failed_stage,
                             esp_err_t a_error,
                             int64_t a_now_us )
 {
+    const bool joined = HOTSPOT_STATUS_GREEN == a_outcome || HOTSPOT_STATUS_YELLOW == a_outcome;
+    attempt_result.gateway_mac_valid =
+        joined && ESP_OK == rfscout_wifi_station_gateway_mac( attempt_result.gateway_mac );
     (void)network_session_release();
 
     attempt_result.outcome = a_outcome;
@@ -560,6 +622,10 @@ static void finish_attempt( hotspot_status_t a_outcome,
         hotspot_entry_record_result( entry, &attempt_result );
     }
     ++checks_completed;
+    rfscout_gps_snapshot_t gps = { 0 };
+    (void)gps_snapshot_get( &gps );
+    hotspot_history_record_result( &attempt_bss, &attempt_result, &gps );
+    record_profile_outcome( joined );
 
     const uint8_t *mac = attempt_bss.bssid;
     ESP_LOGI( TAG,
@@ -588,6 +654,7 @@ static void start_attempt( hotspot_entry_t *a_entry, int64_t a_now_us )
     memset( &attempt_result, 0, sizeof( attempt_result ) );
     attempt_result.manual = a_entry->manual_requested;
     attempt_result.start_rssi = a_entry->bss.rssi;
+    attempt_profile_id = 0U;
     a_entry->manual_requested = false;
 
     phase = HOTSPOTS_PHASE_NETWORK;
@@ -597,13 +664,18 @@ static void start_attempt( hotspot_entry_t *a_entry, int64_t a_now_us )
     esp_err_t result;
     if( RFSCOUT_WIFI_STATION_SECURITY_SECURED == attempt_bss.security )
     {
+        /* A manual Join uses the chosen profile; automatic checks use the resolved one. */
+        attempt_profile_id = 0U != a_entry->manual_profile_id && attempt_result.manual
+                                 ? a_entry->manual_profile_id
+                                 : a_entry->profile_id;
         char password[ SAVED_NETWORK_PASSWORD_MAX_LENGTH + 1U ] = { 0 };
-        result = saved_networks_password( a_entry->profile_id, password, sizeof( password ) );
+        result = saved_networks_password( attempt_profile_id, password, sizeof( password ) );
         if( ESP_OK == result )
         {
             result = network_session_begin_secured_bss( &attempt_bss, password );
         }
         memset( password, 0, sizeof( password ) );
+        a_entry->manual_profile_id = 0U;
     }
     else
     {
@@ -630,23 +702,134 @@ static void refresh_profiles( void )
     }
 }
 
-/** @brief The saved profile already associated with this exact BSSID and auth mode, or 0. */
-static uint32_t resolve_profile( const hotspot_entry_t *a_entry )
+static bool settings_valid( const void *a_record )
 {
+    const hotspots_settings_t *candidate = a_record;
+    return HOTSPOTS_SETTINGS_MAGIC == candidate->magic &&
+           candidate->match_distance_index < MATCH_DISTANCE_OPTION_COUNT;
+}
+
+static void load_settings( void )
+{
+    if( ESP_OK !=
+        app_store_load( HOTSPOTS_SETTINGS_KEY, &settings, sizeof( settings ), settings_valid ) )
+    {
+        settings = ( hotspots_settings_t ){ .magic = HOTSPOTS_SETTINGS_MAGIC,
+                                            .match_distance_index = MATCH_DISTANCE_DEFAULT_INDEX };
+    }
+}
+
+static uint16_t match_distance_m( void )
+{
+    return MATCH_DISTANCE_OPTIONS[ settings.match_distance_index ];
+}
+
+/** A profile's associated BSSID is seen in the latest completed scan with the same SSID. */
+static bool profile_overlaps_scan( const saved_network_profile_t *a_profile, const char *a_ssid )
+{
+    for( size_t index = 0U; index < table.count; ++index )
+    {
+        const hotspot_entry_t *other = &table.entries[ index ];
+        const saved_network_bssid_t *known =
+            saved_network_profile_bssid( a_profile, other->bss.bssid );
+        if( other->visible && 0 == strcmp( other->bss.ssid, a_ssid ) && NULL != known &&
+            SAVED_NETWORK_BSSID_ASSOCIATED == known->state )
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** A profile's associated BSSID has history within the match distance of the current fix. */
+static bool profile_near( const saved_network_profile_t *a_profile,
+                          const rfscout_gps_snapshot_t *a_gps )
+{
+    const uint16_t limit = match_distance_m();
+    if( 0U == limit || !a_gps->location_valid || a_gps->location_age_ms > HOTSPOTS_FIX_MAX_AGE_MS )
+    {
+        return false;
+    }
+    for( size_t bssid = 0U; bssid < a_profile->bssid_count; ++bssid )
+    {
+        if( SAVED_NETWORK_BSSID_ASSOCIATED != a_profile->bssids[ bssid ].state )
+        {
+            continue;
+        }
+        for( size_t index = 0U; index < hotspot_history_count(); ++index )
+        {
+            const hotspot_history_entry_t *history = hotspot_history_at( index );
+            if( 0 != memcmp( history->bssid, a_profile->bssids[ bssid ].address, 6U ) )
+            {
+                continue;
+            }
+            const double distance = geo_bounds_distance_m(
+                &history->bounds, a_gps->latitude_deg, a_gps->longitude_deg );
+            if( distance >= 0.0 && distance <= (double)limit )
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Resolve which saved profile, if any, automatic checks may use for a secured BSSID.
+ * @details An exact associated BSSID wins. Otherwise a same-SSID, auth-compatible profile that
+ *          this BSSID has not rejected qualifies only with evidence: one of its known BSSIDs is
+ *          in the same scan, or has history within the match distance. Several qualifying
+ *          profiles are ambiguous and need the user's choice.
+ */
+static hotspot_credential_t resolve_profile( const hotspot_entry_t *a_entry,
+                                             const rfscout_gps_snapshot_t *a_gps,
+                                             uint32_t *a_profile_id )
+{
+    *a_profile_id = 0U;
+    size_t candidates = 0U;
+    size_t rejected = 0U;
+    size_t with_evidence = 0U;
     for( size_t index = 0U; index < profile_count; ++index )
     {
         const saved_network_profile_t *profile = &profiles[ index ];
+        if( 0 != strcmp( profile->ssid, a_entry->bss.ssid ) ||
+            !saved_network_profile_auth_compatible( profile, a_entry->bss.auth_mode ) )
+        {
+            continue;
+        }
         const saved_network_bssid_t *known =
             saved_network_profile_bssid( profile, a_entry->bss.bssid );
-        if( 0 == strcmp( profile->ssid, a_entry->bss.ssid ) && NULL != known &&
-            SAVED_NETWORK_BSSID_ASSOCIATED == known->state &&
-            known->auth_mode == a_entry->bss.auth_mode &&
-            saved_network_profile_auth_compatible( profile, a_entry->bss.auth_mode ) )
+        if( NULL != known && SAVED_NETWORK_BSSID_REJECTED == known->state )
         {
-            return profile->profile_id;
+            ++rejected;
+            continue;
+        }
+        if( NULL != known && known->auth_mode == a_entry->bss.auth_mode )
+        {
+            *a_profile_id = profile->profile_id;
+            return HOTSPOT_CREDENTIAL_KNOWN;
+        }
+        ++candidates;
+        if( profile_overlaps_scan( profile, a_entry->bss.ssid ) || profile_near( profile, a_gps ) )
+        {
+            ++with_evidence;
+            *a_profile_id = profile->profile_id;
         }
     }
-    return 0U;
+    if( 1U == with_evidence )
+    {
+        return HOTSPOT_CREDENTIAL_INFERRED;
+    }
+    *a_profile_id = 0U;
+    if( with_evidence > 1U )
+    {
+        return HOTSPOT_CREDENTIAL_AMBIGUOUS;
+    }
+    if( 0U != candidates )
+    {
+        return HOTSPOT_CREDENTIAL_UNMATCHED;
+    }
+    return 0U != rejected ? HOTSPOT_CREDENTIAL_REJECTED : HOTSPOT_CREDENTIAL_NONE;
 }
 
 static void complete_scan( int64_t a_now_us )
@@ -666,13 +849,23 @@ static void complete_scan( int64_t a_now_us )
         }
     }
     refresh_profiles();
+    rfscout_gps_snapshot_t gps = { 0 };
+    (void)gps_snapshot_get( &gps );
     for( size_t index = 0U; index < table.count; ++index )
     {
         hotspot_entry_t *entry = &table.entries[ index ];
+        if( entry->visible )
+        {
+            hotspot_history_observe( &entry->bss, &gps );
+        }
         const bool secured = RFSCOUT_WIFI_STATION_SECURITY_SECURED == entry->bss.security;
-        entry->profile_id = secured ? resolve_profile( entry ) : 0U;
-        entry->credential_available = !secured || 0U != entry->profile_id;
-        if( !entry->credential_available )
+        entry->profile_id = 0U;
+        entry->credential =
+            secured ? resolve_profile( entry, &gps, &entry->profile_id ) : HOTSPOT_CREDENTIAL_OPEN;
+        entry->credential_available = HOTSPOT_CREDENTIAL_OPEN == entry->credential ||
+                                      HOTSPOT_CREDENTIAL_KNOWN == entry->credential ||
+                                      HOTSPOT_CREDENTIAL_INFERRED == entry->credential;
+        if( !hotspot_entry_checkable( entry ) )
         {
             entry->manual_requested = false;
         }
@@ -736,7 +929,9 @@ static void scheduler_poll( int64_t a_now_us )
         {
             const bool window_open = a_now_us < window_end_us;
             hotspot_entry_t *candidate =
-                hotspot_table_next_candidate( &table, auto_enabled && window_open );
+                hotspot_history_ready()
+                    ? hotspot_table_next_candidate( &table, auto_enabled && window_open )
+                    : NULL;
             if( NULL != candidate )
             {
                 start_attempt( candidate, a_now_us );
@@ -943,6 +1138,11 @@ static rfscout_app_runtime_result_t hotspots_runtime( const rfscout_app_runtime_
     {
         case RFSCOUT_APP_RUNTIME_ENTER:
             reset_session_state();
+            load_settings();
+            if( ESP_OK != hotspot_history_open() )
+            {
+                ESP_LOGW( TAG, "history unavailable for this visit" );
+            }
             render( a_event->now_us );
             return RFSCOUT_APP_RUNTIME_HANDLED;
 
@@ -954,7 +1154,8 @@ static rfscout_app_runtime_result_t hotspots_runtime( const rfscout_app_runtime_
 
         case RFSCOUT_APP_RUNTIME_LEAVE:
             /* Station and probe services were already stopped by the session; app-session memory
-               is about to be reclaimed, so drop every pointer into it. */
+               is about to be reclaimed, so flush history and drop every pointer into it. */
+            hotspot_history_close();
             reset_session_state();
             phase = HOTSPOTS_PHASE_IDLE;
             return RFSCOUT_APP_RUNTIME_HANDLED;
@@ -985,6 +1186,7 @@ static rfscout_app_runtime_result_t hotspots_runtime( const rfscout_app_runtime_
         case RFSCOUT_APP_RUNTIME_POLL:
             if( a_event->activated )
             {
+                hotspot_history_poll( a_event->now_us );
                 scheduler_poll( a_event->now_us );
             }
             if( render_due || ( a_event->now_us - last_render_us >= HOTSPOTS_RENDER_INTERVAL_US ) )

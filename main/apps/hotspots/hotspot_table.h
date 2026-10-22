@@ -64,15 +64,31 @@ typedef struct
     uint32_t dns_backup;
     char public_ip[ HOTSPOT_PUBLIC_IP_MAX_LENGTH + 1U ];
     char colo[ HOTSPOT_COLO_MAX_LENGTH + 1U ];
+    bool gateway_mac_valid; /**< gateway hardware address read from the station ARP cache */
+    uint8_t gateway_mac[ 6 ];
 } hotspot_result_t;
+
+/** @brief How a BSSID's saved credentials were resolved after the latest scan. */
+typedef enum
+{
+    HOTSPOT_CREDENTIAL_NONE = 0,  /**< secured, no saved profile for this SSID */
+    HOTSPOT_CREDENTIAL_OPEN,      /**< open or OWE: no credentials needed */
+    HOTSPOT_CREDENTIAL_KNOWN,     /**< profile already associated with this exact BSSID */
+    HOTSPOT_CREDENTIAL_INFERRED,  /**< one profile's known BSSIDs are in range or nearby */
+    HOTSPOT_CREDENTIAL_AMBIGUOUS, /**< several profiles have evidence: user must choose */
+    HOTSPOT_CREDENTIAL_UNMATCHED, /**< same-SSID profiles without evidence: manual join only */
+    HOTSPOT_CREDENTIAL_REJECTED,  /**< every same-SSID profile was refused by this BSSID */
+} hotspot_credential_t;
 
 /** @brief One observed eligible BSSID and its current-session characterization. */
 typedef struct
 {
     rfscout_wifi_station_bss_t bss;
     bool visible;
-    bool credential_available; /**< open/OWE, or secured with a resolved saved profile */
-    uint32_t profile_id;       /**< saved profile used for a secured check; 0 when none */
+    bool credential_available; /**< automatic checks may run: open/OWE, known or inferred */
+    hotspot_credential_t credential;
+    uint32_t profile_id;        /**< profile for automatic secured checks; 0 when none */
+    uint32_t manual_profile_id; /**< profile the user chose with Join; used by the queued check */
     uint8_t missed_scans;
     hotspot_status_t status;
     bool retry_gate_active;
@@ -99,6 +115,9 @@ typedef struct
 
 /** @brief Return whether a scanned BSSID has a usable named SSID for observation. */
 bool hotspot_bss_eligible( const rfscout_wifi_station_bss_t *a_bss );
+
+/** @brief Whether a check may start now: automatically resolved credentials or a manual pick. */
+bool hotspot_entry_checkable( const hotspot_entry_t *a_entry );
 
 /** @brief Empty the table; storage is app-session memory reclaimed with the session. */
 void hotspot_table_reset( hotspot_table_t *a_table );

@@ -24,6 +24,7 @@
 #include "network_session.h"
 #include "power.h"
 #include "power_policy_view.h"
+#include "storage_view.h"
 #include "ui_chrome.h"
 #include "ui_game.h"
 #include "ui_layout.h"
@@ -72,10 +73,11 @@
 #define DEVICE_ITEM_GPS_LED_COLOR 35U
 #define DEVICE_ITEM_GPS_KEEP_AWAKE 36U
 #define DEVICE_ITEM_GPS_MOVEMENT 37U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 38U
+#define DEVICE_ITEM_STORAGE 38U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 39U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
-#define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_GPS_MOVEMENT + 1U )
+#define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_STORAGE + 1U )
 #define DEVICE_ROWS_PER_PAGE 6U
 #define DEVICE_LOG_SHUTDOWN_TIMEOUT_MS 3000U
 #define DEVICE_AUDIO_VOLUME_STEP 10
@@ -113,6 +115,7 @@ static bool save_error;
 static bool power_menu_open;
 static unsigned power_selected_item;
 static bool power_policy_menu_open;
+static bool storage_menu_open;
 static bool time_menu_open;
 static unsigned time_selected_item;
 static bool time_editing;
@@ -289,7 +292,7 @@ static bool item_editable( unsigned a_item )
     return ( DEVICE_ITEM_BACK != a_item ) && ( DEVICE_ITEM_TIME != a_item ) &&
            ( DEVICE_ITEM_NETWORK != a_item ) && ( DEVICE_ITEM_OTA != a_item ) &&
            ( DEVICE_ITEM_POWER_BUTTON != a_item ) && ( DEVICE_ITEM_POWER_POLICY != a_item ) &&
-           ( DEVICE_ITEM_BREADCRUMBS != a_item );
+           ( DEVICE_ITEM_BREADCRUMBS != a_item ) && ( DEVICE_ITEM_STORAGE != a_item );
 }
 
 static const char *item_label( unsigned a_item )
@@ -372,6 +375,8 @@ static const char *item_label( unsigned a_item )
             return "Movement trigger";
         case DEVICE_ITEM_HOLD_SHORTCUT:
             return "Hold";
+        case DEVICE_ITEM_STORAGE:
+            return "Storage";
         default:
             if( ( a_item >= DEVICE_ITEM_NOTIFICATION_FIRST ) &&
                 ( a_item <= DEVICE_ITEM_NOTIFICATION_LAST ) )
@@ -845,6 +850,11 @@ void device_view_render( void )
         power_policy_view_render();
         return;
     }
+    if( storage_menu_open )
+    {
+        storage_view_render();
+        return;
+    }
     if( power_menu_open )
     {
         render_power_menu();
@@ -924,6 +934,7 @@ void device_view_enter( void )
     power_menu_open = false;
     power_selected_item = POWER_MENU_BACK;
     power_policy_menu_open = false;
+    storage_menu_open = false;
     time_menu_open = false;
     time_selected_item = TIME_MENU_BACK;
     time_editing = false;
@@ -1821,6 +1832,15 @@ bool device_view_input( const rfscout_input_event_t *a_input )
         }
         return false;
     }
+    if( storage_menu_open )
+    {
+        if( storage_view_input( a_pressed, a_delta ) )
+        {
+            storage_menu_open = false;
+            device_view_render();
+        }
+        return false;
+    }
 
     if( power_menu_open )
     {
@@ -1911,6 +1931,13 @@ bool device_view_input( const rfscout_input_event_t *a_input )
             power_policy_view_enter();
             return false;
         }
+        if( ( DEVICE_ITEM_STORAGE == selected_item ) && !editing )
+        {
+            storage_menu_open = true;
+            emit_device_event( RFSCOUT_EVENT_ENTER, 1 );
+            storage_view_enter();
+            return false;
+        }
         if( !editing && item_direct_toggle( selected_item ) )
         {
             adjust_selected( 1 );
@@ -1977,6 +2004,11 @@ void device_view_poll( int64_t a_now_us )
     if( ota_menu_open )
     {
         ota_menu_poll( a_now_us );
+        return;
+    }
+    if( storage_menu_open )
+    {
+        storage_view_poll();
         return;
     }
 

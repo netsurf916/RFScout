@@ -397,6 +397,7 @@ Current layout:
 | `system` | `logs` | Rotating structured logs `rfscout-00.log` … `rfscout-99.log` |
 | `system` | `breadcrumbs` | Optional movement-triggered GPS breadcrumb journal `breadcrumbs-*.jsonl` |
 | `audio` (Recorder) | `recordings` | Recorder 16-bit mono PCM WAV files |
+| `wardrive` (Wardriving) | `captures` | Wardriving capture files |
 
 Applications add their own collections under their persistence key, for example the WiFi/BLE `locations` collection for `surveillance-*.jsonl`.
 
@@ -413,6 +414,16 @@ Handles opened through an app collection belong to that app session. The lifecyc
 After physical media loss, new opens and directory operations fail with `ESP_ERR_INVALID_STATE`; existing handles fail their next I/O but can still be closed. There is no remount beneath open handles.
 
 The media store also exposes an explicit presence probe for navigation dependency checks. Failed media starts a shared three-second cooldown; a later file operation, capacity query, or explicit probe may attempt one synchronous mount/recovery. Cached availability reads never trigger I/O.
+
+### Storage management
+
+Home → Device Settings → **Storage** is the user's only tool for removing data, so it works per owner through the platform stores rather than by path. It is privileged platform UI, in the same way as `system_store_*` and `media_system_collection()`.
+
+- **Internal records.** `persistent_store_space()` reports LittleFS capacity. `persistent_store_usage()` / `persistent_store_clear()` count or delete every record of one scope: `system`, one compiled app, *unused* app scopes whose hashed directory matches no compiled app (left behind by removed apps or renamed persistence keys), or everything. Owners hold loaded records in RAM and would write them back, so Home flushes dirty configuration, clears, and restarts the device; an erased owner then starts from compiled defaults.
+- **SD collections.** `media_collections()` lists the collection directories that exist for the system owner and for each compiled app, and `media_owner_collection()` resolves an app collection without an app session (valid only while that app is not running, which holds while Home is foreground). `media_clear()` deletes a collection in bounded steps; it never deletes a file that a media handle holds open (for example the live log segment or breadcrumb journal), and removes the emptied collection and owner directories. Files outside `/<owner>/<collection>/`, such as legacy layouts, are never touched.
+- **Confirmation.** Every erase opens a confirmation that names the owner, the record or file count, and the size, with Cancel selected; internal erases state that the device restarts. SD deletion runs a few files per poll with progress and Stop, and halts on the first media error. Each erase is recorded in the system log.
+
+Storage has no persistent state of its own. Formatting the card is intentionally not offered on the device.
 
 ### Logging
 

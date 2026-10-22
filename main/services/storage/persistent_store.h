@@ -27,6 +27,19 @@ typedef struct
     uint32_t generation;
 } rfscout_app_store_context_t;
 
+/** @brief Record owners that storage management can measure and clear. */
+typedef enum
+{
+    /** Privileged system records. */
+    PERSISTENT_SCOPE_SYSTEM = 0,
+    /** One compiled application's records. */
+    PERSISTENT_SCOPE_APP,
+    /** App record directories that match no compiled application. */
+    PERSISTENT_SCOPE_UNUSED,
+    /** Every record on internal storage. */
+    PERSISTENT_SCOPE_ALL
+} persistent_scope_t;
+
 /** @brief Return whether a fixed-size record read from the store is acceptable. */
 typedef bool ( *persistent_record_valid_fn )( const void *a_record );
 
@@ -34,6 +47,23 @@ typedef bool ( *persistent_record_valid_fn )( const void *a_record );
 esp_err_t persistent_store_init( void );
 /** @brief Return whether internal persistence is mounted and usable. */
 bool persistent_store_is_available( void );
+
+/** @brief Report internal filesystem capacity and use in bytes. */
+esp_err_t persistent_store_space( size_t *a_total_bytes, size_t *a_used_bytes );
+/**
+ * @brief Count the records and record bytes held by one owner scope.
+ * @details @p a_app is used only for PERSISTENT_SCOPE_APP. Storage management only.
+ */
+esp_err_t persistent_store_usage( persistent_scope_t a_scope,
+                                  rfscout_app_id_t a_app,
+                                  size_t *a_records,
+                                  size_t *a_bytes );
+/**
+ * @brief Delete every record held by one owner scope.
+ * @details Owners keep loaded state in RAM and may write it back, so the caller restarts the device
+ *          after clearing. Storage management only.
+ */
+esp_err_t persistent_store_clear( persistent_scope_t a_scope, rfscout_app_id_t a_app );
 
 /**
  * @brief Atomically replace one privileged system record.

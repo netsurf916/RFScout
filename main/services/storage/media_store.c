@@ -30,6 +30,7 @@
     ( sizeof( RFSCOUT_STORAGE_MOUNT_POINT ) + RFSCOUT_MEDIA_OWNER_MAX +                            \
       RFSCOUT_MEDIA_COLLECTION_MAX + RFSCOUT_MEDIA_NAME_MAX + 4U )
 #define MEDIA_SLOT_COUNT RFSCOUT_STORAGE_MAX_OPEN_FILES
+#define MEDIA_CLEAR_BATCH_MAX 8U
 
 /** @brief One pooled open file and the owner that may legitimately reach it. */
 typedef struct
@@ -38,6 +39,8 @@ typedef struct
     uint32_t serial;
     bool system;
     rfscout_app_id_t app;
+    char collection[ RFSCOUT_MEDIA_COLLECTION_MAX + 1U ];
+    char name[ RFSCOUT_MEDIA_NAME_MAX + 1U ];
 } media_slot_t;
 
 static const char *TAG = "media_store";
@@ -148,8 +151,9 @@ static esp_err_t collection_check( const rfscout_media_collection_t *a_collectio
     {
         return ESP_ERR_INVALID_ARG;
     }
-    if( !a_collection->system && ( ( a_collection->app != app_session_app() ) ||
-                                   ( a_collection->generation != app_session_generation() ) ) )
+    if( !a_collection->system && !a_collection->platform &&
+        ( ( a_collection->app != app_session_app() ) ||
+          ( a_collection->generation != app_session_generation() ) ) )
     {
         return ESP_ERR_INVALID_STATE;
     }
@@ -493,6 +497,8 @@ esp_err_t media_open( const rfscout_media_collection_t *a_collection,
             slot->serial = next_serial;
             slot->system = a_collection->system;
             slot->app = a_collection->app;
+            strlcpy( slot->collection, a_collection->collection, sizeof( slot->collection ) );
+            strlcpy( slot->name, a_name, sizeof( slot->name ) );
             a_file->slot = (uint8_t)slot_index;
             a_file->serial = slot->serial;
         }
@@ -949,6 +955,172 @@ esp_err_t media_list( const rfscout_media_collection_t *a_collection,
     if( 0 != closedir( directory ) && ESP_OK == result )
     {
         result = errno_result( errno );
+    }
+
+    storage_io_release();
+    return result;
+}
+
+esp_err_t media_owner_collection( rfscout_app_id_t a_app,
+                                  const char *a_collection,
+                                  rfscout_media_collection_t *a_resolved )
+{
+    if( NULL == a_resolved || a_app < 0 || a_app >= RFSCOUT_APP_COUNT ||
+        !token_valid( a_collection, RFSCOUT_MEDIA_COLLECTION_MAX ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memset( a_resolved, 0, sizeof( *a_resolved ) );
+    a_resolved->platform = true;
+    a_resolved->app = a_app;
+    strlcpy( a_resolved->collection, a_collection, sizeof( a_resolved->collection ) );
+    return NULL != collection_owner( a_resolved ) ? ESP_OK : ESP_ERR_INVALID_ARG;
+}
+
+esp_err_t media_collections( bool a_system,
+                             rfscout_app_id_t a_app,
+                             rfscout_media_collection_fn a_visit,
+                             void *a_context )
+{
+    rfscout_media_collection_t collection;
+    esp_err_t result = a_system ? media_system_collection( "x", &collection )
+                                : media_owner_collection( a_app, "x", &collection );
+    if( NULL == a_visit || ESP_OK != result )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    char owner_path[ MEDIA_PATH_MAX ];
+    if( !build_path( &collection, NULL, true, owner_path, sizeof( owner_path ) ) )
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    result = media_lock();
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
+    DIR *directory = opendir( owner_path );
+    if( NULL == directory )
+    {
+        result = ( ENOENT == errno ) ? ESP_OK : errno_result( errno );
+        storage_io_release();
+        return result;
+    }
+    struct dirent *item = NULL;
+    while( NULL != ( item = readdir( directory ) ) )
+    {
+        if( !token_valid( item->d_name, RFSCOUT_MEDIA_COLLECTION_MAX ) )
+        {
+            continue;
+        }
+        char path[ MEDIA_PATH_MAX ];
+        struct stat info;
+        strlcpy( collection.collection, item->d_name, sizeof( collection.collection ) );
+        if( !build_path( &collection, NULL, false, path, sizeof( path ) ) ||
+            0 != stat( path, &info ) || !S_ISDIR( info.st_mode ) )
+        {
+            continue;
+        }
+        if( !a_visit( &collection, a_context ) )
+        {
+            break;
+        }
+    }
+    (void)closedir( directory );
+    storage_io_release();
+    return ESP_OK;
+}
+
+/** @brief Return whether a media handle holds one collection file open; caller holds arbitration. */
+static bool file_open( const rfscout_media_collection_t *a_collection, const char *a_name )
+{
+    for( size_t index = 0U; index < MEDIA_SLOT_COUNT; ++index )
+    {
+        const media_slot_t *slot = &slots[ index ];
+        if( NULL != slot->file && slot->system == a_collection->system &&
+            slot->app == a_collection->app &&
+            0 == strcmp( slot->collection, a_collection->collection ) &&
+            0 == strcmp( slot->name, a_name ) )
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+esp_err_t media_clear( const rfscout_media_collection_t *a_collection,
+                       size_t a_max_files,
+                       size_t *a_removed,
+                       size_t *a_kept )
+{
+    if( NULL == a_removed || NULL == a_kept || 0U == a_max_files )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *a_removed = 0U;
+    *a_kept = 0U;
+    if( a_max_files > MEDIA_CLEAR_BATCH_MAX )
+    {
+        a_max_files = MEDIA_CLEAR_BATCH_MAX;
+    }
+
+    char directory_path[ MEDIA_PATH_MAX ];
+    esp_err_t result =
+        begin_named_operation( a_collection, NULL, directory_path, sizeof( directory_path ) );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
+    /* Collect names first so nothing is unlinked under the open directory iterator. */
+    char names[ MEDIA_CLEAR_BATCH_MAX ][ RFSCOUT_MEDIA_NAME_MAX + 1U ];
+    size_t count = 0U;
+    DIR *directory = opendir( directory_path );
+    if( NULL == directory )
+    {
+        result = ( ENOENT == errno ) ? ESP_OK : errno_result( errno );
+        storage_io_release();
+        return result;
+    }
+    struct dirent *item = NULL;
+    while( count < a_max_files && NULL != ( item = readdir( directory ) ) )
+    {
+        if( !media_name_valid( item->d_name ) )
+        {
+            continue;
+        }
+        if( file_open( a_collection, item->d_name ) )
+        {
+            ++*a_kept;
+            continue;
+        }
+        strlcpy( names[ count ], item->d_name, sizeof( names[ count ] ) );
+        ++count;
+    }
+    (void)closedir( directory );
+
+    char path[ MEDIA_PATH_MAX ];
+    for( size_t index = 0U; ESP_OK == result && index < count; ++index )
+    {
+        if( !build_path( a_collection, names[ index ], false, path, sizeof( path ) ) )
+        {
+            result = ESP_ERR_INVALID_SIZE;
+        }
+        else if( 0 != unlink( path ) )
+        {
+            result = errno_result( errno );
+        }
+        else
+        {
+            ++*a_removed;
+        }
+    }
+    if( ESP_OK == result && 0U == count && 0U == *a_kept && 0 == rmdir( directory_path ) &&
+        build_path( a_collection, NULL, true, path, sizeof( path ) ) )
+    {
+        /* Removing the owner directory fails harmlessly while other collections remain. */
+        (void)rmdir( path );
     }
 
     storage_io_release();
