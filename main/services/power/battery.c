@@ -504,6 +504,7 @@ static void sample_charger( battery_status_t *a_status, bool *a_sampled )
         uint8_t precharge = 0U;
         uint8_t voltage = 0U;
         uint8_t timer = 0U;
+        uint8_t adc_control = 0U;
         uint8_t adc_vbus = 0U;
         uint8_t adc_current = 0U;
         uint8_t adc_system = 0U;
@@ -519,6 +520,7 @@ static void sample_charger( battery_status_t *a_status, bool *a_sampled )
                 read_register_u8( charger_device, BQ25896_REG_FAULT, &a_status->charger_faults ) &&
             ESP_OK == read_register_u8(
                           charger_device, BQ25896_REG_DPM_STATUS, &a_status->charger_dpm_status ) &&
+            ESP_OK == read_register_u8( charger_device, BQ25896_REG_ADC_CONTROL, &adc_control ) &&
             ESP_OK == read_register_u8( charger_device, BQ25896_REG_ADC_VBUS, &adc_vbus ) &&
             ESP_OK ==
                 read_register_u8( charger_device, BQ25896_REG_ADC_CHARGE_CURRENT, &adc_current ) &&
@@ -533,6 +535,9 @@ static void sample_charger( battery_status_t *a_status, bool *a_sampled )
             a_status->charger_fast_charge_limit_ma = 64U * ( current & 0x7FU );
             a_status->charger_regulation_mv = 3840U + 16U * ( ( voltage >> 2U ) & 0x3FU );
             a_status->charger_termination_ma = 64U + 64U * ( precharge & 0x0FU );
+            a_status->charger_adc_fresh =
+                0U != ( adc_control & BQ25896_ADC_CONTINUOUS_BIT ) &&
+                CHARGER_CONTROLLER_MANAGED == charger_controller;
             a_status->charger_vbus_mv = 2600U + 100U * ( adc_vbus & 0x7FU );
             a_status->charger_adc_current_ma = 50U * ( adc_current & 0x7FU );
             a_status->charger_system_mv = 2304U + 20U * ( adc_system & 0x7FU );
@@ -626,6 +631,7 @@ void battery_refresh( void )
         cached_status.charger_fresh = false;
         cached_status.gauge_details_fresh = false;
         cached_status.charger_details_fresh = false;
+        cached_status.charger_adc_fresh = false;
         return;
     }
     last_poll_us = esp_timer_get_time();
@@ -638,6 +644,7 @@ void battery_refresh( void )
     next.charger_fresh = false;
     next.gauge_details_fresh = false;
     next.charger_details_fresh = false;
+    next.charger_adc_fresh = false;
 
     if( RFSCOUT_BATTERY_I2C_GAUGE_CHARGER == RFSCOUT_BOARD_BATTERY_TYPE )
     {
