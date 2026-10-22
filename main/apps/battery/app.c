@@ -69,8 +69,14 @@ static void battery_render( void )
     draw_panel( 4, 76, 152, 88 );
     draw_panel( 160, 76, 156, 88 );
 
-    snprintf( text, sizeof( text ), status.available ? "%u%%" : "--%%",
-              (unsigned)status.percentage );
+    if( status.available )
+    {
+        snprintf( text, sizeof( text ), "%u%%", (unsigned)status.percentage );
+    }
+    else
+    {
+        snprintf( text, sizeof( text ), "--%%" );
+    }
     display_draw_text( 10, 33, text, status.percentage_fresh ? theme->accent : theme->warning, 2U );
 
     const int x = 108;
@@ -84,9 +90,9 @@ static void battery_render( void )
     display_fill_rect( x + width, y + 7, 5, 9, theme->text );
     if( status.available )
     {
-        const int fill = ( (int)status.percentage * ( width - 6 ) ) / 100;
-        display_fill_rect( x + 3, y + 3, fill, height - 6,
-                           status.percentage_fresh ? theme->success : theme->warning );
+        ui_game_draw_meter( x + 3, y + 3, width - 6, height - 6,
+                            status.percentage, 100U,
+                            status.percentage_fresh ? theme->success : theme->warning );
     }
     if( NULL != config && POWER_ACTION_NONE != config->low_battery_action &&
         config->low_battery_threshold_percent <= RFSCOUT_LOW_BATTERY_THRESHOLD_MAX_PERCENT )
