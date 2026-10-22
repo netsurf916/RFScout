@@ -10,6 +10,8 @@
 #include "device_config.h"
 #include "display.h"
 #include "ui_chrome.h"
+#include "ui_game.h"
+#include "ui_layout.h"
 #include "ui_theme.h"
 
 #include <stddef.h>
@@ -18,7 +20,6 @@
 #define BATTERY_REFRESH_INTERVAL_US 1000000LL
 
 static int64_t last_refresh_us;
-static unsigned page;
 
 static const char *charge_label( battery_charge_state_t a_state )
 {
@@ -30,10 +31,25 @@ static const char *charge_label( battery_charge_state_t a_state )
             return "COMPLETE";
         case BATTERY_CHARGE_DISCHARGING:
             return "DISCHARGING";
-        case BATTERY_CHARGE_UNKNOWN:
         default:
             return "UNKNOWN";
     }
+}
+
+/* Match the established GPS/Thermal dashboard panel treatment. */
+static void draw_panel( int a_x, int a_y, int a_width, int a_height )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    if( ui_game_active() )
+    {
+        ui_game_draw_panel( a_x, a_y, a_width, a_height, theme->divider );
+        return;
+    }
+    display_fill_rect( a_x, a_y, a_width, a_height, theme->surface );
+    display_fill_rect( a_x, a_y, a_width, 1, theme->divider );
+    display_fill_rect( a_x, a_y + a_height - 1, a_width, 1, theme->divider );
+    display_fill_rect( a_x, a_y, 1, a_height, theme->divider );
+    display_fill_rect( a_x + a_width - 1, a_y, 1, a_height, theme->divider );
 }
 
 static void battery_render( void )
@@ -42,116 +58,104 @@ static void battery_render( void )
     battery_status_t status = { 0 };
     (void)battery_get_status( &status );
     const ui_theme_palette_t *theme = ui_theme_get();
-    char line[ 64 ];
-    display_clear( theme->background );
-    const char *titles[] = { "BATTERY / LEVEL", "BATTERY / STATUS", "BATTERY / HEALTH", "BATTERY / CHARGER" };
-    ui_chrome_draw( titles[ page ], theme->secondary );
+    const device_config_t *config = device_config_get();
+    char text[ 64 ];
 
-    if( 1U == page )
+    display_clear( theme->background );
+    ui_chrome_draw( "BATTERY", theme->secondary );
+
+    /* Single managed content surface, below platform-owned chrome. */
+    draw_panel( 4, UI_LAYOUT_PANEL_TOP_Y, 312, 48 );
+    draw_panel( 4, 76, 152, 88 );
+    draw_panel( 160, 76, 156, 88 );
+
+    snprintf( text, sizeof( text ), status.available ? "%u%%" : "--%%",
+              (unsigned)status.percentage );
+    display_draw_text( 10, 33, text, status.percentage_fresh ? theme->accent : theme->warning, 2U );
+
+    const int x = 108;
+    const int y = 33;
+    const int width = 195;
+    const int height = 23;
+    display_fill_rect( x, y, width, 1, theme->text );
+    display_fill_rect( x, y + height - 1, width, 1, theme->text );
+    display_fill_rect( x, y, 1, height, theme->text );
+    display_fill_rect( x + width - 1, y, 1, height, theme->text );
+    display_fill_rect( x + width, y + 7, 5, 9, theme->text );
+    if( status.available )
     {
-        snprintf( line, sizeof( line ), "GAUGE: %s%s",
-                  status.gauge_available ? "ONLINE" : "OFFLINE",
-                  status.percentage_fresh ? "" : " (STALE)" );
-        display_draw_text( 12, 43, line, status.percentage_fresh ? theme->text : theme->warning, 1U );
-        snprintf( line, sizeof( line ), "CHARGER: %s%s",
-                  status.charger_available ? "ONLINE" : "OFFLINE",
-                  status.charger_fresh ? "" : " (STALE)" );
-        display_draw_text( 12, 65, line, status.charger_fresh ? theme->text : theme->warning, 1U );
-        snprintf( line, sizeof( line ), "PHASE: %s", charge_label( status.charge_state ) );
-        display_draw_text( 12, 87, line, theme->accent, 1U );
-        snprintf( line, sizeof( line ), "USB: %s",
-                  status.charger_fresh ? ( status.external_power ? "PRESENT" : "ABSENT" ) : "UNKNOWN" );
-        display_draw_text( 12, 109, line, theme->text, 1U );
+        const int fill = ( (int)status.percentage * ( width - 6 ) ) / 100;
+        display_fill_rect( x + 3, y + 3, fill, height - 6,
+                           status.percentage_fresh ? theme->success : theme->warning );
     }
-    else if( 2U == page )
+    if( NULL != config && POWER_ACTION_NONE != config->low_battery_action &&
+        config->low_battery_threshold_percent <= RFSCOUT_LOW_BATTERY_THRESHOLD_MAX_PERCENT )
     {
-        if( status.gauge_details_fresh )
-        {
-            snprintf( line, sizeof( line ), "REMAIN %u mAh", (unsigned)status.remaining_capacity_mah );
-            display_draw_text( 12, 42, line, theme->text, 1U );
-            snprintf( line, sizeof( line ), "FULL %u / DESIGN %u mAh",
-                      (unsigned)status.full_capacity_mah, (unsigned)status.design_capacity_mah );
-            display_draw_text( 12, 64, line, theme->text, 1U );
-            snprintf( line, sizeof( line ), "CYCLES %u", (unsigned)status.cycle_count );
-            display_draw_text( 12, 86, line, theme->text, 1U );
-            snprintf( line, sizeof( line ), "HEALTH %u%%", (unsigned)( status.state_of_health_percent & 0x00FFU ) );
-            display_draw_text( 12, 108, line, theme->accent, 1U );
-        }
-        else
-        {
-            display_draw_text( 12, 60, "GAUGE DETAILS UNAVAILABLE", theme->warning, 1U );
-        }
+        const int marker = x + 3 +
+            ( (int)config->low_battery_threshold_percent * ( width - 6 ) ) / 100;
+        display_fill_rect( marker, y - 3, 2, height + 6, theme->warning );
     }
-    else if( 3U == page )
+    snprintf( text, sizeof( text ), "%s / %s", charge_label( status.charge_state ),
+              status.charger_fresh ? ( status.external_power ? "USB" : "BAT" ) : "POWER ?" );
+    display_draw_text( 10, 60, text, status.charger_fresh ? theme->text : theme->warning, 1U );
+
+    display_draw_text( 10, 81, "GAUGE / HEALTH", theme->secondary, 1U );
+    if( status.percentage_fresh )
     {
-        if( status.charger_details_fresh )
-        {
-            snprintf( line, sizeof( line ), "FAULT 0x%02X  INPUT 0x%02X",
-                      (unsigned)status.charger_faults, (unsigned)status.charger_input_control );
-            display_draw_text( 12, 42, line, status.charger_faults ? theme->error : theme->text, 1U );
-            snprintf( line, sizeof( line ), "CHG 03:%02X 04:%02X 05:%02X",
-                      (unsigned)status.charger_charge_control,
-                      (unsigned)status.charger_current_control,
-                      (unsigned)status.charger_precharge_control );
-            display_draw_text( 12, 64, line, theme->text, 1U );
-            snprintf( line, sizeof( line ), "VREG 06:%02X TIMER 07:%02X",
-                      (unsigned)status.charger_voltage_control,
-                      (unsigned)status.charger_timer_control );
-            display_draw_text( 12, 86, line, theme->text, 1U );
-            display_draw_text( 12, 108, "READ-ONLY REGISTER VALUES", theme->secondary, 1U );
-        }
-        else
-        {
-            display_draw_text( 12, 60, "CHARGER DETAILS UNAVAILABLE", theme->warning, 1U );
-        }
+        snprintf( text, sizeof( text ), "%u mV  %+d mA",
+                  (unsigned)status.voltage_mv, (int)status.current_ma );
+        display_draw_text( 10, 97, text, theme->text, 1U );
     }
     else
     {
-        if( status.available )
-        {
-            snprintf( line, sizeof( line ), "%u%%", (unsigned)status.percentage );
-        }
-        else
-        {
-            snprintf( line, sizeof( line ), "--%%" );
-        }
-        display_draw_text( 12, 42, line, status.percentage_fresh ? theme->accent : theme->warning, 2U );
-        const int x = 105;
-        const int y = 39;
-        const int width = 185;
-        const int height = 44;
-        display_fill_rect( x, y, width, 2, theme->text );
-        display_fill_rect( x, y + height - 2, width, 2, theme->text );
-        display_fill_rect( x, y, 2, height, theme->text );
-        display_fill_rect( x + width - 2, y, 2, height, theme->text );
-        display_fill_rect( x + width, y + 14, 7, 16, theme->text );
-        if( status.available )
-        {
-            const int fill = ( (int)status.percentage * ( width - 8 ) ) / 100;
-            display_fill_rect( x + 4, y + 4, fill, height - 8,
-                               status.percentage_fresh ? theme->success : theme->warning );
-        }
-        const device_config_t *config = device_config_get();
-        if( NULL != config && POWER_ACTION_NONE != config->low_battery_action &&
-            config->low_battery_threshold_percent <= 100U )
-        {
-            const int marker = x + 4 +
-                ( (int)config->low_battery_threshold_percent * ( width - 8 ) ) / 100;
-            display_fill_rect( marker, y - 6, 2, height + 12, theme->warning );
-            snprintf( line, sizeof( line ), "LOW %u%%",
-                      (unsigned)config->low_battery_threshold_percent );
-            display_draw_text( 105, 96, line, theme->warning, 1U );
-        }
-        snprintf( line, sizeof( line ), "%u mV / %d mA",
-                  (unsigned)status.voltage_mv, (int)status.current_ma );
-        display_draw_text( 12, 121, status.percentage_fresh ? line : "MEASUREMENT STALE",
-                           status.percentage_fresh ? theme->text : theme->warning, 1U );
+        display_draw_text( 10, 97, "TELEMETRY STALE", theme->warning, 1U );
     }
-    display_draw_text( 12, 151, "CENTER: NEXT PAGE", theme->secondary, 1U );
+    if( status.gauge_details_fresh )
+    {
+        snprintf( text, sizeof( text ), "SOH %u%%  CYC %u",
+                  (unsigned)( status.state_of_health_percent & 0xFFU ),
+                  (unsigned)status.cycle_count );
+        display_draw_text( 10, 115, text, theme->accent, 1U );
+        snprintf( text, sizeof( text ), "REM %u  FULL %u",
+                  (unsigned)status.remaining_capacity_mah,
+                  (unsigned)status.full_capacity_mah );
+        display_draw_text( 10, 133, text, theme->text, 1U );
+        snprintf( text, sizeof( text ), "DESIGN %u mAh",
+                  (unsigned)status.design_capacity_mah );
+        display_draw_text( 10, 151, text, theme->secondary, 1U );
+    }
+    else
+    {
+        display_draw_text( 10, 119, "HEALTH UNAVAILABLE", theme->warning, 1U );
+    }
+
+    display_draw_text( 166, 81, "CHARGER / LIMITS", theme->secondary, 1U );
+    if( status.charger_details_fresh )
+    {
+        snprintf( text, sizeof( text ), "FAULT %02X  IN %02X",
+                  (unsigned)status.charger_faults, (unsigned)status.charger_input_control );
+        display_draw_text( 166, 97, text, status.charger_faults ? theme->error : theme->text, 1U );
+        snprintf( text, sizeof( text ), "CHG %02X  CUR %02X",
+                  (unsigned)status.charger_charge_control,
+                  (unsigned)status.charger_current_control );
+        display_draw_text( 166, 115, text, theme->text, 1U );
+        snprintf( text, sizeof( text ), "VREG %02X  TERM %02X",
+                  (unsigned)status.charger_voltage_control,
+                  (unsigned)status.charger_precharge_control );
+        display_draw_text( 166, 133, text, theme->text, 1U );
+        snprintf( text, sizeof( text ), "TIMER %02X",
+                  (unsigned)status.charger_timer_control );
+        display_draw_text( 166, 151, text, theme->secondary, 1U );
+    }
+    else
+    {
+        display_draw_text( 166, 105, "DATA UNAVAILABLE", theme->warning, 1U );
+    }
     (void)display_present();
 }
 
-static rfscout_app_runtime_result_t battery_runtime( const rfscout_app_runtime_event_t *a_event )
+static rfscout_app_runtime_result_t
+battery_runtime( const rfscout_app_runtime_event_t *a_event )
 {
     if( NULL == a_event )
     {
@@ -159,28 +163,18 @@ static rfscout_app_runtime_result_t battery_runtime( const rfscout_app_runtime_e
     }
     if( RFSCOUT_APP_RUNTIME_ENTER == a_event->type )
     {
-        page = 0U;
-        last_refresh_us = 0;
+        last_refresh_us = a_event->now_us;
         battery_render();
         return RFSCOUT_APP_RUNTIME_HANDLED;
-    }
-    if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type )
-    {
-        if( RFSCOUT_INPUT_SELECT == a_event->input.type )
-        {
-            page = ( page + 1U ) % 4U;
-            battery_render();
-            return RFSCOUT_APP_RUNTIME_HANDLED;
-        }
-        return RFSCOUT_APP_RUNTIME_IGNORED;
     }
     if( RFSCOUT_APP_RUNTIME_POLL == a_event->type &&
         a_event->now_us - last_refresh_us >= BATTERY_REFRESH_INTERVAL_US )
     {
         last_refresh_us = a_event->now_us;
         battery_render();
+        return RFSCOUT_APP_RUNTIME_HANDLED;
     }
-    return RFSCOUT_APP_RUNTIME_HANDLED;
+    return RFSCOUT_APP_RUNTIME_IGNORED;
 }
 
 const rfscout_app_descriptor_t rfscout_battery_app = {
