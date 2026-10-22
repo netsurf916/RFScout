@@ -46,7 +46,6 @@
 #define BQ25896_REG_ADC_SYSTEM_VOLTAGE 0x0FU
 #define BQ25896_WATCHDOG_RESET_BIT 0x40U
 #define BQ25896_TERMINATION_CURRENT_MASK 0x0FU
-#define BQ25896_TERMINATION_CURRENT_128MA 0x01U
 #define BQ25896_WATCHDOG_MASK 0x30U
 #define BQ25896_WATCHDOG_40S 0x10U
 #define BQ25896_WATCHDOG_FAULT_BIT 0x80U
@@ -86,6 +85,9 @@ static int64_t charger_retry_after_us;
 static uint8_t charger_timer_policy;
 static uint8_t charger_charge_policy;
 static uint8_t charger_precharge_policy;
+static uint8_t charger_input_policy;
+static uint8_t charger_current_policy;
+static uint8_t charger_voltage_policy;
 static bool charger_policy_valid;
 
 static esp_err_t
@@ -262,54 +264,88 @@ static void sample_gauge( battery_status_t *a_status, bool *a_sampled, uint16_t 
     }
 }
 
-/* Capture the board's existing charging policy before entering host mode.
-   Never invent input current, charge current, voltage or safety-timer limits. */
+/* The immutable board profile is the authority for charging limits. */
 static esp_err_t charger_inspect_and_manage( void )
 {
+    const rfscout_charger_policy_t *policy = &board_profile()->charger_policy;
+    if( 0U == policy->fast_charge_current_ma || policy->input_current_ma < 100U ||
+        policy->input_current_ma > 3250U || policy->fast_charge_current_ma > 5056U ||
+        policy->precharge_current_ma < 64U || policy->precharge_current_ma > 1024U ||
+        policy->termination_current_ma < 64U || policy->termination_current_ma > 1024U ||
+        policy->regulation_voltage_mv < 3840U || policy->regulation_voltage_mv > 4608U )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
     uint8_t timer = 0U;
     uint8_t control = 0U;
     uint8_t precharge = 0U;
+    uint8_t input = 0U;
+    uint8_t current = 0U;
+    uint8_t voltage = 0U;
     esp_err_t result = read_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL, &timer );
+    if( ESP_OK == result )
+    {
+        result = read_register_u8( charger_device, BQ25896_REG_CHARGE_CONTROL, &control );
+    }
+    if( ESP_OK == result )
+    {
+        result = read_register_u8( charger_device, BQ25896_REG_PRECHARGE_CONTROL, &precharge );
+    }
+    if( ESP_OK == result )
+    {
+        result = read_register_u8( charger_device, BQ25896_REG_INPUT_CONTROL, &input );
+    }
+    if( ESP_OK == result )
+    {
+        result = read_register_u8( charger_device, BQ25896_REG_CURRENT_CONTROL, &current );
+    }
+    if( ESP_OK == result )
+    {
+        result = read_register_u8( charger_device, BQ25896_REG_VOLTAGE_CONTROL, &voltage );
+    }
     if( ESP_OK != result )
     {
         return result;
     }
-    result = read_register_u8( charger_device, BQ25896_REG_CHARGE_CONTROL, &control );
-    if( ESP_OK != result )
-    {
-        return result;
-    }
-    result = read_register_u8( charger_device, BQ25896_REG_PRECHARGE_CONTROL, &precharge );
-    if( ESP_OK != result )
-    {
-        return result;
-    }
-    /* Keep the board's precharge setting and adjust only ITERM to 128 mA. */
-    charger_precharge_policy = ( precharge & (uint8_t)~BQ25896_TERMINATION_CURRENT_MASK ) |
-                               BQ25896_TERMINATION_CURRENT_128MA;
-    /* Preserve all safety-timer and charge-enable settings. */
+    charger_precharge_policy =
+        ( (uint8_t)( ( policy->precharge_current_ma / 64U - 1U ) << 4U ) ) |
+        (uint8_t)( policy->termination_current_ma / 64U - 1U );
+    charger_input_policy = ( input & 0x80U ) |
+                           (uint8_t)( ( policy->input_current_ma - 100U ) / 50U );
+    charger_current_policy = ( current & 0x80U ) |
+                             (uint8_t)( policy->fast_charge_current_ma / 64U );
+    charger_voltage_policy = ( voltage & 0x03U ) |
+                             (uint8_t)( ( ( policy->regulation_voltage_mv - 3840U ) / 16U ) << 2U );
     charger_timer_policy = ( timer & (uint8_t)~BQ25896_WATCHDOG_MASK ) | BQ25896_WATCHDOG_40S;
     charger_charge_policy = control & (uint8_t)~BQ25896_WATCHDOG_RESET_BIT;
     charger_policy_valid = true;
-    result = write_register_u8(
-        charger_device, BQ25896_REG_PRECHARGE_CONTROL, charger_precharge_policy );
-    if( ESP_OK != result )
+    result = write_register_u8( charger_device, BQ25896_REG_INPUT_CONTROL, charger_input_policy );
+    if( ESP_OK == result )
     {
-        return result;
+        result = write_register_u8( charger_device, BQ25896_REG_CURRENT_CONTROL, charger_current_policy );
     }
-    result = write_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL, charger_timer_policy );
-    if( ESP_OK != result )
+    if( ESP_OK == result )
     {
-        return result;
+        result = write_register_u8( charger_device, BQ25896_REG_VOLTAGE_CONTROL, charger_voltage_policy );
     }
-    result = write_register_u8( charger_device,
-                                BQ25896_REG_CHARGE_CONTROL,
-                                charger_charge_policy | BQ25896_WATCHDOG_RESET_BIT );
+    if( ESP_OK == result )
+    {
+        result = write_register_u8( charger_device, BQ25896_REG_PRECHARGE_CONTROL, charger_precharge_policy );
+    }
+    if( ESP_OK == result )
+    {
+        result = write_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL, charger_timer_policy );
+    }
+    if( ESP_OK == result )
+    {
+        result = write_register_u8( charger_device, BQ25896_REG_CHARGE_CONTROL,
+                                    charger_charge_policy | BQ25896_WATCHDOG_RESET_BIT );
+    }
     if( ESP_OK == result )
     {
         charger_last_watchdog_us = esp_timer_get_time();
         charger_controller = CHARGER_CONTROLLER_MANAGED;
-        ESP_LOGI( TAG, "BQ25896 host mode active, 40s watchdog" );
+        ESP_LOGI( TAG, "BQ25896 board charging policy active, 40s watchdog" );
     }
     return result;
 }
