@@ -34,6 +34,11 @@
 #define BQ25896_REG_STATUS 0x0BU
 #define BQ25896_REG_INPUT_CONTROL 0x00U
 #define BQ25896_REG_CHARGE_CONTROL 0x03U
+#define BQ25896_REG_ADC_CONTROL 0x02U
+#define BQ25896_ADC_CONTINUOUS_BIT 0x40U
+#define BQ25896_HIZ_BIT 0x80U
+#define BQ25896_OTG_ENABLE_BIT 0x20U
+#define BQ25896_CHARGE_ENABLE_BIT 0x10U
 #define BQ25896_REG_CURRENT_CONTROL 0x04U
 #define BQ25896_REG_PRECHARGE_CONTROL 0x05U
 #define BQ25896_REG_VOLTAGE_CONTROL 0x06U
@@ -88,6 +93,7 @@ static uint8_t charger_precharge_policy;
 static uint8_t charger_input_policy;
 static uint8_t charger_current_policy;
 static uint8_t charger_voltage_policy;
+static uint8_t charger_adc_policy;
 static bool charger_policy_valid;
 
 static esp_err_t
@@ -287,6 +293,7 @@ static esp_err_t charger_inspect_and_manage( void )
     uint8_t input = 0U;
     uint8_t current = 0U;
     uint8_t voltage = 0U;
+    uint8_t adc = 0U;
     esp_err_t result = read_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL, &timer );
     if( ESP_OK == result )
     {
@@ -308,6 +315,10 @@ static esp_err_t charger_inspect_and_manage( void )
     {
         result = read_register_u8( charger_device, BQ25896_REG_VOLTAGE_CONTROL, &voltage );
     }
+    if( ESP_OK == result )
+    {
+        result = read_register_u8( charger_device, BQ25896_REG_ADC_CONTROL, &adc );
+    }
     if( ESP_OK != result )
     {
         return result;
@@ -315,13 +326,16 @@ static esp_err_t charger_inspect_and_manage( void )
     charger_precharge_policy = ( (uint8_t)( ( policy->precharge_current_ma / 64U - 1U ) << 4U ) ) |
                                (uint8_t)( policy->termination_current_ma / 64U - 1U );
     charger_input_policy =
-        ( input & 0x80U ) | (uint8_t)( ( policy->input_current_ma - 100U ) / 50U );
+        ( input & 0x40U ) | (uint8_t)( ( policy->input_current_ma - 100U ) / 50U );
     charger_current_policy =
         ( current & 0x80U ) | (uint8_t)( policy->fast_charge_current_ma / 64U );
     charger_voltage_policy = ( voltage & 0x03U ) |
                              (uint8_t)( ( ( policy->regulation_voltage_mv - 3840U ) / 16U ) << 2U );
     charger_timer_policy = ( timer & (uint8_t)~BQ25896_WATCHDOG_MASK ) | BQ25896_WATCHDOG_40S;
-    charger_charge_policy = control & (uint8_t)~BQ25896_WATCHDOG_RESET_BIT;
+    charger_charge_policy = ( control & (uint8_t)~( BQ25896_WATCHDOG_RESET_BIT |
+                                                    BQ25896_OTG_ENABLE_BIT ) ) |
+                            BQ25896_CHARGE_ENABLE_BIT;
+    charger_adc_policy = adc | BQ25896_ADC_CONTINUOUS_BIT;
     charger_policy_valid = true;
     result = write_register_u8( charger_device, BQ25896_REG_INPUT_CONTROL, charger_input_policy );
     if( ESP_OK == result )
@@ -343,6 +357,10 @@ static esp_err_t charger_inspect_and_manage( void )
     {
         result =
             write_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL, charger_timer_policy );
+    }
+    if( ESP_OK == result )
+    {
+        result = write_register_u8( charger_device, BQ25896_REG_ADC_CONTROL, charger_adc_policy );
     }
     if( ESP_OK == result )
     {
