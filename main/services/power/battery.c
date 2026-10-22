@@ -45,6 +45,8 @@
 #define BQ25896_REG_ADC_CHARGE_CURRENT 0x12U
 #define BQ25896_REG_ADC_SYSTEM_VOLTAGE 0x0FU
 #define BQ25896_WATCHDOG_RESET_BIT 0x40U
+#define BQ25896_TERMINATION_CURRENT_MASK 0x0FU
+#define BQ25896_TERMINATION_CURRENT_128MA 0x01U
 #define BQ25896_WATCHDOG_MASK 0x30U
 #define BQ25896_WATCHDOG_40S 0x10U
 #define BQ25896_WATCHDOG_FAULT_BIT 0x80U
@@ -83,6 +85,7 @@ static int64_t charger_last_watchdog_us;
 static int64_t charger_retry_after_us;
 static uint8_t charger_timer_policy;
 static uint8_t charger_charge_policy;
+static uint8_t charger_precharge_policy;
 static bool charger_policy_valid;
 
 static esp_err_t
@@ -265,6 +268,7 @@ static esp_err_t charger_inspect_and_manage( void )
 {
     uint8_t timer = 0U;
     uint8_t control = 0U;
+    uint8_t precharge = 0U;
     esp_err_t result = read_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL, &timer );
     if( ESP_OK != result )
     {
@@ -275,10 +279,26 @@ static esp_err_t charger_inspect_and_manage( void )
     {
         return result;
     }
+    result = read_register_u8( charger_device, BQ25896_REG_PRECHARGE_CONTROL, &precharge );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+    /* Keep the board's precharge setting and adjust only ITERM to 128 mA. */
+    charger_precharge_policy =
+        ( precharge & (uint8_t)~BQ25896_TERMINATION_CURRENT_MASK ) |
+        BQ25896_TERMINATION_CURRENT_128MA;
     /* Preserve all safety-timer and charge-enable settings. */
     charger_timer_policy = ( timer & (uint8_t)~BQ25896_WATCHDOG_MASK ) | BQ25896_WATCHDOG_40S;
     charger_charge_policy = control & (uint8_t)~BQ25896_WATCHDOG_RESET_BIT;
     charger_policy_valid = true;
+    result = write_register_u8( charger_device,
+                                BQ25896_REG_PRECHARGE_CONTROL,
+                                charger_precharge_policy );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
     result = write_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL, charger_timer_policy );
     if( ESP_OK != result )
     {
@@ -312,7 +332,13 @@ static void charger_controller_poll( void )
         }
         uint8_t timer = 0U;
         esp_err_t result = read_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL, &timer );
-        if( ESP_OK == result && charger_policy_valid && timer == charger_timer_policy )
+        uint8_t precharge = 0U;
+        if( ESP_OK == result )
+        {
+            result = read_register_u8( charger_device, BQ25896_REG_PRECHARGE_CONTROL, &precharge );
+        }
+        if( ESP_OK == result && charger_policy_valid && timer == charger_timer_policy &&
+            precharge == charger_precharge_policy )
         {
             result = write_register_u8( charger_device,
                                         BQ25896_REG_CHARGE_CONTROL,
