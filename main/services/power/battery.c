@@ -218,7 +218,9 @@ static void sample_gauge( battery_status_t *a_status, bool *a_sampled, uint16_t 
         a_status->gauge_available = true;
         *a_sampled = true;
         uint16_t voltage_mv = 0U;
-        if( ESP_OK == read_register_u16( gauge_device, BQ27220_REG_VOLTAGE, &voltage_mv ) )
+        const bool voltage_fresh =
+            ESP_OK == read_register_u16( gauge_device, BQ27220_REG_VOLTAGE, &voltage_mv );
+        if( voltage_fresh )
         {
             a_status->voltage_mv = voltage_mv;
         }
@@ -227,10 +229,13 @@ static void sample_gauge( battery_status_t *a_status, bool *a_sampled, uint16_t 
             return;
         }
         uint16_t current_raw = 0U;
-        if( ESP_OK == read_register_u16( gauge_device, BQ27220_REG_CURRENT, &current_raw ) )
+        const bool current_fresh =
+            ESP_OK == read_register_u16( gauge_device, BQ27220_REG_CURRENT, &current_raw );
+        if( current_fresh )
         {
             a_status->current_ma = (int16_t)current_raw;
         }
+        a_status->electrical_fresh = voltage_fresh && current_fresh;
         if( board_i2c_ready() )
         {
             (void)read_register_u16( gauge_device, BQ27220_REG_STATUS, a_gauge_status );
@@ -528,7 +533,9 @@ static void refresh_i2c_battery( battery_status_t *a_status )
     }
     if( !charger_sampled && gauge_sampled )
     {
-        a_status->charge_state = gauge_charge_state( gauge_status, a_status->current_ma );
+        a_status->charge_state = a_status->electrical_fresh
+                                     ? gauge_charge_state( gauge_status, a_status->current_ma )
+                                     : BATTERY_CHARGE_UNKNOWN;
         a_status->external_power = ( BATTERY_CHARGE_CHARGING == a_status->charge_state ) ||
                                    ( BATTERY_CHARGE_COMPLETE == a_status->charge_state );
     }
@@ -548,6 +555,7 @@ void battery_refresh( void )
     if( !board_i2c_ready() )
     {
         cached_status.percentage_fresh = false;
+        cached_status.electrical_fresh = false;
         cached_status.charger_fresh = false;
         cached_status.gauge_details_fresh = false;
         cached_status.charger_details_fresh = false;
@@ -557,6 +565,7 @@ void battery_refresh( void )
     battery_status_t next = cached_status;
     next.available = false;
     next.percentage_fresh = false;
+    next.electrical_fresh = false;
     next.gauge_available = false;
     next.charger_available = false;
     next.charger_fresh = false;
