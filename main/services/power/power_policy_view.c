@@ -95,7 +95,6 @@ format_threshold( uint8_t a_value, bool a_temperature, char *a_output, size_t a_
 
 static void draw_row( int a_y, unsigned a_item, const char *a_label, const char *a_value )
 {
-    const ui_theme_palette_t *theme = ui_theme_get();
     const bool active = selected_item == a_item;
     const ui_menu_state_t state = { .selected = active, .available = true };
     const uint16_t color = ui_menu_label_color( state );
