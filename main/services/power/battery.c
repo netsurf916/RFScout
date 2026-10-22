@@ -427,52 +427,45 @@ static void sample_charger( battery_status_t *a_status, bool *a_sampled )
         a_status->charger_available = true;
         a_status->charger_fresh = true;
         *a_sampled = true;
+        uint8_t input = 0U;
+        uint8_t control = 0U;
+        uint8_t current = 0U;
+        uint8_t precharge = 0U;
+        uint8_t voltage = 0U;
+        uint8_t timer = 0U;
+        uint8_t adc_vbus = 0U;
+        uint8_t adc_current = 0U;
+        uint8_t adc_system = 0U;
         if( board_i2c_ready() &&
-            ESP_OK == read_register_u8( charger_device,
-                                        BQ25896_REG_INPUT_CONTROL,
-                                        &a_status->charger_input_control ) &&
-            ESP_OK == read_register_u8( charger_device,
-                                        BQ25896_REG_CHARGE_CONTROL,
-                                        &a_status->charger_charge_control ) &&
-            ESP_OK == read_register_u8( charger_device,
-                                        BQ25896_REG_CURRENT_CONTROL,
-                                        &a_status->charger_current_control ) &&
-            ESP_OK == read_register_u8( charger_device,
-                                        BQ25896_REG_PRECHARGE_CONTROL,
-                                        &a_status->charger_precharge_control ) &&
-            ESP_OK == read_register_u8( charger_device,
-                                        BQ25896_REG_VOLTAGE_CONTROL,
-                                        &a_status->charger_voltage_control ) &&
-            ESP_OK == read_register_u8( charger_device,
-                                        BQ25896_REG_TIMER_CONTROL,
-                                        &a_status->charger_timer_control ) &&
-            ESP_OK ==
-                read_register_u8( charger_device, BQ25896_REG_FAULT, &a_status->charger_faults ) )
+            ESP_OK == read_register_u8( charger_device, BQ25896_REG_INPUT_CONTROL, &input ) &&
+            ESP_OK == read_register_u8( charger_device, BQ25896_REG_CHARGE_CONTROL, &control ) &&
+            ESP_OK == read_register_u8( charger_device, BQ25896_REG_CURRENT_CONTROL, &current ) &&
+            ESP_OK == read_register_u8( charger_device, BQ25896_REG_PRECHARGE_CONTROL, &precharge ) &&
+            ESP_OK == read_register_u8( charger_device, BQ25896_REG_VOLTAGE_CONTROL, &voltage ) &&
+            ESP_OK == read_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL, &timer ) &&
+            ESP_OK == read_register_u8( charger_device, BQ25896_REG_FAULT, &a_status->charger_faults ) &&
+            ESP_OK == read_register_u8( charger_device, BQ25896_REG_DPM_STATUS, &a_status->charger_dpm_status ) &&
+            ESP_OK == read_register_u8( charger_device, BQ25896_REG_ADC_VBUS, &adc_vbus ) &&
+            ESP_OK == read_register_u8( charger_device, BQ25896_REG_ADC_CHARGE_CURRENT, &adc_current ) &&
+            ESP_OK == read_register_u8( charger_device, BQ25896_REG_ADC_SYSTEM_VOLTAGE, &adc_system ) )
         {
             a_status->charger_details_fresh = true;
-            if( ESP_OK != read_register_u8( charger_device,
-                                            BQ25896_REG_DPM_STATUS,
-                                            &a_status->charger_dpm_status ) ||
-                ESP_OK != read_register_u8(
-                              charger_device, BQ25896_REG_ADC_VBUS, &a_status->charger_adc_vbus ) ||
-                ESP_OK != read_register_u8( charger_device,
-                                            BQ25896_REG_ADC_CHARGE_CURRENT,
-                                            &a_status->charger_adc_charge_current ) ||
-                ESP_OK != read_register_u8( charger_device,
-                                            BQ25896_REG_ADC_SYSTEM_VOLTAGE,
-                                            &a_status->charger_adc_system_voltage ) )
-            {
-                a_status->charger_details_fresh = false;
-            }
-            /* REG0C first exposes latched history; the second read reports
-               present faults. Do not mistake old watchdog events for current ones. */
+            a_status->charger_phase = ( status >> 3U ) & 3U;
+            a_status->charger_input_source = ( status >> 5U ) & 7U;
+            a_status->charger_power_good = 0U != ( status & BQ25896_POWER_GOOD_BIT );
+            a_status->charger_input_limit_ma = 100U + 50U * ( input & 0x3FU );
+            a_status->charger_fast_charge_limit_ma = 64U * ( current & 0x7FU );
+            a_status->charger_regulation_mv = 3840U + 16U * ( ( voltage >> 2U ) & 0x3FU );
+            a_status->charger_termination_ma = 64U + 64U * ( precharge & 0x0FU );
+            a_status->charger_vbus_mv = 2600U + 100U * ( adc_vbus & 0x7FU );
+            a_status->charger_adc_current_ma = 50U * ( adc_current & 0x7FU );
+            a_status->charger_system_mv = 2304U + 20U * ( adc_system & 0x7FU );
+            a_status->charger_charge_enabled = 0U != ( control & 0x10U );
+            a_status->charger_watchdog_enabled = 0U != ( timer & BQ25896_WATCHDOG_MASK );
+            /* First fault read can contain latched history; second is current state. */
             uint8_t current_faults = 0U;
             if( ESP_OK == read_register_u8( charger_device, BQ25896_REG_FAULT, &current_faults ) )
             {
-                if( 0U != ( a_status->charger_faults & BQ25896_WATCHDOG_FAULT_BIT ) )
-                {
-                    ESP_LOGD( TAG, "BQ25896 historical watchdog fault" );
-                }
                 a_status->charger_faults = current_faults;
             }
             else
@@ -535,6 +528,9 @@ static void refresh_i2c_battery( battery_status_t *a_status )
         a_status->external_power = ( BATTERY_CHARGE_CHARGING == a_status->charge_state ) ||
                                    ( BATTERY_CHARGE_COMPLETE == a_status->charge_state );
     }
+    a_status->charger_soc_disagreement =
+        a_status->charger_fresh && a_status->percentage_fresh &&
+        BATTERY_CHARGE_COMPLETE == a_status->charge_state && a_status->percentage < 95U;
 }
 
 void battery_refresh( void )
