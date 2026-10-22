@@ -154,8 +154,7 @@ static void battery_render( void )
                             100U,
                             status.percentage_fresh ? theme->success : theme->warning );
     }
-    if( NULL != config && status.charger_fresh &&
-        0U != config->low_battery_threshold_percent &&
+    if( NULL != config && status.charger_fresh && 0U != config->low_battery_threshold_percent &&
         POWER_ACTION_NONE != config->low_battery_action &&
         config->low_battery_threshold_percent <= RFSCOUT_LOW_BATTERY_THRESHOLD_MAX_PERCENT )
     {
