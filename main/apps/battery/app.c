@@ -154,7 +154,9 @@ static void battery_render( void )
                             100U,
                             status.percentage_fresh ? theme->success : theme->warning );
     }
-    if( NULL != config && POWER_ACTION_NONE != config->low_battery_action &&
+    if( NULL != config && status.charger_fresh &&
+        0U != config->low_battery_threshold_percent &&
+        POWER_ACTION_NONE != config->low_battery_action &&
         config->low_battery_threshold_percent <= RFSCOUT_LOW_BATTERY_THRESHOLD_MAX_PERCENT )
     {
         const int marker =
@@ -173,7 +175,7 @@ static void battery_render( void )
     }
 
     display_draw_text( 10, 81, "GAUGE / HEALTH", theme->secondary, 1U );
-    if( status.percentage_fresh )
+    if( status.electrical_fresh )
     {
         snprintf( text,
                   sizeof( text ),
