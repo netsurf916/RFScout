@@ -43,21 +43,24 @@ typedef struct
     uint16_t cycle_count;
     uint16_t state_of_health_percent;
     uint16_t temperature_decikelvin;
-    /** Read-only charger registers, valid only when charger_details_fresh. */
+    /** Decoded charger telemetry; valid only when charger_details_fresh. */
     bool charger_details_fresh;
     uint8_t charger_faults;
-    uint8_t charger_status_register;
+    uint8_t charger_phase;
+    uint8_t charger_input_source;
+    bool charger_power_good;
+    uint16_t charger_input_limit_ma;
+    uint16_t charger_fast_charge_limit_ma;
+    uint16_t charger_regulation_mv;
+    uint16_t charger_termination_ma;
+    uint16_t charger_vbus_mv;
+    uint16_t charger_adc_current_ma;
+    uint16_t charger_system_mv;
     uint8_t charger_dpm_status;
-    uint8_t charger_adc_vbus;
-    uint8_t charger_adc_charge_current;
-    uint8_t charger_adc_system_voltage;
     uint8_t charger_controller_state;
-    uint8_t charger_input_control;
-    uint8_t charger_charge_control;
-    uint8_t charger_current_control;
-    uint8_t charger_precharge_control;
-    uint8_t charger_voltage_control;
-    uint8_t charger_timer_control;
+    bool charger_charge_enabled;
+    bool charger_watchdog_enabled;
+    bool charger_soc_disagreement;
 } battery_status_t;
 
 esp_err_t battery_init( void );
