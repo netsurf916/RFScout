@@ -1,6 +1,6 @@
 /**
     breadcrumbs.h : RFScout GPS breadcrumb recorder
-    Description: Records durable GPS-UTC location breadcrumbs to bounded CSV files on SD.
+    Description: Records durable GPS-UTC location breadcrumbs to a bounded SD JSONL journal.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -30,7 +30,7 @@ bool breadcrumbs_enabled( void );
 /** @brief Persist breadcrumb recording enablement before publishing the new setting. */
 esp_err_t breadcrumbs_set_enabled( bool a_enabled );
 
-/** @brief Return the configured maximum retained breadcrumb CSV file count. */
+/** @brief Return the configured maximum retained breadcrumb journal segment count. */
 uint16_t breadcrumbs_file_limit( void );
 
 /** @brief Persist a new retained breadcrumb file count and request asynchronous pruning. */

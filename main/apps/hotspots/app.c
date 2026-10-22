@@ -17,7 +17,6 @@
 #include "hotspots_view.h"
 #include "log_writer.h"
 #include "network_session.h"
-#include "ota_networks.h"
 #include "saved_networks.h"
 #include "wifi_station.h"
 
@@ -64,6 +63,9 @@ static rfscout_wifi_station_bss_t *scan_buffer;
 static size_t *order_buffer;
 static hotspots_view_row_t *row_buffer;
 static size_t scratch_capacity;
+/* Non-secret saved-profile snapshot, refreshed after each completed scan. */
+static saved_network_profile_t *profiles;
+static size_t profile_count;
 
 static hotspots_phase_t phase;
 static int64_t phase_deadline_us;
@@ -95,6 +97,8 @@ static void reset_session_state( void )
     order_buffer = NULL;
     row_buffer = NULL;
     scratch_capacity = 0U;
+    profiles = NULL;
+    profile_count = 0U;
     phase = HOTSPOTS_PHASE_IDLE;
     phase_deadline_us = 0;
     window_end_us = 0;
@@ -593,12 +597,8 @@ static void start_attempt( hotspot_entry_t *a_entry, int64_t a_now_us )
     esp_err_t result;
     if( RFSCOUT_WIFI_STATION_SECURITY_SECURED == attempt_bss.security )
     {
-        char password[ OTA_NETWORK_PASSWORD_MAX_LENGTH + 1U ] = { 0 };
-        result = saved_networks_password_for_bss( attempt_bss.bssid,
-                                                  attempt_bss.ssid,
-                                                  attempt_bss.auth_mode,
-                                                  password,
-                                                  sizeof( password ) );
+        char password[ SAVED_NETWORK_PASSWORD_MAX_LENGTH + 1U ] = { 0 };
+        result = saved_networks_password( a_entry->profile_id, password, sizeof( password ) );
         if( ESP_OK == result )
         {
             result = network_session_begin_secured_bss( &attempt_bss, password );
@@ -614,6 +614,39 @@ static void start_attempt( hotspot_entry_t *a_entry, int64_t a_now_us )
         ESP_LOGW( TAG, "could not start association: %s", esp_err_to_name( result ) );
         finish_attempt( HOTSPOT_STATUS_RED, HOTSPOT_STAGE_JOIN, result, a_now_us );
     }
+}
+
+static void refresh_profiles( void )
+{
+    if( NULL == profiles )
+    {
+        profiles = app_session_calloc( SAVED_NETWORK_MAX_COUNT, sizeof( *profiles ) );
+    }
+    profile_count = 0U;
+    if( NULL != profiles &&
+        ESP_OK != saved_networks_list( profiles, SAVED_NETWORK_MAX_COUNT, &profile_count ) )
+    {
+        profile_count = 0U;
+    }
+}
+
+/** @brief The saved profile already associated with this exact BSSID and auth mode, or 0. */
+static uint32_t resolve_profile( const hotspot_entry_t *a_entry )
+{
+    for( size_t index = 0U; index < profile_count; ++index )
+    {
+        const saved_network_profile_t *profile = &profiles[ index ];
+        const saved_network_bssid_t *known =
+            saved_network_profile_bssid( profile, a_entry->bss.bssid );
+        if( 0 == strcmp( profile->ssid, a_entry->bss.ssid ) && NULL != known &&
+            SAVED_NETWORK_BSSID_ASSOCIATED == known->state &&
+            known->auth_mode == a_entry->bss.auth_mode &&
+            saved_network_profile_auth_compatible( profile, a_entry->bss.auth_mode ) )
+        {
+            return profile->profile_id;
+        }
+    }
+    return 0U;
 }
 
 static void complete_scan( int64_t a_now_us )
@@ -632,21 +665,13 @@ static void complete_scan( int64_t a_now_us )
             ESP_LOGW( TAG, "access-point table could not grow; some networks are not shown" );
         }
     }
-    /* A secured candidate is eligible only for an exact, previously associated
-       BSSID with matching SSID and concrete authentication mode. */
+    refresh_profiles();
     for( size_t index = 0U; index < table.count; ++index )
     {
         hotspot_entry_t *entry = &table.entries[ index ];
         const bool secured = RFSCOUT_WIFI_STATION_SECURITY_SECURED == entry->bss.security;
-        entry->credential_available = !secured;
-        if( secured )
-        {
-            uint32_t profile_id = 0U;
-            entry->credential_available =
-                ESP_OK ==
-                saved_networks_known_bss_profile(
-                    entry->bss.ssid, entry->bss.bssid, entry->bss.auth_mode, &profile_id );
-        }
+        entry->profile_id = secured ? resolve_profile( entry ) : 0U;
+        entry->credential_available = !secured || 0U != entry->profile_id;
         if( !entry->credential_available )
         {
             entry->manual_requested = false;

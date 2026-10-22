@@ -6,10 +6,10 @@
 
 #include "characterization_grouping.h"
 
-#include <math.h>
+#include "geo.h"
+
 #include <string.h>
 
-#define GROUPING_DEG_TO_RAD 0.017453292519943295
 #define GROUPING_UNASSIGNED UINT16_MAX
 
 static bool same_subnet( const characterization_network_evidence_t *a_left,
@@ -60,8 +60,6 @@ static uint16_t choose_cluster( const characterization_group_member_t *a_member,
     uint16_t nearest = GROUPING_UNASSIGNED;
     double nearest_distance = 0.0;
     uint16_t largest = GROUPING_UNASSIGNED;
-    const double longitude_scale =
-        a_member->location_valid ? cos( a_member->latitude_deg * GROUPING_DEG_TO_RAD ) : 0.0;
 
     for( size_t index = 0U; index < a_cluster_count; ++index )
     {
@@ -78,9 +76,8 @@ static uint16_t choose_cluster( const characterization_group_member_t *a_member,
 
         const double latitude = cluster->latitude_sum / cluster->location_count;
         const double longitude = cluster->longitude_sum / cluster->location_count;
-        const double delta_y = latitude - a_member->latitude_deg;
-        const double delta_x = ( longitude - a_member->longitude_deg ) * longitude_scale;
-        const double distance = delta_x * delta_x + delta_y * delta_y;
+        const double distance =
+            geo_distance_m( a_member->latitude_deg, a_member->longitude_deg, latitude, longitude );
         if( GROUPING_UNASSIGNED == nearest || distance < nearest_distance )
         {
             nearest = (uint16_t)index;

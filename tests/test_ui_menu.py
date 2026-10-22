@@ -23,6 +23,9 @@ void ui_game_draw_menu_marker(int x, int y, const char *marker, uint16_t color)
 { (void)x; (void)y; (void)color; ++markers; strcpy(last_marker, marker); }
 void ui_icon_draw_lock(int x, int y, bool app, uint16_t color)
 { (void)x; (void)y; (void)app; (void)color; ++locks; }
+static unsigned texts;
+void display_draw_text(int x, int y, const char *text, uint16_t color, unsigned scale)
+{ (void)x; (void)y; (void)text; (void)color; (void)scale; ++texts; }
 int main(void)
 {
     ui_menu_state_t normal = { .available = true };
@@ -47,6 +50,16 @@ int main(void)
     assert(markers == 3 && locks == 0);
     ui_menu_draw_marker(0, 25, locked);
     assert(markers == 4 && locks == 1);
+    assert(ui_menu_window_start(0, 10, 5) == 0);
+    assert(ui_menu_window_start(4, 10, 5) == 0);
+    assert(ui_menu_window_start(5, 10, 5) == 1);
+    assert(ui_menu_window_start(9, 10, 5) == 5);
+    assert(ui_menu_window_start(3, 3, 5) == 0);
+    const ui_menu_row_t rows[3] = { { "Back", NULL, { .available = true } },
+                                    { "Auto", "On", { .available = true } },
+                                    { "Item", NULL, { .available = true } } };
+    assert(ui_menu_draw_rows(rows, 3, 2, 2, 38) == 1);
+    assert(texts == 3 && markers == 5);
     return 0;
 }
 '''
@@ -56,6 +69,9 @@ class MenuPresentationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             temp = Path(directory)
             (temp / "esp_err.h").write_text("typedef int esp_err_t;\n")
+            (temp / "display.h").write_text(
+                "#include <stdint.h>\n"
+                "void display_draw_text(int, int, const char *, uint16_t, unsigned);\n")
             (temp / "menu_harness.c").write_text(HARNESS)
             executable = temp / "menu_test"
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",

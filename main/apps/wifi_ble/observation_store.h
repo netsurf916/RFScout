@@ -110,11 +110,7 @@ typedef struct
     surveillance_class_t surveillance;
     surveillance_signature_id_t signature;
     uint32_t last_seen_ms;
-    bool location_valid;
-    double min_latitude;
-    double max_latitude;
-    double min_longitude;
-    double max_longitude;
+    geo_bounds_t receiver_bounds;
 } observation_history_identity_t;
 
 /** @brief Copy only fields needed for surveillance history. */

@@ -1,6 +1,8 @@
 /**
-    saved_networks.h : Shared access to RFScout's existing saved infrastructure networks
-    Description: One credential store for Home/OTA and Hotspots; no additional persistence key.
+    saved_networks.h : Shared saved infrastructure-network profiles
+    Description: The one credential store for Home/OTA and Hotspots. Profiles have stable IDs;
+                 several profiles may share an SSID. Each profile learns the BSSIDs it
+                 associated with, and the BSSIDs that rejected its passphrase.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -9,70 +11,90 @@
 #ifndef _RFSCOUT_SAVED_NETWORKS_H_
 #define _RFSCOUT_SAVED_NETWORKS_H_
 
-#include "ota_networks.h"
-
 #include "esp_err.h"
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-/**
- * @brief Copy a saved credential for a known SSID into caller-owned memory.
- * @details Loads the same persistent "networks" record used by Home/OTA. An absent SSID
- *          returns ESP_ERR_NOT_FOUND; a storage error is propagated. The caller must erase
- *          the password buffer as soon as association ends. Never log its contents.
- */
-/** Resolve only an already associated BSSID with the exact observed auth mode. */
-esp_err_t saved_networks_password_for_bss( const uint8_t a_bssid[ 6 ],
-                                           const char *a_ssid,
-                                           int32_t a_auth_mode,
-                                           char *a_password,
-                                           size_t a_capacity );
+#define SAVED_NETWORK_MAX_COUNT 8U
+#define SAVED_NETWORK_SSID_MAX_LENGTH 32U
+#define SAVED_NETWORK_PASSWORD_MAX_LENGTH 64U
+#define SAVED_NETWORK_BSSID_MAX_COUNT 32U
+#define SAVED_NETWORK_AUTH_UNKNOWN ( -1 )
 
-/** Non-secret candidate identity; callers select a profile by stable ID. */
+typedef enum
+{
+    SAVED_NETWORK_BSSID_ASSOCIATED = 1, /**< authenticated with this profile's passphrase */
+    SAVED_NETWORK_BSSID_REJECTED,       /**< refused this profile's passphrase */
+} saved_network_bssid_state_t;
+
+typedef struct
+{
+    uint8_t address[ 6 ];
+    uint8_t state; /**< saved_network_bssid_state_t */
+    int32_t auth_mode;
+} saved_network_bssid_t;
+
+/** Non-secret view of one profile; passwords are only returned by saved_networks_password(). */
 typedef struct
 {
     uint32_t profile_id;
-    int32_t auth_mode;
-    bool known_bssid;
-} saved_network_candidate_t;
+    int32_t auth_mode; /**< learned on first association; SAVED_NETWORK_AUTH_UNKNOWN before */
+    bool has_password;
+    uint8_t ordinal; /**< 1-based position among profiles sharing this SSID */
+    uint8_t bssid_count;
+    saved_network_bssid_t bssids[ SAVED_NETWORK_BSSID_MAX_COUNT ];
+    char ssid[ SAVED_NETWORK_SSID_MAX_LENGTH + 1U ];
+} saved_network_profile_t;
 
-/** List profiles sharing an SSID without exposing password material. */
-esp_err_t saved_networks_candidates( const char *a_ssid,
-                                     const uint8_t a_bssid[ 6 ],
-                                     int32_t a_auth_mode,
-                                     saved_network_candidate_t *a_results,
-                                     size_t a_capacity,
-                                     size_t *a_count );
-/** Resolve a previously associated BSSID without loading any password. */
-esp_err_t saved_networks_known_bss_profile( const char *a_ssid,
-                                            const uint8_t a_bssid[ 6 ],
-                                            int32_t a_auth_mode,
-                                            uint32_t *a_profile_id );
-/** Retrieve an explicitly chosen profile's password. */
-esp_err_t
-saved_networks_password_for_profile( uint32_t a_profile_id, char *a_password, size_t a_capacity );
+/*
+ * Every operation loads the record, applies one change, saves it and erases its working copy
+ * before returning, so changes made from one app are immediately visible to the other.
+ * Call from the application task only.
+ */
 
+/** @brief Copy every profile in creation order, without passwords. */
 esp_err_t
-saved_networks_password_for_ssid( const char *a_ssid, char *a_password, size_t a_capacity );
+saved_networks_list( saved_network_profile_t *a_profiles, size_t a_capacity, size_t *a_count );
+
+/** @brief Copy one profile, without its password. */
+esp_err_t saved_networks_get( uint32_t a_profile_id, saved_network_profile_t *a_profile );
+
+/** @brief Copy a profile's password. Erase it as soon as association ends; never log it. */
+esp_err_t saved_networks_password( uint32_t a_profile_id, char *a_password, size_t a_capacity );
+
+/** @brief Create a profile; ESP_ERR_NO_MEM when full. The ID is valid only on ESP_OK. */
+esp_err_t
+saved_networks_create( const char *a_ssid, const char *a_password, uint32_t *a_profile_id );
 
 /**
- * @brief Transactionally save or replace a network using Home/OTA's existing record.
- * @details Writes storage before returning success; no independent Hotspots credential cache.
- *          This operation does not create a separate profile database.
+ * @brief Replace a profile's password.
+ * @details An unchanged password keeps learned BSSIDs; a changed one clears them and the
+ *          learned auth mode, because that evidence belonged to the old secret.
  */
-/** Explicitly create a separate profile; legacy SSID upsert stays supported. */
-esp_err_t
-saved_networks_create_profile( const char *a_ssid, const char *a_password, uint32_t *a_profile_id );
-/** Associate an explicitly chosen profile after successful authentication. */
-esp_err_t saved_networks_associate_profile_bssid( uint32_t a_profile_id,
-                                                  const uint8_t a_bssid[ 6 ],
-                                                  int32_t a_auth_mode );
+esp_err_t saved_networks_set_password( uint32_t a_profile_id, const char *a_password );
 
-esp_err_t saved_networks_save( const char *a_ssid, const char *a_password );
+/** @brief Delete a profile and everything learned for it. */
+esp_err_t saved_networks_forget( uint32_t a_profile_id );
 
-/** @brief Remove one SSID from the authoritative saved networks record. */
-esp_err_t saved_networks_forget( const char *a_ssid );
+/**
+ * @brief Record an association outcome for one BSSID.
+ * @details ASSOCIATED fails with ESP_ERR_INVALID_STATE when another profile already
+ *          associated with that BSSID or the profile learned a different auth mode. When the
+ *          BSSID list is full, the oldest rejected BSSID is evicted.
+ */
+esp_err_t saved_networks_record_bssid( uint32_t a_profile_id,
+                                       const uint8_t a_bssid[ 6 ],
+                                       int32_t a_auth_mode,
+                                       saved_network_bssid_state_t a_state );
+
+/** @brief Find a profile's entry for a BSSID, or NULL. */
+const saved_network_bssid_t *saved_network_profile_bssid( const saved_network_profile_t *a_profile,
+                                                          const uint8_t a_bssid[ 6 ] );
+
+/** @brief Whether a profile may be used with an observed auth mode. */
+bool saved_network_profile_auth_compatible( const saved_network_profile_t *a_profile,
+                                            int32_t a_auth_mode );
 
 #endif // _RFSCOUT_SAVED_NETWORKS_H_

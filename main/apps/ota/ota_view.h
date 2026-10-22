@@ -9,8 +9,6 @@
 #ifndef _RFSCOUT_OTA_VIEW_H_
 #define _RFSCOUT_OTA_VIEW_H_
 
-#include "app_text_entry.h"
-
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -63,10 +61,5 @@ void ota_view_render_build_action( const char *a_installed_version,
                                    const char *a_version,
                                    const char *a_commit,
                                    unsigned a_selected );
-void ota_view_render_password( const char *a_ssid,
-                               size_t a_length,
-                               rfscout_text_entry_selection_t a_selection,
-                               char a_character,
-                               const char *a_error );
 
 #endif // _RFSCOUT_OTA_VIEW_H_

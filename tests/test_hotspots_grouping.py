@@ -8,6 +8,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 GROUPING = ROOT / "main/apps/hotspots/characterization_grouping.c"
 HEADER_DIR = GROUPING.parent
+GEO = ROOT / "main/services/location/geo.c"
 
 HARNESS = r'''
 #include "characterization_grouping.h"
@@ -121,7 +122,7 @@ class GroupingTests(unittest.TestCase):
             source.write_text(HARNESS)
             subprocess.run(
                 [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
-                 "-I", str(HEADER_DIR), str(source), str(GROUPING),
+                 "-I", str(HEADER_DIR), "-I", str(GEO.parent), str(source), str(GROUPING), str(GEO),
                  "-lm", "-o", str(binary)], check=True
             )
             subprocess.run([str(binary)], check=True)

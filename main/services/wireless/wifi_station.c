@@ -15,6 +15,7 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#include "esp_netif_net_stack.h"
 #include "esp_netif_sntp.h"
 #include "esp_random.h"
 #include "esp_wifi.h"
@@ -22,6 +23,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
 #include "freertos/task.h"
+#include "lwip/etharp.h"
 
 #include <string.h>
 
@@ -916,6 +918,85 @@ esp_err_t rfscout_wifi_station_ip_info( rfscout_wifi_station_ip_info_t *a_info )
         }
     }
     return result;
+}
+
+esp_err_t rfscout_wifi_station_ap_info( uint8_t a_bssid[ 6 ], int32_t *a_auth_mode )
+{
+    if( NULL == a_bssid || NULL == a_auth_mode )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
+    if( RFSCOUT_WIFI_STATION_CONNECTED != current.state )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    wifi_ap_record_t record;
+    const esp_err_t result = esp_wifi_sta_get_ap_info( &record );
+    if( ESP_OK == result )
+    {
+        memcpy( a_bssid, record.bssid, 6U );
+        *a_auth_mode = (int32_t)record.authmode;
+    }
+    return result;
+}
+
+typedef struct
+{
+    struct netif *netif;
+    ip4_addr_t gateway;
+    uint8_t mac[ 6 ];
+} gateway_mac_lookup_t;
+
+/* Runs in the TCP/IP task, where the lwIP ARP table may be read safely. */
+static esp_err_t lookup_gateway_mac( void *a_context )
+{
+    gateway_mac_lookup_t *lookup = a_context;
+    struct eth_addr *hardware = NULL;
+    const ip4_addr_t *address = NULL;
+    if( NULL == lookup->netif ||
+        etharp_find_addr( lookup->netif, &lookup->gateway, &hardware, &address ) < 0 ||
+        NULL == hardware )
+    {
+        return ESP_ERR_NOT_FOUND;
+    }
+    memcpy( lookup->mac, hardware->addr, sizeof( lookup->mac ) );
+    return ESP_OK;
+}
+
+esp_err_t rfscout_wifi_station_gateway_mac( uint8_t a_mac[ 6 ] )
+{
+    if( NULL == a_mac )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    rfscout_wifi_station_ip_info_t info;
+    esp_err_t result = rfscout_wifi_station_ip_info( &info );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+    if( 0U == info.gateway )
+    {
+        return ESP_ERR_NOT_FOUND;
+    }
+    gateway_mac_lookup_t lookup = {
+        .netif = esp_netif_get_netif_impl( station_netif ),
+        .gateway.addr = info.gateway,
+    };
+    result = esp_netif_tcpip_exec( lookup_gateway_mac, &lookup );
+    if( ESP_OK == result )
+    {
+        memcpy( a_mac, lookup.mac, sizeof( lookup.mac ) );
+    }
+    return result;
+}
+
+bool rfscout_wifi_station_reason_auth_rejected( int32_t a_reason )
+{
+    return WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT == a_reason || WIFI_REASON_AUTH_FAIL == a_reason ||
+           WIFI_REASON_HANDSHAKE_TIMEOUT == a_reason;
 }
 
 esp_err_t

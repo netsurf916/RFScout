@@ -146,6 +146,18 @@ esp_err_t rfscout_wifi_station_cancel_scan( void );
 /** @brief Copy the current IPv4 configuration; ESP_ERR_INVALID_STATE when not connected. */
 esp_err_t rfscout_wifi_station_ip_info( rfscout_wifi_station_ip_info_t *a_info );
 
+/** @brief Copy the associated BSSID and its auth mode; ESP_ERR_INVALID_STATE when not connected. */
+esp_err_t rfscout_wifi_station_ap_info( uint8_t a_bssid[ 6 ], int32_t *a_auth_mode );
+
+/**
+ * @brief Read the gateway hardware address from the station ARP cache.
+ * @details Passive: no ARP request is sent. ESP_ERR_NOT_FOUND until the gateway was resolved.
+ */
+esp_err_t rfscout_wifi_station_gateway_mac( uint8_t a_mac[ 6 ] );
+
+/** @brief Whether a station disconnect reason means the AP refused the passphrase. */
+bool rfscout_wifi_station_reason_auth_rejected( int32_t a_reason );
+
 /** @brief Cancel an active NTP synchronization attempt while preserving the Wi-Fi connection. */
 esp_err_t rfscout_wifi_station_cancel_time_sync( void );
 

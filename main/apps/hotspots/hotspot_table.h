@@ -71,7 +71,8 @@ typedef struct
 {
     rfscout_wifi_station_bss_t bss;
     bool visible;
-    bool credential_available; /**< secured AP: matched saved credentials in latest scan */
+    bool credential_available; /**< open/OWE, or secured with a resolved saved profile */
+    uint32_t profile_id;       /**< saved profile used for a secured check; 0 when none */
     uint8_t missed_scans;
     hotspot_status_t status;
     bool retry_gate_active;

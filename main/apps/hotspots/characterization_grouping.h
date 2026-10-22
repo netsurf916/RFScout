@@ -55,10 +55,11 @@ typedef struct
  *          - different gateway/netmask between two members that both have it; or
  *          - different gateway MAC between two members that both have it.
  *          Members without evidence join the existing network whose evidence-bearing
- *          members are geographically nearest (flat-earth distance to the location
- *          centroid); without usable location they join the network with the most evidence-bearing members. A member
- *          with gateway/netmask but no gateway MAC is placed the same way among networks
- *          sharing its gateway/netmask. Cost is O(n * k) for n members and k networks.
+ *          members are geographically nearest (great-circle distance to the location
+ *          centroid); without usable location they join the network with the most
+ *          evidence-bearing members. A member with gateway/netmask but no gateway MAC is
+ *          placed the same way among networks sharing its gateway/netmask. Cost is O(n * k)
+ *          for n members and k networks.
  *
  * @param a_members  Members of exactly one SSID/security group; `cluster` is written.
  * @param a_count    Number of members.

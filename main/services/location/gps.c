@@ -6,6 +6,7 @@
 */
 
 #include "gps.h"
+#include "geo.h"
 
 #include "board.h"
 #include "device_config.h"
@@ -47,8 +48,6 @@ static const int GPS_BAUD_RATES[] = {
 #define GPS_TRIP_MAX_GAP_US 10000000LL
 #define GPS_TRIP_CHECKPOINT_INTERVAL_US 300000000LL
 #define GPS_TRIP_CHECKPOINT_DISTANCE_M 250.0
-#define GPS_EARTH_RADIUS_M 6371000.0
-#define GPS_RADIANS_PER_DEGREE 0.017453292519943295
 
 static const char *TAG = "gps";
 static bool initialized;
@@ -989,14 +988,8 @@ static void trip_observe( double a_latitude, double a_longitude, double a_speed_
         return;
     }
 
-    const double lat1 = trip_anchor_latitude * GPS_RADIANS_PER_DEGREE;
-    const double lat2 = a_latitude * GPS_RADIANS_PER_DEGREE;
-    const double half_lat = ( lat2 - lat1 ) / 2.0;
-    const double half_lon = ( a_longitude - trip_anchor_longitude ) * GPS_RADIANS_PER_DEGREE / 2.0;
-    const double haversine = sin( half_lat ) * sin( half_lat ) +
-                             cos( lat1 ) * cos( lat2 ) * sin( half_lon ) * sin( half_lon );
-    const double bounded = fmin( 1.0, fmax( 0.0, haversine ) );
-    const double step_m = 2.0 * GPS_EARTH_RADIUS_M * asin( sqrt( bounded ) );
+    const double step_m =
+        geo_distance_m( trip_anchor_latitude, trip_anchor_longitude, a_latitude, a_longitude );
     if( step_m < GPS_TRIP_MIN_STEP_M )
     {
         return;
