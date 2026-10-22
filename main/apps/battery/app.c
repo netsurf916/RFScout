@@ -71,45 +71,37 @@ static void battery_render( void )
         display_draw_text( 10, 30, "CHARGER DIAGNOSTICS", theme->secondary, 1U );
         if( status.charger_details_fresh )
         {
-            const unsigned charge_phase = ( status.charger_status_register >> 3U ) & 3U;
-            const unsigned input_source = ( status.charger_status_register >> 5U ) & 7U;
-            const unsigned input_limit_ma = 100U + 50U * ( status.charger_input_control & 0x3FU );
-            const unsigned fast_charge_ma = 64U * ( status.charger_current_control & 0x7FU );
-            const unsigned regulation_mv =
-                3840U + 16U * ( ( status.charger_voltage_control >> 2U ) & 0x3FU );
-            const unsigned termination_ma =
-                64U + 64U * ( status.charger_precharge_control & 0x0FU );
             snprintf( text,
                       sizeof( text ),
                       "PHASE %u  INPUT %u  PG %u",
-                      charge_phase,
-                      input_source,
-                      ( status.charger_status_register & 0x04U ) ? 1U : 0U );
+                      status.charger_phase,
+                      status.charger_input_source,
+                      status.charger_power_good ? 1U : 0U );
             display_draw_text( 10, 48, text, theme->text, 1U );
             snprintf(
-                text, sizeof( text ), "IIN %u mA  ICHG %u mA", input_limit_ma, fast_charge_ma );
+                text, sizeof( text ), "IIN %u mA  ICHG %u mA", status.charger_input_limit_ma, status.charger_fast_charge_limit_ma );
             display_draw_text( 10, 64, text, theme->text, 1U );
             snprintf(
-                text, sizeof( text ), "VREG %u mV  ITERM %u mA", regulation_mv, termination_ma );
+                text, sizeof( text ), "VREG %u mV  ITERM %u mA", status.charger_regulation_mv, status.charger_termination_ma );
             display_draw_text( 10, 80, text, theme->text, 1U );
             snprintf( text,
                       sizeof( text ),
                       "VBUS %u mV  IADC %u mA",
-                      2600U + 100U * ( status.charger_adc_vbus & 0x7FU ),
-                      50U * ( status.charger_adc_charge_current & 0x7FU ) );
+                      (unsigned)status.charger_vbus_mv,
+                      (unsigned)status.charger_adc_current_ma );
             display_draw_text( 10, 96, text, theme->text, 1U );
             snprintf( text,
                       sizeof( text ),
                       "VSYS %u mV  DPM %02X",
-                      2304U + 20U * ( status.charger_adc_system_voltage & 0x7FU ),
+                      (unsigned)status.charger_system_mv,
                       (unsigned)status.charger_dpm_status );
             display_draw_text( 10, 112, text, theme->text, 1U );
             snprintf( text,
                       sizeof( text ),
-                      "FAULT %02X  CTRL %u  TIMER %02X",
+                      "FAULT %02X  CTRL %u  WD %u",
                       (unsigned)status.charger_faults,
                       (unsigned)status.charger_controller_state,
-                      (unsigned)status.charger_timer_control );
+                      status.charger_watchdog_enabled ? 1U : 0U );
             display_draw_text(
                 10, 128, text, status.charger_faults ? theme->warning : theme->text, 1U );
         }
@@ -169,8 +161,7 @@ static void battery_render( void )
               charge_label( status.charge_state ),
               status.charger_fresh ? ( status.external_power ? "USB" : "BAT" ) : "POWER ?" );
     display_draw_text( 10, 60, text, status.charger_fresh ? theme->text : theme->warning, 1U );
-    if( status.charger_fresh && status.percentage_fresh &&
-        BATTERY_CHARGE_COMPLETE == status.charge_state && status.percentage < 95U )
+    if( status.charger_soc_disagreement )
     {
         display_draw_text( 166, 60, "SOC / CHG MISMATCH", theme->warning, 1U );
     }
@@ -214,25 +205,18 @@ static void battery_render( void )
     display_draw_text( 166, 81, "CHARGER / LIMITS", theme->secondary, 1U );
     if( status.charger_details_fresh )
     {
-        snprintf( text,
-                  sizeof( text ),
-                  "FAULT %02X  IN %02X",
-                  (unsigned)status.charger_faults,
-                  (unsigned)status.charger_input_control );
+        snprintf( text, sizeof( text ), "FAULT %02X  PG %u",
+                  (unsigned)status.charger_faults, status.charger_power_good ? 1U : 0U );
         display_draw_text( 166, 97, text, status.charger_faults ? theme->error : theme->text, 1U );
-        snprintf( text,
-                  sizeof( text ),
-                  "CHG %02X  CUR %02X",
-                  (unsigned)status.charger_charge_control,
-                  (unsigned)status.charger_current_control );
+        snprintf( text, sizeof( text ), "IIN %u  CHG %u",
+                  (unsigned)status.charger_input_limit_ma,
+                  (unsigned)status.charger_fast_charge_limit_ma );
         display_draw_text( 166, 115, text, theme->text, 1U );
-        snprintf( text,
-                  sizeof( text ),
-                  "VREG %02X  TERM %02X",
-                  (unsigned)status.charger_voltage_control,
-                  (unsigned)status.charger_precharge_control );
+        snprintf( text, sizeof( text ), "VREG %u",
+                  (unsigned)status.charger_regulation_mv );
         display_draw_text( 166, 133, text, theme->text, 1U );
-        snprintf( text, sizeof( text ), "TIMER %02X", (unsigned)status.charger_timer_control );
+        snprintf( text, sizeof( text ), "TERM %u mA",
+                  (unsigned)status.charger_termination_ma );
         display_draw_text( 166, 151, text, theme->secondary, 1U );
     }
     else
