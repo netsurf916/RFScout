@@ -285,16 +285,14 @@ static esp_err_t charger_inspect_and_manage( void )
         return result;
     }
     /* Keep the board's precharge setting and adjust only ITERM to 128 mA. */
-    charger_precharge_policy =
-        ( precharge & (uint8_t)~BQ25896_TERMINATION_CURRENT_MASK ) |
-        BQ25896_TERMINATION_CURRENT_128MA;
+    charger_precharge_policy = ( precharge & (uint8_t)~BQ25896_TERMINATION_CURRENT_MASK ) |
+                               BQ25896_TERMINATION_CURRENT_128MA;
     /* Preserve all safety-timer and charge-enable settings. */
     charger_timer_policy = ( timer & (uint8_t)~BQ25896_WATCHDOG_MASK ) | BQ25896_WATCHDOG_40S;
     charger_charge_policy = control & (uint8_t)~BQ25896_WATCHDOG_RESET_BIT;
     charger_policy_valid = true;
-    result = write_register_u8( charger_device,
-                                BQ25896_REG_PRECHARGE_CONTROL,
-                                charger_precharge_policy );
+    result = write_register_u8(
+        charger_device, BQ25896_REG_PRECHARGE_CONTROL, charger_precharge_policy );
     if( ESP_OK != result )
     {
         return result;
