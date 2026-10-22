@@ -40,6 +40,10 @@
 #define BQ25896_REG_TIMER_CONTROL 0x07U
 #define BQ25896_REG_FAULT 0x0CU
 #define BQ25896_REG_RESET_CONTROL 0x14U
+#define BQ25896_REG_DPM_STATUS 0x13U
+#define BQ25896_REG_ADC_VBUS 0x11U
+#define BQ25896_REG_ADC_CHARGE_CURRENT 0x12U
+#define BQ25896_REG_ADC_SYSTEM_VOLTAGE 0x0FU
 #define BQ25896_WATCHDOG_RESET_BIT 0x40U
 #define BQ25896_WATCHDOG_MASK 0x30U
 #define BQ25896_WATCHDOG_40S 0x10U
@@ -350,6 +354,8 @@ static void sample_charger( battery_status_t *a_status, bool *a_sampled )
     if( ESP_OK == result )
     {
         charger_controller_poll();
+        a_status->charger_status_register = status;
+        a_status->charger_controller_state = (uint8_t)charger_controller;
         const uint8_t bus_status = ( status >> BQ25896_BUS_STATUS_SHIFT ) & BQ25896_BUS_STATUS_MASK;
         const bool valid_input =
             BQ25896_BUS_NO_INPUT != bus_status && BQ25896_BUS_OTG != bus_status;
@@ -381,6 +387,17 @@ static void sample_charger( battery_status_t *a_status, bool *a_sampled )
                 read_register_u8( charger_device, BQ25896_REG_FAULT, &a_status->charger_faults ) )
         {
             a_status->charger_details_fresh = true;
+            if( ESP_OK != read_register_u8( charger_device, BQ25896_REG_DPM_STATUS,
+                                            &a_status->charger_dpm_status ) ||
+                ESP_OK != read_register_u8( charger_device, BQ25896_REG_ADC_VBUS,
+                                            &a_status->charger_adc_vbus ) ||
+                ESP_OK != read_register_u8( charger_device, BQ25896_REG_ADC_CHARGE_CURRENT,
+                                            &a_status->charger_adc_charge_current ) ||
+                ESP_OK != read_register_u8( charger_device, BQ25896_REG_ADC_SYSTEM_VOLTAGE,
+                                            &a_status->charger_adc_system_voltage ) )
+            {
+                a_status->charger_details_fresh = false;
+            }
             /* REG0C first exposes latched history; the second read reports
                present faults. Do not mistake old watchdog events for current ones. */
             uint8_t current_faults = 0U;
