@@ -70,6 +70,7 @@ static uint32_t next_segment;
 static uint32_t current_bytes;
 static int64_t capture_monotonic_origin_us;
 static uint64_t capture_epoch_origin_us;
+static bool capture_utc_anchored;
 static portMUX_TYPE gps_lock = portMUX_INITIALIZER_UNLOCKED;
 static int64_t gps_updated_us;
 static bool gps_fix_valid;
@@ -128,15 +129,40 @@ static bool write_bytes( const void *a_data, size_t a_length )
 
 static bool write_section( void )
 {
+    /* Standard SHB opt_comment (code 1), padded to four bytes. */
+    static const char relative_comment[] = "RFScout timestamps: relative only; no UTC anchor";
+    const uint32_t comment_length = capture_utc_anchored ? 0U : sizeof( relative_comment ) - 1U;
+    const uint32_t padded_comment = ( comment_length + 3U ) & ~3U;
+    const uint32_t total_length = 28U + ( comment_length ? 8U + padded_comment : 0U );
     uint8_t block[ 28 ] = { 0 };
     le32( block, 0x0A0D0D0AU );
-    le32( block + 4U, sizeof( block ) );
+    le32( block + 4U, total_length );
     le32( block + 8U, 0x1A2B3C4DU );
     le16( block + 12U, 1U );
     le16( block + 14U, 0U );
     le64( block + 16U, UINT64_MAX );
-    le32( block + 24U, sizeof( block ) );
-    return write_bytes( block, sizeof( block ) );
+    if( !comment_length )
+    {
+        le32( block + 24U, total_length );
+        return write_bytes( block, sizeof( block ) );
+    }
+    if( !write_bytes( block, 24U ) )
+    {
+        return false;
+    }
+    uint8_t option_header[ 4 ];
+    le16( option_header, 1U );
+    le16( option_header + 2U, (uint16_t)comment_length );
+    const uint8_t padding[ 3 ] = { 0 };
+    const uint8_t end_of_options[ 4 ] = { 0 };
+    uint8_t trailer[ 4 ];
+    le32( trailer, total_length );
+    return write_bytes( option_header, sizeof( option_header ) ) &&
+           write_bytes( relative_comment, comment_length ) &&
+           ( padded_comment == comment_length ||
+             write_bytes( padding, padded_comment - comment_length ) ) &&
+           write_bytes( end_of_options, sizeof( end_of_options ) ) &&
+           write_bytes( trailer, sizeof( trailer ) );
 }
 
 static bool write_interface( uint16_t a_link_type )
@@ -517,22 +543,22 @@ esp_err_t wardrive_capture_start( const wardrive_config_t *a_config )
     {
         return ESP_ERR_INVALID_ARG;
     }
-    if( !device_time_now( NULL ) )
-    {
-        return ESP_ERR_INVALID_STATE;
-    }
     if( ESP_OK != media_app_collection( "captures", &collection ) )
     {
         return ESP_ERR_INVALID_STATE;
     }
-    struct timeval initial_time;
-    if( 0 != gettimeofday( &initial_time, NULL ) )
+    /* Preserve packet intervals even without a trustworthy wall clock. A capture\n       without UTC uses a synthetic epoch, never re-anchored mid-recording. */
+    const bool utc_valid = device_time_now( NULL );
+    capture_utc_anchored = utc_valid;
+    struct timeval initial_time = { 0 };
+    if( utc_valid && 0 != gettimeofday( &initial_time, NULL ) )
     {
         return ESP_FAIL;
     }
     capture_monotonic_origin_us = esp_timer_get_time();
     capture_epoch_origin_us =
-        (uint64_t)initial_time.tv_sec * 1000000ULL + (uint64_t)initial_time.tv_usec;
+        utc_valid ? (uint64_t)initial_time.tv_sec * 1000000ULL + (uint64_t)initial_time.tv_usec
+                  : 0U;
     config = *a_config;
     stats = ( wardrive_stats_t ){ 0 };
     stopping = false;

@@ -24,6 +24,7 @@
 #define ACTIVITY_CHANNELS 14U
 #define ACTIVITY_SECONDS 74U
 #define CAPTURE_GPS_REFRESH_US 250000LL
+#define GPS_FIX_MAX_AGE_MS 5000U
 #define CAPTURE_SETTINGS_MAGIC 0x57445256U
 #define CAPTURE_SETTINGS_VERSION 1U
 #define MENU_BACK 0U
@@ -81,6 +82,23 @@ static uint64_t stored_bytes;
 static uint64_t free_bytes;
 static esp_err_t last_error;
 static bool terminal_error_reported;
+static void draw_gps_prompt( void );
+static bool capture_waiting_for_gps;
+static bool gps_prompt_open;
+static unsigned gps_choice_selected;
+static bool gps_fix_ready( void )
+{
+    rfscout_gps_snapshot_t gps = { 0 };
+    return gps_snapshot_get( &gps ) && gps.time_valid && gps.location_valid &&
+           gps.time_age_ms <= GPS_FIX_MAX_AGE_MS && gps.location_age_ms <= GPS_FIX_MAX_AGE_MS;
+}
+static bool gps_receiver_present( void )
+{
+    /* UART availability is not receiver presence; require validated NMEA traffic. */
+    /* Do not classify a configured receiver as absent until the initial probe finishes. */
+    return gps_detected() || ( gps_available() && !gps_probe_complete() );
+}
+
 static uint32_t activity_pending[ ACTIVITY_CHANNELS ];
 static uint32_t activity_history[ ACTIVITY_SECONDS ][ ACTIVITY_CHANNELS ];
 static uint32_t activity_totals[ ACTIVITY_CHANNELS ];
@@ -553,7 +571,9 @@ static void describe_setting( unsigned a_index, const char **a_label, char *a_va
         {
             wardrive_stats_t stats;
             wardrive_capture_stats( &stats );
-            label = stats.recording ? "Stop capture" : "Start capture";
+            label = stats.recording           ? "Stop capture"
+                    : capture_waiting_for_gps ? "Cancel wait"
+                                              : "Start capture";
             break;
         }
         case MENU_SOURCES:
@@ -708,6 +728,11 @@ static void draw_sources_menu( void )
 
 static void draw_menu( void )
 {
+    if( gps_prompt_open )
+    {
+        draw_gps_prompt();
+        return;
+    }
     if( wifi_menu_open || ble_menu_open || channels_menu_open )
     {
         draw_radio_submenu();
@@ -737,7 +762,8 @@ static void draw_menu( void )
         describe_setting( item, &label, value, sizeof( value ) );
         const bool disabled =
             ( item == MENU_PACKETS && !options.wifi ) ||
-            ( capture_busy && item != MENU_BACK && item != MENU_START && item != MENU_SOURCES );
+            ( capture_busy && item != MENU_BACK && item != MENU_START && item != MENU_SOURCES ) ||
+            ( capture_waiting_for_gps && item != MENU_START );
         const uint16_t color = ui_menu_label_color(
             ( ui_menu_state_t ){ .selected = item == selected, .available = !disabled } );
         ui_game_draw_menu_marker( 8, 26 + (int)i * 20, item == selected ? ">" : " ", color );
@@ -757,6 +783,49 @@ static void draw_menu( void )
                     (unsigned long)( free_bytes / 1048576U ) );
     display_draw_text( 8, 151, line, theme->secondary, 1U );
     (void)display_present();
+}
+
+static esp_err_t apply_radio( void );
+
+static void draw_gps_prompt( void )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    static const char *choices[] = { "Start anyway", "Wait for fix", "Cancel" };
+    display_clear( theme->background );
+    ui_chrome_draw( "GPS NOT READY", theme->warning );
+    display_draw_text( 12, 37, "Time / location unavailable", theme->text, 1U );
+    display_draw_text( 12, 53, "Choose capture behavior:", theme->secondary, 1U );
+    for( unsigned i = 0U; i < 3U; ++i )
+    {
+        const ui_menu_state_t state = { .selected = i == gps_choice_selected, .available = true };
+        const uint16_t color = ui_menu_label_color( state );
+        ui_menu_draw_marker( 12, 77 + (int)i * 22, state );
+        display_draw_text( 28, 77 + (int)i * 22, choices[ i ], color, 1U );
+    }
+    (void)display_present();
+}
+
+static esp_err_t start_capture_now( void )
+{
+    wardrive_capture_stop();
+    report_stopped_capture_error();
+    esp_err_t result = apply_radio();
+    if( ESP_OK == result )
+    {
+        result = wardrive_capture_start( &options );
+        if( ESP_OK == result )
+        {
+            terminal_error_reported = false;
+            wardrive_capture_update_gps();
+        }
+    }
+    if( ESP_OK != result )
+    {
+        (void)radio_monitor_stop();
+        (void)ble_monitor_stop();
+        ESP_LOGW( TAG, "capture start failed: %s", esp_err_to_name( result ) );
+    }
+    return result;
 }
 
 static esp_err_t apply_radio( void )
@@ -835,6 +904,37 @@ static void modify_setting( unsigned a_item, int a_direction )
 
 static void act_on_selection( void )
 {
+    if( gps_prompt_open )
+    {
+        gps_prompt_open = false;
+        if( gps_choice_selected == 1U )
+        {
+            capture_waiting_for_gps = true;
+        }
+        else if( gps_choice_selected == 0U )
+        {
+            last_error = start_capture_now();
+            if( ESP_OK == last_error )
+            {
+                menu_open = false;
+            }
+        }
+        if( menu_open )
+        {
+            draw_menu();
+        }
+        else
+        {
+            draw_overview();
+        }
+        return;
+    }
+    if( capture_waiting_for_gps && selected != MENU_START )
+    {
+        draw_menu();
+        return;
+    }
+
     if( wifi_menu_open || ble_menu_open || channels_menu_open )
     {
         wardrive_stats_t capture_status;
@@ -975,12 +1075,23 @@ static void act_on_selection( void )
     }
     if( selected == MENU_BACK )
     {
+        if( capture_waiting_for_gps )
+        {
+            draw_menu();
+            return;
+        }
         menu_open = false;
         draw_overview();
         return;
     }
     if( selected == MENU_START )
     {
+        if( capture_waiting_for_gps )
+        {
+            capture_waiting_for_gps = false;
+            draw_menu();
+            return;
+        }
         wardrive_stats_t stats;
         wardrive_capture_stats( &stats );
         if( stats.recording )
@@ -997,26 +1108,16 @@ static void act_on_selection( void )
             draw_menu();
             return;
         }
+        else if( gps_receiver_present() && !gps_fix_ready() )
+        {
+            gps_prompt_open = true;
+            gps_choice_selected = 1U;
+            draw_menu();
+            return;
+        }
         else
         {
-            wardrive_capture_stop();
-            report_stopped_capture_error();
-            last_error = apply_radio();
-            if( ESP_OK == last_error )
-            {
-                last_error = wardrive_capture_start( &options );
-                if( ESP_OK == last_error )
-                {
-                    terminal_error_reported = false;
-                    wardrive_capture_update_gps();
-                }
-            }
-            if( ESP_OK != last_error )
-            {
-                (void)radio_monitor_stop();
-                (void)ble_monitor_stop();
-                ESP_LOGW( TAG, "capture start failed: %s", esp_err_to_name( last_error ) );
-            }
+            last_error = start_capture_now();
         }
         /* Starting capture returns to the live dashboard; leave failed starts
            in settings so the user can adjust the configuration. */
@@ -1037,7 +1138,7 @@ static void act_on_selection( void )
     {
         wardrive_stats_t stats = { 0 };
         wardrive_capture_stats( &stats );
-        if( !stats.recording && !wardrive_capture_stop_pending() &&
+        if( !capture_waiting_for_gps && !stats.recording && !wardrive_capture_stop_pending() &&
             ( selected != MENU_PACKETS || options.wifi ) )
         {
             modify_setting( selected, 1 );
@@ -1052,7 +1153,8 @@ static esp_err_t prepare_leave( void )
     wardrive_stats_t stats;
     wardrive_capture_stats( &stats );
     /* Like Recorder, never interrupt a capture through app navigation. */
-    return stats.recording ? ESP_ERR_INVALID_STATE : ESP_OK;
+    return ( stats.recording || capture_waiting_for_gps || gps_prompt_open ) ? ESP_ERR_INVALID_STATE
+                                                                             : ESP_OK;
 }
 
 static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_event_t *a_event )
@@ -1065,6 +1167,8 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
     {
         load_settings();
         load_radio_settings();
+        capture_waiting_for_gps = false;
+        gps_prompt_open = false;
         menu_open = false;
         sources_menu_open = false;
         wifi_menu_open = false;
@@ -1096,6 +1200,8 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
     }
     if( RFSCOUT_APP_RUNTIME_LEAVE == a_event->type )
     {
+        capture_waiting_for_gps = false;
+        gps_prompt_open = false;
         /* A writer failure can arrive after the last poll but before navigation. */
         wardrive_stats_t capture_status = { 0 };
         wardrive_capture_stats( &capture_status );
@@ -1111,6 +1217,20 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
     }
     if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type )
     {
+        if( gps_prompt_open && RFSCOUT_INPUT_NAVIGATION == a_event->input.type )
+        {
+            gps_choice_selected =
+                ( gps_choice_selected + ( a_event->input.value > 0 ? 1U : 2U ) ) % 3U;
+            draw_gps_prompt();
+            return RFSCOUT_APP_RUNTIME_HANDLED;
+        }
+        if( gps_prompt_open && RFSCOUT_INPUT_LONG_PRESS == a_event->input.type )
+        {
+            gps_prompt_open = false;
+            draw_menu();
+            return RFSCOUT_APP_RUNTIME_HANDLED;
+        }
+
         if( RFSCOUT_INPUT_SELECT == a_event->input.type )
         {
             if( menu_open )
@@ -1177,6 +1297,11 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
                 draw_menu();
                 return RFSCOUT_APP_RUNTIME_HANDLED;
             }
+            if( capture_waiting_for_gps )
+            {
+                draw_menu();
+                return RFSCOUT_APP_RUNTIME_HANDLED;
+            }
             menu_open = false;
             draw_overview();
             return RFSCOUT_APP_RUNTIME_HANDLED;
@@ -1186,6 +1311,25 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
     if( RFSCOUT_APP_RUNTIME_POLL == a_event->type )
     {
         activity_tick( a_event->now_us );
+        if( capture_waiting_for_gps &&
+            ( gps_fix_ready() || ( gps_probe_complete() && !gps_detected() ) ) )
+        {
+            capture_waiting_for_gps = false;
+            last_error = start_capture_now();
+            if( ESP_OK == last_error )
+            {
+                menu_open = false;
+            }
+            if( menu_open )
+            {
+                draw_menu();
+            }
+            else
+            {
+                draw_overview();
+            }
+        }
+
         wardrive_stats_t capture_status;
         wardrive_capture_stats( &capture_status );
         if( capture_status.storage_error || wardrive_capture_stop_pending() )
@@ -1237,7 +1381,7 @@ const rfscout_app_descriptor_t rfscout_wardrive_app = {
     .probe = NULL,
     .requires_activation = true,
     .prepare_leave = prepare_leave,
-    .transition_denial_message = "STOP CAPTURE FIRST",
+    .transition_denial_message = "STOP CAPTURE OR CANCEL WAIT",
     .services = RFSCOUT_APP_SERVICE_WIFI_MONITOR | RFSCOUT_APP_SERVICE_BLE_MONITOR,
     .consumers =
         {
