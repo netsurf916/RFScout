@@ -39,6 +39,13 @@
 #define BQ25896_REG_VOLTAGE_CONTROL 0x06U
 #define BQ25896_REG_TIMER_CONTROL 0x07U
 #define BQ25896_REG_FAULT 0x0CU
+#define BQ25896_REG_RESET_CONTROL 0x14U
+#define BQ25896_WATCHDOG_RESET_BIT 0x40U
+#define BQ25896_WATCHDOG_MASK 0x30U
+#define BQ25896_WATCHDOG_40S 0x10U
+#define BQ25896_WATCHDOG_FAULT_BIT 0x80U
+#define CHARGER_WATCHDOG_REFRESH_US 10000000LL
+#define CHARGER_RETRY_US 5000000LL
 #define BQ25896_BATFET_DISABLE_BIT 0x20U
 #define BQ25896_BUS_STATUS_SHIFT 5U
 #define BQ25896_BUS_STATUS_MASK 0x07U
@@ -59,6 +66,20 @@ static i2c_master_dev_handle_t charger_device;
 static battery_status_t cached_status;
 static int64_t last_poll_us;
 static bool initialized;
+typedef enum
+{
+    CHARGER_CONTROLLER_DISCOVER = 0,
+    CHARGER_CONTROLLER_INSPECT,
+    CHARGER_CONTROLLER_MANAGED,
+    CHARGER_CONTROLLER_RECOVERY,
+    CHARGER_CONTROLLER_SHUTDOWN
+} charger_controller_state_t;
+static charger_controller_state_t charger_controller;
+static int64_t charger_last_watchdog_us;
+static int64_t charger_retry_after_us;
+static uint8_t charger_timer_policy;
+static uint8_t charger_charge_policy;
+static bool charger_policy_valid;
 
 static esp_err_t
 read_register_u8( i2c_master_dev_handle_t a_device, uint8_t a_register, uint8_t *a_value )
@@ -234,6 +255,90 @@ static void sample_gauge( battery_status_t *a_status, bool *a_sampled, uint16_t 
     }
 }
 
+/* Capture the board's existing charging policy before entering host mode.
+   Never invent input current, charge current, voltage or safety-timer limits. */
+static esp_err_t charger_inspect_and_manage( void )
+{
+    uint8_t timer = 0U;
+    uint8_t control = 0U;
+    esp_err_t result = read_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL, &timer );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+    result = read_register_u8( charger_device, BQ25896_REG_CHARGE_CONTROL, &control );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+    /* Preserve all safety-timer and charge-enable settings. */
+    charger_timer_policy = ( timer & (uint8_t)~BQ25896_WATCHDOG_MASK ) |
+                           BQ25896_WATCHDOG_40S;
+    charger_charge_policy = control & (uint8_t)~BQ25896_WATCHDOG_RESET_BIT;
+    charger_policy_valid = true;
+    result = write_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL,
+                                charger_timer_policy );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+    result = write_register_u8( charger_device, BQ25896_REG_CHARGE_CONTROL,
+                                charger_charge_policy | BQ25896_WATCHDOG_RESET_BIT );
+    if( ESP_OK == result )
+    {
+        charger_last_watchdog_us = esp_timer_get_time();
+        charger_controller = CHARGER_CONTROLLER_MANAGED;
+        ESP_LOGI( TAG, "BQ25896 host mode active, 40s watchdog" );
+    }
+    return result;
+}
+
+static void charger_controller_poll( void )
+{
+    if( NULL == charger_device || !board_i2c_ready() ||
+        CHARGER_CONTROLLER_SHUTDOWN == charger_controller )
+    {
+        return;
+    }
+    const int64_t now = esp_timer_get_time();
+    if( CHARGER_CONTROLLER_MANAGED == charger_controller )
+    {
+        if( now - charger_last_watchdog_us < CHARGER_WATCHDOG_REFRESH_US )
+        {
+            return;
+        }
+        uint8_t timer = 0U;
+        esp_err_t result = read_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL, &timer );
+        if( ESP_OK == result && charger_policy_valid && timer == charger_timer_policy )
+        {
+            result = write_register_u8( charger_device, BQ25896_REG_CHARGE_CONTROL,
+                                        charger_charge_policy | BQ25896_WATCHDOG_RESET_BIT );
+            if( ESP_OK == result )
+            {
+                charger_last_watchdog_us = now;
+                return;
+            }
+        }
+        ESP_LOGW( TAG, "BQ25896 configuration/watchdog lost: %s",
+                  esp_err_to_name( result ) );
+        charger_controller = CHARGER_CONTROLLER_RECOVERY;
+        charger_retry_after_us = now + CHARGER_RETRY_US;
+        return;
+    }
+    if( CHARGER_CONTROLLER_RECOVERY == charger_controller && now < charger_retry_after_us )
+    {
+        return;
+    }
+    charger_controller = CHARGER_CONTROLLER_INSPECT;
+    const esp_err_t result = charger_inspect_and_manage();
+    if( ESP_OK != result )
+    {
+        charger_controller = CHARGER_CONTROLLER_RECOVERY;
+        charger_retry_after_us = now + CHARGER_RETRY_US;
+        ESP_LOGW( TAG, "BQ25896 host setup deferred: %s", esp_err_to_name( result ) );
+    }
+}
+
 static void sample_charger( battery_status_t *a_status, bool *a_sampled )
 {
     if( NULL == charger_device || !board_i2c_ready() )
@@ -244,6 +349,7 @@ static void sample_charger( battery_status_t *a_status, bool *a_sampled )
     const esp_err_t result = read_register_u8( charger_device, BQ25896_REG_STATUS, &status );
     if( ESP_OK == result )
     {
+        charger_controller_poll();
         const uint8_t bus_status = ( status >> BQ25896_BUS_STATUS_SHIFT ) & BQ25896_BUS_STATUS_MASK;
         const bool valid_input =
             BQ25896_BUS_NO_INPUT != bus_status && BQ25896_BUS_OTG != bus_status;
@@ -275,11 +381,29 @@ static void sample_charger( battery_status_t *a_status, bool *a_sampled )
                 read_register_u8( charger_device, BQ25896_REG_FAULT, &a_status->charger_faults ) )
         {
             a_status->charger_details_fresh = true;
+            /* REG0C first exposes latched history; the second read reports
+               present faults. Do not mistake old watchdog events for current ones. */
+            uint8_t current_faults = 0U;
+            if( ESP_OK == read_register_u8( charger_device, BQ25896_REG_FAULT,
+                                            &current_faults ) )
+            {
+                if( 0U != ( a_status->charger_faults & BQ25896_WATCHDOG_FAULT_BIT ) )
+                {
+                    ESP_LOGD( TAG, "BQ25896 historical watchdog fault" );
+                }
+                a_status->charger_faults = current_faults;
+            }
+            else
+            {
+                a_status->charger_details_fresh = false;
+            }
         }
     }
     else if( ESP_ERR_INVALID_STATE != result )
     {
         ESP_LOGW( TAG, "BQ25896 no longer responding: %s", esp_err_to_name( result ) );
+        charger_controller = CHARGER_CONTROLLER_RECOVERY;
+        charger_retry_after_us = esp_timer_get_time() + CHARGER_RETRY_US;
         detach_optional_device( &charger_device );
     }
 }
@@ -376,6 +500,10 @@ esp_err_t battery_init( void )
     cached_status.charge_state = BATTERY_CHARGE_UNKNOWN;
     gauge_device = NULL;
     charger_device = NULL;
+    charger_controller = CHARGER_CONTROLLER_DISCOVER;
+    charger_policy_valid = false;
+    charger_last_watchdog_us = 0;
+    charger_retry_after_us = 0;
 
     esp_err_t result = ESP_OK;
     if( RFSCOUT_BATTERY_I2C_GAUGE_CHARGER == RFSCOUT_BOARD_BATTERY_TYPE )
@@ -451,6 +579,13 @@ esp_err_t battery_shutdown( void )
         return result;
     }
 
+    charger_controller = CHARGER_CONTROLLER_SHUTDOWN;
     power_path |= BQ25896_BATFET_DISABLE_BIT;
-    return write_register_u8( charger_device, BQ25896_REG_POWER_PATH, power_path );
+    result = write_register_u8( charger_device, BQ25896_REG_POWER_PATH, power_path );
+    if( ESP_OK != result )
+    {
+        charger_controller = CHARGER_CONTROLLER_RECOVERY;
+        charger_retry_after_us = esp_timer_get_time() + CHARGER_RETRY_US;
+    }
+    return result;
 }
