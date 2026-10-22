@@ -118,13 +118,14 @@ static const rfscout_board_profile_t tembed_profile = {
     .speaker_bclk_pin = 46,
     .speaker_data_pin = 7,
     .battery_type = RFSCOUT_BATTERY_I2C_GAUGE_CHARGER,
-    .charger_policy = {
-        .input_current_ma = 500,
-        .fast_charge_current_ma = 512,
-        .precharge_current_ma = 128,
-        .termination_current_ma = 128,
-        .regulation_voltage_mv = 4208,
-    },
+    .charger_policy =
+        {
+            .input_current_ma = 500,
+            .fast_charge_current_ma = 512,
+            .precharge_current_ma = 128,
+            .termination_current_ma = 128,
+            .regulation_voltage_mv = 4208,
+        },
     .pn532_i2c_address = 0x24,
     .mlx90640_i2c_address = 0x33,
     .bq27220_i2c_address = 0x55,
