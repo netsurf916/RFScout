@@ -20,6 +20,7 @@
 #define BATTERY_REFRESH_INTERVAL_US 1000000LL
 
 static int64_t last_refresh_us;
+static bool details_page;
 
 static const char *charge_label( battery_charge_state_t a_state )
 {
@@ -63,6 +64,58 @@ static void battery_render( void )
 
     display_clear( theme->background );
     ui_chrome_draw( "BATTERY", theme->secondary );
+
+    if( details_page )
+    {
+        draw_panel( 4, UI_LAYOUT_PANEL_TOP_Y, 312, 140 );
+        display_draw_text( 10, 30, "CHARGER DIAGNOSTICS", theme->secondary, 1U );
+        if( status.charger_details_fresh )
+        {
+            const unsigned charge_phase =
+                ( status.charger_status_register >> 3U ) & 3U;
+            const unsigned input_source =
+                ( status.charger_status_register >> 5U ) & 7U;
+            const unsigned input_limit_ma =
+                100U + 50U * ( status.charger_input_control & 0x3FU );
+            const unsigned fast_charge_ma =
+                64U * ( status.charger_current_control & 0x7FU );
+            const unsigned regulation_mv =
+                3840U + 16U * ( ( status.charger_voltage_control >> 2U ) & 0x3FU );
+            const unsigned termination_ma =
+                64U + 64U * ( status.charger_precharge_control & 0x0FU );
+            snprintf( text, sizeof( text ), "PHASE %u  INPUT %u  PG %u",
+                      charge_phase, input_source,
+                      ( status.charger_status_register & 0x04U ) ? 1U : 0U );
+            display_draw_text( 10, 48, text, theme->text, 1U );
+            snprintf( text, sizeof( text ), "ILIM %u mA  ICHG %u mA",
+                      input_limit_ma, fast_charge_ma );
+            display_draw_text( 10, 64, text, theme->text, 1U );
+            snprintf( text, sizeof( text ), "VREG %u mV  ITERM %u mA",
+                      regulation_mv, termination_ma );
+            display_draw_text( 10, 80, text, theme->text, 1U );
+            snprintf( text, sizeof( text ), "VBUS %u mV  IADC %u mA",
+                      2600U + 100U * ( status.charger_adc_vbus & 0x7FU ),
+                      50U * ( status.charger_adc_charge_current & 0x7FU ) );
+            display_draw_text( 10, 96, text, theme->text, 1U );
+            snprintf( text, sizeof( text ), "VSYS %u mV  DPM %02X",
+                      2304U + 20U * ( status.charger_adc_system_voltage & 0x7FU ),
+                      (unsigned)status.charger_dpm_status );
+            display_draw_text( 10, 112, text, theme->text, 1U );
+            snprintf( text, sizeof( text ), "FAULT %02X  CTRL %u  TIMER %02X",
+                      (unsigned)status.charger_faults,
+                      (unsigned)status.charger_controller_state,
+                      (unsigned)status.charger_timer_control );
+            display_draw_text( 10, 128, text,
+                               status.charger_faults ? theme->warning : theme->text, 1U );
+        }
+        else
+        {
+            display_draw_text( 10, 65, "CHARGER DATA UNAVAILABLE", theme->warning, 1U );
+        }
+        display_draw_text( 10, 149, "SELECT: BATTERY SUMMARY", theme->secondary, 1U );
+        (void)display_present();
+        return;
+    }
 
     /* Single managed content surface, below platform-owned chrome. */
     draw_panel( 4, UI_LAYOUT_PANEL_TOP_Y, 312, 48 );
@@ -188,6 +241,7 @@ static rfscout_app_runtime_result_t battery_runtime( const rfscout_app_runtime_e
     if( RFSCOUT_APP_RUNTIME_ENTER == a_event->type )
     {
         last_refresh_us = a_event->now_us;
+        details_page = false;
         battery_render();
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
@@ -195,6 +249,13 @@ static rfscout_app_runtime_result_t battery_runtime( const rfscout_app_runtime_e
         a_event->now_us - last_refresh_us >= BATTERY_REFRESH_INTERVAL_US )
     {
         last_refresh_us = a_event->now_us;
+        battery_render();
+        return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
+    if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type &&
+        RFSCOUT_INPUT_SELECT == a_event->input.type )
+    {
+        details_page = !details_page;
         battery_render();
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
