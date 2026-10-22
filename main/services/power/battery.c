@@ -275,6 +275,8 @@ static void sample_gauge( battery_status_t *a_status, bool *a_sampled, uint16_t 
     }
 }
 
+static esp_err_t charger_verify_policy( void );
+
 /* The immutable board profile is the authority for charging limits. */
 static esp_err_t charger_inspect_and_manage( void )
 {
@@ -392,19 +394,33 @@ static esp_err_t charger_verify_policy( void )
     uint8_t adc = 0U;
     esp_err_t result = read_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL, &timer );
     if( ESP_OK == result )
+    {
         result = read_register_u8( charger_device, BQ25896_REG_PRECHARGE_CONTROL, &precharge );
+    }
     if( ESP_OK == result )
+    {
         result = read_register_u8( charger_device, BQ25896_REG_INPUT_CONTROL, &input );
+    }
     if( ESP_OK == result )
+    {
         result = read_register_u8( charger_device, BQ25896_REG_CURRENT_CONTROL, &current );
+    }
     if( ESP_OK == result )
+    {
         result = read_register_u8( charger_device, BQ25896_REG_VOLTAGE_CONTROL, &voltage );
+    }
     if( ESP_OK == result )
+    {
         result = read_register_u8( charger_device, BQ25896_REG_CHARGE_CONTROL, &control );
+    }
     if( ESP_OK == result )
+    {
         result = read_register_u8( charger_device, BQ25896_REG_ADC_CONTROL, &adc );
+    }
     if( ESP_OK != result )
+    {
         return result;
+    }
     if( !charger_policy_valid || timer != charger_timer_policy ||
         precharge != charger_precharge_policy || input != charger_input_policy ||
         current != charger_current_policy || voltage != charger_voltage_policy ||
