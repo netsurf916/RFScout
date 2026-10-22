@@ -18,7 +18,7 @@
 #define BATTERY_REFRESH_INTERVAL_US 1000000LL
 
 static int64_t last_refresh_us;
-static bool show_details;
+static unsigned page;
 
 static const char *charge_label( battery_charge_state_t a_state )
 {
@@ -44,9 +44,10 @@ static void battery_render( void )
     const ui_theme_palette_t *theme = ui_theme_get();
     char line[ 64 ];
     display_clear( theme->background );
-    ui_chrome_draw( show_details ? "BATTERY / STATUS" : "BATTERY / LEVEL", theme->secondary );
+    const char *titles[] = { "BATTERY / LEVEL", "BATTERY / STATUS", "BATTERY / HEALTH", "BATTERY / CHARGER" };
+    ui_chrome_draw( titles[ page ], theme->secondary );
 
-    if( show_details )
+    if( 1U == page )
     {
         snprintf( line, sizeof( line ), "GAUGE: %s%s",
                   status.gauge_available ? "ONLINE" : "OFFLINE",
@@ -61,6 +62,48 @@ static void battery_render( void )
         snprintf( line, sizeof( line ), "USB: %s",
                   status.charger_fresh ? ( status.external_power ? "PRESENT" : "ABSENT" ) : "UNKNOWN" );
         display_draw_text( 12, 109, line, theme->text, 1U );
+    }
+    else if( 2U == page )
+    {
+        if( status.gauge_details_fresh )
+        {
+            snprintf( line, sizeof( line ), "REMAIN %u mAh", (unsigned)status.remaining_capacity_mah );
+            display_draw_text( 12, 42, line, theme->text, 1U );
+            snprintf( line, sizeof( line ), "FULL %u / DESIGN %u mAh",
+                      (unsigned)status.full_capacity_mah, (unsigned)status.design_capacity_mah );
+            display_draw_text( 12, 64, line, theme->text, 1U );
+            snprintf( line, sizeof( line ), "CYCLES %u", (unsigned)status.cycle_count );
+            display_draw_text( 12, 86, line, theme->text, 1U );
+            snprintf( line, sizeof( line ), "HEALTH %u%%", (unsigned)( status.state_of_health_percent & 0x00FFU ) );
+            display_draw_text( 12, 108, line, theme->accent, 1U );
+        }
+        else
+        {
+            display_draw_text( 12, 60, "GAUGE DETAILS UNAVAILABLE", theme->warning, 1U );
+        }
+    }
+    else if( 3U == page )
+    {
+        if( status.charger_details_fresh )
+        {
+            snprintf( line, sizeof( line ), "FAULT 0x%02X  INPUT 0x%02X",
+                      (unsigned)status.charger_faults, (unsigned)status.charger_input_control );
+            display_draw_text( 12, 42, line, status.charger_faults ? theme->error : theme->text, 1U );
+            snprintf( line, sizeof( line ), "CHG 03:%02X 04:%02X 05:%02X",
+                      (unsigned)status.charger_charge_control,
+                      (unsigned)status.charger_current_control,
+                      (unsigned)status.charger_precharge_control );
+            display_draw_text( 12, 64, line, theme->text, 1U );
+            snprintf( line, sizeof( line ), "VREG 06:%02X TIMER 07:%02X",
+                      (unsigned)status.charger_voltage_control,
+                      (unsigned)status.charger_timer_control );
+            display_draw_text( 12, 86, line, theme->text, 1U );
+            display_draw_text( 12, 108, "READ-ONLY REGISTER VALUES", theme->secondary, 1U );
+        }
+        else
+        {
+            display_draw_text( 12, 60, "CHARGER DETAILS UNAVAILABLE", theme->warning, 1U );
+        }
     }
     else
     {
@@ -104,7 +147,7 @@ static void battery_render( void )
         display_draw_text( 12, 121, status.percentage_fresh ? line : "MEASUREMENT STALE",
                            status.percentage_fresh ? theme->text : theme->warning, 1U );
     }
-    display_draw_text( 12, 151, "CENTER: DETAILS", theme->secondary, 1U );
+    display_draw_text( 12, 151, "CENTER: NEXT PAGE", theme->secondary, 1U );
     (void)display_present();
 }
 
@@ -116,7 +159,7 @@ static rfscout_app_runtime_result_t battery_runtime( const rfscout_app_runtime_e
     }
     if( RFSCOUT_APP_RUNTIME_ENTER == a_event->type )
     {
-        show_details = false;
+        page = 0U;
         last_refresh_us = 0;
         battery_render();
         return RFSCOUT_APP_RUNTIME_HANDLED;
@@ -125,7 +168,7 @@ static rfscout_app_runtime_result_t battery_runtime( const rfscout_app_runtime_e
     {
         if( RFSCOUT_INPUT_SELECT == a_event->input.type )
         {
-            show_details = !show_details;
+            page = ( page + 1U ) % 4U;
             battery_render();
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
