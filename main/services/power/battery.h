@@ -46,6 +46,12 @@ typedef struct
     /** Read-only charger registers, valid only when charger_details_fresh. */
     bool charger_details_fresh;
     uint8_t charger_faults;
+    uint8_t charger_status_register;
+    uint8_t charger_dpm_status;
+    uint8_t charger_adc_vbus;
+    uint8_t charger_adc_charge_current;
+    uint8_t charger_adc_system_voltage;
+    uint8_t charger_controller_state;
     uint8_t charger_input_control;
     uint8_t charger_charge_control;
     uint8_t charger_current_control;
