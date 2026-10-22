@@ -54,6 +54,8 @@ typedef struct
     uint16_t charger_fast_charge_limit_ma;
     uint16_t charger_regulation_mv;
     uint16_t charger_termination_ma;
+    /** ADC values are meaningful only when charger_adc_fresh is true. */
+    bool charger_adc_fresh;
     uint16_t charger_vbus_mv;
     uint16_t charger_adc_current_ma;
     uint16_t charger_system_mv;
