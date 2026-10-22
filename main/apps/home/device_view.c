@@ -442,8 +442,8 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             snprintf( a_value, a_capacity, "%s", startup_app_name( config->startup_app ) );
             break;
         case DEVICE_ITEM_BATTERY:
-            snprintf( a_value, a_capacity, "%s",
-                      on_off( config->apps_enabled[ RFSCOUT_APP_BATTERY ] ) );
+            snprintf(
+                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_BATTERY ] ) );
             break;
         case DEVICE_ITEM_DIAGNOSTICS:
             snprintf( a_value,
