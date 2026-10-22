@@ -92,19 +92,22 @@ static void battery_render( void )
             display_draw_text( 10, 80, text, theme->text, 1U );
             if( status.charger_adc_fresh )
             {
-                snprintf( text, sizeof( text ), "VBUS %u mV  IADC %u mA",
+                snprintf( text,
+                          sizeof( text ),
+                          "VBUS %u mV  IADC %u mA",
                           (unsigned)status.charger_vbus_mv,
                           (unsigned)status.charger_adc_current_ma );
                 display_draw_text( 10, 96, text, theme->text, 1U );
-                snprintf( text, sizeof( text ), "VSYS %u mV  DPM %02X",
+                snprintf( text,
+                          sizeof( text ),
+                          "VSYS %u mV  DPM %02X",
                           (unsigned)status.charger_system_mv,
                           (unsigned)status.charger_dpm_status );
             }
             else
             {
                 display_draw_text( 10, 96, "ADC DATA UNAVAILABLE", theme->warning, 1U );
-                snprintf( text, sizeof( text ), "DPM %02X",
-                          (unsigned)status.charger_dpm_status );
+                snprintf( text, sizeof( text ), "DPM %02X", (unsigned)status.charger_dpm_status );
             }
             display_draw_text( 10, 112, text, theme->text, 1U );
             snprintf( text,
