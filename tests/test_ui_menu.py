@@ -69,9 +69,9 @@ class MenuPresentationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             temp = Path(directory)
             (temp / "esp_err.h").write_text("typedef int esp_err_t;\n")
-            (temp / "display.h").write_text(
-                "#include <stdint.h>\n"
-                "void display_draw_text(int, int, const char *, uint16_t, unsigned);\n")
+            (temp / "board.h").write_text(
+                "#define RFSCOUT_BOARD_DISPLAY_WIDTH 320\n"
+                "#define RFSCOUT_BOARD_DISPLAY_HEIGHT 170\n")
             (temp / "menu_harness.c").write_text(HARNESS)
             executable = temp / "menu_test"
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",

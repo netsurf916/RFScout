@@ -92,6 +92,7 @@ typedef struct {
     uint32_t gps_led_rgb;
     bool gps_keep_awake;
     uint8_t gps_timeout_seconds;
+    uint8_t gps_movement_m;
 } device_config_t;
 const device_config_t *device_config_get(void);
 typedef enum { RFSCOUT_EVIDENCE_STRENGTH_EVERYTHING, RFSCOUT_EVIDENCE_STRENGTH_POSSIBLE,
