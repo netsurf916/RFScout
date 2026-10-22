@@ -87,7 +87,7 @@ static void battery_render( void )
                       ( status.charger_status_register & 0x04U ) ? 1U : 0U );
             display_draw_text( 10, 48, text, theme->text, 1U );
             snprintf(
-                text, sizeof( text ), "ILIM %u mA  ICHG %u mA", input_limit_ma, fast_charge_ma );
+                text, sizeof( text ), "IIN %u mA  ICHG %u mA", input_limit_ma, fast_charge_ma );
             display_draw_text( 10, 64, text, theme->text, 1U );
             snprintf(
                 text, sizeof( text ), "VREG %u mV  ITERM %u mA", regulation_mv, termination_ma );
@@ -169,6 +169,11 @@ static void battery_render( void )
               charge_label( status.charge_state ),
               status.charger_fresh ? ( status.external_power ? "USB" : "BAT" ) : "POWER ?" );
     display_draw_text( 10, 60, text, status.charger_fresh ? theme->text : theme->warning, 1U );
+    if( status.charger_fresh && status.percentage_fresh &&
+        BATTERY_CHARGE_COMPLETE == status.charge_state && status.percentage < 95U )
+    {
+        display_draw_text( 166, 60, "SOC / CHG MISMATCH", theme->warning, 1U );
+    }
 
     display_draw_text( 10, 81, "GAUGE / HEALTH", theme->secondary, 1U );
     if( status.percentage_fresh )
