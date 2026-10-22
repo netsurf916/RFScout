@@ -334,9 +334,9 @@ static esp_err_t charger_inspect_and_manage( void )
     charger_voltage_policy = ( voltage & 0x03U ) |
                              (uint8_t)( ( ( policy->regulation_voltage_mv - 3840U ) / 16U ) << 2U );
     charger_timer_policy = ( timer & (uint8_t)~BQ25896_WATCHDOG_MASK ) | BQ25896_WATCHDOG_40S;
-    charger_charge_policy = ( control & (uint8_t)~( BQ25896_WATCHDOG_RESET_BIT |
-                                                    BQ25896_OTG_ENABLE_BIT ) ) |
-                            BQ25896_CHARGE_ENABLE_BIT;
+    charger_charge_policy =
+        ( control & ( uint8_t ) ~( BQ25896_WATCHDOG_RESET_BIT | BQ25896_OTG_ENABLE_BIT ) ) |
+        BQ25896_CHARGE_ENABLE_BIT;
     charger_adc_policy = adc | BQ25896_ADC_CONTINUOUS_BIT;
     charger_policy_valid = true;
     result = write_register_u8( charger_device, BQ25896_REG_INPUT_CONTROL, charger_input_policy );
@@ -535,9 +535,8 @@ static void sample_charger( battery_status_t *a_status, bool *a_sampled )
             a_status->charger_fast_charge_limit_ma = 64U * ( current & 0x7FU );
             a_status->charger_regulation_mv = 3840U + 16U * ( ( voltage >> 2U ) & 0x3FU );
             a_status->charger_termination_ma = 64U + 64U * ( precharge & 0x0FU );
-            a_status->charger_adc_fresh =
-                0U != ( adc_control & BQ25896_ADC_CONTINUOUS_BIT ) &&
-                CHARGER_CONTROLLER_MANAGED == charger_controller;
+            a_status->charger_adc_fresh = 0U != ( adc_control & BQ25896_ADC_CONTINUOUS_BIT ) &&
+                                          CHARGER_CONTROLLER_MANAGED == charger_controller;
             a_status->charger_vbus_mv = 2600U + 100U * ( adc_vbus & 0x7FU );
             a_status->charger_adc_current_ma = 50U * ( adc_current & 0x7FU );
             a_status->charger_system_mv = 2304U + 20U * ( adc_system & 0x7FU );
