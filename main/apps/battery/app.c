@@ -78,11 +78,17 @@ static void battery_render( void )
                       status.charger_input_source,
                       status.charger_power_good ? 1U : 0U );
             display_draw_text( 10, 48, text, theme->text, 1U );
-            snprintf(
-                text, sizeof( text ), "IIN %u mA  ICHG %u mA", status.charger_input_limit_ma, status.charger_fast_charge_limit_ma );
+            snprintf( text,
+                      sizeof( text ),
+                      "IIN %u mA  ICHG %u mA",
+                      status.charger_input_limit_ma,
+                      status.charger_fast_charge_limit_ma );
             display_draw_text( 10, 64, text, theme->text, 1U );
-            snprintf(
-                text, sizeof( text ), "VREG %u mV  ITERM %u mA", status.charger_regulation_mv, status.charger_termination_ma );
+            snprintf( text,
+                      sizeof( text ),
+                      "VREG %u mV  ITERM %u mA",
+                      status.charger_regulation_mv,
+                      status.charger_termination_ma );
             display_draw_text( 10, 80, text, theme->text, 1U );
             snprintf( text,
                       sizeof( text ),
@@ -205,18 +211,21 @@ static void battery_render( void )
     display_draw_text( 166, 81, "CHARGER / LIMITS", theme->secondary, 1U );
     if( status.charger_details_fresh )
     {
-        snprintf( text, sizeof( text ), "FAULT %02X  PG %u",
-                  (unsigned)status.charger_faults, status.charger_power_good ? 1U : 0U );
+        snprintf( text,
+                  sizeof( text ),
+                  "FAULT %02X  PG %u",
+                  (unsigned)status.charger_faults,
+                  status.charger_power_good ? 1U : 0U );
         display_draw_text( 166, 97, text, status.charger_faults ? theme->error : theme->text, 1U );
-        snprintf( text, sizeof( text ), "IIN %u  CHG %u",
+        snprintf( text,
+                  sizeof( text ),
+                  "IIN %u  CHG %u",
                   (unsigned)status.charger_input_limit_ma,
                   (unsigned)status.charger_fast_charge_limit_ma );
         display_draw_text( 166, 115, text, theme->text, 1U );
-        snprintf( text, sizeof( text ), "VREG %u",
-                  (unsigned)status.charger_regulation_mv );
+        snprintf( text, sizeof( text ), "VREG %u", (unsigned)status.charger_regulation_mv );
         display_draw_text( 166, 133, text, theme->text, 1U );
-        snprintf( text, sizeof( text ), "TERM %u mA",
-                  (unsigned)status.charger_termination_ma );
+        snprintf( text, sizeof( text ), "TERM %u mA", (unsigned)status.charger_termination_ma );
         display_draw_text( 166, 151, text, theme->secondary, 1U );
     }
     else
