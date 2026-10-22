@@ -417,7 +417,6 @@ static void sample_charger( battery_status_t *a_status, bool *a_sampled )
     if( ESP_OK == result )
     {
         charger_controller_poll();
-        a_status->charger_status_register = status;
         a_status->charger_controller_state = (uint8_t)charger_controller;
         const uint8_t bus_status = ( status >> BQ25896_BUS_STATUS_SHIFT ) & BQ25896_BUS_STATUS_MASK;
         const bool valid_input =
@@ -440,14 +439,19 @@ static void sample_charger( battery_status_t *a_status, bool *a_sampled )
             ESP_OK == read_register_u8( charger_device, BQ25896_REG_INPUT_CONTROL, &input ) &&
             ESP_OK == read_register_u8( charger_device, BQ25896_REG_CHARGE_CONTROL, &control ) &&
             ESP_OK == read_register_u8( charger_device, BQ25896_REG_CURRENT_CONTROL, &current ) &&
-            ESP_OK == read_register_u8( charger_device, BQ25896_REG_PRECHARGE_CONTROL, &precharge ) &&
+            ESP_OK ==
+                read_register_u8( charger_device, BQ25896_REG_PRECHARGE_CONTROL, &precharge ) &&
             ESP_OK == read_register_u8( charger_device, BQ25896_REG_VOLTAGE_CONTROL, &voltage ) &&
             ESP_OK == read_register_u8( charger_device, BQ25896_REG_TIMER_CONTROL, &timer ) &&
-            ESP_OK == read_register_u8( charger_device, BQ25896_REG_FAULT, &a_status->charger_faults ) &&
-            ESP_OK == read_register_u8( charger_device, BQ25896_REG_DPM_STATUS, &a_status->charger_dpm_status ) &&
+            ESP_OK ==
+                read_register_u8( charger_device, BQ25896_REG_FAULT, &a_status->charger_faults ) &&
+            ESP_OK == read_register_u8(
+                          charger_device, BQ25896_REG_DPM_STATUS, &a_status->charger_dpm_status ) &&
             ESP_OK == read_register_u8( charger_device, BQ25896_REG_ADC_VBUS, &adc_vbus ) &&
-            ESP_OK == read_register_u8( charger_device, BQ25896_REG_ADC_CHARGE_CURRENT, &adc_current ) &&
-            ESP_OK == read_register_u8( charger_device, BQ25896_REG_ADC_SYSTEM_VOLTAGE, &adc_system ) )
+            ESP_OK ==
+                read_register_u8( charger_device, BQ25896_REG_ADC_CHARGE_CURRENT, &adc_current ) &&
+            ESP_OK ==
+                read_register_u8( charger_device, BQ25896_REG_ADC_SYSTEM_VOLTAGE, &adc_system ) )
         {
             a_status->charger_details_fresh = true;
             a_status->charger_phase = ( status >> 3U ) & 3U;
@@ -528,9 +532,9 @@ static void refresh_i2c_battery( battery_status_t *a_status )
         a_status->external_power = ( BATTERY_CHARGE_CHARGING == a_status->charge_state ) ||
                                    ( BATTERY_CHARGE_COMPLETE == a_status->charge_state );
     }
-    a_status->charger_soc_disagreement =
-        a_status->charger_fresh && a_status->percentage_fresh &&
-        BATTERY_CHARGE_COMPLETE == a_status->charge_state && a_status->percentage < 95U;
+    a_status->charger_soc_disagreement = a_status->charger_fresh && a_status->percentage_fresh &&
+                                         BATTERY_CHARGE_COMPLETE == a_status->charge_state &&
+                                         a_status->percentage < 95U;
 }
 
 void battery_refresh( void )
