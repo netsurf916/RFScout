@@ -773,8 +773,7 @@ esp_err_t rfscout_wifi_station_connect_secured_bss( const rfscout_wifi_station_b
     }
     if( NULL == a_bss || NULL == a_password ||
         RFSCOUT_WIFI_STATION_SECURITY_SECURED != a_bss->security ||
-        ( WIFI_AUTH_WPA2_PSK != a_bss->auth_mode && WIFI_AUTH_WPA2_WPA3_PSK != a_bss->auth_mode &&
-          WIFI_AUTH_WPA3_PSK != a_bss->auth_mode ) )
+        !rfscout_wifi_station_secured_supported( a_bss->auth_mode ) )
     {
         return ESP_ERR_INVALID_ARG;
     }
@@ -997,6 +996,37 @@ bool rfscout_wifi_station_reason_auth_rejected( int32_t a_reason )
 {
     return WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT == a_reason || WIFI_REASON_AUTH_FAIL == a_reason ||
            WIFI_REASON_HANDSHAKE_TIMEOUT == a_reason;
+}
+
+bool rfscout_wifi_station_secured_supported( int32_t a_auth_mode )
+{
+    return WIFI_AUTH_WPA2_PSK == a_auth_mode || WIFI_AUTH_WPA2_WPA3_PSK == a_auth_mode ||
+           WIFI_AUTH_WPA3_PSK == a_auth_mode;
+}
+
+const char *rfscout_wifi_station_auth_label( int32_t a_auth_mode )
+{
+    switch( (wifi_auth_mode_t)a_auth_mode )
+    {
+        case WIFI_AUTH_OPEN:
+            return "Open";
+        case WIFI_AUTH_OWE:
+            return "OWE";
+        case WIFI_AUTH_WEP:
+            return "WEP";
+        case WIFI_AUTH_WPA_PSK:
+            return "WPA";
+        case WIFI_AUTH_WPA2_PSK:
+            return "WPA2";
+        case WIFI_AUTH_WPA_WPA2_PSK:
+            return "WPA1/2";
+        case WIFI_AUTH_WPA3_PSK:
+            return "WPA3";
+        case WIFI_AUTH_WPA2_WPA3_PSK:
+            return "WPA2/3";
+        default:
+            return "Secured";
+    }
 }
 
 esp_err_t

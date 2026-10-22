@@ -349,16 +349,19 @@ Replace hard-coded SD paths and direct stdio/POSIX card access with one storage-
 - [x] No migration: files written by earlier firmware under `/sdcard/audio/` and `/sdcard/logs/` remain on the card untouched. Release notes must call this out.
 - [ ] Hardware-validate logging, breadcrumbs (when a GPS provider is present), Recorder record/save/browse/delete/playback, SD removal while each is active, forced-close diagnostics, and repeated Recorder enter/exit with zero remaining media handles.
 
-#### G2: Hotspots (Hotspotter Lite) application
+#### G2: Hotspots application (Hotspotter parity)
 
 **Status:** Implemented as documented in [Hotspots](apps/HOTSPOTS.md); hardware validation open.
 
-A lightweight, realtime view of nearby open access points and whether each currently provides Internet connectivity, derived from the standalone Hotspotter project but intentionally narrower: no GPS, no persistent storage, no credentials.
+RFScout's port of the standalone Hotspotter project: nearby access points, whether each currently provides Internet connectivity, and a durable, grouped history of the ones that did, adapted to the rotary interface.
 
 Decisions:
 
 - [x] Automatic checking **on by default** (Hotspotter's -80 dBm floor and +4 dB retry gating, strongest first), with a per-visit toggle and manual Recheck.
-- [x] **Open and OWE** networks are eligible; secured and hidden networks are counted but never joined.
+- [x] **Open, OWE and WPA2/WPA3 personal** networks are eligible; other secured modes are listed as unsupported, and hidden networks are not reported.
+- [x] One credential store shared with Home, with stable profile IDs so several profiles can share an SSID, learned associated/rejected BSSIDs, and evidence-based automatic profile selection ([Architecture](ARCHITECTURE.md#shared-network-profiles)).
+- [x] Durable SD history of green/yellow results with configuration epochs, movement-triggered locations, background replay and compaction.
+- [x] Hotspotter's evidence-based network grouping for Live and History; Live, History and Saved views switched by landing rotary under app lock.
 - [x] A fresh random, locally administered station MAC for every check; factory MAC restored when the station session stops.
 - [x] Named **Hotspots**, placed after WiFi/BLE in navigation order.
 - [x] NTP is required before HTTPS: NTP failure or timeout marks the AP yellow without attempting HTTPS.
@@ -375,6 +378,7 @@ Platform prerequisites:
 Remaining:
 
 - [ ] Hardware-validate open, OWE, captive-portal, NTP-blocked, and no-Internet networks; MAC randomization and factory-MAC restore; rapid enter/exit during each check stage.
+- [ ] Hardware-validate WPA2, WPA3 and WPA2/WPA3 transition networks, a same-SSID AP with another passphrase, credential round trips between Home and Hotspots, SD removal during history writes, journal replay with torn and malformed lines, and history with no or stale GPS.
 - [ ] Decide whether captive-portal detection (plain-HTTP generate_204-style check) should refine yellow.
 
 #### Further framework isolation candidates

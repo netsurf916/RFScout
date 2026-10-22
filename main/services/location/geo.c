@@ -7,7 +7,7 @@
 #include "geo.h"
 
 #include <math.h>
-#include <stddef.h>
+#include <stdio.h>
 
 #define GEO_EARTH_RADIUS_M 6371000.0
 #define GEO_RADIANS_PER_DEGREE 0.017453292519943295
@@ -22,6 +22,51 @@ geo_distance_m( double a_latitude1, double a_longitude1, double a_latitude2, dou
     const double haversine = sin( half_lat ) * sin( half_lat ) +
                              cos( lat1 ) * cos( lat2 ) * sin( half_lon ) * sin( half_lon );
     return 2.0 * GEO_EARTH_RADIUS_M * asin( sqrt( fmin( 1.0, fmax( 0.0, haversine ) ) ) );
+}
+
+double
+geo_bearing_deg( double a_latitude1, double a_longitude1, double a_latitude2, double a_longitude2 )
+{
+    const double lat1 = a_latitude1 * GEO_RADIANS_PER_DEGREE;
+    const double lat2 = a_latitude2 * GEO_RADIANS_PER_DEGREE;
+    const double delta = ( a_longitude2 - a_longitude1 ) * GEO_RADIANS_PER_DEGREE;
+    const double bearing =
+        atan2( sin( delta ) * cos( lat2 ),
+               cos( lat1 ) * sin( lat2 ) - sin( lat1 ) * cos( lat2 ) * cos( delta ) ) /
+        GEO_RADIANS_PER_DEGREE;
+    return bearing < 0.0 ? bearing + 360.0 : bearing;
+}
+
+unsigned geo_compass_sector( double a_degrees )
+{
+    const double wrapped = fmod( fmod( a_degrees, 360.0 ) + 360.0, 360.0 );
+    return (unsigned)( ( wrapped + 22.5 ) / 45.0 ) % 8U;
+}
+
+const char *geo_compass_label( double a_degrees )
+{
+    static const char *const labels[] = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
+    return labels[ geo_compass_sector( a_degrees ) ];
+}
+
+void geo_format_distance( double a_meters, char *a_output, size_t a_capacity )
+{
+    if( NULL == a_output || 0U == a_capacity )
+    {
+        return;
+    }
+    if( a_meters >= 10000.0 )
+    {
+        (void)snprintf( a_output, a_capacity, "%.0fkm", a_meters / 1000.0 );
+    }
+    else if( a_meters >= 1000.0 )
+    {
+        (void)snprintf( a_output, a_capacity, "%.1fkm", a_meters / 1000.0 );
+    }
+    else
+    {
+        (void)snprintf( a_output, a_capacity, "%.0fm", a_meters );
+    }
 }
 
 /** Degrees travelled eastward from a_from to a_to, in [0, 360). */

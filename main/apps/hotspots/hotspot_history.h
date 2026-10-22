@@ -72,6 +72,9 @@ uint8_t hotspot_history_progress( void );
 /** @brief Whether the latest journal access failed and records are only held in memory. */
 bool hotspot_history_degraded( void );
 
+/** @brief Malformed or unreadable journal lines skipped by the latest replay. */
+size_t hotspot_history_skipped( void );
+
 /** @brief Request compaction of the journal into one summary record per BSSID. */
 void hotspot_history_request_compaction( void );
 bool hotspot_history_compacting( void );

@@ -184,8 +184,7 @@ static void render_summary( void )
     /* Reserve the fifth row for overflow when more than five signatures are active. */
     const size_t shown = snapshot.signature_count > 5U ? 4U : snapshot.signature_count;
     rfscout_gps_snapshot_t gps = { 0 };
-    const bool has_fix =
-        gps_snapshot_get( &gps ) && gps.location_valid && gps.location_age_ms <= 5000U;
+    const bool has_fix = gps_snapshot_get( &gps ) && gps_location_fresh( &gps );
     double nearest_meters[ 5 ] = { 0 };
     bool nearest_valid[ 5 ] = { false };
     if( has_fix && shown > 0U )
@@ -198,15 +197,7 @@ static void render_summary( void )
         char distance[ 8 ] = "";
         if( has_fix && nearest_valid[ row ] )
         {
-            if( nearest_meters[ row ] >= 1000.0 )
-            {
-                (void)snprintf(
-                    distance, sizeof( distance ), "%.1fkm", nearest_meters[ row ] / 1000.0 );
-            }
-            else
-            {
-                (void)snprintf( distance, sizeof( distance ), "%.0fm", nearest_meters[ row ] );
-            }
+            geo_format_distance( nearest_meters[ row ], distance, sizeof( distance ) );
         }
         (void)snprintf( line,
                         sizeof( line ),

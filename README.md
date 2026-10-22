@@ -2,13 +2,13 @@
 
 RFScout is a handheld **RF situational-awareness** instrument for ESP32-S3. The currently supported hardware profile is the **LILYGO T-Embed CC1101 Plus**. RFScout keeps board identity behind runtime profile/capability boundaries so applications consume semantic services rather than hardware-specific GPIO or peripheral details.
 
-RFScout combines passive Wi-Fi observation and configurable passive/active BLE discovery, open-hotspot connectivity checks, receive-only RF activity monitoring, SD-backed audio recording and logging, thermal imaging with an optional MLX90640, semantic input/notifications, persistent device configuration, battery telemetry, and A/B firmware update support.
+RFScout combines passive Wi-Fi observation and configurable passive/active BLE discovery, hotspot connectivity checks with durable history, receive-only RF activity monitoring, SD-backed audio recording and logging, thermal imaging with an optional MLX90640, semantic input/notifications, persistent device configuration, battery telemetry, and A/B firmware update support.
 
 <p align="center">
   <img src="assets/device.jpg" alt="RFScout running on a LILYGO T-Embed CC1101 Plus" width="800">
 </p>
 
-RFScout passively observes Wi-Fi and does not join networks outside Hotspots or Home-managed infrastructure connections. BLE discovery can be configured as active, in which case the controller transmits scan requests; passive BLE discovery does not. Hotspots deliberately joins eligible open networks only while active. It is designed to answer “what electronic activity is around me?” without requiring continuous raw-packet inspection.
+RFScout passively observes Wi-Fi and does not join networks outside Hotspots or Home-managed infrastructure connections. BLE discovery can be configured as active, in which case the controller transmits scan requests; passive BLE discovery does not. Hotspots deliberately joins eligible open and saved-password networks only while active. It is designed to answer “what electronic activity is around me?” without requiring continuous raw-packet inspection.
 
 ## Documentation map
 
@@ -34,7 +34,7 @@ Top-level application order is:
 1. **System Events** — optional and disabled by default; bounded read-only system-event history
 2. **Home / Device Settings** — always available; device policy, networking, firmware update, and global settings
 3. **WiFi / BT** — passive Wi-Fi observation and configurable passive/active BLE discovery; the monitor UI already presents itself as **WiFi / BLE**, while some current descriptor/settings labels retain the older name
-4. **Hotspots** — realtime open/OWE access-point view that joins eligible networks to check NTP and verified HTTPS connectivity; no storage or location
+4. **Hotspots** — joins eligible open, OWE and saved WPA2/WPA3 access points to check NTP and verified HTTPS connectivity, and keeps a grouped SD history with optional GPS locations
 5. **CC1101** — receive-only sub-GHz RSSI sweeps and conservative signal-shape classification
 6. **nRF24** — receive-only 2.4 GHz RPD activity scanning plus surfaces for separately validated Enhanced ShockBurst observations
 7. **Recorder** — SD-backed 16-bit mono WAV recording, post-processing, browsing, deletion, and playback

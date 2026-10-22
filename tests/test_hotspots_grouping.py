@@ -1,4 +1,5 @@
-"""Host regression fixtures for Hotspotter's evidence-sensitive BSSID partitioning."""
+"""Host regression fixtures for Hotspotter's evidence-sensitive BSSID partitioning and the
+Hotspots network grouping model built on it."""
 import pathlib
 import shutil
 import subprocess
@@ -8,6 +9,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 GROUPING = ROOT / "main/apps/hotspots/characterization_grouping.c"
 HEADER_DIR = GROUPING.parent
+GROUPS = HEADER_DIR / "hotspot_groups.c"
 GEO = ROOT / "main/services/location/geo.c"
 
 HARNESS = r'''
@@ -110,22 +112,109 @@ int main( void )
 }
 '''
 
+MODEL_HARNESS = r'''
+#include "geo.h"
+#include "hotspot_groups.h"
+#include <assert.h>
+#include <math.h>
+#include <string.h>
+
+static hotspot_group_input_t input( const char *ssid, int auth, unsigned gateway, unsigned mac,
+                                    unsigned char partition )
+{
+    hotspot_group_input_t value = { 0 };
+    value.ssid = ssid;
+    value.auth_mode = auth;
+    value.partition = partition;
+    value.member.evidence.subnet_valid = gateway != 0;
+    value.member.evidence.gateway = gateway;
+    value.member.evidence.netmask = gateway != 0 ? 255U : 0U;
+    value.member.evidence.gateway_mac_valid = mac != 0;
+    value.member.evidence.gateway_mac[ 5 ] = (unsigned char)mac;
+    return value;
+}
+
+int main( void )
+{
+    /* 0,1: CAFE WPA2 conflicting gateways; 2: CAFE WPA2 no evidence; 3: CAFE open (other auth);
+       4: LIB; 5: CAFE WPA2 rejected every profile (partition 1). */
+    hotspot_group_input_t inputs[ 6 ] = {
+        input( "CAFE", 3, 1, 1, 0 ), input( "CAFE", 3, 2, 2, 0 ), input( "CAFE", 3, 0, 0, 0 ),
+        input( "CAFE", 0, 0, 0, 0 ), input( "LIB", 3, 0, 0, 0 ),  input( "CAFE", 3, 0, 0, 1 ),
+    };
+    /* Preference: LIB first, then 1, 5, 3, 2, 0. */
+    const size_t preference[ 6 ] = { 4, 1, 5, 3, 2, 0 };
+    size_t order[ 6 ];
+    hotspot_group_t groups[ 6 ];
+    size_t sorted[ 6 ];
+    size_t rank[ 6 ];
+    characterization_group_member_t members[ 6 ];
+    characterization_group_cluster_t clusters[ 6 ];
+    const hotspot_group_scratch_t scratch = { sorted, rank, members, clusters };
+
+    const size_t count = hotspot_groups_build( inputs, 6, preference, order, groups, &scratch );
+    assert( count == 5 );
+    /* Networks follow their best member: LIB, then the network holding 1, then 5, then 3. */
+    assert( groups[ 0 ].count == 1 && order[ groups[ 0 ].first ] == 4 );
+    assert( groups[ 0 ].networks == 1 );
+    assert( order[ groups[ 1 ].first ] == 1 );
+    assert( groups[ 1 ].networks == 3 );
+    assert( order[ groups[ 2 ].first ] == 5 );
+    assert( groups[ 2 ].count == 1 && groups[ 2 ].network == 3 );
+    assert( order[ groups[ 3 ].first ] == 3 && groups[ 3 ].networks == 1 );
+    /* Member 2 joins one of the evidence networks and keeps preference order inside it. */
+    size_t holder = 5;
+    for( size_t group = 0; group < count; ++group )
+        for( size_t member = 0; member < groups[ group ].count; ++member )
+            if( order[ groups[ group ].first + member ] == 2 )
+                holder = group;
+    assert( holder == 1 || holder == 4 );
+    assert( groups[ holder ].count == 2 );
+    assert( order[ groups[ holder ].first + 1 ] == 2 || order[ groups[ holder ].first ] == 1 );
+    /* Numbering among the three CAFE/WPA2 networks is unique. */
+    assert( groups[ 1 ].network != groups[ 4 ].network );
+    assert( hotspot_groups_build( inputs, 0, preference, order, groups, &scratch ) == 0 );
+
+    /* Shared geo helpers used by History distance and direction. */
+    assert( fabs( geo_bearing_deg( 0.0, 0.0, 1.0, 0.0 ) ) < 0.001 );
+    assert( fabs( geo_bearing_deg( 0.0, 0.0, 0.0, 1.0 ) - 90.0 ) < 0.001 );
+    assert( strcmp( geo_compass_label( 359.0 ), "N" ) == 0 );
+    assert( strcmp( geo_compass_label( 225.0 ), "SW" ) == 0 );
+    assert( strcmp( geo_compass_label( -45.0 ), "NW" ) == 0 );
+    char text[ 16 ];
+    geo_format_distance( 850.4, text, sizeof( text ) );
+    assert( strcmp( text, "850m" ) == 0 );
+    geo_format_distance( 1234.0, text, sizeof( text ) );
+    assert( strcmp( text, "1.2km" ) == 0 );
+    geo_format_distance( 12345.0, text, sizeof( text ) );
+    assert( strcmp( text, "12km" ) == 0 );
+    return 0;
+}
+'''
+
+
+def compile_and_run(harness, sources):
+    compiler = shutil.which("cc")
+    if compiler is None:
+        raise unittest.SkipTest("C compiler unavailable")
+    with tempfile.TemporaryDirectory() as folder:
+        source = pathlib.Path(folder) / "harness.c"
+        binary = pathlib.Path(folder) / "harness"
+        source.write_text(harness)
+        subprocess.run(
+            [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
+             "-I", str(HEADER_DIR), "-I", str(GEO.parent), str(source),
+             *[str(path) for path in sources], "-lm", "-o", str(binary)], check=True
+        )
+        subprocess.run([str(binary)], check=True)
+
 
 class GroupingTests(unittest.TestCase):
     def test_evidence_parity(self):
-        compiler = shutil.which("cc")
-        if compiler is None:
-            self.skipTest("C compiler unavailable")
-        with tempfile.TemporaryDirectory() as folder:
-            source = pathlib.Path(folder) / "grouping_test.c"
-            binary = pathlib.Path(folder) / "grouping_test"
-            source.write_text(HARNESS)
-            subprocess.run(
-                [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
-                 "-I", str(HEADER_DIR), "-I", str(GEO.parent), str(source), str(GROUPING), str(GEO),
-                 "-lm", "-o", str(binary)], check=True
-            )
-            subprocess.run([str(binary)], check=True)
+        compile_and_run(HARNESS, [GROUPING, GEO])
+
+    def test_network_model_and_geo(self):
+        compile_and_run(MODEL_HARNESS, [GROUPS, GROUPING, GEO])
 
 
 if __name__ == "__main__":

@@ -666,8 +666,7 @@ static bool record_receiver_location( rf_device_t *a_device,
                                       const rfscout_gps_snapshot_t *a_gps,
                                       observation_location_event_t *a_event )
 {
-    if( SURVEILLANCE_NONE == a_device->surveillance || !a_gps->location_valid ||
-        a_gps->location_age_ms > 5000U )
+    if( SURVEILLANCE_NONE == a_device->surveillance || !gps_location_fresh( a_gps ) )
         return false;
     geo_bounds_extend( &a_device->receiver_bounds, a_gps->latitude_deg, a_gps->longitude_deg );
     /* Live bounds see every packet; the journal records only movement-triggered samples. */

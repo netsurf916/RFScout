@@ -9,6 +9,7 @@
 #include "breadcrumbs.h"
 #include "device_config.h"
 #include "display_idle.h"
+#include "geo.h"
 #include "gps.h"
 #include "gps_view.h"
 #include "led_ring.h"
@@ -44,13 +45,13 @@ static void update_direction_led( void )
 
     rfscout_gps_snapshot_t gps = { 0 };
     int sector = -1;
-    if( gps_snapshot_get( &gps ) && gps.location_valid && gps.location_age_ms <= 5000U &&
-        gps.track_valid && gps.speed_valid && gps.speed_mps >= 0.7f && gps.track_deg >= 0.0f &&
+    if( gps_snapshot_get( &gps ) && gps_location_fresh( &gps ) && gps.track_valid &&
+        gps.speed_valid && gps.speed_mps >= 0.7f && gps.track_deg >= 0.0f &&
         gps.track_deg < 360.0f )
     {
         /* Hardware calibration: physical LED index 0 points West, not North.
            Shift the clockwise azimuth sector two LEDs so North uses index 2. */
-        sector = ( (int)( ( gps.track_deg + 22.5f ) / 45.0f ) + 2 ) % 8;
+        sector = (int)( ( geo_compass_sector( gps.track_deg ) + 2U ) % 8U );
     }
     if( sector == last_led_sector && !led_refresh_pending )
     {

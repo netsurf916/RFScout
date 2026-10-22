@@ -116,13 +116,22 @@ before an application transition commits; after one bounded retry for an RMT tim
 release failure vetoes the transition so no other application inherits a latched GPS
 navigation pixel. No additional LED ownership state machine exists.
 
-## Planned shared network-profile identity (PR #122)
+## Shared network profiles
 
-**Architecture contract for PR #122.** RFScout departs from Hotspotter's SSID-keyed credentials and supports multiple independently identified profiles with the same SSID. Home/OTA and Hotspots must continue to share one authoritative credential store, using a versioned backward-compatible migration from existing SSID/password records. Each profile has a stable internal ID, optional user label, SSID, credential and expected authentication policy, plus a bounded collection of associated BSSID observations (last seen, observed authentication mode, and whether connection/characterization succeeded). Credentials must never be copied into observation history or SD journal records.
+`services/wireless/saved_networks` is the one credential store for Home/OTA and Hotspots. It holds up to eight profiles in Home's `networks` record. Each profile has a stable ID, SSID, password, the auth mode learned on its first association, and up to 32 BSSIDs marked **associated** (accepted the passphrase) or **rejected** (refused it). Several profiles may share an SSID; screens label them `SSID #n`.
 
-Profile selection uses a previously associated BSSID and compatible authentication policy first; for a new BSSID consider same-SSID profile candidates, concurrent observations with known BSSIDs, and optionally fresh GPS proximity. Matching SSIDs in distinct places may resolve to different saved profiles; an ambiguous match must be presented for selection rather than silently choosing a password. A BSSID observation by itself is not proof of trust; track observed and successfully associated BSSIDs separately. A successful association adds the BSSID to its chosen profile; connectivity/HTTPS characterization success is a distinct outcome. Automatic candidate admission is explicit policy, not an implicit result of an SSID match. Until profile selection and authentication compatibility have passed tests, secured auto-check eligibility fails closed.
+- Every operation loads the record, applies one change, saves it, and erases its working copy, so a change made in either app is visible to the other at once. A failed save is returned to the caller and shown, never presented as saved.
+- `saved_networks_list()` returns a non-secret snapshot. `saved_networks_password()` copies one password for one association; callers erase it as soon as the association has started. Passwords are never copied into observation tables, SD journals, logs, or telemetry.
+- A BSSID can be associated with only one profile, and only under the auth mode the profile learned. Changing a password clears what the profile learned, because that evidence belonged to the old secret. Learned rejections are evicted oldest first when the BSSID list is full.
+- Older record layouts are rejected and deleted like any other unsupported record ([Save/default semantics](#savedefault-semantics)).
 
-GPS coordinates and learned profile coverage are **optional evidence**, never prerequisites for credential lookup, candidate discovery, association, characterization, or history. With valid location, use bounded/accuracy-aware coverage to improve ambiguous profile selection and gradually learn coverage from successful associations; without GPS, use BSSID history, observed overlap, security compatibility and explicit selection. Avoid using one growing bounding box as the sole proof of network identity. Keep this profile-selection layer separate from Hotspots' independent network-characterization/grouping evidence (gateway, subnet and gateway MAC), and defer rogue-AP classification to a future capability.
+Learning comes from association outcomes only: a successful join records the BSSID as associated, and an authentication failure or handshake timeout records it as rejected. Connectivity results (green/yellow/red) are not profile evidence. Home connects by profile ID and records the BSSID it reached; Hotspots records the BSSID of every secured check.
+
+Hotspots resolves which profile a secured BSSID may use automatically: an exact associated BSSID with the same auth mode first; otherwise a same-SSID, auth-compatible profile that this BSSID has not rejected, but only with evidence — one of the profile's associated BSSIDs in the same scan, or with history within the configured match distance of a fresh fix. One such profile is used; several, or same-SSID profiles without evidence, require the user to choose one for a manual join. GPS is supplementary evidence only; resolution, association, characterization, and history all work without it. Secured association is BSSID- and channel-pinned, accepts only WPA2/WPA3 personal, and never accepts a WPA3-only BSSID under a WPA2 minimum.
+
+The shared screens in `apps/network_common/network_credentials` give Home and Hotspots the same interaction: a profile view with the password masked until **Show**, **Edit password** and **Forget**; saving a password for an SSID with existing profiles as **Replace** or **New profile**; and picking an auth-compatible profile for one join.
+
+Profile selection is kept separate from Hotspots' network grouping, which uses its own characterization evidence (gateway, netmask, gateway MAC). Neither layer classifies rogue access points.
 
 ## Application lifecycle, views, and resource sessions
 
@@ -249,7 +258,7 @@ Infrastructure Wi-Fi is split into a low-level station driver and a framework-ow
 
 The network-session policy is common across applications: every new association requests a fresh random locally administered station MAC by default, association/DHCP is bounded to 30 seconds, and NTP synchronization is attempted for up to 15 seconds. Association plus DHCP establishes the LAN session; NTP failure leaves that connection in LIMITED rather than tearing it down, while successful NTP promotes it to READY. Only READY sessions may start HTTPS consumers. Release synchronously tears the station down before another logical session may reuse it. The station driver drains its event-loop work during stop so stale ESP-IDF disconnect events remain below the framework boundary. If the factory MAC cannot be captured, randomization degrades to the current station MAC rather than preventing connectivity. The factory MAC is restored after randomized sessions whenever the station stops.
 
-The station driver still provides a strongest-per-SSID scan projection for Home and a per-BSSID projection with security classification for Hotspots. The framework selects either credentialed SSID association or credential-free BSSID-pinned Open/OWE association, then applies the same network-session lifecycle to both. HTTPS remains a consumer of READY network sessions: OTA acquisition and the Hotspots connectivity probe retain separate transfer semantics while sharing connection/time policy.
+The station driver still provides a strongest-per-SSID scan projection for Home and a per-BSSID projection with security classification for Hotspots. The framework selects credentialed SSID association (Home), credential-free BSSID-pinned Open/OWE association, or passphrase BSSID-pinned WPA2/WPA3 association (Hotspots), then applies the same network-session lifecycle to each. HTTPS remains a consumer of READY network sessions: OTA acquisition and the Hotspots connectivity probe retain separate transfer semantics while sharing connection/time policy.
 
 The connectivity probe is a separate transactional session-managed service whose parameterized `begin` performs one bounded, cancellable, certificate-validated HTTPS request (Cloudflare `/cdn-cgi/trace`) over whatever station connection is up and reports the HTTP status plus public egress metadata. Session close cancels it and waits for its worker to exit.
 
@@ -398,6 +407,7 @@ Current layout:
 | `system` | `breadcrumbs` | Optional movement-triggered GPS breadcrumb journal `breadcrumbs-*.jsonl` |
 | `audio` (Recorder) | `recordings` | Recorder 16-bit mono PCM WAV files |
 | `wardrive` (Wardriving) | `captures` | Wardriving capture files |
+| `hotspots` (Hotspots) | `history` | Successful-characterization journal `hotspots-*.jsonl` |
 
 Applications add their own collections under their persistence key, for example the WiFi/BLE `locations` collection for `surveillance-*.jsonl`.
 
@@ -433,7 +443,7 @@ Breadcrumb recording is independent from the ordinary SD logging toggle and requ
 
 ### SD journals
 
-Every SD event log (breadcrumbs, WiFi/BLE surveillance locations, and future journals) uses
+Every SD event log (breadcrumbs, WiFi/BLE surveillance locations, Hotspots history) uses
 the shared `media_journal` service rather than its own file handling. A journal is a numbered
 series of segments in one media collection, `<prefix>-<8 hex digits>.jsonl`, where each line
 is one JSON object with a `type` field, an optional integer `utc`, and `lat`/`lon` with seven

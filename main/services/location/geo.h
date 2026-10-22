@@ -10,6 +10,7 @@
 #define _RFSCOUT_GEO_H_
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /**
@@ -38,6 +39,19 @@ typedef struct
 /** @brief Great-circle (haversine) distance between two points in metres. */
 double
 geo_distance_m( double a_latitude1, double a_longitude1, double a_latitude2, double a_longitude2 );
+
+/** @brief Initial great-circle bearing from point 1 to point 2, clockwise from north [0, 360). */
+double
+geo_bearing_deg( double a_latitude1, double a_longitude1, double a_latitude2, double a_longitude2 );
+
+/** @brief Eight-point compass sector of a bearing: 0 is N, 1 is NE, ... 7 is NW. */
+unsigned geo_compass_sector( double a_degrees );
+
+/** @brief Eight-point compass label ("N" ... "NW") of a bearing. */
+const char *geo_compass_label( double a_degrees );
+
+/** @brief Format a distance for small displays: "850m", "1.2km" or "12km". */
+void geo_format_distance( double a_meters, char *a_output, size_t a_capacity );
 
 /** @brief Grow the range to include one point, choosing the shorter longitude extension. */
 void geo_bounds_extend( geo_bounds_t *a_bounds, double a_latitude, double a_longitude );

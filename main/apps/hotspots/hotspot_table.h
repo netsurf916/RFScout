@@ -71,13 +71,14 @@ typedef struct
 /** @brief How a BSSID's saved credentials were resolved after the latest scan. */
 typedef enum
 {
-    HOTSPOT_CREDENTIAL_NONE = 0,  /**< secured, no saved profile for this SSID */
-    HOTSPOT_CREDENTIAL_OPEN,      /**< open or OWE: no credentials needed */
-    HOTSPOT_CREDENTIAL_KNOWN,     /**< profile already associated with this exact BSSID */
-    HOTSPOT_CREDENTIAL_INFERRED,  /**< one profile's known BSSIDs are in range or nearby */
-    HOTSPOT_CREDENTIAL_AMBIGUOUS, /**< several profiles have evidence: user must choose */
-    HOTSPOT_CREDENTIAL_UNMATCHED, /**< same-SSID profiles without evidence: manual join only */
-    HOTSPOT_CREDENTIAL_REJECTED,  /**< every same-SSID profile was refused by this BSSID */
+    HOTSPOT_CREDENTIAL_NONE = 0,    /**< secured, no saved profile for this SSID */
+    HOTSPOT_CREDENTIAL_OPEN,        /**< open or OWE: no credentials needed */
+    HOTSPOT_CREDENTIAL_KNOWN,       /**< profile already associated with this exact BSSID */
+    HOTSPOT_CREDENTIAL_INFERRED,    /**< one profile's known BSSIDs are in range or nearby */
+    HOTSPOT_CREDENTIAL_AMBIGUOUS,   /**< several profiles have evidence: user must choose */
+    HOTSPOT_CREDENTIAL_UNMATCHED,   /**< same-SSID profiles without evidence: manual join only */
+    HOTSPOT_CREDENTIAL_REJECTED,    /**< every same-SSID profile was refused by this BSSID */
+    HOTSPOT_CREDENTIAL_UNSUPPORTED, /**< secured mode the station cannot join (WEP, WPA1, 802.1X) */
 } hotspot_credential_t;
 
 /** @brief One observed eligible BSSID and its current-session characterization. */

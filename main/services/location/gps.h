@@ -11,6 +11,7 @@
 #include "esp_err.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <time.h>
 
@@ -53,6 +54,16 @@ bool gps_probe_complete( void );
 void gps_poll( void );
 /** @brief Copy the latest detected-receiver state including explicit location/time validity. */
 bool gps_snapshot_get( rfscout_gps_snapshot_t *a_snapshot );
+
+/** Oldest position that may stamp a record or anchor a distance. */
+#define RFSCOUT_GPS_FIX_FRESH_MS 5000U
+
+/** @brief Whether a snapshot holds a position fresh enough to log or measure from. */
+static inline bool gps_location_fresh( const rfscout_gps_snapshot_t *a_gps )
+{
+    return NULL != a_gps && a_gps->location_valid &&
+           a_gps->location_age_ms <= RFSCOUT_GPS_FIX_FRESH_MS;
+}
 /** @brief Return whether a GPS UART provider is active, independent of receiver detection/fix state. */
 bool gps_available( void );
 /** @brief Return the current trip odometer even when no receiver is present. */

@@ -1,90 +1,130 @@
 # Hotspots
 
-Hotspots is RFScout's realtime view of nearby **open** Wi-Fi access points and whether each one currently provides Internet connectivity. It is a lightweight derivative of the standalone Hotspotter project. Shared Wi-Fi station, connectivity-probe, lifecycle, and memory contracts are defined in [Platform architecture](../ARCHITECTURE.md); future work belongs in [ROADMAP.md](../ROADMAP.md).
+Hotspots finds nearby Wi-Fi access points, checks whether each one provides Internet connectivity, and keeps a durable history of the ones that worked. It is RFScout's port of the standalone Hotspotter project, adapted to a 320x170 rotary interface. Shared Wi-Fi station, network-session, credential, journal, GPS, lifecycle, and memory contracts are defined in [Platform architecture](../ARCHITECTURE.md); future work belongs in [ROADMAP.md](../ROADMAP.md).
 
-> **Active behavior:** unlike every other RFScout application, Hotspots **associates with third-party networks**. With automatic checking on (the default), it joins eligible open access points by itself while the app is active. Leaving the app stops all scanning, association, and probing immediately.
+> **Active behavior:** unlike most RFScout applications, Hotspots **associates with third-party networks**. With automatic checking on (the default), it joins eligible access points by itself while the app is active. Leaving the app stops all scanning, association, and probing immediately.
 
 ## Scope
 
-- Realtime only. Results live in app-session PSRAM and are released when the app is left; re-entering starts with an empty view.
-- No GPS, location, distance, or history.
-- No persistent storage of any kind: no SD media collections and no app configuration records. The automatic-check toggle resets to **On** each time the app is entered.
-- No credentials or profiles. Only plain **Open** and **OWE** (Enhanced Open) networks are eligible. Secured networks are counted but never joined; hidden networks are not reported by the passive scan.
+- **Live** results for the current visit live in app-session PSRAM and are released when the app is left.
+- **History** of every access point that passed a green or yellow check is kept on SD and replayed on each visit, including with no radio activity and no GPS.
+- **Saved networks** are the same profiles Home uses; there is no separate Hotspots credential store.
+- Eligible security: **Open**, **OWE** (Enhanced Open), and **WPA2/WPA3 personal** (WPA2, WPA2/WPA3 transition, WPA3). WEP, WPA1 and 802.1X networks are listed as unsupported and never joined. Hidden networks are not reported by the passive scan.
+- GPS is optional. Without a fix, everything works except location capture, distance/direction, and nearest-first sorting.
 
 ## Services and lifecycle
 
-The descriptor declares the framework network-session and connectivity-probe services and requires delayed activation, so skipping through the app does not start the radio. The network session owns association, DHCP, NTP, MAC policy, timeout, and teardown; the app owns only candidate selection and result interpretation. Both services are stopped by the app session before app memory is reclaimed.
+The descriptor declares the framework network-session and connectivity-probe services and requires delayed activation, so skipping through the app does not start the radio. The network session owns association, DHCP, NTP, MAC policy, timeout, and teardown; the app owns only candidate selection, credential resolution, and result interpretation. Both services are stopped by the app session before app memory is reclaimed. History opens on entry, replays in the background, and is flushed and closed when the app is left.
 
 ## Scanning and observation sessions
 
 Hotspots alternates bounded **scan** and **check** phases, following Hotspotter's characterization policy:
 
-1. A passive all-channel scan (no probe requests, about 200 ms per channel) refreshes every visible BSSID with its SSID, channel, RSSI, and security.
+1. A passive all-channel scan (no probe requests, about 200 ms per channel) refreshes every visible named BSSID with its SSID, channel, RSSI, and exact auth mode.
 2. A check phase of up to **2.8 seconds** may start checks on eligible access points. The window only limits when new checks start; a check already running finishes or reaches its own timeouts.
 3. The next passive scan begins.
 
-Each BSSID has an independent observation session. A BSSID missing from one or two consecutive completed scans stays listed as not currently visible; the third consecutive miss ends its session and removes it from the view together with its result. A later reappearance starts a fresh session.
+Each BSSID has an independent observation session. A BSSID missing from one or two consecutive completed scans stays listed as not currently visible; the third consecutive miss ends its session and removes it from the Live view. Its history, if any, remains. A BSSID whose auth mode changes starts a fresh observation session.
+
+## Credentials
+
+Secured networks use the shared saved-network profiles (see [Home](HOME.md) and [Architecture](../ARCHITECTURE.md#shared-network-profiles)). Several profiles may share an SSID; each profile learns the BSSIDs that accepted its passphrase and the BSSIDs that refused it. After every completed scan, and immediately after any credential change, each secured BSSID is resolved to one of these states:
+
+| State | Tag | Meaning |
+| --- | --- | --- |
+| Known | — | A profile already associated with this exact BSSID and auth mode. Automatic checks use it. |
+| Inferred | — | Exactly one same-SSID, auth-compatible profile has evidence: one of its known BSSIDs is in the same scan, or has history within the **Match distance** of the current fix. Automatic checks use it. |
+| Ambiguous | `PICK` | Several profiles have evidence. Only a manual **Join with profile** checks it. |
+| Unmatched | `PICK` | Same-SSID profiles exist but none has evidence here. Only a manual join checks it. |
+| Rejected | `DENY` | Every compatible same-SSID profile was refused by this BSSID. |
+| None | `KEY?` | No saved password for this SSID. |
+| Unsupported | `N/A` | WEP, WPA1, 802.1X or another mode the station cannot join. |
+
+A profile is never used with a BSSID whose observed auth mode differs from the one it learned, and a WPA3-only BSSID is never joined under a WPA2 minimum. A successful secured association records the BSSID as associated with that profile, so later visits resolve it as Known. A join refused by the passphrase (authentication failure or handshake timeout) records the BSSID as rejected for that profile. Connectivity results are recorded separately in history; a yellow or red result does not change what a profile learned.
+
+**Match distance** (Settings; Off, 50, 100, 200 or 500 m; default 100 m) controls how close the current fix must be to the history of a profile's known BSSID for it to count as evidence. It needs a GPS receiver and is shown unavailable without one. Profile resolution works without GPS through exact BSSIDs and same-scan overlap.
+
+Passwords are copied out of the store only to start an association and are erased as soon as the attempt has started. They never appear in history, logs, telemetry, or the observation table.
 
 ## Connectivity check
 
-One check for one open or OWE BSSID performs:
+One check for one BSSID performs:
 
-1. **Network** — associate pinned to that BSSID with no credentials (OWE networks require OWE), then complete DHCP under the common framework policy. Association/DHCP failure marks the AP **red**.
+1. **Network** — associate pinned to that BSSID and channel: Open and OWE without credentials (OWE requires OWE), secured networks with the resolved or user-chosen profile. Then complete DHCP under the common framework policy. Association/DHCP failure marks the AP **red**.
 2. **Time** — once DHCP succeeds, the framework captures LAN attributes and attempts NTP. NTP failure leaves the session LIMITED, marks the AP **yellow**, retains the LAN attributes, and **skips HTTPS**. A successful sync promotes the session to READY and sets the device clock.
 3. **HTTPS** — only for READY sessions, perform one certificate-validated request to Cloudflare's `/cdn-cgi/trace`, bounded to **10 seconds**. HTTP 200 marks the AP **green** and records the public egress IP and Cloudflare colo; any other result marks it **yellow**.
-4. **Leave** — release the network session and return to scanning.
+4. **Leave** — read the gateway's MAC address from the station's ARP cache (joined checks only), release the network session, and return to scanning.
 
-Each check inherits the platform-wide default of a fresh random, locally administered station MAC. This is the same policy used by Home/OTA connections. The factory MAC is restored when the network session stops; if the factory MAC could not be captured, the framework continues with the current station MAC rather than failing the check.
+Each check inherits the platform-wide default of a fresh random, locally administered station MAC; the factory MAC is restored when the network session stops.
 
-A failed recheck does not erase an earlier green or yellow result for the same observation session; the latest attempt's failure is shown in the detail view.
+A failed recheck does not erase an earlier green or yellow result for the same observation session; the latest attempt's failure is shown separately in the detail view.
 
 ### Automatic checking
 
-Automatic checking is **on by default** each time the app is entered:
+Automatic checking is **on by default** each time the app is entered, and starts only after history has finished loading:
 
-- an eligible BSSID is checked automatically once it is visible at **-80 dBm or stronger**;
+- an eligible BSSID (Open, OWE, or secured with a Known or Inferred profile) is checked automatically once it is visible at **-80 dBm or stronger**;
 - after a failed automatic attempt, the same BSSID is retried in the same observation session only when its RSSI improves by at least **4 dB** over the RSSI of the previous failed attempt;
 - a green or yellow result ends automatic checks for that BSSID for its observation session; and
 - among candidates, the strongest currently visible BSSID is checked first.
 
-A manual **Recheck** from the detail view bypasses the RSSI gates (not eligibility) and runs before the next automatic check. Turning automatic checking off stops new automatic checks; manual rechecks still work.
+A manual **Recheck** or **Join with profile** bypasses the RSSI gates (not eligibility) and runs before the next automatic check. Turning automatic checking off stops new automatic checks; manual checks still work.
+
+## History
+
+Every green or yellow check is appended to the app's SD journal, `hotspots/history/hotspots-*.jsonl` (256 KiB segments, up to 32 retained), using the shared [SD journal](../ARCHITECTURE.md#sd-journals) format. Records hold the BSSID, SSID, auth mode, status, RSSI, gateway, netmask, DNS servers, gateway MAC, public IP and colo, and the receiver position when a fresh fix exists. Client IP addresses and credentials are never written.
+
+- **Locations.** While a BSSID with history is visible, a `location` record is added each time the receiver has moved at least the system [movement trigger](../ARCHITECTURE.md#gps-movement-trigger) from that BSSID's previous logged point. A BSSID characterized without a fix therefore gains its location from the first later sighting with one. In memory each BSSID keeps the latitude/longitude range of its samples; its location is the center of that range, which can be recomputed from the journal.
+- **Epochs.** A change of SSID, auth mode, gateway, netmask or DNS servers starts a new epoch for that BSSID: its counts and location range restart, so a re-addressed or repurposed access point is not merged with its past.
+- **Loading.** Replay runs in the background, a bounded number of lines per poll, while Live scanning and drawing continue. The footer shows `LOAD n%`; checks start once replay completes. Malformed lines are skipped and counted (`n BAD` on the History footer); a torn final line is ignored.
+- **Compaction.** When replay reads more than 1 MiB, or when **Compact history** is chosen in Settings, the journal is rewritten as one `summary` record per BSSID (latest details, success count, and location range) through the journal's atomic compaction. Records arriving meanwhile are kept and applied afterwards.
+- **SD failures.** Unwritten records stay in memory and are retried; the footer shows `SD!` while the journal is unavailable.
+
+## Network grouping
+
+Live and History group BSSIDs into networks with Hotspotter's evidence rule. Only BSSIDs with the same SSID and auth mode are compared. Within that group they are one network unless their evidence conflicts: different gateway/netmask, or different gateway MAC, between two BSSIDs that both have it. Missing evidence never splits a network. A BSSID without evidence joins the network whose evidence-bearing members have the nearest location center, or the network with the most evidence-bearing members when it has no location. In Live, a BSSID that refused every same-SSID profile is kept apart from the networks those profiles reach.
+
+When one SSID and auth mode splits into several networks, rows are labelled `SSID #1`, `SSID #2`, and so on, largest first. Individual BSSIDs always remain browsable under their network.
 
 ## Presentation and controls
 
-The landing view lists the strongest visible eligible access points with their status and RSSI, plus a footer showing the current phase or check and counts of open, OWE, and ignored secured networks. Rotary navigation on the landing view changes applications as usual.
+Hotspots has three views. **App lock** off: landing-level rotary changes RFScout applications as usual. **App lock** on: landing-level rotary moves between Live, History and Saved. Long press on a landing view also moves to the next view. Select opens the current view's menu; rotary and select inside menus and details stay within Hotspots. Long press in a menu or detail returns one level.
 
-Pressing **Select** opens the browser:
+- **Live** — networks currently observed this visit, ordered by their strongest visible BSSID. Each row shows the network label, a status tag summarizing its BSSIDs, the number of BSSIDs, and the strongest visible RSSI (`--` when none is visible). The footer shows the phase or running check and counts of open, OWE, and secured BSSIDs.
+- **History** — networks from durable history, nearest first when GPS has a fresh fix (then green first, newest first). Rows show the label, `OK`/`LTD`, the number of BSSIDs, and the distance and compass direction to the nearest member (`--` without a fix). The footer shows the BSSID count, fix state, and any `BAD` or `SD!` indicators. With no history the view says **No known hotspots**, or **SD history unavailable** when the card cannot be read.
+- **Saved** — the shared profiles, labelled `SSID #n` when several share an SSID, with the learned auth mode and the number of associated BSSIDs. Selecting one opens the shared profile screen: masked password with **Show**, **Edit password**, and **Forget**. Changes apply to Home immediately.
 
-- **Back** — return to the landing view;
-- **Auto check** — toggle automatic checking for this visit; and
-- one row per eligible BSSID, sorted strongest first, showing SSID, status, and RSSI. Selection follows the BSSID while the list re-sorts.
+Each view's menu starts with **Back**, **App lock**, **Auto check**, and **Settings** (**Match distance** and **Compact history**), followed by the view's rows. Selecting a Live or History network opens its BSSID list; selecting a BSSID opens its detail.
 
-Selecting an access point opens its detail view: SSID, BSSID, channel, RSSI or not-visible state, security, status, current check stage, the last attempt's outcome, client IP, gateway, netmask, DHCP-provided DNS servers, public IP, and Cloudflare colo when known. LIMITED/NTP-failed results retain and display the LAN attributes even though HTTPS is skipped. **Recheck** requests a manual check while the BSSID is visible.
+**Live BSSID detail** shows the network label, BSSID and channel, RSSI or not-visible state with auth mode and check count, the credential state, status, the latest attempt's outcome (including a rejected password), client IP, gateway, netmask, gateway MAC, DNS servers, and public IP with Cloudflare colo. LIMITED results keep the LAN attributes even though HTTPS was skipped. Actions:
 
-Status column values:
+- **Recheck** — queue a manual check (visible, eligible BSSIDs only).
+- **Password** — open the profile used for this BSSID.
+- **Join with profile** — for Ambiguous, Unmatched or Rejected BSSIDs: choose an auth-compatible profile for one manual check.
+- **Add password** — for secured BSSIDs without a usable profile: replace a same-SSID profile's password or create a new profile, then check this BSSID with it.
 
-| Value | Meaning |
+**History BSSID detail** is read-only: BSSID and auth mode, status, validation time (UTC) and success count, RSSI at the last success, gateway and netmask, gateway MAC, DNS servers, public IP and colo, and the location center with distance and direction.
+
+Status tags carry their meaning as text, not only color:
+
+| Tag | Meaning |
 | --- | --- |
 | `OK` (green) | Joined, NTP succeeded, verified HTTPS returned 200 |
 | `LTD` (yellow) | Joined, but NTP failed or the HTTPS check did not pass |
 | `FAIL` (red) | Association or DHCP failed and no earlier success exists in this session |
-| `Q` | Queued for a manual recheck |
-| `NETWORK` / `HTTPS` | Check in progress at that stage |
+| `Q` | Queued for a manual check |
+| `JOIN` / `HTTPS` | Check in progress at that stage |
 | `<-80` | Waiting for the automatic RSSI gate |
+| `KEY?` / `PICK` / `DENY` / `N/A` | Secured BSSID that needs a password, a profile choice, was refused, or is unsupported |
 | `-` | Not yet checked |
 
 ## Logging
 
-When SD logging is enabled, each finished check writes one `type:"hotspot"` record with the BSSID, channel, RSSI, security, outcome, failing stage, NTP result, and HTTP status. SSIDs, client addresses, and public IPs are not logged. The periodic telemetry record reports counts of visible, green, yellow, and red access points.
-
-## Credential profiles and discovery contract
-
-The RFScout Home/OTA/Hotspots credential model uses **stable profile IDs, not unique SSIDs**, and stores a bounded per-profile BSSID history with separate observed, successfully associated and characterized states. Different places advertising the same SSID may use different saved passwords and security policies, without collisions or replacement. Legacy SSID/password records migrate compatibly into profiles with initially unknown BSSIDs; no second credential store or Hotspots-owned password cache will be created.
-
-When deciding which saved credentials to use, RFScout first looks for a known BSSID with matching SSID/security, then evaluates profiles with the same SSID using observed BSSID overlap and, where available, fresh GPS coverage. GPS is supplementary evidence only: all core discovery, saved-network operations and checks must operate without it. When selection remains ambiguous, the user picks a profile; an unknown BSSID must not silently inherit credentials merely because its SSID matches. Successful new associations grow the selected profile's BSSID membership and optionally its learned spatial coverage, while connectivity-test results are recorded separately. Auth-mode mismatches and downgrade cases remain subject to explicit compatibility checks. The implementation must satisfy these requirements before secured automatic checking is enabled. The legacy implementation described earlier in this page remains a current-behavior snapshot until this PR is finished.
+When SD logging is enabled, each finished check writes one `type:"hotspot"` record with the BSSID, channel, RSSI, auth mode, outcome, failing stage, NTP result, HTTP status, and whether it was manual. SSIDs, client addresses, public IPs and passwords are not logged. The periodic telemetry record reports counts of visible, green, yellow, and red access points. History is a separate data journal, described above.
 
 ## Current limitations
 
 - Yellow does not distinguish captive portals, DNS filtering, or blocked NTP from other restrictions.
-- Results are not retained after leaving the app, by design.
-- Same-SSID BSSIDs are listed individually; there is no network grouping.
+- Failed attempts are not kept in history.
+- Grouping assumes same-SSID/auth BSSIDs are one network unless evidence conflicts, so unrelated networks can share a row until they are characterized. HESSID/802.11u and 802.11r mobility-domain evidence are not used.
+- A profile is matched to the exact auth mode it learned, so a profile learned on a WPA2 BSSID is not offered for a WPA2/WPA3 transition BSSID of the same SSID; that BSSID needs its own profile (**Add password** → New profile).

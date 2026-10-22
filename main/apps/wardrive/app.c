@@ -24,7 +24,6 @@
 #define ACTIVITY_CHANNELS 14U
 #define ACTIVITY_SECONDS 74U
 #define CAPTURE_GPS_REFRESH_US 250000LL
-#define GPS_FIX_MAX_AGE_MS 5000U
 #define CAPTURE_SETTINGS_MAGIC 0x57445256U
 #define CAPTURE_SETTINGS_VERSION 1U
 #define RADIO_SETTINGS_MAGIC 0x52575032U
@@ -90,8 +89,8 @@ static unsigned gps_choice_selected;
 static bool gps_fix_ready( void )
 {
     rfscout_gps_snapshot_t gps = { 0 };
-    return gps_snapshot_get( &gps ) && gps.time_valid && gps.location_valid &&
-           gps.time_age_ms <= GPS_FIX_MAX_AGE_MS && gps.location_age_ms <= GPS_FIX_MAX_AGE_MS;
+    return gps_snapshot_get( &gps ) && gps_location_fresh( &gps ) && gps.time_valid &&
+           gps.time_age_ms <= RFSCOUT_GPS_FIX_FRESH_MS;
 }
 static bool gps_receiver_present( void )
 {
@@ -396,8 +395,7 @@ static void draw_overview( void )
     wardrive_stats_t stats;
     wardrive_capture_stats( &stats );
     rfscout_gps_snapshot_t gps = { 0 };
-    const bool fixed =
-        gps_snapshot_get( &gps ) && gps.location_valid && gps.location_age_ms <= 5000U;
+    const bool fixed = gps_snapshot_get( &gps ) && gps_location_fresh( &gps );
     const unsigned current = radio_monitor_channel();
     char line[ 72 ];
     char count[ 16 ];

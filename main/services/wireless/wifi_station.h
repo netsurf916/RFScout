@@ -158,6 +158,12 @@ esp_err_t rfscout_wifi_station_gateway_mac( uint8_t a_mac[ 6 ] );
 /** @brief Whether a station disconnect reason means the AP refused the passphrase. */
 bool rfscout_wifi_station_reason_auth_rejected( int32_t a_reason );
 
+/** @brief Whether a secured auth mode can be joined with a passphrase (WPA2/WPA3 personal). */
+bool rfscout_wifi_station_secured_supported( int32_t a_auth_mode );
+
+/** @brief Short display name of an observed auth mode, such as "WPA2" or "OWE". */
+const char *rfscout_wifi_station_auth_label( int32_t a_auth_mode );
+
 /** @brief Cancel an active NTP synchronization attempt while preserving the Wi-Fi connection. */
 esp_err_t rfscout_wifi_station_cancel_time_sync( void );
 

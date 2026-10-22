@@ -306,7 +306,7 @@ static void check_style_color_combinations( void )
             assert( ui_game_active() == ( style == RFSCOUT_STYLE_PIXEL_QUEST ) );
             assert( ui_colors_current() == colors );
             assert( ui_theme_get() == ui_theme_palette( colors == RFSCOUT_COLORS_NIGHT
-                                                        ? RFSCOUT_THEME_NIGHT
+                                                            ? RFSCOUT_THEME_NIGHT
                                                         : colors == RFSCOUT_COLORS_OUTDOOR
                                                             ? RFSCOUT_THEME_OUTDOOR
                                                             : RFSCOUT_THEME_DEFAULT ) );
@@ -451,7 +451,8 @@ static void check_battery_states( void )
                 }
                 else
                 {
-                    assert( pixel == ui_theme_get()->background || pixel == ui_theme_get()->divider );
+                    assert( pixel == ui_theme_get()->background ||
+                            pixel == ui_theme_get()->divider );
                 }
             }
         }
@@ -528,8 +529,7 @@ int main( int a_argc, char **a_argv )
     ui_game_draw_home();
     display_present();
     save( a_argv[ 1 ], "home" );
-    wifi_settings_view_render(
-        4U, true, true, RFSCOUT_EVIDENCE_STRENGTH_PROBABLE, 60U, 60U );
+    wifi_settings_view_render( 4U, true, true, RFSCOUT_EVIDENCE_STRENGTH_PROBABLE, 60U, 60U );
     save( a_argv[ 1 ], "settings" );
     audio_spectrum_view_render();
     /* The spectrum reaches both sides while retaining equal gutters and a quiet bottom edge. */
@@ -552,13 +552,47 @@ int main( int a_argc, char **a_argv )
     recording_state = RFSCOUT_RECORDER_PLAYING;
     recorder_view_landing( "field-0000042.wav", 65U );
     save( a_argv[ 1 ], "playback" );
-    hotspots_view_row_t rows[] = {
-        { "FIELD NETWORK", "ONLINE", HOTSPOTS_TONE_GOOD, -42, true },
-        { "GUEST", "LIMIT", HOTSPOTS_TONE_LIMITED, -67, true },
-        { "CAFE", "NEW", HOTSPOTS_TONE_NEUTRAL, -73, true },
+    const hotspots_view_row_t rows[] = {
+        { "FIELD NETWORK", "OK", HOTSPOTS_TONE_GOOD, "-42", 3U, true },
+        { "GUEST #2", "LTD", HOTSPOTS_TONE_LIMITED, "-67", 1U, true },
+        { "CAFE", "KEY?", HOTSPOTS_TONE_NEUTRAL, "--", 2U, false },
     };
-    hotspots_view_browser( rows, 3U, 3U, false, false, "CENTER: INSPECT" );
+    const ui_menu_row_t fixed[] = {
+        { .label = "Back", .state = { .available = true } },
+        { .label = "App lock", .value = "Off", .state = { .available = true } },
+        { .label = "Auto check", .value = "On", .state = { .available = true } },
+        { .label = "Settings", .state = { .available = true } },
+    };
+    hotspots_view_menu( "HOTSPOTS LIVE", fixed, 4U, rows, 3U, 4U, "AUTO OPEN 2 OWE 0 SECURED 4" );
     save( a_argv[ 1 ], "hotspots" );
+    const hotspots_view_row_t history[] = {
+        { "FIELD NETWORK", "OK", HOTSPOTS_TONE_GOOD, "120m NE", 3U, true },
+        { "LIBRARY", "LTD", HOTSPOTS_TONE_LIMITED, "1.4km S", 1U, true },
+    };
+    hotspots_view_landing(
+        "HOTSPOTS HISTORY", history, 2U, "No known hotspots", "4 BSSIDS  GPS FIX" );
+    save( a_argv[ 1 ], "hotspots_history" );
+    hotspots_view_detail_t detail = {
+        .lines = { "FIELD NETWORK",
+                   "BSSID 02:11:22:33:44:55  CH 6",
+                   "RSSI -42 dBm  WPA2  checks 1",
+                   "Key FIELD NETWORK (known)",
+                   "OK - Internet reachable",
+                   "Last: NTP ok, HTTPS 200",
+                   "IP 10.0.0.23  GW 10.0.0.1",
+                   "Mask 255.255.255.0  MAC 02:AA:BB:CC:DD:EE",
+                   "DNS 10.0.0.1 / --",
+                   "Public 203.0.113.9 (SEA)" },
+        .line_count = 10U,
+        .status_line = 4U,
+        .status_tone = HOTSPOTS_TONE_GOOD,
+        .actions = { { .label = "Back", .state = { .available = true } },
+                     { .label = "Recheck", .state = { .available = true } },
+                     { .label = "Password", .state = { .available = true } } },
+        .action_count = 3U,
+    };
+    hotspots_view_detail( "HOTSPOTS LIVE", &detail, 1U );
+    save( a_argv[ 1 ], "hotspots_detail" );
     ota_view_render_update_main( "0.3.0", "0.3.1 available", "FIELD NETWORK", 2U, true, true, "" );
     save( a_argv[ 1 ], "update" );
     cc1101_scan_config_t scan = {

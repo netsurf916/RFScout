@@ -26,7 +26,6 @@
 #define HISTORY_REPLAY_LINES_PER_POLL 24U
 #define HISTORY_COMPACT_ENTRIES_PER_POLL 16U
 #define HISTORY_FLUSH_INTERVAL_US 1000000LL
-#define HISTORY_FIX_MAX_AGE_MS 5000U
 
 typedef enum
 {
@@ -769,6 +768,11 @@ bool hotspot_history_degraded( void )
     return degraded;
 }
 
+size_t hotspot_history_skipped( void )
+{
+    return replay_malformed;
+}
+
 void hotspot_history_request_compaction( void )
 {
     compaction_requested = journal_bound;
@@ -802,12 +806,6 @@ const hotspot_history_entry_t *hotspot_history_find( const rfscout_wifi_station_
                : NULL;
 }
 
-static bool fresh_fix( const rfscout_gps_snapshot_t *a_gps )
-{
-    return NULL != a_gps && a_gps->location_valid &&
-           a_gps->location_age_ms <= HISTORY_FIX_MAX_AGE_MS;
-}
-
 static void fill_identity( history_record_t *a_record,
                            history_record_kind_t a_kind,
                            const rfscout_wifi_station_bss_t *a_bss,
@@ -825,7 +823,7 @@ static void fill_identity( history_record_t *a_record,
     {
         a_record->utc = 0; /* the device clock has not been set */
     }
-    if( fresh_fix( a_gps ) )
+    if( gps_location_fresh( a_gps ) )
     {
         a_record->location_valid = true;
         a_record->latitude = a_gps->latitude_deg;
@@ -864,7 +862,7 @@ void hotspot_history_record_result( const rfscout_wifi_station_bss_t *a_bss,
 void hotspot_history_observe( const rfscout_wifi_station_bss_t *a_bss,
                               const rfscout_gps_snapshot_t *a_gps )
 {
-    if( !journal_bound || !fresh_fix( a_gps ) || HISTORY_STATE_COMPACTING == state )
+    if( !journal_bound || !gps_location_fresh( a_gps ) || HISTORY_STATE_COMPACTING == state )
     {
         return;
     }

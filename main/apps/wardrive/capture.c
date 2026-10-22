@@ -25,7 +25,6 @@
 #define CAPTURE_SYNC_INTERVAL_US 10000000LL
 #define CAPTURE_FILE_MIN ( 1024U * 1024U )
 #define CAPTURE_FILE_MAX ( 128U * 1024U * 1024U )
-#define CAPTURE_GPS_MAX_AGE_MS 5000U
 
 typedef struct
 {
@@ -81,8 +80,7 @@ static uint32_t gps_fix_age_ms;
 void wardrive_capture_update_gps( void )
 {
     rfscout_gps_snapshot_t gps = { 0 };
-    const bool available = gps_snapshot_get( &gps ) && gps.location_valid &&
-                           gps.location_age_ms <= CAPTURE_GPS_MAX_AGE_MS;
+    const bool available = gps_snapshot_get( &gps ) && gps_location_fresh( &gps );
     portENTER_CRITICAL( &gps_lock );
     gps_fix_valid = available;
     if( available )
@@ -337,7 +335,7 @@ static void enqueue( uint8_t a_source,
     const int64_t elapsed_us = arrival_us - gps_updated_us;
     packet->gps_valid =
         config.gps_metadata && gps_fix_valid && elapsed_us >= 0 && elapsed_us <= 1000000LL &&
-        gps_fix_age_ms + (uint32_t)( elapsed_us / 1000LL ) <= CAPTURE_GPS_MAX_AGE_MS;
+        gps_fix_age_ms + (uint32_t)( elapsed_us / 1000LL ) <= RFSCOUT_GPS_FIX_FRESH_MS;
     if( packet->gps_valid )
     {
         packet->latitude_e7 = gps_latitude_e7;

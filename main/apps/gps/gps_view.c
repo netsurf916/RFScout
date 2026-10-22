@@ -9,6 +9,7 @@
 #include "display.h"
 #include "device_config.h"
 #include "breadcrumbs.h"
+#include "geo.h"
 #include "gps.h"
 #include "ui_chrome.h"
 #include "ui_game.h"
@@ -31,11 +32,6 @@ static void draw_gps_panel( int a_x, int a_y, int a_width, int a_height )
     display_fill_rect( a_x, a_y + a_height - 1, a_width, 1, theme->divider );
     display_fill_rect( a_x, a_y, 1, a_height, theme->divider );
     display_fill_rect( a_x + a_width - 1, a_y, 1, a_height, theme->divider );
-}
-
-static unsigned track_sector( float a_degrees )
-{
-    return ( (unsigned)( ( a_degrees + 22.5f ) / 45.0f ) ) % 8U;
 }
 
 typedef struct
@@ -187,7 +183,7 @@ void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_menu_error 
     draw_gps_panel( 160, 70, 156, 94 );
 
     display_draw_text( 10, 28, "FIX", theme->secondary, 1U );
-    const bool fixed = present && gps.location_valid && gps.location_age_ms <= 5000U;
+    const bool fixed = present && gps_location_fresh( &gps );
     display_draw_text(
         115, 28, fixed ? "FIX" : "NO FIX", fixed ? theme->success : theme->warning, 1U );
     if( fixed )
@@ -243,9 +239,7 @@ void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_menu_error 
     const bool track = fixed && gps.track_valid && gps.speed_valid && gps.speed_mps >= 0.7f;
     if( track )
     {
-        static const char *labels[] = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
-        const unsigned sector = track_sector( gps.track_deg );
-        display_draw_text( 176, 96, labels[ sector ], theme->accent, 3U );
+        display_draw_text( 176, 96, geo_compass_label( gps.track_deg ), theme->accent, 3U );
         (void)snprintf( text, sizeof( text ), "%.1f deg", (double)gps.track_deg );
         display_draw_text( 176, 142, text, theme->text, 1U );
     }
@@ -261,7 +255,7 @@ void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_menu_error 
     {
         static const int offsets_x[] = { 0, 7, 10, 7, 0, -7, -10, -7 };
         static const int offsets_y[] = { -10, -7, 0, 7, 10, 7, 0, -7 };
-        const unsigned sector = track_sector( gps.track_deg );
+        const unsigned sector = geo_compass_sector( gps.track_deg );
         display_fill_rect(
             272 + offsets_x[ sector ], 120 + offsets_y[ sector ], 3, 3, theme->accent );
     }
