@@ -67,14 +67,15 @@
 #define DEVICE_ITEM_GPS_TIMEOUT 30U
 #define DEVICE_ITEM_GPS 31U
 #define DEVICE_ITEM_DIAGNOSTICS 32U
-#define DEVICE_ITEM_GPS_LED_ENABLE 33U
+#define DEVICE_ITEM_GPS_TIMEPULSE 33U
 #define DEVICE_ITEM_GPS_LED_BRIGHTNESS 34U
 #define DEVICE_ITEM_GPS_LED_COLOR 35U
 #define DEVICE_ITEM_GPS_KEEP_AWAKE 36U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 37U
+#define DEVICE_ITEM_GPS_MOVEMENT 37U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 38U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
-#define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_GPS_KEEP_AWAKE + 1U )
+#define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_GPS_MOVEMENT + 1U )
 #define DEVICE_ROWS_PER_PAGE 6U
 #define DEVICE_LOG_SHUTDOWN_TIMEOUT_MS 3000U
 #define DEVICE_AUDIO_VOLUME_STEP 10
@@ -97,7 +98,6 @@
 
 static const uint16_t DIM_TIMEOUT_OPTIONS[] = { 0U, 30U, 60U, 120U, 300U };
 static const uint16_t OFF_TIMEOUT_OPTIONS[] = { 0U, 60U, 120U, 300U, 600U, 1800U };
-static const uint16_t BREADCRUMB_FILE_LIMIT_OPTIONS[] = { 24U, 72U, 144U, 288U, 1008U };
 
 #define COLOR_BACKGROUND ( ui_theme_get()->background )
 #define COLOR_TEXT ( ui_theme_get()->text )
@@ -261,9 +261,18 @@ static char next_morse_character( char a_current, int a_direction )
     return characters[ index ];
 }
 
+/** Rows that act on receiver data are unavailable until a GPS receiver is detected. */
+static bool item_available( unsigned a_item )
+{
+    const bool needs_receiver =
+        DEVICE_ITEM_BREADCRUMBS == a_item || DEVICE_ITEM_BREADCRUMB_FILES == a_item ||
+        DEVICE_ITEM_GPS_MOVEMENT == a_item || DEVICE_ITEM_GPS_TIMEPULSE == a_item;
+    return !needs_receiver || gps_detected();
+}
+
 static bool item_direct_toggle( unsigned a_item )
 {
-    return ( DEVICE_ITEM_BREADCRUMBS == a_item ) || ( DEVICE_ITEM_GPS_LED_ENABLE == a_item ) ||
+    return ( DEVICE_ITEM_BREADCRUMBS == a_item ) || ( DEVICE_ITEM_GPS_TIMEPULSE == a_item ) ||
            ( DEVICE_ITEM_GPS_KEEP_AWAKE == a_item ) || ( DEVICE_ITEM_AUDIO_POLICY == a_item ) ||
            ( DEVICE_ITEM_ALERT_MODE == a_item ) || ( DEVICE_ITEM_CLOCK_FORMAT == a_item ) ||
            ( apps_menu_open &&
@@ -351,7 +360,7 @@ static const char *item_label( unsigned a_item )
             return "Breadcrumb files";
         case DEVICE_ITEM_GPS_TIMEOUT:
             return "GPS timeout";
-        case DEVICE_ITEM_GPS_LED_ENABLE:
+        case DEVICE_ITEM_GPS_TIMEPULSE:
             return "GPS Timepulse";
         case DEVICE_ITEM_GPS_LED_BRIGHTNESS:
             return "GPS LED level";
@@ -359,6 +368,8 @@ static const char *item_label( unsigned a_item )
             return "GPS LED color";
         case DEVICE_ITEM_GPS_KEEP_AWAKE:
             return "GPS stay awake";
+        case DEVICE_ITEM_GPS_MOVEMENT:
+            return "Movement trigger";
         case DEVICE_ITEM_HOLD_SHORTCUT:
             return "Hold";
         default:
@@ -416,7 +427,7 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
         case DEVICE_ITEM_GPS_TIMEOUT:
             snprintf( a_value, a_capacity, "%us", (unsigned)config->gps_timeout_seconds );
             break;
-        case DEVICE_ITEM_GPS_LED_ENABLE:
+        case DEVICE_ITEM_GPS_TIMEPULSE:
             snprintf( a_value, a_capacity, "%s", on_off( config->gps_timepulse_enabled ) );
             break;
         case DEVICE_ITEM_GPS_LED_BRIGHTNESS:
@@ -521,6 +532,9 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
         case DEVICE_ITEM_BREADCRUMB_FILES:
             snprintf( a_value, a_capacity, "%u", (unsigned)breadcrumbs_file_limit() );
             break;
+        case DEVICE_ITEM_GPS_MOVEMENT:
+            snprintf( a_value, a_capacity, "%u m", (unsigned)config->gps_movement_m );
+            break;
         case DEVICE_ITEM_HOLD_SHORTCUT:
             snprintf( a_value,
                       a_capacity,
@@ -563,17 +577,15 @@ static void draw_row( int a_y, unsigned a_item )
         item_value( a_item, value, sizeof( value ) );
     }
     const bool active = selected_item == a_item;
-    const uint16_t color =
-        ui_menu_label_color( ( ui_menu_state_t ){ .selected = active, .available = true } );
-    if( active )
-    {
-        ui_game_draw_menu_marker(
-            UI_LAYOUT_LEFT_X, a_y, ( editing && item_editable( a_item ) ) ? ">*" : ">", color );
-    }
-    display_draw_text( UI_LAYOUT_LABEL_X, a_y, item_label( a_item ), color, 1U );
+    const ui_menu_state_t state = { .selected = active,
+                                    .editing = active && editing && item_editable( a_item ),
+                                    .available = item_available( a_item ) };
+    ui_menu_draw_marker( UI_LAYOUT_LEFT_X, a_y, state );
+    display_draw_text(
+        UI_LAYOUT_LABEL_X, a_y, item_label( a_item ), ui_menu_label_color( state ), 1U );
     if( '\0' != value[ 0 ] )
     {
-        display_draw_text( 232, a_y, value, active ? COLOR_ACCENT : COLOR_DIM, 1U );
+        display_draw_text( 232, a_y, value, ui_menu_value_color( state ), 1U );
     }
 }
 
@@ -1515,11 +1527,7 @@ static void toggle_breadcrumbs( void )
 static void adjust_breadcrumb_file_limit( int a_delta )
 {
     const uint16_t old_limit = breadcrumbs_file_limit();
-    const uint16_t new_limit = next_timeout_option(
-        BREADCRUMB_FILE_LIMIT_OPTIONS,
-        sizeof( BREADCRUMB_FILE_LIMIT_OPTIONS ) / sizeof( BREADCRUMB_FILE_LIMIT_OPTIONS[ 0 ] ),
-        old_limit,
-        a_delta );
+    const uint16_t new_limit = breadcrumbs_file_limit_step( old_limit, a_delta );
     if( new_limit == old_limit )
     {
         return;
@@ -1590,6 +1598,11 @@ static void adjust_notification_character( unsigned a_item, int a_delta )
 static void adjust_selected( int a_delta )
 {
     const device_config_t *config = device_config_get();
+    if( !item_available( selected_item ) )
+    {
+        emit_device_event( RFSCOUT_EVENT_ERROR, (int32_t)ESP_ERR_INVALID_STATE );
+        return;
+    }
     if( DEVICE_ITEM_BRIGHTNESS == selected_item )
     {
         const uint8_t old_value = config->brightness_percent;
@@ -1716,7 +1729,7 @@ static void adjust_selected( int a_delta )
     {
         adjust_breadcrumb_file_limit( a_delta );
     }
-    else if( DEVICE_ITEM_GPS_LED_ENABLE == selected_item )
+    else if( DEVICE_ITEM_GPS_TIMEPULSE == selected_item )
     {
         if( ESP_OK == device_config_set_gps_timepulse( !config->gps_timepulse_enabled ) )
         {
@@ -1733,6 +1746,14 @@ static void adjust_selected( int a_delta )
     else if( DEVICE_ITEM_HOLD_SHORTCUT == selected_item )
     {
         toggle_hold_shortcut();
+    }
+    else if( DEVICE_ITEM_GPS_MOVEMENT == selected_item )
+    {
+        const uint8_t value = device_config_gps_movement_step( config->gps_movement_m, a_delta );
+        if( ESP_OK == device_config_set_gps_movement_m( value ) )
+        {
+            emit_device_event( RFSCOUT_EVENT_NAVIGATE, a_delta > 0 ? 1 : -1 );
+        }
     }
     else if( DEVICE_ITEM_GPS_TIMEOUT == selected_item )
     {
@@ -1897,7 +1918,7 @@ bool device_view_input( const rfscout_input_event_t *a_input )
             return false;
         }
 
-        if( item_editable( selected_item ) )
+        if( item_editable( selected_item ) && ( editing || item_available( selected_item ) ) )
         {
             editing = !editing;
             emit_device_event( editing ? RFSCOUT_EVENT_ENTER : RFSCOUT_EVENT_ACTIVATE,

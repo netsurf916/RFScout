@@ -135,3 +135,25 @@ double geo_bounds_distance_m( const geo_bounds_t *a_bounds, double a_latitude, d
     }
     return geo_distance_m( a_latitude, a_longitude, latitude, longitude );
 }
+
+bool geo_movement_gate_accept( geo_movement_gate_t *a_gate,
+                               double a_latitude,
+                               double a_longitude,
+                               double a_meters )
+{
+    if( NULL == a_gate )
+    {
+        return false;
+    }
+    if( a_gate->valid &&
+        geo_distance_m( a_gate->latitude, a_gate->longitude, a_latitude, a_longitude ) < a_meters )
+    {
+        return false;
+    }
+    *a_gate = ( geo_movement_gate_t ){
+        .valid = true,
+        .latitude = a_latitude,
+        .longitude = a_longitude,
+    };
+    return true;
+}

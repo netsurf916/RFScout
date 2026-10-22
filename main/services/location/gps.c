@@ -934,6 +934,13 @@ static void policy_poll( int64_t a_now )
     (void)policy_request_rate( target, a_now );
 }
 
+static bool trip_record_valid( const void *a_record )
+{
+    const gps_trip_record_t *record = a_record;
+    return GPS_TRIP_STORE_VERSION == record->version && isfinite( record->distance_m ) &&
+           record->distance_m >= 0.0;
+}
+
 static void trip_load( void )
 {
     if( trip_loaded )
@@ -942,10 +949,8 @@ static void trip_load( void )
     }
     trip_loaded = true;
     gps_trip_record_t stored = { 0 };
-    size_t length = 0U;
-    if( ESP_OK == system_store_read( GPS_TRIP_STORE_KEY, &stored, sizeof( stored ), &length ) &&
-        sizeof( stored ) == length && GPS_TRIP_STORE_VERSION == stored.version &&
-        isfinite( stored.distance_m ) && stored.distance_m >= 0.0 )
+    if( ESP_OK ==
+        system_store_load( GPS_TRIP_STORE_KEY, &stored, sizeof( stored ), trip_record_valid ) )
     {
         trip_total_m = stored.distance_m;
     }

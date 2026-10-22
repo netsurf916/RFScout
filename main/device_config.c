@@ -240,6 +240,7 @@ static void set_defaults( void )
     config.logging_enabled = true;
     config.clock_24h = false;
     config.gps_timeout_seconds = RFSCOUT_GPS_TIMEOUT_DEFAULT_SECONDS;
+    config.gps_movement_m = RFSCOUT_GPS_MOVEMENT_DEFAULT_M;
     config.gps_timepulse_enabled = true;
     config.gps_led_enabled = false;
     config.gps_led_brightness = 20U;
@@ -375,6 +376,22 @@ static void load_display( const cJSON *a_root )
     }
 }
 
+static const uint8_t GPS_MOVEMENT_OPTIONS[] = { 5U, 10U, 25U, 50U, 100U };
+#define GPS_MOVEMENT_OPTION_COUNT                                                                  \
+    ( sizeof( GPS_MOVEMENT_OPTIONS ) / sizeof( GPS_MOVEMENT_OPTIONS[ 0 ] ) )
+
+static int gps_movement_index( uint8_t a_meters )
+{
+    for( size_t index = 0U; index < GPS_MOVEMENT_OPTION_COUNT; ++index )
+    {
+        if( GPS_MOVEMENT_OPTIONS[ index ] == a_meters )
+        {
+            return (int)index;
+        }
+    }
+    return -1;
+}
+
 static void load_gps( const cJSON *a_root )
 {
     const cJSON *gps = cJSON_GetObjectItemCaseSensitive( a_root, "gps" );
@@ -383,6 +400,12 @@ static void load_gps( const cJSON *a_root )
         timeout->valueint <= (int)RFSCOUT_GPS_TIMEOUT_MAX_SECONDS )
     {
         config.gps_timeout_seconds = (uint8_t)timeout->valueint;
+    }
+    const cJSON *movement = cJSON_GetObjectItemCaseSensitive( gps, "movement_m" );
+    if( cJSON_IsNumber( movement ) && movement->valueint > 0 && movement->valueint <= UINT8_MAX &&
+        gps_movement_index( (uint8_t)movement->valueint ) >= 0 )
+    {
+        config.gps_movement_m = (uint8_t)movement->valueint;
     }
     config.gps_timepulse_enabled =
         json_bool( gps, "timepulse_enabled", config.gps_timepulse_enabled );
@@ -985,6 +1008,7 @@ static cJSON *build_system_record( void )
 
     cJSON *gps = cJSON_AddObjectToObject( root, "gps" );
     cJSON_AddNumberToObject( gps, "inactivity_seconds", config.gps_timeout_seconds );
+    cJSON_AddNumberToObject( gps, "movement_m", config.gps_movement_m );
     cJSON_AddBoolToObject( gps, "timepulse_enabled", config.gps_timepulse_enabled );
     cJSON_AddBoolToObject( gps, "led_enabled", config.gps_led_enabled );
     cJSON_AddNumberToObject( gps, "led_brightness", config.gps_led_brightness );
@@ -1046,6 +1070,8 @@ static void remove_legacy_config_files( void )
     (void)unlink( RFSCOUT_INTERNAL_ROOT "/rfscout.json.tmp" );
     (void)unlink( RFSCOUT_INTERNAL_ROOT "/rfscout.json.bak" );
     (void)unlink( RFSCOUT_INTERNAL_ROOT "/rfscout.json.bad" );
+    /* Retired automatic/manual clock mode; nothing reads it any more. */
+    (void)system_store_remove( "time.policy" );
 }
 
 esp_err_t device_config_init( void )
@@ -1290,6 +1316,31 @@ esp_err_t device_config_set_gps_timeout_seconds( uint8_t a_seconds )
         config_dirty = true;
     }
     return ESP_OK;
+}
+
+esp_err_t device_config_set_gps_movement_m( uint8_t a_meters )
+{
+    if( gps_movement_index( a_meters ) < 0 )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if( config.gps_movement_m != a_meters )
+    {
+        config.gps_movement_m = a_meters;
+        config_dirty = true;
+    }
+    return ESP_OK;
+}
+
+uint8_t device_config_gps_movement_step( uint8_t a_meters, int a_direction )
+{
+    const int index = gps_movement_index( a_meters );
+    const int count = (int)GPS_MOVEMENT_OPTION_COUNT;
+    if( index < 0 )
+    {
+        return RFSCOUT_GPS_MOVEMENT_DEFAULT_M;
+    }
+    return GPS_MOVEMENT_OPTIONS[ ( index + ( a_direction > 0 ? 1 : count - 1 ) ) % count ];
 }
 
 esp_err_t device_config_set_gps_timepulse( bool a_enabled )

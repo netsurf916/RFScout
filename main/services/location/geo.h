@@ -27,6 +27,14 @@ typedef struct
     uint32_t samples;
 } geo_bounds_t;
 
+/** @brief Last accepted point of a movement-triggered log; zero-initialized is empty. */
+typedef struct
+{
+    bool valid;
+    double latitude;
+    double longitude;
+} geo_movement_gate_t;
+
 /** @brief Great-circle (haversine) distance between two points in metres. */
 double
 geo_distance_m( double a_latitude1, double a_longitude1, double a_latitude2, double a_longitude2 );
@@ -42,5 +50,15 @@ bool geo_bounds_center( const geo_bounds_t *a_bounds, double *a_latitude, double
 
 /** @brief Distance from a point to the nearest point of the range (0 inside); negative when empty. */
 double geo_bounds_distance_m( const geo_bounds_t *a_bounds, double a_latitude, double a_longitude );
+
+/**
+ * @brief Accept a point when nothing was accepted yet or it is at least a_meters away.
+ * @details An accepted point becomes the new reference. Callers apply this only to fresh
+ *          GPS fixes, so every movement-triggered log shares one rule.
+ */
+bool geo_movement_gate_accept( geo_movement_gate_t *a_gate,
+                               double a_latitude,
+                               double a_longitude,
+                               double a_meters );
 
 #endif // _RFSCOUT_GEO_H_

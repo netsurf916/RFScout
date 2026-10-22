@@ -670,6 +670,12 @@ static bool record_receiver_location( rf_device_t *a_device,
         a_gps->location_age_ms > 5000U )
         return false;
     geo_bounds_extend( &a_device->receiver_bounds, a_gps->latitude_deg, a_gps->longitude_deg );
+    /* Live bounds see every packet; the journal records only movement-triggered samples. */
+    if( !geo_movement_gate_accept( &a_device->journal_gate,
+                                   a_gps->latitude_deg,
+                                   a_gps->longitude_deg,
+                                   device_config_get()->gps_movement_m ) )
+        return false;
     memcpy( a_event->address, a_device->address, sizeof( a_event->address ) );
     a_event->address_type = a_device->address_type;
     a_event->classification = a_device->surveillance;

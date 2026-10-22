@@ -10,8 +10,6 @@
 #include "app_descriptor.h"
 #include "persistent_store.h"
 
-#include "esp_log.h"
-
 #include <string.h>
 
 #define SAVED_NETWORK_RECORD_KEY "networks"
@@ -36,7 +34,6 @@ typedef struct
     saved_network_entry_t entries[ SAVED_NETWORK_MAX_COUNT ];
 } saved_network_record_t;
 
-static const char *TAG = "saved_networks";
 /* The record stays in the Home/device namespace where Home created it, so this platform
    service uses the privileged core path rather than the calling app's namespace. The working
    copy is static to keep credential material off the limited app task stack. */
@@ -57,37 +54,30 @@ static void release( void )
     memset( &record, 0, sizeof( record ) );
 }
 
-/** Load the record; a missing or rejected record yields an empty list. */
+static bool record_valid( const void *a_record )
+{
+    const saved_network_record_t *candidate = a_record;
+    bool valid = SAVED_NETWORK_RECORD_MAGIC == candidate->magic &&
+                 SAVED_NETWORK_RECORD_VERSION == candidate->version &&
+                 candidate->count <= SAVED_NETWORK_MAX_COUNT;
+    for( size_t index = 0U; valid && index < candidate->count; ++index )
+    {
+        valid = entry_valid( &candidate->entries[ index ] );
+    }
+    return valid;
+}
+
+/** Load the record; a missing or rejected (and therefore deleted) record is an empty list. */
 static esp_err_t load( void )
 {
     release();
-    size_t length = 0U;
-    const esp_err_t result = persistent_store_app_read(
-        RFSCOUT_APP_DEVICE, SAVED_NETWORK_RECORD_KEY, &record, sizeof( record ), &length );
-    if( ESP_ERR_NOT_FOUND == result )
-    {
-        return ESP_OK;
-    }
+    const esp_err_t result = persistent_store_app_load(
+        RFSCOUT_APP_DEVICE, SAVED_NETWORK_RECORD_KEY, &record, sizeof( record ), record_valid );
     if( ESP_OK != result )
     {
         release();
-        return result;
     }
-    bool valid = sizeof( record ) == length && SAVED_NETWORK_RECORD_MAGIC == record.magic &&
-                 SAVED_NETWORK_RECORD_VERSION == record.version &&
-                 record.count <= SAVED_NETWORK_MAX_COUNT;
-    for( size_t index = 0U; valid && index < record.count; ++index )
-    {
-        valid = entry_valid( &record.entries[ index ] );
-    }
-    if( !valid )
-    {
-        /* Nothing else can manage an internal record, so a rejected one is deleted. */
-        ESP_LOGW( TAG, "deleting unsupported saved-network record" );
-        release();
-        return persistent_store_app_remove( RFSCOUT_APP_DEVICE, SAVED_NETWORK_RECORD_KEY );
-    }
-    return ESP_OK;
+    return ESP_ERR_NOT_FOUND == result || ESP_ERR_INVALID_RESPONSE == result ? ESP_OK : result;
 }
 
 static esp_err_t save( void )

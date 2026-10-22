@@ -93,7 +93,8 @@ typedef struct
     uint16_t service_uuids[ RFSCOUT_BLE_SERVICE_UUID_MAX ];
     uint8_t service_uuid_count;
     bool has_remote_id;
-    geo_bounds_t receiver_bounds; /**< where RFScout received this device's packets */
+    geo_bounds_t receiver_bounds;     /**< where RFScout received this device's packets */
+    geo_movement_gate_t journal_gate; /**< last receiver position journaled for this device */
 } rf_device_t;
 
 /**

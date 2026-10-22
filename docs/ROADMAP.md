@@ -528,6 +528,10 @@ The system-owned persistent-record service for bounded named records and configu
 - use GNSS UTC as an explicit time authority;
 - expose fix/location/satellite/accuracy information;
 - optionally attach location metadata to observations/captures when enabled;
+- parse NMEA GSV to expose satellites in view separately from GGA satellites used;
+- capture GGA HDOP and, where emitted, GSA DOP; report horizontal accuracy only from a defensible receiver accuracy measurement, never from DOP alone;
+- add fix type and GPS UTC presentation as supported by receiver messages (per-satellite detail stays out of scope);
+- show the receiver's read-back GPS Timepulse state in menus instead of only the saved preference;
 - [x] add NTP to the explicit Home networking workflow; a successful connection attempts UTC synchronization, while Update remains available if time sync fails or is cancelled.
 - [ ] define longer-term authority transitions among manual, saved, RTC, GNSS, and NTP sources beyond the current one-shot/network-session behavior.
 
@@ -644,7 +648,7 @@ Wi-Fi settings
   Active discovery          On                 [Off / On]
   Active scanning policy    >                  [visible when On]
     Use GPS                 On                 [Off / On]
-    Minimum distance        50 m               [GPS On]
+    Minimum distance        shared Movement trigger [GPS On]
     Stationary duration     10 sec             [GPS On]
     GPS unavailable         Timed fallback     [GPS On; Timed / Skip]
     Minimum interval        120 sec            [GPS Off OR Timed fallback]

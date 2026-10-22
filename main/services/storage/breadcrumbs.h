@@ -21,7 +21,10 @@
 /** @brief Start or resume the breadcrumb worker when SD storage is available. */
 esp_err_t breadcrumbs_init( void );
 
-/** @brief Snapshot a fresh GPS fix for asynchronous breadcrumb recording when due. */
+/**
+ * @brief Queue a fresh GPS fix once the receiver has moved by the shared movement trigger.
+ * @details At most one record per second and per GPS UTC second.
+ */
 void breadcrumbs_poll( void );
 
 /** @brief Return whether breadcrumb recording is enabled. */
@@ -32,6 +35,9 @@ esp_err_t breadcrumbs_set_enabled( bool a_enabled );
 
 /** @brief Return the configured maximum retained breadcrumb journal segment count. */
 uint16_t breadcrumbs_file_limit( void );
+
+/** @brief Next supported retained-segment count in a_direction, wrapping. */
+uint16_t breadcrumbs_file_limit_step( uint16_t a_file_limit, int a_direction );
 
 /** @brief Persist a new retained breadcrumb file count and request asynchronous pruning. */
 esp_err_t breadcrumbs_set_file_limit( uint16_t a_file_limit );

@@ -109,6 +109,13 @@ when the GPS app is foregrounded, because deep sleep does not dispatch an ordina
 app-leave event. Failure to clear the ring cancels sleep and rolls back terminal
 preparation so a latched navigation pixel is not left powered during sleep.
 
+The ring is a board-owned RMT provider (`led_ring`) exposing indexed RGB, intensity, clear,
+and atomic frame updates; GPIO/RMT details never reach applications. The foreground GPS
+application holds the only ring lease. Its `prepare_leave` hook clears and releases the ring
+before an application transition commits; after one bounded retry for an RMT timeout, a
+release failure vetoes the transition so no other application inherits a latched GPS
+navigation pixel. No additional LED ownership state machine exists.
+
 ## Planned shared network-profile identity (PR #122)
 
 **Architecture contract for PR #122.** RFScout departs from Hotspotter's SSID-keyed credentials and supports multiple independently identified profiles with the same SSID. Home/OTA and Hotspots must continue to share one authoritative credential store, using a versioned backward-compatible migration from existing SSID/password records. Each profile has a stable internal ID, optional user label, SSID, credential and expected authentication policy, plus a bounded collection of associated BSSID observations (last seen, observed authentication mode, and whether connection/characterization succeeded). Credentials must never be copied into observation history or SD journal records.
@@ -254,7 +261,7 @@ Durable state uses logical owner/key namespaces:
 
 - `system/config` — ordinary device-wide policy such as display/power behavior, themes, timezone/clock presentation, SD logging, app enablement/startup choice, global audio policy/gains, and alert policy;
 - `app/<persistence_key>/config` — descriptor-confined app preference overrides;
-- legacy `system/time.policy` records from earlier firmware are ignored (automatic time sync needs no stored mode);
+- `system/time.policy` — retired (automatic time sync needs no stored mode); device configuration deletes it at startup;
 - `system/breadcrumbs` — breadcrumb enablement/retention policy; and
 - additional bounded `system/*` or app-scoped records owned by their service/application.
 
@@ -280,6 +287,8 @@ Normal app-facing operations cannot choose another app's namespace. Core orchest
 Ordinary setting setters mark owned configuration dirty and the normal service loop flushes it automatically. There is no Home **Save config** action.
 
 A missing record means compiled defaults. Malformed/unsupported owned records fall back to defaults for that owner. App configuration records are sparse overrides: returning all app preferences to their defaults removes the app config record.
+
+Every reader must **delete a record it rejects** — wrong size, magic, version, or out-of-range values. Nothing short of erasing the device can otherwise clear an internal record, so a rejected record is never left in place. Fixed-size records use `system_store_load()` / `app_store_load()`, which read the exact size, apply the owner's validator, and remove the record on rejection; variable-length readers such as device configuration remove rejected records themselves. Records are not migrated across format changes: an older layout is rejected and removed like any other unsupported record, and records retired from the firmware are deleted rather than ignored.
 
 The retired monolithic internal `rfscout.json` representation is not authoritative or migrated forward as an editable interchange format.
 
@@ -386,10 +395,12 @@ Current layout:
 | Owner | Collection | Contents |
 | --- | --- | --- |
 | `system` | `logs` | Rotating structured logs `rfscout-00.log` … `rfscout-99.log` |
-| `system` | `breadcrumbs` | Optional ten-minute GPS breadcrumb CSV buckets |
+| `system` | `breadcrumbs` | Optional movement-triggered GPS breadcrumb journal `breadcrumbs-*.jsonl` |
 | `audio` (Recorder) | `recordings` | Recorder 16-bit mono PCM WAV files |
 
-Files written by earlier firmware under `/sdcard/audio/`, `/sdcard/logs/`, or `/sdcard/logs/breadcrumbs/` are not migrated, browsed, rotated, or deleted by the current layout; they remain on the card for manual removal.
+Applications add their own collections under their persistence key, for example the WiFi/BLE `locations` collection for `surveillance-*.jsonl`.
+
+Files written by earlier firmware under `/sdcard/audio/`, `/sdcard/logs/`, or `/sdcard/logs/breadcrumbs/`, earlier CSV breadcrumb buckets, and earlier unsegmented `surveillance.jsonl` journals are not migrated, browsed, rotated, or deleted by the current layout; they remain on the card for manual removal.
 
 ### Media file handles and arbitration
 
@@ -407,7 +418,48 @@ The media store also exposes an explicit presence probe for navigation dependenc
 
 Rotating logs use `rfscout-00.log` through `rfscout-99.log` in `system/logs`, up to 4 MiB each, while attempting to preserve at least 64 MiB free. The conservative hardware-tested SD baseline remains a FAT-compatible SanDisk card of 32 GB or less.
 
-Breadcrumb recording is independent from the ordinary SD logging toggle and requires fresh valid GPS position **and GPS UTC**. Accepted fixes are sampled automatically between one and five seconds: five seconds is the conservative fallback, and a verified actual receiver rate can accelerate capture to at most once per second. Duplicate whole-second GPS UTC stamps are suppressed. Samples are bucketed into ten-minute GPS-UTC filenames in `system/breadcrumbs`. Current retention is file-count based, not a per-file byte limit. The Home and GPS menus access the same service-owned recording and retention settings.
+Breadcrumb recording is independent from the ordinary SD logging toggle and requires fresh valid GPS position **and GPS UTC**. A breadcrumb is queued once the receiver has moved at least the shared movement trigger since the previous breadcrumb, no more than once per second and never twice for the same GPS UTC second; nothing is written while stationary. Each record carries UTC, latitude/longitude, raw speed when fresh, and the GPS service's filtered speed and current/target receiver update intervals when available. Breadcrumbs use a `system/breadcrumbs` journal of 64 KiB segments; the retained-file setting is the journal's segment count. The Home and GPS menus access the same service-owned recording and retention settings.
+
+### SD journals
+
+Every SD event log (breadcrumbs, WiFi/BLE surveillance locations, and future journals) uses
+the shared `media_journal` service rather than its own file handling. A journal is a numbered
+series of segments in one media collection, `<prefix>-<8 hex digits>.jsonl`, where each line
+is one JSON object with a `type` field, an optional integer `utc`, and `lat`/`lon` with seven
+decimals when the record has a location. Callers own buffering, formatting, and scheduling;
+the journal is not thread-safe and runs from the caller's own task or poll.
+
+- An append writes one batch, syncs it, and truncates back to the previous size on failure.
+  When that outcome is uncertain (truncate or close failed), the segment is abandoned and the
+  next append starts a fresh `CREATE_NEW` segment, so a torn line is never followed by more
+  records. Callers can tell a rolled-back batch (safe to retry) from an uncertain one (dropped
+  rather than duplicated).
+- On first use after a mount the journal scans its collection; the newest segment is
+  continued only when it ends with a complete line and is below the segment size.
+- A segment that reaches its size bound is closed and a new one is started; segments beyond
+  the retention count are deleted oldest first.
+- Compaction writes a replacement base `<prefix>-<n>c.jsonl` through a temporary file,
+  renames it into place, then deletes every older segment. A base supersedes all older
+  segments; an interrupted compaction leaves either the old segments or the new base, and
+  leftover temporary files or superseded segments are removed on the next scan.
+- Readers replay complete lines oldest first. An unterminated final line of a segment is
+  treated as a torn write and skipped.
+
+### GPS movement trigger
+
+One system setting, **Movement trigger** (5, 10, 25, 50, or 100 m; default 10 m), decides when
+any SD log records another receiver location. A point qualifies only with a fresh GPS fix and
+only once the receiver has moved at least that distance from the writer's previous logged
+point (`geo_movement_gate`). Each writer keeps its own reference point: breadcrumbs keep one,
+the WiFi/BLE journal one per surveillance identity, and Hotspots one per access point. The
+trigger never limits live GPS data: the GPS service, dashboard, trip odometer, LED guidance,
+live receiver bounds and distances, Wardriving packet metadata, and structured-log position
+fields continue to see every fix.
+
+The setting lives in system configuration and appears in Home **Device Settings** and GPS
+Settings. Like the other receiver-dependent rows (breadcrumbs, retained files, GPS Timepulse),
+it is shown unavailable and refuses changes until a GPS receiver is detected.
+
 
 ## Firmware image and OTA architecture
 
@@ -505,17 +557,17 @@ valid GPS fix, each identity expands a receiver-location latitude/longitude boun
 This box records **where RFScout received packets**, not a transmitter's verified position.
 Expired identities are removed without any timeout-triggered storage write.
 
-Each qualified packet with a fresh GPS fix is queued as an individual append-only JSONL
-record in the app-owned `locations/surveillance.jsonl` file. The record contains full MAC,
-address type, classification, receiver latitude/longitude, valid UTC when available, and
-last-seen milliseconds. The app poll batches SD writes outside the observation-store lock;
-a failed batch remains queued for retry during the current app session when rollback succeeds.
-If rollback fails, the uncertain batch is dropped; a later media request uses a new,
-create-only `surveillance-XXXXXXXX.jsonl` journal segment instead of appending after a
-potentially incomplete line. App exit attempts a final flush. Insufficient memory or
-unavailable media can still result in loss; no cross-session queue recovery is promised.
-The storage service records SD mount, loss, and recovery transitions in System Events
-without checking the card when no client requests storage.
+Every qualified packet still expands the live bounding box. A journal record is queued only
+when the identity's receiver position has moved by the shared movement trigger since that
+identity's previous record (its first qualified packet always records). Records go to the
+app-owned `locations` collection through the shared `surveillance` journal (1 MiB segments,
+64 retained) and contain full MAC, address type, classification, receiver latitude/longitude,
+valid UTC when available, and last-seen milliseconds. The app poll batches SD writes outside
+the observation-store lock; a rolled-back batch is retried during the current app session,
+and an uncertain batch is dropped rather than duplicated. App exit attempts a final flush.
+Insufficient memory or unavailable media can still result in loss; no cross-session queue
+recovery is promised. The storage service records SD mount, loss, and recovery transitions in
+System Events without checking the card when no client requests storage.
 
 The WiFi/BLE dashboard's surveillance signature rows show the nearest available distance
 among retained identities with that signature, without replaying the SD journal or

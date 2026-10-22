@@ -8,6 +8,8 @@
 #include "breadcrumbs.h"
 
 #include "gps.h"
+#include "device_config.h"
+#include "geo.h"
 #include "event.h"
 #include "media_journal.h"
 #include "persistent_store.h"
@@ -32,7 +34,6 @@
 #define BREADCRUMB_SETTINGS_KEY "breadcrumbs"
 #define BREADCRUMB_SETTINGS_VERSION 1U
 #define BREADCRUMB_SETTINGS_SIZE 4U
-#define BREADCRUMB_FALLBACK_INTERVAL_US 5000000LL
 /* Timestamps have whole-second precision; never write multiple records per UTC second. */
 #define BREADCRUMB_MIN_INTERVAL_US 1000000LL
 #define BREADCRUMB_QUEUE_DEPTH 4U
@@ -60,6 +61,8 @@ static uint8_t queue_storage[ BREADCRUMB_QUEUE_DEPTH * sizeof( breadcrumb_record
 static QueueHandle_t queue;
 static TaskHandle_t worker_task;
 static int64_t last_capture_us;
+static geo_movement_gate_t movement_gate;
+static const uint16_t FILE_LIMIT_OPTIONS[] = { 24U, 72U, 144U, 288U, 1008U };
 static time_t last_queued_utc;
 static volatile bool trim_requested;
 static volatile bool shutdown_requested;
@@ -86,6 +89,19 @@ static esp_err_t persist_settings( bool a_enabled, uint16_t a_file_limit )
     return system_store_write( BREADCRUMB_SETTINGS_KEY, record, sizeof( record ) );
 }
 
+static uint16_t stored_file_limit( const uint8_t *a_record )
+{
+    return (uint16_t)a_record[ 2 ] | ( (uint16_t)a_record[ 3 ] << 8U );
+}
+
+static bool settings_valid( const void *a_record )
+{
+    const uint8_t *record = a_record;
+    const uint16_t limit = stored_file_limit( record );
+    return BREADCRUMB_SETTINGS_VERSION == record[ 0 ] && record[ 1 ] <= 1U && 0U != limit &&
+           limit <= RFSCOUT_BREADCRUMB_FILE_LIMIT_MAX;
+}
+
 static void load_settings( void )
 {
     if( settings_loaded )
@@ -97,31 +113,12 @@ static void load_settings( void )
     file_limit = RFSCOUT_BREADCRUMB_FILE_LIMIT_DEFAULT;
 
     uint8_t record[ BREADCRUMB_SETTINGS_SIZE ];
-    size_t length = 0U;
-    const esp_err_t result =
-        system_store_read( BREADCRUMB_SETTINGS_KEY, record, sizeof( record ), &length );
-    if( ESP_ERR_NOT_FOUND == result )
+    if( ESP_OK ==
+        system_store_load( BREADCRUMB_SETTINGS_KEY, record, sizeof( record ), settings_valid ) )
     {
-        return;
+        enabled = 0U != record[ 1 ];
+        file_limit = stored_file_limit( record );
     }
-    if( ESP_OK != result || sizeof( record ) != length ||
-        BREADCRUMB_SETTINGS_VERSION != record[ 0 ] || record[ 1 ] > 1U )
-    {
-        ESP_LOGW( TAG, "discarding incompatible breadcrumb settings" );
-        (void)system_store_remove( BREADCRUMB_SETTINGS_KEY );
-        return;
-    }
-
-    const uint16_t stored_limit = (uint16_t)record[ 2 ] | ( (uint16_t)record[ 3 ] << 8U );
-    if( 0U == stored_limit || stored_limit > RFSCOUT_BREADCRUMB_FILE_LIMIT_MAX )
-    {
-        ESP_LOGW( TAG, "discarding invalid breadcrumb file limit" );
-        (void)system_store_remove( BREADCRUMB_SETTINGS_KEY );
-        return;
-    }
-
-    enabled = 0U != record[ 1 ];
-    file_limit = stored_limit;
 }
 
 static void request_trim( void )
@@ -342,35 +339,28 @@ void breadcrumbs_poll( void )
     {
         return;
     }
-    float filtered_speed_mps = 0.0f;
-    int current_rate_ms = 0;
-    int target_rate_ms = 0;
-    const bool rate_valid =
-        gps_rate_diagnostics_get( &filtered_speed_mps, &current_rate_ms, &target_rate_ms );
-    /* Follow verified receiver cadence, not a requested target. The whole-second
-       timestamp and dedup contract permit at most one record per UTC second. */
-    int64_t interval_us = BREADCRUMB_FALLBACK_INTERVAL_US;
-    if( rate_valid && current_rate_ms >= 100 && current_rate_ms <= 1000 )
-    {
-        interval_us = (int64_t)current_rate_ms * 1000LL;
-        if( interval_us < BREADCRUMB_MIN_INTERVAL_US )
-        {
-            interval_us = BREADCRUMB_MIN_INTERVAL_US;
-        }
-    }
     const int64_t now_us = esp_timer_get_time();
-    if( 0 != last_capture_us && ( now_us - last_capture_us ) < interval_us )
+    if( 0 != last_capture_us && ( now_us - last_capture_us ) < BREADCRUMB_MIN_INTERVAL_US )
     {
         return;
     }
 
     rfscout_gps_snapshot_t gps;
     if( !gps_snapshot_get( &gps ) || !gps.location_valid || !gps.time_valid ||
-        gps.utc_epoch == last_queued_utc )
+        gps.utc_epoch == last_queued_utc || 0U == uxQueueSpacesAvailable( queue ) ||
+        !geo_movement_gate_accept( &movement_gate,
+                                   gps.latitude_deg,
+                                   gps.longitude_deg,
+                                   device_config_get()->gps_movement_m ) )
     {
         return;
     }
     last_capture_us = now_us;
+    float filtered_speed_mps = 0.0f;
+    int current_rate_ms = 0;
+    int target_rate_ms = 0;
+    const bool rate_valid =
+        gps_rate_diagnostics_get( &filtered_speed_mps, &current_rate_ms, &target_rate_ms );
     const breadcrumb_record_t record = {
         .utc_epoch = gps.utc_epoch,
         .latitude_deg = gps.latitude_deg,
@@ -414,6 +404,7 @@ esp_err_t breadcrumbs_set_enabled( bool a_enabled )
             consecutive_write_failures = 0U;
             last_capture_us = 0;
             last_queued_utc = 0;
+            memset( &movement_gate, 0, sizeof( movement_gate ) );
             if( !a_enabled && NULL != queue )
             {
                 (void)xQueueReset( queue );
@@ -426,6 +417,19 @@ esp_err_t breadcrumbs_set_enabled( bool a_enabled )
         (void)xSemaphoreGive( write_mutex );
     }
     return result;
+}
+
+uint16_t breadcrumbs_file_limit_step( uint16_t a_file_limit, int a_direction )
+{
+    const size_t count = sizeof( FILE_LIMIT_OPTIONS ) / sizeof( FILE_LIMIT_OPTIONS[ 0 ] );
+    for( size_t index = 0U; index < count; ++index )
+    {
+        if( FILE_LIMIT_OPTIONS[ index ] == a_file_limit )
+        {
+            return FILE_LIMIT_OPTIONS[ ( index + ( a_direction > 0 ? 1U : count - 1U ) ) % count ];
+        }
+    }
+    return RFSCOUT_BREADCRUMB_FILE_LIMIT_DEFAULT;
 }
 
 uint16_t breadcrumbs_file_limit( void )

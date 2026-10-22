@@ -13,7 +13,6 @@
 #include "notification.h"
 #include "notification_preferences.h"
 #include "ui_chrome.h"
-#include "ui_game.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
 #include "ui_menu.h"
@@ -71,67 +70,68 @@ void notification_settings_view_render( rfscout_app_id_t a_app,
 
         const int y = UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT;
         const bool active = ( item == a_selected );
-        const uint16_t foreground =
-            ui_menu_label_color( ( ui_menu_state_t ){ .selected = active, .available = true } );
-        ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X,
-                                  y,
-                                  active ? ( a_editing ? "*" : ">" ) : " ",
-                                  active ? theme->selected : theme->divider );
+        const char *label = NULL;
+        char value[ 24 ];
+        value[ 0 ] = '\0';
 
         if( NOTIFICATION_SETTINGS_BACK == item )
         {
-            display_draw_text( UI_LAYOUT_LABEL_X, y, "BACK", foreground, 1U );
-            continue;
+            label = "BACK";
         }
-        if( NOTIFICATION_SETTINGS_ENABLED == item )
+        else if( NOTIFICATION_SETTINGS_ENABLED == item )
         {
-            display_draw_text( UI_LAYOUT_LABEL_X, y, "ENABLED", foreground, 1U );
-            display_draw_text( 232,
-                               y,
-                               notification_preferences_app_enabled( a_app ) ? "ON" : "OFF",
-                               active ? theme->selected : theme->secondary,
-                               1U );
-            continue;
+            label = "ENABLED";
+            snprintf( value,
+                      sizeof( value ),
+                      "%s",
+                      notification_preferences_app_enabled( a_app ) ? "ON" : "OFF" );
         }
-
-        if( ( RFSCOUT_APP_WIFI_BT == a_app ) && ( item >= NOTIFICATION_SETTINGS_FIXED_ITEMS ) &&
-            ( item < first_mapping ) )
+        else if( ( RFSCOUT_APP_WIFI_BT == a_app ) &&
+                 ( item >= NOTIFICATION_SETTINGS_FIXED_ITEMS ) && ( item < first_mapping ) )
         {
             const rfscout_wifi_detection_event_t event =
                 (rfscout_wifi_detection_event_t)( item - NOTIFICATION_SETTINGS_FIXED_ITEMS );
-            const char *label =
+            label =
                 ( RFSCOUT_WIFI_DETECTION_WIFI_DEVICE == event ) ? "WIFI DEVICES" : "BLE DEVICES";
-            display_draw_text( UI_LAYOUT_LABEL_X, y, label, foreground, 1U );
-            display_draw_text( 232,
-                               y,
-                               notification_preferences_wifi_detection_enabled( event ) ? "ON"
-                                                                                        : "OFF",
-                               active ? theme->selected : theme->secondary,
-                               1U );
-            continue;
-        }
-
-        const rfscout_notification_descriptor_t *descriptor =
-            notification_descriptor_for_app( a_app, item - first_mapping );
-        if( NULL == descriptor )
-        {
-            continue;
-        }
-
-        const char character = device_config_notification_character( descriptor->type );
-        char value[ 24 ];
-        if( ' ' == character )
-        {
-            snprintf( value, sizeof( value ), "OFF" );
+            snprintf( value,
+                      sizeof( value ),
+                      "%s",
+                      notification_preferences_wifi_detection_enabled( event ) ? "ON" : "OFF" );
         }
         else
         {
-            const char *pattern = morse_pattern( character );
-            snprintf(
-                value, sizeof( value ), "%c %s", character, ( NULL != pattern ) ? pattern : "?" );
+            const rfscout_notification_descriptor_t *descriptor =
+                notification_descriptor_for_app( a_app, item - first_mapping );
+            if( NULL != descriptor )
+            {
+                const char character = device_config_notification_character( descriptor->type );
+                label = descriptor->label;
+                if( ' ' == character )
+                {
+                    snprintf( value, sizeof( value ), "OFF" );
+                }
+                else
+                {
+                    const char *pattern = morse_pattern( character );
+                    snprintf( value,
+                              sizeof( value ),
+                              "%c %s",
+                              character,
+                              ( NULL != pattern ) ? pattern : "?" );
+                }
+            }
         }
-        display_draw_text( UI_LAYOUT_LABEL_X, y, descriptor->label, foreground, 1U );
-        display_draw_text( 232, y, value, active ? theme->selected : theme->secondary, 1U );
+
+        ui_menu_draw_row(
+            y,
+            label,
+            NULL,
+            ( ui_menu_state_t ){ .selected = active, .editing = a_editing, .available = true } );
+        if( '\0' != value[ 0 ] )
+        {
+            /* Values keep this view's wider column at x=232. */
+            display_draw_text( 232, y, value, active ? theme->selected : theme->secondary, 1U );
+        }
     }
 
     char footer[ 64 ];

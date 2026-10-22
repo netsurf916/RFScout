@@ -109,6 +109,7 @@ static const device_config_t gps_config_fixture = {
     .gps_led_rgb = 0x00FF00U,
     .gps_keep_awake = true,
     .gps_timeout_seconds = 30U,
+    .gps_movement_m = 10U,
 };
 const device_config_t *device_config_get( void )
 {
@@ -217,6 +218,10 @@ const rfscout_recording_t *recorder_file( size_t a_index )
     return NULL;
 }
 bool gps_available( void )
+{
+    return true;
+}
+bool gps_detected( void )
 {
     return true;
 }

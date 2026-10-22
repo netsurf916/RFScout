@@ -376,6 +376,32 @@ static bool record_exists( const char *a_scope, const char *a_key )
     return exists;
 }
 
+static esp_err_t record_load( const char *a_scope,
+                              const char *a_key,
+                              void *a_record,
+                              size_t a_length,
+                              persistent_record_valid_fn a_valid )
+{
+    if( NULL == a_record || 0U == a_length )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    size_t length = 0U;
+    const esp_err_t result = record_read( a_scope, a_key, a_record, a_length, &length );
+    if( ESP_ERR_NOT_FOUND == result || ESP_ERR_INVALID_STATE == result ||
+        ESP_ERR_INVALID_ARG == result )
+    {
+        return result;
+    }
+    if( ESP_OK == result && a_length == length && ( NULL == a_valid || a_valid( a_record ) ) )
+    {
+        return ESP_OK;
+    }
+    ESP_LOGW( TAG, "removing rejected record %s", a_key );
+    (void)record_remove( a_scope, a_key );
+    return ESP_ERR_INVALID_RESPONSE;
+}
+
 esp_err_t persistent_store_init( void )
 {
     if( initialized )
@@ -462,6 +488,14 @@ bool system_store_exists( const char *a_key )
     return record_exists( PERSISTENT_SYSTEM_ROOT, a_key );
 }
 
+esp_err_t system_store_load( const char *a_key,
+                             void *a_record,
+                             size_t a_length,
+                             persistent_record_valid_fn a_valid )
+{
+    return record_load( PERSISTENT_SYSTEM_ROOT, a_key, a_record, a_length, a_valid );
+}
+
 esp_err_t persistent_store_app_write( rfscout_app_id_t a_app,
                                       const char *a_key,
                                       const void *a_data,
@@ -479,6 +513,17 @@ esp_err_t persistent_store_app_read(
     const esp_err_t result = app_scope( a_app, scope );
     return ( ESP_OK == result ) ? record_read( scope, a_key, a_data, a_capacity, a_length )
                                 : result;
+}
+
+esp_err_t persistent_store_app_load( rfscout_app_id_t a_app,
+                                     const char *a_key,
+                                     void *a_record,
+                                     size_t a_length,
+                                     persistent_record_valid_fn a_valid )
+{
+    char scope[ PERSISTENT_PATH_MAX ];
+    const esp_err_t result = app_scope( a_app, scope );
+    return ( ESP_OK == result ) ? record_load( scope, a_key, a_record, a_length, a_valid ) : result;
 }
 
 esp_err_t persistent_store_app_remove( rfscout_app_id_t a_app, const char *a_key )
@@ -577,4 +622,19 @@ bool app_store_exists( const char *a_key )
     rfscout_app_store_context_t context;
     return ESP_OK == app_store_context_current( &context ) &&
            app_store_exists_context( &context, a_key );
+}
+
+esp_err_t app_store_load( const char *a_key,
+                          void *a_record,
+                          size_t a_length,
+                          persistent_record_valid_fn a_valid )
+{
+    rfscout_app_store_context_t context;
+    char scope[ PERSISTENT_PATH_MAX ];
+    esp_err_t result = app_store_context_current( &context );
+    if( ESP_OK == result )
+    {
+        result = app_scope( context.app, scope );
+    }
+    return ( ESP_OK == result ) ? record_load( scope, a_key, a_record, a_length, a_valid ) : result;
 }

@@ -76,10 +76,15 @@ typedef struct
     uint8_t ble_duty;
 } app_radio_settings_t;
 
+static bool radio_settings_valid( const void *a_record )
+{
+    const app_radio_settings_t *stored = a_record;
+    return stored->magic == 0x52575032U && stored->dwell < 5U && stored->ble_duty < 3U;
+}
+
 static void load_radio_settings( void )
 {
     app_radio_settings_t stored;
-    size_t length = 0U;
     wifi_source = true;
     ble_source = true;
     selected_channels = 0x3FFFU;
@@ -90,23 +95,10 @@ static void load_radio_settings( void )
     ble_active_scan = false;
     ble_dedupe = false;
     ble_duty = 0U;
-    /* Preserve previously persisted app source choices on upgrade. */
-    struct
-    {
-        uint32_t magic;
-        uint8_t wifi;
-        uint8_t ble;
-    } legacy;
-    size_t legacy_length = 0U;
-    if( ESP_OK == app_store_read( "sources.settings", &legacy, sizeof( legacy ), &legacy_length ) &&
-        legacy_length == sizeof( legacy ) && legacy.magic == 0x57425352U )
-    {
-        wifi_source = legacy.wifi != 0U;
-        ble_source = legacy.ble != 0U;
-    }
-    if( ESP_OK == app_store_read( "radio.settings", &stored, sizeof( stored ), &length ) &&
-        length == sizeof( stored ) && stored.magic == 0x52575032U && stored.dwell < 5U &&
-        stored.ble_duty < 3U )
+    /* Retired per-source record; radio.settings owns source enablement. */
+    (void)app_store_remove( "sources.settings" );
+    if( ESP_OK ==
+        app_store_load( "radio.settings", &stored, sizeof( stored ), radio_settings_valid ) )
     {
         wifi_source = stored.wifi != 0U;
         ble_source = stored.ble != 0U;
@@ -119,12 +111,8 @@ static void load_radio_settings( void )
         ble_duty = stored.ble_duty;
     }
     uint8_t stored_ap_dwell = 1U;
-    size_t ap_dwell_length = 0U;
-    if( ESP_OK == app_store_read( "ap_dwell.settings",
-                                  &stored_ap_dwell,
-                                  sizeof( stored_ap_dwell ),
-                                  &ap_dwell_length ) &&
-        sizeof( stored_ap_dwell ) == ap_dwell_length )
+    if( ESP_OK ==
+        app_store_load( "ap_dwell.settings", &stored_ap_dwell, sizeof( stored_ap_dwell ), NULL ) )
     {
         ap_dwell_enabled = 0U != stored_ap_dwell;
     }
