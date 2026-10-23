@@ -6,9 +6,9 @@
 #include "gps.h"
 #include "log_writer.h"
 #include "media_store.h"
+#include "memory_manager.h"
 #include "radio_monitor.h"
 
-#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -567,9 +567,9 @@ esp_err_t wardrive_capture_start( const wardrive_config_t *a_config )
     {
         next_segment = files.found ? files.newest + 1U : 0U;
     }
-    packet_pool = heap_caps_calloc(
-        CAPTURE_QUEUE_COUNT, sizeof( *packet_pool ), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
-    writer_frame = heap_caps_malloc( CAPTURE_MAX_FRAME + 20U, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
+    const rfscout_memory_owner_t owner = memory_manager_app_owner( RFSCOUT_APP_WARDRIVE );
+    packet_pool = memory_manager_calloc( owner, CAPTURE_QUEUE_COUNT, sizeof( *packet_pool ) );
+    writer_frame = memory_manager_calloc( owner, CAPTURE_MAX_FRAME + 20U, 1U );
     pending_queue = xQueueCreate( CAPTURE_QUEUE_COUNT, sizeof( capture_packet_t * ) );
     free_queue = xQueueCreate( CAPTURE_QUEUE_COUNT, sizeof( capture_packet_t * ) );
     if( packet_pool == NULL || writer_frame == NULL || pending_queue == NULL || free_queue == NULL )
@@ -642,10 +642,15 @@ void wardrive_capture_stop( void )
         free_queue = NULL;
     }
     close_segment();
-    heap_caps_free( packet_pool );
-    packet_pool = NULL;
-    heap_caps_free( writer_frame );
-    writer_frame = NULL;
+    const rfscout_memory_owner_t owner = memory_manager_app_owner( RFSCOUT_APP_WARDRIVE );
+    if( NULL != packet_pool && memory_manager_free( owner, packet_pool ) )
+    {
+        packet_pool = NULL;
+    }
+    if( NULL != writer_frame && memory_manager_free( owner, writer_frame ) )
+    {
+        writer_frame = NULL;
+    }
     stats.recording = false;
     stop_pending = false;
 }
