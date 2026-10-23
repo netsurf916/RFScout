@@ -9,12 +9,9 @@
 #include "ota_installer.h"
 #include "memory_manager.h"
 
-#include "https_diagnostics.h"
-
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
-#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -128,11 +125,6 @@ static esp_err_t http_event( esp_http_client_event_t *a_event )
     if( NULL == a_event )
     {
         return ESP_ERR_INVALID_ARG;
-    }
-    if( HTTP_EVENT_ON_CONNECTED == a_event->event_id )
-    {
-        ESP_LOGI( TAG, "HTTPS transport connected" );
-        return ESP_OK;
     }
     if( HTTP_EVENT_ON_DATA != a_event->event_id || NULL == a_event->data || a_event->data_len <= 0 )
     {
@@ -255,17 +247,6 @@ static void acquisition_worker( void *a_context )
     const bool cancelled_before_start = cancel_requested;
     portEXIT_CRITICAL( &state_lock );
 
-    const int64_t request_started_us = esp_timer_get_time();
-    ESP_LOGI( TAG,
-              "HTTPS request begin kind=%d timeout_ms=%u",
-              (int)status.kind,
-              (unsigned)OTA_HTTP_TIMEOUT_MS );
-    https_diag_heap( TAG, "before" );
-    memory_manager_debug_dump( "HTTPS before" );
-    if( !cancelled_before_start )
-    {
-        https_diag_dns( TAG, "netsurf916.github.io" );
-    }
     esp_err_t result = ESP_ERR_INVALID_STATE;
     int http_status = 0;
     if( !cancelled_before_start )
@@ -289,14 +270,6 @@ static void acquisition_worker( void *a_context )
                       (unsigned)tls_flags );
         }
     }
-
-    ESP_LOGI( TAG,
-              "HTTPS request end elapsed_ms=%lld result=%s http=%d",
-              (long long)( ( esp_timer_get_time() - request_started_us ) / 1000LL ),
-              esp_err_to_name( result ),
-              http_status );
-
-    https_diag_heap( TAG, "after" );
 
     ota_acquisition_kind_t kind;
     size_t transferred;
