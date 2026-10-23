@@ -261,6 +261,7 @@ static void acquisition_worker( void *a_context )
               (int)status.kind,
               (unsigned)OTA_HTTP_TIMEOUT_MS );
     https_diag_heap( TAG, "before" );
+    memory_manager_debug_dump( "HTTPS before" );
     if( !cancelled_before_start )
     {
         https_diag_dns( TAG, "netsurf916.github.io" );
