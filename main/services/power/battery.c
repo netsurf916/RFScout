@@ -93,6 +93,7 @@ static battery_status_t cached_status;
 static battery_history_sample_t history[ BATTERY_HISTORY_CAPACITY ];
 static size_t history_head;
 static size_t history_count;
+static int64_t history_last_sample_us;
 static int64_t last_poll_us;
 static bool initialized;
 typedef enum
@@ -1046,8 +1047,11 @@ void battery_refresh( void )
        already completed during this refresh. */
     cached_status = next;
     /* Keep history in the service across app navigation. */
-    if( next.electrical_fresh )
+    if( next.electrical_fresh &&
+        ( 0U == history_count ||
+          last_poll_us - history_last_sample_us >= BATTERY_TELEMETRY_INTERVAL_US ) )
     {
+        history_last_sample_us = last_poll_us;
         history[ history_head ] = ( battery_history_sample_t ){ .timestamp_us = last_poll_us,
                                                                 .current_ma = next.current_ma,
                                                                 .voltage_mv = next.voltage_mv };
@@ -1068,6 +1072,7 @@ esp_err_t battery_init( void )
     memset( &cached_status, 0, sizeof( cached_status ) );
     history_head = 0U;
     history_count = 0U;
+    history_last_sample_us = 0;
     cached_status.charge_state = BATTERY_CHARGE_UNKNOWN;
     gauge_device = NULL;
     gauge_config_state = GAUGE_INSPECT;
