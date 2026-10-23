@@ -42,10 +42,10 @@ typedef struct
     uint16_t max_segments;  /**< delete the oldest segments beyond this count; 0 = unbounded */
     uint32_t media_generation;
     bool resolved;
-    bool advance;   /**< next append must start a fresh segment */
+    bool advance;          /**< next append must start a fresh segment */
     bool append_uncertain; /**< last append might have persisted records */
-    uint32_t first; /**< oldest live segment, 0 when none */
-    uint32_t last;  /**< newest segment, 0 when none */
+    uint32_t first;        /**< oldest live segment, 0 when none */
+    uint32_t last;         /**< newest segment, 0 when none */
     uint16_t count;
     bool compacting;
     uint32_t compact_sequence;
