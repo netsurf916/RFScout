@@ -68,11 +68,18 @@ static void draw_history( void )
         display_draw_text( 10, 85, "WAITING FOR FRESH SAMPLES", theme->warning, 1U );
         return;
     }
+    const int64_t latest_us = esp_timer_get_time();
     int min_ma = 0;
     int max_ma = 0;
     int64_t total_ma = 0;
+    size_t visible_count = 0U;
     for( size_t i = 0U; i < count; i++ )
     {
+        const int64_t age_us = latest_us - samples[ i ].timestamp_us;
+        if( age_us < 0 || age_us > BATTERY_HISTORY_WINDOW_US )
+        {
+            continue;
+        }
         const int current = samples[ i ].current_ma;
         if( current < min_ma )
         {
@@ -83,6 +90,12 @@ static void draw_history( void )
             max_ma = current;
         }
         total_ma += current;
+        visible_count++;
+    }
+    if( 0U == visible_count )
+    {
+        display_draw_text( 10, 85, "NO RECENT BATTERY SAMPLES", theme->warning, 1U );
+        return;
     }
     /* Round outward to meaningful 50 mA divisions, always including zero. */
     const int step = 50;
@@ -103,7 +116,6 @@ static void draw_history( void )
     display_draw_text( 8, y0, text, theme->secondary, 1U );
     snprintf( text, sizeof( text ), "%d", min_ma );
     display_draw_text( 8, y0 + graph_h - 8, text, theme->secondary, 1U );
-    const int64_t latest_us = esp_timer_get_time();
     for( size_t i = 0U; i < count; i++ )
     {
         const int64_t age_us = latest_us - samples[ i ].timestamp_us;
@@ -124,7 +136,7 @@ static void draw_history( void )
     snprintf( text,
               sizeof( text ),
               "AVG %+lldmA  LAST %+dmA",
-              (long long)( total_ma / (int64_t)count ),
+              (long long)( total_ma / (int64_t)visible_count ),
               (int)samples[ count - 1U ].current_ma );
     display_draw_text( 10, 137, text, theme->text, 1U );
     display_draw_text( 10, 151, "-5m50s                     NOW", theme->secondary, 1U );
