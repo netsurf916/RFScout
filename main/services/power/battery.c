@@ -34,6 +34,7 @@
 #define BQ27220_REG_MAC_DATA 0x40U
 #define BQ27220_REG_MAC_SUM 0x60U
 #define BQ27220_DM_CAPACITY 0x929FU
+#define BQ27220_DM_LEARNED_FCC 0x929DU
 #define BQ27220_CFG_BIT 0x0400U
 #define BQ27220_INIT_BIT 0x0020U
 #define BQ27220_SEALED_MASK 0x0006U
@@ -107,6 +108,7 @@ typedef enum
 static gauge_config_state_t gauge_config_state;
 static int64_t gauge_config_after_us;
 static bool gauge_needs_seal;
+static bool gauge_reinitialize_fcc;
 static uint8_t gauge_wait_count;
 
 typedef enum
@@ -179,11 +181,11 @@ static esp_err_t gauge_command( uint16_t a_command )
     return board_i2c_transmit( gauge_device, data, sizeof( data ) );
 }
 
-static esp_err_t gauge_capacity_read( uint16_t *a_capacity )
+static esp_err_t gauge_dm_read( uint16_t a_address, uint16_t *a_capacity )
 {
     const uint8_t address[] = { BQ27220_REG_DM_SELECT,
-                                (uint8_t)BQ27220_DM_CAPACITY,
-                                (uint8_t)( BQ27220_DM_CAPACITY >> 8U ) };
+                                (uint8_t)a_address,
+                                (uint8_t)( a_address >> 8U ) };
     esp_err_t result = board_i2c_transmit( gauge_device, address, sizeof( address ) );
     if( ESP_OK != result )
     {
@@ -200,10 +202,10 @@ static esp_err_t gauge_capacity_read( uint16_t *a_capacity )
     return result;
 }
 
-static esp_err_t gauge_capacity_write( uint16_t a_capacity )
+static esp_err_t gauge_dm_write( uint16_t a_address, uint16_t a_capacity )
 {
-    const uint8_t lo = (uint8_t)BQ27220_DM_CAPACITY;
-    const uint8_t hi = (uint8_t)( BQ27220_DM_CAPACITY >> 8U );
+    const uint8_t lo = (uint8_t)a_address;
+    const uint8_t hi = (uint8_t)( a_address >> 8U );
     const uint8_t cap_hi = (uint8_t)( a_capacity >> 8U );
     const uint8_t cap_lo = (uint8_t)a_capacity;
     const uint8_t payload[] = { BQ27220_REG_DM_SELECT, lo, hi, cap_hi, cap_lo };
@@ -237,6 +239,7 @@ static void gauge_configuration_poll( void )
     }
     uint16_t status = 0U;
     uint16_t capacity = 0U;
+    uint16_t learned_fcc = 0U;
     esp_err_t result = read_register_u16( gauge_device, BQ27220_REG_OPERATION_STATUS, &status );
     if( ESP_OK != result )
     {
@@ -250,12 +253,20 @@ static void gauge_configuration_poll( void )
                 gauge_config_after_us = now + 1000000LL;
                 return;
             }
-            result = gauge_capacity_read( &capacity );
+            result = gauge_dm_read( BQ27220_DM_CAPACITY, &capacity );
+            if( ESP_OK == result )
+            {
+                result = gauge_dm_read( BQ27220_DM_LEARNED_FCC, &learned_fcc );
+            }
             if( ESP_OK != result )
             {
                 break;
             }
-            if( capacity == expected && 0U == ( status & BQ27220_CFG_BIT ) )
+            /* A wildly oversized learned FCC belongs to the previous battery profile.
+             * Normal subsequent learning is retained once it is plausible. */
+            gauge_reinitialize_fcc = learned_fcc > (uint32_t)expected * 5U / 4U;
+            if( capacity == expected && !gauge_reinitialize_fcc &&
+                0U == ( status & BQ27220_CFG_BIT ) )
             {
                 if( ( status & BQ27220_SEALED_MASK ) != BQ27220_SEALED_VALUE )
                 {
@@ -346,7 +357,11 @@ static void gauge_configuration_poll( void )
                 result = ESP_ERR_INVALID_STATE;
                 break;
             }
-            result = gauge_capacity_write( expected );
+            result = gauge_dm_write( BQ27220_DM_CAPACITY, expected );
+            if( ESP_OK == result && gauge_reinitialize_fcc )
+            {
+                result = gauge_dm_write( BQ27220_DM_LEARNED_FCC, expected );
+            }
             if( ESP_OK != result )
             {
                 break;
@@ -377,12 +392,16 @@ static void gauge_configuration_poll( void )
             gauge_config_state = GAUGE_VERIFY;
             return;
         case GAUGE_VERIFY:
-            result = gauge_capacity_read( &capacity );
+            result = gauge_dm_read( BQ27220_DM_CAPACITY, &capacity );
+            if( ESP_OK == result && gauge_reinitialize_fcc )
+            {
+                result = gauge_dm_read( BQ27220_DM_LEARNED_FCC, &learned_fcc );
+            }
             if( ESP_OK != result )
             {
                 break;
             }
-            if( expected != capacity )
+            if( expected != capacity || ( gauge_reinitialize_fcc && expected != learned_fcc ) )
             {
                 result = ESP_ERR_INVALID_RESPONSE;
                 break;
