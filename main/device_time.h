@@ -40,6 +40,8 @@ esp_err_t device_time_set_epoch( time_t a_epoch );
 esp_err_t device_time_offer_gps( time_t a_epoch );
 /** @brief Apply an explicit network time synchronization without changing user settings. */
 esp_err_t device_time_offer_ntp( time_t a_epoch );
+/** @brief Whether valid GPS or NTP UTC was accepted within the last hour (this boot). */
+bool device_time_network_ready( void );
 /** @brief Whether valid GPS UTC arrived within the last five seconds. */
 bool device_time_gps_available( void );
 /** @brief Return the current epoch only when RFScout considers wall time valid. */
