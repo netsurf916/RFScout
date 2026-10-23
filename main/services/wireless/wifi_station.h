@@ -77,6 +77,7 @@ typedef struct
     rfscout_wifi_station_state_t state;
     uint32_t scan_generation;
     int32_t disconnect_reason;
+    bool associated; /**< association succeeded at least once in this connection attempt */
     char ssid[ RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH + 1U ];
     bool ntp_syncing;
     bool ntp_synced;
