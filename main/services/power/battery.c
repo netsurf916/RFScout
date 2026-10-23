@@ -334,7 +334,7 @@ static void gauge_configuration_poll( void )
                 result = ESP_ERR_INVALID_STATE;
                 break;
             }
-            gauge_config_report.result = BATTERY_GAUGE_CONFIG_CONFIGURING;
+            gauge_config_report.result = BATTERY_GAUGE_CONFIGURING;
             gauge_needs_seal = true;
             if( ( status & BQ27220_SEALED_MASK ) == BQ27220_SEALED_VALUE )
             {
