@@ -67,7 +67,10 @@ typedef struct
     bool charger_soc_disagreement;
 } battery_status_t;
 
-/** Number of one-second history slots (at least one minute). */
+/** Default periodic battery telemetry interval. */
+#define BATTERY_TELEMETRY_INTERVAL_US 5000000LL
+
+/** Number of historical telemetry slots (about 5m50s at the default interval). */
 #define BATTERY_HISTORY_CAPACITY 70U
 
 /** Battery current is signed: positive means charging, negative means discharge. */
@@ -85,6 +88,31 @@ typedef struct
  * @return Number of samples copied, or available count when a_samples is NULL.
  */
 size_t battery_history_read( battery_history_sample_t *a_samples, size_t a_capacity );
+
+/** Read-only result of the one-shot BQ27220 startup profile inspection. */
+typedef enum
+{
+    BATTERY_GAUGE_CONFIG_PENDING = 0,
+    BATTERY_GAUGE_CONFIGURING,
+    BATTERY_GAUGE_CONFIG_VERIFIED,
+    BATTERY_GAUGE_CONFIG_FAILED
+} battery_gauge_config_result_t;
+
+typedef struct
+{
+    battery_gauge_config_result_t result;
+    /** Last provisioning error, ESP_OK unless result is FAILED. */
+    esp_err_t error;
+    /** Stable description of current or failed startup step. */
+    const char *stage;
+    /** True when profile values have been read successfully during this startup. */
+    bool profile_read;
+    uint16_t profile_full_capacity_mah;
+    uint16_t profile_design_capacity_mah;
+} battery_gauge_configuration_t;
+
+/** @brief Copy the one-shot gauge configuration status into caller-owned storage. */
+bool battery_get_gauge_configuration( battery_gauge_configuration_t *a_status );
 
 esp_err_t battery_init( void );
 void battery_poll( void );
