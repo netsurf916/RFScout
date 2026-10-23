@@ -124,7 +124,7 @@ static saved_network_entry_t *find( uint32_t a_profile_id )
     {
         if( record->entries[ index ].profile_id == a_profile_id )
         {
-            return record->entries[ index ];
+            return &record->entries[ index ];
         }
     }
     return NULL;
@@ -176,7 +176,7 @@ saved_networks_list( saved_network_profile_t *a_profiles, size_t a_capacity, siz
     for( size_t index = 0U; ESP_OK == result && index < record->count && index < a_capacity;
          ++index )
     {
-        describe( record->entries[ index ], &a_profiles[ index ] );
+        describe( &record->entries[ index ], &a_profiles[ index ] );
         ++*a_count;
     }
     release();
@@ -248,7 +248,7 @@ saved_networks_create( const char *a_ssid, const char *a_password, uint32_t *a_p
             profile_id = record->entries[ index ].profile_id + 1U;
         }
     }
-    saved_network_entry_t *entry = ESP_OK == result ? record->entries[ record->count ] : NULL;
+    saved_network_entry_t *entry = ESP_OK == result ? &record->entries[ record->count ] : NULL;
     if( ESP_OK == result )
     {
         memset( entry, 0, sizeof( *entry ) );
@@ -330,7 +330,7 @@ esp_err_t saved_networks_forget( uint32_t a_profile_id )
     const size_t index = (size_t)( entry - record->entries );
     memmove( entry, entry + 1, ( record->count - index - 1U ) * sizeof( *entry ) );
     --record->count;
-    memset( record->entries[ record->count ], 0, sizeof( record->entries[ 0 ] ) );
+    memset( &record->entries[ record->count ], 0, sizeof( record->entries[ 0 ] ) );
     return save();
 }
 
@@ -391,7 +391,7 @@ esp_err_t saved_networks_record_bssid( uint32_t a_profile_id,
         /* One BSSID is never trusted by two credentials, and a profile keeps one auth mode. */
         for( size_t index = 0U; index < record->count; ++index )
         {
-            saved_network_entry_t *other = record->entries[ index ];
+            saved_network_entry_t *other = &record->entries[ index ];
             const saved_network_bssid_t *known = entry_bssid( other, a_bssid );
             if( other != entry && NULL != known && SAVED_NETWORK_BSSID_ASSOCIATED == known->state )
             {
