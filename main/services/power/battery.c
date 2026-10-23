@@ -287,7 +287,8 @@ static void gauge_configuration_poll( void )
             const esp_err_t seal_result = gauge_command( 0x0030U );
             if( ESP_OK != seal_result )
             {
-                ESP_LOGW( TAG, "BQ27220 failure cleanup could not seal: %s",
+                ESP_LOGW( TAG,
+                          "BQ27220 failure cleanup could not seal: %s",
                           esp_err_to_name( seal_result ) );
             }
             gauge_needs_seal = false;
@@ -511,7 +512,8 @@ failed:
             gauge_config_after_us = now + GAUGE_EXIT_SETTLE_US;
             return;
         }
-        ESP_LOGW( TAG, "BQ27220 failure cleanup could not exit CFGUPDATE: %s",
+        ESP_LOGW( TAG,
+                  "BQ27220 failure cleanup could not exit CFGUPDATE: %s",
                   esp_err_to_name( exit_result ) );
     }
     if( gauge_needs_seal )
@@ -519,8 +521,8 @@ failed:
         const esp_err_t seal_result = gauge_command( 0x0030U );
         if( ESP_OK != seal_result )
         {
-            ESP_LOGW( TAG, "BQ27220 failure cleanup could not seal: %s",
-                      esp_err_to_name( seal_result ) );
+            ESP_LOGW(
+                TAG, "BQ27220 failure cleanup could not seal: %s", esp_err_to_name( seal_result ) );
         }
         gauge_needs_seal = false;
     }
@@ -1047,9 +1049,8 @@ void battery_refresh( void )
        already completed during this refresh. */
     cached_status = next;
     /* Keep history in the service across app navigation. */
-    if( next.electrical_fresh &&
-        ( 0U == history_count ||
-          last_poll_us - history_last_sample_us >= BATTERY_TELEMETRY_INTERVAL_US ) )
+    if( next.electrical_fresh && ( 0U == history_count || last_poll_us - history_last_sample_us >=
+                                                              BATTERY_TELEMETRY_INTERVAL_US ) )
     {
         history_last_sample_us = last_poll_us;
         history[ history_head ] = ( battery_history_sample_t ){ .timestamp_us = last_poll_us,
