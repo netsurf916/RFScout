@@ -609,7 +609,7 @@ static void draw_time_row( int a_y, unsigned a_item )
 {
     const bool active = time_selected_item == a_item;
     const uint16_t color = ( ( a_item == TIME_MENU_SECOND ||
-                               ( a_item >= TIME_MENU_YEAR && device_time_gps_available() ) ) )
+                               ( a_item >= TIME_MENU_YEAR && device_time_network_ready() ) ) )
                                ? COLOR_DIM
                                : ( active ? COLOR_SELECTED : COLOR_TEXT );
     const char *label = "";
@@ -1419,14 +1419,14 @@ static bool time_menu_input( bool a_pressed, int a_delta )
             return false;
         }
         if( time_selected_item == TIME_MENU_SECOND ||
-            ( time_selected_item >= TIME_MENU_YEAR && device_time_gps_available() ) )
+            ( time_selected_item >= TIME_MENU_YEAR && device_time_network_ready() ) )
         {
             time_editing = false;
             render_time_menu();
             return false;
         }
 
-        /* Refresh from the live clock when entering manual edit mode. GPS may
+        /* Refresh from the live clock when entering manual edit mode. GPS or NTP may
            have synchronized time while this menu remained open. */
         if( !time_editing && time_selected_item >= TIME_MENU_YEAR )
         {
@@ -1439,7 +1439,7 @@ static bool time_menu_input( bool a_pressed, int a_delta )
             accepted = commit_manual_time();
         }
         if( TIME_MENU_TIMEZONE == time_selected_item ||
-            ( !device_time_gps_available() && time_selected_item >= TIME_MENU_YEAR &&
+            ( !device_time_network_ready() && time_selected_item >= TIME_MENU_YEAR &&
               time_selected_item <= TIME_MENU_MINUTE ) )
         {
             time_editing = !time_editing;
@@ -1459,7 +1459,7 @@ static bool time_menu_input( bool a_pressed, int a_delta )
     }
     if( time_editing )
     {
-        if( time_selected_item >= TIME_MENU_YEAR && device_time_gps_available() )
+        if( time_selected_item >= TIME_MENU_YEAR && device_time_network_ready() )
         {
             time_editing = false;
             render_time_menu();
@@ -1992,10 +1992,10 @@ void device_view_poll( int64_t a_now_us )
 {
     if( time_menu_open )
     {
-        /* GPS may take over while a manual edit is in progress. Cancel before
-           its freshness expires so stale editor fields cannot overwrite GPS time. */
+        /* GPS or NTP may establish trusted time during manual editing. Cancel the
+           editor before stale fields can override synchronized time. */
         if( time_editing && time_selected_item >= TIME_MENU_YEAR &&
-            time_selected_item <= TIME_MENU_MINUTE && device_time_gps_available() )
+            time_selected_item <= TIME_MENU_MINUTE && device_time_network_ready() )
         {
             time_editing = false;
             refresh_edited_time();

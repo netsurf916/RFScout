@@ -50,8 +50,8 @@ Passwords are copied out of the store only to start an association and are erase
 
 One check for one BSSID performs:
 
-1. **Network** — associate pinned to that BSSID and channel: Open and OWE without credentials (OWE requires OWE), secured networks with the resolved or user-chosen profile. Then complete DHCP under the common framework policy. Association/DHCP failure marks the AP **red**.
-2. **Time** — once DHCP succeeds, the framework captures LAN attributes and attempts NTP. NTP failure leaves the session LIMITED, marks the AP **yellow**, retains the LAN attributes, and **skips HTTPS**. A successful sync promotes the session to READY and sets the device clock.
+1. **Network** — associate pinned to that BSSID with no credentials (OWE networks require OWE), then complete DHCP under the common framework policy. Association/DHCP failure marks the AP **red**.
+2. **Time** — once DHCP succeeds, the framework captures LAN attributes and checks whether GPS or NTP has already provided trusted UTC within the last hour. If so, it skips a redundant NTP request and advances to READY; otherwise it attempts NTP (up to 15 seconds). Failure of a required NTP check leaves the session LIMITED, marks the AP **yellow**, retains LAN attributes, and **skips HTTPS**. Time readiness does not prove that this specific AP supports NTP.
 3. **HTTPS** — only for READY sessions, perform one certificate-validated request to Cloudflare's `/cdn-cgi/trace`, bounded to **10 seconds**. HTTP 200 marks the AP **green** and records the public egress IP and Cloudflare colo; any other result marks it **yellow**.
 4. **Leave** — read the gateway's MAC address from the station's ARP cache (joined checks only), release the network session, and return to scanning.
 
@@ -109,8 +109,8 @@ Status tags carry their meaning as text, not only color:
 
 | Tag | Meaning |
 | --- | --- |
-| `OK` (green) | Joined, NTP succeeded, verified HTTPS returned 200 |
-| `LTD` (yellow) | Joined, but NTP failed or the HTTPS check did not pass |
+| `OK` (green) | Joined, trusted time was available or NTP succeeded, and verified HTTPS returned 200 |
+| `LTD` (yellow) | Joined, but required time synchronization failed or the HTTPS check did not pass |
 | `FAIL` (red) | Association or DHCP failed and no earlier success exists in this session |
 | `Q` | Queued for a manual check |
 | `JOIN` / `HTTPS` | Check in progress at that stage |
@@ -120,7 +120,7 @@ Status tags carry their meaning as text, not only color:
 
 ## Logging
 
-When SD logging is enabled, each finished check writes one `type:"hotspot"` record with the BSSID, channel, RSSI, auth mode, outcome, failing stage, NTP result, HTTP status, and whether it was manual. SSIDs, client addresses, public IPs and passwords are not logged. The periodic telemetry record reports counts of visible, green, yellow, and red access points. History is a separate data journal, described above.
+When SD logging is enabled, each finished check writes one `type:"hotspot"` record with the BSSID, channel, RSSI, security, outcome, failing stage, time-readiness result (not necessarily an NTP probe on this AP), and HTTP status. SSIDs, client addresses, and public IPs are not logged. The periodic telemetry record reports counts of visible, green, yellow, and red access points.
 
 ## Current limitations
 

@@ -47,7 +47,7 @@ The current workflow:
 - requires an explicit connect action;
 - presents the framework network session as a modal **Connecting...** → **Setting time...** transaction, then returns to the Network main screen once the session is READY or LIMITED;
 - lets a short center click cancel the transaction; cancellation releases the whole logical network session through the framework;
-- inherits the common framework deadlines: 30 seconds for association/DHCP and 15 seconds for required NTP synchronization;
+- inherits the common framework deadlines: 30 seconds for association/DHCP and, only when no recent trusted GPS/NTP time exists, up to 15 seconds for NTP synchronization;
 - keeps normal connection/time progress out of the persistent Network screen, reserving its footer for terminal errors;
 - supports rotary password entry, disconnect, and forget;
 - can use a targeted **Connect anyway** active search for a remembered network not seen passively;
@@ -60,7 +60,7 @@ ESP-IDF Wi-Fi persistence remains RAM-only so the driver does not become an inde
 
 ## Firmware Update
 
-**Device Settings → Update** only starts network acquisition when the Home-owned network session is READY. READY means association, DHCP, and NTP synchronization all completed under the common framework policy. LIMITED means DHCP succeeded but NTP did not; Home retains that LAN connection, but Update deliberately does not attempt HTTPS while it is limited.
+**Device Settings → Update** only starts network acquisition when the Home-owned network session is READY. READY means association and DHCP completed with recent trusted GPS/NTP time available (or a new successful NTP sync). LIMITED means DHCP succeeded but the required time sync failed; Home retains that LAN connection, but Update deliberately does not attempt HTTPS while it is limited.
 
 The UI supports:
 
@@ -80,9 +80,10 @@ Leaving Update cancels acquisition/installation but deliberately preserves the H
 
 `device_time` owns wall-clock validity/source and timezone conversion.
 
-- **Manual** exposes local Year/Month/Day/Hour/Minute controls and persists Manual policy before changing the clock.
-- **Auto** hides manual fields and may accept a valid GPS UTC source when such a provider is available.
-- A successful Home Network connection applies synchronized NTP UTC without changing the stored Auto/Manual policy.
+- Manual Year/Month/Day/Hour/Minute controls are unavailable while trusted GPS or NTP synchronization is recent (within one hour). The clock service rejects manual changes during this interval, even if requested outside the UI; timezone selection remains available.
+- When the trusted synchronization window expires, manual adjustments become available again. A successful manual adjustment invalidates any previously recorded trusted-sync freshness.
+- Valid GPS UTC may update the clock automatically. Infrastructure networking starts SNTP only when there is no GPS/NTP synchronization within the last hour of the current boot; retained or manually set time alone does not suppress SNTP.
+- The five-second GPS availability indicator remains separate from the one-hour trusted-time reuse policy. Neither automatic source changes nor skipped NTP change the stored Auto/Manual preference.
 
 The T-Embed profile enables optional UART GPS detection on GPIO43/44, which are also used by the nRF24 shield. After startup nRF24 discovery and power-down, GPS probes 38400, 9600, 19200, 57600, and 115200 baud. A checksum-valid RMC/GGA sentence establishes receiver presence even without a location fix. Presence expires after the configured NMEA inactivity timeout (default 5 seconds). After the initial two-cycle (15-second) GPS detection window, nRF24 may probe on app demand only when GPS is absent. GPS monitoring is suspended while the nRF24 application owns the pins and resumes when it exits. GPS cannot preempt an active radio session. Plugging in or powering on a GPS receiver during an active nRF24 session is unsupported and may cause undefined hardware behavior due to the shared GPIO43/44 wiring.
 

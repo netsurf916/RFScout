@@ -167,6 +167,21 @@ static void stop_ntp_sync( void )
 
 static esp_err_t start_ntp_sync( void )
 {
+    /* Recent GPS or NTP synchronization provides a trusted clock for TLS.
+       Avoid redundant SNTP during repeated network checks. */
+    if( device_time_network_ready() )
+    {
+        portENTER_CRITICAL( &state_lock );
+        const bool active = started && !stopping && RFSCOUT_WIFI_STATION_CONNECTED == status.state;
+        if( active )
+        {
+            status.ntp_syncing = false;
+            status.ntp_synced = true;
+        }
+        portEXIT_CRITICAL( &state_lock );
+        return active ? ESP_OK : ESP_ERR_INVALID_STATE;
+    }
+
     bool active;
     portENTER_CRITICAL( &state_lock );
     active = started && !stopping && RFSCOUT_WIFI_STATION_CONNECTED == status.state;
