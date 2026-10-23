@@ -483,6 +483,8 @@ void memory_manager_debug_dump( const char *a_stage )
     }
     if( total > saved )
     {
-        ESP_LOGW( TAG, "managed PSRAM table truncated; %u additional blocks", (unsigned)( total - saved ) );
+        ESP_LOGW( TAG,
+                  "managed PSRAM table truncated; %u additional blocks",
+                  (unsigned)( total - saved ) );
     }
 }
