@@ -68,10 +68,10 @@ typedef struct
 } battery_status_t;
 
 /** Default periodic battery telemetry interval. */
-#define BATTERY_TELEMETRY_INTERVAL_US 5000000LL
+#define BATTERY_TELEMETRY_INTERVAL_US 2000000LL
 
-/** Number of historical telemetry slots (about 5m50s at the default interval). */
-#define BATTERY_HISTORY_CAPACITY 70U
+/** 180 slots at two seconds cover nearly six minutes of battery history. */
+#define BATTERY_HISTORY_CAPACITY 180U
 
 /** Battery current is signed: positive means charging, negative means discharge. */
 typedef struct
