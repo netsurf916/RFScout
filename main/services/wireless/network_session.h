@@ -34,6 +34,7 @@ typedef struct
     rfscout_network_session_state_t state;
     esp_err_t error;
     int32_t disconnect_reason;
+    bool associated; /**< station association succeeded, independent of DHCP/NTP */
     uint32_t generation;
     char ssid[ RFSCOUT_NETWORK_SESSION_SSID_MAX_LENGTH + 1U ];
     rfscout_wifi_station_ip_info_t ip;
