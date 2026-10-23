@@ -1,206 +1,209 @@
 /**
-    board.h : RFScout runtime board profile
-    Description: Exposes the immutable hardware profile selected during early startup.
+    board.c : RFScout runtime board profile
+    Description: Detects supported ESP32-S3 hardware and exposes immutable runtime wiring/capabilities.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
 
-#pragma once
+#include "board.h"
 
-#ifndef _RFSCOUT_BOARD_H_
-#define _RFSCOUT_BOARD_H_
+#include "driver/i2c_master.h"
+#include "esp_log.h"
 
-#include "esp_err.h"
+#include <stddef.h>
 
-#include <stdbool.h>
-#include <stdint.h>
+#define BOARD_DETECT_TIMEOUT_MS 20
 
-typedef enum
+static const char *TAG = "board";
+
+static const rfscout_board_profile_t unknown_profile = {
+    .id = RFSCOUT_BOARD_UNKNOWN,
+    .target_id = "unknown",
+    .name = "Unknown hardware",
+    .capabilities = 0,
+    .power_enable_pin = -1,
+    .user_key_pin = -1,
+    .spi_mosi_pin = -1,
+    .spi_miso_pin = -1,
+    .spi_sclk_pin = -1,
+    .display_cs_pin = -1,
+    .display_dc_pin = -1,
+    .display_reset_pin = -1,
+    .display_backlight_pin = -1,
+    .display_width = 0,
+    .display_height = 0,
+    .display_native_width = 0,
+    .display_native_height = 0,
+    .display_x_gap = 0,
+    .display_y_gap = 0,
+    .display_swap_xy = false,
+    .display_mirror_x = false,
+    .display_mirror_y = false,
+    .display_invert_color = false,
+    .backlight_type = RFSCOUT_BACKLIGHT_PWM,
+    .sd_cs_pin = -1,
+    .cc1101_cs_pin = -1,
+    .cc1101_gdo2_pin = -1,
+    .cc1101_gdo0_pin = -1,
+    .cc1101_switch_1_pin = -1,
+    .cc1101_switch_0_pin = -1,
+    .nrf24_cs_pin = -1,
+    .nrf24_ce_pin = -1,
+    .i2c_sda_pin = -1,
+    .i2c_scl_pin = -1,
+    .encoder_a_pin = -1,
+    .encoder_b_pin = -1,
+    .encoder_key_pin = -1,
+    .speaker_lrclk_pin = -1,
+    .speaker_bclk_pin = -1,
+    .speaker_data_pin = -1,
+    .battery_type = RFSCOUT_BATTERY_NONE,
+    .pn532_i2c_address = 0,
+    .mlx90640_i2c_address = 0,
+    .bq27220_i2c_address = 0,
+    .bq25896_i2c_address = 0,
+    .pn532_reset_pin = -1,
+    .pn532_irq_pin = -1,
+    .ir_enable_pin = -1,
+    .ir_rx_pin = -1,
+    .mic_data_pin = -1,
+    .mic_clock_pin = -1,
+    .gps_tx_pin = -1,
+    .gps_rx_pin = -1,
+};
+
+static const rfscout_board_profile_t tembed_profile = {
+    .id = RFSCOUT_BOARD_TEMBED_CC1101_PLUS,
+    .target_id = "t-embed-cc1101-plus",
+    .name = "LILYGO T-Embed CC1101 Plus",
+    .capabilities = RFSCOUT_BOARD_CAP_CC1101 | RFSCOUT_BOARD_CAP_NRF24 | RFSCOUT_BOARD_CAP_GPS |
+                    RFSCOUT_BOARD_CAP_ROTARY_ENCODER | RFSCOUT_BOARD_CAP_PDM_MIC |
+                    RFSCOUT_BOARD_CAP_SPEAKER | RFSCOUT_BOARD_CAP_SD |
+                    RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE | RFSCOUT_BOARD_CAP_SCREEN_OFF |
+                    RFSCOUT_BOARD_CAP_DEEP_SLEEP | RFSCOUT_BOARD_CAP_POWER_OFF,
+    .power_enable_pin = 15,
+    .user_key_pin = 6,
+    .spi_mosi_pin = 9,
+    .spi_miso_pin = 10,
+    .spi_sclk_pin = 11,
+    .display_cs_pin = 41,
+    .display_dc_pin = 16,
+    .display_reset_pin = -1,
+    .display_backlight_pin = 21,
+    .display_width = 320,
+    .display_height = 170,
+    .display_native_width = 170,
+    .display_native_height = 320,
+    .display_x_gap = 0,
+    .display_y_gap = 35,
+    .display_swap_xy = true,
+    .display_mirror_x = false,
+    .display_mirror_y = true,
+    .display_invert_color = true,
+    .backlight_type = RFSCOUT_BACKLIGHT_PWM,
+    .sd_cs_pin = 13,
+    .cc1101_cs_pin = 12,
+    .cc1101_gdo2_pin = 38,
+    .cc1101_gdo0_pin = 3,
+    .cc1101_switch_1_pin = 47,
+    .cc1101_switch_0_pin = 48,
+    .nrf24_cs_pin = 44,
+    .nrf24_ce_pin = 43,
+    .i2c_sda_pin = 8,
+    .i2c_scl_pin = 18,
+    .encoder_a_pin = 4,
+    .encoder_b_pin = 5,
+    .encoder_key_pin = 0,
+    .speaker_lrclk_pin = 40,
+    .speaker_bclk_pin = 46,
+    .speaker_data_pin = 7,
+    .battery_type = RFSCOUT_BATTERY_I2C_GAUGE_CHARGER,
+    .battery_profile =
+        {
+            .design_capacity_mah = 1300,
+            .nominal_voltage_mv = 3700,
+            .design_energy_mwh = 4810,
+        },
+    .charger_policy =
+        {
+            .input_current_ma = 500,
+            .fast_charge_current_ma = 512,
+            .precharge_current_ma = 128,
+            .termination_current_ma = 128,
+            .regulation_voltage_mv = 4208,
+        },
+    .pn532_i2c_address = 0x24,
+    .mlx90640_i2c_address = 0x33,
+    .bq27220_i2c_address = 0x55,
+    .bq25896_i2c_address = 0x6B,
+    .pn532_reset_pin = 45,
+    .pn532_irq_pin = 17,
+    .ir_enable_pin = 2,
+    .ir_rx_pin = 1,
+    .mic_data_pin = 42,
+    .mic_clock_pin = 39,
+    .gps_tx_pin = 43,
+    .gps_rx_pin = 44,
+};
+
+static const rfscout_board_profile_t *active_profile = &unknown_profile;
+
+static bool probe_fingerprint( int a_sda, int a_scl, const uint8_t *a_addresses, size_t a_count )
 {
-    RFSCOUT_BOARD_UNKNOWN = 0,
-    RFSCOUT_BOARD_TEMBED_CC1101_PLUS,
-} rfscout_board_id_t;
+    i2c_master_bus_handle_t bus = NULL;
+    const i2c_master_bus_config_t config = {
+        .i2c_port = I2C_NUM_0,
+        .sda_io_num = a_sda,
+        .scl_io_num = a_scl,
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = true,
+    };
+    if( ESP_OK != i2c_new_master_bus( &config, &bus ) )
+    {
+        return false;
+    }
 
-typedef enum
+    bool found = false;
+    for( size_t index = 0U; index < a_count && !found; ++index )
+    {
+        found = ESP_OK == i2c_master_probe( bus, a_addresses[ index ], BOARD_DETECT_TIMEOUT_MS );
+    }
+    (void)i2c_del_master_bus( bus );
+    return found;
+}
+
+esp_err_t board_profile_detect( void )
 {
-    RFSCOUT_BOARD_CAP_CC1101 = 1U << 0,
-    RFSCOUT_BOARD_CAP_NRF24 = 1U << 1,
-    RFSCOUT_BOARD_CAP_GPS = 1U << 3,
-    RFSCOUT_BOARD_CAP_ROTARY_ENCODER = 1U << 7,
-    RFSCOUT_BOARD_CAP_PDM_MIC = 1U << 8,
-    RFSCOUT_BOARD_CAP_SPEAKER = 1U << 9,
-    RFSCOUT_BOARD_CAP_SD = 1U << 10,
-    RFSCOUT_BOARD_CAP_SCREEN_OFF = 1U << 11,
-    RFSCOUT_BOARD_CAP_DEEP_SLEEP = 1U << 12,
-    RFSCOUT_BOARD_CAP_POWER_OFF = 1U << 13,
-    RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE = 1U << 14,
-} rfscout_board_capability_t;
+    if( RFSCOUT_BOARD_UNKNOWN != active_profile->id )
+    {
+        return ESP_OK;
+    }
 
-typedef enum
+    static const uint8_t TEMBED_SIGNATURES[] = { 0x6B, 0x55 };
+    if( !probe_fingerprint( 8, 18, TEMBED_SIGNATURES, sizeof( TEMBED_SIGNATURES ) ) )
+    {
+        ESP_LOGE( TAG, "no supported hardware profile detected" );
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    active_profile = &tembed_profile;
+    ESP_LOGI( TAG, "selected hardware profile: %s", active_profile->name );
+    return ESP_OK;
+}
+
+const rfscout_board_profile_t *board_profile( void )
 {
-    RFSCOUT_BACKLIGHT_PWM = 0,
-} rfscout_backlight_type_t;
+    return active_profile;
+}
 
-typedef enum
+bool board_profile_selected( void )
 {
-    RFSCOUT_BATTERY_NONE = 0,
-    RFSCOUT_BATTERY_I2C_GAUGE_CHARGER,
-} rfscout_battery_type_t;
+    return RFSCOUT_BOARD_UNKNOWN != active_profile->id;
+}
 
-/** Board-owned BQ25896 charging policy; zero capacity means no managed charger. */
-typedef struct
+bool board_profile_has( rfscout_board_capability_t a_capability )
 {
-    uint16_t input_current_ma;
-    uint16_t fast_charge_current_ma;
-    uint16_t precharge_current_ma;
-    uint16_t termination_current_ma;
-    uint16_t regulation_voltage_mv;
-} rfscout_charger_policy_t;
-
-/** Nominal battery facts; learned fuel-gauge values are never board constants. */
-typedef struct
-{
-    uint16_t design_capacity_mah;
-    uint16_t nominal_voltage_mv;
-    uint16_t design_energy_mwh;
-} rfscout_battery_profile_t;
-
-typedef struct
-{
-    rfscout_board_id_t id;
-    const char *target_id;
-    const char *name;
-    uint32_t capabilities;
-
-    int power_enable_pin;
-    int user_key_pin;
-
-    int spi_mosi_pin;
-    int spi_miso_pin;
-    int spi_sclk_pin;
-
-    int display_cs_pin;
-    int display_dc_pin;
-    int display_reset_pin;
-    int display_backlight_pin;
-    uint16_t display_width;
-    uint16_t display_height;
-    uint16_t display_native_width;
-    uint16_t display_native_height;
-    int16_t display_x_gap;
-    int16_t display_y_gap;
-    bool display_swap_xy;
-    bool display_mirror_x;
-    bool display_mirror_y;
-    bool display_invert_color;
-    rfscout_backlight_type_t backlight_type;
-
-    int sd_cs_pin;
-
-    int cc1101_cs_pin;
-    int cc1101_gdo2_pin;
-    int cc1101_gdo0_pin;
-    int cc1101_switch_1_pin;
-    int cc1101_switch_0_pin;
-    int nrf24_cs_pin;
-    int nrf24_ce_pin;
-
-    int i2c_sda_pin;
-    int i2c_scl_pin;
-
-    int encoder_a_pin;
-    int encoder_b_pin;
-    int encoder_key_pin;
-
-    int speaker_lrclk_pin;
-    int speaker_bclk_pin;
-    int speaker_data_pin;
-
-    rfscout_battery_type_t battery_type;
-    rfscout_charger_policy_t charger_policy;
-    rfscout_battery_profile_t battery_profile;
-    uint16_t pn532_i2c_address;
-    uint16_t mlx90640_i2c_address;
-    uint16_t bq27220_i2c_address;
-    uint16_t bq25896_i2c_address;
-    int pn532_reset_pin;
-    int pn532_irq_pin;
-
-    int ir_enable_pin;
-    int ir_rx_pin;
-    int mic_data_pin;
-    int mic_clock_pin;
-    int gps_tx_pin;
-    int gps_rx_pin;
-} rfscout_board_profile_t;
-
-esp_err_t board_profile_detect( void );
-const rfscout_board_profile_t *board_profile( void );
-bool board_profile_selected( void );
-bool board_profile_has( rfscout_board_capability_t a_capability );
-
-#define RFSCOUT_BOARD_NAME ( board_profile()->name )
-#define RFSCOUT_BOARD_HAS_CC1101 ( board_profile_has( RFSCOUT_BOARD_CAP_CC1101 ) )
-#define RFSCOUT_BOARD_HAS_NRF24 ( board_profile_has( RFSCOUT_BOARD_CAP_NRF24 ) )
-#define RFSCOUT_BOARD_HAS_GPS ( board_profile_has( RFSCOUT_BOARD_CAP_GPS ) )
-#define RFSCOUT_BOARD_HAS_ROTARY_ENCODER ( board_profile_has( RFSCOUT_BOARD_CAP_ROTARY_ENCODER ) )
-#define RFSCOUT_BOARD_HAS_PDM_MIC ( board_profile_has( RFSCOUT_BOARD_CAP_PDM_MIC ) )
-#define RFSCOUT_BOARD_HAS_SPEAKER ( board_profile_has( RFSCOUT_BOARD_CAP_SPEAKER ) )
-#define RFSCOUT_BOARD_HAS_INTERNAL_TEMPERATURE                                                     \
-    ( board_profile_has( RFSCOUT_BOARD_CAP_INTERNAL_TEMPERATURE ) )
-#define RFSCOUT_BOARD_HAS_SD ( board_profile_has( RFSCOUT_BOARD_CAP_SD ) )
-#define RFSCOUT_BOARD_CAN_SCREEN_OFF ( board_profile_has( RFSCOUT_BOARD_CAP_SCREEN_OFF ) )
-#define RFSCOUT_BOARD_CAN_DEEP_SLEEP ( board_profile_has( RFSCOUT_BOARD_CAP_DEEP_SLEEP ) )
-#define RFSCOUT_BOARD_CAN_POWER_OFF ( board_profile_has( RFSCOUT_BOARD_CAP_POWER_OFF ) )
-
-#define RFSCOUT_BOARD_POWER_ENABLE_PIN ( board_profile()->power_enable_pin )
-#define RFSCOUT_BOARD_USER_KEY_PIN ( board_profile()->user_key_pin )
-#define RFSCOUT_BOARD_SPI_MOSI_PIN ( board_profile()->spi_mosi_pin )
-#define RFSCOUT_BOARD_SPI_MISO_PIN ( board_profile()->spi_miso_pin )
-#define RFSCOUT_BOARD_SPI_SCLK_PIN ( board_profile()->spi_sclk_pin )
-#define RFSCOUT_BOARD_DISPLAY_CS_PIN ( board_profile()->display_cs_pin )
-#define RFSCOUT_BOARD_DISPLAY_DC_PIN ( board_profile()->display_dc_pin )
-#define RFSCOUT_BOARD_DISPLAY_RESET_PIN ( board_profile()->display_reset_pin )
-#define RFSCOUT_BOARD_DISPLAY_BACKLIGHT_PIN ( board_profile()->display_backlight_pin )
-#define RFSCOUT_BOARD_DISPLAY_WIDTH ( board_profile()->display_width )
-#define RFSCOUT_BOARD_DISPLAY_HEIGHT ( board_profile()->display_height )
-#define RFSCOUT_BOARD_DISPLAY_NATIVE_WIDTH ( board_profile()->display_native_width )
-#define RFSCOUT_BOARD_DISPLAY_NATIVE_HEIGHT ( board_profile()->display_native_height )
-#define RFSCOUT_BOARD_DISPLAY_X_GAP ( board_profile()->display_x_gap )
-#define RFSCOUT_BOARD_DISPLAY_Y_GAP ( board_profile()->display_y_gap )
-#define RFSCOUT_BOARD_DISPLAY_SWAP_XY ( board_profile()->display_swap_xy )
-#define RFSCOUT_BOARD_DISPLAY_MIRROR_X ( board_profile()->display_mirror_x )
-#define RFSCOUT_BOARD_DISPLAY_MIRROR_Y ( board_profile()->display_mirror_y )
-#define RFSCOUT_BOARD_DISPLAY_INVERT_COLOR ( board_profile()->display_invert_color )
-#define RFSCOUT_BOARD_BACKLIGHT_TYPE ( board_profile()->backlight_type )
-#define RFSCOUT_BOARD_SD_CS_PIN ( board_profile()->sd_cs_pin )
-#define RFSCOUT_BOARD_CC1101_CS_PIN ( board_profile()->cc1101_cs_pin )
-#define RFSCOUT_BOARD_CC1101_GDO2_PIN ( board_profile()->cc1101_gdo2_pin )
-#define RFSCOUT_BOARD_CC1101_GDO0_PIN ( board_profile()->cc1101_gdo0_pin )
-#define RFSCOUT_BOARD_CC1101_SWITCH_1_PIN ( board_profile()->cc1101_switch_1_pin )
-#define RFSCOUT_BOARD_CC1101_SWITCH_0_PIN ( board_profile()->cc1101_switch_0_pin )
-#define RFSCOUT_BOARD_NRF24_CS_PIN ( board_profile()->nrf24_cs_pin )
-#define RFSCOUT_BOARD_NRF24_CE_PIN ( board_profile()->nrf24_ce_pin )
-#define RFSCOUT_BOARD_I2C_SDA_PIN ( board_profile()->i2c_sda_pin )
-#define RFSCOUT_BOARD_I2C_SCL_PIN ( board_profile()->i2c_scl_pin )
-#define RFSCOUT_BOARD_ENCODER_A_PIN ( board_profile()->encoder_a_pin )
-#define RFSCOUT_BOARD_ENCODER_B_PIN ( board_profile()->encoder_b_pin )
-#define RFSCOUT_BOARD_ENCODER_KEY_PIN ( board_profile()->encoder_key_pin )
-#define RFSCOUT_BOARD_SPEAKER_LRCLK_PIN ( board_profile()->speaker_lrclk_pin )
-#define RFSCOUT_BOARD_SPEAKER_BCLK_PIN ( board_profile()->speaker_bclk_pin )
-#define RFSCOUT_BOARD_SPEAKER_DATA_PIN ( board_profile()->speaker_data_pin )
-#define RFSCOUT_BOARD_BATTERY_TYPE ( board_profile()->battery_type )
-#define RFSCOUT_BOARD_PN532_I2C_ADDRESS ( board_profile()->pn532_i2c_address )
-#define RFSCOUT_BOARD_MLX90640_I2C_ADDRESS ( board_profile()->mlx90640_i2c_address )
-#define RFSCOUT_BOARD_BQ27220_I2C_ADDRESS ( board_profile()->bq27220_i2c_address )
-#define RFSCOUT_BOARD_BQ25896_I2C_ADDRESS ( board_profile()->bq25896_i2c_address )
-#define RFSCOUT_BOARD_PN532_RESET_PIN ( board_profile()->pn532_reset_pin )
-#define RFSCOUT_BOARD_PN532_IRQ_PIN ( board_profile()->pn532_irq_pin )
-#define RFSCOUT_BOARD_IR_ENABLE_PIN ( board_profile()->ir_enable_pin )
-#define RFSCOUT_BOARD_IR_RX_PIN ( board_profile()->ir_rx_pin )
-#define RFSCOUT_BOARD_MIC_DATA_PIN ( board_profile()->mic_data_pin )
-#define RFSCOUT_BOARD_MIC_CLOCK_PIN ( board_profile()->mic_clock_pin )
-#define RFSCOUT_BOARD_GPS_TX_PIN ( board_profile()->gps_tx_pin )
-#define RFSCOUT_BOARD_GPS_RX_PIN ( board_profile()->gps_rx_pin )
-
-#endif // _RFSCOUT_BOARD_H_
+    return board_profile_selected() &&
+           0U != ( active_profile->capabilities & (uint32_t)a_capability );
+}
