@@ -170,8 +170,7 @@ static esp_err_t start_ntp_sync( void )
     if( device_time_network_ready() )
     {
         portENTER_CRITICAL( &state_lock );
-        const bool active = started && !stopping &&
-                            RFSCOUT_WIFI_STATION_CONNECTED == status.state;
+        const bool active = started && !stopping && RFSCOUT_WIFI_STATION_CONNECTED == status.state;
         if( active )
         {
             status.ntp_syncing = false;
