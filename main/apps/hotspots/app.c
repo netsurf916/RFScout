@@ -289,7 +289,10 @@ static void finish_attempt( hotspot_status_t a_outcome,
                             esp_err_t a_error,
                             int64_t a_now_us )
 {
+    rfscout_network_session_status_t session;
+    network_session_status( &session );
     const bool joined = HOTSPOT_STATUS_GREEN == a_outcome || HOTSPOT_STATUS_YELLOW == a_outcome;
+    const bool associated = session.associated;
     attempt_result.gateway_mac_valid =
         joined && ESP_OK == rfscout_wifi_station_gateway_mac( attempt_result.gateway_mac );
     (void)network_session_release();
@@ -306,7 +309,7 @@ static void finish_attempt( hotspot_status_t a_outcome,
     rfscout_gps_snapshot_t gps = { 0 };
     (void)gps_snapshot_get( &gps );
     hotspot_history_record_result( &attempt_bss, &attempt_result, &gps );
-    record_profile_outcome( joined );
+    record_profile_outcome( associated );
 
     const uint8_t *mac = attempt_bss.bssid;
     ESP_LOGI( TAG,
