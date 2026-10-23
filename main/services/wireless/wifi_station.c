@@ -378,6 +378,17 @@ wifi_event( void *a_context, esp_event_base_t a_event_base, int32_t a_event_id, 
         return;
     }
 
+    if( WIFI_EVENT_STA_CONNECTED == a_event_id )
+    {
+        portENTER_CRITICAL( &state_lock );
+        if( started && !stopping && RFSCOUT_WIFI_STATION_CONNECTING == status.state )
+        {
+            status.associated = true;
+        }
+        portEXIT_CRITICAL( &state_lock );
+        return;
+    }
+
     if( WIFI_EVENT_STA_DISCONNECTED == a_event_id )
     {
         const wifi_event_sta_disconnected_t *event = a_event_data;
@@ -763,6 +774,7 @@ esp_err_t rfscout_wifi_station_connect_open_bss( const rfscout_wifi_station_bss_
     portENTER_CRITICAL( &state_lock );
     disconnect_requested = false;
     status.disconnect_reason = 0;
+    status.associated = false;
     memset( status.ssid, 0, sizeof( status.ssid ) );
     memcpy( status.ssid, a_bss->ssid, ssid_length );
     status.ntp_syncing = false;
@@ -846,6 +858,7 @@ esp_err_t rfscout_wifi_station_connect_secured_bss( const rfscout_wifi_station_b
     portENTER_CRITICAL( &state_lock );
     disconnect_requested = false;
     status.disconnect_reason = 0;
+    status.associated = false;
     memset( status.ssid, 0, sizeof( status.ssid ) );
     memcpy( status.ssid, a_bss->ssid, ssid_length );
     status.ntp_syncing = false;
