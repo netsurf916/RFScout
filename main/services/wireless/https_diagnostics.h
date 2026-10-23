@@ -41,11 +41,11 @@ static inline void https_diag_dns( const char *a_tag, const char *a_host )
         const void *ip = NULL;
         if( AF_INET == addresses->ai_family )
         {
-            ip = &((const struct sockaddr_in *)addresses->ai_addr)->sin_addr;
+            ip = &( (const struct sockaddr_in *)addresses->ai_addr )->sin_addr;
         }
         else if( AF_INET6 == addresses->ai_family )
         {
-            ip = &((const struct sockaddr_in6 *)addresses->ai_addr)->sin6_addr;
+            ip = &( (const struct sockaddr_in6 *)addresses->ai_addr )->sin6_addr;
         }
         if( NULL != ip )
         {
