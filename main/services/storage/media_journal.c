@@ -375,6 +375,7 @@ esp_err_t media_journal_append( media_journal_t *a_journal,
     {
         return ESP_ERR_INVALID_STATE;
     }
+    a_journal->append_uncertain = false;
     esp_err_t result = resolve( a_journal );
     if( ESP_OK == result && a_journal->advance )
     {
@@ -428,12 +429,14 @@ esp_err_t media_journal_append( media_journal_t *a_journal,
     {
         ESP_LOGE( TAG, "%s rollback failed; continuing in a new segment", a_journal->prefix );
         a_journal->advance = true;
+        a_journal->append_uncertain = true;
     }
     const esp_err_t close_result = media_close( &file );
     if( ESP_OK != close_result )
     {
         /* Even a successful truncate may not be durable when close fails. */
         a_journal->advance = true;
+        a_journal->append_uncertain = true;
         if( ESP_OK == result )
         {
             result = close_result;
