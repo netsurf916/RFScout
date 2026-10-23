@@ -254,8 +254,10 @@ static void acquisition_worker( void *a_context )
     portEXIT_CRITICAL( &state_lock );
 
     const int64_t request_started_us = esp_timer_get_time();
-    ESP_LOGI( TAG, "HTTPS request begin kind=%d timeout_ms=%u",
-              (int)status.kind, (unsigned)OTA_HTTP_TIMEOUT_MS );
+    ESP_LOGI( TAG,
+              "HTTPS request begin kind=%d timeout_ms=%u",
+              (int)status.kind,
+              (unsigned)OTA_HTTP_TIMEOUT_MS );
     esp_err_t result = ESP_ERR_INVALID_STATE;
     int http_status = 0;
     if( !cancelled_before_start )
@@ -280,9 +282,11 @@ static void acquisition_worker( void *a_context )
         }
     }
 
-    ESP_LOGI( TAG, "HTTPS request end elapsed_ms=%lld result=%s http=%d",
+    ESP_LOGI( TAG,
+              "HTTPS request end elapsed_ms=%lld result=%s http=%d",
               (long long)( ( esp_timer_get_time() - request_started_us ) / 1000LL ),
-              esp_err_to_name( result ), http_status );
+              esp_err_to_name( result ),
+              http_status );
 
     ota_acquisition_kind_t kind;
     size_t transferred;
