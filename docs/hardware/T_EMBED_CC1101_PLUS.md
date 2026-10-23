@@ -24,7 +24,7 @@ A GPS without a fix can still hold UART priority. A valid, fresh position fix is
 
 ## Shared resources and operational limits
 
-The display, SD card, CC1101 and nRF24 share SPI resources; use the board SPI arbitration rather than direct uncoordinated transfers. Wi-Fi and BLE share ESP32-S3 2.4 GHz airtime. The ESP32-S3 does not provide 5 GHz Wi-Fi reception. Storage, radio callbacks, and streaming workflows must respect the platform's session ownership and teardown rules.
+The display, SD card, CC1101 and nRF24 share SPI resources; use the board SPI arbitration rather than direct uncoordinated transfers. The shared board I2C service defaults to 100 kHz for the BQ27220 gauge, BQ25896 charger and optional MLX90640 thermal sensor. This permits the BQ27220 multi-byte configuration writes at standard-mode I2C rates without device-specific bus-speed switching; thermal acquisition may be slower than at 400 kHz. Device handles must continue to use the shared I2C abstraction. Wi-Fi and BLE share ESP32-S3 2.4 GHz airtime. The ESP32-S3 does not provide 5 GHz Wi-Fi reception. Storage, radio callbacks, and streaming workflows must respect the platform's session ownership and teardown rules.
 
 The runtime supports deep sleep, screen off, and physical power-off with distinct behavior. See [Architecture](../ARCHITECTURE.md) and [Home](../apps/HOME.md). Optional hardware failure does not imply that the entire board is unsupported.
 
