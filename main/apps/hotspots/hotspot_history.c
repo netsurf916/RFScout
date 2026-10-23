@@ -619,6 +619,7 @@ static void flush( void )
 
 static void finish_compaction( bool a_committed )
 {
+    (void)a_committed; /* Host fixtures compile ESP_LOGI away. */
     state = HISTORY_STATE_READY;
     for( size_t index = 0U; index < pending_count; ++index )
     {
