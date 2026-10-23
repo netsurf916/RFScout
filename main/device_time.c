@@ -9,6 +9,9 @@
 
 #include "device_config.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
+#include "freertos/semphr.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -17,10 +20,33 @@
 #define DEVICE_TIME_PLAUSIBLE_EPOCH 1577836800LL
 
 #define DEVICE_GPS_FRESH_US 5000000LL
+/* A GPS/NTP synchronization remains useful for TLS validation across short network visits. */
+#define DEVICE_TIME_NETWORK_FRESH_US ( 60LL * 60LL * 1000000LL )
 
 static bool time_valid;
 static rfscout_time_source_t time_source;
 static int64_t last_gps_time_us;
+static int64_t last_trusted_time_us;
+static portMUX_TYPE trusted_time_lock = portMUX_INITIALIZER_UNLOCKED;
+static StaticSemaphore_t clock_mutex_storage;
+static SemaphoreHandle_t clock_mutex;
+
+static void update_trusted_time( int64_t a_time_us )
+{
+    portENTER_CRITICAL( &trusted_time_lock );
+    last_trusted_time_us = a_time_us;
+    portEXIT_CRITICAL( &trusted_time_lock );
+}
+
+bool device_time_network_ready( void )
+{
+    const int64_t now = esp_timer_get_time();
+    portENTER_CRITICAL( &trusted_time_lock );
+    const int64_t last_sync = last_trusted_time_us;
+    portEXIT_CRITICAL( &trusted_time_lock );
+    return time_valid && last_sync > 0 && now >= last_sync &&
+           now - last_sync <= DEVICE_TIME_NETWORK_FRESH_US;
+}
 
 bool device_time_gps_available( void )
 {
@@ -66,17 +92,30 @@ esp_err_t device_time_init( void )
     const time_t now = time( NULL );
     time_valid = now >= (time_t)DEVICE_TIME_PLAUSIBLE_EPOCH;
     time_source = time_valid ? RFSCOUT_TIME_SOURCE_RETAINED : RFSCOUT_TIME_SOURCE_INVALID;
+    clock_mutex = xSemaphoreCreateMutexStatic( &clock_mutex_storage );
+    if( NULL == clock_mutex )
+    {
+        return ESP_ERR_NO_MEM;
+    }
     last_gps_time_us = 0;
+    update_trusted_time( 0 );
     return device_time_apply_timezone();
 }
 
 esp_err_t device_time_set_epoch( time_t a_epoch )
 {
-    if( device_time_gps_available() )
+    (void)xSemaphoreTake( clock_mutex, portMAX_DELAY );
+    esp_err_t result = ESP_ERR_INVALID_STATE;
+    if( !device_time_network_ready() )
     {
-        return ESP_ERR_INVALID_STATE;
+        result = set_epoch( a_epoch, RFSCOUT_TIME_SOURCE_MANUAL );
+        if( ESP_OK == result )
+        {
+            update_trusted_time( 0 );
+        }
     }
-    return set_epoch( a_epoch, RFSCOUT_TIME_SOURCE_MANUAL );
+    (void)xSemaphoreGive( clock_mutex );
+    return result;
 }
 
 esp_err_t device_time_offer_gps( time_t a_epoch )
@@ -86,24 +125,35 @@ esp_err_t device_time_offer_gps( time_t a_epoch )
         return ESP_ERR_INVALID_ARG;
     }
 
+    (void)xSemaphoreTake( clock_mutex, portMAX_DELAY );
     const time_t current = time( NULL );
     if( !time_valid || llabs( (long long)a_epoch - (long long)current ) >= 2LL )
     {
         const esp_err_t result = set_epoch( a_epoch, RFSCOUT_TIME_SOURCE_GPS );
         if( ESP_OK != result )
         {
+            (void)xSemaphoreGive( clock_mutex );
             return result;
         }
     }
     time_valid = true;
     time_source = RFSCOUT_TIME_SOURCE_GPS;
     last_gps_time_us = esp_timer_get_time();
+    update_trusted_time( last_gps_time_us );
+    (void)xSemaphoreGive( clock_mutex );
     return ESP_OK;
 }
 
 esp_err_t device_time_offer_ntp( time_t a_epoch )
 {
-    return set_epoch( a_epoch, RFSCOUT_TIME_SOURCE_NTP );
+    (void)xSemaphoreTake( clock_mutex, portMAX_DELAY );
+    const esp_err_t result = set_epoch( a_epoch, RFSCOUT_TIME_SOURCE_NTP );
+    if( ESP_OK == result )
+    {
+        update_trusted_time( esp_timer_get_time() );
+    }
+    (void)xSemaphoreGive( clock_mutex );
+    return result;
 }
 
 bool device_time_now( time_t *a_epoch )
