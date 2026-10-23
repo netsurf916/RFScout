@@ -8,6 +8,7 @@
 #include "connectivity_probe.h"
 
 #include "https_diagnostics.h"
+#include "memory_manager.h"
 
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
@@ -160,6 +161,7 @@ static void probe_worker( void *a_context )
     const int64_t request_started_us = esp_timer_get_time();
     ESP_LOGI( TAG, "HTTPS probe begin timeout_ms=%u", (unsigned)request_timeout_ms );
     https_diag_heap( TAG, "before" );
+    memory_manager_debug_dump( "HTTPS before" );
     if( !cancelled )
     {
         https_diag_dns( TAG, "cloudflare.com" );
