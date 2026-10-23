@@ -106,7 +106,7 @@ esp_err_t device_time_set_epoch( time_t a_epoch )
 {
     (void)xSemaphoreTake( clock_mutex, portMAX_DELAY );
     esp_err_t result = ESP_ERR_INVALID_STATE;
-    if( !device_time_gps_available() )
+    if( !device_time_network_ready() )
     {
         result = set_epoch( a_epoch, RFSCOUT_TIME_SOURCE_MANUAL );
         if( ESP_OK == result )
