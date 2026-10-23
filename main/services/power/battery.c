@@ -376,9 +376,13 @@ static void gauge_configuration_poll( void )
                       (unsigned)profile_fcc,
                       (unsigned)capacity,
                       (unsigned)expected );
-            if( expected == capacity )
+            /* A previous design-only update may have left the factory 3000 mAh
+               FCC alongside the 1300 mAh design. Preserve genuine learned FCC,
+               but provision obviously inconsistent or uninitialized profiles. */
+            const bool fcc_plausible =
+                0U != profile_fcc && (uint32_t)profile_fcc * 2U <= (uint32_t)expected * 3U;
+            if( expected == capacity && fcc_plausible )
             {
-                /* Never rewrite a correctly provisioned profile's learned FCC. */
                 gauge_config_state = GAUGE_SEAL;
                 return;
             }
