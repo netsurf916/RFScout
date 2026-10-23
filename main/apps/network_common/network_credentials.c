@@ -454,6 +454,11 @@ bool network_credentials_input( const rfscout_input_event_t *a_input,
     {
         return handle_entry( a_input, a_outcome );
     }
+    /* Keep Back and long-press cancellation equivalent on profile and picker screens. */
+    if( RFSCOUT_INPUT_LONG_PRESS == a_input->type )
+    {
+        return finish( NETWORK_CREDENTIALS_RESULT_NONE, 0U, a_outcome );
+    }
     if( RFSCOUT_INPUT_NAVIGATION == a_input->type )
     {
         const unsigned count = row_count();
