@@ -213,9 +213,7 @@ static esp_err_t gauge_capacity_write( uint16_t a_capacity )
     const uint8_t hi = (uint8_t)( BQ27220_DM_LEARNED_FCC >> 8U );
     const uint8_t cap_hi = (uint8_t)( a_capacity >> 8U );
     const uint8_t cap_lo = (uint8_t)a_capacity;
-    const uint8_t payload[] = {
-        BQ27220_REG_DM_SELECT, lo, hi, cap_hi, cap_lo, cap_hi, cap_lo
-    };
+    const uint8_t payload[] = { BQ27220_REG_DM_SELECT, lo, hi, cap_hi, cap_lo, cap_hi, cap_lo };
     esp_err_t result = board_i2c_transmit( gauge_device, payload, sizeof( payload ) );
     if( ESP_OK != result )
     {
@@ -275,8 +273,10 @@ static void gauge_configuration_poll( void )
                     return;
                 }
                 gauge_config_state = GAUGE_READY;
-                ESP_LOGI( TAG, "BQ27220 profile verified: design %u, profile FCC %u mAh",
-                          (unsigned)capacity, (unsigned)profile_fcc );
+                ESP_LOGI( TAG,
+                          "BQ27220 profile verified: design %u, profile FCC %u mAh",
+                          (unsigned)capacity,
+                          (unsigned)profile_fcc );
                 return;
             }
             gauge_needs_seal = true;
@@ -412,8 +412,10 @@ static void gauge_configuration_poll( void )
                 gauge_needs_seal = false;
             }
             gauge_config_state = GAUGE_READY;
-            ESP_LOGI( TAG, "BQ27220 startup configuration complete: design %u, profile FCC %u mAh",
-                      (unsigned)capacity, (unsigned)profile_fcc );
+            ESP_LOGI( TAG,
+                      "BQ27220 startup configuration complete: design %u, profile FCC %u mAh",
+                      (unsigned)capacity,
+                      (unsigned)profile_fcc );
             return;
         case GAUGE_FAILED:
         case GAUGE_READY:
@@ -422,8 +424,10 @@ static void gauge_configuration_poll( void )
             return;
     }
 failed:
-    ESP_LOGE( TAG, "BQ27220 startup configuration failed (state %u): %s",
-              (unsigned)gauge_config_state, esp_err_to_name( result ) );
+    ESP_LOGE( TAG,
+              "BQ27220 startup configuration failed (state %u): %s",
+              (unsigned)gauge_config_state,
+              esp_err_to_name( result ) );
     if( 0U != ( status & BQ27220_CFG_BIT ) )
     {
         (void)gauge_command( 0x0091U );
@@ -959,11 +963,9 @@ void battery_refresh( void )
     /* Keep history in the service across app navigation. */
     if( next.electrical_fresh )
     {
-        history[ history_head ] = (battery_history_sample_t){
-            .timestamp_us = last_poll_us,
-            .current_ma = next.current_ma,
-            .voltage_mv = next.voltage_mv
-        };
+        history[ history_head ] = ( battery_history_sample_t ){ .timestamp_us = last_poll_us,
+                                                                .current_ma = next.current_ma,
+                                                                .voltage_mv = next.voltage_mv };
         history_head = ( history_head + 1U ) % BATTERY_HISTORY_CAPACITY;
         if( history_count < BATTERY_HISTORY_CAPACITY )
         {
@@ -1042,7 +1044,8 @@ size_t battery_history_read( battery_history_sample_t *a_samples, size_t a_capac
         return history_count;
     }
     const size_t count = a_capacity < history_count ? a_capacity : history_count;
-    const size_t first = ( history_head + BATTERY_HISTORY_CAPACITY - count ) % BATTERY_HISTORY_CAPACITY;
+    const size_t first =
+        ( history_head + BATTERY_HISTORY_CAPACITY - count ) % BATTERY_HISTORY_CAPACITY;
     for( size_t i = 0U; i < count; i++ )
     {
         a_samples[ i ] = history[ ( first + i ) % BATTERY_HISTORY_CAPACITY ];
