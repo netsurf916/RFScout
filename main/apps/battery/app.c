@@ -9,6 +9,7 @@
 #include "battery.h"
 #include "device_config.h"
 #include "display.h"
+#include "esp_timer.h"
 #include "ui_chrome.h"
 #include "ui_game.h"
 #include "ui_layout.h"
@@ -18,6 +19,7 @@
 #include <stdio.h>
 
 #define BATTERY_REFRESH_INTERVAL_US 1000000LL
+#define BATTERY_HISTORY_WINDOW_US ( BATTERY_HISTORY_CAPACITY * BATTERY_TELEMETRY_INTERVAL_US )
 
 static int64_t last_refresh_us;
 static uint8_t battery_page;
@@ -60,7 +62,7 @@ static void draw_history( void )
     const size_t count = battery_history_read( samples, BATTERY_HISTORY_CAPACITY );
     char text[ 64 ];
     draw_panel( 4, UI_LAYOUT_PANEL_TOP_Y, 312, 140 );
-    display_draw_text( 10, 30, "BATTERY CURRENT / LAST 60S", theme->secondary, 1U );
+    display_draw_text( 10, 30, "BATTERY CURRENT / LAST 5M50S", theme->secondary, 1U );
     if( 0U == count )
     {
         display_draw_text( 10, 85, "WAITING FOR FRESH SAMPLES", theme->warning, 1U );
@@ -101,15 +103,15 @@ static void draw_history( void )
     display_draw_text( 8, y0, text, theme->secondary, 1U );
     snprintf( text, sizeof( text ), "%d", min_ma );
     display_draw_text( 8, y0 + graph_h - 8, text, theme->secondary, 1U );
-    const int64_t latest_us = samples[ count - 1U ].timestamp_us;
+    const int64_t latest_us = esp_timer_get_time();
     for( size_t i = 0U; i < count; i++ )
     {
         const int64_t age_us = latest_us - samples[ i ].timestamp_us;
-        if( age_us < 0 || age_us > 60000000LL )
+        if( age_us < 0 || age_us > BATTERY_HISTORY_WINDOW_US )
         {
             continue;
         }
-        const int x = x0 + graph_w - 1 - (int)( age_us * ( graph_w - 1 ) / 60000000LL );
+        const int x = x0 + graph_w - 1 - (int)( age_us * ( graph_w - 1 ) / BATTERY_HISTORY_WINDOW_US );
         const int y = y0 + ( ( max_ma - samples[ i ].current_ma ) * graph_h ) / range;
         const int top = y < zero_y ? y : zero_y;
         const int height = y < zero_y ? zero_y - y : y - zero_y;
@@ -121,11 +123,82 @@ static void draw_history( void )
     }
     snprintf( text,
               sizeof( text ),
-              "AVG %+lldmA  NOW %+dmA",
+              "AVG %+lldmA  LAST %+dmA",
               (long long)( total_ma / (int64_t)count ),
               (int)samples[ count - 1U ].current_ma );
     display_draw_text( 10, 137, text, theme->text, 1U );
-    display_draw_text( 10, 151, "-60s                       NOW", theme->secondary, 1U );
+    display_draw_text( 10, 151, "-5m50s                     NOW", theme->secondary, 1U );
+}
+
+static const char *gauge_config_label( battery_gauge_config_result_t a_result )
+{
+    switch( a_result )
+    {
+        case BATTERY_GAUGE_CONFIG_PENDING:
+            return "PENDING";
+        case BATTERY_GAUGE_CONFIG_CONFIGURING:
+            return "CONFIGURING";
+        case BATTERY_GAUGE_CONFIG_VERIFIED:
+            return "VERIFIED";
+        case BATTERY_GAUGE_CONFIG_FAILED:
+            return "FAILED";
+        default:
+            return "UNKNOWN";
+    }
+}
+
+static void draw_gauge_configuration( const battery_status_t *a_status )
+{
+    battery_gauge_configuration_t config = { 0 };
+    const bool available = battery_get_gauge_configuration( &config );
+    const ui_theme_palette_t *theme = ui_theme_get();
+    char text[ 64 ];
+
+    draw_panel( 4, UI_LAYOUT_PANEL_TOP_Y, 312, 140 );
+    display_draw_text( 10, 30, "GAUGE CONFIGURATION / PROFILE", theme->secondary, 1U );
+    snprintf( text, sizeof( text ), "STATE %s  STEP %s",
+              gauge_config_label( config.result ), config.stage ? config.stage : "NONE" );
+    display_draw_text( 10, 48, text,
+                       BATTERY_GAUGE_CONFIG_FAILED == config.result ? theme->error : theme->text, 1U );
+
+    if( config.profile_read )
+    {
+        snprintf( text, sizeof( text ), "PROFILE FCC %u  DESIGN %u mAh",
+                  (unsigned)config.profile_full_capacity_mah,
+                  (unsigned)config.profile_design_capacity_mah );
+        display_draw_text( 10, 66, text, theme->accent, 1U );
+    }
+    else
+    {
+        display_draw_text( 10, 66, available ? "PROFILE NOT YET READ" : "GAUGE UNAVAILABLE",
+                           theme->warning, 1U );
+    }
+
+    if( a_status->gauge_details_fresh )
+    {
+        snprintf( text, sizeof( text ), "LIVE FCC %u  DESIGN %u mAh",
+                  (unsigned)a_status->full_capacity_mah,
+                  (unsigned)a_status->design_capacity_mah );
+        const bool mismatch = BATTERY_GAUGE_CONFIG_VERIFIED == config.result &&
+                              config.profile_read &&
+                              config.profile_design_capacity_mah != a_status->design_capacity_mah;
+        display_draw_text( 10, 84, text, mismatch ? theme->warning : theme->text, 1U );
+        if( mismatch )
+        {
+            display_draw_text( 10, 104, "PROFILE / LIVE DESIGN MISMATCH",
+                               theme->warning, 1U );
+        }
+    }
+    else
+    {
+        display_draw_text( 10, 84, "LIVE CAPACITY UNAVAILABLE", theme->warning, 1U );
+    }
+    if( BATTERY_GAUGE_CONFIG_FAILED == config.result )
+    {
+        snprintf( text, sizeof( text ), "LAST ERROR %s", esp_err_to_name( config.error ) );
+        display_draw_text( 10, 123, text, theme->error, 1U );
+    }
+    display_draw_text( 10, 149, "SELECT: BATTERY SUMMARY", theme->secondary, 1U );
 }
 
 static void battery_render( void )
@@ -140,6 +213,12 @@ static void battery_render( void )
     display_clear( theme->background );
     ui_chrome_draw( "BATTERY", theme->secondary );
 
+    if( 3U == battery_page )
+    {
+        draw_gauge_configuration( &status );
+        (void)display_present();
+        return;
+    }
     if( 2U == battery_page )
     {
         draw_history();
@@ -347,7 +426,7 @@ static rfscout_app_runtime_result_t battery_runtime( const rfscout_app_runtime_e
     }
     if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type && RFSCOUT_INPUT_SELECT == a_event->input.type )
     {
-        battery_page = (uint8_t)( ( battery_page + 1U ) % 3U );
+        battery_page = (uint8_t)( ( battery_page + 1U ) % 4U );
         battery_render();
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
