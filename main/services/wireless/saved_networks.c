@@ -8,6 +8,7 @@
 #include "saved_networks.h"
 
 #include "app_descriptor.h"
+#include "memory_manager.h"
 #include "persistent_store.h"
 
 #include <string.h>
@@ -34,10 +35,9 @@ typedef struct
     saved_network_entry_t entries[ SAVED_NETWORK_MAX_COUNT ];
 } saved_network_record_t;
 
-/* The record stays in the Home/device namespace where Home created it, so this platform
-   service uses the privileged core path rather than the calling app's namespace. The working
-   copy is static to keep credential material off the limited app task stack. */
-static saved_network_record_t record;
+/* Shared service operations are serialized by their existing app-task contract.
+   The transient credential record belongs to the platform, not either caller app. */
+static saved_network_record_t *record;
 
 static bool entry_valid( const saved_network_entry_t *a_entry )
 {
@@ -51,7 +51,19 @@ static bool entry_valid( const saved_network_entry_t *a_entry )
 
 static void release( void )
 {
-    memset( &record, 0, sizeof( record ) );
+    if( NULL == record )
+    {
+        return;
+    }
+    /* Volatile writes ensure credentials are cleared before PSRAM is returned. */
+    volatile uint8_t *bytes = (volatile uint8_t *)record;
+    for( size_t index = 0U; index < sizeof( *record ); ++index )
+    {
+        bytes[ index ] = 0U;
+    }
+    (void)memory_manager_free(
+        (rfscout_memory_owner_t){ .owner_class = RFSCOUT_MEMORY_OWNER_PLATFORM }, record );
+    record = NULL;
 }
 
 static bool record_valid( const void *a_record )
@@ -71,32 +83,48 @@ static bool record_valid( const void *a_record )
 static esp_err_t load( void )
 {
     release();
+    const rfscout_memory_owner_t owner = {
+        .owner_class = RFSCOUT_MEMORY_OWNER_PLATFORM,
+    };
+    record = memory_manager_calloc( owner, 1U, sizeof( *record ) );
+    if( NULL == record )
+    {
+        return ESP_ERR_NO_MEM;
+    }
     const esp_err_t result = persistent_store_app_load(
-        RFSCOUT_APP_DEVICE, SAVED_NETWORK_RECORD_KEY, &record, sizeof( record ), record_valid );
+        RFSCOUT_APP_DEVICE, SAVED_NETWORK_RECORD_KEY, record, sizeof( *record ), record_valid );
+    if( ESP_OK != result )
+    {
+        memset( record, 0, sizeof( *record ) );
+    }
+    if( ESP_ERR_NOT_FOUND == result || ESP_ERR_INVALID_RESPONSE == result )
+    {
+        return ESP_OK;
+    }
     if( ESP_OK != result )
     {
         release();
     }
-    return ESP_ERR_NOT_FOUND == result || ESP_ERR_INVALID_RESPONSE == result ? ESP_OK : result;
+    return result;
 }
 
 static esp_err_t save( void )
 {
-    record.magic = SAVED_NETWORK_RECORD_MAGIC;
-    record.version = SAVED_NETWORK_RECORD_VERSION;
+    record->magic = SAVED_NETWORK_RECORD_MAGIC;
+    record->version = SAVED_NETWORK_RECORD_VERSION;
     const esp_err_t result = persistent_store_app_write(
-        RFSCOUT_APP_DEVICE, SAVED_NETWORK_RECORD_KEY, &record, sizeof( record ) );
+        RFSCOUT_APP_DEVICE, SAVED_NETWORK_RECORD_KEY, record, sizeof( *record ) );
     release();
     return result;
 }
 
 static saved_network_entry_t *find( uint32_t a_profile_id )
 {
-    for( size_t index = 0U; 0U != a_profile_id && index < record.count; ++index )
+    for( size_t index = 0U; 0U != a_profile_id && index < record->count; ++index )
     {
-        if( record.entries[ index ].profile_id == a_profile_id )
+        if( record->entries[ index ].profile_id == a_profile_id )
         {
-            return &record.entries[ index ];
+            return record->entries[ index ];
         }
     }
     return NULL;
@@ -111,7 +139,7 @@ static void describe( const saved_network_entry_t *a_entry, saved_network_profil
     a_profile->bssid_count = a_entry->bssid_count;
     memcpy( a_profile->bssids, a_entry->bssids, sizeof( a_profile->bssids ) );
     memcpy( a_profile->ssid, a_entry->ssid, sizeof( a_profile->ssid ) );
-    for( const saved_network_entry_t *other = record.entries; other <= a_entry; ++other )
+    for( const saved_network_entry_t *other = record->entries; other <= a_entry; ++other )
     {
         if( 0 == strcmp( other->ssid, a_entry->ssid ) )
         {
@@ -145,10 +173,10 @@ saved_networks_list( saved_network_profile_t *a_profiles, size_t a_capacity, siz
     }
     *a_count = 0U;
     const esp_err_t result = load();
-    for( size_t index = 0U; ESP_OK == result && index < record.count && index < a_capacity;
+    for( size_t index = 0U; ESP_OK == result && index < record->count && index < a_capacity;
          ++index )
     {
-        describe( &record.entries[ index ], &a_profiles[ index ] );
+        describe( record->entries[ index ], &a_profiles[ index ] );
         ++*a_count;
     }
     release();
@@ -208,19 +236,19 @@ saved_networks_create( const char *a_ssid, const char *a_password, uint32_t *a_p
     }
     *a_profile_id = 0U;
     esp_err_t result = load();
-    if( ESP_OK == result && record.count >= SAVED_NETWORK_MAX_COUNT )
+    if( ESP_OK == result && record->count >= SAVED_NETWORK_MAX_COUNT )
     {
         result = ESP_ERR_NO_MEM;
     }
     uint32_t profile_id = 1U;
-    for( size_t index = 0U; ESP_OK == result && index < record.count; ++index )
+    for( size_t index = 0U; ESP_OK == result && index < record->count; ++index )
     {
-        if( record.entries[ index ].profile_id >= profile_id )
+        if( record->entries[ index ].profile_id >= profile_id )
         {
-            profile_id = record.entries[ index ].profile_id + 1U;
+            profile_id = record->entries[ index ].profile_id + 1U;
         }
     }
-    saved_network_entry_t *entry = ESP_OK == result ? &record.entries[ record.count ] : NULL;
+    saved_network_entry_t *entry = ESP_OK == result ? record->entries[ record->count ] : NULL;
     if( ESP_OK == result )
     {
         memset( entry, 0, sizeof( *entry ) );
@@ -245,7 +273,7 @@ saved_networks_create( const char *a_ssid, const char *a_password, uint32_t *a_p
     }
     entry->profile_id = profile_id;
     entry->auth_mode = SAVED_NETWORK_AUTH_UNKNOWN;
-    ++record.count;
+    ++record->count;
     result = save();
     if( ESP_OK == result )
     {
@@ -299,10 +327,10 @@ esp_err_t saved_networks_forget( uint32_t a_profile_id )
         release();
         return ESP_OK != result ? result : ESP_ERR_NOT_FOUND;
     }
-    const size_t index = (size_t)( entry - record.entries );
-    memmove( entry, entry + 1, ( record.count - index - 1U ) * sizeof( *entry ) );
-    --record.count;
-    memset( &record.entries[ record.count ], 0, sizeof( record.entries[ 0 ] ) );
+    const size_t index = (size_t)( entry - record->entries );
+    memmove( entry, entry + 1, ( record->count - index - 1U ) * sizeof( *entry ) );
+    --record->count;
+    memset( record->entries[ record->count ], 0, sizeof( record->entries[ 0 ] ) );
     return save();
 }
 
@@ -361,9 +389,9 @@ esp_err_t saved_networks_record_bssid( uint32_t a_profile_id,
     if( ESP_OK == result && SAVED_NETWORK_BSSID_ASSOCIATED == a_state )
     {
         /* One BSSID is never trusted by two credentials, and a profile keeps one auth mode. */
-        for( size_t index = 0U; index < record.count; ++index )
+        for( size_t index = 0U; index < record->count; ++index )
         {
-            saved_network_entry_t *other = &record.entries[ index ];
+            saved_network_entry_t *other = record->entries[ index ];
             const saved_network_bssid_t *known = entry_bssid( other, a_bssid );
             if( other != entry && NULL != known && SAVED_NETWORK_BSSID_ASSOCIATED == known->state )
             {
