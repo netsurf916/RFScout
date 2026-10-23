@@ -358,6 +358,9 @@ static void gauge_configuration_poll( void )
             }
             if( 0U != ( status & BQ27220_CFG_BIT ) )
             {
+                /* A gauge already in CFGUPDATE also requires exit and sealing,
+                   even if our startup sequence did not enter that mode. */
+                gauge_needs_seal = true;
                 result = ESP_ERR_INVALID_STATE;
                 break;
             }
