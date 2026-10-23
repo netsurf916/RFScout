@@ -287,8 +287,7 @@ static void gauge_configuration_poll( void )
     }
 
     const int64_t now = esp_timer_get_time();
-    if( GAUGE_CLEANUP_EXIT == gauge_config_state ||
-        GAUGE_CLEANUP_SEAL == gauge_config_state )
+    if( GAUGE_CLEANUP_EXIT == gauge_config_state || GAUGE_CLEANUP_SEAL == gauge_config_state )
     {
         /* Run cleanup only after the shared bus cooldown, with a bounded number
            of attempts. Never repeat the configuration/data-memory writes. */
