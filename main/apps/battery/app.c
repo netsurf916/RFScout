@@ -149,7 +149,7 @@ static const char *gauge_config_label( battery_gauge_config_result_t a_result )
     {
         case BATTERY_GAUGE_CONFIG_PENDING:
             return "PENDING";
-        case BATTERY_GAUGE_CONFIG_CONFIGURING:
+        case BATTERY_GAUGE_CONFIGURING:
             return "CONFIGURING";
         case BATTERY_GAUGE_CONFIG_VERIFIED:
             return "VERIFIED";
