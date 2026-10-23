@@ -112,6 +112,7 @@ typedef enum
     GAUGE_SEAL,
     GAUGE_READY,
     GAUGE_CLEANUP_EXIT,
+    GAUGE_CLEANUP_WAIT_EXIT,
     GAUGE_CLEANUP_SEAL,
     GAUGE_FAILED
 } gauge_config_state_t;
@@ -215,6 +216,8 @@ static const char *gauge_config_stage_name( gauge_config_state_t a_state )
             return "VERIFIED";
         case GAUGE_CLEANUP_EXIT:
             return "CLEANUP EXIT";
+        case GAUGE_CLEANUP_WAIT_EXIT:
+            return "CLEANUP WAIT EXIT";
         case GAUGE_CLEANUP_SEAL:
             return "CLEANUP SEAL";
         case GAUGE_FAILED:
@@ -287,6 +290,41 @@ static void gauge_configuration_poll( void )
     }
 
     const int64_t now = esp_timer_get_time();
+    if( GAUGE_CLEANUP_WAIT_EXIT == gauge_config_state )
+    {
+        uint16_t status = 0U;
+        const esp_err_t status_result =
+            read_register_u16( gauge_device, BQ27220_REG_OPERATION_STATUS, &status );
+        if( ESP_OK != status_result )
+        {
+            ++gauge_cleanup_attempts;
+            if( gauge_cleanup_attempts >= GAUGE_CLEANUP_MAX_ATTEMPTS )
+            {
+                ESP_LOGW( TAG,
+                          "BQ27220 cleanup cannot confirm CFGUPDATE exit: %s",
+                          esp_err_to_name( status_result ) );
+                gauge_config_state = GAUGE_FAILED;
+                return;
+            }
+            gauge_config_after_us = now + GAUGE_CLEANUP_RETRY_US;
+            return;
+        }
+        gauge_cleanup_attempts = 0U;
+        if( 0U != ( status & BQ27220_CFG_BIT ) || 0U == ( status & BQ27220_INIT_BIT ) )
+        {
+            if( ++gauge_wait_count > GAUGE_WAIT_LIMIT )
+            {
+                ESP_LOGW( TAG, "BQ27220 cleanup timed out awaiting CFGUPDATE exit" );
+                gauge_config_state = GAUGE_FAILED;
+                return;
+            }
+            gauge_config_after_us = now + GAUGE_WAIT_INTERVAL_US;
+            return;
+        }
+        gauge_configuration_open = false;
+        gauge_config_state = gauge_needs_seal ? GAUGE_CLEANUP_SEAL : GAUGE_FAILED;
+        return;
+    }
     if( GAUGE_CLEANUP_EXIT == gauge_config_state || GAUGE_CLEANUP_SEAL == gauge_config_state )
     {
         /* Run cleanup only after the shared bus cooldown, with a bounded number
@@ -313,8 +351,8 @@ static void gauge_configuration_poll( void )
         gauge_cleanup_attempts = 0U;
         if( exiting )
         {
-            gauge_configuration_open = false;
-            gauge_config_state = gauge_needs_seal ? GAUGE_CLEANUP_SEAL : GAUGE_FAILED;
+            gauge_wait_count = 0U;
+            gauge_config_state = GAUGE_CLEANUP_WAIT_EXIT;
             gauge_config_after_us = now + GAUGE_EXIT_SETTLE_US;
         }
         else
@@ -524,6 +562,7 @@ static void gauge_configuration_poll( void )
                       (unsigned)gauge_config_report.profile_design_capacity_mah );
             return;
         case GAUGE_CLEANUP_EXIT:
+        case GAUGE_CLEANUP_WAIT_EXIT:
         case GAUGE_CLEANUP_SEAL:
         case GAUGE_READY:
         case GAUGE_FAILED:
