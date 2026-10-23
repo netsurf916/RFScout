@@ -181,9 +181,11 @@ static void probe_worker( void *a_context )
         }
     }
 
-    ESP_LOGI( TAG, "HTTPS probe end elapsed_ms=%lld result=%s http=%d",
+    ESP_LOGI( TAG,
+              "HTTPS probe end elapsed_ms=%lld result=%s http=%d",
               (long long)( ( esp_timer_get_time() - request_started_us ) / 1000LL ),
-              esp_err_to_name( result ), http_status );
+              esp_err_to_name( result ),
+              http_status );
 
     /* Clear the shared handle under the cancellation mutex before cleanup so a concurrent cancel
        either sees a valid client or none at all. */
