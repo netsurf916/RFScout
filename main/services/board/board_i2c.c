@@ -80,9 +80,11 @@ esp_err_t board_i2c_probe( uint16_t a_address )
     return account_result( i2c_master_probe( bus_handle, a_address, BOARD_I2C_PROBE_TIMEOUT_MS ) );
 }
 
-esp_err_t board_i2c_add_device( uint16_t a_address, i2c_master_dev_handle_t *a_device )
+esp_err_t board_i2c_add_device_with_speed( uint16_t a_address,
+                                           uint32_t a_scl_speed_hz,
+                                           i2c_master_dev_handle_t *a_device )
 {
-    if( NULL == a_device )
+    if( NULL == a_device || 0U == a_scl_speed_hz )
     {
         return ESP_ERR_INVALID_ARG;
     }
@@ -95,9 +97,14 @@ esp_err_t board_i2c_add_device( uint16_t a_address, i2c_master_dev_handle_t *a_d
 
     i2c_device_config_t device_config = { .dev_addr_length = I2C_ADDR_BIT_LEN_7,
                                           .device_address = a_address,
-                                          .scl_speed_hz = BOARD_I2C_FREQUENCY_HZ };
+                                          .scl_speed_hz = a_scl_speed_hz };
 
     return i2c_master_bus_add_device( bus_handle, &device_config, a_device );
+}
+
+esp_err_t board_i2c_add_device( uint16_t a_address, i2c_master_dev_handle_t *a_device )
+{
+    return board_i2c_add_device_with_speed( a_address, BOARD_I2C_FREQUENCY_HZ, a_device );
 }
 
 esp_err_t board_i2c_transmit_receive( i2c_master_dev_handle_t a_device,
