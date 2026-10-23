@@ -102,10 +102,10 @@ jobs:
         with:
           ref: ${{ needs.validate.outputs.commit }}
 
-      - name: Install clang-format 18
+      - name: Install clang-format 18 and host-test libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang-format-18
+          sudo apt-get install -y --no-install-recommends clang-format-18 libcjson-dev
 
       - name: Check complete C formatting
         run: python3 tools/check_format.py --all

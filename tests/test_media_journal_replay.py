@@ -38,7 +38,8 @@ typedef enum
 """,
 }
 
-HARNESS = r'''
+# In-memory media store shared with other journal-backed host fixtures.
+MEMORY_STORE = r'''
 #undef NDEBUG
 #include "media_journal.h"
 
@@ -410,6 +411,9 @@ static size_t open_handles( void )
     return count;
 }
 
+'''
+
+HARNESS = MEMORY_STORE + r'''
 /* ------------------------------------------------------------------ journal helpers */
 
 static const rfscout_media_collection_t collection = { .system = true, .collection = "test" };
