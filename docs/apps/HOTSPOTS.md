@@ -50,7 +50,7 @@ Passwords are copied out of the store only to start an association and are erase
 
 One check for one BSSID performs:
 
-1. **Network** — associate pinned to that BSSID with no credentials (OWE networks require OWE), then complete DHCP under the common framework policy. Association/DHCP failure marks the AP **red**.
+1. **Network** — associate pinned to the selected BSSID and channel: without a password for Open/OWE (OWE remains required when advertised), or with the resolved shared profile for supported WPA2/WPA3 personal networks. Complete DHCP under the common framework policy. Association/DHCP failure marks the AP **red**.
 2. **Time** — once DHCP succeeds, the framework captures LAN attributes and checks whether GPS or NTP has already provided trusted UTC within the last hour. If so, it skips a redundant NTP request and advances to READY; otherwise it attempts NTP (up to 15 seconds). Failure of a required NTP check leaves the session LIMITED, marks the AP **yellow**, retains LAN attributes, and **skips HTTPS**. Time readiness does not prove that this specific AP supports NTP.
 3. **HTTPS** — only for READY sessions, perform one certificate-validated request to Cloudflare's `/cdn-cgi/trace`, bounded to **10 seconds**. HTTP 200 marks the AP **green** and records the public egress IP and Cloudflare colo; any other result marks it **yellow**.
 4. **Leave** — read the gateway's MAC address from the station's ARP cache (joined checks only), release the network session, and return to scanning.
@@ -120,7 +120,9 @@ Status tags carry their meaning as text, not only color:
 
 ## Logging
 
-When SD logging is enabled, each finished check writes one `type:"hotspot"` record with the BSSID, channel, RSSI, security, outcome, failing stage, time-readiness result (not necessarily an NTP probe on this AP), and HTTP status. SSIDs, client addresses, and public IPs are not logged. The periodic telemetry record reports counts of visible, green, yellow, and red access points.
+**System event logs (when SD logging is enabled):** Each completed check emits a `type:"hotspot"` record with BSSID, channel, RSSI, security, outcome, failing stage, the `ntp` field (meaning the network session's time prerequisite was satisfied, **not** proof of an NTP response from that AP), HTTP status, and whether the check was manual. These event-log records omit SSIDs, client addresses, and public IPs. Periodic telemetry reports visible, green, yellow, red, and check counts.
+
+**Hotspots history journal (separate from system event logging):** Successful green and yellow characterizations are retained in the `hotspots/history` SD collection as described in [History](#history). These records **do** include the SSID and public egress IP when known, but never credentials or the client IP. This journal is independent of the system's optional `type:"hotspot"` event logs.
 
 ## Current limitations
 
