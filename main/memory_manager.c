@@ -423,4 +423,3 @@ size_t memory_manager_app_allocation_count( rfscout_app_id_t a_app )
     xSemaphoreGive( manager_lock );
     return count;
 }
-
