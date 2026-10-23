@@ -20,7 +20,8 @@
 
 #define POWER_POLICY_TEMPERATURE_INTERVAL_US 1000000LL
 #define POWER_POLICY_BATTERY_INTERVAL_US 5000000LL
-#define POWER_POLICY_CONFIRM_SAMPLES 5U
+#define POWER_POLICY_LOW_BATTERY_CONFIRM_SAMPLES 2U
+#define POWER_POLICY_TEMPERATURE_CONFIRM_SAMPLES 5U
 #define POWER_POLICY_TRANSITION_DELAY_SECONDS 5U
 #define POWER_POLICY_BATTERY_HYSTERESIS_PERCENT 3U
 #define POWER_POLICY_TEMPERATURE_HYSTERESIS_C 5.0F
@@ -143,11 +144,11 @@ static void poll_low_battery( void )
         return;
     }
 
-    if( low_battery_samples < POWER_POLICY_CONFIRM_SAMPLES )
+    if( low_battery_samples < POWER_POLICY_LOW_BATTERY_CONFIRM_SAMPLES )
     {
         ++low_battery_samples;
     }
-    if( low_battery_samples < POWER_POLICY_CONFIRM_SAMPLES )
+    if( low_battery_samples < POWER_POLICY_LOW_BATTERY_CONFIRM_SAMPLES )
     {
         return;
     }
@@ -230,11 +231,11 @@ static void poll_high_temperature( void )
         return;
     }
 
-    if( high_temperature_samples < POWER_POLICY_CONFIRM_SAMPLES )
+    if( high_temperature_samples < POWER_POLICY_TEMPERATURE_CONFIRM_SAMPLES )
     {
         ++high_temperature_samples;
     }
-    if( high_temperature_samples < POWER_POLICY_CONFIRM_SAMPLES )
+    if( high_temperature_samples < POWER_POLICY_TEMPERATURE_CONFIRM_SAMPLES )
     {
         return;
     }
