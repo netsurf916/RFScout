@@ -125,6 +125,7 @@ static void battery_render( void )
     if( 2U == battery_page )
     {
         draw_history();
+        (void)display_present();
         return;
     }
     if( 1U == battery_page )
