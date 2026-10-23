@@ -89,6 +89,7 @@ static esp_err_t prepare_begin( const char *a_ssid )
     memset( &status.ip, 0, sizeof( status.ip ) );
     status.error = ESP_OK;
     status.disconnect_reason = 0;
+    status.associated = false;
     status.state = RFSCOUT_NETWORK_SESSION_ASSOCIATING;
     phase_started_us = 0;
     return ESP_OK;
@@ -185,6 +186,7 @@ void network_session_poll( int64_t a_now_us )
 
     rfscout_wifi_station_status_t station;
     rfscout_wifi_station_status( &station );
+    status.associated = status.associated || station.associated;
 
     if( RFSCOUT_NETWORK_SESSION_READY == status.state ||
         RFSCOUT_NETWORK_SESSION_LIMITED == status.state )
