@@ -234,9 +234,8 @@ static esp_err_t gauge_capacity_write( uint16_t a_capacity )
 
 static void gauge_configuration_poll( void )
 {
-    if( NULL == gauge_device || !board_i2c_ready() ||
-        GAUGE_READY == gauge_config_state || GAUGE_FAILED == gauge_config_state ||
-        esp_timer_get_time() < gauge_config_after_us )
+    if( NULL == gauge_device || !board_i2c_ready() || GAUGE_READY == gauge_config_state ||
+        GAUGE_FAILED == gauge_config_state || esp_timer_get_time() < gauge_config_after_us )
     {
         return;
     }
@@ -390,7 +389,7 @@ static void gauge_configuration_poll( void )
             gauge_config_state = GAUGE_VERIFY;
             return;
         case GAUGE_VERIFY:
-            result = gauge_capacity_read( &capacity );
+            result = gauge_capacity_read( &profile_fcc, &capacity );
             if( ESP_OK != result )
             {
                 break;
