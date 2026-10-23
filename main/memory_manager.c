@@ -423,3 +423,66 @@ size_t memory_manager_app_allocation_count( rfscout_app_id_t a_app )
     xSemaphoreGive( manager_lock );
     return count;
 }
+
+/* Temporary HTTPS investigation: bounded stack snapshot, never log while holding the manager lock.
+   This reports RFScout-managed PSRAM blocks, not arbitrary ESP-IDF or libc allocations. */
+void memory_manager_debug_dump( const char *a_stage )
+{
+    if( NULL == manager_lock )
+    {
+        return;
+    }
+
+    enum
+    {
+        DEBUG_MAX_ALLOCATIONS = 32
+    };
+    typedef struct
+    {
+        void *pointer;
+        size_t size;
+        rfscout_memory_owner_t owner;
+    } debug_allocation_t;
+    debug_allocation_t snapshot[ DEBUG_MAX_ALLOCATIONS ];
+    size_t saved = 0U;
+    size_t total = 0U;
+    size_t bytes = 0U;
+
+    xSemaphoreTake( manager_lock, portMAX_DELAY );
+    for( memory_allocation_t *entry = allocations; NULL != entry; entry = entry->next )
+    {
+        ++total;
+        bytes += entry->size;
+        if( saved < DEBUG_MAX_ALLOCATIONS )
+        {
+            snapshot[ saved ].pointer = entry->pointer;
+            snapshot[ saved ].size = entry->size;
+            snapshot[ saved ].owner = entry->owner;
+            ++saved;
+        }
+    }
+    xSemaphoreGive( manager_lock );
+
+    ESP_LOGI( TAG,
+              "managed PSRAM %s blocks=%u bytes=%u showing=%u",
+              NULL != a_stage ? a_stage : "-",
+              (unsigned)total,
+              (unsigned)bytes,
+              (unsigned)saved );
+    for( size_t index = 0U; index < saved; ++index )
+    {
+        const debug_allocation_t *entry = &snapshot[ index ];
+        ESP_LOGI( TAG,
+                  "managed PSRAM [%u] ptr=%p bytes=%u owner=%d app=%d operation=%u",
+                  (unsigned)index,
+                  entry->pointer,
+                  (unsigned)entry->size,
+                  (int)entry->owner.owner_class,
+                  (int)entry->owner.app,
+                  (unsigned)entry->owner.operation );
+    }
+    if( total > saved )
+    {
+        ESP_LOGW( TAG, "managed PSRAM table truncated; %u additional blocks", (unsigned)( total - saved ) );
+    }
+}
