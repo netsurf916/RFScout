@@ -172,8 +172,8 @@ read_register_u16( i2c_master_dev_handle_t a_device, uint8_t a_register, uint16_
  */
 static esp_err_t gauge_command( uint16_t a_command )
 {
-    const uint8_t data[] = { BQ27220_REG_CONTROL, (uint8_t)a_command,
-                             (uint8_t)( a_command >> 8U ) };
+    const uint8_t data[] = {
+        BQ27220_REG_CONTROL, (uint8_t)a_command, (uint8_t)( a_command >> 8U ) };
     return board_i2c_transmit( gauge_device, data, sizeof( data ) );
 }
 
@@ -223,8 +223,7 @@ static esp_err_t gauge_capacity_write( uint16_t a_capacity )
 
 static void gauge_configuration_poll( void )
 {
-    if( NULL == gauge_device || !board_i2c_ready() ||
-        esp_timer_get_time() < gauge_config_after_us )
+    if( NULL == gauge_device || !board_i2c_ready() || esp_timer_get_time() < gauge_config_after_us )
     {
         return;
     }
@@ -339,8 +338,7 @@ static void gauge_configuration_poll( void )
             gauge_config_after_us = now + 2000000LL;
             return;
         case GAUGE_WAIT_EXIT:
-            if( 0U != ( status & BQ27220_CFG_BIT ) ||
-                0U == ( status & BQ27220_INIT_BIT ) )
+            if( 0U != ( status & BQ27220_CFG_BIT ) || 0U == ( status & BQ27220_INIT_BIT ) )
             {
                 if( ++gauge_wait_count > 20U )
                 {
@@ -377,8 +375,8 @@ static void gauge_configuration_poll( void )
             }
             gauge_config_state = GAUGE_READY;
             gauge_config_after_us = now + 30000000LL;
-            ESP_LOGI( TAG, "BQ27220 configured in RAM: %u mAh; learning restarted",
-                      (unsigned)expected );
+            ESP_LOGI(
+                TAG, "BQ27220 configured in RAM: %u mAh; learning restarted", (unsigned)expected );
             return;
         case GAUGE_RECOVER:
             gauge_config_state = GAUGE_INSPECT;
