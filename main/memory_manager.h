@@ -102,7 +102,4 @@ void memory_manager_app_stats( rfscout_app_id_t a_app, rfscout_memory_stats_t *a
 /** @brief Return the number of managed allocations still owned by an application. */
 size_t memory_manager_app_allocation_count( rfscout_app_id_t a_app );
 
-/** @brief Temporary bounded UART snapshot of managed PSRAM allocations and owners. */
-void memory_manager_debug_dump( const char *a_stage );
-
 #endif // _RFSCOUT_MEMORY_MANAGER_H_
