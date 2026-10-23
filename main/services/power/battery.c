@@ -17,7 +17,11 @@
 #include <stddef.h>
 #include <string.h>
 
-#define BATTERY_POLL_INTERVAL_US 1000000LL
+#define GAUGE_ENTER_SETTLE_US 2000000LL
+#define GAUGE_EXIT_SETTLE_US 2000000LL
+#define GAUGE_INIT_TIMEOUT_US 15000000LL
+#define GAUGE_WAIT_INTERVAL_US 100000LL
+#define GAUGE_WAIT_LIMIT 20U
 #define BQ27220_REG_VOLTAGE 0x08U
 #define BQ27220_REG_STATUS 0x0AU
 #define BQ27220_REG_CURRENT 0x0CU
@@ -95,8 +99,7 @@ typedef enum
 {
     GAUGE_INSPECT,
     GAUGE_UNSEAL_2,
-    GAUGE_FULL_ACCESS_1,
-    GAUGE_FULL_ACCESS_2,
+    GAUGE_READ_PROFILE,
     GAUGE_ENTER,
     GAUGE_WAIT_ENTER,
     GAUGE_WRITE,
@@ -105,13 +108,15 @@ typedef enum
     GAUGE_VERIFY,
     GAUGE_SEAL,
     GAUGE_READY,
+    GAUGE_CLEANUP_SEAL,
     GAUGE_FAILED
 } gauge_config_state_t;
 static gauge_config_state_t gauge_config_state;
 static int64_t gauge_config_after_us;
+static int64_t gauge_inspect_started_us;
 static bool gauge_needs_seal;
 static uint8_t gauge_wait_count;
-static bool gauge_programmed;
+static battery_gauge_configuration_t gauge_config_report;
 
 typedef enum
 {
@@ -172,10 +177,45 @@ read_register_u16( i2c_master_dev_handle_t a_device, uint8_t a_register, uint16_
 }
 
 /*
- * RAM-backed BQ27220 data memory, not OTP. A mismatched design capacity
- * invalidates learned estimates, so EXIT_CFG_UPDATE_REINIT starts relearning.
- * This controller advances once per poll and never blocks charger servicing.
+ * BQ27220 RAM-backed data memory is provisioned once per firmware startup.
+ * This controller runs from the existing battery_poll() loop independent of
+ * the five-second telemetry cadence. There are no repeated capacity writes.
  */
+static const char *gauge_config_stage_name( gauge_config_state_t a_state )
+{
+    switch( a_state )
+    {
+        case GAUGE_INSPECT:
+            return "INSPECT";
+        case GAUGE_UNSEAL_2:
+            return "UNSEAL";
+        case GAUGE_READ_PROFILE:
+            return "READ PROFILE";
+        case GAUGE_ENTER:
+            return "ENTER CFG";
+        case GAUGE_WAIT_ENTER:
+            return "WAIT ENTER";
+        case GAUGE_WRITE:
+            return "WRITE";
+        case GAUGE_EXIT:
+            return "EXIT CFG";
+        case GAUGE_WAIT_EXIT:
+            return "WAIT EXIT";
+        case GAUGE_VERIFY:
+            return "VERIFY";
+        case GAUGE_SEAL:
+            return "SEAL";
+        case GAUGE_READY:
+            return "VERIFIED";
+        case GAUGE_CLEANUP_SEAL:
+            return "CLEANUP";
+        case GAUGE_FAILED:
+            return "FAILED";
+        default:
+            return "UNKNOWN";
+    }
+}
+
 static esp_err_t gauge_command( uint16_t a_command )
 {
     const uint8_t data[] = {
@@ -206,7 +246,7 @@ static esp_err_t gauge_capacity_read( uint16_t *a_fcc, uint16_t *a_design )
     return result;
 }
 
-/* A single data-memory transaction updates both contiguous capacity fields. */
+/* One contiguous data-memory transaction updates both capacity fields. */
 static esp_err_t gauge_capacity_write( uint16_t a_capacity )
 {
     const uint8_t lo = (uint8_t)BQ27220_DM_LEARNED_FCC;
@@ -237,7 +277,24 @@ static void gauge_configuration_poll( void )
     {
         return;
     }
+
     const int64_t now = esp_timer_get_time();
+    if( GAUGE_CLEANUP_SEAL == gauge_config_state )
+    {
+        if( gauge_needs_seal )
+        {
+            const esp_err_t seal_result = gauge_command( 0x0030U );
+            if( ESP_OK != seal_result )
+            {
+                ESP_LOGW( TAG, "BQ27220 failure cleanup could not seal: %s",
+                          esp_err_to_name( seal_result ) );
+            }
+            gauge_needs_seal = false;
+        }
+        gauge_config_state = GAUGE_FAILED;
+        return;
+    }
+
     const uint16_t expected = board_profile()->battery_profile.design_capacity_mah;
     if( 0U == expected )
     {
@@ -251,34 +308,30 @@ static void gauge_configuration_poll( void )
     {
         goto failed;
     }
+
     switch( gauge_config_state )
     {
         case GAUGE_INSPECT:
+            if( 0 == gauge_inspect_started_us )
+            {
+                gauge_inspect_started_us = now;
+            }
             if( 0U == ( status & BQ27220_INIT_BIT ) )
             {
-                gauge_config_after_us = now + 1000000LL;
+                if( now - gauge_inspect_started_us >= GAUGE_INIT_TIMEOUT_US )
+                {
+                    result = ESP_ERR_TIMEOUT;
+                    break;
+                }
+                gauge_config_after_us = now + GAUGE_WAIT_INTERVAL_US;
                 return;
             }
-            result = gauge_capacity_read( &profile_fcc, &capacity );
-            if( ESP_OK != result )
+            if( 0U != ( status & BQ27220_CFG_BIT ) )
             {
+                result = ESP_ERR_INVALID_STATE;
                 break;
             }
-            if( capacity == expected && 0U == ( status & BQ27220_CFG_BIT ) )
-            {
-                if( ( status & BQ27220_SEALED_MASK ) != BQ27220_SEALED_VALUE )
-                {
-                    gauge_config_state = GAUGE_SEAL;
-                    gauge_needs_seal = true;
-                    return;
-                }
-                gauge_config_state = GAUGE_READY;
-                ESP_LOGI( TAG,
-                          "BQ27220 profile verified: design %u, profile FCC %u mAh",
-                          (unsigned)capacity,
-                          (unsigned)profile_fcc );
-                return;
-            }
+            gauge_config_report.result = BATTERY_GAUGE_CONFIG_CONFIGURING;
             gauge_needs_seal = true;
             if( ( status & BQ27220_SEALED_MASK ) == BQ27220_SEALED_VALUE )
             {
@@ -291,7 +344,7 @@ static void gauge_configuration_poll( void )
                 gauge_config_after_us = now + 10000LL;
                 return;
             }
-            gauge_config_state = GAUGE_FULL_ACCESS_1;
+            gauge_config_state = GAUGE_READ_PROFILE;
             return;
         case GAUGE_UNSEAL_2:
             result = gauge_command( 0x3672U );
@@ -299,54 +352,61 @@ static void gauge_configuration_poll( void )
             {
                 break;
             }
-            gauge_config_state = GAUGE_FULL_ACCESS_1;
+            gauge_config_state = GAUGE_READ_PROFILE;
             gauge_config_after_us = now + 10000LL;
             return;
-        case GAUGE_FULL_ACCESS_1:
-            result = gauge_command( 0xFFFFU );
-            if( ESP_OK != result )
-            {
-                break;
-            }
-            gauge_config_state = GAUGE_FULL_ACCESS_2;
-            gauge_config_after_us = now + 10000LL;
-            return;
-        case GAUGE_FULL_ACCESS_2:
-            result = gauge_command( 0xFFFFU );
-            if( ESP_OK != result )
-            {
-                break;
-            }
-            gauge_config_state = GAUGE_ENTER;
-            gauge_config_after_us = now + 10000LL;
-            return;
-        case GAUGE_ENTER:
-            if( ( status & BQ27220_SEALED_MASK ) != 0x0002U )
+        case GAUGE_READ_PROFILE:
+            if( ( status & BQ27220_SEALED_MASK ) == BQ27220_SEALED_VALUE )
             {
                 result = ESP_ERR_INVALID_STATE;
                 break;
             }
-            if( 0U == ( status & BQ27220_CFG_BIT ) )
+            result = gauge_capacity_read( &profile_fcc, &capacity );
+            if( ESP_OK != result )
             {
-                result = gauge_command( 0x0090U );
-                if( ESP_OK != result )
-                {
-                    break;
-                }
+                break;
             }
-            gauge_wait_count = 0U;
+            gauge_config_report.profile_read = true;
+            gauge_config_report.profile_full_capacity_mah = profile_fcc;
+            gauge_config_report.profile_design_capacity_mah = capacity;
+            ESP_LOGI( TAG,
+                      "BQ27220 startup profile: FCC %u, design %u mAh (target %u mAh)",
+                      (unsigned)profile_fcc,
+                      (unsigned)capacity,
+                      (unsigned)expected );
+            if( expected == capacity )
+            {
+                /* Never rewrite a correctly provisioned profile's learned FCC. */
+                gauge_config_state = GAUGE_SEAL;
+                return;
+            }
+            gauge_config_state = GAUGE_ENTER;
+            return;
+        case GAUGE_ENTER:
+            if( 0U != ( status & BQ27220_CFG_BIT ) )
+            {
+                result = ESP_ERR_INVALID_STATE;
+                break;
+            }
+            result = gauge_command( 0x0090U );
+            if( ESP_OK != result )
+            {
+                break;
+            }
             gauge_config_state = GAUGE_WAIT_ENTER;
-            gauge_config_after_us = now + 100000LL;
+            gauge_wait_count = 0U;
+            /* TI requires at least two seconds before checking CFGUPDATE. */
+            gauge_config_after_us = now + GAUGE_ENTER_SETTLE_US;
             return;
         case GAUGE_WAIT_ENTER:
             if( 0U == ( status & BQ27220_CFG_BIT ) )
             {
-                if( ++gauge_wait_count > 20U )
+                if( ++gauge_wait_count > GAUGE_WAIT_LIMIT )
                 {
                     result = ESP_ERR_TIMEOUT;
                     break;
                 }
-                gauge_config_after_us = now + 100000LL;
+                gauge_config_after_us = now + GAUGE_WAIT_INTERVAL_US;
                 return;
             }
             gauge_config_state = GAUGE_WRITE;
@@ -362,7 +422,6 @@ static void gauge_configuration_poll( void )
             {
                 break;
             }
-            gauge_programmed = true;
             gauge_config_state = GAUGE_EXIT;
             return;
         case GAUGE_EXIT:
@@ -373,17 +432,17 @@ static void gauge_configuration_poll( void )
             }
             gauge_config_state = GAUGE_WAIT_EXIT;
             gauge_wait_count = 0U;
-            gauge_config_after_us = now + BATTERY_POLL_INTERVAL_US;
+            gauge_config_after_us = now + GAUGE_EXIT_SETTLE_US;
             return;
         case GAUGE_WAIT_EXIT:
             if( 0U != ( status & BQ27220_CFG_BIT ) || 0U == ( status & BQ27220_INIT_BIT ) )
             {
-                if( ++gauge_wait_count > 20U )
+                if( ++gauge_wait_count > GAUGE_WAIT_LIMIT )
                 {
                     result = ESP_ERR_TIMEOUT;
                     break;
                 }
-                gauge_config_after_us = now + 100000LL;
+                gauge_config_after_us = now + GAUGE_WAIT_INTERVAL_US;
                 return;
             }
             gauge_config_state = GAUGE_VERIFY;
@@ -394,8 +453,16 @@ static void gauge_configuration_poll( void )
             {
                 break;
             }
-            if( expected != capacity || ( gauge_programmed && expected != profile_fcc ) )
+            gauge_config_report.profile_read = true;
+            gauge_config_report.profile_full_capacity_mah = profile_fcc;
+            gauge_config_report.profile_design_capacity_mah = capacity;
+            if( expected != capacity || expected != profile_fcc )
             {
+                ESP_LOGE( TAG,
+                          "BQ27220 profile verification mismatch: FCC %u, design %u, target %u mAh",
+                          (unsigned)profile_fcc,
+                          (unsigned)capacity,
+                          (unsigned)expected );
                 result = ESP_ERR_INVALID_RESPONSE;
                 break;
             }
@@ -412,29 +479,48 @@ static void gauge_configuration_poll( void )
                 gauge_needs_seal = false;
             }
             gauge_config_state = GAUGE_READY;
+            gauge_config_report.result = BATTERY_GAUGE_CONFIG_VERIFIED;
             ESP_LOGI( TAG,
-                      "BQ27220 startup configuration complete: design %u, profile FCC %u mAh",
-                      (unsigned)capacity,
-                      (unsigned)profile_fcc );
+                      "BQ27220 profile verified: FCC %u, design %u mAh (no further writes)",
+                      (unsigned)gauge_config_report.profile_full_capacity_mah,
+                      (unsigned)gauge_config_report.profile_design_capacity_mah );
             return;
-        case GAUGE_FAILED:
+        case GAUGE_CLEANUP_SEAL:
         case GAUGE_READY:
-            return;
+        case GAUGE_FAILED:
         default:
             return;
     }
+
 failed:
+    gauge_config_report.result = BATTERY_GAUGE_CONFIG_FAILED;
+    gauge_config_report.error = result;
+    gauge_config_report.stage = gauge_config_stage_name( gauge_config_state );
     ESP_LOGE( TAG,
-              "BQ27220 startup configuration failed (state %u): %s",
-              (unsigned)gauge_config_state,
+              "BQ27220 startup configuration failed at %s: %s",
+              gauge_config_report.stage,
               esp_err_to_name( result ) );
+    /* Cleanup is best-effort and is not another provisioning attempt. */
     if( 0U != ( status & BQ27220_CFG_BIT ) )
     {
-        (void)gauge_command( 0x0091U );
+        const esp_err_t exit_result = gauge_command( 0x0091U );
+        if( ESP_OK == exit_result )
+        {
+            gauge_config_state = GAUGE_CLEANUP_SEAL;
+            gauge_config_after_us = now + GAUGE_EXIT_SETTLE_US;
+            return;
+        }
+        ESP_LOGW( TAG, "BQ27220 failure cleanup could not exit CFGUPDATE: %s",
+                  esp_err_to_name( exit_result ) );
     }
     if( gauge_needs_seal )
     {
-        (void)gauge_command( 0x0030U );
+        const esp_err_t seal_result = gauge_command( 0x0030U );
+        if( ESP_OK != seal_result )
+        {
+            ESP_LOGW( TAG, "BQ27220 failure cleanup could not seal: %s",
+                      esp_err_to_name( seal_result ) );
+        }
         gauge_needs_seal = false;
     }
     gauge_config_state = GAUGE_FAILED;
@@ -519,7 +605,6 @@ static void sample_gauge( battery_status_t *a_status, bool *a_sampled, uint16_t 
     {
         return;
     }
-    gauge_configuration_poll();
     uint16_t percentage = 0U;
     const esp_err_t result =
         read_register_u16( gauge_device, BQ27220_REG_STATE_OF_CHARGE, &percentage );
@@ -987,9 +1072,11 @@ esp_err_t battery_init( void )
     gauge_device = NULL;
     gauge_config_state = GAUGE_INSPECT;
     gauge_config_after_us = 0;
+    gauge_inspect_started_us = 0;
     gauge_wait_count = 0U;
     gauge_needs_seal = false;
-    gauge_programmed = false;
+    memset( &gauge_config_report, 0, sizeof( gauge_config_report ) );
+    gauge_config_report.result = BATTERY_GAUGE_CONFIG_PENDING;
     charger_device = NULL;
     charger_controller = CHARGER_CONTROLLER_DISCOVER;
     charger_policy_valid = false;
@@ -1018,7 +1105,7 @@ esp_err_t battery_init( void )
     }
 
     initialized = true;
-    last_poll_us = -BATTERY_POLL_INTERVAL_US;
+    last_poll_us = -BATTERY_TELEMETRY_INTERVAL_US;
     battery_refresh();
     return ESP_OK;
 }
@@ -1029,8 +1116,11 @@ void battery_poll( void )
     {
         return;
     }
+    /* Advance the one-shot gauge startup controller without waiting for the
+       five-second telemetry interval or creating a second background task. */
+    gauge_configuration_poll();
     const int64_t now_us = esp_timer_get_time();
-    if( ( now_us - last_poll_us ) < BATTERY_POLL_INTERVAL_US )
+    if( ( now_us - last_poll_us ) < BATTERY_TELEMETRY_INTERVAL_US )
     {
         return;
     }
@@ -1051,6 +1141,20 @@ size_t battery_history_read( battery_history_sample_t *a_samples, size_t a_capac
         a_samples[ i ] = history[ ( first + i ) % BATTERY_HISTORY_CAPACITY ];
     }
     return count;
+}
+
+bool battery_get_gauge_configuration( battery_gauge_configuration_t *a_status )
+{
+    if( NULL == a_status )
+    {
+        return false;
+    }
+    *a_status = gauge_config_report;
+    if( BATTERY_GAUGE_CONFIG_FAILED != gauge_config_report.result )
+    {
+        a_status->stage = gauge_config_stage_name( gauge_config_state );
+    }
+    return NULL != gauge_device || BATTERY_GAUGE_CONFIG_FAILED == gauge_config_report.result;
 }
 
 bool battery_get_status( battery_status_t *a_status )
