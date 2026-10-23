@@ -1242,6 +1242,7 @@ static void render_members( char *a_footer )
     const size_t count = build_member_rows( group );
     if( member_selected )
     {
+        bool found = false;
         for( size_t member = 0U; member < count; ++member )
         {
             if( 0 == memcmp( model_bssid( scratch.order[ scratch.groups[ group ].first + member ] ),
@@ -1249,13 +1250,21 @@ static void render_members( char *a_footer )
                              6U ) )
             {
                 members_selected = 1U + (unsigned)member;
+                found = true;
                 break;
             }
+        }
+        if( !found )
+        {
+            /* A disappeared or regrouped BSSID must not select a different row. */
+            member_selected = false;
+            members_selected = 0U;
         }
     }
     if( members_selected > count )
     {
-        members_selected = (unsigned)count;
+        members_selected = 0U;
+        member_selected = false;
     }
     /* The footer names the network, since the title keeps the view name. */
     char label[ UI_LABEL_MAX ];
