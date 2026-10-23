@@ -812,16 +812,20 @@ static void describe_last_attempt( const hotspot_entry_t *a_entry, char *a_line,
             {
                 snprintf( a_line, a_capacity, "Last: NTP failed, HTTPS skipped" );
             }
+            else if( ESP_OK != last->error )
+            {
+                snprintf( a_line,
+                          a_capacity,
+                          "Last: HTTPS %s",
+                          esp_err_to_name( last->error ) );
+            }
             else if( last->http_status > 0 )
             {
                 snprintf( a_line, a_capacity, "Last: time ready, HTTPS %d", last->http_status );
             }
             else
             {
-                snprintf( a_line,
-                          a_capacity,
-                          "Last: time ready, HTTPS %s",
-                          esp_err_to_name( last->error ) );
+                snprintf( a_line, a_capacity, "Last: HTTPS no response" );
             }
             break;
         default:
