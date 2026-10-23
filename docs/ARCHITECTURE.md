@@ -343,7 +343,7 @@ Power actions are semantic and filtered by runtime profile capability. T-Embed s
 
 Display dim/off is presentation policy, not application lifecycle or ESP32 sleep. The display provider can disable output/enter controller low power while acquisition/logging/audio continue; wake restores the latest framebuffer before brightness.
 
-The current T-Embed fuel gauge/charger provides battery percentage and authoritative external-power evidence. Protective low-battery action requires fresh battery data plus evidence that external power is absent. High internal-temperature protection is also constrained by the active profile's supported terminal actions.
+The current T-Embed fuel gauge/charger provides battery percentage and authoritative external-power evidence. Periodic battery measurements and the diagnostic UI use a two-second cadence, while gauge startup configuration advances independently through its nonblocking state machine. Protective low-battery action requires fresh battery data plus evidence that external power is absent and is evaluated every five seconds, with five qualifying checks for debounce and the existing hysteresis/transition delay. Internal-temperature protection retains its one-second polling/confirmation cadence and is constrained by the active profile's supported terminal actions. Direct power-transition safety checks may refresh battery telemetry immediately.
 
 Terminal sleep/power-off preparation flushes dirty configuration and quiesces required storage users. Active Recorder recording/finalization can veto the transition.
 
