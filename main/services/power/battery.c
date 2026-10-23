@@ -183,9 +183,8 @@ static esp_err_t gauge_command( uint16_t a_command )
 
 static esp_err_t gauge_dm_read( uint16_t a_address, uint16_t *a_capacity )
 {
-    const uint8_t address[] = { BQ27220_REG_DM_SELECT,
-                                (uint8_t)a_address,
-                                (uint8_t)( a_address >> 8U ) };
+    const uint8_t address[] = {
+        BQ27220_REG_DM_SELECT, (uint8_t)a_address, (uint8_t)( a_address >> 8U ) };
     esp_err_t result = board_i2c_transmit( gauge_device, address, sizeof( address ) );
     if( ESP_OK != result )
     {
