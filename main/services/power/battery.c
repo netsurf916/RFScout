@@ -33,12 +33,12 @@
 #define BQ27220_REG_DM_SELECT 0x3EU
 #define BQ27220_REG_MAC_DATA 0x40U
 #define BQ27220_REG_MAC_SUM 0x60U
+#define BQ27220_DM_LEARNED_FCC 0x929DU
 #define BQ27220_DM_CAPACITY 0x929FU
 #define BQ27220_CFG_BIT 0x0400U
 #define BQ27220_INIT_BIT 0x0020U
 #define BQ27220_SEALED_MASK 0x0006U
 #define BQ27220_SEALED_VALUE 0x0006U
-#define GAUGE_RETRY_US 5000000LL
 #define BQ27220_STATUS_DISCHARGING 0x0001U
 #define BQ27220_STATUS_FULL 0x0200U
 
@@ -105,12 +105,13 @@ typedef enum
     GAUGE_VERIFY,
     GAUGE_SEAL,
     GAUGE_READY,
-    GAUGE_RECOVER
+    GAUGE_FAILED
 } gauge_config_state_t;
 static gauge_config_state_t gauge_config_state;
 static int64_t gauge_config_after_us;
 static bool gauge_needs_seal;
 static uint8_t gauge_wait_count;
+static bool gauge_programmed;
 
 typedef enum
 {
@@ -182,11 +183,12 @@ static esp_err_t gauge_command( uint16_t a_command )
     return board_i2c_transmit( gauge_device, data, sizeof( data ) );
 }
 
-static esp_err_t gauge_capacity_read( uint16_t *a_capacity )
+/* Read adjacent CEDV Profile 1 FCC and design-capacity words (MSB first). */
+static esp_err_t gauge_capacity_read( uint16_t *a_fcc, uint16_t *a_design )
 {
     const uint8_t address[] = { BQ27220_REG_DM_SELECT,
-                                (uint8_t)BQ27220_DM_CAPACITY,
-                                (uint8_t)( BQ27220_DM_CAPACITY >> 8U ) };
+                                (uint8_t)BQ27220_DM_LEARNED_FCC,
+                                (uint8_t)( BQ27220_DM_LEARNED_FCC >> 8U ) };
     esp_err_t result = board_i2c_transmit( gauge_device, address, sizeof( address ) );
     if( ESP_OK != result )
     {
@@ -194,30 +196,34 @@ static esp_err_t gauge_capacity_read( uint16_t *a_capacity )
     }
     esp_rom_delay_us( 1000U );
     const uint8_t reg = BQ27220_REG_MAC_DATA;
-    uint8_t value[ 2 ];
+    uint8_t value[ 4 ];
     result = board_i2c_transmit_receive( gauge_device, &reg, 1U, value, sizeof( value ) );
     if( ESP_OK == result )
     {
-        *a_capacity = ( (uint16_t)value[ 0 ] << 8U ) | value[ 1 ];
+        *a_fcc = ( (uint16_t)value[ 0 ] << 8U ) | value[ 1 ];
+        *a_design = ( (uint16_t)value[ 2 ] << 8U ) | value[ 3 ];
     }
     return result;
 }
 
+/* A single data-memory transaction updates both contiguous capacity fields. */
 static esp_err_t gauge_capacity_write( uint16_t a_capacity )
 {
-    const uint8_t lo = (uint8_t)BQ27220_DM_CAPACITY;
-    const uint8_t hi = (uint8_t)( BQ27220_DM_CAPACITY >> 8U );
+    const uint8_t lo = (uint8_t)BQ27220_DM_LEARNED_FCC;
+    const uint8_t hi = (uint8_t)( BQ27220_DM_LEARNED_FCC >> 8U );
     const uint8_t cap_hi = (uint8_t)( a_capacity >> 8U );
     const uint8_t cap_lo = (uint8_t)a_capacity;
-    const uint8_t payload[] = { BQ27220_REG_DM_SELECT, lo, hi, cap_hi, cap_lo };
+    const uint8_t payload[] = {
+        BQ27220_REG_DM_SELECT, lo, hi, cap_hi, cap_lo, cap_hi, cap_lo
+    };
     esp_err_t result = board_i2c_transmit( gauge_device, payload, sizeof( payload ) );
     if( ESP_OK != result )
     {
         return result;
     }
     esp_rom_delay_us( 250U );
-    const uint8_t sum = (uint8_t)( lo + hi + cap_hi + cap_lo );
-    const uint8_t checksum[] = { BQ27220_REG_MAC_SUM, (uint8_t)( 0xFFU - sum ), 6U };
+    const uint8_t sum = (uint8_t)( lo + hi + cap_hi + cap_lo + cap_hi + cap_lo );
+    const uint8_t checksum[] = { BQ27220_REG_MAC_SUM, (uint8_t)( 0xFFU - sum ), 8U };
     result = board_i2c_transmit( gauge_device, checksum, sizeof( checksum ) );
     if( ESP_OK == result )
     {
@@ -228,7 +234,9 @@ static esp_err_t gauge_capacity_write( uint16_t a_capacity )
 
 static void gauge_configuration_poll( void )
 {
-    if( NULL == gauge_device || !board_i2c_ready() || esp_timer_get_time() < gauge_config_after_us )
+    if( NULL == gauge_device || !board_i2c_ready() ||
+        GAUGE_READY == gauge_config_state || GAUGE_FAILED == gauge_config_state ||
+        esp_timer_get_time() < gauge_config_after_us )
     {
         return;
     }
@@ -240,6 +248,7 @@ static void gauge_configuration_poll( void )
     }
     uint16_t status = 0U;
     uint16_t capacity = 0U;
+    uint16_t profile_fcc = 0U;
     esp_err_t result = read_register_u16( gauge_device, BQ27220_REG_OPERATION_STATUS, &status );
     if( ESP_OK != result )
     {
@@ -253,7 +262,7 @@ static void gauge_configuration_poll( void )
                 gauge_config_after_us = now + 1000000LL;
                 return;
             }
-            result = gauge_capacity_read( &capacity );
+            result = gauge_capacity_read( &profile_fcc, &capacity );
             if( ESP_OK != result )
             {
                 break;
@@ -267,8 +276,8 @@ static void gauge_configuration_poll( void )
                     return;
                 }
                 gauge_config_state = GAUGE_READY;
-                gauge_config_after_us = now + 30000000LL;
-                ESP_LOGI( TAG, "BQ27220 profile verified: %u mAh", (unsigned)capacity );
+                ESP_LOGI( TAG, "BQ27220 profile verified: design %u, profile FCC %u mAh",
+                          (unsigned)capacity, (unsigned)profile_fcc );
                 return;
             }
             gauge_needs_seal = true;
@@ -354,6 +363,7 @@ static void gauge_configuration_poll( void )
             {
                 break;
             }
+            gauge_programmed = true;
             gauge_config_state = GAUGE_EXIT;
             return;
         case GAUGE_EXIT:
@@ -364,7 +374,7 @@ static void gauge_configuration_poll( void )
             }
             gauge_config_state = GAUGE_WAIT_EXIT;
             gauge_wait_count = 0U;
-            gauge_config_after_us = now + 2000000LL;
+            gauge_config_after_us = now + BATTERY_POLL_INTERVAL_US;
             return;
         case GAUGE_WAIT_EXIT:
             if( 0U != ( status & BQ27220_CFG_BIT ) || 0U == ( status & BQ27220_INIT_BIT ) )
@@ -385,7 +395,7 @@ static void gauge_configuration_poll( void )
             {
                 break;
             }
-            if( expected != capacity )
+            if( expected != capacity || ( gauge_programmed && expected != profile_fcc ) )
             {
                 result = ESP_ERR_INVALID_RESPONSE;
                 break;
@@ -403,22 +413,18 @@ static void gauge_configuration_poll( void )
                 gauge_needs_seal = false;
             }
             gauge_config_state = GAUGE_READY;
-            gauge_config_after_us = now + 30000000LL;
-            ESP_LOGI(
-                TAG, "BQ27220 configured in RAM: %u mAh; learning restarted", (unsigned)expected );
+            ESP_LOGI( TAG, "BQ27220 startup configuration complete: design %u, profile FCC %u mAh",
+                      (unsigned)capacity, (unsigned)profile_fcc );
             return;
-        case GAUGE_RECOVER:
-            gauge_config_state = GAUGE_INSPECT;
-            return;
+        case GAUGE_FAILED:
         case GAUGE_READY:
-            gauge_config_state = GAUGE_INSPECT;
-            gauge_config_after_us = now + 1000000LL;
             return;
         default:
             return;
     }
 failed:
-    ESP_LOGW( TAG, "BQ27220 configuration retry: %s", esp_err_to_name( result ) );
+    ESP_LOGE( TAG, "BQ27220 startup configuration failed (state %u): %s",
+              (unsigned)gauge_config_state, esp_err_to_name( result ) );
     if( 0U != ( status & BQ27220_CFG_BIT ) )
     {
         (void)gauge_command( 0x0091U );
@@ -428,8 +434,7 @@ failed:
         (void)gauge_command( 0x0030U );
         gauge_needs_seal = false;
     }
-    gauge_config_state = GAUGE_RECOVER;
-    gauge_config_after_us = now + GAUGE_RETRY_US;
+    gauge_config_state = GAUGE_FAILED;
 }
 
 static void detach_optional_device( i2c_master_dev_handle_t *a_device )
@@ -571,9 +576,7 @@ static void sample_gauge( battery_status_t *a_status, bool *a_sampled, uint16_t 
     {
         ESP_LOGW( TAG, "BQ27220 no longer responding: %s", esp_err_to_name( result ) );
         detach_optional_device( &gauge_device );
-        gauge_config_state = GAUGE_INSPECT;
-        gauge_config_after_us = 0;
-        gauge_needs_seal = false;
+        /* Do not re-run startup provisioning after a transient I2C disconnect. */
     }
 }
 
@@ -981,6 +984,11 @@ esp_err_t battery_init( void )
     history_count = 0U;
     cached_status.charge_state = BATTERY_CHARGE_UNKNOWN;
     gauge_device = NULL;
+    gauge_config_state = GAUGE_INSPECT;
+    gauge_config_after_us = 0;
+    gauge_wait_count = 0U;
+    gauge_needs_seal = false;
+    gauge_programmed = false;
     charger_device = NULL;
     charger_controller = CHARGER_CONTROLLER_DISCOVER;
     charger_policy_valid = false;
