@@ -19,7 +19,7 @@
 #include <stdio.h>
 
 #define BATTERY_REFRESH_INTERVAL_US BATTERY_TELEMETRY_INTERVAL_US
-#define BATTERY_HISTORY_WINDOW_US \
+#define BATTERY_HISTORY_WINDOW_US                                                                  \
     ( ( BATTERY_HISTORY_CAPACITY - 1U ) * BATTERY_TELEMETRY_INTERVAL_US )
 
 static int64_t last_refresh_us;
@@ -462,8 +462,7 @@ static rfscout_app_runtime_result_t battery_runtime( const rfscout_app_runtime_e
             battery_history_sample_t newest;
             const size_t count = battery_history_read( &newest, 1U );
             const int64_t latest_us = 0U == count ? -1 : newest.timestamp_us;
-            if( latest_us != last_graph_sample_us ||
-                last_graph_style != ui_style_current() ||
+            if( latest_us != last_graph_sample_us || last_graph_style != ui_style_current() ||
                 last_graph_colors != ui_colors_current() )
             {
                 last_refresh_us = a_event->now_us;
