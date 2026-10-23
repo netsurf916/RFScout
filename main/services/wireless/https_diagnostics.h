@@ -12,6 +12,7 @@
 #include "esp_timer.h"
 
 #include <netdb.h>
+#include <arpa/inet.h>
 #include <sys/socket.h>
 
 static inline void https_diag_heap( const char *a_tag, const char *a_stage )
@@ -34,16 +35,22 @@ static inline void https_diag_dns( const char *a_tag, const char *a_host )
     struct addrinfo *addresses = NULL;
     const int64_t started = esp_timer_get_time();
     const int result = getaddrinfo( a_host, "443", &hints, &addresses );
-    char address[ NI_MAXHOST ] = { 0 };
+    char address[ 48 ] = { 0 };
     if( 0 == result && NULL != addresses )
     {
-        (void)getnameinfo( addresses->ai_addr,
-                           addresses->ai_addrlen,
-                           address,
-                           sizeof( address ),
-                           NULL,
-                           0,
-                           NI_NUMERICHOST );
+        const void *ip = NULL;
+        if( AF_INET == addresses->ai_family )
+        {
+            ip = &((const struct sockaddr_in *)addresses->ai_addr)->sin_addr;
+        }
+        else if( AF_INET6 == addresses->ai_family )
+        {
+            ip = &((const struct sockaddr_in6 *)addresses->ai_addr)->sin6_addr;
+        }
+        if( NULL != ip )
+        {
+            (void)inet_ntop( addresses->ai_family, ip, address, sizeof( address ) );
+        }
     }
     ESP_LOGI( a_tag,
               "HTTPS DNS host=%s result=%d family=%d address=%s elapsed_ms=%lld",
