@@ -22,6 +22,8 @@
 #define GAUGE_INIT_TIMEOUT_US 15000000LL
 #define GAUGE_WAIT_INTERVAL_US 100000LL
 #define GAUGE_WAIT_LIMIT 20U
+#define GAUGE_CLEANUP_RETRY_US 500000LL
+#define GAUGE_CLEANUP_MAX_ATTEMPTS 3U
 #define BQ27220_REG_VOLTAGE 0x08U
 #define BQ27220_REG_STATUS 0x0AU
 #define BQ27220_REG_CURRENT 0x0CU
@@ -109,6 +111,7 @@ typedef enum
     GAUGE_VERIFY,
     GAUGE_SEAL,
     GAUGE_READY,
+    GAUGE_CLEANUP_EXIT,
     GAUGE_CLEANUP_SEAL,
     GAUGE_FAILED
 } gauge_config_state_t;
@@ -118,6 +121,7 @@ static int64_t gauge_inspect_started_us;
 static bool gauge_needs_seal;
 static bool gauge_configuration_open;
 static uint8_t gauge_wait_count;
+static uint8_t gauge_cleanup_attempts;
 static battery_gauge_configuration_t gauge_config_report;
 
 typedef enum
@@ -209,8 +213,10 @@ static const char *gauge_config_stage_name( gauge_config_state_t a_state )
             return "SEAL";
         case GAUGE_READY:
             return "VERIFIED";
+        case GAUGE_CLEANUP_EXIT:
+            return "CLEANUP EXIT";
         case GAUGE_CLEANUP_SEAL:
-            return "CLEANUP";
+            return "CLEANUP SEAL";
         case GAUGE_FAILED:
             return "FAILED";
         default:
@@ -281,20 +287,42 @@ static void gauge_configuration_poll( void )
     }
 
     const int64_t now = esp_timer_get_time();
-    if( GAUGE_CLEANUP_SEAL == gauge_config_state )
+    if( GAUGE_CLEANUP_EXIT == gauge_config_state ||
+        GAUGE_CLEANUP_SEAL == gauge_config_state )
     {
-        if( gauge_needs_seal )
+        /* Run cleanup only after the shared bus cooldown, with a bounded number
+           of attempts. Never repeat the configuration/data-memory writes. */
+        const bool exiting = GAUGE_CLEANUP_EXIT == gauge_config_state;
+        const esp_err_t cleanup_result =
+            exiting ? gauge_command( 0x0091U ) : gauge_command( 0x0030U );
+        if( ESP_OK != cleanup_result )
         {
-            const esp_err_t seal_result = gauge_command( 0x0030U );
-            if( ESP_OK != seal_result )
+            gauge_cleanup_attempts++;
+            ESP_LOGW( TAG,
+                      "BQ27220 cleanup %s attempt %u failed: %s",
+                      exiting ? "exit" : "seal",
+                      (unsigned)gauge_cleanup_attempts,
+                      esp_err_to_name( cleanup_result ) );
+            if( gauge_cleanup_attempts < GAUGE_CLEANUP_MAX_ATTEMPTS )
             {
-                ESP_LOGW( TAG,
-                          "BQ27220 failure cleanup could not seal: %s",
-                          esp_err_to_name( seal_result ) );
+                gauge_config_after_us = now + GAUGE_CLEANUP_RETRY_US;
+                return;
             }
-            gauge_needs_seal = false;
+            gauge_config_state = GAUGE_FAILED;
+            return;
         }
-        gauge_config_state = GAUGE_FAILED;
+        gauge_cleanup_attempts = 0U;
+        if( exiting )
+        {
+            gauge_configuration_open = false;
+            gauge_config_state = gauge_needs_seal ? GAUGE_CLEANUP_SEAL : GAUGE_FAILED;
+            gauge_config_after_us = now + GAUGE_EXIT_SETTLE_US;
+        }
+        else
+        {
+            gauge_needs_seal = false;
+            gauge_config_state = GAUGE_FAILED;
+        }
         return;
     }
 
@@ -493,6 +521,7 @@ static void gauge_configuration_poll( void )
                       (unsigned)gauge_config_report.profile_full_capacity_mah,
                       (unsigned)gauge_config_report.profile_design_capacity_mah );
             return;
+        case GAUGE_CLEANUP_EXIT:
         case GAUGE_CLEANUP_SEAL:
         case GAUGE_READY:
         case GAUGE_FAILED:
@@ -508,32 +537,23 @@ failed:
               "BQ27220 startup configuration failed at %s: %s",
               gauge_config_report.stage,
               esp_err_to_name( result ) );
-    /* Cleanup is best-effort and is not another provisioning attempt. */
+    /* Allow a shared-I2C timeout cooldown to expire before any cleanup writes.
+       Cleanup may retry up to three times; provisioning never retries. */
+    gauge_cleanup_attempts = 0U;
     if( gauge_configuration_open || 0U != ( status & BQ27220_CFG_BIT ) )
     {
-        const esp_err_t exit_result = gauge_command( 0x0091U );
-        if( ESP_OK == exit_result )
-        {
-            gauge_configuration_open = false;
-            gauge_config_state = GAUGE_CLEANUP_SEAL;
-            gauge_config_after_us = now + GAUGE_EXIT_SETTLE_US;
-            return;
-        }
-        ESP_LOGW( TAG,
-                  "BQ27220 failure cleanup could not exit CFGUPDATE: %s",
-                  esp_err_to_name( exit_result ) );
+        gauge_config_state = GAUGE_CLEANUP_EXIT;
     }
-    if( gauge_needs_seal )
+    else if( gauge_needs_seal )
     {
-        const esp_err_t seal_result = gauge_command( 0x0030U );
-        if( ESP_OK != seal_result )
-        {
-            ESP_LOGW(
-                TAG, "BQ27220 failure cleanup could not seal: %s", esp_err_to_name( seal_result ) );
-        }
-        gauge_needs_seal = false;
+        gauge_config_state = GAUGE_CLEANUP_SEAL;
     }
-    gauge_config_state = GAUGE_FAILED;
+    else
+    {
+        gauge_config_state = GAUGE_FAILED;
+        return;
+    }
+    gauge_config_after_us = now + GAUGE_CLEANUP_RETRY_US;
 }
 
 static void detach_optional_device( i2c_master_dev_handle_t *a_device )
@@ -1087,6 +1107,7 @@ esp_err_t battery_init( void )
     gauge_config_after_us = 0;
     gauge_inspect_started_us = 0;
     gauge_wait_count = 0U;
+    gauge_cleanup_attempts = 0U;
     gauge_needs_seal = false;
     gauge_configuration_open = false;
     memset( &gauge_config_report, 0, sizeof( gauge_config_report ) );
