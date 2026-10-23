@@ -86,6 +86,9 @@ static const char *TAG = "battery";
 static i2c_master_dev_handle_t gauge_device;
 static i2c_master_dev_handle_t charger_device;
 static battery_status_t cached_status;
+static battery_history_sample_t history[ BATTERY_HISTORY_CAPACITY ];
+static size_t history_head;
+static size_t history_count;
 static int64_t last_poll_us;
 static bool initialized;
 typedef enum
@@ -951,6 +954,20 @@ void battery_refresh( void )
     /* A timeout invalidates unobserved values, not a healthy peer's sample
        already completed during this refresh. */
     cached_status = next;
+    /* Keep history in the service across app navigation. */
+    if( next.electrical_fresh )
+    {
+        history[ history_head ] = (battery_history_sample_t){
+            .timestamp_us = last_poll_us,
+            .current_ma = next.current_ma,
+            .voltage_mv = next.voltage_mv
+        };
+        history_head = ( history_head + 1U ) % BATTERY_HISTORY_CAPACITY;
+        if( history_count < BATTERY_HISTORY_CAPACITY )
+        {
+            history_count++;
+        }
+    }
 }
 
 esp_err_t battery_init( void )
@@ -960,6 +977,8 @@ esp_err_t battery_init( void )
         return ESP_OK;
     }
     memset( &cached_status, 0, sizeof( cached_status ) );
+    history_head = 0U;
+    history_count = 0U;
     cached_status.charge_state = BATTERY_CHARGE_UNKNOWN;
     gauge_device = NULL;
     charger_device = NULL;
@@ -1007,6 +1026,21 @@ void battery_poll( void )
         return;
     }
     battery_refresh();
+}
+
+size_t battery_history_read( battery_history_sample_t *a_samples, size_t a_capacity )
+{
+    if( NULL == a_samples )
+    {
+        return history_count;
+    }
+    const size_t count = a_capacity < history_count ? a_capacity : history_count;
+    const size_t first = ( history_head + BATTERY_HISTORY_CAPACITY - count ) % BATTERY_HISTORY_CAPACITY;
+    for( size_t i = 0U; i < count; i++ )
+    {
+        a_samples[ i ] = history[ ( first + i ) % BATTERY_HISTORY_CAPACITY ];
+    }
+    return count;
 }
 
 bool battery_get_status( battery_status_t *a_status )
