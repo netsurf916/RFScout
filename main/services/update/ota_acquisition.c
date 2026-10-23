@@ -9,6 +9,8 @@
 #include "ota_installer.h"
 #include "memory_manager.h"
 
+#include "https_diagnostics.h"
+
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
@@ -258,6 +260,11 @@ static void acquisition_worker( void *a_context )
               "HTTPS request begin kind=%d timeout_ms=%u",
               (int)status.kind,
               (unsigned)OTA_HTTP_TIMEOUT_MS );
+    https_diag_heap( TAG, "before" );
+    if( !cancelled_before_start )
+    {
+        https_diag_dns( TAG, "netsurf916.github.io" );
+    }
     esp_err_t result = ESP_ERR_INVALID_STATE;
     int http_status = 0;
     if( !cancelled_before_start )
@@ -287,6 +294,8 @@ static void acquisition_worker( void *a_context )
               (long long)( ( esp_timer_get_time() - request_started_us ) / 1000LL ),
               esp_err_to_name( result ),
               http_status );
+
+    https_diag_heap( TAG, "after" );
 
     ota_acquisition_kind_t kind;
     size_t transferred;
