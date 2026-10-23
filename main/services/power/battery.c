@@ -92,6 +92,8 @@ typedef enum
 {
     GAUGE_INSPECT,
     GAUGE_UNSEAL_2,
+    GAUGE_FULL_ACCESS_1,
+    GAUGE_FULL_ACCESS_2,
     GAUGE_ENTER,
     GAUGE_WAIT_ENTER,
     GAUGE_WRITE,
@@ -255,13 +257,19 @@ static void gauge_configuration_poll( void )
             }
             if( capacity == expected && 0U == ( status & BQ27220_CFG_BIT ) )
             {
+                if( ( status & BQ27220_SEALED_MASK ) != BQ27220_SEALED_VALUE )
+                {
+                    gauge_config_state = GAUGE_SEAL;
+                    gauge_needs_seal = true;
+                    return;
+                }
                 gauge_config_state = GAUGE_READY;
                 gauge_config_after_us = now + 30000000LL;
                 ESP_LOGI( TAG, "BQ27220 profile verified: %u mAh", (unsigned)capacity );
                 return;
             }
-            gauge_needs_seal = ( status & BQ27220_SEALED_MASK ) == BQ27220_SEALED_VALUE;
-            if( gauge_needs_seal )
+            gauge_needs_seal = true;
+            if( ( status & BQ27220_SEALED_MASK ) == BQ27220_SEALED_VALUE )
             {
                 result = gauge_command( 0x0414U );
                 if( ESP_OK != result )
@@ -272,10 +280,28 @@ static void gauge_configuration_poll( void )
                 gauge_config_after_us = now + 10000LL;
                 return;
             }
-            gauge_config_state = GAUGE_ENTER;
+            gauge_config_state = GAUGE_FULL_ACCESS_1;
             return;
         case GAUGE_UNSEAL_2:
             result = gauge_command( 0x3672U );
+            if( ESP_OK != result )
+            {
+                break;
+            }
+            gauge_config_state = GAUGE_FULL_ACCESS_1;
+            gauge_config_after_us = now + 10000LL;
+            return;
+        case GAUGE_FULL_ACCESS_1:
+            result = gauge_command( 0xFFFFU );
+            if( ESP_OK != result )
+            {
+                break;
+            }
+            gauge_config_state = GAUGE_FULL_ACCESS_2;
+            gauge_config_after_us = now + 10000LL;
+            return;
+        case GAUGE_FULL_ACCESS_2:
+            result = gauge_command( 0xFFFFU );
             if( ESP_OK != result )
             {
                 break;
@@ -284,7 +310,7 @@ static void gauge_configuration_poll( void )
             gauge_config_after_us = now + 10000LL;
             return;
         case GAUGE_ENTER:
-            if( ( status & BQ27220_SEALED_MASK ) == BQ27220_SEALED_VALUE )
+            if( ( status & BQ27220_SEALED_MASK ) != 0x0002U )
             {
                 result = ESP_ERR_INVALID_STATE;
                 break;
