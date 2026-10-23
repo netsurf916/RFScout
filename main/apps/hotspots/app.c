@@ -12,6 +12,7 @@
 #include "connectivity_probe.h"
 #include "gps.h"
 #include "hotspot_history.h"
+#include "hotspot_profiles.h"
 #include "hotspot_table.h"
 #include "hotspots_app.h"
 #include "hotspots_internal.h"
@@ -428,118 +429,30 @@ const saved_network_profile_t *hotspots_profiles( size_t *a_count )
     return profiles;
 }
 
-/** A profile's associated BSSID is seen in the latest completed scan with the same SSID. */
-static bool profile_overlaps_scan( const saved_network_profile_t *a_profile, const char *a_ssid )
+/** History bounds for a BSSID; history keeps one entry per BSSID. */
+static const geo_bounds_t *history_bounds( const uint8_t a_bssid[ 6 ] )
 {
-    for( size_t index = 0U; index < table.count; ++index )
+    for( size_t index = 0U; index < hotspot_history_count(); ++index )
     {
-        const hotspot_entry_t *other = &table.entries[ index ];
-        const saved_network_bssid_t *known =
-            saved_network_profile_bssid( a_profile, other->bss.bssid );
-        if( other->visible && 0 == strcmp( other->bss.ssid, a_ssid ) && NULL != known &&
-            SAVED_NETWORK_BSSID_ASSOCIATED == known->state )
+        const hotspot_history_entry_t *history = hotspot_history_at( index );
+        if( 0 == memcmp( history->bssid, a_bssid, 6U ) )
         {
-            return true;
+            return &history->bounds;
         }
     }
-    return false;
-}
-
-/** A profile's associated BSSID has history within the match distance of the current fix. */
-static bool profile_near( const saved_network_profile_t *a_profile,
-                          const rfscout_gps_snapshot_t *a_gps )
-{
-    const uint16_t limit = hotspots_match_distance_m();
-    if( 0U == limit || !gps_location_fresh( a_gps ) )
-    {
-        return false;
-    }
-    for( size_t bssid = 0U; bssid < a_profile->bssid_count; ++bssid )
-    {
-        if( SAVED_NETWORK_BSSID_ASSOCIATED != a_profile->bssids[ bssid ].state )
-        {
-            continue;
-        }
-        for( size_t index = 0U; index < hotspot_history_count(); ++index )
-        {
-            const hotspot_history_entry_t *history = hotspot_history_at( index );
-            if( 0 != memcmp( history->bssid, a_profile->bssids[ bssid ].address, 6U ) )
-            {
-                continue;
-            }
-            const double distance = geo_bounds_distance_m(
-                &history->bounds, a_gps->latitude_deg, a_gps->longitude_deg );
-            if( distance >= 0.0 && distance <= (double)limit )
-            {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Resolve which saved profile, if any, automatic checks may use for a secured BSSID.
- * @details An exact associated BSSID wins. Otherwise a same-SSID, auth-compatible profile that
- *          this BSSID has not rejected qualifies only with evidence: one of its known BSSIDs is
- *          in the same scan, or has history within the match distance. Several qualifying
- *          profiles are ambiguous and need the user's choice.
- */
-static hotspot_credential_t resolve_profile( const hotspot_entry_t *a_entry,
-                                             const rfscout_gps_snapshot_t *a_gps,
-                                             uint32_t *a_profile_id )
-{
-    *a_profile_id = 0U;
-    size_t candidates = 0U;
-    size_t rejected = 0U;
-    size_t with_evidence = 0U;
-    for( size_t index = 0U; index < profile_count; ++index )
-    {
-        const saved_network_profile_t *profile = &profiles[ index ];
-        if( 0 != strcmp( profile->ssid, a_entry->bss.ssid ) ||
-            !saved_network_profile_auth_compatible( profile, a_entry->bss.auth_mode ) )
-        {
-            continue;
-        }
-        const saved_network_bssid_t *known =
-            saved_network_profile_bssid( profile, a_entry->bss.bssid );
-        if( NULL != known && SAVED_NETWORK_BSSID_REJECTED == known->state )
-        {
-            ++rejected;
-            continue;
-        }
-        if( NULL != known && known->auth_mode == a_entry->bss.auth_mode )
-        {
-            *a_profile_id = profile->profile_id;
-            return HOTSPOT_CREDENTIAL_KNOWN;
-        }
-        ++candidates;
-        if( profile_overlaps_scan( profile, a_entry->bss.ssid ) || profile_near( profile, a_gps ) )
-        {
-            ++with_evidence;
-            *a_profile_id = profile->profile_id;
-        }
-    }
-    if( 1U == with_evidence )
-    {
-        return HOTSPOT_CREDENTIAL_INFERRED;
-    }
-    *a_profile_id = 0U;
-    if( with_evidence > 1U )
-    {
-        return HOTSPOT_CREDENTIAL_AMBIGUOUS;
-    }
-    if( 0U != candidates )
-    {
-        return HOTSPOT_CREDENTIAL_UNMATCHED;
-    }
-    return 0U != rejected ? HOTSPOT_CREDENTIAL_REJECTED : HOTSPOT_CREDENTIAL_NONE;
+    return NULL;
 }
 
 /** @brief Refresh the profile snapshot and re-resolve every entry's credentials. */
 static void resolve_credentials( const rfscout_gps_snapshot_t *a_gps )
 {
     refresh_profiles();
+    const hotspot_profiles_input_t input = { .profiles = profiles,
+                                             .profile_count = profile_count,
+                                             .table = &table,
+                                             .history_bounds = history_bounds,
+                                             .gps = a_gps,
+                                             .match_distance_m = hotspots_match_distance_m() };
     for( size_t index = 0U; index < table.count; ++index )
     {
         hotspot_entry_t *entry = &table.entries[ index ];
@@ -556,7 +469,7 @@ static void resolve_credentials( const rfscout_gps_snapshot_t *a_gps )
         }
         else
         {
-            entry->credential = resolve_profile( entry, a_gps, &entry->profile_id );
+            entry->credential = hotspot_profiles_resolve( &input, entry, &entry->profile_id );
         }
         entry->credential_available = HOTSPOT_CREDENTIAL_OPEN == entry->credential ||
                                       HOTSPOT_CREDENTIAL_KNOWN == entry->credential ||

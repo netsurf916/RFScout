@@ -16,6 +16,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #define SAVED_NETWORK_MAX_COUNT 8U
 #define SAVED_NETWORK_SSID_MAX_LENGTH 32U
@@ -89,12 +90,29 @@ esp_err_t saved_networks_record_bssid( uint32_t a_profile_id,
                                        int32_t a_auth_mode,
                                        saved_network_bssid_state_t a_state );
 
+/* Pure profile-snapshot helpers; inline so host models and tests need no storage code. */
+
 /** @brief Find a profile's entry for a BSSID, or NULL. */
-const saved_network_bssid_t *saved_network_profile_bssid( const saved_network_profile_t *a_profile,
-                                                          const uint8_t a_bssid[ 6 ] );
+static inline const saved_network_bssid_t *
+saved_network_profile_bssid( const saved_network_profile_t *a_profile, const uint8_t a_bssid[ 6 ] )
+{
+    for( size_t index = 0U; NULL != a_profile && NULL != a_bssid && index < a_profile->bssid_count;
+         ++index )
+    {
+        if( 0 == memcmp( a_profile->bssids[ index ].address, a_bssid, 6U ) )
+        {
+            return &a_profile->bssids[ index ];
+        }
+    }
+    return NULL;
+}
 
 /** @brief Whether a profile may be used with an observed auth mode. */
-bool saved_network_profile_auth_compatible( const saved_network_profile_t *a_profile,
-                                            int32_t a_auth_mode );
+static inline bool saved_network_profile_auth_compatible( const saved_network_profile_t *a_profile,
+                                                          int32_t a_auth_mode )
+{
+    return NULL != a_profile && ( SAVED_NETWORK_AUTH_UNKNOWN == a_profile->auth_mode ||
+                                  a_profile->auth_mode == a_auth_mode );
+}
 
 #endif // _RFSCOUT_SAVED_NETWORKS_H_

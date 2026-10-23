@@ -90,6 +90,7 @@ idf_component_register(
         "apps/hotspots/app.c"
         "apps/hotspots/hotspot_table.c"
         "apps/hotspots/hotspot_history.c"
+        "apps/hotspots/hotspot_profiles.c"
         "apps/hotspots/characterization_grouping.c"
         "apps/hotspots/hotspot_groups.c"
         "apps/hotspots/hotspots_view.c"

@@ -407,24 +407,3 @@ esp_err_t saved_networks_record_bssid( uint32_t a_profile_id,
     }
     return save();
 }
-
-const saved_network_bssid_t *saved_network_profile_bssid( const saved_network_profile_t *a_profile,
-                                                          const uint8_t a_bssid[ 6 ] )
-{
-    for( size_t index = 0U; NULL != a_profile && NULL != a_bssid && index < a_profile->bssid_count;
-         ++index )
-    {
-        if( 0 == memcmp( a_profile->bssids[ index ].address, a_bssid, 6U ) )
-        {
-            return &a_profile->bssids[ index ];
-        }
-    }
-    return NULL;
-}
-
-bool saved_network_profile_auth_compatible( const saved_network_profile_t *a_profile,
-                                            int32_t a_auth_mode )
-{
-    return NULL != a_profile && ( SAVED_NETWORK_AUTH_UNKNOWN == a_profile->auth_mode ||
-                                  a_profile->auth_mode == a_auth_mode );
-}
