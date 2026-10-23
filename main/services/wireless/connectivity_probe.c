@@ -7,6 +7,8 @@
 
 #include "connectivity_probe.h"
 
+#include "https_diagnostics.h"
+
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
@@ -157,6 +159,11 @@ static void probe_worker( void *a_context )
 
     const int64_t request_started_us = esp_timer_get_time();
     ESP_LOGI( TAG, "HTTPS probe begin timeout_ms=%u", (unsigned)request_timeout_ms );
+    https_diag_heap( TAG, "before" );
+    if( !cancelled )
+    {
+        https_diag_dns( TAG, "cloudflare.com" );
+    }
     esp_err_t result = ESP_ERR_INVALID_STATE;
     int http_status = 0;
     if( !cancelled )
@@ -186,6 +193,8 @@ static void probe_worker( void *a_context )
               (long long)( ( esp_timer_get_time() - request_started_us ) / 1000LL ),
               esp_err_to_name( result ),
               http_status );
+
+    https_diag_heap( TAG, "after" );
 
     /* Clear the shared handle under the cancellation mutex before cleanup so a concurrent cancel
        either sees a valid client or none at all. */
