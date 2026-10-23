@@ -8,6 +8,7 @@
 #include "ui.h"
 
 #include "display.h"
+#include "geo.h"
 #include "gps.h"
 #include "observation_store.h"
 #include "surveillance.h"
@@ -21,7 +22,6 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <math.h>
 
 #define UI_MAX_KNOWN_BRANDS 8U
 #define UI_REFRESH_INTERVAL_US 100000LL
@@ -80,37 +80,6 @@ static void draw_channel_box( unsigned a_channel, uint16_t a_active_channel_mask
         x + ( UI_CHANNEL_GRID_CELL_WIDTH - text_width ) / 2, y + 2, label, label_color, 1U );
 }
 
-static double live_receiver_distance( const observation_history_identity_t *a_device,
-                                      double a_latitude,
-                                      double a_longitude )
-{
-    double lat = a_latitude;
-    double lon = a_longitude;
-    if( lat < a_device->min_latitude )
-        lat = a_device->min_latitude;
-    if( lat > a_device->max_latitude )
-        lat = a_device->max_latitude;
-    const double west = a_device->min_longitude;
-    const double east = a_device->max_longitude;
-    const bool inside = west <= east ? lon >= west && lon <= east : lon >= west || lon <= east;
-    if( !inside )
-    {
-        double to_west = fabs( lon - west );
-        double to_east = fabs( lon - east );
-        if( to_west > 180.0 )
-            to_west = 360.0 - to_west;
-        if( to_east > 180.0 )
-            to_east = 360.0 - to_east;
-        lon = to_west <= to_east ? west : east;
-    }
-    const double dy = ( a_latitude - lat ) * 0.017453292519943295;
-    double delta_lon = fabs( a_longitude - lon );
-    if( delta_lon > 180.0 )
-        delta_lon = 360.0 - delta_lon;
-    const double dx = delta_lon * 0.017453292519943295 * cos( a_latitude * 0.017453292519943295 );
-    return 6371000.0 * sqrt( dx * dx + dy * dy );
-}
-
 /** @brief Recompute nearest known signature distances at most once per second. */
 static void surveillance_distances( const observation_surveillance_signature_t *a_rows,
                                     size_t a_count,
@@ -142,12 +111,13 @@ static void surveillance_distances( const observation_surveillance_signature_t *
         for( size_t index = 0U; index < total; ++index )
         {
             observation_history_identity_t device = { 0 };
-            if( !observation_store_surveillance_get( index, &device ) || !device.location_valid )
+            if( !observation_store_surveillance_get( index, &device ) ||
+                !device.receiver_bounds.valid )
             {
                 continue;
             }
-            const double meters =
-                live_receiver_distance( &device, a_gps->latitude_deg, a_gps->longitude_deg );
+            const double meters = geo_bounds_distance_m(
+                &device.receiver_bounds, a_gps->latitude_deg, a_gps->longitude_deg );
             for( size_t row = 0U; row < a_count; ++row )
             {
                 if( device.signature == a_rows[ row ].signature &&
@@ -214,8 +184,7 @@ static void render_summary( void )
     /* Reserve the fifth row for overflow when more than five signatures are active. */
     const size_t shown = snapshot.signature_count > 5U ? 4U : snapshot.signature_count;
     rfscout_gps_snapshot_t gps = { 0 };
-    const bool has_fix =
-        gps_snapshot_get( &gps ) && gps.location_valid && gps.location_age_ms <= 5000U;
+    const bool has_fix = gps_snapshot_get( &gps ) && gps_location_fresh( &gps );
     double nearest_meters[ 5 ] = { 0 };
     bool nearest_valid[ 5 ] = { false };
     if( has_fix && shown > 0U )
@@ -228,15 +197,7 @@ static void render_summary( void )
         char distance[ 8 ] = "";
         if( has_fix && nearest_valid[ row ] )
         {
-            if( nearest_meters[ row ] >= 1000.0 )
-            {
-                (void)snprintf(
-                    distance, sizeof( distance ), "%.1fkm", nearest_meters[ row ] / 1000.0 );
-            }
-            else
-            {
-                (void)snprintf( distance, sizeof( distance ), "%.0fm", nearest_meters[ row ] );
-            }
+            geo_format_distance( nearest_meters[ row ], distance, sizeof( distance ) );
         }
         (void)snprintf( line,
                         sizeof( line ),

@@ -42,6 +42,7 @@ set(RFSCOUT_INCLUDE_DIRS
     "apps/cc1101"
     "apps/nrf24"
     "apps/radio_common"
+    "apps/network_common"
     "apps/recorder"
     "apps/audio_spectrum"
     "apps/thermal"
@@ -77,11 +78,11 @@ idf_component_register(
         "apps/system_events/system_events_view.c"
         "apps/ota/ota_menu.c"
         "apps/ota/ota_catalog.c"
-        "apps/ota/ota_networks.c"
         "apps/ota/ota_view.c"
         "apps/home/app.c"
         "apps/home/device_view.c"
         "apps/home/home_landing.c"
+        "apps/home/storage_view.c"
         "apps/wifi_ble/app.c"
         "apps/wifi_ble/ui.c"
         "apps/wifi_ble/wifi_settings_view.c"
@@ -90,7 +91,12 @@ idf_component_register(
         "apps/wifi_ble/surveillance.c"
         "apps/hotspots/app.c"
         "apps/hotspots/hotspot_table.c"
+        "apps/hotspots/hotspot_history.c"
+        "apps/hotspots/hotspot_profiles.c"
+        "apps/hotspots/characterization_grouping.c"
+        "apps/hotspots/hotspot_groups.c"
         "apps/hotspots/hotspots_view.c"
+        "apps/hotspots/hotspots_ui.c"
         "apps/cc1101/app.c"
         "apps/cc1101/cc1101_view.c"
         "apps/cc1101/subghz_decode.c"
@@ -98,6 +104,7 @@ idf_component_register(
         "apps/nrf24/nrf24_activity.c"
         "apps/nrf24/nrf24_packet_view.c"
         "apps/radio_common/radio_app_view.c"
+        "apps/network_common/network_credentials.c"
         "apps/recorder/app.c"
         "services/audio/audio_capture.c"
         "services/audio/recorder.c"
@@ -131,9 +138,11 @@ idf_component_register(
         "services/board/board_i2c.c"
         "services/input/input.c"
         "services/location/gps.c"
+        "services/location/geo.c"
         "services/wireless/radio_monitor.c"
         "services/wireless/wifi_core.c"
         "services/wireless/wifi_station.c"
+        "services/wireless/saved_networks.c"
         "services/wireless/network_session.c"
         "services/wireless/connectivity_probe.c"
         "services/wireless/ble_monitor.c"
@@ -148,6 +157,7 @@ idf_component_register(
         "services/storage/storage.c"
         "services/storage/persistent_store.c"
         "services/storage/media_store.c"
+        "services/storage/media_journal.c"
         "services/storage/log_writer.c"
         "services/storage/breadcrumbs.c"
         "services/update/ota_acquisition.c"
@@ -178,4 +188,11 @@ idf_component_register(
 
 # Enforce warning-free compilation for RFScout-owned sources only. Do not
 # propagate -Werror to ESP-IDF, managed third-party components, or consumers.
-target_compile_options(${COMPONENT_LIB} PRIVATE -Werror)
+# ESP-IDF downgrades the unused-* classes with -Wno-error=...; restore them here
+# (later options win). deprecated-declarations stays a warning so ESP-IDF API
+# deprecations do not break the build on an IDF update.
+target_compile_options(${COMPONENT_LIB} PRIVATE
+    -Werror
+    -Werror=unused-function
+    -Werror=unused-variable
+    -Werror=unused-but-set-variable)

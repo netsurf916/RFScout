@@ -10,7 +10,6 @@
 #include "display.h"
 #include "nrf24_activity.h"
 #include "ui_chrome.h"
-#include "ui_game.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
 #include "ui_menu.h"
@@ -116,7 +115,8 @@ size_t nrf24_packet_view_list( unsigned a_selected )
     {
         selected = (unsigned)item_count - 1U;
     }
-    const unsigned first = ui_layout_menu_window_start( selected, (unsigned)item_count );
+    const unsigned first =
+        ui_menu_window_start( selected, (unsigned)item_count, UI_LAYOUT_MENU_VISIBLE_ROWS );
 
     for( unsigned row = 0U; row < UI_LAYOUT_MENU_VISIBLE_ROWS; ++row )
     {
@@ -127,19 +127,10 @@ size_t nrf24_packet_view_list( unsigned a_selected )
         }
 
         const int y = UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT;
-        const bool active = ( item == selected );
+        const ui_menu_state_t state = { .selected = item == selected, .available = true };
         if( 0U == item )
         {
-            ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X,
-                                      y,
-                                      active ? ">" : " ",
-                                      active ? theme->selected : theme->divider );
-            display_draw_text(
-                UI_LAYOUT_LABEL_X,
-                y,
-                "BACK",
-                ui_menu_label_color( ( ui_menu_state_t ){ .selected = active, .available = true } ),
-                1U );
+            ui_menu_draw_row( y, "BACK", NULL, state );
             continue;
         }
 
@@ -154,14 +145,7 @@ size_t nrf24_packet_view_list( unsigned a_selected )
                   bitrate_name( packet->bitrate ),
                   address,
                   (unsigned)packet->payload_len );
-        ui_game_draw_menu_marker(
-            UI_LAYOUT_LEFT_X, y, active ? ">" : " ", active ? theme->selected : theme->divider );
-        display_draw_text(
-            UI_LAYOUT_LABEL_X,
-            y,
-            line,
-            ui_menu_label_color( ( ui_menu_state_t ){ .selected = active, .available = true } ),
-            1U );
+        ui_menu_draw_row( y, line, NULL, state );
     }
 
     if( 0U == displayed_packet_count )

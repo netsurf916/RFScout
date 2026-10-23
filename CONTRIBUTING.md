@@ -75,7 +75,7 @@ Generated `.inc` tables should be changed through their generators rather than h
 
 ## Compiler warnings
 
-RFScout-maintained firmware C code is compiled with `-Werror`: compiler warnings are build failures. The option is scoped to the RFScout `main` component and does not affect ESP-IDF or third-party components. Fix warnings at their source rather than adding broad diagnostic suppressions. This policy does not enable additional warning classes; compiler/ESP-IDF baseline warning selection remains unchanged. Both local `idf.py build` and firmware CI enforce this policy.
+RFScout-maintained firmware C code is compiled with `-Werror`: compiler warnings are build failures. The option is scoped to the RFScout `main` component and does not affect ESP-IDF or third-party components. ESP-IDF's global options downgrade unused-function, unused-variable and unused-but-set-variable with `-Wno-error=...`, so the component restores them explicitly with `-Werror=...`; only `deprecated-declarations` remains a warning, so ESP-IDF API deprecations do not break builds after an IDF update. Fix warnings at their source rather than adding broad diagnostic suppressions. This policy does not enable additional warning classes; compiler/ESP-IDF baseline warning selection remains unchanged. Both local `idf.py build` and firmware CI enforce this policy.
 
 ## Formatting
 
@@ -122,6 +122,9 @@ app views, using the actual LCD font and framebuffer drawing functions extracted
 It writes portable PPM images with simulated service data/status widgets. Host checks cover stable
 theme IDs/config-name round trips, title/status separation, menu/header separation, graph heights,
 zero/clamped meter inputs, containment of instrument frames, icons, and energy meters, unknown/zero/charging battery presentation, and modal/system-popup framebuffer restoration, including long text.
+The same suite also compiles production models (grouping, profile selection, SD journal and
+Hotspots history replay) against small host stubs. Hotspots history parsing needs the cJSON
+development package (`libcjson-dev` on Debian/Ubuntu); tests without a compiler or that package skip.
 The test suite runs these checks in ordinary formatting/packaging CI. They complement the ESP-IDF
 build and [target hardware acceptance](docs/RELEASE_VALIDATION.md); they do not emulate radios,
 storage, input timing, or the physical LCD.

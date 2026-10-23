@@ -210,21 +210,22 @@ configured source timeout. GPS-qualified surveillance packet observations expand
 These coordinates represent where RFScout received packets, not a verified transmitter position.
 Expiration simply removes the active identity; it does not write a summary to SD.
 
-Each GPS-qualified surveillance packet is separately queued for the append-only
-`locations/surveillance.jsonl` journal, including full MAC, address type, classification,
-receiver latitude/longitude, trusted UTC when available, and observation time. The `type` and `class` fields now use readable labels (for example, `public_or_wifi` and `Camera / doorbell`) rather than numeric enum codes. Existing journals are not rewritten; newly appended records use the readable representation. The canonical store emits a compact event to an app-owned sink after releasing its lock.
-The sink only enqueues records into a preallocated PSRAM buffer; queue growth and
-batched SD writes happen from the app poll, never inside radio callbacks.
-The journal is retained for offline analysis. It is not replayed to populate the live UI,
-and legacy bounding-box journal formats are not read or supported. A failed SD append is
-retried while the app session remains active if rollback succeeds. If a partial write cannot
-be safely rolled back, that uncertain batch is discarded; the next write request recovers
-the card after the shared 3-second cooldown and uses a unique
-`locations/surveillance-XXXXXXXX.jsonl` file, preserving the previous file for offline
-inspection. That rotation state survives WiFi/BLE app reentry during the same boot.
-Insufficient PSRAM or unavailable media can still prevent capture. App exit attempts to drain both the writing and pending journal batches when media is healthy; an
-I/O failure stops this bounded final flush. An unsuccessful file close also makes the batch
-ambiguous and forces journal rotation before further writes.
+Every GPS-qualified surveillance packet expands the live bounding box. A journal record is
+queued when that identity's receiver position has moved by the shared **Movement trigger**
+since its previous record (the first qualified packet always records), so a stationary
+receiver does not repeat identical positions. Records are appended to the app's `locations`
+collection as `surveillance-*.jsonl` segments with full MAC, address type, classification,
+receiver latitude/longitude, trusted UTC when available, and observation time; `type` and
+`class` use readable labels (for example, `public_or_wifi` and `Camera / doorbell`). The
+canonical store emits a compact event to an app-owned sink after releasing its lock. The sink
+only enqueues records into a preallocated PSRAM buffer; queue growth and batched SD writes
+happen from the app poll, never inside radio callbacks.
+The journal is retained for offline analysis. It is not replayed to populate the live UI. A
+failed append that was rolled back is retried while the app session remains active; an
+uncertain batch is discarded and later records continue in a fresh segment, following the
+shared [SD journal](../ARCHITECTURE.md#sd-journals) contract. Insufficient PSRAM or
+unavailable media can still prevent capture. App exit attempts to drain both the writing and
+pending journal batches when media is healthy; an I/O failure stops this bounded final flush.
 SD lost/recovered transitions enter System Events without periodic card polling; when there
 are no outstanding writes or other SD requests, mere insertion is not detected until the
 next storage operation.

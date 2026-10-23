@@ -13,11 +13,17 @@ This is a repeatable **validation procedure for implemented behavior**, not a fe
 | Wardriving policy | Confirm radio settings cannot change during recording and resume correctly after stop | Untested |
 | GPS | Detect NMEA without fix, acquire valid fix, invalidate stale fix, inspect trip distance/reset and position metadata | Untested |
 | GPS/nRF24 | Verify UART priority with GPS connected and nRF24 present; verify absent GPS fallback | Untested |
+| GPS LED ring | Leave GPS for Home and other apps repeatedly with guidance on and off: the ring goes dark at every exit and no app inherits a pixel. While moving with known course, record the lit index for N/NE/E/SE/S/SW/W/NW (ground track is direction of motion, not enclosure facing); stationary/no fix blanks the ring; check 0%/100% intensity and every color preset | Untested |
+| GPS Timepulse | Toggle in Home and GPS Settings; both show the same saved value; the receiver indicator follows without interrupting NMEA or restarting rate probing | Untested |
+| GPS settings | With no receiver attached, breadcrumbs, retained files, Movement trigger, and Timepulse rows are shown unavailable and refuse changes in Home and GPS Settings; they become available once NMEA is detected | Untested |
+| Breadcrumbs | Stationary for several minutes: no new records. Walking and driving: records spaced by the Movement trigger, at most one per second and per UTC second, each with fresh fix/UTC; change the trigger and confirm spacing; remove/reinsert SD and confirm journal segments continue without torn lines | Untested |
+| Surveillance journal | Stationary receiver: repeated packets from one identity add no records; moving beyond the trigger adds one record per identity; live distances still update on every packet | Untested |
 | SD handling | Remove/reinsert outside and during active logging/capture; verify errors and recovery without corruption | Untested |
 | Audio | Recorder start/stop/playback and Audio Spectrum transition; verify no resource leakage | Untested |
 | System UI | Input lock, application lock, status icon changes, display idle/wake and power button | Untested |
 | Visual themes | Select Pixel Quest and each legacy theme; visit every app, nested settings, channel/source menus, and dialogs; verify title/status separation, editing cursors, battery/charging/locks, dense rows, thermal colors, idle/wake, and persisted selection after reboot | Untested |
 | Networking | Home Wi-Fi connection, randomized station MAC, NTP/HTTPS probe, Hotspots exit cleanup | Untested |
+| Hotspots | Secured checks with Known/Inferred/picked profiles, password rejection learning, Home/Hotspots credential round trip, Live/History/Saved views under app lock, history replay/compaction/SD loss, grouping splits, distance with fresh/stale/no GPS | Untested |
 | OTA | Candidate update, reboot confirmation and rollback behavior; verify release identity and SHA | Untested |
 | Power | Screen-off, deep sleep, physical power-off and return where supported | Untested |
 

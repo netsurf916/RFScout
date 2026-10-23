@@ -24,6 +24,7 @@
 #define RFSCOUT_GPS_TIMEOUT_MIN_SECONDS 2U
 #define RFSCOUT_GPS_TIMEOUT_MAX_SECONDS 30U
 #define RFSCOUT_GPS_TIMEOUT_DEFAULT_SECONDS 5U
+#define RFSCOUT_GPS_MOVEMENT_DEFAULT_M 10U
 #define RFSCOUT_CONFIG_SCHEMA_VERSION 1U
 #define RFSCOUT_TIMEZONE_MAX 8U
 #define RFSCOUT_TIMEZONE_NAME_MAX 32U
@@ -78,6 +79,8 @@ typedef struct
     bool logging_enabled;
     bool clock_24h;
     uint8_t gps_timeout_seconds;
+    /** Receiver movement required between samples of every GPS-located SD log. */
+    uint8_t gps_movement_m;
     bool gps_timepulse_enabled;
     bool gps_led_enabled;
     uint8_t gps_led_brightness;
@@ -124,6 +127,10 @@ rfscout_hold_shortcut_t device_config_hold_shortcut( void );
 const char *device_config_hold_shortcut_name( rfscout_hold_shortcut_t a_shortcut );
 esp_err_t device_config_set_hold_shortcut( rfscout_hold_shortcut_t a_shortcut );
 esp_err_t device_config_set_gps_timeout_seconds( uint8_t a_seconds );
+/** @brief Set the movement trigger; only the distances offered by the step helper are valid. */
+esp_err_t device_config_set_gps_movement_m( uint8_t a_meters );
+/** @brief Next supported movement-trigger distance in a_direction, wrapping. */
+uint8_t device_config_gps_movement_step( uint8_t a_meters, int a_direction );
 esp_err_t device_config_set_gps_timepulse( bool a_enabled );
 esp_err_t device_config_set_gps_led( bool a_enabled, uint8_t a_brightness, uint32_t a_rgb );
 esp_err_t device_config_set_gps_keep_awake( bool a_enabled );

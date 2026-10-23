@@ -195,7 +195,8 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
     static const char *labels[ NRF24_MENU_ITEM_COUNT ] = {
         "BACK", "RESET COUNTS", "LOW CH", "HIGH CH", "DWELL", "PACKET DETAILS", "NOTIFICATIONS" };
     const ui_theme_palette_t *theme = ui_theme_get();
-    const unsigned first = ui_layout_menu_window_start( a_selected, NRF24_MENU_ITEM_COUNT );
+    const unsigned first =
+        ui_menu_window_start( a_selected, NRF24_MENU_ITEM_COUNT, UI_LAYOUT_MENU_VISIBLE_ROWS );
 
     display_clear( theme->background );
     ui_chrome_draw( "nRF24 SETTINGS", theme->secondary );
@@ -212,21 +213,12 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
         const int y = UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT;
         const bool active = ( i == a_selected );
         const bool action = ( 0U == i ) || ( 1U == i ) || ( 5U == i ) || ( 6U == i );
-        const char *marker = " ";
-
-        if( active )
-        {
-            marker = action ? ">" : ( a_editing ? "*" : ">" );
-        }
-
-        ui_game_draw_menu_marker(
-            UI_LAYOUT_LEFT_X, y, marker, active ? theme->selected : theme->divider );
-        display_draw_text(
-            UI_LAYOUT_LABEL_X,
-            y,
-            labels[ i ],
-            ui_menu_label_color( ( ui_menu_state_t ){ .selected = active, .available = true } ),
-            1U );
+        ui_menu_draw_row( y,
+                          labels[ i ],
+                          NULL,
+                          ( ui_menu_state_t ){ .selected = active,
+                                               .editing = a_editing && !action,
+                                               .available = true } );
 
         value[ 0 ] = '\0';
         if( 2U == i )

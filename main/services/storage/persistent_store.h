@@ -27,10 +27,43 @@ typedef struct
     uint32_t generation;
 } rfscout_app_store_context_t;
 
+/** @brief Record owners that storage management can measure and clear. */
+typedef enum
+{
+    /** Privileged system records. */
+    PERSISTENT_SCOPE_SYSTEM = 0,
+    /** One compiled application's records. */
+    PERSISTENT_SCOPE_APP,
+    /** App record directories that match no compiled application. */
+    PERSISTENT_SCOPE_UNUSED,
+    /** Every record on internal storage. */
+    PERSISTENT_SCOPE_ALL
+} persistent_scope_t;
+
+/** @brief Return whether a fixed-size record read from the store is acceptable. */
+typedef bool ( *persistent_record_valid_fn )( const void *a_record );
+
 /** @brief Mount and initialize the system-owned internal persistence service. */
 esp_err_t persistent_store_init( void );
 /** @brief Return whether internal persistence is mounted and usable. */
 bool persistent_store_is_available( void );
+
+/** @brief Report internal filesystem capacity and use in bytes. */
+esp_err_t persistent_store_space( size_t *a_total_bytes, size_t *a_used_bytes );
+/**
+ * @brief Count the records and record bytes held by one owner scope.
+ * @details @p a_app is used only for PERSISTENT_SCOPE_APP. Storage management only.
+ */
+esp_err_t persistent_store_usage( persistent_scope_t a_scope,
+                                  rfscout_app_id_t a_app,
+                                  size_t *a_records,
+                                  size_t *a_bytes );
+/**
+ * @brief Delete every record held by one owner scope.
+ * @details Owners keep loaded state in RAM and may write it back, so the caller restarts the device
+ *          after clearing. Storage management only.
+ */
+esp_err_t persistent_store_clear( persistent_scope_t a_scope, rfscout_app_id_t a_app );
 
 /**
  * @brief Atomically replace one privileged system record.
@@ -43,6 +76,18 @@ esp_err_t system_store_write( const char *a_key, const void *a_data, size_t a_le
 esp_err_t system_store_read( const char *a_key, void *a_data, size_t a_capacity, size_t *a_length );
 esp_err_t system_store_remove( const char *a_key );
 bool system_store_exists( const char *a_key );
+/**
+ * @brief Read one fixed-size system record and remove it when it is rejected.
+ * @details Returns ESP_OK only when exactly @p a_length bytes were read and @p a_valid (optional)
+ *          accepts them, and ESP_ERR_NOT_FOUND when no record exists. A record with the wrong
+ *          size, an unreadable body or rejected contents is removed, because nothing short of
+ *          erasing the device could otherwise clear it, and ESP_ERR_INVALID_RESPONSE is returned.
+ *          @p a_record is unspecified on any failure.
+ */
+esp_err_t system_store_load( const char *a_key,
+                             void *a_record,
+                             size_t a_length,
+                             persistent_record_valid_fn a_valid );
 
 /**
  * @brief Privileged core access to one compiled application's records.
@@ -55,6 +100,12 @@ esp_err_t persistent_store_app_write( rfscout_app_id_t a_app,
                                       size_t a_length );
 esp_err_t persistent_store_app_read(
     rfscout_app_id_t a_app, const char *a_key, void *a_data, size_t a_capacity, size_t *a_length );
+/** @brief system_store_load() semantics for one compiled application's record (privileged). */
+esp_err_t persistent_store_app_load( rfscout_app_id_t a_app,
+                                     const char *a_key,
+                                     void *a_record,
+                                     size_t a_length,
+                                     persistent_record_valid_fn a_valid );
 esp_err_t persistent_store_app_remove( rfscout_app_id_t a_app, const char *a_key );
 bool persistent_store_app_exists( rfscout_app_id_t a_app, const char *a_key );
 
@@ -91,5 +142,10 @@ esp_err_t app_store_write( const char *a_key, const void *a_data, size_t a_lengt
 esp_err_t app_store_read( const char *a_key, void *a_data, size_t a_capacity, size_t *a_length );
 esp_err_t app_store_remove( const char *a_key );
 bool app_store_exists( const char *a_key );
+/** @brief system_store_load() semantics for a record owned by the current application session. */
+esp_err_t app_store_load( const char *a_key,
+                          void *a_record,
+                          size_t a_length,
+                          persistent_record_valid_fn a_valid );
 
 #endif // _RFSCOUT_PERSISTENT_STORE_H_

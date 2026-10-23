@@ -17,7 +17,7 @@ class UiPreviewTests(unittest.TestCase):
             output = Path(directory)
             PREVIEW.build_and_render(output)
             images = list(output.glob("*.ppm"))
-            self.assertEqual(11, len(images))
+            self.assertEqual(13, len(images))
             for image in images:
                 content = image.read_bytes()
                 self.assertTrue(content.startswith(b"P6\n320 170\n255\n"))

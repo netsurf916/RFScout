@@ -109,6 +109,30 @@ when the GPS app is foregrounded, because deep sleep does not dispatch an ordina
 app-leave event. Failure to clear the ring cancels sleep and rolls back terminal
 preparation so a latched navigation pixel is not left powered during sleep.
 
+The ring is a board-owned RMT provider (`led_ring`) exposing indexed RGB, intensity, clear,
+and atomic frame updates; GPIO/RMT details never reach applications. The foreground GPS
+application holds the only ring lease. Its `prepare_leave` hook clears and releases the ring
+before an application transition commits; after one bounded retry for an RMT timeout, a
+release failure vetoes the transition so no other application inherits a latched GPS
+navigation pixel. No additional LED ownership state machine exists.
+
+## Shared network profiles
+
+`services/wireless/saved_networks` is the one credential store for Home/OTA and Hotspots. It holds up to eight profiles in Home's `networks` record. Each profile has a stable ID, SSID, password, the auth mode learned on its first association, and up to 32 BSSIDs marked **associated** (accepted the passphrase) or **rejected** (refused it). Several profiles may share an SSID; screens label them `SSID #n`.
+
+- Every operation loads the record, applies one change, saves it, and erases its working copy, so a change made in either app is visible to the other at once. A failed save is returned to the caller and shown, never presented as saved.
+- `saved_networks_list()` returns a non-secret snapshot. `saved_networks_password()` copies one password for one association; callers erase it as soon as the association has started. Passwords are never copied into observation tables, SD journals, logs, or telemetry.
+- A BSSID can be associated with only one profile, and only under the auth mode the profile learned. Changing a password clears what the profile learned, because that evidence belonged to the old secret. Learned rejections are evicted oldest first when the BSSID list is full.
+- Older record layouts are rejected and deleted like any other unsupported record ([Save/default semantics](#savedefault-semantics)).
+
+Learning comes from association outcomes only: a successful join records the BSSID as associated, and an authentication failure or handshake timeout records it as rejected. Connectivity results (green/yellow/red) are not profile evidence. Home connects by profile ID and records the BSSID it reached; Hotspots records the BSSID of every secured check.
+
+Hotspots resolves which profile a secured BSSID may use automatically: an exact associated BSSID with the same auth mode first; otherwise a same-SSID, auth-compatible profile that this BSSID has not rejected, but only with evidence — one of the profile's associated BSSIDs in the same scan, or with history within the configured match distance of a fresh fix. One such profile is used; several, or same-SSID profiles without evidence, require the user to choose one for a manual join. GPS is supplementary evidence only; resolution, association, characterization, and history all work without it. Secured association is BSSID- and channel-pinned, accepts only WPA2/WPA3 personal, and never accepts a WPA3-only BSSID under a WPA2 minimum.
+
+The shared screens in `apps/network_common/network_credentials` give Home and Hotspots the same interaction: a profile view with the password masked until **Show**, **Edit password** and **Forget**; saving a password for an SSID with existing profiles as **Replace** or **New profile**; and picking an auth-compatible profile for one join.
+
+Profile selection is kept separate from Hotspots' network grouping, which uses its own characterization evidence (gateway, netmask, gateway MAC). Neither layer classifies rogue access points.
+
 ## Application lifecycle, views, and resource sessions
 
 Descriptors provide an optional `telemetry` callback. Core schedules it for the active app and owns structured record framing; apps own their metric fields. Terminal events such as Wardriving storage failures are emitted by the owning app on the runtime event path, not inferred by core polling.
@@ -234,7 +258,7 @@ Infrastructure Wi-Fi is split into a low-level station driver and a framework-ow
 
 The network-session policy is common across applications: every new association requests a fresh random locally administered station MAC by default, association/DHCP is bounded to 30 seconds, and NTP synchronization is attempted for up to 15 seconds only if the clock has not accepted valid GPS or NTP time within the previous hour of this boot. Association plus DHCP establishes the LAN session; recently trusted time or successful NTP promotes it to READY. If time synchronization is required and fails, the connection remains LIMITED rather than being torn down. Only READY sessions may start HTTPS consumers. Release synchronously tears the station down before another logical session may reuse it. The station driver drains its event-loop work during stop so stale ESP-IDF disconnect events remain below the framework boundary. If the factory MAC cannot be captured, randomization degrades to the current station MAC rather than preventing connectivity. The factory MAC is restored after randomized sessions whenever the station stops.
 
-The station driver still provides a strongest-per-SSID scan projection for Home and a per-BSSID projection with security classification for Hotspots. The framework selects either credentialed SSID association or credential-free BSSID-pinned Open/OWE association, then applies the same network-session lifecycle to both. HTTPS remains a consumer of READY network sessions: OTA acquisition and the Hotspots connectivity probe retain separate transfer semantics while sharing connection/time policy.
+The station driver still provides a strongest-per-SSID scan projection for Home and a per-BSSID projection with security classification for Hotspots. The framework selects credentialed SSID association (Home), credential-free BSSID-pinned Open/OWE association, or passphrase BSSID-pinned WPA2/WPA3 association (Hotspots), then applies the same network-session lifecycle to each. HTTPS remains a consumer of READY network sessions: OTA acquisition and the Hotspots connectivity probe retain separate transfer semantics while sharing connection/time policy.
 
 The connectivity probe is a separate transactional session-managed service whose parameterized `begin` performs one bounded, cancellable, certificate-validated HTTPS request (Cloudflare `/cdn-cgi/trace`) over whatever station connection is up and reports the HTTP status plus public egress metadata. Session close cancels it and waits for its worker to exit.
 
@@ -246,7 +270,7 @@ Durable state uses logical owner/key namespaces:
 
 - `system/config` — ordinary device-wide policy such as display/power behavior, themes, timezone/clock presentation, SD logging, app enablement/startup choice, global audio policy/gains, and alert policy;
 - `app/<persistence_key>/config` — descriptor-confined app preference overrides;
-- legacy `system/time.policy` records from earlier firmware are ignored (automatic time sync needs no stored mode);
+- `system/time.policy` — retired (automatic time sync needs no stored mode); device configuration deletes it at startup;
 - `system/breadcrumbs` — breadcrumb enablement/retention policy; and
 - additional bounded `system/*` or app-scoped records owned by their service/application.
 
@@ -272,6 +296,8 @@ Normal app-facing operations cannot choose another app's namespace. Core orchest
 Ordinary setting setters mark owned configuration dirty and the normal service loop flushes it automatically. There is no Home **Save config** action.
 
 A missing record means compiled defaults. Malformed/unsupported owned records fall back to defaults for that owner. App configuration records are sparse overrides: returning all app preferences to their defaults removes the app config record.
+
+Every reader must **delete a record it rejects** — wrong size, magic, version, or out-of-range values. Nothing short of erasing the device can otherwise clear an internal record, so a rejected record is never left in place. Fixed-size records use `system_store_load()` / `app_store_load()`, which read the exact size, apply the owner's validator, and remove the record on rejection; variable-length readers such as device configuration remove rejected records themselves. Records are not migrated across format changes: an older layout is rejected and removed like any other unsupported record, and records retired from the firmware are deleted rather than ignored.
 
 The retired monolithic internal `rfscout.json` representation is not authoritative or migrated forward as an editable interchange format.
 
@@ -378,10 +404,14 @@ Current layout:
 | Owner | Collection | Contents |
 | --- | --- | --- |
 | `system` | `logs` | Rotating structured logs `rfscout-00.log` … `rfscout-99.log` |
-| `system` | `breadcrumbs` | Optional ten-minute GPS breadcrumb CSV buckets |
+| `system` | `breadcrumbs` | Optional movement-triggered GPS breadcrumb journal `breadcrumbs-*.jsonl` |
 | `audio` (Recorder) | `recordings` | Recorder 16-bit mono PCM WAV files |
+| `wardrive` (Wardriving) | `captures` | Wardriving capture files |
+| `hotspots` (Hotspots) | `history` | Successful-characterization journal `hotspots-*.jsonl` |
 
-Files written by earlier firmware under `/sdcard/audio/`, `/sdcard/logs/`, or `/sdcard/logs/breadcrumbs/` are not migrated, browsed, rotated, or deleted by the current layout; they remain on the card for manual removal.
+Applications add their own collections under their persistence key, for example the WiFi/BLE `locations` collection for `surveillance-*.jsonl`.
+
+Files written by earlier firmware under `/sdcard/audio/`, `/sdcard/logs/`, or `/sdcard/logs/breadcrumbs/`, earlier CSV breadcrumb buckets, and earlier unsegmented `surveillance.jsonl` journals are not migrated, browsed, rotated, or deleted by the current layout; they remain on the card for manual removal.
 
 ### Media file handles and arbitration
 
@@ -395,11 +425,62 @@ After physical media loss, new opens and directory operations fail with `ESP_ERR
 
 The media store also exposes an explicit presence probe for navigation dependency checks. Failed media starts a shared three-second cooldown; a later file operation, capacity query, or explicit probe may attempt one synchronous mount/recovery. Cached availability reads never trigger I/O.
 
+### Storage management
+
+Home → Device Settings → **Storage** is the user's only tool for removing data, so it works per owner through the platform stores rather than by path. It is privileged platform UI, in the same way as `system_store_*` and `media_system_collection()`.
+
+- **Internal records.** `persistent_store_space()` reports LittleFS capacity. `persistent_store_usage()` / `persistent_store_clear()` count or delete every record of one scope: `system`, one compiled app, *unused* app scopes whose hashed directory matches no compiled app (left behind by removed apps or renamed persistence keys), or everything. Owners hold loaded records in RAM and would write them back, so Home flushes dirty configuration, clears, and restarts the device; an erased owner then starts from compiled defaults.
+- **SD collections.** `media_collections()` lists the collection directories that exist for the system owner and for each compiled app, and `media_owner_collection()` resolves an app collection without an app session (valid only while that app is not running, which holds while Home is foreground). `media_clear()` deletes a collection in bounded steps; it never deletes a file that a media handle holds open (for example the live log segment or breadcrumb journal), and removes the emptied collection and owner directories. Files outside `/<owner>/<collection>/`, such as legacy layouts, are never touched.
+- **Confirmation.** Every erase opens a confirmation that names the owner, the record or file count, and the size, with Cancel selected; internal erases state that the device restarts. SD deletion runs a few files per poll with progress and Stop, and halts on the first media error. Each erase is recorded in the system log.
+
+Storage has no persistent state of its own. Formatting the card is intentionally not offered on the device.
+
 ### Logging
 
 Rotating logs use `rfscout-00.log` through `rfscout-99.log` in `system/logs`, up to 4 MiB each, while attempting to preserve at least 64 MiB free. The conservative hardware-tested SD baseline remains a FAT-compatible SanDisk card of 32 GB or less.
 
-Breadcrumb recording is independent from the ordinary SD logging toggle and requires fresh valid GPS position **and GPS UTC**. Accepted fixes are sampled automatically between one and five seconds: five seconds is the conservative fallback, and a verified actual receiver rate can accelerate capture to at most once per second. Duplicate whole-second GPS UTC stamps are suppressed. Samples are bucketed into ten-minute GPS-UTC filenames in `system/breadcrumbs`. Current retention is file-count based, not a per-file byte limit. The Home and GPS menus access the same service-owned recording and retention settings.
+Breadcrumb recording is independent from the ordinary SD logging toggle and requires fresh valid GPS position **and GPS UTC**. A breadcrumb is queued once the receiver has moved at least the shared movement trigger since the previous breadcrumb, no more than once per second and never twice for the same GPS UTC second; nothing is written while stationary. Each record carries UTC, latitude/longitude, raw speed when fresh, and the GPS service's filtered speed and current/target receiver update intervals when available. Breadcrumbs use a `system/breadcrumbs` journal of 64 KiB segments; the retained-file setting is the journal's segment count. The Home and GPS menus access the same service-owned recording and retention settings.
+
+### SD journals
+
+Every SD event log (breadcrumbs, WiFi/BLE surveillance locations, Hotspots history) uses
+the shared `media_journal` service rather than its own file handling. A journal is a numbered
+series of segments in one media collection, `<prefix>-<8 hex digits>.jsonl`, where each line
+is one JSON object with a `type` field, an optional integer `utc`, and `lat`/`lon` with seven
+decimals when the record has a location. Callers own buffering, formatting, and scheduling;
+the journal is not thread-safe and runs from the caller's own task or poll.
+
+- An append writes one batch, syncs it, and truncates back to the previous size on failure.
+  When that outcome is uncertain (truncate or close failed), the segment is abandoned and the
+  next append starts a fresh `CREATE_NEW` segment, so a torn line is never followed by more
+  records. Callers can tell a rolled-back batch (safe to retry) from an uncertain one (dropped
+  rather than duplicated).
+- On first use after a mount the journal scans its collection; the newest segment is
+  continued only when it ends with a complete line and is below the segment size.
+- A segment that reaches its size bound is closed and a new one is started; segments beyond
+  the retention count are deleted oldest first.
+- Compaction writes a replacement base `<prefix>-<n>c.jsonl` through a temporary file,
+  renames it into place, then deletes every older segment. A base supersedes all older
+  segments; an interrupted compaction leaves either the old segments or the new base, and
+  leftover temporary files or superseded segments are removed on the next scan.
+- Readers replay complete lines oldest first. An unterminated final line of a segment is
+  treated as a torn write and skipped.
+
+### GPS movement trigger
+
+One system setting, **Movement trigger** (5, 10, 25, 50, or 100 m; default 10 m), decides when
+any SD log records another receiver location. A point qualifies only with a fresh GPS fix and
+only once the receiver has moved at least that distance from the writer's previous logged
+point (`geo_movement_gate`). Each writer keeps its own reference point: breadcrumbs keep one,
+the WiFi/BLE journal one per surveillance identity, and Hotspots one per access point. The
+trigger never limits live GPS data: the GPS service, dashboard, trip odometer, LED guidance,
+live receiver bounds and distances, Wardriving packet metadata, and structured-log position
+fields continue to see every fix.
+
+The setting lives in system configuration and appears in Home **Device Settings** and GPS
+Settings. Like the other receiver-dependent rows (breadcrumbs, retained files, GPS Timepulse),
+it is shown unavailable and refuses changes until a GPS receiver is detected.
+
 
 ## Firmware image and OTA architecture
 
@@ -497,17 +578,17 @@ valid GPS fix, each identity expands a receiver-location latitude/longitude boun
 This box records **where RFScout received packets**, not a transmitter's verified position.
 Expired identities are removed without any timeout-triggered storage write.
 
-Each qualified packet with a fresh GPS fix is queued as an individual append-only JSONL
-record in the app-owned `locations/surveillance.jsonl` file. The record contains full MAC,
-address type, classification, receiver latitude/longitude, valid UTC when available, and
-last-seen milliseconds. The app poll batches SD writes outside the observation-store lock;
-a failed batch remains queued for retry during the current app session when rollback succeeds.
-If rollback fails, the uncertain batch is dropped; a later media request uses a new,
-create-only `surveillance-XXXXXXXX.jsonl` journal segment instead of appending after a
-potentially incomplete line. App exit attempts a final flush. Insufficient memory or
-unavailable media can still result in loss; no cross-session queue recovery is promised.
-The storage service records SD mount, loss, and recovery transitions in System Events
-without checking the card when no client requests storage.
+Every qualified packet still expands the live bounding box. A journal record is queued only
+when the identity's receiver position has moved by the shared movement trigger since that
+identity's previous record (its first qualified packet always records). Records go to the
+app-owned `locations` collection through the shared `surveillance` journal (1 MiB segments,
+64 retained) and contain full MAC, address type, classification, receiver latitude/longitude,
+valid UTC when available, and last-seen milliseconds. The app poll batches SD writes outside
+the observation-store lock; a rolled-back batch is retried during the current app session,
+and an uncertain batch is dropped rather than duplicated. App exit attempts a final flush.
+Insufficient memory or unavailable media can still result in loss; no cross-session queue
+recovery is promised. The storage service records SD mount, loss, and recovery transitions in
+System Events without checking the card when no client requests storage.
 
 The WiFi/BLE dashboard's surveillance signature rows show the nearest available distance
 among retained identities with that signature, without replaying the SD journal or

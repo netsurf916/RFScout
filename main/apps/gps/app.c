@@ -9,6 +9,7 @@
 #include "breadcrumbs.h"
 #include "device_config.h"
 #include "display_idle.h"
+#include "geo.h"
 #include "gps.h"
 #include "gps_view.h"
 #include "led_ring.h"
@@ -18,7 +19,7 @@
 #include <stddef.h>
 
 #define GPS_VIEW_REFRESH_INTERVAL_US 500000LL
-#define GPS_MENU_ITEMS 10U
+#define GPS_MENU_ITEMS GPS_SETTING_COUNT
 
 static const char *TAG = "gps_app";
 static int64_t last_refresh_us;
@@ -44,13 +45,13 @@ static void update_direction_led( void )
 
     rfscout_gps_snapshot_t gps = { 0 };
     int sector = -1;
-    if( gps_snapshot_get( &gps ) && gps.location_valid && gps.location_age_ms <= 5000U &&
-        gps.track_valid && gps.speed_valid && gps.speed_mps >= 0.7f && gps.track_deg >= 0.0f &&
+    if( gps_snapshot_get( &gps ) && gps_location_fresh( &gps ) && gps.track_valid &&
+        gps.speed_valid && gps.speed_mps >= 0.7f && gps.track_deg >= 0.0f &&
         gps.track_deg < 360.0f )
     {
         /* Hardware calibration: physical LED index 0 points West, not North.
            Shift the clockwise azimuth sector two LEDs so North uses index 2. */
-        sector = ( (int)( ( gps.track_deg + 22.5f ) / 45.0f ) + 2 ) % 8;
+        sector = (int)( ( geo_compass_sector( gps.track_deg ) + 2U ) % 8U );
     }
     if( sector == last_led_sector && !led_refresh_pending )
     {
@@ -111,68 +112,54 @@ static void select_menu_item( void )
     const device_config_t *config = device_config_get();
     esp_err_t result = ESP_OK;
     menu_error = false;
+    if( !gps_view_setting_available( menu_item ) )
+    {
+        menu_error = true;
+        return;
+    }
     switch( menu_item )
     {
-        case 0U:
+        case GPS_SETTING_BACK:
             menu_open = false;
             return;
-        case 1U:
+        case GPS_SETTING_RESET_TRIP:
             result = gps_trip_reset();
             break;
-        case 2U:
+        case GPS_SETTING_LED:
             result = device_config_set_gps_led(
                 !config->gps_led_enabled, config->gps_led_brightness, config->gps_led_rgb );
             break;
-        case 3U:
+        case GPS_SETTING_LED_BRIGHTNESS:
             result = device_config_set_gps_led( config->gps_led_enabled,
                                                 (uint8_t)( config->gps_led_brightness >= 90U
                                                                ? 0U
                                                                : config->gps_led_brightness + 10U ),
                                                 config->gps_led_rgb );
             break;
-        case 4U:
-        {
-            static const uint32_t colors[] = {
-                0x00FF00U, 0xFF0000U, 0x0000FFU, 0xFFFFFFU, 0xFF8000U, 0x00FFFFU };
-            unsigned next = 0U;
-            for( unsigned i = 0U; i < sizeof( colors ) / sizeof( colors[ 0 ] ); ++i )
-            {
-                if( config->gps_led_rgb == colors[ i ] )
-                {
-                    next = ( i + 1U ) % ( sizeof( colors ) / sizeof( colors[ 0 ] ) );
-                    break;
-                }
-            }
-            result = device_config_set_gps_led(
-                config->gps_led_enabled, config->gps_led_brightness, colors[ next ] );
+        case GPS_SETTING_LED_COLOR:
+            result = device_config_set_gps_led( config->gps_led_enabled,
+                                                config->gps_led_brightness,
+                                                gps_view_next_led_color( config->gps_led_rgb ) );
             break;
-        }
-        case 5U:
+        case GPS_SETTING_KEEP_AWAKE:
             result = device_config_set_gps_keep_awake( !config->gps_keep_awake );
             display_idle_set_keep_awake( device_config_get()->gps_keep_awake );
             break;
-        case 6U:
+        case GPS_SETTING_BREADCRUMBS:
             result = breadcrumbs_set_enabled( !breadcrumbs_enabled() );
             break;
-        case 7U:
-        {
-            static const uint16_t options[] = { 24U, 72U, 144U, 288U, 1008U };
-            uint16_t next = options[ 0 ];
-            for( unsigned i = 0U; i < sizeof( options ) / sizeof( options[ 0 ] ); ++i )
-            {
-                if( breadcrumbs_file_limit() == options[ i ] )
-                {
-                    next = options[ ( i + 1U ) % ( sizeof( options ) / sizeof( options[ 0 ] ) ) ];
-                    break;
-                }
-            }
-            result = breadcrumbs_set_file_limit( next );
+        case GPS_SETTING_BREADCRUMB_FILES:
+            result = breadcrumbs_set_file_limit(
+                breadcrumbs_file_limit_step( breadcrumbs_file_limit(), 1 ) );
             break;
-        }
-        case 9U:
+        case GPS_SETTING_MOVEMENT:
+            result = device_config_set_gps_movement_m(
+                device_config_gps_movement_step( config->gps_movement_m, 1 ) );
+            break;
+        case GPS_SETTING_TIMEPULSE:
             result = device_config_set_gps_timepulse( !config->gps_timepulse_enabled );
             break;
-        case 8U:
+        case GPS_SETTING_TIMEOUT:
         {
             uint8_t next = (uint8_t)( config->gps_timeout_seconds + 5U );
             if( next > RFSCOUT_GPS_TIMEOUT_MAX_SECONDS )
@@ -185,7 +172,9 @@ static void select_menu_item( void )
         default:
             return;
     }
-    if( ESP_OK == result && menu_item != 1U && menu_item != 6U && menu_item != 7U )
+    /* Trip and breadcrumb settings persist through their own services. */
+    if( ESP_OK == result && GPS_SETTING_RESET_TRIP != menu_item &&
+        GPS_SETTING_BREADCRUMBS != menu_item && GPS_SETTING_BREADCRUMB_FILES != menu_item )
     {
         result = device_config_save();
     }
@@ -194,7 +183,7 @@ static void select_menu_item( void )
         ESP_LOGW( TAG, "GPS menu action failed: %s", esp_err_to_name( result ) );
         menu_error = true;
     }
-    if( ESP_OK == result && 9U == menu_item )
+    if( ESP_OK == result && GPS_SETTING_TIMEPULSE == menu_item )
     {
         gps_timepulse_apply();
     }

@@ -14,7 +14,8 @@
 #include "firmware_identity.h"
 #include "ota_acquisition.h"
 #include "ota_catalog.h"
-#include "ota_networks.h"
+#include "network_credentials.h"
+#include "saved_networks.h"
 #include "ota_installer.h"
 #include "ota_view.h"
 #include "network_session.h"
@@ -32,7 +33,6 @@
 #include <string.h>
 
 #define OTA_REFRESH_INTERVAL_US 125000LL
-#define OTA_VISIBLE_MAX OTA_NETWORK_MAX_COUNT
 #define OTA_ERROR_TEXT_LENGTH 48U
 
 static const char *TAG = "ota_menu";
@@ -43,7 +43,7 @@ typedef enum
     OTA_SCREEN_ACTION,
     OTA_SCREEN_ADD,
     OTA_SCREEN_SAVED,
-    OTA_SCREEN_PASSWORD,
+    OTA_SCREEN_CREDENTIALS,
     OTA_SCREEN_BUILDS,
     OTA_SCREEN_BUILD_ACTION
 } ota_screen_t;
@@ -54,20 +54,27 @@ typedef enum
     HOME_SUBMENU_UPDATE
 } home_submenu_t;
 
-static ota_network_list_t saved_networks;
+/* Non-secret profile snapshot in app-session memory; passwords stay in the service. */
+static saved_network_profile_t *profiles;
+static size_t profile_count;
+static char view_labels[ RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS ]
+                       [ SAVED_NETWORK_SSID_MAX_LENGTH + 6U ];
 static rfscout_wifi_station_ap_t scan_results[ RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS ];
 static ota_view_network_t view_networks[ RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS ];
 static size_t scan_count;
 static size_t view_network_count;
-static size_t visible_saved_indices[ OTA_VISIBLE_MAX ];
+static size_t visible_saved_indices[ RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS ];
 static ota_screen_t screen;
 static home_submenu_t submenu;
 static unsigned selected_item;
 static int action_saved_index;
+static uint32_t action_profile_id;
+/* Profile of the Home network session; kept across submenu visits while connected. */
+static uint32_t connected_profile_id;
+static bool connected_profile_recorded;
 static int action_scan_index;
 static char action_ssid[ RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH + 1U ];
 static char error_text[ OTA_ERROR_TEXT_LENGTH ];
-static rfscout_text_entry_t password_entry;
 static ota_catalog_selection_t catalog_selection;
 static ota_catalog_build_t available_builds[ OTA_CATALOG_VISIBLE_BUILDS ];
 static ota_view_build_t view_builds[ OTA_CATALOG_VISIBLE_BUILDS ];
@@ -157,40 +164,90 @@ static int scan_index_for_ssid( const char *a_ssid )
     return -1;
 }
 
+static void reload_profiles( void )
+{
+    profile_count = 0U;
+    if( NULL == profiles )
+    {
+        profiles = app_session_calloc( SAVED_NETWORK_MAX_COUNT, sizeof( *profiles ) );
+    }
+    const esp_err_t result =
+        NULL == profiles ? ESP_ERR_NO_MEM
+                         : saved_networks_list( profiles, SAVED_NETWORK_MAX_COUNT, &profile_count );
+    if( ESP_OK != result )
+    {
+        set_error( result );
+    }
+}
+
+static int profile_index( uint32_t a_profile_id )
+{
+    for( size_t index = 0U; 0U != a_profile_id && index < profile_count; ++index )
+    {
+        if( profiles[ index ].profile_id == a_profile_id )
+        {
+            return (int)index;
+        }
+    }
+    return -1;
+}
+
+static bool profile_shared( size_t a_index )
+{
+    for( size_t index = 0U; index < profile_count; ++index )
+    {
+        if( index != a_index && 0 == strcmp( profiles[ index ].ssid, profiles[ a_index ].ssid ) )
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+static const char *profile_label( size_t a_index, size_t a_slot )
+{
+    network_credentials_label( profiles[ a_index ].ssid,
+                               profiles[ a_index ].ordinal,
+                               profile_shared( a_index ),
+                               view_labels[ a_slot ],
+                               sizeof( view_labels[ a_slot ] ) );
+    return view_labels[ a_slot ];
+}
+
 static void refresh_action_indices( void )
 {
-    if( '\0' == action_ssid[ 0 ] )
+    action_saved_index = profile_index( action_profile_id );
+    if( action_saved_index < 0 )
     {
-        action_saved_index = -1;
-        action_scan_index = -1;
-        return;
+        action_profile_id = 0U;
     }
-
-    action_saved_index = ota_networks_find( &saved_networks, action_ssid );
-    action_scan_index = scan_index_for_ssid( action_ssid );
+    action_scan_index = '\0' != action_ssid[ 0 ] ? scan_index_for_ssid( action_ssid ) : -1;
 }
 
 static void build_visible_saved( void )
 {
     view_network_count = 0U;
-    for( size_t scan_index = 0U; scan_index < scan_count && view_network_count < OTA_VISIBLE_MAX;
-         ++scan_index )
+    for( size_t scan_index = 0U; scan_index < scan_count; ++scan_index )
     {
-        const int saved_index =
-            ota_networks_find( &saved_networks, scan_results[ scan_index ].ssid );
-        if( saved_index < 0 )
+        for( size_t index = 0U;
+             index < profile_count && view_network_count < RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS;
+             ++index )
         {
-            continue;
+            if( 0 != strcmp( profiles[ index ].ssid, scan_results[ scan_index ].ssid ) )
+            {
+                continue;
+            }
+            view_networks[ view_network_count ] = ( ota_view_network_t ){
+                .ssid = profile_label( index, view_network_count ),
+                .rssi = scan_results[ scan_index ].rssi,
+            };
+            visible_saved_indices[ view_network_count ] = index;
+            ++view_network_count;
         }
-        view_networks[ view_network_count ] = ( ota_view_network_t ){
-            .ssid = saved_networks.entries[ saved_index ].ssid,
-            .rssi = scan_results[ scan_index ].rssi,
-        };
-        visible_saved_indices[ view_network_count ] = (size_t)saved_index;
-        ++view_network_count;
     }
 }
 
+/* Every visible SSID can be added; a saved one offers Replace or New profile. */
 static void build_add_list( void )
 {
     view_network_count = 0U;
@@ -198,10 +255,6 @@ static void build_add_list( void )
          scan_index < scan_count && view_network_count < RFSCOUT_WIFI_STATION_SCAN_MAX_RESULTS;
          ++scan_index )
     {
-        if( ota_networks_find( &saved_networks, scan_results[ scan_index ].ssid ) >= 0 )
-        {
-            continue;
-        }
         view_networks[ view_network_count++ ] = ( ota_view_network_t ){
             .ssid = scan_results[ scan_index ].ssid,
             .rssi = scan_results[ scan_index ].rssi,
@@ -211,12 +264,12 @@ static void build_add_list( void )
 
 static void build_saved_list( void )
 {
-    view_network_count = saved_networks.count;
-    for( size_t index = 0U; index < saved_networks.count; ++index )
+    view_network_count = profile_count;
+    for( size_t index = 0U; index < profile_count; ++index )
     {
-        const int scan_index = scan_index_for_ssid( saved_networks.entries[ index ].ssid );
+        const int scan_index = scan_index_for_ssid( profiles[ index ].ssid );
         view_networks[ index ] = ( ota_view_network_t ){
-            .ssid = saved_networks.entries[ index ].ssid,
+            .ssid = profile_label( index, index ),
             .rssi = scan_index >= 0 ? scan_results[ scan_index ].rssi : INT8_MIN,
         };
     }
@@ -326,13 +379,14 @@ static void render_action( void )
 {
     refresh_action_indices();
     const char *ssid = '\0' != action_ssid[ 0 ] ? action_ssid : NULL;
-    const bool saved = action_saved_index >= 0 && (size_t)action_saved_index < saved_networks.count;
+    const bool saved = action_saved_index >= 0;
     const bool visible = action_scan_index >= 0 && (size_t)action_scan_index < scan_count;
     const int8_t rssi = visible ? scan_results[ action_scan_index ].rssi : INT8_MIN;
 
     rfscout_network_session_status_t network;
     network_session_status( &network );
-    const bool target = NULL != ssid && 0 == strcmp( network.ssid, ssid );
+    const bool target = saved ? connected_profile_id == action_profile_id
+                              : NULL != ssid && 0 == strcmp( network.ssid, ssid );
     const bool connected = target && ( RFSCOUT_NETWORK_SESSION_READY == network.state ||
                                        RFSCOUT_NETWORK_SESSION_LIMITED == network.state );
     const char *status_text = error_text;
@@ -365,8 +419,14 @@ static void render_action( void )
     }
     const bool open =
         visible && action_scan_index >= 0 ? scan_results[ action_scan_index ].open : false;
-    ota_view_render_network_action(
-        ssid, rssi, visible, saved, open, connected, selected_item, status_text );
+    ota_view_render_network_action( saved ? profile_label( (size_t)action_saved_index, 0U ) : ssid,
+                                    rssi,
+                                    visible,
+                                    saved,
+                                    open,
+                                    connected,
+                                    selected_item,
+                                    status_text );
 }
 
 static void render_add( void )
@@ -391,16 +451,6 @@ static void render_saved( void )
     }
     ota_view_render_network_list(
         "SAVED NETWORKS", view_networks, view_network_count, selected_item, "No saved networks" );
-}
-
-static void render_password( void )
-{
-    const char *ssid = '\0' != action_ssid[ 0 ] ? action_ssid : "Network";
-    ota_view_render_password( ssid,
-                              password_entry.length,
-                              app_text_entry_selection( &password_entry ),
-                              app_text_entry_character( &password_entry ),
-                              error_text );
 }
 
 static void build_build_views( void )
@@ -458,8 +508,8 @@ static void render( void )
         case OTA_SCREEN_SAVED:
             render_saved();
             break;
-        case OTA_SCREEN_PASSWORD:
-            render_password();
+        case OTA_SCREEN_CREDENTIALS:
+            network_credentials_render( "NETWORK" );
             break;
         case OTA_SCREEN_BUILDS:
             render_builds();
@@ -502,12 +552,12 @@ static void move_selection( int a_direction, unsigned a_item_count )
 
 static void open_saved_action( size_t a_saved_index )
 {
-    if( a_saved_index >= saved_networks.count )
+    if( a_saved_index >= profile_count )
     {
         return;
     }
-    snprintf(
-        action_ssid, sizeof( action_ssid ), "%s", saved_networks.entries[ a_saved_index ].ssid );
+    action_profile_id = profiles[ a_saved_index ].profile_id;
+    snprintf( action_ssid, sizeof( action_ssid ), "%s", profiles[ a_saved_index ].ssid );
     refresh_action_indices();
     selected_item = 0U;
     screen = OTA_SCREEN_ACTION;
@@ -521,6 +571,7 @@ static void open_unsaved_action( size_t a_scan_index )
     {
         return;
     }
+    action_profile_id = 0U;
     snprintf( action_ssid, sizeof( action_ssid ), "%s", scan_results[ a_scan_index ].ssid );
     refresh_action_indices();
     selected_item = 0U;
@@ -747,25 +798,31 @@ static void save_open_network( void )
         render();
         return;
     }
-    esp_err_t result = ota_networks_upsert( &saved_networks, action_ssid, "" );
-    if( ESP_OK == result )
-    {
-        result = ota_networks_save( &saved_networks );
-    }
+    uint32_t profile_id = 0U;
+    const esp_err_t result = saved_networks_create( action_ssid, "", &profile_id );
     set_error( result );
+    reload_profiles();
     if( ESP_OK == result )
     {
+        action_profile_id = profile_id;
         refresh_action_indices();
         selected_item = 0U;
     }
     render();
 }
 
-static void begin_password_entry( void )
+static void open_credentials( void )
 {
     error_text[ 0 ] = '\0';
-    app_text_entry_begin( &password_entry, NULL, OTA_NETWORK_PASSWORD_MAX_LENGTH );
-    screen = OTA_SCREEN_PASSWORD;
+    if( 0U != action_profile_id )
+    {
+        network_credentials_open_profile( action_profile_id );
+    }
+    else
+    {
+        network_credentials_open_add( action_ssid );
+    }
+    screen = OTA_SCREEN_CREDENTIALS;
     render();
 }
 
@@ -776,6 +833,7 @@ static void return_to_network_main( void )
     screen = OTA_SCREEN_MAIN;
     selected_item = 0U;
     action_saved_index = -1;
+    action_profile_id = 0U;
     action_scan_index = -1;
     memset( action_ssid, 0, sizeof( action_ssid ) );
     render();
@@ -805,13 +863,19 @@ static void cancel_network_connect_modal( void )
 
 static void connect_selected_network( void )
 {
-    if( action_saved_index < 0 || (size_t)action_saved_index >= saved_networks.count )
+    if( action_saved_index < 0 )
     {
         return;
     }
 
-    const ota_network_t *network = &saved_networks.entries[ action_saved_index ];
-    const esp_err_t result = network_session_begin_saved( network->ssid, network->password );
+    const saved_network_profile_t *profile = &profiles[ action_saved_index ];
+    char password[ SAVED_NETWORK_PASSWORD_MAX_LENGTH + 1U ];
+    esp_err_t result = saved_networks_password( profile->profile_id, password, sizeof( password ) );
+    if( ESP_OK == result )
+    {
+        result = network_session_begin_saved( profile->ssid, password );
+    }
+    memset( password, 0, sizeof( password ) );
     set_error( result );
     if( ESP_OK != result )
     {
@@ -819,50 +883,45 @@ static void connect_selected_network( void )
         return;
     }
 
+    connected_profile_id = profile->profile_id;
+    connected_profile_recorded = false;
     network_connect_modal_active = true;
     display_modal_show( "NETWORK", "Connecting..." );
     render();
 }
 
-static void forget_selected_network( void )
+/* A successful Home association teaches the profile which BSSID and auth mode it used. */
+static void record_connected_bssid( const rfscout_network_session_status_t *a_network )
 {
-    if( action_saved_index < 0 || (size_t)action_saved_index >= saved_networks.count )
+    const bool connected = RFSCOUT_NETWORK_SESSION_READY == a_network->state ||
+                           RFSCOUT_NETWORK_SESSION_LIMITED == a_network->state;
+    if( RFSCOUT_NETWORK_SESSION_IDLE == a_network->state ||
+        RFSCOUT_NETWORK_SESSION_FAILED == a_network->state )
+    {
+        connected_profile_id = 0U;
+    }
+    if( !connected || 0U == connected_profile_id || connected_profile_recorded )
     {
         return;
     }
-
-    const char *ssid = saved_networks.entries[ action_saved_index ].ssid;
-    rfscout_network_session_status_t current;
-    network_session_status( &current );
-    if( RFSCOUT_NETWORK_SESSION_IDLE != current.state && 0 == strcmp( current.ssid, ssid ) )
+    uint8_t bssid[ 6 ];
+    int32_t auth_mode = SAVED_NETWORK_AUTH_UNKNOWN;
+    connected_profile_recorded = true;
+    if( ESP_OK == rfscout_wifi_station_ap_info( bssid, &auth_mode ) )
     {
-        const esp_err_t disconnect_result = network_session_release();
-        if( ESP_OK != disconnect_result )
+        const esp_err_t result = saved_networks_record_bssid(
+            connected_profile_id, bssid, auth_mode, SAVED_NETWORK_BSSID_ASSOCIATED );
+        if( ESP_OK != result )
         {
-            set_error( disconnect_result );
-            render();
-            return;
+            ESP_LOGW( TAG, "could not record associated BSSID: %s", esp_err_to_name( result ) );
         }
     }
-
-    esp_err_t result = ota_networks_forget( &saved_networks, (size_t)action_saved_index );
-    if( ESP_OK == result )
-    {
-        result = ota_networks_save( &saved_networks );
-    }
-    set_error( result );
-    screen = OTA_SCREEN_MAIN;
-    selected_item = 0U;
-    action_saved_index = -1;
-    action_scan_index = -1;
-    memset( action_ssid, 0, sizeof( action_ssid ) );
-    render();
 }
 
 static void handle_action_select( void )
 {
     refresh_action_indices();
-    const bool saved = action_saved_index >= 0 && (size_t)action_saved_index < saved_networks.count;
+    const bool saved = action_saved_index >= 0;
     const bool visible = action_scan_index >= 0 && (size_t)action_scan_index < scan_count;
 
     if( 0U == selected_item )
@@ -881,7 +940,7 @@ static void handle_action_select( void )
         }
         else
         {
-            begin_password_entry();
+            open_credentials();
         }
         return;
     }
@@ -892,7 +951,7 @@ static void handle_action_select( void )
         network_session_status( &current );
         if( ( RFSCOUT_NETWORK_SESSION_READY == current.state ||
               RFSCOUT_NETWORK_SESSION_LIMITED == current.state ) &&
-            0 == strcmp( current.ssid, saved_networks.entries[ action_saved_index ].ssid ) )
+            connected_profile_id == action_profile_id )
         {
             set_error( network_session_release() );
             render();
@@ -904,7 +963,33 @@ static void handle_action_select( void )
         return;
     }
 
-    forget_selected_network();
+    open_credentials();
+}
+
+static void handle_credentials_input( const rfscout_input_event_t *a_input )
+{
+    network_credentials_outcome_t outcome = { 0 };
+    if( !network_credentials_input( a_input, &outcome ) )
+    {
+        render();
+        return;
+    }
+    if( NETWORK_CREDENTIALS_RESULT_FORGOTTEN == outcome.result &&
+        outcome.profile_id == connected_profile_id )
+    {
+        set_error( network_session_release() );
+        connected_profile_id = 0U;
+    }
+    reload_profiles();
+    if( NETWORK_CREDENTIALS_RESULT_SAVED == outcome.result )
+    {
+        action_profile_id = outcome.profile_id;
+    }
+    refresh_action_indices();
+    selected_item = 0U;
+    screen = NETWORK_CREDENTIALS_RESULT_FORGOTTEN == outcome.result ? OTA_SCREEN_MAIN
+                                                                    : OTA_SCREEN_ACTION;
+    render();
 }
 
 static void handle_add_select( void )
@@ -923,11 +1008,7 @@ static void handle_add_select( void )
     {
         return;
     }
-    const int scan_index = scan_index_for_ssid( view_networks[ view_index ].ssid );
-    if( scan_index >= 0 )
-    {
-        open_unsaved_action( (size_t)scan_index );
-    }
+    open_unsaved_action( view_index );
 }
 
 static void handle_saved_select( void )
@@ -939,11 +1020,7 @@ static void handle_saved_select( void )
         render();
         return;
     }
-    const size_t saved_index = selected_item - 1U;
-    if( saved_index < saved_networks.count )
-    {
-        open_saved_action( saved_index );
-    }
+    open_saved_action( selected_item - 1U );
 }
 
 static void handle_builds_select( void )
@@ -985,60 +1062,11 @@ static void handle_build_action_select( void )
     request_candidate_install( &available_builds[ selected_build_index ].candidate );
 }
 
-static void handle_password_input( const rfscout_input_event_t *a_input )
-{
-    const rfscout_text_entry_result_t result = app_text_entry_input( &password_entry, a_input );
-    if( RFSCOUT_TEXT_ENTRY_CANCELLED == result )
-    {
-        app_text_entry_clear( &password_entry );
-        screen = OTA_SCREEN_ACTION;
-        error_text[ 0 ] = '\0';
-        render();
-        return;
-    }
-    if( RFSCOUT_TEXT_ENTRY_ACCEPTED == result )
-    {
-        if( '\0' == action_ssid[ 0 ] )
-        {
-            set_error( ESP_ERR_INVALID_STATE );
-            app_text_entry_clear( &password_entry );
-            screen = OTA_SCREEN_ACTION;
-            render();
-            return;
-        }
-
-        esp_err_t save_result =
-            ota_networks_upsert( &saved_networks, action_ssid, password_entry.value );
-        if( ESP_OK == save_result )
-        {
-            ESP_LOGI( TAG,
-                      "saving OTA network credentials; stack high-water=%u bytes",
-                      (unsigned)uxTaskGetStackHighWaterMark( NULL ) );
-            save_result = ota_networks_save( &saved_networks );
-            ESP_LOGI( TAG,
-                      "saved OTA network credentials: %s; stack high-water=%u bytes",
-                      esp_err_to_name( save_result ),
-                      (unsigned)uxTaskGetStackHighWaterMark( NULL ) );
-        }
-        app_text_entry_clear( &password_entry );
-        set_error( save_result );
-        screen = OTA_SCREEN_ACTION;
-        if( ESP_OK == save_result )
-        {
-            refresh_action_indices();
-            selected_item = 0U;
-        }
-        render();
-        return;
-    }
-    render();
-}
-
 static void handle_input( const rfscout_input_event_t *a_input )
 {
-    if( OTA_SCREEN_PASSWORD == screen )
+    if( OTA_SCREEN_CREDENTIALS == screen )
     {
-        handle_password_input( a_input );
+        handle_credentials_input( a_input );
         return;
     }
 
@@ -1062,9 +1090,7 @@ static void handle_input( const rfscout_input_event_t *a_input )
         }
         else if( OTA_SCREEN_ACTION == screen )
         {
-            const bool saved =
-                action_saved_index >= 0 && (size_t)action_saved_index < saved_networks.count;
-            item_count = saved ? 3U : 2U;
+            item_count = action_saved_index >= 0 ? 3U : 2U;
         }
         else if( OTA_SCREEN_ADD == screen )
         {
@@ -1073,7 +1099,7 @@ static void handle_input( const rfscout_input_event_t *a_input )
         }
         else if( OTA_SCREEN_SAVED == screen )
         {
-            item_count = (unsigned)saved_networks.count + 1U;
+            item_count = (unsigned)profile_count + 1U;
         }
         else if( OTA_SCREEN_BUILDS == screen )
         {
@@ -1123,7 +1149,13 @@ static void handle_input( const rfscout_input_event_t *a_input )
 static void reset_runtime_state( void )
 {
     display_modal_clear();
-    ota_networks_clear_runtime( &saved_networks );
+    network_credentials_close();
+    if( NULL != profiles )
+    {
+        (void)app_session_free( profiles );
+    }
+    profiles = NULL;
+    profile_count = 0U;
     memset( scan_results, 0, sizeof( scan_results ) );
     memset( view_networks, 0, sizeof( view_networks ) );
     memset( visible_saved_indices, 0, sizeof( visible_saved_indices ) );
@@ -1132,10 +1164,10 @@ static void reset_runtime_state( void )
     screen = OTA_SCREEN_MAIN;
     selected_item = 0U;
     action_saved_index = -1;
+    action_profile_id = 0U;
     action_scan_index = -1;
     memset( action_ssid, 0, sizeof( action_ssid ) );
     memset( error_text, 0, sizeof( error_text ) );
-    app_text_entry_clear( &password_entry );
     memset( &catalog_selection, 0, sizeof( catalog_selection ) );
     memset( available_builds, 0, sizeof( available_builds ) );
     memset( view_builds, 0, sizeof( view_builds ) );
@@ -1159,11 +1191,7 @@ void network_menu_enter( void )
     reset_runtime_state();
     submenu = HOME_SUBMENU_NETWORK;
 
-    const esp_err_t load_result = ota_networks_load( &saved_networks );
-    if( ESP_OK != load_result )
-    {
-        set_error( load_result );
-    }
+    reload_profiles();
 
     refresh_scan_results();
     render();
@@ -1269,6 +1297,7 @@ static void submenu_poll( int64_t a_now_us )
 
     rfscout_network_session_status_t network;
     network_session_status( &network );
+    record_connected_bssid( &network );
 
     if( network_connect_modal_active )
     {

@@ -24,9 +24,9 @@
 #define ACTIVITY_CHANNELS 14U
 #define ACTIVITY_SECONDS 74U
 #define CAPTURE_GPS_REFRESH_US 250000LL
-#define GPS_FIX_MAX_AGE_MS 5000U
 #define CAPTURE_SETTINGS_MAGIC 0x57445256U
 #define CAPTURE_SETTINGS_VERSION 1U
+#define RADIO_SETTINGS_MAGIC 0x52575032U
 #define MENU_BACK 0U
 #define MENU_START 1U
 #define MENU_SOURCES 2U
@@ -89,8 +89,8 @@ static unsigned gps_choice_selected;
 static bool gps_fix_ready( void )
 {
     rfscout_gps_snapshot_t gps = { 0 };
-    return gps_snapshot_get( &gps ) && gps.time_valid && gps.location_valid &&
-           gps.time_age_ms <= GPS_FIX_MAX_AGE_MS && gps.location_age_ms <= GPS_FIX_MAX_AGE_MS;
+    return gps_snapshot_get( &gps ) && gps_location_fresh( &gps ) && gps.time_valid &&
+           gps.time_age_ms <= RFSCOUT_GPS_FIX_FRESH_MS;
 }
 static bool gps_receiver_present( void )
 {
@@ -250,31 +250,38 @@ static wardrive_config_t defaults( void )
     };
 }
 
+static bool settings_valid( const void *a_record )
+{
+    const saved_settings_t *stored = a_record;
+    return stored->magic == CAPTURE_SETTINGS_MAGIC && stored->version == CAPTURE_SETTINGS_VERSION &&
+           stored->options.max_files > 0U && stored->options.file_limit_bytes >= 1024U * 1024U &&
+           stored->options.file_limit_bytes <= 128U * 1024U * 1024U &&
+           stored->options.channel >= 1U && stored->options.channel <= 14U &&
+           stored->options.dwell_ms >= 50U && stored->options.dwell_ms <= 5000U;
+}
+
 static void load_settings( void )
 {
     saved_settings_t stored;
-    size_t length = 0U;
     options = defaults();
-    if( ESP_OK == app_store_read( "capture.settings", &stored, sizeof( stored ), &length ) &&
-        length == sizeof( stored ) && stored.magic == CAPTURE_SETTINGS_MAGIC &&
-        stored.version == CAPTURE_SETTINGS_VERSION && stored.options.max_files > 0U &&
-        stored.options.file_limit_bytes >= 1024U * 1024U &&
-        stored.options.file_limit_bytes <= 128U * 1024U * 1024U && stored.options.channel >= 1U &&
-        stored.options.channel <= 14U && stored.options.dwell_ms >= 50U &&
-        stored.options.dwell_ms <= 5000U )
+    if( ESP_OK == app_store_load( "capture.settings", &stored, sizeof( stored ), settings_valid ) )
     {
         options = stored.options;
     }
 }
 
-/* Version 2 keeps the original record size; manual bit 0 selects manual
-   channels, and bit 1 is the authoritative Wi-Fi source enable flag. */
-static void save_radio_settings( void );
+/* Manual bit 0 selects manual channels, and bit 1 is the authoritative Wi-Fi
+   source enable flag. */
+static bool radio_settings_valid( const void *a_record )
+{
+    const radio_settings_t *stored = a_record;
+    return stored->magic == RADIO_SETTINGS_MAGIC && stored->dwell_index < 5U &&
+           stored->ble_duty < 3U;
+}
 
 static void load_radio_settings( void )
 {
     radio_settings_t stored;
-    size_t length = 0U;
     selected_channels = 0x3FFFU;
     manual_channels = options.fixed_channel;
     if( manual_channels && options.channel >= 1U && options.channel <= 14U )
@@ -287,11 +294,8 @@ static void load_radio_settings( void )
     ble_dedupe = false;
     /* Prefer a balanced scan window for new settings; preserve saved selections. */
     ble_duty = 1U;
-    const bool valid =
-        ESP_OK == app_store_read( "capture.radio", &stored, sizeof( stored ), &length ) &&
-        length == sizeof( stored ) && stored.dwell_index < 5U && stored.ble_duty < 3U &&
-        ( stored.magic == 0x52575031U || stored.magic == 0x52575032U );
-    if( valid )
+    if( ESP_OK ==
+        app_store_load( "capture.radio", &stored, sizeof( stored ), radio_settings_valid ) )
     {
         selected_channels = stored.channels & 0x3FFFU;
         manual_channels = ( stored.manual & 1U ) != 0U;
@@ -300,27 +304,14 @@ static void load_radio_settings( void )
         ble_active_scan = stored.ble_active != 0U;
         ble_dedupe = stored.ble_duplicates != 0U;
         ble_duty = stored.ble_duty;
-        if( stored.magic == 0x52575032U )
-        {
-            options.wifi = ( stored.manual & 2U ) != 0U;
-        }
-    }
-    /* Existing radio settings did not own source enablement. Preserve the
-       legacy choice when upgrading and save the authoritative combined record. */
-    if( !valid || stored.magic != 0x52575032U )
-    {
-        if( manual_channels && selected_channels == 0U )
-        {
-            options.wifi = false;
-        }
-        save_radio_settings();
+        options.wifi = ( stored.manual & 2U ) != 0U;
     }
 }
 
 static void save_radio_settings( void )
 {
     const radio_settings_t stored = {
-        .magic = 0x52575032U,
+        .magic = RADIO_SETTINGS_MAGIC,
         .channels = selected_channels,
         .manual = (uint8_t)( ( manual_channels ? 1U : 0U ) | ( options.wifi ? 2U : 0U ) ),
         .shuffled = shuffle_channels,
@@ -404,8 +395,7 @@ static void draw_overview( void )
     wardrive_stats_t stats;
     wardrive_capture_stats( &stats );
     rfscout_gps_snapshot_t gps = { 0 };
-    const bool fixed =
-        gps_snapshot_get( &gps ) && gps.location_valid && gps.location_age_ms <= 5000U;
+    const bool fixed = gps_snapshot_get( &gps ) && gps_location_fresh( &gps );
     const unsigned current = radio_monitor_channel();
     char line[ 72 ];
     char count[ 16 ];

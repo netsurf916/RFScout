@@ -23,6 +23,7 @@ SOURCES = [
     "apps/recorder/recorder_view.c", "apps/hotspots/hotspots_view.c",
     "apps/ota/ota_view.c", "apps/cc1101/cc1101_view.c",
     "apps/radio_common/radio_app_view.c", "apps/wifi_ble/wifi_settings_view.c",
+    "services/location/geo.c",
 ]
 
 
@@ -92,6 +93,7 @@ typedef struct {
     uint32_t gps_led_rgb;
     bool gps_keep_awake;
     uint8_t gps_timeout_seconds;
+    uint8_t gps_movement_m;
 } device_config_t;
 const device_config_t *device_config_get(void);
 typedef enum { RFSCOUT_EVIDENCE_STRENGTH_EVERYTHING, RFSCOUT_EVIDENCE_STRENGTH_POSSIBLE,
@@ -119,7 +121,7 @@ RFSCOUT_EVIDENCE_STRENGTH_COUNT } rfscout_evidence_strength_t;
             command.extend(["-I", str(path)])
         command.extend([str(temp / "preview.c")])
         command.extend(str(ROOT / "main" / path) for path in SOURCES)
-        command.extend(["-Wl,--gc-sections", "-o", str(temp / "preview")])
+        command.extend(["-Wl,--gc-sections", "-lm", "-o", str(temp / "preview")])
         subprocess.run(command, check=True, cwd=ROOT)
         subprocess.run([str(temp / "preview"), str(output_dir.resolve())], check=True, cwd=ROOT)
 

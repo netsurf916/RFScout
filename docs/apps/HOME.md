@@ -25,9 +25,10 @@ Current settings include:
 - per-app enablement grouped under **Device Settings → Apps**, preserving existing toggles; preferred startup application remains a system-wide control in **Device Settings**;
 - SD logging to the `system/logs` media collection;
 - supported power-button actions and protective power policy;
-- breadcrumb recording to the `system/breadcrumbs` media collection and retained breadcrumb-file count (the same system-owned controls are also available in GPS Settings; sampling adapts from five seconds down to one second at most);
+- breadcrumb recording to the `system/breadcrumbs` media collection, retained breadcrumb-file count, and the shared GPS **Movement trigger** that decides when breadcrumbs and other GPS-located SD logs record another position (the same system-owned controls are also available in GPS Settings; these rows and GPS Timepulse are shown unavailable until a GPS receiver is detected);
 - GPS Timepulse On/Off (shared with GPS Settings): controls the receiver timing-pulse output, which drives the flashing indicator on the tested module; this is **not** the foreground GPS app's eight-LED directional ring;
-- global Hold shortcut selection between **Input Lock** and **App Lock**; and
+- global Hold shortcut selection between **Input Lock** and **App Lock**;
+- **Storage**: internal and SD usage by owner, with per-owner erase (see below); and
 - application notification preferences exposed through the relevant app settings.
 
 Ordinary setting changes are persisted automatically through RFScout's internal persistent-record service. There is no user-facing Save step.
@@ -85,6 +86,15 @@ Leaving Update cancels acquisition/installation but deliberately preserves the H
 - The five-second GPS availability indicator remains separate from the one-hour trusted-time reuse policy. Neither automatic source changes nor skipped NTP change the stored Auto/Manual preference.
 
 The T-Embed profile enables optional UART GPS detection on GPIO43/44, which are also used by the nRF24 shield. After startup nRF24 discovery and power-down, GPS probes 38400, 9600, 19200, 57600, and 115200 baud. A checksum-valid RMC/GGA sentence establishes receiver presence even without a location fix. Presence expires after the configured NMEA inactivity timeout (default 5 seconds). After the initial two-cycle (15-second) GPS detection window, nRF24 may probe on app demand only when GPS is absent. GPS monitoring is suspended while the nRF24 application owns the pins and resumes when it exits. GPS cannot preempt an active radio session. Plugging in or powering on a GPS receiver during an active nRF24 session is unsupported and may cause undefined hardware behavior due to the shared GPIO43/44 wiring.
+
+## Storage
+
+**Device Settings → Storage** measures storage once on entry and lists:
+
+- **INTERNAL** used/total, then the record count and size for System settings, each app that has records, *Unused app data* (records of apps no longer in the firmware), and *Erase all internal*;
+- **SD CARD** free space (or *No card*), then every non-empty collection, for example *System logs*, *System breadcrumbs*, *Recorder recordings*, *Wardriving captures*, and *WiFi / BT locations*.
+
+Selecting a row opens a confirmation with **Cancel** preselected. Erasing internal records saves pending settings, deletes the records, and restarts so the affected owners start from defaults. Deleting an SD collection runs with progress and can be stopped; files currently open (the live log or breadcrumb file) are kept and reported. Files RFScout did not create, including legacy `/sdcard/audio` and `/sdcard/logs` folders, are not shown or deleted.
 
 ## Power, display, and persistence
 

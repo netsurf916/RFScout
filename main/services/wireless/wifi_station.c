@@ -15,6 +15,7 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#include "esp_netif_net_stack.h"
 #include "esp_netif_sntp.h"
 #include "esp_random.h"
 #include "esp_wifi.h"
@@ -22,6 +23,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
 #include "freertos/task.h"
+#include "lwip/etharp.h"
 
 #include <string.h>
 
@@ -290,6 +292,7 @@ static void collect_scan_results( void )
         output->rssi = record->rssi;
         output->channel = record->primary;
         output->security = security_class( record->authmode );
+        output->auth_mode = (int32_t)record->authmode;
     }
 
     scan_result_count = 0U;
@@ -372,6 +375,17 @@ wifi_event( void *a_context, esp_event_base_t a_event_base, int32_t a_event_id, 
         {
             (void)esp_wifi_clear_ap_list();
         }
+        return;
+    }
+
+    if( WIFI_EVENT_STA_CONNECTED == a_event_id )
+    {
+        portENTER_CRITICAL( &state_lock );
+        if( started && !stopping && RFSCOUT_WIFI_STATION_CONNECTING == status.state )
+        {
+            status.associated = true;
+        }
+        portEXIT_CRITICAL( &state_lock );
         return;
     }
 
@@ -760,6 +774,91 @@ esp_err_t rfscout_wifi_station_connect_open_bss( const rfscout_wifi_station_bss_
     portENTER_CRITICAL( &state_lock );
     disconnect_requested = false;
     status.disconnect_reason = 0;
+    status.associated = false;
+    memset( status.ssid, 0, sizeof( status.ssid ) );
+    memcpy( status.ssid, a_bss->ssid, ssid_length );
+    status.ntp_syncing = false;
+    status.ntp_synced = false;
+    status.state = RFSCOUT_WIFI_STATION_CONNECTING;
+    portEXIT_CRITICAL( &state_lock );
+
+    result = esp_wifi_connect();
+    if( ESP_OK != result )
+    {
+        set_state( RFSCOUT_WIFI_STATION_FAILED, (int32_t)result );
+    }
+    return result;
+}
+
+esp_err_t rfscout_wifi_station_connect_secured_bss( const rfscout_wifi_station_bss_t *a_bss,
+                                                    const char *a_password,
+                                                    bool a_randomize_mac )
+{
+    if( !initialized )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if( NULL == a_bss || NULL == a_password ||
+        RFSCOUT_WIFI_STATION_SECURITY_SECURED != a_bss->security ||
+        !rfscout_wifi_station_secured_supported( a_bss->auth_mode ) )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const size_t ssid_length = strnlen( a_bss->ssid, RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH + 1U );
+    const size_t password_length =
+        strnlen( a_password, RFSCOUT_WIFI_STATION_PASSWORD_MAX_LENGTH + 1U );
+    if( 0U == ssid_length || ssid_length > RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH ||
+        password_length < 8U || password_length > RFSCOUT_WIFI_STATION_PASSWORD_MAX_LENGTH ||
+        0U == a_bss->channel )
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
+    if( RFSCOUT_WIFI_STATION_SCANNING == current.state ||
+        RFSCOUT_WIFI_STATION_SEARCHING == current.state ||
+        RFSCOUT_WIFI_STATION_CONNECTING == current.state ||
+        RFSCOUT_WIFI_STATION_DISCONNECTING == current.state ||
+        RFSCOUT_WIFI_STATION_CONNECTED == current.state )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t result = ensure_started();
+    if( ESP_OK == result && a_randomize_mac )
+    {
+        result = restart_with_random_mac();
+    }
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
+    wifi_config_t config = { 0 };
+    memcpy( config.sta.ssid, a_bss->ssid, ssid_length );
+    memcpy( config.sta.password, a_password, password_length );
+    memcpy( config.sta.bssid, a_bss->bssid, sizeof( config.sta.bssid ) );
+    config.sta.bssid_set = true;
+    config.sta.channel = a_bss->channel;
+    config.sta.scan_method = WIFI_FAST_SCAN;
+    /* A WPA3-only observation must never be accepted under a WPA2 minimum. */
+    config.sta.threshold.authmode =
+        ( WIFI_AUTH_WPA3_PSK == a_bss->auth_mode ) ? WIFI_AUTH_WPA3_PSK : WIFI_AUTH_WPA2_PSK;
+    config.sta.failure_retry_cnt = 0U;
+
+    result = esp_wifi_set_config( WIFI_IF_STA, &config );
+    memset( &config, 0, sizeof( config ) );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+
+    stop_ntp_sync();
+    portENTER_CRITICAL( &state_lock );
+    disconnect_requested = false;
+    status.disconnect_reason = 0;
+    status.associated = false;
     memset( status.ssid, 0, sizeof( status.ssid ) );
     memcpy( status.ssid, a_bss->ssid, ssid_length );
     status.ntp_syncing = false;
@@ -846,6 +945,116 @@ esp_err_t rfscout_wifi_station_ip_info( rfscout_wifi_station_ip_info_t *a_info )
         }
     }
     return result;
+}
+
+esp_err_t rfscout_wifi_station_ap_info( uint8_t a_bssid[ 6 ], int32_t *a_auth_mode )
+{
+    if( NULL == a_bssid || NULL == a_auth_mode )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    rfscout_wifi_station_status_t current;
+    rfscout_wifi_station_status( &current );
+    if( RFSCOUT_WIFI_STATION_CONNECTED != current.state )
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    wifi_ap_record_t record;
+    const esp_err_t result = esp_wifi_sta_get_ap_info( &record );
+    if( ESP_OK == result )
+    {
+        memcpy( a_bssid, record.bssid, 6U );
+        *a_auth_mode = (int32_t)record.authmode;
+    }
+    return result;
+}
+
+typedef struct
+{
+    struct netif *netif;
+    ip4_addr_t gateway;
+    uint8_t mac[ 6 ];
+} gateway_mac_lookup_t;
+
+/* Runs in the TCP/IP task, where the lwIP ARP table may be read safely. */
+static esp_err_t lookup_gateway_mac( void *a_context )
+{
+    gateway_mac_lookup_t *lookup = a_context;
+    struct eth_addr *hardware = NULL;
+    const ip4_addr_t *address = NULL;
+    if( NULL == lookup->netif ||
+        etharp_find_addr( lookup->netif, &lookup->gateway, &hardware, &address ) < 0 ||
+        NULL == hardware )
+    {
+        return ESP_ERR_NOT_FOUND;
+    }
+    memcpy( lookup->mac, hardware->addr, sizeof( lookup->mac ) );
+    return ESP_OK;
+}
+
+esp_err_t rfscout_wifi_station_gateway_mac( uint8_t a_mac[ 6 ] )
+{
+    if( NULL == a_mac )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    rfscout_wifi_station_ip_info_t info;
+    esp_err_t result = rfscout_wifi_station_ip_info( &info );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+    if( 0U == info.gateway )
+    {
+        return ESP_ERR_NOT_FOUND;
+    }
+    gateway_mac_lookup_t lookup = {
+        .netif = esp_netif_get_netif_impl( station_netif ),
+        .gateway.addr = info.gateway,
+    };
+    result = esp_netif_tcpip_exec( lookup_gateway_mac, &lookup );
+    if( ESP_OK == result )
+    {
+        memcpy( a_mac, lookup.mac, sizeof( lookup.mac ) );
+    }
+    return result;
+}
+
+bool rfscout_wifi_station_reason_auth_rejected( int32_t a_reason )
+{
+    return WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT == a_reason || WIFI_REASON_AUTH_FAIL == a_reason ||
+           WIFI_REASON_HANDSHAKE_TIMEOUT == a_reason;
+}
+
+bool rfscout_wifi_station_secured_supported( int32_t a_auth_mode )
+{
+    return WIFI_AUTH_WPA2_PSK == a_auth_mode || WIFI_AUTH_WPA2_WPA3_PSK == a_auth_mode ||
+           WIFI_AUTH_WPA3_PSK == a_auth_mode;
+}
+
+const char *rfscout_wifi_station_auth_label( int32_t a_auth_mode )
+{
+    switch( (wifi_auth_mode_t)a_auth_mode )
+    {
+        case WIFI_AUTH_OPEN:
+            return "Open";
+        case WIFI_AUTH_OWE:
+            return "OWE";
+        case WIFI_AUTH_WEP:
+            return "WEP";
+        case WIFI_AUTH_WPA_PSK:
+            return "WPA";
+        case WIFI_AUTH_WPA2_PSK:
+            return "WPA2";
+        case WIFI_AUTH_WPA_WPA2_PSK:
+            return "WPA1/2";
+        case WIFI_AUTH_WPA3_PSK:
+            return "WPA3";
+        case WIFI_AUTH_WPA2_WPA3_PSK:
+            return "WPA2/3";
+        default:
+            return "Secured";
+    }
 }
 
 esp_err_t

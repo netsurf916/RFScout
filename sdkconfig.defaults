@@ -35,6 +35,12 @@ CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
 CONFIG_MBEDTLS_DEFAULT_CERTIFICATE_BUNDLE=y
 
+# Favor external PSRAM for mbedTLS dynamic allocations so TLS certificate
+# verification does not compete with Wi-Fi and DMA for limited internal RAM.
+# Certificate and hostname verification remain enabled.
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+# CONFIG_MBEDTLS_INTERNAL_MEM_ALLOC is not set
+
 # Remove local paths and build timestamps so release images can be reproduced
 # from the same source and ESP-IDF/toolchain inputs.
 CONFIG_APP_REPRODUCIBLE_BUILD=y

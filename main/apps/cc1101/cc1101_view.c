@@ -368,7 +368,8 @@ void cc1101_view_menu( unsigned a_selected,
         "STEP",
     };
     const ui_theme_palette_t *theme = ui_theme_get();
-    const unsigned first = ui_layout_menu_window_start( a_selected, CC1101_MENU_ITEM_COUNT );
+    const unsigned first =
+        ui_menu_window_start( a_selected, CC1101_MENU_ITEM_COUNT, UI_LAYOUT_MENU_VISIBLE_ROWS );
 
     display_clear( theme->background );
     ui_chrome_draw( "CC1101 SETTINGS", theme->secondary );
@@ -384,18 +385,23 @@ void cc1101_view_menu( unsigned a_selected,
 
         const int y = UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT;
         const bool active = index == a_selected;
-        const bool action = 0U == index;
-        const uint16_t accent =
-            ( active && a_editing && a_limit_reached ) ? theme->warning : theme->selected;
-        const char *marker = active ? ( action ? ">" : ( a_editing ? "*" : ">" ) ) : " ";
+        const ui_menu_state_t state = {
+            .selected = active, .editing = a_editing && 0U != index, .available = true };
+        const bool limit_warning = active && a_editing && a_limit_reached;
+        const uint16_t accent = limit_warning ? theme->warning : theme->selected;
 
-        ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X, y, marker, active ? accent : theme->divider );
-        display_draw_text(
-            UI_LAYOUT_LABEL_X,
-            y,
-            labels[ index ],
-            ui_menu_label_color( ( ui_menu_state_t ){ .selected = active, .available = true } ),
-            1U );
+        if( limit_warning )
+        {
+            /* The edit-limit warning keeps its CC1101-specific marker colour. */
+            ui_game_draw_menu_marker(
+                UI_LAYOUT_LEFT_X, y, state.editing ? "*" : ">", theme->warning );
+            display_draw_text(
+                UI_LAYOUT_LABEL_X, y, labels[ index ], ui_menu_label_color( state ), 1U );
+        }
+        else
+        {
+            ui_menu_draw_row( y, labels[ index ], NULL, state );
+        }
 
         value[ 0 ] = '\0';
         if( 1U == index )

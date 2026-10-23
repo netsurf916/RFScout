@@ -19,9 +19,9 @@
 #include <string.h>
 
 #define TRANSITION_NOTICE_US 1800000LL
-#define GLOBAL_OVERLAY_X 42
+#define GLOBAL_OVERLAY_X 18
 #define GLOBAL_OVERLAY_Y 50
-#define GLOBAL_OVERLAY_WIDTH 236
+#define GLOBAL_OVERLAY_WIDTH 284
 #define GLOBAL_OVERLAY_HEIGHT 70
 #define GLOBAL_OVERLAY_PIXEL_COUNT ( GLOBAL_OVERLAY_WIDTH * GLOBAL_OVERLAY_HEIGHT )
 
@@ -53,7 +53,7 @@ static void draw_overlay_line( int a_y, const char *a_text, uint16_t a_color, un
     const size_t line_capacity = ( GLOBAL_OVERLAY_WIDTH - 20 ) / 6;
     if( 1U == a_scale && strlen( a_text ) > line_capacity )
     {
-        char line[ 37 ];
+        char line[ 48 ];
         snprintf( line, sizeof( line ), "%.*s", (int)line_capacity, a_text );
         display_draw_text( centered_x( line, 1U ), a_y, line, a_color, 1U );
         snprintf( line, sizeof( line ), "%s", a_text + line_capacity );

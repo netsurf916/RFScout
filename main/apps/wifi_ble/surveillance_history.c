@@ -6,26 +6,25 @@
 #include "surveillance_history.h"
 #include "surveillance.h"
 #include "app_session.h"
-#include "media_store.h"
+#include "media_journal.h"
 
 #include "esp_log.h"
-#include "esp_timer.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
-#include <stdio.h>
 #include <string.h>
 
-#define HISTORY_JOURNAL "surveillance.jsonl"
-#define HISTORY_ROTATION_ATTEMPTS 16U
+#define HISTORY_COLLECTION "locations"
+#define HISTORY_PREFIX "surveillance"
+#define HISTORY_SEGMENT_BYTES ( 1024U * 1024U )
+#define HISTORY_MAX_SEGMENTS 64U
+#define HISTORY_INITIAL_CAPACITY 2048U
 
 static const char *TAG = "surveillance_history";
 static uint32_t dropped_points;
-static bool journal_ambiguous;
-/* Keep the selected journal across app sessions; never reappend to an uncertain tail. */
-static char journal_name[ RFSCOUT_MEDIA_NAME_MAX + 1U ] = HISTORY_JOURNAL;
-static uint32_t journal_nonce;
+static media_journal_t journal;
+static bool journal_ready;
 
 typedef observation_location_event_t history_point_t;
 
@@ -42,18 +41,24 @@ void surveillance_history_open( void )
         history_lock = xSemaphoreCreateMutex();
     if( NULL == history_lock )
         return;
+    rfscout_media_collection_t collection;
+    journal_ready = ESP_OK == media_app_collection( HISTORY_COLLECTION, &collection ) &&
+                    ESP_OK == media_journal_init( &journal,
+                                                  &collection,
+                                                  HISTORY_PREFIX,
+                                                  HISTORY_SEGMENT_BYTES,
+                                                  HISTORY_MAX_SEGMENTS );
     xSemaphoreTake( history_lock, portMAX_DELAY );
     if( NULL != pending )
         (void)app_session_free( pending );
     if( NULL != writing )
         (void)app_session_free( writing );
-    pending = app_session_resize( NULL, 2048U, sizeof( *pending ) );
+    pending = app_session_resize( NULL, HISTORY_INITIAL_CAPACITY, sizeof( *pending ) );
     pending_count = 0U;
-    pending_capacity = NULL != pending ? 2048U : 0U;
+    pending_capacity = NULL != pending ? HISTORY_INITIAL_CAPACITY : 0U;
     writing = NULL;
     writing_count = 0U;
     dropped_points = 0U;
-    /* Preserve journal ambiguity across app exit/reentry until a fresh file is opened. */
     xSemaphoreGive( history_lock );
 }
 
@@ -71,6 +76,7 @@ void surveillance_history_close( void )
     pending_capacity = 0U;
     writing = NULL;
     writing_count = 0U;
+    journal_ready = false;
     xSemaphoreGive( history_lock );
 }
 
@@ -110,61 +116,34 @@ static const char *address_type_name( uint8_t a_type )
     }
 }
 
-static esp_err_t append_point( const rfscout_media_file_t *a_file, const history_point_t *a_point )
+static int format_point( void *a_context, size_t a_index, char *a_line, size_t a_capacity )
 {
-    char line[ 256 ];
-    const int length =
-        snprintf( line,
-                  sizeof( line ),
-                  "{\"type\":\"%s\",\"mac\":\"%02X%02X%02X%02X%02X%02X\",\"class\":\"%s\","
-                  "\"lat\":%.7f,\"lon\":%.7f,\"utc\":%lld,\"seen\":%lu}\n",
-                  address_type_name( a_point->address_type ),
-                  a_point->address[ 0 ],
-                  a_point->address[ 1 ],
-                  a_point->address[ 2 ],
-                  a_point->address[ 3 ],
-                  a_point->address[ 4 ],
-                  a_point->address[ 5 ],
-                  surveillance_name( a_point->classification ),
-                  a_point->latitude,
-                  a_point->longitude,
-                  (long long)a_point->utc_epoch,
-                  (unsigned long)a_point->seen_ms );
-    if( length < 0 || (size_t)length >= sizeof( line ) )
-        return ESP_ERR_INVALID_SIZE;
-    return media_write( a_file, line, (size_t)length );
-}
-
-/* If rollback failed, the previous file may end in partial JSON. Preserve it for
-   offline inspection and use a CREATE_NEW segment instead of risking more corruption.
-   Collisions are checked without replacing existing files across reboots/sessions. */
-static esp_err_t rotate_ambiguous_journal( const rfscout_media_collection_t *a_collection )
-{
-    for( size_t attempt = 0U; attempt < HISTORY_ROTATION_ATTEMPTS; ++attempt )
-    {
-        char name[ RFSCOUT_MEDIA_NAME_MAX + 1U ];
-        const uint32_t suffix = (uint32_t)( esp_timer_get_time() / 1000LL ) + ++journal_nonce;
-        snprintf( name, sizeof( name ), "surveillance-%08lx.jsonl", (unsigned long)suffix );
-        rfscout_media_file_t file = { 0 };
-        esp_err_t result = media_open( a_collection, name, RFSCOUT_MEDIA_OPEN_CREATE_NEW, &file );
-        if( ESP_ERR_NOT_ALLOWED == result )
-            continue;
-        if( ESP_OK != result )
-            return result;
-        result = media_close( &file );
-        if( ESP_OK != result )
-            return result;
-        snprintf( journal_name, sizeof( journal_name ), "%s", name );
-        journal_ambiguous = false;
-        ESP_LOGW( TAG, "Resuming surveillance journal in a fresh file: %s", journal_name );
-        return ESP_OK;
-    }
-    return ESP_ERR_NOT_ALLOWED;
+    const history_point_t *point = &( (const history_point_t *)a_context )[ a_index ];
+    int length = media_journal_printf( a_line, a_capacity, 0, "{\"type\":\"surveillance\"" );
+    if( 0 != point->utc_epoch )
+        length = media_journal_printf(
+            a_line, a_capacity, length, ",\"utc\":%lld", (long long)point->utc_epoch );
+    return media_journal_printf( a_line,
+                                 a_capacity,
+                                 length,
+                                 ",\"lat\":%.7f,\"lon\":%.7f,\"mac\":\"%02X%02X%02X%02X%02X%02X\","
+                                 "\"address_type\":\"%s\",\"class\":\"%s\",\"seen_ms\":%lu}",
+                                 point->latitude,
+                                 point->longitude,
+                                 point->address[ 0 ],
+                                 point->address[ 1 ],
+                                 point->address[ 2 ],
+                                 point->address[ 3 ],
+                                 point->address[ 4 ],
+                                 point->address[ 5 ],
+                                 address_type_name( point->address_type ),
+                                 surveillance_name( point->classification ),
+                                 (unsigned long)point->seen_ms );
 }
 
 static bool surveillance_history_flush_one( void )
 {
-    if( NULL == history_lock )
+    if( NULL == history_lock || !journal_ready )
         return false;
     xSemaphoreTake( history_lock, portMAX_DELAY );
     if( NULL == writing && pending_count != 0U )
@@ -187,55 +166,10 @@ static bool surveillance_history_flush_one( void )
     if( NULL == writing )
         return false;
 
-    rfscout_media_collection_t collection;
-    rfscout_media_file_t file = { 0 };
-    esp_err_t result = media_store_probe();
-    if( ESP_OK == result )
-        result = media_app_collection( "locations", &collection );
-    if( ESP_OK == result && journal_ambiguous )
-        result = rotate_ambiguous_journal( &collection );
-    if( ESP_OK == result )
-        result = media_open( &collection, journal_name, RFSCOUT_MEDIA_OPEN_APPEND, &file );
-    if( ESP_OK == result )
+    const esp_err_t result = media_journal_append( &journal, format_point, writing, writing_count );
+    /* A rolled-back batch is retried; an uncertain one is dropped rather than duplicated. */
+    if( ESP_OK == result || media_journal_outcome_uncertain( &journal ) )
     {
-        uint64_t original_size = 0U;
-        result = media_size( &file, &original_size );
-        const bool size_known = ESP_OK == result;
-        for( size_t i = 0U; ESP_OK == result && i < writing_count; ++i )
-            result = append_point( &file, &writing[ i ] );
-        if( ESP_OK == result )
-            result = media_sync( &file );
-        if( ESP_OK != result && size_known )
-        {
-            const esp_err_t rollback_result = media_truncate( &file, original_size );
-            if( ESP_OK != rollback_result )
-            {
-                journal_ambiguous = true;
-                ESP_LOGE( TAG, "Journal rollback failed; will rotate journal before resuming" );
-            }
-        }
-        else if( ESP_OK != result )
-        {
-            journal_ambiguous = true;
-            ESP_LOGE( TAG, "Journal size unknown; will rotate journal before resuming" );
-        }
-        const esp_err_t close_result = media_close( &file );
-        if( ESP_OK != close_result )
-        {
-            /* Even a successful truncate can fail to become durable during close.
-               Treat the entire write outcome as uncertain, not safe to replay. */
-            journal_ambiguous = true;
-            ESP_LOGE( TAG,
-                      "Journal close failed; rotating before the next write: %ld",
-                      (long)close_result );
-            if( ESP_OK == result )
-                result = close_result;
-        }
-    }
-    if( ESP_OK == result || journal_ambiguous )
-    {
-        /* A batch with an uncertain write outcome is dropped, never replayed
-           into another file where previously persisted rows could duplicate. */
         (void)app_session_free( writing );
         writing = NULL;
         writing_count = 0U;

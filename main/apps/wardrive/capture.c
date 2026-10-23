@@ -6,9 +6,9 @@
 #include "gps.h"
 #include "log_writer.h"
 #include "media_store.h"
+#include "memory_manager.h"
 #include "radio_monitor.h"
 
-#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -25,7 +25,6 @@
 #define CAPTURE_SYNC_INTERVAL_US 10000000LL
 #define CAPTURE_FILE_MIN ( 1024U * 1024U )
 #define CAPTURE_FILE_MAX ( 128U * 1024U * 1024U )
-#define CAPTURE_GPS_MAX_AGE_MS 5000U
 
 typedef struct
 {
@@ -81,8 +80,7 @@ static uint32_t gps_fix_age_ms;
 void wardrive_capture_update_gps( void )
 {
     rfscout_gps_snapshot_t gps = { 0 };
-    const bool available = gps_snapshot_get( &gps ) && gps.location_valid &&
-                           gps.location_age_ms <= CAPTURE_GPS_MAX_AGE_MS;
+    const bool available = gps_snapshot_get( &gps ) && gps_location_fresh( &gps );
     portENTER_CRITICAL( &gps_lock );
     gps_fix_valid = available;
     if( available )
@@ -337,7 +335,7 @@ static void enqueue( uint8_t a_source,
     const int64_t elapsed_us = arrival_us - gps_updated_us;
     packet->gps_valid =
         config.gps_metadata && gps_fix_valid && elapsed_us >= 0 && elapsed_us <= 1000000LL &&
-        gps_fix_age_ms + (uint32_t)( elapsed_us / 1000LL ) <= CAPTURE_GPS_MAX_AGE_MS;
+        gps_fix_age_ms + (uint32_t)( elapsed_us / 1000LL ) <= RFSCOUT_GPS_FIX_FRESH_MS;
     if( packet->gps_valid )
     {
         packet->latitude_e7 = gps_latitude_e7;
@@ -569,9 +567,9 @@ esp_err_t wardrive_capture_start( const wardrive_config_t *a_config )
     {
         next_segment = files.found ? files.newest + 1U : 0U;
     }
-    packet_pool = heap_caps_calloc(
-        CAPTURE_QUEUE_COUNT, sizeof( *packet_pool ), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
-    writer_frame = heap_caps_malloc( CAPTURE_MAX_FRAME + 20U, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
+    const rfscout_memory_owner_t owner = memory_manager_app_owner( RFSCOUT_APP_WARDRIVE );
+    packet_pool = memory_manager_calloc( owner, CAPTURE_QUEUE_COUNT, sizeof( *packet_pool ) );
+    writer_frame = memory_manager_calloc( owner, CAPTURE_MAX_FRAME + 20U, 1U );
     pending_queue = xQueueCreate( CAPTURE_QUEUE_COUNT, sizeof( capture_packet_t * ) );
     free_queue = xQueueCreate( CAPTURE_QUEUE_COUNT, sizeof( capture_packet_t * ) );
     if( packet_pool == NULL || writer_frame == NULL || pending_queue == NULL || free_queue == NULL )
@@ -644,10 +642,15 @@ void wardrive_capture_stop( void )
         free_queue = NULL;
     }
     close_segment();
-    heap_caps_free( packet_pool );
-    packet_pool = NULL;
-    heap_caps_free( writer_frame );
-    writer_frame = NULL;
+    const rfscout_memory_owner_t owner = memory_manager_app_owner( RFSCOUT_APP_WARDRIVE );
+    if( NULL != packet_pool && memory_manager_free( owner, packet_pool ) )
+    {
+        packet_pool = NULL;
+    }
+    if( NULL != writer_frame && memory_manager_free( owner, writer_frame ) )
+    {
+        writer_frame = NULL;
+    }
     stats.recording = false;
     stop_pending = false;
 }

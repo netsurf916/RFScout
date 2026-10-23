@@ -58,6 +58,8 @@ typedef struct
     int8_t rssi;
     uint8_t channel;
     rfscout_wifi_station_security_t security;
+    /** Exact ESP-IDF wifi_auth_mode_t observed in passive scan (not the coarse security class). */
+    int32_t auth_mode;
 } rfscout_wifi_station_bss_t;
 
 /** @brief IPv4 configuration of the current station connection, in network byte order. */
@@ -75,6 +77,7 @@ typedef struct
     rfscout_wifi_station_state_t state;
     uint32_t scan_generation;
     int32_t disconnect_reason;
+    bool associated; /**< association succeeded at least once in this connection attempt */
     char ssid[ RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH + 1U ];
     bool ntp_syncing;
     bool ntp_synced;
@@ -122,6 +125,16 @@ esp_err_t rfscout_wifi_station_connect_open_bss( const rfscout_wifi_station_bss_
                                                  bool a_randomize_mac );
 
 /**
+ * @brief Connect to a specifically observed secured BSSID using a saved password.
+ * @details Requires an observed secured BSSID and a WPA2-or-stronger station policy.
+ *          This must never roam to a different BSSID with the same SSID.
+ *          Credentials are caller-owned and are not retained by this API.
+ */
+esp_err_t rfscout_wifi_station_connect_secured_bss( const rfscout_wifi_station_bss_t *a_bss,
+                                                    const char *a_password,
+                                                    bool a_randomize_mac );
+
+/**
  * @brief Start SNTP on the current connection.
  * @details Progress is reported through rfscout_wifi_station_status() ntp_syncing / ntp_synced. A
  *          successful sync is offered to device_time.
@@ -133,6 +146,24 @@ esp_err_t rfscout_wifi_station_cancel_scan( void );
 
 /** @brief Copy the current IPv4 configuration; ESP_ERR_INVALID_STATE when not connected. */
 esp_err_t rfscout_wifi_station_ip_info( rfscout_wifi_station_ip_info_t *a_info );
+
+/** @brief Copy the associated BSSID and its auth mode; ESP_ERR_INVALID_STATE when not connected. */
+esp_err_t rfscout_wifi_station_ap_info( uint8_t a_bssid[ 6 ], int32_t *a_auth_mode );
+
+/**
+ * @brief Read the gateway hardware address from the station ARP cache.
+ * @details Passive: no ARP request is sent. ESP_ERR_NOT_FOUND until the gateway was resolved.
+ */
+esp_err_t rfscout_wifi_station_gateway_mac( uint8_t a_mac[ 6 ] );
+
+/** @brief Whether a station disconnect reason means the AP refused the passphrase. */
+bool rfscout_wifi_station_reason_auth_rejected( int32_t a_reason );
+
+/** @brief Whether a secured auth mode can be joined with a passphrase (WPA2/WPA3 personal). */
+bool rfscout_wifi_station_secured_supported( int32_t a_auth_mode );
+
+/** @brief Short display name of an observed auth mode, such as "WPA2" or "OWE". */
+const char *rfscout_wifi_station_auth_label( int32_t a_auth_mode );
 
 /** @brief Cancel an active NTP synchronization attempt while preserving the Wi-Fi connection. */
 esp_err_t rfscout_wifi_station_cancel_time_sync( void );

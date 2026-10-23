@@ -16,6 +16,7 @@
 #define UI_LAYOUT_MENU_START_Y 38
 #define UI_LAYOUT_MENU_ROW_HEIGHT 20
 #define UI_LAYOUT_MENU_VISIBLE_ROWS 6U
+#define UI_LAYOUT_MENU_VALUE_X 242
 #define UI_LAYOUT_FOOTER_Y 150
 /** Shared instrument panel origin and text insets (see GPS and Thermal). */
 #define UI_LAYOUT_PANEL_TOP_Y 24

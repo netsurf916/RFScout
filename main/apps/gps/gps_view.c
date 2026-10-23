@@ -9,6 +9,7 @@
 #include "display.h"
 #include "device_config.h"
 #include "breadcrumbs.h"
+#include "geo.h"
 #include "gps.h"
 #include "ui_chrome.h"
 #include "ui_game.h"
@@ -33,9 +34,52 @@ static void draw_gps_panel( int a_x, int a_y, int a_width, int a_height )
     display_fill_rect( a_x + a_width - 1, a_y, 1, a_height, theme->divider );
 }
 
-static unsigned track_sector( float a_degrees )
+typedef struct
 {
-    return ( (unsigned)( ( a_degrees + 22.5f ) / 45.0f ) ) % 8U;
+    uint32_t rgb;
+    const char *name;
+} gps_led_color_t;
+
+static const gps_led_color_t LED_COLORS[] = {
+    { 0x00FF00U, "Green" },
+    { 0xFF0000U, "Red" },
+    { 0x0000FFU, "Blue" },
+    { 0xFFFFFFU, "White" },
+    { 0xFF8000U, "Orange" },
+    { 0x00FFFFU, "Cyan" },
+};
+#define LED_COLOR_COUNT ( sizeof( LED_COLORS ) / sizeof( LED_COLORS[ 0 ] ) )
+
+static const char *led_color_name( uint32_t a_rgb )
+{
+    for( size_t index = 0U; index < LED_COLOR_COUNT; ++index )
+    {
+        if( LED_COLORS[ index ].rgb == a_rgb )
+        {
+            return LED_COLORS[ index ].name;
+        }
+    }
+    return "";
+}
+
+uint32_t gps_view_next_led_color( uint32_t a_rgb )
+{
+    for( size_t index = 0U; index < LED_COLOR_COUNT; ++index )
+    {
+        if( LED_COLORS[ index ].rgb == a_rgb )
+        {
+            return LED_COLORS[ ( index + 1U ) % LED_COLOR_COUNT ].rgb;
+        }
+    }
+    return LED_COLORS[ 0 ].rgb;
+}
+
+bool gps_view_setting_available( unsigned a_setting )
+{
+    const bool needs_receiver =
+        GPS_SETTING_BREADCRUMBS == a_setting || GPS_SETTING_BREADCRUMB_FILES == a_setting ||
+        GPS_SETTING_MOVEMENT == a_setting || GPS_SETTING_TIMEPULSE == a_setting;
+    return !needs_receiver || gps_detected();
 }
 
 void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_menu_error )
@@ -50,79 +94,70 @@ void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_menu_error 
 
     if( a_menu_open )
     {
-        static const char *labels[] = { "Back",
-                                        "Reset trip",
-                                        "LED guidance",
-                                        "LED brightness",
-                                        "LED color",
-                                        "Stay awake",
-                                        "Breadcrumbs",
-                                        "Retained files",
-                                        "GPS timeout",
-                                        "GPS Timepulse" };
-        static const char *color_names[] = { "Green", "Red", "Blue", "White", "Orange", "Cyan" };
+        static const char *labels[ GPS_SETTING_COUNT ] = {
+            [GPS_SETTING_BACK] = "Back",
+            [GPS_SETTING_RESET_TRIP] = "Reset trip",
+            [GPS_SETTING_LED] = "LED guidance",
+            [GPS_SETTING_LED_BRIGHTNESS] = "LED brightness",
+            [GPS_SETTING_LED_COLOR] = "LED color",
+            [GPS_SETTING_KEEP_AWAKE] = "Stay awake",
+            [GPS_SETTING_BREADCRUMBS] = "Breadcrumbs",
+            [GPS_SETTING_BREADCRUMB_FILES] = "Retained files",
+            [GPS_SETTING_MOVEMENT] = "Movement trigger",
+            [GPS_SETTING_TIMEOUT] = "GPS timeout",
+            [GPS_SETTING_TIMEPULSE] = "GPS Timepulse",
+        };
         const device_config_t *config = device_config_get();
-        const unsigned first = a_menu_item < 5U ? 0U : a_menu_item - 4U;
+        const unsigned first = ui_menu_window_start( a_menu_item, GPS_SETTING_COUNT, 5U );
         for( unsigned row = 0U; row < 5U; ++row )
         {
             const unsigned item = first + row;
-            if( item >= sizeof( labels ) / sizeof( labels[ 0 ] ) )
+            if( item >= GPS_SETTING_COUNT )
             {
                 break;
             }
             const int y = UI_LAYOUT_MENU_START_Y + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT;
-            const bool selected = item == a_menu_item;
-            const ui_menu_state_t menu_state = { .selected = selected, .available = true };
-            ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X,
-                                      y,
-                                      selected ? ">" : " ",
-                                      selected ? theme->selected : theme->divider );
-            display_draw_text(
-                UI_LAYOUT_LABEL_X, y, labels[ item ], ui_menu_label_color( menu_state ), 1U );
+            const ui_menu_state_t menu_state = { .selected = item == a_menu_item,
+                                                 .available = gps_view_setting_available( item ) };
+            ui_menu_draw_row( y, labels[ item ], NULL, menu_state );
             text[ 0 ] = '\0';
             switch( item )
             {
-                case 2U:
+                case GPS_SETTING_LED:
                     (void)snprintf(
                         text, sizeof( text ), "%s", config->gps_led_enabled ? "On" : "Off" );
                     break;
-                case 3U:
+                case GPS_SETTING_LED_BRIGHTNESS:
                     (void)snprintf(
                         text, sizeof( text ), "%u%%", (unsigned)config->gps_led_brightness );
                     break;
-                case 4U:
-                {
-                    static const uint32_t colors[] = {
-                        0x00FF00U, 0xFF0000U, 0x0000FFU, 0xFFFFFFU, 0xFF8000U, 0x00FFFFU };
-                    for( unsigned i = 0U; i < sizeof( colors ) / sizeof( colors[ 0 ] ); ++i )
-                    {
-                        if( colors[ i ] == config->gps_led_rgb )
-                        {
-                            (void)snprintf( text, sizeof( text ), "%s", color_names[ i ] );
-                            break;
-                        }
-                    }
+                case GPS_SETTING_LED_COLOR:
+                    (void)snprintf(
+                        text, sizeof( text ), "%s", led_color_name( config->gps_led_rgb ) );
                     break;
-                }
-                case 5U:
+                case GPS_SETTING_KEEP_AWAKE:
                     (void)snprintf(
                         text, sizeof( text ), "%s", config->gps_keep_awake ? "On" : "Off" );
                     break;
-                case 6U:
+                case GPS_SETTING_BREADCRUMBS:
                     (void)snprintf(
                         text, sizeof( text ), "%s", breadcrumbs_enabled() ? "On" : "Off" );
                     break;
-                case 7U:
+                case GPS_SETTING_BREADCRUMB_FILES:
                     (void)snprintf(
                         text, sizeof( text ), "%u", (unsigned)breadcrumbs_file_limit() );
                     break;
-                case 9U:
+                case GPS_SETTING_MOVEMENT:
                     (void)snprintf(
-                        text, sizeof( text ), "%s", config->gps_timepulse_enabled ? "On" : "Off" );
+                        text, sizeof( text ), "%u m", (unsigned)config->gps_movement_m );
                     break;
-                case 8U:
+                case GPS_SETTING_TIMEOUT:
                     (void)snprintf(
                         text, sizeof( text ), "%us", (unsigned)config->gps_timeout_seconds );
+                    break;
+                case GPS_SETTING_TIMEPULSE:
+                    (void)snprintf(
+                        text, sizeof( text ), "%s", config->gps_timepulse_enabled ? "On" : "Off" );
                     break;
                 default:
                     break;
@@ -148,7 +183,7 @@ void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_menu_error 
     draw_gps_panel( 160, 70, 156, 94 );
 
     display_draw_text( 10, 28, "FIX", theme->secondary, 1U );
-    const bool fixed = present && gps.location_valid && gps.location_age_ms <= 5000U;
+    const bool fixed = present && gps_location_fresh( &gps );
     display_draw_text(
         115, 28, fixed ? "FIX" : "NO FIX", fixed ? theme->success : theme->warning, 1U );
     if( fixed )
@@ -204,9 +239,7 @@ void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_menu_error 
     const bool track = fixed && gps.track_valid && gps.speed_valid && gps.speed_mps >= 0.7f;
     if( track )
     {
-        static const char *labels[] = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
-        const unsigned sector = track_sector( gps.track_deg );
-        display_draw_text( 176, 96, labels[ sector ], theme->accent, 3U );
+        display_draw_text( 176, 96, geo_compass_label( gps.track_deg ), theme->accent, 3U );
         (void)snprintf( text, sizeof( text ), "%.1f deg", (double)gps.track_deg );
         display_draw_text( 176, 142, text, theme->text, 1U );
     }
@@ -222,7 +255,7 @@ void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_menu_error 
     {
         static const int offsets_x[] = { 0, 7, 10, 7, 0, -7, -10, -7 };
         static const int offsets_y[] = { -10, -7, 0, 7, 10, 7, 0, -7 };
-        const unsigned sector = track_sector( gps.track_deg );
+        const unsigned sector = geo_compass_sector( gps.track_deg );
         display_fill_rect(
             272 + offsets_x[ sector ], 120 + offsets_y[ sector ], 3, 3, theme->accent );
     }

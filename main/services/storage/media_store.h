@@ -32,11 +32,13 @@
  * @details Obtain with media_system_collection() or media_app_collection(); do not populate the
  *          fields directly. The value is small and may be copied. An app collection captures the
  *          app-session generation, so it becomes stale (operations return ESP_ERR_INVALID_STATE)
- *          once that app session closes.
+ *          once that app session closes. A collection from media_owner_collection() is a
+ *          platform reference that is not tied to a session.
  */
 typedef struct
 {
     bool system;
+    bool platform;
     rfscout_app_id_t app;
     uint32_t generation;
     char collection[ RFSCOUT_MEDIA_COLLECTION_MAX + 1U ];
@@ -90,6 +92,14 @@ typedef struct
  */
 typedef bool ( *rfscout_media_list_fn )( const rfscout_media_entry_t *a_entry, void *a_context );
 
+/**
+ * @brief Visit one owner collection during media_collections().
+ * @details Called with the storage arbitration held; the callback may list the collection.
+ * @return true to continue, false to stop early.
+ */
+typedef bool ( *rfscout_media_collection_fn )( const rfscout_media_collection_t *a_collection,
+                                               void *a_context );
+
 /** @brief Read the last observed storage status without probing or recovering the card. */
 bool media_store_available( void );
 
@@ -126,6 +136,37 @@ esp_err_t media_system_collection( const char *a_collection,
  *          before handing it to asynchronous work owned by that session.
  */
 esp_err_t media_app_collection( const char *a_collection, rfscout_media_collection_t *a_resolved );
+
+/**
+ * @brief Resolve any compiled application's collection for platform storage management.
+ * @details Platform services and Home storage management only. The result is not tied to an app
+ *          session, so use it only while the owning app is not running.
+ */
+esp_err_t media_owner_collection( rfscout_app_id_t a_app,
+                                  const char *a_collection,
+                                  rfscout_media_collection_t *a_resolved );
+
+/**
+ * @brief Visit the collection directories that exist on the card for one owner.
+ * @details @p a_system selects the system owner; otherwise @p a_app names the owner. Visited
+ *          collections are platform references (see media_owner_collection()). A missing owner
+ *          directory visits nothing.
+ */
+esp_err_t media_collections( bool a_system,
+                             rfscout_app_id_t a_app,
+                             rfscout_media_collection_fn a_visit,
+                             void *a_context );
+
+/**
+ * @brief Delete up to @p a_max_files files that no media handle holds open.
+ * @details @p a_removed receives the number deleted. When it is zero the collection holds only
+ *          @p a_kept open files, and an emptied collection directory (and then its owner directory)
+ *          is removed. Call repeatedly to clear a collection in bounded steps.
+ */
+esp_err_t media_clear( const rfscout_media_collection_t *a_collection,
+                       size_t a_max_files,
+                       size_t *a_removed,
+                       size_t *a_kept );
 
 /**
  * @brief Open one file in a collection.

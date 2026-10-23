@@ -20,36 +20,13 @@
 #define OTA_UPDATE_MENU_START_Y 72
 #define OTA_UPDATE_MENU_ROW_HEIGHT UI_LAYOUT_MENU_ROW_HEIGHT
 
-static unsigned menu_window_start( unsigned a_selected, unsigned a_count )
-{
-    if( a_count <= OTA_MENU_VISIBLE_ROWS || a_selected < OTA_MENU_VISIBLE_ROWS )
-    {
-        return 0U;
-    }
-    unsigned start = a_selected - OTA_MENU_VISIBLE_ROWS + 1U;
-    const unsigned maximum = a_count - OTA_MENU_VISIBLE_ROWS;
-    if( start > maximum )
-    {
-        start = maximum;
-    }
-    return start;
-}
-
 static void draw_menu_row_at(
     int a_y, unsigned a_item, unsigned a_selected, const char *a_label, const char *a_value )
 {
-    const bool active = a_item == a_selected;
-    const ui_menu_state_t state = { .selected = active, .available = true };
-    const uint16_t color = ui_menu_label_color( state );
-    if( active )
-    {
-        ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X, a_y, ">", color );
-    }
-    display_draw_text( UI_LAYOUT_LABEL_X, a_y, a_label, color, 1U );
-    if( NULL != a_value && '\0' != a_value[ 0 ] )
-    {
-        display_draw_text( 242, a_y, a_value, ui_menu_value_color( state ), 1U );
-    }
+    ui_menu_draw_row( a_y,
+                      a_label,
+                      a_value,
+                      ( ui_menu_state_t ){ .selected = a_item == a_selected, .available = true } );
 }
 
 static void draw_menu_row(
@@ -84,7 +61,7 @@ void ota_view_render_network_main( const ota_view_network_t *a_networks,
     const ui_theme_palette_t *theme = ui_theme_get();
     const unsigned action_count = a_connected ? 1U : 3U;
     const unsigned item_count = 1U + (unsigned)a_network_count + action_count;
-    const unsigned start = menu_window_start( a_selected, item_count );
+    const unsigned start = ui_menu_window_start( a_selected, item_count, OTA_MENU_VISIBLE_ROWS );
 
     display_clear( theme->background );
     ui_chrome_draw( "NETWORK", theme->secondary );
@@ -235,7 +212,7 @@ void ota_view_render_network_action( const char *a_ssid,
         }
         else if( 2U == row )
         {
-            label = "Forget";
+            label = "Credentials";
         }
         draw_menu_row_at( 58 + (int)row * UI_LAYOUT_MENU_ROW_HEIGHT, row, a_selected, label, NULL );
     }
@@ -257,7 +234,7 @@ void ota_view_render_network_list( const char *a_title,
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     const unsigned item_count = (unsigned)a_network_count + 1U;
-    const unsigned start = menu_window_start( a_selected, item_count );
+    const unsigned start = ui_menu_window_start( a_selected, item_count, OTA_MENU_VISIBLE_ROWS );
 
     display_clear( theme->background );
     ui_chrome_draw( NULL != a_title ? a_title : "NETWORKS", theme->secondary );
@@ -306,7 +283,7 @@ void ota_view_render_build_list( const char *a_installed_version,
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     const unsigned item_count = (unsigned)a_build_count + 1U;
-    const unsigned start = menu_window_start( a_selected, item_count );
+    const unsigned start = ui_menu_window_start( a_selected, item_count, OTA_MENU_VISIBLE_ROWS );
 
     display_clear( theme->background );
     ui_chrome_draw( "AVAILABLE BUILDS", theme->secondary );
@@ -368,58 +345,5 @@ void ota_view_render_build_action( const char *a_installed_version,
 
     display_draw_text(
         UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "EXPLICIT BUILD INSTALL", theme->secondary, 1U );
-    (void)display_present();
-}
-
-void ota_view_render_password( const char *a_ssid,
-                               size_t a_length,
-                               rfscout_text_entry_selection_t a_selection,
-                               char a_character,
-                               const char *a_error )
-{
-    const ui_theme_palette_t *theme = ui_theme_get();
-    display_clear( theme->background );
-    ui_chrome_draw( "WI-FI PASSWORD", theme->secondary );
-
-    display_draw_text(
-        UI_LAYOUT_LEFT_X, 31, NULL != a_ssid ? a_ssid : "Network", theme->accent, 1U );
-
-    char masked[ 33 ];
-    const size_t shown = a_length < sizeof( masked ) - 1U ? a_length : sizeof( masked ) - 1U;
-    memset( masked, '*', shown );
-    masked[ shown ] = '\0';
-    display_draw_text( UI_LAYOUT_LEFT_X, 58, "Password", theme->text, 1U );
-    display_draw_text( 90, 58, masked, theme->secondary, 1U );
-
-    char candidate[ 32 ];
-    if( RFSCOUT_TEXT_ENTRY_SELECTION_DONE == a_selection )
-    {
-        snprintf( candidate, sizeof( candidate ), "Action: Done" );
-    }
-    else if( RFSCOUT_TEXT_ENTRY_SELECTION_BACKSPACE == a_selection )
-    {
-        snprintf( candidate, sizeof( candidate ), "Action: Backspace" );
-    }
-    else
-    {
-        snprintf( candidate,
-                  sizeof( candidate ),
-                  "Character: %c",
-                  ' ' == a_character ? '_' : a_character );
-    }
-    display_draw_text( UI_LAYOUT_LEFT_X, 84, candidate, theme->selected, 1U );
-
-    if( NULL != a_error && '\0' != a_error[ 0 ] )
-    {
-        display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, a_error, theme->error, 1U );
-    }
-    else
-    {
-        display_draw_text( UI_LAYOUT_LEFT_X,
-                           UI_LAYOUT_FOOTER_Y,
-                           "TURN SELECT / CENTER USE / LONG PRESS CANCEL",
-                           theme->secondary,
-                           1U );
-    }
     (void)display_present();
 }
