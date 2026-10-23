@@ -18,10 +18,16 @@
 #include <stddef.h>
 #include <stdio.h>
 
-#define BATTERY_REFRESH_INTERVAL_US 1000000LL
-#define BATTERY_HISTORY_WINDOW_US ( BATTERY_HISTORY_CAPACITY * BATTERY_TELEMETRY_INTERVAL_US )
+#define BATTERY_REFRESH_INTERVAL_US BATTERY_TELEMETRY_INTERVAL_US
+#define BATTERY_HISTORY_WINDOW_US \
+    ( ( BATTERY_HISTORY_CAPACITY - 1U ) * BATTERY_TELEMETRY_INTERVAL_US )
 
 static int64_t last_refresh_us;
+static int64_t last_graph_sample_us;
+static rfscout_style_id_t last_graph_style;
+static rfscout_colors_id_t last_graph_colors;
+/* This larger view buffer is static rather than a 2.9 KB local stack array. */
+static battery_history_sample_t history_view_samples[ BATTERY_HISTORY_CAPACITY ];
 static uint8_t battery_page;
 
 static const char *charge_label( battery_charge_state_t a_state )
@@ -58,29 +64,33 @@ static void draw_panel( int a_x, int a_y, int a_width, int a_height )
 static void draw_history( void )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
-    battery_history_sample_t samples[ BATTERY_HISTORY_CAPACITY ];
-    const size_t count = battery_history_read( samples, BATTERY_HISTORY_CAPACITY );
+    const size_t count = battery_history_read( history_view_samples, BATTERY_HISTORY_CAPACITY );
+    last_graph_sample_us = 0U == count ? -1 : history_view_samples[ count - 1U ].timestamp_us;
+    last_graph_style = ui_style_current();
+    last_graph_colors = ui_colors_current();
     char text[ 64 ];
     draw_panel( 4, UI_LAYOUT_PANEL_TOP_Y, 312, 140 );
-    display_draw_text( 10, 30, "BATTERY CURRENT / LAST 5M50S", theme->secondary, 1U );
+    display_draw_text( 10, 30, "BATTERY CURRENT / 6-MIN HISTORY", theme->secondary, 1U );
     if( 0U == count )
     {
         display_draw_text( 10, 85, "WAITING FOR FRESH SAMPLES", theme->warning, 1U );
         return;
     }
-    const int64_t latest_us = esp_timer_get_time();
+    /* The newest measured sample, not wall-clock time, anchors the plot.
+       X positions remain fixed between actual samples; no visual drift. */
+    const int64_t latest_us = last_graph_sample_us;
     int min_ma = 0;
     int max_ma = 0;
     int64_t total_ma = 0;
     size_t visible_count = 0U;
     for( size_t i = 0U; i < count; i++ )
     {
-        const int64_t age_us = latest_us - samples[ i ].timestamp_us;
+        const int64_t age_us = latest_us - history_view_samples[ i ].timestamp_us;
         if( age_us < 0 || age_us > BATTERY_HISTORY_WINDOW_US )
         {
             continue;
         }
-        const int current = samples[ i ].current_ma;
+        const int current = history_view_samples[ i ].current_ma;
         if( current < min_ma )
         {
             min_ma = current;
@@ -118,29 +128,34 @@ static void draw_history( void )
     display_draw_text( 8, y0 + graph_h - 8, text, theme->secondary, 1U );
     for( size_t i = 0U; i < count; i++ )
     {
-        const int64_t age_us = latest_us - samples[ i ].timestamp_us;
+        const int64_t age_us = latest_us - history_view_samples[ i ].timestamp_us;
         if( age_us < 0 || age_us > BATTERY_HISTORY_WINDOW_US )
         {
             continue;
         }
         const int x =
             x0 + graph_w - 1 - (int)( age_us * ( graph_w - 1 ) / BATTERY_HISTORY_WINDOW_US );
-        const int y = y0 + ( ( max_ma - samples[ i ].current_ma ) * graph_h ) / range;
+        const int y = y0 + ( ( max_ma - history_view_samples[ i ].current_ma ) * graph_h ) / range;
         const int top = y < zero_y ? y : zero_y;
         const int height = y < zero_y ? zero_y - y : y - zero_y;
-        display_fill_rect( x,
-                           top,
-                           2,
-                           height > 0 ? height : 1,
-                           samples[ i ].current_ma < 0 ? theme->warning : theme->accent );
+        if( 0 != history_view_samples[ i ].current_ma )
+        {
+            /* Match radio/spectrum graph geometry and palette in both styles. */
+            ui_game_draw_column( x,
+                                 top,
+                                 1,
+                                 height > 0 ? height : 1,
+                                 history_view_samples[ i ].current_ma < 0 ? theme->graph_peak
+                                                                          : theme->graph_primary );
+        }
     }
     snprintf( text,
               sizeof( text ),
               "AVG %+lldmA  LAST %+dmA",
               (long long)( total_ma / (int64_t)visible_count ),
-              (int)samples[ count - 1U ].current_ma );
+              (int)history_view_samples[ count - 1U ].current_ma );
     display_draw_text( 10, 137, text, theme->text, 1U );
-    display_draw_text( 10, 151, "-5m50s                     NOW", theme->secondary, 1U );
+    display_draw_text( 10, 151, "-6 MIN                     LAST", theme->secondary, 1U );
 }
 
 static const char *gauge_config_label( battery_gauge_config_result_t a_result )
@@ -435,20 +450,39 @@ static rfscout_app_runtime_result_t battery_runtime( const rfscout_app_runtime_e
     if( RFSCOUT_APP_RUNTIME_ENTER == a_event->type )
     {
         last_refresh_us = a_event->now_us;
+        last_graph_sample_us = -1;
         battery_page = 0U;
         battery_render();
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
-    if( RFSCOUT_APP_RUNTIME_POLL == a_event->type &&
-        a_event->now_us - last_refresh_us >= BATTERY_REFRESH_INTERVAL_US )
+    if( RFSCOUT_APP_RUNTIME_POLL == a_event->type )
     {
-        last_refresh_us = a_event->now_us;
-        battery_render();
-        return RFSCOUT_APP_RUNTIME_HANDLED;
+        if( 2U == battery_page )
+        {
+            battery_history_sample_t newest;
+            const size_t count = battery_history_read( &newest, 1U );
+            const int64_t latest_us = 0U == count ? -1 : newest.timestamp_us;
+            if( latest_us != last_graph_sample_us ||
+                last_graph_style != ui_style_current() ||
+                last_graph_colors != ui_colors_current() )
+            {
+                last_refresh_us = a_event->now_us;
+                battery_render();
+                return RFSCOUT_APP_RUNTIME_HANDLED;
+            }
+            return RFSCOUT_APP_RUNTIME_IGNORED;
+        }
+        if( a_event->now_us - last_refresh_us >= BATTERY_REFRESH_INTERVAL_US )
+        {
+            last_refresh_us = a_event->now_us;
+            battery_render();
+            return RFSCOUT_APP_RUNTIME_HANDLED;
+        }
     }
     if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type && RFSCOUT_INPUT_SELECT == a_event->input.type )
     {
         battery_page = (uint8_t)( ( battery_page + 1U ) % 4U );
+        last_refresh_us = a_event->now_us;
         battery_render();
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
