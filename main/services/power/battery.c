@@ -181,7 +181,7 @@ read_register_u16( i2c_master_dev_handle_t a_device, uint8_t a_register, uint16_
 /*
  * BQ27220 RAM-backed data memory is provisioned once per firmware startup.
  * This controller runs from the existing battery_poll() loop independent of
- * the five-second telemetry cadence. There are no repeated capacity writes.
+ * the two-second telemetry cadence. There are no repeated capacity writes.
  */
 static const char *gauge_config_stage_name( gauge_config_state_t a_state )
 {
