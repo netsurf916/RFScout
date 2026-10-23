@@ -863,7 +863,7 @@ void hotspot_history_record_result( const rfscout_wifi_station_bss_t *a_bss,
 void hotspot_history_observe( const rfscout_wifi_station_bss_t *a_bss,
                               const rfscout_gps_snapshot_t *a_gps )
 {
-    if( !journal_bound || !gps_location_fresh( a_gps ) || HISTORY_STATE_COMPACTING == state )
+    if( !journal_bound || NULL == a_bss || !gps_location_fresh( a_gps ) )
     {
         return;
     }
