@@ -43,6 +43,7 @@ typedef struct
     uint32_t media_generation;
     bool resolved;
     bool advance;   /**< next append must start a fresh segment */
+    bool append_uncertain; /**< last append might have persisted records */
     uint32_t first; /**< oldest live segment, 0 when none */
     uint32_t last;  /**< newest segment, 0 when none */
     uint16_t count;
@@ -99,7 +100,7 @@ esp_err_t media_journal_append( media_journal_t *a_journal,
  */
 static inline bool media_journal_outcome_uncertain( const media_journal_t *a_journal )
 {
-    return a_journal->advance;
+    return a_journal->append_uncertain;
 }
 
 /** @brief Total bytes of live segments; resolves the journal when needed. */
