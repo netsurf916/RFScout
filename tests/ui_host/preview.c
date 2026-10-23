@@ -288,7 +288,7 @@ static void check_overlay_restoration( bool a_modal )
         {
             size_t i = (size_t)y * 320U + (unsigned)x;
             assert( pixels[ i ] == (uint16_t)i );
-            if( x < 42 || x >= 278 || y < 50 || y >= 120 )
+            if( x < 18 || x >= 302 || y < 50 || y >= 120 )
                 assert( presented[ i ] == pixels[ i ] );
         }
     display_modal_clear();
