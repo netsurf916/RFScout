@@ -116,6 +116,7 @@ static gauge_config_state_t gauge_config_state;
 static int64_t gauge_config_after_us;
 static int64_t gauge_inspect_started_us;
 static bool gauge_needs_seal;
+static bool gauge_configuration_open;
 static uint8_t gauge_wait_count;
 static battery_gauge_configuration_t gauge_config_report;
 
@@ -399,6 +400,7 @@ static void gauge_configuration_poll( void )
             {
                 break;
             }
+            gauge_configuration_open = true;
             gauge_config_state = GAUGE_WAIT_ENTER;
             gauge_wait_count = 0U;
             /* TI requires at least two seconds before checking CFGUPDATE. */
@@ -451,6 +453,7 @@ static void gauge_configuration_poll( void )
                 gauge_config_after_us = now + GAUGE_WAIT_INTERVAL_US;
                 return;
             }
+            gauge_configuration_open = false;
             gauge_config_state = GAUGE_VERIFY;
             return;
         case GAUGE_VERIFY:
@@ -507,11 +510,12 @@ failed:
               gauge_config_report.stage,
               esp_err_to_name( result ) );
     /* Cleanup is best-effort and is not another provisioning attempt. */
-    if( 0U != ( status & BQ27220_CFG_BIT ) )
+    if( gauge_configuration_open || 0U != ( status & BQ27220_CFG_BIT ) )
     {
         const esp_err_t exit_result = gauge_command( 0x0091U );
         if( ESP_OK == exit_result )
         {
+            gauge_configuration_open = false;
             gauge_config_state = GAUGE_CLEANUP_SEAL;
             gauge_config_after_us = now + GAUGE_EXIT_SETTLE_US;
             return;
@@ -1085,6 +1089,7 @@ esp_err_t battery_init( void )
     gauge_inspect_started_us = 0;
     gauge_wait_count = 0U;
     gauge_needs_seal = false;
+    gauge_configuration_open = false;
     memset( &gauge_config_report, 0, sizeof( gauge_config_report ) );
     gauge_config_report.result = BATTERY_GAUGE_CONFIG_PENDING;
     charger_device = NULL;
