@@ -20,7 +20,7 @@
 #define BATTERY_REFRESH_INTERVAL_US 1000000LL
 
 static int64_t last_refresh_us;
-static bool details_page;
+static uint8_t battery_page;
 
 static const char *charge_label( battery_charge_state_t a_state )
 {
@@ -53,6 +53,63 @@ static void draw_panel( int a_x, int a_y, int a_width, int a_height )
     display_fill_rect( a_x + a_width - 1, a_y, 1, a_height, theme->divider );
 }
 
+static void draw_history( void )
+{
+    const ui_theme_palette_t *theme = ui_theme_get();
+    battery_history_sample_t samples[ BATTERY_HISTORY_CAPACITY ];
+    const size_t count = battery_history_read( samples, BATTERY_HISTORY_CAPACITY );
+    char text[ 64 ];
+    draw_panel( 4, UI_LAYOUT_PANEL_TOP_Y, 312, 140 );
+    display_draw_text( 10, 30, "BATTERY CURRENT / LAST 60S", theme->secondary, 1U );
+    if( 0U == count )
+    {
+        display_draw_text( 10, 85, "WAITING FOR FRESH SAMPLES", theme->warning, 1U );
+        return;
+    }
+    int min_ma = 0;
+    int max_ma = 0;
+    int64_t total_ma = 0;
+    for( size_t i = 0U; i < count; i++ )
+    {
+        const int current = samples[ i ].current_ma;
+        if( current < min_ma ) { min_ma = current; }
+        if( current > max_ma ) { max_ma = current; }
+        total_ma += current;
+    }
+    /* Round outward to meaningful 50 mA divisions, always including zero. */
+    const int step = 50;
+    min_ma = -(( -min_ma + step - 1 ) / step ) * step;
+    max_ma = (( max_ma + step - 1 ) / step ) * step;
+    if( min_ma == max_ma ) { max_ma += step; }
+    const int x0 = 38;
+    const int y0 = 55;
+    const int graph_h = 76;
+    const int graph_w = 266;
+    const int range = max_ma - min_ma;
+    const int zero_y = y0 + ( max_ma * graph_h ) / range;
+    display_fill_rect( x0, zero_y, graph_w, 1, theme->divider );
+    snprintf( text, sizeof( text ), "%d", max_ma );
+    display_draw_text( 8, y0, text, theme->secondary, 1U );
+    snprintf( text, sizeof( text ), "%d", min_ma );
+    display_draw_text( 8, y0 + graph_h - 8, text, theme->secondary, 1U );
+    const int64_t latest_us = samples[ count - 1U ].timestamp_us;
+    for( size_t i = 0U; i < count; i++ )
+    {
+        const int64_t age_us = latest_us - samples[ i ].timestamp_us;
+        if( age_us < 0 || age_us > 60000000LL ) { continue; }
+        const int x = x0 + graph_w - 1 - (int)( age_us * ( graph_w - 1 ) / 60000000LL );
+        const int y = y0 + ( ( max_ma - samples[ i ].current_ma ) * graph_h ) / range;
+        const int top = y < zero_y ? y : zero_y;
+        const int height = y < zero_y ? zero_y - y : y - zero_y;
+        display_fill_rect( x, top, 2, height > 0 ? height : 1,
+                           samples[ i ].current_ma < 0 ? theme->warning : theme->accent );
+    }
+    snprintf( text, sizeof( text ), "AVG %+lldmA  NOW %+dmA",
+              (long long)( total_ma / (int64_t)count ), (int)samples[ count - 1U ].current_ma );
+    display_draw_text( 10, 137, text, theme->text, 1U );
+    display_draw_text( 10, 151, "-60s                       NOW", theme->secondary, 1U );
+}
+
 static void battery_render( void )
 {
     battery_poll();
@@ -65,7 +122,12 @@ static void battery_render( void )
     display_clear( theme->background );
     ui_chrome_draw( "BATTERY", theme->secondary );
 
-    if( details_page )
+    if( 2U == battery_page )
+    {
+        draw_history();
+        return;
+    }
+    if( 1U == battery_page )
     {
         draw_panel( 4, UI_LAYOUT_PANEL_TOP_Y, 312, 140 );
         display_draw_text( 10, 30, "CHARGER DIAGNOSTICS", theme->secondary, 1U );
@@ -123,7 +185,7 @@ static void battery_render( void )
         {
             display_draw_text( 10, 65, "CHARGER DATA UNAVAILABLE", theme->warning, 1U );
         }
-        display_draw_text( 10, 149, "SELECT: BATTERY SUMMARY", theme->secondary, 1U );
+        display_draw_text( 10, 149, "SELECT: CURRENT GRAPH", theme->secondary, 1U );
         (void)display_present();
         return;
     }
@@ -253,7 +315,7 @@ static rfscout_app_runtime_result_t battery_runtime( const rfscout_app_runtime_e
     if( RFSCOUT_APP_RUNTIME_ENTER == a_event->type )
     {
         last_refresh_us = a_event->now_us;
-        details_page = false;
+        battery_page = 0U;
         battery_render();
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
@@ -266,7 +328,7 @@ static rfscout_app_runtime_result_t battery_runtime( const rfscout_app_runtime_e
     }
     if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type && RFSCOUT_INPUT_SELECT == a_event->input.type )
     {
-        details_page = !details_page;
+        battery_page = (uint8_t)( ( battery_page + 1U ) % 3U );
         battery_render();
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
