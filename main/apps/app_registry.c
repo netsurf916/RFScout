@@ -9,6 +9,7 @@
 extern const rfscout_app_descriptor_t rfscout_diagnostics_app;
 extern const rfscout_app_descriptor_t rfscout_system_events_app;
 extern const rfscout_app_descriptor_t rfscout_home_app;
+extern const rfscout_app_descriptor_t rfscout_battery_app;
 extern const rfscout_app_descriptor_t rfscout_wifi_ble_app;
 extern const rfscout_app_descriptor_t rfscout_hotspots_app;
 extern const rfscout_app_descriptor_t rfscout_cc1101_app;
@@ -23,6 +24,7 @@ const rfscout_app_descriptor_t *const rfscout_app_registry[ RFSCOUT_APP_COUNT ] 
     [RFSCOUT_APP_DIAGNOSTICS] = &rfscout_diagnostics_app,
     [RFSCOUT_APP_SYSTEM_EVENTS] = &rfscout_system_events_app,
     [RFSCOUT_APP_DEVICE] = &rfscout_home_app,
+    [RFSCOUT_APP_BATTERY] = &rfscout_battery_app,
     [RFSCOUT_APP_WIFI_BT] = &rfscout_wifi_ble_app,
     [RFSCOUT_APP_HOTSPOTS] = &rfscout_hotspots_app,
     [RFSCOUT_APP_CC1101] = &rfscout_cc1101_app,

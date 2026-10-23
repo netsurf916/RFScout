@@ -47,6 +47,24 @@ typedef enum
     RFSCOUT_BATTERY_I2C_GAUGE_CHARGER,
 } rfscout_battery_type_t;
 
+/** Board-owned BQ25896 charging policy; zero capacity means no managed charger. */
+typedef struct
+{
+    uint16_t input_current_ma;
+    uint16_t fast_charge_current_ma;
+    uint16_t precharge_current_ma;
+    uint16_t termination_current_ma;
+    uint16_t regulation_voltage_mv;
+} rfscout_charger_policy_t;
+
+/** Nominal battery facts; learned fuel-gauge values are never board constants. */
+typedef struct
+{
+    uint16_t design_capacity_mah;
+    uint16_t nominal_voltage_mv;
+    uint16_t design_energy_mwh;
+} rfscout_battery_profile_t;
+
 typedef struct
 {
     rfscout_board_id_t id;
@@ -99,6 +117,8 @@ typedef struct
     int speaker_data_pin;
 
     rfscout_battery_type_t battery_type;
+    rfscout_charger_policy_t charger_policy;
+    rfscout_battery_profile_t battery_profile;
     uint16_t pn532_i2c_address;
     uint16_t mlx90640_i2c_address;
     uint16_t bq27220_i2c_address;

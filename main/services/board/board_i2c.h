@@ -33,6 +33,14 @@ esp_err_t board_i2c_probe( uint16_t a_address );
 esp_err_t board_i2c_add_device( uint16_t a_address, i2c_master_dev_handle_t *a_device );
 
 /**
+ * @brief Add a shared-bus device with a device-specific I2C clock frequency.
+ * @note Other devices retain their own configured clock rates on the same bus.
+ */
+esp_err_t board_i2c_add_device_with_speed( uint16_t a_address,
+                                           uint32_t a_scl_speed_hz,
+                                           i2c_master_dev_handle_t *a_device );
+
+/**
  * @brief Write bytes and immediately read a response from a shared-bus device.
  * @param a_device Device handle returned by board_i2c_add_device().
  * @param a_write Bytes sent before the repeated-start read.

@@ -41,6 +41,7 @@ static const char *app_config_name( rfscout_app_id_t a_app )
 {
     static const char *names[ RFSCOUT_APP_COUNT ] = {
         [RFSCOUT_APP_DIAGNOSTICS] = "diagnostics",
+        [RFSCOUT_APP_BATTERY] = "battery",
         [RFSCOUT_APP_SYSTEM_EVENTS] = "system_events",
         [RFSCOUT_APP_DEVICE] = "device",
         [RFSCOUT_APP_WIFI_BT] = "wifi_bt",
@@ -269,6 +270,7 @@ static void set_defaults( void )
     }
     config.apps_enabled[ RFSCOUT_APP_DIAGNOSTICS ] = false;
     config.apps_enabled[ RFSCOUT_APP_SYSTEM_EVENTS ] = false;
+    config.apps_enabled[ RFSCOUT_APP_BATTERY ] = false;
     config.apps_enabled[ RFSCOUT_APP_DEVICE ] = true;
 
     for( size_t index = 0U; index < RFSCOUT_NOTIFICATION_TYPE_COUNT; ++index )

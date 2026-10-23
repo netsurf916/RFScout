@@ -209,7 +209,7 @@ void battery_indicator_draw( void )
 
 void battery_indicator_poll( void )
 {
-    /* Keep the widget self-contained: battery_poll() is internally rate-limited to 1 Hz, so this
+    /* Keep the widget self-contained: battery_poll() is internally rate-limited to a two-second telemetry interval, so this
      * remains cheap when called from the 10 ms UI loop and cannot depend on caller ordering. */
     battery_poll();
 

@@ -71,10 +71,11 @@
 #define DEVICE_ITEM_GPS_LED_BRIGHTNESS 34U
 #define DEVICE_ITEM_GPS_LED_COLOR 35U
 #define DEVICE_ITEM_GPS_KEEP_AWAKE 36U
-#define DEVICE_ITEM_NOTIFICATION_FIRST 37U
+#define DEVICE_ITEM_BATTERY 37U
+#define DEVICE_ITEM_NOTIFICATION_FIRST 38U
 #define DEVICE_ITEM_NOTIFICATION_LAST                                                              \
     ( DEVICE_ITEM_NOTIFICATION_FIRST + RFSCOUT_NOTIFICATION_TYPE_COUNT - 1U )
-#define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_GPS_KEEP_AWAKE + 1U )
+#define DEVICE_ITEM_BASE_COUNT ( DEVICE_ITEM_BATTERY + 1U )
 #define DEVICE_ROWS_PER_PAGE 6U
 #define DEVICE_LOG_SHUTDOWN_TIMEOUT_MS 3000U
 #define DEVICE_AUDIO_VOLUME_STEP 10
@@ -123,6 +124,7 @@ static bool apps_menu_open;
 static bool app_enable_item( unsigned a_item )
 {
     return DEVICE_ITEM_DIAGNOSTICS == a_item || DEVICE_ITEM_SYSTEM_EVENTS == a_item ||
+           DEVICE_ITEM_BATTERY == a_item ||
            ( a_item >= DEVICE_ITEM_WIFI && a_item <= DEVICE_ITEM_AUDIO_SPECTRUM ) ||
            DEVICE_ITEM_GPS == a_item;
 }
@@ -221,6 +223,8 @@ static const char *startup_app_name( rfscout_app_id_t a_app )
             return "Diagnostics";
         case RFSCOUT_APP_SYSTEM_EVENTS:
             return "System Events";
+        case RFSCOUT_APP_BATTERY:
+            return "Battery";
         case RFSCOUT_APP_WIFI_BT:
             return "WiFi / BT";
         case RFSCOUT_APP_HOTSPOTS:
@@ -267,7 +271,8 @@ static bool item_direct_toggle( unsigned a_item )
            ( DEVICE_ITEM_GPS_KEEP_AWAKE == a_item ) || ( DEVICE_ITEM_AUDIO_POLICY == a_item ) ||
            ( DEVICE_ITEM_ALERT_MODE == a_item ) || ( DEVICE_ITEM_CLOCK_FORMAT == a_item ) ||
            ( apps_menu_open &&
-             ( DEVICE_ITEM_DIAGNOSTICS == a_item || DEVICE_ITEM_SYSTEM_EVENTS == a_item ) ) ||
+             ( DEVICE_ITEM_DIAGNOSTICS == a_item || DEVICE_ITEM_SYSTEM_EVENTS == a_item ||
+               DEVICE_ITEM_BATTERY == a_item ) ) ||
            ( DEVICE_ITEM_WIFI == a_item ) || ( DEVICE_ITEM_HOTSPOTS == a_item ) ||
            ( DEVICE_ITEM_CC1101 == a_item ) || ( DEVICE_ITEM_NRF24 == a_item ) ||
            ( DEVICE_ITEM_AUDIO == a_item ) || ( DEVICE_ITEM_THERMAL == a_item ) ||
@@ -317,6 +322,8 @@ static const char *item_label( unsigned a_item )
             return "Startup app";
         case DEVICE_ITEM_DIAGNOSTICS:
             return "Diagnostics";
+        case DEVICE_ITEM_BATTERY:
+            return "Battery";
         case DEVICE_ITEM_SYSTEM_EVENTS:
             return apps_menu_open ? "System Events" : "Apps";
         case DEVICE_ITEM_NETWORK:
@@ -433,6 +440,10 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             break;
         case DEVICE_ITEM_STARTUP:
             snprintf( a_value, a_capacity, "%s", startup_app_name( config->startup_app ) );
+            break;
+        case DEVICE_ITEM_BATTERY:
+            snprintf(
+                a_value, a_capacity, "%s", on_off( config->apps_enabled[ RFSCOUT_APP_BATTERY ] ) );
             break;
         case DEVICE_ITEM_DIAGNOSTICS:
             snprintf( a_value,
@@ -852,6 +863,7 @@ void device_view_render( void )
         items[ visible++ ] = DEVICE_ITEM_BACK;
         items[ visible++ ] = DEVICE_ITEM_DIAGNOSTICS;
         items[ visible++ ] = DEVICE_ITEM_SYSTEM_EVENTS;
+        items[ visible++ ] = DEVICE_ITEM_BATTERY;
         for( unsigned item = DEVICE_ITEM_WIFI; item <= DEVICE_ITEM_AUDIO_SPECTRUM; ++item )
         {
             items[ visible++ ] = item;
@@ -931,6 +943,7 @@ static void move_selection( int a_delta )
         items[ count++ ] = DEVICE_ITEM_BACK;
         items[ count++ ] = DEVICE_ITEM_DIAGNOSTICS;
         items[ count++ ] = DEVICE_ITEM_SYSTEM_EVENTS;
+        items[ count++ ] = DEVICE_ITEM_BATTERY;
         for( unsigned item = DEVICE_ITEM_WIFI; item <= DEVICE_ITEM_AUDIO_SPECTRUM; ++item )
         {
             items[ count++ ] = item;
@@ -1663,6 +1676,10 @@ static void adjust_selected( int a_delta )
     else if( DEVICE_ITEM_STARTUP == selected_item )
     {
         adjust_startup_app( a_delta );
+    }
+    else if( DEVICE_ITEM_BATTERY == selected_item )
+    {
+        toggle_app( RFSCOUT_APP_BATTERY, "apps.battery" );
     }
     else if( DEVICE_ITEM_DIAGNOSTICS == selected_item )
     {
