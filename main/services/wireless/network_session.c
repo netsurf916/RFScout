@@ -210,15 +210,7 @@ void network_session_poll( int64_t a_now_us )
         }
         if( RFSCOUT_WIFI_STATION_CONNECTED == station.state )
         {
-            const esp_err_t ip_result = rfscout_wifi_station_ip_info( &status.ip );
-            ESP_LOGI( TAG,
-                      "DHCP acquired ip=0x%08lx gateway=0x%08lx dns=0x%08lx/0x%08lx "
-                      "ip_info=%s",
-                      (unsigned long)status.ip.address,
-                      (unsigned long)status.ip.gateway,
-                      (unsigned long)status.ip.dns_primary,
-                      (unsigned long)status.ip.dns_backup,
-                      esp_err_to_name( ip_result ) );
+            (void)rfscout_wifi_station_ip_info( &status.ip );
             const esp_err_t result = rfscout_wifi_station_start_time_sync();
             if( ESP_OK != result )
             {
