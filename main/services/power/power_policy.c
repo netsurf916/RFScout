@@ -304,7 +304,11 @@ void power_policy_poll( void )
         last_temperature_poll_us = now_us;
         poll_high_temperature();
     }
-    if( now_us - last_battery_poll_us >= POWER_POLICY_BATTERY_INTERVAL_US )
+    /* While a low-battery shutdown countdown is active, recheck every
+       second so USB insertion or a disabled policy can cancel promptly. */
+    const int64_t battery_interval_us = low_battery_latched ? POWER_POLICY_TEMPERATURE_INTERVAL_US
+                                                           : POWER_POLICY_BATTERY_INTERVAL_US;
+    if( now_us - last_battery_poll_us >= battery_interval_us )
     {
         last_battery_poll_us = now_us;
         poll_low_battery();
