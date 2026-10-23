@@ -7,8 +7,6 @@
 
 #include "connectivity_probe.h"
 
-#include "https_diagnostics.h"
-#include "memory_manager.h"
 
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
@@ -78,11 +76,6 @@ copy_trace_value( const char *a_trace, const char *a_key, char *a_destination, s
 
 static esp_err_t http_event( esp_http_client_event_t *a_event )
 {
-    if( NULL != a_event && HTTP_EVENT_ON_CONNECTED == a_event->event_id )
-    {
-        ESP_LOGI( TAG, "HTTPS transport connected" );
-        return ESP_OK;
-    }
     if( ( NULL == a_event ) || ( HTTP_EVENT_ON_DATA != a_event->event_id ) ||
         ( NULL == a_event->data ) || ( a_event->data_len <= 0 ) )
     {
@@ -158,14 +151,6 @@ static void probe_worker( void *a_context )
     portEXIT_CRITICAL( &state_lock );
     (void)xSemaphoreGive( client_mutex );
 
-    const int64_t request_started_us = esp_timer_get_time();
-    ESP_LOGI( TAG, "HTTPS probe begin timeout_ms=%u", (unsigned)request_timeout_ms );
-    https_diag_heap( TAG, "before" );
-    memory_manager_debug_dump( "HTTPS before" );
-    if( !cancelled )
-    {
-        https_diag_dns( TAG, "cloudflare.com" );
-    }
     esp_err_t result = ESP_ERR_INVALID_STATE;
     int http_status = 0;
     if( !cancelled )
@@ -189,14 +174,6 @@ static void probe_worker( void *a_context )
                       (unsigned)tls_flags );
         }
     }
-
-    ESP_LOGI( TAG,
-              "HTTPS probe end elapsed_ms=%lld result=%s http=%d",
-              (long long)( ( esp_timer_get_time() - request_started_us ) / 1000LL ),
-              esp_err_to_name( result ),
-              http_status );
-
-    https_diag_heap( TAG, "after" );
 
     /* Clear the shared handle under the cancellation mutex before cleanup so a concurrent cancel
        either sees a valid client or none at all. */
