@@ -62,7 +62,7 @@ static void release( void )
         bytes[ index ] = 0U;
     }
     (void)memory_manager_free(
-        (rfscout_memory_owner_t){ .owner_class = RFSCOUT_MEMORY_OWNER_PLATFORM }, record );
+        ( rfscout_memory_owner_t ){ .owner_class = RFSCOUT_MEMORY_OWNER_PLATFORM }, record );
     record = NULL;
 }
 
