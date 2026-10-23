@@ -165,9 +165,9 @@ static void stop_ntp_sync( void )
 
 static esp_err_t start_ntp_sync( void )
 {
-    /* GPS already provides valid UTC. Keep the network session READY without
-       starting SNTP, whose system-clock update bypasses device_time policy. */
-    if( device_time_gps_available() )
+    /* Recent GPS or NTP synchronization provides a trusted clock for TLS.
+       Avoid redundant SNTP during repeated network checks. */
+    if( device_time_network_ready() )
     {
         portENTER_CRITICAL( &state_lock );
         const bool active = started && !stopping &&
