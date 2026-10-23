@@ -14,6 +14,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 typedef enum
 {
@@ -65,6 +66,25 @@ typedef struct
     bool charger_watchdog_enabled;
     bool charger_soc_disagreement;
 } battery_status_t;
+
+/** Number of one-second history slots (at least one minute). */
+#define BATTERY_HISTORY_CAPACITY 70U
+
+/** Battery current is signed: positive means charging, negative means discharge. */
+typedef struct
+{
+    int64_t timestamp_us;
+    int16_t current_ma;
+    uint16_t voltage_mv;
+} battery_history_sample_t;
+
+/**
+ * @brief Copy up to a_capacity most recent valid electrical samples, oldest first.
+ * @param a_samples Caller-owned storage, or NULL when querying available count.
+ * @param a_capacity Number of elements in a_samples.
+ * @return Number of samples copied, or available count when a_samples is NULL.
+ */
+size_t battery_history_read( battery_history_sample_t *a_samples, size_t a_capacity );
 
 esp_err_t battery_init( void );
 void battery_poll( void );
