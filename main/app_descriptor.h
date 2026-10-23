@@ -36,6 +36,7 @@ typedef enum
     RFSCOUT_APP_GPS,
     RFSCOUT_APP_WARDRIVE,
     RFSCOUT_APP_DIAGNOSTICS,
+    RFSCOUT_APP_BATTERY,
     RFSCOUT_APP_COUNT
 } rfscout_app_id_t;
 

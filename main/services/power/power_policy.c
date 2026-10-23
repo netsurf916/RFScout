@@ -18,14 +18,17 @@
 
 #include <stdint.h>
 
-#define POWER_POLICY_POLL_INTERVAL_US 1000000LL
-#define POWER_POLICY_CONFIRM_SAMPLES 5U
+#define POWER_POLICY_TEMPERATURE_INTERVAL_US 1000000LL
+#define POWER_POLICY_BATTERY_INTERVAL_US 5000000LL
+#define POWER_POLICY_LOW_BATTERY_CONFIRM_SAMPLES 2U
+#define POWER_POLICY_TEMPERATURE_CONFIRM_SAMPLES 5U
 #define POWER_POLICY_TRANSITION_DELAY_SECONDS 5U
 #define POWER_POLICY_BATTERY_HYSTERESIS_PERCENT 3U
 #define POWER_POLICY_TEMPERATURE_HYSTERESIS_C 5.0F
 
 static const char *TAG = "power_policy";
-static int64_t last_poll_us;
+static int64_t last_temperature_poll_us;
+static int64_t last_battery_poll_us;
 static uint8_t low_battery_samples;
 static uint8_t high_temperature_samples;
 static bool low_battery_latched;
@@ -141,11 +144,11 @@ static void poll_low_battery( void )
         return;
     }
 
-    if( low_battery_samples < POWER_POLICY_CONFIRM_SAMPLES )
+    if( low_battery_samples < POWER_POLICY_LOW_BATTERY_CONFIRM_SAMPLES )
     {
         ++low_battery_samples;
     }
-    if( low_battery_samples < POWER_POLICY_CONFIRM_SAMPLES )
+    if( low_battery_samples < POWER_POLICY_LOW_BATTERY_CONFIRM_SAMPLES )
     {
         return;
     }
@@ -228,11 +231,11 @@ static void poll_high_temperature( void )
         return;
     }
 
-    if( high_temperature_samples < POWER_POLICY_CONFIRM_SAMPLES )
+    if( high_temperature_samples < POWER_POLICY_TEMPERATURE_CONFIRM_SAMPLES )
     {
         ++high_temperature_samples;
     }
-    if( high_temperature_samples < POWER_POLICY_CONFIRM_SAMPLES )
+    if( high_temperature_samples < POWER_POLICY_TEMPERATURE_CONFIRM_SAMPLES )
     {
         return;
     }
@@ -256,7 +259,8 @@ static void poll_high_temperature( void )
 
 esp_err_t power_policy_init( void )
 {
-    last_poll_us = -POWER_POLICY_POLL_INTERVAL_US;
+    last_temperature_poll_us = -POWER_POLICY_TEMPERATURE_INTERVAL_US;
+    last_battery_poll_us = -POWER_POLICY_BATTERY_INTERVAL_US;
     low_battery_samples = 0U;
     high_temperature_samples = 0U;
     low_battery_latched = false;
@@ -293,12 +297,21 @@ esp_err_t power_policy_init( void )
 void power_policy_poll( void )
 {
     const int64_t now_us = esp_timer_get_time();
-    if( ( now_us - last_poll_us ) < POWER_POLICY_POLL_INTERVAL_US )
+    /* Thermal protection retains its one-second cadence. Low-battery
+       confirmation runs only every five seconds, so successive confirmation
+       samples cannot repeatedly count the same two-second gauge reading. */
+    if( now_us - last_temperature_poll_us >= POWER_POLICY_TEMPERATURE_INTERVAL_US )
     {
-        return;
+        last_temperature_poll_us = now_us;
+        poll_high_temperature();
     }
-    last_poll_us = now_us;
-
-    poll_high_temperature();
-    poll_low_battery();
+    /* While a low-battery shutdown countdown is active, recheck every
+       second so USB insertion or a disabled policy can cancel promptly. */
+    const int64_t battery_interval_us = low_battery_latched ? POWER_POLICY_TEMPERATURE_INTERVAL_US
+                                                            : POWER_POLICY_BATTERY_INTERVAL_US;
+    if( now_us - last_battery_poll_us >= battery_interval_us )
+    {
+        last_battery_poll_us = now_us;
+        poll_low_battery();
+    }
 }

@@ -8,6 +8,7 @@
 #include "app_audio_policy.h"
 
 static const rfscout_app_audio_policy_t policies[ RFSCOUT_APP_COUNT ] = {
+    [RFSCOUT_APP_BATTERY] = { .ui_audio = true, .event_audio = true },
     [RFSCOUT_APP_SYSTEM_EVENTS] =
         {
             .ui_audio = true,
