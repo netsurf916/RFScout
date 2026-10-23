@@ -805,7 +805,7 @@ static void describe_last_attempt( const hotspot_entry_t *a_entry, char *a_line,
     switch( last->outcome )
     {
         case HOTSPOT_STATUS_GREEN:
-            snprintf( a_line, a_capacity, "Last: NTP ok, HTTPS 200" );
+            snprintf( a_line, a_capacity, "Last: time ready, HTTPS 200" );
             break;
         case HOTSPOT_STATUS_YELLOW:
             if( HOTSPOT_STAGE_NTP == last->failed_stage )
@@ -814,12 +814,12 @@ static void describe_last_attempt( const hotspot_entry_t *a_entry, char *a_line,
             }
             else if( last->http_status > 0 )
             {
-                snprintf( a_line, a_capacity, "Last: NTP ok, HTTPS %d", last->http_status );
+                snprintf( a_line, a_capacity, "Last: time ready, HTTPS %d", last->http_status );
             }
             else
             {
                 snprintf(
-                    a_line, a_capacity, "Last: NTP ok, HTTPS %s", esp_err_to_name( last->error ) );
+                    a_line, a_capacity, "Last: time ready, HTTPS %s", esp_err_to_name( last->error ) );
             }
             break;
         default:
