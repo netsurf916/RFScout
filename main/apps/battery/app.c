@@ -123,7 +123,8 @@ static void draw_history( void )
         {
             continue;
         }
-        const int x = x0 + graph_w - 1 - (int)( age_us * ( graph_w - 1 ) / BATTERY_HISTORY_WINDOW_US );
+        const int x =
+            x0 + graph_w - 1 - (int)( age_us * ( graph_w - 1 ) / BATTERY_HISTORY_WINDOW_US );
         const int y = y0 + ( ( max_ma - samples[ i ].current_ma ) * graph_h ) / range;
         const int top = y < zero_y ? y : zero_y;
         const int height = y < zero_y ? zero_y - y : y - zero_y;
@@ -168,27 +169,37 @@ static void draw_gauge_configuration( const battery_status_t *a_status )
 
     draw_panel( 4, UI_LAYOUT_PANEL_TOP_Y, 312, 140 );
     display_draw_text( 10, 30, "GAUGE CONFIGURATION / PROFILE", theme->secondary, 1U );
-    snprintf( text, sizeof( text ), "STATE %s  STEP %s",
-              gauge_config_label( config.result ), config.stage ? config.stage : "NONE" );
-    display_draw_text( 10, 48, text,
-                       BATTERY_GAUGE_CONFIG_FAILED == config.result ? theme->error : theme->text, 1U );
+    snprintf( text,
+              sizeof( text ),
+              "STATE %s  STEP %s",
+              gauge_config_label( config.result ),
+              config.stage ? config.stage : "NONE" );
+    display_draw_text( 10,
+                       48,
+                       text,
+                       BATTERY_GAUGE_CONFIG_FAILED == config.result ? theme->error : theme->text,
+                       1U );
 
     if( config.profile_read )
     {
-        snprintf( text, sizeof( text ), "PROFILE FCC %u  DESIGN %u mAh",
+        snprintf( text,
+                  sizeof( text ),
+                  "PROFILE FCC %u  DESIGN %u mAh",
                   (unsigned)config.profile_full_capacity_mah,
                   (unsigned)config.profile_design_capacity_mah );
         display_draw_text( 10, 66, text, theme->accent, 1U );
     }
     else
     {
-        display_draw_text( 10, 66, available ? "PROFILE NOT YET READ" : "GAUGE UNAVAILABLE",
-                           theme->warning, 1U );
+        display_draw_text(
+            10, 66, available ? "PROFILE NOT YET READ" : "GAUGE UNAVAILABLE", theme->warning, 1U );
     }
 
     if( a_status->gauge_details_fresh )
     {
-        snprintf( text, sizeof( text ), "LIVE FCC %u  DESIGN %u mAh",
+        snprintf( text,
+                  sizeof( text ),
+                  "LIVE FCC %u  DESIGN %u mAh",
                   (unsigned)a_status->full_capacity_mah,
                   (unsigned)a_status->design_capacity_mah );
         const bool mismatch = BATTERY_GAUGE_CONFIG_VERIFIED == config.result &&
@@ -197,8 +208,7 @@ static void draw_gauge_configuration( const battery_status_t *a_status )
         display_draw_text( 10, 84, text, mismatch ? theme->warning : theme->text, 1U );
         if( mismatch )
         {
-            display_draw_text( 10, 104, "PROFILE / LIVE DESIGN MISMATCH",
-                               theme->warning, 1U );
+            display_draw_text( 10, 104, "PROFILE / LIVE DESIGN MISMATCH", theme->warning, 1U );
         }
     }
     else
