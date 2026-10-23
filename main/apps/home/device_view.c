@@ -1947,7 +1947,7 @@ void device_view_poll( int64_t a_now_us )
         /* GPS or NTP may establish trusted time during manual editing. Cancel the
            editor before stale fields can override synchronized time. */
         if( time_editing && time_selected_item >= TIME_MENU_YEAR &&
-            time_selected_item <= TIME_MENU_MINUTE && device_time_gps_available() )
+            time_selected_item <= TIME_MENU_MINUTE && device_time_network_ready() )
         {
             time_editing = false;
             refresh_edited_time();
