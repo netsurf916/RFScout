@@ -818,8 +818,10 @@ static void describe_last_attempt( const hotspot_entry_t *a_entry, char *a_line,
             }
             else
             {
-                snprintf(
-                    a_line, a_capacity, "Last: time ready, HTTPS %s", esp_err_to_name( last->error ) );
+                snprintf( a_line,
+                          a_capacity,
+                          "Last: time ready, HTTPS %s",
+                          esp_err_to_name( last->error ) );
             }
             break;
         default:
