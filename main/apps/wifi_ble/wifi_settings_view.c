@@ -25,12 +25,8 @@ void wifi_settings_view_render( unsigned a_selected,
                                 uint16_t a_wifi_timeout_seconds,
                                 uint16_t a_ble_timeout_seconds )
 {
-    static const char *labels[ WIFI_SETTINGS_ITEM_COUNT ] = { "Back",
-                                                              "Notifications",
-                                                              "Evidence threshold",
-                                                              "WiFi timeout",
-                                                              "BLE timeout",
-                                                              "Sources" };
+    static const char *labels[ WIFI_SETTINGS_ITEM_COUNT ] = {
+        "Back", "Notifications", "Evidence threshold", "WiFi timeout", "BLE timeout", "Sources" };
     const ui_theme_palette_t *theme = ui_theme_get();
 
     display_clear( theme->background );
