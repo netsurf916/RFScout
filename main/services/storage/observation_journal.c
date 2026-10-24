@@ -32,8 +32,7 @@ static const char *source_name( rf_source_t a_source )
 
 static int append( char *a_line, size_t a_capacity, int a_length, const char *a_format, ... )
 {
-    if( NULL == a_line || NULL == a_format || a_length < 0 ||
-        (size_t)a_length >= a_capacity )
+    if( NULL == a_line || NULL == a_format || a_length < 0 || (size_t)a_length >= a_capacity )
     {
         return -1;
     }
