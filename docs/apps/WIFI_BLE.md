@@ -6,6 +6,14 @@ The WiFi/BLE application passively observes Wi-Fi frames and supports either pas
 
 ## Services and lifecycle
 
+### Shared discovery and retention migration (PR #136)
+
+**Target behavior; app migration pending.** The existing framework Wi-Fi monitor remains the sole channel-hopping and packet-discovery implementation. A shared, bounded, allocation-free AP metadata decoder will additionally expose SSID, BSSID, authentication evidence, channel and RSSI for consumers such as Hotspots. The WiFi/BLE collection remains app-owned and retains its canonical (MAC, address-type) merging and independent Wi-Fi/BLE source lifetimes; the Hotspots table is **not** merged into this store.
+
+WiFi/BLE keeps its configurable 60-second default timeouts (10–300 s, separately for Wi-Fi and BLE) and gains **optional GPS coverage-distance expiry** (Off by default) plus a *measured memory budget*. Capacity pressure is a resource goal, not a free-standing eviction policy: first expire time/distance-stale records, then iteratively choose safe victims by age and optionally RSSI until space is available. Do not model Hotspots' OPEN/OWE ranking as a generic WiFi/BLE category. If all eligible records are protected, drop the new observation without exceeding the budget. Keep multi-source identities alive while either source is active. The redundant **Reset detections** action will be removed after migration because exiting the app already clears its session data.
+
+Common observation JSONL records (source, address, time, RSSI, optional location) will be serialized through the shared SD journal abstraction; surveillance-specific evidence remains an app-owned event/extension. Journal only selected/aggregated observations, not each advertising packet or beacon. Until the migration lands, the current settings, history schema, and behavior below remain authoritative.
+
 The application requires delayed activation and declares both the Wi-Fi monitor and BLE monitor session services. Both collectors must quiesce before app-session PSRAM can be reclaimed.
 
 The normalized live observation store grows in app-owned PSRAM instead of enforcing the former fixed 1000-item limit. Collector ingestion uses an identity index rather than linearly rescanning the entire collection for every callback.
