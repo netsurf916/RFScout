@@ -145,6 +145,11 @@ int main(void)
     assert(!wifi_ap_observation_parse(frame, used, -60, 1, &ap));
 
     begin(0, 0); ssid();
+    frame[1] = 0x08; /* Retry bit does not invalidate a management frame. */
+    ap = parse();
+    assert(ap.auth == RFSCOUT_WIFI_AP_AUTH_OPEN);
+
+    begin(0, 0); ssid();
     frame[0] = 0x08; /* Data frame, not beacon. */
     assert(!wifi_ap_observation_parse(frame, used, -60, 1, &ap));
 
