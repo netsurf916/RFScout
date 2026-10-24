@@ -157,7 +157,7 @@ bool wifi_ap_observation_parse( const uint8_t *a_frame,
         return false;
     }
     const uint16_t control = little_endian_16( a_frame );
-    if( 0x0080U != control && 0x0050U != control )
+    if( 0x0080U != ( control & 0x00ffU ) && 0x0050U != ( control & 0x00ffU ) )
     {
         return false;
     }
