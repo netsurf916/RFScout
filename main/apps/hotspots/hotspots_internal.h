@@ -35,6 +35,15 @@ uint16_t hotspots_match_distance_m( void );
 /** @brief Step the match distance and save it; failures are returned, not hidden. */
 esp_err_t hotspots_step_match_distance( int a_direction );
 
+/** @brief Completed scan misses before a Live BSSID expires (1-10). */
+uint8_t hotspots_missed_scan_limit( void );
+/** @brief Step the missed-scan limit and persist the change. */
+esp_err_t hotspots_step_missed_scans( int a_direction );
+/** @brief Excess distance beyond Live estimated coverage; 0 disables geographic eviction. */
+uint16_t hotspots_eviction_distance_m( void );
+/** @brief Step the eviction distance in 100 m increments and persist the change. */
+esp_err_t hotspots_step_eviction_distance( int a_direction );
+
 /**
  * @brief Queue a manual check for a visible entry.
  * @param a_profile_id Profile chosen by the user for a secured entry; 0 uses the resolved one.
