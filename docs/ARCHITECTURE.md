@@ -258,6 +258,16 @@ Speaker output is a separate semantic service on the validated T-Embed I2S1 path
 
 ## Radio-service boundaries
 
+### Planned shared observation refactor (not yet implemented)
+
+The stacked refactor following PR #135 will reuse the existing Wi-Fi monitor and channel scheduler for Hotspots, extending their normalized access-point observations with SSID and exact authentication mode rather than maintaining a second AP scan-result pipeline. The framework must own transitions between receive-only monitoring and framework-managed station association/TLS, with callback quiescence and deliberate restart. WiFi/BLE and Hotspots retain distinct app-session collections: Hotspots keeps its provisional 128-entry Live bound and OPEN/OWE admission preference; WiFi/BLE gets an app-specific, measured memory budget. No shared policy engine is required: small time/distance, RSSI and allocation-accounting helpers may be shared, while each app decides eviction eligibility and victim ranking.
+
+Both apps will use elapsed time since the last observation and optional receiver-distance expiry, not Hotspots-specific missed-scan counters. A capacity limit is an admission/memory target: apps first perform normal expiry and then iteratively evict eligible records according to their local policy; if no safe victim exists, the newcomer is rejected. RSSI is primarily a secondary ranking criterion under capacity pressure, not a blanket threshold for WiFi/BLE. Existing Hotspots protections for active checks/manual requests and WiFi/BLE multi-source identity lifetime must survive. Intentional monitoring interruptions for association and TLS must not create artificial expiration.
+
+The existing `media_journal` abstraction remains the sole SD path. A common versioned observation-record envelope should carry source, identity, time, RSSI and optional location, with app-specific characterization or surveillance fields maintained separately. Journaling should be aggregated/rate-limited, not one record per received beacon/advertisement. Hotspots History should use bounded SD-backed nearest-entry queries and bounded view scratch rather than replaying the whole characterized population into live PSRAM; credential matching, epoch semantics, compaction and removable-media recovery still need correct query behavior. The WiFi/BLE redundant Reset detections menu action can be retired because app transitions already clear session state.
+
+This is a design target for the new stacked PR, not a description of current firmware behavior. Completion requires host tests, ESP-IDF builds, and hardware measurements of PSRAM, internal free heap and largest allocatable blocks across scanning, association and TLS.
+
 The Wi-Fi and BLE monitor services normalize passive observations for the [WiFi / BLE app](apps/WIFI_BLE.md). Their app-owned collection/index lives in the active app session and both collectors must quiesce before that session is reclaimed.
 
 CC1101 and nRF24 are receive-only scanner services advertised by the current T-Embed profile. Each owns a session-managed worker that must stop before app memory release. App-specific interpretation and current retained-history limits are documented in [CC1101](apps/CC1101.md) and [nRF24](apps/NRF24.md).
