@@ -326,9 +326,12 @@ static void promiscuous( void *a_buffer, wifi_promiscuous_pkt_type_t a_type )
             if( NULL != ap_sink )
             {
                 rfscout_wifi_ap_observation_t ap;
-                if( wifi_ap_observation_parse( packet->payload,
-                                               packet->rx_ctrl.sig_len,
-                                               packet->rx_ctrl.rssi,
+                /* ESP-IDF sig_len includes the trailing 802.11 FCS. The decoder
+                   expects information elements only, not the four CRC octets. */
+                const size_t length = packet->rx_ctrl.sig_len;
+                if( length >= 4U && wifi_ap_observation_parse( packet->payload,
+                                                                 length - 4U,
+                                                                 packet->rx_ctrl.rssi,
                                                packet->rx_ctrl.channel,
                                                &ap ) )
                 {
