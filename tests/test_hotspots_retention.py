@@ -131,6 +131,57 @@ int main(void)
     assert(hotspot_table_find(&table, batch[1].bssid) != NULL);
     assert(table.count == HOTSPOT_TABLE_MAX_ENTRIES);
     hotspot_table_reset(&table);
+
+    /* Preserve guest-facing OPEN and OWE entries preferentially under pressure. */
+    for (unsigned round = 0; round < 4; ++round)
+    {
+        for (unsigned i = 0; i < 32; ++i)
+        {
+            const unsigned id = round * 32 + i;
+            batch[i] = bss(id);
+            batch[i].security = id < 32 ? RFSCOUT_WIFI_STATION_SECURITY_OPEN :
+                                id < 64 ? RFSCOUT_WIFI_STATION_SECURITY_OWE :
+                                          RFSCOUT_WIFI_STATION_SECURITY_SECURED;
+        }
+        scan(&table, batch, 32, retention, NULL);
+    }
+    assert(table.count == HOTSPOT_TABLE_MAX_ENTRIES);
+    rfscout_wifi_station_bss_t guest_new = bss(1002);
+    scan(&table, &guest_new, 1, retention, NULL);
+    assert(table.count == HOTSPOT_TABLE_MAX_ENTRIES);
+    assert(hotspot_table_find(&table, guest_new.bssid) != NULL);
+    rfscout_wifi_station_bss_t secured_oldest = bss(64);
+    assert(hotspot_table_find(&table, secured_oldest.bssid) == NULL);
+    rfscout_wifi_station_bss_t guest_oldest = bss(0);
+    assert(hotspot_table_find(&table, guest_oldest.bssid) != NULL);
+    rfscout_wifi_station_bss_t owe_oldest = bss(32);
+    assert(hotspot_table_find(&table, owe_oldest.bssid) != NULL);
+
+    rfscout_wifi_station_bss_t secured_new = bss(1003);
+    secured_new.security = RFSCOUT_WIFI_STATION_SECURITY_SECURED;
+    scan(&table, &secured_new, 1, retention, NULL);
+    assert(hotspot_table_find(&table, secured_new.bssid) != NULL);
+    rfscout_wifi_station_bss_t secured_second = bss(65);
+    assert(hotspot_table_find(&table, secured_second.bssid) == NULL);
+
+    /* A secured newcomer cannot displace a guest candidate even when all are absent. */
+    hotspot_table_reset(&table);
+    for (unsigned round = 0; round < 4; ++round)
+    {
+        for (unsigned i = 0; i < 32; ++i)
+        {
+            batch[i] = bss(round * 32 + i);
+            batch[i].security = round < 2 ? RFSCOUT_WIFI_STATION_SECURITY_OPEN :
+                                           RFSCOUT_WIFI_STATION_SECURITY_OWE;
+        }
+        scan(&table, batch, 32, retention, NULL);
+    }
+    assert(table.count == HOTSPOT_TABLE_MAX_ENTRIES);
+    assert(hotspot_table_apply_scan(&table, &secured_new, 1, &retention, NULL) == ESP_ERR_NO_MEM);
+    assert(table.count == HOTSPOT_TABLE_MAX_ENTRIES);
+    assert(hotspot_table_find(&table, bss(0).bssid) != NULL);
+    assert(hotspot_table_find(&table, secured_new.bssid) == NULL);
+    hotspot_table_reset(&table);
     return 0;
 }
 '''
