@@ -128,8 +128,8 @@ static bool out_of_range( const hotspot_entry_t *a_entry,
                           uint16_t a_threshold_m,
                           const rfscout_gps_snapshot_t *a_gps )
 {
-    if( 0U == a_threshold_m || !gps_location_fresh( a_gps ) ||
-        !a_entry->live_bounds.valid || a_entry->visible )
+    if( 0U == a_threshold_m || !gps_location_fresh( a_gps ) || !a_entry->live_bounds.valid ||
+        a_entry->visible )
     {
         return false;
     }
@@ -139,8 +139,8 @@ static bool out_of_range( const hotspot_entry_t *a_entry,
     {
         return false;
     }
-    const double center_distance = geo_distance_m(
-        latitude, longitude, a_gps->latitude_deg, a_gps->longitude_deg );
+    const double center_distance =
+        geo_distance_m( latitude, longitude, a_gps->latitude_deg, a_gps->longitude_deg );
     return center_distance - observed_radius_m( &a_entry->live_bounds ) > (double)a_threshold_m;
 }
 
@@ -183,8 +183,8 @@ esp_err_t hotspot_table_apply_scan( hotspot_table_t *a_table,
                                     const hotspot_retention_t *a_retention,
                                     const rfscout_gps_snapshot_t *a_gps )
 {
-    if( NULL == a_table || ( NULL == a_records && 0U != a_count ) ||
-        NULL == a_retention || 0U == a_retention->missed_scan_limit )
+    if( NULL == a_table || ( NULL == a_records && 0U != a_count ) || NULL == a_retention ||
+        0U == a_retention->missed_scan_limit )
     {
         return ESP_ERR_INVALID_ARG;
     }
@@ -227,8 +227,8 @@ esp_err_t hotspot_table_apply_scan( hotspot_table_t *a_table,
         {
             continue;
         }
-        if( 0 != strcmp( entry->bss.ssid, bss->ssid ) ||
-            entry->bss.security != bss->security || entry->bss.auth_mode != bss->auth_mode )
+        if( 0 != strcmp( entry->bss.ssid, bss->ssid ) || entry->bss.security != bss->security ||
+            entry->bss.auth_mode != bss->auth_mode )
         {
             /* Changed identity starts a new observation session, including location bounds. */
             memset( entry, 0, sizeof( *entry ) );
@@ -267,8 +267,7 @@ esp_err_t hotspot_table_apply_scan( hotspot_table_t *a_table,
     for( size_t record = 0U; record < a_count; ++record )
     {
         const rfscout_wifi_station_bss_t *bss = &a_records[ record ];
-        if( !hotspot_bss_eligible( bss ) ||
-            NULL != hotspot_table_find( a_table, bss->bssid ) )
+        if( !hotspot_bss_eligible( bss ) || NULL != hotspot_table_find( a_table, bss->bssid ) )
         {
             continue;
         }
