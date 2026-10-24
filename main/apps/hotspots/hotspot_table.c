@@ -157,9 +157,22 @@ static void remove_entry( hotspot_table_t *a_table, size_t a_index )
     memset( &a_table->entries[ a_table->count ], 0, sizeof( hotspot_entry_t ) );
 }
 
-/** @brief Least recently observed unprotected entry. Current-scan sightings are protected. */
-static size_t eviction_victim( const hotspot_table_t *a_table )
+/** @brief Open and OWE BSSIDs need no saved credentials and are guest-accessible candidates. */
+static bool guest_accessible( const rfscout_wifi_station_bss_t *a_bss )
 {
+    return RFSCOUT_WIFI_STATION_SECURITY_OPEN == a_bss->security ||
+           RFSCOUT_WIFI_STATION_SECURITY_OWE == a_bss->security;
+}
+
+/**
+ * @brief Prefer evicting secured BSSIDs, then least recently observed within each class.
+ * @details Never discard a guest-accessible record to admit a secured one. Current-scan
+ *          sightings and queued manual requests remain protected regardless of security.
+ */
+static size_t eviction_victim( const hotspot_table_t *a_table,
+                               const rfscout_wifi_station_bss_t *a_incoming )
+{
+    const bool incoming_guest = guest_accessible( a_incoming );
     size_t victim = a_table->count;
     for( size_t index = 0U; index < a_table->count; ++index )
     {
@@ -168,8 +181,16 @@ static size_t eviction_victim( const hotspot_table_t *a_table )
         {
             continue;
         }
+        const bool entry_guest = guest_accessible( &entry->bss );
+        if( entry_guest && !incoming_guest )
+        {
+            /* A secured newcomer must not displace an OPEN/OWE observation. */
+            continue;
+        }
         if( victim == a_table->count ||
-            entry->last_seen_scan < a_table->entries[ victim ].last_seen_scan )
+            ( !entry_guest && guest_accessible( &a_table->entries[ victim ].bss ) ) ||
+            ( entry_guest == guest_accessible( &a_table->entries[ victim ].bss ) &&
+              entry->last_seen_scan < a_table->entries[ victim ].last_seen_scan ) )
         {
             victim = index;
         }
@@ -273,7 +294,7 @@ esp_err_t hotspot_table_apply_scan( hotspot_table_t *a_table,
         }
         if( a_table->count == HOTSPOT_TABLE_MAX_ENTRIES )
         {
-            const size_t victim = eviction_victim( a_table );
+            const size_t victim = eviction_victim( a_table, bss );
             if( victim == a_table->count )
             {
                 result = ESP_ERR_NO_MEM;
