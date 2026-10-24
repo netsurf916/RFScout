@@ -101,6 +101,7 @@ typedef rfscout_app_runtime_result_t ( *rfscout_app_runtime_handler_t )(
 typedef struct
 {
     radio_observation_fn wifi_observation;
+    radio_ap_observation_fn wifi_ap_observation;
     radio_raw_frame_fn wifi_raw;
     ble_observation_fn ble_observation;
     ble_raw_adv_fn ble_raw;
