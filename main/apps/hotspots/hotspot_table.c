@@ -211,6 +211,10 @@ esp_err_t hotspot_table_apply_scan( hotspot_table_t *a_table,
     }
 
     const bool located = gps_location_fresh( a_gps );
+    /* A full scan snapshot may have been truncated by the 32-BSSID station limit.
+       Only positive sightings are authoritative; absence cannot age or distance-expire
+       an entry when the snapshot may omit other networks still on air. */
+    const bool complete_snapshot = a_count < RFSCOUT_WIFI_STATION_BSS_MAX_RESULTS;
     const uint32_t scan_ordinal = a_table->scans_completed + 1U;
     a_table->open_count = 0U;
     a_table->owe_count = 0U;
@@ -268,7 +272,7 @@ esp_err_t hotspot_table_apply_scan( hotspot_table_t *a_table,
     for( size_t index = 0U; index < a_table->count; )
     {
         hotspot_entry_t *entry = &a_table->entries[ index ];
-        if( !entry->visible )
+        if( !entry->visible && complete_snapshot )
         {
             if( entry->missed_scans < UINT8_MAX )
             {
@@ -285,36 +289,44 @@ esp_err_t hotspot_table_apply_scan( hotspot_table_t *a_table,
     }
 
     esp_err_t result = ESP_OK;
-    for( size_t record = 0U; record < a_count; ++record )
+    /* Admission order is independent of driver scan order. Guest-accessible BSSIDs take
+       priority over new secured BSSIDs when remaining slots cannot hold both. */
+    for( unsigned priority = 0U; priority < 2U; ++priority )
     {
-        const rfscout_wifi_station_bss_t *bss = &a_records[ record ];
-        if( !hotspot_bss_eligible( bss ) || NULL != hotspot_table_find( a_table, bss->bssid ) )
+        for( size_t record = 0U; record < a_count; ++record )
         {
-            continue;
-        }
-        if( a_table->count == HOTSPOT_TABLE_MAX_ENTRIES )
-        {
-            const size_t victim = eviction_victim( a_table, bss );
-            if( victim == a_table->count )
+            const rfscout_wifi_station_bss_t *bss = &a_records[ record ];
+            if( !hotspot_bss_eligible( bss ) ||
+                guest_accessible( bss ) != ( 0U == priority ) ||
+                NULL != hotspot_table_find( a_table, bss->bssid ) )
+            {
+                continue;
+            }
+            if( a_table->count == HOTSPOT_TABLE_MAX_ENTRIES )
+            {
+                const size_t victim = eviction_victim( a_table, bss );
+                if( victim == a_table->count )
+                {
+                    result = ESP_ERR_NO_MEM;
+                    continue;
+                }
+                remove_entry( a_table, victim );
+            }
+            if( ESP_OK != ensure_capacity( a_table, a_table->count + 1U ) )
             {
                 result = ESP_ERR_NO_MEM;
                 continue;
             }
-            remove_entry( a_table, victim );
-        }
-        if( ESP_OK != ensure_capacity( a_table, a_table->count + 1U ) )
-        {
-            result = ESP_ERR_NO_MEM;
-            continue;
-        }
-        hotspot_entry_t *entry = &a_table->entries[ a_table->count++ ];
-        memset( entry, 0, sizeof( *entry ) );
-        entry->bss = *bss;
-        entry->visible = true;
-        entry->last_seen_scan = scan_ordinal;
-        if( located )
-        {
-            geo_bounds_extend( &entry->live_bounds, a_gps->latitude_deg, a_gps->longitude_deg );
+            hotspot_entry_t *entry = &a_table->entries[ a_table->count++ ];
+            memset( entry, 0, sizeof( *entry ) );
+            entry->bss = *bss;
+            entry->visible = true;
+            entry->last_seen_scan = scan_ordinal;
+            if( located )
+            {
+                geo_bounds_extend(
+                    &entry->live_bounds, a_gps->latitude_deg, a_gps->longitude_deg );
+            }
         }
     }
     a_table->scans_completed = scan_ordinal;
