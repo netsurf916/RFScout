@@ -204,7 +204,7 @@ must not leave a visible but unjournaled record. Short-lived credential and HTTP
 are released by their owning operation rather than retained until the next app exit;
 app-session reclamation remains the final safety net, not the ordinary cleanup strategy.
 
-There is deliberately no arbitrary per-app item quota. Collections grow according to resources and semantics; presentation scratch can remain bounded separately.
+There is no blanket per-app item quota: retained collections grow according to their semantics and resources. Explicitly bounded active collections, such as the Hotspots Live table, are exceptions justified by transient memory headroom; durable history remains independent. Presentation scratch can be bounded separately.
 
 Usable external PSRAM is a supported-platform requirement. RFScout does not silently substitute internal SRAM with a hidden lower capacity.
 
