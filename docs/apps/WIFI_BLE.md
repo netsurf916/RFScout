@@ -144,7 +144,6 @@ Changing the threshold reevaluates every currently retained case immediately. Lo
 
 Pressing the center/select control from the main WiFi/BLE view opens the app settings surface. Current items are:
 
-- **Reset detections** — clears the current canonical observation collection;
 - **Notifications** — opens the shared per-app notification settings;
 - **Evidence threshold** — cycles Everything / Possible / Probable / Distinctive and immediately reevaluates retained surveillance cases;
 - **WiFi timeout** — independent Wi-Fi source-retention timeout; and
