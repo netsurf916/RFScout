@@ -83,6 +83,7 @@ int main(void)
     rfscout_gps_snapshot_t moved = gps(0.001);
     rfscout_gps_snapshot_t near = gps(0.004);
     rfscout_gps_snapshot_t far = gps(0.007);
+    rfscout_gps_snapshot_t farther = gps(0.018);
 
     scan(&table, &one, 1, retention, &origin);
     scan(&table, &one, 1, retention, &moved);
@@ -91,7 +92,7 @@ int main(void)
     assert(table.count == 1 && !table.entries[0].visible);
     scan(&table, &one, 1, retention, &far);
     assert(table.count == 1 && table.entries[0].visible);
-    scan(&table, NULL, 0, retention, &far);
+    scan(&table, NULL, 0, retention, &farther);
     assert(table.count == 0); /* 500m beyond half-diagonal of live bounds. */
 
     scan(&table, &one, 1, retention, NULL);
