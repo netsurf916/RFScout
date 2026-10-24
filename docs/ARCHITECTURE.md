@@ -196,6 +196,12 @@ A provider that must perform a **manual GPIO-level SPI sequence** outside a norm
 
 App-session **PSRAM** is for retained observations, histories, captures, and other meaningfully sized/growable state. Internal SRAM remains appropriate for RTOS/system state, task stacks, latency-sensitive allocations, and small bounded DMA/peripheral buffers. Providers should prefer the simplest memory class that satisfies the fixed capacity and peripheral constraints; external PSRAM is reserved for cases where retained/growable size materially justifies it.
 
+Retained, dynamically growing records must reserve capacity before updating any index or
+other in-memory state that is expected to survive a journal replay. Allocation failure
+must not leave a visible but unjournaled record. Short-lived credential and HTTPS buffers
+are released by their owning operation rather than retained until the next app exit;
+app-session reclamation remains the final safety net, not the ordinary cleanup strategy.
+
 There is deliberately no arbitrary per-app item quota. Collections grow according to resources and semantics; presentation scratch can remain bounded separately.
 
 Usable external PSRAM is a supported-platform requirement. RFScout does not silently substitute internal SRAM with a hidden lower capacity.
@@ -454,7 +460,9 @@ the journal is not thread-safe and runs from the caller's own task or poll.
   When that outcome is uncertain (truncate or close failed), the segment is abandoned and the
   next append starts a fresh `CREATE_NEW` segment, so a torn line is never followed by more
   records. Callers can tell a rolled-back batch (safe to retry) from an uncertain one (dropped
-  rather than duplicated).
+  rather than duplicated). Ordinary segment rotation and a failed attempt to create a new
+  segment do not by themselves make an unwritten batch uncertain; a sequence number is
+  committed only after its file was opened successfully.
 - On first use after a mount the journal scans its collection; the newest segment is
   continued only when it ends with a complete line and is below the segment size.
 - A segment that reaches its size bound is closed and a new one is started; segments beyond
