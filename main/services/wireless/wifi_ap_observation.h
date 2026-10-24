@@ -54,7 +54,8 @@ typedef struct
 
 /**
  * @brief Decode a single complete 802.11 Beacon or Probe Response.
- * @details No heap allocation or retained pointers. Rejects malformed IEs, invalid RSN
+ * @details a_length excludes the 4-byte 802.11 FCS (ESP-IDF rx_ctrl.sig_len includes it).
+ *          No heap allocation or retained pointers. Rejects malformed IEs, invalid RSN
  *          suites, group BSSIDs, and truncated frames. The caller owns and copies the result.
  *          A valid hidden-SSID frame has ssid_length=0; consumers decide whether to admit it.
  *          Only normalized evidence is returned; it must not directly authorize association.
