@@ -64,9 +64,9 @@ static bool parse_rsn( const uint8_t *a_ie, size_t a_length, uint32_t *a_akm )
         }
         switch( suite[ 3 ] )
         {
-            case 1U: /* 802.1X */
-            case 3U: /* FT over 802.1X */
-            case 5U: /* SHA256 802.1X */
+            case 1U:  /* 802.1X */
+            case 3U:  /* FT over 802.1X */
+            case 5U:  /* SHA256 802.1X */
             case 11U: /* Suite B */
             case 12U: /* Suite B 192-bit */
             case 13U: /* FT 802.1X SHA384 */
