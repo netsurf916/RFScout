@@ -421,8 +421,7 @@ static void load_settings( void )
                                         .eviction_distance_steps =
                                             HOTSPOTS_EVICTION_DISTANCE_DEFAULT_STEPS };
     hotspots_settings_t saved = { 0 };
-    if( ESP_OK ==
-        app_store_load( HOTSPOTS_SETTINGS_KEY, &saved, sizeof( saved ), settings_valid ) )
+    if( ESP_OK == app_store_load( HOTSPOTS_SETTINGS_KEY, &saved, sizeof( saved ), settings_valid ) )
     {
         settings = saved;
         return;
@@ -454,7 +453,8 @@ uint16_t hotspots_eviction_distance_m( void )
 
 static esp_err_t save_settings( const hotspots_settings_t *a_previous )
 {
-    const esp_err_t result = app_store_write( HOTSPOTS_SETTINGS_KEY, &settings, sizeof( settings ) );
+    const esp_err_t result =
+        app_store_write( HOTSPOTS_SETTINGS_KEY, &settings, sizeof( settings ) );
     if( ESP_OK != result )
     {
         settings = *a_previous;
@@ -467,29 +467,31 @@ esp_err_t hotspots_step_match_distance( int a_direction )
 {
     const hotspots_settings_t previous = settings;
     const uint8_t old = settings.match_distance_index;
-    settings.match_distance_index = (uint8_t)( a_direction > 0
-        ? ( old + 1U ) % MATCH_DISTANCE_OPTION_COUNT
-        : ( old + MATCH_DISTANCE_OPTION_COUNT - 1U ) % MATCH_DISTANCE_OPTION_COUNT );
+    settings.match_distance_index =
+        (uint8_t)( a_direction > 0
+                       ? ( old + 1U ) % MATCH_DISTANCE_OPTION_COUNT
+                       : ( old + MATCH_DISTANCE_OPTION_COUNT - 1U ) % MATCH_DISTANCE_OPTION_COUNT );
     return save_settings( &previous );
 }
 
 esp_err_t hotspots_step_missed_scans( int a_direction )
 {
     const hotspots_settings_t previous = settings;
-    settings.missed_scan_limit = (uint8_t)( a_direction > 0
-        ? ( settings.missed_scan_limit % 10U ) + 1U
-        : ( settings.missed_scan_limit + 8U ) % 10U + 1U );
+    settings.missed_scan_limit =
+        (uint8_t)( a_direction > 0 ? ( settings.missed_scan_limit % 10U ) + 1U
+                                   : ( settings.missed_scan_limit + 8U ) % 10U + 1U );
     return save_settings( &previous );
 }
 
 esp_err_t hotspots_step_eviction_distance( int a_direction )
 {
     const hotspots_settings_t previous = settings;
-    settings.eviction_distance_steps = (uint8_t)( a_direction > 0
-        ? ( settings.eviction_distance_steps + 1U ) %
-              ( HOTSPOTS_EVICTION_DISTANCE_MAX_STEPS + 1U )
-        : ( settings.eviction_distance_steps + HOTSPOTS_EVICTION_DISTANCE_MAX_STEPS ) %
-              ( HOTSPOTS_EVICTION_DISTANCE_MAX_STEPS + 1U ) );
+    settings.eviction_distance_steps =
+        (uint8_t)( a_direction > 0 ? ( settings.eviction_distance_steps + 1U ) %
+                                         ( HOTSPOTS_EVICTION_DISTANCE_MAX_STEPS + 1U )
+                                   : ( settings.eviction_distance_steps +
+                                       HOTSPOTS_EVICTION_DISTANCE_MAX_STEPS ) %
+                                         ( HOTSPOTS_EVICTION_DISTANCE_MAX_STEPS + 1U ) );
     return save_settings( &previous );
 }
 
@@ -593,7 +595,9 @@ static void complete_scan( int64_t a_now_us )
         };
         if( ESP_OK != hotspot_table_apply_scan( &table, scan_buffer, count, &retention, &gps ) )
         {
-            ESP_LOGW( TAG, "Hotspots live table at capacity or out of memory; some networks are not shown" );
+            ESP_LOGW(
+                TAG,
+                "Hotspots live table at capacity or out of memory; some networks are not shown" );
         }
     }
     rfscout_gps_snapshot_t gps = { 0 };
