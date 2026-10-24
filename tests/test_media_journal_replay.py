@@ -525,13 +525,13 @@ static void create_failure_does_not_advance( void )
     store_reset();
     bind( 4096U );
     fail_create = true;
-    assert( ESP_OK != append( ( const char *[] ){ "{\\"n\\":1}" }, 1U ) );
+    assert( ESP_OK != append( ( const char *[] ){ "{\"n\":1}" }, 1U ) );
     assert( !media_journal_outcome_uncertain( &journal ) );
     assert( 0U == journal.last );
     assert( !exists( "hist-00000001.jsonl" ) );
-    assert( ESP_OK == append( ( const char *[] ){ "{\\"n\\":1}" }, 1U ) );
+    assert( ESP_OK == append( ( const char *[] ){ "{\"n\":1}" }, 1U ) );
     assert( 1U == journal.last );
-    assert( holds( "hist-00000001.jsonl", "{\\"n\\":1}\\n" ) );
+    assert( holds( "hist-00000001.jsonl", "{\"n\":1}\n" ) );
 }
 
 static void append_rollback( void )
