@@ -41,13 +41,13 @@ bool observation_retention_outside_coverage( const geo_bounds_t *a_bounds,
         return false;
     }
     const double first_diagonal = geo_distance_m( a_bounds->min_latitude,
-                                                   a_bounds->min_longitude,
-                                                   a_bounds->max_latitude,
-                                                   a_bounds->max_longitude );
+                                                  a_bounds->min_longitude,
+                                                  a_bounds->max_latitude,
+                                                  a_bounds->max_longitude );
     const double second_diagonal = geo_distance_m( a_bounds->min_latitude,
-                                                    a_bounds->max_longitude,
-                                                    a_bounds->max_latitude,
-                                                    a_bounds->min_longitude );
+                                                   a_bounds->max_longitude,
+                                                   a_bounds->max_latitude,
+                                                   a_bounds->min_longitude );
     const double radius = fmax( first_diagonal, second_diagonal ) / 2.0;
     const double distance = geo_distance_m(
         center_latitude, center_longitude, a_receiver_latitude, a_receiver_longitude );
@@ -64,6 +64,5 @@ bool observation_retention_over_budget( size_t a_used_bytes,
                                         size_t a_budget_bytes )
 {
     return 0U != a_budget_bytes &&
-           ( a_used_bytes > a_budget_bytes ||
-             a_admission_bytes > a_budget_bytes - a_used_bytes );
+           ( a_used_bytes > a_budget_bytes || a_admission_bytes > a_budget_bytes - a_used_bytes );
 }
