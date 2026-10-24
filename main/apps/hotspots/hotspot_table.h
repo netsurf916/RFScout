@@ -11,6 +11,8 @@
 #ifndef _RFSCOUT_HOTSPOT_TABLE_H_
 #define _RFSCOUT_HOTSPOT_TABLE_H_
 
+#include "geo.h"
+#include "gps.h"
 #include "wifi_station.h"
 
 #include "esp_err.h"
@@ -25,6 +27,10 @@
 #define HOTSPOT_RETRY_IMPROVEMENT_DB 4
 /** Consecutive missed completed scans that end a BSSID's observation session. */
 #define HOTSPOT_MISSED_SCAN_LIMIT 3U
+/** Provisional bounded live-list budget; validate against measured PSRAM/TLS headroom. */
+#define HOTSPOT_TABLE_MAX_ENTRIES 128U
+/** Distance beyond the observed coverage circle, not distance from its center. */
+#define HOTSPOT_EVICTION_DISTANCE_DEFAULT_M 500U
 #define HOTSPOT_PUBLIC_IP_MAX_LENGTH 45U
 #define HOTSPOT_COLO_MAX_LENGTH 15U
 
@@ -91,6 +97,8 @@ typedef struct
     uint32_t profile_id;        /**< profile for automatic secured checks; 0 when none */
     uint32_t manual_profile_id; /**< profile the user chose with Join; used by the queued check */
     uint8_t missed_scans;
+    uint32_t last_seen_scan;  /**< Completed scan ordinal for least-recently-observed eviction. */
+    geo_bounds_t live_bounds; /**< Receiver positions seen in this Live observation session. */
     hotspot_status_t status;
     bool retry_gate_active;
     int8_t retry_gate_rssi;
@@ -102,7 +110,14 @@ typedef struct
     hotspot_result_t success; /**< Last validated green/yellow result, retained after failure. */
 } hotspot_entry_t;
 
-/** @brief Growable app-session table of eligible BSSIDs plus last-scan environment counts. */
+/** @brief Configurable normal expiration; 0 distance disables GPS-based eviction. */
+typedef struct
+{
+    uint8_t missed_scan_limit;     /**< Completed scans without observation, range 1-10. */
+    uint16_t distance_threshold_m; /**< Metres beyond estimated coverage, in 100 m steps. */
+} hotspot_retention_t;
+
+/** @brief Bounded app-session table of eligible BSSIDs plus last-scan environment counts. */
 typedef struct
 {
     hotspot_entry_t *entries;
@@ -120,18 +135,22 @@ bool hotspot_bss_eligible( const rfscout_wifi_station_bss_t *a_bss );
 /** @brief Whether a check may start now: automatically resolved credentials or a manual pick. */
 bool hotspot_entry_checkable( const hotspot_entry_t *a_entry );
 
-/** @brief Empty the table; storage is app-session memory reclaimed with the session. */
+/** @brief Empty the table and release its app-session storage immediately. */
 void hotspot_table_reset( hotspot_table_t *a_table );
 
 /**
  * @brief Apply one completed passive scan.
- * @details Refreshes visible entries, appends newly seen eligible BSSIDs, advances missed-scan
- *          counters, and removes entries whose observation session ended. Counts are recomputed.
- * @return ESP_ERR_NO_MEM when growth failed; existing entries remain valid and are updated.
+ * @details Refreshes known BSSIDs before expiring absent entries; when full, admits new BSSIDs
+ *          by evicting the least recently observed absent, non-queued entry. Distance expiration
+ *          uses current Live bounds' center and half diagonal as estimated coverage radius.
+ *          Array capacity never grows beyond HOTSPOT_TABLE_MAX_ENTRIES.
+ * @return ESP_ERR_NO_MEM when a new BSSID cannot be admitted or allocation fails.
  */
 esp_err_t hotspot_table_apply_scan( hotspot_table_t *a_table,
                                     const rfscout_wifi_station_bss_t *a_records,
-                                    size_t a_count );
+                                    size_t a_count,
+                                    const hotspot_retention_t *a_retention,
+                                    const rfscout_gps_snapshot_t *a_gps );
 
 /** @brief Find an entry by BSSID; the pointer is valid until the next table mutation. */
 hotspot_entry_t *hotspot_table_find( hotspot_table_t *a_table, const uint8_t a_bssid[ 6 ] );

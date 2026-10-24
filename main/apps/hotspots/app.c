@@ -36,7 +36,9 @@
 #define HOTSPOTS_SCAN_RETRY_US 1000000LL
 #define HOTSPOTS_RENDER_INTERVAL_US 500000LL
 #define HOTSPOTS_SETTINGS_KEY "settings"
-#define HOTSPOTS_SETTINGS_MAGIC 0x48535331U
+#define HOTSPOTS_SETTINGS_MAGIC 0x48535332U
+#define HOTSPOTS_EVICTION_DISTANCE_MAX_STEPS 20U
+#define HOTSPOTS_EVICTION_DISTANCE_DEFAULT_STEPS 5U
 
 /** Distances (m) within which a profile's known BSSID makes a new BSSID a candidate; 0 is Off. */
 static const uint16_t MATCH_DISTANCE_OPTIONS[] = { 0U, 50U, 100U, 200U, 500U };
@@ -48,6 +50,8 @@ typedef struct
 {
     uint32_t magic;
     uint8_t match_distance_index;
+    uint8_t missed_scan_limit;
+    uint8_t eviction_distance_steps; /**< 0 disables; each step represents 100 metres. */
 } hotspots_settings_t;
 
 /** @brief Scheduler phase: alternating passive scan and check window, plus check stages. */
@@ -390,16 +394,24 @@ static bool settings_valid( const void *a_record )
 {
     const hotspots_settings_t *candidate = a_record;
     return HOTSPOTS_SETTINGS_MAGIC == candidate->magic &&
-           candidate->match_distance_index < MATCH_DISTANCE_OPTION_COUNT;
+           candidate->match_distance_index < MATCH_DISTANCE_OPTION_COUNT &&
+           candidate->missed_scan_limit >= 1U && candidate->missed_scan_limit <= 10U &&
+           candidate->eviction_distance_steps <= HOTSPOTS_EVICTION_DISTANCE_MAX_STEPS;
 }
 
 static void load_settings( void )
 {
-    if( ESP_OK !=
-        app_store_load( HOTSPOTS_SETTINGS_KEY, &settings, sizeof( settings ), settings_valid ) )
+    settings = ( hotspots_settings_t ){ .magic = HOTSPOTS_SETTINGS_MAGIC,
+                                        .match_distance_index = MATCH_DISTANCE_DEFAULT_INDEX,
+                                        .missed_scan_limit = HOTSPOT_MISSED_SCAN_LIMIT,
+                                        .eviction_distance_steps =
+                                            HOTSPOTS_EVICTION_DISTANCE_DEFAULT_STEPS };
+    /* Shared storage policy rejects and removes unsupported older record layouts.
+       A settings version change therefore restores compiled defaults, without migration. */
+    hotspots_settings_t saved = { 0 };
+    if( ESP_OK == app_store_load( HOTSPOTS_SETTINGS_KEY, &saved, sizeof( saved ), settings_valid ) )
     {
-        settings = ( hotspots_settings_t ){ .magic = HOTSPOTS_SETTINGS_MAGIC,
-                                            .match_distance_index = MATCH_DISTANCE_DEFAULT_INDEX };
+        settings = saved;
     }
 }
 
@@ -408,22 +420,58 @@ uint16_t hotspots_match_distance_m( void )
     return MATCH_DISTANCE_OPTIONS[ settings.match_distance_index ];
 }
 
-esp_err_t hotspots_step_match_distance( int a_direction )
+uint8_t hotspots_missed_scan_limit( void )
 {
-    const uint8_t previous = settings.match_distance_index;
-    settings.match_distance_index =
-        (uint8_t)( a_direction > 0 ? ( previous + 1U ) % MATCH_DISTANCE_OPTION_COUNT
-                                   : ( previous + MATCH_DISTANCE_OPTION_COUNT - 1U ) %
-                                         MATCH_DISTANCE_OPTION_COUNT );
+    return settings.missed_scan_limit;
+}
+
+uint16_t hotspots_eviction_distance_m( void )
+{
+    return (uint16_t)( (uint16_t)settings.eviction_distance_steps * 100U );
+}
+
+static esp_err_t save_settings( const hotspots_settings_t *a_previous )
+{
     const esp_err_t result =
         app_store_write( HOTSPOTS_SETTINGS_KEY, &settings, sizeof( settings ) );
     if( ESP_OK != result )
     {
-        /* A change that did not persist is not shown as made. */
-        settings.match_distance_index = previous;
+        settings = *a_previous;
         ESP_LOGW( TAG, "could not save settings: %s", esp_err_to_name( result ) );
     }
     return result;
+}
+
+esp_err_t hotspots_step_match_distance( int a_direction )
+{
+    const hotspots_settings_t previous = settings;
+    const uint8_t old = settings.match_distance_index;
+    settings.match_distance_index =
+        (uint8_t)( a_direction > 0
+                       ? ( old + 1U ) % MATCH_DISTANCE_OPTION_COUNT
+                       : ( old + MATCH_DISTANCE_OPTION_COUNT - 1U ) % MATCH_DISTANCE_OPTION_COUNT );
+    return save_settings( &previous );
+}
+
+esp_err_t hotspots_step_missed_scans( int a_direction )
+{
+    const hotspots_settings_t previous = settings;
+    settings.missed_scan_limit =
+        (uint8_t)( a_direction > 0 ? ( settings.missed_scan_limit % 10U ) + 1U
+                                   : ( settings.missed_scan_limit + 8U ) % 10U + 1U );
+    return save_settings( &previous );
+}
+
+esp_err_t hotspots_step_eviction_distance( int a_direction )
+{
+    const hotspots_settings_t previous = settings;
+    settings.eviction_distance_steps =
+        (uint8_t)( a_direction > 0 ? ( settings.eviction_distance_steps + 1U ) %
+                                         ( HOTSPOTS_EVICTION_DISTANCE_MAX_STEPS + 1U )
+                                   : ( settings.eviction_distance_steps +
+                                       HOTSPOTS_EVICTION_DISTANCE_MAX_STEPS ) %
+                                         ( HOTSPOTS_EVICTION_DISTANCE_MAX_STEPS + 1U ) );
+    return save_settings( &previous );
 }
 
 const saved_network_profile_t *hotspots_profiles( size_t *a_count )
@@ -518,9 +566,17 @@ static void complete_scan( int64_t a_now_us )
     {
         const size_t count =
             rfscout_wifi_station_bss_results( scan_buffer, RFSCOUT_WIFI_STATION_BSS_MAX_RESULTS );
-        if( ESP_OK != hotspot_table_apply_scan( &table, scan_buffer, count ) )
+        rfscout_gps_snapshot_t gps = { 0 };
+        (void)gps_snapshot_get( &gps );
+        const hotspot_retention_t retention = {
+            .missed_scan_limit = hotspots_missed_scan_limit(),
+            .distance_threshold_m = hotspots_eviction_distance_m(),
+        };
+        if( ESP_OK != hotspot_table_apply_scan( &table, scan_buffer, count, &retention, &gps ) )
         {
-            ESP_LOGW( TAG, "access-point table could not grow; some networks are not shown" );
+            ESP_LOGW(
+                TAG,
+                "Hotspots live table at capacity or out of memory; some networks are not shown" );
         }
     }
     rfscout_gps_snapshot_t gps = { 0 };

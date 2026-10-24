@@ -583,16 +583,18 @@ static void replay_step( void )
 
 static void queue_record( history_record_t *a_record )
 {
-    /* During compaction the index is being written out; apply afterwards to avoid double counts. */
-    if( HISTORY_STATE_COMPACTING != state )
-    {
-        apply_record( a_record );
-    }
+    /* Reserve journal capacity before modifying the in-memory index. Otherwise an OOM
+       leaves visible history that cannot be replayed from persistent storage. */
     if( !grow( (void **)&pending, &pending_capacity, pending_count + 1U, sizeof( *pending ) ) )
     {
         ESP_LOGW( TAG, "history record dropped: no memory" );
         degraded = true;
         return;
+    }
+    /* The compaction snapshot owns the index until commit; apply queued changes afterwards. */
+    if( HISTORY_STATE_COMPACTING != state )
+    {
+        apply_record( a_record );
     }
     pending[ pending_count++ ] = *a_record;
 }

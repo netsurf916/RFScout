@@ -80,6 +80,7 @@ static unsigned fail_write_at;
 static size_t torn_bytes;
 static bool fail_truncate;
 static bool fail_close; /* one shot */
+static bool fail_create; /* one shot */
 
 static store_file_t *find_file( const char *a_name )
 {
@@ -142,6 +143,11 @@ esp_err_t media_open( const rfscout_media_collection_t *a_collection,
 {
     (void)a_collection;
     store_file_t *file = find_file( a_name );
+    if( RFSCOUT_MEDIA_OPEN_CREATE_NEW == a_mode && fail_create )
+    {
+        fail_create = false;
+        return ESP_ERR_NO_MEM;
+    }
     if( RFSCOUT_MEDIA_OPEN_READ == a_mode && NULL == file )
     {
         return ESP_ERR_NOT_FOUND;
@@ -358,6 +364,7 @@ static void clear_faults( void )
     torn_bytes = 0U;
     fail_truncate = false;
     fail_close = false;
+    fail_create = false;
 }
 
 /** Card swap: no files, handles or faults survive. */
@@ -513,6 +520,20 @@ static void malformed_lines( void )
         6U );
 }
 
+static void create_failure_does_not_advance( void )
+{
+    store_reset();
+    bind( 4096U );
+    fail_create = true;
+    assert( ESP_OK != append( ( const char *[] ){ "{\"n\":1}" }, 1U ) );
+    assert( !media_journal_outcome_uncertain( &journal ) );
+    assert( 0U == journal.last );
+    assert( !exists( "hist-00000001.jsonl" ) );
+    assert( ESP_OK == append( ( const char *[] ){ "{\"n\":1}" }, 1U ) );
+    assert( 1U == journal.last );
+    assert( holds( "hist-00000001.jsonl", "{\"n\":1}\n" ) );
+}
+
 static void append_rollback( void )
 {
     store_reset();
@@ -643,6 +664,7 @@ int main( int argc, char **argv )
         { "torn_final_line", torn_final_line },
         { "malformed_lines", malformed_lines },
         { "append_rollback", append_rollback },
+        { "create_failure", create_failure_does_not_advance },
         { "segment_order_and_base", segment_order_and_base },
         { "compaction", compaction },
     };
@@ -702,6 +724,9 @@ class MediaJournalReplayTests(unittest.TestCase):
 
     def test_append_rollback_and_uncertain_outcome(self):
         self.run_scenario("append_rollback")
+
+    def test_failed_segment_create_keeps_sequence(self):
+        self.run_scenario("create_failure")
 
     def test_segment_order_and_compacted_base(self):
         self.run_scenario("segment_order_and_base")

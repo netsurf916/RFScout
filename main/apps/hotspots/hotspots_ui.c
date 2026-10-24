@@ -65,6 +65,8 @@ typedef enum
 {
     SETTING_BACK = 0,
     SETTING_MATCH,
+    SETTING_MISSED,
+    SETTING_EVICTION,
     SETTING_COMPACT,
     SETTING_COUNT
 } setting_item_t;
@@ -1170,12 +1172,30 @@ static void render_settings( char *a_footer )
     {
         snprintf( match, sizeof( match ), "%um", (unsigned)distance );
     }
+    char missed[ UI_VALUE_MAX ];
+    char eviction[ UI_VALUE_MAX ];
+    snprintf( missed, sizeof( missed ), "%u scans", (unsigned)hotspots_missed_scan_limit() );
+    const uint16_t eviction_m = hotspots_eviction_distance_m();
+    if( 0U == eviction_m )
+    {
+        snprintf( eviction, sizeof( eviction ), "Off" );
+    }
+    else
+    {
+        snprintf( eviction, sizeof( eviction ), "%um", (unsigned)eviction_m );
+    }
     const bool compact_available = hotspot_history_ready() && !hotspot_history_compacting();
     const ui_menu_row_t rows[ SETTING_COUNT ] = {
         [SETTING_BACK] = { .label = "Back", .state = { .available = true } },
         [SETTING_MATCH] = { .label = "Match distance",
                             .value = match,
                             .state = { .available = gps_detected(), .editing = settings_editing } },
+        [SETTING_MISSED] = { .label = "Missed scans",
+                             .value = missed,
+                             .state = { .available = true, .editing = settings_editing } },
+        [SETTING_EVICTION] = { .label = "Evict beyond",
+                               .value = eviction,
+                               .state = { .available = true, .editing = settings_editing } },
         [SETTING_COMPACT] = { .label = "Compact history",
                               .value = hotspot_history_compacting() ? "Busy" : NULL,
                               .state = { .available = compact_available } },
@@ -1487,7 +1507,19 @@ static void handle_settings_input( const rfscout_input_event_t *a_input )
     {
         if( settings_editing )
         {
-            const esp_err_t result = hotspots_step_match_distance( a_input->value );
+            esp_err_t result = ESP_OK;
+            if( SETTING_MATCH == settings_selected )
+            {
+                result = hotspots_step_match_distance( a_input->value );
+            }
+            else if( SETTING_MISSED == settings_selected )
+            {
+                result = hotspots_step_missed_scans( a_input->value );
+            }
+            else if( SETTING_EVICTION == settings_selected )
+            {
+                result = hotspots_step_eviction_distance( a_input->value );
+            }
             snprintf( settings_error,
                       sizeof( settings_error ),
                       "%s",
@@ -1514,7 +1546,8 @@ static void handle_settings_input( const rfscout_input_event_t *a_input )
     {
         return;
     }
-    if( SETTING_MATCH == settings_selected && gps_detected() )
+    if( ( SETTING_MATCH == settings_selected && gps_detected() ) ||
+        SETTING_MISSED == settings_selected || SETTING_EVICTION == settings_selected )
     {
         settings_editing = !settings_editing;
         emit_event( RFSCOUT_EVENT_ACTIVATE, settings_editing ? 1 : 0 );

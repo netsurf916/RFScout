@@ -190,13 +190,21 @@ Current session-managed asynchronous services include Wi-Fi monitoring, framewor
 
 Growable retained app state uses `app_session_calloc()`, `app_session_resize()`, and `app_session_free()`. The lower-level memory manager supplies owner accounting, failure tracking, and bulk reclamation.
 
+**Active-list eviction has two distinct purposes:** relevance expiration (completed observation cycles and, where meaningful, geographic distance) and resource-protection admission (a fixed allocation ceiling with deterministic least-recently-observed eviction). Expiration expressed in completed scans avoids time thresholds shorter than an application’s scan/check cycle. GPS-based Hotspots expiration measures how far the receiver is beyond the current observation session’s estimated coverage circle (half the latitude/longitude bounding-box diagonal), and never expels a BSSID seen during the current scan; with no fresh GPS fix, scan-count and capacity policies still operate. Active observation eviction must not erase durable SD history or saved profiles. Hotspots-specific defaults, configurations, and provisional memory ceiling are defined in [Hotspots](apps/HOTSPOTS.md#scanning-and-observation-sessions). The live cap does not bound the separately growing history index or guarantee internal-DMA/contiguous-PSRAM reserves; those require measured worst-case audits.
+
 Shared SPI peripherals use the ESP-IDF SPI driver's device arbitration **plus** a board-level recursive SPI lock (`board_spi_lock()` / `board_spi_unlock()`). Every SPI2 client holds the board lock around each group of transactions it issues: LCD flushes per DMA chunk and panel commands, every SD/FatFs transaction (taken automatically inside the storage I/O arbitration, so storage users never take it directly), and each CC1101/nRF24 register transfer. The board lock is defensive: it keeps clients from ever contending inside the driver's own bus lock, which has had shared-bus races in some ESP-IDF releases (for example the `spi_ll_get_running_cmd(hw) == 0` assert in `spi_hal_setup_trans`). Hold times stay short; the LCD releases between chunks so radios and SD can interleave. When both locks are needed, the storage I/O lock is always taken before the board SPI lock.
 
 A provider that must perform a **manual GPIO-level SPI sequence** outside a normal transaction must first reserve the shared bus through the board SPI abstraction (`board_spi_manual_acquire()`, which takes the board lock and acquires the driver bus), perform the manual sequence, release that reservation, and only then resume normal device transactions. Device drivers must not independently manipulate a shared-bus CS line while unrelated SPI clients can transact.
 
 App-session **PSRAM** is for retained observations, histories, captures, and other meaningfully sized/growable state. Internal SRAM remains appropriate for RTOS/system state, task stacks, latency-sensitive allocations, and small bounded DMA/peripheral buffers. Providers should prefer the simplest memory class that satisfies the fixed capacity and peripheral constraints; external PSRAM is reserved for cases where retained/growable size materially justifies it.
 
-There is deliberately no arbitrary per-app item quota. Collections grow according to resources and semantics; presentation scratch can remain bounded separately.
+Retained, dynamically growing records must reserve capacity before updating any index or
+other in-memory state that is expected to survive a journal replay. Allocation failure
+must not leave a visible but unjournaled record. Short-lived credential and HTTPS buffers
+are released by their owning operation rather than retained until the next app exit;
+app-session reclamation remains the final safety net, not the ordinary cleanup strategy.
+
+There is no blanket per-app item quota: retained collections grow according to their semantics and resources. Explicitly bounded active collections, such as the Hotspots Live table, are exceptions justified by transient memory headroom; durable history remains independent. Presentation scratch can be bounded separately.
 
 Usable external PSRAM is a supported-platform requirement. RFScout does not silently substitute internal SRAM with a hidden lower capacity.
 
@@ -454,7 +462,9 @@ the journal is not thread-safe and runs from the caller's own task or poll.
   When that outcome is uncertain (truncate or close failed), the segment is abandoned and the
   next append starts a fresh `CREATE_NEW` segment, so a torn line is never followed by more
   records. Callers can tell a rolled-back batch (safe to retry) from an uncertain one (dropped
-  rather than duplicated).
+  rather than duplicated). Ordinary segment rotation and a failed attempt to create a new
+  segment do not by themselves make an unwritten batch uncertain; a sequence number is
+  committed only after its file was opened successfully.
 - On first use after a mount the journal scans its collection; the newest segment is
   continued only when it ends with a complete line and is below the segment size.
 - A segment that reaches its size bound is closed and a new one is started; segments beyond

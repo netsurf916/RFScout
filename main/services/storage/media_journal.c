@@ -241,15 +241,15 @@ static void trim_resolved( media_journal_t *a_journal )
 
 static esp_err_t create_segment( media_journal_t *a_journal )
 {
+    uint32_t candidate = a_journal->last;
     for( size_t attempt = 0U; attempt < JOURNAL_CREATE_ATTEMPTS; ++attempt )
     {
-        const uint32_t sequence = a_journal->last + 1U;
+        const uint32_t sequence = ++candidate;
         char name[ RFSCOUT_MEDIA_NAME_MAX + 1U ];
         segment_name( a_journal, sequence, JOURNAL_NAME_RAW, name );
         rfscout_media_file_t file = { 0 };
         esp_err_t result =
             media_open( &a_journal->collection, name, RFSCOUT_MEDIA_OPEN_CREATE_NEW, &file );
-        a_journal->last = sequence;
         if( ESP_ERR_NOT_ALLOWED == result )
         {
             continue;
@@ -258,6 +258,9 @@ static esp_err_t create_segment( media_journal_t *a_journal )
         {
             return result;
         }
+        /* Creation succeeded: even a close failure may leave this file on media.
+           Keep the real sequence, but never advance it for an unsuccessful open. */
+        a_journal->last = sequence;
         if( 0U == a_journal->first )
         {
             a_journal->first = sequence;
