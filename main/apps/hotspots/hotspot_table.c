@@ -296,8 +296,7 @@ esp_err_t hotspot_table_apply_scan( hotspot_table_t *a_table,
         for( size_t record = 0U; record < a_count; ++record )
         {
             const rfscout_wifi_station_bss_t *bss = &a_records[ record ];
-            if( !hotspot_bss_eligible( bss ) ||
-                guest_accessible( bss ) != ( 0U == priority ) ||
+            if( !hotspot_bss_eligible( bss ) || guest_accessible( bss ) != ( 0U == priority ) ||
                 NULL != hotspot_table_find( a_table, bss->bssid ) )
             {
                 continue;
@@ -324,8 +323,7 @@ esp_err_t hotspot_table_apply_scan( hotspot_table_t *a_table,
             entry->last_seen_scan = scan_ordinal;
             if( located )
             {
-                geo_bounds_extend(
-                    &entry->live_bounds, a_gps->latitude_deg, a_gps->longitude_deg );
+                geo_bounds_extend( &entry->live_bounds, a_gps->latitude_deg, a_gps->longitude_deg );
             }
         }
     }
