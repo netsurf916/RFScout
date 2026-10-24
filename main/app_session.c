@@ -67,6 +67,15 @@ static void wifi_observation_dispatch( rf_device_t *a_observation )
         app->consumers.wifi_observation( a_observation );
 }
 
+static void wifi_ap_observation_dispatch( const rfscout_wifi_ap_observation_t *a_observation )
+{
+    const rfscout_app_descriptor_t *app =
+        app_framework_descriptor( __atomic_load_n( &session_app, __ATOMIC_ACQUIRE ) );
+    if( !__atomic_load_n( &close_in_progress, __ATOMIC_ACQUIRE ) && app &&
+        app->consumers.wifi_ap_observation )
+        app->consumers.wifi_ap_observation( a_observation );
+}
+
 static void ble_observation_dispatch( rf_device_t *a_observation )
 {
     const rfscout_app_descriptor_t *app =
@@ -101,6 +110,8 @@ static void bind_session_consumers( const rfscout_app_descriptor_t *app )
 {
     radio_monitor_set_observer( app && app->consumers.wifi_observation ? wifi_observation_dispatch
                                                                        : NULL );
+    radio_monitor_set_ap_observer(
+        app && app->consumers.wifi_ap_observation ? wifi_ap_observation_dispatch : NULL );
     radio_monitor_set_raw_observer( app && app->consumers.wifi_raw ? wifi_raw_dispatch : NULL );
     ble_monitor_set_observer( app && app->consumers.ble_observation ? ble_observation_dispatch
                                                                     : NULL );
