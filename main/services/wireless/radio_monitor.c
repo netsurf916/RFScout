@@ -330,10 +330,10 @@ static void promiscuous( void *a_buffer, wifi_promiscuous_pkt_type_t a_type )
                    expects information elements only, not the four CRC octets. */
                 const size_t length = packet->rx_ctrl.sig_len;
                 if( length >= 4U && wifi_ap_observation_parse( packet->payload,
-                                                                 length - 4U,
-                                                                 packet->rx_ctrl.rssi,
-                                               packet->rx_ctrl.channel,
-                                               &ap ) )
+                                                               length - 4U,
+                                                               packet->rx_ctrl.rssi,
+                                                               packet->rx_ctrl.channel,
+                                                               &ap ) )
                 {
                     ap_sink( &ap );
                 }
