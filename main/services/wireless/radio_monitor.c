@@ -50,6 +50,7 @@ typedef struct
 
 static const char *TAG = "radio_monitor";
 static radio_observation_fn sink;
+static radio_ap_observation_fn ap_sink;
 static radio_raw_frame_fn raw_sink;
 static uint32_t raw_callbacks_inflight;
 static bool capture_policy;
@@ -320,6 +321,20 @@ static void promiscuous( void *a_buffer, wifi_promiscuous_pkt_type_t a_type )
         if( IEEE80211_TYPE_MANAGEMENT == frame.type )
         {
             emit_management_observations( &frame, packet->rx_ctrl.rssi, packet->rx_ctrl.channel );
+            /* Extended AP metadata is opt-in; existing consumers keep their exact
+               callback behavior and no additional parsing runs without an AP sink. */
+            if( NULL != ap_sink )
+            {
+                rfscout_wifi_ap_observation_t ap;
+                if( wifi_ap_observation_parse( packet->payload,
+                                               packet->rx_ctrl.sig_len,
+                                               packet->rx_ctrl.rssi,
+                                               packet->rx_ctrl.channel,
+                                               &ap ) )
+                {
+                    ap_sink( &ap );
+                }
+            }
         }
         else if( IEEE80211_TYPE_DATA == frame.type )
         {
@@ -625,6 +640,12 @@ void radio_monitor_set_raw_observer( radio_raw_frame_fn a_callback )
 void radio_monitor_set_observer( radio_observation_fn a_callback )
 {
     sink = a_callback;
+}
+
+void radio_monitor_set_ap_observer( radio_ap_observation_fn a_callback )
+{
+    /* App-session lifecycle drains all RX callbacks before its memory is released. */
+    ap_sink = a_callback;
 }
 
 esp_err_t radio_monitor_init( void )
