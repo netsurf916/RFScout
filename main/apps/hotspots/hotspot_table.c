@@ -8,6 +8,7 @@
 
 #include "app_session.h"
 
+#include <math.h>
 #include <string.h>
 
 #define HOTSPOT_TABLE_INITIAL_CAPACITY 8U
@@ -30,6 +31,12 @@ void hotspot_table_reset( hotspot_table_t *a_table )
     {
         return;
     }
+    if( NULL != a_table->entries )
+    {
+        (void)app_session_free( a_table->entries );
+        a_table->entries = NULL;
+    }
+    a_table->capacity = 0U;
     a_table->count = 0U;
     a_table->open_count = 0U;
     a_table->owe_count = 0U;
@@ -56,6 +63,10 @@ hotspot_entry_t *hotspot_table_find( hotspot_table_t *a_table, const uint8_t a_b
 /** @brief Grow entry storage geometrically in app-session memory. */
 static esp_err_t ensure_capacity( hotspot_table_t *a_table, size_t a_required )
 {
+    if( a_required > HOTSPOT_TABLE_MAX_ENTRIES )
+    {
+        return ESP_ERR_NO_MEM;
+    }
     if( a_required <= a_table->capacity )
     {
         return ESP_OK;
@@ -65,6 +76,10 @@ static esp_err_t ensure_capacity( hotspot_table_t *a_table, size_t a_required )
     while( capacity < a_required )
     {
         capacity *= 2U;
+    }
+    if( capacity > HOTSPOT_TABLE_MAX_ENTRIES )
+    {
+        capacity = HOTSPOT_TABLE_MAX_ENTRIES;
     }
     hotspot_entry_t *resized =
         ( NULL == a_table->entries )
@@ -79,24 +94,115 @@ static esp_err_t ensure_capacity( hotspot_table_t *a_table, size_t a_required )
     return ESP_OK;
 }
 
+/** @brief Whether a BSSID appeared in a completed scan, independent of input ordering. */
+static bool scan_contains( const rfscout_wifi_station_bss_t *a_records,
+                           size_t a_count,
+                           const uint8_t a_bssid[ 6 ] )
+{
+    for( size_t index = 0U; index < a_count; ++index )
+    {
+        if( hotspot_bss_eligible( &a_records[ index ] ) &&
+            0 == memcmp( a_records[ index ].bssid, a_bssid, 6U ) )
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** @brief Approximate coverage radius as half the larger geographic box diagonal. */
+static double observed_radius_m( const geo_bounds_t *a_bounds )
+{
+    const double diagonal_a = geo_distance_m( a_bounds->min_latitude,
+                                              a_bounds->min_longitude,
+                                              a_bounds->max_latitude,
+                                              a_bounds->max_longitude );
+    const double diagonal_b = geo_distance_m( a_bounds->min_latitude,
+                                              a_bounds->max_longitude,
+                                              a_bounds->max_latitude,
+                                              a_bounds->min_longitude );
+    return fmax( diagonal_a, diagonal_b ) / 2.0;
+}
+
+static bool out_of_range( const hotspot_entry_t *a_entry,
+                          uint16_t a_threshold_m,
+                          const rfscout_gps_snapshot_t *a_gps )
+{
+    if( 0U == a_threshold_m || !gps_location_fresh( a_gps ) ||
+        !a_entry->live_bounds.valid || a_entry->visible )
+    {
+        return false;
+    }
+    double latitude = 0.0;
+    double longitude = 0.0;
+    if( !geo_bounds_center( &a_entry->live_bounds, &latitude, &longitude ) )
+    {
+        return false;
+    }
+    const double center_distance = geo_distance_m(
+        latitude, longitude, a_gps->latitude_deg, a_gps->longitude_deg );
+    return center_distance - observed_radius_m( &a_entry->live_bounds ) > (double)a_threshold_m;
+}
+
+/** @brief Compact entries in place without disturbing the current scan's observations. */
+static void remove_entry( hotspot_table_t *a_table, size_t a_index )
+{
+    --a_table->count;
+    if( a_index < a_table->count )
+    {
+        memmove( &a_table->entries[ a_index ],
+                 &a_table->entries[ a_index + 1U ],
+                 ( a_table->count - a_index ) * sizeof( hotspot_entry_t ) );
+    }
+    memset( &a_table->entries[ a_table->count ], 0, sizeof( hotspot_entry_t ) );
+}
+
+/** @brief Least recently observed unprotected entry. Current-scan sightings are protected. */
+static size_t eviction_victim( const hotspot_table_t *a_table )
+{
+    size_t victim = a_table->count;
+    for( size_t index = 0U; index < a_table->count; ++index )
+    {
+        const hotspot_entry_t *entry = &a_table->entries[ index ];
+        if( entry->visible || entry->manual_requested )
+        {
+            continue;
+        }
+        if( victim == a_table->count ||
+            entry->last_seen_scan < a_table->entries[ victim ].last_seen_scan )
+        {
+            victim = index;
+        }
+    }
+    return victim;
+}
+
 esp_err_t hotspot_table_apply_scan( hotspot_table_t *a_table,
                                     const rfscout_wifi_station_bss_t *a_records,
-                                    size_t a_count )
+                                    size_t a_count,
+                                    const hotspot_retention_t *a_retention,
+                                    const rfscout_gps_snapshot_t *a_gps )
 {
-    if( ( NULL == a_table ) || ( ( NULL == a_records ) && ( 0U != a_count ) ) )
+    if( NULL == a_table || ( NULL == a_records && 0U != a_count ) ||
+        NULL == a_retention || 0U == a_retention->missed_scan_limit )
     {
         return ESP_ERR_INVALID_ARG;
     }
 
-    for( size_t index = 0U; index < a_table->count; ++index )
-    {
-        a_table->entries[ index ].visible = false;
-    }
-
-    esp_err_t result = ESP_OK;
+    const bool located = gps_location_fresh( a_gps );
+    const uint32_t scan_ordinal = a_table->scans_completed + 1U;
     a_table->open_count = 0U;
     a_table->owe_count = 0U;
     a_table->secured_count = 0U;
+
+    /* Mark all current-scan sightings before admission/eviction. A new BSSID cannot push out a
+       previously known BSSID that is also visible later in the same scan results. */
+    for( size_t index = 0U; index < a_table->count; ++index )
+    {
+        hotspot_entry_t *entry = &a_table->entries[ index ];
+        entry->visible = scan_contains( a_records, a_count, entry->bss.bssid );
+    }
+
     for( size_t record = 0U; record < a_count; ++record )
     {
         const rfscout_wifi_station_bss_t *bss = &a_records[ record ];
@@ -116,54 +222,82 @@ esp_err_t hotspot_table_apply_scan( hotspot_table_t *a_table,
         {
             continue;
         }
-
         hotspot_entry_t *entry = hotspot_table_find( a_table, bss->bssid );
-        if( NULL != entry )
+        if( NULL == entry )
         {
-            /* A changed SSID or security for the same BSSID is a different network; restart it. */
-            if( ( 0 != strcmp( entry->bss.ssid, bss->ssid ) ) ||
-                ( entry->bss.security != bss->security ) ||
-                ( entry->bss.auth_mode != bss->auth_mode ) )
-            {
-                memset( entry, 0, sizeof( *entry ) );
-            }
-            entry->bss = *bss;
-            entry->visible = true;
-            entry->missed_scans = 0U;
             continue;
         }
+        if( 0 != strcmp( entry->bss.ssid, bss->ssid ) ||
+            entry->bss.security != bss->security || entry->bss.auth_mode != bss->auth_mode )
+        {
+            /* Changed identity starts a new observation session, including location bounds. */
+            memset( entry, 0, sizeof( *entry ) );
+        }
+        entry->bss = *bss;
+        entry->visible = true;
+        entry->missed_scans = 0U;
+        entry->last_seen_scan = scan_ordinal;
+        if( located )
+        {
+            geo_bounds_extend( &entry->live_bounds, a_gps->latitude_deg, a_gps->longitude_deg );
+        }
+    }
 
+    /* Normal expiry happens before admitting new BSSIDs, minimizing capacity churn. */
+    for( size_t index = 0U; index < a_table->count; )
+    {
+        hotspot_entry_t *entry = &a_table->entries[ index ];
+        if( !entry->visible )
+        {
+            if( entry->missed_scans < UINT8_MAX )
+            {
+                ++entry->missed_scans;
+            }
+            if( entry->missed_scans >= a_retention->missed_scan_limit ||
+                out_of_range( entry, a_retention->distance_threshold_m, a_gps ) )
+            {
+                remove_entry( a_table, index );
+                continue;
+            }
+        }
+        ++index;
+    }
+
+    esp_err_t result = ESP_OK;
+    for( size_t record = 0U; record < a_count; ++record )
+    {
+        const rfscout_wifi_station_bss_t *bss = &a_records[ record ];
+        if( !hotspot_bss_eligible( bss ) ||
+            NULL != hotspot_table_find( a_table, bss->bssid ) )
+        {
+            continue;
+        }
+        if( a_table->count == HOTSPOT_TABLE_MAX_ENTRIES )
+        {
+            const size_t victim = eviction_victim( a_table );
+            if( victim == a_table->count )
+            {
+                result = ESP_ERR_NO_MEM;
+                continue;
+            }
+            remove_entry( a_table, victim );
+        }
         if( ESP_OK != ensure_capacity( a_table, a_table->count + 1U ) )
         {
             result = ESP_ERR_NO_MEM;
             continue;
         }
-        entry = &a_table->entries[ a_table->count++ ];
+        hotspot_entry_t *entry = &a_table->entries[ a_table->count++ ];
         memset( entry, 0, sizeof( *entry ) );
         entry->bss = *bss;
         entry->visible = true;
-    }
-
-    size_t kept = 0U;
-    for( size_t index = 0U; index < a_table->count; ++index )
-    {
-        hotspot_entry_t *entry = &a_table->entries[ index ];
-        if( !entry->visible )
+        entry->last_seen_scan = scan_ordinal;
+        if( located )
         {
-            ++entry->missed_scans;
-            if( entry->missed_scans >= HOTSPOT_MISSED_SCAN_LIMIT )
-            {
-                continue;
-            }
+            geo_bounds_extend( &entry->live_bounds, a_gps->latitude_deg, a_gps->longitude_deg );
         }
-        if( kept != index )
-        {
-            a_table->entries[ kept ] = *entry;
-        }
-        ++kept;
     }
-    a_table->count = kept;
-    ++a_table->scans_completed;
+    a_table->scans_completed = scan_ordinal;
     return result;
 }
 
