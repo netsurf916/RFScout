@@ -34,13 +34,12 @@
 #define WIFI_JOURNAL_FLUSH_INTERVAL_US 500000LL
 
 #define WIFI_MENU_BACK 0U
-#define WIFI_MENU_RESET 1U
-#define WIFI_MENU_NOTIFICATIONS 2U
-#define WIFI_MENU_EVIDENCE_THRESHOLD 3U
-#define WIFI_MENU_WIFI_TIMEOUT 4U
-#define WIFI_MENU_BLE_TIMEOUT 5U
-#define WIFI_MENU_SOURCES 6U
-#define WIFI_MENU_ITEM_COUNT 7U
+#define WIFI_MENU_NOTIFICATIONS 1U
+#define WIFI_MENU_EVIDENCE_THRESHOLD 2U
+#define WIFI_MENU_WIFI_TIMEOUT 3U
+#define WIFI_MENU_BLE_TIMEOUT 4U
+#define WIFI_MENU_SOURCES 5U
+#define WIFI_MENU_ITEM_COUNT 6U
 
 static bool menu_active;
 static bool menu_editing;
@@ -608,13 +607,6 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
             render_menu();
             emit_event( RFSCOUT_EVENT_ENTER, 0 );
             return;
-        }
-        if( WIFI_MENU_RESET == menu_item )
-        {
-            surveillance_history_flush();
-            observation_store_reset();
-            close_menu();
-            emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
         }
         return;
     }
