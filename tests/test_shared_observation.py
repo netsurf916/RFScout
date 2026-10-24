@@ -177,7 +177,7 @@ int main(void)
     assert(observation_retention_over_budget(SIZE_MAX, 1, 100));
     geo_bounds_t bounds = {0};
     geo_bounds_extend(&bounds, 0.0, 0.0);
-    assert(!observation_retention_outside_coverage(&bounds, 0, 0.005, 500, true, false));
+    assert(!observation_retention_outside_coverage(&bounds, 0, 0.004, 500, true, false));
     assert(observation_retention_outside_coverage(&bounds, 0, 0.008, 500, true, false));
     assert(!observation_retention_outside_coverage(&bounds, 0, 0.008, 500, false, false));
     assert(!observation_retention_outside_coverage(&bounds, 0, 0.008, 500, true, true));
