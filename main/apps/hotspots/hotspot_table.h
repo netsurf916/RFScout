@@ -97,7 +97,7 @@ typedef struct
     uint32_t profile_id;        /**< profile for automatic secured checks; 0 when none */
     uint32_t manual_profile_id; /**< profile the user chose with Join; used by the queued check */
     uint8_t missed_scans;
-    uint32_t last_seen_scan; /**< Completed scan ordinal for least-recently-observed eviction. */
+    uint32_t last_seen_scan;  /**< Completed scan ordinal for least-recently-observed eviction. */
     geo_bounds_t live_bounds; /**< Receiver positions seen in this Live observation session. */
     hotspot_status_t status;
     bool retry_gate_active;
@@ -113,7 +113,7 @@ typedef struct
 /** @brief Configurable normal expiration; 0 distance disables GPS-based eviction. */
 typedef struct
 {
-    uint8_t missed_scan_limit; /**< Completed scans without observation, range 1-10. */
+    uint8_t missed_scan_limit;     /**< Completed scans without observation, range 1-10. */
     uint16_t distance_threshold_m; /**< Metres beyond estimated coverage, in 100 m steps. */
 } hotspot_retention_t;
 
