@@ -14,6 +14,14 @@ Hotspots finds nearby Wi-Fi access points, checks whether each one provides Inte
 
 ## Services and lifecycle
 
+### Shared discovery, memory and history migration (PR #136)
+
+**Target behavior; app migration pending.** Hotspots will subscribe to the same framework-owned Wi-Fi monitor and normalized access-point observations used by WiFi/BLE, with the shared beacon/probe-response parser supplying BSSID, SSID, channel, RSSI and carefully validated security metadata. Framework-owned monitor quiescence and station transitions will suspend discovery before association, DHCP/NTP and TLS, and restore monitoring after release; Hotspots will not maintain a parallel scan-result collection or its current 32-BSSID retrieval limit.
+
+Hotspots retains its app-owned **128-BSSID Live budget** and its OPEN/OWE-over-secured admission/eviction preference, with active checks and manual requests protected. Replace **Missed scans** with a **last-observed elapsed-time timeout**, accounting for deliberate monitor interruptions, while keeping GPS-distance eviction (500 m default). Under capacity pressure, expire time/distance-stale entries first, then iteratively evict safe candidates by app-specific category, age and optionally RSSI; if no safe victim exists, reject admission rather than oversubscribe memory. Capacity is the budget to satisfy, not the eviction algorithm.
+
+History and UI will use bounded SD-backed nearest-first queries and detail caching rather than retaining every characterized BSSID and history-sized scratch arrays. History remains authoritative on SD and must still support credential inference, epoch handling, grouping, compaction and missing-card recovery. Shared, versioned observation JSONL fields will be emitted through the existing SD abstraction; Hotspots-specific characterization records stay distinct and credentials never enter the journal. Until migration, the implementation, settings, and history behavior described below remain authoritative.
+
 The descriptor declares the framework network-session and connectivity-probe services and requires delayed activation, so skipping through the app does not start the radio. The network session owns association, DHCP, NTP, MAC policy, timeout, and teardown; the app owns only candidate selection, credential resolution, and result interpretation. Both services are stopped by the app session before app memory is reclaimed. History opens on entry, replays in the background, and is flushed and closed when the app is left.
 
 ## Scanning and observation sessions
