@@ -56,13 +56,25 @@ const char *esp_err_to_name( esp_err_t a_error )
     return "error";
 }
 
+static bool fail_next_allocation;
+
 void *app_session_calloc( size_t a_count, size_t a_size )
 {
+    if( fail_next_allocation )
+    {
+        fail_next_allocation = false;
+        return NULL;
+    }
     return calloc( a_count, a_size );
 }
 
 void *app_session_resize( void *a_pointer, size_t a_count, size_t a_size )
 {
+    if( fail_next_allocation )
+    {
+        fail_next_allocation = false;
+        return NULL;
+    }
     return realloc( a_pointer, a_count * a_size );
 }
 
@@ -323,6 +335,25 @@ static void epochs( void )
     hotspot_history_close();
 }
 
+/** An OOM while reserving pending journal storage must not mutate the replay index. */
+static void pending_allocation_failure( void )
+{
+    store_reset();
+    assert( ESP_OK == hotspot_history_open() );
+    poll_until_ready();
+    const rfscout_wifi_station_bss_t cafe = bss( 0x32U, "CAFE", 0 );
+    hotspot_result_t result = { 0 };
+    result.outcome = HOTSPOT_STATUS_GREEN;
+    const rfscout_gps_snapshot_t no_fix = { 0 };
+    fail_next_allocation = true;
+    hotspot_history_record_result( &cafe, &result, &no_fix );
+    assert( 0U == hotspot_history_count() );
+    assert( hotspot_history_degraded() );
+    hotspot_history_record_result( &cafe, &result, &no_fix );
+    assert( 1U == hotspot_history_count() );
+    hotspot_history_close();
+}
+
 /** Results without a fix gain a location later; a failed flush is retried without duplicates. */
 static void backfill_and_deferred_flush( void )
 {
@@ -466,6 +497,7 @@ int main( int argc, char **argv )
         { "epochs", epochs },
         { "backfill_and_deferred_flush", backfill_and_deferred_flush },
         { "compaction_round_trip", compaction_round_trip },
+        { "pending_oom", pending_allocation_failure },
     };
     if( 2 != argc )
     {
@@ -533,6 +565,9 @@ class HotspotsHistoryReplayTests(unittest.TestCase):
 
     def test_location_backfill_and_deferred_flush(self):
         self.run_scenario("backfill_and_deferred_flush")
+
+    def test_pending_allocation_failure_is_consistent(self):
+        self.run_scenario("pending_oom")
 
     def test_compaction_round_trip(self):
         self.run_scenario("compaction_round_trip")
