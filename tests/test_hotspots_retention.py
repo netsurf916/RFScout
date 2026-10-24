@@ -20,6 +20,7 @@ typedef int esp_err_t;
 WIFI = """#pragma once
 #include <stdint.h>
 #define RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH 32U
+#define RFSCOUT_WIFI_STATION_BSS_MAX_RESULTS 32U
 #define RFSCOUT_WIFI_STATION_SECURITY_OPEN 0
 #define RFSCOUT_WIFI_STATION_SECURITY_OWE 1
 #define RFSCOUT_WIFI_STATION_SECURITY_SECURED 2
@@ -105,10 +106,26 @@ int main(void)
     hotspot_table_reset(&table);
     assert(table.entries == NULL && table.capacity == 0);
 
+    /* The maximum-size station result array may be truncated. Do not infer misses or
+       out-of-range expiry for a BSSID omitted from repeated saturated snapshots. */
+    rfscout_wifi_station_bss_t batch[32];
+    retention.missed_scan_limit = 3;
+    retention.distance_threshold_m = 500;
+    scan(&table, &one, 1, retention, &origin);
+    for (unsigned i = 0; i < 32; ++i)
+        batch[i] = bss(i + 500);
+    for (unsigned repeat = 0; repeat < 4; ++repeat)
+        scan(&table, batch, 32, retention, &farther);
+    hotspot_entry_t *unconfirmed = hotspot_table_find(&table, one.bssid);
+    assert(unconfirmed != NULL && !unconfirmed->visible && unconfirmed->missed_scans == 0);
+    /* Once a scan is known to be complete, geographic expiry can be applied. */
+    scan(&table, NULL, 0, retention, &farther);
+    assert(hotspot_table_find(&table, one.bssid) == NULL);
+    hotspot_table_reset(&table);
+
     /* A wider missed-scan window allows a busy Live table to reach capacity. */
     retention.missed_scan_limit = 10;
     retention.distance_threshold_m = 0;
-    rfscout_wifi_station_bss_t batch[32];
     for (unsigned round = 0; round < 4; ++round)
     {
         for (unsigned i = 0; i < 32; ++i)
@@ -181,6 +198,28 @@ int main(void)
     assert(table.count == HOTSPOT_TABLE_MAX_ENTRIES);
     assert(hotspot_table_find(&table, bss(0).bssid) != NULL);
     assert(hotspot_table_find(&table, secured_new.bssid) == NULL);
+    hotspot_table_reset(&table);
+
+    /* Guest admission wins the final free slot even when the driver returns a secured
+       BSSID first. All prior 127 entries are OPEN/OWE; none may be evicted for secured. */
+    for (unsigned round = 0; round < 4; ++round)
+    {
+        const unsigned count = round == 3 ? 31 : 32;
+        for (unsigned i = 0; i < count; ++i)
+        {
+            batch[i] = bss(round * 32 + i);
+            batch[i].security = round < 2 ? RFSCOUT_WIFI_STATION_SECURITY_OPEN :
+                                           RFSCOUT_WIFI_STATION_SECURITY_OWE;
+        }
+        scan(&table, batch, count, retention, NULL);
+    }
+    assert(table.count == HOTSPOT_TABLE_MAX_ENTRIES - 1U);
+    rfscout_wifi_station_bss_t mixed[2] = { bss(2000), bss(2001) };
+    mixed[0].security = RFSCOUT_WIFI_STATION_SECURITY_SECURED;
+    assert(hotspot_table_apply_scan(&table, mixed, 2, &retention, NULL) == ESP_ERR_NO_MEM);
+    assert(table.count == HOTSPOT_TABLE_MAX_ENTRIES);
+    assert(hotspot_table_find(&table, mixed[0].bssid) == NULL);
+    assert(hotspot_table_find(&table, mixed[1].bssid) != NULL);
     hotspot_table_reset(&table);
     return 0;
 }
