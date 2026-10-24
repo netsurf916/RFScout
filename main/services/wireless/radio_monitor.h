@@ -11,6 +11,7 @@
 
 #include "esp_err.h"
 #include "rf_observation.h"
+#include "wifi_ap_observation.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -30,6 +31,10 @@ typedef void ( *radio_observation_fn )( rf_device_t *a_observation );
 
 /** @brief Bind the platform observation sink used while monitoring is active. */
 void radio_monitor_set_observer( radio_observation_fn a_callback );
+
+/** @brief Optional normalized AP metadata sink; callback result is borrowed and ephemeral. */
+typedef void ( *radio_ap_observation_fn )( const rfscout_wifi_ap_observation_t *a_observation );
+void radio_monitor_set_ap_observer( radio_ap_observation_fn a_callback );
 
 /** @brief Initialize reusable passive Wi-Fi monitor state without starting reception. */
 esp_err_t radio_monitor_init( void );
