@@ -37,7 +37,6 @@
 #define HOTSPOTS_RENDER_INTERVAL_US 500000LL
 #define HOTSPOTS_SETTINGS_KEY "settings"
 #define HOTSPOTS_SETTINGS_MAGIC 0x48535332U
-#define HOTSPOTS_SETTINGS_LEGACY_MAGIC 0x48535331U
 #define HOTSPOTS_EVICTION_DISTANCE_MAX_STEPS 20U
 #define HOTSPOTS_EVICTION_DISTANCE_DEFAULT_STEPS 5U
 
@@ -54,12 +53,6 @@ typedef struct
     uint8_t missed_scan_limit;
     uint8_t eviction_distance_steps; /**< 0 disables; each step represents 100 metres. */
 } hotspots_settings_t;
-
-typedef struct
-{
-    uint32_t magic;
-    uint8_t match_distance_index;
-} hotspots_legacy_settings_t;
 
 /** @brief Scheduler phase: alternating passive scan and check window, plus check stages. */
 typedef enum
@@ -406,13 +399,6 @@ static bool settings_valid( const void *a_record )
            candidate->eviction_distance_steps <= HOTSPOTS_EVICTION_DISTANCE_MAX_STEPS;
 }
 
-static bool legacy_settings_valid( const void *a_record )
-{
-    const hotspots_legacy_settings_t *candidate = a_record;
-    return HOTSPOTS_SETTINGS_LEGACY_MAGIC == candidate->magic &&
-           candidate->match_distance_index < MATCH_DISTANCE_OPTION_COUNT;
-}
-
 static void load_settings( void )
 {
     settings = ( hotspots_settings_t ){ .magic = HOTSPOTS_SETTINGS_MAGIC,
@@ -420,19 +406,12 @@ static void load_settings( void )
                                         .missed_scan_limit = HOTSPOT_MISSED_SCAN_LIMIT,
                                         .eviction_distance_steps =
                                             HOTSPOTS_EVICTION_DISTANCE_DEFAULT_STEPS };
+    /* Shared storage policy rejects and removes unsupported older record layouts.
+       A settings version change therefore restores compiled defaults, without migration. */
     hotspots_settings_t saved = { 0 };
     if( ESP_OK == app_store_load( HOTSPOTS_SETTINGS_KEY, &saved, sizeof( saved ), settings_valid ) )
     {
         settings = saved;
-        return;
-    }
-    /* The v1 record predates retention configuration; retain its Match distance choice.
-       The layout is intentionally distinct even if padding makes the sizes coincide. */
-    hotspots_legacy_settings_t legacy = { 0 };
-    if( ESP_OK ==
-        app_store_load( HOTSPOTS_SETTINGS_KEY, &legacy, sizeof( legacy ), legacy_settings_valid ) )
-    {
-        settings.match_distance_index = legacy.match_distance_index;
     }
 }
 
