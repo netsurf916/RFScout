@@ -540,6 +540,11 @@ uint16_t hotspots_retention_seconds( void )
     return RETENTION_SECONDS_OPTIONS[ settings.retention_seconds_index ];
 }
 
+uint32_t hotspots_monitor_clock_ms( void )
+{
+    return monitor_clock_ms;
+}
+
 uint16_t hotspots_eviction_distance_m( void )
 {
     return (uint16_t)( (uint16_t)settings.eviction_distance_steps * 100U );
