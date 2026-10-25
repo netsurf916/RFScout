@@ -505,8 +505,7 @@ esp_err_t radio_monitor_start( void )
 
     portENTER_CRITICAL( &callback_lock );
     const bool already_running = running;
-    const bool cleanup_pending =
-        driver_stop_pending || ( observation_callbacks_inflight > 0U );
+    const bool cleanup_pending = driver_stop_pending || ( observation_callbacks_inflight > 0U );
     portEXIT_CRITICAL( &callback_lock );
     if( already_running )
     {
