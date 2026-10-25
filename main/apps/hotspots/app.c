@@ -249,10 +249,9 @@ static void drain_ap_queue( void )
             observation_metadata_enrich( ready[ index ].seen_ms, &gps, &metadata );
             uint32_t profile_id = 0U;
             const hotspot_credential_t credential = credential_for_bss( &bss, &gps, &profile_id );
-            const bool eligible = HOTSPOT_CREDENTIAL_OPEN == credential ||
-                                  HOTSPOT_CREDENTIAL_KNOWN == credential ||
-                                  HOTSPOT_CREDENTIAL_INFERRED == credential ||
-                                  NULL != hotspot_history_find( &bss );
+            const bool eligible =
+                HOTSPOT_CREDENTIAL_OPEN == credential || HOTSPOT_CREDENTIAL_KNOWN == credential ||
+                HOTSPOT_CREDENTIAL_INFERRED == credential || NULL != hotspot_history_find( &bss );
             /* Logging is independent of Live-table admission and capacity pressure. */
             hotspot_sightings_observe( &bss, &metadata, eligible );
             /* Previously validated BSSIDs retain the existing movement-triggered

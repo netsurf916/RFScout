@@ -79,7 +79,8 @@ static void flush( void )
     {
         return;
     }
-    const esp_err_t result = media_journal_append( &journal, format_sighting, pending, pending_count );
+    const esp_err_t result =
+        media_journal_append( &journal, format_sighting, pending, pending_count );
     if( ESP_OK == result || media_journal_outcome_uncertain( &journal ) )
     {
         pending_count = 0U;
@@ -103,8 +104,11 @@ esp_err_t hotspot_sightings_open( void )
     esp_err_t result = media_app_collection( SIGHTINGS_COLLECTION, &collection );
     if( ESP_OK == result )
     {
-        result = media_journal_init(
-            &journal, &collection, SIGHTINGS_PREFIX, SIGHTINGS_SEGMENT_BYTES, SIGHTINGS_MAX_SEGMENTS );
+        result = media_journal_init( &journal,
+                                     &collection,
+                                     SIGHTINGS_PREFIX,
+                                     SIGHTINGS_SEGMENT_BYTES,
+                                     SIGHTINGS_MAX_SEGMENTS );
     }
     journal_bound = ESP_OK == result;
     return result;
