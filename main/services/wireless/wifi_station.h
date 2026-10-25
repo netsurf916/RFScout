@@ -11,6 +11,7 @@
 #define _RFSCOUT_WIFI_STATION_H_
 
 #include "esp_err.h"
+#include "wifi_ap_observation.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -61,6 +62,12 @@ typedef struct
     /** Exact ESP-IDF wifi_auth_mode_t observed in passive scan (not the coarse security class). */
     int32_t auth_mode;
 } rfscout_wifi_station_bss_t;
+
+/** @brief Translate conservative passive AP evidence to a station BSSID description.
+ *         Unsupported/ambiguous security remains secured and cannot auto-connect.
+ */
+bool rfscout_wifi_station_bss_from_observation( const rfscout_wifi_ap_observation_t *a_observation,
+                                                rfscout_wifi_station_bss_t *a_bss );
 
 /** @brief IPv4 configuration of the current station connection, in network byte order. */
 typedef struct

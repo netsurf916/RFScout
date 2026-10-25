@@ -65,7 +65,7 @@ typedef enum
 {
     SETTING_BACK = 0,
     SETTING_MATCH,
-    SETTING_MISSED,
+    SETTING_TIMEOUT,
     SETTING_EVICTION,
     SETTING_COMPACT,
     SETTING_COUNT
@@ -951,8 +951,8 @@ static void render_live_detail( const hotspot_entry_t *a_entry, const char *a_la
     {
         snprintf( lines[ 2 ],
                   UI_LINE_MAX,
-                  "Not visible (missed %u)  %s",
-                  (unsigned)a_entry->missed_scans,
+                  "Not seen %us  %s",
+                  (unsigned)( ( hotspots_monitor_clock_ms() - a_entry->last_seen_ms ) / 1000U ),
                   rfscout_wifi_station_auth_label( a_entry->bss.auth_mode ) );
     }
     describe_credential( a_entry, lines[ 3 ], UI_LINE_MAX );
@@ -1172,9 +1172,9 @@ static void render_settings( char *a_footer )
     {
         snprintf( match, sizeof( match ), "%um", (unsigned)distance );
     }
-    char missed[ UI_VALUE_MAX ];
+    char timeout[ UI_VALUE_MAX ];
     char eviction[ UI_VALUE_MAX ];
-    snprintf( missed, sizeof( missed ), "%u scans", (unsigned)hotspots_missed_scan_limit() );
+    snprintf( timeout, sizeof( timeout ), "%us", (unsigned)hotspots_retention_seconds() );
     const uint16_t eviction_m = hotspots_eviction_distance_m();
     if( 0U == eviction_m )
     {
@@ -1190,9 +1190,9 @@ static void render_settings( char *a_footer )
         [SETTING_MATCH] = { .label = "Match distance",
                             .value = match,
                             .state = { .available = gps_detected(), .editing = settings_editing } },
-        [SETTING_MISSED] = { .label = "Missed scans",
-                             .value = missed,
-                             .state = { .available = true, .editing = settings_editing } },
+        [SETTING_TIMEOUT] = { .label = "Expire after",
+                              .value = timeout,
+                              .state = { .available = true, .editing = settings_editing } },
         [SETTING_EVICTION] = { .label = "Evict beyond",
                                .value = eviction,
                                .state = { .available = true, .editing = settings_editing } },
@@ -1512,9 +1512,9 @@ static void handle_settings_input( const rfscout_input_event_t *a_input )
             {
                 result = hotspots_step_match_distance( a_input->value );
             }
-            else if( SETTING_MISSED == settings_selected )
+            else if( SETTING_TIMEOUT == settings_selected )
             {
-                result = hotspots_step_missed_scans( a_input->value );
+                result = hotspots_step_retention_seconds( a_input->value );
             }
             else if( SETTING_EVICTION == settings_selected )
             {
@@ -1547,7 +1547,7 @@ static void handle_settings_input( const rfscout_input_event_t *a_input )
         return;
     }
     if( ( SETTING_MATCH == settings_selected && gps_detected() ) ||
-        SETTING_MISSED == settings_selected || SETTING_EVICTION == settings_selected )
+        SETTING_TIMEOUT == settings_selected || SETTING_EVICTION == settings_selected )
     {
         settings_editing = !settings_editing;
         emit_event( RFSCOUT_EVENT_ACTIVATE, settings_editing ? 1 : 0 );

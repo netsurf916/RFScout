@@ -11,6 +11,7 @@
 
 #include "esp_err.h"
 #include "rf_observation.h"
+#include "wifi_ap_observation.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -31,17 +32,23 @@ typedef void ( *radio_observation_fn )( rf_device_t *a_observation );
 /** @brief Bind the platform observation sink used while monitoring is active. */
 void radio_monitor_set_observer( radio_observation_fn a_callback );
 
+/** @brief Optional normalized AP metadata sink; callback result is borrowed and ephemeral. */
+typedef void ( *radio_ap_observation_fn )( const rfscout_wifi_ap_observation_t *a_observation );
+void radio_monitor_set_ap_observer( radio_ap_observation_fn a_callback );
+
 /** @brief Initialize reusable passive Wi-Fi monitor state without starting reception. */
 esp_err_t radio_monitor_init( void );
 
-/** @brief Activate Wi-Fi hardware and promiscuous reception after framework initialization. */
+/** @brief Activate Wi-Fi reception; retry and confirm any pending driver stop first. */
 esp_err_t radio_monitor_start( void );
 
-/** @brief Stop promiscuous reception and Wi-Fi hardware while app is inactive. */
+/** @brief Stop Wi-Fi hardware and drain callbacks; retain retry obligation after failed shutdown. */
 esp_err_t radio_monitor_stop( void );
 
-/** @brief Return whether the app currently requests Wi-Fi observation delivery. */
+/** @brief True only while receive callbacks are enabled. */
 bool radio_monitor_is_active( void );
+/** @brief True if a prior driver stop or RX callback drain still needs a retry. */
+bool radio_monitor_cleanup_pending( void );
 /** @brief Last configured Wi-Fi channel, for capture UI. */
 uint8_t radio_monitor_channel( void );
 

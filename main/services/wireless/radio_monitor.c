@@ -50,6 +50,7 @@ typedef struct
 
 static const char *TAG = "radio_monitor";
 static radio_observation_fn sink;
+static radio_ap_observation_fn ap_sink;
 static radio_raw_frame_fn raw_sink;
 static uint32_t raw_callbacks_inflight;
 static bool capture_policy;
@@ -69,6 +70,10 @@ static int64_t last_hop_us;
 static uint16_t active_ap_channel_mask;
 static bool initialized;
 static bool running;
+/* True whenever a driver start has occurred without a confirmed esp_wifi_stop().
+   Unlike 'running', this survives a failed promiscuous-mode restore and forces
+   subsequent stop attempts to retry the physical shutdown. */
+static bool driver_stop_pending;
 static portMUX_TYPE callback_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t observation_callbacks_inflight;
 
@@ -320,6 +325,23 @@ static void promiscuous( void *a_buffer, wifi_promiscuous_pkt_type_t a_type )
         if( IEEE80211_TYPE_MANAGEMENT == frame.type )
         {
             emit_management_observations( &frame, packet->rx_ctrl.rssi, packet->rx_ctrl.channel );
+            /* Extended AP metadata is opt-in; existing consumers keep their exact
+               callback behavior and no additional parsing runs without an AP sink. */
+            if( NULL != ap_sink )
+            {
+                rfscout_wifi_ap_observation_t ap;
+                /* ESP-IDF sig_len includes the trailing 802.11 FCS. The decoder
+                   expects information elements only, not the four CRC octets. */
+                const size_t length = packet->rx_ctrl.sig_len;
+                if( length >= 4U && wifi_ap_observation_parse( packet->payload,
+                                                               length - 4U,
+                                                               packet->rx_ctrl.rssi,
+                                                               packet->rx_ctrl.channel,
+                                                               &ap ) )
+                {
+                    ap_sink( &ap );
+                }
+            }
         }
         else if( IEEE80211_TYPE_DATA == frame.type )
         {
@@ -450,11 +472,26 @@ uint8_t radio_monitor_channel( void )
     return channel;
 }
 
+/* ESP_ERR_WIFI_NOT_STARTED is positive confirmation that no driver is running. */
+static bool driver_is_stopped( esp_err_t a_result )
+{
+    return ESP_OK == a_result || ESP_ERR_WIFI_NOT_STARTED == a_result;
+}
+
 bool radio_monitor_is_active( void )
 {
     bool result;
     portENTER_CRITICAL( &callback_lock );
     result = running;
+    portEXIT_CRITICAL( &callback_lock );
+    return result;
+}
+
+bool radio_monitor_cleanup_pending( void )
+{
+    bool result;
+    portENTER_CRITICAL( &callback_lock );
+    result = !running && ( driver_stop_pending || observation_callbacks_inflight > 0U );
     portEXIT_CRITICAL( &callback_lock );
     return result;
 }
@@ -468,20 +505,46 @@ esp_err_t radio_monitor_start( void )
 
     portENTER_CRITICAL( &callback_lock );
     const bool already_running = running;
-    if( !already_running )
-    {
-        running = true;
-    }
+    const bool cleanup_pending = driver_stop_pending || ( observation_callbacks_inflight > 0U );
     portEXIT_CRITICAL( &callback_lock );
     if( already_running )
     {
         return ESP_OK;
+    }
+    if( cleanup_pending )
+    {
+        /* Recovery belongs to the service, so WiFi/BLE's normal start retry
+           discharges a pending stop before touching station/monitor hardware. */
+        const esp_err_t cleanup_result = radio_monitor_stop();
+        if( ESP_OK != cleanup_result )
+        {
+            return cleanup_result;
+        }
+    }
+
+    portENTER_CRITICAL( &callback_lock );
+    const bool can_start =
+        !running && !driver_stop_pending && ( observation_callbacks_inflight == 0U );
+    if( can_start )
+    {
+        running = true;
+    }
+    portEXIT_CRITICAL( &callback_lock );
+    if( !can_start )
+    {
+        return ESP_ERR_INVALID_STATE;
     }
 
     esp_err_t result = esp_wifi_set_mode( WIFI_MODE_NULL );
     if( ESP_OK == result )
     {
         result = esp_wifi_start();
+        if( ESP_OK == result )
+        {
+            portENTER_CRITICAL( &callback_lock );
+            driver_stop_pending = true;
+            portEXIT_CRITICAL( &callback_lock );
+        }
     }
     if( ESP_OK == result )
     {
@@ -504,7 +567,19 @@ esp_err_t radio_monitor_start( void )
         portENTER_CRITICAL( &callback_lock );
         running = false;
         portEXIT_CRITICAL( &callback_lock );
-        (void)esp_wifi_stop();
+
+        /* A failed start can leave the driver partially active. Keep the cleanup
+           obligation until esp_wifi_stop confirms it is no longer started. */
+        const esp_err_t cleanup_result = esp_wifi_stop();
+        portENTER_CRITICAL( &callback_lock );
+        driver_stop_pending = !driver_is_stopped( cleanup_result );
+        portEXIT_CRITICAL( &callback_lock );
+        if( !driver_is_stopped( cleanup_result ) )
+        {
+            ESP_LOGE( TAG,
+                      "Wi-Fi start cleanup did not stop driver: %s",
+                      esp_err_to_name( cleanup_result ) );
+        }
         return result;
     }
 
@@ -519,36 +594,62 @@ esp_err_t radio_monitor_stop( void )
 {
     portENTER_CRITICAL( &callback_lock );
     const bool was_running = running;
-    running = false;
+    const bool stop_required = was_running || driver_stop_pending;
+    running = false; /* Reject new callbacks while stopping or retrying cleanup. */
     portEXIT_CRITICAL( &callback_lock );
 
     esp_err_t stop_result = ESP_OK;
-    if( was_running )
+    if( stop_required )
     {
-        (void)esp_wifi_set_promiscuous( false );
-        stop_result = esp_wifi_stop();
-        if( ESP_OK != stop_result )
+        if( was_running )
         {
-            const esp_err_t restore_result = esp_wifi_set_promiscuous( true );
-            if( ESP_OK == restore_result )
+            (void)esp_wifi_set_promiscuous( false );
+        }
+        stop_result = esp_wifi_stop();
+        if( driver_is_stopped( stop_result ) )
+        {
+            /* No more driver work is pending even if stop reported NOT_STARTED. */
+            portENTER_CRITICAL( &callback_lock );
+            driver_stop_pending = false;
+            portEXIT_CRITICAL( &callback_lock );
+            stop_result = ESP_OK;
+        }
+        else
+        {
+            /* The first failed stop does not prove the driver is inactive. A later
+               stop call must retry even if receive mode could not be restored. */
+            portENTER_CRITICAL( &callback_lock );
+            driver_stop_pending = true;
+            portEXIT_CRITICAL( &callback_lock );
+
+            if( was_running )
             {
-                /* The failed stop left capture operational; retain its running state. */
-                portENTER_CRITICAL( &callback_lock );
-                running = true;
-                portEXIT_CRITICAL( &callback_lock );
-            }
-            else
-            {
-                /* Never report capture active when restoring reception failed. */
-                ESP_LOGE(
-                    TAG, "Wi-Fi capture restore failed: %s", esp_err_to_name( restore_result ) );
-                /* Best-effort cleanup allows the app's normal retry to start afresh. */
-                const esp_err_t cleanup_result = esp_wifi_stop();
-                if( ESP_OK != cleanup_result )
+                const esp_err_t restore_result = esp_wifi_set_promiscuous( true );
+                if( ESP_OK == restore_result )
                 {
-                    ESP_LOGW( TAG,
-                              "Wi-Fi cleanup after failed restore failed: %s",
-                              esp_err_to_name( cleanup_result ) );
+                    /* Restore reception for an app that continues using the monitor. */
+                    portENTER_CRITICAL( &callback_lock );
+                    running = true;
+                    portEXIT_CRITICAL( &callback_lock );
+                }
+                else
+                {
+                    ESP_LOGE( TAG,
+                              "Wi-Fi capture restore failed: %s",
+                              esp_err_to_name( restore_result ) );
+                    const esp_err_t cleanup_result = esp_wifi_stop();
+                    if( driver_is_stopped( cleanup_result ) )
+                    {
+                        portENTER_CRITICAL( &callback_lock );
+                        driver_stop_pending = false;
+                        portEXIT_CRITICAL( &callback_lock );
+                    }
+                    else
+                    {
+                        ESP_LOGW( TAG,
+                                  "Wi-Fi cleanup after failed restore failed: %s",
+                                  esp_err_to_name( cleanup_result ) );
+                    }
                 }
             }
             ESP_LOGW( TAG, "Wi-Fi driver stop failed: %s", esp_err_to_name( stop_result ) );
@@ -569,15 +670,18 @@ esp_err_t radio_monitor_stop( void )
         vTaskDelay( pdMS_TO_TICKS( 1U ) );
     }
 
+    if( ESP_OK != stop_result )
+    {
+        return stop_result;
+    }
     active_ap_channel_mask = 0U;
     capture_policy = false;
-    if( was_running )
+    if( stop_required )
     {
-        ESP_LOGI( TAG, "Wi-Fi monitor stopped for inactive app" );
+        ESP_LOGI( TAG, "Wi-Fi monitor driver stopped" );
     }
-    return stop_result;
+    return ESP_OK;
 }
-
 esp_err_t
 radio_monitor_set_capture_policy( bool a_enabled, uint8_t a_fixed_channel, uint32_t a_dwell_ms )
 {
@@ -627,6 +731,12 @@ void radio_monitor_set_observer( radio_observation_fn a_callback )
     sink = a_callback;
 }
 
+void radio_monitor_set_ap_observer( radio_ap_observation_fn a_callback )
+{
+    /* App-session lifecycle drains all RX callbacks before its memory is released. */
+    ap_sink = a_callback;
+}
+
 esp_err_t radio_monitor_init( void )
 {
     if( initialized )
@@ -647,6 +757,7 @@ esp_err_t radio_monitor_init( void )
 
     portENTER_CRITICAL( &callback_lock );
     running = false;
+    driver_stop_pending = false;
     observation_callbacks_inflight = 0U;
     portEXIT_CRITICAL( &callback_lock );
     active_ap_channel_mask = 0U;

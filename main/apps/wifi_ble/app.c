@@ -34,13 +34,12 @@
 #define WIFI_JOURNAL_FLUSH_INTERVAL_US 500000LL
 
 #define WIFI_MENU_BACK 0U
-#define WIFI_MENU_RESET 1U
-#define WIFI_MENU_NOTIFICATIONS 2U
-#define WIFI_MENU_EVIDENCE_THRESHOLD 3U
-#define WIFI_MENU_WIFI_TIMEOUT 4U
-#define WIFI_MENU_BLE_TIMEOUT 5U
-#define WIFI_MENU_SOURCES 6U
-#define WIFI_MENU_ITEM_COUNT 7U
+#define WIFI_MENU_NOTIFICATIONS 1U
+#define WIFI_MENU_EVIDENCE_THRESHOLD 2U
+#define WIFI_MENU_WIFI_TIMEOUT 3U
+#define WIFI_MENU_BLE_TIMEOUT 4U
+#define WIFI_MENU_SOURCES 5U
+#define WIFI_MENU_ITEM_COUNT 6U
 
 static bool menu_active;
 static bool menu_editing;
@@ -475,9 +474,13 @@ static void render_menu_callback( void *a_context )
 static void start_collectors( void )
 {
     esp_err_t result;
-    if( !wifi_source && radio_monitor_is_active() )
+    if( !wifi_source && ( radio_monitor_is_active() || radio_monitor_cleanup_pending() ) )
     {
-        (void)radio_monitor_stop();
+        result = radio_monitor_stop();
+        if( ESP_OK != result )
+        {
+            ESP_LOGW( TAG, "Wi-Fi monitor stop failed: %s; retrying", esp_err_to_name( result ) );
+        }
     }
     if( !ble_source && ble_monitor_is_active() )
     {
@@ -608,13 +611,6 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
             render_menu();
             emit_event( RFSCOUT_EVENT_ENTER, 0 );
             return;
-        }
-        if( WIFI_MENU_RESET == menu_item )
-        {
-            surveillance_history_flush();
-            observation_store_reset();
-            close_menu();
-            emit_event( RFSCOUT_EVENT_ACTIVATE, 0 );
         }
         return;
     }
@@ -760,6 +756,7 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
     }
 
     if( ( ( wifi_source && !radio_monitor_is_active() ) ||
+          ( !wifi_source && ( radio_monitor_is_active() || radio_monitor_cleanup_pending() ) ) ||
           ( ble_source && !ble_monitor_is_active() ) ) &&
         ( a_event->now_us - last_radio_retry_us >= WIFI_RADIO_RETRY_INTERVAL_US ) )
     {

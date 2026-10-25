@@ -16,7 +16,7 @@
 
 #include <stdio.h>
 
-#define WIFI_SETTINGS_ITEM_COUNT 7U
+#define WIFI_SETTINGS_ITEM_COUNT 6U
 
 void wifi_settings_view_render( unsigned a_selected,
                                 bool a_editing,
@@ -25,13 +25,8 @@ void wifi_settings_view_render( unsigned a_selected,
                                 uint16_t a_wifi_timeout_seconds,
                                 uint16_t a_ble_timeout_seconds )
 {
-    static const char *labels[ WIFI_SETTINGS_ITEM_COUNT ] = { "Back",
-                                                              "Reset detections",
-                                                              "Notifications",
-                                                              "Evidence threshold",
-                                                              "WiFi timeout",
-                                                              "BLE timeout",
-                                                              "Sources" };
+    static const char *labels[ WIFI_SETTINGS_ITEM_COUNT ] = {
+        "Back", "Notifications", "Evidence threshold", "WiFi timeout", "BLE timeout", "Sources" };
     const ui_theme_palette_t *theme = ui_theme_get();
 
     display_clear( theme->background );
@@ -45,7 +40,7 @@ void wifi_settings_view_render( unsigned a_selected,
     {
         const int y = UI_LAYOUT_MENU_START_Y + (int)( item - first ) * UI_LAYOUT_MENU_ROW_HEIGHT;
         const bool active = ( item == a_selected );
-        const bool editable = ( item >= 4U ) && ( item <= 5U );
+        const bool editable = ( item >= 3U ) && ( item <= 4U );
         ui_game_draw_menu_marker( UI_LAYOUT_LEFT_X,
                                   y,
                                   active ? ( a_editing && editable ? "*" : ">" ) : " ",
@@ -59,11 +54,11 @@ void wifi_settings_view_render( unsigned a_selected,
 
         char value[ 16 ];
         value[ 0 ] = '\0';
-        if( 2U == item )
+        if( 1U == item )
         {
             snprintf( value, sizeof( value ), "%s", a_notifications_enabled ? "On" : "Off" );
         }
-        else if( 3U == item )
+        else if( 2U == item )
         {
             static const char *names[ RFSCOUT_EVIDENCE_STRENGTH_COUNT ] = {
                 [RFSCOUT_EVIDENCE_STRENGTH_EVERYTHING] = "Everything",
@@ -77,11 +72,11 @@ void wifi_settings_view_render( unsigned a_selected,
                       ( a_threshold < RFSCOUT_EVIDENCE_STRENGTH_COUNT ) ? names[ a_threshold ]
                                                                         : "Possible" );
         }
-        else if( 4U == item )
+        else if( 3U == item )
         {
             snprintf( value, sizeof( value ), "%u s", (unsigned)a_wifi_timeout_seconds );
         }
-        else if( 5U == item )
+        else if( 4U == item )
         {
             snprintf( value, sizeof( value ), "%u s", (unsigned)a_ble_timeout_seconds );
         }

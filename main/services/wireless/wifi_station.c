@@ -253,6 +253,63 @@ static bool passive_snapshot_contains( const char *a_ssid )
 }
 
 /** @brief Classify a driver auth mode for credential-free association eligibility. */
+bool rfscout_wifi_station_bss_from_observation( const rfscout_wifi_ap_observation_t *a_observation,
+                                                rfscout_wifi_station_bss_t *a_bss )
+{
+    if( NULL == a_observation || NULL == a_bss || 0U == a_observation->ssid_length ||
+        a_observation->ssid_length > RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH ||
+        0U == a_observation->channel )
+    {
+        return false;
+    }
+    rfscout_wifi_station_bss_t result = { 0 };
+    memcpy( result.bssid, a_observation->bssid, sizeof( result.bssid ) );
+    memcpy( result.ssid, a_observation->ssid, a_observation->ssid_length );
+    result.rssi = a_observation->rssi;
+    result.channel = a_observation->channel;
+    result.security = RFSCOUT_WIFI_STATION_SECURITY_SECURED;
+    result.auth_mode = -1; /* Unknown: never infer a usable credential policy. */
+    switch( a_observation->auth )
+    {
+        case RFSCOUT_WIFI_AP_AUTH_OPEN:
+            if( RFSCOUT_WIFI_AP_SECURITY_OPEN == a_observation->security )
+            {
+                result.security = RFSCOUT_WIFI_STATION_SECURITY_OPEN;
+                result.auth_mode = WIFI_AUTH_OPEN;
+            }
+            break;
+        case RFSCOUT_WIFI_AP_AUTH_OWE:
+            if( RFSCOUT_WIFI_AP_SECURITY_OWE == a_observation->security )
+            {
+                result.security = RFSCOUT_WIFI_STATION_SECURITY_OWE;
+                result.auth_mode = WIFI_AUTH_OWE;
+            }
+            break;
+        case RFSCOUT_WIFI_AP_AUTH_WEP:
+            result.auth_mode = WIFI_AUTH_WEP;
+            break;
+        case RFSCOUT_WIFI_AP_AUTH_WPA:
+            result.auth_mode = WIFI_AUTH_WPA_PSK;
+            break;
+        case RFSCOUT_WIFI_AP_AUTH_WPA2_PSK:
+            result.auth_mode = WIFI_AUTH_WPA2_PSK;
+            break;
+        case RFSCOUT_WIFI_AP_AUTH_WPA3_SAE:
+            result.auth_mode = WIFI_AUTH_WPA3_PSK;
+            break;
+        case RFSCOUT_WIFI_AP_AUTH_WPA2_WPA3_PERSONAL:
+            result.auth_mode = WIFI_AUTH_WPA2_WPA3_PSK;
+            break;
+        case RFSCOUT_WIFI_AP_AUTH_ENTERPRISE:
+            result.auth_mode = WIFI_AUTH_WPA2_ENTERPRISE;
+            break;
+        default:
+            break;
+    }
+    *a_bss = result;
+    return true;
+}
+
 static rfscout_wifi_station_security_t security_class( wifi_auth_mode_t a_authmode )
 {
     if( WIFI_AUTH_OPEN == a_authmode )
