@@ -491,7 +491,7 @@ bool radio_monitor_cleanup_pending( void )
 {
     bool result;
     portENTER_CRITICAL( &callback_lock );
-    result = !running && driver_stop_pending;
+    result = !running && ( driver_stop_pending || observation_callbacks_inflight > 0U );
     portEXIT_CRITICAL( &callback_lock );
     return result;
 }
@@ -505,7 +505,8 @@ esp_err_t radio_monitor_start( void )
 
     portENTER_CRITICAL( &callback_lock );
     const bool already_running = running;
-    const bool cleanup_pending = driver_stop_pending;
+    const bool cleanup_pending =
+        driver_stop_pending || ( observation_callbacks_inflight > 0U );
     portEXIT_CRITICAL( &callback_lock );
     if( already_running )
     {
@@ -523,7 +524,8 @@ esp_err_t radio_monitor_start( void )
     }
 
     portENTER_CRITICAL( &callback_lock );
-    const bool can_start = !running && !driver_stop_pending;
+    const bool can_start =
+        !running && !driver_stop_pending && ( observation_callbacks_inflight == 0U );
     if( can_start )
     {
         running = true;
