@@ -110,6 +110,9 @@ static unsigned occurrences( const store_file_t *file, const char *needle )
 static void run( void )
 {
     store_reset();
+    /* The collection must ignore unrelated files without disturbing them. */
+    put( "unrelated.jsonl", "{}\\n" );
+    assert( exists( "unrelated.jsonl" ) && holds( "unrelated.jsonl", "{}\\n" ) );
     assert( ESP_OK == hotspot_sightings_open() );
     rfscout_wifi_station_bss_t cafe = bss( 1U );
     rfscout_observation_metadata_t metadata = observation( false, 0.0 );
@@ -136,6 +139,7 @@ static void run( void )
     assert( 0U == occurrences( file, "\"status\":" ) ); /* No invented check result. */
     assert( 0U == open_handles() );
     hotspot_sightings_close();
+    store_reboot();
 
     /* Re-entry clears the de-duplication cache, but keeps existing journal data. */
     assert( ESP_OK == hotspot_sightings_open() );
