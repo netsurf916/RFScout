@@ -47,7 +47,7 @@ esp_err_t radio_monitor_stop( void );
 
 /** @brief True only while receive callbacks are enabled. */
 bool radio_monitor_is_active( void );
-/** @brief True when driver shutdown remains unconfirmed and stop should be retried. */
+/** @brief True if a prior driver stop or RX callback drain still needs a retry. */
 bool radio_monitor_cleanup_pending( void );
 /** @brief Last configured Wi-Fi channel, for capture UI. */
 uint8_t radio_monitor_channel( void );
