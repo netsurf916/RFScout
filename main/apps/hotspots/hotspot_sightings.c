@@ -27,9 +27,9 @@
 typedef struct
 {
     uint8_t bssid[ 6 ];
+    char ssid[ RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH + 1U ];
     int32_t auth_mode;
     geo_movement_gate_t location_gate;
-    bool valid;
 } sighting_gate_t;
 
 typedef struct
@@ -126,7 +126,8 @@ void hotspot_sightings_observe( const rfscout_wifi_station_bss_t *a_bss,
     for( size_t index = 0U; index < gate_count; ++index )
     {
         if( 0 == memcmp( gates[ index ].bssid, a_bss->bssid, 6U ) &&
-            gates[ index ].auth_mode == a_bss->auth_mode )
+            gates[ index ].auth_mode == a_bss->auth_mode &&
+            0 == strcmp( gates[ index ].ssid, a_bss->ssid ) )
         {
             slot = index;
             break;
@@ -176,9 +177,9 @@ void hotspot_sightings_observe( const rfscout_wifi_station_bss_t *a_bss,
         }
     }
     memcpy( gates[ slot ].bssid, a_bss->bssid, 6U );
+    memcpy( gates[ slot ].ssid, a_bss->ssid, sizeof( gates[ slot ].ssid ) );
     gates[ slot ].auth_mode = a_bss->auth_mode;
     gates[ slot ].location_gate = gate;
-    gates[ slot ].valid = true;
 }
 
 void hotspot_sightings_poll( int64_t a_now_us )

@@ -138,6 +138,12 @@ static void run( void )
     assert( occurrences( file, "\"utc\":1700000300" ) == 4U );
     assert( 0U == occurrences( file, "\"status\":" ) ); /* No invented check result. */
     assert( 0U == open_handles() );
+    /* Changed SSID on the same BSSID starts a new sighting identity. */
+    cafe = bss( 1U );
+    snprintf( cafe.ssid, sizeof( cafe.ssid ), "Renamed" );
+    hotspot_sightings_observe( &cafe, &metadata, true );
+    hotspot_sightings_poll( 2000000 );
+    assert( 1U == occurrences( file, "\\"ssid\\":\\"Renamed\\"" ) );
     hotspot_sightings_close();
     store_reboot();
 
@@ -148,7 +154,7 @@ static void run( void )
     hotspot_sightings_close();
     file = find_file( "hotspots-00000001.jsonl" );
     assert( file != NULL );
-    assert( 5U == occurrences( file, "\"type\":\"observation\"" ) );
+    assert( 6U == occurrences( file, "\"type\":\"observation\"" ) );
     assert( 0U == open_handles() );
 }
 
