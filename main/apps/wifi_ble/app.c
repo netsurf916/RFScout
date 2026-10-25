@@ -474,9 +474,13 @@ static void render_menu_callback( void *a_context )
 static void start_collectors( void )
 {
     esp_err_t result;
-    if( !wifi_source && radio_monitor_is_active() )
+    if( !wifi_source && ( radio_monitor_is_active() || radio_monitor_cleanup_pending() ) )
     {
-        (void)radio_monitor_stop();
+        result = radio_monitor_stop();
+        if( ESP_OK != result )
+        {
+            ESP_LOGW( TAG, "Wi-Fi monitor stop failed: %s; retrying", esp_err_to_name( result ) );
+        }
     }
     if( !ble_source && ble_monitor_is_active() )
     {
@@ -752,6 +756,8 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
     }
 
     if( ( ( wifi_source && !radio_monitor_is_active() ) ||
+          ( !wifi_source &&
+            ( radio_monitor_is_active() || radio_monitor_cleanup_pending() ) ) ||
           ( ble_source && !ble_monitor_is_active() ) ) &&
         ( a_event->now_us - last_radio_retry_us >= WIFI_RADIO_RETRY_INTERVAL_US ) )
     {
