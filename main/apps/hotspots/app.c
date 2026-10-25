@@ -73,6 +73,7 @@ typedef enum
     HOTSPOTS_PHASE_CHECK,
     HOTSPOTS_PHASE_NETWORK,
     HOTSPOTS_PHASE_HTTPS,
+    HOTSPOTS_PHASE_CHECK_TEARDOWN,
     HOTSPOTS_PHASE_SETTLE
 } hotspots_phase_t;
 
@@ -410,7 +411,18 @@ static void record_profile_outcome( bool a_joined )
     attempt_profile_id = 0U;
 }
 
-/** @brief Close one check: leave the network, record the result, and settle before continuing. */
+/** @brief Quiesce TLS before releasing station; never stop Wi-Fi under a live probe. */
+static esp_err_t release_check_services( void )
+{
+    const esp_err_t probe_result = connectivity_probe_stop();
+    if( ESP_OK != probe_result )
+    {
+        return probe_result;
+    }
+    return network_session_release();
+}
+
+/** @brief Close one check: record once, then wait for confirmed network teardown. */
 static void finish_attempt( hotspot_status_t a_outcome,
                             hotspot_stage_t a_failed_stage,
                             esp_err_t a_error,
@@ -422,7 +434,7 @@ static void finish_attempt( hotspot_status_t a_outcome,
     const bool associated = session.associated;
     attempt_result.gateway_mac_valid =
         joined && ESP_OK == rfscout_wifi_station_gateway_mac( attempt_result.gateway_mac );
-    (void)network_session_release();
+    const esp_err_t release_result = release_check_services();
 
     attempt_result.outcome = a_outcome;
     attempt_result.failed_stage = a_failed_stage;
@@ -454,8 +466,19 @@ static void finish_attempt( hotspot_status_t a_outcome,
               esp_err_to_name( a_error ) );
     log_result();
 
-    phase = HOTSPOTS_PHASE_SETTLE;
-    phase_deadline_us = a_now_us + HOTSPOTS_SETTLE_US;
+    if( ESP_OK == release_result )
+    {
+        phase = HOTSPOTS_PHASE_SETTLE;
+        phase_deadline_us = a_now_us + HOTSPOTS_SETTLE_US;
+    }
+    else
+    {
+        ESP_LOGW( TAG,
+                  "connectivity teardown pending: %s",
+                  esp_err_to_name( release_result ) );
+        phase = HOTSPOTS_PHASE_CHECK_TEARDOWN;
+        phase_deadline_us = a_now_us + HOTSPOTS_SCAN_RETRY_US;
+    }
     render_due = true;
 }
 
@@ -733,6 +756,20 @@ static void scheduler_poll( int64_t a_now_us )
             {
                 break;
             }
+            /* Never activate promiscuous reception while a prior connection,
+               event-loop drain or TLS probe still owns the Wi-Fi driver. */
+            if( connectivity_probe_is_active() || network_session_is_active() )
+            {
+                const esp_err_t cleanup_result = release_check_services();
+                if( ESP_OK != cleanup_result )
+                {
+                    ESP_LOGW( TAG,
+                              "cannot resume monitor until network teardown: %s",
+                              esp_err_to_name( cleanup_result ) );
+                    next_scan_us = a_now_us + HOTSPOTS_SCAN_RETRY_US;
+                    break;
+                }
+            }
             __atomic_store_n( &collecting_ap_observations, true, __ATOMIC_RELEASE );
             const esp_err_t result = radio_monitor_start();
             if( ESP_OK == result )
@@ -874,6 +911,26 @@ static void scheduler_poll( int64_t a_now_us )
             }
             break;
         }
+
+        case HOTSPOTS_PHASE_CHECK_TEARDOWN:
+            if( a_now_us >= phase_deadline_us )
+            {
+                const esp_err_t cleanup_result = release_check_services();
+                if( ESP_OK == cleanup_result )
+                {
+                    phase = HOTSPOTS_PHASE_SETTLE;
+                    phase_deadline_us = a_now_us + HOTSPOTS_SETTLE_US;
+                    render_due = true;
+                }
+                else
+                {
+                    ESP_LOGW( TAG,
+                              "retrying connectivity teardown: %s",
+                              esp_err_to_name( cleanup_result ) );
+                    phase_deadline_us = a_now_us + HOTSPOTS_SCAN_RETRY_US;
+                }
+            }
+            break;
 
         case HOTSPOTS_PHASE_SETTLE:
             if( a_now_us >= phase_deadline_us )
