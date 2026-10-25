@@ -756,8 +756,7 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
     }
 
     if( ( ( wifi_source && !radio_monitor_is_active() ) ||
-          ( !wifi_source &&
-            ( radio_monitor_is_active() || radio_monitor_cleanup_pending() ) ) ||
+          ( !wifi_source && ( radio_monitor_is_active() || radio_monitor_cleanup_pending() ) ) ||
           ( ble_source && !ble_monitor_is_active() ) ) &&
         ( a_event->now_us - last_radio_retry_us >= WIFI_RADIO_RETRY_INTERVAL_US ) )
     {
