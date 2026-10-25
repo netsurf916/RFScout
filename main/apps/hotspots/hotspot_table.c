@@ -41,7 +41,7 @@ void hotspot_table_reset( hotspot_table_t *a_table )
     a_table->open_count = 0U;
     a_table->owe_count = 0U;
     a_table->secured_count = 0U;
-    a_table->scans_completed = 0U;
+    a_table->sweep_id = 0U;
 }
 
 hotspot_entry_t *hotspot_table_find( hotspot_table_t *a_table, const uint8_t a_bssid[ 6 ] )
@@ -114,7 +114,7 @@ static bool guest_accessible( const rfscout_wifi_station_bss_t *a_bss )
 }
 
 /**
- * @brief Under capacity pressure, choose an absent, unqueued victim.
+ * @brief Under capacity pressure, choose a not-yet-heard-in-this-sweep, unqueued victim.
  * @details Secured records yield to guest candidates; guests are never evicted for
  *          secured new arrivals. Older observations rank first, RSSI breaks age ties.
  */
@@ -127,7 +127,7 @@ static size_t eviction_victim( const hotspot_table_t *a_table,
     for( size_t index = 0U; index < a_table->count; ++index )
     {
         const hotspot_entry_t *entry = &a_table->entries[ index ];
-        if( entry->visible || entry->manual_requested )
+        if( entry->observed_sweep_id == a_table->sweep_id || entry->manual_requested )
         {
             continue;
         }
@@ -162,20 +162,17 @@ void hotspot_table_begin_sweep( hotspot_table_t *a_table )
     {
         return;
     }
-    ++a_table->scans_completed;
-    if( 0U == a_table->scans_completed )
+    ++a_table->sweep_id;
+    if( 0U == a_table->sweep_id )
     {
-        ++a_table->scans_completed;
-        /* Unlikely uptime wrap: avoid false current-sweep identity matches. */
+        ++a_table->sweep_id;
+        /* Generation wrap cannot make old entries appear heard in this sweep. */
         for( size_t index = 0U; index < a_table->count; ++index )
         {
-            a_table->entries[ index ].last_seen_scan = 0U;
+            a_table->entries[ index ].observed_sweep_id = 0U;
         }
     }
-    for( size_t index = 0U; index < a_table->count; ++index )
-    {
-        a_table->entries[ index ].visible = false;
-    }
+    /* Never clear visible at a sweep boundary: freshness comes from last_seen_ms. */
 }
 
 esp_err_t hotspot_table_observe( hotspot_table_t *a_table,
@@ -183,7 +180,7 @@ esp_err_t hotspot_table_observe( hotspot_table_t *a_table,
                                  uint32_t a_monitor_ms,
                                  const rfscout_gps_snapshot_t *a_gps )
 {
-    if( NULL == a_table || !hotspot_bss_eligible( a_bss ) || 0U == a_table->scans_completed )
+    if( NULL == a_table || !hotspot_bss_eligible( a_bss ) || 0U == a_table->sweep_id )
     {
         return ESP_ERR_INVALID_ARG;
     }
@@ -216,7 +213,7 @@ esp_err_t hotspot_table_observe( hotspot_table_t *a_table,
 
     entry->bss = *a_bss;
     entry->last_seen_ms = a_monitor_ms;
-    entry->last_seen_scan = a_table->scans_completed;
+    entry->observed_sweep_id = a_table->sweep_id;
     entry->visible = true;
     if( gps_location_fresh( a_gps ) )
     {
@@ -225,36 +222,12 @@ esp_err_t hotspot_table_observe( hotspot_table_t *a_table,
     return ESP_OK;
 }
 
-void hotspot_table_finish_sweep( hotspot_table_t *a_table,
-                                 uint32_t a_monitor_ms,
-                                 const hotspot_retention_t *a_retention,
-                                 const rfscout_gps_snapshot_t *a_gps )
+/** @brief Visibility is a receive-time window, independent of sweep completion. */
+void hotspot_table_refresh_visibility( hotspot_table_t *a_table, uint32_t a_monitor_ms )
 {
-    if( NULL == a_table || NULL == a_retention )
+    if( NULL == a_table )
     {
         return;
-    }
-
-    const bool located = gps_location_fresh( a_gps );
-    for( size_t index = 0U; index < a_table->count; )
-    {
-        hotspot_entry_t *entry = &a_table->entries[ index ];
-        const bool out_of_range =
-            observation_retention_outside_coverage( &entry->live_bounds,
-                                                    located ? a_gps->latitude_deg : 0.0,
-                                                    located ? a_gps->longitude_deg : 0.0,
-                                                    a_retention->distance_threshold_m,
-                                                    located,
-                                                    entry->visible );
-        if( !entry->visible && !entry->manual_requested &&
-            ( observation_retention_expired(
-                  a_monitor_ms, entry->last_seen_ms, a_retention->timeout_ms, 0U ) ||
-              out_of_range ) )
-        {
-            remove_entry( a_table, index );
-            continue;
-        }
-        ++index;
     }
 
     a_table->open_count = 0U;
@@ -262,7 +235,9 @@ void hotspot_table_finish_sweep( hotspot_table_t *a_table,
     a_table->secured_count = 0U;
     for( size_t index = 0U; index < a_table->count; ++index )
     {
-        const hotspot_entry_t *entry = &a_table->entries[ index ];
+        hotspot_entry_t *entry = &a_table->entries[ index ];
+        entry->visible = !observation_retention_expired(
+            a_monitor_ms, entry->last_seen_ms, HOTSPOT_VISIBILITY_TIMEOUT_MS, 0U );
         if( !entry->visible )
         {
             continue;
@@ -280,6 +255,42 @@ void hotspot_table_finish_sweep( hotspot_table_t *a_table,
             ++a_table->secured_count;
         }
     }
+}
+
+void hotspot_table_finish_sweep( hotspot_table_t *a_table,
+                                 uint32_t a_monitor_ms,
+                                 const hotspot_retention_t *a_retention,
+                                 const rfscout_gps_snapshot_t *a_gps )
+{
+    if( NULL == a_table || NULL == a_retention )
+    {
+        return;
+    }
+
+    const bool located = gps_location_fresh( a_gps );
+    for( size_t index = 0U; index < a_table->count; )
+    {
+        hotspot_entry_t *entry = &a_table->entries[ index ];
+        const bool observed_this_sweep = entry->observed_sweep_id == a_table->sweep_id;
+        const bool out_of_range =
+            observation_retention_outside_coverage( &entry->live_bounds,
+                                                    located ? a_gps->latitude_deg : 0.0,
+                                                    located ? a_gps->longitude_deg : 0.0,
+                                                    a_retention->distance_threshold_m,
+                                                    located,
+                                                    observed_this_sweep );
+        if( !observed_this_sweep && !entry->manual_requested &&
+            ( observation_retention_expired(
+                  a_monitor_ms, entry->last_seen_ms, a_retention->timeout_ms, 0U ) ||
+              out_of_range ) )
+        {
+            remove_entry( a_table, index );
+            continue;
+        }
+        ++index;
+    }
+
+    hotspot_table_refresh_visibility( a_table, a_monitor_ms );
 }
 
 bool hotspot_auto_pending( const hotspot_entry_t *a_entry )

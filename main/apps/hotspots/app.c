@@ -719,7 +719,7 @@ static void complete_scan( int64_t a_now_us )
     hotspot_table_finish_sweep( &table, monitor_clock_ms, &retention, &gps );
     for( size_t index = 0U; index < table.count; ++index )
     {
-        if( table.entries[ index ].visible )
+        if( table.entries[ index ].observed_sweep_id == table.sweep_id )
         {
             hotspot_history_observe( &table.entries[ index ].bss, &gps );
         }
@@ -800,6 +800,7 @@ static void scheduler_poll( int64_t a_now_us )
             tick_monitor_clock( sample_us );
             radio_monitor_step();
             drain_ap_queue();
+            hotspot_table_refresh_visibility( &table, monitor_clock_ms );
             if( a_now_us >= phase_deadline_us )
             {
                 __atomic_store_n( &collecting_ap_observations, false, __ATOMIC_RELEASE );

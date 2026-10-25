@@ -107,7 +107,7 @@ int main(void)
     assert(table.count == 1 && table.entries[0].live_bounds.samples == 2);
     hotspot_table_begin_sweep(&table);
     finish(&table, 3000, retention, &near);
-    assert(table.count == 1 && !table.entries[0].visible);
+    assert(table.count == 1 && table.entries[0].visible); /* Still recent after a missed sweep. */
     hotspot_table_begin_sweep(&table);
     observe(&table, one, 4000, &far);
     finish(&table, 4000, retention, &far);
@@ -136,6 +136,22 @@ int main(void)
     assert(table.count == 1); /* Wall clock may have advanced minutes. */
     hotspot_table_reset(&table);
 
+    /* Recent visibility persists across scan boundaries, but ages on monitor time. */
+    hotspot_table_begin_sweep(&table);
+    observe(&table, one, 1000, NULL);
+    finish(&table, 1000, retention, NULL);
+    hotspot_table_begin_sweep(&table);
+    assert(table.entries[0].visible);
+    hotspot_table_refresh_visibility(&table, 8999);
+    assert(table.entries[0].visible && table.open_count == 1);
+    hotspot_table_refresh_visibility(&table, 9000);
+    assert(!table.entries[0].visible && table.open_count == 0);
+    observe(&table, one, 9001, NULL);
+    assert(table.entries[0].visible);
+    finish(&table, 9001, retention, NULL);
+    assert(table.entries[0].visible);
+    hotspot_table_reset(&table);
+
     rfscout_wifi_station_bss_t guest_old = bss(0, RFSCOUT_WIFI_STATION_SECURITY_OPEN);
     rfscout_wifi_station_bss_t secured_old = bss(64, RFSCOUT_WIFI_STATION_SECURITY_SECURED);
     rfscout_wifi_station_bss_t owe_old = bss(0, RFSCOUT_WIFI_STATION_SECURITY_OWE);
@@ -149,11 +165,15 @@ int main(void)
     assert(table.open_count == HOTSPOT_TABLE_MAX_ENTRIES);
     assert(table.capacity <= HOTSPOT_TABLE_MAX_ENTRIES);
     hotspot_table_begin_sweep(&table);
+    assert(table.entries[0].visible); /* Recent entries stay visible during a sweep. */
+    rfscout_wifi_station_bss_t protected_guest = bss(1, RFSCOUT_WIFI_STATION_SECURITY_OPEN);
+    observe(&table, protected_guest, 150, NULL);
     rfscout_wifi_station_bss_t newcomer = bss(1000, RFSCOUT_WIFI_STATION_SECURITY_OPEN);
     observe(&table, newcomer, 150, NULL);
     finish(&table, 150, retention, NULL);
     assert(table.count == HOTSPOT_TABLE_MAX_ENTRIES);
     assert(hotspot_table_find(&table, newcomer.bssid) != NULL);
+    assert(hotspot_table_find(&table, protected_guest.bssid) != NULL);
     assert(hotspot_table_find(&table, guest_old.bssid) == NULL);
     hotspot_table_reset(&table);
 

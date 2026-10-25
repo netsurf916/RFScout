@@ -27,6 +27,8 @@
 #define HOTSPOT_RETRY_IMPROVEMENT_DB 4
 /** Default expiration after 60 seconds of actual monitor receive time. */
 #define HOTSPOT_RETENTION_DEFAULT_SECONDS 60U
+/** Fresh when heard within more than two 3.2-second sweeps of monitor receive time. */
+#define HOTSPOT_VISIBILITY_TIMEOUT_MS 8000U
 /** Provisional bounded live-list budget; validate against measured PSRAM/TLS headroom. */
 #define HOTSPOT_TABLE_MAX_ENTRIES 128U
 /** Distance beyond the observed coverage circle, not distance from its center. */
@@ -97,7 +99,7 @@ typedef struct
     uint32_t profile_id;        /**< profile for automatic secured checks; 0 when none */
     uint32_t manual_profile_id; /**< profile the user chose with Join; used by the queued check */
     uint32_t last_seen_ms;      /**< Logical scanning clock, excludes association/TLS downtime. */
-    uint32_t last_seen_scan;    /**< Monitor sweep ordinal for recency and UI presence. */
+    uint32_t observed_sweep_id; /**< Only protects this sweep's sightings during admission. */
     geo_bounds_t live_bounds;   /**< Receiver positions seen in this Live observation session. */
     hotspot_status_t status;
     bool retry_gate_active;
@@ -126,7 +128,7 @@ typedef struct
     size_t open_count;
     size_t owe_count;
     size_t secured_count;
-    uint32_t scans_completed;
+    uint32_t sweep_id; /**< Admission generation, never used for expiration or UI freshness. */
 } hotspot_table_t;
 
 /** @brief Return whether a scanned BSSID has a usable named SSID for observation. */
@@ -138,7 +140,7 @@ bool hotspot_entry_checkable( const hotspot_entry_t *a_entry );
 /** @brief Empty the table and release its app-session storage immediately. */
 void hotspot_table_reset( hotspot_table_t *a_table );
 
-/** @brief Begin a bounded monitor sweep; prior visibility becomes provisional. */
+/** @brief Begin a monitor sweep without invalidating timestamp-based visibility. */
 void hotspot_table_begin_sweep( hotspot_table_t *a_table );
 
 /**
@@ -151,7 +153,10 @@ esp_err_t hotspot_table_observe( hotspot_table_t *a_table,
                                  uint32_t a_monitor_ms,
                                  const rfscout_gps_snapshot_t *a_gps );
 
-/** @brief Expire absent observations, recompute sweep counts, keep protected work. */
+/** @brief Recompute timestamp-based UI/check freshness and visible security counts. */
+void hotspot_table_refresh_visibility( hotspot_table_t *a_table, uint32_t a_monitor_ms );
+
+/** @brief Expire overdue/out-of-range observations, preserving current sightings and manual work. */
 void hotspot_table_finish_sweep( hotspot_table_t *a_table,
                                  uint32_t a_monitor_ms,
                                  const hotspot_retention_t *a_retention,
