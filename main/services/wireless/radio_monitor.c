@@ -482,7 +482,16 @@ bool radio_monitor_is_active( void )
 {
     bool result;
     portENTER_CRITICAL( &callback_lock );
-    result = running || driver_stop_pending;
+    result = running;
+    portEXIT_CRITICAL( &callback_lock );
+    return result;
+}
+
+bool radio_monitor_cleanup_pending( void )
+{
+    bool result;
+    portENTER_CRITICAL( &callback_lock );
+    result = !running && driver_stop_pending;
     portEXIT_CRITICAL( &callback_lock );
     return result;
 }
@@ -497,10 +506,6 @@ esp_err_t radio_monitor_start( void )
     portENTER_CRITICAL( &callback_lock );
     const bool already_running = running;
     const bool cleanup_pending = driver_stop_pending;
-    if( !already_running && !cleanup_pending )
-    {
-        running = true;
-    }
     portEXIT_CRITICAL( &callback_lock );
     if( already_running )
     {
@@ -508,7 +513,24 @@ esp_err_t radio_monitor_start( void )
     }
     if( cleanup_pending )
     {
-        /* A previous failed stop must be retried before any new Wi-Fi start. */
+        /* Recovery belongs to the service, so WiFi/BLE's normal start retry
+           discharges a pending stop before touching station/monitor hardware. */
+        const esp_err_t cleanup_result = radio_monitor_stop();
+        if( ESP_OK != cleanup_result )
+        {
+            return cleanup_result;
+        }
+    }
+
+    portENTER_CRITICAL( &callback_lock );
+    const bool can_start = !running && !driver_stop_pending;
+    if( can_start )
+    {
+        running = true;
+    }
+    portEXIT_CRITICAL( &callback_lock );
+    if( !can_start )
+    {
         return ESP_ERR_INVALID_STATE;
     }
 
