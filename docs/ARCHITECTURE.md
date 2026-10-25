@@ -212,6 +212,17 @@ Usable external PSRAM is a supported-platform requirement. RFScout does not sile
 
 Applications consume semantic input rather than GPIOs. The current T-Embed provider maps the rotary encoder/buttons into signed navigation, Select, Long Press, and the global Hold shortcut. There is no global Back input semantic; explicit Back rows and app-local actions are ordinary Select-driven UI choices. The dedicated user/power key remains a separate power-policy input.
 
+The T-Embed provider accepts only valid A/B quadrature half-steps between opposite latch
+states; contact bounce returning to the same latch is ignored, and missed/invalid transitions
+are discarded and resynchronized instead of being assigned a direction. Decoded detents
+accumulate as a signed net movement until the application consumes input. Each consumption
+takes and clears the entire accumulated value, delivering at most one signed navigation
+action; opposite turns cancel and fast spins cannot leave a delayed backlog. This favors
+a responsive UI over replaying every detent during slow application transitions. Input lock
+and the existing screen-wake gesture policy intentionally discard pending/partial movement.
+The existing two-edge detent calibration is retained; interrupt latency and occasional
+direction anomalies still require validation on the supported T-Embed board.
+
 The user-facing gesture vocabulary is intentional:
 
 - **Center / Select** — short center-button press and release; ordinary activation.

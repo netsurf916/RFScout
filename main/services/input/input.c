@@ -9,6 +9,7 @@
 
 #include "board.h"
 #include "event.h"
+#include "rotary_decoder.h"
 #include "session_state.h"
 
 #include "driver/gpio.h"
@@ -23,14 +24,9 @@
 
 #define INPUT_BUTTON_DEBOUNCE_US 30000LL
 #define INPUT_BUTTON_LONG_PRESS_US 800000LL
-#define ENCODER_LATCH_STATE_0 0U
-#define ENCODER_LATCH_STATE_3 3U
-#define ENCODER_TRANSITIONS_PER_DETENT 2
 
 static const char *TAG = "input";
-static volatile uint8_t encoder_state;
-static volatile int navigation_accumulator;
-static volatile int navigation_delta;
+static rotary_decoder_t navigation_decoder;
 static portMUX_TYPE navigation_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE button_lock = portMUX_INITIALIZER_UNLOCKED;
 static volatile bool button_down;
@@ -51,27 +47,11 @@ static rfscout_input_provider_t provider;
 static void IRAM_ATTR encoder_isr( void *a_argument )
 {
     (void)a_argument;
-    static const int8_t transitions[ 16 ] = { 0, -1, 1, 0, 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, -1, 0 };
-
     const uint8_t current = (uint8_t)( ( gpio_get_level( RFSCOUT_BOARD_ENCODER_A_PIN ) << 1 ) |
                                        gpio_get_level( RFSCOUT_BOARD_ENCODER_B_PIN ) );
 
     portENTER_CRITICAL_ISR( &navigation_lock );
-    navigation_accumulator += transitions[ ( ( encoder_state << 2 ) | current ) & 0x0FU ];
-    encoder_state = current;
-    if( ( ENCODER_LATCH_STATE_0 == current ) || ( ENCODER_LATCH_STATE_3 == current ) )
-    {
-        if( navigation_accumulator >= ENCODER_TRANSITIONS_PER_DETENT )
-        {
-            ++navigation_delta;
-            navigation_accumulator = 0;
-        }
-        else if( navigation_accumulator <= -ENCODER_TRANSITIONS_PER_DETENT )
-        {
-            --navigation_delta;
-            navigation_accumulator = 0;
-        }
-    }
+    rotary_decoder_sample( &navigation_decoder, current );
     portEXIT_CRITICAL_ISR( &navigation_lock );
 }
 
@@ -109,16 +89,18 @@ static void IRAM_ATTR primary_button_isr( void *a_argument )
 static void clear_navigation_delta( void )
 {
     portENTER_CRITICAL( &navigation_lock );
-    navigation_delta = 0;
-    navigation_accumulator = 0;
+    rotary_decoder_clear_pending( &navigation_decoder );
     portEXIT_CRITICAL( &navigation_lock );
 }
 
 static int consume_navigation_delta( void )
 {
     portENTER_CRITICAL( &navigation_lock );
-    const int delta = locked ? 0 : navigation_delta;
-    navigation_delta = 0;
+    const int delta = locked ? 0 : rotary_decoder_take_direction( &navigation_decoder );
+    if( locked )
+    {
+        rotary_decoder_clear_pending( &navigation_decoder );
+    }
     portEXIT_CRITICAL( &navigation_lock );
     return delta;
 }
@@ -191,10 +173,10 @@ static esp_err_t install_rotary_provider( void )
         return result;
     }
 
-    encoder_state = (uint8_t)( ( gpio_get_level( RFSCOUT_BOARD_ENCODER_A_PIN ) << 1 ) |
-                               gpio_get_level( RFSCOUT_BOARD_ENCODER_B_PIN ) );
-    navigation_accumulator = 0;
-    navigation_delta = 0;
+    const uint8_t initial_state =
+        (uint8_t)( ( gpio_get_level( RFSCOUT_BOARD_ENCODER_A_PIN ) << 1 ) |
+                   gpio_get_level( RFSCOUT_BOARD_ENCODER_B_PIN ) );
+    rotary_decoder_reset( &navigation_decoder, initial_state );
     initialize_button_state();
 
     result = gpio_install_isr_service( 0 );
@@ -321,7 +303,7 @@ bool input_activity_pending( void )
     bool button_activity;
 
     portENTER_CRITICAL( &navigation_lock );
-    movement = ( 0 != navigation_delta );
+    movement = rotary_decoder_pending( &navigation_decoder );
     portEXIT_CRITICAL( &navigation_lock );
 
     portENTER_CRITICAL( &button_lock );
