@@ -173,6 +173,15 @@ static void observe_ap( const rfscout_wifi_ap_observation_t *a_ap )
     portEXIT_CRITICAL( &ap_queue_lock );
 }
 
+/** @brief Read a callback-owned counter without racing the Wi-Fi receive task. */
+static uint32_t ap_drops_snapshot( void )
+{
+    portENTER_CRITICAL( &ap_queue_lock );
+    const uint32_t dropped = ap_queue_dropped;
+    portEXIT_CRITICAL( &ap_queue_lock );
+    return dropped;
+}
+
 static void tick_monitor_clock( int64_t a_now_us )
 {
     if( a_now_us > monitor_last_tick_us && monitor_last_tick_us > 0 )
@@ -694,11 +703,12 @@ static void complete_scan( int64_t a_now_us )
             hotspot_history_observe( &table.entries[ index ].bss, &gps );
         }
     }
-    if( ap_queue_dropped > 0U || observations_rejected > 0U )
+    const uint32_t queue_drops = ap_drops_snapshot();
+    if( queue_drops > 0U || observations_rejected > 0U )
     {
         ESP_LOGW( TAG,
                   "AP monitoring pressure: queued drops=%lu admission rejects=%lu",
-                  (unsigned long)ap_queue_dropped,
+                  (unsigned long)queue_drops,
                   (unsigned long)observations_rejected );
     }
     resolve_credentials( &gps );
@@ -979,7 +989,7 @@ static bool app_telemetry( rfscout_log_record_t *a_record )
                    log_uint( a_record, "red", counts.red ) &&
                    log_uint( a_record, "checks", counts.checks ) &&
                    log_uint( a_record, "monitor_ms", monitor_clock_ms ) &&
-                   log_uint( a_record, "ap_queue_drops", ap_queue_dropped ) &&
+                   log_uint( a_record, "ap_queue_drops", ap_drops_snapshot() ) &&
                    log_uint( a_record, "ap_rejected", observations_rejected );
     return success;
 }
