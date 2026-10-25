@@ -69,6 +69,7 @@ typedef enum
     HOTSPOTS_PHASE_IDLE = 0,
     HOTSPOTS_PHASE_SCAN_START,
     HOTSPOTS_PHASE_SCANNING,
+    HOTSPOTS_PHASE_MONITOR_STOP,
     HOTSPOTS_PHASE_CHECK,
     HOTSPOTS_PHASE_NETWORK,
     HOTSPOTS_PHASE_HTTPS,
@@ -746,9 +747,8 @@ static void scheduler_poll( int64_t a_now_us )
             if( !radio_monitor_is_active() )
             {
                 __atomic_store_n( &collecting_ap_observations, false, __ATOMIC_RELEASE );
-                ESP_LOGW( TAG, "Wi-Fi monitor stopped unexpectedly; retrying" );
-                phase = HOTSPOTS_PHASE_SCAN_START;
-                next_scan_us = a_now_us + HOTSPOTS_SCAN_RETRY_US;
+                ESP_LOGW( TAG, "Wi-Fi monitor stopped unexpectedly; quiescing callbacks" );
+                phase = HOTSPOTS_PHASE_MONITOR_STOP;
                 break;
             }
             const int64_t sample_us = a_now_us < phase_deadline_us ? a_now_us : phase_deadline_us;
@@ -762,12 +762,9 @@ static void scheduler_poll( int64_t a_now_us )
                 if( ESP_OK != result )
                 {
                     ESP_LOGW( TAG, "Wi-Fi monitor did not quiesce: %s", esp_err_to_name( result ) );
-                    /* Never begin station association until the monitor has stopped. */
-                    next_scan_us = a_now_us + HOTSPOTS_SCAN_RETRY_US;
-                    if( !radio_monitor_is_active() )
-                    {
-                        phase = HOTSPOTS_PHASE_SCAN_START;
-                    }
+                    /* A failed stop may leave callbacks in flight or receive mode active.
+                       Retry the full quiesce path; do not enter station mode or restart. */
+                    phase = HOTSPOTS_PHASE_MONITOR_STOP;
                 }
                 else
                 {
@@ -776,6 +773,14 @@ static void scheduler_poll( int64_t a_now_us )
             }
             break;
         }
+
+        case HOTSPOTS_PHASE_MONITOR_STOP:
+            /* Idempotent stop also waits for callbacks after a prior stop timeout. */
+            if( ESP_OK == radio_monitor_stop() )
+            {
+                complete_scan( a_now_us );
+            }
+            break;
 
         case HOTSPOTS_PHASE_CHECK:
         {
