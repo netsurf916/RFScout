@@ -12,12 +12,14 @@
 #include "connectivity_probe.h"
 #include "gps.h"
 #include "hotspot_history.h"
+#include "hotspot_sightings.h"
 #include "hotspot_profiles.h"
 #include "hotspot_table.h"
 #include "hotspots_app.h"
 #include "hotspots_internal.h"
 #include "hotspots_ui.h"
 #include "log_writer.h"
+#include "observation_metadata.h"
 #include "radio_monitor.h"
 #include "network_session.h"
 #include "persistent_store.h"
@@ -159,6 +161,11 @@ static void observe_ap( const rfscout_wifi_ap_observation_t *a_ap )
             {
                 ap_queue[ index ] = *a_ap;
             }
+            else
+            {
+                /* Retain the stronger auth evidence, but stamp the latest reception. */
+                ap_queue[ index ].seen_ms = a_ap->seen_ms;
+            }
             portEXIT_CRITICAL( &ap_queue_lock );
             return;
         }
@@ -238,6 +245,19 @@ static void drain_ap_queue( void )
             {
                 continue;
             }
+            rfscout_observation_metadata_t metadata;
+            observation_metadata_enrich( ready[ index ].seen_ms, &gps, &metadata );
+            uint32_t profile_id = 0U;
+            const hotspot_credential_t credential = credential_for_bss( &bss, &gps, &profile_id );
+            const bool eligible = HOTSPOT_CREDENTIAL_OPEN == credential ||
+                                  HOTSPOT_CREDENTIAL_KNOWN == credential ||
+                                  HOTSPOT_CREDENTIAL_INFERRED == credential ||
+                                  NULL != hotspot_history_find( &bss );
+            /* Logging is independent of Live-table admission and capacity pressure. */
+            hotspot_sightings_observe( &bss, &metadata, eligible );
+            /* Previously validated BSSIDs retain the existing movement-triggered
+               History location backfill even when Live rejects the observation. */
+            hotspot_history_observe( &bss, &gps );
             if( table.count == HOTSPOT_TABLE_MAX_ENTRIES &&
                 NULL == hotspot_table_find( &table, bss.bssid ) )
             {
@@ -248,8 +268,6 @@ static void drain_ap_queue( void )
                 };
                 hotspot_table_finish_sweep( &table, monitor_clock_ms, &retention, &gps );
             }
-            uint32_t profile_id = 0U;
-            const hotspot_credential_t credential = credential_for_bss( &bss, &gps, &profile_id );
             if( ESP_OK != hotspot_table_observe(
                               &table, &bss, monitor_clock_ms, &gps, credential, profile_id ) )
             {
@@ -751,13 +769,6 @@ static void complete_scan( int64_t a_now_us )
         .distance_threshold_m = hotspots_eviction_distance_m(),
     };
     hotspot_table_finish_sweep( &table, monitor_clock_ms, &retention, &gps );
-    for( size_t index = 0U; index < table.count; ++index )
-    {
-        if( table.entries[ index ].observed_sweep_id == table.sweep_id )
-        {
-            hotspot_history_observe( &table.entries[ index ].bss, &gps );
-        }
-    }
     const uint32_t queue_drops = ap_drops_snapshot();
     if( queue_drops > 0U || observations_rejected > 0U )
     {
@@ -999,6 +1010,10 @@ static rfscout_app_runtime_result_t hotspots_runtime( const rfscout_app_runtime_
             {
                 ESP_LOGW( TAG, "history unavailable for this visit" );
             }
+            if( ESP_OK != hotspot_sightings_open() )
+            {
+                ESP_LOGW( TAG, "sightings journal unavailable for this visit" );
+            }
             render( a_event->now_us );
             return RFSCOUT_APP_RUNTIME_HANDLED;
 
@@ -1016,6 +1031,7 @@ static rfscout_app_runtime_result_t hotspots_runtime( const rfscout_app_runtime_
             /* Station and probe services were already stopped by the session; app-session memory
                is about to be reclaimed, so flush history and drop every pointer into it. */
             hotspots_ui_close();
+            hotspot_sightings_close();
             hotspot_history_close();
             reset_session_state();
             hotspots_ui_reset();
@@ -1034,6 +1050,7 @@ static rfscout_app_runtime_result_t hotspots_runtime( const rfscout_app_runtime_
             if( a_event->activated )
             {
                 hotspot_history_poll( a_event->now_us );
+                hotspot_sightings_poll( a_event->now_us );
                 scheduler_poll( a_event->now_us );
             }
             if( render_due || ( a_event->now_us - last_render_us >= HOTSPOTS_RENDER_INTERVAL_US ) )
