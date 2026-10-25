@@ -281,8 +281,8 @@ int main(void)
                               HOTSPOT_CREDENTIAL_INFERRED, 9U) == ESP_OK);
     assert(hotspot_table_find(&table, unsupported_oldest.bssid) == NULL);
     assert(hotspot_table_find(&table, guest_first.bssid) != NULL);
-    rfscout_wifi_station_bss_t newcomer = tier_bss(1000U, 2U);
-    assert(hotspot_table_find(&table, newcomer.bssid)->profile_id == 9U);
+    rfscout_wifi_station_bss_t admitted = tier_bss(1000U, 2U);
+    assert(hotspot_table_find(&table, admitted.bssid)->profile_id == 9U);
     hotspot_table_reset(&table);
 
     /* At equal ages, weaker RSSI yields; exact ties use deterministic BSSID order. */
