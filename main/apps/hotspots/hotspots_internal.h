@@ -35,10 +35,12 @@ uint16_t hotspots_match_distance_m( void );
 /** @brief Step the match distance and save it; failures are returned, not hidden. */
 esp_err_t hotspots_step_match_distance( int a_direction );
 
-/** @brief Completed scan misses before a Live BSSID expires (1-10). */
-uint8_t hotspots_missed_scan_limit( void );
-/** @brief Step the missed-scan limit and persist the change. */
-esp_err_t hotspots_step_missed_scans( int a_direction );
+/** @brief Time without an observation before a Live BSSID expires (monitor time). */
+uint16_t hotspots_retention_seconds( void );
+/** @brief Logical uptime spent actively listening for APs (connection time excluded). */
+uint32_t hotspots_monitor_clock_ms( void );
+/** @brief Step the Live timeout and persist the change. */
+esp_err_t hotspots_step_retention_seconds( int a_direction );
 /** @brief Excess distance beyond Live estimated coverage; 0 disables geographic eviction. */
 uint16_t hotspots_eviction_distance_m( void );
 /** @brief Step the eviction distance in 100 m increments and persist the change. */
