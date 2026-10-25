@@ -1,4 +1,4 @@
-"""Exercise the actual radio_monitor_stop() C implementation with a scripted Wi-Fi driver.
+"""Exercise actual radio_monitor_start()/stop() C code with a scripted Wi-Fi driver.
 
 The host harness extracts only the stop-state functions, avoiding dependency on
 ESP-IDF radio hardware while testing the production recovery/error paths.
@@ -48,6 +48,10 @@ typedef unsigned TickType_t;
 #define ESP_OK 0
 #define ESP_FAIL (-1)
 #define ESP_ERR_TIMEOUT (-2)
+#define ESP_ERR_INVALID_STATE (-3)
+#define WIFI_MODE_NULL 0
+#define WIFI_SECOND_CHAN_NONE 0
+#define RFSCOUT_WIFI_CHANNEL_MAX 14U
 #define ESP_ERR_WIFI_NOT_STARTED 0x3002
 #define WIFI_CALLBACK_QUIESCE_TIMEOUT_MS 1000U
 #define pdMS_TO_TICKS(a) (a)
@@ -60,15 +64,33 @@ typedef unsigned TickType_t;
 static int callback_lock;
 static bool running;
 static bool driver_stop_pending;
+static bool initialized = true;
+static uint8_t channel = 1U;
+static int64_t last_hop_us;
 static uint16_t active_ap_channel_mask;
 static bool capture_policy;
 static unsigned tick_count;
 static unsigned callbacks_active;
 static esp_err_t restore_result;
+static esp_err_t start_result;
+static unsigned start_count;
 static esp_err_t stop_answers[4];
 static unsigned stop_count;
 static unsigned stop_index;
 
+/* radio_monitor_start() is extracted before the stop implementation below. */
+esp_err_t radio_monitor_stop(void);
+static esp_err_t esp_wifi_set_mode(int mode) { (void)mode; return ESP_OK; }
+static esp_err_t esp_wifi_start(void) { ++start_count; return start_result; }
+static esp_err_t configure_receive_channels(void) { return ESP_OK; }
+static esp_err_t configure_promiscuous_filters(void) { return ESP_OK; }
+static esp_err_t esp_wifi_set_channel(uint8_t selected, int second)
+{
+    (void)selected;
+    (void)second;
+    return ESP_OK;
+}
+static int64_t esp_timer_get_time(void) { return 123456; }
 static esp_err_t esp_wifi_stop(void)
 {
     assert(stop_index < stop_count);
@@ -88,11 +110,16 @@ static void reset(void)
 {
     running = true;
     driver_stop_pending = true;
+    initialized = true;
+    channel = 1U;
+    last_hop_us = 0;
     active_ap_channel_mask = 0x3fff;
     capture_policy = true;
     tick_count = 0;
     callbacks_active = 0;
     restore_result = ESP_FAIL;
+    start_result = ESP_OK;
+    start_count = 0;
     stop_count = 0;
     stop_index = 0;
 }
@@ -113,10 +140,11 @@ int main(void)
     results(ESP_FAIL, ESP_FAIL, ESP_OK);
     assert(radio_monitor_stop() == ESP_FAIL);
     assert(!running && driver_stop_pending);
-    assert(radio_monitor_is_active());
+    assert(!radio_monitor_is_active() && radio_monitor_cleanup_pending());
     assert(stop_index == 2);
     assert(radio_monitor_stop() == ESP_OK);
     assert(!driver_stop_pending && !radio_monitor_is_active());
+    assert(!radio_monitor_cleanup_pending());
     assert(stop_index == 3);
 
     /* An initial failure with successful receive restoration retains active
@@ -137,6 +165,7 @@ int main(void)
     results(ESP_FAIL, ESP_OK, ESP_OK);
     assert(radio_monitor_stop() == ESP_FAIL);
     assert(!running && !driver_stop_pending);
+    assert(!radio_monitor_cleanup_pending());
     assert(stop_index == 2);
     assert(radio_monitor_stop() == ESP_OK);
     assert(stop_index == 2);
@@ -158,6 +187,36 @@ int main(void)
     callbacks_active = 0;
     assert(radio_monitor_stop() == ESP_OK);
     assert(stop_index == 1);
+
+    /* When WiFi/BLE asks to restart after a failed hardware stop, the service
+       must first retry that hardware stop; it cannot claim "already active". */
+    reset();
+    running = false;
+    driver_stop_pending = true;
+    results(ESP_FAIL, ESP_OK, ESP_OK);
+    restore_result = ESP_OK;
+    assert(!radio_monitor_is_active() && radio_monitor_cleanup_pending());
+    assert(radio_monitor_start() == ESP_FAIL);
+    assert(stop_index == 1 && start_count == 0);
+    assert(radio_monitor_start() == ESP_OK);
+    assert(stop_index == 2 && start_count == 1);
+    assert(running && radio_monitor_is_active());
+    assert(!radio_monitor_cleanup_pending());
+
+    /* An incomplete start cleanup also must be retried before the next start. */
+    reset();
+    running = false;
+    driver_stop_pending = false;
+    start_result = ESP_FAIL;
+    results(ESP_FAIL, ESP_OK, ESP_OK);
+    assert(radio_monitor_start() == ESP_FAIL);
+    assert(!radio_monitor_is_active() && radio_monitor_cleanup_pending());
+    assert(stop_index == 1 && start_count == 1);
+    start_result = ESP_OK;
+    restore_result = ESP_OK;
+    assert(radio_monitor_start() == ESP_OK);
+    assert(stop_index == 2 && start_count == 2);
+    assert(running && !radio_monitor_cleanup_pending());
     return 0;
 }
 '''
@@ -175,6 +234,8 @@ class RadioMonitorStopRecoveryTests(unittest.TestCase):
             for name in (
                 "driver_is_stopped",
                 "radio_monitor_is_active",
+                "radio_monitor_cleanup_pending",
+                "radio_monitor_start",
                 "radio_monitor_stop",
             )
         )
