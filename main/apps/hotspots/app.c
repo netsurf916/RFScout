@@ -909,6 +909,10 @@ static rfscout_app_runtime_result_t hotspots_runtime( const rfscout_app_runtime_
             return RFSCOUT_APP_RUNTIME_HANDLED;
 
         case RFSCOUT_APP_RUNTIME_ACTIVATE:
+            /* WiFi/BLE may have persisted a manual channel subset. Hotspots always
+               makes its own full 14-channel passive sweep without inheriting that. */
+            (void)radio_monitor_set_manual_channels( false, 0U, false, 120U );
+            radio_monitor_set_ap_dwell_enabled( true );
             phase = HOTSPOTS_PHASE_SCAN_START;
             next_scan_us = a_event->now_us;
             render_due = true;
