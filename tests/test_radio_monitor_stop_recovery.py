@@ -70,7 +70,7 @@ static int64_t last_hop_us;
 static uint16_t active_ap_channel_mask;
 static bool capture_policy;
 static unsigned tick_count;
-static unsigned callbacks_active;
+static uint32_t observation_callbacks_inflight;
 static esp_err_t restore_result;
 static esp_err_t start_result;
 static unsigned start_count;
@@ -102,7 +102,7 @@ static esp_err_t esp_wifi_set_promiscuous(bool enable)
 }
 static TickType_t xTaskGetTickCount(void) { return tick_count; }
 static void vTaskDelay(TickType_t ticks) { tick_count += ticks; }
-static unsigned observation_callbacks_active(void) { return callbacks_active; }
+static unsigned observation_callbacks_active(void) { return observation_callbacks_inflight; }
 '''
 
 HARNESS_END = r'''
@@ -116,7 +116,7 @@ static void reset(void)
     active_ap_channel_mask = 0x3fff;
     capture_policy = true;
     tick_count = 0;
-    callbacks_active = 0;
+    observation_callbacks_inflight = 0;
     restore_result = ESP_FAIL;
     start_result = ESP_OK;
     start_count = 0;
@@ -181,10 +181,10 @@ int main(void)
        redundant hardware stop after the first successful stop. */
     reset();
     results(ESP_OK, ESP_OK, ESP_OK);
-    callbacks_active = 1;
+    observation_callbacks_inflight = 1;
     assert(radio_monitor_stop() == ESP_ERR_TIMEOUT);
     assert(!driver_stop_pending && stop_index == 1);
-    callbacks_active = 0;
+    observation_callbacks_inflight = 0;
     assert(radio_monitor_stop() == ESP_OK);
     assert(stop_index == 1);
 
@@ -217,6 +217,20 @@ int main(void)
     assert(radio_monitor_start() == ESP_OK);
     assert(stop_index == 2 && start_count == 2);
     assert(running && !radio_monitor_cleanup_pending());
+
+    /* Callback-drain timeout also blocks a new start, even if the physical
+       driver was already stopped and no hardware cleanup is pending. */
+    reset();
+    running = false;
+    driver_stop_pending = false;
+    observation_callbacks_inflight = 1;
+    restore_result = ESP_OK;
+    assert(!radio_monitor_is_active() && radio_monitor_cleanup_pending());
+    assert(radio_monitor_start() == ESP_ERR_TIMEOUT);
+    assert(start_count == 0 && stop_index == 0);
+    observation_callbacks_inflight = 0;
+    assert(radio_monitor_start() == ESP_OK);
+    assert(start_count == 1 && running && !radio_monitor_cleanup_pending());
     return 0;
 }
 '''
