@@ -1,6 +1,6 @@
 /**
-    rotary_decoder.c : Bounded rotary-encoder quadrature decoder
-    Description: Accepts complete two-edge half-steps and ignores bounce or missed edges.
+    rotary_decoder.c : Rotary quadrature decoder with coalesced navigation
+    Description: Decodes valid half-steps and collapses pending movement at input consumption.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -22,18 +22,20 @@ static bool ROTARY_ISR_ATTR is_latch( uint8_t a_state )
     return 0U == a_state || 3U == a_state;
 }
 
-/** @brief Retain each sign separately; opposite turns must not cancel before dispatch. */
-static void ROTARY_ISR_ATTR queue_step( rotary_decoder_t *a_decoder, int8_t a_step )
+/** @brief Accumulate net detents until the UI is ready, without signed overflow. */
+static void ROTARY_ISR_ATTR accumulate_step( rotary_decoder_t *a_decoder, int8_t a_step )
 {
-    if( ROTARY_DECODER_QUEUE_CAPACITY == a_decoder->count )
+    if( a_step > 0 )
     {
-        ++a_decoder->dropped_steps;
-        return;
+        if( a_decoder->pending_delta < INT32_MAX )
+        {
+            ++a_decoder->pending_delta;
+        }
     }
-    const unsigned tail =
-        ( (unsigned)a_decoder->head + (unsigned)a_decoder->count ) % ROTARY_DECODER_QUEUE_CAPACITY;
-    a_decoder->steps[ tail ] = a_step;
-    ++a_decoder->count;
+    else if( a_decoder->pending_delta > INT32_MIN )
+    {
+        --a_decoder->pending_delta;
+    }
 }
 
 void rotary_decoder_reset( rotary_decoder_t *a_decoder, uint8_t a_initial_state )
@@ -46,10 +48,8 @@ void rotary_decoder_reset( rotary_decoder_t *a_decoder, uint8_t a_initial_state 
     a_decoder->anchor_state = a_decoder->last_state;
     a_decoder->intermediate_state = 0U;
     a_decoder->synchronized = is_latch( a_decoder->last_state );
-    a_decoder->head = 0U;
-    a_decoder->count = 0U;
+    a_decoder->pending_delta = 0;
     a_decoder->invalid_transitions = 0U;
-    a_decoder->dropped_steps = 0U;
 }
 
 void ROTARY_ISR_ATTR rotary_decoder_sample( rotary_decoder_t *a_decoder, uint8_t a_state )
@@ -99,28 +99,27 @@ void ROTARY_ISR_ATTR rotary_decoder_sample( rotary_decoder_t *a_decoder, uint8_t
     {
         const bool positive = ( 0U == a_decoder->anchor_state && 2U == previous ) ||
                               ( 3U == a_decoder->anchor_state && 1U == previous );
-        queue_step( a_decoder, positive ? 1 : -1 );
+        accumulate_step( a_decoder, positive ? 1 : -1 );
     }
     /* Returning to the same latch is contact bounce, not movement. */
     a_decoder->anchor_state = current;
     a_decoder->intermediate_state = 0U;
 }
 
-int rotary_decoder_take_step( rotary_decoder_t *a_decoder )
+int rotary_decoder_take_direction( rotary_decoder_t *a_decoder )
 {
-    if( NULL == a_decoder || 0U == a_decoder->count )
+    if( NULL == a_decoder )
     {
         return 0;
     }
-    const int step = a_decoder->steps[ a_decoder->head ];
-    a_decoder->head = (uint8_t)( ( a_decoder->head + 1U ) % ROTARY_DECODER_QUEUE_CAPACITY );
-    --a_decoder->count;
-    return step;
+    const int32_t delta = a_decoder->pending_delta;
+    a_decoder->pending_delta = 0;
+    return delta > 0 ? 1 : ( delta < 0 ? -1 : 0 );
 }
 
 bool rotary_decoder_pending( const rotary_decoder_t *a_decoder )
 {
-    return NULL != a_decoder && 0U != a_decoder->count;
+    return NULL != a_decoder && 0 != a_decoder->pending_delta;
 }
 
 void rotary_decoder_clear_pending( rotary_decoder_t *a_decoder )
@@ -129,8 +128,7 @@ void rotary_decoder_clear_pending( rotary_decoder_t *a_decoder )
     {
         return;
     }
-    a_decoder->head = 0U;
-    a_decoder->count = 0U;
+    a_decoder->pending_delta = 0;
     a_decoder->intermediate_state = 0U;
     a_decoder->anchor_state = a_decoder->last_state;
     a_decoder->synchronized = is_latch( a_decoder->last_state );

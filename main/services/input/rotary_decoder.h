@@ -1,6 +1,6 @@
 /**
-    rotary_decoder.h : Bounded rotary-encoder quadrature decoder
-    Description: Rejects invalid transitions and retains individual detents in arrival order.
+    rotary_decoder.h : Rotary quadrature decoder with coalesced navigation
+    Description: Rejects invalid transitions and collapses pending detents to one action.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -13,20 +13,15 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define ROTARY_DECODER_QUEUE_CAPACITY 64U
-
-/** @brief Half-step quadrature decoder and bounded ordered queue of signed detents. */
+/** @brief Half-step quadrature decoder with a signed count awaiting application input. */
 typedef struct
 {
     uint8_t last_state;
     uint8_t anchor_state;
     uint8_t intermediate_state;
     bool synchronized;
-    int8_t steps[ ROTARY_DECODER_QUEUE_CAPACITY ];
-    uint8_t head;
-    uint8_t count;
+    int32_t pending_delta;
     uint32_t invalid_transitions;
-    uint32_t dropped_steps;
 } rotary_decoder_t;
 
 /** @brief Initialize from the actual sampled two-bit A/B state. */
@@ -35,13 +30,13 @@ void rotary_decoder_reset( rotary_decoder_t *a_decoder, uint8_t a_initial_state 
 /** @brief Sample a two-bit A/B state from the GPIO edge ISR; caller provides synchronization. */
 void rotary_decoder_sample( rotary_decoder_t *a_decoder, uint8_t a_state );
 
-/** @brief Consume one queued signed detent in arrival order, or zero when empty. */
-int rotary_decoder_take_step( rotary_decoder_t *a_decoder );
+/** @brief Consume all pending detents and return their net direction (-1, 0 or +1). */
+int rotary_decoder_take_direction( rotary_decoder_t *a_decoder );
 
 /** @brief Return whether at least one decoded detent is pending. */
 bool rotary_decoder_pending( const rotary_decoder_t *a_decoder );
 
-/** @brief Discard queued movement and any incomplete half-step without resetting diagnostics. */
+/** @brief Discard pending movement and any incomplete half-step without resetting diagnostics. */
 void rotary_decoder_clear_pending( rotary_decoder_t *a_decoder );
 
 #endif // _RFSCOUT_ROTARY_DECODER_H_

@@ -214,13 +214,14 @@ Applications consume semantic input rather than GPIOs. The current T-Embed provi
 
 The T-Embed provider accepts only valid A/B quadrature half-steps between opposite latch
 states; contact bounce returning to the same latch is ignored, and missed/invalid transitions
-are discarded and resynchronized instead of being assigned a direction. Decoded detents enter
-a bounded 64-event FIFO in interrupt context and reach applications one signed step at a time
-in arrival order. This prevents fast turns from collapsing into one navigation event or
-opposite turns from cancelling before application dispatch. On overflow, new events are
-dropped and counted; input lock and the existing screen-wake gesture policy intentionally
-discard queued/partial movement. Physical detent calibration and interrupt latency still
-require validation on the supported T-Embed board.
+are discarded and resynchronized instead of being assigned a direction. Decoded detents
+accumulate as a signed net movement until the application consumes input. Each consumption
+takes and clears the entire accumulated value, delivering at most one signed navigation
+action; opposite turns cancel and fast spins cannot leave a delayed backlog. This favors
+a responsive UI over replaying every detent during slow application transitions. Input lock
+and the existing screen-wake gesture policy intentionally discard pending/partial movement.
+The existing two-edge detent calibration is retained; interrupt latency and occasional
+direction anomalies still require validation on the supported T-Embed board.
 
 The user-facing gesture vocabulary is intentional:
 

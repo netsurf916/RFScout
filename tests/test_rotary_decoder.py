@@ -28,14 +28,14 @@ int main(void)
 
     /* Two half-steps in each clean full Gray-code cycle, preserving original detent calibration. */
     sample(&decoder, 1, 3);
+    assert(rotary_decoder_take_direction(&decoder) == -1);
     sample(&decoder, 2, 0);
-    assert(rotary_decoder_take_step(&decoder) == -1);
-    assert(rotary_decoder_take_step(&decoder) == -1);
-    assert(rotary_decoder_take_step(&decoder) == 0);
+    assert(rotary_decoder_take_direction(&decoder) == -1);
+    assert(rotary_decoder_take_direction(&decoder) == 0);
     sample(&decoder, 2, 3);
+    assert(rotary_decoder_take_direction(&decoder) == 1);
     sample(&decoder, 1, 0);
-    assert(rotary_decoder_take_step(&decoder) == 1);
-    assert(rotary_decoder_take_step(&decoder) == 1);
+    assert(rotary_decoder_take_direction(&decoder) == 1);
 
     /* Bounce back to the same latch and duplicate IRQs must not create steps. */
     sample(&decoder, 1, 0);
@@ -44,23 +44,33 @@ int main(void)
     assert(!rotary_decoder_pending(&decoder));
     sample(&decoder, 1, 3);
     sample(&decoder, 1, 3);
-    assert(rotary_decoder_take_step(&decoder) == -1);
-    assert(rotary_decoder_take_step(&decoder) == 0);
+    assert(rotary_decoder_take_direction(&decoder) == -1);
+    assert(rotary_decoder_take_direction(&decoder) == 0);
     sample(&decoder, 2, 0);
-    assert(rotary_decoder_take_step(&decoder) == -1);
+    assert(rotary_decoder_take_direction(&decoder) == -1);
 
     /* A skipped A/B edge (00 -> 11) does not invent or reverse a detent. */
     rotary_decoder_sample(&decoder, 3);
     assert(decoder.invalid_transitions == 1);
     assert(!rotary_decoder_pending(&decoder));
     sample(&decoder, 2, 0);
-    assert(rotary_decoder_take_step(&decoder) == -1);
+    assert(rotary_decoder_take_direction(&decoder) == -1);
 
-    /* Preserve a forward and immediate backward step independently (no signed cancellation). */
+    /* If the UI is busy, opposite steps cancel rather than replay later. */
     sample(&decoder, 2, 3);
     sample(&decoder, 2, 0);
-    assert(rotary_decoder_take_step(&decoder) == 1);
-    assert(rotary_decoder_take_step(&decoder) == -1);
+    assert(!rotary_decoder_pending(&decoder));
+    assert(rotary_decoder_take_direction(&decoder) == 0);
+
+    /* Several steps in a poll interval still produce only one action. */
+    sample(&decoder, 2, 3);
+    sample(&decoder, 1, 0);
+    sample(&decoder, 2, 3);
+    sample(&decoder, 2, 0);
+    assert(decoder.pending_delta == 2); /* +1, +1, +1, -1 */
+    assert(rotary_decoder_take_direction(&decoder) == 1);
+    assert(!rotary_decoder_pending(&decoder));
+    assert(rotary_decoder_take_direction(&decoder) == 0);
 
     /* Wake or input-lock clears unfinished turns and queued movement. */
     sample(&decoder, 1, 3);
@@ -69,7 +79,7 @@ int main(void)
     rotary_decoder_sample(&decoder, 0);
     assert(!rotary_decoder_pending(&decoder));
     sample(&decoder, 1, 3);
-    assert(rotary_decoder_take_step(&decoder) == -1);
+    assert(rotary_decoder_take_direction(&decoder) == -1);
     assert(!rotary_decoder_pending(&decoder));
 
     /* Startup at a non-latch phase must wait for a stable latch before emitting movement. */
@@ -77,29 +87,28 @@ int main(void)
     rotary_decoder_sample(&decoder, 3);
     assert(!rotary_decoder_pending(&decoder));
     sample(&decoder, 2, 0);
-    assert(rotary_decoder_take_step(&decoder) == -1);
+    assert(rotary_decoder_take_direction(&decoder) == -1);
 
-    /* Bounded memory: a long task stall drops newer steps but never corrupts the ring. */
+    /* A prolonged UI stall must never leave a backlog of delayed actions. */
     rotary_decoder_reset(&decoder, 0);
     for(unsigned i = 0; i < 33; ++i)
     {
         sample(&decoder, 1, 3);
         sample(&decoder, 2, 0);
     }
-    assert(decoder.count == ROTARY_DECODER_QUEUE_CAPACITY);
-    assert(decoder.dropped_steps == 2);
-    for(unsigned i = 0; i < ROTARY_DECODER_QUEUE_CAPACITY; ++i)
-        assert(rotary_decoder_take_step(&decoder) == -1);
+    assert(decoder.pending_delta == -66);
+    assert(rotary_decoder_take_direction(&decoder) == -1);
     assert(!rotary_decoder_pending(&decoder));
+    assert(rotary_decoder_take_direction(&decoder) == 0);
     sample(&decoder, 2, 3);
-    assert(rotary_decoder_take_step(&decoder) == 1);
+    assert(rotary_decoder_take_direction(&decoder) == 1);
     return 0;
 }
 '''
 
 
 class RotaryDecoderTests(unittest.TestCase):
-    def test_quadrature_and_ordered_navigation(self):
+    def test_quadrature_and_coalesced_navigation(self):
         compiler = shutil.which("cc")
         if compiler is None:
             self.skipTest("C compiler unavailable")

@@ -96,7 +96,7 @@ static void clear_navigation_delta( void )
 static int consume_navigation_delta( void )
 {
     portENTER_CRITICAL( &navigation_lock );
-    const int delta = locked ? 0 : rotary_decoder_take_step( &navigation_decoder );
+    const int delta = locked ? 0 : rotary_decoder_take_direction( &navigation_decoder );
     if( locked )
     {
         rotary_decoder_clear_pending( &navigation_decoder );
