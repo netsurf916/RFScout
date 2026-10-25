@@ -136,6 +136,10 @@ int main(void)
     assert(table.count == 1); /* Wall clock may have advanced minutes. */
     hotspot_table_reset(&table);
 
+    rfscout_wifi_station_bss_t guest_old = bss(0, RFSCOUT_WIFI_STATION_SECURITY_OPEN);
+    rfscout_wifi_station_bss_t secured_old = bss(64, RFSCOUT_WIFI_STATION_SECURITY_SECURED);
+    rfscout_wifi_station_bss_t owe_old = bss(0, RFSCOUT_WIFI_STATION_SECURITY_OWE);
+
     /* More than 32 APs per sweep, with strict 128-entry memory ceiling. */
     hotspot_table_begin_sweep(&table);
     for (unsigned i = 0; i < 128; ++i)
@@ -150,7 +154,7 @@ int main(void)
     finish(&table, 150, retention, NULL);
     assert(table.count == HOTSPOT_TABLE_MAX_ENTRIES);
     assert(hotspot_table_find(&table, newcomer.bssid) != NULL);
-    assert(hotspot_table_find(&table, bss(0, RFSCOUT_WIFI_STATION_SECURITY_OPEN).bssid) == NULL);
+    assert(hotspot_table_find(&table, guest_old.bssid) == NULL);
     hotspot_table_reset(&table);
 
     /* Capacity: prefer reclaiming absent secured networks over guest networks. */
@@ -168,8 +172,8 @@ int main(void)
     observe(&table, guest_new, 300, NULL);
     finish(&table, 300, retention, NULL);
     assert(table.count == HOTSPOT_TABLE_MAX_ENTRIES);
-    assert(hotspot_table_find(&table, bss(64, RFSCOUT_WIFI_STATION_SECURITY_SECURED).bssid) == NULL);
-    assert(hotspot_table_find(&table, bss(0, RFSCOUT_WIFI_STATION_SECURITY_OPEN).bssid) != NULL);
+    assert(hotspot_table_find(&table, secured_old.bssid) == NULL);
+    assert(hotspot_table_find(&table, guest_old.bssid) != NULL);
     hotspot_table_reset(&table);
 
     /* All guest records protected from a secured new arrival; refuse admission. */
@@ -183,12 +187,12 @@ int main(void)
     assert(table.count == HOTSPOT_TABLE_MAX_ENTRIES);
 
     /* Manual requests survive normal expiry and capacity eviction. */
-    hotspot_entry_t *protected = hotspot_table_find(&table, bss(0, RFSCOUT_WIFI_STATION_SECURITY_OWE).bssid);
+    hotspot_entry_t *protected = hotspot_table_find(&table, owe_old.bssid);
     assert(protected != NULL);
     protected->manual_requested = true;
     hotspot_table_begin_sweep(&table);
     finish(&table, 120001, retention, NULL);
-    assert(hotspot_table_find(&table, bss(0, RFSCOUT_WIFI_STATION_SECURITY_OWE).bssid) != NULL);
+    assert(hotspot_table_find(&table, owe_old.bssid) != NULL);
     assert(table.count == 1);
     hotspot_table_reset(&table);
     return 0;
