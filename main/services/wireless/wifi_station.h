@@ -66,8 +66,8 @@ typedef struct
 /** @brief Translate conservative passive AP evidence to a station BSSID description.
  *         Unsupported/ambiguous security remains secured and cannot auto-connect.
  */
-bool rfscout_wifi_station_bss_from_observation(
-    const rfscout_wifi_ap_observation_t *a_observation, rfscout_wifi_station_bss_t *a_bss );
+bool rfscout_wifi_station_bss_from_observation( const rfscout_wifi_ap_observation_t *a_observation,
+                                                rfscout_wifi_station_bss_t *a_bss );
 
 /** @brief IPv4 configuration of the current station connection, in network byte order. */
 typedef struct
