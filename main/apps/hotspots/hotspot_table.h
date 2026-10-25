@@ -96,9 +96,9 @@ typedef struct
     hotspot_credential_t credential;
     uint32_t profile_id;        /**< profile for automatic secured checks; 0 when none */
     uint32_t manual_profile_id; /**< profile the user chose with Join; used by the queued check */
-    uint32_t last_seen_ms;   /**< Logical scanning clock, excludes association/TLS downtime. */
-    uint32_t last_seen_scan; /**< Monitor sweep ordinal for recency and UI presence. */
-    geo_bounds_t live_bounds; /**< Receiver positions seen in this Live observation session. */
+    uint32_t last_seen_ms;      /**< Logical scanning clock, excludes association/TLS downtime. */
+    uint32_t last_seen_scan;    /**< Monitor sweep ordinal for recency and UI presence. */
+    geo_bounds_t live_bounds;   /**< Receiver positions seen in this Live observation session. */
     hotspot_status_t status;
     bool retry_gate_active;
     int8_t retry_gate_rssi;
@@ -113,7 +113,7 @@ typedef struct
 /** @brief Configurable normal expiration; 0 distance disables GPS-based eviction. */
 typedef struct
 {
-    uint32_t timeout_ms;          /**< Effective monitor receive time without observation. */
+    uint32_t timeout_ms;           /**< Effective monitor receive time without observation. */
     uint16_t distance_threshold_m; /**< Metres beyond estimated coverage, in 100 m steps. */
 } hotspot_retention_t;
 
