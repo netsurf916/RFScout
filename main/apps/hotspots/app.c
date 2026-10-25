@@ -473,9 +473,7 @@ static void finish_attempt( hotspot_status_t a_outcome,
     }
     else
     {
-        ESP_LOGW( TAG,
-                  "connectivity teardown pending: %s",
-                  esp_err_to_name( release_result ) );
+        ESP_LOGW( TAG, "connectivity teardown pending: %s", esp_err_to_name( release_result ) );
         phase = HOTSPOTS_PHASE_CHECK_TEARDOWN;
         phase_deadline_us = a_now_us + HOTSPOTS_SCAN_RETRY_US;
     }
