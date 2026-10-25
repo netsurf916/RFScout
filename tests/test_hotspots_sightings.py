@@ -143,7 +143,7 @@ static void run( void )
     snprintf( cafe.ssid, sizeof( cafe.ssid ), "Renamed" );
     hotspot_sightings_observe( &cafe, &metadata, true );
     hotspot_sightings_poll( 2000000 );
-    assert( 1U == occurrences( file, "\\"ssid\\":\\"Renamed\\"" ) );
+    assert( 1U == occurrences( file, "\"ssid\":\"Renamed\"" ) );
     hotspot_sightings_close();
     store_reboot();
 
