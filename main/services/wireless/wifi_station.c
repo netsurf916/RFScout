@@ -253,8 +253,8 @@ static bool passive_snapshot_contains( const char *a_ssid )
 }
 
 /** @brief Classify a driver auth mode for credential-free association eligibility. */
-bool rfscout_wifi_station_bss_from_observation(
-    const rfscout_wifi_ap_observation_t *a_observation, rfscout_wifi_station_bss_t *a_bss )
+bool rfscout_wifi_station_bss_from_observation( const rfscout_wifi_ap_observation_t *a_observation,
+                                                rfscout_wifi_station_bss_t *a_bss )
 {
     if( NULL == a_observation || NULL == a_bss || 0U == a_observation->ssid_length ||
         a_observation->ssid_length > RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH ||
