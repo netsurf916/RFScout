@@ -822,3 +822,15 @@ not be interpreted as evidence of power-saving or guaranteed LED behavior.
 - What happens when the GPS is electrically powered while the ESP32 enters deep sleep?
 
 
+
+### Hotspots Live admission: validation follow-up
+
+The four-tier Hotspots-only capacity admission policy is implemented in the
+application model; see [Hotspots](apps/HOTSPOTS.md#capacity-protection) for the
+current contract. Before shipping, validate 128-entry saturation with dense
+real-world Wi-Fi captures, including whether equal-tier replacements in one
+sweep cause excessive churn. If churn is observed, choose an explicit, minimal
+same-tier stability rule rather than an app setting or shared admission engine.
+Keep profile evidence fresh enough for admission without blocking receive
+callbacks; never copy saved passwords into Live table entries. Existing manual
+checks and independent normal time/GPS expiration must remain protected.

@@ -192,6 +192,17 @@ static void tick_monitor_clock( int64_t a_now_us )
     monitor_last_tick_us = a_now_us;
 }
 
+/** @brief Reuse saved-profile evidence for an incoming BSSID before capacity admission. */
+static hotspot_credential_t credential_for_bss( const rfscout_wifi_station_bss_t *a_bss,
+                                                 const rfscout_gps_snapshot_t *a_gps,
+                                                 uint32_t *a_profile_id );
+
+/** @brief Cached non-secret profile snapshot, refreshed between monitor sweeps. */
+static void refresh_profiles( void );
+
+/** @brief Existing history evidence provider for profile resolution. */
+static const geo_bounds_t *history_bounds( const uint8_t a_bssid[ 6 ] );
+
 /** @brief Drain at most one bounded callback queue per application poll. */
 static void drain_ap_queue( void )
 {
@@ -227,7 +238,20 @@ static void drain_ap_queue( void )
             {
                 continue;
             }
-            if( ESP_OK != hotspot_table_observe( &table, &bss, monitor_clock_ms, &gps ) )
+            if( table.count == HOTSPOT_TABLE_MAX_ENTRIES &&
+                NULL == hotspot_table_find( &table, bss.bssid ) )
+            {
+                /* Reuse normal retention before sacrificing a fresh record for capacity. */
+                const hotspot_retention_t retention = {
+                    .timeout_ms = (uint32_t)hotspots_retention_seconds() * 1000U,
+                    .distance_threshold_m = hotspots_eviction_distance_m(),
+                };
+                hotspot_table_finish_sweep( &table, monitor_clock_ms, &retention, &gps );
+            }
+            uint32_t profile_id = 0U;
+            const hotspot_credential_t credential = credential_for_bss( &bss, &gps, &profile_id );
+            if( ESP_OK !=
+                hotspot_table_observe( &table, &bss, monitor_clock_ms, &gps, credential, profile_id ) )
             {
                 ++observations_rejected;
             }
@@ -645,37 +669,47 @@ static const geo_bounds_t *history_bounds( const uint8_t a_bssid[ 6 ] )
     return NULL;
 }
 
-/** @brief Refresh the profile snapshot and re-resolve every entry's credentials. */
-static void resolve_credentials( const rfscout_gps_snapshot_t *a_gps )
+/** @brief Resolve admission and check credentials using the same existing evidence. */
+static hotspot_credential_t credential_for_bss( const rfscout_wifi_station_bss_t *a_bss,
+                                                 const rfscout_gps_snapshot_t *a_gps,
+                                                 uint32_t *a_profile_id )
 {
-    refresh_profiles();
+    *a_profile_id = 0U;
+    if( RFSCOUT_WIFI_STATION_SECURITY_OPEN == a_bss->security ||
+        RFSCOUT_WIFI_STATION_SECURITY_OWE == a_bss->security )
+    {
+        return HOTSPOT_CREDENTIAL_OPEN;
+    }
+    if( RFSCOUT_WIFI_STATION_SECURITY_SECURED != a_bss->security ||
+        !rfscout_wifi_station_secured_supported( a_bss->auth_mode ) )
+    {
+        return HOTSPOT_CREDENTIAL_UNSUPPORTED;
+    }
     const hotspot_profiles_input_t input = { .profiles = profiles,
                                              .profile_count = profile_count,
                                              .table = &table,
                                              .history_bounds = history_bounds,
                                              .gps = a_gps,
                                              .match_distance_m = hotspots_match_distance_m() };
+    const hotspot_entry_t candidate = { .bss = *a_bss };
+    return hotspot_profiles_resolve( &input, &candidate, a_profile_id );
+}
+
+/** @brief Refresh the profile snapshot and re-resolve every entry's credentials. */
+static void resolve_credentials( const rfscout_gps_snapshot_t *a_gps )
+{
+    refresh_profiles();
     for( size_t index = 0U; index < table.count; ++index )
     {
         hotspot_entry_t *entry = &table.entries[ index ];
-        const bool secured = RFSCOUT_WIFI_STATION_SECURITY_SECURED == entry->bss.security;
-        entry->profile_id = 0U;
-        if( !secured )
-        {
-            entry->credential = HOTSPOT_CREDENTIAL_OPEN;
-        }
-        else if( !rfscout_wifi_station_secured_supported( entry->bss.auth_mode ) )
-        {
-            entry->credential = HOTSPOT_CREDENTIAL_UNSUPPORTED;
-            entry->manual_profile_id = 0U;
-        }
-        else
-        {
-            entry->credential = hotspot_profiles_resolve( &input, entry, &entry->profile_id );
-        }
+        entry->credential = credential_for_bss( &entry->bss, a_gps, &entry->profile_id );
         entry->credential_available = HOTSPOT_CREDENTIAL_OPEN == entry->credential ||
                                       HOTSPOT_CREDENTIAL_KNOWN == entry->credential ||
                                       HOTSPOT_CREDENTIAL_INFERRED == entry->credential;
+        if( HOTSPOT_CREDENTIAL_UNSUPPORTED == entry->credential )
+        {
+            entry->manual_profile_id = 0U;
+        }
         if( !hotspot_entry_checkable( entry ) )
         {
             entry->manual_requested = false;
@@ -768,6 +802,10 @@ static void scheduler_poll( int64_t a_now_us )
                     break;
                 }
             }
+            /* Keep the same profile evidence for all admissions in this monitor sweep. */
+            rfscout_gps_snapshot_t gps = { 0 };
+            (void)gps_snapshot_get( &gps );
+            resolve_credentials( &gps );
             __atomic_store_n( &collecting_ap_observations, true, __ATOMIC_RELEASE );
             const esp_err_t result = radio_monitor_start();
             if( ESP_OK == result )

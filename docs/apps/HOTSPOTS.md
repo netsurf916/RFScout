@@ -18,7 +18,7 @@ Hotspots finds nearby Wi-Fi access points, checks whether each one provides Inte
 
 Hotspots now uses the same framework-owned `radio_monitor` and channel scheduler as WiFi/BLE. The shared beacon/probe-response decoder provides BSSID, SSID, receiver channel, RSSI and conservatively validated authentication evidence. A **64-item bounded callback queue** coalesces AP identities on the Wi-Fi callback task; the app task drains it into the separate **128-BSSID Live table**, with no station scan-result array or 32-result upstream ceiling. Queue overflow is counted and surfaced as telemetry (`ap_queue_drops`); admission failures are counted (`ap_rejected`). This queue is not a population ceiling: it is drained repeatedly during a sweep. The monitor is stopped and its callbacks quiesced **before** station association, DHCP/NTP and TLS. After each check, Hotspots stops the connectivity probe, releases the network session, and retries failed teardown before allowing another monitor sweep. A failed driver stop, unfinished callback, TLS worker, or station event drain never counts as a successful handoff.
 
-Hotspots now uses **Expire after** (30–300 s, default 60 s) measured on a logical clock that only advances while the monitor is receiving, so connection/TLS interruptions do not falsely age nearby BSSIDs. The location eviction rule remains optional, defaulting to 500 m beyond observed coverage bounds. Normal expiration removes overdue, unqueued entries not heard during the current sweep; on capacity pressure, guest-capable BSSIDs preferentially reclaim not-yet-heard secured records, then older/weak-RSSI eligible records. Already-observed-in-sweep and queued-manual records are never displaced, and admission is rejected when no eligible victim exists. The app settings format version changes intentionally; old missed-scan settings are rejected and return to defaults.
+Hotspots now uses **Expire after** (30–300 s, default 60 s) measured on a logical clock that only advances while the monitor is receiving, so connection/TLS interruptions do not falsely age nearby BSSIDs. The location eviction rule remains optional, defaulting to 500 m beyond observed coverage bounds. Normal expiration removes overdue, unqueued entries not heard during the current sweep. At capacity, Hotspots first reuses that normal expiration, then admits new BSSIDs by the four-tier credential-aware policy described below. A current-sweep sighting is no longer absolutely protected from capacity eviction; queued manual work remains protected. Admission is rejected when no eligible victim exists. The app settings format version changes intentionally; old missed-scan settings are rejected and return to defaults.
 
 **Still planned elsewhere in #136:** bounded SD-backed History projections, common observation journal serialization, and WiFi/BLE's own memory-budget/GPS policy. Hotspots-specific characterization remains journaled through `media_journal`, and Live eviction never deletes History or saved credentials.
 
@@ -36,85 +36,41 @@ Each BSSID has an independent Live observation session. **Visibility is timestam
 
 **Live retention.** A second, independent eviction rule removes an *absent* BSSID when the receiver is more than the configured **Evict beyond** distance (default 500 m, Off or 100–2,000 m in 100 m increments) beyond the BSSID's estimated observed coverage. For that Live observation session, fresh GPS at an observed BSSID expands a latitude/longitude bounding box. The location estimate is the box center; its conservative coverage radius is half the larger great-circle diagonal measured in metres. Eviction occurs when the distance from the current fix to the center, minus the coverage radius, exceeds the configured distance. A BSSID seen in the current monitor sweep is never distance-evicted, and without a fresh GPS fix or a valid Live location box the distance rule is skipped entirely. The Live box is independent of durable History location bounds.
 
-**Capacity protection.** The Live table has a provisional hard maximum of 128 allocated BSSID entries, independent of the bounded AP callback queue. Each monitor sweep tags fresh sightings only for admission protection and GPS distance eviction; the marker never controls UI visibility or time expiration. Only entries not heard this sweep and not queued for manual work can yield to a new AP when full. Admission prefers evicting absent **secured** BSSIDs before absent **OPEN/OWE** BSSIDs and otherwise prioritizes oldest observations, using weaker RSSI as a tie-breaker. A secured newcomer cannot displace an Open/OWE entry. When all entries are protected, the new candidate is rejected rather than growing memory. Order of receipt is not a complete scan ranking; some co-visible APs may be unrepresented under saturated capacity. The cap is subject to measured PSRAM/internal RAM and HTTPS/TLS peak headroom; neither the Live ceiling nor the distance policy limits the SD History index.
+**Capacity protection.** The Live table has a provisional hard ceiling of 128 BSSID
+entries, independent of the callback queue, persistent History and saved profiles.
+When full, Hotspots first applies ordinary time/GPS expiration to unprotected records.
+If there is still no space, it considers a victim only in an equal or lower-priority
+tier than the newcomer:
 
+| Tier (highest first) | BSSID classification |
+| --- | --- |
+| 1 | Open or OWE |
+| 2 | Supported WPA2/WPA3 personal with an unambiguous Known or Inferred saved profile |
+| 3 | Supported personal without automatically usable credentials (None, Ambiguous, Unmatched or Rejected) |
+| 4 | Unsupported or unknown authentication (WEP, WPA1, 802.1X and other nonjoinable modes) |
+
+The **lowest-priority eligible tier yields first**, then the oldest `last_seen_ms`
+(logical monitor time), then the weaker RSSI, then the lowest BSSID byte order.
+A newly observed BSSID may replace an equal-tier incumbent even if the incumbent
+was heard in the current sweep; normal expiration still protects current-sweep
+sightings. Manual requests cannot be capacity-evicted. A running network check
+cannot overlap active scanning and therefore cannot be a capacity victim.
+At less than 128 entries, any named BSSID is admitted regardless of tier.
+
+For incoming admission Hotspots reuses the same saved-profile resolver as normal
+connectivity checks (exact BSSID, compatible auth, recent same-SSID overlap,
+optional GPS/history evidence). A non-secret saved-profile snapshot is refreshed
+before each monitor sweep and after credential changes; surviving entries are
+resolved after each scan. When evidence cannot establish Known/Inferred, the
+incoming secured BSSID is conservatively assigned tier 3, or tier 4 when
+unsupported. No password is copied into the Live table or read during admission.
+The existing radio monitor, callback queue and shared retention policy are unchanged.
+
+The cap remains subject to measured PSRAM/internal RAM and HTTPS/TLS peak headroom.
 Eviction of Live state never deletes saved network profiles or persisted History.
-
-### Planned: Hotspots-only admission priorities (follow-up PR)
-
-> **Design specification, not current behavior.** The following hierarchy is intended for a
-> follow-up PR based on #136. Until implemented, the capacity policy in the preceding
-> paragraph remains authoritative. This policy belongs to the Hotspots/Hotspotter
-> application model (`main/apps/hotspots/`), **not** to the shared wireless monitor,
-> shared observation-retention arithmetic, WiFi/BLE, Wardriving, or a generic eviction engine.
-
-**Purpose.** The 128-BSSID Live ceiling is a memory budget, not a scan population
-limit. At capacity, keep making room for newly discovered *useful* BSSIDs without
-letting a newcomer displace an incumbent in a higher admission tier. Capacity
-pressure is intentionally allowed to evict an otherwise-unexpired record; normal
-time/GPS expiration remains independent of admission priority.
-
-| Priority (highest first) | Incoming BSSID | Entry it may replace at capacity |
-| --- | --- | --- |
-| 1 | Open or OWE (both guest-accessible) | Eligible entries in tiers 1–4 |
-| 2 | Supported WPA2/WPA3 personal with an unambiguous, usable **Known** or **Inferred** saved profile | Eligible entries in tiers 2–4 |
-| 3 | Supported WPA2/WPA3 personal without an automatically usable profile (None, Ambiguous, Unmatched or Rejected) | Eligible entries in tiers 3–4 |
-| 4 | Unsupported or conservatively unknown security/authentication (including WEP, WPA1 and 802.1X) | Eligible entries in tier 4 only |
-
-An incoming entry **must never evict a higher-priority tier**. Open and OWE
-share the top tier for *guest accessibility*, not because Open offers the same
-privacy as OWE. At less than 128 entries, an eligible named BSSID can be
-recorded regardless of tier; these tiers govern **capacity admission only**.
-No user-selectable eviction strategy or per-tier capacity quotas are planned.
-
-**Full-table admission algorithm (Hotspots-owned):**
-
-1. First apply existing timeout and optional GPS coverage-distance expiration
-   to eligible, unprotected records. The configured *Expire after* (default 60 s)
-   and *Evict beyond* (default 500 m) semantics do not change; GPS is optional.
-   The logical receive clock still excludes association/TLS downtime.
-2. If room remains, admit the new BSSID. Otherwise, classify the newcomer
-   using the security evidence and credential state actually applicable to
-   **that BSSID and authentication mode**, then consider only incumbent tiers
-   of equal or lower priority. An incumbent with an active connectivity attempt
-   or a queued manual check is never a victim.
-3. Prefer reclaiming the **lowest-priority eligible tier**. Within that tier,
-   evict the **least recently observed** BSSID (using `last_seen_ms` on the
-   logical monitor clock); break equal-age ties with weaker RSSI and then a
-   deterministic BSSID order. Distance and signal are **not** alternative
-   user-selectable capacity rankings.
-4. A current-sweep observation should ordinarily be favored over an otherwise
-   equivalent stale candidate, but **current-sweep membership must not be an
-   absolute capacity-admission barrier**. At saturation, allow the oldest
-   eligible same-tier (or lower-tier) entry to yield to a new BSSID, even if
-   that incumbent was observed earlier in the same sweep. Preserve absolute
-   active-check/manual-work protection. Avoid pathological churn among equally
-   fresh BSSIDs without imposing a new 32/128-BSSID discovery ceiling.
-5. If no lawful victim exists, reject the newcomer within the 128-entry bound
-   and count it in the existing admission-rejection telemetry; never allocate
-   past the cap or evict a higher tier to make space.
-
-**Admission-time credential resolution.** Today Hotspots resolves saved profiles
-after the sweep, whereas full-table admission occurs as AP callbacks are drained.
-The implementation must therefore determine a candidate's tier *before* choosing
-a victim, using an app-owned, bounded/read-only credential lookup compatible with
-the existing `hotspot_profiles_resolve` and history/match-distance evidence.
-Do not infer tier 2 merely from an SSID match, a stored password, an ambiguous
-choice or previously rejected credentials. If current evidence cannot establish
-a Known/Inferred usable profile, classify conservatively; never promote a
-candidate based on unverified security evidence. Re-evaluate affected incumbent
-tiers when saved credentials change. Do not copy passwords into Live entries,
-logs or telemetry, or perform station association in the admission path.
-
-**Implementation and regression scope.** Keep tier classification and victim
-selection inside `main/apps/hotspots/` with app-local tests. Cover all four
-incoming tiers against each incumbent tier, top-tier-to-top-tier replacement
-under saturation, last-seen/RSSI ordering, full-table admission with all 128
-incumbents seen during the current sweep, manual and active-check protection,
-conservative/changed credential resolution, normal time/distance expiry,
-128-entry allocation safety, and stable behavior under repeated observations.
-The existing shared `radio_monitor`, `observation_retention`, WiFi/BLE and
-Wardriving contracts are deliberately unchanged.
+Repeated same-tier discoveries at saturation can replace freshly observed records;
+an admission hysteresis rule is intentionally deferred until real dense-area
+captures show whether churn is problematic.
 
 ## Credentials
 

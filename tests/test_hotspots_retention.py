@@ -77,7 +77,30 @@ static rfscout_gps_snapshot_t gps(double longitude)
 static void observe(hotspot_table_t *table, rfscout_wifi_station_bss_t bss,
                     uint32_t clock_ms, const rfscout_gps_snapshot_t *gps)
 {
-    assert(hotspot_table_observe(table, &bss, clock_ms, gps) == ESP_OK);
+    hotspot_credential_t credential = bss.security == RFSCOUT_WIFI_STATION_SECURITY_OPEN ||
+                                      bss.security == RFSCOUT_WIFI_STATION_SECURITY_OWE
+                                          ? HOTSPOT_CREDENTIAL_OPEN : HOTSPOT_CREDENTIAL_NONE;
+    assert(hotspot_table_observe(table, &bss, clock_ms, gps, credential, 0) == ESP_OK);
+}
+
+static esp_err_t observe_credential(hotspot_table_t *table, rfscout_wifi_station_bss_t bss,
+                                    uint32_t clock_ms, hotspot_credential_t credential,
+                                    uint32_t profile_id)
+{
+    return hotspot_table_observe(table, &bss, clock_ms, NULL, credential, profile_id);
+}
+
+static rfscout_wifi_station_bss_t tier_bss(unsigned id, unsigned tier)
+{
+    return bss(id, tier == 1U ? RFSCOUT_WIFI_STATION_SECURITY_OPEN
+                               : RFSCOUT_WIFI_STATION_SECURITY_SECURED);
+}
+
+static hotspot_credential_t tier_credential(unsigned tier)
+{
+    return tier == 1U ? HOTSPOT_CREDENTIAL_OPEN :
+           tier == 2U ? HOTSPOT_CREDENTIAL_KNOWN :
+           tier == 3U ? HOTSPOT_CREDENTIAL_UNMATCHED : HOTSPOT_CREDENTIAL_UNSUPPORTED;
 }
 
 static void finish(hotspot_table_t *table, uint32_t clock_ms,
@@ -203,7 +226,8 @@ int main(void)
     finish(&table, 100, retention, NULL);
     hotspot_table_begin_sweep(&table);
     rfscout_wifi_station_bss_t secured = bss(2000, RFSCOUT_WIFI_STATION_SECURITY_SECURED);
-    assert(hotspot_table_observe(&table, &secured, 200, NULL) == ESP_ERR_NO_MEM);
+    assert(hotspot_table_observe(&table, &secured, 200, NULL,
+                                 HOTSPOT_CREDENTIAL_NONE, 0) == ESP_ERR_NO_MEM);
     assert(table.count == HOTSPOT_TABLE_MAX_ENTRIES);
 
     /* Manual requests survive normal expiry and capacity eviction. */
@@ -214,6 +238,100 @@ int main(void)
     finish(&table, 120001, retention, NULL);
     assert(hotspot_table_find(&table, owe_old.bssid) != NULL);
     assert(table.count == 1);
+    hotspot_table_reset(&table);
+
+    /* Every incoming tier against every incumbent tier, including equal-tier
+       replacement with all 128 incumbents heard in the same sweep. */
+    for (unsigned incumbent = 1U; incumbent <= 4U; ++incumbent)
+    {
+        for (unsigned incoming = 1U; incoming <= 4U; ++incoming)
+        {
+            hotspot_table_begin_sweep(&table);
+            for (unsigned id = 0U; id < HOTSPOT_TABLE_MAX_ENTRIES; ++id)
+            {
+                assert(observe_credential(&table, tier_bss(id, incumbent), 100U,
+                                          tier_credential(incumbent), 42U) == ESP_OK);
+            }
+            rfscout_wifi_station_bss_t candidate = tier_bss(1000U, incoming);
+            const esp_err_t result = observe_credential(&table, candidate, 101U,
+                                                         tier_credential(incoming), 17U);
+            assert(result == (incoming <= incumbent ? ESP_OK : ESP_ERR_NO_MEM));
+            assert(table.count == HOTSPOT_TABLE_MAX_ENTRIES);
+            assert(table.capacity <= HOTSPOT_TABLE_MAX_ENTRIES);
+            assert((hotspot_table_find(&table, candidate.bssid) != NULL) ==
+                   (incoming <= incumbent));
+            rfscout_wifi_station_bss_t oldest = tier_bss(0U, incumbent);
+            assert((hotspot_table_find(&table, oldest.bssid) == NULL) ==
+                   (incoming <= incumbent));
+            hotspot_table_reset(&table);
+        }
+    }
+
+    /* The lowest tier yields before older/higher-priority records. */
+    hotspot_table_begin_sweep(&table);
+    for (unsigned id = 0U; id < HOTSPOT_TABLE_MAX_ENTRIES; ++id)
+    {
+        const unsigned tier = id / 32U + 1U;
+        assert(observe_credential(&table, tier_bss(id, tier), 100U,
+                                  tier_credential(tier), tier) == ESP_OK);
+    }
+    rfscout_wifi_station_bss_t guest_first = tier_bss(0U, 1U);
+    rfscout_wifi_station_bss_t unsupported_oldest = tier_bss(96U, 4U);
+    assert(observe_credential(&table, tier_bss(1000U, 2U), 120U,
+                              HOTSPOT_CREDENTIAL_INFERRED, 9U) == ESP_OK);
+    assert(hotspot_table_find(&table, unsupported_oldest.bssid) == NULL);
+    assert(hotspot_table_find(&table, guest_first.bssid) != NULL);
+    rfscout_wifi_station_bss_t newcomer = tier_bss(1000U, 2U);
+    assert(hotspot_table_find(&table, newcomer.bssid)->profile_id == 9U);
+    hotspot_table_reset(&table);
+
+    /* At equal ages, weaker RSSI yields; exact ties use deterministic BSSID order. */
+    hotspot_table_begin_sweep(&table);
+    for (unsigned id = 0U; id < HOTSPOT_TABLE_MAX_ENTRIES; ++id)
+    {
+        rfscout_wifi_station_bss_t value = tier_bss(id, 1U);
+        value.rssi = (id == 60U || id == 61U) ? -85 : -50;
+        assert(observe_credential(&table, value, 100U, HOTSPOT_CREDENTIAL_OPEN, 0U) == ESP_OK);
+    }
+    assert(observe_credential(&table, tier_bss(1000U, 1U), 110U,
+                              HOTSPOT_CREDENTIAL_OPEN, 0U) == ESP_OK);
+    rfscout_wifi_station_bss_t weak = tier_bss(60U, 1U);
+    assert(hotspot_table_find(&table, weak.bssid) == NULL);
+    weak = tier_bss(61U, 1U);
+    assert(hotspot_table_find(&table, weak.bssid) != NULL);
+    hotspot_table_reset(&table);
+
+    /* Manual work is an absolute capacity protection, even for lower tiers. */
+    hotspot_table_begin_sweep(&table);
+    for (unsigned id = 0U; id < HOTSPOT_TABLE_MAX_ENTRIES; ++id)
+    {
+        assert(observe_credential(&table, tier_bss(id, 4U), 100U,
+                                  HOTSPOT_CREDENTIAL_UNSUPPORTED, 0U) == ESP_OK);
+        table.entries[id].manual_requested = true;
+    }
+    assert(observe_credential(&table, tier_bss(1000U, 1U), 110U,
+                              HOTSPOT_CREDENTIAL_OPEN, 0U) == ESP_ERR_NO_MEM);
+    table.entries[5].manual_requested = false;
+    assert(observe_credential(&table, tier_bss(1000U, 1U), 110U,
+                              HOTSPOT_CREDENTIAL_OPEN, 0U) == ESP_OK);
+    hotspot_table_reset(&table);
+
+    /* Re-observation refreshes an incumbent's credential tier; there is no
+       stale permanent ranking after the saved-profile evidence changes. */
+    hotspot_table_begin_sweep(&table);
+    for (unsigned id = 0U; id < HOTSPOT_TABLE_MAX_ENTRIES; ++id)
+    {
+        assert(observe_credential(&table, tier_bss(id, 2U), 100U,
+                                  HOTSPOT_CREDENTIAL_KNOWN, 8U) == ESP_OK);
+    }
+    assert(observe_credential(&table, tier_bss(1000U, 3U), 110U,
+                              HOTSPOT_CREDENTIAL_NONE, 0U) == ESP_ERR_NO_MEM);
+    assert(observe_credential(&table, tier_bss(0U, 2U), 100U,
+                              HOTSPOT_CREDENTIAL_UNMATCHED, 0U) == ESP_OK);
+    assert(observe_credential(&table, tier_bss(1000U, 3U), 110U,
+                              HOTSPOT_CREDENTIAL_NONE, 0U) == ESP_OK);
+    rfscout_wifi_station_bss_t changed = tier_bss(0U, 2U);
+    assert(hotspot_table_find(&table, changed.bssid) == NULL);
     hotspot_table_reset(&table);
     return 0;
 }
