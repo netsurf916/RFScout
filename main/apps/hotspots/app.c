@@ -50,7 +50,7 @@ static const uint16_t MATCH_DISTANCE_OPTIONS[] = { 0U, 50U, 100U, 200U, 500U };
 #define MATCH_DISTANCE_DEFAULT_INDEX 2U
 static const uint16_t RETENTION_SECONDS_OPTIONS[] = { 30U, 60U, 90U, 120U, 180U, 240U, 300U };
 #define RETENTION_SECONDS_DEFAULT_INDEX 1U
-#define RETENTION_SECONDS_OPTION_COUNT                                                            \
+#define RETENTION_SECONDS_OPTION_COUNT                                                             \
     ( sizeof( RETENTION_SECONDS_OPTIONS ) / sizeof( RETENTION_SECONDS_OPTIONS[ 0 ] ) )
 #define MATCH_DISTANCE_OPTION_COUNT                                                                \
     ( sizeof( MATCH_DISTANCE_OPTIONS ) / sizeof( MATCH_DISTANCE_OPTIONS[ 0 ] ) )
@@ -187,15 +187,13 @@ static void drain_ap_queue( void )
     rfscout_gps_snapshot_t gps = { 0 };
     (void)gps_snapshot_get( &gps );
 
-    for( unsigned batch = 0U;
-         batch < ( HOTSPOTS_AP_QUEUE_CAPACITY / HOTSPOTS_AP_DRAIN_BATCH );
+    for( unsigned batch = 0U; batch < ( HOTSPOTS_AP_QUEUE_CAPACITY / HOTSPOTS_AP_DRAIN_BATCH );
          ++batch )
     {
         rfscout_wifi_ap_observation_t ready[ HOTSPOTS_AP_DRAIN_BATCH ];
         portENTER_CRITICAL( &ap_queue_lock );
-        const size_t count = ap_queue_count < HOTSPOTS_AP_DRAIN_BATCH
-                                 ? ap_queue_count
-                                 : HOTSPOTS_AP_DRAIN_BATCH;
+        const size_t count =
+            ap_queue_count < HOTSPOTS_AP_DRAIN_BATCH ? ap_queue_count : HOTSPOTS_AP_DRAIN_BATCH;
         if( count > 0U )
         {
             memcpy( ready, ap_queue, count * sizeof( ready[ 0 ] ) );
@@ -578,10 +576,9 @@ esp_err_t hotspots_step_retention_seconds( int a_direction )
     const hotspots_settings_t previous = settings;
     const uint8_t current = settings.retention_seconds_index;
     settings.retention_seconds_index =
-        (uint8_t)( a_direction > 0
-                       ? ( current + 1U ) % RETENTION_SECONDS_OPTION_COUNT
-                       : ( current + RETENTION_SECONDS_OPTION_COUNT - 1U ) %
-                             RETENTION_SECONDS_OPTION_COUNT );
+        (uint8_t)( a_direction > 0 ? ( current + 1U ) % RETENTION_SECONDS_OPTION_COUNT
+                                   : ( current + RETENTION_SECONDS_OPTION_COUNT - 1U ) %
+                                         RETENTION_SECONDS_OPTION_COUNT );
     return save_settings( &previous );
 }
 
