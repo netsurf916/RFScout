@@ -1,6 +1,6 @@
 /**
     apps/hotspots/app.c : Hotspots application descriptor and runtime
-    Description: Alternates passive scans with bounded credential-aware connectivity checks
+    Description: Alternates shared Wi-Fi monitor sweeps with credential-aware connectivity checks
                  (join, NTP, verified HTTPS); screens live in hotspots_ui.c.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
@@ -18,12 +18,15 @@
 #include "hotspots_internal.h"
 #include "hotspots_ui.h"
 #include "log_writer.h"
+#include "radio_monitor.h"
 #include "network_session.h"
 #include "persistent_store.h"
 #include "saved_networks.h"
 #include "wifi_station.h"
 
 #include "esp_log.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -32,17 +35,23 @@
 #define HOTSPOTS_HTTPS_TIMEOUT_MS 10000U
 #define HOTSPOTS_HTTPS_GUARD_US 12000000LL
 #define HOTSPOTS_SETTLE_US 300000LL
-#define HOTSPOTS_SCAN_TIMEOUT_US 8000000LL
+#define HOTSPOTS_MONITOR_SWEEP_US 3200000LL
 #define HOTSPOTS_SCAN_RETRY_US 1000000LL
+#define HOTSPOTS_AP_QUEUE_CAPACITY 64U
+#define HOTSPOTS_AP_DRAIN_BATCH 16U
 #define HOTSPOTS_RENDER_INTERVAL_US 500000LL
 #define HOTSPOTS_SETTINGS_KEY "settings"
-#define HOTSPOTS_SETTINGS_MAGIC 0x48535332U
+#define HOTSPOTS_SETTINGS_MAGIC 0x48535333U
 #define HOTSPOTS_EVICTION_DISTANCE_MAX_STEPS 20U
 #define HOTSPOTS_EVICTION_DISTANCE_DEFAULT_STEPS 5U
 
 /** Distances (m) within which a profile's known BSSID makes a new BSSID a candidate; 0 is Off. */
 static const uint16_t MATCH_DISTANCE_OPTIONS[] = { 0U, 50U, 100U, 200U, 500U };
 #define MATCH_DISTANCE_DEFAULT_INDEX 2U
+static const uint16_t RETENTION_SECONDS_OPTIONS[] = { 30U, 60U, 90U, 120U, 180U, 240U, 300U };
+#define RETENTION_SECONDS_DEFAULT_INDEX 1U
+#define RETENTION_SECONDS_OPTION_COUNT                                                            \
+    ( sizeof( RETENTION_SECONDS_OPTIONS ) / sizeof( RETENTION_SECONDS_OPTIONS[ 0 ] ) )
 #define MATCH_DISTANCE_OPTION_COUNT                                                                \
     ( sizeof( MATCH_DISTANCE_OPTIONS ) / sizeof( MATCH_DISTANCE_OPTIONS[ 0 ] ) )
 
@@ -50,7 +59,7 @@ typedef struct
 {
     uint32_t magic;
     uint8_t match_distance_index;
-    uint8_t missed_scan_limit;
+    uint8_t retention_seconds_index;
     uint8_t eviction_distance_steps; /**< 0 disables; each step represents 100 metres. */
 } hotspots_settings_t;
 
@@ -70,7 +79,17 @@ static const char *TAG = "hotspots";
 
 /* Session-scoped state. Pointers reference app-session memory and are cleared on ENTER/LEAVE. */
 static hotspot_table_t table;
-static rfscout_wifi_station_bss_t *scan_buffer;
+/* Wi-Fi callbacks only copy bounded metadata into this queue. All policy, allocation and
+   history work remains on the application task after the callback has returned. */
+static rfscout_wifi_ap_observation_t ap_queue[ HOTSPOTS_AP_QUEUE_CAPACITY ];
+static portMUX_TYPE ap_queue_lock = portMUX_INITIALIZER_UNLOCKED;
+static size_t ap_queue_count;
+static uint32_t ap_queue_dropped;
+static uint32_t observations_rejected;
+static bool collecting_ap_observations;
+/* Logical time advances only while receive-only monitoring is active; join/TLS is excluded. */
+static uint32_t monitor_clock_ms;
+static int64_t monitor_last_tick_us;
 /* Non-secret saved-profile snapshot, refreshed after each completed scan. */
 static saved_network_profile_t *profiles;
 static size_t profile_count;
@@ -79,7 +98,6 @@ static hotspots_phase_t phase;
 static int64_t phase_deadline_us;
 static int64_t window_end_us;
 static int64_t next_scan_us;
-static uint32_t scan_generation_at_start;
 static rfscout_wifi_station_bss_t attempt_bss;
 static hotspot_result_t attempt_result;
 static size_t checks_completed;
@@ -94,14 +112,20 @@ static int64_t last_render_us;
 static void reset_session_state( void )
 {
     memset( &table, 0, sizeof( table ) );
-    scan_buffer = NULL;
+    portENTER_CRITICAL( &ap_queue_lock );
+    ap_queue_count = 0U;
+    ap_queue_dropped = 0U;
+    portEXIT_CRITICAL( &ap_queue_lock );
+    __atomic_store_n( &collecting_ap_observations, false, __ATOMIC_RELEASE );
+    observations_rejected = 0U;
+    monitor_clock_ms = 0U;
+    monitor_last_tick_us = 0;
     profiles = NULL;
     profile_count = 0U;
     phase = HOTSPOTS_PHASE_IDLE;
     phase_deadline_us = 0;
     window_end_us = 0;
     next_scan_us = 0;
-    scan_generation_at_start = 0U;
     memset( &attempt_bss, 0, sizeof( attempt_bss ) );
     memset( &attempt_result, 0, sizeof( attempt_result ) );
     checks_completed = 0U;
@@ -109,6 +133,97 @@ static void reset_session_state( void )
     attempt_profile_id = 0U;
     render_due = true;
     last_render_us = 0;
+}
+
+/**
+ * @brief Callback from the framework radio monitor; never allocates or touches app-session
+ *        state outside this bounded copy. A later app-task poll owns all Hotspots mutations.
+ */
+static void observe_ap( const rfscout_wifi_ap_observation_t *a_ap )
+{
+    if( NULL == a_ap || 0U == a_ap->ssid_length ||
+        !__atomic_load_n( &collecting_ap_observations, __ATOMIC_ACQUIRE ) )
+    {
+        return;
+    }
+    portENTER_CRITICAL( &ap_queue_lock );
+    for( size_t index = 0U; index < ap_queue_count; ++index )
+    {
+        if( 0 == memcmp( ap_queue[ index ].bssid, a_ap->bssid, sizeof( a_ap->bssid ) ) )
+        {
+            /* Prefer valid security evidence over later ambiguous frames. */
+            if( RFSCOUT_WIFI_AP_AUTH_UNKNOWN != a_ap->auth ||
+                RFSCOUT_WIFI_AP_AUTH_UNKNOWN == ap_queue[ index ].auth )
+            {
+                ap_queue[ index ] = *a_ap;
+            }
+            portEXIT_CRITICAL( &ap_queue_lock );
+            return;
+        }
+    }
+    if( ap_queue_count < HOTSPOTS_AP_QUEUE_CAPACITY )
+    {
+        ap_queue[ ap_queue_count++ ] = *a_ap;
+    }
+    else
+    {
+        ++ap_queue_dropped;
+    }
+    portEXIT_CRITICAL( &ap_queue_lock );
+}
+
+static void tick_monitor_clock( int64_t a_now_us )
+{
+    if( a_now_us > monitor_last_tick_us && monitor_last_tick_us > 0 )
+    {
+        monitor_clock_ms += (uint32_t)( ( a_now_us - monitor_last_tick_us ) / 1000LL );
+    }
+    monitor_last_tick_us = a_now_us;
+}
+
+/** @brief Drain at most one bounded callback queue per application poll. */
+static void drain_ap_queue( void )
+{
+    rfscout_gps_snapshot_t gps = { 0 };
+    (void)gps_snapshot_get( &gps );
+
+    for( unsigned batch = 0U;
+         batch < ( HOTSPOTS_AP_QUEUE_CAPACITY / HOTSPOTS_AP_DRAIN_BATCH );
+         ++batch )
+    {
+        rfscout_wifi_ap_observation_t ready[ HOTSPOTS_AP_DRAIN_BATCH ];
+        portENTER_CRITICAL( &ap_queue_lock );
+        const size_t count = ap_queue_count < HOTSPOTS_AP_DRAIN_BATCH
+                                 ? ap_queue_count
+                                 : HOTSPOTS_AP_DRAIN_BATCH;
+        if( count > 0U )
+        {
+            memcpy( ready, ap_queue, count * sizeof( ready[ 0 ] ) );
+            ap_queue_count -= count;
+            if( ap_queue_count > 0U )
+            {
+                memmove( ap_queue, &ap_queue[ count ], ap_queue_count * sizeof( ap_queue[ 0 ] ) );
+            }
+        }
+        portEXIT_CRITICAL( &ap_queue_lock );
+
+        if( 0U == count )
+        {
+            break;
+        }
+        for( size_t index = 0U; index < count; ++index )
+        {
+            rfscout_wifi_station_bss_t bss = { 0 };
+            if( !rfscout_wifi_station_bss_from_observation( &ready[ index ], &bss ) )
+            {
+                continue;
+            }
+            if( ESP_OK != hotspot_table_observe( &table, &bss, monitor_clock_ms, &gps ) )
+            {
+                ++observations_rejected;
+            }
+        }
+    }
 }
 
 static bool attempt_running( void )
@@ -395,7 +510,7 @@ static bool settings_valid( const void *a_record )
     const hotspots_settings_t *candidate = a_record;
     return HOTSPOTS_SETTINGS_MAGIC == candidate->magic &&
            candidate->match_distance_index < MATCH_DISTANCE_OPTION_COUNT &&
-           candidate->missed_scan_limit >= 1U && candidate->missed_scan_limit <= 10U &&
+           candidate->retention_seconds_index < RETENTION_SECONDS_OPTION_COUNT &&
            candidate->eviction_distance_steps <= HOTSPOTS_EVICTION_DISTANCE_MAX_STEPS;
 }
 
@@ -403,7 +518,7 @@ static void load_settings( void )
 {
     settings = ( hotspots_settings_t ){ .magic = HOTSPOTS_SETTINGS_MAGIC,
                                         .match_distance_index = MATCH_DISTANCE_DEFAULT_INDEX,
-                                        .missed_scan_limit = HOTSPOT_MISSED_SCAN_LIMIT,
+                                        .retention_seconds_index = RETENTION_SECONDS_DEFAULT_INDEX,
                                         .eviction_distance_steps =
                                             HOTSPOTS_EVICTION_DISTANCE_DEFAULT_STEPS };
     /* Shared storage policy rejects and removes unsupported older record layouts.
@@ -420,9 +535,9 @@ uint16_t hotspots_match_distance_m( void )
     return MATCH_DISTANCE_OPTIONS[ settings.match_distance_index ];
 }
 
-uint8_t hotspots_missed_scan_limit( void )
+uint16_t hotspots_retention_seconds( void )
 {
-    return settings.missed_scan_limit;
+    return RETENTION_SECONDS_OPTIONS[ settings.retention_seconds_index ];
 }
 
 uint16_t hotspots_eviction_distance_m( void )
@@ -453,12 +568,15 @@ esp_err_t hotspots_step_match_distance( int a_direction )
     return save_settings( &previous );
 }
 
-esp_err_t hotspots_step_missed_scans( int a_direction )
+esp_err_t hotspots_step_retention_seconds( int a_direction )
 {
     const hotspots_settings_t previous = settings;
-    settings.missed_scan_limit =
-        (uint8_t)( a_direction > 0 ? ( settings.missed_scan_limit % 10U ) + 1U
-                                   : ( settings.missed_scan_limit + 8U ) % 10U + 1U );
+    const uint8_t current = settings.retention_seconds_index;
+    settings.retention_seconds_index =
+        (uint8_t)( a_direction > 0
+                       ? ( current + 1U ) % RETENTION_SECONDS_OPTION_COUNT
+                       : ( current + RETENTION_SECONDS_OPTION_COUNT - 1U ) %
+                             RETENTION_SECONDS_OPTION_COUNT );
     return save_settings( &previous );
 }
 
@@ -557,36 +675,28 @@ void hotspots_credentials_changed( const network_credentials_outcome_t *a_outcom
 
 static void complete_scan( int64_t a_now_us )
 {
-    if( NULL == scan_buffer )
-    {
-        scan_buffer =
-            app_session_calloc( RFSCOUT_WIFI_STATION_BSS_MAX_RESULTS, sizeof( *scan_buffer ) );
-    }
-    if( NULL != scan_buffer )
-    {
-        const size_t count =
-            rfscout_wifi_station_bss_results( scan_buffer, RFSCOUT_WIFI_STATION_BSS_MAX_RESULTS );
-        rfscout_gps_snapshot_t gps = { 0 };
-        (void)gps_snapshot_get( &gps );
-        const hotspot_retention_t retention = {
-            .missed_scan_limit = hotspots_missed_scan_limit(),
-            .distance_threshold_m = hotspots_eviction_distance_m(),
-        };
-        if( ESP_OK != hotspot_table_apply_scan( &table, scan_buffer, count, &retention, &gps ) )
-        {
-            ESP_LOGW(
-                TAG,
-                "Hotspots live table at capacity or out of memory; some networks are not shown" );
-        }
-    }
+    /* Monitor is already stopped and all callbacks have quiesced. */
+    drain_ap_queue();
     rfscout_gps_snapshot_t gps = { 0 };
     (void)gps_snapshot_get( &gps );
+    const hotspot_retention_t retention = {
+        .timeout_ms = (uint32_t)hotspots_retention_seconds() * 1000U,
+        .distance_threshold_m = hotspots_eviction_distance_m(),
+    };
+    hotspot_table_finish_sweep( &table, monitor_clock_ms, &retention, &gps );
     for( size_t index = 0U; index < table.count; ++index )
     {
         if( table.entries[ index ].visible )
         {
             hotspot_history_observe( &table.entries[ index ].bss, &gps );
         }
+    }
+    if( ap_queue_dropped > 0U || observations_rejected > 0U )
+    {
+        ESP_LOGW( TAG,
+                  "AP monitoring pressure: queued drops=%lu admission rejects=%lu",
+                  (unsigned long)ap_queue_dropped,
+                  (unsigned long)observations_rejected );
     }
     resolve_credentials( &gps );
     phase = HOTSPOTS_PHASE_CHECK;
@@ -599,9 +709,6 @@ static void scheduler_poll( int64_t a_now_us )
 {
     network_session_poll( a_now_us );
 
-    rfscout_wifi_station_status_t station;
-    rfscout_wifi_station_status( &station );
-
     switch( phase )
     {
         case HOTSPOTS_PHASE_IDLE:
@@ -613,36 +720,60 @@ static void scheduler_poll( int64_t a_now_us )
             {
                 break;
             }
-            scan_generation_at_start = station.scan_generation;
-            const esp_err_t result = rfscout_wifi_station_passive_scan_start();
+            __atomic_store_n( &collecting_ap_observations, true, __ATOMIC_RELEASE );
+            const esp_err_t result = radio_monitor_start();
             if( ESP_OK == result )
             {
+                hotspot_table_begin_sweep( &table );
+                monitor_last_tick_us = a_now_us;
                 phase = HOTSPOTS_PHASE_SCANNING;
-                phase_deadline_us = a_now_us + HOTSPOTS_SCAN_TIMEOUT_US;
+                phase_deadline_us = a_now_us + HOTSPOTS_MONITOR_SWEEP_US;
                 render_due = true;
             }
             else
             {
-                ESP_LOGW( TAG, "passive scan could not start: %s", esp_err_to_name( result ) );
+                __atomic_store_n( &collecting_ap_observations, false, __ATOMIC_RELEASE );
+                ESP_LOGW( TAG, "Wi-Fi monitor could not start: %s", esp_err_to_name( result ) );
                 next_scan_us = a_now_us + HOTSPOTS_SCAN_RETRY_US;
             }
             break;
         }
 
         case HOTSPOTS_PHASE_SCANNING:
-            if( station.scan_generation != scan_generation_at_start )
+        {
+            if( !radio_monitor_is_active() )
             {
-                complete_scan( a_now_us );
-            }
-            else if( ( RFSCOUT_WIFI_STATION_SCANNING != station.state ) ||
-                     ( a_now_us >= phase_deadline_us ) )
-            {
-                ESP_LOGW( TAG, "passive scan did not complete; retrying" );
-                (void)rfscout_wifi_station_cancel_scan();
+                __atomic_store_n( &collecting_ap_observations, false, __ATOMIC_RELEASE );
+                ESP_LOGW( TAG, "Wi-Fi monitor stopped unexpectedly; retrying" );
                 phase = HOTSPOTS_PHASE_SCAN_START;
                 next_scan_us = a_now_us + HOTSPOTS_SCAN_RETRY_US;
+                break;
+            }
+            const int64_t sample_us = a_now_us < phase_deadline_us ? a_now_us : phase_deadline_us;
+            tick_monitor_clock( sample_us );
+            radio_monitor_step();
+            drain_ap_queue();
+            if( a_now_us >= phase_deadline_us )
+            {
+                __atomic_store_n( &collecting_ap_observations, false, __ATOMIC_RELEASE );
+                const esp_err_t result = radio_monitor_stop();
+                if( ESP_OK != result )
+                {
+                    ESP_LOGW( TAG, "Wi-Fi monitor did not quiesce: %s", esp_err_to_name( result ) );
+                    /* Never begin station association until the monitor has stopped. */
+                    next_scan_us = a_now_us + HOTSPOTS_SCAN_RETRY_US;
+                    if( !radio_monitor_is_active() )
+                    {
+                        phase = HOTSPOTS_PHASE_SCAN_START;
+                    }
+                }
+                else
+                {
+                    complete_scan( a_now_us );
+                }
             }
             break;
+        }
 
         case HOTSPOTS_PHASE_CHECK:
         {
@@ -839,7 +970,10 @@ static bool app_telemetry( rfscout_log_record_t *a_record )
                    log_uint( a_record, "green", counts.green ) &&
                    log_uint( a_record, "yellow", counts.yellow ) &&
                    log_uint( a_record, "red", counts.red ) &&
-                   log_uint( a_record, "checks", counts.checks );
+                   log_uint( a_record, "checks", counts.checks ) &&
+                   log_uint( a_record, "monitor_ms", monitor_clock_ms ) &&
+                   log_uint( a_record, "ap_queue_drops", ap_queue_dropped ) &&
+                   log_uint( a_record, "ap_rejected", observations_rejected );
     return success;
 }
 
@@ -850,7 +984,9 @@ const rfscout_app_descriptor_t rfscout_hotspots_app = {
     .probe_policy = RFSCOUT_APP_PROBE_NONE,
     .probe = NULL,
     .requires_activation = true,
-    .services = RFSCOUT_APP_SERVICE_NETWORK_SESSION | RFSCOUT_APP_SERVICE_CONNECTIVITY_PROBE,
+    .services = RFSCOUT_APP_SERVICE_WIFI_MONITOR | RFSCOUT_APP_SERVICE_NETWORK_SESSION |
+                RFSCOUT_APP_SERVICE_CONNECTIVITY_PROBE,
+    .consumers = { .wifi_ap_observation = observe_ap },
     .runtime = hotspots_runtime,
     .telemetry = app_telemetry,
 };
