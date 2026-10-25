@@ -78,11 +78,6 @@ static esp_err_t esp_wifi_set_promiscuous(bool enable)
 {
     return enable ? restore_result : ESP_OK;
 }
-static const char *esp_err_to_name(esp_err_t result)
-{
-    (void)result;
-    return "simulated";
-}
 static TickType_t xTaskGetTickCount(void) { return tick_count; }
 static void vTaskDelay(TickType_t ticks) { tick_count += ticks; }
 static unsigned observation_callbacks_active(void) { return callbacks_active; }
@@ -187,13 +182,13 @@ class RadioMonitorStopRecoveryTests(unittest.TestCase):
             binary = pathlib.Path(folder) / "monitor_stop"
             harness = pathlib.Path(folder) / "monitor_stop.c"
             harness.write_text(HARNESS_BEGIN + functions + HARNESS_END)
-            subprocess.run(
+            compiled = subprocess.run(
                 [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror", "-o",
                  str(binary), str(harness)],
-                check=True,
                 capture_output=True,
                 text=True,
             )
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
             subprocess.run([str(binary)], check=True)
 
 
