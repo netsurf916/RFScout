@@ -137,6 +137,7 @@ idf_component_register(
         "services/board/board_spi.c"
         "services/board/board_i2c.c"
         "services/input/input.c"
+        "services/input/rotary_decoder.c"
         "services/location/gps.c"
         "services/location/geo.c"
         "services/wireless/radio_monitor.c"
