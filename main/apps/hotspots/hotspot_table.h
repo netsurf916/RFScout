@@ -99,8 +99,9 @@ typedef struct
     uint32_t profile_id;        /**< profile for automatic secured checks; 0 when none */
     uint32_t manual_profile_id; /**< profile the user chose with Join; used by the queued check */
     uint32_t last_seen_ms;      /**< Logical scanning clock, excludes association/TLS downtime. */
-    uint32_t observed_sweep_id; /**< Current sweep: used for GPS/time expiration, not capacity immunity. */
-    geo_bounds_t live_bounds;   /**< Receiver positions seen in this Live observation session. */
+    uint32_t
+        observed_sweep_id; /**< Current sweep: used for GPS/time expiration, not capacity immunity. */
+    geo_bounds_t live_bounds; /**< Receiver positions seen in this Live observation session. */
     hotspot_status_t status;
     bool retry_gate_active;
     int8_t retry_gate_rssi;

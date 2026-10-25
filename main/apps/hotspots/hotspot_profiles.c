@@ -69,7 +69,7 @@ hotspot_credential_t hotspot_profiles_resolve( const hotspot_profiles_input_t *a
     for( size_t index = 0U; NULL != a_input->profiles && index < a_input->profile_count; ++index )
     {
         const saved_network_profile_t *profile = &a_input->profiles[ index ];
-        if( 0 != strcmp( profile->ssid, a_entry->bss.ssid ) ||
+        if( !profile->has_password || 0 != strcmp( profile->ssid, a_entry->bss.ssid ) ||
             !saved_network_profile_auth_compatible( profile, a_entry->bss.auth_mode ) )
         {
             continue;
@@ -81,7 +81,8 @@ hotspot_credential_t hotspot_profiles_resolve( const hotspot_profiles_input_t *a
             ++rejected;
             continue;
         }
-        if( NULL != known && known->auth_mode == a_entry->bss.auth_mode )
+        if( NULL != known && SAVED_NETWORK_BSSID_ASSOCIATED == known->state &&
+            known->auth_mode == a_entry->bss.auth_mode )
         {
             *a_profile_id = profile->profile_id;
             return HOTSPOT_CREDENTIAL_KNOWN;

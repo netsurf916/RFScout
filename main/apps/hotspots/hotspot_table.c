@@ -109,7 +109,7 @@ static void remove_entry( hotspot_table_t *a_table, size_t a_index )
 
 /** @brief Hotspots-only capacity priority (smaller values are better). */
 static unsigned admission_tier( const rfscout_wifi_station_bss_t *a_bss,
-                                 hotspot_credential_t a_credential )
+                                hotspot_credential_t a_credential )
 {
     if( RFSCOUT_WIFI_STATION_SECURITY_OPEN == a_bss->security ||
         RFSCOUT_WIFI_STATION_SECURITY_OWE == a_bss->security )
@@ -117,13 +117,11 @@ static unsigned admission_tier( const rfscout_wifi_station_bss_t *a_bss,
         return 1U;
     }
     if( RFSCOUT_WIFI_STATION_SECURITY_SECURED != a_bss->security ||
-        HOTSPOT_CREDENTIAL_UNSUPPORTED == a_credential ||
-        HOTSPOT_CREDENTIAL_OPEN == a_credential )
+        HOTSPOT_CREDENTIAL_UNSUPPORTED == a_credential || HOTSPOT_CREDENTIAL_OPEN == a_credential )
     {
         return 4U;
     }
-    if( HOTSPOT_CREDENTIAL_KNOWN == a_credential ||
-        HOTSPOT_CREDENTIAL_INFERRED == a_credential )
+    if( HOTSPOT_CREDENTIAL_KNOWN == a_credential || HOTSPOT_CREDENTIAL_INFERRED == a_credential )
     {
         return 2U;
     }
