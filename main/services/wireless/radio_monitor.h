@@ -39,14 +39,16 @@ void radio_monitor_set_ap_observer( radio_ap_observation_fn a_callback );
 /** @brief Initialize reusable passive Wi-Fi monitor state without starting reception. */
 esp_err_t radio_monitor_init( void );
 
-/** @brief Activate Wi-Fi reception; refuses to start while a prior driver stop is unresolved. */
+/** @brief Activate Wi-Fi reception; retry and confirm any pending driver stop first. */
 esp_err_t radio_monitor_start( void );
 
 /** @brief Stop Wi-Fi hardware and drain callbacks; retain retry obligation after failed shutdown. */
 esp_err_t radio_monitor_stop( void );
 
-/** @brief True while receiving OR while hardware shutdown remains unconfirmed. */
+/** @brief True only while receive callbacks are enabled. */
 bool radio_monitor_is_active( void );
+/** @brief True when driver shutdown remains unconfirmed and stop should be retried. */
+bool radio_monitor_cleanup_pending( void );
 /** @brief Last configured Wi-Fi channel, for capture UI. */
 uint8_t radio_monitor_channel( void );
 
