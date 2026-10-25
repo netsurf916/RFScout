@@ -183,8 +183,7 @@ esp_err_t hotspot_table_observe( hotspot_table_t *a_table,
                                  uint32_t a_monitor_ms,
                                  const rfscout_gps_snapshot_t *a_gps )
 {
-    if( NULL == a_table || !hotspot_bss_eligible( a_bss ) ||
-        0U == a_table->scans_completed )
+    if( NULL == a_table || !hotspot_bss_eligible( a_bss ) || 0U == a_table->scans_completed )
     {
         return ESP_ERR_INVALID_ARG;
     }
@@ -209,8 +208,7 @@ esp_err_t hotspot_table_observe( hotspot_table_t *a_table,
         memset( entry, 0, sizeof( *entry ) );
     }
     else if( 0 != strcmp( entry->bss.ssid, a_bss->ssid ) ||
-             entry->bss.security != a_bss->security ||
-             entry->bss.auth_mode != a_bss->auth_mode )
+             entry->bss.security != a_bss->security || entry->bss.auth_mode != a_bss->auth_mode )
     {
         /* Identity changed: start a new Live session including credential evidence. */
         memset( entry, 0, sizeof( *entry ) );
@@ -241,18 +239,16 @@ void hotspot_table_finish_sweep( hotspot_table_t *a_table,
     for( size_t index = 0U; index < a_table->count; )
     {
         hotspot_entry_t *entry = &a_table->entries[ index ];
-        const bool out_of_range = observation_retention_outside_coverage(
-            &entry->live_bounds,
-            located ? a_gps->latitude_deg : 0.0,
-            located ? a_gps->longitude_deg : 0.0,
-            a_retention->distance_threshold_m,
-            located,
-            entry->visible );
+        const bool out_of_range =
+            observation_retention_outside_coverage( &entry->live_bounds,
+                                                    located ? a_gps->latitude_deg : 0.0,
+                                                    located ? a_gps->longitude_deg : 0.0,
+                                                    a_retention->distance_threshold_m,
+                                                    located,
+                                                    entry->visible );
         if( !entry->visible && !entry->manual_requested &&
-            ( observation_retention_expired( a_monitor_ms,
-                                             entry->last_seen_ms,
-                                             a_retention->timeout_ms,
-                                             0U ) ||
+            ( observation_retention_expired(
+                  a_monitor_ms, entry->last_seen_ms, a_retention->timeout_ms, 0U ) ||
               out_of_range ) )
         {
             remove_entry( a_table, index );
