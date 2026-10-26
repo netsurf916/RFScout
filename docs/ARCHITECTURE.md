@@ -30,6 +30,17 @@ UI components. **An application-specific deviation must not be introduced withou
 explicit permission from the project owner.** A bug report or a suspected
 workaround is not, by itself, permission to change the shared contract.
 
+**Explicitly approved service-fingerprint compatibility exception (PR #140):**
+Although XML QName local parts are case-sensitive, the Hotspots service
+fingerprinting *metadata-only prototype* interprets the caller-validated
+WS-Discovery `NetworkVideoTransmitter` local name using exact-length
+ASCII case-insensitive matching. The owner requested this tolerance for
+nonstandard vendor implementations. This exception applies **only** to
+the tentative service-fingerprint evidence flag, not XML parsing, endpoint
+authorization, surveillance classification, or camera verification. Reassess
+its evidence strength if strict ONVIF conformance or automatic decisions
+are ever introduced; see [service fingerprinting](SERVICE_FINGERPRINTING.md).
+
 Every explicitly approved deviation **must be documented in this architecture
 page** before or alongside implementation, identifying the affected application
 or component, the shared behavior it differs from, the reason for the exception,

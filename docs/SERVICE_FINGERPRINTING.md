@@ -33,7 +33,16 @@ confidence percentage. In particular:
 - `image/jpeg` and multipart responses indicate media response metadata only.
 - `NetworkVideoTransmitter` is recorded only after a caller has validated
   WS-Discovery XML, namespace and QName; this module receives just the local name.
+  **Compatibility exception:** the local-name comparison is ASCII case-insensitive
+  even though XML QName local parts are formally case-sensitive. The owner explicitly
+  prefers tolerance for nonstandard vendor implementations. Length and spelling
+  remain exact apart from case; a match is only *tentative* service evidence,
+  not proof of ONVIF conformance, surveillance, or authorization.
   No unauthenticated discovery response should be treated as authorization.
+
+HTTP `Content-Type` identification is still restricted to the actual media-type
+token before `;` parameters; case tolerance must not turn parameter text into
+media evidence. These are separate interoperability and parsing decisions.
 
 The current recognition literals are intentionally tiny illustrative heuristics,
 **not** a complete vendor fingerprint database. Do not translate their presence

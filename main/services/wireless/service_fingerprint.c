@@ -171,9 +171,11 @@ void service_fingerprint_ws_device_type( rfscout_service_fingerprint_t *a_result
     {
         return;
     }
-    static const char DEVICE_TYPE[] = "NetworkVideoTransmitter";
-    if( sizeof( DEVICE_TYPE ) - 1U == a_local_name_length &&
-        0 == memcmp( a_local_name, DEVICE_TYPE, sizeof( DEVICE_TYPE ) - 1U ) )
+    /* Deliberate compatibility concession: XML QName local names are formally
+       case-sensitive, but vendor WS-Discovery implementations sometimes vary
+       their capitalization. Treat the exact-length ASCII case-folded name as
+       device-type evidence, never as proof or authorization. */
+    if( field_equals( a_local_name, a_local_name_length, "NetworkVideoTransmitter" ) )
     {
         a_result->evidence |= RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE;
     }

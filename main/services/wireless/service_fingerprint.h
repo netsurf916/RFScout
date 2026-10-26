@@ -58,7 +58,10 @@ void service_fingerprint_dns_sd( rfscout_service_fingerprint_t *a_result,
 /**
  * @brief Ingest a validated WS-Discovery device-type local name.
  * @details The caller must validate XML/QName syntax and extract the local name;
- *          never pass an unparsed SOAP response as a device type.
+ *          never pass an unparsed SOAP response as a device type. This classifier
+ *          deliberately compares local-name ASCII case-insensitively for
+ *          nonstandard vendor interoperability, despite XML QName case rules.
+ *          The result is only tentative device-type evidence, not proof.
  */
 void service_fingerprint_ws_device_type( rfscout_service_fingerprint_t *a_result,
                                          const char *a_local_name,

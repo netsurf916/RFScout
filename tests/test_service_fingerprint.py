@@ -46,16 +46,27 @@ int main(void)
     service_fingerprint_ws_device_type(&result, device, sizeof(device) - 1);
     assert(result.evidence == RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE);
 
-    /* XML local names are case-sensitive, unlike HTTP header fields. */
+    /* The owner's interoperability policy accepts vendor QName casing errors. */
     service_fingerprint_reset(&result);
     const char lower_device[] = "networkvideotransmitter";
     service_fingerprint_ws_device_type(&result, lower_device, sizeof(lower_device) - 1);
-    assert(!(result.evidence & RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE));
+    assert(result.evidence & RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE);
+    service_fingerprint_reset(&result);
     const char upper_device[] = "NetworkVideoTRANSMITTER";
     service_fingerprint_ws_device_type(&result, upper_device, sizeof(upper_device) - 1);
-    assert(!(result.evidence & RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE));
-    service_fingerprint_ws_device_type(&result, device, sizeof(device) - 1);
     assert(result.evidence & RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE);
+
+    /* Case tolerance does not permit near matches or longer local names. */
+    service_fingerprint_reset(&result);
+    const char suffix_device[] = "NetworkVideoTransmitterExtra";
+    service_fingerprint_ws_device_type(&result, suffix_device, sizeof(suffix_device) - 1);
+    assert(!(result.evidence & RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE));
+    const char wrong_device[] = "NetworkVideoReceiver";
+    service_fingerprint_ws_device_type(&result, wrong_device, sizeof(wrong_device) - 1);
+    assert(!(result.evidence & RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE));
+    const char prefix_device[] = "NetworkVideoTransmitte";
+    service_fingerprint_ws_device_type(&result, prefix_device, sizeof(prefix_device) - 1);
+    assert(!(result.evidence & RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE));
 
     service_fingerprint_reset(&result);
     HEADER(result, "Content-Type", "image/jpeg");
