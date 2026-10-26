@@ -99,8 +99,9 @@ typedef struct
     uint32_t profile_id;        /**< profile for automatic secured checks; 0 when none */
     uint32_t manual_profile_id; /**< profile the user chose with Join; used by the queued check */
     uint32_t last_seen_ms;      /**< Logical scanning clock, excludes association/TLS downtime. */
-    uint32_t observed_sweep_id; /**< Only protects this sweep's sightings during admission. */
-    geo_bounds_t live_bounds;   /**< Receiver positions seen in this Live observation session. */
+    uint32_t
+        observed_sweep_id; /**< Current sweep: used for GPS/time expiration, not capacity immunity. */
+    geo_bounds_t live_bounds; /**< Receiver positions seen in this Live observation session. */
     hotspot_status_t status;
     bool retry_gate_active;
     int8_t retry_gate_rssi;
@@ -145,13 +146,17 @@ void hotspot_table_begin_sweep( hotspot_table_t *a_table );
 
 /**
  * @brief Ingest one AP observation on the app task (never from the Wi-Fi RX callback).
- * @details Admission is limited to 128 BSSIDs, with guest preference, protected in-sweep
- *          observations and manual checks. Does not retain packet or callback pointers.
+ * @details Capacity admission uses app-owned credential tiers, oldest observation,
+ *          RSSI and BSSID ordering. Queued manual work is protected; current-sweep
+ *          sightings may yield under capacity pressure. Caller supplies the credential
+ *          resolver's non-secret result for this observation.
  */
 esp_err_t hotspot_table_observe( hotspot_table_t *a_table,
                                  const rfscout_wifi_station_bss_t *a_bss,
                                  uint32_t a_monitor_ms,
-                                 const rfscout_gps_snapshot_t *a_gps );
+                                 const rfscout_gps_snapshot_t *a_gps,
+                                 hotspot_credential_t a_credential,
+                                 uint32_t a_profile_id );
 
 /** @brief Recompute timestamp-based UI/check freshness and visible security counts. */
 void hotspot_table_refresh_visibility( hotspot_table_t *a_table, uint32_t a_monitor_ms );

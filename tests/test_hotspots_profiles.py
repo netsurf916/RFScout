@@ -115,6 +115,16 @@ int main( void )
     none = input( other, 1 );
     assert( resolve( &none, &id ) == HOTSPOT_CREDENTIAL_NONE && id == 0 );
 
+    /* An empty credential or unassociated evidence must never promote a secured BSSID. */
+    saved_network_profile_t no_password[ 1 ] = { profile( 21, "CAFE", WPA2 ) };
+    learn( &no_password[ 0 ], A, SAVED_NETWORK_BSSID_ASSOCIATED, WPA2 );
+    no_password[ 0 ].has_password = false;
+    none = input( no_password, 1 );
+    assert( resolve( &none, &id ) == HOTSPOT_CREDENTIAL_NONE && id == 0 );
+    no_password[ 0 ].has_password = true;
+    no_password[ 0 ].bssids[ 0 ].state = 0U;
+    assert( resolve( &none, &id ) != HOTSPOT_CREDENTIAL_KNOWN );
+
     /* Known: the exact associated BSSID with the same auth mode wins over earlier evidence. */
     saved_network_profile_t known[ 2 ] = { profile( 7, "CAFE", WPA2 ), profile( 9, "CAFE", WPA2 ) };
     learn( &known[ 0 ], B, SAVED_NETWORK_BSSID_ASSOCIATED, WPA2 );

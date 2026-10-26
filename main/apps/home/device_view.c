@@ -271,9 +271,9 @@ static char next_morse_character( char a_current, int a_direction )
 /** Rows that act on receiver data are unavailable until a GPS receiver is detected. */
 static bool item_available( unsigned a_item )
 {
-    const bool needs_receiver =
-        DEVICE_ITEM_BREADCRUMBS == a_item || DEVICE_ITEM_BREADCRUMB_FILES == a_item ||
-        DEVICE_ITEM_GPS_MOVEMENT == a_item || DEVICE_ITEM_GPS_TIMEPULSE == a_item;
+    const bool needs_receiver = DEVICE_ITEM_BREADCRUMBS == a_item ||
+                                DEVICE_ITEM_GPS_MOVEMENT == a_item ||
+                                DEVICE_ITEM_GPS_TIMEPULSE == a_item;
     return !needs_receiver || gps_detected();
 }
 
@@ -297,7 +297,8 @@ static bool item_editable( unsigned a_item )
     return ( DEVICE_ITEM_BACK != a_item ) && ( DEVICE_ITEM_TIME != a_item ) &&
            ( DEVICE_ITEM_NETWORK != a_item ) && ( DEVICE_ITEM_OTA != a_item ) &&
            ( DEVICE_ITEM_POWER_BUTTON != a_item ) && ( DEVICE_ITEM_POWER_POLICY != a_item ) &&
-           ( DEVICE_ITEM_BREADCRUMBS != a_item ) && ( DEVICE_ITEM_STORAGE != a_item );
+           ( DEVICE_ITEM_BREADCRUMBS != a_item ) && ( DEVICE_ITEM_BREADCRUMB_FILES != a_item ) &&
+           ( DEVICE_ITEM_STORAGE != a_item );
 }
 
 static const char *item_label( unsigned a_item )
@@ -367,7 +368,7 @@ static const char *item_label( unsigned a_item )
         case DEVICE_ITEM_BREADCRUMBS:
             return "Breadcrumbs";
         case DEVICE_ITEM_BREADCRUMB_FILES:
-            return "Breadcrumb files";
+            return "Breadcrumb archive";
         case DEVICE_ITEM_GPS_TIMEOUT:
             return "GPS timeout";
         case DEVICE_ITEM_GPS_TIMEPULSE:
@@ -546,7 +547,7 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             snprintf( a_value, a_capacity, "%s", on_off( breadcrumbs_enabled() ) );
             break;
         case DEVICE_ITEM_BREADCRUMB_FILES:
-            snprintf( a_value, a_capacity, "%u", (unsigned)breadcrumbs_file_limit() );
+            snprintf( a_value, a_capacity, "All" );
             break;
         case DEVICE_ITEM_GPS_MOVEMENT:
             snprintf( a_value, a_capacity, "%u m", (unsigned)config->gps_movement_m );
@@ -1548,32 +1549,6 @@ static void toggle_breadcrumbs( void )
                        !old_value ? 1 : 0 );
 }
 
-static void adjust_breadcrumb_file_limit( int a_delta )
-{
-    const uint16_t old_limit = breadcrumbs_file_limit();
-    const uint16_t new_limit = breadcrumbs_file_limit_step( old_limit, a_delta );
-    if( new_limit == old_limit )
-    {
-        return;
-    }
-
-    const esp_err_t result = breadcrumbs_set_file_limit( new_limit );
-    if( ESP_OK != result )
-    {
-        save_error = true;
-        emit_device_event( RFSCOUT_EVENT_ERROR, (int32_t)result );
-        return;
-    }
-
-    char old_text[ 8 ];
-    char new_text[ 8 ];
-    snprintf( old_text, sizeof( old_text ), "%u", (unsigned)old_limit );
-    snprintf( new_text, sizeof( new_text ), "%u", (unsigned)new_limit );
-    log_config_change( "breadcrumbs.file_limit", old_text, new_text );
-    save_error = false;
-    emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
-}
-
 static void adjust_alert_mode( int a_delta )
 {
     const rfscout_alert_mode_t old_mode = device_config_get()->alert_mode;
@@ -1752,10 +1727,6 @@ static void adjust_selected( int a_delta )
     else if( DEVICE_ITEM_BREADCRUMBS == selected_item )
     {
         toggle_breadcrumbs();
-    }
-    else if( DEVICE_ITEM_BREADCRUMB_FILES == selected_item )
-    {
-        adjust_breadcrumb_file_limit( a_delta );
     }
     else if( DEVICE_ITEM_GPS_TIMEPULSE == selected_item )
     {

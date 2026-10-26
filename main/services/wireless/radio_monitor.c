@@ -339,6 +339,8 @@ static void promiscuous( void *a_buffer, wifi_promiscuous_pkt_type_t a_type )
                                                                packet->rx_ctrl.channel,
                                                                &ap ) )
                 {
+                    /* Capture at the radio boundary, before the app's bounded queue. */
+                    ap.seen_ms = (uint32_t)( esp_timer_get_time() / 1000ULL );
                     ap_sink( &ap );
                 }
             }
