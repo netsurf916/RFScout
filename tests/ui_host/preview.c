@@ -119,9 +119,14 @@ bool breadcrumbs_enabled( void )
 {
     return false;
 }
-uint16_t breadcrumbs_file_limit( void )
+breadcrumb_retention_t breadcrumbs_retention( void )
 {
-    return 144U;
+    return BREADCRUMB_RETENTION_FOREVER;
+}
+const char *breadcrumbs_retention_name( breadcrumb_retention_t a_retention )
+{
+    (void)a_retention;
+    return "Forever";
 }
 const char *esp_err_to_name( esp_err_t a_error )
 {
