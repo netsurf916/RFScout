@@ -148,6 +148,7 @@ idf_component_register(
         "services/wireless/saved_networks.c"
         "services/wireless/network_session.c"
         "services/wireless/connectivity_probe.c"
+        "services/wireless/service_fingerprint.c"
         "services/wireless/ble_monitor.c"
         "services/wireless/oui_database.c"
         "services/wireless/surveillance_database.c"
