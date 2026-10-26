@@ -15,8 +15,7 @@
 #include <time.h>
 
 /** @brief Use the record's GPS UTC date, not the recorder's current wall clock. */
-static inline bool
-breadcrumb_daily_filename( time_t a_epoch, char *a_name, size_t a_capacity )
+static inline bool breadcrumb_daily_filename( time_t a_epoch, char *a_name, size_t a_capacity )
 {
     if( NULL == a_name || 0U == a_capacity )
     {

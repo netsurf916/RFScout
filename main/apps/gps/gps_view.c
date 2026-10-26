@@ -76,9 +76,9 @@ uint32_t gps_view_next_led_color( uint32_t a_rgb )
 
 bool gps_view_setting_available( unsigned a_setting )
 {
-    const bool needs_receiver =
-        GPS_SETTING_BREADCRUMBS == a_setting || GPS_SETTING_MOVEMENT == a_setting ||
-        GPS_SETTING_TIMEPULSE == a_setting;
+    const bool needs_receiver = GPS_SETTING_BREADCRUMBS == a_setting ||
+                                GPS_SETTING_MOVEMENT == a_setting ||
+                                GPS_SETTING_TIMEPULSE == a_setting;
     return !needs_receiver || gps_detected();
 }
 

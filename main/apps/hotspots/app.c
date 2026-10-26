@@ -255,9 +255,9 @@ static void drain_ap_queue( void )
             /* History replays while scans continue. Before replay finishes, preserve
                potential previously characterized secured sightings rather than losing
                a fleeting AP whose History record has not yet been loaded. */
-            const bool pending_history =
-                !hotspot_history_ready() && RFSCOUT_WIFI_STATION_SECURITY_SECURED == bss.security &&
-                rfscout_wifi_station_secured_supported( bss.auth_mode );
+            const bool pending_history = !hotspot_history_ready() &&
+                                         RFSCOUT_WIFI_STATION_SECURITY_SECURED == bss.security &&
+                                         rfscout_wifi_station_secured_supported( bss.auth_mode );
             const bool eligible =
                 resolved || pending_history || NULL != hotspot_history_find( &bss );
             /* Logging is independent of Live-table admission and capacity pressure. */

@@ -79,7 +79,10 @@ static esp_err_t persist_settings( bool a_enabled )
 {
     /* Preserve existing breadcrumb On/Off preference across firmware updates. */
     const uint8_t record[ BREADCRUMB_SETTINGS_SIZE ] = {
-        BREADCRUMB_SETTINGS_VERSION, a_enabled ? 1U : 0U, 0U, 0U,
+        BREADCRUMB_SETTINGS_VERSION,
+        a_enabled ? 1U : 0U,
+        0U,
+        0U,
     };
     return system_store_write( BREADCRUMB_SETTINGS_KEY, record, sizeof( record ) );
 }
@@ -344,16 +347,15 @@ void breadcrumbs_poll( void )
     const bool rate_valid =
         gps_rate_diagnostics_get( &filtered_speed_mps, &current_rate_ms, &target_rate_ms );
     const float speed_mph = rate_valid ? filtered_speed_mps * 2.23693629f
-                                     : ( gps.speed_valid ? gps.speed_mps * 2.23693629f : 0.0f );
-    if( 0 != last_capture_us && now_us - last_capture_us < breadcrumb_capture_interval_us( speed_mph ) )
+                                       : ( gps.speed_valid ? gps.speed_mps * 2.23693629f : 0.0f );
+    if( 0 != last_capture_us &&
+        now_us - last_capture_us < breadcrumb_capture_interval_us( speed_mph ) )
     {
         return;
     }
     geo_movement_gate_t next_gate = movement_gate;
-    if( !geo_movement_gate_accept( &next_gate,
-                                   gps.latitude_deg,
-                                   gps.longitude_deg,
-                                   device_config_get()->gps_movement_m ) )
+    if( !geo_movement_gate_accept(
+            &next_gate, gps.latitude_deg, gps.longitude_deg, device_config_get()->gps_movement_m ) )
     {
         return;
     }
