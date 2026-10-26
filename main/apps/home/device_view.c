@@ -63,7 +63,7 @@
 #define DEVICE_ITEM_POWER_BUTTON 25U
 #define DEVICE_ITEM_POWER_POLICY 26U
 #define DEVICE_ITEM_BREADCRUMBS 27U
-#define DEVICE_ITEM_BREADCRUMB_FILES 28U
+#define DEVICE_ITEM_BREADCRUMB_RETENTION 28U
 #define DEVICE_ITEM_HOLD_SHORTCUT 29U
 #define DEVICE_ITEM_GPS_TIMEOUT 30U
 #define DEVICE_ITEM_GPS 31U
@@ -297,8 +297,7 @@ static bool item_editable( unsigned a_item )
     return ( DEVICE_ITEM_BACK != a_item ) && ( DEVICE_ITEM_TIME != a_item ) &&
            ( DEVICE_ITEM_NETWORK != a_item ) && ( DEVICE_ITEM_OTA != a_item ) &&
            ( DEVICE_ITEM_POWER_BUTTON != a_item ) && ( DEVICE_ITEM_POWER_POLICY != a_item ) &&
-           ( DEVICE_ITEM_BREADCRUMBS != a_item ) && ( DEVICE_ITEM_BREADCRUMB_FILES != a_item ) &&
-           ( DEVICE_ITEM_STORAGE != a_item );
+           ( DEVICE_ITEM_BREADCRUMBS != a_item ) && ( DEVICE_ITEM_STORAGE != a_item );
 }
 
 static const char *item_label( unsigned a_item )
@@ -367,8 +366,8 @@ static const char *item_label( unsigned a_item )
             return "Power policy";
         case DEVICE_ITEM_BREADCRUMBS:
             return "Breadcrumbs";
-        case DEVICE_ITEM_BREADCRUMB_FILES:
-            return "Breadcrumb archive";
+        case DEVICE_ITEM_BREADCRUMB_RETENTION:
+            return "Breadcrumb retention";
         case DEVICE_ITEM_GPS_TIMEOUT:
             return "GPS timeout";
         case DEVICE_ITEM_GPS_TIMEPULSE:
@@ -546,8 +545,9 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
         case DEVICE_ITEM_BREADCRUMBS:
             snprintf( a_value, a_capacity, "%s", on_off( breadcrumbs_enabled() ) );
             break;
-        case DEVICE_ITEM_BREADCRUMB_FILES:
-            snprintf( a_value, a_capacity, "All" );
+        case DEVICE_ITEM_BREADCRUMB_RETENTION:
+            snprintf(
+                a_value, a_capacity, "%s", breadcrumbs_retention_name( breadcrumbs_retention() ) );
             break;
         case DEVICE_ITEM_GPS_MOVEMENT:
             snprintf( a_value, a_capacity, "%u m", (unsigned)config->gps_movement_m );
@@ -1549,6 +1549,23 @@ static void toggle_breadcrumbs( void )
                        !old_value ? 1 : 0 );
 }
 
+static void adjust_breadcrumb_retention( int a_delta )
+{
+    const breadcrumb_retention_t old_value = breadcrumbs_retention();
+    const breadcrumb_retention_t next = breadcrumbs_retention_step( old_value, a_delta );
+    if( ESP_OK != breadcrumbs_set_retention( next ) )
+    {
+        save_error = true;
+        emit_device_event( RFSCOUT_EVENT_ERROR, 1 );
+        return;
+    }
+    log_config_change( "breadcrumbs.retention",
+                       breadcrumbs_retention_name( old_value ),
+                       breadcrumbs_retention_name( next ) );
+    save_error = false;
+    emit_device_event( RFSCOUT_EVENT_NAVIGATE, a_delta > 0 ? 1 : -1 );
+}
+
 static void adjust_alert_mode( int a_delta )
 {
     const rfscout_alert_mode_t old_mode = device_config_get()->alert_mode;
@@ -1745,6 +1762,10 @@ static void adjust_selected( int a_delta )
     else if( DEVICE_ITEM_HOLD_SHORTCUT == selected_item )
     {
         toggle_hold_shortcut();
+    }
+    else if( DEVICE_ITEM_BREADCRUMB_RETENTION == selected_item )
+    {
+        adjust_breadcrumb_retention( a_delta );
     }
     else if( DEVICE_ITEM_GPS_MOVEMENT == selected_item )
     {

@@ -102,7 +102,7 @@ void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_menu_error 
             [GPS_SETTING_LED_COLOR] = "LED color",
             [GPS_SETTING_KEEP_AWAKE] = "Stay awake",
             [GPS_SETTING_BREADCRUMBS] = "Breadcrumbs",
-            [GPS_SETTING_BREADCRUMB_FILES] = "Breadcrumb archive",
+            [GPS_SETTING_BREADCRUMB_RETENTION] = "Breadcrumb retention",
             [GPS_SETTING_MOVEMENT] = "Movement trigger",
             [GPS_SETTING_TIMEOUT] = "GPS timeout",
             [GPS_SETTING_TIMEPULSE] = "GPS Timepulse",
@@ -143,8 +143,11 @@ void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_menu_error 
                     (void)snprintf(
                         text, sizeof( text ), "%s", breadcrumbs_enabled() ? "On" : "Off" );
                     break;
-                case GPS_SETTING_BREADCRUMB_FILES:
-                    (void)snprintf( text, sizeof( text ), "All" );
+                case GPS_SETTING_BREADCRUMB_RETENTION:
+                    (void)snprintf( text,
+                                    sizeof( text ),
+                                    "%s",
+                                    breadcrumbs_retention_name( breadcrumbs_retention() ) );
                     break;
                 case GPS_SETTING_MOVEMENT:
                     (void)snprintf(

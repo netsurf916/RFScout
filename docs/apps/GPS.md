@@ -9,7 +9,7 @@ write position history to SD. Its descriptor has no exclusive service dependenci
 
 The 320×170 app surface now uses four semantic, theme-aware instruments beneath the global status strip: a **Fix** panel for latitude/longitude, altitude, fix freshness/age and receiver status; a **Motion** panel for cumulative trip distance and current velocity; a **Satellites** panel for GGA satellites used; and a larger **Ground Track** panel showing a prominent compass direction and numeric degrees.
 
-Ground track comes directly from the RMC **course-over-ground** field, not inferred from screen updates or an electronic compass. It is shown only for a fresh position fix, fresh receiver motion and speed of at least 0.7 m/s, to avoid unstable headings while stationary. When unavailable, both indicators show placeholders. The heading is direction of travel, not the direction the physical device faces. In Pixel Quest style, panels use clipped-corner frames; Simple style uses rectangular semantic frames, and both use the active theme colors. The center/select button opens GPS Settings with trip reset, GPS-app-only directional LED options, stay-awake, shared breadcrumb enablement/archive status, Movement trigger and inactivity timeout, and receiver GPS Timepulse. Back returns to the dashboard. Trip reset is only available through GPS Settings;
+Ground track comes directly from the RMC **course-over-ground** field, not inferred from screen updates or an electronic compass. It is shown only for a fresh position fix, fresh receiver motion and speed of at least 0.7 m/s, to avoid unstable headings while stationary. When unavailable, both indicators show placeholders. The heading is direction of travel, not the direction the physical device faces. In Pixel Quest style, panels use clipped-corner frames; Simple style uses rectangular semantic frames, and both use the active theme colors. The center/select button opens GPS Settings with trip reset, GPS-app-only directional LED options, stay-awake, shared breadcrumb enablement/retention, Movement trigger and inactivity timeout, and receiver GPS Timepulse. Back returns to the dashboard. Trip reset is only available through GPS Settings;
 there is no reset instruction or reset-failure helper text on the dashboard.
 Menu action errors are shown in the settings footer instead.
 
@@ -46,7 +46,25 @@ independent of the time required to obtain a GPS position fix.
 
 ## Breadcrumb sampling and storage
 
-Breadcrumb logging remains a system service even if the GPS app is closed or disabled. A breadcrumb requires fresh location, GPS UTC and at least the shared **Movement trigger** distance since the last queued point. The sample cadence is **5 s below 3 mph, 2 s between 3 and 15 mph, and 1 s at 15 mph or higher**, using filtered GPS speed when available; there is never more than one record per UTC second and no stationary spam. Records are append-only JSONL in `system/breadcrumbs/breadcrumbs-YYYY-MM-DD.jsonl`, one file per UTC day. Older files, including files from the previous segmented-journal system, remain on the card unless explicitly deleted by the user. Home/GPS show **Breadcrumb archive: All** as a non-editable status; the previous retained-file count preference is ignored. Enablement and the shared movement trigger remain editable in both menus. See [Architecture](../ARCHITECTURE.md#gps-movement-trigger) for the shared trigger and storage convention.
+Breadcrumbs remain a system service even when the GPS app is closed. A record
+requires fresh GPS position and GPS UTC; a stale fix never produces a stationary
+heartbeat. The recorder uses the GPS service's already low-pass-filtered speed
+(independent of the receiver-rate-control capability) to interpolate an interval
+between **60 seconds at 0 m/s** and **1 second at 10 m/s and faster**. A sample
+is queued once the interval passes **and** either the shared **Movement trigger**
+distance has been crossed or a **60-second stationary heartbeat** is due.
+There is at most one record per GPS UTC second. The movement anchor advances only
+after successful queueing. Details and speed knots are in
+[the breadcrumb policy](../BREADCRUMB_POLICY.md).
+
+Records are appended as JSONL to `system/breadcrumbs/breadcrumbs-YYYY-MM-DD.jsonl`
+using the record's GPS UTC date. **Breadcrumb retention** is editable in Home and
+GPS Settings: **1 day, 1 week, 1 month, Forever** (default). The existing breadcrumb
+On/Off preference survives upgrades; an old segment-count setting is ignored.
+Finite retention removes only recognized, fully expired UTC-day JSONL files in
+bounded background-worker steps when GPS/NTP-verified UTC is available. It never
+automatically removes old numbered or CSV formats, and does not delete a partial
+cutoff day. See the [architecture](../ARCHITECTURE.md#gps-movement-trigger).
 
 ## Receiver timepulse and LED ring
 

@@ -73,6 +73,11 @@ esp_err_t gps_trip_reset( void );
 /** Apply the persisted receiver timepulse preference when CASIC is ready. */
 void gps_timepulse_apply( void );
 
+/** @brief Fresh low-pass-filtered speed independent of receiver rate-control support.
+ * @return false when filtered speed has not been measured recently.
+ */
+bool gps_filtered_speed_get( float *a_speed_mps );
+
 /** @brief Fresh filtered speed and current/target update intervals for diagnostic breadcrumbs.
  * @return false when filtered speed is unavailable or stale.
  */
