@@ -257,6 +257,8 @@ Application lock is transient runtime state. It is cleared when an application t
 
 Edge capture survives temporary main-loop/display stalls. Input used only to wake a dimmed/off display is consumed before normal navigation or power handling.
 
+**Open investigation (no behavior change):** See [rotary wake and input-lock regression](INPUT_WAKE_REGRESSION.md) for reported single-detent wake+navigation and locked-wake loss, possible scheduling interleavings, and the shared-service test matrix. The documented wake-consumption contract remains the expected behavior while this regression is investigated.
+
 Common presentation overlays are platform-owned. Applications render their view, while power/system-event/app-modal presentation is composed by the shared display service so application lifecycle state is not replaced by a transient notification.
 
 ## Audio architecture
