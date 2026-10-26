@@ -283,6 +283,10 @@ static int prune_one( time_t a_now_utc, breadcrumb_retention_t a_retention )
     breadcrumb_expiry_candidate_t candidate = {
         .cutoff_utc = a_now_utc - (time_t)days * 86400,
     };
+    if( shutdown_requested )
+    {
+        return 0;
+    }
     const esp_err_t listed = media_list( &collection, find_expired, &candidate );
     if( ESP_OK != listed )
     {
@@ -292,6 +296,10 @@ static int prune_one( time_t a_now_utc, breadcrumb_retention_t a_retention )
     if( '\0' == candidate.filename[ 0 ] )
     {
         return 0;
+    }
+    if( shutdown_requested )
+    {
+        return 0; /* Allow lifecycle shutdown before beginning another SD operation. */
     }
     const esp_err_t removed = media_remove( &collection, candidate.filename );
     if( ESP_OK != removed )
@@ -308,9 +316,15 @@ static int prune_one( time_t a_now_utc, breadcrumb_retention_t a_retention )
 /** @brief Run bounded retention I/O exclusively on the existing storage worker. */
 static void prune_poll( int64_t a_now_us )
 {
-    if( NULL == write_mutex || a_now_us < next_prune_us ||
-        pdTRUE != xSemaphoreTake( write_mutex, 0U ) )
+    if( NULL == write_mutex || pdTRUE != xSemaphoreTake( write_mutex, 0U ) )
     {
+        return;
+    }
+    /* next_prune_us is 64-bit on a 32-bit ESP32. Read it only while locked,
+       just like breadcrumbs_set_retention() does when changing the deadline. */
+    if( shutdown_requested || a_now_us < next_prune_us )
+    {
+        (void)xSemaphoreGive( write_mutex );
         return;
     }
     if( BREADCRUMB_RETENTION_FOREVER == retention )
@@ -368,7 +382,10 @@ static void worker( void *a_argument )
         {
             write_record( &record );
         }
-        prune_poll( esp_timer_get_time() );
+        if( !shutdown_requested )
+        {
+            prune_poll( esp_timer_get_time() );
+        }
     }
 }
 
