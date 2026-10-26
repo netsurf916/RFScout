@@ -470,6 +470,14 @@ Rotating logs use `rfscout-00.log` through `rfscout-99.log` in `system/logs`, up
 
 Breadcrumb recording is independent from ordinary SD logging and requires a fresh GPS position and valid GPS UTC. Samples must pass the existing shared GPS movement trigger. The sampling minimum increases with velocity: 5 seconds below 3 mph, 2 seconds from 3 to below 15 mph, and 1 second at or above 15 mph, using the GPS service's filtered speed when available (otherwise fresh raw speed). Never write more than one per GPS UTC second or while stationary. Records retain UTC, latitude/longitude, raw speed and, when available, filtered speed and current/target GPS receiver update intervals. Each record is appended through the shared `media_store` API to `system/breadcrumbs/breadcrumbs-YYYY-MM-DD.jsonl` using the record's GPS UTC date. Files from previous days, including earlier numbered and CSV formats, are **never automatically pruned**. Legacy stored file-limit preferences are ignored; Home and GPS now display the informational archive policy `All` rather than offering deletion limits. On media errors, best-effort truncation avoids appending after an incomplete JSON line and the existing write-failure disable policy still applies.
 
+**Planned breadcrumb policy follow-up:** See the
+[breadcrumb design baseline](BREADCRUMB_POLICY.md) for a 60-to-1-second
+filtered-velocity cadence, an optional-position-change-independent 60-second
+fresh-fix heartbeat, and editable 1/7/30-day or Forever retention of
+UTC-dated breadcrumb files. These changes are **not yet implemented** in
+PR #137; the parent branch's 5/2/1-second policy and archive-All UI remain
+current until this follow-up lands.
+
 ### SD journals
 
 Hotspots History, WiFi/BLE surveillance-location journals and Hotspots sightings use

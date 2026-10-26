@@ -26,6 +26,15 @@ Menu action errors are shown in the settings footer instead.
 - The display refreshes twice per second. Normal global navigation applies outside the GPS Settings menu.
 - GPS app periodic SD telemetry includes receiver/fix state, trip distance, and fresh speed/altitude/satellites-used values when available. The normal passive-app audio feedback policy applies.
 
+## Planned follow-up: breadcrumb cadence and retention
+
+The [breadcrumb policy design baseline](../BREADCRUMB_POLICY.md) specifies a
+60-to-1-second filtered-velocity sampling curve (1 Hz from 10 m/s), a
+60-second stationary heartbeat requiring a fresh GPS fix, and editable
+1 day / 1 week / 1 month / Forever retention of dated files. **Not yet
+implemented:** the 5/2/1-second movement-gated policy and archive-All UI
+above remain current on the parent branch.
+
 ## Receiver and radio interaction
 
 GPS detection and valid GPS position are distinct. A receiver may be present while
