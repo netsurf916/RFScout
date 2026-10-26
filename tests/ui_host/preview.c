@@ -14,6 +14,7 @@
 #include "system_events.h"
 #include "recorder.h"
 #include "gps.h"
+#include "breadcrumbs.h"
 #include "gps_view.h"
 #include "recorder_view.h"
 #include "hotspots_view.h"
