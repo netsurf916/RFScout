@@ -441,10 +441,10 @@ static void parse_network( const cJSON *a_root, history_record_t *a_record )
               "%s",
               NULL != public_ip ? public_ip : "" );
     snprintf( a_record->colo, sizeof( a_record->colo ), "%s", NULL != colo ? colo : "" );
-    a_record->camera_evidence = json_number( a_root, "camera_evidence", &value ) &&
-                                            value >= 0.0 && value <= (double)UINT32_MAX
-                                        ? (uint32_t)value
-                                        : 0U;
+    a_record->camera_evidence = json_number( a_root, "camera_evidence", &value ) && value >= 0.0 &&
+                                        value <= (double)UINT32_MAX
+                                    ? (uint32_t)value
+                                    : 0U;
 }
 
 /** Replace an entry's epoch with a compacted summary. */

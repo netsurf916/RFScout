@@ -311,8 +311,8 @@ hotspot_stage_t hotspots_attempt_stage( const hotspot_entry_t *a_entry )
     {
         return HOTSPOT_STAGE_NONE;
     }
-    return HOTSPOTS_PHASE_NETWORK == phase ? HOTSPOT_STAGE_JOIN
-           : HOTSPOTS_PHASE_CAMERA == phase  ? HOTSPOT_STAGE_CAMERA
+    return HOTSPOTS_PHASE_NETWORK == phase  ? HOTSPOT_STAGE_JOIN
+           : HOTSPOTS_PHASE_CAMERA == phase ? HOTSPOT_STAGE_CAMERA
                                             : HOTSPOT_STAGE_HTTPS;
 }
 
@@ -388,9 +388,9 @@ void hotspots_format_status( char *a_footer, size_t a_capacity )
         snprintf( a_footer,
                   a_capacity,
                   "%s %.32s",
-                  HOTSPOTS_PHASE_NETWORK == phase ? "NETWORK"
-                   : HOTSPOTS_PHASE_CAMERA == phase ? "CAMERA"
-                                                     : "HTTPS",
+                  HOTSPOTS_PHASE_NETWORK == phase  ? "NETWORK"
+                  : HOTSPOTS_PHASE_CAMERA == phase ? "CAMERA"
+                                                   : "HTTPS",
                   attempt_bss.ssid );
         return;
     }
@@ -494,8 +494,7 @@ static esp_err_t release_check_services( void )
 static bool gateway_probe_eligible( const hotspot_result_t *a_result )
 {
     return NULL != a_result &&
-           camera_probe_gateway_eligible(
-               a_result->address, a_result->netmask, a_result->gateway );
+           camera_probe_gateway_eligible( a_result->address, a_result->netmask, a_result->gateway );
 }
 
 static void finish_attempt( hotspot_status_t a_outcome,
@@ -503,15 +502,14 @@ static void finish_attempt( hotspot_status_t a_outcome,
                             esp_err_t a_error,
                             int64_t a_now_us );
 
-static void start_limited_camera_probe( hotspot_stage_t a_stage,
-                                        esp_err_t a_error,
-                                        int64_t a_now_us )
+static void
+start_limited_camera_probe( hotspot_stage_t a_stage, esp_err_t a_error, int64_t a_now_us )
 {
     limited_failed_stage = a_stage;
     limited_error = a_error;
     if( !gateway_probe_eligible( &attempt_result ) ||
-        ESP_OK != connectivity_probe_begin_camera( attempt_result.gateway,
-                                                    HOTSPOTS_CAMERA_TIMEOUT_MS ) )
+        ESP_OK !=
+            connectivity_probe_begin_camera( attempt_result.gateway, HOTSPOTS_CAMERA_TIMEOUT_MS ) )
     {
         finish_attempt( HOTSPOT_STATUS_YELLOW, a_stage, a_error, a_now_us );
         return;
@@ -1022,14 +1020,14 @@ static void scheduler_poll( int64_t a_now_us )
             rfscout_connectivity_probe_status_t probe;
             connectivity_probe_status( &probe );
             if( RFSCOUT_CONNECTIVITY_PROBE_SUCCEEDED == probe.state ||
-                RFSCOUT_CONNECTIVITY_PROBE_FAILED == probe.state ||
-                a_now_us >= phase_deadline_us )
+                RFSCOUT_CONNECTIVITY_PROBE_FAILED == probe.state || a_now_us >= phase_deadline_us )
             {
                 if( RFSCOUT_CONNECTIVITY_PROBE_SUCCEEDED == probe.state )
                 {
                     attempt_result.camera_evidence = probe.camera_evidence;
                 }
-                finish_attempt( HOTSPOT_STATUS_YELLOW, limited_failed_stage, limited_error, a_now_us );
+                finish_attempt(
+                    HOTSPOT_STATUS_YELLOW, limited_failed_stage, limited_error, a_now_us );
             }
             break;
         }

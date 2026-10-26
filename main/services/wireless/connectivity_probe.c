@@ -87,9 +87,8 @@ copy_trace_value( const char *a_trace, const char *a_key, char *a_destination, s
 
 static esp_err_t http_event( esp_http_client_event_t *a_event )
 {
-    if( NULL != a_event && PROBE_MODE_CAMERA == mode &&
-        HTTP_EVENT_ON_HEADER == a_event->event_id && NULL != a_event->header_key &&
-        NULL != a_event->header_value )
+    if( NULL != a_event && PROBE_MODE_CAMERA == mode && HTTP_EVENT_ON_HEADER == a_event->event_id &&
+        NULL != a_event->header_key && NULL != a_event->header_value )
     {
         service_fingerprint_http_header( &camera_fingerprint,
                                          a_event->header_key,

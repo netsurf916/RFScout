@@ -554,11 +554,10 @@ static const char *history_tag( const hotspot_history_entry_t *a_entry,
                                 hotspots_view_tone_t *a_tone )
 {
     const bool camera = HOTSPOT_STATUS_YELLOW == a_entry->status &&
-                        0U != ( a_entry->camera_evidence &
-                                ( RFSCOUT_SERVICE_CAMERA_HINT | RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE ) );
+                        0U != ( a_entry->camera_evidence & ( RFSCOUT_SERVICE_CAMERA_HINT |
+                                                             RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE ) );
     const bool green = HOTSPOT_STATUS_GREEN == a_entry->status;
-    *a_tone = camera ? HOTSPOTS_TONE_ACTIVE
-                    : green ? HOTSPOTS_TONE_GOOD : HOTSPOTS_TONE_LIMITED;
+    *a_tone = camera ? HOTSPOTS_TONE_ACTIVE : green ? HOTSPOTS_TONE_GOOD : HOTSPOTS_TONE_LIMITED;
     return camera ? "CAM" : green ? "OK" : "LTD";
 }
 
@@ -791,10 +790,8 @@ static const char *history_empty_text( void )
 
 /* ---- Detail ------------------------------------------------------------------------------ */
 
-static void describe_status( hotspot_status_t a_status,
-                             bool a_camera,
-                             char *a_line,
-                             size_t a_capacity )
+static void
+describe_status( hotspot_status_t a_status, bool a_camera, char *a_line, size_t a_capacity )
 {
     if( a_camera && HOTSPOT_STATUS_YELLOW == a_status )
     {
@@ -1060,9 +1057,8 @@ render_history_detail( const hotspot_history_entry_t *a_entry, size_t a_index, c
               rfscout_wifi_station_auth_label( a_entry->auth_mode ) );
     describe_status( a_entry->status,
                      HOTSPOT_STATUS_YELLOW == a_entry->status &&
-                         0U != ( a_entry->camera_evidence &
-                                 ( RFSCOUT_SERVICE_CAMERA_HINT |
-                                   RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE ) ),
+                         0U != ( a_entry->camera_evidence & ( RFSCOUT_SERVICE_CAMERA_HINT |
+                                                              RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE ) ),
                      lines[ 2 ],
                      UI_LINE_MAX );
     if( 0 != a_entry->validated_utc )
