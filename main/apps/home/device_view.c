@@ -546,10 +546,8 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
             snprintf( a_value, a_capacity, "%s", on_off( breadcrumbs_enabled() ) );
             break;
         case DEVICE_ITEM_BREADCRUMB_RETENTION:
-            snprintf( a_value,
-                      a_capacity,
-                      "%s",
-                      breadcrumbs_retention_name( breadcrumbs_retention() ) );
+            snprintf(
+                a_value, a_capacity, "%s", breadcrumbs_retention_name( breadcrumbs_retention() ) );
             break;
         case DEVICE_ITEM_GPS_MOVEMENT:
             snprintf( a_value, a_capacity, "%u m", (unsigned)config->gps_movement_m );

@@ -99,9 +99,8 @@ static bool settings_valid( const void *a_record )
     const uint8_t *record = a_record;
     /* V1 stores a segment count in bytes 2/3: do not reinterpret it. */
     return record[ 1 ] <= 1U &&
-           ( 1U == record[ 0 ] ||
-             ( BREADCRUMB_SETTINGS_VERSION == record[ 0 ] &&
-               record[ 2 ] < (uint8_t)BREADCRUMB_RETENTION_COUNT ) );
+           ( 1U == record[ 0 ] || ( BREADCRUMB_SETTINGS_VERSION == record[ 0 ] &&
+                                    record[ 2 ] < (uint8_t)BREADCRUMB_RETENTION_COUNT ) );
 }
 
 static void load_settings( void )
@@ -264,8 +263,7 @@ static bool find_expired( const rfscout_media_entry_t *a_entry, void *a_context 
     breadcrumb_expiry_candidate_t *candidate = a_context;
     if( breadcrumb_filename_expired( a_entry->name, candidate->cutoff_utc ) )
     {
-        (void)snprintf(
-            candidate->filename, sizeof( candidate->filename ), "%s", a_entry->name );
+        (void)snprintf( candidate->filename, sizeof( candidate->filename ), "%s", a_entry->name );
         return false;
     }
     return true;
@@ -339,8 +337,8 @@ static void prune_poll( int64_t a_now_us )
     {
         const int outcome = prune_one( now_utc, retention );
         prune_pending = 0 != outcome;
-        next_prune_us = a_now_us + ( outcome > 0 ? BREADCRUMB_PRUNE_STEP_US
-                                                : BREADCRUMB_PRUNE_RETRY_US );
+        next_prune_us =
+            a_now_us + ( outcome > 0 ? BREADCRUMB_PRUNE_STEP_US : BREADCRUMB_PRUNE_RETRY_US );
     }
     else
     {
@@ -470,8 +468,8 @@ void breadcrumbs_poll( void )
         gps_rate_diagnostics_get( &filtered_speed_mps, &current_rate_ms, &target_rate_ms );
     float smoothed_speed = 0.0f;
     const bool filtered_valid = gps_filtered_speed_get( &smoothed_speed );
-    const float speed_mps = filtered_valid ? smoothed_speed
-                                         : ( gps.speed_valid ? gps.speed_mps : 0.0f );
+    const float speed_mps =
+        filtered_valid ? smoothed_speed : ( gps.speed_valid ? gps.speed_mps : 0.0f );
     geo_movement_gate_t next_gate = movement_gate;
     const bool moved = geo_movement_gate_accept(
         &next_gate, gps.latitude_deg, gps.longitude_deg, device_config_get()->gps_movement_m );
@@ -577,10 +575,11 @@ breadcrumb_retention_t breadcrumbs_retention_step( breadcrumb_retention_t a_curr
     {
         return BREADCRUMB_RETENTION_FOREVER;
     }
-    return (breadcrumb_retention_t)(
-        ( (unsigned)a_current +
-          ( a_direction > 0 ? 1U : (unsigned)BREADCRUMB_RETENTION_COUNT - 1U ) ) %
-        (unsigned)BREADCRUMB_RETENTION_COUNT );
+    return (breadcrumb_retention_t)( ( (unsigned)a_current +
+                                       ( a_direction > 0
+                                             ? 1U
+                                             : (unsigned)BREADCRUMB_RETENTION_COUNT - 1U ) ) %
+                                     (unsigned)BREADCRUMB_RETENTION_COUNT );
 }
 
 esp_err_t breadcrumbs_set_retention( breadcrumb_retention_t a_retention )

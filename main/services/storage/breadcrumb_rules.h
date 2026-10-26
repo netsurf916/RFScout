@@ -63,10 +63,8 @@ static inline int64_t breadcrumb_capture_interval_us( float a_speed_mps )
  * @brief Capture only after the speed interval and a movement event or 60-second heartbeat.
  * @details a_moved is calculated against a copy of the last queued movement gate.
  */
-static inline bool breadcrumb_capture_due( int64_t a_now_us,
-                                           int64_t a_last_us,
-                                           float a_speed_mps,
-                                           bool a_moved )
+static inline bool
+breadcrumb_capture_due( int64_t a_now_us, int64_t a_last_us, float a_speed_mps, bool a_moved )
 {
     if( 0 == a_last_us )
     {
@@ -85,8 +83,7 @@ static inline bool breadcrumb_capture_due( int64_t a_now_us,
 static inline bool breadcrumb_filename_date_valid( const char *a_name )
 {
     if( NULL == a_name || strlen( a_name ) != sizeof( "breadcrumbs-2026-10-25.jsonl" ) - 1U ||
-        0 != strncmp( a_name, "breadcrumbs-", 12U ) ||
-        a_name[ 16 ] != '-' || a_name[ 19 ] != '-' ||
+        0 != strncmp( a_name, "breadcrumbs-", 12U ) || a_name[ 16 ] != '-' || a_name[ 19 ] != '-' ||
         0 != strcmp( &a_name[ 22 ], ".jsonl" ) )
     {
         return false;
@@ -102,21 +99,17 @@ static inline bool breadcrumb_filename_date_valid( const char *a_name )
     }
     const unsigned year = (unsigned)( a_name[ 12 ] - '0' ) * 1000U +
                           (unsigned)( a_name[ 13 ] - '0' ) * 100U +
-                          (unsigned)( a_name[ 14 ] - '0' ) * 10U +
-                          (unsigned)( a_name[ 15 ] - '0' );
-    const unsigned month = (unsigned)( a_name[ 17 ] - '0' ) * 10U +
-                           (unsigned)( a_name[ 18 ] - '0' );
-    const unsigned day = (unsigned)( a_name[ 20 ] - '0' ) * 10U +
-                         (unsigned)( a_name[ 21 ] - '0' );
+                          (unsigned)( a_name[ 14 ] - '0' ) * 10U + (unsigned)( a_name[ 15 ] - '0' );
+    const unsigned month =
+        (unsigned)( a_name[ 17 ] - '0' ) * 10U + (unsigned)( a_name[ 18 ] - '0' );
+    const unsigned day = (unsigned)( a_name[ 20 ] - '0' ) * 10U + (unsigned)( a_name[ 21 ] - '0' );
     if( year < 1970U || month < 1U || month > 12U )
     {
         return false;
     }
-    static const unsigned days[] = { 31U, 28U, 31U, 30U, 31U, 30U,
-                                     31U, 31U, 30U, 31U, 30U, 31U };
-    const unsigned max_day = days[ month - 1U ] +
-                             ( month == 2U && year % 4U == 0U &&
-                               ( year % 100U != 0U || year % 400U == 0U ) );
+    static const unsigned days[] = { 31U, 28U, 31U, 30U, 31U, 30U, 31U, 31U, 30U, 31U, 30U, 31U };
+    const unsigned max_day = days[ month - 1U ] + ( month == 2U && year % 4U == 0U &&
+                                                    ( year % 100U != 0U || year % 400U == 0U ) );
     return day >= 1U && day <= max_day;
 }
 

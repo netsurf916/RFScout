@@ -174,8 +174,7 @@ static void select_menu_item( void )
     }
     /* Trip and breadcrumb settings persist through their own services. */
     if( ESP_OK == result && GPS_SETTING_RESET_TRIP != menu_item &&
-        GPS_SETTING_BREADCRUMBS != menu_item &&
-        GPS_SETTING_BREADCRUMB_RETENTION != menu_item )
+        GPS_SETTING_BREADCRUMBS != menu_item && GPS_SETTING_BREADCRUMB_RETENTION != menu_item )
     {
         result = device_config_save();
     }
