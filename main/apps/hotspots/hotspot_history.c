@@ -44,6 +44,7 @@ typedef struct
     int64_t utc;
     int8_t rssi;
     hotspot_status_t status;
+    uint32_t camera_evidence;
     bool location_valid;
     double latitude;
     double longitude;
@@ -182,6 +183,7 @@ static void apply_characterization( const history_record_t *a_record )
         memcpy( entry->colo, a_record->colo, sizeof( entry->colo ) );
     }
     entry->status = a_record->status;
+    entry->camera_evidence = a_record->camera_evidence;
     entry->validated_utc = a_record->utc;
     entry->rssi = a_record->rssi;
     ++entry->successes;
@@ -319,6 +321,11 @@ static int format_record( void *a_context, size_t a_index, char *a_line, size_t 
             a_line, a_capacity, length, ",\"status\":\"%s\"", status_name( record->status ) );
         length = format_network(
             a_line, a_capacity, length, &record->network, record->public_ip, record->colo );
+        length = media_journal_printf( a_line,
+                                       a_capacity,
+                                       length,
+                                       ",\"camera_evidence\":%lu",
+                                       (unsigned long)record->camera_evidence );
     }
     if( record->location_valid )
     {
@@ -353,6 +360,11 @@ static int format_summary( void *a_context, size_t a_index, char *a_line, size_t
                                    (unsigned long)entry->successes );
     length = format_network(
         a_line, a_capacity, length, &entry->network, entry->public_ip, entry->colo );
+    length = media_journal_printf( a_line,
+                                   a_capacity,
+                                   length,
+                                   ",\"camera_evidence\":%lu",
+                                   (unsigned long)entry->camera_evidence );
     if( entry->bounds.valid )
     {
         length = media_journal_printf( a_line,
@@ -429,6 +441,10 @@ static void parse_network( const cJSON *a_root, history_record_t *a_record )
               "%s",
               NULL != public_ip ? public_ip : "" );
     snprintf( a_record->colo, sizeof( a_record->colo ), "%s", NULL != colo ? colo : "" );
+    a_record->camera_evidence = json_number( a_root, "camera_evidence", &value ) &&
+                                            value >= 0.0 && value <= (double)UINT32_MAX
+                                        ? (uint32_t)value
+                                        : 0U;
 }
 
 /** Replace an entry's epoch with a compacted summary. */
@@ -444,6 +460,7 @@ static void apply_summary( const cJSON *a_root, const history_record_t *a_record
     memcpy( entry->public_ip, a_record->public_ip, sizeof( entry->public_ip ) );
     memcpy( entry->colo, a_record->colo, sizeof( entry->colo ) );
     entry->status = a_record->status;
+    entry->camera_evidence = a_record->camera_evidence;
     entry->validated_utc = a_record->utc;
     entry->rssi = a_record->rssi;
     double value = 0.0;
@@ -848,6 +865,7 @@ void hotspot_history_record_result( const rfscout_wifi_station_bss_t *a_bss,
     fill_identity( &record, HISTORY_RECORD_CHARACTERIZATION, a_bss, a_gps );
     record.rssi = a_result->start_rssi;
     record.status = a_result->outcome;
+    record.camera_evidence = a_result->camera_evidence;
     record.network = ( hotspot_history_network_t ){
         .gateway = a_result->gateway,
         .netmask = a_result->netmask,

@@ -33,6 +33,7 @@ typedef struct
     rfscout_connectivity_probe_state_t state;
     esp_err_t error;
     int http_status;
+    uint32_t camera_evidence; /**< Metadata flags only; zero is inconclusive. */
     char public_ip[ RFSCOUT_CONNECTIVITY_PROBE_PUBLIC_IP_MAX_LENGTH + 1U ];
     char colo[ RFSCOUT_CONNECTIVITY_PROBE_COLO_MAX_LENGTH + 1U ];
 } rfscout_connectivity_probe_status_t;
@@ -47,6 +48,14 @@ esp_err_t connectivity_probe_init( void );
  * @details SUCCEEDED means HTTP 200; public egress IP and Cloudflare colo are parsed from the body.
  */
 esp_err_t connectivity_probe_begin( uint32_t a_timeout_ms );
+
+/**
+ * @brief One bounded local HTTP HEAD request to the supplied DHCP gateway on port 80.
+ * @details Only caller-authorized, directly connected gateways may be supplied. No
+ *          URL path enumeration, credentials, body downloads, redirects or subnet scan.
+ *          Camera evidence is suggestive, never an authorization or device identity.
+ */
+esp_err_t connectivity_probe_begin_camera( uint32_t a_gateway, uint32_t a_timeout_ms );
 
 /** @brief Copy the latest probe status into caller-owned storage. */
 void connectivity_probe_status( rfscout_connectivity_probe_status_t *a_status );

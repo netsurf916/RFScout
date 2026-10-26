@@ -1,8 +1,10 @@
 # Hotspots service fingerprinting (experimental design)
 
-This page describes an **unwired prototype and proposed integration**, not an implemented
-Hotspots feature. Current connection, UI, settings, journals and automatic checking
-remain as documented in [Hotspots](apps/HOTSPOTS.md).
+This page documents an **experimental, bounded local HTTP probe** plus the metadata
+classifier and proposed later integration. On a Hotspots LIMITED connection,
+the app now sends one HTTP HEAD request to the same-subnet DHCP gateway
+during its normal station-session window. No wider network discovery exists yet.
+See [Hotspots](apps/HOTSPOTS.md) for the live UI contract.
 
 ## Purpose and independent evidence
 
@@ -49,11 +51,37 @@ The current recognition literals are intentionally tiny illustrative heuristics,
 into a surveillance alert. Host regression coverage is in
 `tests/test_service_fingerprint.py`.
 
+## First gateway-only probe and CAM presentation (experimental)
+
+After either NTP timeout or HTTPS failure has produced a LIMITED result, a
+single asynchronous HTTP `HEAD /` request is attempted against the DHCP gateway
+on port 80, with a 2.5-second request timeout and 3.5-second scheduler guard.
+The gateway must be on the connected subnet. The probe reuses the existing
+framework-managed connectivity-probe worker, cancels on app exit, never
+follows redirects, submits credentials, downloads response bodies, attempts
+additional endpoints, or scans other LAN hosts. It cannot establish that the
+gateway is the observed BSSID/AP: gateway service identity is separate.
+
+The existing bounded metadata classifier evaluates only the HTTP status and
+response headers. An explicit camera/ONVIF server or authentication banner
+produces tentative camera evidence. **Generic HTTP, HTTP 401, or JPEG alone does
+not produce CAM.** Only a connection that already failed Internet verification
+(LTD / internal YELLOW) may display the three-character **CAM** overlay. The
+underlying connectivity result, reason, and diagnostics remain LIMITED, and
+the detail view states `CAM - gateway camera hint (LTD)`. Camera metadata
+is saved as optional numeric `camera_evidence` in history characterization
+records; older history with no field remains compatible. CAM is a heuristic
+indication, **not proof** of a camera, surveillance, ONVIF compliance, or AP identity.
+
+A nonresponsive gateway, a camera on another LAN address, HTTPS-only camera,
+or a camera that does not supply recognizable HEAD headers remains LTD. More
+complete service discovery is deliberately deferred.
+
 ## Proposed integrations (not implemented)
 
-1. Define a separate opt-in, explicitly authorized network/device scope.
-   Do not add passive observation results to that scope automatically.
-   Preserve existing Hotspots automatic connectivity checks unchanged.
+1. Introduce a separate opt-in target selection and authorization mechanism
+   for any expansion beyond the currently connected DHCP gateway; do not scan
+   arbitrary subnet hosts or automatically expand passive observation targets.
 2. Add a bounded, cancellable, framework-owned local discovery adapter,
    activated only during the existing station-session check window and stopped
    before a new monitor sweep. Avoid arbitrary subnet-wide scanning.

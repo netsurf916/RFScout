@@ -39,7 +39,8 @@ typedef struct
     uint8_t bssid[ 6 ];
     char ssid[ RFSCOUT_WIFI_STATION_SSID_MAX_LENGTH + 1U ];
     int32_t auth_mode;
-    hotspot_status_t status; /**< GREEN or YELLOW */
+    hotspot_status_t status; /**< GREEN or YELLOW; CAM is a display annotation. */
+    uint32_t camera_evidence; /**< Optional gateway service evidence for the latest check. */
     int64_t validated_utc;   /**< latest successful check; 0 when the time was unknown */
     uint32_t successes;
     int8_t rssi; /**< RSSI when the latest successful check started */

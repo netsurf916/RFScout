@@ -11,6 +11,7 @@ WIRELESS = ROOT / "main/services/wireless"
 
 HARNESS = r'''
 #include "service_fingerprint.h"
+#include "camera_probe_rules.h"
 #include <assert.h>
 #include <string.h>
 
@@ -125,6 +126,24 @@ int main(void)
     service_fingerprint_dns_sd(&result, NULL, 4);
     service_fingerprint_ws_device_type(&result, NULL, 3);
     assert(result.evidence == 0);
+
+    /* LTD-only gateway probing never leaves the directly connected subnet. */
+    const uint32_t client = 0x6401A8C0U;  /* 192.168.1.100 on ESP32 */
+    const uint32_t mask = 0x00FFFFFFU;    /* 255.255.255.0 on ESP32 */
+    const uint32_t gateway = 0x0101A8C0U; /* 192.168.1.1 */
+    assert(camera_probe_gateway_eligible(client, mask, gateway));
+    assert(!camera_probe_gateway_eligible(client, mask, 0U));
+    assert(!camera_probe_gateway_eligible(client, mask, client));
+    assert(!camera_probe_gateway_eligible(client, mask, 0x0100A8C0U));
+    assert(!camera_probe_gateway_eligible(client, 0U, gateway));
+
+    /* Generic web/auth and JPEG are not enough to call a gateway CAM. */
+    assert(!camera_probe_camera_hint(0U));
+    assert(!camera_probe_camera_hint(RFSCOUT_SERVICE_HTTP |
+                                     RFSCOUT_SERVICE_AUTH_CHALLENGE));
+    assert(!camera_probe_camera_hint(RFSCOUT_SERVICE_MEDIA_RESPONSE));
+    assert(camera_probe_camera_hint(RFSCOUT_SERVICE_CAMERA_HINT));
+    assert(camera_probe_camera_hint(RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE));
     return 0;
 }
 '''
