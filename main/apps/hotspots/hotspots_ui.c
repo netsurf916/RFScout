@@ -311,7 +311,15 @@ static const char *entry_tag( const hotspot_entry_t *a_entry, hotspots_view_tone
     if( HOTSPOT_STAGE_NONE != stage )
     {
         *a_tone = HOTSPOTS_TONE_ACTIVE;
-        return HOTSPOT_STAGE_JOIN == stage ? "JOIN" : "HTTPS";
+        if( HOTSPOT_STAGE_JOIN == stage )
+        {
+            return "JOIN";
+        }
+        if( HOTSPOT_STAGE_CAMERA == stage )
+        {
+            return "PROBE";
+        }
+        return "HTTPS";
     }
     if( a_entry->manual_requested )
     {
