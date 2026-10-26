@@ -46,10 +46,47 @@ int main(void)
     service_fingerprint_ws_device_type(&result, device, sizeof(device) - 1);
     assert(result.evidence == RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE);
 
+    /* XML local names are case-sensitive, unlike HTTP header fields. */
+    service_fingerprint_reset(&result);
+    const char lower_device[] = "networkvideotransmitter";
+    service_fingerprint_ws_device_type(&result, lower_device, sizeof(lower_device) - 1);
+    assert(!(result.evidence & RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE));
+    const char upper_device[] = "NetworkVideoTRANSMITTER";
+    service_fingerprint_ws_device_type(&result, upper_device, sizeof(upper_device) - 1);
+    assert(!(result.evidence & RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE));
+    service_fingerprint_ws_device_type(&result, device, sizeof(device) - 1);
+    assert(result.evidence & RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE);
+
     service_fingerprint_reset(&result);
     HEADER(result, "Content-Type", "image/jpeg");
     assert(result.evidence & RFSCOUT_SERVICE_MEDIA_RESPONSE);
     assert(!(result.evidence & RFSCOUT_SERVICE_CAMERA_HINT));
+
+    /* A MIME parameter may mention an image even if the response is plain text. */
+    service_fingerprint_reset(&result);
+    HEADER(result, "Content-Type", "text/plain; filename=image/jpeg");
+    assert(!(result.evidence & RFSCOUT_SERVICE_MEDIA_RESPONSE));
+    HEADER(result, "Content-Type", "application/json; note=multipart/x-mixed-replace");
+    assert(!(result.evidence & RFSCOUT_SERVICE_MEDIA_RESPONSE));
+    HEADER(result, "Content-Type", "application/image/jpeg");
+    assert(!(result.evidence & RFSCOUT_SERVICE_MEDIA_RESPONSE));
+    HEADER(result, "Content-Type", "image/jpegx");
+    assert(!(result.evidence & RFSCOUT_SERVICE_MEDIA_RESPONSE));
+
+    /* Media-type matching is ASCII case-insensitive with optional whitespace. */
+    service_fingerprint_reset(&result);
+    HEADER(result, "cOnTeNt-TyPe", "  IMAGE/JPEG ; charset=utf-8");
+    assert(result.evidence & RFSCOUT_SERVICE_MEDIA_RESPONSE);
+    service_fingerprint_reset(&result);
+    HEADER(result, "Content-Type", "\tMULTIPART/X-MIXED-REPLACE; boundary=frame");
+    assert(result.evidence & RFSCOUT_SERVICE_MEDIA_RESPONSE);
+
+    /* The supplied value need not be NUL-terminated. */
+    service_fingerprint_reset(&result);
+    const char bounded_type[] = {'i','m','a','g','e','/','j','p','e','g',';','x'};
+    service_fingerprint_http_header(&result, "Content-Type", 12U,
+                                    bounded_type, sizeof(bounded_type));
+    assert(result.evidence & RFSCOUT_SERVICE_MEDIA_RESPONSE);
 
     /* A body/URL mention does not count as a recognized header. */
     service_fingerprint_reset(&result);

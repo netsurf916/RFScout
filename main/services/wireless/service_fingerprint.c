@@ -38,6 +38,33 @@ static bool field_equals( const char *a_text, size_t a_length, const char *a_lit
     return true;
 }
 
+/** @brief ASCII HTTP optional whitespace, valid around a media-type token. */
+static bool is_http_ows( char a_value )
+{
+    return ' ' == a_value || '\t' == a_value;
+}
+
+/** @brief Match only the HTTP Content-Type media-type token, not any parameters. */
+static bool content_type_equals( const char *a_value, size_t a_length, const char *a_literal )
+{
+    size_t start = 0U;
+    size_t end = 0U;
+    while( start < a_length && is_http_ows( a_value[ start ] ) )
+    {
+        ++start;
+    }
+    end = start;
+    while( end < a_length && ';' != a_value[ end ] )
+    {
+        ++end;
+    }
+    while( end > start && is_http_ows( a_value[ end - 1U ] ) )
+    {
+        --end;
+    }
+    return field_equals( &a_value[ start ], end - start, a_literal );
+}
+
 /** @brief Find a bounded, case-insensitive phrase without assuming NUL termination. */
 static bool field_contains( const char *a_text, size_t a_length, const char *a_literal )
 {
@@ -108,8 +135,8 @@ void service_fingerprint_http_header( rfscout_service_fingerprint_t *a_result,
     }
 
     if( field_equals( a_name, a_name_length, "Content-Type" ) &&
-        ( field_contains( a_value, a_value_length, "image/jpeg" ) ||
-          field_contains( a_value, a_value_length, "multipart/x-mixed-replace" ) ) )
+        ( content_type_equals( a_value, a_value_length, "image/jpeg" ) ||
+          content_type_equals( a_value, a_value_length, "multipart/x-mixed-replace" ) ) )
     {
         a_result->evidence |= RFSCOUT_SERVICE_MEDIA_RESPONSE;
     }
@@ -144,7 +171,9 @@ void service_fingerprint_ws_device_type( rfscout_service_fingerprint_t *a_result
     {
         return;
     }
-    if( field_equals( a_local_name, a_local_name_length, "NetworkVideoTransmitter" ) )
+    static const char DEVICE_TYPE[] = "NetworkVideoTransmitter";
+    if( sizeof( DEVICE_TYPE ) - 1U == a_local_name_length &&
+        0 == memcmp( a_local_name, DEVICE_TYPE, sizeof( DEVICE_TYPE ) - 1U ) )
     {
         a_result->evidence |= RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE;
     }
