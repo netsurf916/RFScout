@@ -61,7 +61,7 @@ void service_fingerprint_dns_sd( rfscout_service_fingerprint_t *a_result,
  *          never pass an unparsed SOAP response as a device type.
  */
 void service_fingerprint_ws_device_type( rfscout_service_fingerprint_t *a_result,
-                                          const char *a_local_name,
-                                          size_t a_local_name_length );
+                                         const char *a_local_name,
+                                         size_t a_local_name_length );
 
 #endif // _RFSCOUT_SERVICE_FINGERPRINT_H_
