@@ -131,7 +131,10 @@ A manual **Recheck** or **Join with profile** bypasses the RSSI gates (not eligi
 `hotspots/sightings/hotspots-*.jsonl` using the existing `media_journal` writer and
 shared `observation_journal` envelope. Eligible means Open, OWE, supported secured
 with Known/Inferred usable credentials, or an exact BSSID/SSID/auth identity with
-previously validated History. Records contain capture-time monotonic milliseconds,
+previously validated History. While History is still replaying, supported secured
+observations are provisionally journaled as sightings, because a fleeting AP's
+previously validated result might not yet be loaded. These provisional records
+never grant credentials or change a check result. Records contain capture-time monotonic milliseconds,
 trusted UTC when available, BSSID, SSID, authentication/security, RSSI/channel and
 an optional fresh GPS point; no passwords or client IPs. The journal is distinct
 from validated History and is **not** interpreted as evidence of working Internet.
