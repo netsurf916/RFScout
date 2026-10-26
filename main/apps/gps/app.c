@@ -148,9 +148,9 @@ static void select_menu_item( void )
         case GPS_SETTING_BREADCRUMBS:
             result = breadcrumbs_set_enabled( !breadcrumbs_enabled() );
             break;
-        case GPS_SETTING_BREADCRUMB_FILES:
-            result = breadcrumbs_set_file_limit(
-                breadcrumbs_file_limit_step( breadcrumbs_file_limit(), 1 ) );
+        case GPS_SETTING_BREADCRUMB_RETENTION:
+            result = breadcrumbs_set_retention(
+                breadcrumbs_retention_step( breadcrumbs_retention(), 1 ) );
             break;
         case GPS_SETTING_MOVEMENT:
             result = device_config_set_gps_movement_m(
@@ -174,7 +174,7 @@ static void select_menu_item( void )
     }
     /* Trip and breadcrumb settings persist through their own services. */
     if( ESP_OK == result && GPS_SETTING_RESET_TRIP != menu_item &&
-        GPS_SETTING_BREADCRUMBS != menu_item && GPS_SETTING_BREADCRUMB_FILES != menu_item )
+        GPS_SETTING_BREADCRUMBS != menu_item && GPS_SETTING_BREADCRUMB_RETENTION != menu_item )
     {
         result = device_config_save();
     }

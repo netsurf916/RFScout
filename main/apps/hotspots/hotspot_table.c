@@ -107,32 +107,49 @@ static void remove_entry( hotspot_table_t *a_table, size_t a_index )
     memset( &a_table->entries[ a_table->count ], 0, sizeof( hotspot_entry_t ) );
 }
 
-static bool guest_accessible( const rfscout_wifi_station_bss_t *a_bss )
+/** @brief Hotspots-only capacity priority (smaller values are better). */
+static unsigned admission_tier( const rfscout_wifi_station_bss_t *a_bss,
+                                hotspot_credential_t a_credential )
 {
-    return RFSCOUT_WIFI_STATION_SECURITY_OPEN == a_bss->security ||
-           RFSCOUT_WIFI_STATION_SECURITY_OWE == a_bss->security;
+    if( RFSCOUT_WIFI_STATION_SECURITY_OPEN == a_bss->security ||
+        RFSCOUT_WIFI_STATION_SECURITY_OWE == a_bss->security )
+    {
+        return 1U;
+    }
+    if( RFSCOUT_WIFI_STATION_SECURITY_SECURED != a_bss->security ||
+        HOTSPOT_CREDENTIAL_UNSUPPORTED == a_credential || HOTSPOT_CREDENTIAL_OPEN == a_credential )
+    {
+        return 4U;
+    }
+    if( HOTSPOT_CREDENTIAL_KNOWN == a_credential || HOTSPOT_CREDENTIAL_INFERRED == a_credential )
+    {
+        return 2U;
+    }
+    return 3U;
 }
 
 /**
- * @brief Under capacity pressure, choose a not-yet-heard-in-this-sweep, unqueued victim.
- * @details Secured records yield to guest candidates; guests are never evicted for
- *          secured new arrivals. Older observations rank first, RSSI breaks age ties.
+ * @brief Under capacity pressure, choose the lowest-priority unqueued incumbent.
+ * @details Admit only if the incoming tier is at least as good as the victim's.
+ *          Least recently heard yields first; weaker RSSI and BSSID break ties.
+ *          A sighting in this sweep is not an absolute admission barrier.
  */
 static size_t eviction_victim( const hotspot_table_t *a_table,
                                const rfscout_wifi_station_bss_t *a_incoming,
+                               hotspot_credential_t a_credential,
                                uint32_t a_monitor_ms )
 {
-    const bool incoming_guest = guest_accessible( a_incoming );
+    const unsigned incoming_tier = admission_tier( a_incoming, a_credential );
     size_t victim = a_table->count;
     for( size_t index = 0U; index < a_table->count; ++index )
     {
         const hotspot_entry_t *entry = &a_table->entries[ index ];
-        if( entry->observed_sweep_id == a_table->sweep_id || entry->manual_requested )
+        if( entry->manual_requested )
         {
             continue;
         }
-        const bool entry_guest = guest_accessible( &entry->bss );
-        if( entry_guest && !incoming_guest )
+        const unsigned tier = admission_tier( &entry->bss, entry->credential );
+        if( tier < incoming_tier )
         {
             continue;
         }
@@ -142,13 +159,16 @@ static size_t eviction_victim( const hotspot_table_t *a_table,
             continue;
         }
         const hotspot_entry_t *current = &a_table->entries[ victim ];
-        const bool current_guest = guest_accessible( &current->bss );
+        const unsigned current_tier = admission_tier( &current->bss, current->credential );
         const uint32_t age = a_monitor_ms - entry->last_seen_ms;
         const uint32_t current_age = a_monitor_ms - current->last_seen_ms;
-        if( ( !entry_guest && current_guest ) ||
-            ( entry_guest == current_guest &&
+        if( tier > current_tier ||
+            ( tier == current_tier &&
               ( age > current_age ||
-                ( age == current_age && entry->bss.rssi < current->bss.rssi ) ) ) )
+                ( age == current_age &&
+                  ( entry->bss.rssi < current->bss.rssi ||
+                    ( entry->bss.rssi == current->bss.rssi &&
+                      memcmp( entry->bss.bssid, current->bss.bssid, 6U ) < 0 ) ) ) ) ) )
         {
             victim = index;
         }
@@ -178,7 +198,9 @@ void hotspot_table_begin_sweep( hotspot_table_t *a_table )
 esp_err_t hotspot_table_observe( hotspot_table_t *a_table,
                                  const rfscout_wifi_station_bss_t *a_bss,
                                  uint32_t a_monitor_ms,
-                                 const rfscout_gps_snapshot_t *a_gps )
+                                 const rfscout_gps_snapshot_t *a_gps,
+                                 hotspot_credential_t a_credential,
+                                 uint32_t a_profile_id )
 {
     if( NULL == a_table || !hotspot_bss_eligible( a_bss ) || 0U == a_table->sweep_id )
     {
@@ -189,7 +211,7 @@ esp_err_t hotspot_table_observe( hotspot_table_t *a_table,
     {
         if( HOTSPOT_TABLE_MAX_ENTRIES == a_table->count )
         {
-            const size_t victim = eviction_victim( a_table, a_bss, a_monitor_ms );
+            const size_t victim = eviction_victim( a_table, a_bss, a_credential, a_monitor_ms );
             if( victim == a_table->count )
             {
                 return ESP_ERR_NO_MEM;
@@ -212,6 +234,11 @@ esp_err_t hotspot_table_observe( hotspot_table_t *a_table,
     }
 
     entry->bss = *a_bss;
+    entry->credential = a_credential;
+    entry->profile_id = a_profile_id;
+    entry->credential_available = HOTSPOT_CREDENTIAL_OPEN == a_credential ||
+                                  HOTSPOT_CREDENTIAL_KNOWN == a_credential ||
+                                  HOTSPOT_CREDENTIAL_INFERRED == a_credential;
     entry->last_seen_ms = a_monitor_ms;
     entry->observed_sweep_id = a_table->sweep_id;
     entry->visible = true;

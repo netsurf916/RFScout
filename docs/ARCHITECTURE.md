@@ -271,13 +271,13 @@ Speaker output is a separate semantic service on the validated T-Embed I2S1 path
 
 ### Planned shared observation refactor (not yet implemented)
 
-PR #136 now reuses the existing Wi-Fi monitor and channel scheduler for Hotspots with a shared SSID, BSSID, RSN/AKM security-evidence parser. The app receives AP metadata through its app-session descriptor and a 64-item bounded callback queue, then updates its own 128-BSSID Live model on the app task. The old Hotspots 32-result station scan pipeline is no longer used. The app stops the monitor and quiesces callbacks before requesting framework-owned station association/TLS, restarting on the next monitor sweep. WiFi/BLE and Hotspots retain distinct app-session collections: Hotspots keeps its provisional 128-entry Live bound and OPEN/OWE admission preference; WiFi/BLE gets an app-specific, measured memory budget. No shared policy engine is required: small time/distance, RSSI and allocation-accounting helpers may be shared, while each app decides eviction eligibility and victim ranking.
+PR #136 now reuses the existing Wi-Fi monitor and channel scheduler for Hotspots with a shared SSID, BSSID, RSN/AKM security-evidence parser. The app receives AP metadata through its app-session descriptor and a 64-item bounded callback queue, then updates its own 128-BSSID Live model on the app task. The old Hotspots 32-result station scan pipeline is no longer used. The app stops the monitor and quiesces callbacks before requesting framework-owned station association/TLS, restarting on the next monitor sweep. WiFi/BLE and Hotspots retain distinct app-session collections: Hotspots keeps its provisional 128-entry Live bound with a four-tier security/credential-aware admission policy; WiFi/BLE gets an app-specific, measured memory budget. No shared policy engine is required: small time/distance, RSSI and allocation-accounting helpers may be shared, while each app decides eviction eligibility and victim ranking.
 
-Hotspots now uses last-observed timestamps, with an 8-second monitor-receive-time visibility window and independent configurable expiration (default 60 seconds), plus optional GPS coverage-distance expiry; station/network/TLS downtime advances neither clock. Sweep generations protect in-progress observations from capacity/distance eviction only, not UI visibility or expiration. WiFi/BLE still uses its independently configured source timeouts and awaits optional GPS-distance expiry. A capacity limit is an admission/memory target: apps first perform normal expiry and then iteratively evict eligible records according to their local policy; if no safe victim exists, the newcomer is rejected. RSSI is primarily a secondary ranking criterion under capacity pressure, not a blanket threshold for WiFi/BLE. Existing Hotspots protections for active checks/manual requests and WiFi/BLE multi-source identity lifetime must survive. Intentional monitoring interruptions for association and TLS must not create artificial expiration.
+Hotspots now uses last-observed timestamps, with an 8-second monitor-receive-time visibility window and independent configurable expiration (default 60 seconds), plus optional GPS coverage-distance expiry; station/network/TLS downtime advances neither clock. Sweep generations protect current observations from normal time/GPS expiration, not from capacity eviction, UI visibility or the separate timeout. WiFi/BLE still uses its independently configured source timeouts and awaits optional GPS-distance expiry. A capacity limit is an admission/memory target: apps first perform normal expiry and then iteratively evict eligible records according to their local policy; if no safe victim exists, the newcomer is rejected. RSSI is primarily a secondary ranking criterion under capacity pressure, not a blanket threshold for WiFi/BLE. Existing Hotspots protections for active checks/manual requests and WiFi/BLE multi-source identity lifetime must survive. Intentional monitoring interruptions for association and TLS must not create artificial expiration.
 
 The existing `media_journal` abstraction remains the sole SD path. A common versioned observation-record envelope should carry source, identity, time, RSSI and optional location, with app-specific characterization or surveillance fields maintained separately. Journaling should be aggregated/rate-limited, not one record per received beacon/advertisement. Hotspots History should use bounded SD-backed nearest-entry queries and bounded view scratch rather than replaying the whole characterized population into live PSRAM; credential matching, epoch semantics, compaction and removable-media recovery still need correct query behavior. The WiFi/BLE redundant Reset detections menu action was retired on this branch because app transitions already clear session state.
 
-Shared building blocks now exist on this branch: allocation-free `wifi_ap_observation` decoding, opt-in `radio_monitor` AP callbacks through the app-session descriptor, `observation_retention` time/GPS/budget arithmetic, and a versioned `observation_journal` JSONL formatter. **Hotspots discovery and timestamp-based retention have migrated**, including a conservative station-auth translation helper, but WiFi/BLE resource/GPS migration, shared journal adoption, and bounded SD-backed Hotspots History are outstanding. Full validation still requires ESP-IDF builds, tests and hardware measurements of PSRAM, internal free heap and largest allocatable blocks across scanning, association and TLS. Full migration still requires host tests, ESP-IDF builds, and hardware measurements of PSRAM, internal free heap and largest allocatable blocks across scanning, association and TLS.
+Shared building blocks now exist on this branch: allocation-free `wifi_ap_observation` decoding, opt-in `radio_monitor` AP callbacks through the app-session descriptor, `observation_retention` time/GPS/budget arithmetic, and a versioned `observation_journal` JSONL formatter. PR #137 stamps extended AP observations with monotonic receive time at the radio boundary and provides an app-task `observation_metadata_enrich` helper for optional trusted UTC and fresh GPS. The radio callback never reads GPS or performs storage I/O. Hotspots resolves profiles and writes bounded eligible sightings to a separate shared-journal-format collection **before** its own Live admission policy; those unvalidated sightings do not populate or alter characterized History. **Hotspots discovery and timestamp-based retention have migrated**, including a conservative station-auth translation helper, but WiFi/BLE resource/GPS migration, shared journal adoption, and bounded SD-backed Hotspots History are outstanding. Full validation still requires ESP-IDF builds, tests and hardware measurements of PSRAM, internal free heap and largest allocatable blocks across scanning, association and TLS. Full migration still requires host tests, ESP-IDF builds, and hardware measurements of PSRAM, internal free heap and largest allocatable blocks across scanning, association and TLS.
 
 The Wi-Fi and BLE monitor services normalize passive observations for the [WiFi / BLE app](apps/WIFI_BLE.md). Their app-owned collection/index lives in the active app session and both collectors must quiesce before that session is reclaimed.
 
@@ -300,7 +300,7 @@ Durable state uses logical owner/key namespaces:
 - `system/config` — ordinary device-wide policy such as display/power behavior, themes, timezone/clock presentation, SD logging, app enablement/startup choice, global audio policy/gains, and alert policy;
 - `app/<persistence_key>/config` — descriptor-confined app preference overrides;
 - `system/time.policy` — retired (automatic time sync needs no stored mode); device configuration deletes it at startup;
-- `system/breadcrumbs` — breadcrumb enablement/retention policy; and
+- `system/breadcrumbs` — breadcrumb enablement and UTC-day retention policy (legacy file count ignored); and
 - additional bounded `system/*` or app-scoped records owned by their service/application.
 
 These are logical API names, not literal filesystem paths. The persistent-store service hashes logical keys and app identities into filesystem-safe private paths.
@@ -433,7 +433,7 @@ Current layout:
 | Owner | Collection | Contents |
 | --- | --- | --- |
 | `system` | `logs` | Rotating structured logs `rfscout-00.log` … `rfscout-99.log` |
-| `system` | `breadcrumbs` | Optional movement-triggered GPS breadcrumb journal `breadcrumbs-*.jsonl` |
+| `system` | `breadcrumbs` | Append-only UTC-day GPS breadcrumbs `breadcrumbs-YYYY-MM-DD.jsonl` |
 | `audio` (Recorder) | `recordings` | Recorder 16-bit mono PCM WAV files |
 | `wardrive` (Wardriving) | `captures` | Wardriving capture files |
 | `hotspots` (Hotspots) | `history` | Successful-characterization journal `hotspots-*.jsonl` |
@@ -468,12 +468,36 @@ Storage has no persistent state of its own. Formatting the card is intentionally
 
 Rotating logs use `rfscout-00.log` through `rfscout-99.log` in `system/logs`, up to 4 MiB each, while attempting to preserve at least 64 MiB free. The conservative hardware-tested SD baseline remains a FAT-compatible SanDisk card of 32 GB or less.
 
-Breadcrumb recording is independent from the ordinary SD logging toggle and requires fresh valid GPS position **and GPS UTC**. A breadcrumb is queued once the receiver has moved at least the shared movement trigger since the previous breadcrumb, no more than once per second and never twice for the same GPS UTC second; nothing is written while stationary. Each record carries UTC, latitude/longitude, raw speed when fresh, and the GPS service's filtered speed and current/target receiver update intervals when available. Breadcrumbs use a `system/breadcrumbs` journal of 64 KiB segments; the retained-file setting is the journal's segment count. The Home and GPS menus access the same service-owned recording and retention settings.
+Breadcrumb recording is independent from ordinary SD logging. Fresh GPS
+position and valid GPS UTC are mandatory, including for stationary
+confirmations. The existing GPS low-pass filtered velocity (accessible without
+CASIC rate-control support) selects an interpolated **60-to-1-second** minimum
+interval, reaching 1 Hz at **10 m/s**. A record requires that interval and either
+the shared movement threshold or a **60-second stationary heartbeat**. UTC-second
+deduplication is absolute; workers only queue when bounded space is available.
+The recorder stores GPS UTC/position, raw speed and optional filtered speed and
+receiver-rate diagnostics.
+
+The shared media store appends each record to
+`system/breadcrumbs/breadcrumbs-YYYY-MM-DD.jsonl` with the **record's** UTC day,
+not the host's current wall time. Home/GPS expose the same persisted retention
+choices: **1 day / 1 week / 1 month / Forever**, defaulting to Forever on
+upgrades. Using recently verified GPS/NTP UTC, the existing breadcrumb worker
+removes at most one old dated file per cleanup pass after its *entire UTC day*
+is outside the configured window. Cleanup never deletes legacy numbered/CSV,
+unrecognized, future-dated or active files, and suspends when UTC or SD media
+is unavailable. The old breadcrumb On/Off setting is migrated without
+reinterpreting its obsolete segment-count bytes.
+
+The full behavioral contract and test plan are in
+[breadcrumb policy](BREADCRUMB_POLICY.md). No new worker or shared retention
+framework is introduced.
 
 ### SD journals
 
-Every SD event log (breadcrumbs, WiFi/BLE surveillance locations, Hotspots history) uses
-the shared `media_journal` service rather than its own file handling. A journal is a numbered
+Hotspots History, WiFi/BLE surveillance-location journals and Hotspots sightings use
+the shared `media_journal` service; GPS breadcrumbs instead use a UTC-date-named,
+append-only JSONL file via the same underlying `media_store` arbitration. A journal is a numbered
 series of segments in one media collection, `<prefix>-<8 hex digits>.jsonl`, where each line
 is one JSON object with a `type` field, an optional integer `utc`, and `lat`/`lon` with seven
 decimals when the record has a location. Callers own buffering, formatting, and scheduling;
@@ -509,7 +533,7 @@ live receiver bounds and distances, Wardriving packet metadata, and structured-l
 fields continue to see every fix.
 
 The setting lives in system configuration and appears in Home **Device Settings** and GPS
-Settings. Like the other receiver-dependent rows (breadcrumbs, retained files, GPS Timepulse),
+Settings. Like the other receiver-dependent rows (breadcrumbs, GPS Timepulse),
 it is shown unavailable and refuses changes until a GPS receiver is detected.
 
 

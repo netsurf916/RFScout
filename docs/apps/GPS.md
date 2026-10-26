@@ -46,7 +46,25 @@ independent of the time required to obtain a GPS position fix.
 
 ## Breadcrumb sampling and storage
 
-Breadcrumb logging remains a system service even if the GPS app is closed or disabled. A breadcrumb is recorded once the receiver has moved at least the shared **Movement trigger** distance since the previous one, at most once per second and never twice in the same GPS UTC second; nothing is recorded while stationary. Each record needs a fresh valid position and GPS UTC. Retention counts 64 KiB journal segments in `system/breadcrumbs`. Enablement, retention, and the movement trigger can be changed from either Home or GPS Settings. See [Architecture](../ARCHITECTURE.md#gps-movement-trigger) for the shared trigger and journal format.
+Breadcrumbs remain a system service even when the GPS app is closed. A record
+requires fresh GPS position and GPS UTC; a stale fix never produces a stationary
+heartbeat. The recorder uses the GPS service's already low-pass-filtered speed
+(independent of the receiver-rate-control capability) to interpolate an interval
+between **60 seconds at 0 m/s** and **1 second at 10 m/s and faster**. A sample
+is queued once the interval passes **and** either the shared **Movement trigger**
+distance has been crossed or a **60-second stationary heartbeat** is due.
+There is at most one record per GPS UTC second. The movement anchor advances only
+after successful queueing. Details and speed knots are in
+[the breadcrumb policy](../BREADCRUMB_POLICY.md).
+
+Records are appended as JSONL to `system/breadcrumbs/breadcrumbs-YYYY-MM-DD.jsonl`
+using the record's GPS UTC date. **Breadcrumb retention** is editable in Home and
+GPS Settings: **1 day, 1 week, 1 month, Forever** (default). The existing breadcrumb
+On/Off preference survives upgrades; an old segment-count setting is ignored.
+Finite retention removes only recognized, fully expired UTC-day JSONL files in
+bounded background-worker steps when GPS/NTP-verified UTC is available. It never
+automatically removes old numbered or CSV formats, and does not delete a partial
+cutoff day. See the [architecture](../ARCHITECTURE.md#gps-movement-trigger).
 
 ## Receiver timepulse and LED ring
 

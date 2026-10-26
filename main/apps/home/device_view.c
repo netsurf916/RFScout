@@ -63,7 +63,7 @@
 #define DEVICE_ITEM_POWER_BUTTON 25U
 #define DEVICE_ITEM_POWER_POLICY 26U
 #define DEVICE_ITEM_BREADCRUMBS 27U
-#define DEVICE_ITEM_BREADCRUMB_FILES 28U
+#define DEVICE_ITEM_BREADCRUMB_RETENTION 28U
 #define DEVICE_ITEM_HOLD_SHORTCUT 29U
 #define DEVICE_ITEM_GPS_TIMEOUT 30U
 #define DEVICE_ITEM_GPS 31U
@@ -271,9 +271,9 @@ static char next_morse_character( char a_current, int a_direction )
 /** Rows that act on receiver data are unavailable until a GPS receiver is detected. */
 static bool item_available( unsigned a_item )
 {
-    const bool needs_receiver =
-        DEVICE_ITEM_BREADCRUMBS == a_item || DEVICE_ITEM_BREADCRUMB_FILES == a_item ||
-        DEVICE_ITEM_GPS_MOVEMENT == a_item || DEVICE_ITEM_GPS_TIMEPULSE == a_item;
+    const bool needs_receiver = DEVICE_ITEM_BREADCRUMBS == a_item ||
+                                DEVICE_ITEM_GPS_MOVEMENT == a_item ||
+                                DEVICE_ITEM_GPS_TIMEPULSE == a_item;
     return !needs_receiver || gps_detected();
 }
 
@@ -366,8 +366,8 @@ static const char *item_label( unsigned a_item )
             return "Power policy";
         case DEVICE_ITEM_BREADCRUMBS:
             return "Breadcrumbs";
-        case DEVICE_ITEM_BREADCRUMB_FILES:
-            return "Breadcrumb files";
+        case DEVICE_ITEM_BREADCRUMB_RETENTION:
+            return "Breadcrumb retention";
         case DEVICE_ITEM_GPS_TIMEOUT:
             return "GPS timeout";
         case DEVICE_ITEM_GPS_TIMEPULSE:
@@ -545,8 +545,9 @@ static void item_value( unsigned a_item, char *a_value, size_t a_capacity )
         case DEVICE_ITEM_BREADCRUMBS:
             snprintf( a_value, a_capacity, "%s", on_off( breadcrumbs_enabled() ) );
             break;
-        case DEVICE_ITEM_BREADCRUMB_FILES:
-            snprintf( a_value, a_capacity, "%u", (unsigned)breadcrumbs_file_limit() );
+        case DEVICE_ITEM_BREADCRUMB_RETENTION:
+            snprintf(
+                a_value, a_capacity, "%s", breadcrumbs_retention_name( breadcrumbs_retention() ) );
             break;
         case DEVICE_ITEM_GPS_MOVEMENT:
             snprintf( a_value, a_capacity, "%u m", (unsigned)config->gps_movement_m );
@@ -1548,30 +1549,21 @@ static void toggle_breadcrumbs( void )
                        !old_value ? 1 : 0 );
 }
 
-static void adjust_breadcrumb_file_limit( int a_delta )
+static void adjust_breadcrumb_retention( int a_delta )
 {
-    const uint16_t old_limit = breadcrumbs_file_limit();
-    const uint16_t new_limit = breadcrumbs_file_limit_step( old_limit, a_delta );
-    if( new_limit == old_limit )
-    {
-        return;
-    }
-
-    const esp_err_t result = breadcrumbs_set_file_limit( new_limit );
-    if( ESP_OK != result )
+    const breadcrumb_retention_t old_value = breadcrumbs_retention();
+    const breadcrumb_retention_t next = breadcrumbs_retention_step( old_value, a_delta );
+    if( ESP_OK != breadcrumbs_set_retention( next ) )
     {
         save_error = true;
-        emit_device_event( RFSCOUT_EVENT_ERROR, (int32_t)result );
+        emit_device_event( RFSCOUT_EVENT_ERROR, 1 );
         return;
     }
-
-    char old_text[ 8 ];
-    char new_text[ 8 ];
-    snprintf( old_text, sizeof( old_text ), "%u", (unsigned)old_limit );
-    snprintf( new_text, sizeof( new_text ), "%u", (unsigned)new_limit );
-    log_config_change( "breadcrumbs.file_limit", old_text, new_text );
+    log_config_change( "breadcrumbs.retention",
+                       breadcrumbs_retention_name( old_value ),
+                       breadcrumbs_retention_name( next ) );
     save_error = false;
-    emit_device_event( RFSCOUT_EVENT_NAVIGATE, ( a_delta > 0 ) ? 1 : -1 );
+    emit_device_event( RFSCOUT_EVENT_NAVIGATE, a_delta > 0 ? 1 : -1 );
 }
 
 static void adjust_alert_mode( int a_delta )
@@ -1753,10 +1745,6 @@ static void adjust_selected( int a_delta )
     {
         toggle_breadcrumbs();
     }
-    else if( DEVICE_ITEM_BREADCRUMB_FILES == selected_item )
-    {
-        adjust_breadcrumb_file_limit( a_delta );
-    }
     else if( DEVICE_ITEM_GPS_TIMEPULSE == selected_item )
     {
         if( ESP_OK == device_config_set_gps_timepulse( !config->gps_timepulse_enabled ) )
@@ -1774,6 +1762,10 @@ static void adjust_selected( int a_delta )
     else if( DEVICE_ITEM_HOLD_SHORTCUT == selected_item )
     {
         toggle_hold_shortcut();
+    }
+    else if( DEVICE_ITEM_BREADCRUMB_RETENTION == selected_item )
+    {
+        adjust_breadcrumb_retention( a_delta );
     }
     else if( DEVICE_ITEM_GPS_MOVEMENT == selected_item )
     {

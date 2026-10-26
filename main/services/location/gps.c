@@ -1722,6 +1722,18 @@ esp_err_t gps_trip_reset( void )
     return ESP_OK;
 }
 
+bool gps_filtered_speed_get( float *a_speed_mps )
+{
+    if( NULL == a_speed_mps || !policy_filtered_speed_valid ||
+        esp_timer_get_time() - policy_filtered_speed_updated_us >
+            (int64_t)GPS_FIX_STALE_MS * 1000LL )
+    {
+        return false;
+    }
+    *a_speed_mps = (float)policy_filtered_speed_mps;
+    return true;
+}
+
 bool gps_rate_diagnostics_get( float *a_filtered_speed_mps,
                                int *a_current_interval_ms,
                                int *a_target_interval_ms )

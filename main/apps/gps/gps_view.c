@@ -76,9 +76,9 @@ uint32_t gps_view_next_led_color( uint32_t a_rgb )
 
 bool gps_view_setting_available( unsigned a_setting )
 {
-    const bool needs_receiver =
-        GPS_SETTING_BREADCRUMBS == a_setting || GPS_SETTING_BREADCRUMB_FILES == a_setting ||
-        GPS_SETTING_MOVEMENT == a_setting || GPS_SETTING_TIMEPULSE == a_setting;
+    const bool needs_receiver = GPS_SETTING_BREADCRUMBS == a_setting ||
+                                GPS_SETTING_MOVEMENT == a_setting ||
+                                GPS_SETTING_TIMEPULSE == a_setting;
     return !needs_receiver || gps_detected();
 }
 
@@ -102,7 +102,7 @@ void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_menu_error 
             [GPS_SETTING_LED_COLOR] = "LED color",
             [GPS_SETTING_KEEP_AWAKE] = "Stay awake",
             [GPS_SETTING_BREADCRUMBS] = "Breadcrumbs",
-            [GPS_SETTING_BREADCRUMB_FILES] = "Retained files",
+            [GPS_SETTING_BREADCRUMB_RETENTION] = "Breadcrumb retention",
             [GPS_SETTING_MOVEMENT] = "Movement trigger",
             [GPS_SETTING_TIMEOUT] = "GPS timeout",
             [GPS_SETTING_TIMEPULSE] = "GPS Timepulse",
@@ -143,9 +143,11 @@ void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_menu_error 
                     (void)snprintf(
                         text, sizeof( text ), "%s", breadcrumbs_enabled() ? "On" : "Off" );
                     break;
-                case GPS_SETTING_BREADCRUMB_FILES:
-                    (void)snprintf(
-                        text, sizeof( text ), "%u", (unsigned)breadcrumbs_file_limit() );
+                case GPS_SETTING_BREADCRUMB_RETENTION:
+                    (void)snprintf( text,
+                                    sizeof( text ),
+                                    "%s",
+                                    breadcrumbs_retention_name( breadcrumbs_retention() ) );
                     break;
                 case GPS_SETTING_MOVEMENT:
                     (void)snprintf(

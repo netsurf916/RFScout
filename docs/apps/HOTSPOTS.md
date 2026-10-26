@@ -18,7 +18,7 @@ Hotspots finds nearby Wi-Fi access points, checks whether each one provides Inte
 
 Hotspots now uses the same framework-owned `radio_monitor` and channel scheduler as WiFi/BLE. The shared beacon/probe-response decoder provides BSSID, SSID, receiver channel, RSSI and conservatively validated authentication evidence. A **64-item bounded callback queue** coalesces AP identities on the Wi-Fi callback task; the app task drains it into the separate **128-BSSID Live table**, with no station scan-result array or 32-result upstream ceiling. Queue overflow is counted and surfaced as telemetry (`ap_queue_drops`); admission failures are counted (`ap_rejected`). This queue is not a population ceiling: it is drained repeatedly during a sweep. The monitor is stopped and its callbacks quiesced **before** station association, DHCP/NTP and TLS. After each check, Hotspots stops the connectivity probe, releases the network session, and retries failed teardown before allowing another monitor sweep. A failed driver stop, unfinished callback, TLS worker, or station event drain never counts as a successful handoff.
 
-Hotspots now uses **Expire after** (30–300 s, default 60 s) measured on a logical clock that only advances while the monitor is receiving, so connection/TLS interruptions do not falsely age nearby BSSIDs. The location eviction rule remains optional, defaulting to 500 m beyond observed coverage bounds. Normal expiration removes overdue, unqueued entries not heard during the current sweep; on capacity pressure, guest-capable BSSIDs preferentially reclaim not-yet-heard secured records, then older/weak-RSSI eligible records. Already-observed-in-sweep and queued-manual records are never displaced, and admission is rejected when no eligible victim exists. The app settings format version changes intentionally; old missed-scan settings are rejected and return to defaults.
+Hotspots now uses **Expire after** (30–300 s, default 60 s) measured on a logical clock that only advances while the monitor is receiving, so connection/TLS interruptions do not falsely age nearby BSSIDs. The location eviction rule remains optional, defaulting to 500 m beyond observed coverage bounds. Normal expiration removes overdue, unqueued entries not heard during the current sweep. At capacity, Hotspots first reuses that normal expiration, then admits new BSSIDs by the four-tier credential-aware policy described below. A current-sweep sighting is no longer absolutely protected from capacity eviction; queued manual work remains protected. Admission is rejected when no eligible victim exists. The app settings format version changes intentionally; old missed-scan settings are rejected and return to defaults.
 
 **Still planned elsewhere in #136:** bounded SD-backed History projections, common observation journal serialization, and WiFi/BLE's own memory-budget/GPS policy. Hotspots-specific characterization remains journaled through `media_journal`, and Live eviction never deletes History or saved credentials.
 
@@ -32,13 +32,54 @@ Hotspots alternates bounded **scan** and **check** phases, following Hotspotter'
 2. The app updates last-seen timestamps during the sweep without clearing existing visibility. After the monitor has stopped and callbacks have quiesced, it expires stale/distant records, resolves saved profiles and may perform bounded Open/OWE/credentialed checks in its check window. The radio is never in monitor mode during association or HTTPS/TLS.
 3. The next monitor sweep begins after the check window and successful connectivity-probe/station cleanup plus settling. Teardown failure enters a retry phase; result/history are recorded only once.
 
+**Observation pipeline (PR #137).** The shared radio monitor stamps each normalized AP
+observation with monotonic receive time. On the app task, common metadata enrichment
+associates trusted device UTC and a fresh GPS position when available, without querying
+the GPS or SD card in the Wi-Fi receive callback. Hotspots resolves the existing
+saved-credential state, optionally queues a bounded SD sighting, and only then
+considers admission to the 128-entry Live list. Live rejection or eviction never
+suppresses a qualifying sighting. The receiver-time metadata is distinct from
+Hotspots' logical monitor clock, which still excludes association/TLS downtime.
+
 Each BSSID has an independent Live observation session. **Visibility is timestamp-driven, never based on a missed-sweep count:** an AP is displayed as recently visible when last observed within 8 seconds of active monitor receive time, spanning more than two full 3.2-second sweeps without blinking at a sweep boundary. After that it is shown as absent/dimmed, but its Live record is retained until **Expire after** (default 60 seconds of monitor receive time) or geographic eviction removes it. Association/TLS downtime does not advance either clock. A BSSID whose SSID, security or auth mode changes starts a fresh Live session. No **Missed scans** setting or scan-count expiration policy remains.
 
 **Live retention.** A second, independent eviction rule removes an *absent* BSSID when the receiver is more than the configured **Evict beyond** distance (default 500 m, Off or 100–2,000 m in 100 m increments) beyond the BSSID's estimated observed coverage. For that Live observation session, fresh GPS at an observed BSSID expands a latitude/longitude bounding box. The location estimate is the box center; its conservative coverage radius is half the larger great-circle diagonal measured in metres. Eviction occurs when the distance from the current fix to the center, minus the coverage radius, exceeds the configured distance. A BSSID seen in the current monitor sweep is never distance-evicted, and without a fresh GPS fix or a valid Live location box the distance rule is skipped entirely. The Live box is independent of durable History location bounds.
 
-**Capacity protection.** The Live table has a provisional hard maximum of 128 allocated BSSID entries, independent of the bounded AP callback queue. Each monitor sweep tags fresh sightings only for admission protection and GPS distance eviction; the marker never controls UI visibility or time expiration. Only entries not heard this sweep and not queued for manual work can yield to a new AP when full. Admission prefers evicting absent **secured** BSSIDs before absent **OPEN/OWE** BSSIDs and otherwise prioritizes oldest observations, using weaker RSSI as a tie-breaker. A secured newcomer cannot displace an Open/OWE entry. When all entries are protected, the new candidate is rejected rather than growing memory. Order of receipt is not a complete scan ranking; some co-visible APs may be unrepresented under saturated capacity. The cap is subject to measured PSRAM/internal RAM and HTTPS/TLS peak headroom; neither the Live ceiling nor the distance policy limits the SD History index.
+**Capacity protection.** The Live table has a provisional hard ceiling of 128 BSSID
+entries, independent of the callback queue, persistent History and saved profiles.
+When full, Hotspots first applies ordinary time/GPS expiration to unprotected records.
+If there is still no space, it considers a victim only in an equal or lower-priority
+tier than the newcomer:
 
+| Tier (highest first) | BSSID classification |
+| --- | --- |
+| 1 | Open or OWE |
+| 2 | Supported WPA2/WPA3 personal with an unambiguous Known or Inferred saved profile |
+| 3 | Supported personal without automatically usable credentials (None, Ambiguous, Unmatched or Rejected) |
+| 4 | Unsupported or unknown authentication (WEP, WPA1, 802.1X and other nonjoinable modes) |
+
+The **lowest-priority eligible tier yields first**, then the oldest `last_seen_ms`
+(logical monitor time), then the weaker RSSI, then the lowest BSSID byte order.
+A newly observed BSSID may replace an equal-tier incumbent even if the incumbent
+was heard in the current sweep; normal expiration still protects current-sweep
+sightings. Manual requests cannot be capacity-evicted. A running network check
+cannot overlap active scanning and therefore cannot be a capacity victim.
+At less than 128 entries, any named BSSID is admitted regardless of tier.
+
+For incoming admission Hotspots reuses the same saved-profile resolver as normal
+connectivity checks (exact BSSID, compatible auth, recent same-SSID overlap,
+optional GPS/history evidence). A non-secret saved-profile snapshot is refreshed
+before each monitor sweep and after credential changes; surviving entries are
+resolved after each scan. When evidence cannot establish Known/Inferred, the
+incoming secured BSSID is conservatively assigned tier 3, or tier 4 when
+unsupported. No password is copied into the Live table or read during admission.
+The existing radio monitor, callback queue and shared retention policy are unchanged.
+
+The cap remains subject to measured PSRAM/internal RAM and HTTPS/TLS peak headroom.
 Eviction of Live state never deletes saved network profiles or persisted History.
+Repeated same-tier discoveries at saturation can replace freshly observed records;
+an admission hysteresis rule is intentionally deferred until real dense-area
+captures show whether churn is problematic.
 
 ## Credentials
 
@@ -86,9 +127,29 @@ A manual **Recheck** or **Join with profile** bypasses the RSSI gates (not eligi
 
 ## History
 
-Every green or yellow check is appended to the app's SD journal, `hotspots/history/hotspots-*.jsonl` (256 KiB segments, up to 32 retained), using the shared [SD journal](../ARCHITECTURE.md#sd-journals) format. Records hold the BSSID, SSID, auth mode, status, RSSI, gateway, netmask, DNS servers, gateway MAC, public IP and colo, and the receiver position when a fresh fix exists. Client IP addresses and credentials are never written.
+**Independent observation sightings.** Hotspots journals eligible *observations* in
+`hotspots/sightings/hotspots-*.jsonl` using the existing `media_journal` writer and
+shared `observation_journal` envelope. Eligible means Open, OWE, supported secured
+with Known/Inferred usable credentials, or an exact BSSID/SSID/auth identity with
+previously validated History. While History is still replaying, supported secured
+observations are provisionally journaled as sightings, because a fleeting AP's
+previously validated result might not yet be loaded. These provisional records
+never grant credentials or change a check result. Records contain capture-time monotonic milliseconds,
+trusted UTC when available, BSSID, SSID, authentication/security, RSSI/channel and
+an optional fresh GPS point; no passwords or client IPs. The journal is distinct
+from validated History and is **not** interpreted as evidence of working Internet.
+A bounded app-session cache of 128 identities emits an initial sighting once per
+visit and further sightings when GPS movement reaches the existing configured
+movement trigger. Under exceptional churn beyond 128 distinct identities the
+oldest cached identity may be logged again. Sightings batch at up to 32 records,
+flush using the shared journal service, and retain up to 32 segments of 256 KiB
+without an in-RAM replay index or compaction. SD failures can delay or lose
+sightings and are logged to device diagnostics; callback overflow can also lose
+observations. Recording is best-effort, not an audit-grade guarantee.
 
-- **Locations.** While a BSSID with history is visible, a `location` record is added each time the receiver has moved at least the system [movement trigger](../ARCHITECTURE.md#gps-movement-trigger) from that BSSID's previous logged point. A BSSID characterized without a fix therefore gains its location from the first later sighting with one. In memory each BSSID keeps the latitude/longitude range of its samples; its location is the center of that range, which can be recomputed from the journal.
+**Validated history.** Every green or yellow check is appended to the app's SD journal, `hotspots/history/hotspots-*.jsonl` (256 KiB segments, up to 32 retained), using the shared [SD journal](../ARCHITECTURE.md#sd-journals) format. Records hold the BSSID, SSID, auth mode, status, RSSI, gateway, netmask, DNS servers, gateway MAC, public IP and colo, and the receiver position when a fresh fix exists. Client IP addresses and credentials are never written.
+
+- **Locations.** For a previously characterized BSSID, a `location` record is added independently of Live admission each time the receiver has moved at least the system [movement trigger](../ARCHITECTURE.md#gps-movement-trigger) from that BSSID's previous logged point. A BSSID characterized without a fix therefore gains its location from the first later sighting with one. In memory each BSSID keeps the latitude/longitude range of its samples; its location is the center of that range, which can be recomputed from the journal.
 - **Epochs.** A change of SSID, auth mode, gateway, netmask or DNS servers starts a new epoch for that BSSID: its counts and location range restart, so a re-addressed or repurposed access point is not merged with its past.
 - **Loading.** Replay runs in the background, a bounded number of lines per poll, while Live scanning and drawing continue. The footer shows `LOAD n%`; checks start once replay completes. Malformed lines are skipped and counted (`n BAD` on the History footer); a torn final line is ignored.
 - **Compaction.** When replay reads more than 1 MiB, or when **Compact history** is chosen in Settings, the journal is rewritten as one `summary` record per BSSID (latest details, success count, and location range) through the journal's atomic compaction. Records arriving meanwhile are kept and applied afterwards.

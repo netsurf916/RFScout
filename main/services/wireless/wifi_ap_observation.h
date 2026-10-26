@@ -50,6 +50,7 @@ typedef struct
     int8_t rssi;
     rfscout_wifi_ap_security_t security;
     rfscout_wifi_ap_auth_t auth;
+    uint32_t seen_ms; /**< Capture-time monotonic milliseconds, stamped by the radio service. */
 } rfscout_wifi_ap_observation_t;
 
 /**
