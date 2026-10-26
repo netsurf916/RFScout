@@ -68,6 +68,12 @@ int main(void)
     service_fingerprint_ws_device_type(&result, prefix_device, sizeof(prefix_device) - 1);
     assert(!(result.evidence & RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE));
 
+    /* Same length, one altered non-case character: never classify near matches. */
+    const char same_length_typo[] = "NetworkVideoTransmittar";
+    assert(sizeof(same_length_typo) == sizeof(device));
+    service_fingerprint_ws_device_type(&result, same_length_typo, sizeof(same_length_typo) - 1);
+    assert(!(result.evidence & RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE));
+
     service_fingerprint_reset(&result);
     HEADER(result, "Content-Type", "image/jpeg");
     assert(result.evidence & RFSCOUT_SERVICE_MEDIA_RESPONSE);
