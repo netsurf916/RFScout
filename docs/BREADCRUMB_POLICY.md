@@ -1,6 +1,6 @@
-# Breadcrumb cadence and retention — design baseline
+# Breadcrumb cadence and retention — implementation contract
 
-**State: planned; implementation pending.** This PR is stacked on PR #137, whose daily UTC JSONL writer is the prerequisite. This document defines target behavior, not current firmware behavior.
+**State: implemented on draft PR #139; firmware CI and hardware verification pending.** This PR is stacked on PR #137, whose UTC-dated JSONL writer is the prerequisite. This document defines intended behavior and acceptance criteria.
 
 ## Goals
 

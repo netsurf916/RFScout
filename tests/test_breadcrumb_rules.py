@@ -1,4 +1,4 @@
-"""Host regression: UTC daily breadcrumb filenames and velocity cadence."""
+"""Host regression: UTC daily breadcrumb names, retention cutoff and capture cadence."""
 import calendar
 import datetime
 import pathlib
@@ -28,19 +28,46 @@ int main(int argc, char **argv)
     assert(strcmp(name, "breadcrumbs-2026-10-26.jsonl") == 0);
     assert(!breadcrumb_daily_filename(last, name, 8U));
     assert(!breadcrumb_daily_filename(last, NULL, sizeof(name)));
-    assert(breadcrumb_capture_interval_us(0.0f) == 5000000LL);
-    assert(breadcrumb_capture_interval_us(2.99f) == 5000000LL);
-    assert(breadcrumb_capture_interval_us(3.0f) == 2000000LL);
-    assert(breadcrumb_capture_interval_us(14.99f) == 2000000LL);
-    assert(breadcrumb_capture_interval_us(15.0f) == 1000000LL);
-    assert(breadcrumb_capture_interval_us(60.0f) == 1000000LL);
+    assert(breadcrumb_capture_interval_us(0.0f) == 60000000LL);
+    assert(breadcrumb_capture_interval_us(0.5f) == 45000000LL);
+    assert(breadcrumb_capture_interval_us(1.0f) == 30000000LL);
+    assert(breadcrumb_capture_interval_us(2.0f) == 12000000LL);
+    assert(breadcrumb_capture_interval_us(3.0f) == 6000000LL);
+    assert(breadcrumb_capture_interval_us(5.0f) == 3000000LL);
+    assert(breadcrumb_capture_interval_us(7.0f) == 2000000LL);
+    assert(breadcrumb_capture_interval_us(10.0f) == 1000000LL);
+    assert(breadcrumb_capture_interval_us(20.0f) == 1000000LL);
+    assert(breadcrumb_capture_interval_us(-1.0f) == 60000000LL);
+    assert(breadcrumb_capture_interval_us(1.5f) == 21000000LL);
+    assert(breadcrumb_capture_interval_us(6.0f) == 2500000LL);
+
+    /* The movement trigger cannot outrun the speed-controlled cadence. */
+    assert(breadcrumb_capture_due(1000000LL, 0, 0.0f, true));
+    assert(!breadcrumb_capture_due(1500000LL, 1000000LL, 10.0f, true));
+    assert(breadcrumb_capture_due(2000000LL, 1000000LL, 10.0f, true));
+    assert(!breadcrumb_capture_due(12000000LL, 1000000LL, 2.0f, false));
+    assert(!breadcrumb_capture_due(50000000LL, 1000000LL, 0.0f, false));
+    assert(breadcrumb_capture_due(61000000LL, 1000000LL, 0.0f, false));
+    assert(breadcrumb_capture_due(61000000LL, 1000000LL, 10.0f, false));
+    assert(!breadcrumb_capture_due(900000LL, 1000000LL, 10.0f, true));
+
+    /* Full UTC days only. Keep the cutoff date; ignore unknown/legacy/future. */
+    assert(breadcrumb_filename_expired("breadcrumbs-2026-10-23.jsonl", last - 86400));
+    assert(!breadcrumb_filename_expired("breadcrumbs-2026-10-24.jsonl", last - 86400));
+    assert(!breadcrumb_filename_expired("breadcrumbs-2026-10-25.jsonl", last - 86400));
+    assert(!breadcrumb_filename_expired("breadcrumbs-2026-10-26.jsonl", last - 86400));
+    assert(!breadcrumb_filename_expired("breadcrumbs-00000001.jsonl", last - 86400));
+    assert(!breadcrumb_filename_expired("breadcrumbs-2026-02-30.jsonl", last - 86400));
+    assert(!breadcrumb_filename_expired("breadcrumbs-2025-02-29.jsonl", last - 86400));
+    assert(breadcrumb_filename_expired("breadcrumbs-2024-02-29.jsonl", last - 86400));
+    assert(!breadcrumb_filename_expired("breadcrumbs-2026-10-23.csv", last - 86400));
     return 0;
 }
 '''
 
 
 class BreadcrumbRulesTests(unittest.TestCase):
-    def test_daily_utc_names_and_speed_tiers(self):
+    def test_daily_utc_names_retention_and_sampling(self):
         compiler = shutil.which("cc")
         if compiler is None:
             self.skipTest("C compiler unavailable")

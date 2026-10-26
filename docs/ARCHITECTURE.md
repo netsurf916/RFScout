@@ -300,7 +300,7 @@ Durable state uses logical owner/key namespaces:
 - `system/config` — ordinary device-wide policy such as display/power behavior, themes, timezone/clock presentation, SD logging, app enablement/startup choice, global audio policy/gains, and alert policy;
 - `app/<persistence_key>/config` — descriptor-confined app preference overrides;
 - `system/time.policy` — retired (automatic time sync needs no stored mode); device configuration deletes it at startup;
-- `system/breadcrumbs` — breadcrumb enablement policy (legacy retention value ignored); and
+- `system/breadcrumbs` — breadcrumb enablement and UTC-day retention policy (legacy file count ignored); and
 - additional bounded `system/*` or app-scoped records owned by their service/application.
 
 These are logical API names, not literal filesystem paths. The persistent-store service hashes logical keys and app identities into filesystem-safe private paths.
@@ -468,15 +468,30 @@ Storage has no persistent state of its own. Formatting the card is intentionally
 
 Rotating logs use `rfscout-00.log` through `rfscout-99.log` in `system/logs`, up to 4 MiB each, while attempting to preserve at least 64 MiB free. The conservative hardware-tested SD baseline remains a FAT-compatible SanDisk card of 32 GB or less.
 
-Breadcrumb recording is independent from ordinary SD logging and requires a fresh GPS position and valid GPS UTC. Samples must pass the existing shared GPS movement trigger. The sampling minimum increases with velocity: 5 seconds below 3 mph, 2 seconds from 3 to below 15 mph, and 1 second at or above 15 mph, using the GPS service's filtered speed when available (otherwise fresh raw speed). Never write more than one per GPS UTC second or while stationary. Records retain UTC, latitude/longitude, raw speed and, when available, filtered speed and current/target GPS receiver update intervals. Each record is appended through the shared `media_store` API to `system/breadcrumbs/breadcrumbs-YYYY-MM-DD.jsonl` using the record's GPS UTC date. Files from previous days, including earlier numbered and CSV formats, are **never automatically pruned**. Legacy stored file-limit preferences are ignored; Home and GPS now display the informational archive policy `All` rather than offering deletion limits. On media errors, best-effort truncation avoids appending after an incomplete JSON line and the existing write-failure disable policy still applies.
+Breadcrumb recording is independent from ordinary SD logging. Fresh GPS
+position and valid GPS UTC are mandatory, including for stationary
+confirmations. The existing GPS low-pass filtered velocity (accessible without
+CASIC rate-control support) selects an interpolated **60-to-1-second** minimum
+interval, reaching 1 Hz at **10 m/s**. A record requires that interval and either
+the shared movement threshold or a **60-second stationary heartbeat**. UTC-second
+deduplication is absolute; workers only queue when bounded space is available.
+The recorder stores GPS UTC/position, raw speed and optional filtered speed and
+receiver-rate diagnostics.
 
-**Planned breadcrumb policy follow-up:** See the
-[breadcrumb design baseline](BREADCRUMB_POLICY.md) for a 60-to-1-second
-filtered-velocity cadence, an optional-position-change-independent 60-second
-fresh-fix heartbeat, and editable 1/7/30-day or Forever retention of
-UTC-dated breadcrumb files. These changes are **not yet implemented** in
-PR #137; the parent branch's 5/2/1-second policy and archive-All UI remain
-current until this follow-up lands.
+The shared media store appends each record to
+`system/breadcrumbs/breadcrumbs-YYYY-MM-DD.jsonl` with the **record's** UTC day,
+not the host's current wall time. Home/GPS expose the same persisted retention
+choices: **1 day / 1 week / 1 month / Forever**, defaulting to Forever on
+upgrades. Using recently verified GPS/NTP UTC, the existing breadcrumb worker
+removes at most one old dated file per cleanup pass after its *entire UTC day*
+is outside the configured window. Cleanup never deletes legacy numbered/CSV,
+unrecognized, future-dated or active files, and suspends when UTC or SD media
+is unavailable. The old breadcrumb On/Off setting is migrated without
+reinterpreting its obsolete segment-count bytes.
+
+The full behavioral contract and test plan are in
+[breadcrumb policy](BREADCRUMB_POLICY.md). No new worker or shared retention
+framework is introduced.
 
 ### SD journals
 
@@ -518,7 +533,7 @@ live receiver bounds and distances, Wardriving packet metadata, and structured-l
 fields continue to see every fix.
 
 The setting lives in system configuration and appears in Home **Device Settings** and GPS
-Settings. Like the other receiver-dependent rows (breadcrumbs, retained files, GPS Timepulse),
+Settings. Like the other receiver-dependent rows (breadcrumbs, GPS Timepulse),
 it is shown unavailable and refuses changes until a GPS receiver is detected.
 
 
