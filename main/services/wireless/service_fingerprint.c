@@ -136,8 +136,8 @@ void service_fingerprint_dns_sd( rfscout_service_fingerprint_t *a_result,
 }
 
 void service_fingerprint_ws_device_type( rfscout_service_fingerprint_t *a_result,
-                                          const char *a_local_name,
-                                          size_t a_local_name_length )
+                                         const char *a_local_name,
+                                         size_t a_local_name_length )
 {
     if( ( NULL == a_result ) || ( NULL == a_local_name ) ||
         ( a_local_name_length > RFSCOUT_SERVICE_METADATA_MAX_LENGTH ) )
