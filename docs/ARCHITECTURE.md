@@ -300,7 +300,7 @@ Durable state uses logical owner/key namespaces:
 - `system/config` — ordinary device-wide policy such as display/power behavior, themes, timezone/clock presentation, SD logging, app enablement/startup choice, global audio policy/gains, and alert policy;
 - `app/<persistence_key>/config` — descriptor-confined app preference overrides;
 - `system/time.policy` — retired (automatic time sync needs no stored mode); device configuration deletes it at startup;
-- `system/breadcrumbs` — breadcrumb enablement/retention policy; and
+- `system/breadcrumbs` — breadcrumb enablement policy (legacy retention value ignored); and
 - additional bounded `system/*` or app-scoped records owned by their service/application.
 
 These are logical API names, not literal filesystem paths. The persistent-store service hashes logical keys and app identities into filesystem-safe private paths.
@@ -433,7 +433,7 @@ Current layout:
 | Owner | Collection | Contents |
 | --- | --- | --- |
 | `system` | `logs` | Rotating structured logs `rfscout-00.log` … `rfscout-99.log` |
-| `system` | `breadcrumbs` | Optional movement-triggered GPS breadcrumb journal `breadcrumbs-*.jsonl` |
+| `system` | `breadcrumbs` | Append-only UTC-day GPS breadcrumbs `breadcrumbs-YYYY-MM-DD.jsonl` |
 | `audio` (Recorder) | `recordings` | Recorder 16-bit mono PCM WAV files |
 | `wardrive` (Wardriving) | `captures` | Wardriving capture files |
 | `hotspots` (Hotspots) | `history` | Successful-characterization journal `hotspots-*.jsonl` |
@@ -468,12 +468,13 @@ Storage has no persistent state of its own. Formatting the card is intentionally
 
 Rotating logs use `rfscout-00.log` through `rfscout-99.log` in `system/logs`, up to 4 MiB each, while attempting to preserve at least 64 MiB free. The conservative hardware-tested SD baseline remains a FAT-compatible SanDisk card of 32 GB or less.
 
-Breadcrumb recording is independent from the ordinary SD logging toggle and requires fresh valid GPS position **and GPS UTC**. A breadcrumb is queued once the receiver has moved at least the shared movement trigger since the previous breadcrumb, no more than once per second and never twice for the same GPS UTC second; nothing is written while stationary. Each record carries UTC, latitude/longitude, raw speed when fresh, and the GPS service's filtered speed and current/target receiver update intervals when available. Breadcrumbs use a `system/breadcrumbs` journal of 64 KiB segments; the retained-file setting is the journal's segment count. The Home and GPS menus access the same service-owned recording and retention settings.
+Breadcrumb recording is independent from ordinary SD logging and requires a fresh GPS position and valid GPS UTC. Samples must pass the existing shared GPS movement trigger. The sampling minimum increases with velocity: 5 seconds below 3 mph, 2 seconds from 3 to below 15 mph, and 1 second at or above 15 mph, using the GPS service's filtered speed when available (otherwise fresh raw speed). Never write more than one per GPS UTC second or while stationary. Records retain UTC, latitude/longitude, raw speed and, when available, filtered speed and current/target GPS receiver update intervals. Each record is appended through the shared `media_store` API to `system/breadcrumbs/breadcrumbs-YYYY-MM-DD.jsonl` using the record's GPS UTC date. Files from previous days, including earlier numbered and CSV formats, are **never automatically pruned**. Legacy stored file-limit preferences are ignored; Home and GPS now display the informational archive policy `All` rather than offering deletion limits. On media errors, best-effort truncation avoids appending after an incomplete JSON line and the existing write-failure disable policy still applies.
 
 ### SD journals
 
-Every SD event log (breadcrumbs, WiFi/BLE surveillance locations, Hotspots history) uses
-the shared `media_journal` service rather than its own file handling. A journal is a numbered
+Hotspots History, WiFi/BLE surveillance-location journals and Hotspots sightings use
+the shared `media_journal` service; GPS breadcrumbs instead use a UTC-date-named,
+append-only JSONL file via the same underlying `media_store` arbitration. A journal is a numbered
 series of segments in one media collection, `<prefix>-<8 hex digits>.jsonl`, where each line
 is one JSON object with a `type` field, an optional integer `utc`, and `lat`/`lon` with seven
 decimals when the record has a location. Callers own buffering, formatting, and scheduling;
