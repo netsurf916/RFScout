@@ -18,8 +18,7 @@
 
 /* T-Embed's LilyGO factory firmware uses the same Gray-code transition table.
    A return along the previous edge cancels bounce; diagonal jumps count zero. */
-static const int8_t transitions[ 16 ] = { 0, -1, 1, 0, 1, 0, 0, -1,
-                                         -1, 0, 0, 1, 0, 1, -1, 0 };
+static const int8_t transitions[ 16 ] = { 0, -1, 1, 0, 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, -1, 0 };
 
 /** @brief Accumulate signed navigation without overflowing during stalled UI polls. */
 static void ROTARY_ISR_ATTR accumulate_step( rotary_decoder_t *a_decoder, int8_t a_step )
