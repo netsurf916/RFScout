@@ -223,16 +223,21 @@ Usable external PSRAM is a supported-platform requirement. RFScout does not sile
 
 Applications consume semantic input rather than GPIOs. The current T-Embed provider maps the rotary encoder/buttons into signed navigation, Select, Long Press, and the global Hold shortcut. There is no global Back input semantic; explicit Back rows and app-local actions are ordinary Select-driven UI choices. The dedicated user/power key remains a separate power-policy input.
 
-The T-Embed provider accepts only valid A/B quadrature half-steps between opposite latch
-states; contact bounce returning to the same latch is ignored, and missed/invalid transitions
-are discarded and resynchronized instead of being assigned a direction. Decoded detents
-accumulate as a signed net movement until the application consumes input. Each consumption
-takes and clears the entire accumulated value, delivering at most one signed navigation
-action; opposite turns cancel and fast spins cannot leave a delayed backlog. This favors
-a responsive UI over replaying every detent during slow application transitions. Input lock
-and the existing screen-wake gesture policy intentionally discard pending/partial movement.
-The existing two-edge detent calibration is retained; interrupt latency and occasional
-direction anomalies still require validation on the supported T-Embed board.
+The T-Embed rotary provider decodes GPIO A/B transitions with the original 16-entry
+Gray-code lookup table used by LilyGO's factory example and the earlier RFScout input
+service. A repeated A/B state or a two-bit (diagonal) jump contributes zero signed
+movement; unlike the stricter PR #138 decoder, an invalid jump does not force a
+resynchronization. At either 00 or 11 latch, two accumulated signed transitions produce
+one navigation step. Completed steps accumulate as net signed movement until consumed:
+each input poll takes and clears that movement, reporting only -1, 0 or +1. Opposite
+turns cancel, avoiding a backlog of delayed application switches during a busy poll.
+Input lock and wake-gesture consumption clear pending and fractional movement.
+
+The two-transition, 00/11 latch calibration matches the board's LilyGO `TWO03`
+reference. No hardware GPIO glitch filter or per-edge SD diagnostic trace is enabled
+by this decoder. Hardware testing indicates better navigation than the previous
+strict-state decoder, but does not establish that wake and input-lock regressions
+are resolved.
 
 The user-facing gesture vocabulary is intentional:
 
@@ -266,7 +271,14 @@ Long Press remains an app-level semantic. In the shared rotary text-entry compon
 
 Application lock is transient runtime state. It is cleared when an application transition commits and is not a distinct persistence/resource-ownership domain. A shared status-bar indicator renders an **A-marked lock** for application lock, distinct from the ordinary input-lock symbol. When both locks are active, the stronger Input Lock symbol temporarily supersedes the A-lock; the app-lock indicator returns when input is unlocked.
 
-Edge capture survives temporary main-loop/display stalls. Input used only to wake a dimmed/off display is consumed before normal navigation or power handling.
+Interrupt-driven decoding retains accumulated input through temporary main-loop/display
+stalls. Input used only to wake a dimmed/off display is consumed before normal
+navigation or power handling.
+
+**Known wake follow-up:** Restoring the original decoder changes rotary behavior,
+but not the display's 200 ms wake guard or input-lock wake ordering. See
+[rotary wake and input-lock follow-up](INPUT_WAKE_REGRESSION.md) for the remaining
+race hypotheses and hardware verification matrix.
 
 Common presentation overlays are platform-owned. Applications render their view, while power/system-event/app-modal presentation is composed by the shared display service so application lifecycle state is not replaced by a transient notification.
 
