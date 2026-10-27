@@ -46,6 +46,10 @@ void input_consume_wake( void );
 bool input_get( rfscout_input_event_t *a_event );
 bool input_locked( void );
 void input_set_locked( bool a_locked );
+
+/** Main-loop-only, bounded SD diagnostic marker; never call from a GPIO ISR.
+ *  stage is a fixed program literal and value/aux describe the event. */
+void input_trace_note( const char *a_stage, int32_t a_value, int32_t a_aux );
 rfscout_input_provider_t input_provider( void );
 
 #endif // _RFSCOUT_INPUT_H_

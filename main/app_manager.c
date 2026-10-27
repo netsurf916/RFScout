@@ -395,6 +395,7 @@ void app_manager_poll( void )
     rfscout_input_event_t input;
     if( input_get( &input ) )
     {
+        input_trace_note( "app_input", input.value, (int32_t)input.type );
         if( display_idle_input_should_wake() )
         {
             return;
@@ -414,6 +415,10 @@ void app_manager_poll( void )
 
         const rfscout_app_runtime_result_t result = dispatch_runtime(
             active_app, RFSCOUT_APP_RUNTIME_INPUT, &input, now_us, app_activated );
+        if( RFSCOUT_INPUT_NAVIGATION == input.type )
+        {
+            input_trace_note( "app_dispatch", (int32_t)result, (int32_t)active_app );
+        }
         if( RFSCOUT_APP_RUNTIME_REQUEST_HOME == result )
         {
             handle_runtime_result( result );
@@ -429,6 +434,7 @@ void app_manager_poll( void )
         {
             if( !app_locked )
             {
+                input_trace_note( "app_switch_request", input.value, (int32_t)active_app );
                 (void)switch_app_for_navigation( input.value );
             }
             return;

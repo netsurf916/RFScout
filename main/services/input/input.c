@@ -9,6 +9,7 @@
 
 #include "board.h"
 #include "event.h"
+#include "log_writer.h"
 #include "rotary_decoder.h"
 #include "session_state.h"
 
@@ -24,6 +25,14 @@
 
 #define INPUT_BUTTON_DEBOUNCE_US 30000LL
 #define INPUT_BUTTON_LONG_PRESS_US 800000LL
+
+/* Investigation PR #141: enable only on diagnostic builds. Set to 0 for release. */
+#ifndef RFSCOUT_INPUT_TRACE_ENABLED
+#define RFSCOUT_INPUT_TRACE_ENABLED 1
+#endif
+
+#define INPUT_TRACE_CAPACITY 128U
+#define INPUT_TRACE_POLL_BURST 16U
 
 static const char *TAG = "input";
 static rotary_decoder_t navigation_decoder;
@@ -44,6 +53,131 @@ static bool locked;
 static int primary_button_pin = -1;
 static rfscout_input_provider_t provider;
 
+#if RFSCOUT_INPUT_TRACE_ENABLED
+typedef struct
+{
+    int64_t edge_us;
+    uint32_t invalid;
+    int32_t pending;
+    uint8_t ab;
+    uint8_t anchor;
+    uint8_t intermediate;
+    int8_t step;
+    bool synchronized;
+} input_edge_trace_t;
+
+static input_edge_trace_t edge_trace[ INPUT_TRACE_CAPACITY ];
+static uint16_t edge_head;
+static uint16_t edge_tail;
+static uint32_t edge_drops;
+static uint32_t edge_record_seq;
+
+/* Called only with navigation_lock held, including from the GPIO ISR.
+   No allocation, SD access, printf or ESP_LOG in the interrupt. */
+static void IRAM_ATTR record_encoder_edge( uint8_t a_ab, int32_t a_before )
+{
+    const uint16_t next = (uint16_t)( ( edge_head + 1U ) % INPUT_TRACE_CAPACITY );
+    if( next == edge_tail )
+    {
+        ++edge_drops;
+        return;
+    }
+    input_edge_trace_t *item = &edge_trace[ edge_head ];
+    item->edge_us = esp_timer_get_time();
+    item->ab = a_ab;
+    item->step = (int8_t)( navigation_decoder.pending_delta > a_before
+                               ? 1
+                               : ( navigation_decoder.pending_delta < a_before ? -1 : 0 ) );
+    item->pending = navigation_decoder.pending_delta;
+    item->invalid = navigation_decoder.invalid_transitions;
+    item->anchor = navigation_decoder.anchor_state;
+    item->intermediate = navigation_decoder.intermediate_state;
+    item->synchronized = navigation_decoder.synchronized;
+    edge_head = next;
+}
+#endif
+
+void input_trace_note( const char *a_stage, int32_t a_value, int32_t a_aux )
+{
+#if RFSCOUT_INPUT_TRACE_ENABLED
+    if( NULL == a_stage )
+    {
+        return;
+    }
+    int32_t pending;
+    uint32_t invalid;
+    uint8_t ab;
+    portENTER_CRITICAL( &navigation_lock );
+    pending = navigation_decoder.pending_delta;
+    invalid = navigation_decoder.invalid_transitions;
+    ab = navigation_decoder.last_state;
+    portEXIT_CRITICAL( &navigation_lock );
+    rfscout_log_record_t record;
+    if( log_begin( &record, "input_trace" ) && log_str( &record, "stage", a_stage ) &&
+        log_int( &record, "mono_us", esp_timer_get_time() ) &&
+        log_int( &record, "value", a_value ) && log_int( &record, "aux", a_aux ) &&
+        log_uint( &record, "ab", ab ) && log_int( &record, "pending", pending ) &&
+        log_uint( &record, "invalid", invalid ) &&
+        log_bool( &record, "input_locked", locked ) )
+    {
+        (void)log_end( &record );
+    }
+#else
+    (void)a_stage;
+    (void)a_value;
+    (void)a_aux;
+#endif
+}
+
+static void input_trace_drain( void )
+{
+#if RFSCOUT_INPUT_TRACE_ENABLED
+    for( unsigned count = 0U; count < INPUT_TRACE_POLL_BURST; ++count )
+    {
+        input_edge_trace_t item;
+        uint32_t drops = 0U;
+        bool has_item = false;
+        uint32_t sequence = 0U;
+        portENTER_CRITICAL( &navigation_lock );
+        if( edge_tail != edge_head )
+        {
+            item = edge_trace[ edge_tail ];
+            edge_tail = (uint16_t)( ( edge_tail + 1U ) % INPUT_TRACE_CAPACITY );
+            sequence = ++edge_record_seq;
+            has_item = true;
+        }
+        else if( edge_drops > 0U )
+        {
+            drops = edge_drops;
+            edge_drops = 0U;
+        }
+        portEXIT_CRITICAL( &navigation_lock );
+        if( !has_item )
+        {
+            if( drops > 0U )
+            {
+                input_trace_note( "edge_overflow", (int32_t)drops, 0 );
+            }
+            break;
+        }
+        rfscout_log_record_t record;
+        if( log_begin( &record, "rotary_edge" ) &&
+            log_int( &record, "mono_us", item.edge_us ) &&
+            log_uint( &record, "seq", sequence ) &&
+            log_uint( &record, "ab", item.ab ) &&
+            log_uint( &record, "anchor", item.anchor ) &&
+            log_uint( &record, "intermediate", item.intermediate ) &&
+            log_int( &record, "step", item.step ) &&
+            log_int( &record, "pending", item.pending ) &&
+            log_uint( &record, "invalid", item.invalid ) &&
+            log_bool( &record, "synced", item.synchronized ) )
+        {
+            (void)log_end( &record );
+        }
+    }
+#endif
+}
+
 static void IRAM_ATTR encoder_isr( void *a_argument )
 {
     (void)a_argument;
@@ -51,7 +185,13 @@ static void IRAM_ATTR encoder_isr( void *a_argument )
                                        gpio_get_level( RFSCOUT_BOARD_ENCODER_B_PIN ) );
 
     portENTER_CRITICAL_ISR( &navigation_lock );
+#if RFSCOUT_INPUT_TRACE_ENABLED
+    const int32_t before = navigation_decoder.pending_delta;
+#endif
     rotary_decoder_sample( &navigation_decoder, current );
+#if RFSCOUT_INPUT_TRACE_ENABLED
+    record_encoder_edge( current, before );
+#endif
     portEXIT_CRITICAL_ISR( &navigation_lock );
 }
 
@@ -96,12 +236,20 @@ static void clear_navigation_delta( void )
 static int consume_navigation_delta( void )
 {
     portENTER_CRITICAL( &navigation_lock );
+    const int32_t raw_delta = navigation_decoder.pending_delta;
     const int delta = locked ? 0 : rotary_decoder_take_direction( &navigation_decoder );
-    if( locked )
+    const bool was_locked = locked;
+    if( was_locked )
     {
         rotary_decoder_clear_pending( &navigation_decoder );
     }
     portEXIT_CRITICAL( &navigation_lock );
+    if( 0 != raw_delta )
+    {
+        input_trace_note( was_locked ? "nav_locked_discard" : "nav_consumed",
+                          raw_delta,
+                          delta );
+    }
     return delta;
 }
 
@@ -124,6 +272,7 @@ void input_set_locked( bool a_locked )
     button_long_press_event = false;
     button_global_hold_event = false;
     clear_navigation_delta();
+    input_trace_note( "input_lock_change", locked ? 1 : 0, 0 );
     ESP_LOGI( TAG, "user input %s", locked ? "locked" : "unlocked" );
     rfscout_event_emit( locked ? RFSCOUT_EVENT_INPUT_LOCKED : RFSCOUT_EVENT_INPUT_UNLOCKED,
                         RFSCOUT_EVENT_SOURCE_SYSTEM,
@@ -177,6 +326,12 @@ static esp_err_t install_rotary_provider( void )
         (uint8_t)( ( gpio_get_level( RFSCOUT_BOARD_ENCODER_A_PIN ) << 1 ) |
                    gpio_get_level( RFSCOUT_BOARD_ENCODER_B_PIN ) );
     rotary_decoder_reset( &navigation_decoder, initial_state );
+#if RFSCOUT_INPUT_TRACE_ENABLED
+    edge_head = 0U;
+    edge_tail = 0U;
+    edge_drops = 0U;
+    edge_record_seq = 0U;
+#endif
     initialize_button_state();
 
     result = gpio_install_isr_service( 0 );
@@ -225,6 +380,7 @@ esp_err_t input_init( void )
 
 void input_poll( void )
 {
+    input_trace_drain();
     const int64_t now_us = esp_timer_get_time();
     bool current_button_down;
     int64_t pressed_us;
@@ -318,6 +474,7 @@ bool input_activity_pending( void )
 
 void input_consume_wake( void )
 {
+    input_trace_note( "wake_consume", 0, 0 );
     clear_navigation_delta();
     button_event = false;
     button_long_press_event = false;

@@ -88,4 +88,37 @@ Specifically force the detent to complete **between** `display_idle_poll()` and 
 - **Suppress an entire wake gesture.** Consider ending suppression after a quiet interval since the *last physical rotary transition* rather than a one-shot guard after the first wake, but distinguish mechanical bounce from deliberate new turns and preserve prompt post-wake response.
 - Maintain a single shared policy for all applications and for both manual screen-off and idle dim/off. Avoid simply lengthening the 200 ms timeout without a regression covering both behaviors.
 
-**Scope rule:** This PR starts with documentation only. Do not modify PR #140, merge anything, or change firmware until the evidence and proposed behavior are discussed with the owner.
+## Instrumentation added for diagnostic build
+
+PR #141 now emits two additional **best-effort** SD JSONL record types without changing
+input decoding, wake consumption, semantic navigation, or app switching:
+
+- `rotary_edge`: monotonic `mono_us` at the actual GPIO ISR sample, two-bit
+  `ab` state, decoder `anchor`, `intermediate`, signed `step`, `pending` net
+  movement, `invalid` transition counter, `synced` flag, and sequence number.
+  The ISR writes only to a fixed 128-entry ring under the existing spinlock;
+  **it never formats JSON, logs to flash/SD, or allocates memory**.
+- `input_trace`: main-loop `mono_us`, `stage`, `value`, `aux`, last `ab`,
+  `pending` and `invalid` snapshots, and `input_locked`. Stages include
+  `nav_consumed`, `nav_locked_discard`, `wake_consume`,
+  `wake_from_idle_poll`, `wake_from_input_get`, `wake_guard_suppress`,
+  `input_lock_change`, `app_input`, `app_dispatch`,
+  `app_switch_request`, and `edge_overflow`.
+
+Up to 16 raw edges are drained per regular input poll on the main task.
+Ring overflow is counted explicitly. All emission is best effort and requires
+the existing SD log writer; an unavailable/full log drops trace records without
+changing input behavior. `RFSCOUT_INPUT_TRACE_ENABLED` is **1 on this
+investigation branch** and can be overridden to 0 in release builds.
+
+Pair records using `mono_us` (the JSONL auto-added wall-clock timestamp
+reflects log time, which may lag a GPIO edge). The `step` value is decoded
+half-step delta, **not a guaranteed physical detent**. Compare edge sequences
+against `app_switch_request` and app `transition` records to identify
+double steps, bounce and reversals, and against `nav_locked_discard` versus
+`wake_from_idle_poll` for the locked-input race. For accurate reproduction,
+capture a single **slow** detent and a short reversal, then rotate while the
+display is dimmed/off, in both locked and unlocked states.
+
+**Scope rule:** This PR adds diagnosis only, not a behavioral fix. Do not modify
+PR #140 or merge until the shared decoder/wake policy is discussed.

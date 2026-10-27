@@ -278,6 +278,8 @@ bool display_idle_input_should_wake( void )
     {
         /* An edge can arrive after display_idle_poll but before input_get.
            Wake first even in this race, never dispatch navigation in the dark. */
+        input_trace_note( "wake_from_input_get", (int32_t)state,
+                          (int32_t)( DISPLAY_IDLE_WAKE_GUARD_US / 1000LL ) );
         input_consume_wake();
         wake_guard_until_us = now_us + DISPLAY_IDLE_WAKE_GUARD_US;
         cancel_attention_restore();
@@ -288,6 +290,8 @@ bool display_idle_input_should_wake( void )
     }
     if( now_us < wake_guard_until_us )
     {
+        input_trace_note( "wake_guard_suppress", (int32_t)state,
+                          (int32_t)( ( wake_guard_until_us - now_us ) / 1000LL ) );
         input_consume_wake();
         return true;
     }
@@ -304,6 +308,8 @@ void display_idle_poll( void )
         reset_pixel_shift( now_us );
         if( DISPLAY_IDLE_ACTIVE != state )
         {
+            input_trace_note( "wake_from_idle_poll", (int32_t)state,
+                              (int32_t)( DISPLAY_IDLE_WAKE_GUARD_US / 1000LL ) );
             wake_guard_until_us = now_us + DISPLAY_IDLE_WAKE_GUARD_US;
             input_consume_wake();
             if( RFSCOUT_BOARD_USER_KEY_PIN >= 0 )
