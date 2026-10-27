@@ -117,8 +117,7 @@ void input_trace_note( const char *a_stage, int32_t a_value, int32_t a_aux )
         log_int( &record, "mono_us", esp_timer_get_time() ) &&
         log_int( &record, "value", a_value ) && log_int( &record, "aux", a_aux ) &&
         log_uint( &record, "ab", ab ) && log_int( &record, "pending", pending ) &&
-        log_uint( &record, "invalid", invalid ) &&
-        log_bool( &record, "input_locked", locked ) )
+        log_uint( &record, "invalid", invalid ) && log_bool( &record, "input_locked", locked ) )
     {
         (void)log_end( &record );
     }
@@ -161,14 +160,11 @@ static void input_trace_drain( void )
             break;
         }
         rfscout_log_record_t record;
-        if( log_begin( &record, "rotary_edge" ) &&
-            log_int( &record, "mono_us", item.edge_us ) &&
-            log_uint( &record, "seq", sequence ) &&
-            log_uint( &record, "ab", item.ab ) &&
+        if( log_begin( &record, "rotary_edge" ) && log_int( &record, "mono_us", item.edge_us ) &&
+            log_uint( &record, "seq", sequence ) && log_uint( &record, "ab", item.ab ) &&
             log_uint( &record, "anchor", item.anchor ) &&
             log_uint( &record, "intermediate", item.intermediate ) &&
-            log_int( &record, "step", item.step ) &&
-            log_int( &record, "pending", item.pending ) &&
+            log_int( &record, "step", item.step ) && log_int( &record, "pending", item.pending ) &&
             log_uint( &record, "invalid", item.invalid ) &&
             log_bool( &record, "synced", item.synchronized ) )
         {
@@ -246,9 +242,7 @@ static int consume_navigation_delta( void )
     portEXIT_CRITICAL( &navigation_lock );
     if( 0 != raw_delta )
     {
-        input_trace_note( was_locked ? "nav_locked_discard" : "nav_consumed",
-                          raw_delta,
-                          delta );
+        input_trace_note( was_locked ? "nav_locked_discard" : "nav_consumed", raw_delta, delta );
     }
     return delta;
 }
