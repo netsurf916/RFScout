@@ -12,7 +12,7 @@ SOURCE = ROOT / "main/apps/hotspots/app.c"
 
 
 def extract_function(source: str, name: str) -> str:
-    pattern = rf"static (?:bool|void)\\s+{name}\\s*\\([^)]*\\)\\s*\\{{"
+    pattern = rf"static (?:bool|void)\s+{name}\s*\([^)]*\)\s*\{{"
     match = re.search(pattern, source)
     if not match:
         raise AssertionError(f"Missing Hotspots function {name}")
