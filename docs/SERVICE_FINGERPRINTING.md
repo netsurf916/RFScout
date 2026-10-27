@@ -46,6 +46,17 @@ HTTP `Content-Type` identification is still restricted to the actual media-type
 token before `;` parameters; case tolerance must not turn parameter text into
 media evidence. These are separate interoperability and parsing decisions.
 
+ONVIF banner matching requires a bounded, case-insensitive word/token match:
+`Server: ONVIF/1.0` is accepted, but `Server: nonvif-proxy` and
+`WWW-Authenticate: Basic realm="not-onvif"` are not accepted as camera
+evidence. The standalone validated WS-Discovery local-name policy remains
+case-insensitive for vendor compatibility.
+
+The shared network-session service quiesces any active connectivity-probe
+worker **before** shutting down the Wi-Fi station after link loss or explicit
+release. On cancellation timeout it defers teardown and retries; this
+protects the HTTP HEAD worker from concurrent station shutdown.
+
 The current recognition literals are intentionally tiny illustrative heuristics,
 **not** a complete vendor fingerprint database. Do not translate their presence
 into a surveillance alert. Host regression coverage is in

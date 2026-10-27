@@ -5,6 +5,7 @@
 */
 
 #include "network_session.h"
+#include "connectivity_probe.h"
 
 #include "esp_log.h"
 
@@ -36,8 +37,26 @@ static void reset_logical_state( void )
     phase_started_us = 0;
 }
 
+/** @brief Preserve probe-before-Wi-Fi shutdown on *automatic* link failure too.
+ * @details If the HTTP worker cannot be joined, defer station shutdown and retry
+ *          in the next network_session_poll rather than racing a live socket.
+ */
+static esp_err_t quiesce_probe_before_station_stop( void )
+{
+    const esp_err_t result = connectivity_probe_stop();
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG, "deferring station stop until probe exits: %s", esp_err_to_name( result ) );
+    }
+    return result;
+}
+
 static void fail_session( esp_err_t a_error, int32_t a_disconnect_reason )
 {
+    if( ESP_OK != quiesce_probe_before_station_stop() )
+    {
+        return;
+    }
     const esp_err_t stop_result = rfscout_wifi_station_stop();
     status.state = RFSCOUT_NETWORK_SESSION_FAILED;
     status.error = ( ESP_OK == stop_result ) ? a_error : stop_result;
@@ -270,6 +289,11 @@ bool network_session_ready( void )
 
 esp_err_t network_session_release( void )
 {
+    const esp_err_t quiesce_result = quiesce_probe_before_station_stop();
+    if( ESP_OK != quiesce_result )
+    {
+        return quiesce_result;
+    }
     const esp_err_t result = rfscout_wifi_station_stop();
     if( ESP_OK == result )
     {

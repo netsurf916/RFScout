@@ -35,6 +35,25 @@ int main(void)
     assert(result.evidence & RFSCOUT_SERVICE_CAMERA_HINT);
     assert(!(result.evidence & RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE));
 
+    /* ONVIF text is accepted as a token, not embedded in unrelated names. */
+    service_fingerprint_reset(&result);
+    HEADER(result, "WWW-Authenticate", "Basic realm=\"not-onvif\"");
+    assert(!(result.evidence & RFSCOUT_SERVICE_CAMERA_HINT));
+    HEADER(result, "Server", "nonvif-proxy");
+    assert(!(result.evidence & RFSCOUT_SERVICE_CAMERA_HINT));
+    HEADER(result, "Server", "onvifproxy");
+    assert(!(result.evidence & RFSCOUT_SERVICE_CAMERA_HINT));
+
+    service_fingerprint_reset(&result);
+    HEADER(result, "Server", "ONVIF/1.0");
+    assert(result.evidence & RFSCOUT_SERVICE_CAMERA_HINT);
+    service_fingerprint_reset(&result);
+    HEADER(result, "Server", "OnViF-Compatible");
+    assert(result.evidence & RFSCOUT_SERVICE_CAMERA_HINT);
+    service_fingerprint_reset(&result);
+    HEADER(result, "WWW-Authenticate", "Basic realm=\"ONVIF\"");
+    assert(result.evidence & RFSCOUT_SERVICE_CAMERA_HINT);
+
     service_fingerprint_reset(&result);
     DNS(result, "_rtsp._tcp");
     assert(result.evidence & RFSCOUT_SERVICE_RTSP_ADVERTISED);
