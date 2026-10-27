@@ -36,7 +36,7 @@ typedef int esp_err_t;
 #define ESP_ERR_TIMEOUT (-1)
 #define ESP_FAIL (-2)
 #define RFSCOUT_NETWORK_SESSION_FAILED 4
-#define ESP_LOGW(...) ((void)0)
+#define ESP_LOGW(tag, ...) ((void)(tag))
 #define esp_err_to_name(x) "error"
 static const char *TAG = "network_session";
 typedef struct {
