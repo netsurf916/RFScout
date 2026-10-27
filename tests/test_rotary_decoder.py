@@ -58,8 +58,8 @@ int main(void)
     sample(&decoder, 1, 3);
     assert(rotary_decoder_take_direction(&decoder) == -1);
 
+    /* A skipped A/B edge (00 -> 11) contributes no signed transition. */
     rotary_decoder_reset(&decoder, 0);
-    /* A skipped A/B edge (00 -> 11) does not invent or reverse a detent. */
     rotary_decoder_sample(&decoder, 3);
     assert(decoder.invalid_transitions == 1);
     assert(!rotary_decoder_pending(&decoder));
@@ -92,7 +92,7 @@ int main(void)
     assert(rotary_decoder_take_direction(&decoder) == -1);
     assert(!rotary_decoder_pending(&decoder));
 
-    /* Startup at a non-latch phase must wait for a stable latch before emitting movement. */
+    /* Starting between latches requires sufficient signed movement to a latch. */
     rotary_decoder_reset(&decoder, 1);
     rotary_decoder_sample(&decoder, 3);
     assert(!rotary_decoder_pending(&decoder));

@@ -1,122 +1,82 @@
-# Rotary wake and input-lock regression investigation
+# Rotary input decoder and wake follow-up
 
-**Status:** Targeted decoder experiment on PR #141. PR #140 is independent. Wake/lock policy remains unchanged. Base: `main` at `e29b2c4d1f8a`. Related: [merged PR #138](https://github.com/netsurf916/RFScout/pull/138), which introduced the rotary quadrature decoder and coalesced navigation.
+## Summary
 
-## Reported device symptoms (2026-10-26)
+PR [#141](https://github.com/netsurf916/RFScout/pull/141) restores the original
+T-Embed rotary quadrature decoding behavior after navigation became jumpy and
+occasionally reversed following [#138](https://github.com/netsurf916/RFScout/pull/138).
+The owner reports that #141 is **substantially better** on the board, but has
+not declared the remaining behavior fully verified. No changes to the common
+wake, input-lock or application-lock policies are included.
 
-1. **Input unlocked:** A **single physical encoder detent** wakes a dimmed/off display **and switches to another application**. Expected: the wake gesture is swallowed; the current application does not change.
-2. **Input locked:** A rotary detent **sometimes fails to wake the dimmed/off display**. Expected: input lock suppresses UI actions, **not screen-wake activity**.
-3. Existing behavior to preserve: the dedicated power key and center-button Hold unlock path work when input is locked. Application lock still allows local app input and blocks *unhandled* global app navigation.
+The independent camera-service work in PR #140 is outside this change.
 
-These are device observations, not host-reproduced failures yet. Both symptoms belong to the shared input/display-idle path; do not patch an individual app or PR #140.
+## Production behavior in PR #141
 
-## Verified current execution order
+- GPIO4/GPIO5 still use the existing interrupts on both edges and internal
+  pull-ups; hardware glitch filtering is **not** enabled.
+- The decoder uses the original 16-entry Gray-code lookup table, shared with
+  the earlier RFScout implementation and LilyGO factory firmware.
+- Repeated and two-bit diagonal A/B changes contribute zero to the signed
+  transition accumulator. Diagonal jumps increment an in-memory counter but
+  **do not** reset partial movement or force synchronization.
+- At either `00` or `11` latch, two signed transitions count as a step,
+  matching LilyGO's `RotaryEncoder::LatchMode::TWO03` calibration.
+- The shared input API coalesces all pending movement to one net `-1/0/+1`
+  direction per consumption. Opposite movement can cancel; it does not
+  replay every detent delayed by an application stall.
+- `input_consume_wake()` and input lock still clear pending and partial
+  decoder movement. The 200 ms display-wake guard is unchanged.
 
-In `main/rfscout.c`, one main-loop iteration calls:
+Host tests cover both directions, bounce, duplicate states, skipped diagonal
+transitions, reversal cancellation, startup between latches, wake/lock clears,
+and coalescing over a delayed input poll.
 
-```text
-input_poll()
-display_idle_poll()                  // checks input_activity_pending()
-GPS / power / services / housekeeping
-app_manager_poll()                   // input_get(); display_idle_input_should_wake()
-display_present()
-10 ms sleep (plus variable loop work)
-```
+## Diagnostic logging removed
 
-Relevant contracts:
+The earlier diagnostic build `candidate-283cc3c1474b` emitted best-effort
+`rotary_edge` and `input_trace` SD JSONL records. A capture in
+`rfscout-03.log` showed rapid illegal A/B transitions and apparent navigation
+reversals, but its bounded ring overflowed substantially (31,746 dropped
+samples), and the logging itself could perturb input-loop timing.
 
-- `input.c:300-317` `input_activity_pending()` tests `rotary_decoder_pending()` under `navigation_lock`, **independent of `locked`**.
-- `input.c:96-106` `consume_navigation_delta()` returns zero **and calls `rotary_decoder_clear_pending()` when locked**, as part of `input_get()` (`input.c:340-374`).
-- `input.c:319-338` `input_consume_wake()` clears pending/partial movement and button events.
-- `display_idle.c:297-317` `display_idle_poll()` wakes when activity is pending and the display is not active, consumes wake input, and starts a **200 ms** guard.
-- `display_idle.c:274-295` `display_idle_input_should_wake()` also catches an event delivered after the idle poll; while the guard is running, input is discarded. The guard is a **fixed interval from wake**, not from the latest physical encoder edge.
-- `app_manager.c:388-435` calls `input_get()` before the display-idle guard check; an unhandled navigation event after the guard can invoke `switch_app_for_navigation()`.
-- `rotary_decoder.c` now uses the original 16-entry transition table with a two-transition threshold at 00/11 latches, matching the older RFScout input service and LilyGO factory example. Signed steps still coalesce to one net semantic direction per consumption; this is not a wake-service integration test.
+**No ISR trace ring, extra SD record types, trace enable macro, or temporary
+trace calls remain in PR #141's effective code.** Normal existing application
+and system logging is unaffected. Earlier diagnostic commits remain visible
+in the PR's Git history; they are not part of the resulting firmware tree.
 
-## Hypothesis A — lost locked wake on interleaving (high confidence as a possible race)
+## Screen-wake issues not fixed by the decoder restoration
 
-A complete detent arrives **after** `display_idle_poll()` checked for activity but **before** `app_manager_poll()`:
+The main loop calls `input_poll()`, `display_idle_poll()`, service polling,
+and then `app_manager_poll()`. The display checks physical pending movement
+before the application manager consumes semantic input.
 
-1. `display_idle_poll()` sees no activity and stays off.
-2. The encoder ISR adds a pending detent.
-3. `app_manager_poll()` calls `input_get()`.
-4. When `locked` is true, `consume_navigation_delta()` discards the pending detent, returns no input, and therefore never calls `display_idle_input_should_wake()`.
-5. On the next loop the wake detector finds no pending movement. **The entire physical detent was lost as a wake request.**
+1. **Locked wake may be lost.** If a detent is decoded after
+   `display_idle_poll()` checks input but before `app_manager_poll()`
+   calls `input_get()`, the locked semantic input consumer can clear that
+   movement before the next display wake check. This is a source-level race
+   hypothesis; it has not been confirmed in a recent focused hardware test.
+2. **A wake gesture may leak into app navigation.** A slow detent can span
+   multiple input polls. The existing wake guard expires 200 ms after wake,
+   rather than after the last rotary edge. A later step may therefore be
+   delivered after the guard. The exact causal sequence is unconfirmed.
 
-This ordering is possible from source inspection, not measured as the exact hardware race yet. Input lock's policy is currently conflating *discard semantic navigation* with *erase the only pending wake evidence*.
+Address these at the shared input/display boundary only after a focused
+regression test; changing the decoder alone must not be presented as proof
+that wake behavior has been corrected.
 
-## Hypothesis B — unlocked single-detent app switch (requires timestamp validation)
+## Hardware verification before owner-directed merge
 
-If the display is genuinely dimmed/off when `app_manager_poll()` processes a navigation event, `display_idle_input_should_wake()` returns true; that **single semantic event cannot both wake and switch an app** through the straightforward path.
-
-Two plausible alternatives, requiring discrimination:
-
-- One physical detent produces multiple half-steps spread across main-loop iterations (the decoder's 00/11 calibration can create two navigation events per full A/B cycle). The first wakes/clears; a later decoded half-step becomes input after the **fixed 200 ms guard** has expired, perhaps due to slow rotation or scheduler/display stalls.
-- The LCD is made active by an earlier activity/attention/device-wake path, and the later decoder event is allowed through because the active-state guard is no longer running.
-
-The existing guard was introduced on October 12 in commit `bd6fdb1` to handle trailing detents; PR #138 changed the encoder decoder on October 25 without changing that guard. PR #141 now tests a return to the original table while retaining the guard. Correlation with #138 is compelling, but it is **not proven** to be the only cause.
-
-## Minimum trace and test plan — before choosing a fix
-
-Instrument a **bounded, opt-in, low-overhead** input/display trace (prefer counters and timestamps over logging in GPIO ISRs). Each event should record monotonic microseconds and, where relevant:
-
-- Rotary A/B transition / decoded half-step, decoder pending count, invalid transitions and whether this was an input-lock discard.
-- Display state at the start of idle poll, wake reason, wake-guard deadline and its most recent refresh.
-- `input_activity_pending`, `input_get` result, `input_consume_wake`, and app navigation dispatch.
-- Whether app lock and input lock are active, and whether a system/attention wake intervened.
-- A test event/trace should distinguish physical detent boundaries from complete decoded half-steps; do not infer them solely from pending net direction.
-
-Repro matrix (with normal and deliberately delayed loop interleavings):
-
-| Display at start | Input lock | Gesture | Required result |
+| Display | Input lock | Gesture | Expected result |
 | --- | --- | --- | --- |
-| Off | Unlocked | One slow physical detent | Wake, **zero** app transitions |
-| Off | Locked | One slow physical detent | Wake, **zero** semantic input or app transitions |
-| Dimmed | Unlocked | One detent | Restore brightness, no app transition |
-| Dimmed | Locked | One detent | Restore brightness, no semantic input |
-| Off | Unlocked | Continuous rotation spanning >200 ms | Consume the **wake gesture** entirely; no delayed app switch |
-| Active after a completed wake gesture | Unlocked | A new separate detent | Exactly one intended semantic navigation action |
-| Active | Locked | Detent | No semantic navigation; maintain locked state |
-| Off | App lock only | One detent | Wake, no app switch or local action from wake gesture |
-| Off | Input lock | Center Hold / power key | Existing unlock / physical power policy preserved |
+| Active | Unlocked | Slow single detents | Predictable direction and one intended action per detent |
+| Active | Unlocked | Fast turns and reversals | No unexpected jumps, reversal, or delayed backlog |
+| Active | Unlocked | App-owned menus | Correct local navigation and Select behavior |
+| Off/dimmed | Unlocked | One detent | Wake display without switching apps |
+| Off/dimmed | Locked | One detent | Wake display without delivering semantic navigation |
+| Off/dimmed | Unlocked | Slow rotation across 200 ms | No leftover wake-gesture navigation |
+| Active | Locked | Rotation | No semantic navigation |
+| Off/dimmed | Locked | Center Hold / physical power key | Existing unlock / power behavior preserved |
 
-Specifically force the detent to complete **between** `display_idle_poll()` and `app_manager_poll()` to expose Hypothesis A. Force a two-half-step input to cross the guard deadline to test Hypothesis B. Do not rely only on decoder unit tests; add a service-integration regression capable of observing wake and app dispatch.
-
-## Proposed design questions (not implemented)
-
-- **Wake evidence must survive ordinary semantic input suppression.** Consider a separate activity-generation counter or wake-pending latch that can only be acknowledged by the display-idle policy, while the locked semantic consumer may still discard navigation. Ensure latched activity does not falsely wake a later idle cycle.
-- **Suppress an entire wake gesture.** Consider ending suppression after a quiet interval since the *last physical rotary transition* rather than a one-shot guard after the first wake, but distinguish mechanical bounce from deliberate new turns and preserve prompt post-wake response.
-- Maintain a single shared policy for all applications and for both manual screen-off and idle dim/off. Avoid simply lengthening the 200 ms timeout without a regression covering both behaviors.
-
-## PR #141 decoder experiment (2026-10-26)
-
-After reviewing the October 27 diagnostic capture (`rfscout-03.log`, build
-`candidate-283cc3c1474b`), the owner approved a minimal decoder experiment:
-
-- Return to the original RFScout/LilyGO 16-entry Gray-code transition table,
-  preserving the 00/11 two-transition latch threshold.
-- Keep `rotary_decoder_take_direction()` coalescing net pending movement to
-  one `-1/0/+1` semantic navigation event per input consumption.
-- Record skipped diagonal states in the existing in-memory counter, but do not
-  reset decoder synchronization or discard fractional movement on a diagonal.
-- Do **not** add hardware glitch filtering or modify the display wake/lock
-  contract in this experiment.
-- Remove PR #141's additional `rotary_edge` and `input_trace` SD JSONL logging,
-  ISR diagnostic ring, and all extra logging hooks. The diagnostic build
-  suffered heavy ring overflow, and its I/O may influence timing.
-
-The earlier trace showed fast diagonal state changes and application-level
-direction reversals, but it cannot establish whether the electrical input,
-ISR timing, or the decoder state machine is primary. The experimental build
-should be evaluated by deliberately rotating single slow detents, changing
-direction, navigating menus, and checking locked/unlocked dimmed-screen wake.
-
-**Acceptance for device testing:** predictable single-detent navigation,
-no spurious reversals, no delayed jump after wake, and wake while input is
-locked. Report the wake bugs separately if decoder behavior improves without
-fixing wake handling. This PR remains unmerged pending hardware feedback.
-
-**Reference:** LilyGO's `examples/factory/factory.cpp` implements the same
-transition table and two-count latch navigation. The standalone
-`examples/encode_test/encode_test.ino` uses
-`RotaryEncoder::LatchMode::TWO03`.
+The navigation improvement is owner-confirmed; the complete wake matrix above
+is still a follow-up checklist, not a claim of passing hardware verification.
