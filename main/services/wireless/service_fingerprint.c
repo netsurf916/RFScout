@@ -89,15 +89,14 @@ static bool field_contains( const char *a_text, size_t a_length, const char *a_l
  */
 static bool onvif_token_before( char a_char )
 {
-    return ' ' == a_char || '\t' == a_char || '"' == a_char || '\'' == a_char ||
-           '(' == a_char || '[' == a_char || '=' == a_char || ',' == a_char ||
-           ';' == a_char || ':' == a_char;
+    return ' ' == a_char || '\t' == a_char || '"' == a_char || '\'' == a_char || '(' == a_char ||
+           '[' == a_char || '=' == a_char || ',' == a_char || ';' == a_char || ':' == a_char;
 }
 
 static bool onvif_token_after( char a_char )
 {
-    return onvif_token_before( a_char ) || ')' == a_char || ']' == a_char ||
-           '/' == a_char || '-' == a_char;
+    return onvif_token_before( a_char ) || ')' == a_char || ']' == a_char || '/' == a_char ||
+           '-' == a_char;
 }
 
 static bool contains_onvif_token( const char *a_text, size_t a_length )
@@ -111,8 +110,7 @@ static bool contains_onvif_token( const char *a_text, size_t a_length )
     for( size_t i = 0U; i <= a_length - token_length; ++i )
     {
         if( ( 0U == i || onvif_token_before( a_text[ i - 1U ] ) ) &&
-            ( i + token_length == a_length ||
-              onvif_token_after( a_text[ i + token_length ] ) ) &&
+            ( i + token_length == a_length || onvif_token_after( a_text[ i + token_length ] ) ) &&
             field_equals( &a_text[ i ], token_length, TOKEN ) )
         {
             return true;
