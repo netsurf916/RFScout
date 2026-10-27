@@ -502,9 +502,29 @@ static void finish_attempt( hotspot_status_t a_outcome,
                             esp_err_t a_error,
                             int64_t a_now_us );
 
+/** @brief Link-loss teardown wins over later HTTPS or local-gateway probe results. */
+static bool finish_failed_network_attempt( int64_t a_now_us )
+{
+    rfscout_network_session_status_t network;
+    network_session_status( &network );
+    if( RFSCOUT_NETWORK_SESSION_FAILED != network.state )
+    {
+        return false;
+    }
+
+    attempt_result.disconnect_reason = network.disconnect_reason;
+    finish_attempt( HOTSPOT_STATUS_RED, HOTSPOT_STAGE_JOIN, network.error, a_now_us );
+    return true;
+}
+
 static void
 start_limited_camera_probe( hotspot_stage_t a_stage, esp_err_t a_error, int64_t a_now_us )
 {
+    if( finish_failed_network_attempt( a_now_us ) )
+    {
+        return;
+    }
+
     limited_failed_stage = a_stage;
     limited_error = a_error;
     if( !gateway_probe_eligible( &attempt_result ) ||
@@ -993,6 +1013,10 @@ static void scheduler_poll( int64_t a_now_us )
 
         case HOTSPOTS_PHASE_HTTPS:
         {
+            if( finish_failed_network_attempt( a_now_us ) )
+            {
+                break;
+            }
             rfscout_connectivity_probe_status_t probe;
             connectivity_probe_status( &probe );
             attempt_result.http_status = probe.http_status;
@@ -1017,6 +1041,10 @@ static void scheduler_poll( int64_t a_now_us )
 
         case HOTSPOTS_PHASE_CAMERA:
         {
+            if( finish_failed_network_attempt( a_now_us ) )
+            {
+                break;
+            }
             rfscout_connectivity_probe_status_t probe;
             connectivity_probe_status( &probe );
             if( RFSCOUT_CONNECTIVITY_PROBE_SUCCEEDED == probe.state ||
