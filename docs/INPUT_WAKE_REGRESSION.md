@@ -1,6 +1,6 @@
 # Rotary wake and input-lock regression investigation
 
-**Status:** Investigation baseline only; no behavior or firmware changes in this initial PR. Base: `main` at `e29b2c4d1f8a`. Related: [merged PR #138](https://github.com/netsurf916/RFScout/pull/138), which introduced the rotary quadrature decoder and coalesced navigation.
+**Status:** Targeted decoder experiment on PR #141. PR #140 is independent. Wake/lock policy remains unchanged. Base: `main` at `e29b2c4d1f8a`. Related: [merged PR #138](https://github.com/netsurf916/RFScout/pull/138), which introduced the rotary quadrature decoder and coalesced navigation.
 
 ## Reported device symptoms (2026-10-26)
 
@@ -31,7 +31,7 @@ Relevant contracts:
 - `display_idle.c:297-317` `display_idle_poll()` wakes when activity is pending and the display is not active, consumes wake input, and starts a **200 ms** guard.
 - `display_idle.c:274-295` `display_idle_input_should_wake()` also catches an event delivered after the idle poll; while the guard is running, input is discarded. The guard is a **fixed interval from wake**, not from the latest physical encoder edge.
 - `app_manager.c:388-435` calls `input_get()` before the display-idle guard check; an unhandled navigation event after the guard can invoke `switch_app_for_navigation()`.
-- `rotary_decoder.c` recognizes half-steps at opposite 00/11 latches; the existing host test intentionally demonstrates **two navigation half-steps for one full Gray-code cycle**, and coalescing only occurs on each consumption. It does not test wake-service integration.
+- `rotary_decoder.c` now uses the original 16-entry transition table with a two-transition threshold at 00/11 latches, matching the older RFScout input service and LilyGO factory example. Signed steps still coalesce to one net semantic direction per consumption; this is not a wake-service integration test.
 
 ## Hypothesis A — lost locked wake on interleaving (high confidence as a possible race)
 
@@ -54,7 +54,7 @@ Two plausible alternatives, requiring discrimination:
 - One physical detent produces multiple half-steps spread across main-loop iterations (the decoder's 00/11 calibration can create two navigation events per full A/B cycle). The first wakes/clears; a later decoded half-step becomes input after the **fixed 200 ms guard** has expired, perhaps due to slow rotation or scheduler/display stalls.
 - The LCD is made active by an earlier activity/attention/device-wake path, and the later decoder event is allowed through because the active-state guard is no longer running.
 
-The existing guard was introduced on October 12 in commit `bd6fdb1` to handle trailing detents; PR #138 changed the encoder decoder on October 25 without changing that guard. Correlation with #138 is compelling, but it is **not proven** to be the only cause.
+The existing guard was introduced on October 12 in commit `bd6fdb1` to handle trailing detents; PR #138 changed the encoder decoder on October 25 without changing that guard. PR #141 now tests a return to the original table while retaining the guard. Correlation with #138 is compelling, but it is **not proven** to be the only cause.
 
 ## Minimum trace and test plan — before choosing a fix
 
@@ -88,37 +88,35 @@ Specifically force the detent to complete **between** `display_idle_poll()` and 
 - **Suppress an entire wake gesture.** Consider ending suppression after a quiet interval since the *last physical rotary transition* rather than a one-shot guard after the first wake, but distinguish mechanical bounce from deliberate new turns and preserve prompt post-wake response.
 - Maintain a single shared policy for all applications and for both manual screen-off and idle dim/off. Avoid simply lengthening the 200 ms timeout without a regression covering both behaviors.
 
-## Instrumentation added for diagnostic build
+## PR #141 decoder experiment (2026-10-26)
 
-PR #141 now emits two additional **best-effort** SD JSONL record types without changing
-input decoding, wake consumption, semantic navigation, or app switching:
+After reviewing the October 27 diagnostic capture (`rfscout-03.log`, build
+`candidate-283cc3c1474b`), the owner approved a minimal decoder experiment:
 
-- `rotary_edge`: monotonic `mono_us` at the actual GPIO ISR sample, two-bit
-  `ab` state, decoder `anchor`, `intermediate`, signed `step`, `pending` net
-  movement, `invalid` transition counter, `synced` flag, and sequence number.
-  The ISR writes only to a fixed 128-entry ring under the existing spinlock;
-  **it never formats JSON, logs to flash/SD, or allocates memory**.
-- `input_trace`: main-loop `mono_us`, `stage`, `value`, `aux`, last `ab`,
-  `pending` and `invalid` snapshots, and `input_locked`. Stages include
-  `nav_consumed`, `nav_locked_discard`, `wake_consume`,
-  `wake_from_idle_poll`, `wake_from_input_get`, `wake_guard_suppress`,
-  `input_lock_change`, `app_input`, `app_dispatch`,
-  `app_switch_request`, and `edge_overflow`.
+- Return to the original RFScout/LilyGO 16-entry Gray-code transition table,
+  preserving the 00/11 two-transition latch threshold.
+- Keep `rotary_decoder_take_direction()` coalescing net pending movement to
+  one `-1/0/+1` semantic navigation event per input consumption.
+- Record skipped diagonal states in the existing in-memory counter, but do not
+  reset decoder synchronization or discard fractional movement on a diagonal.
+- Do **not** add hardware glitch filtering or modify the display wake/lock
+  contract in this experiment.
+- Remove PR #141's additional `rotary_edge` and `input_trace` SD JSONL logging,
+  ISR diagnostic ring, and all extra logging hooks. The diagnostic build
+  suffered heavy ring overflow, and its I/O may influence timing.
 
-Up to 16 raw edges are drained per regular input poll on the main task.
-Ring overflow is counted explicitly. All emission is best effort and requires
-the existing SD log writer; an unavailable/full log drops trace records without
-changing input behavior. `RFSCOUT_INPUT_TRACE_ENABLED` is **1 on this
-investigation branch** and can be overridden to 0 in release builds.
+The earlier trace showed fast diagonal state changes and application-level
+direction reversals, but it cannot establish whether the electrical input,
+ISR timing, or the decoder state machine is primary. The experimental build
+should be evaluated by deliberately rotating single slow detents, changing
+direction, navigating menus, and checking locked/unlocked dimmed-screen wake.
 
-Pair records using `mono_us` (the JSONL auto-added wall-clock timestamp
-reflects log time, which may lag a GPIO edge). The `step` value is decoded
-half-step delta, **not a guaranteed physical detent**. Compare edge sequences
-against `app_switch_request` and app `transition` records to identify
-double steps, bounce and reversals, and against `nav_locked_discard` versus
-`wake_from_idle_poll` for the locked-input race. For accurate reproduction,
-capture a single **slow** detent and a short reversal, then rotate while the
-display is dimmed/off, in both locked and unlocked states.
+**Acceptance for device testing:** predictable single-detent navigation,
+no spurious reversals, no delayed jump after wake, and wake while input is
+locked. Report the wake bugs separately if decoder behavior improves without
+fixing wake handling. This PR remains unmerged pending hardware feedback.
 
-**Scope rule:** This PR adds diagnosis only, not a behavioral fix. Do not modify
-PR #140 or merge until the shared decoder/wake policy is discussed.
+**Reference:** LilyGO's `examples/factory/factory.cpp` implements the same
+transition table and two-count latch navigation. The standalone
+`examples/encode_test/encode_test.ino` uses
+`RotaryEncoder::LatchMode::TWO03`.

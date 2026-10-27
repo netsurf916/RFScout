@@ -1,6 +1,6 @@
 /**
     rotary_decoder.c : Rotary quadrature decoder with coalesced navigation
-    Description: Decodes valid half-steps and collapses pending movement at input consumption.
+    Description: Uses the original transition-table decoder and coalesces pending movement.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -16,13 +16,12 @@
 
 #include <stddef.h>
 
-/** @brief A valid half-step starts and ends at opposite 00/11 latch states. */
-static bool ROTARY_ISR_ATTR is_latch( uint8_t a_state )
-{
-    return 0U == a_state || 3U == a_state;
-}
+/* T-Embed's LilyGO factory firmware uses the same Gray-code transition table.
+   A return along the previous edge cancels bounce; diagonal jumps count zero. */
+static const int8_t transitions[ 16 ] = { 0, -1, 1, 0, 1, 0, 0, -1,
+                                         -1, 0, 0, 1, 0, 1, -1, 0 };
 
-/** @brief Accumulate net detents until the UI is ready, without signed overflow. */
+/** @brief Accumulate signed navigation without overflowing during stalled UI polls. */
 static void ROTARY_ISR_ATTR accumulate_step( rotary_decoder_t *a_decoder, int8_t a_step )
 {
     if( a_step > 0 )
@@ -45,9 +44,7 @@ void rotary_decoder_reset( rotary_decoder_t *a_decoder, uint8_t a_initial_state 
         return;
     }
     a_decoder->last_state = a_initial_state & 3U;
-    a_decoder->anchor_state = a_decoder->last_state;
-    a_decoder->intermediate_state = 0U;
-    a_decoder->synchronized = is_latch( a_decoder->last_state );
+    a_decoder->transition_accumulator = 0;
     a_decoder->pending_delta = 0;
     a_decoder->invalid_transitions = 0U;
 }
@@ -60,50 +57,44 @@ void ROTARY_ISR_ATTR rotary_decoder_sample( rotary_decoder_t *a_decoder, uint8_t
     }
     const uint8_t current = a_state & 3U;
     const uint8_t previous = a_decoder->last_state;
-    const uint8_t changed = current ^ previous;
-    if( 0U == changed )
+    if( current == previous )
     {
         return;
     }
-    a_decoder->last_state = current;
+
+    const uint8_t changed = current ^ previous;
     if( 3U == changed )
     {
-        /* Two pins changed since the last sample. Do not synthesize a direction. */
+        /* Observe skipped states without resetting the transition accumulator. */
         ++a_decoder->invalid_transitions;
-        a_decoder->intermediate_state = 0U;
-        a_decoder->synchronized = is_latch( current );
-        a_decoder->anchor_state = current;
-        return;
     }
-    if( !a_decoder->synchronized )
+
+    const int8_t transition = transitions[ ( ( previous << 2 ) | current ) & 0x0FU ];
+    a_decoder->last_state = current;
+
+    if( transition > 0 && a_decoder->transition_accumulator < INT32_MAX )
     {
-        /* Restart only at a stable latch: a partial sequence is not a detent. */
-        if( is_latch( current ) )
+        ++a_decoder->transition_accumulator;
+    }
+    else if( transition < 0 && a_decoder->transition_accumulator > INT32_MIN )
+    {
+        --a_decoder->transition_accumulator;
+    }
+
+    /* Preserve the original two-transitions-per-latch calibration at 00 and 11. */
+    if( 0U == current || 3U == current )
+    {
+        if( a_decoder->transition_accumulator >= 2 )
         {
-            a_decoder->anchor_state = current;
-            a_decoder->intermediate_state = 0U;
-            a_decoder->synchronized = true;
+            accumulate_step( a_decoder, 1 );
+            a_decoder->transition_accumulator = 0;
         }
-        return;
-    }
-    if( !is_latch( current ) )
-    {
-        if( previous == a_decoder->anchor_state )
+        else if( a_decoder->transition_accumulator <= -2 )
         {
-            a_decoder->intermediate_state = current;
+            accumulate_step( a_decoder, -1 );
+            a_decoder->transition_accumulator = 0;
         }
-        return;
     }
-    if( current != a_decoder->anchor_state && previous == a_decoder->intermediate_state &&
-        ( 1U == previous || 2U == previous ) )
-    {
-        const bool positive = ( 0U == a_decoder->anchor_state && 2U == previous ) ||
-                              ( 3U == a_decoder->anchor_state && 1U == previous );
-        accumulate_step( a_decoder, positive ? 1 : -1 );
-    }
-    /* Returning to the same latch is contact bounce, not movement. */
-    a_decoder->anchor_state = current;
-    a_decoder->intermediate_state = 0U;
 }
 
 int rotary_decoder_take_direction( rotary_decoder_t *a_decoder )
@@ -129,7 +120,5 @@ void rotary_decoder_clear_pending( rotary_decoder_t *a_decoder )
         return;
     }
     a_decoder->pending_delta = 0;
-    a_decoder->intermediate_state = 0U;
-    a_decoder->anchor_state = a_decoder->last_state;
-    a_decoder->synchronized = is_latch( a_decoder->last_state );
+    a_decoder->transition_accumulator = 0;
 }
