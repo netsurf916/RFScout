@@ -1154,7 +1154,9 @@ static void resolve_menu_selection( size_t a_row_count )
                 return;
             }
         }
+        /* The selected profile disappeared; do not silently select another row. */
         profile_selected = 0U;
+        menu_selected = MENU_BACK;
     }
     else if( VIEW_SAVED != view && group_selected )
     {
@@ -1164,7 +1166,9 @@ static void resolve_menu_selection( size_t a_row_count )
             menu_selected = MENU_FIXED + (unsigned)group;
             return;
         }
+        /* The selected network disappeared; stale indices must not switch groups. */
         group_selected = false;
+        menu_selected = MENU_BACK;
     }
     if( menu_selected >= MENU_FIXED + a_row_count )
     {
@@ -1288,24 +1292,20 @@ static void render_detail( void )
     screen = SCREEN_MEMBERS;
 }
 
-static void render_members( char *a_footer )
+/** @brief Keep member cursor bound to the selected BSSID as Live entries reorder.
+ * @details Called by both drawing and input processing, after the current model is rebuilt,
+ *          so a queued event cannot act on an index from an earlier frame. */
+static void resolve_member_selection( size_t a_group, size_t a_count )
 {
-    const size_t group = group_selected ? find_group( group_bssid ) : group_count;
-    if( group >= group_count )
-    {
-        group_selected = false;
-        screen = SCREEN_MENU;
-        return;
-    }
-    const size_t count = build_member_rows( group );
     if( member_selected )
     {
         bool found = false;
-        for( size_t member = 0U; member < count; ++member )
+        for( size_t member = 0U; member < a_count; ++member )
         {
-            if( 0 == memcmp( model_bssid( scratch.order[ scratch.groups[ group ].first + member ] ),
-                             member_bssid,
-                             6U ) )
+            if( 0 ==
+                memcmp( model_bssid( scratch.order[ scratch.groups[ a_group ].first + member ] ),
+                        member_bssid,
+                        6U ) )
             {
                 members_selected = 1U + (unsigned)member;
                 found = true;
@@ -1319,11 +1319,25 @@ static void render_members( char *a_footer )
             members_selected = 0U;
         }
     }
-    if( members_selected > count )
+    if( members_selected > a_count )
     {
         members_selected = 0U;
         member_selected = false;
     }
+}
+
+static void render_members( char *a_footer )
+{
+    const size_t group = group_selected ? find_group( group_bssid ) : group_count;
+    if( group >= group_count )
+    {
+        group_selected = false;
+        menu_selected = MENU_BACK;
+        screen = SCREEN_MENU;
+        return;
+    }
+    const size_t count = build_member_rows( group );
+    resolve_member_selection( group, count );
     /* The footer names the network, since the title keeps the view name. */
     char label[ UI_LABEL_MAX ];
     format_label(
@@ -1473,6 +1487,9 @@ static void handle_menu_input( const rfscout_input_event_t *a_input )
     {
         (void)hotspots_profiles( &rows );
     }
+    /* Render may have selected an old numeric index before a Live list reorder.
+       Reattach to the selected BSSID/profile before handling rotation or Select. */
+    resolve_menu_selection( rows );
     if( RFSCOUT_INPUT_NAVIGATION == a_input->type )
     {
         menu_selected = step_index( menu_selected, MENU_FIXED + (unsigned)rows, a_input->value );
@@ -1598,7 +1615,18 @@ static void handle_settings_input( const rfscout_input_event_t *a_input )
 static void handle_members_input( const rfscout_input_event_t *a_input )
 {
     const size_t group = group_selected ? find_group( group_bssid ) : group_count;
-    const size_t count = group < group_count ? scratch.groups[ group ].count : 0U;
+    if( group >= group_count )
+    {
+        group_selected = false;
+        member_selected = false;
+        members_selected = 0U;
+        menu_selected = MENU_BACK;
+        screen = SCREEN_MENU;
+        return;
+    }
+    const size_t count = scratch.groups[ group ].count;
+    /* Use the same identity reconciliation as render_members. */
+    resolve_member_selection( group, count );
     if( RFSCOUT_INPUT_NAVIGATION == a_input->type )
     {
         members_selected = step_index( members_selected, 1U + (unsigned)count, a_input->value );
