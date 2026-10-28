@@ -10,7 +10,7 @@ SOURCE = ROOT / "main/apps/hotspots/hotspots_ui.c"
 
 def function_body(source: str, name: str) -> str:
     match = re.search(
-        rf"static (?:void|bool|size_t)\s+{re.escape(name)}\s*\([^;]*?\)\s*\{{",
+        rf"(?:static\s+)?(?:void|bool|size_t)\s+{re.escape(name)}\s*\([^;]*?\)\s*\{{",
         source,
     )
     if match is None:
