@@ -509,7 +509,8 @@ static void finish_attempt( hotspot_status_t a_outcome,
                             int64_t a_now_us );
 
 /** @brief Write one bounded gateway HEAD report from the app task, never from the HTTP worker. */
-static void save_gateway_probe_result( int a_http_status, esp_err_t a_error )
+static void
+save_gateway_probe_result( int a_http_status, esp_err_t a_error, const char *a_completion )
 {
     if( !gateway_capture_pending )
     {
@@ -581,7 +582,7 @@ static void save_gateway_probe_result( int a_http_status, esp_err_t a_error )
                   "# RFScout DHCP gateway HEAD probe (parsed response headers; not wire-exact)\n"
                   "# time=%s%s bssid=%02X:%02X:%02X:%02X:%02X:%02X\n"
                   "# uptime_us=%llu gateway=%u.%u.%u.%u\n"
-                  "# transport=%s http_status=%d capture_available=%d truncated=%d\n",
+                  "# transport=%s completion=%s http_status=%d capture_available=%d truncated=%d\n",
                   stamp,
                   'u' == stamp[ 0 ] ? " (monotonic; UTC unavailable)" : " UTC",
                   bssid[ 0 ],
@@ -596,6 +597,7 @@ static void save_gateway_probe_result( int a_http_status, esp_err_t a_error )
                   (unsigned)( ( gateway >> 16U ) & 0xffU ),
                   (unsigned)( ( gateway >> 24U ) & 0xffU ),
                   esp_err_to_name( a_error ),
+                  a_completion,
                   a_http_status,
                   captured ? 1 : 0,
                   truncated ? 1 : 0 );
@@ -645,7 +647,7 @@ static bool finish_failed_network_attempt( int64_t a_now_us )
 
     attempt_result.disconnect_reason = network.disconnect_reason;
     /* Network teardown may have cancelled the worker already; record the failure. */
-    save_gateway_probe_result( 0, network.error );
+    save_gateway_probe_result( 0, network.error, "link_loss" );
     finish_attempt( HOTSPOT_STATUS_RED, HOTSPOT_STAGE_JOIN, network.error, a_now_us );
     return true;
 }
@@ -1197,7 +1199,10 @@ static void scheduler_poll( int64_t a_now_us )
                 save_gateway_probe_result( probe.http_status,
                                            RFSCOUT_CONNECTIVITY_PROBE_RUNNING == probe.state
                                                ? ESP_ERR_TIMEOUT
-                                               : probe.error );
+                                               : probe.error,
+                                           RFSCOUT_CONNECTIVITY_PROBE_RUNNING == probe.state
+                                               ? "timeout"
+                                               : "complete" );
                 finish_attempt(
                     HOTSPOT_STATUS_YELLOW, limited_failed_stage, limited_error, a_now_us );
             }
@@ -1272,6 +1277,9 @@ static rfscout_app_runtime_result_t hotspots_runtime( const rfscout_app_runtime_
             return RFSCOUT_APP_RUNTIME_HANDLED;
 
         case RFSCOUT_APP_RUNTIME_LEAVE:
+            /* App-session shutdown joins the HTTP worker before delivering LEAVE.
+               Save any interrupted gateway probe before clearing the pending marker. */
+            save_gateway_probe_result( 0, ESP_ERR_INVALID_STATE, "app_exit" );
             /* Station and probe services were already stopped by the session; app-session memory
                is about to be reclaimed, so flush history and drop every pointer into it. */
             hotspots_ui_close();

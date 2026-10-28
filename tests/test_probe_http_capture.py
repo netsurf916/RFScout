@@ -84,6 +84,15 @@ class ProbeHttpCaptureTests(unittest.TestCase):
         self.assertIn("gateway_capture_pending = true;", app)
         self.assertIn("save_gateway_probe_result(", app)
         self.assertIn("finish_failed_network_attempt(", app)
+        # LEAVE must archive cancelled HEAD metadata before app-session reset.
+        leave = app.split("case RFSCOUT_APP_RUNTIME_LEAVE:", 1)[1].split(
+            "case RFSCOUT_APP_RUNTIME_INPUT:", 1
+        )[0]
+        self.assertIn('save_gateway_probe_result( 0, ESP_ERR_INVALID_STATE, "app_exit" );', leave)
+        self.assertLess(
+            leave.index("save_gateway_probe_result("),
+            leave.index("reset_session_state();"),
+        )
 
 
 if __name__ == "__main__":

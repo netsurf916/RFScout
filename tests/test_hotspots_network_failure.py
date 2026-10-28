@@ -73,9 +73,10 @@ static int phase;
 static int64_t phase_deadline_us;
 static bool render_due;
 static void network_session_status(rfscout_network_session_status_t *out) { *out = network; }
-static void save_gateway_probe_result(int status, esp_err_t error) {
+static void save_gateway_probe_result(int status, esp_err_t error, const char *reason) {
     (void)status;
     (void)error;
+    (void)reason;
     if (gateway_capture_pending) {
         ++capture_saves;
         gateway_capture_pending = false;

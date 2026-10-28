@@ -114,7 +114,10 @@ worker never performs SD I/O; the Hotspots app task writes after the
 worker finishes or is cancelled. Failed requests and timeouts still
 produce a metadata report, optionally containing partial headers.
 If link-loss teardown already cancelled a request, partial headers
-might not be recoverable; the failure is still reported. No SD card
+might not be recoverable; the failure is still reported. Leaving Hotspots
+also saves a best-effort cancelled report during LEAVE after session-managed
+worker quiescence and before app-session reclamation, marked
+`completion=app_exit`. No SD card
 is required for monitoring or fingerprint classification.
 
 **Privacy:** HTTP headers can contain authentication challenges, cookie
