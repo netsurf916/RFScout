@@ -119,13 +119,11 @@ MODEL_HARNESS = r'''
 #include <math.h>
 #include <string.h>
 
-static hotspot_group_input_t input( const char *ssid, int auth, unsigned gateway, unsigned mac,
-                                    unsigned char partition )
+static hotspot_group_input_t input( const char *ssid, int auth, unsigned gateway, unsigned mac )
 {
     hotspot_group_input_t value = { 0 };
     value.ssid = ssid;
     value.auth_mode = auth;
-    value.partition = partition;
     value.member.evidence.subnet_valid = gateway != 0;
     value.member.evidence.gateway = gateway;
     value.member.evidence.netmask = gateway != 0 ? 255U : 0U;
@@ -136,11 +134,10 @@ static hotspot_group_input_t input( const char *ssid, int auth, unsigned gateway
 
 int main( void )
 {
-    /* 0,1: CAFE WPA2 conflicting gateways; 2: CAFE WPA2 no evidence; 3: CAFE open (other auth);
-       4: LIB; 5: CAFE WPA2 rejected every profile (partition 1). */
+    /* 0,1: same-SSID conflicting gateways; 2,5: no evidence; 3: open; 4: LIB. */
     hotspot_group_input_t inputs[ 6 ] = {
-        input( "CAFE", 3, 1, 1, 0 ), input( "CAFE", 3, 2, 2, 0 ), input( "CAFE", 3, 0, 0, 0 ),
-        input( "CAFE", 0, 0, 0, 0 ), input( "LIB", 3, 0, 0, 0 ),  input( "CAFE", 3, 0, 0, 1 ),
+        input( "CAFE", 3, 1, 1 ), input( "CAFE", 3, 2, 2 ), input( "CAFE", 3, 0, 0 ),
+        input( "CAFE", 0, 0, 0 ), input( "LIB", 3, 0, 0 ),  input( "CAFE", 3, 0, 0 ),
     };
     /* Preference: LIB first, then 1, 5, 3, 2, 0. */
     const size_t preference[ 6 ] = { 4, 1, 5, 3, 2, 0 };
@@ -153,26 +150,19 @@ int main( void )
     const hotspot_group_scratch_t scratch = { sorted, rank, members, clusters };
 
     const size_t count = hotspot_groups_build( inputs, 6, preference, order, groups, &scratch );
-    assert( count == 5 );
-    /* Networks follow their best member: LIB, then the network holding 1, then 5, then 3. */
+    /* No credential-only split: LIB, two characterized CAFE/WPA2 networks and CAFE/open. */
+    assert( count == 4 );
     assert( groups[ 0 ].count == 1 && order[ groups[ 0 ].first ] == 4 );
     assert( groups[ 0 ].networks == 1 );
+    assert( groups[ 1 ].networks == 2 && groups[ 1 ].count == 3 );
     assert( order[ groups[ 1 ].first ] == 1 );
-    assert( groups[ 1 ].networks == 3 );
-    assert( order[ groups[ 2 ].first ] == 5 );
-    assert( groups[ 2 ].count == 1 && groups[ 2 ].network == 3 );
-    assert( order[ groups[ 3 ].first ] == 3 && groups[ 3 ].networks == 1 );
-    /* Member 2 joins one of the evidence networks and keeps preference order inside it. */
-    size_t holder = 5;
-    for( size_t group = 0; group < count; ++group )
-        for( size_t member = 0; member < groups[ group ].count; ++member )
-            if( order[ groups[ group ].first + member ] == 2 )
-                holder = group;
-    assert( holder == 1 || holder == 4 );
-    assert( groups[ holder ].count == 2 );
-    assert( order[ groups[ holder ].first + 1 ] == 2 || order[ groups[ holder ].first ] == 1 );
-    /* Numbering among the three CAFE/WPA2 networks is unique. */
-    assert( groups[ 1 ].network != groups[ 4 ].network );
+    /* Unknown members 5 and 2 stay with an existing characterized network. */
+    assert( order[ groups[ 1 ].first + 1 ] == 5 );
+    assert( order[ groups[ 1 ].first + 2 ] == 2 );
+    assert( groups[ 2 ].count == 1 && order[ groups[ 2 ].first ] == 3 );
+    assert( groups[ 2 ].networks == 1 );
+    assert( groups[ 3 ].count == 1 && order[ groups[ 3 ].first ] == 0 );
+    assert( groups[ 3 ].networks == 2 && groups[ 1 ].network != groups[ 3 ].network );
     assert( hotspot_groups_build( inputs, 0, preference, order, groups, &scratch ) == 0 );
 
     /* Shared geo helpers used by History distance and direction. */

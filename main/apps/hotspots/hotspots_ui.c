@@ -354,8 +354,6 @@ static const char *entry_tag( const hotspot_entry_t *a_entry, hotspots_view_tone
         case HOTSPOT_CREDENTIAL_AMBIGUOUS:
         case HOTSPOT_CREDENTIAL_UNMATCHED:
             return "PICK";
-        case HOTSPOT_CREDENTIAL_REJECTED:
-            return "DENY";
         case HOTSPOT_CREDENTIAL_UNSUPPORTED:
             return "N/A";
         default:
@@ -427,8 +425,6 @@ static bool build_live( void )
         memset( input, 0, sizeof( *input ) );
         input->ssid = entry->bss.ssid;
         input->auth_mode = entry->bss.auth_mode;
-        /* A BSSID that refused every same-SSID passphrase is not those profiles' network. */
-        input->partition = HOTSPOT_CREDENTIAL_REJECTED == entry->credential ? 1U : 0U;
         if( entry->has_success )
         {
             const hotspot_result_t *success = &entry->success;
@@ -858,7 +854,7 @@ static void describe_last_attempt( const hotspot_entry_t *a_entry, char *a_line,
         default:
             if( rfscout_wifi_station_reason_auth_rejected( last->disconnect_reason ) )
             {
-                snprintf( a_line, a_capacity, "Last: password rejected" );
+                snprintf( a_line, a_capacity, "Last: auth/handshake failed" );
             }
             else if( 0 != last->disconnect_reason )
             {
@@ -898,9 +894,6 @@ static void describe_credential( const hotspot_entry_t *a_entry, char *a_line, s
         case HOTSPOT_CREDENTIAL_UNMATCHED:
             snprintf( a_line, a_capacity, "Profiles not proven here: Join to pick" );
             break;
-        case HOTSPOT_CREDENTIAL_REJECTED:
-            snprintf( a_line, a_capacity, "Saved passwords were rejected" );
-            break;
         case HOTSPOT_CREDENTIAL_UNSUPPORTED:
             snprintf( a_line, a_capacity, "Security mode not supported" );
             break;
@@ -926,8 +919,7 @@ live_actions( const hotspot_entry_t *a_entry, ui_menu_row_t *a_rows, detail_acti
     }
     const bool secured = RFSCOUT_WIFI_STATION_SECURITY_SECURED == a_entry->bss.security;
     const bool needs_pick = HOTSPOT_CREDENTIAL_AMBIGUOUS == a_entry->credential ||
-                            HOTSPOT_CREDENTIAL_UNMATCHED == a_entry->credential ||
-                            HOTSPOT_CREDENTIAL_REJECTED == a_entry->credential;
+                            HOTSPOT_CREDENTIAL_UNMATCHED == a_entry->credential;
     if( secured && needs_pick )
     {
         a_ids[ count ] = ACTION_JOIN;

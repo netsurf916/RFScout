@@ -64,7 +64,6 @@ hotspot_credential_t hotspot_profiles_resolve( const hotspot_profiles_input_t *a
 {
     *a_profile_id = 0U;
     size_t candidates = 0U;
-    size_t rejected = 0U;
     size_t with_evidence = 0U;
     for( size_t index = 0U; NULL != a_input->profiles && index < a_input->profile_count; ++index )
     {
@@ -76,11 +75,7 @@ hotspot_credential_t hotspot_profiles_resolve( const hotspot_profiles_input_t *a
         }
         const saved_network_bssid_t *known =
             saved_network_profile_bssid( profile, a_entry->bss.bssid );
-        if( NULL != known && SAVED_NETWORK_BSSID_REJECTED == known->state )
-        {
-            ++rejected;
-            continue;
-        }
+        /* Existing saved REJECTED entries are no longer a credential veto. */
         if( NULL != known && SAVED_NETWORK_BSSID_ASSOCIATED == known->state &&
             known->auth_mode == a_entry->bss.auth_mode )
         {
@@ -108,5 +103,5 @@ hotspot_credential_t hotspot_profiles_resolve( const hotspot_profiles_input_t *a
     {
         return HOTSPOT_CREDENTIAL_UNMATCHED;
     }
-    return 0U != rejected ? HOTSPOT_CREDENTIAL_REJECTED : HOTSPOT_CREDENTIAL_NONE;
+    return HOTSPOT_CREDENTIAL_NONE;
 }

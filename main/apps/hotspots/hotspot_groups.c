@@ -27,7 +27,7 @@ static int compare_key( size_t a_left, size_t a_right )
     {
         return left->auth_mode < right->auth_mode ? -1 : 1;
     }
-    return (int)left->partition - (int)right->partition;
+    return 0;
 }
 
 static int compare_members( const void *a_left, const void *a_right )
@@ -83,36 +83,23 @@ size_t hotspot_groups_build( hotspot_group_input_t *a_inputs,
     size_t run = 0U;
     while( run < a_count )
     {
-        /* One SSID/auth run, made of consecutive partitions in rank order. */
+        /* One SSID/auth run; only conflicting network evidence can split it. */
         size_t run_end = run + 1U;
         while( run_end < a_count && same_ssid_auth( &a_inputs[ a_scratch->sorted[ run ] ],
                                                     &a_inputs[ a_scratch->sorted[ run_end ] ] ) )
         {
             ++run_end;
         }
-
-        uint16_t networks = 0U;
-        size_t part = run;
-        while( part < run_end )
+        for( size_t index = run; index < run_end; ++index )
         {
-            const uint8_t partition = a_inputs[ a_scratch->sorted[ part ] ].partition;
-            size_t part_end = part;
-            while( part_end < run_end &&
-                   a_inputs[ a_scratch->sorted[ part_end ] ].partition == partition )
-            {
-                a_scratch->members[ part_end - part ] =
-                    a_inputs[ a_scratch->sorted[ part_end ] ].member;
-                ++part_end;
-            }
-            const size_t clusters = characterization_grouping_partition(
-                a_scratch->members, part_end - part, a_scratch->clusters );
-            for( size_t index = part; index < part_end; ++index )
-            {
-                a_inputs[ a_scratch->sorted[ index ] ].member.cluster =
-                    (uint16_t)( networks + a_scratch->members[ index - part ].cluster );
-            }
-            networks = (uint16_t)( networks + clusters );
-            part = part_end;
+            a_scratch->members[ index - run ] = a_inputs[ a_scratch->sorted[ index ] ].member;
+        }
+        const uint16_t networks = (uint16_t)characterization_grouping_partition(
+            a_scratch->members, run_end - run, a_scratch->clusters );
+        for( size_t index = run; index < run_end; ++index )
+        {
+            a_inputs[ a_scratch->sorted[ index ] ].member.cluster =
+                a_scratch->members[ index - run ].cluster;
         }
 
         for( uint16_t network = 0U; network < networks; ++network )

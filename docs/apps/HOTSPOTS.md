@@ -55,7 +55,7 @@ tier than the newcomer:
 | --- | --- |
 | 1 | Open or OWE |
 | 2 | Supported WPA2/WPA3 personal with an unambiguous Known or Inferred saved profile |
-| 3 | Supported personal without automatically usable credentials (None, Ambiguous, Unmatched or Rejected) |
+| 3 | Supported personal without automatically usable credentials (None, Ambiguous or Unmatched) |
 | 4 | Unsupported or unknown authentication (WEP, WPA1, 802.1X and other nonjoinable modes) |
 
 The **lowest-priority eligible tier yields first**, then the oldest `last_seen_ms`
@@ -83,7 +83,7 @@ captures show whether churn is problematic.
 
 ## Credentials
 
-Secured networks use the shared saved-network profiles (see [Home](HOME.md) and [Architecture](../ARCHITECTURE.md#shared-network-profiles)). Several profiles may share an SSID; each profile learns the BSSIDs that accepted its passphrase and the BSSIDs that refused it. After every completed scan, and immediately after any credential change, each secured BSSID is resolved to one of these states:
+Secured networks use the shared saved-network profiles (see [Home](HOME.md) and [Architecture](../ARCHITECTURE.md#shared-network-profiles)). Several profiles may share an SSID; successful secured joins teach positive BSSID/profile associations. Historical rejected-BSSID records remain readable but no longer exclude a compatible profile. After every completed scan, and immediately after any credential change, each secured BSSID is resolved to one of these states:
 
 | State | Tag | Meaning |
 | --- | --- | --- |
@@ -91,11 +91,18 @@ Secured networks use the shared saved-network profiles (see [Home](HOME.md) and 
 | Inferred | — | Exactly one same-SSID, auth-compatible profile has evidence: one of its known BSSIDs is in the same scan, or has history within the **Match distance** of the current fix. Automatic checks use it. |
 | Ambiguous | `PICK` | Several profiles have evidence. Only a manual **Join with profile** checks it. |
 | Unmatched | `PICK` | Same-SSID profiles exist but none has evidence here. Only a manual join checks it. |
-| Rejected | `DENY` | Every compatible same-SSID profile was refused by this BSSID. |
 | None | `KEY?` | No saved password for this SSID. |
 | Unsupported | `N/A` | WEP, WPA1, 802.1X or another mode the station cannot join. |
 
-A profile is never used with a BSSID whose observed auth mode differs from the one it learned, and a WPA3-only BSSID is never joined under a WPA2 minimum. A successful secured association records the BSSID as associated with that profile, so later visits resolve it as Known. A join refused by the passphrase (authentication failure or handshake timeout) records the BSSID as rejected for that profile. Connectivity results are recorded separately in history; a yellow or red result does not change what a profile learned.
+A profile is never used with a BSSID whose observed auth mode differs from the one it learned, and a WPA3-only BSSID is never joined under a WPA2 minimum. A successful secured association records the BSSID as associated with that profile, so later visits resolve it as Known. Hotspots no longer learns persistent negative BSSID/credential associations:
+failed authentication, handshake timeout, DHCP, DNS, NTP, HTTPS, and network
+disconnection remain ordinary failed check outcomes, not an exclusion.
+All such failures use the existing retry scheduling and signal-strength
+improvement policy. Previously saved rejection records are ignored by the
+Hotspots resolver without changing the saved-profile binary format. A
+successful manual join may replace an old rejection with a positive match.
+Auto-checking still needs a Known or Inferred credential; a profile without
+positive matching evidence requires manual `Join with profile`.
 
 **Match distance** (Settings; Off, 50, 100, 200 or 500 m; default 100 m) controls how close the current fix must be to the history of a profile's known BSSID for it to count as evidence. It needs a GPS receiver and is shown unavailable without one. Profile resolution works without GPS through exact BSSIDs and same-scan overlap.
 
@@ -120,7 +127,7 @@ A failed recheck does not erase an earlier green or yellow result for the same o
 Automatic checking is **on by default** each time the app is entered, and starts only after history has finished loading:
 
 - an eligible BSSID (Open, OWE, or secured with a Known or Inferred profile) is checked automatically once it is visible at **-80 dBm or stronger**;
-- after a failed automatic attempt, the same BSSID is retried in the same observation session only when its RSSI improves by at least **4 dB** over the RSSI of the previous failed attempt;
+- after a failed automatic attempt, including association or handshake failure, the same BSSID can be retried once RSSI improves at least **4 dB** over the last failed attempt (subject to the existing -80 dBm floor and usable credentials);
 - a green or yellow result ends automatic checks for that BSSID for its observation session; and
 - among candidates, the strongest currently visible BSSID is checked first.
 
@@ -158,7 +165,7 @@ observations. Recording is best-effort, not an audit-grade guarantee.
 
 ## Network grouping
 
-Live and History group BSSIDs into networks with Hotspotter's evidence rule. Only BSSIDs with the same SSID and auth mode are compared. Within that group they are one network unless their evidence conflicts: different gateway/netmask, or different gateway MAC, between two BSSIDs that both have it. Missing evidence never splits a network. A BSSID without evidence joins the network whose evidence-bearing members have the nearest location center, or the network with the most evidence-bearing members when it has no location. In Live, a BSSID that refused every same-SSID profile is kept apart from the networks those profiles reach.
+Live and History group BSSIDs into networks with Hotspotter's evidence rule. Only BSSIDs with the same SSID and auth mode are compared. Within that group they are one network unless their evidence conflicts: different gateway/netmask, or different gateway MAC, between two BSSIDs that both have it. Missing evidence never splits a network. A BSSID without evidence joins the network whose evidence-bearing members have the nearest location center, or the network with the most evidence-bearing members when it has no location. Credential failures never split the Live group: only positive, conflicting gateway/netmask or gateway-MAC evidence does so.
 
 When one SSID and auth mode splits into several networks, rows are labelled `SSID #1`, `SSID #2`, and so on, largest first. Individual BSSIDs always remain browsable under their network.
 
@@ -172,11 +179,11 @@ Hotspots has three views. **App lock** off: landing-level rotary changes RFScout
 
 Each view's menu starts with **Back**, **App lock**, **Auto check**, and **Settings** (**Match distance**, **Expire after**, **Evict beyond**, and **Compact history**), followed by the view's rows. Selecting a Live or History network opens its BSSID list; selecting a BSSID opens its detail.
 
-**Live BSSID detail** shows the network label, BSSID and channel, RSSI or not-visible state with auth mode and check count, the credential state, status, the latest attempt's outcome (including a rejected password), client IP, gateway, netmask, gateway MAC, DNS servers, and public IP with Cloudflare colo. LIMITED results keep the LAN attributes even though HTTPS was skipped. Actions:
+**Live BSSID detail** shows the network label, BSSID and channel, RSSI or not-visible state with auth mode and check count, the credential state, status, the latest attempt's outcome (including a failed association), client IP, gateway, netmask, gateway MAC, DNS servers, and public IP with Cloudflare colo. LIMITED results keep the LAN attributes even though HTTPS was skipped. Actions:
 
 - **Recheck** — queue a manual check (visible, eligible BSSIDs only).
 - **Password** — open the profile used for this BSSID.
-- **Join with profile** — for Ambiguous, Unmatched or Rejected BSSIDs: choose an auth-compatible profile for one manual check.
+- **Join with profile** — for Ambiguous or Unmatched BSSIDs: choose an auth-compatible profile for one manual check.
 - **Add password** — for secured BSSIDs without a usable profile: replace a same-SSID profile's password or create a new profile, then check this BSSID with it.
 
 **History BSSID detail** is read-only: BSSID and auth mode, status, validation time (UTC) and success count, RSSI at the last success, gateway and netmask, gateway MAC, DNS servers, public IP and colo, and the location center with distance and direction.
@@ -191,7 +198,7 @@ Status tags carry their meaning as text, not only color:
 | `Q` | Queued for a manual check |
 | `JOIN` / `HTTPS` | Check in progress at that stage |
 | `<-80` | Waiting for the automatic RSSI gate |
-| `KEY?` / `PICK` / `DENY` / `N/A` | Secured BSSID that needs a password, a profile choice, was refused, or is unsupported |
+| `KEY?` / `PICK` / `N/A` | Secured BSSID that needs a password, a profile choice, or uses unsupported security |
 | `-` | Not yet checked |
 
 ## Logging

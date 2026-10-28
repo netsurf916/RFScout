@@ -97,7 +97,6 @@ typedef enum
     HOTSPOT_CREDENTIAL_INFERRED,    /**< one profile's known BSSIDs are in range or nearby */
     HOTSPOT_CREDENTIAL_AMBIGUOUS,   /**< several profiles have evidence: user must choose */
     HOTSPOT_CREDENTIAL_UNMATCHED,   /**< same-SSID profiles without evidence: manual join only */
-    HOTSPOT_CREDENTIAL_REJECTED,    /**< every same-SSID profile was refused by this BSSID */
     HOTSPOT_CREDENTIAL_UNSUPPORTED, /**< secured mode the station cannot join (WEP, WPA1, 802.1X) */
 } hotspot_credential_t;
 

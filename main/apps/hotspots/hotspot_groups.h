@@ -21,11 +21,6 @@ typedef struct
 {
     const char *ssid;
     int32_t auth_mode;
-    /**
-     * Caller-defined evidence class: members in different partitions never share a network.
-     * Live uses it to keep BSSIDs that refused every same-SSID profile apart from the rest.
-     */
-    uint8_t partition;
     characterization_group_member_t member; /**< evidence and location in; cluster out */
 } hotspot_group_input_t;
 
@@ -51,8 +46,7 @@ typedef struct
  * @brief Partition inputs into networks.
  * @details @p a_preference lists every input index once, best first. Members of a network keep
  *          that order, and networks are ordered by their best member, so callers choose both
- *          orders with one ranking. Numbering of same-SSID networks follows the partition order
- *          (partition 0 first) and then cluster size.
+ *          orders with one ranking. Only network characterization evidence splits groups.
  * @param a_order   Receives every input index, grouped by network (a_count entries).
  * @param a_groups  Receives the networks (up to a_count entries).
  * @return Number of networks written; 0 when a_count is 0 or an argument is invalid.
