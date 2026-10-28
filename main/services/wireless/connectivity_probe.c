@@ -6,6 +6,8 @@
 */
 
 #include "connectivity_probe.h"
+#include "service_fingerprint.h"
+#include "probe_http_capture.h"
 
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
@@ -15,6 +17,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #define CONNECTIVITY_PROBE_URL "https://cloudflare.com/cdn-cgi/trace"
@@ -37,6 +40,17 @@ static esp_http_client_handle_t active_client;
 /* Only one worker exists at a time, so its bounded response buffer is static rather than stack. */
 static char response[ CONNECTIVITY_PROBE_RESPONSE_MAX_LENGTH + 1U ];
 static size_t response_length;
+
+typedef enum
+{
+    PROBE_MODE_INTERNET = 0,
+    PROBE_MODE_CAMERA
+} probe_mode_t;
+
+static probe_mode_t mode;
+static rfscout_service_fingerprint_t camera_fingerprint;
+static rfscout_probe_http_capture_t camera_headers;
+static char camera_url[ 32 ];
 
 /** @brief Copy the value of one `key=value` line from a Cloudflare trace body. */
 static void
@@ -75,6 +89,20 @@ copy_trace_value( const char *a_trace, const char *a_key, char *a_destination, s
 
 static esp_err_t http_event( esp_http_client_event_t *a_event )
 {
+    if( NULL != a_event && PROBE_MODE_CAMERA == mode && HTTP_EVENT_ON_HEADER == a_event->event_id &&
+        NULL != a_event->header_key && NULL != a_event->header_value )
+    {
+        service_fingerprint_http_header( &camera_fingerprint,
+                                         a_event->header_key,
+                                         strlen( a_event->header_key ),
+                                         a_event->header_value,
+                                         strlen( a_event->header_value ) );
+        probe_http_capture_header( &camera_headers, a_event->header_key, a_event->header_value );
+    }
+    if( PROBE_MODE_CAMERA == mode )
+    {
+        return ESP_OK; /* HEAD cannot download response bodies. */
+    }
     if( ( NULL == a_event ) || ( HTTP_EVENT_ON_DATA != a_event->event_id ) ||
         ( NULL == a_event->data ) || ( a_event->data_len <= 0 ) )
     {
@@ -111,8 +139,15 @@ finish( rfscout_connectivity_probe_state_t a_state, esp_err_t a_error, int a_htt
         status.http_status = a_http_status;
         if( RFSCOUT_CONNECTIVITY_PROBE_SUCCEEDED == a_state )
         {
-            copy_trace_value( response, "ip", status.public_ip, sizeof( status.public_ip ) );
-            copy_trace_value( response, "colo", status.colo, sizeof( status.colo ) );
+            if( PROBE_MODE_CAMERA == mode )
+            {
+                status.camera_evidence = camera_fingerprint.evidence;
+            }
+            else
+            {
+                copy_trace_value( response, "ip", status.public_ip, sizeof( status.public_ip ) );
+                copy_trace_value( response, "colo", status.colo, sizeof( status.colo ) );
+            }
         }
     }
     worker_task = NULL;
@@ -126,7 +161,7 @@ static void probe_worker( void *a_context )
     response_length = 0U;
     response[ 0 ] = '\0';
     const esp_http_client_config_t config = {
-        .url = CONNECTIVITY_PROBE_URL,
+        .url = PROBE_MODE_CAMERA == mode ? camera_url : CONNECTIVITY_PROBE_URL,
         .event_handler = http_event,
         .crt_bundle_attach = esp_crt_bundle_attach,
         .timeout_ms = (int)request_timeout_ms,
@@ -142,6 +177,10 @@ static void probe_worker( void *a_context )
         return;
     }
 
+    if( PROBE_MODE_CAMERA == mode )
+    {
+        (void)esp_http_client_set_method( client, HTTP_METHOD_HEAD );
+    }
     (void)xSemaphoreTake( client_mutex, portMAX_DELAY );
     active_client = client;
     bool cancelled;
@@ -181,8 +220,13 @@ static void probe_worker( void *a_context )
     (void)xSemaphoreGive( client_mutex );
     esp_http_client_cleanup( client );
 
-    if( ( ESP_OK == result ) && ( 200 == http_status ) )
+    if( ESP_OK == result && ( ( PROBE_MODE_CAMERA == mode && http_status >= 100 ) ||
+                              ( PROBE_MODE_INTERNET == mode && 200 == http_status ) ) )
     {
+        if( PROBE_MODE_CAMERA == mode )
+        {
+            service_fingerprint_http_status( &camera_fingerprint, (unsigned)http_status );
+        }
         finish( RFSCOUT_CONNECTIVITY_PROBE_SUCCEEDED, ESP_OK, http_status );
     }
     else
@@ -219,7 +263,7 @@ esp_err_t connectivity_probe_init( void )
     return ESP_OK;
 }
 
-esp_err_t connectivity_probe_begin( uint32_t a_timeout_ms )
+static esp_err_t begin_probe( uint32_t a_timeout_ms, probe_mode_t a_mode, uint32_t a_gateway )
 {
     if( NULL == client_mutex )
     {
@@ -239,6 +283,20 @@ esp_err_t connectivity_probe_begin( uint32_t a_timeout_ms )
     memset( &status, 0, sizeof( status ) );
     status.state = RFSCOUT_CONNECTIVITY_PROBE_RUNNING;
     request_timeout_ms = a_timeout_ms;
+    mode = a_mode;
+    service_fingerprint_reset( &camera_fingerprint );
+    probe_http_capture_reset( &camera_headers );
+    if( PROBE_MODE_CAMERA == mode )
+    {
+        /* lwIP gateway fields use network byte order, first octet in low byte on ESP32. */
+        (void)snprintf( camera_url,
+                        sizeof( camera_url ),
+                        "http://%u.%u.%u.%u/",
+                        (unsigned)( a_gateway & 0xffU ),
+                        (unsigned)( ( a_gateway >> 8U ) & 0xffU ),
+                        (unsigned)( ( a_gateway >> 16U ) & 0xffU ),
+                        (unsigned)( ( a_gateway >> 24U ) & 0xffU ) );
+    }
     cancel_requested = false;
     portEXIT_CRITICAL( &state_lock );
 
@@ -265,6 +323,43 @@ esp_err_t connectivity_probe_begin( uint32_t a_timeout_ms )
     }
     portEXIT_CRITICAL( &state_lock );
     return ESP_OK;
+}
+
+esp_err_t connectivity_probe_begin( uint32_t a_timeout_ms )
+{
+    return begin_probe( a_timeout_ms, PROBE_MODE_INTERNET, 0U );
+}
+
+esp_err_t connectivity_probe_begin_camera( uint32_t a_gateway, uint32_t a_timeout_ms )
+{
+    if( 0U == a_gateway || UINT32_MAX == a_gateway || a_timeout_ms > 3000U )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return begin_probe( a_timeout_ms, PROBE_MODE_CAMERA, a_gateway );
+}
+
+/** @brief Borrow completed HEAD response headers until the next probe begins. */
+bool connectivity_probe_camera_headers( const char **a_data, size_t *a_length, bool *a_truncated )
+{
+    if( NULL == a_data || NULL == a_length || NULL == a_truncated )
+    {
+        return false;
+    }
+    portENTER_CRITICAL( &state_lock );
+    /* The worker finishes all header callbacks before publishing terminal status.
+       Only the app task starts a subsequent request in this session. */
+    const bool ready = PROBE_MODE_CAMERA == mode &&
+                       RFSCOUT_CONNECTIVITY_PROBE_RUNNING != status.state && NULL == worker_task;
+    portEXIT_CRITICAL( &state_lock );
+    if( !ready )
+    {
+        return false;
+    }
+    *a_data = camera_headers.data;
+    *a_length = camera_headers.length;
+    *a_truncated = camera_headers.truncated;
+    return true;
 }
 
 void connectivity_probe_status( rfscout_connectivity_probe_status_t *a_status )

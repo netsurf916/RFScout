@@ -311,12 +311,25 @@ static const char *entry_tag( const hotspot_entry_t *a_entry, hotspots_view_tone
     if( HOTSPOT_STAGE_NONE != stage )
     {
         *a_tone = HOTSPOTS_TONE_ACTIVE;
-        return HOTSPOT_STAGE_JOIN == stage ? "JOIN" : "HTTPS";
+        if( HOTSPOT_STAGE_JOIN == stage )
+        {
+            return "JOIN";
+        }
+        if( HOTSPOT_STAGE_CAMERA == stage )
+        {
+            return "PROBE";
+        }
+        return "HTTPS";
     }
     if( a_entry->manual_requested )
     {
         *a_tone = HOTSPOTS_TONE_ACTIVE;
         return "Q";
+    }
+    if( a_entry->has_success && hotspot_result_camera_hint( &a_entry->success ) )
+    {
+        *a_tone = HOTSPOTS_TONE_ACTIVE;
+        return "CAM";
     }
     switch( a_entry->status )
     {
@@ -548,9 +561,12 @@ static bool build_history( void )
 static const char *history_tag( const hotspot_history_entry_t *a_entry,
                                 hotspots_view_tone_t *a_tone )
 {
+    const bool camera = HOTSPOT_STATUS_YELLOW == a_entry->status &&
+                        0U != ( a_entry->camera_evidence & ( RFSCOUT_SERVICE_CAMERA_HINT |
+                                                             RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE ) );
     const bool green = HOTSPOT_STATUS_GREEN == a_entry->status;
-    *a_tone = green ? HOTSPOTS_TONE_GOOD : HOTSPOTS_TONE_LIMITED;
-    return green ? "OK" : "LTD";
+    *a_tone = camera ? HOTSPOTS_TONE_ACTIVE : green ? HOTSPOTS_TONE_GOOD : HOTSPOTS_TONE_LIMITED;
+    return camera ? "CAM" : green ? "OK" : "LTD";
 }
 
 static void history_group_row( size_t a_group, hotspots_view_row_t *a_row )
@@ -562,10 +578,16 @@ static void history_group_row( size_t a_group, hotspots_view_row_t *a_row )
     {
         const hotspot_history_entry_t *entry =
             hotspot_history_at( scratch.order[ group->first + member ] );
-        if( HOTSPOT_STATUS_GREEN == entry->status )
+        if( HOTSPOT_STATUS_YELLOW == entry->status &&
+            0U != ( entry->camera_evidence &
+                    ( RFSCOUT_SERVICE_CAMERA_HINT | RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE ) ) )
         {
             summary = entry;
             break;
+        }
+        if( HOTSPOT_STATUS_GREEN == entry->status )
+        {
+            summary = entry;
         }
     }
     format_label( summary->ssid, group, scratch.labels[ a_group ], UI_LABEL_MAX );
@@ -776,8 +798,14 @@ static const char *history_empty_text( void )
 
 /* ---- Detail ------------------------------------------------------------------------------ */
 
-static void describe_status( hotspot_status_t a_status, char *a_line, size_t a_capacity )
+static void
+describe_status( hotspot_status_t a_status, bool a_camera, char *a_line, size_t a_capacity )
 {
+    if( a_camera && HOTSPOT_STATUS_YELLOW == a_status )
+    {
+        snprintf( a_line, a_capacity, "CAM - gateway camera hint (LTD)" );
+        return;
+    }
     switch( a_status )
     {
         case HOTSPOT_STATUS_GREEN:
@@ -969,7 +997,10 @@ static void render_live_detail( const hotspot_entry_t *a_entry, const char *a_la
     }
     else
     {
-        describe_status( a_entry->status, lines[ 4 ], UI_LINE_MAX );
+        describe_status( a_entry->status,
+                         a_entry->has_success && hotspot_result_camera_hint( &a_entry->success ),
+                         lines[ 4 ],
+                         UI_LINE_MAX );
     }
     describe_last_attempt( a_entry, lines[ 5 ], UI_LINE_MAX );
 
@@ -993,7 +1024,14 @@ static void render_live_detail( const hotspot_entry_t *a_entry, const char *a_la
     snprintf( lines[ 6 ], UI_LINE_MAX, "IP %s  GW %s", client, gateway );
     snprintf( lines[ 7 ], UI_LINE_MAX, "Mask %s  MAC %s", netmask, gateway_mac );
     snprintf( lines[ 8 ], UI_LINE_MAX, "DNS %s / %s", dns_primary, dns_backup );
-    format_egress( evidence->public_ip, evidence->colo, lines[ 9 ], UI_LINE_MAX );
+    if( hotspot_result_camera_hint( evidence ) )
+    {
+        snprintf( lines[ 9 ], UI_LINE_MAX, "CAM source: gateway HTTP headers" );
+    }
+    else
+    {
+        format_egress( evidence->public_ip, evidence->colo, lines[ 9 ], UI_LINE_MAX );
+    }
 
     hotspots_view_detail_t detail = {
         .line_count = HOTSPOTS_VIEW_DETAIL_LINES,
@@ -1025,7 +1063,12 @@ render_history_detail( const hotspot_history_entry_t *a_entry, size_t a_index, c
               "BSSID %s  %s",
               bssid,
               rfscout_wifi_station_auth_label( a_entry->auth_mode ) );
-    describe_status( a_entry->status, lines[ 2 ], UI_LINE_MAX );
+    describe_status( a_entry->status,
+                     HOTSPOT_STATUS_YELLOW == a_entry->status &&
+                         0U != ( a_entry->camera_evidence & ( RFSCOUT_SERVICE_CAMERA_HINT |
+                                                              RFSCOUT_SERVICE_ONVIF_DEVICE_TYPE ) ),
+                     lines[ 2 ],
+                     UI_LINE_MAX );
     if( 0 != a_entry->validated_utc )
     {
         const time_t utc = (time_t)a_entry->validated_utc;

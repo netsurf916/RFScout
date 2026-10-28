@@ -108,7 +108,8 @@ One check for one BSSID performs:
 1. **Network** — associate pinned to the selected BSSID and channel: without a password for Open/OWE (OWE remains required when advertised), or with the resolved shared profile for supported WPA2/WPA3 personal networks. Complete DHCP under the common framework policy. Association/DHCP failure marks the AP **red**.
 2. **Time** — once DHCP succeeds, the framework captures LAN attributes and checks whether GPS or NTP has already provided trusted UTC within the last hour. If so, it skips a redundant NTP request and advances to READY; otherwise it attempts NTP (up to 15 seconds). Failure of a required NTP check leaves the session LIMITED, marks the AP **yellow**, retains LAN attributes, and **skips HTTPS**. Time readiness does not prove that this specific AP supports NTP.
 3. **HTTPS** — only for READY sessions, perform one certificate-validated request to Cloudflare's `/cdn-cgi/trace`, bounded to **10 seconds**. HTTP 200 marks the AP **green** and records the public egress IP and Cloudflare colo; any other result marks it **yellow**.
-4. **Leave** — read the gateway's MAC address from the station's ARP cache (joined checks only), release the network session, and return to scanning.
+4. **Camera hint (experimental)** — only after either path yields LIMITED/yellow (NTP or HTTPS failure), and only if the DHCP gateway lies on the directly connected subnet, issue one cancellable HTTP `HEAD /` request to that gateway on port 80 (2.5-second request timeout, 3.5-second scheduler guard). Inspect bounded response headers for explicit camera/ONVIF banners. Generic HTTP, HTTP 401, or JPEG alone is not enough. When camera-specific evidence is present, **CAM** replaces **LTD** in Live and History; the stored connectivity outcome remains yellow/LIMITED. The detail view identifies this as *gateway camera metadata*, not verified camera or BSSID identity. The request sends no credentials, fetches no image/body, follows no redirects, and scans no subnet.
+5. **Leave** — read the gateway's MAC address from the station's ARP cache (joined checks only), stop the probe, release the network session, and return to scanning.
 
 Each check inherits the platform-wide default of a fresh random, locally administered station MAC; the factory MAC is restored when the network session stops.
 
@@ -205,3 +206,16 @@ Status tags carry their meaning as text, not only color:
 - Failed attempts are not kept in history.
 - Grouping assumes same-SSID/auth BSSIDs are one network unless evidence conflicts, so unrelated networks can share a row until they are characterized. HESSID/802.11u and 802.11r mobility-domain evidence are not used.
 - A profile is matched to the exact auth mode it learned, so a profile learned on a WPA2 BSSID is not offered for a WPA2/WPA3 transition BSSID of the same SSID; that BSSID needs its own profile (**Add password** → New profile).
+
+
+### Local gateway HEAD debug reports
+
+One file is saved per started gateway HEAD probe, under
+`hotspots/gateway_probes/`. Filenames include verified UTC (or a
+clearly marked monotonic fallback), the tested BSSID, and a unique uptime
+suffix. The file contains bounded response headers as delivered by ESP-IDF
+and the numeric HTTP status or an explicit transport failure. This is not
+a byte-for-byte wire capture and does not fetch any body. Header values
+are retained without redaction and may be sensitive; inspect files before
+sharing. SD unavailability has no effect on camera classification or
+Hotspots connectivity outcomes.

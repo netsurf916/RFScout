@@ -14,6 +14,7 @@
 #include "geo.h"
 #include "gps.h"
 #include "wifi_station.h"
+#include "camera_probe_rules.h"
 
 #include "esp_err.h"
 
@@ -51,7 +52,8 @@ typedef enum
     HOTSPOT_STAGE_NONE = 0,
     HOTSPOT_STAGE_JOIN,
     HOTSPOT_STAGE_NTP,
-    HOTSPOT_STAGE_HTTPS
+    HOTSPOT_STAGE_HTTPS,
+    HOTSPOT_STAGE_CAMERA
 } hotspot_stage_t;
 
 /** @brief Outcome of one finished connectivity check. */
@@ -63,6 +65,7 @@ typedef struct
     bool ntp_ok;
     int8_t start_rssi;
     int http_status;
+    uint32_t camera_evidence; /**< Local gateway HTTP metadata, not AP identity. */
     esp_err_t error;
     int32_t disconnect_reason;
     uint32_t address;
@@ -75,6 +78,15 @@ typedef struct
     bool gateway_mac_valid; /**< gateway hardware address read from the station ARP cache */
     uint8_t gateway_mac[ 6 ];
 } hotspot_result_t;
+
+/** @brief Whether a LIMITED network's gateway advertised a camera-like service.
+ * @details A hint is not proof of ONVIF conformance, camera identity or authorization.
+ */
+static inline bool hotspot_result_camera_hint( const hotspot_result_t *a_result )
+{
+    return NULL != a_result && HOTSPOT_STATUS_YELLOW == a_result->outcome &&
+           camera_probe_camera_hint( a_result->camera_evidence );
+}
 
 /** @brief How a BSSID's saved credentials were resolved after the latest scan. */
 typedef enum

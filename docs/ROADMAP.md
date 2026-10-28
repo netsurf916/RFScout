@@ -381,6 +381,16 @@ Remaining:
 - [ ] Hardware-validate WPA2, WPA3 and WPA2/WPA3 transition networks, a same-SSID AP with another passphrase, credential round trips between Home and Hotspots, SD removal during history writes, journal replay with torn and malformed lines, and history with no or stale GPS.
 - [ ] Decide whether captive-portal detection (plain-HTTP generate_204-style check) should refine yellow.
 
+#### Hotspots general-purpose service fingerprinting (gateway-only test integration)
+
+- [x] Add an allocation-free, bounded metadata classifier independent of surveillance signatures, with host tests.
+- [x] Wire a bounded, cancellable single-HTTP-HEAD metadata probe to the current DHCP gateway only for LIMITED checks; expose tentative CAM tags while retaining internal LIMITED outcomes.
+- [ ] Add explicit authorization/opt-in and constrained target selection before probing anything beyond the connected gateway.
+- [ ] Validate DNS-SD / WS-Discovery response parsing and build a separately curated fingerprint rule database with provenance and uncertainty.
+- [ ] Evaluate authenticated, explicitly requested snapshots for owned/authorized devices as a separate feature; do not silently collect third-party images.
+
+See [Service fingerprinting design](SERVICE_FINGERPRINTING.md) for evidence semantics, lifecycle and acceptance gates.
+
 #### Further framework isolation candidates
 
 Not yet scheduled; recorded so later application work does not deepen these couplings:
