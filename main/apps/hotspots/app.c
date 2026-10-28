@@ -1196,13 +1196,11 @@ static void scheduler_poll( int64_t a_now_us )
                     /* Join the worker before borrowing headers or writing to SD. */
                     (void)connectivity_probe_stop();
                 }
-                save_gateway_probe_result( probe.http_status,
-                                           RFSCOUT_CONNECTIVITY_PROBE_RUNNING == probe.state
-                                               ? ESP_ERR_TIMEOUT
-                                               : probe.error,
-                                           RFSCOUT_CONNECTIVITY_PROBE_RUNNING == probe.state
-                                               ? "timeout"
-                                               : "complete" );
+                save_gateway_probe_result(
+                    probe.http_status,
+                    RFSCOUT_CONNECTIVITY_PROBE_RUNNING == probe.state ? ESP_ERR_TIMEOUT
+                                                                      : probe.error,
+                    RFSCOUT_CONNECTIVITY_PROBE_RUNNING == probe.state ? "timeout" : "complete" );
                 finish_attempt(
                     HOTSPOT_STATUS_YELLOW, limited_failed_stage, limited_error, a_now_us );
             }
