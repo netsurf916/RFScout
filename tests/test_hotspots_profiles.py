@@ -132,17 +132,23 @@ int main( void )
     hotspot_profiles_input_t pass = input( known, 2 );
     assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_KNOWN && id == 9 );
 
-    /* Rejected BSSID excludes that profile even with evidence; the other one is inferred. */
+    /* Legacy rejected BSSIDs never veto a compatible profile with positive evidence. */
     saved_network_profile_t refused[ 2 ] = { profile( 4, "CAFE", WPA2 ), profile( 5, "CAFE", WPA2 ) };
     learn( &refused[ 0 ], B, SAVED_NETWORK_BSSID_ASSOCIATED, WPA2 );
     learn( &refused[ 0 ], A, SAVED_NETWORK_BSSID_REJECTED, WPA2 );
     learn( &refused[ 1 ], B, SAVED_NETWORK_BSSID_ASSOCIATED, WPA2 );
     pass = input( refused, 2 );
-    assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_INFERRED && id == 5 );
+    assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_AMBIGUOUS && id == 0 );
 
-    /* Only rejections: REJECTED. */
+    /* The profile with legacy rejected A is still inferred through associated B. */
     pass = input( refused, 1 );
-    assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_REJECTED && id == 0 );
+    assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_INFERRED && id == 4 );
+
+    /* A legacy rejected-only BSSID has no positive evidence: manual PICK, not DENY. */
+    saved_network_profile_t rejected_only[ 1 ] = { profile( 34, "CAFE", WPA2 ) };
+    learn( &rejected_only[ 0 ], A, SAVED_NETWORK_BSSID_REJECTED, WPA2 );
+    pass = input( rejected_only, 1 );
+    assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_UNMATCHED && id == 0 );
 
     /* Auth mismatch: a profile that learned another auth mode is ignored entirely. */
     saved_network_profile_t mismatch[ 2 ] = { profile( 6, "CAFE", WPA3 ), profile( 8, "CAFE", WPA2 ) };

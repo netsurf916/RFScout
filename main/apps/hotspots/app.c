@@ -459,25 +459,23 @@ static void log_result( void )
     }
 }
 
-/** @brief Teach the profile used by a secured check whether this BSSID accepted it. */
+/** @brief Only successful secured association creates durable BSSID/profile evidence.
+ * @details Failed attempts stay retryable via the existing signal-improvement gate. */
 static void record_profile_outcome( bool a_joined )
 {
     if( 0U == attempt_profile_id )
     {
         return;
     }
-    const bool rejected =
-        !a_joined && rfscout_wifi_station_reason_auth_rejected( attempt_result.disconnect_reason );
-    if( a_joined || rejected )
+    if( a_joined )
     {
-        const esp_err_t result = saved_networks_record_bssid(
-            attempt_profile_id,
-            attempt_bss.bssid,
-            attempt_bss.auth_mode,
-            a_joined ? SAVED_NETWORK_BSSID_ASSOCIATED : SAVED_NETWORK_BSSID_REJECTED );
+        const esp_err_t result = saved_networks_record_bssid( attempt_profile_id,
+                                                              attempt_bss.bssid,
+                                                              attempt_bss.auth_mode,
+                                                              SAVED_NETWORK_BSSID_ASSOCIATED );
         if( ESP_OK != result )
         {
-            ESP_LOGW( TAG, "could not record BSSID outcome: %s", esp_err_to_name( result ) );
+            ESP_LOGW( TAG, "could not record BSSID association: %s", esp_err_to_name( result ) );
         }
     }
     attempt_profile_id = 0U;

@@ -27,7 +27,7 @@
 typedef enum
 {
     SAVED_NETWORK_BSSID_ASSOCIATED = 1, /**< authenticated with this profile's passphrase */
-    SAVED_NETWORK_BSSID_REJECTED,       /**< refused this profile's passphrase */
+    SAVED_NETWORK_BSSID_REJECTED,       /**< legacy negative association; ignored by Hotspots */
 } saved_network_bssid_state_t;
 
 typedef struct

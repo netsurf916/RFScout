@@ -36,11 +36,11 @@ typedef struct
 /**
  * @brief Resolve which saved profile, if any, automatic checks may use for a secured BSSID.
  * @details An exact associated BSSID wins. Otherwise a same-SSID, auth-compatible profile that
- *          this BSSID has not rejected qualifies only with evidence: one of its known BSSIDs is
+ *          qualifies only with evidence (historical rejected BSSIDs are ignored): one of its known BSSIDs is
  *          in the same scan, or has history within the match distance of a fresh fix. Several
  *          qualifying profiles are ambiguous and need the user's choice.
  * @param a_profile_id Set to the profile for KNOWN and INFERRED; 0 otherwise.
- * @return KNOWN, INFERRED, AMBIGUOUS, UNMATCHED, REJECTED or NONE; never OPEN or UNSUPPORTED.
+ * @return KNOWN, INFERRED, AMBIGUOUS, UNMATCHED or NONE; never OPEN or UNSUPPORTED.
  */
 hotspot_credential_t hotspot_profiles_resolve( const hotspot_profiles_input_t *a_input,
                                                const hotspot_entry_t *a_entry,
