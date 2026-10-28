@@ -206,3 +206,16 @@ Status tags carry their meaning as text, not only color:
 - Failed attempts are not kept in history.
 - Grouping assumes same-SSID/auth BSSIDs are one network unless evidence conflicts, so unrelated networks can share a row until they are characterized. HESSID/802.11u and 802.11r mobility-domain evidence are not used.
 - A profile is matched to the exact auth mode it learned, so a profile learned on a WPA2 BSSID is not offered for a WPA2/WPA3 transition BSSID of the same SSID; that BSSID needs its own profile (**Add password** → New profile).
+
+
+### Local gateway HEAD debug reports
+
+One file is saved per started gateway HEAD probe, under
+`hotspots/gateway_probes/`. Filenames include verified UTC (or a
+clearly marked monotonic fallback), the tested BSSID, and a unique uptime
+suffix. The file contains bounded response headers as delivered by ESP-IDF
+and the numeric HTTP status or an explicit transport failure. This is not
+a byte-for-byte wire capture and does not fetch any body. Header values
+are retained without redaction and may be sensitive; inspect files before
+sharing. SD unavailability has no effect on camera classification or
+Hotspots connectivity outcomes.

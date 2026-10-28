@@ -88,6 +88,40 @@ A nonresponsive gateway, a camera on another LAN address, HTTPS-only camera,
 or a camera that does not supply recognizable HEAD headers remains LTD. More
 complete service discovery is deliberately deferred.
 
+## Best-effort local HEAD response archive
+
+For **each started** gateway HEAD probe, the Hotspots app saves a separate
+report in `hotspots/gateway_probes/`, via `media_app_collection()` and the
+generation-checked `media_store` API. A file is named
+`gw-YYYYMMDDTHHMMSSZ-AABBCCDDEEFF-<uptime_us>.http` with the target
+BSSID's 12 hex digits. The final token is monotonically increasing
+microseconds to distinguish attempts within the same UTC second. Without a
+trusted wall clock the timestamp is visibly prefixed `u` and records
+monotonic uptime instead of an invented UTC date.
+
+Each file has the UTC-or-uptime timestamp, BSSID, DHCP gateway address,
+transport error, HTTP numeric status, and header names/values received from
+ESP-IDF. **This is parsed-and-reassembled response metadata, not an exact
+packet capture:** HEAD obtains no body, the HTTP version and reason
+phrase are not available through this callback, redirects are disabled,
+and the recorder never broadens its permitted target list. The raw
+parsed header values are not filtered by camera-signature recognition:
+a normal generic web server can yield a report too.
+
+Capture is capped at 3072 total bytes and 1024 bytes per header field,
+with explicit truncation and control-character escaping. The HTTP
+worker never performs SD I/O; the Hotspots app task writes after the
+worker finishes or is cancelled. Failed requests and timeouts still
+produce a metadata report, optionally containing partial headers.
+If link-loss teardown already cancelled a request, partial headers
+might not be recoverable; the failure is still reported. No SD card
+is required for monitoring or fingerprint classification.
+
+**Privacy:** HTTP headers can contain authentication challenges, cookie
+values, internal hostnames and other sensitive device metadata. Capture
+is deliberately unredacted for local debugging and should be reviewed
+before sharing a full SD dump. Firmware does not upload these archives.
+
 ## Proposed integrations (not implemented)
 
 1. Introduce a separate opt-in target selection and authorization mechanism
