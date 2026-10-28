@@ -62,6 +62,8 @@ static fake_attempt_result_t attempt_result;
 static rfscout_network_session_status_t network;
 static unsigned finished;
 static unsigned camera_begins;
+static unsigned capture_saves;
+static bool gateway_capture_pending;
 static hotspot_status_t finished_outcome;
 static hotspot_stage_t finished_stage;
 static esp_err_t finished_error;
@@ -71,6 +73,14 @@ static int phase;
 static int64_t phase_deadline_us;
 static bool render_due;
 static void network_session_status(rfscout_network_session_status_t *out) { *out = network; }
+static void save_gateway_probe_result(int status, esp_err_t error) {
+    (void)status;
+    (void)error;
+    if (gateway_capture_pending) {
+        ++capture_saves;
+        gateway_capture_pending = false;
+    }
+}
 static void finish_attempt(hotspot_status_t status, hotspot_stage_t stage,
                            esp_err_t error, int64_t now) {
     (void)now;
@@ -101,6 +111,7 @@ int main(void)
     /* The network session already stopped Wi-Fi: do not launch HTTP HEAD. */
     start_limited_camera_probe(HOTSPOT_STAGE_HTTPS, ESP_FAIL, 100);
     assert(camera_begins == 0);
+    assert(capture_saves == 0);
     assert(finished == 1);
     assert(finished_outcome == HOTSPOT_STATUS_RED);
     assert(finished_stage == HOTSPOT_STAGE_JOIN);
@@ -112,6 +123,7 @@ int main(void)
     network.state = RFSCOUT_NETWORK_SESSION_LIMITED;
     start_limited_camera_probe(HOTSPOT_STAGE_HTTPS, ESP_FAIL, 200);
     assert(camera_begins == 1);
+    assert(gateway_capture_pending);
     assert(finished == 0);
     assert(phase == HOTSPOTS_PHASE_CAMERA);
     assert(phase_deadline_us == 200 + HOTSPOTS_CAMERA_GUARD_US);
@@ -122,6 +134,7 @@ int main(void)
     network.disconnect_reason = 32;
     assert(finish_failed_network_attempt(300));
     assert(finished == 1 && finished_outcome == HOTSPOT_STATUS_RED);
+    assert(capture_saves == 1 && !gateway_capture_pending);
     assert(attempt_result.disconnect_reason == 32);
     return 0;
 }
