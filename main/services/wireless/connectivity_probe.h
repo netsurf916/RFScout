@@ -13,6 +13,7 @@
 #include "esp_err.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define RFSCOUT_CONNECTIVITY_PROBE_PUBLIC_IP_MAX_LENGTH 45U
@@ -59,6 +60,16 @@ esp_err_t connectivity_probe_begin_camera( uint32_t a_gateway, uint32_t a_timeou
 
 /** @brief Copy the latest probe status into caller-owned storage. */
 void connectivity_probe_status( rfscout_connectivity_probe_status_t *a_status );
+
+/**
+ * @brief Borrow bounded parsed camera HEAD headers after the worker finishes.
+ * @details Not wire-exact; output is valid until the next request starts. The
+ *          caller must serialize with probe start and avoid reading while RUNNING.
+ *          A successful stop retains partial captured headers for diagnostics.
+ */
+bool connectivity_probe_camera_headers( const char **a_data,
+                                        size_t *a_length,
+                                        bool *a_truncated );
 
 /** @brief Return whether a probe worker is currently running. */
 bool connectivity_probe_is_active( void );

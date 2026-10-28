@@ -7,6 +7,7 @@
 
 #include "connectivity_probe.h"
 #include "service_fingerprint.h"
+#include "probe_http_capture.h"
 
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
@@ -48,6 +49,7 @@ typedef enum
 
 static probe_mode_t mode;
 static rfscout_service_fingerprint_t camera_fingerprint;
+static rfscout_probe_http_capture_t camera_headers;
 static char camera_url[ 32 ];
 
 /** @brief Copy the value of one `key=value` line from a Cloudflare trace body. */
@@ -95,6 +97,7 @@ static esp_err_t http_event( esp_http_client_event_t *a_event )
                                          strlen( a_event->header_key ),
                                          a_event->header_value,
                                          strlen( a_event->header_value ) );
+        probe_http_capture_header( &camera_headers, a_event->header_key, a_event->header_value );
     }
     if( PROBE_MODE_CAMERA == mode )
     {
@@ -282,6 +285,7 @@ static esp_err_t begin_probe( uint32_t a_timeout_ms, probe_mode_t a_mode, uint32
     request_timeout_ms = a_timeout_ms;
     mode = a_mode;
     service_fingerprint_reset( &camera_fingerprint );
+    probe_http_capture_reset( &camera_headers );
     if( PROBE_MODE_CAMERA == mode )
     {
         /* lwIP gateway fields use network byte order, first octet in low byte on ESP32. */
@@ -333,6 +337,30 @@ esp_err_t connectivity_probe_begin_camera( uint32_t a_gateway, uint32_t a_timeou
         return ESP_ERR_INVALID_ARG;
     }
     return begin_probe( a_timeout_ms, PROBE_MODE_CAMERA, a_gateway );
+}
+
+/** @brief Borrow completed HEAD response headers until the next probe begins. */
+bool connectivity_probe_camera_headers( const char **a_data, size_t *a_length, bool *a_truncated )
+{
+    if( NULL == a_data || NULL == a_length || NULL == a_truncated )
+    {
+        return false;
+    }
+    portENTER_CRITICAL( &state_lock );
+    /* The worker finishes all header callbacks before publishing terminal status.
+       Only the app task starts a subsequent request in this session. */
+    const bool ready = PROBE_MODE_CAMERA == mode &&
+                       RFSCOUT_CONNECTIVITY_PROBE_RUNNING != status.state &&
+                       NULL == worker_task;
+    portEXIT_CRITICAL( &state_lock );
+    if( !ready )
+    {
+        return false;
+    }
+    *a_data = camera_headers.data;
+    *a_length = camera_headers.length;
+    *a_truncated = camera_headers.truncated;
+    return true;
 }
 
 void connectivity_probe_status( rfscout_connectivity_probe_status_t *a_status )
