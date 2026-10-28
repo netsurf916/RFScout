@@ -350,8 +350,7 @@ bool connectivity_probe_camera_headers( const char **a_data, size_t *a_length, b
     /* The worker finishes all header callbacks before publishing terminal status.
        Only the app task starts a subsequent request in this session. */
     const bool ready = PROBE_MODE_CAMERA == mode &&
-                       RFSCOUT_CONNECTIVITY_PROBE_RUNNING != status.state &&
-                       NULL == worker_task;
+                       RFSCOUT_CONNECTIVITY_PROBE_RUNNING != status.state && NULL == worker_task;
     portEXIT_CRITICAL( &state_lock );
     if( !ready )
     {

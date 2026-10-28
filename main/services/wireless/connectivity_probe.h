@@ -67,9 +67,7 @@ void connectivity_probe_status( rfscout_connectivity_probe_status_t *a_status );
  *          caller must serialize with probe start and avoid reading while RUNNING.
  *          A successful stop retains partial captured headers for diagnostics.
  */
-bool connectivity_probe_camera_headers( const char **a_data,
-                                        size_t *a_length,
-                                        bool *a_truncated );
+bool connectivity_probe_camera_headers( const char **a_data, size_t *a_length, bool *a_truncated );
 
 /** @brief Return whether a probe worker is currently running. */
 bool connectivity_probe_is_active( void );

@@ -520,8 +520,7 @@ static void save_gateway_probe_result( int a_http_status, esp_err_t a_error )
     const char *headers = NULL;
     size_t header_bytes = 0U;
     bool truncated = false;
-    const bool captured =
-        connectivity_probe_camera_headers( &headers, &header_bytes, &truncated );
+    const bool captured = connectivity_probe_camera_headers( &headers, &header_bytes, &truncated );
 
     rfscout_media_collection_t collection;
     esp_err_t result = media_app_collection( "gateway_probes", &collection );
@@ -576,30 +575,30 @@ static void save_gateway_probe_result( int a_http_status, esp_err_t a_error )
 
     const uint32_t gateway = attempt_result.gateway;
     char note[ 384 ];
-    const int count = snprintf(
-        note,
-        sizeof( note ),
-        "# RFScout DHCP gateway HEAD probe (parsed response headers; not wire-exact)\n"
-        "# time=%s%s bssid=%02X:%02X:%02X:%02X:%02X:%02X\n"
-        "# uptime_us=%llu gateway=%u.%u.%u.%u\n"
-        "# transport=%s http_status=%d capture_available=%d truncated=%d\n",
-        stamp,
-        'u' == stamp[ 0 ] ? " (monotonic; UTC unavailable)" : " UTC",
-        bssid[ 0 ],
-        bssid[ 1 ],
-        bssid[ 2 ],
-        bssid[ 3 ],
-        bssid[ 4 ],
-        bssid[ 5 ],
-        (unsigned long long)uptime_us,
-        (unsigned)( gateway & 0xffU ),
-        (unsigned)( ( gateway >> 8U ) & 0xffU ),
-        (unsigned)( ( gateway >> 16U ) & 0xffU ),
-        (unsigned)( ( gateway >> 24U ) & 0xffU ),
-        esp_err_to_name( a_error ),
-        a_http_status,
-        captured ? 1 : 0,
-        truncated ? 1 : 0 );
+    const int count =
+        snprintf( note,
+                  sizeof( note ),
+                  "# RFScout DHCP gateway HEAD probe (parsed response headers; not wire-exact)\n"
+                  "# time=%s%s bssid=%02X:%02X:%02X:%02X:%02X:%02X\n"
+                  "# uptime_us=%llu gateway=%u.%u.%u.%u\n"
+                  "# transport=%s http_status=%d capture_available=%d truncated=%d\n",
+                  stamp,
+                  'u' == stamp[ 0 ] ? " (monotonic; UTC unavailable)" : " UTC",
+                  bssid[ 0 ],
+                  bssid[ 1 ],
+                  bssid[ 2 ],
+                  bssid[ 3 ],
+                  bssid[ 4 ],
+                  bssid[ 5 ],
+                  (unsigned long long)uptime_us,
+                  (unsigned)( gateway & 0xffU ),
+                  (unsigned)( ( gateway >> 8U ) & 0xffU ),
+                  (unsigned)( ( gateway >> 16U ) & 0xffU ),
+                  (unsigned)( ( gateway >> 24U ) & 0xffU ),
+                  esp_err_to_name( a_error ),
+                  a_http_status,
+                  captured ? 1 : 0,
+                  truncated ? 1 : 0 );
     if( count < 0 || (size_t)count >= sizeof( note ) )
     {
         (void)media_close( &file );
@@ -611,7 +610,8 @@ static void save_gateway_probe_result( int a_http_status, esp_err_t a_error )
     if( ESP_OK == result && a_http_status > 0 )
     {
         /* The HTTP client does not expose the original reason phrase or protocol. */
-        const int status_len = snprintf( note, sizeof( note ), "\nHTTP status: %d\r\n", a_http_status );
+        const int status_len =
+            snprintf( note, sizeof( note ), "\nHTTP status: %d\r\n", a_http_status );
         if( status_len < 0 || (size_t)status_len >= sizeof( note ) )
         {
             result = ESP_ERR_INVALID_SIZE;
@@ -1194,10 +1194,10 @@ static void scheduler_poll( int64_t a_now_us )
                     /* Join the worker before borrowing headers or writing to SD. */
                     (void)connectivity_probe_stop();
                 }
-                save_gateway_probe_result(
-                    probe.http_status,
-                    RFSCOUT_CONNECTIVITY_PROBE_RUNNING == probe.state ? ESP_ERR_TIMEOUT
-                                                                    : probe.error );
+                save_gateway_probe_result( probe.http_status,
+                                           RFSCOUT_CONNECTIVITY_PROBE_RUNNING == probe.state
+                                               ? ESP_ERR_TIMEOUT
+                                               : probe.error );
                 finish_attempt(
                     HOTSPOT_STATUS_YELLOW, limited_failed_stage, limited_error, a_now_us );
             }
