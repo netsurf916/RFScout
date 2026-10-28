@@ -9,6 +9,7 @@
 #include "app_descriptor.h"
 
 #include "app_session.h"
+#include "device_time.h"
 #include "connectivity_probe.h"
 #include "camera_probe_rules.h"
 #include "gps.h"
@@ -20,6 +21,7 @@
 #include "hotspots_internal.h"
 #include "hotspots_ui.h"
 #include "log_writer.h"
+#include "media_store.h"
 #include "observation_metadata.h"
 #include "radio_monitor.h"
 #include "network_session.h"
@@ -34,6 +36,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #define HOTSPOTS_CHECK_WINDOW_US 2800000LL
 #define HOTSPOTS_HTTPS_TIMEOUT_MS 10000U
@@ -112,6 +115,8 @@ static hotspot_result_t attempt_result;
 static hotspot_stage_t limited_failed_stage;
 static esp_err_t limited_error;
 static size_t checks_completed;
+/** True only when a gateway HEAD probe worker was successfully started. */
+static bool gateway_capture_pending;
 
 static bool auto_enabled;
 static hotspots_settings_t settings;
@@ -142,6 +147,7 @@ static void reset_session_state( void )
     limited_failed_stage = HOTSPOT_STAGE_NONE;
     limited_error = ESP_OK;
     checks_completed = 0U;
+    gateway_capture_pending = false;
     auto_enabled = true;
     attempt_profile_id = 0U;
     render_due = true;
@@ -502,6 +508,131 @@ static void finish_attempt( hotspot_status_t a_outcome,
                             esp_err_t a_error,
                             int64_t a_now_us );
 
+/** @brief Write one bounded gateway HEAD report from the app task, never from the HTTP worker. */
+static void save_gateway_probe_result( int a_http_status, esp_err_t a_error )
+{
+    if( !gateway_capture_pending )
+    {
+        return;
+    }
+    gateway_capture_pending = false;
+
+    const char *headers = NULL;
+    size_t header_bytes = 0U;
+    bool truncated = false;
+    const bool captured =
+        connectivity_probe_camera_headers( &headers, &header_bytes, &truncated );
+
+    rfscout_media_collection_t collection;
+    esp_err_t result = media_app_collection( "gateway_probes", &collection );
+    if( ESP_OK != result )
+    {
+        ESP_LOGD( TAG, "gateway HEAD capture unavailable: %s", esp_err_to_name( result ) );
+        return;
+    }
+
+    const uint64_t uptime_us = (uint64_t)esp_timer_get_time();
+    char stamp[ 20 ] = { 0 };
+    time_t epoch = 0;
+    if( device_time_now( &epoch ) )
+    {
+        struct tm utc;
+        if( NULL != gmtime_r( &epoch, &utc ) )
+        {
+            (void)strftime( stamp, sizeof( stamp ), "%Y%m%dT%H%M%SZ", &utc );
+        }
+    }
+    if( '\0' == stamp[ 0 ] )
+    {
+        /* Use a visibly monotonic timestamp if wall-clock time is untrusted. */
+        (void)snprintf( stamp, sizeof( stamp ), "u%015llX", (unsigned long long)uptime_us );
+    }
+
+    const uint8_t *bssid = attempt_bss.bssid;
+    char filename[ RFSCOUT_MEDIA_NAME_MAX + 1U ];
+    const int name_len = snprintf( filename,
+                                   sizeof( filename ),
+                                   "gw-%s-%02X%02X%02X%02X%02X%02X-%012llX.http",
+                                   stamp,
+                                   bssid[ 0 ],
+                                   bssid[ 1 ],
+                                   bssid[ 2 ],
+                                   bssid[ 3 ],
+                                   bssid[ 4 ],
+                                   bssid[ 5 ],
+                                   (unsigned long long)uptime_us );
+    if( name_len < 0 || (size_t)name_len >= sizeof( filename ) )
+    {
+        return;
+    }
+
+    rfscout_media_file_t file = { 0 };
+    result = media_open( &collection, filename, RFSCOUT_MEDIA_OPEN_CREATE_NEW, &file );
+    if( ESP_OK != result )
+    {
+        ESP_LOGD( TAG, "cannot create gateway HEAD capture: %s", esp_err_to_name( result ) );
+        return;
+    }
+
+    const uint32_t gateway = attempt_result.gateway;
+    char note[ 384 ];
+    const int count = snprintf(
+        note,
+        sizeof( note ),
+        "# RFScout DHCP gateway HEAD probe (parsed response headers; not wire-exact)\n"
+        "# time=%s%s bssid=%02X:%02X:%02X:%02X:%02X:%02X\n"
+        "# uptime_us=%llu gateway=%u.%u.%u.%u\n"
+        "# transport=%s http_status=%d capture_available=%d truncated=%d\n",
+        stamp,
+        'u' == stamp[ 0 ] ? " (monotonic; UTC unavailable)" : " UTC",
+        bssid[ 0 ],
+        bssid[ 1 ],
+        bssid[ 2 ],
+        bssid[ 3 ],
+        bssid[ 4 ],
+        bssid[ 5 ],
+        (unsigned long long)uptime_us,
+        (unsigned)( gateway & 0xffU ),
+        (unsigned)( ( gateway >> 8U ) & 0xffU ),
+        (unsigned)( ( gateway >> 16U ) & 0xffU ),
+        (unsigned)( ( gateway >> 24U ) & 0xffU ),
+        esp_err_to_name( a_error ),
+        a_http_status,
+        captured ? 1 : 0,
+        truncated ? 1 : 0 );
+    if( count < 0 || (size_t)count >= sizeof( note ) )
+    {
+        (void)media_close( &file );
+        (void)media_remove( &collection, filename );
+        return;
+    }
+
+    result = media_write( &file, note, (size_t)count );
+    if( ESP_OK == result && a_http_status > 0 )
+    {
+        /* The HTTP client does not expose the original reason phrase or protocol. */
+        const int status_len = snprintf( note, sizeof( note ), "\nHTTP status: %d\r\n", a_http_status );
+        if( status_len < 0 || (size_t)status_len >= sizeof( note ) )
+        {
+            result = ESP_ERR_INVALID_SIZE;
+        }
+        else
+        {
+            result = media_write( &file, note, (size_t)status_len );
+        }
+    }
+    if( ESP_OK == result && captured && header_bytes > 0U )
+    {
+        result = media_write( &file, headers, header_bytes );
+    }
+    const esp_err_t close_result = media_close( &file );
+    if( ESP_OK != result || ESP_OK != close_result )
+    {
+        ESP_LOGW( TAG, "gateway HEAD capture write incomplete" );
+        (void)media_remove( &collection, filename );
+    }
+}
+
 /** @brief Link-loss teardown wins over later HTTPS or local-gateway probe results. */
 static bool finish_failed_network_attempt( int64_t a_now_us )
 {
@@ -513,6 +644,8 @@ static bool finish_failed_network_attempt( int64_t a_now_us )
     }
 
     attempt_result.disconnect_reason = network.disconnect_reason;
+    /* Network teardown may have cancelled the worker already; record the failure. */
+    save_gateway_probe_result( 0, network.error );
     finish_attempt( HOTSPOT_STATUS_RED, HOTSPOT_STAGE_JOIN, network.error, a_now_us );
     return true;
 }
@@ -534,6 +667,7 @@ start_limited_camera_probe( hotspot_stage_t a_stage, esp_err_t a_error, int64_t 
         finish_attempt( HOTSPOT_STATUS_YELLOW, a_stage, a_error, a_now_us );
         return;
     }
+    gateway_capture_pending = true;
     phase = HOTSPOTS_PHASE_CAMERA;
     phase_deadline_us = a_now_us + HOTSPOTS_CAMERA_GUARD_US;
     render_due = true;
@@ -606,6 +740,7 @@ static void start_attempt( hotspot_entry_t *a_entry, int64_t a_now_us )
     attempt_result.manual = a_entry->manual_requested;
     attempt_result.start_rssi = a_entry->bss.rssi;
     attempt_profile_id = 0U;
+    gateway_capture_pending = false;
     a_entry->manual_requested = false;
 
     phase = HOTSPOTS_PHASE_NETWORK;
@@ -1054,6 +1189,15 @@ static void scheduler_poll( int64_t a_now_us )
                 {
                     attempt_result.camera_evidence = probe.camera_evidence;
                 }
+                if( RFSCOUT_CONNECTIVITY_PROBE_RUNNING == probe.state )
+                {
+                    /* Join the worker before borrowing headers or writing to SD. */
+                    (void)connectivity_probe_stop();
+                }
+                save_gateway_probe_result(
+                    probe.http_status,
+                    RFSCOUT_CONNECTIVITY_PROBE_RUNNING == probe.state ? ESP_ERR_TIMEOUT
+                                                                    : probe.error );
                 finish_attempt(
                     HOTSPOT_STATUS_YELLOW, limited_failed_stage, limited_error, a_now_us );
             }
