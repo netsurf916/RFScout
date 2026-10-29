@@ -14,7 +14,7 @@ Hotspots finds nearby Wi-Fi access points, checks whether each one provides Inte
 
 ## Services and lifecycle
 
-### Shared discovery migration (PR #136)
+### Shared discovery implementation (PR #136)
 
 Hotspots now uses the same framework-owned `radio_monitor` and channel scheduler as WiFi/BLE. The shared beacon/probe-response decoder provides BSSID, SSID, receiver channel, RSSI and conservatively validated authentication evidence. A **64-item bounded callback queue** coalesces AP identities on the Wi-Fi callback task; the app task drains it into the separate **128-BSSID Live table**, with no station scan-result array or 32-result upstream ceiling. Queue overflow is counted and surfaced as telemetry (`ap_queue_drops`); admission failures are counted (`ap_rejected`). This queue is not a population ceiling: it is drained repeatedly during a sweep. The monitor is stopped and its callbacks quiesced **before** station association, DHCP/NTP and TLS. After each check, Hotspots stops the connectivity probe, releases the network session, and retries failed teardown before allowing another monitor sweep. A failed driver stop, unfinished callback, TLS worker, or station event drain never counts as a successful handoff.
 
@@ -45,7 +45,9 @@ Each BSSID has an independent Live observation session. **Visibility is timestam
 
 **Live retention.** A second, independent eviction rule removes an *absent* BSSID when the receiver is more than the configured **Evict beyond** distance (default 500 m, Off or 100–2,000 m in 100 m increments) beyond the BSSID's estimated observed coverage. For that Live observation session, fresh GPS at an observed BSSID expands a latitude/longitude bounding box. The location estimate is the box center; its conservative coverage radius is half the larger great-circle diagonal measured in metres. Eviction occurs when the distance from the current fix to the center, minus the coverage radius, exceeds the configured distance. A BSSID seen in the current monitor sweep is never distance-evicted, and without a fresh GPS fix or a valid Live location box the distance rule is skipped entirely. The Live box is independent of durable History location bounds.
 
-**Capacity protection.** The Live table has a provisional hard ceiling of 128 BSSID
+### Capacity protection
+
+The Live table has a provisional hard ceiling of 128 BSSID
 entries, independent of the callback queue, persistent History and saved profiles.
 When full, Hotspots first applies ordinary time/GPS expiration to unprotected records.
 If there is still no space, it considers a victim only in an equal or lower-priority
@@ -174,7 +176,7 @@ When one SSID and auth mode splits into several networks, rows are labelled `SSI
 Hotspots has three views. **App lock** off: landing-level rotary changes RFScout applications as usual. **App lock** on: landing-level rotary moves between Live, History and Saved. Long press on a landing view also moves to the next view. Select opens the current view's menu; rotary and select inside menus and details stay within Hotspots. Long press in a menu or detail returns one level.
 
 - **Live** — networks currently observed this visit, ordered by their strongest visible BSSID. Each row shows the network label, a status tag summarizing its BSSIDs, the number of BSSIDs, and the strongest visible RSSI (`--` when none is visible). The footer shows the phase or running check and counts of open, OWE, and secured BSSIDs.
-- **History** — networks from durable history, nearest first when GPS has a fresh fix (then green first, newest first). Rows show the label, `OK`/`LTD`, the number of BSSIDs, and the distance and compass direction to the nearest member (`--` without a fix). The footer shows the BSSID count, fix state, and any `BAD` or `SD!` indicators. With no history the view says **No known hotspots**, or **SD history unavailable** when the card cannot be read.
+- **History** — networks from durable history, nearest first when GPS has a fresh fix (then green first, newest first). Rows show the label, `OK`/`LTD`/`CAM` (when tentative camera evidence exists), the number of BSSIDs, and the distance and compass direction to the nearest member (`--` without a fix). The footer shows the BSSID count, fix state, and any `BAD` or `SD!` indicators. With no history the view says **No known hotspots**, or **SD history unavailable** when the card cannot be read.
 - **Saved** — the shared profiles, labelled `SSID #n` when several share an SSID, with the learned auth mode and the number of associated BSSIDs. Selecting one opens the shared profile screen: masked password with **Show**, **Edit password**, and **Forget**. Changes apply to Home immediately.
 
 Each view's menu starts with **Back**, **App lock**, **Auto check**, and **Settings** (**Match distance**, **Expire after**, **Evict beyond**, and **Compact history**), followed by the view's rows. Selecting a Live or History network opens its BSSID list; selecting a BSSID opens its detail.
@@ -200,6 +202,7 @@ Status tags carry their meaning as text, not only color:
 | --- | --- |
 | `OK` (green) | Joined, trusted time was available or NTP succeeded, and verified HTTPS returned 200 |
 | `LTD` (yellow) | Joined, but required time synchronization failed or the HTTPS check did not pass |
+| `CAM` (tentative) | An otherwise LIMITED/yellow network's connected DHCP gateway returned camera-specific HTTP metadata; this is **not** proof of the BSSID's identity, surveillance or image access |
 | `FAIL` (red) | Association or DHCP failed and no earlier success exists in this session |
 | `Q` | Queued for a manual check |
 | `JOIN` / `HTTPS` | Check in progress at that stage |

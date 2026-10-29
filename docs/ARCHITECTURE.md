@@ -235,7 +235,7 @@ Usable external PSRAM is a supported-platform requirement. RFScout does not sile
 
 Applications consume semantic input rather than GPIOs. The current T-Embed provider maps the rotary encoder/buttons into signed navigation, Select, Long Press, and the global Hold shortcut. There is no global Back input semantic; explicit Back rows and app-local actions are ordinary Select-driven UI choices. The dedicated user/power key remains a separate power-policy input.
 
-The T-Embed rotary provider in PR #145 samples GPIO4/5 on both edges,
+The T-Embed rotary provider (merged via PR #145) samples GPIO4/5 on both edges,
 with GPIO state reads serialized under the decoder lock. It follows the LilyGO
 TWO03 16-entry Gray-code transition table, encoding A as bit 0 and B as bit 1.
 The signed raw position accumulates continuously; publication occurs only on
@@ -250,9 +250,9 @@ state `01` or `10`, PR #145 suppresses remaining movement until the next
 `00`/`11` latch and then rebases; this avoids the incomplete wake gesture
 leaking into subsequent UI navigation. The existing GPIO-ISR sampling remains
 different from LilyGO's roughly 1-ms polling, and no hardware glitch filter
-or per-edge SD trace is added. #145 is still pending hardware acceptance and
-merge; neither its CI success nor its software regression tests prove the
-complete display-wake matrix on hardware.
+or per-edge SD trace is added. #145 is merged, but the hardware release
+acceptance remains open: neither CI success nor software regression tests
+prove the full display-wake matrix on a physical device.
 
 The user-facing gesture vocabulary is intentional:
 

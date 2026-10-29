@@ -33,7 +33,7 @@ The heartbeat intentionally bypasses only the movement gate. The 1-record-per-UT
 
 ## Per-day storage and retention
 
-Use the parent PR's append-only `system/breadcrumbs/breadcrumbs-YYYY-MM-DD.jsonl` files; UTC **from the record** determines the filename. Retention choices, editable through the **existing** Home and GPS settings rows:
+Breadcrumbs use append-only `system/breadcrumbs/breadcrumbs-YYYY-MM-DD.jsonl` files; UTC **from the record** determines the filename. Retention choices, editable through the **existing** Home and GPS settings rows:
 
 | Label | Duration |
 | --- | --- |

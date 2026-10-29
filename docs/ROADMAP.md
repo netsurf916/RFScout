@@ -20,13 +20,13 @@ of its envisioned future features to be safe and useful in 0.4.0.
 
 1. **Stabilize `main`:** PRs #139 (adaptive breadcrumbs), #140 (gateway
    camera-service fingerprinting), #141 (rotary restoration), #143 (remove
-   persistent Hotspots DENY), and #144 (stable Hotspots list selection) are
-   merged. PR #145 improves the rotary decoder with LilyGO-compatible TWO03
-   latches, restored physical direction and wake/lock resynchronization,
-   but is **not yet merged**: owner hardware acceptance remains required.
-   This documentation PR is stacked on #145 so that the 0.4.0 plan includes
-   those expected input semantics. Verify locked/unlocked display wake and
-   ongoing network/TLS UI responsiveness on actual hardware.
+   persistent Hotspots DENY), #144 (stable Hotspots list selection), and
+   #145 (LilyGO-compatible TWO03 decoder with corrected physical direction
+   and partial-detent wake/lock resynchronization) are **merged**. Their
+   implementation status is not hardware release acceptance. Validate
+   locked/unlocked display wake, rotary behavior and network/TLS UI
+   responsiveness on the actual release hardware. This documentation PR
+   targets `main` after #145's merge.
 2. **Cleanup and optimization:** align current-state documentation with
    actual code, fix reproducible bugs, simplify stale paths, audit
    semantic menus, normalize UI labels and audio control units, remove
@@ -70,10 +70,10 @@ implemented behavior are **not** excused by deferring feature expansion.
 
 ### Stabilization and cleanup checklist
 
-- [ ] Obtain hardware acceptance and an owner-approved merge decision
-  for PR #145 before treating its LilyGO-aligned decoder as shipped.
-  Do not mark this release checklist complete merely because #142 is stacked
-  on #145 or a CI build passed.
+- [ ] Obtain owner hardware acceptance for the **merged** PR #145
+  rotary decoder, especially incomplete wake-gesture suppression and
+  lock/display-off interactions. Merging a firmware PR or passing CI
+  does not establish the v0.4.0 release acceptance gate.
 - [ ] Recheck recently merged Hotspots #143 behavior: failed authentication,
   handshake, DHCP, DNS, NTP, HTTPS and link loss are retryable outcomes, not
   persistent BSSID credential denials. Automatic retries remain subject to
@@ -435,12 +435,12 @@ Decisions:
 
 - [x] Automatic checking **on by default** (Hotspotter's -80 dBm floor and +4 dB retry gating, strongest first), with a per-visit toggle and manual Recheck.
 - [x] **Open, OWE and WPA2/WPA3 personal** networks are eligible; other secured modes are listed as unsupported, and hidden networks are not reported.
-- [x] One credential store shared with Home, with stable profile IDs so several profiles can share an SSID, learned associated/rejected BSSIDs, and evidence-based automatic profile selection ([Architecture](ARCHITECTURE.md#shared-network-profiles)).
+- [x] One credential store shared with Home, with stable profile IDs for multiple profiles per SSID, positive associated-BSSID learning and evidence-based automatic selection. Legacy rejected BSSID entries remain readable for compatibility but are **not** learned or treated as credential vetoes by Hotspots after PR #143 ([Architecture](ARCHITECTURE.md#shared-network-profiles)).
 - [x] Durable SD history of green/yellow results with configuration epochs, movement-triggered locations, background replay and compaction.
 - [x] Hotspotter's evidence-based network grouping for Live and History; Live, History and Saved views switched by landing rotary under app lock.
 - [x] A fresh random, locally administered station MAC for every check; factory MAC restored when the station session stops.
 - [x] Named **Hotspots**, placed after WiFi/BLE in navigation order.
-- [x] NTP is required before HTTPS: NTP failure or timeout marks the AP yellow without attempting HTTPS.
+- [x] **Trusted UTC** is required before certificate-validated HTTPS: recent GPS or NTP time satisfies the requirement; otherwise RFScout attempts SNTP, and a required synchronization failure/timeout marks the AP yellow without HTTPS. A cached trusted clock is not evidence that the currently joined AP supports NTP.
 
 Platform prerequisites:
 
