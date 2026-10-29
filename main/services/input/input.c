@@ -44,14 +44,21 @@ static bool locked;
 static int primary_button_pin = -1;
 static rfscout_input_provider_t provider;
 
+/** @brief LilyGO RotaryEncoder::tick() uses A as bit zero and B as bit one. */
+static uint8_t IRAM_ATTR read_encoder_state( void )
+{
+    const uint8_t a = (uint8_t)gpio_get_level( RFSCOUT_BOARD_ENCODER_A_PIN );
+    const uint8_t b = (uint8_t)gpio_get_level( RFSCOUT_BOARD_ENCODER_B_PIN );
+    return a | (uint8_t)( b << 1U );
+}
+
 static void IRAM_ATTR encoder_isr( void *a_argument )
 {
     (void)a_argument;
-    const uint8_t current = (uint8_t)( ( gpio_get_level( RFSCOUT_BOARD_ENCODER_A_PIN ) << 1 ) |
-                                       gpio_get_level( RFSCOUT_BOARD_ENCODER_B_PIN ) );
-
+    /* Read while serialized: an older sampled state must never be decoded
+       after a newer GPIO interrupt has already updated the state machine. */
     portENTER_CRITICAL_ISR( &navigation_lock );
-    rotary_decoder_sample( &navigation_decoder, current );
+    rotary_decoder_sample( &navigation_decoder, read_encoder_state() );
     portEXIT_CRITICAL_ISR( &navigation_lock );
 }
 
@@ -173,9 +180,7 @@ static esp_err_t install_rotary_provider( void )
         return result;
     }
 
-    const uint8_t initial_state =
-        (uint8_t)( ( gpio_get_level( RFSCOUT_BOARD_ENCODER_A_PIN ) << 1 ) |
-                   gpio_get_level( RFSCOUT_BOARD_ENCODER_B_PIN ) );
+    const uint8_t initial_state = read_encoder_state();
     rotary_decoder_reset( &navigation_decoder, initial_state );
     initialize_button_state();
 

@@ -1,6 +1,6 @@
 /**
-    rotary_decoder.c : Rotary quadrature decoder with coalesced navigation
-    Description: Uses the original transition-table decoder and coalesces pending movement.
+    rotary_decoder.c : LilyGO-compatible rotary quadrature decoder
+    Description: Applies the TWO03 latch rule before publishing coalesced navigation.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -16,25 +16,10 @@
 
 #include <stddef.h>
 
-/* T-Embed's LilyGO factory firmware uses the same Gray-code transition table.
-   A return along the previous edge cancels bounce; diagonal jumps count zero. */
+/* Matches Matthias Hertel's RotaryEncoder::tick(): old_state << 2 | current.
+   LilyGO T-Embed uses LatchMode::TWO03 with A as bit 0, B as bit 1.
+   Source: https://github.com/mathertel/RotaryEncoder/blob/master/src/RotaryEncoder.cpp */
 static const int8_t transitions[ 16 ] = { 0, -1, 1, 0, 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, -1, 0 };
-
-/** @brief Accumulate signed navigation without overflowing during stalled UI polls. */
-static void ROTARY_ISR_ATTR accumulate_step( rotary_decoder_t *a_decoder, int8_t a_step )
-{
-    if( a_step > 0 )
-    {
-        if( a_decoder->pending_delta < INT32_MAX )
-        {
-            ++a_decoder->pending_delta;
-        }
-    }
-    else if( a_decoder->pending_delta > INT32_MIN )
-    {
-        --a_decoder->pending_delta;
-    }
-}
 
 void rotary_decoder_reset( rotary_decoder_t *a_decoder, uint8_t a_initial_state )
 {
@@ -43,8 +28,10 @@ void rotary_decoder_reset( rotary_decoder_t *a_decoder, uint8_t a_initial_state 
         return;
     }
     a_decoder->last_state = a_initial_state & 3U;
-    a_decoder->transition_accumulator = 0;
-    a_decoder->pending_delta = 0;
+    a_decoder->suppress_until_latch = false;
+    a_decoder->position = 0;
+    a_decoder->latched_position = 0;
+    a_decoder->consumed_position = 0;
     a_decoder->invalid_transitions = 0U;
 }
 
@@ -61,38 +48,45 @@ void ROTARY_ISR_ATTR rotary_decoder_sample( rotary_decoder_t *a_decoder, uint8_t
         return;
     }
 
-    const uint8_t changed = current ^ previous;
-    if( 3U == changed )
+    if( 3U == ( current ^ previous ) )
     {
-        /* Observe skipped states without resetting the transition accumulator. */
         ++a_decoder->invalid_transitions;
     }
 
-    const int8_t transition = transitions[ ( ( previous << 2 ) | current ) & 0x0FU ];
+    if( a_decoder->suppress_until_latch )
+    {
+        /* A wake/lock clear during 01/10 must discard the remainder of that
+           incomplete cycle, not publish it as a new detent. Follow the GPIO
+           states until the first 00/11 latch, then establish a clean origin. */
+        a_decoder->last_state = current;
+        if( 0U == current || 3U == current )
+        {
+            a_decoder->position = 0;
+            a_decoder->latched_position = 0;
+            a_decoder->consumed_position = 0;
+            a_decoder->suppress_until_latch = false;
+        }
+        return;
+    }
+
+    /* Unlike our prior threshold-and-reset decoder, the reference library
+       retains the cumulative signed position across every latch. */
+    const int8_t step = transitions[ ( previous << 2U ) | current ];
+    if( step > 0 && a_decoder->position < INT32_MAX )
+    {
+        ++a_decoder->position;
+    }
+    else if( step < 0 && a_decoder->position > INT32_MIN )
+    {
+        --a_decoder->position;
+    }
     a_decoder->last_state = current;
 
-    if( transition > 0 && a_decoder->transition_accumulator < INT32_MAX )
-    {
-        ++a_decoder->transition_accumulator;
-    }
-    else if( transition < 0 && a_decoder->transition_accumulator > INT32_MIN )
-    {
-        --a_decoder->transition_accumulator;
-    }
-
-    /* Preserve the original two-transitions-per-latch calibration at 00 and 11. */
+    /* EXACT TWO03 latch rule: intermediate 01/10 states never publish movement.
+       Arithmetic right shift for negative counts matches the ESP32 reference. */
     if( 0U == current || 3U == current )
     {
-        if( a_decoder->transition_accumulator >= 2 )
-        {
-            accumulate_step( a_decoder, 1 );
-            a_decoder->transition_accumulator = 0;
-        }
-        else if( a_decoder->transition_accumulator <= -2 )
-        {
-            accumulate_step( a_decoder, -1 );
-            a_decoder->transition_accumulator = 0;
-        }
+        a_decoder->latched_position = a_decoder->position >> 1;
     }
 }
 
@@ -102,14 +96,19 @@ int rotary_decoder_take_direction( rotary_decoder_t *a_decoder )
     {
         return 0;
     }
-    const int32_t delta = a_decoder->pending_delta;
-    a_decoder->pending_delta = 0;
-    return delta > 0 ? 1 : ( delta < 0 ? -1 : 0 );
+    const int result =
+        a_decoder->latched_position > a_decoder->consumed_position
+            ? 1
+            : ( a_decoder->latched_position < a_decoder->consumed_position ? -1 : 0 );
+    a_decoder->consumed_position = a_decoder->latched_position;
+    /* Keep LilyGO's accumulated position/latch semantics, but map physical
+       rotation into RFScout's established navigation direction convention. */
+    return -result;
 }
 
 bool rotary_decoder_pending( const rotary_decoder_t *a_decoder )
 {
-    return NULL != a_decoder && 0 != a_decoder->pending_delta;
+    return NULL != a_decoder && a_decoder->latched_position != a_decoder->consumed_position;
 }
 
 void rotary_decoder_clear_pending( rotary_decoder_t *a_decoder )
@@ -118,6 +117,12 @@ void rotary_decoder_clear_pending( rotary_decoder_t *a_decoder )
     {
         return;
     }
-    a_decoder->pending_delta = 0;
-    a_decoder->transition_accumulator = 0;
+    /* A mid-cycle clear must not allow the remaining edge to publish a
+       phantom step. Resume only after reaching an actual TWO03 latch. */
+    a_decoder->suppress_until_latch =
+        a_decoder->suppress_until_latch ||
+        ( 0U != a_decoder->last_state && 3U != a_decoder->last_state );
+    a_decoder->position = 0;
+    a_decoder->latched_position = 0;
+    a_decoder->consumed_position = 0;
 }
