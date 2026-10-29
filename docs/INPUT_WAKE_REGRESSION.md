@@ -45,6 +45,58 @@ trace calls remain in PR #141's effective code.** Normal existing application
 and system logging is unaffected. Earlier diagnostic commits remain visible
 in the PR's Git history; they are not part of the resulting firmware tree.
 
+## PR #145: LilyGO TWO03 software-decoder parity trial
+
+Hardware feedback showed that neither the original #145 fixed GPIO filter nor
+the subsequent PCNT quadrature decoder eliminated repeated back-and-forth
+navigation (PCNT was somewhat better). The PCNT experiment has therefore been
+removed from this PR. The shared encoder again uses GPIO4/GPIO5 both-edge
+interrupts and the pre-existing, coalesced semantic navigation API.
+
+This revision explicitly follows the LilyGO T-Embed CC1101 factory encoder
+example and Matthias Hertel's `RotaryEncoder::tick()` in `LatchMode::TWO03`:
+
+- Encode inputs as `A | (B << 1)` (LilyGO's first GPIO4 signal is bit zero).
+- On a *changed* sampled A/B state, apply the library's 16-entry Gray-code
+  lookup table to a **cumulative**, signed raw position; do not zero that
+  position after an accepted step. Duplicate states do nothing; illegal
+  diagonal changes contribute zero but still update the previous state.
+- Only at state `00` or `11` publish `raw_position >> 1`. The intermediate
+  `01` and `10` states cannot themselves publish an input action.
+- Keep LilyGO's raw transition counting unchanged, but **invert the semantic
+  navigation direction** to restore the physical UI direction confirmed during
+  on-device PR #145 testing. The factory library's raw position sign remains
+  available in tests independently of RFScout's navigation sign.
+- Preserve RFScout's independent input lock, wake-clearing and one-net-direction
+  per application poll. Pending navigation reflects the published latch
+  position, not a fractional edge. Wake/lock rebases the decoder and, if a
+  clear occurs in intermediate state `01` or `10`, discards all transitions
+  until the next `00` or `11` latch to prevent the wake gesture's last edge
+  from leaking into navigation. The center button is unchanged.
+- Host tests compare synthetic streams against an independent model of the
+  reference `tick()` logic: clean turns, duplicate states, bounce, diagonal
+  transitions, reversals, mid-latch startup, delayed poll coalescing, and
+  mid-cycle wake/lock resets in both directions.
+
+LilyGO's demonstration polls `encoder.tick()` with a roughly 1 ms loop delay.
+RFScout still samples using *both-edge GPIO interrupts*. Therefore this PR
+aligns the **decoder state machine and latch rule**, not the sampling cadence.
+The ISR can observe contact bounce that LilyGO's 1 ms polling may skip. This
+change does not add speculative software debounce or SD logging. The earlier
+PCNT-only Codex direction finding is no longer applicable.
+
+Reference: [LilyGO factory example](https://github.com/Xinyuan-LilyGO/T-Embed-CC1101/blob/master/examples/encode_test/encode_test.ino)
+and [RotaryEncoder library](https://github.com/mathertel/RotaryEncoder/blob/master/src/RotaryEncoder.cpp).
+
+**Hardware acceptance:** Confirm exactly one movement per physical detent in
+both directions, especially at slow speeds. Test stopping between detents,
+rocking gently around a latch, fast spins, immediate reversals, Home and
+application menus, and the display-off/locked-input wake matrix below. Check
+that clockwise and counterclockwise actions now match the device's expected
+menu direction. The RFScout semantic sign is intentionally opposite the raw
+LilyGO position sign. If bounce remains, separately
+investigate time-qualified input sampling rather than changing detent counts.
+
 ## Screen-wake issues not fixed by the decoder restoration
 
 The main loop calls `input_poll()`, `display_idle_poll()`, service polling,

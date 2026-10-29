@@ -1,6 +1,6 @@
 /**
-    rotary_decoder.h : Rotary quadrature decoder with coalesced navigation
-    Description: Decodes lookup-table quadrature transitions and collapses pending detents.
+    rotary_decoder.h : LilyGO-compatible rotary quadrature decoder
+    Description: Reports position changes only at TWO03 latches and coalesces navigation.
     Copyright 2026 Daniel Wilson
     SPDX-License-Identifier: MIT
 */
@@ -13,28 +13,30 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/** @brief Two-transition latch decoder with signed movement awaiting application input. */
+/** @brief Persistent Gray-code position and last externally consumed TWO03 latch. */
 typedef struct
 {
     uint8_t last_state;
-    int32_t transition_accumulator;
-    int32_t pending_delta;
+    bool suppress_until_latch;
+    int32_t position;
+    int32_t latched_position;
+    int32_t consumed_position;
     uint32_t invalid_transitions;
 } rotary_decoder_t;
 
-/** @brief Initialize from the actual sampled two-bit A/B state. */
+/** @brief Initialize using the sampled A | (B << 1) GPIO state. */
 void rotary_decoder_reset( rotary_decoder_t *a_decoder, uint8_t a_initial_state );
 
-/** @brief Sample a two-bit A/B state from the GPIO edge ISR; caller provides synchronization. */
+/** @brief Apply a LilyGO-style tick from the GPIO edge ISR; caller synchronizes. */
 void rotary_decoder_sample( rotary_decoder_t *a_decoder, uint8_t a_state );
 
-/** @brief Consume pending detents as one net direction (-1, 0 or +1). */
+/** @brief Consume all published latch movement as one net direction (-1, 0, +1). */
 int rotary_decoder_take_direction( rotary_decoder_t *a_decoder );
 
-/** @brief Return whether net decoded movement is pending. */
+/** @brief Report completed, unconsumed latch motion, not intermediate GPIO changes. */
 bool rotary_decoder_pending( const rotary_decoder_t *a_decoder );
 
-/** @brief Discard pending and fractional movement without resetting diagnostic counters. */
+/** @brief Discard movement; if mid-cycle, suppress input through the next TWO03 latch. */
 void rotary_decoder_clear_pending( rotary_decoder_t *a_decoder );
 
 #endif // _RFSCOUT_ROTARY_DECODER_H_
