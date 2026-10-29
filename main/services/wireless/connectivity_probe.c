@@ -197,7 +197,8 @@ static void probe_worker( void *a_context )
     (void)a_context;
 
     const int64_t worker_started_us = esp_timer_get_time();
-    log_probe_timing( "begin", mode, 0, 0, ESP_OK, 0 );
+    const probe_mode_t worker_mode = mode;
+    log_probe_timing( "begin", worker_mode, 0, 0, ESP_OK, 0 );
 
     response_length = 0U;
     response[ 0 ] = '\0';
@@ -264,13 +265,6 @@ static void probe_worker( void *a_context )
     (void)xSemaphoreGive( client_mutex );
     esp_http_client_cleanup( client );
 
-    log_probe_timing( "complete",
-                      mode,
-                      esp_timer_get_time() - worker_started_us,
-                      request_us,
-                      result,
-                      http_status );
-
     if( ESP_OK == result && ( ( PROBE_MODE_CAMERA == mode && http_status >= 100 ) ||
                               ( PROBE_MODE_INTERNET == mode && 200 == http_status ) ) )
     {
@@ -293,6 +287,14 @@ static void probe_worker( void *a_context )
                 ( ESP_OK == result ) ? ESP_FAIL : result,
                 http_status );
     }
+
+    /* Do not hold the worker-completion signal while the SD logger queues this record. */
+    log_probe_timing( "complete",
+                      worker_mode,
+                      esp_timer_get_time() - worker_started_us,
+                      request_us,
+                      result,
+                      http_status );
     vTaskDelete( NULL );
 }
 
