@@ -95,7 +95,7 @@ WiFi/BLE persists a non-default threshold as the sparse `evidence_threshold` app
 
 Instant / Timed / Never retention modes are not implemented; they are deferred to v0.5.0.
 
-The **Reset detections** action clears all current logical observations and identity-index contents immediately while retaining the app's already-allocated session capacity for reuse. Normal timeout expiry removes a canonical record only after all active source memberships have expired.
+There is **no in-app Reset detections menu action** in the current Wi-Fi/BLE UI. Individual radio-source toggles remove that source's membership without discarding an identity still observed by the other source. Normal timeout expiry removes a canonical record only after all active source memberships expire. Leaving the app reclaims its session-owned observation store after both collectors quiesce; the internal reset helper is not exposed as a user control.
 
 ## Vendor identity
 
@@ -160,10 +160,12 @@ Changing the threshold reevaluates every currently retained case immediately. Lo
 
 Pressing the center/select control from the main WiFi/BLE view opens the app settings surface. Current items are:
 
-- **Notifications** — opens the shared per-app notification settings;
-- **Evidence threshold** — cycles Everything / Possible / Probable / Distinctive and immediately reevaluates retained surveillance cases;
-- **WiFi timeout** — independent Wi-Fi source-retention timeout; and
-- **BLE timeout** — independent BLE source-retention timeout.
+- **Back** — return to the main Wi-Fi/BLE view;
+- **Notifications** — open the shared per-app notification settings;
+- **Evidence threshold** — cycle Everything / Possible / Probable / Distinctive and immediately reevaluate retained surveillance cases;
+- **WiFi timeout** — independent Wi-Fi source-retention timeout;
+- **BLE timeout** — independent BLE source-retention timeout; and
+- **Sources** — manage independent Wi-Fi/BLE On/Off and per-source scanning settings (Wi-Fi channel selection/dwell, BLE active/passive scan, duplicates, and duty presets).
 
 Wi-Fi and BLE timeouts are edited in 10-second steps from 10 through 300 seconds. Configuration is persisted through the normal device-configuration path when the menu closes.
 
