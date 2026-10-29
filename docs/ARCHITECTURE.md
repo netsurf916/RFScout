@@ -306,9 +306,10 @@ Speaker output is a separate semantic service on the validated T-Embed I2S1 path
 
 ### Shared radio observation ownership
 
-The framework-owned Wi-Fi monitor and channel scheduler supply the
-same bounded AP metadata decoder to WiFi/BLE and Hotspots, but the
-applications maintain independent session-owned observation stores.
+WiFi/BLE and Hotspots share the framework-owned Wi-Fi monitor and channel
+scheduler, but only Hotspots subscribes to its opt-in, bounded AP metadata
+decoder. WiFi/BLE consumes the monitor's ordinary MAC/RSSI observations;
+the applications maintain independent session-owned observation stores.
 Hotspots receives AP observations through a 64-item coalescing callback
 queue on its app task, maintains its 128-BSSID bounded Live model,
 and stops/quiesces the monitor before association and TLS. The
