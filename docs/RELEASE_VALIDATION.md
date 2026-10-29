@@ -1,12 +1,13 @@
 # Release hardware acceptance checklist
 
-This is a repeatable **validation procedure for implemented behavior**, not a feature plan. Record device revision, firmware commit/tag, SD card, GPS/nRF24 accessories, tester, date, and pass/fail notes in the release review. Any improvement proposals found during testing belong only in [Roadmap](ROADMAP.md); code defects belong in GitHub issues or corrective PRs.
+This is a repeatable **validation procedure for implemented behavior**, not a feature plan. For v0.4.0 the release scope is stabilization/cleanup of existing capabilities, not completion of the deferred v0.5.0 implementation backlog. Tests that need unavailable optional nRF24 or other accessories may be recorded explicitly **Untested (hardware unavailable)**, never silently marked passed; software lifecycle safety remains mandatory. Record device revision, firmware commit/tag, SD card, GPS/nRF24 accessories, tester, date, and pass/fail notes in the release review. Any improvement proposals found during testing belong only in [Roadmap](ROADMAP.md); code defects belong in GitHub issues or corrective PRs.
 
 | Area | Acceptance check | Result |
 | --- | --- | --- |
 | Startup | Cold boot, detect supported board, render display, navigate Home | Untested |
 | App lifecycle | Switch repeatedly among Home, WiFi/BLE, Wardriving, GPS, CC1101, nRF24 (if present), Recorder; watch for hangs or retained workers | Untested |
 | Radio sources | Toggle Wi-Fi/BLE independently; confirm disabled sources stop and stale observations disappear | Untested |
+| Wi-Fi/BLE memory pressure | Verify independent source expiry, geometric PSRAM growth, clean capacity-drop reporting without evicting existing observations, and full reclamation on exit; record free/largest-free-block measurements | Untested |
 | Wi-Fi channel policy | Auto/Manual, individual mask, sequential/shuffled sweep, empty-mask disable and reenable; verify after restart | Untested |
 | BLE discovery | Passive/Active, duplicate filter, duty presets; validate observed scan responses and Wi-Fi coexistence | Untested |
 | Wardriving | Start/stop PCAPNG capture, verify packet timestamps/Wireshark decoding and SD filenames | Untested |

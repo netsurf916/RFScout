@@ -6,17 +6,31 @@ The WiFi/BLE application passively observes Wi-Fi frames and supports either pas
 
 ## Services and lifecycle
 
-### Shared discovery and retention migration (PR #136)
+### Shared discovery and current retention
 
-**Target behavior; app migration pending.** The existing framework Wi-Fi monitor remains the sole channel-hopping and packet-discovery implementation. A shared, bounded, allocation-free AP metadata decoder will additionally expose SSID, BSSID, authentication evidence, channel and RSSI for consumers such as Hotspots. The WiFi/BLE collection remains app-owned and retains its canonical (MAC, address-type) merging and independent Wi-Fi/BLE source lifetimes; the Hotspots table is **not** merged into this store.
+The Wi-Fi/BLE app and Hotspots share the framework Wi-Fi monitor and
+its allocation-free AP metadata decoder, but **not** their observation
+stores or admission policies. The canonical Wi-Fi/BLE collection is
+app-session-owned PSRAM, keyed by (address type, MAC); Hotspots maintains
+its own bounded Live collection. Both Wi-Fi and BLE collectors must
+quiesce before the Wi-Fi/BLE app-session memory is reclaimed.
 
-WiFi/BLE keeps its configurable 60-second default timeouts (10–300 s, separately for Wi-Fi and BLE) and gains **optional GPS coverage-distance expiry** (Off by default) plus a *measured memory budget*. Capacity pressure is a resource goal, not a free-standing eviction policy: first expire time/distance-stale records, then iteratively choose safe victims by age and optionally RSSI until space is available. Do not model Hotspots' OPEN/OWE ranking as a generic WiFi/BLE category. If all eligible records are protected, drop the new observation without exceeding the budget. Keep multi-source identities alive while either source is active. The redundant **Reset detections** action is already removed from Settings in this branch, because exiting the app clears its session data.
+Current Wi-Fi/BLE retention is based on independent configurable
+Wi-Fi and BLE timeouts (10–300 seconds, default 60 seconds). There
+is no optional GPS-distance expiry, fixed per-app entry/memory budget
+or RSSI/age-based forced victim selection for this store. Geometric
+PSRAM growth and regular source-timeout expiration preserve established
+observations. When store/index capacity cannot grow, the incoming
+observation is dropped and a capacity-drop event is emitted without
+evicting an existing record. This alternative policy was selected after
+empirical hardware evaluation in the 0.4.0 release planning pass;
+formal release stress/low-memory validation remains outstanding.
 
-Common observation JSONL records (source, address, time, RSSI, optional location) will be serialized through the shared SD journal abstraction; surveillance-specific evidence remains an app-owned event/extension. Journal only selected/aggregated observations, not each advertising packet or beacon. Until the migration lands, the current settings, history schema, and behavior below remain authoritative.
-
-The application requires delayed activation and declares both the Wi-Fi monitor and BLE monitor session services. Both collectors must quiesce before app-session PSRAM can be reclaimed.
-
-The normalized live observation store grows in app-owned PSRAM instead of enforcing the former fixed 1000-item limit. Collector ingestion uses an identity index rather than linearly rescanning the entire collection for every callback.
+Instant/Timed/Never modes, advanced semantic entities, and richer
+memory-pressure ranking are not implemented. The first two are deferred
+to 0.5.0; a ranked victim-eviction system is **not** a committed
+requirement. Surveillance packet/location journaling is described
+below and remains distinct from ordinary live observation retention.
 
 ### Current collection behavior
 
@@ -77,7 +91,7 @@ Surveillance classification is an attribute of that canonical active record and 
 
 WiFi/BLE persists a non-default threshold as the sparse `evidence_threshold` app setting (`everything`, `probable`, or `distinctive`). The retired pre-1.0 `surveillance_sensitivity` setting is not migrated; if encountered, it is ignored and pruned through the normal configuration-save workflow.
 
-Instant / Timed / Never retention modes are not implemented yet.
+Instant / Timed / Never retention modes are not implemented; they are deferred to v0.5.0.
 
 The **Reset detections** action clears all current logical observations and identity-index contents immediately while retaining the app's already-allocated session capacity for reuse. Normal timeout expiry removes a canonical record only after all active source memberships have expired.
 
@@ -207,7 +221,7 @@ Relevant generated tables live under `main/services/wireless/`. Registry, genera
 
 ## Current limitations
 
-Current production behavior preserves enough AP/BSSID and frame-role semantics for adaptive scanning, but it does not yet provide the full semantic physical-entity model, AP/client topology and association confidence, probe relationships, stable relationship drill-down, BLE-native deep views, or conservative address-rotation correlation planned for v0.4.0. Randomized addresses therefore remain evidence rather than proof of physical identity.
+Current production behavior preserves enough AP/BSSID and frame-role semantics for adaptive scanning, but it does not yet provide the full semantic physical-entity model, AP/client topology and association confidence, probe relationships, stable relationship drill-down, BLE-native deep views, or conservative address-rotation correlation deferred to v0.5.0. Randomized addresses therefore remain evidence rather than proof of physical identity.
 
 ## Surveillance locations: live receiver bounds and packet journal
 
