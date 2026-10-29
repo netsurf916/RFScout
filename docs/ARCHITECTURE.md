@@ -235,21 +235,24 @@ Usable external PSRAM is a supported-platform requirement. RFScout does not sile
 
 Applications consume semantic input rather than GPIOs. The current T-Embed provider maps the rotary encoder/buttons into signed navigation, Select, Long Press, and the global Hold shortcut. There is no global Back input semantic; explicit Back rows and app-local actions are ordinary Select-driven UI choices. The dedicated user/power key remains a separate power-policy input.
 
-The T-Embed rotary provider decodes GPIO A/B transitions with the original 16-entry
-Gray-code lookup table used by LilyGO's factory example and the earlier RFScout input
-service. A repeated A/B state or a two-bit (diagonal) jump contributes zero signed
-movement; unlike the stricter PR #138 decoder, an invalid jump does not force a
-resynchronization. At either 00 or 11 latch, two accumulated signed transitions produce
-one navigation step. Completed steps accumulate as net signed movement until consumed:
-each input poll takes and clears that movement, reporting only -1, 0 or +1. Opposite
-turns cancel, avoiding a backlog of delayed application switches during a busy poll.
-Input lock and wake-gesture consumption clear pending and fractional movement.
+The T-Embed rotary provider in PR #145 samples GPIO4/5 on both edges,
+with GPIO state reads serialized under the decoder lock. It follows the LilyGO
+TWO03 16-entry Gray-code transition table, encoding A as bit 0 and B as bit 1.
+The signed raw position accumulates continuously; publication occurs only on
+recognized `00` or `11` latches (`raw_position >> 1`). Duplicate states
+and illegal diagonal transitions contribute no raw movement. The published
+direction is inverted at the semantic input boundary to retain the tested
+physical menu direction. A busy UI consumes at most one net -1/0/+1 movement
+per poll, with opposing movement cancelling rather than backlogging.
 
-The two-transition, 00/11 latch calibration matches the board's LilyGO `TWO03`
-reference. No hardware GPIO glitch filter or per-edge SD diagnostic trace is enabled
-by this decoder. Hardware testing indicates better navigation than the previous
-strict-state decoder, but does not establish that wake and input-lock regressions
-are resolved.
+Wake/lock consumption clears pending navigation. If it occurs at intermediate
+state `01` or `10`, PR #145 suppresses remaining movement until the next
+`00`/`11` latch and then rebases; this avoids the incomplete wake gesture
+leaking into subsequent UI navigation. The existing GPIO-ISR sampling remains
+different from LilyGO's roughly 1-ms polling, and no hardware glitch filter
+or per-edge SD trace is added. #145 is still pending hardware acceptance and
+merge; neither its CI success nor its software regression tests prove the
+complete display-wake matrix on hardware.
 
 The user-facing gesture vocabulary is intentional:
 

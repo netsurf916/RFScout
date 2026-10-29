@@ -18,10 +18,15 @@ of its envisioned future features to be safe and useful in 0.4.0.
 
 ### Ordered release work
 
-1. **Stabilize `main`:** PR #141's improved rotary decoder and PR #140's
-   gateway camera-service fingerprinting are now merged. Review remaining
-   integration work and address regressions in implemented services; verify
-   shared locked/unlocked display wake independently.
+1. **Stabilize `main`:** PRs #139 (adaptive breadcrumbs), #140 (gateway
+   camera-service fingerprinting), #141 (rotary restoration), #143 (remove
+   persistent Hotspots DENY), and #144 (stable Hotspots list selection) are
+   merged. PR #145 improves the rotary decoder with LilyGO-compatible TWO03
+   latches, restored physical direction and wake/lock resynchronization,
+   but is **not yet merged**: owner hardware acceptance remains required.
+   This documentation PR is stacked on #145 so that the 0.4.0 plan includes
+   those expected input semantics. Verify locked/unlocked display wake and
+   ongoing network/TLS UI responsiveness on actual hardware.
 2. **Cleanup and optimization:** align current-state documentation with
    actual code, fix reproducible bugs, simplify stale paths, audit
    semantic menus, normalize UI labels and audio control units, remove
@@ -65,10 +70,20 @@ implemented behavior are **not** excused by deferring feature expansion.
 
 ### Stabilization and cleanup checklist
 
-- [ ] Complete integration/review and owner-approved merge/deferral
-  decisions for remaining open PRs. PR #140 was merged after passing CI
-  and resolution of its Codex review findings.
-- [ ] Regression-test rotary navigation and the distinct input-lock /
+- [ ] Obtain hardware acceptance and an owner-approved merge decision
+  for PR #145 before treating its LilyGO-aligned decoder as shipped.
+  Do not mark this release checklist complete merely because #142 is stacked
+  on #145 or a CI build passed.
+- [ ] Recheck recently merged Hotspots #143 behavior: failed authentication,
+  handshake, DHCP, DNS, NTP, HTTPS and link loss are retryable outcomes, not
+  persistent BSSID credential denials. Automatic retries remain subject to
+  the existing RSSI improvement/floor rules; failed checks never split an
+  SSID group without conflicting characterized network evidence.
+- [ ] Verify PR #144 selection identity during Live/History refreshes:
+  reordering must retain the intended BSSID/profile, and disappearing items
+  select Back instead of redirecting Select to an unrelated row.
+- [ ] Regression-test #145's slow and fast rotary navigation, corrected
+  direction, partial-detent wake suppression, and distinct input-lock /
   dimmed/off wake interactions; address reproducible shared-input bugs.
 - [ ] Audit existing app menus, UI labels and volume/gain semantics:
   speaker/output volume is percentage-based, microphone digital gain
@@ -102,9 +117,11 @@ implemented behavior are **not** excused by deferring feature expansion.
 - [ ] Recorder start/stop/save, veto of unsafe transitions, SD
   removal/write errors, playback, and repeated Audio Spectrum
   transitions maintain audio/service/resource safety.
-- [ ] Hotspots common network lifecycle, supported auth types,
-  NTP/HTTPS failures, station MAC restore, history journal/compaction
-  and SD removal receive focused validation.
+- [ ] Hotspots network lifecycle, Open/OWE/WPA2/WPA3 support,
+  retry without DENY (#143), stable Live list identity (#144),
+  tentative gateway CAM identification (#140), NTP/HTTPS failures,
+  TLS worker cancellation and UI responsiveness, station MAC restore,
+  history journal/compaction and SD removal receive focused validation.
 - [ ] CC1101 and nRF24 continue to satisfy receive-only and
   lifecycle contracts. Optional hardware absent from the current
   test setup is explicitly documented as untested, not falsely
@@ -112,7 +129,9 @@ implemented behavior are **not** excused by deferring feature expansion.
 - [ ] Thermal's uncalibrated image remains **relative IR**, with no
   false absolute-temperature claims; currently implemented
   acquisition/teardown remains safe.
-- [ ] SD media store, breadcrumbs, OTA install/first-boot
+- [ ] SD media store, #139 adaptive breadcrumbs (including a valid
+  60-second stationary heartbeat, speed-based rate limits, UTC-dated
+  files and configured retention), OTA install/first-boot
   confirmation/rollback, and browser-flasher/OTA catalog pass
   relevant supported-hardware checks.
 - [ ] Release documentation calls out version compatibility,

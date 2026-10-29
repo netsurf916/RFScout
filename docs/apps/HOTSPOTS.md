@@ -20,7 +20,7 @@ Hotspots now uses the same framework-owned `radio_monitor` and channel scheduler
 
 Hotspots now uses **Expire after** (30–300 s, default 60 s) measured on a logical clock that only advances while the monitor is receiving, so connection/TLS interruptions do not falsely age nearby BSSIDs. The location eviction rule remains optional, defaulting to 500 m beyond observed coverage bounds. Normal expiration removes overdue, unqueued entries not heard during the current sweep. At capacity, Hotspots first reuses that normal expiration, then admits new BSSIDs by the four-tier credential-aware policy described below. A current-sweep sighting is no longer absolutely protected from capacity eviction; queued manual work remains protected. Admission is rejected when no eligible victim exists. The app settings format version changes intentionally; old missed-scan settings are rejected and return to defaults.
 
-**Still planned elsewhere in #136:** bounded SD-backed History projections, common observation journal serialization, and WiFi/BLE's own memory-budget/GPS policy. Hotspots-specific characterization remains journaled through `media_journal`, and Live eviction never deletes History or saved credentials.
+**Still deferred:** bounded SD-backed History projections and broader shared observation journal use. WiFi/BLE's separately chosen policy uses geometric app-session PSRAM growth and independent source expiry; it does **not** implement the earlier proposed fixed memory budget, ranked victim selection or GPS-distance expiry. Hotspots characterization remains journaled through `media_journal`, and Live eviction never deletes History or saved credentials.
 
 The descriptor declares the shared Wi-Fi monitor, framework network-session and connectivity-probe services and requires delayed activation, so skipping through the app does not start the radio. The network session owns association, DHCP, NTP, MAC policy, timeout, and teardown; the app owns only candidate selection, credential resolution, and result interpretation. Both services are stopped by the app session before app memory is reclaimed. History opens on entry, replays in the background, and is flushed and closed when the app is left.
 
@@ -178,6 +178,12 @@ Hotspots has three views. **App lock** off: landing-level rotary changes RFScout
 - **Saved** — the shared profiles, labelled `SSID #n` when several share an SSID, with the learned auth mode and the number of associated BSSIDs. Selecting one opens the shared profile screen: masked password with **Show**, **Edit password**, and **Forget**. Changes apply to Home immediately.
 
 Each view's menu starts with **Back**, **App lock**, **Auto check**, and **Settings** (**Match distance**, **Expire after**, **Evict beyond**, and **Compact history**), followed by the view's rows. Selecting a Live or History network opens its BSSID list; selecting a BSSID opens its detail.
+
+PR #144 keeps the selected BSSID or saved profile identity stable when Live/History
+models reorder. Both input handling and rendering reconcile selection against
+the current model; if the selected group, member or profile disappears, the
+cursor selects **Back**, rather than applying the next event to a different
+numeric row. See [Live selection consistency](../HOTSPOTS_LIVE_SELECTION.md).
 
 **Live BSSID detail** shows the network label, BSSID and channel, RSSI or not-visible state with auth mode and check count, the credential state, status, the latest attempt's outcome (including a failed association), client IP, gateway, netmask, gateway MAC, DNS servers, and public IP with Cloudflare colo. LIMITED results keep the LAN attributes even though HTTPS was skipped. Actions:
 
