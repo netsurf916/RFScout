@@ -8,8 +8,10 @@ The WiFi/BLE application passively observes Wi-Fi frames and supports either pas
 
 ### Shared discovery and current retention
 
-The Wi-Fi/BLE app and Hotspots share the framework Wi-Fi monitor and
-its allocation-free AP metadata decoder, but **not** their observation
+The Wi-Fi/BLE app and Hotspots share the framework Wi-Fi monitor, but
+only Hotspots registers for its opt-in, allocation-free AP metadata decoder.
+Wi-Fi/BLE consumes ordinary monitor observations rather than extended
+SSID/authentication metadata. The apps do **not** share observation
 stores or admission policies. The canonical Wi-Fi/BLE collection is
 app-session-owned PSRAM, keyed by (address type, MAC); Hotspots maintains
 its own bounded Live collection. Both Wi-Fi and BLE collectors must
