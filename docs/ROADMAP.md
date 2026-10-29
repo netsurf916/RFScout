@@ -18,10 +18,10 @@ of its envisioned future features to be safe and useful in 0.4.0.
 
 ### Ordered release work
 
-1. **Stabilize `main`:** review outstanding integration work (notably PR
-   #140), decide whether it is accepted or deferred, and address regressions
-   in implemented services. PR #141's improved rotary decoder is merged;
-   independently verify shared locked/unlocked display wake.
+1. **Stabilize `main`:** PR #141's improved rotary decoder and PR #140's
+   gateway camera-service fingerprinting are now merged. Review remaining
+   integration work and address regressions in implemented services; verify
+   shared locked/unlocked display wake independently.
 2. **Cleanup and optimization:** align current-state documentation with
    actual code, fix reproducible bugs, simplify stale paths, audit
    semantic menus, normalize UI labels and audio control units, remove
@@ -66,7 +66,8 @@ implemented behavior are **not** excused by deferring feature expansion.
 ### Stabilization and cleanup checklist
 
 - [ ] Complete integration/review and owner-approved merge/deferral
-  decisions for open PRs; #140 remains unmerged until explicitly accepted.
+  decisions for remaining open PRs. PR #140 was merged after passing CI
+  and resolution of its Codex review findings.
 - [ ] Regression-test rotary navigation and the distinct input-lock /
   dimmed/off wake interactions; address reproducible shared-input bugs.
 - [ ] Audit existing app menus, UI labels and volume/gain semantics:
