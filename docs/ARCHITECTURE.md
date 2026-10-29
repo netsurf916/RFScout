@@ -201,7 +201,19 @@ Current session-managed asynchronous services include Wi-Fi monitoring, framewor
 
 Growable retained app state uses `app_session_calloc()`, `app_session_resize()`, and `app_session_free()`. The lower-level memory manager supplies owner accounting, failure tracking, and bulk reclamation.
 
-**Active-list eviction has two distinct purposes:** relevance expiration (completed observation cycles and, where meaningful, geographic distance) and resource-protection admission (a fixed allocation ceiling with deterministic least-recently-observed eviction). Expiration expressed in completed scans avoids time thresholds shorter than an application’s scan/check cycle. GPS-based Hotspots expiration measures how far the receiver is beyond the current observation session’s estimated coverage circle (half the latitude/longitude bounding-box diagonal), and never expels a BSSID seen during the current scan; with no fresh GPS fix, scan-count and capacity policies still operate. Active observation eviction must not erase durable SD history or saved profiles. Hotspots-specific defaults, configurations, and provisional memory ceiling are defined in [Hotspots](apps/HOTSPOTS.md#scanning-and-observation-sessions). The live cap does not bound the separately growing history index or guarantee internal-DMA/contiguous-PSRAM reserves; those require measured worst-case audits.
+**Live observation retention is application-specific.** Wi-Fi/BLE uses
+geometrically growing app-owned PSRAM storage, independent finite Wi-Fi/BLE
+source-membership expiry, and rejects an incoming observation if capacity
+growth fails; it does not evict established records using a fixed memory
+budget or RSSI/age-ranked victims. This behavior was chosen after empirical
+device evaluation. A successful app-session close releases retained PSRAM.
+Hotspots, by contrast, uses a bounded Live table with a four-tier
+security/credential-aware capacity admission rule, normal receive-time
+and optional GPS-distance expiry, and protections for active checks.
+Neither app's active-list expiration may delete durable SD history
+or saved credentials. Treat these as distinct policies, not a shared
+eviction engine. See [WiFi/BLE](apps/WIFI_BLE.md) and
+[Hotspots](apps/HOTSPOTS.md).
 
 Shared SPI peripherals use the ESP-IDF SPI driver's device arbitration **plus** a board-level recursive SPI lock (`board_spi_lock()` / `board_spi_unlock()`). Every SPI2 client holds the board lock around each group of transactions it issues: LCD flushes per DMA chunk and panel commands, every SD/FatFs transaction (taken automatically inside the storage I/O arbitration, so storage users never take it directly), and each CC1101/nRF24 register transfer. The board lock is defensive: it keeps clients from ever contending inside the driver's own bus lock, which has had shared-bus races in some ESP-IDF releases (for example the `spi_ll_get_running_cmd(hw) == 0` assert in `spi_hal_setup_trans`). Hold times stay short; the LCD releases between chunks so radios and SD can interleave. When both locks are needed, the storage I/O lock is always taken before the board SPI lock.
 
@@ -223,21 +235,24 @@ Usable external PSRAM is a supported-platform requirement. RFScout does not sile
 
 Applications consume semantic input rather than GPIOs. The current T-Embed provider maps the rotary encoder/buttons into signed navigation, Select, Long Press, and the global Hold shortcut. There is no global Back input semantic; explicit Back rows and app-local actions are ordinary Select-driven UI choices. The dedicated user/power key remains a separate power-policy input.
 
-The T-Embed rotary provider decodes GPIO A/B transitions with the original 16-entry
-Gray-code lookup table used by LilyGO's factory example and the earlier RFScout input
-service. A repeated A/B state or a two-bit (diagonal) jump contributes zero signed
-movement; unlike the stricter PR #138 decoder, an invalid jump does not force a
-resynchronization. At either 00 or 11 latch, two accumulated signed transitions produce
-one navigation step. Completed steps accumulate as net signed movement until consumed:
-each input poll takes and clears that movement, reporting only -1, 0 or +1. Opposite
-turns cancel, avoiding a backlog of delayed application switches during a busy poll.
-Input lock and wake-gesture consumption clear pending and fractional movement.
+The T-Embed rotary provider (merged via PR #145) samples GPIO4/5 on both edges,
+with GPIO state reads serialized under the decoder lock. It follows the LilyGO
+TWO03 16-entry Gray-code transition table, encoding A as bit 0 and B as bit 1.
+The signed raw position accumulates continuously; publication occurs only on
+recognized `00` or `11` latches (`raw_position >> 1`). Duplicate states
+and illegal diagonal transitions contribute no raw movement. The published
+direction is inverted at the semantic input boundary to retain the tested
+physical menu direction. A busy UI consumes at most one net -1/0/+1 movement
+per poll, with opposing movement cancelling rather than backlogging.
 
-The two-transition, 00/11 latch calibration matches the board's LilyGO `TWO03`
-reference. No hardware GPIO glitch filter or per-edge SD diagnostic trace is enabled
-by this decoder. Hardware testing indicates better navigation than the previous
-strict-state decoder, but does not establish that wake and input-lock regressions
-are resolved.
+Wake/lock consumption clears pending navigation. If it occurs at intermediate
+state `01` or `10`, PR #145 suppresses remaining movement until the next
+`00`/`11` latch and then rebases; this avoids the incomplete wake gesture
+leaking into subsequent UI navigation. The existing GPIO-ISR sampling remains
+different from LilyGO's roughly 1-ms polling, and no hardware glitch filter
+or per-edge SD trace is added. #145 is merged, but the hardware release
+acceptance remains open: neither CI success nor software regression tests
+prove the full display-wake matrix on a physical device.
 
 The user-facing gesture vocabulary is intentional:
 
@@ -292,15 +307,26 @@ Speaker output is a separate semantic service on the validated T-Embed I2S1 path
 
 ## Radio-service boundaries
 
-### Planned shared observation refactor (not yet implemented)
+### Shared radio observation ownership
 
-PR #136 now reuses the existing Wi-Fi monitor and channel scheduler for Hotspots with a shared SSID, BSSID, RSN/AKM security-evidence parser. The app receives AP metadata through its app-session descriptor and a 64-item bounded callback queue, then updates its own 128-BSSID Live model on the app task. The old Hotspots 32-result station scan pipeline is no longer used. The app stops the monitor and quiesces callbacks before requesting framework-owned station association/TLS, restarting on the next monitor sweep. WiFi/BLE and Hotspots retain distinct app-session collections: Hotspots keeps its provisional 128-entry Live bound with a four-tier security/credential-aware admission policy; WiFi/BLE gets an app-specific, measured memory budget. No shared policy engine is required: small time/distance, RSSI and allocation-accounting helpers may be shared, while each app decides eviction eligibility and victim ranking.
+WiFi/BLE and Hotspots share the framework-owned Wi-Fi monitor and channel
+scheduler, but only Hotspots subscribes to its opt-in, bounded AP metadata
+decoder. WiFi/BLE consumes the monitor's ordinary MAC/RSSI observations;
+the applications maintain independent session-owned observation stores.
+Hotspots receives AP observations through a 64-item coalescing callback
+queue on its app task, maintains its 128-BSSID bounded Live model,
+and stops/quiesces the monitor before association and TLS. The
+framework-owned station/network sessions handle credentials, connection,
+time synchronization, and teardown.
 
-Hotspots now uses last-observed timestamps, with an 8-second monitor-receive-time visibility window and independent configurable expiration (default 60 seconds), plus optional GPS coverage-distance expiry; station/network/TLS downtime advances neither clock. Sweep generations protect current observations from normal time/GPS expiration, not from capacity eviction, UI visibility or the separate timeout. WiFi/BLE still uses its independently configured source timeouts and awaits optional GPS-distance expiry. A capacity limit is an admission/memory target: apps first perform normal expiry and then iteratively evict eligible records according to their local policy; if no safe victim exists, the newcomer is rejected. RSSI is primarily a secondary ranking criterion under capacity pressure, not a blanket threshold for WiFi/BLE. Existing Hotspots protections for active checks/manual requests and WiFi/BLE multi-source identity lifetime must survive. Intentional monitoring interruptions for association and TLS must not create artificial expiration.
-
-The existing `media_journal` abstraction remains the sole SD path. A common versioned observation-record envelope should carry source, identity, time, RSSI and optional location, with app-specific characterization or surveillance fields maintained separately. Journaling should be aggregated/rate-limited, not one record per received beacon/advertisement. Hotspots History should use bounded SD-backed nearest-entry queries and bounded view scratch rather than replaying the whole characterized population into live PSRAM; credential matching, epoch semantics, compaction and removable-media recovery still need correct query behavior. The WiFi/BLE redundant Reset detections menu action was retired on this branch because app transitions already clear session state.
-
-Shared building blocks now exist on this branch: allocation-free `wifi_ap_observation` decoding, opt-in `radio_monitor` AP callbacks through the app-session descriptor, `observation_retention` time/GPS/budget arithmetic, and a versioned `observation_journal` JSONL formatter. PR #137 stamps extended AP observations with monotonic receive time at the radio boundary and provides an app-task `observation_metadata_enrich` helper for optional trusted UTC and fresh GPS. The radio callback never reads GPS or performs storage I/O. Hotspots resolves profiles and writes bounded eligible sightings to a separate shared-journal-format collection **before** its own Live admission policy; those unvalidated sightings do not populate or alter characterized History. **Hotspots discovery and timestamp-based retention have migrated**, including a conservative station-auth translation helper, but WiFi/BLE resource/GPS migration, shared journal adoption, and bounded SD-backed Hotspots History are outstanding. Full validation still requires ESP-IDF builds, tests and hardware measurements of PSRAM, internal free heap and largest allocatable blocks across scanning, association and TLS. Full migration still requires host tests, ESP-IDF builds, and hardware measurements of PSRAM, internal free heap and largest allocatable blocks across scanning, association and TLS.
+WiFi/BLE retains a growable PSRAM observation collection and independent
+source timeouts. It does not share Hotspots' capacity ranking or
+use a fixed WiFi/BLE memory budget, optional GPS-distance expiry or
+RSSI-ranked capacity eviction. Index growth failure rejects the
+new observation without losing already retained entries. Optional
+shared observation journaling and deeper identity/correlation models
+remain future designs in the [roadmap](ROADMAP.md), not implemented
+contracts in this architecture.
 
 The Wi-Fi and BLE monitor services normalize passive observations for the [WiFi / BLE app](apps/WIFI_BLE.md). Their app-owned collection/index lives in the active app session and both collectors must quiesce before that session is reclaimed.
 

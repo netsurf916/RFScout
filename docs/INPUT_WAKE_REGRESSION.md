@@ -45,12 +45,12 @@ trace calls remain in PR #141's effective code.** Normal existing application
 and system logging is unaffected. Earlier diagnostic commits remain visible
 in the PR's Git history; they are not part of the resulting firmware tree.
 
-## PR #145: LilyGO TWO03 software-decoder parity trial
+## Merged PR #145: LilyGO TWO03 software-decoder implementation
 
 Hardware feedback showed that neither the original #145 fixed GPIO filter nor
 the subsequent PCNT quadrature decoder eliminated repeated back-and-forth
 navigation (PCNT was somewhat better). The PCNT experiment has therefore been
-removed from this PR. The shared encoder again uses GPIO4/GPIO5 both-edge
+removed before #145 merged. The shared encoder uses GPIO4/GPIO5 both-edge
 interrupts and the pre-existing, coalesced semantic navigation API.
 
 This revision explicitly follows the LilyGO T-Embed CC1101 factory encoder
@@ -79,7 +79,7 @@ example and Matthias Hertel's `RotaryEncoder::tick()` in `LatchMode::TWO03`:
   mid-cycle wake/lock resets in both directions.
 
 LilyGO's demonstration polls `encoder.tick()` with a roughly 1 ms loop delay.
-RFScout still samples using *both-edge GPIO interrupts*. Therefore this PR
+RFScout still samples using *both-edge GPIO interrupts*. Therefore #145
 aligns the **decoder state machine and latch rule**, not the sampling cadence.
 The ISR can observe contact bounce that LilyGO's 1 ms polling may skip. This
 change does not add speculative software debounce or SD logging. The earlier
@@ -117,7 +117,7 @@ Address these at the shared input/display boundary only after a focused
 regression test; changing the decoder alone must not be presented as proof
 that wake behavior has been corrected.
 
-## Hardware verification before owner-directed merge
+## v0.4.0 hardware acceptance after merge (still open)
 
 | Display | Input lock | Gesture | Expected result |
 | --- | --- | --- | --- |

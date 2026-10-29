@@ -1,6 +1,6 @@
 # Breadcrumb cadence and retention — implementation contract
 
-**State: implemented on draft PR #139; firmware CI and hardware verification pending.** This PR is stacked on PR #137, whose UTC-dated JSONL writer is the prerequisite. This document defines intended behavior and acceptance criteria.
+**State: implemented and merged on PR #139, following merged PR #137's UTC-dated JSONL writer.** The policy below describes the current code contract, not an unmerged draft or a new prerequisite. Hardware cadence and retention validation remains part of the v0.4.0 release gate.
 
 ## Goals
 
@@ -33,7 +33,7 @@ The heartbeat intentionally bypasses only the movement gate. The 1-record-per-UT
 
 ## Per-day storage and retention
 
-Use the parent PR's append-only `system/breadcrumbs/breadcrumbs-YYYY-MM-DD.jsonl` files; UTC **from the record** determines the filename. Retention choices, editable through the **existing** Home and GPS settings rows:
+Breadcrumbs use append-only `system/breadcrumbs/breadcrumbs-YYYY-MM-DD.jsonl` files; UTC **from the record** determines the filename. Retention choices, editable through the **existing** Home and GPS settings rows:
 
 | Label | Duration |
 | --- | --- |
@@ -55,4 +55,4 @@ Use existing `media_list()`/`media_remove()` through the breadcrumb worker, in b
 - The Home and GPS menus agree on retention; previously persisted On/Off survives.
 - Hardware: parked for several minutes, walk, cycle and drive up to/exceeding 10 m/s; verify both frequency and coordinate validity; inspect SD writes and queue drops.
 
-**Dependency:** PR #137 must merge first. Keep this PR targeted at `feature/hotspots-priority-admission` until then, then rebase and retarget to `main`. Only the owner merges.
+**Release status:** Both #137 and #139 have merged. Validate on the actual v0.4.0 candidate hardware; this document does not by itself record those tests as passed.

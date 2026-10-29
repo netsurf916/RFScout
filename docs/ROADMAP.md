@@ -4,91 +4,167 @@ This is the **authoritative planning document** for RFScout. Current product beh
 
 Statuses describe implementation state, not release state. Git history and pull requests preserve implementation history; completed items should remain here only when they provide useful context for still-open work.
 
-## v0.4.0 milestone plan
+## v0.4.0 — stabilize, clean up, validate and release
 
-**Status:** In progress
+**Status:** In progress. **Implementation scope is frozen to existing capability and corrective work; remaining feature expansion moves to v0.5.0.** This replaces the original all-app feature-completion gate below.
 
-v0.4.0 is a resource-management, lifecycle-stability, and application-quality release. The release should make application switching deterministic, allow data-heavy applications to use PSRAM opportunistically instead of being constrained by arbitrary fixed-capacity buffers, and improve each current application on top of that lifecycle model.
+The goal is to deliver the substantial platform and application changes since
+v0.3.5 as a reliable release. The foundation is already present: owner-scoped
+PSRAM management, transactional app resource sessions, descriptor-driven
+runtime, shared configuration/SD media services, system events, themes,
+improved Wi-Fi/BLE capture and surveillance cases, Hotspots, CC1101 receive
+views, and many other application improvements. An app need not have all
+of its envisioned future features to be safe and useful in 0.4.0.
 
-Several foundations originally planned for v0.4.0 are already present on `main` and were included in the published v0.3.2 firmware. Git history is authoritative for those implementation boundaries:
+### Ordered release work
 
-- **PR #60 — implemented:** independent Indoor/Outdoor/Night visual themes and Normal/Quiet audio policy.
-- **PR #61 — implemented:** shared semantic system-event history, presentation, attention-wake, and initial hardware/system event sources.
-- **PR #63 — implemented:** owner-aware PSRAM memory manager with application/operation ownership, safe growth, accounting, failure tracking, and bulk reclamation.
-- **PR #64 — implemented:** transactional application-transition/reclamation foundation with post-reclamation accounting checks.
-- **PR #65 — implemented:** optional System Events / Recent Events application over the shared volatile event history.
+1. **Stabilize `main`:** PRs #139 (adaptive breadcrumbs), #140 (gateway
+   camera-service fingerprinting), #141 (rotary restoration), #143 (remove
+   persistent Hotspots DENY), #144 (stable Hotspots list selection), and
+   #145 (LilyGO-compatible TWO03 decoder with corrected physical direction
+   and partial-detent wake/lock resynchronization) are **merged**. Their
+   implementation status is not hardware release acceptance. Validate
+   locked/unlocked display wake, rotary behavior and network/TLS UI
+   responsiveness on the actual release hardware. This documentation PR
+   targets `main` after #145's merge.
+2. **Cleanup and optimization:** align current-state documentation with
+   actual code, fix reproducible bugs, simplify stale paths, audit
+   semantic menus, normalize UI labels and audio control units, remove
+   temporary diagnostic logging, and make measured improvements with
+   corresponding tests. Avoid introducing new feature architectures.
+3. **Carry forward incomplete feature work to v0.5.0:** retain the original
+   designs and checklists below, especially Wi-Fi/BLE entity/topology and
+   deeper views, CC1101 protocol expansion, nRF24 validated packet
+   discovery/history, Recorder generalized audio, and MLX90640 calibration.
+4. **Test, freeze, release:** use reproducible CI and device acceptance
+   tests on the exact release commit; run lifecycle/memory/failure-injection
+   checks, validate OTA and rollback, freeze to release-blocker fixes, and
+   publish only after the owner's final decision.
 
-Release-level stress and hardware validation remain outstanding even where the underlying implementation is already merged.
+Known safety, lifecycle, storage, input, power or OTA defects in already
+implemented behavior are **not** excused by deferring feature expansion.
 
-### Release objective
+### Wi-Fi/BLE eviction decision — completed by adopting a different policy
 
-RFScout applications should behave like isolated consumers of a common pool of dynamic memory:
+- [x] **Close the old memory-pressure victim-selection task based on the
+  owner's empirical testing.** The implementation does not use the
+  originally proposed fixed memory budget, RSSI/age-ranked victims, or
+  GPS-distance-based eviction for Wi-Fi/BLE.
+- The canonical observation store instead **grows geometrically** in
+  app-owned PSRAM without a fixed item ceiling. Wi-Fi and BLE membership
+  timeouts are independent; a record expires only after its active source
+  memberships age out. Exit reclaims its app-session memory after
+  collector quiescence.
+- If growth/allocation fails, the new observation is rejected with an
+  existing capacity-drop event, rather than evicting retained identities.
+  This preserves existing observations and avoids an unvalidated ranking
+  algorithm. The policy is accepted for 0.4.0; empirical test details and
+  exact memory-headroom figures have not been recorded in the roadmap.
+- This is **not** implementation of proposed Instant/Timed/Never retention.
+  That separate feature and the richer identity/topology model move to
+  0.5.0. Hotspots uses its own bounded 128-entry Live admission policy,
+  which must not be conflated with Wi-Fi/BLE.
+- Formal 0.4.0 stress testing still needs to verify bounded failure
+  handling, absence of corrupt/partial records, and session cleanup;
+  it does **not** require a different eviction algorithm.
 
-- long-lived platform services keep only memory that genuinely must survive application changes;
-- the active application may dynamically consume available PSRAM for retained observations, history, captures, and scratch processing;
-- application exit asks the app resource session to quiesce its platform services, and a successful session close is the proof that workers/callbacks can no longer reach app-owned state;
-- irreversible cleanup and reclamation happen only after that platform-owned safety gate succeeds;
-- the next application starts from a predictable memory baseline and can reuse the released PSRAM;
-- PSRAM is a platform requirement for supported RFScout hardware targets.
+### Stabilization and cleanup checklist
 
-This is resource isolation by lifecycle, not a promise that literally every byte of physical PSRAM is available to an application. Platform, RTOS, display, driver, DMA, and service allocations that must remain resident are excluded from the app-owned pool. Internal SRAM remains reserved for the system, stacks, latency-sensitive state, and allocations constrained by ESP-IDF or peripheral hardware.
+- [ ] Obtain owner hardware acceptance for the **merged** PR #145
+  rotary decoder, especially incomplete wake-gesture suppression and
+  lock/display-off interactions. Merging a firmware PR or passing CI
+  does not establish the v0.4.0 release acceptance gate.
+- [ ] Recheck recently merged Hotspots #143 behavior: failed authentication,
+  handshake, DHCP, DNS, NTP, HTTPS and link loss are retryable outcomes, not
+  persistent BSSID credential denials. Automatic retries remain subject to
+  the existing RSSI improvement/floor rules; failed checks never split an
+  SSID group without conflicting characterized network evidence.
+- [ ] Verify PR #144 selection identity during Live/History refreshes:
+  reordering must retain the intended BSSID/profile, and disappearing items
+  select Back instead of redirecting Select to an unrelated row.
+- [ ] Regression-test #145's slow and fast rotary navigation, corrected
+  direction, partial-detent wake suppression, and distinct input-lock /
+  dimmed/off wake interactions; address reproducible shared-input bugs.
+- [ ] Audit existing app menus, UI labels and volume/gain semantics:
+  speaker/output volume is percentage-based, microphone digital gain
+  remains in dB. Check selection and scrolling consistently.
+- [ ] Remove obsolete paths, abandoned diagnostics, contradictory
+  documentation and unintended logging overhead.
+- [ ] Review performance and app-session memory usage with real logs,
+  apply only targeted correctness/efficiency changes, and add regression
+  tests for each behavior change.
+- [ ] Bring README, architecture, app docs, roadmap and release notes
+  into agreement with shipped behavior.
 
-Stack safety is part of the v0.4.0 resource contract. Nontrivial or growth-prone structures should be passed by pointer/reference rather than copied or returned by value when practical, especially across lifecycle, logging, collector, and application boundaries. Large retained state belongs in app-owned PSRAM where appropriate; fixed task stacks should not silently absorb structure growth. Ownership and lifetime should remain explicit so avoiding a stack copy does not introduce ambiguous reachability.
+### 0.4.0 release acceptance
 
-### Workstream A: application-scoped PSRAM memory manager
+- [ ] Full formatting, host regression and packaging checks, plus
+  ESP-IDF build, pass for the **exact release candidate commit**.
+- [ ] Supported-board boot, input/buttons/rotary, locks, dim/off wake,
+  power, visual themes, normal/quiet audio, overlays and key menus
+  pass device acceptance.
+- [ ] Repeated application transitions stabilize free/peak/available
+  PSRAM and largest free block, leave zero managed app allocations
+  and open app media handles on committed exit, and preserve service
+  quiescence ordering.
+- [ ] Failure-injection verifies safe worker/callback/timer shutdown,
+  abandoned transition recovery, and errors when restart/cleanup fails;
+  lifecycle logs expose outcomes, reclaimed bytes, remaining ownership,
+  duration and PSRAM metrics when SD logging is available.
+- [ ] Existing Wi-Fi/BLE timeouts, scanner/source switching,
+  acquisition and growth failure paths preserve valid observations,
+  report drops and release all session-owned memory on exit.
+- [ ] Recorder start/stop/save, veto of unsafe transitions, SD
+  removal/write errors, playback, and repeated Audio Spectrum
+  transitions maintain audio/service/resource safety.
+- [ ] Hotspots network lifecycle, Open/OWE/WPA2/WPA3 support,
+  retry without DENY (#143), stable Live list identity (#144),
+  tentative gateway CAM identification (#140), NTP/HTTPS failures,
+  TLS worker cancellation and UI responsiveness, station MAC restore,
+  history journal/compaction and SD removal receive focused validation.
+- [ ] CC1101 and nRF24 continue to satisfy receive-only and
+  lifecycle contracts. Optional hardware absent from the current
+  test setup is explicitly documented as untested, not falsely
+  reported passing; deeper protocol feature development is 0.5.0.
+- [ ] Thermal's uncalibrated image remains **relative IR**, with no
+  false absolute-temperature claims; currently implemented
+  acquisition/teardown remains safe.
+- [ ] SD media store, #139 adaptive breadcrumbs (including a valid
+  60-second stationary heartbeat, speed-based rate limits, UTC-dated
+  files and configured retention), OTA install/first-boot
+  confirmation/rollback, and browser-flasher/OTA catalog pass
+  relevant supported-hardware checks.
+- [ ] Release documentation calls out version compatibility,
+  changed SD paths (`system/logs`, owner collections),
+  nonmigration of legacy files, and user-visible changes.
+- [ ] Record device, firmware SHA, test conditions and explicit
+  pass/fail/untested results in [RELEASE_VALIDATION.md](RELEASE_VALIDATION.md);
+  obtain final owner approval before freeze completion and publish.
 
-**Status:** Implemented by PR #63.
+The release checklist is not considered passed merely because a previous
+PR build passed CI. No action in this plan merges PRs, tags firmware, or
+publishes a release.
 
-Implemented behavior:
+## v0.5.0 — deferred implementation roadmap
 
-- explicit platform/service, application, and nested operation ownership;
-- PSRAM-only managed allocation for eligible application storage;
-- safe growth with overflow checks and failure preserving the existing allocation;
-- owner validation and diagnosable ownership errors;
-- current/peak app payload usage, allocation count, and allocation-failure tracking;
-- application-wide and operation-wide reclamation;
-- unsupported-target failure when usable PSRAM is absent rather than silent internal-SRAM fallback.
+**Status:** Planned feature expansion, after 0.4.0 stabilization and release.
 
-The manager is intended for meaningfully sized retained observations, histories, captures, and processing state. Tiny transient objects and DMA/peripheral-constrained allocations should continue to use the appropriate native allocation path.
+The original 0.4.0 workstream detail is preserved below to avoid losing
+design choices. **Unchecked** feature-development items are now intended
+for 0.5.0. Checked rows describe already implemented prerequisites and
+should not be rebuilt. Validation of **already implemented** behavior
+remains a 0.4.0 requirement, even when an old validation row appears in
+the preserved planning matrix.
 
-Preferred memory-pressure order remains:
+**Prioritization:** CC1101's advanced receive/protocol work remains
+important but has been delayed by limited representative capture data.
+The nRF24 module is currently removed from the owner's setup, which
+limits hardware tests; its packet discovery/history work remains
+planned rather than deprecated. Neither should block 0.4.0.
 
-1. Preserve correctness and current data.
-2. Release reconstructable scratch/cache data.
-3. Evict oldest/lowest-value retained history where semantics permit.
-4. Surface resource pressure.
-5. Continue in a bounded state.
+### Workstream C: advanced WiFi/BLE observation model
 
-A crash, overwrite, or undocumented conversion of an unlimited/session-retained mode into a hidden fixed item limit is not acceptable.
-
-### Workstream B: deterministic app-exit reclamation
-
-**Status:** Transactional foundation implemented by PR #64; simplified resource-session model implemented by PR #68; descriptor-driven runtime and simplified semantic-veto model implemented by PR #70; hardware stress/fault-injection validation remains open.
-
-Application changes use a single platform-owned resource-session boundary rather than parallel app-specific reachability or rollback protocols:
-
-1. Ensure the source application has a resource session.
-2. Allow an optional app-semantic prepare hook to veto the transition **before** service teardown when an operation cannot safely be interrupted.
-3. Ask the session to stop/quiesce every platform service associated with the source app.
-4. Abort without reclaiming memory and restore only the successfully stopped source services that expose a safe restart operation if any service cannot quiesce safely.
-5. Treat successful session close as the platform reachability proof; applications do not implement separate worker/callback reachability callbacks.
-6. Commit app-visible LEAVE cleanup only after platform services are safely quiesced.
-7. Reclaim all remaining memory owned by the source application and verify zero managed allocations remain.
-8. Create the destination session before the destination app begins using app-scoped resources.
-
-PR #68 removes duplicate Wi-Fi/BLE, CC1101, and nRF24 stop/restart bookkeeping from `app_manager`; service failure/recovery semantics live with the platform session. Service membership is platform-defined rather than negotiated through a public registration API or arbitrary service-slot quota.
-
-PR #70 moves normal app runtime behavior behind compiled descriptors and removes the former app-level reactivation hook. Recorder now uses only a pre-teardown veto while recording or finalizing a file; RFScout does not stop an active recording and later attempt to reconstruct/restart it after an aborted transition. Playback may stop during an ordinary committed leave. Audio Spectrum follows the normal resource-session lifecycle with no Recorder-specific rollback behavior.
-
-Storage/resource policy distinguishes hard lifecycle dependencies from optional operation-time facilities. Hard services remain descriptor-managed; optional facilities such as removable storage are checked only by the service/operation that explicitly requires them, while internal persistence remains a separate device-owned capability.
-
-Outstanding validation includes rapid app rotation, repeated Home/app cycles, large histories, Recorder recording/save transition vetoes, Audio Spectrum rapid skip-through and no-SD operation, Thermal attach/detach, forced service-quiesce failures, callback/timer races, low-memory behavior, baseline-memory stability, and largest-free-block stability.
-
-Hardware validation should rely on the existing structured RFScout log as the primary evidence source whenever SD logging is available rather than requiring a parallel serial-console transcript. Extend the current logging path to preserve the lifecycle diagnostics already computed by the transition coordinator — sequence, source/destination app, outcome/error, reclaimed bytes, remaining managed allocations, transition duration, free PSRAM, and largest free PSRAM block. Reuse the existing lifecycle diagnostics and JSONL writer rather than creating a second lifecycle-event or logging subsystem. The serial console remains the fallback evidence path when storage is intentionally absent.
-
-### Workstream C: dynamic WiFi/BLE retention and observation model
-
-**Status:** In progress. PR #68 begins the application-data migration onto Workstreams A/B and establishes the simplified session abstraction across current apps.
+**Status:** Existing growable PSRAM store and finite source timeouts are delivered; remaining extended retention, identity, topology, radio-specific UX, and signature research move to v0.5.0.
 
 PR #68 implements the first storage/lifecycle slice:
 
@@ -190,7 +266,7 @@ For each signature/category, record the evidence source, provenance, expected un
 - [ ] Complete durable provenance review for every curated database fact.
 - [ ] Hardware/field validate representative detections where suitable devices or captures are available.
 
-#### Remaining WiFi/BLE checklist
+#### Remaining WiFi/BLE development checklist
 
 - [ ] Rename user-facing WiFi / BT to WiFi / BLE across UI and production documentation.
 - [x] Move the normalized retained observation collection to growable app-owned PSRAM. Implemented by PR #68.
@@ -205,13 +281,13 @@ For each signature/category, record the evidence source, provenance, expected un
 - [ ] Conservatively cluster randomized probe activity where evidence supports it.
 - [ ] Add Combined/Wi-Fi/BLE radio selection and radio-specific projections.
 - [ ] Add stable relationship drill-down without cursor/selection instability.
-- [ ] Define/test memory-pressure eviction behavior favoring current/high-confidence data over stale/transient evidence where appropriate.
+- [x] WiFi/BLE memory-pressure policy is accepted based on empirical field testing: geometric app-session PSRAM growth and independent source timeout expiry are preferred over a fixed ceiling or ranked victim eviction; when growth fails the incoming observation is dropped without replacing existing records. No GPS-distance victim ranking was implemented or required.
 - [ ] Prove both collectors stop before all app-owned observation/identity memory is released.
 - [ ] Perform repeated enter/exit, large-growth, low-memory, and collector/reclamation race testing on hardware.
 
-### Workstream D: application-by-application improvement pass
+### Workstream D: application-by-application feature expansion
 
-Every current application receives an explicit v0.4.0 review rather than treating the memory manager as an isolated infrastructure change.
+The remaining application-specific enhancements move to v0.5.0. Their current implemented capabilities still receive 0.4.0 cleanup and regression testing.
 
 #### Home / Device Settings
 
@@ -359,12 +435,12 @@ Decisions:
 
 - [x] Automatic checking **on by default** (Hotspotter's -80 dBm floor and +4 dB retry gating, strongest first), with a per-visit toggle and manual Recheck.
 - [x] **Open, OWE and WPA2/WPA3 personal** networks are eligible; other secured modes are listed as unsupported, and hidden networks are not reported.
-- [x] One credential store shared with Home, with stable profile IDs so several profiles can share an SSID, learned associated/rejected BSSIDs, and evidence-based automatic profile selection ([Architecture](ARCHITECTURE.md#shared-network-profiles)).
+- [x] One credential store shared with Home, with stable profile IDs for multiple profiles per SSID, positive associated-BSSID learning and evidence-based automatic selection. Legacy rejected BSSID entries remain readable for compatibility but are **not** learned or treated as credential vetoes by Hotspots after PR #143 ([Architecture](ARCHITECTURE.md#shared-network-profiles)).
 - [x] Durable SD history of green/yellow results with configuration epochs, movement-triggered locations, background replay and compaction.
 - [x] Hotspotter's evidence-based network grouping for Live and History; Live, History and Saved views switched by landing rotary under app lock.
 - [x] A fresh random, locally administered station MAC for every check; factory MAC restored when the station session stops.
 - [x] Named **Hotspots**, placed after WiFi/BLE in navigation order.
-- [x] NTP is required before HTTPS: NTP failure or timeout marks the AP yellow without attempting HTTPS.
+- [x] **Trusted UTC** is required before certificate-validated HTTPS: recent GPS or NTP time satisfies the requirement; otherwise RFScout attempts SNTP, and a required synchronization failure/timeout marks the AP yellow without HTTPS. A cached trusted clock is not evidence that the currently joined AP supports NTP.
 
 Platform prerequisites:
 
@@ -399,9 +475,9 @@ Not yet scheduled; recorded so later application work does not deepen these coup
 - [ ] Move WiFi/BLE observation handling (`on_observation`, observation logging, store initialization) out of `rfscout.c` and behind the app's activation path.
 - [ ] Descriptor-declared hard dependencies (for example SD media, microphone) so availability is derived uniformly instead of in app-specific probe code.
 
-### v0.4.0 release validation gate
+### Original full-scope release acceptance matrix (superseded)
 
-v0.4.0 is not complete until:
+The following is the **original broad milestone** acceptance matrix. As of the 0.4.0 scope reset, tests for **implemented** capabilities still apply to 0.4.0; rows that require not-yet-built WiFi/BLE entity/retention modes or other deferred features instead apply to 0.5.0. See the scoped 0.4.0 gate above.
 
 - [ ] All tests/build/format checks pass.
 - [ ] App-switch stress testing shows a stable memory baseline, no ownership violations, and zero app-owned allocations after successful exit.
@@ -429,6 +505,7 @@ v0.4.0 is not complete until:
 - [ ] All SD access goes through the media store; no module outside the storage service constructs SD paths, and app exit leaves zero open app media handles.
 - [ ] Production documentation reflects implemented behavior and release notes distinguish user-visible changes from internal resource-management work.
 
+
 ## Completed foundation before v0.4.0
 
 The following baseline work is already complete and remains relevant context for later roadmap items:
@@ -445,7 +522,7 @@ The following baseline work is already complete and remains relevant context for
 - **PR #32:** Home and configurable startup.
 - **PR #33:** global visual themes.
 
-## Near-term work after the current v0.4.0 slice
+## v0.5.0 additional candidates (pending prioritization)
 
 ### Shared calibrated Audio Input service
 
