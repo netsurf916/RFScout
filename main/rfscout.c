@@ -583,8 +583,8 @@ void app_main( void )
 
         const int64_t loop_work_us = esp_timer_get_time() - loop_start_us;
         const int64_t input_to_app_us = app_poll_started_us - input_done_us;
-        if( loop_gap_us >= 50000LL || input_to_app_us >= 50000LL ||
-            app_poll_us >= 50000LL || loop_work_us >= 50000LL )
+        if( loop_gap_us >= 50000LL || input_to_app_us >= 50000LL || app_poll_us >= 50000LL ||
+            loop_work_us >= 50000LL )
         {
             ++slow_loop_count;
             if( loop_gap_us > peak_loop_gap_us )

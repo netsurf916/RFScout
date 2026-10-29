@@ -164,8 +164,7 @@ static void log_probe_timing( const char *a_phase,
                               int a_http_status )
 {
     rfscout_log_record_t record;
-    if( log_begin( &record, "connectivity_probe_timing" ) &&
-        log_str( &record, "phase", a_phase ) &&
+    if( log_begin( &record, "connectivity_probe_timing" ) && log_str( &record, "phase", a_phase ) &&
         log_str( &record, "mode", PROBE_MODE_CAMERA == a_mode ? "gateway" : "https" ) &&
         log_int( &record, "elapsed_us", a_elapsed_us ) &&
         log_int( &record, "request_us", a_request_us ) &&
@@ -183,12 +182,10 @@ static void log_probe_stop_timing( probe_mode_t a_mode,
                                    bool a_timeout )
 {
     rfscout_log_record_t record;
-    if( log_begin( &record, "connectivity_probe_timing" ) &&
-        log_str( &record, "phase", "stop" ) &&
+    if( log_begin( &record, "connectivity_probe_timing" ) && log_str( &record, "phase", "stop" ) &&
         log_str( &record, "mode", PROBE_MODE_CAMERA == a_mode ? "gateway" : "https" ) &&
         log_int( &record, "elapsed_us", a_elapsed_us ) &&
-        log_int( &record, "cancel_us", a_cancel_us ) &&
-        log_int( &record, "join_us", a_join_us ) &&
+        log_int( &record, "cancel_us", a_cancel_us ) && log_int( &record, "join_us", a_join_us ) &&
         log_bool( &record, "timeout", a_timeout ) )
     {
         (void)log_end( &record );
@@ -468,8 +465,11 @@ esp_err_t connectivity_probe_stop( void )
             if( running )
             {
                 const int64_t now_us = esp_timer_get_time();
-                log_probe_stop_timing(
-                    stop_mode, now_us - stop_started_us, cancel_us, now_us - join_started_us, true );
+                log_probe_stop_timing( stop_mode,
+                                       now_us - stop_started_us,
+                                       cancel_us,
+                                       now_us - join_started_us,
+                                       true );
             }
             return ESP_ERR_TIMEOUT;
         }
