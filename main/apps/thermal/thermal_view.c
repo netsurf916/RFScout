@@ -32,7 +32,6 @@
 #define THERMAL_CELL_HEIGHT ( THERMAL_IMAGE_HEIGHT / MLX90640_HEIGHT )
 #define THERMAL_RANGE_MARGIN_DENOMINATOR 16
 
-static const char *TAG = "thermal_view";
 static mlx90640_frame_t frame;
 
 /** @brief Convert one RGB888 triplet to the display's RGB565 representation. */
@@ -162,7 +161,6 @@ void thermal_view_enter( void )
                        1U );
     display_draw_text(
         THERMAL_IMAGE_X + 30, THERMAL_IMAGE_Y + 52, "WAITING FOR FRAME", theme->secondary, 1U );
-    (void)display_present();
 }
 
 esp_err_t thermal_view_render( void )
@@ -195,13 +193,12 @@ esp_err_t thermal_view_render( void )
     {
         display_draw_text( 56, 70, "MLX90640 NOT DETECTED", theme->error, 2 );
         display_draw_text( 73, 98, "I2C ADDRESS 0x33", theme->info, 1 );
-        return display_present();
+        return ESP_OK;
     }
 
     if( ESP_OK != result )
     {
         display_draw_text( 72, 76, "THERMAL READ ERROR", theme->error, 2 );
-        display_present();
         return result;
     }
 
@@ -256,12 +253,7 @@ esp_err_t thermal_view_render( void )
     display_draw_text( THERMAL_INFO_X, 128, "32x24 LIVE", theme->info, 1 );
     display_draw_text( THERMAL_INFO_X, 144, "RAW IR DATA", theme->secondary, 1 );
 
-    const esp_err_t present = display_present();
-    if( ESP_OK != present )
-    {
-        ESP_LOGW( TAG, "thermal LCD refresh failed" );
-    }
-    return present;
+    return ESP_OK;
 }
 
 void thermal_view_menu( unsigned a_selected, bool a_locked, bool a_keep_awake )
@@ -296,5 +288,4 @@ void thermal_view_menu( unsigned a_selected, bool a_locked, bool a_keep_awake )
                        a_keep_awake ? "ON" : "OFF",
                        theme->info,
                        1U );
-    (void)display_present();
 }
