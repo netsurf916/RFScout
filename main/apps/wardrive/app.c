@@ -85,6 +85,7 @@ static bool last_ui_fixed;
 static double last_ui_latitude;
 static double last_ui_longitude;
 static unsigned last_ui_channel;
+static int64_t last_ui_activity_tick_us;
 static uint64_t stored_bytes;
 static uint64_t free_bytes;
 static esp_err_t last_error;
@@ -1193,6 +1194,7 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
         selected = MENU_BACK;
         last_draw_us = 0;
         last_ui_stats_valid = false;
+        last_ui_activity_tick_us = 0;
         last_gps_refresh_us = 0;
         last_error = ESP_OK;
         (void)radio_monitor_stop();
@@ -1379,14 +1381,16 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
                 0 != memcmp( &capture_status, &last_ui_stats, sizeof( capture_status ) ) ||
                 channel != last_ui_channel || fixed != last_ui_fixed ||
                 ( fixed && ( gps.latitude_deg != last_ui_latitude ||
-                             gps.longitude_deg != last_ui_longitude ) );
+                             gps.longitude_deg != last_ui_longitude ) ) ||
+                ( capture_status.recording && activity_last_tick_us != last_ui_activity_tick_us );
             last_ui_stats = capture_status;
+            last_ui_activity_tick_us = activity_last_tick_us;
             last_ui_stats_valid = true;
             last_ui_channel = channel;
             last_ui_fixed = fixed;
             last_ui_latitude = gps.latitude_deg;
             last_ui_longitude = gps.longitude_deg;
-            if( changed || capture_status.recording )
+            if( changed )
             {
                 app_manager_request_render( RFSCOUT_APP_WARDRIVE, false );
             }
