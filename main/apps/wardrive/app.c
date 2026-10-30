@@ -1,5 +1,6 @@
 /** apps/wardrive/app.c : RFScout raw wireless PCAPNG capture application. */
 #include "app_descriptor.h"
+#include "app_manager.h"
 
 #include "capture.h"
 #include "ble_monitor.h"
@@ -78,6 +79,12 @@ typedef struct
 
 static int64_t last_draw_us;
 static int64_t last_gps_refresh_us;
+static wardrive_stats_t last_ui_stats;
+static bool last_ui_stats_valid;
+static bool last_ui_fixed;
+static double last_ui_latitude;
+static double last_ui_longitude;
+static unsigned last_ui_channel;
 static uint64_t stored_bytes;
 static uint64_t free_bytes;
 static esp_err_t last_error;
@@ -391,6 +398,11 @@ static void draw_instrument_panel( int a_x, int a_y, int a_width, int a_height )
 
 static void draw_overview( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_WARDRIVE, true );
+        return;
+    }
     const ui_theme_palette_t *theme = ui_theme_get();
     wardrive_stats_t stats;
     wardrive_capture_stats( &stats );
@@ -549,7 +561,6 @@ static void draw_overview( void )
         (void)snprintf( line, sizeof( line ), "%u", i + 1U );
         display_draw_text( x, 154, line, theme->text, 1U );
     }
-    (void)display_present();
 }
 
 static void describe_setting( unsigned a_index, const char **a_label, char *a_value, size_t a_size )
@@ -686,7 +697,6 @@ static void draw_radio_submenu( void )
         display_draw_text( 22, y, label, color, 1U );
         display_draw_text( 214, y, value, color, 1U );
     }
-    (void)display_present();
 }
 
 static void draw_sources_menu( void )
@@ -713,11 +723,15 @@ static void draw_sources_menu( void )
         }
     }
     display_draw_text( 8, 151, "CENTER: TOGGLE / BACK", theme->secondary, 1U );
-    (void)display_present();
 }
 
 static void draw_menu( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_WARDRIVE, true );
+        return;
+    }
     if( gps_prompt_open )
     {
         draw_gps_prompt();
@@ -772,13 +786,17 @@ static void draw_menu( void )
                     (unsigned long)( stored_bytes / 1048576U ),
                     (unsigned long)( free_bytes / 1048576U ) );
     display_draw_text( 8, 151, line, theme->secondary, 1U );
-    (void)display_present();
 }
 
 static esp_err_t apply_radio( void );
 
 static void draw_gps_prompt( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_WARDRIVE, true );
+        return;
+    }
     const ui_theme_palette_t *theme = ui_theme_get();
     static const char *choices[] = { "Start anyway", "Wait for fix", "Cancel" };
     display_clear( theme->background );
@@ -792,7 +810,6 @@ static void draw_gps_prompt( void )
         ui_menu_draw_marker( 12, 77 + (int)i * 22, state );
         display_draw_text( 28, 77 + (int)i * 22, choices[ i ], color, 1U );
     }
-    (void)display_present();
 }
 
 static esp_err_t start_capture_now( void )
@@ -1175,6 +1192,7 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
         activity_last_tick_us = 0;
         selected = MENU_BACK;
         last_draw_us = 0;
+        last_ui_stats_valid = false;
         last_gps_refresh_us = 0;
         last_error = ESP_OK;
         (void)radio_monitor_stop();
@@ -1203,6 +1221,18 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
             report_terminal_capture_error( &capture_status );
         }
         (void)radio_monitor_set_manual_channels( false, 0U, false, 250U );
+        return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
+    if( RFSCOUT_APP_RUNTIME_RENDER == a_event->type )
+    {
+        if( menu_open )
+        {
+            draw_menu();
+        }
+        else
+        {
+            draw_overview();
+        }
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
     if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type )
@@ -1341,7 +1371,24 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
         if( !menu_open && ( a_event->now_us - last_draw_us >= CAPTURE_REFRESH_US ) )
         {
             last_draw_us = a_event->now_us;
-            draw_overview();
+            rfscout_gps_snapshot_t gps = { 0 };
+            const bool fixed = gps_snapshot_get( &gps ) && gps_location_fresh( &gps );
+            const unsigned channel = radio_monitor_channel();
+            const bool changed = !last_ui_stats_valid ||
+                                 0 != memcmp( &capture_status, &last_ui_stats, sizeof( capture_status ) ) ||
+                                 channel != last_ui_channel || fixed != last_ui_fixed ||
+                                 ( fixed && ( gps.latitude_deg != last_ui_latitude ||
+                                              gps.longitude_deg != last_ui_longitude ) );
+            last_ui_stats = capture_status;
+            last_ui_stats_valid = true;
+            last_ui_channel = channel;
+            last_ui_fixed = fixed;
+            last_ui_latitude = gps.latitude_deg;
+            last_ui_longitude = gps.longitude_deg;
+            if( changed || capture_status.recording )
+            {
+                app_manager_request_render( RFSCOUT_APP_WARDRIVE, false );
+            }
         }
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
