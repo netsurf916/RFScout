@@ -215,6 +215,13 @@ static void probe_worker( void *a_context )
     if( NULL == client )
     {
         finish( RFSCOUT_CONNECTIVITY_PROBE_FAILED, ESP_ERR_NO_MEM, 0 );
+        /* The begin record was already emitted; report allocation failure too. */
+        log_probe_timing( "complete",
+                          worker_mode,
+                          esp_timer_get_time() - worker_started_us,
+                          0,
+                          ESP_ERR_NO_MEM,
+                          0 );
         vTaskDelete( NULL );
         return;
     }
