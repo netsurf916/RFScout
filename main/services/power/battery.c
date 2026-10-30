@@ -611,9 +611,10 @@ static void detach_optional_device( i2c_master_dev_handle_t *a_device )
     }
 }
 
-static esp_err_t
-attach_optional_device( uint16_t a_address, const char *a_name, uint32_t a_speed_hz,
-                        i2c_master_dev_handle_t *a_device )
+static esp_err_t attach_optional_device( uint16_t a_address,
+                                         const char *a_name,
+                                         uint32_t a_speed_hz,
+                                         i2c_master_dev_handle_t *a_device )
 {
     if( 0U == a_address )
     {
@@ -1044,14 +1045,18 @@ static void refresh_i2c_battery( battery_status_t *a_status )
     {
         if( NULL == charger_device && board_i2c_ready() )
         {
-            (void)attach_optional_device(
-                RFSCOUT_BOARD_BQ25896_I2C_ADDRESS, "BQ25896 charger", BOARD_I2C_STANDARD_SPEED_HZ, &charger_device );
+            (void)attach_optional_device( RFSCOUT_BOARD_BQ25896_I2C_ADDRESS,
+                                          "BQ25896 charger",
+                                          BOARD_I2C_STANDARD_SPEED_HZ,
+                                          &charger_device );
         }
         sample_charger( a_status, &charger_sampled );
         if( NULL == gauge_device && board_i2c_ready() )
         {
-            (void)attach_optional_device(
-                RFSCOUT_BOARD_BQ27220_I2C_ADDRESS, "BQ27220 fuel gauge", BOARD_I2C_STANDARD_SPEED_HZ, &gauge_device );
+            (void)attach_optional_device( RFSCOUT_BOARD_BQ27220_I2C_ADDRESS,
+                                          "BQ27220 fuel gauge",
+                                          BOARD_I2C_STANDARD_SPEED_HZ,
+                                          &gauge_device );
         }
         sample_gauge( a_status, &gauge_sampled, &gauge_status );
     }
@@ -1059,14 +1064,18 @@ static void refresh_i2c_battery( battery_status_t *a_status )
     {
         if( NULL == gauge_device && board_i2c_ready() )
         {
-            (void)attach_optional_device(
-                RFSCOUT_BOARD_BQ27220_I2C_ADDRESS, "BQ27220 fuel gauge", BOARD_I2C_STANDARD_SPEED_HZ, &gauge_device );
+            (void)attach_optional_device( RFSCOUT_BOARD_BQ27220_I2C_ADDRESS,
+                                          "BQ27220 fuel gauge",
+                                          BOARD_I2C_STANDARD_SPEED_HZ,
+                                          &gauge_device );
         }
         sample_gauge( a_status, &gauge_sampled, &gauge_status );
         if( NULL == charger_device && board_i2c_ready() )
         {
-            (void)attach_optional_device(
-                RFSCOUT_BOARD_BQ25896_I2C_ADDRESS, "BQ25896 charger", BOARD_I2C_STANDARD_SPEED_HZ, &charger_device );
+            (void)attach_optional_device( RFSCOUT_BOARD_BQ25896_I2C_ADDRESS,
+                                          "BQ25896 charger",
+                                          BOARD_I2C_STANDARD_SPEED_HZ,
+                                          &charger_device );
         }
         sample_charger( a_status, &charger_sampled );
     }
@@ -1169,10 +1178,14 @@ esp_err_t battery_init( void )
         result = board_i2c_init();
         if( ESP_OK == result )
         {
-            (void)attach_optional_device(
-                RFSCOUT_BOARD_BQ27220_I2C_ADDRESS, "BQ27220 fuel gauge", BOARD_I2C_STANDARD_SPEED_HZ, &gauge_device );
-            (void)attach_optional_device(
-                RFSCOUT_BOARD_BQ25896_I2C_ADDRESS, "BQ25896 charger", BOARD_I2C_STANDARD_SPEED_HZ, &charger_device );
+            (void)attach_optional_device( RFSCOUT_BOARD_BQ27220_I2C_ADDRESS,
+                                          "BQ27220 fuel gauge",
+                                          BOARD_I2C_STANDARD_SPEED_HZ,
+                                          &gauge_device );
+            (void)attach_optional_device( RFSCOUT_BOARD_BQ25896_I2C_ADDRESS,
+                                          "BQ25896 charger",
+                                          BOARD_I2C_STANDARD_SPEED_HZ,
+                                          &charger_device );
         }
     }
     else

@@ -213,12 +213,13 @@ static esp_err_t read_failed( esp_err_t a_result )
                     refresh_configured = false;
                     return ESP_ERR_NOT_FINISHED;
                 }
-                ESP_LOGW( TAG, "MLX90640 I2C fallback attach failed: %s", esp_err_to_name( attach ) );
+                ESP_LOGW(
+                    TAG, "MLX90640 I2C fallback attach failed: %s", esp_err_to_name( attach ) );
             }
             else
             {
-                ESP_LOGW( TAG, "MLX90640 I2C handle removal failed: %s",
-                          esp_err_to_name( removed ) );
+                ESP_LOGW(
+                    TAG, "MLX90640 I2C handle removal failed: %s", esp_err_to_name( removed ) );
             }
         }
         detected = false;
