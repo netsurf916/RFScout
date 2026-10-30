@@ -262,13 +262,11 @@ static void battery_render( void )
     if( 3U == battery_page )
     {
         draw_gauge_configuration( &status );
-        (void)display_present();
         return;
     }
     if( 2U == battery_page )
     {
         draw_history();
-        (void)display_present();
         return;
     }
     if( 1U == battery_page )
@@ -330,7 +328,6 @@ static void battery_render( void )
             display_draw_text( 10, 65, "CHARGER DATA UNAVAILABLE", theme->warning, 1U );
         }
         display_draw_text( 10, 149, "SELECT: CURRENT GRAPH", theme->secondary, 1U );
-        (void)display_present();
         return;
     }
 
