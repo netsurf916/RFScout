@@ -33,6 +33,7 @@ static bool app_activated;
 static bool app_locked;
 static bool render_pending;
 static bool render_immediate;
+static bool in_app_render;
 static int64_t last_render_us;
 
 static bool app_available( rfscout_app_id_t a_app )
@@ -392,6 +393,11 @@ bool app_manager_select( rfscout_app_id_t a_app )
     return true;
 }
 
+bool app_manager_rendering( void )
+{
+    return in_app_render;
+}
+
 void app_manager_request_render( rfscout_app_id_t a_app, bool a_immediate )
 {
     if( a_app != active_app )
@@ -417,8 +423,10 @@ void app_manager_render_poll( void )
     render_pending = false;
     render_immediate = false;
     last_render_us = now_us;
+    in_app_render = true;
     const rfscout_app_runtime_result_t result =
         dispatch_runtime( active_app, RFSCOUT_APP_RUNTIME_RENDER, NULL, now_us, app_activated );
+    in_app_render = false;
     handle_runtime_result( result );
 }
 
