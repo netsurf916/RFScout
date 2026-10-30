@@ -55,19 +55,24 @@ system_events_runtime( const rfscout_app_runtime_event_t *a_event )
         if( a_event->now_us - last_refresh_us >= SYSTEM_EVENTS_REFRESH_INTERVAL_US )
         {
             last_refresh_us = a_event->now_us;
+            /* Uptime remains visible even with an empty list or frozen browse snapshot. */
+            const int64_t now_second = a_event->now_us / 1000000LL;
+            bool changed = now_second != last_age_second;
+            last_age_second = now_second;
             if( !system_events_view_browsing() )
             {
                 rfscout_system_event_entry_t latest = { 0 };
                 const bool have_event = system_events_history_get( 0U, &latest );
-                const int64_t now_second = a_event->now_us / 1000000LL;
-                if( ( have_event && latest.monotonic_us != latest_event_us ) ||
-                    ( have_event && now_second != last_age_second ) ||
-                    ( !have_event && latest_event_us != 0 ) )
+                const int64_t current_event_us = have_event ? latest.monotonic_us : 0;
+                if( current_event_us != latest_event_us )
                 {
-                    latest_event_us = have_event ? latest.monotonic_us : 0;
-                    last_age_second = now_second;
-                    app_manager_request_render( RFSCOUT_APP_SYSTEM_EVENTS, false );
+                    latest_event_us = current_event_us;
+                    changed = true;
                 }
+            }
+            if( changed )
+            {
+                app_manager_request_render( RFSCOUT_APP_SYSTEM_EVENTS, false );
             }
         }
         return RFSCOUT_APP_RUNTIME_HANDLED;
