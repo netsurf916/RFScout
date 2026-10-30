@@ -40,6 +40,19 @@ jobs:
             exit 1
           fi
 
+      # Coverity Capture invokes /usr/bin/file during CMake/toolchain discovery.
+      # The stock espressif/idf:release-v6.1 image does not include it.
+      - name: Install Coverity capture prerequisites
+        shell: bash
+        run: |
+          set -eo pipefail
+          if ! command -v file >/dev/null 2>&1; then
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends file
+          fi
+          command -v file
+          file --version
+
       - name: Download Coverity C/C++ build tools
         shell: bash
         run: |
