@@ -159,7 +159,7 @@ Descriptors provide an optional `telemetry` callback. Core schedules it for the 
 
 Every active app has a temporary **resource session**, including apps that currently allocate no dynamic PSRAM. An existing session cannot be replaced by calling `app_session_ensure()` for another app, even if it has zero managed allocations: only a successful lifecycle close may retire that session and prove service quiescence. During destination setup, successful service initializations are stopped in reverse order if a later initialization or view acquisition fails. A service's `init()` must remain inactive and its `stop()` must safely release initialized-but-inactive state. If any initialization rollback `stop()` fails, the session retains ownership in a degraded state and blocks all subsequent session acquisition (including the same application). Destination recovery then fails closed rather than overlapping uncertain live resources; a restart is required. The same session owns the app's managed `rfscout_view_t`.
 
-Application lock deliberately sits **above** this lifecycle boundary. Locking/unlocking the active application does not enter, leave, reactivate, quiesce, reclaim, or otherwise mutate its resource session; it only changes whether unhandled rotary input is permitted to request a different application.
+Application lock deliberately sits **above** this lifecycle boundary. Locking/unlocking the active application does not enter, leave, reactivate, quiesce, reclaim, or otherwise mutate its resource session; it only changes whether unhandled rotary input is permitted to request a different application. A global lock-state change also requests an immediate render of the active app, so app-local lock rows and shared indicators cannot remain stale while background data is idle.
 
 The current canonical view is 320x170 and maps to the full T-Embed display. Applications render through their assigned view rather than owning the physical display.
 
@@ -283,25 +283,24 @@ Usable external PSRAM is a supported-platform requirement. RFScout does not sile
 
 Applications consume semantic input rather than GPIOs. The current T-Embed provider maps the rotary encoder/buttons into signed navigation, Select, Long Press, and the global Hold shortcut. There is no global Back input semantic; explicit Back rows and app-local actions are ordinary Select-driven UI choices. The dedicated user/power key remains a separate power-policy input.
 
-The T-Embed rotary provider (merged via PR #145) samples GPIO4/5 on both edges,
-with GPIO state reads serialized under the decoder lock. It follows the LilyGO
-TWO03 16-entry Gray-code transition table, encoding A as bit 0 and B as bit 1.
+The current T-Embed rotary provider samples GPIO4/5 with an independent
+periodic **1 ms ESP timer callback**, rather than GPIO A/B edge interrupts.
+Its LilyGO TWO03 16-entry Gray-code decoder encodes A as bit 0 and B as bit 1.
 The signed raw position accumulates continuously; publication occurs only on
 recognized `00` or `11` latches (`raw_position >> 1`). Duplicate states
 and illegal diagonal transitions contribute no raw movement. The published
-direction is inverted at the semantic input boundary to retain the tested
+direction is inverted at the semantic input boundary to preserve the tested
 physical menu direction. A busy UI consumes at most one net -1/0/+1 movement
 per poll, with opposing movement cancelling rather than backlogging.
 
-Wake/lock consumption clears pending navigation. If it occurs at intermediate
-state `01` or `10`, PR #145 suppresses remaining movement until the next
-`00`/`11` latch and then rebases; this avoids the incomplete wake gesture
-leaking into subsequent UI navigation. PR #149 replaces quadrature GPIO edge interrupts with a dedicated 1 ms
-ESP timer task callback, following LilyGO's sampling style without changing
-the TWO03 decoder, center-button interrupt, or wake/lock rules. No hardware
-glitch filter or per-edge SD trace is added. #145 is merged, but the hardware release
-acceptance remains open: neither CI success nor software regression tests
-prove the full display-wake matrix on a physical device.
+The center button retains GPIO interrupt handling. Wake/lock consumption clears
+pending navigation; if consumed at intermediate state `01` or `10`, subsequent
+movement is suppressed until a `00`/`11` latch and rebased, preventing an
+incomplete wake gesture from leaking into later navigation. There is no hardware
+contact-debounce filter or per-edge SD trace. PR #145 established the decoder;
+merged PR #149 introduced 1 ms sampling. Hardware acceptance for the complete
+wake, lock, bounce and high-load gesture matrix remains open; successful CI
+and positive navigation testing do not establish every wake case.
 
 The user-facing gesture vocabulary is intentional:
 

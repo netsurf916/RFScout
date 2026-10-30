@@ -1,6 +1,6 @@
 # Per-device I2C clock policy (implementation and hardware acceptance)
 
-**Status:** Implemented on PR #146; host/ESP-IDF validation and real-device testing are separate acceptance gates. This workstream is independent of the v0.4.0 release.
+**Status:** Implemented and merged on `main` in PR #146 before the planned **v0.4.0** candidate build. Device-specific clocks are part of the current firmware baseline, not deferred 0.5.0 work; electrical and optional-sensor hardware validation remain open.
 
 ## Ownership and clock contract
 

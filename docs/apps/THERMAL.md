@@ -1,63 +1,33 @@
 # Thermal
 
-Thermal is RFScout's optional MLX90640 imaging application. Shared I2C/profile/lifecycle rules are defined in [Platform architecture](../ARCHITECTURE.md); calibration/history/palette improvements belong in [ROADMAP.md](../ROADMAP.md).
+Thermal is RFScout's optional MLX90640 relative-IR imaging application. Shared I2C, profile, lifecycle and rendering rules live in [Platform architecture](../ARCHITECTURE.md); future calibration, history and palette enhancements belong in [Roadmap](../ROADMAP.md).
 
 ## Availability and lifecycle
 
-The application uses hot-plug probing for an MLX90640 at I2C address `0x33` on the compatible external/shared I2C path. It requires activation but currently performs synchronous acquisition rather than owning a session-managed worker.
+The optional MLX90640 is detected through hot-plug probing at I2C address `0x33`. Thermal has **no SD-card dependency** or separate acquisition worker. Active application polling acquires sensor data incrementally, while the `RENDER` callback composes only cached data. Input and settings changes request immediate frames; newly completed sensor frames request coalesced background frames capped by the shared framework at 5 Hz.
 
-Loss/read failure marks the application unavailable and returns to Home through the normal app framework.
+A shared-bus timeout cooldown or incomplete sensor subpage is not itself hardware removal. Persistent sensor failure can mark Thermal unavailable and return to Home through ordinary lifecycle handling. The app logger writes only when removable SD storage is mounted.
 
-Thermal has **no SD-storage dependency**. Its availability is determined by the MLX90640/I2C path, so the app is expected to remain navigable with or without an SD card when the sensor is healthy. This has been verified on the target hardware.
+## Image and controls
 
-When SD logging is mounted, the generic app logger can record Thermal lifecycle/telemetry. With the SD card absent there is intentionally no SD log, so console diagnostics or direct on-device observation must be used for that validation.
+- Native sensor resolution is **32 × 24**, presented in theme-framed image and telemetry panels with an Inferno-like relative palette.
+- The UI shows frame-relative minimum, maximum and center values under **RELATIVE IR** / **CAL PENDING** labels. These readings are **not calibrated temperatures**.
+- A small local spatial filter reduces raw per-pixel contrast without adding sensor traffic or claiming higher sensor resolution; no temporal averaging is applied to the sensor stream.
+- The view displays `WAITING FOR FRAME` until both complementary subpages have been combined.
+- Select opens **Back**, **App lock**, and **Keep screen awake**. The awake override defaults On while Thermal is foreground and is released on exit. Physical power controls retain priority.
 
-## Sensor and display
+## Incremental acquisition and I2C clocks
 
-The MLX90640 native sensor resolution is **32x24**.
+The MLX90640 attaches an explicit **400-kHz per-device I2C handle**. The BQ27220 fuel gauge and BQ25896 charger retain separate **100-kHz** handles; RFScout does **not** change the entire bus's speed. Board/device probing is separate from the handle's transfer rate.
 
-Current presentation:
+On initial acquisition, the sensor's refresh-control register is set to **8 Hz alternating subpages**, preserving other control bits. The app checks for acquisition work at a **1-ms minimum interval**, and each active call transfers up to **four 32-word I2C blocks**, taking at least six calls to read the raw 768-word subpage. A frame becomes valid only after both subpages are captured. Actual delivered frame rate depends on sensor conversion, bus availability and the independent 5-Hz background presentation cap.
 
-- displays the image in a theme-framed view beside a surface-colored telemetry box, and draws the 32x24 native cells at a fixed 6x6 scale, avoiding false interpolation detail and reducing drawing calls from 27,648 to 768 rectangles per complete frame;
-- uses an Inferno-like relative palette;
-- lightly smooths both sensor samples and the relative display range to balance responsiveness against color pumping;
-- shows frame-relative minimum, maximum, and center values; and
-- bypasses theme color translation for literal thermal image pixels while keeping chrome/labels theme-aware.
+The shared I2C service imposes a **250-ms cooldown** after a hardware timeout. After **three consecutive failed sensor acquisitions at 400 kHz**, Thermal discards partial data, attempts to remove its existing handle, and reattaches at a **sticky 100 kHz** for the remainder of this boot. Refresh setup is repeated after downgrade. The old handle is retained if removal fails. If fallback cannot recover the sensor, it may be marked unavailable and probed again through the normal hot-plug path. Mixed-speed operation, cable/pull-up integrity and recovery remain hardware acceptance items.
 
-The UI deliberately labels the data **RELATIVE IR** and **CAL PENDING**.
+See the [per-device I2C clock policy](../design/PER_DEVICE_I2C_CLOCK_POLICY.md).
 
-## Temperature semantics
+## Current limitations and v0.4.0 acceptance
 
-RFScout does **not** currently present the displayed frame values as calibrated absolute temperatures. MLX90640 calibration-data extraction and per-pixel absolute-temperature conversion remain future work and must be hardware-validated before absolute values are claimed.
+MLX90640 EEPROM calibration, absolute-temperature conversion, invalid-pixel compensation, user-lockable display range and retained image history are not implemented. Raw IR data and local spatial filtering must never be presented as absolute degrees Celsius.
 
-## Current limitations
-
-Current behavior does not yet include calibrated absolute temperature, invalid-pixel filtering, user-lockable range, or retained history/statistics. The image intentionally retains visible native pixels instead of implying greater sensor resolution through interpolation. Acquisition reads pixels in 32-word bounded I2C blocks (24 transfers per subpage) to lower transaction overhead on the existing shared 400 kHz bus. Acquisition is polled every 50 ms while active, but complete-frame rate remains limited by sensor subpage delivery and shared I2C transfers; the UI change does not claim additional sensor frames.
-
-## I2C failure handling
-
-A complete-frame read failure discards pending subpage data and allows up to three successive failed acquisitions before treating the sensor as disconnected. This reduces false hot-plug events from transient bus contention; persistent errors still trigger the existing Home fallback. The shared I2C bus, battery devices, and watchdog require device-side validation when an electrical bus hang occurs. Pixel Quest boxes reuse `ui_game_draw_panel` rather than bespoke edges.
-
-## Incremental acquisition
-
-The MLX90640 provider now performs at most one 32-word pixel transfer per runtime poll, yielding to other system work between transfers. A complete image is published only after both subpages are captured. The sensor's 0x800D refresh field is set to 16 Hz subpages (instead of the 2 Hz factory default) on first active acquisition, preserving other control bits. Temporal pixel averaging and display-range averaging have been removed to favor immediate scene response. The poll interval is 1 ms; achievable display frame rate remains constrained by sensor conversion and shared-bus timing. These changes do not constitute a general-purpose I2C scheduler.
-
-## Local display settings
-
-Press Select in Thermal to open its app-local menu: Back, App lock, and Keep screen awake (default On). The latter temporarily suppresses inactivity dim/off while Thermal is foreground; explicit power button actions remain authoritative. The override is released on exit. Audio Spectrum also retains an awake display while running; its local toggle remains follow-up work.
-
-## Raw-pixel checkerboard
-
-The displayed sensor values are uncalibrated raw RAM words. Correcting per-pixel offset/gain and subpage residual patterns requires MLX90640 EEPROM calibration and an actual temperature or compensated-radiance pipeline. Alternating subpage assembly alone cannot eliminate pixel-to-pixel offsets; no synthetic spatial averaging is applied in this change.
-
-## Frame acquisition pacing
-
-Each runtime call performs up to four 32-word I2C transfers, rather than one; that requires six polls per subpage instead of 24 while still yielding to other system work between bursts. The shared bus is configured for 400 kHz. Firmware build and on-device frame-rate characterization are required before claiming a sustained update rate.
-
-## Presentation follow-up
-
-Both live-view panels now use the same Y origin and height. Pixel Quest uses the shared clipped-corner panel primitive, while simpler styles use theme surfaces without leftover rectangular outlines. The displayed 32x24 cells use a small per-frame spatial neighborhood filter to attenuate raw alternating-cell contrast. This is visual smoothing only: it cannot substitute for per-pixel EEPROM calibration and introduces no temporal averaging or additional sensor bus activity.
-
-## Display alignment and shared-bus protection
-
-The shared instrument-panel top is Y=24; the panel gutter and text inset are defined in `ui_layout.h`. Thermal renders its panels and `WAITING FOR FRAME` immediately on app entry, before the MLX90640 finishes acquiring a complete frame. The two global Pixel Quest bottom-edge ornaments were removed from `ui_chrome_draw()` for every view. Thermal now targets an 8 Hz subpage refresh to reduce occupancy of the shared 400 kHz I2C bus, and waits 250 ms before retrying transient failed reads; this is a stability tradeoff with a nominal maximum of four complete two-subpage images per second. I2C hardware timeouts and the reported corrupted battery-indicator backtrace still require hardware regression testing and root-cause investigation.
+Before v0.4.0 publication, verify sensor-present and sensor-absent navigation, SD-absent operation, incremental frame updates, lock and keep-awake behavior, app transitions, battery telemetry coexistence and fallback/hot-plug handling on representative physical hardware. Passing CI does not establish optional sensor/electrical validation.

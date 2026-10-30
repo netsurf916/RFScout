@@ -1,6 +1,6 @@
 # Coverity Scan integration
 
-**Status:** configured in a draft PR; no scan has been submitted by this change.
+**Status:** The workflow and public flasher badge are merged on `main` via PR #148. This page has not verified a completed scan, repository credentials or a successful Xtensa compiler capture; a configured workflow is not proof of a passing scan.
 
 RFScout's Coverity Scan project: https://scan.coverity.com/projects/rfscout
 
@@ -27,15 +27,13 @@ the build-tool download and build-submission requests only.
 
 ## First scan
 
-1. Merge the Coverity integration PR after review; the workflow must exist on
-   `main` to be selectable for manual dispatch.
-2. Confirm both repository Actions secrets are set.
-3. Open **Actions → Coverity Scan → Run workflow**, select `main`, and run it.
-4. Review the capture log and project build on Coverity Scan; confirm the
+1. Confirm both repository Actions secrets are set; the workflow is already on `main`.
+2. Open **Actions → Coverity Scan → Run workflow**, select `main`, and run it.
+3. Review the capture log and project build on Coverity Scan; confirm the
    analyzed source volume and findings are reasonable. If compilation units
    are not captured, inspect the compiler configuration rather than accepting
    an empty scan as successful.
-5. After the first cleanly captured submission, consider a weekly scheduled
+4. After the first cleanly captured submission, consider a weekly scheduled
    scan on `main` and a process for triaging findings.
 
 No automatic schedule or PR-triggered submission is enabled in this initial

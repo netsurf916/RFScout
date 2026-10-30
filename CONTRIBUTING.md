@@ -107,6 +107,14 @@ When adding a menu, inspect related menus in Home, GPS, radio settings, and Hots
 
 Before adding a menu or reusable icon, consult the shared menu/icon contract in [Architecture](docs/ARCHITECTURE.md#shared-menu-and-icon-contract). Use `ui_menu` for focus, editing and availability colors; do not equate an OFF setting with unavailable or use the divider color for ordinary selectable labels. Place reusable icon art in `ui_icon` rather than duplicating pixel geometry. Preserve action guards independently of drawing, validate both styles/all color configurations, and update existing documentation rather than introducing parallel app or service pages.
 
+## Event-driven UI contribution contract
+
+Application **state changes and pixel composition are separate**. The active app's `ENTER`, `ACTIVATE`, `INPUT` and `POLL` handlers should update state or consume service data and request presentation through `app_manager_request_render(app, immediate)`; they must not flush the display or rely on unconditional periodic repainting. `RFSCOUT_APP_RUNTIME_RENDER` composes the view, and the application manager dispatches it before the shared `display_present()` call. Reusable views only draw pixels; they do not call `display_present()`. Nested view/menu entry points must respect `app_manager_rendering()`.
+
+Use **immediate** requests for input/selection/menu/lock changes, including system-owned global App Lock updates; coalesce background data changes by checking visible generations, snapshots or real new frames. The framework bounds background renders to one every 200 ms; it does not throttle service acquisition. Keep sensor bus reads and other I/O out of the render callback. The shared power-transition and wake presentation paths are intentional exceptions owned by the platform. Do not assume the display transfer is asynchronous or dirty-rectangle based: the current ST7789 driver transmits entire dirty frames.
+
+New applications should follow this contract and extend `tests/test_ui_render_contract.py` when they add new runtimes or shared view helpers. See [Architecture](docs/ARCHITECTURE.md#event-driven-ui-and-presentation).
+
 ## Host UI previews
 
 On a Linux host with Python 3 and a C compiler (`cc`, or `CC`), render deterministic 320×170

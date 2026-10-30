@@ -71,4 +71,4 @@ RFScout does not enable auto-ACK, inject, replay, pair, probe, or actively disco
 
 ## Current limitations
 
-The current scanner does not yet provide the stronger passive ESB candidate discovery/validation or growable PSRAM-backed validated packet history planned for v0.4.0. Packet/history surfaces must not be populated from unvalidated RPD activity alone.
+The current scanner does not yet provide the stronger passive ESB candidate discovery/validation or growable PSRAM-backed validated packet history deferred to v0.5.0. Packet/history surfaces must not be populated from unvalidated RPD activity alone.
