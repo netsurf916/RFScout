@@ -159,6 +159,11 @@ static void render_menu( void );
 
 static void render_radio_menu( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_WIFI_BT, true );
+        return;
+    }
     const ui_theme_palette_t *theme = ui_theme_get();
     const bool channels = radio_page == 3U;
     const bool wifi = radio_page == 1U;
@@ -269,7 +274,6 @@ static void render_radio_menu( void )
         display_draw_text( 22, y, label, color, 1U );
         display_draw_text( 215, y, value, color, 1U );
     }
-    (void)display_present();
 }
 
 static void handle_radio_menu( const rfscout_input_event_t *a_input )
@@ -452,6 +456,11 @@ static void handle_radio_menu( const rfscout_input_event_t *a_input )
 
 static void render_menu( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_WIFI_BT, true );
+        return;
+    }
     if( radio_page != 4U )
     {
         render_radio_menu();
@@ -749,7 +758,15 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
     }
     if( RFSCOUT_APP_RUNTIME_RENDER == a_event->type )
     {
-        if( !menu_active && !app_notification_menu_active( &notification_menu ) )
+        if( app_notification_menu_active( &notification_menu ) )
+        {
+            app_notification_menu_render( &notification_menu );
+        }
+        else if( menu_active )
+        {
+            render_menu();
+        }
+        else
         {
             ui_render();
         }

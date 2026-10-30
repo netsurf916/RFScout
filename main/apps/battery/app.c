@@ -5,6 +5,7 @@
 */
 
 #include "app_descriptor.h"
+#include "app_manager.h"
 
 #include "battery.h"
 #include "device_config.h"
@@ -17,6 +18,7 @@
 
 #include <stddef.h>
 #include <stdio.h>
+#include <string.h>
 
 #define BATTERY_REFRESH_INTERVAL_US BATTERY_TELEMETRY_INTERVAL_US
 #define BATTERY_HISTORY_WINDOW_US                                                                  \
@@ -29,6 +31,8 @@ static rfscout_colors_id_t last_graph_colors;
 /* This larger view buffer is static rather than a 2.9 KB local stack array. */
 static battery_history_sample_t history_view_samples[ BATTERY_HISTORY_CAPACITY ];
 static uint8_t battery_page;
+static battery_status_t last_battery_status;
+static bool battery_snapshot_valid;
 
 static const char *charge_label( battery_charge_state_t a_state )
 {
@@ -240,6 +244,11 @@ static void draw_gauge_configuration( const battery_status_t *a_status )
 
 static void battery_render( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_BATTERY, true );
+        return;
+    }
     battery_poll();
     battery_status_t status = { 0 };
     (void)battery_get_status( &status );
@@ -438,7 +447,6 @@ static void battery_render( void )
     {
         display_draw_text( 166, 105, "DATA UNAVAILABLE", theme->warning, 1U );
     }
-    (void)display_present();
 }
 
 static rfscout_app_runtime_result_t battery_runtime( const rfscout_app_runtime_event_t *a_event )
@@ -452,7 +460,17 @@ static rfscout_app_runtime_result_t battery_runtime( const rfscout_app_runtime_e
         last_refresh_us = a_event->now_us;
         last_graph_sample_us = -1;
         battery_page = 0U;
+        battery_snapshot_valid = false;
         battery_render();
+        return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
+    if( RFSCOUT_APP_RUNTIME_RENDER == a_event->type )
+    {
+        battery_render();
+        battery_status_t current = { 0 };
+        (void)battery_get_status( &current );
+        last_battery_status = current;
+        battery_snapshot_valid = true;
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
     if( RFSCOUT_APP_RUNTIME_POLL == a_event->type )
@@ -474,7 +492,15 @@ static rfscout_app_runtime_result_t battery_runtime( const rfscout_app_runtime_e
         if( a_event->now_us - last_refresh_us >= BATTERY_REFRESH_INTERVAL_US )
         {
             last_refresh_us = a_event->now_us;
-            battery_render();
+            battery_status_t current = { 0 };
+            (void)battery_get_status( &current );
+            if( !battery_snapshot_valid ||
+                0 != memcmp( &current, &last_battery_status, sizeof( current ) ) )
+            {
+                last_battery_status = current;
+                battery_snapshot_valid = true;
+                app_manager_request_render( RFSCOUT_APP_BATTERY, false );
+            }
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
     }
