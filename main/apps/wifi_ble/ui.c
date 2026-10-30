@@ -269,11 +269,10 @@ void ui_poll( void )
         ( gps_fix_valid != previous_gps_fix_valid ||
           ( gps_fix_valid && now_us - last_gps_distance_redraw_us >= 1000000LL ) );
 
-    const bool changed = !snapshot_valid ||
-                         0 != memcmp( &snapshot, &previous_snapshot, sizeof( snapshot ) ) ||
-                         0 != memcmp( vendors, previous_vendors, sizeof( vendors ) ) ||
-                         0 != memcmp( signatures, previous_signatures, sizeof( signatures ) ) ||
-                         gps_refresh;
+    const bool changed =
+        !snapshot_valid || 0 != memcmp( &snapshot, &previous_snapshot, sizeof( snapshot ) ) ||
+        0 != memcmp( vendors, previous_vendors, sizeof( vendors ) ) ||
+        0 != memcmp( signatures, previous_signatures, sizeof( signatures ) ) || gps_refresh;
     if( !changed )
     {
         return;
