@@ -27,7 +27,7 @@ typedef struct
 /** @brief Initialize using the sampled A | (B << 1) GPIO state. */
 void rotary_decoder_reset( rotary_decoder_t *a_decoder, uint8_t a_initial_state );
 
-/** @brief Apply a LilyGO-style tick from the GPIO edge ISR; caller synchronizes. */
+/** @brief Apply a LilyGO-style tick from the 1ms periodic sampler; caller synchronizes. */
 void rotary_decoder_sample( rotary_decoder_t *a_decoder, uint8_t a_state );
 
 /** @brief Consume all published latch movement as one net direction (-1, 0, +1). */
