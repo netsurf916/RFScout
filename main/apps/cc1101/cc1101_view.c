@@ -121,7 +121,6 @@ void cc1101_view_discovery( const int8_t *a_rssi,
                                     : "TURN: APPS  LONG PRESS: VIEW  CENTER: SETTINGS",
                        theme->secondary,
                        1U );
-    (void)display_present();
 }
 
 static void render_decode( const rfscout_subghz_analysis_t *a_analysis,
@@ -345,7 +344,6 @@ void cc1101_view_receive( cc1101_view_mode_t a_view,
                                     : "TURN: APPS  LONG PRESS: VIEW  CENTER: SETTINGS",
                        theme->secondary,
                        1U );
-    (void)display_present();
 }
 
 void cc1101_view_menu( unsigned a_selected,
@@ -458,5 +456,4 @@ void cc1101_view_menu( unsigned a_selected,
                        a_editing ? "TURN: CHANGE  CENTER: DONE" : "TURN: SELECT  CENTER: ENTER",
                        a_editing ? theme->selected : theme->secondary,
                        1U );
-    (void)display_present();
 }

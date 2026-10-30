@@ -182,7 +182,6 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
         }
     }
 
-    (void)display_present();
 }
 
 void radio_app_view_nrf24_menu( unsigned a_selected,
@@ -266,5 +265,4 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
                        a_editing ? "TURN: CHANGE  CENTER: DONE" : "TURN: SELECT  CENTER: ENTER",
                        a_editing ? theme->selected : theme->secondary,
                        1U );
-    (void)display_present();
 }

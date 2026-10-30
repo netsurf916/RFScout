@@ -109,5 +109,4 @@ void device_view_landing( void )
         draw_home_bitmap();
         draw_home_controls();
     }
-    (void)display_present();
 }

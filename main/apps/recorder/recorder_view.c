@@ -116,7 +116,6 @@ void recorder_view_landing( const char *a_playback_name, uint8_t a_playback_volu
         display_draw_text(
             UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: OPEN", theme->secondary, 1U );
     }
-    (void)display_present();
 }
 
 void recorder_view_browser( unsigned a_selected,
@@ -210,5 +209,4 @@ void recorder_view_browser( unsigned a_selected,
                        "CENTER: SELECT  LONG PRESS: DELETE",
                        theme->secondary,
                        1U );
-    (void)display_present();
 }
