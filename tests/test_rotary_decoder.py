@@ -224,21 +224,17 @@ int main(void)
 
 
 class RotaryDecoderTests(unittest.TestCase):
-    def test_lilygo_state_ordering_and_gpio_isrs(self):
+    def test_lilygo_state_ordering_and_periodic_sampling(self):
         source = (INPUT / "input.c").read_text()
         self.assertIn("return a | (uint8_t)( b << 1U );", source)
+        self.assertIn("INPUT_ROTARY_SAMPLE_PERIOD_US 1000U", source)
+        self.assertIn("esp_timer_start_periodic( encoder_timer, INPUT_ROTARY_SAMPLE_PERIOD_US )", source)
         self.assertIn("rotary_decoder_sample( &navigation_decoder, read_encoder_state() )", source)
-        isr = source.split("static void IRAM_ATTR encoder_isr(", 1)[1].split(
-            "static void IRAM_ATTR primary_button_isr(", 1
-        )[0]
-        self.assertLess(
-            isr.index("portENTER_CRITICAL_ISR( &navigation_lock )"),
-            isr.index("read_encoder_state()"),
-        )
-        self.assertIn("gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_A_PIN", source)
-        self.assertIn("gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_B_PIN", source)
-        self.assertNotIn("pcnt_new_unit", source)
+        self.assertNotIn("gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_A_PIN", source)
+        self.assertNotIn("gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_B_PIN", source)
+        self.assertIn("gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_KEY_PIN", source)
         self.assertIn("rotary_decoder_pending( &navigation_decoder )", source)
+        self.assertNotIn("pcnt_new_unit", source)
 
     def test_reference_traces_latches_and_coalescing(self):
         compiler = shutil.which("cc")
