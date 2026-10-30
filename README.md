@@ -92,7 +92,7 @@ For a complete development setup, generated-data workflow, formatting commands, 
 
 ## Releases
 
-The latest published stable release is **v0.3.5**. **v0.4.0 is in release stabilization**, with implementation from merged PRs #139–#149 (including the event-driven UI and per-device I2C clocks) subject to final candidate and hardware acceptance. This documentation synchronization does **not** create a v0.4.0 tag, release candidate or GitHub Release.
+The latest published stable release is **v0.3.5**. **v0.4.0 is in release stabilization**, with recent merged work including #139–#145, #146, #148 and #149 (not the still-open #147 design PR) subject to final candidate and hardware acceptance. This documentation synchronization does **not** create a v0.4.0 tag, release candidate or GitHub Release.
 
 Ready-for-review pull requests and `main` can produce short-lived candidate bundles. Durable releases are prepared deliberately, use SemVer `vX.Y.Z` tags, and publish browser-flasher plus in-device OTA catalog data through GitHub Pages. Follow [the 0.4.0 release gates](docs/ROADMAP.md#v040--stabilize-clean-up-validate-and-release) and the [release acceptance checklist](docs/RELEASE_VALIDATION.md) before publication.
 
