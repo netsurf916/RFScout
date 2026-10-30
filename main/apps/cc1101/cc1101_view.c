@@ -60,7 +60,6 @@ void cc1101_view_discovery( const int8_t *a_rssi,
     if( !a_detected || ( NULL == a_config ) )
     {
         display_draw_text( UI_LAYOUT_LEFT_X, 70, "CC1101 NOT DETECTED", theme->warning, 1U );
-        (void)display_present();
         return;
     }
 

@@ -172,7 +172,6 @@ void nrf24_packet_view_detail( unsigned a_selected )
         display_draw_text( UI_LAYOUT_LEFT_X, 70, "PACKET NO LONGER AVAILABLE", theme->text, 1U );
         display_draw_text(
             UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: BACK", theme->secondary, 1U );
-        (void)display_present();
         return;
     }
 

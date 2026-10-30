@@ -155,7 +155,6 @@ void recorder_view_browser( unsigned a_selected,
                            "TURN: CHOOSE  CENTER: CONFIRM",
                            theme->secondary,
                            1U );
-        (void)display_present();
         return;
     }
 
