@@ -42,6 +42,12 @@ class EventDrivenPresentationContract(unittest.TestCase):
             with self.subTest(view=view):
                 self.assertNotIn("display_present(", (ROOT / "main" / view).read_text())
 
+    def test_global_app_lock_invalidates_active_view(self):
+        app = (ROOT / "main" / "app_manager.c").read_text()
+        lock_handler = app.split("bool app_manager_set_locked( bool a_locked )", 1)[1]
+        lock_handler = lock_handler.split("bool app_manager_select( rfscout_app_id_t a_app )", 1)[0]
+        self.assertIn("app_manager_request_render( active_app, true );", lock_handler)
+
     def test_frame_scheduler_owns_render_then_present(self):
         app = (ROOT / "main" / "app_manager.c").read_text()
         loop = (ROOT / "main" / "rfscout.c").read_text()
