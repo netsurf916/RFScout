@@ -47,7 +47,8 @@ static rfscout_app_runtime_result_t thermal_runtime( const rfscout_app_runtime_e
         mlx90640_discard_partial_frame();
         menu_item = 0U;
         display_idle_set_keep_awake( keep_screen_awake );
-        thermal_view_enter();
+        thermal_view_reset();
+        app_manager_request_render( RFSCOUT_APP_THERMAL, true );
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
     if( RFSCOUT_APP_RUNTIME_LEAVE == a_event->type )
@@ -81,21 +82,33 @@ static rfscout_app_runtime_result_t thermal_runtime( const rfscout_app_runtime_e
             }
             if( menu_active )
             {
-                thermal_view_menu( menu_item, app_manager_locked(), keep_screen_awake );
+                app_manager_request_render( RFSCOUT_APP_THERMAL, true );
             }
             else
             {
-                thermal_view_enter();
+                app_manager_request_render( RFSCOUT_APP_THERMAL, true );
             }
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
         if( menu_active && RFSCOUT_INPUT_NAVIGATION == a_event->input.type )
         {
             menu_item = ( menu_item + ( a_event->input.value > 0 ? 1U : 2U ) ) % 3U;
-            thermal_view_menu( menu_item, app_manager_locked(), keep_screen_awake );
+            app_manager_request_render( RFSCOUT_APP_THERMAL, true );
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
         return RFSCOUT_APP_RUNTIME_IGNORED;
+    }
+    if( RFSCOUT_APP_RUNTIME_RENDER == a_event->type )
+    {
+        if( menu_active )
+        {
+            thermal_view_menu( menu_item, app_manager_locked(), keep_screen_awake );
+        }
+        else
+        {
+            (void)thermal_view_render();
+        }
+        return RFSCOUT_APP_RUNTIME_HANDLED;
     }
     if( RFSCOUT_APP_RUNTIME_POLL != a_event->type )
     {
@@ -121,7 +134,11 @@ static rfscout_app_runtime_result_t thermal_runtime( const rfscout_app_runtime_e
     {
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
-    const esp_err_t result = thermal_view_render();
+    const esp_err_t result = thermal_view_sample();
+    if( ESP_ERR_NOT_FINISHED != result )
+    {
+        app_manager_request_render( RFSCOUT_APP_THERMAL, false );
+    }
     if( ( ESP_OK != result ) && ( ESP_ERR_NOT_FINISHED != result ) && mlx90640_is_detected() )
     {
         /* Avoid hammering an unhealthy shared I2C bus between other clients. */
