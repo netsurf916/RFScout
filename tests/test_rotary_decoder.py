@@ -232,7 +232,7 @@ class RotaryDecoderTests(unittest.TestCase):
         self.assertIn("rotary_decoder_sample( &navigation_decoder, read_encoder_state() )", source)
         self.assertNotIn("gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_A_PIN", source)
         self.assertNotIn("gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_B_PIN", source)
-        self.assertIn("gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_KEY_PIN", source)
+        self.assertRegex(source, r"gpio_isr_handler_add\(\s*RFSCOUT_BOARD_ENCODER_KEY_PIN,\s*primary_button_isr")
         self.assertIn("rotary_decoder_pending( &navigation_decoder )", source)
         self.assertNotIn("pcnt_new_unit", source)
 
