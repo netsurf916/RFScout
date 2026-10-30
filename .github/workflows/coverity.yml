@@ -1,0 +1,107 @@
+name: Coverity Scan
+
+# Scan submissions deliberately require a manual main-branch dispatch.
+# Only enable a schedule after the first ESP32-S3 capture has been verified.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rfscout-coverity-scan
+  cancel-in-progress: false
+
+jobs:
+  capture-and-submit:
+    name: Capture and submit ESP32-S3 firmware
+    if: github.repository == 'netsurf916/RFScout' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    container: espressif/idf:release-v6.1
+    timeout-minutes: 120
+
+    env:
+      COVERITY_PROJECT: RFScout
+      COVERITY_SCAN_TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN }}
+      COVERITY_SCAN_EMAIL: ${{ secrets.COVERITY_SCAN_EMAIL }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify Coverity configuration
+        shell: bash
+        run: |
+          set -eo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          if [[ -z "$COVERITY_SCAN_TOKEN" || -z "$COVERITY_SCAN_EMAIL" ]]; then
+            echo "::error::Set COVERITY_SCAN_TOKEN and COVERITY_SCAN_EMAIL as repository Actions secrets."
+            exit 1
+          fi
+
+      - name: Download Coverity C/C++ build tools
+        shell: bash
+        run: |
+          set -eo pipefail
+          archive="$RUNNER_TEMP/coverity-tool.tgz"
+          export COVERITY_HOME="$RUNNER_TEMP/coverity"
+          curl --fail --silent --show-error --location --retry 3 \
+            --form "token=$COVERITY_SCAN_TOKEN" \
+            --form "project=$COVERITY_PROJECT" \
+            "https://scan.coverity.com/download/cxx/linux64" \
+            --output "$archive"
+          mkdir -p "$COVERITY_HOME"
+          tar -xzf "$archive" --strip-components=1 -C "$COVERITY_HOME"
+          test -x "$COVERITY_HOME/bin/cov-build"
+          test -x "$COVERITY_HOME/bin/cov-configure"
+          rm -f "$archive"
+
+      - name: Capture ESP-IDF build with Xtensa compiler configuration
+        shell: bash
+        run: |
+          set -eo pipefail
+          . "$IDF_PATH/export.sh"
+          export PATH="$RUNNER_TEMP/coverity/bin:$PATH"
+
+          # The ESP-IDF cross compiler has a nonstandard executable name.
+          # Coverity recommends template configuration for Xtensa toolchains.
+          compiler=""
+          for name in xtensa-esp-elf-gcc xtensa-esp32s3-elf-gcc; do
+            if command -v "$name" >/dev/null 2>&1; then
+              compiler="$name"
+              break
+            fi
+          done
+          if [[ -z "$compiler" ]]; then
+            echo "::error::ESP32-S3 Xtensa compiler was not found in the ESP-IDF environment."
+            exit 1
+          fi
+          cov-configure --template --compiler "$compiler" --comptype gcc
+          cxx="${compiler%-gcc}-g++"
+          if command -v "$cxx" >/dev/null 2>&1; then
+            cov-configure --template --compiler "$cxx" --comptype g++
+          fi
+
+          # A fresh checkout ensures the native build compiles real sources
+          # inside cov-build rather than reusing object files from cache.
+          export CCACHE_DISABLE=1
+          idf.py -DRFSCOUT_FORMAT_CHECK=OFF set-target esp32s3
+          version="coverity-${GITHUB_SHA:0:12}"
+          cov-build --return-emit-failures --dir cov-int \
+            idf.py -DRFSCOUT_FORMAT_CHECK=OFF -DPROJECT_VER="$version" build
+
+      - name: Submit captured build to Coverity Scan
+        shell: bash
+        run: |
+          set -eo pipefail
+          archive="$RUNNER_TEMP/rfscout-coverity.tgz"
+          tar -czf "$archive" cov-int
+          curl --fail --silent --show-error --retry 3 \
+            --form "token=$COVERITY_SCAN_TOKEN" \
+            --form "email=$COVERITY_SCAN_EMAIL" \
+            --form "file=@$archive" \
+            --form "version=$GITHUB_SHA" \
+            --form "description=RFScout ESP32-S3 firmware; ESP-IDF v6.1; GitHub Actions" \
+            "https://scan.coverity.com/builds?project=$COVERITY_PROJECT"
+          echo "Coverity Scan submission completed for $GITHUB_SHA"
