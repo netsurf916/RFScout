@@ -132,3 +132,17 @@ that wake behavior has been corrected.
 
 The navigation improvement is owner-confirmed; the complete wake matrix above
 is still a follow-up checklist, not a claim of passing hardware verification.
+
+## PR #149 UI stabilization pilot (hardware validation pending)
+
+PR #149 replaces GPIO4/5 quadrature edge interrupts with a dedicated periodic
+ESP timer callback sampling both pins at **1000 microsecond intervals**. It keeps
+the LilyGO TWO03 state machine, semantic inversion, coalescing, input lock and
+button GPIO interrupt unchanged. Like LilyGO's demonstration, this is a
+software sampling cadence, not a hardware contact-debounce guarantee. ESP timer
+callback jitter under load and the existing wake matrix still need on-device tests.
+
+The same PR introduces a framework-owned deferred render event and migrates
+WiFi/BLE dashboard refreshing as the first pilot. The rest of the apps continue
+their existing rendering paths until explicitly migrated. Do not describe the
+whole UI as event-driven until that migration is complete.
