@@ -32,7 +32,9 @@ typedef struct
 /**
  * @brief Probe for the optional MLX90640 at its standard address.
  * @return ESP_OK when the device acknowledges or the underlying I2C error.
- * @details The device handle is attached lazily on first successful detection.
+ * @details A successful probe lazily attaches a 400-kHz device handle. Repeated
+ *          transfer failures downgrade that optional sensor to 100 kHz without
+ *          changing the charger/gauge clock or the shared bus configuration.
  */
 esp_err_t mlx90640_probe( void );
 

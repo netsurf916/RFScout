@@ -17,6 +17,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Transfer rates belong to device handles, not a global bus mode. */
+#define BOARD_I2C_STANDARD_SPEED_HZ 100000U
+#define BOARD_I2C_FAST_SPEED_HZ 400000U
+
 /** @brief Initialize the shared board I2C bus. */
 esp_err_t board_i2c_init( void );
 
@@ -39,6 +43,9 @@ esp_err_t board_i2c_add_device( uint16_t a_address, i2c_master_dev_handle_t *a_d
 esp_err_t board_i2c_add_device_with_speed( uint16_t a_address,
                                            uint32_t a_scl_speed_hz,
                                            i2c_master_dev_handle_t *a_device );
+
+/** @brief Remove a device handle, clearing it only after the driver confirms removal. */
+esp_err_t board_i2c_remove_device( i2c_master_dev_handle_t *a_device );
 
 /**
  * @brief Write bytes and immediately read a response from a shared-bus device.

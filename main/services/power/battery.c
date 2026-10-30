@@ -604,12 +604,16 @@ static void detach_optional_device( i2c_master_dev_handle_t *a_device )
         return;
     }
 
-    (void)i2c_master_bus_rm_device( *a_device );
-    *a_device = NULL;
+    const esp_err_t result = board_i2c_remove_device( a_device );
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG, "battery I2C detach failed: %s", esp_err_to_name( result ) );
+    }
 }
 
 static esp_err_t
-attach_optional_device( uint16_t a_address, const char *a_name, i2c_master_dev_handle_t *a_device )
+attach_optional_device( uint16_t a_address, const char *a_name, uint32_t a_speed_hz,
+                        i2c_master_dev_handle_t *a_device )
 {
     if( 0U == a_address )
     {
@@ -621,7 +625,7 @@ attach_optional_device( uint16_t a_address, const char *a_name, i2c_master_dev_h
         ESP_LOGD( TAG, "%s not detected at 0x%02X", a_name, (unsigned)a_address );
         return probe_result;
     }
-    const esp_err_t result = board_i2c_add_device( a_address, a_device );
+    const esp_err_t result = board_i2c_add_device_with_speed( a_address, a_speed_hz, a_device );
     if( ESP_OK == result )
     {
         ESP_LOGI( TAG, "%s detected at 0x%02X", a_name, (unsigned)a_address );
@@ -1041,13 +1045,13 @@ static void refresh_i2c_battery( battery_status_t *a_status )
         if( NULL == charger_device && board_i2c_ready() )
         {
             (void)attach_optional_device(
-                RFSCOUT_BOARD_BQ25896_I2C_ADDRESS, "BQ25896 charger", &charger_device );
+                RFSCOUT_BOARD_BQ25896_I2C_ADDRESS, "BQ25896 charger", BOARD_I2C_STANDARD_SPEED_HZ, &charger_device );
         }
         sample_charger( a_status, &charger_sampled );
         if( NULL == gauge_device && board_i2c_ready() )
         {
             (void)attach_optional_device(
-                RFSCOUT_BOARD_BQ27220_I2C_ADDRESS, "BQ27220 fuel gauge", &gauge_device );
+                RFSCOUT_BOARD_BQ27220_I2C_ADDRESS, "BQ27220 fuel gauge", BOARD_I2C_STANDARD_SPEED_HZ, &gauge_device );
         }
         sample_gauge( a_status, &gauge_sampled, &gauge_status );
     }
@@ -1056,13 +1060,13 @@ static void refresh_i2c_battery( battery_status_t *a_status )
         if( NULL == gauge_device && board_i2c_ready() )
         {
             (void)attach_optional_device(
-                RFSCOUT_BOARD_BQ27220_I2C_ADDRESS, "BQ27220 fuel gauge", &gauge_device );
+                RFSCOUT_BOARD_BQ27220_I2C_ADDRESS, "BQ27220 fuel gauge", BOARD_I2C_STANDARD_SPEED_HZ, &gauge_device );
         }
         sample_gauge( a_status, &gauge_sampled, &gauge_status );
         if( NULL == charger_device && board_i2c_ready() )
         {
             (void)attach_optional_device(
-                RFSCOUT_BOARD_BQ25896_I2C_ADDRESS, "BQ25896 charger", &charger_device );
+                RFSCOUT_BOARD_BQ25896_I2C_ADDRESS, "BQ25896 charger", BOARD_I2C_STANDARD_SPEED_HZ, &charger_device );
         }
         sample_charger( a_status, &charger_sampled );
     }
@@ -1166,9 +1170,9 @@ esp_err_t battery_init( void )
         if( ESP_OK == result )
         {
             (void)attach_optional_device(
-                RFSCOUT_BOARD_BQ27220_I2C_ADDRESS, "BQ27220 fuel gauge", &gauge_device );
+                RFSCOUT_BOARD_BQ27220_I2C_ADDRESS, "BQ27220 fuel gauge", BOARD_I2C_STANDARD_SPEED_HZ, &gauge_device );
             (void)attach_optional_device(
-                RFSCOUT_BOARD_BQ25896_I2C_ADDRESS, "BQ25896 charger", &charger_device );
+                RFSCOUT_BOARD_BQ25896_I2C_ADDRESS, "BQ25896 charger", BOARD_I2C_STANDARD_SPEED_HZ, &charger_device );
         }
     }
     else

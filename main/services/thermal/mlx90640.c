@@ -34,6 +34,8 @@
 
 static const char *TAG = "mlx90640";
 static i2c_master_dev_handle_t device;
+/* The optional sensor is fast-mode capable; power IC handles remain at 100 kHz. */
+static uint32_t active_scl_speed_hz = BOARD_I2C_FAST_SPEED_HZ;
 static bool detected;
 static int16_t merged_pixels[ MLX90640_PIXEL_COUNT ];
 static uint8_t merged_subpages;
@@ -138,8 +140,8 @@ esp_err_t mlx90640_probe( void )
 
     if( NULL == device )
     {
-        const esp_err_t attach =
-            board_i2c_add_device( RFSCOUT_BOARD_MLX90640_I2C_ADDRESS, &device );
+        const esp_err_t attach = board_i2c_add_device_with_speed(
+            RFSCOUT_BOARD_MLX90640_I2C_ADDRESS, active_scl_speed_hz, &device );
         if( ESP_OK != attach )
         {
             detected = false;
@@ -149,8 +151,10 @@ esp_err_t mlx90640_probe( void )
 
     if( !detected )
     {
-        ESP_LOGI(
-            TAG, "MLX90640 detected at I2C address 0x%02X", RFSCOUT_BOARD_MLX90640_I2C_ADDRESS );
+        ESP_LOGI( TAG,
+                  "MLX90640 detected at I2C address 0x%02X (%lu Hz)",
+                  RFSCOUT_BOARD_MLX90640_I2C_ADDRESS,
+                  (unsigned long)active_scl_speed_hz );
     }
     if( !detected )
     {
@@ -191,6 +195,32 @@ static esp_err_t read_failed( esp_err_t a_result )
     reading_pixels = false;
     if( ++consecutive_read_failures >= MLX90640_READ_FAILURE_RETRY_COUNT )
     {
+        if( BOARD_I2C_FAST_SPEED_HZ == active_scl_speed_hz )
+        {
+            /* A sensor or expansion cable may not tolerate 400 kHz on this board.
+               Retire the old handle before attaching 100 kHz. Never modify the
+               bus speed globally or discard a handle if removal fails. */
+            const esp_err_t removed = board_i2c_remove_device( &device );
+            if( ESP_OK == removed )
+            {
+                active_scl_speed_hz = BOARD_I2C_STANDARD_SPEED_HZ;
+                const esp_err_t attach = board_i2c_add_device_with_speed(
+                    RFSCOUT_BOARD_MLX90640_I2C_ADDRESS, active_scl_speed_hz, &device );
+                if( ESP_OK == attach )
+                {
+                    ESP_LOGW( TAG, "MLX90640 I2C transfers failed at 400 kHz; using 100 kHz" );
+                    consecutive_read_failures = 0U;
+                    refresh_configured = false;
+                    return ESP_ERR_NOT_FINISHED;
+                }
+                ESP_LOGW( TAG, "MLX90640 I2C fallback attach failed: %s", esp_err_to_name( attach ) );
+            }
+            else
+            {
+                ESP_LOGW( TAG, "MLX90640 I2C handle removal failed: %s",
+                          esp_err_to_name( removed ) );
+            }
+        }
         detected = false;
         refresh_configured = false;
     }
