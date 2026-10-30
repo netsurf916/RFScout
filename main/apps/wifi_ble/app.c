@@ -684,6 +684,8 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
     if( RFSCOUT_APP_RUNTIME_ENTER == a_event->type )
     {
         load_radio_settings();
+        ui_reset();
+        app_manager_request_render( RFSCOUT_APP_WIFI_BT, true );
         collectors_activated = false;
         menu_active = false;
         radio_page = 4U;
