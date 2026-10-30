@@ -270,9 +270,8 @@ static rfscout_app_runtime_result_t gps_runtime( const rfscout_app_runtime_event
             }
         }
         update_direction_led();
-        if( !menu_open &&
-            ( 0 == last_refresh_us ||
-              a_event->now_us - last_refresh_us >= GPS_VIEW_REFRESH_INTERVAL_US ) )
+        if( !menu_open && ( 0 == last_refresh_us ||
+                            a_event->now_us - last_refresh_us >= GPS_VIEW_REFRESH_INTERVAL_US ) )
         {
             last_refresh_us = a_event->now_us;
             rfscout_gps_snapshot_t current = { 0 };

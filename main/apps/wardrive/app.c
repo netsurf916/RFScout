@@ -1374,11 +1374,12 @@ static rfscout_app_runtime_result_t wardrive_runtime( const rfscout_app_runtime_
             rfscout_gps_snapshot_t gps = { 0 };
             const bool fixed = gps_snapshot_get( &gps ) && gps_location_fresh( &gps );
             const unsigned channel = radio_monitor_channel();
-            const bool changed = !last_ui_stats_valid ||
-                                 0 != memcmp( &capture_status, &last_ui_stats, sizeof( capture_status ) ) ||
-                                 channel != last_ui_channel || fixed != last_ui_fixed ||
-                                 ( fixed && ( gps.latitude_deg != last_ui_latitude ||
-                                              gps.longitude_deg != last_ui_longitude ) );
+            const bool changed =
+                !last_ui_stats_valid ||
+                0 != memcmp( &capture_status, &last_ui_stats, sizeof( capture_status ) ) ||
+                channel != last_ui_channel || fixed != last_ui_fixed ||
+                ( fixed && ( gps.latitude_deg != last_ui_latitude ||
+                             gps.longitude_deg != last_ui_longitude ) );
             last_ui_stats = capture_status;
             last_ui_stats_valid = true;
             last_ui_channel = channel;

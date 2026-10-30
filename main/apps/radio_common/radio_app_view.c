@@ -181,7 +181,6 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
                                1U );
         }
     }
-
 }
 
 void radio_app_view_nrf24_menu( unsigned a_selected,

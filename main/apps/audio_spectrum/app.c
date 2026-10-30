@@ -108,7 +108,8 @@ static rfscout_app_runtime_result_t spectrum_runtime( const rfscout_app_runtime_
         last_refresh_us = a_event->now_us;
         uint8_t bins[ RFSCOUT_RECORDER_MONITOR_BINS ] = { 0 };
         const size_t count = recorder_monitor_bins( bins, sizeof( bins ) );
-        if( !bins_valid || count != last_bin_count || 0 != memcmp( bins, last_bins, sizeof( bins ) ) )
+        if( !bins_valid || count != last_bin_count ||
+            0 != memcmp( bins, last_bins, sizeof( bins ) ) )
         {
             memcpy( last_bins, bins, sizeof( bins ) );
             last_bin_count = count;
