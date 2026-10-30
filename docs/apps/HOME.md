@@ -106,7 +106,7 @@ The small deep-sleep RTC envelope preserves active-app and input-lock session st
 
 ## Current limitations
 
-Home does not yet expose the richer memory/lifecycle diagnostics planned for v0.4.0. Shared capability/status presentation is also intentionally limited to the current application-availability and service state exposed by the implemented menus.
+Home does not yet expose the richer memory/lifecycle diagnostics deferred to v0.5.0. Shared capability/status presentation is also intentionally limited to the current application-availability and service state exposed by the implemented menus.
 
 
 ## Current OTA and station privacy behavior
