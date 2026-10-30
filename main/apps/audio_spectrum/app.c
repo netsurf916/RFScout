@@ -5,6 +5,7 @@
 */
 
 #include "app_descriptor.h"
+#include "app_manager.h"
 
 #include "recorder.h"
 #include "display_idle.h"
@@ -13,12 +14,16 @@
 #include "esp_log.h"
 
 #include <stddef.h>
+#include <string.h>
 
 #define SPECTRUM_REFRESH_INTERVAL_US 100000LL
 
 static const char *TAG = "audio_spectrum_app";
 static bool monitor_started;
 static int64_t last_refresh_us;
+static uint8_t last_bins[ RFSCOUT_RECORDER_MONITOR_BINS ];
+static size_t last_bin_count;
+static bool bins_valid;
 
 static esp_err_t probe_audio_spectrum( void )
 {
@@ -27,6 +32,11 @@ static esp_err_t probe_audio_spectrum( void )
 
 static void render( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_AUDIO_SPECTRUM, true );
+        return;
+    }
     audio_spectrum_view_render();
 }
 
@@ -41,6 +51,7 @@ static rfscout_app_runtime_result_t spectrum_runtime( const rfscout_app_runtime_
     {
         monitor_started = false;
         last_refresh_us = 0;
+        bins_valid = false;
         display_idle_set_keep_awake( true );
         render();
         return RFSCOUT_APP_RUNTIME_HANDLED;
@@ -68,6 +79,11 @@ static rfscout_app_runtime_result_t spectrum_runtime( const rfscout_app_runtime_
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
 
+    if( RFSCOUT_APP_RUNTIME_RENDER == a_event->type )
+    {
+        render();
+        return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
     if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type )
     {
         return RFSCOUT_APP_RUNTIME_IGNORED;
@@ -90,7 +106,15 @@ static rfscout_app_runtime_result_t spectrum_runtime( const rfscout_app_runtime_
     if( a_event->now_us - last_refresh_us >= SPECTRUM_REFRESH_INTERVAL_US )
     {
         last_refresh_us = a_event->now_us;
-        render();
+        uint8_t bins[ RFSCOUT_RECORDER_MONITOR_BINS ] = { 0 };
+        const size_t count = recorder_monitor_bins( bins, sizeof( bins ) );
+        if( !bins_valid || count != last_bin_count || 0 != memcmp( bins, last_bins, sizeof( bins ) ) )
+        {
+            memcpy( last_bins, bins, sizeof( bins ) );
+            last_bin_count = count;
+            bins_valid = true;
+            app_manager_request_render( RFSCOUT_APP_AUDIO_SPECTRUM, false );
+        }
     }
     return RFSCOUT_APP_RUNTIME_HANDLED;
 }
