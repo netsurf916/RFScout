@@ -102,7 +102,6 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
         display_draw_text( UI_LAYOUT_LEFT_X, 70, "nRF24 NOT DETECTED", theme->warning, 1U );
         display_draw_text(
             UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: SETTINGS", theme->secondary, 1U );
-        (void)display_present();
         return;
     }
 
@@ -181,8 +180,6 @@ void radio_app_view_nrf24_spectrum( const uint8_t *a_fast,
                                1U );
         }
     }
-
-    (void)display_present();
 }
 
 void radio_app_view_nrf24_menu( unsigned a_selected,
@@ -266,5 +263,4 @@ void radio_app_view_nrf24_menu( unsigned a_selected,
                        a_editing ? "TURN: CHANGE  CENTER: DONE" : "TURN: SELECT  CENTER: ENTER",
                        a_editing ? theme->selected : theme->secondary,
                        1U );
-    (void)display_present();
 }

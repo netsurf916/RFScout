@@ -7,6 +7,7 @@
 */
 
 #include "app_descriptor.h"
+#include "app_manager.h"
 
 #include "app_session.h"
 #include "device_time.h"
@@ -48,7 +49,6 @@
 #define HOTSPOTS_SCAN_RETRY_US 1000000LL
 #define HOTSPOTS_AP_QUEUE_CAPACITY 64U
 #define HOTSPOTS_AP_DRAIN_BATCH 16U
-#define HOTSPOTS_RENDER_INTERVAL_US 500000LL
 #define HOTSPOTS_SETTINGS_KEY "settings"
 #define HOTSPOTS_SETTINGS_MAGIC 0x48535333U
 #define HOTSPOTS_EVICTION_DISTANCE_MAX_STEPS 20U
@@ -123,7 +123,9 @@ static hotspots_settings_t settings;
 /** Profile used by the running secured attempt; learned outcomes are recorded against it. */
 static uint32_t attempt_profile_id;
 static bool render_due;
-static int64_t last_render_us;
+static uint8_t last_history_progress;
+static bool last_history_ready;
+static bool last_history_compacting;
 
 static void reset_session_state( void )
 {
@@ -151,7 +153,9 @@ static void reset_session_state( void )
     auto_enabled = true;
     attempt_profile_id = 0U;
     render_due = true;
-    last_render_us = 0;
+    last_history_progress = 0U;
+    last_history_ready = false;
+    last_history_compacting = false;
 }
 
 /**
@@ -430,8 +434,13 @@ void hotspots_format_status( char *a_footer, size_t a_capacity )
 
 static void render( int64_t a_now_us )
 {
+    (void)a_now_us;
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_HOTSPOTS, true );
+        return;
+    }
     render_due = false;
-    last_render_us = a_now_us;
     hotspots_ui_render();
 }
 
@@ -1262,6 +1271,10 @@ static rfscout_app_runtime_result_t hotspots_runtime( const rfscout_app_runtime_
             render( a_event->now_us );
             return RFSCOUT_APP_RUNTIME_HANDLED;
 
+        case RFSCOUT_APP_RUNTIME_RENDER:
+            render( a_event->now_us );
+            return RFSCOUT_APP_RUNTIME_HANDLED;
+
         case RFSCOUT_APP_RUNTIME_ACTIVATE:
             /* WiFi/BLE may have persisted a manual channel subset. Hotspots always
                makes its own full 14-channel passive sweep without inheriting that. */
@@ -1301,9 +1314,20 @@ static rfscout_app_runtime_result_t hotspots_runtime( const rfscout_app_runtime_
                 hotspot_sightings_poll( a_event->now_us );
                 scheduler_poll( a_event->now_us );
             }
-            if( render_due || ( a_event->now_us - last_render_us >= HOTSPOTS_RENDER_INTERVAL_US ) )
+            const uint8_t progress = hotspot_history_progress();
+            const bool ready = hotspot_history_ready();
+            const bool compacting = hotspot_history_compacting();
+            if( progress != last_history_progress || ready != last_history_ready ||
+                compacting != last_history_compacting )
             {
-                render( a_event->now_us );
+                last_history_progress = progress;
+                last_history_ready = ready;
+                last_history_compacting = compacting;
+                render_due = true;
+            }
+            if( render_due )
+            {
+                app_manager_request_render( RFSCOUT_APP_HOTSPOTS, false );
             }
             return RFSCOUT_APP_RUNTIME_HANDLED;
 

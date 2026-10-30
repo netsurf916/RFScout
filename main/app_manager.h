@@ -21,6 +21,13 @@ esp_err_t app_manager_init( void );
 /** @brief Process app navigation, semantic input, and active rendering. */
 void app_manager_poll( void );
 
+/** @brief Request a coalesced active-app render from main-task code. */
+void app_manager_request_render( rfscout_app_id_t a_app, bool a_immediate );
+/** @brief True only while dispatching the active app's render callback. */
+bool app_manager_rendering( void );
+/** @brief Dispatch the pending render callback before shared presentation. */
+void app_manager_render_poll( void );
+
 /** @brief Return the application currently visible on the LCD. */
 rfscout_app_id_t app_manager_current( void );
 

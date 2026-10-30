@@ -159,6 +159,11 @@ static void render_menu( void );
 
 static void render_radio_menu( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_WIFI_BT, true );
+        return;
+    }
     const ui_theme_palette_t *theme = ui_theme_get();
     const bool channels = radio_page == 3U;
     const bool wifi = radio_page == 1U;
@@ -269,7 +274,6 @@ static void render_radio_menu( void )
         display_draw_text( 22, y, label, color, 1U );
         display_draw_text( 215, y, value, color, 1U );
     }
-    (void)display_present();
 }
 
 static void handle_radio_menu( const rfscout_input_event_t *a_input )
@@ -452,6 +456,11 @@ static void handle_radio_menu( const rfscout_input_event_t *a_input )
 
 static void render_menu( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_WIFI_BT, true );
+        return;
+    }
     if( radio_page != 4U )
     {
         render_radio_menu();
@@ -525,6 +534,10 @@ static void close_menu( void )
     menu_editing = false;
     menu_item = WIFI_MENU_BACK;
     radio_page = 4U;
+    /* The dashboard may have remained unchanged while a menu was open.
+       Restoring it is an immediate view change, not a telemetry refresh. */
+    ui_reset();
+    app_manager_request_render( RFSCOUT_APP_WIFI_BT, true );
 }
 
 static uint16_t adjust_timeout_seconds( uint16_t a_current, int a_direction )
@@ -684,6 +697,8 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
     if( RFSCOUT_APP_RUNTIME_ENTER == a_event->type )
     {
         load_radio_settings();
+        ui_reset();
+        app_manager_request_render( RFSCOUT_APP_WIFI_BT, true );
         collectors_activated = false;
         menu_active = false;
         radio_page = 4U;
@@ -740,6 +755,22 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
             return RFSCOUT_APP_RUNTIME_HANDLED;
         }
         return RFSCOUT_APP_RUNTIME_IGNORED;
+    }
+    if( RFSCOUT_APP_RUNTIME_RENDER == a_event->type )
+    {
+        if( app_notification_menu_active( &notification_menu ) )
+        {
+            app_notification_menu_render( &notification_menu );
+        }
+        else if( menu_active )
+        {
+            render_menu();
+        }
+        else
+        {
+            ui_render();
+        }
+        return RFSCOUT_APP_RUNTIME_HANDLED;
     }
     if( RFSCOUT_APP_RUNTIME_POLL != a_event->type )
     {

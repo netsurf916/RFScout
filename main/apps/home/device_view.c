@@ -707,6 +707,11 @@ static void draw_time_row( int a_y, unsigned a_item )
 
 static void render_time_menu( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_DEVICE, true );
+        return;
+    }
     const unsigned item_count = time_menu_item_count();
     if( time_selected_item >= item_count )
     {
@@ -742,7 +747,6 @@ static void render_time_menu( void )
     {
         display_draw_text( 246, UI_LAYOUT_FOOTER_Y, "SAVE ERROR", COLOR_ERROR, 1U );
     }
-    (void)display_present();
 }
 
 static power_action_t next_power_action( power_action_t a_current, bool a_long_press )
@@ -778,6 +782,11 @@ draw_power_menu_row( int a_y, unsigned a_item, const char *a_label, const char *
 
 static void render_power_menu( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_DEVICE, true );
+        return;
+    }
     const device_config_t *config = device_config_get();
     display_clear( COLOR_BACKGROUND );
     ui_chrome_draw( "POWER BUTTON", COLOR_DIM );
@@ -800,7 +809,6 @@ static void render_power_menu( void )
               (unsigned)POWER_MENU_ITEM_COUNT,
               hint );
     display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, footer, COLOR_DIM, 1U );
-    (void)display_present();
 }
 
 static void cycle_power_action( bool a_long_press )
@@ -842,16 +850,25 @@ static void draw_home_logo( void )
 
 void device_view_landing( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_DEVICE, true );
+        return;
+    }
     display_clear( COLOR_BACKGROUND );
     ui_chrome_draw( "HOME", COLOR_DIM );
     draw_home_logo();
     display_draw_text( 92, 118, "CENTER: SETTINGS", COLOR_ACCENT, 1U );
     display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN: APPS", COLOR_DIM, 1U );
-    (void)display_present();
 }
 
 void device_view_render( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_DEVICE, true );
+        return;
+    }
     if( time_menu_open )
     {
         render_time_menu();
@@ -872,8 +889,14 @@ void device_view_render( void )
         render_power_menu();
         return;
     }
-    if( network_menu_open || ota_menu_open )
+    if( network_menu_open )
     {
+        network_menu_render();
+        return;
+    }
+    if( ota_menu_open )
+    {
+        ota_menu_render();
         return;
     }
 
@@ -936,7 +959,6 @@ void device_view_render( void )
     {
         display_draw_text( 246, UI_LAYOUT_FOOTER_Y, "SAVE ERROR", COLOR_ERROR, 1U );
     }
-    (void)display_present();
 }
 
 void device_view_enter( void )

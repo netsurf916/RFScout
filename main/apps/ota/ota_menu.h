@@ -17,6 +17,8 @@
 #include <stdint.h>
 
 /** @brief Enter the Home-owned Network menu and start passive discovery when disconnected. */
+void network_menu_render( void );
+void ota_menu_render( void );
 void network_menu_enter( void );
 /** @brief Leave the Network menu while preserving the Home-owned station connection. */
 void network_menu_leave( void );

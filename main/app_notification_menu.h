@@ -37,6 +37,9 @@ void app_notification_menu_reset( rfscout_app_notification_menu_t *a_menu );
 /** @brief Open and render the notification menu. */
 void app_notification_menu_open( rfscout_app_notification_menu_t *a_menu );
 
+/** @brief Render current notification-menu state in the framework render callback. */
+void app_notification_menu_render( const rfscout_app_notification_menu_t *a_menu );
+
 /** @brief Return whether the notification menu currently owns app input. */
 bool app_notification_menu_active( const rfscout_app_notification_menu_t *a_menu );
 

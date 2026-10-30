@@ -5,6 +5,7 @@
 */
 
 #include "app_descriptor.h"
+#include "app_manager.h"
 
 #include "app_notification_menu.h"
 #include "event.h"
@@ -90,11 +91,15 @@ static void notify_detections( void )
 
 static void render_spectrum( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_NRF24, true );
+        return;
+    }
     uint8_t fast[ NRF24_CHANNEL_COUNT ];
     nrf24_fingerprint_t devices[ NRF24_FINGERPRINT_MAX ];
     const size_t count = nrf24_activity_histogram( fast, NRF24_CHANNEL_COUNT );
     const size_t device_count = nrf24_activity_fingerprints( devices, NRF24_FINGERPRINT_MAX );
-    notify_detections();
     const nrf24_scan_config_t *config = nrf24_config();
     radio_app_view_nrf24_spectrum( fast,
                                    count,
@@ -107,6 +112,11 @@ static void render_spectrum( void )
 
 static void render_menu( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_NRF24, true );
+        return;
+    }
     const nrf24_scan_config_t *config = nrf24_config();
     radio_app_view_nrf24_menu( menu_item,
                                menu_editing,
@@ -146,7 +156,7 @@ static void handle_packet_input( const rfscout_input_event_t *a_input )
         if( RFSCOUT_INPUT_SELECT == a_input->type )
         {
             packet_detail = false;
-            (void)nrf24_packet_view_list( packet_item );
+            app_manager_request_render( RFSCOUT_APP_NRF24, true );
             emit_event( RFSCOUT_EVENT_BACK, 0 );
         }
         return;
@@ -169,7 +179,7 @@ static void handle_packet_input( const rfscout_input_event_t *a_input )
                 packet_item = (unsigned)item_count - 1U;
             }
             packet_detail = true;
-            nrf24_packet_view_detail( packet_item - 1U );
+            app_manager_request_render( RFSCOUT_APP_NRF24, true );
             emit_event( RFSCOUT_EVENT_ENTER, (int32_t)( packet_item - 1U ) );
         }
         return;
@@ -192,7 +202,7 @@ static void handle_packet_input( const rfscout_input_event_t *a_input )
     if( (unsigned)item != packet_item )
     {
         packet_item = (unsigned)item;
-        (void)nrf24_packet_view_list( packet_item );
+        app_manager_request_render( RFSCOUT_APP_NRF24, true );
         emit_event( RFSCOUT_EVENT_NAVIGATE, direction );
     }
 }
@@ -334,6 +344,33 @@ static rfscout_app_runtime_result_t nrf24_runtime( const rfscout_app_runtime_eve
         app_notification_menu_reset( &notification_menu );
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
+    if( RFSCOUT_APP_RUNTIME_RENDER == a_event->type )
+    {
+        if( app_notification_menu_active( &notification_menu ) )
+        {
+            app_notification_menu_render( &notification_menu );
+        }
+        else if( packet_browser )
+        {
+            if( packet_detail && packet_item > 0U )
+            {
+                nrf24_packet_view_detail( packet_item - 1U );
+            }
+            else
+            {
+                (void)nrf24_packet_view_list( packet_item );
+            }
+        }
+        else if( menu_active )
+        {
+            render_menu();
+        }
+        else
+        {
+            render_spectrum();
+        }
+        return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
     if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type )
     {
         if( app_notification_menu_active( &notification_menu ) )
@@ -368,7 +405,8 @@ static rfscout_app_runtime_result_t nrf24_runtime( const rfscout_app_runtime_eve
         nrf24_poll();
         if( nrf24_take_frame_ready() )
         {
-            render_spectrum();
+            notify_detections();
+            app_manager_request_render( RFSCOUT_APP_NRF24, false );
         }
     }
     return RFSCOUT_APP_RUNTIME_HANDLED;

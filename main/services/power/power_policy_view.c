@@ -111,6 +111,11 @@ static void draw_row( int a_y, unsigned a_item, const char *a_label, const char 
 
 void power_policy_view_render( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_DEVICE, true );
+        return;
+    }
     const device_config_t *config = device_config_get();
     const ui_theme_palette_t *theme = ui_theme_get();
     char low_threshold[ 12 ];
@@ -146,7 +151,6 @@ void power_policy_view_render( void )
                                                              : "TURN SELECT / CENTER CYCLE",
                        theme->secondary,
                        1U );
-    (void)display_present();
 }
 
 void power_policy_view_enter( void )

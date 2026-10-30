@@ -232,6 +232,26 @@ footer p {
   margin-bottom: 0;
 }
 
+.quality-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.quality-links a,
+.quality-links img {
+  display: inline-block;
+}
+
+.quality-links img {
+  max-width: 100%;
+  height: auto;
+  vertical-align: middle;
+}
+
 a {
   color: var(--accent);
 }

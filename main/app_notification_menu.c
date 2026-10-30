@@ -5,6 +5,7 @@
 */
 
 #include "app_notification_menu.h"
+#include "app_manager.h"
 
 #include "device_config.h"
 #include "event.h"
@@ -50,7 +51,20 @@ static char next_morse_character( char a_current, int a_direction )
 
 static void render_menu( const rfscout_app_notification_menu_t *a_menu )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( a_menu->app, true );
+        return;
+    }
     notification_settings_view_render( a_menu->app, a_menu->item, a_menu->editing );
+}
+
+void app_notification_menu_render( const rfscout_app_notification_menu_t *a_menu )
+{
+    if( NULL != a_menu && a_menu->active )
+    {
+        render_menu( a_menu );
+    }
 }
 
 static bool close_menu( rfscout_app_notification_menu_t *a_menu )

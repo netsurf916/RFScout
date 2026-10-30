@@ -5,6 +5,7 @@
 */
 
 #include "app_descriptor.h"
+#include "app_manager.h"
 #include "ota_menu.h"
 
 #include "app_text_entry.h"
@@ -497,6 +498,11 @@ static void render_build_action( void )
 
 static void render( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_DEVICE, true );
+        return;
+    }
     switch( screen )
     {
         case OTA_SCREEN_ACTION:
@@ -1184,6 +1190,16 @@ static void reset_runtime_state( void )
     last_refresh_us = 0;
     pending_install_candidate = NULL;
     close_requested = false;
+}
+
+void network_menu_render( void )
+{
+    render();
+}
+
+void ota_menu_render( void )
+{
+    render();
 }
 
 void network_menu_enter( void )

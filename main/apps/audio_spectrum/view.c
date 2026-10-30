@@ -181,6 +181,4 @@ void audio_spectrum_view_render( void )
         }
         draw_peak_labels( bins, count );
     }
-
-    (void)display_present();
 }
