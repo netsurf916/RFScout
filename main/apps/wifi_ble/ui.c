@@ -6,6 +6,7 @@
 */
 
 #include "ui.h"
+#include "app_manager.h"
 
 #include "display.h"
 #include "geo.h"
@@ -137,7 +138,7 @@ static void surveillance_distances( const observation_surveillance_signature_t *
     }
 }
 
-static void render_summary( void )
+void ui_render( void )
 {
     const ui_theme_palette_t *theme = ui_theme_get();
     observation_ui_snapshot_t snapshot = { 0 };
@@ -224,11 +225,8 @@ static void render_summary( void )
     {
         draw_channel_box( channel, snapshot.ap_channel_mask );
     }
-    if( ESP_OK != display_present() )
-    {
-        ESP_LOGW( TAG, "LCD refresh failed" );
-    }
 }
+
 
 void ui_poll( void )
 {
@@ -238,5 +236,5 @@ void ui_poll( void )
         return;
     }
     last_refresh_us = now_us;
-    render_summary();
+    app_manager_request_render( RFSCOUT_APP_WIFI_BT, false );
 }
