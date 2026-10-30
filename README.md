@@ -74,6 +74,8 @@ Persistent preferences are firmware-managed internal records split between syste
 
 Firmware update and infrastructure networking are Home-owned workflows over the session-managed Wi-Fi station service. A/B OTA streams an application image directly into the ESP-IDF-selected inactive slot, validates identity/size/SHA/image structure/readback before boot commit, and relies on ESP-IDF first-boot rollback until mandatory common startup confirms the new image.
 
+Presentation is **event-driven at the application boundary**: all 13 application runtimes request an active-app render on meaningful state changes rather than flushing the screen from their input or poll handlers. The framework coalesces background requests (at most 5 Hz) while interactive changes request immediate frames. Rotary A/B is sampled by a separate 1 ms ESP timer; the center button retains its interrupt. The ST7789 still transmits whole dirty frames, and some service shutdown paths remain synchronous. The shared I2C bus assigns device-specific transfer speeds (100 kHz for the charger and gauge; 400 kHz with a 100-kHz fallback for the optional Thermal sensor).
+
 The [platform architecture](docs/ARCHITECTURE.md) is the canonical reference for these shared contracts.
 
 ## Build and flashing
@@ -90,7 +92,9 @@ For a complete development setup, generated-data workflow, formatting commands, 
 
 ## Releases
 
-Ready-for-review pull requests and `main` can produce short-lived candidate bundles. Durable releases are prepared deliberately, use SemVer `vX.Y.Z` tags, and publish browser-flasher plus in-device OTA catalog data through GitHub Pages.
+The latest published stable release is **v0.3.5**. **v0.4.0 is in release stabilization**, with implementation from merged PRs #139–#149 (including the event-driven UI and per-device I2C clocks) subject to final candidate and hardware acceptance. This documentation synchronization does **not** create a v0.4.0 tag, release candidate or GitHub Release.
+
+Ready-for-review pull requests and `main` can produce short-lived candidate bundles. Durable releases are prepared deliberately, use SemVer `vX.Y.Z` tags, and publish browser-flasher plus in-device OTA catalog data through GitHub Pages. Follow [the 0.4.0 release gates](docs/ROADMAP.md#v040--stabilize-clean-up-validate-and-release) and the [release acceptance checklist](docs/RELEASE_VALIDATION.md) before publication.
 
 See the [firmware release runbook](docs/operations/RELEASING.md) for the operational workflow.
 
