@@ -577,6 +577,7 @@ void app_main( void )
            retain the dirty record but retry at a bounded cadence rather than hammering flash. */
         persist_config_if_due();
 
+        app_manager_render_poll();
         (void)display_present();
 
         app_logging_poll();
