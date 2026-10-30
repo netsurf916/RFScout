@@ -6,7 +6,7 @@ Statuses describe implementation state, not release state. Git history and pull 
 
 ## v0.4.0 — stabilize, clean up, validate and release
 
-**Status:** In progress. **Implementation scope is frozen to existing capability and corrective work; remaining feature expansion moves to v0.5.0.** This replaces the original all-app feature-completion gate below.
+**Status:** Preparing the next **v0.4.0 release candidate after documentation synchronization**. The latest published stable release is **v0.3.5**; no v0.4.0 tag or release build is created by this documentation work. Implementation scope is frozen to existing capability and corrective work; remaining feature expansion is deferred to v0.5.0. Exact-candidate hardware validation is still open.
 
 The goal is to deliver the substantial platform and application changes since
 v0.3.5 as a reliable release. The foundation is already present: owner-scoped
@@ -18,15 +18,7 @@ of its envisioned future features to be safe and useful in 0.4.0.
 
 ### Ordered release work
 
-1. **Stabilize `main`:** PRs #139 (adaptive breadcrumbs), #140 (gateway
-   camera-service fingerprinting), #141 (rotary restoration), #143 (remove
-   persistent Hotspots DENY), #144 (stable Hotspots list selection), and
-   #145 (LilyGO-compatible TWO03 decoder with corrected physical direction
-   and partial-detent wake/lock resynchronization) are **merged**. Their
-   implementation status is not hardware release acceptance. Validate
-   locked/unlocked display wake, rotary behavior and network/TLS UI
-   responsiveness on the actual release hardware. This documentation PR
-   targets `main` after #145's merge.
+1. **Stabilize `main`:** Merged PRs #139 (breadcrumbs), #140 (gateway camera-service metadata), #141/#145 (rotary TWO03 decoder), #143 (Hotspots retries without DENY), #144 (stable selection), #148 (Coverity workflow and badge), #149 (**1-ms rotary sampling and event-driven rendering for all 13 app runtimes**), and #146 (**per-device I2C clocks**) form the current baseline. The owner reports substantially improved #149 UI behavior. Neither merged code nor preliminary field feedback establishes complete hardware release acceptance.
 2. **Cleanup and optimization:** align current-state documentation with
    actual code, fix reproducible bugs, simplify stale paths, audit
    semantic menus, normalize UI labels and audio control units, remove
@@ -70,10 +62,10 @@ implemented behavior are **not** excused by deferring feature expansion.
 
 ### Stabilization and cleanup checklist
 
-- [ ] Obtain owner hardware acceptance for the **merged** PR #145
-  rotary decoder, especially incomplete wake-gesture suppression and
-  lock/display-off interactions. Merging a firmware PR or passing CI
-  does not establish the v0.4.0 release acceptance gate.
+- [ ] Obtain owner hardware acceptance for the merged #145/#149
+  rotary decoder and independent 1-ms sampling, including bounce,
+  incomplete wake gestures, Input/App Lock, and display-off wake.
+  Positive field feedback is not a complete release acceptance matrix.
 - [ ] Recheck recently merged Hotspots #143 behavior: failed authentication,
   handshake, DHCP, DNS, NTP, HTTPS and link loss are retryable outcomes, not
   persistent BSSID credential denials. Automatic retries remain subject to
@@ -82,27 +74,33 @@ implemented behavior are **not** excused by deferring feature expansion.
 - [ ] Verify PR #144 selection identity during Live/History refreshes:
   reordering must retain the intended BSSID/profile, and disappearing items
   select Back instead of redirecting Select to an unrelated row.
-- [ ] Regression-test #145's slow and fast rotary navigation, corrected
-  direction, partial-detent wake suppression, and distinct input-lock /
-  dimmed/off wake interactions; address reproducible shared-input bugs.
+- [ ] Regression-test #149's event-driven UI across **all 13 app runtimes**,
+  nested Home/Network/OTA settings, status bar and modal overlays:
+  immediate updates on navigation/App Lock, live-data refresh on changes,
+  static screens without unnecessary redraws, and responsive input
+  during scan/HTTPS. Retest #145/#149's slow/fast rotary and wake matrix.
 - [ ] Audit existing app menus, UI labels and volume/gain semantics:
   speaker/output volume is percentage-based, microphone digital gain
   remains in dB. Check selection and scrolling consistently.
-- [ ] Remove obsolete paths, abandoned diagnostics, contradictory
-  documentation and unintended logging overhead.
+- [ ] Remove obsolete paths and reconcile contradictory documentation.
+  Decide whether retained `ui_latency` and `connectivity_probe_timing`
+  diagnostics from #149 are appropriate for v0.4.0; do not claim they
+  have been removed without a corresponding code change.
 - [ ] Review performance and app-session memory usage with real logs,
   apply only targeted correctness/efficiency changes, and add regression
   tests for each behavior change.
-- [ ] Bring README, architecture, app docs, roadmap and release notes
-  into agreement with shipped behavior.
+- [ ] Merge this documentation synchronization before preparing the
+  next release candidate. Then reconcile draft release notes with the
+  **exact candidate SHA**, migrated SD paths, user-visible changes,
+  supported hardware and known limitations.
 
 ### 0.4.0 release acceptance
 
 - [ ] Full formatting, host regression and packaging checks, plus
   ESP-IDF build, pass for the **exact release candidate commit**.
-- [ ] Supported-board boot, input/buttons/rotary, locks, dim/off wake,
-  power, visual themes, normal/quiet audio, overlays and key menus
-  pass device acceptance.
+- [ ] Supported-board boot, 1-ms rotary sampling, buttons, immediate
+  App Lock redraw, Input Lock, dim/off wake, power, themes, normal/quiet
+  audio, overlays and key menus pass device acceptance.
 - [ ] Repeated application transitions stabilize free/peak/available
   PSRAM and largest free block, leave zero managed app allocations
   and open app media handles on committed exit, and preserve service
@@ -126,9 +124,10 @@ implemented behavior are **not** excused by deferring feature expansion.
   lifecycle contracts. Optional hardware absent from the current
   test setup is explicitly documented as untested, not falsely
   reported passing; deeper protocol feature development is 0.5.0.
-- [ ] Thermal's uncalibrated image remains **relative IR**, with no
-  false absolute-temperature claims; currently implemented
-  acquisition/teardown remains safe.
+- [ ] Thermal's uncalibrated image remains **relative IR**. Hardware-test
+  #146's MLX90640 400-kHz transfer handle and sticky 100-kHz fallback
+  alongside the BQ27220/BQ25896 100-kHz startup, provisioning, watchdog,
+  charging and telemetry; missing optional hardware is explicitly untested.
 - [ ] SD media store, #139 adaptive breadcrumbs (including a valid
   60-second stationary heartbeat, speed-based rate limits, UTC-dated
   files and configured retention), OTA install/first-boot
@@ -141,9 +140,11 @@ implemented behavior are **not** excused by deferring feature expansion.
   pass/fail/untested results in [RELEASE_VALIDATION.md](RELEASE_VALIDATION.md);
   obtain final owner approval before freeze completion and publish.
 
-The release checklist is not considered passed merely because a previous
-PR build passed CI. No action in this plan merges PRs, tags firmware, or
-publishes a release.
+This documentation PR does not generate a v0.4.0 build or tag. After it
+is merged, prepare a fresh draft release from the resulting `main` SHA,
+run exact-candidate CI and device checks, record Pass/Fail/Untested in
+[Release validation](RELEASE_VALIDATION.md), and publish only with
+explicit owner acceptance. Previous PR CI is insufficient.
 
 ## v0.5.0 — deferred implementation roadmap
 
