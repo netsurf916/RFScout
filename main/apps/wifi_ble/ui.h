@@ -12,7 +12,9 @@
 
 #include <stdbool.h>
 
-/** @brief Refresh the WiFi/BLE display when its update interval has elapsed. */
+/** @brief Request a redraw when the visible WiFi/BLE summary changes. */
 void ui_poll( void );
+/** @brief Draw the current WiFi/BLE dashboard without flushing it. */
+void ui_render( void );
 
 #endif // _RFSCOUT_UI_H_
