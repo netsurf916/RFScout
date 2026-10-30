@@ -741,6 +741,14 @@ static rfscout_app_runtime_result_t wifi_ble_runtime( const rfscout_app_runtime_
         }
         return RFSCOUT_APP_RUNTIME_IGNORED;
     }
+    if( RFSCOUT_APP_RUNTIME_RENDER == a_event->type )
+    {
+        if( !menu_active && !app_notification_menu_active( &notification_menu ) )
+        {
+            ui_render();
+        }
+        return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
     if( RFSCOUT_APP_RUNTIME_POLL != a_event->type )
     {
         return RFSCOUT_APP_RUNTIME_HANDLED;
