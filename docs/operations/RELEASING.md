@@ -2,6 +2,18 @@
 
 RFScout separates continuous validation from durable firmware releases. Pull requests and pushes to `main` can build short-lived candidate artifacts, but they do not create tags or GitHub Releases. A release begins only when a maintainer deliberately runs the **Prepare firmware release** workflow.
 
+## v0.4.0 release handoff after documentation synchronization
+
+The latest published stable release is `v0.3.5`. Merged #149 event-driven UI / 1-ms encoder and #146 per-device I2C changes are implemented, but **do not constitute a published v0.4.0 release**.
+
+1. Review and merge the documentation synchronization PR. Record the resulting `main` SHA; an earlier PR firmware candidate is not the release build.
+2. Deliberately run **Prepare firmware release** with `v0.4.0` and source `main`. The workflow builds the exact revision, creates the semantic tag and prepares an **unpublished draft**. This documentation PR does not trigger that workflow.
+3. Reconcile draft release notes with the actual `v0.3.5`→candidate delta: resource-session ownership, Hotspots and Wi-Fi/BLE, 1-ms rotary/event-driven UI, battery/Thermal limitations, per-device I2C, GPS/breadcrumbs, changes to SD owner-scoped paths and OTA compatibility. Qualify any optional-hardware or performance claims not validated on the release device.
+4. Flash the **exact draft candidate** and complete [release validation](../RELEASE_VALIDATION.md), recording SHA, board revision, accessories and explicit pass/fail/untested outcomes. Include power, networking and OTA first-boot/rollback. Full-frame LCD SPI and synchronous Wi-Fi teardown are not claimed eliminated.
+5. Publish only after explicit owner acceptance. Prepared drafts are mirrored publicly through Pages, so draft release status is not a privacy boundary.
+
+This documentation synchronization alone creates **no firmware build, tag or release**.
+
 ## Bundle contents
 
 The release packager validates ESP-IDF build metadata before producing files. RFScout currently requires:
