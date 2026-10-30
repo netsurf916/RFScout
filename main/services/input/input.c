@@ -22,6 +22,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define INPUT_ROTARY_SAMPLE_PERIOD_US 1000U
 #define INPUT_BUTTON_DEBOUNCE_US 30000LL
 #define INPUT_BUTTON_LONG_PRESS_US 800000LL
 
@@ -43,6 +44,7 @@ static bool button_lock_fired;
 static bool locked;
 static int primary_button_pin = -1;
 static rfscout_input_provider_t provider;
+static esp_timer_handle_t encoder_timer;
 
 /** @brief LilyGO RotaryEncoder::tick() uses A as bit zero and B as bit one. */
 static uint8_t IRAM_ATTR read_encoder_state( void )
@@ -52,14 +54,15 @@ static uint8_t IRAM_ATTR read_encoder_state( void )
     return a | (uint8_t)( b << 1U );
 }
 
-static void IRAM_ATTR encoder_isr( void *a_argument )
+/* Keep quadrature sampling independent from the potentially blocking foreground UI loop.
+   The 1 ms ESP timer task samples the contacts like LilyGO's software tick(),
+   rather than observing every contact bounce through GPIO edge interrupts. */
+static void encoder_timer_sample( void *a_argument )
 {
     (void)a_argument;
-    /* Read while serialized: an older sampled state must never be decoded
-       after a newer GPIO interrupt has already updated the state machine. */
-    portENTER_CRITICAL_ISR( &navigation_lock );
+    portENTER_CRITICAL( &navigation_lock );
     rotary_decoder_sample( &navigation_decoder, read_encoder_state() );
-    portEXIT_CRITICAL_ISR( &navigation_lock );
+    portEXIT_CRITICAL( &navigation_lock );
 }
 
 static void IRAM_ATTR primary_button_isr( void *a_argument )
@@ -190,20 +193,29 @@ static esp_err_t install_rotary_provider( void )
         return result;
     }
     if( ESP_OK !=
-            ( result = gpio_set_intr_type( RFSCOUT_BOARD_ENCODER_A_PIN, GPIO_INTR_ANYEDGE ) ) ||
-        ESP_OK !=
-            ( result = gpio_set_intr_type( RFSCOUT_BOARD_ENCODER_B_PIN, GPIO_INTR_ANYEDGE ) ) ||
-        ESP_OK !=
             ( result = gpio_set_intr_type( RFSCOUT_BOARD_ENCODER_KEY_PIN, GPIO_INTR_ANYEDGE ) ) ||
-        ESP_OK !=
-            ( result = gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_A_PIN, encoder_isr, NULL ) ) ||
-        ESP_OK !=
-            ( result = gpio_isr_handler_add( RFSCOUT_BOARD_ENCODER_B_PIN, encoder_isr, NULL ) ) ||
         ESP_OK != ( result = gpio_isr_handler_add(
                         RFSCOUT_BOARD_ENCODER_KEY_PIN, primary_button_isr, NULL ) ) )
     {
         return result;
     }
+    const esp_timer_create_args_t timer_args = {
+        .callback = encoder_timer_sample,
+        .name = "rotary_1ms",
+    };
+    result = esp_timer_create( &timer_args, &encoder_timer );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+    result = esp_timer_start_periodic( encoder_timer, INPUT_ROTARY_SAMPLE_PERIOD_US );
+    if( ESP_OK != result )
+    {
+        (void)esp_timer_delete( encoder_timer );
+        encoder_timer = NULL;
+        return result;
+    }
+
     provider = RFSCOUT_INPUT_PROVIDER_ROTARY_BUTTONS;
     return ESP_OK;
 }
@@ -222,7 +234,7 @@ esp_err_t input_init( void )
         return result;
     }
 
-    ESP_LOGI( TAG, "rotary/button input provider selected" );
+    ESP_LOGI( TAG, "rotary/button input provider selected (1ms encoder sampling)" );
     rfscout_event_emit(
         RFSCOUT_EVENT_INPUT_PROVIDER_SELECTED, RFSCOUT_EVENT_SOURCE_SYSTEM, (int32_t)provider );
     return ESP_OK;
