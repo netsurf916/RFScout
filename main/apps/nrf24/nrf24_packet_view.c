@@ -157,7 +157,6 @@ size_t nrf24_packet_view_list( unsigned a_selected )
 
     display_draw_text(
         UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN: SELECT  CENTER: ENTER", theme->secondary, 1U );
-    (void)display_present();
     return item_count;
 }
 
@@ -220,5 +219,4 @@ void nrf24_packet_view_detail( unsigned a_selected )
     }
 
     display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "CENTER: BACK", theme->secondary, 1U );
-    (void)display_present();
 }

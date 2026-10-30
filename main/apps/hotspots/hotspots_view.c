@@ -121,7 +121,6 @@ void hotspots_view_landing( const char *a_title,
     }
 
     draw_footer( a_footer );
-    (void)display_present();
 }
 
 void hotspots_view_menu( const char *a_title,
@@ -159,7 +158,6 @@ void hotspots_view_menu( const char *a_title,
     }
 
     draw_footer( a_footer );
-    (void)display_present();
 }
 
 void hotspots_view_detail( const char *a_title,
@@ -201,5 +199,4 @@ void hotspots_view_detail( const char *a_title,
                           a_detail->actions[ action ].value,
                           state );
     }
-    (void)display_present();
 }
