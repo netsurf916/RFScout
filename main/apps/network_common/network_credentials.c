@@ -327,7 +327,6 @@ void network_credentials_render( const char *a_title )
     {
         render_entry();
     }
-    (void)display_present();
 }
 
 static bool finish( network_credentials_result_t a_result,

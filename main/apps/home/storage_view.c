@@ -328,7 +328,6 @@ void storage_view_render( void )
                            theme->secondary,
                            1U );
     }
-    (void)display_present();
 }
 
 void storage_view_enter( void )

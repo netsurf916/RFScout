@@ -742,7 +742,6 @@ static void render_time_menu( void )
     {
         display_draw_text( 246, UI_LAYOUT_FOOTER_Y, "SAVE ERROR", COLOR_ERROR, 1U );
     }
-    (void)display_present();
 }
 
 static power_action_t next_power_action( power_action_t a_current, bool a_long_press )
@@ -800,7 +799,6 @@ static void render_power_menu( void )
               (unsigned)POWER_MENU_ITEM_COUNT,
               hint );
     display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, footer, COLOR_DIM, 1U );
-    (void)display_present();
 }
 
 static void cycle_power_action( bool a_long_press )
@@ -847,7 +845,6 @@ void device_view_landing( void )
     draw_home_logo();
     display_draw_text( 92, 118, "CENTER: SETTINGS", COLOR_ACCENT, 1U );
     display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN: APPS", COLOR_DIM, 1U );
-    (void)display_present();
 }
 
 void device_view_render( void )
@@ -936,7 +933,6 @@ void device_view_render( void )
     {
         display_draw_text( 246, UI_LAYOUT_FOOTER_Y, "SAVE ERROR", COLOR_ERROR, 1U );
     }
-    (void)display_present();
 }
 
 void device_view_enter( void )

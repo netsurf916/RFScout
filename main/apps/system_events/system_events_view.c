@@ -314,5 +314,4 @@ void system_events_view_render( void )
                   seconds );
     }
     display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, footer, theme->secondary, 1U );
-    (void)display_present();
 }

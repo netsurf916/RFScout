@@ -146,7 +146,6 @@ void power_policy_view_render( void )
                                                              : "TURN SELECT / CENTER CYCLE",
                        theme->secondary,
                        1U );
-    (void)display_present();
 }
 
 void power_policy_view_enter( void )
