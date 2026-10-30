@@ -525,6 +525,10 @@ static void close_menu( void )
     menu_editing = false;
     menu_item = WIFI_MENU_BACK;
     radio_page = 4U;
+    /* The dashboard may have remained unchanged while a menu was open.
+       Restoring it is an immediate view change, not a telemetry refresh. */
+    ui_reset();
+    app_manager_request_render( RFSCOUT_APP_WIFI_BT, true );
 }
 
 static uint16_t adjust_timeout_seconds( uint16_t a_current, int a_direction )
