@@ -707,6 +707,11 @@ static void draw_time_row( int a_y, unsigned a_item )
 
 static void render_time_menu( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_DEVICE, true );
+        return;
+    }
     const unsigned item_count = time_menu_item_count();
     if( time_selected_item >= item_count )
     {
@@ -777,6 +782,11 @@ draw_power_menu_row( int a_y, unsigned a_item, const char *a_label, const char *
 
 static void render_power_menu( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_DEVICE, true );
+        return;
+    }
     const device_config_t *config = device_config_get();
     display_clear( COLOR_BACKGROUND );
     ui_chrome_draw( "POWER BUTTON", COLOR_DIM );
@@ -840,6 +850,11 @@ static void draw_home_logo( void )
 
 void device_view_landing( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_DEVICE, true );
+        return;
+    }
     display_clear( COLOR_BACKGROUND );
     ui_chrome_draw( "HOME", COLOR_DIM );
     draw_home_logo();
@@ -849,6 +864,11 @@ void device_view_landing( void )
 
 void device_view_render( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_DEVICE, true );
+        return;
+    }
     if( time_menu_open )
     {
         render_time_menu();
@@ -869,8 +889,14 @@ void device_view_render( void )
         render_power_menu();
         return;
     }
-    if( network_menu_open || ota_menu_open )
+    if( network_menu_open )
     {
+        network_menu_render();
+        return;
+    }
+    if( ota_menu_open )
+    {
+        ota_menu_render();
         return;
     }
 

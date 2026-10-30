@@ -32,6 +32,18 @@ static rfscout_app_runtime_result_t home_runtime( const rfscout_app_runtime_even
         device_view_landing();
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
+    if( RFSCOUT_APP_RUNTIME_RENDER == a_event->type )
+    {
+        if( menu_active )
+        {
+            device_view_render();
+        }
+        else
+        {
+            device_view_landing();
+        }
+        return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
     if( RFSCOUT_APP_RUNTIME_LEAVE == a_event->type )
     {
         device_view_leave();

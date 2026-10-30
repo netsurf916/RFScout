@@ -8,6 +8,7 @@
 #include "storage_view.h"
 
 #include "app_framework.h"
+#include "app_manager.h"
 #include "device_config.h"
 #include "display.h"
 #include "event.h"
@@ -298,6 +299,11 @@ static void render_confirm( const ui_theme_palette_t *a_theme, const storage_row
 
 void storage_view_render( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_DEVICE, true );
+        return;
+    }
     const ui_theme_palette_t *theme = ui_theme_get();
     display_clear( theme->background );
     ui_chrome_draw( "STORAGE", theme->secondary );
