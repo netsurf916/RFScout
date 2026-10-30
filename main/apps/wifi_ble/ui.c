@@ -18,7 +18,6 @@
 #include "ui_layout.h"
 #include "ui_theme.h"
 
-#include "esp_log.h"
 #include "esp_timer.h"
 
 #include <stdio.h>
@@ -39,8 +38,17 @@
 #define UI_CHANNEL_GRID_CELL_HEIGHT 12
 #define UI_CHANNEL_GRID_COLUMN_STEP 21
 
-static const char *TAG = "ui";
 static int64_t last_refresh_us;
+static observation_ui_snapshot_t previous_snapshot;
+static observation_vendor_count_t previous_vendors[ UI_MAX_KNOWN_BRANDS ];
+static observation_surveillance_signature_t previous_signatures[ UI_SURVEILLANCE_MAX_ROWS ];
+static bool snapshot_valid;
+
+void ui_reset( void )
+{
+    last_refresh_us = 0;
+    snapshot_valid = false;
+}
 
 /** @brief Theme-aware instrument frame; preserve the Pixel Quest clipped-corner language. */
 static void draw_dashboard_panel( int a_x, int a_y, int a_width, int a_height )
@@ -236,5 +244,24 @@ void ui_poll( void )
         return;
     }
     last_refresh_us = now_us;
+
+    observation_ui_snapshot_t snapshot = { 0 };
+    observation_vendor_count_t vendors[ UI_MAX_KNOWN_BRANDS ] = { 0 };
+    observation_surveillance_signature_t signatures[ UI_SURVEILLANCE_MAX_ROWS ] = { 0 };
+    observation_store_ui_snapshot(
+        &snapshot, vendors, UI_MAX_KNOWN_BRANDS, signatures, UI_SURVEILLANCE_MAX_ROWS );
+
+    const bool changed = !snapshot_valid ||
+                         0 != memcmp( &snapshot, &previous_snapshot, sizeof( snapshot ) ) ||
+                         0 != memcmp( vendors, previous_vendors, sizeof( vendors ) ) ||
+                         0 != memcmp( signatures, previous_signatures, sizeof( signatures ) );
+    if( !changed )
+    {
+        return;
+    }
+    previous_snapshot = snapshot;
+    memcpy( previous_vendors, vendors, sizeof( vendors ) );
+    memcpy( previous_signatures, signatures, sizeof( signatures ) );
+    snapshot_valid = true;
     app_manager_request_render( RFSCOUT_APP_WIFI_BT, false );
 }
