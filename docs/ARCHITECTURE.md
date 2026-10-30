@@ -64,6 +64,14 @@ Board detection and provider probing are separate:
 
 The current T-Embed fingerprint uses the early I2C path and onboard BQ25896/BQ27220 presence. The temporary detection bus is deleted before normal shared-I2C initialization.
 
+### Shared I2C per-device transfer policy
+
+The runtime bus owns controller initialization and its 250-ms timeout cooldown, while each peripheral driver attaches an ESP-IDF **device handle with a configured transfer clock**. The default is 100 kHz, not a global bus frequency. BQ25896 charger (`0x6B`) and BQ27220 fuel gauge (`0x55`) always use explicit 100-kHz handles, including early power/configuration and recovery. The optional MLX90640 (`0x33`) uses 400-kHz transfers when supported by the wiring and downgrades to a 100-kHz handle after repeated acquisition failures; the downgrade is sticky for the boot session. Handle replacement is fail-closed: remove the old handle successfully before registering a replacement, and retain it if removal fails.
+
+Board identification and optional-device discovery use `i2c_master_probe()` before the corresponding runtime device handles are established. This is not a negotiated per-device transfer rate, and no global 100-to-400-kHz transition is performed. GPS currently uses UART rather than a shared I2C device. The full acceptance checklist, electrical assumptions and vendor references are in [Per-device I2C clock policy](design/PER_DEVICE_I2C_CLOCK_POLICY.md). The selected fast-mode clock must still be validated on representative hardware.
+
+
+
 Unknown or ambiguous hardware is a deliberate recovery state: RFScout leaves ordinary board GPIO/peripherals untouched and remains awake for recovery flashing.
 
 ### Current T-Embed profile

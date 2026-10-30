@@ -11,7 +11,6 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 
-#define BOARD_I2C_FREQUENCY_HZ 100000U
 #define BOARD_I2C_PROBE_TIMEOUT_MS 50
 #define BOARD_I2C_TRANSFER_TIMEOUT_MS 100
 #define BOARD_I2C_TIMEOUT_COOLDOWN_US 250000LL
@@ -104,7 +103,21 @@ esp_err_t board_i2c_add_device_with_speed( uint16_t a_address,
 
 esp_err_t board_i2c_add_device( uint16_t a_address, i2c_master_dev_handle_t *a_device )
 {
-    return board_i2c_add_device_with_speed( a_address, BOARD_I2C_FREQUENCY_HZ, a_device );
+    return board_i2c_add_device_with_speed( a_address, BOARD_I2C_STANDARD_SPEED_HZ, a_device );
+}
+
+esp_err_t board_i2c_remove_device( i2c_master_dev_handle_t *a_device )
+{
+    if( NULL == a_device || NULL == *a_device )
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const esp_err_t result = i2c_master_bus_rm_device( *a_device );
+    if( ESP_OK == result )
+    {
+        *a_device = NULL;
+    }
+    return result;
 }
 
 esp_err_t board_i2c_transmit_receive( i2c_master_dev_handle_t a_device,
