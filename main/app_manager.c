@@ -374,6 +374,8 @@ bool app_manager_set_locked( bool a_locked )
     rfscout_event_emit( app_locked ? RFSCOUT_EVENT_APP_LOCKED : RFSCOUT_EVENT_APP_UNLOCKED,
                         RFSCOUT_EVENT_SOURCE_SYSTEM,
                         app_locked ? 1 : 0 );
+    /* App menus may display the lock state even while all background redraws are paused. */
+    app_manager_request_render( active_app, true );
     return app_locked;
 }
 
