@@ -43,11 +43,15 @@ static observation_ui_snapshot_t previous_snapshot;
 static observation_vendor_count_t previous_vendors[ UI_MAX_KNOWN_BRANDS ];
 static observation_surveillance_signature_t previous_signatures[ UI_SURVEILLANCE_MAX_ROWS ];
 static bool snapshot_valid;
+static bool previous_gps_fix_valid;
+static int64_t last_gps_distance_redraw_us;
 
 void ui_reset( void )
 {
     last_refresh_us = 0;
     snapshot_valid = false;
+    previous_gps_fix_valid = false;
+    last_gps_distance_redraw_us = 0;
 }
 
 /** @brief Theme-aware instrument frame; preserve the Pixel Quest clipped-corner language. */
@@ -235,7 +239,6 @@ void ui_render( void )
     }
 }
 
-
 void ui_poll( void )
 {
     const int64_t now_us = esp_timer_get_time();
@@ -251,13 +254,34 @@ void ui_poll( void )
     observation_store_ui_snapshot(
         &snapshot, vendors, UI_MAX_KNOWN_BRANDS, signatures, UI_SURVEILLANCE_MAX_ROWS );
 
+    /* last_seen_ms is not displayed. Repeated packets must not trigger redraws. */
+    for( size_t i = 0U; i < UI_SURVEILLANCE_MAX_ROWS; ++i )
+    {
+        signatures[ i ].last_seen_ms = 0U;
+    }
+
+    rfscout_gps_snapshot_t gps = { 0 };
+    const bool gps_fix_valid = gps_snapshot_get( &gps ) && gps_location_fresh( &gps );
+    /* Nearest-surveillance distances are displayed; refresh them once per second
+       while a fresh GPS fix exists, or immediately when the fix becomes stale. */
+    const bool gps_refresh =
+        snapshot.signature_count > 0U &&
+        ( gps_fix_valid != previous_gps_fix_valid ||
+          ( gps_fix_valid && now_us - last_gps_distance_redraw_us >= 1000000LL ) );
+
     const bool changed = !snapshot_valid ||
                          0 != memcmp( &snapshot, &previous_snapshot, sizeof( snapshot ) ) ||
                          0 != memcmp( vendors, previous_vendors, sizeof( vendors ) ) ||
-                         0 != memcmp( signatures, previous_signatures, sizeof( signatures ) );
+                         0 != memcmp( signatures, previous_signatures, sizeof( signatures ) ) ||
+                         gps_refresh;
     if( !changed )
     {
         return;
+    }
+    previous_gps_fix_valid = gps_fix_valid;
+    if( gps_refresh )
+    {
+        last_gps_distance_redraw_us = now_us;
     }
     previous_snapshot = snapshot;
     memcpy( previous_vendors, vendors, sizeof( vendors ) );
