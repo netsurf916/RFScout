@@ -79,6 +79,11 @@ static void reset_receive_results( void )
 
 static void render_discovery( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_CC1101, true );
+        return;
+    }
     cc1101_scan_config_t config;
     cc1101_scan_config( &config );
     cc1101_view_discovery( discovery_rssi,
@@ -92,6 +97,11 @@ static void render_discovery( void )
 
 static void render_receive( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_CC1101, true );
+        return;
+    }
     cc1101_receive_config_t config;
     cc1101_capture_stats_t stats;
     cc1101_receive_config( &config );
@@ -121,6 +131,11 @@ static void render_current( void )
 
 static void render_menu( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_CC1101, true );
+        return;
+    }
     rendered_app_lock = app_manager_locked();
     cc1101_scan_config_t scan;
     cc1101_receive_config_t receive;
@@ -169,7 +184,7 @@ static void consume_discovery_frame( bool a_render )
     update_discovery_peak();
     if( a_render )
     {
-        render_discovery();
+        app_manager_request_render( RFSCOUT_APP_CC1101, false );
     }
 }
 
@@ -222,7 +237,7 @@ static bool consume_receive_captures( bool a_render )
 
     if( consumed && a_render )
     {
-        render_receive();
+        app_manager_request_render( RFSCOUT_APP_CC1101, false );
     }
     return consumed;
 }
@@ -533,6 +548,18 @@ static rfscout_app_runtime_result_t cc1101_runtime( const rfscout_app_runtime_ev
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
 
+    if( RFSCOUT_APP_RUNTIME_RENDER == a_event->type )
+    {
+        if( menu_active )
+        {
+            render_menu();
+        }
+        else
+        {
+            render_current();
+        }
+        return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
     if( RFSCOUT_APP_RUNTIME_INPUT == a_event->type )
     {
         if( menu_active )
