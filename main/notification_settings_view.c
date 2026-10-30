@@ -146,5 +146,4 @@ void notification_settings_view_render( rfscout_app_id_t a_app,
                        footer,
                        a_editing ? theme->selected : theme->secondary,
                        1U );
-    (void)display_present();
 }

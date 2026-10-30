@@ -114,7 +114,6 @@ void ota_view_render_network_main( const ota_view_network_t *a_networks,
                        footer,
                        NULL != a_error && '\0' != a_error[ 0 ] ? theme->error : theme->secondary,
                        1U );
-    (void)display_present();
 }
 
 void ota_view_render_update_main( const char *a_installed_version,
@@ -165,7 +164,6 @@ void ota_view_render_update_main( const char *a_installed_version,
                        footer,
                        NULL != a_error && '\0' != a_error[ 0 ] ? theme->error : theme->secondary,
                        1U );
-    (void)display_present();
 }
 
 void ota_view_render_network_action( const char *a_ssid,
@@ -223,7 +221,6 @@ void ota_view_render_network_action( const char *a_ssid,
                        has_status ? a_status : "TURN SELECT / CENTER ACTION",
                        theme->secondary,
                        1U );
-    (void)display_present();
 }
 
 void ota_view_render_network_list( const char *a_title,
@@ -272,7 +269,6 @@ void ota_view_render_network_list( const char *a_title,
 
     display_draw_text(
         UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN SELECT / CENTER ACTION", theme->secondary, 1U );
-    (void)display_present();
 }
 
 void ota_view_render_build_list( const char *a_installed_version,
@@ -315,7 +311,6 @@ void ota_view_render_build_list( const char *a_installed_version,
 
     display_draw_text(
         UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "TURN SELECT / CENTER ACTION", theme->secondary, 1U );
-    (void)display_present();
 }
 
 void ota_view_render_build_action( const char *a_installed_version,
@@ -345,5 +340,4 @@ void ota_view_render_build_action( const char *a_installed_version,
 
     display_draw_text(
         UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, "EXPLICIT BUILD INSTALL", theme->secondary, 1U );
-    (void)display_present();
 }

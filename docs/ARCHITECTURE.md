@@ -155,6 +155,46 @@ Application lock deliberately sits **above** this lifecycle boundary. Locking/un
 
 The current canonical view is 320x170 and maps to the full T-Embed display. Applications render through their assigned view rather than owning the physical display.
 
+### Event-driven UI and presentation
+
+Application runtimes separate state updates from rendering. `ENTER`, `ACTIVATE`,
+`INPUT`, and `POLL` may update app state or consume background data, but
+request display updates through `app_manager_request_render(app, immediate)`
+rather than drawing or flushing the LCD. Only the active app may enqueue a
+frame. The application manager coalesces requests for the current session,
+clears pending work when switching sessions, and dispatches
+`RFSCOUT_APP_RUNTIME_RENDER` before the shared `display_present()` call.
+`app_manager_rendering()` marks this callback boundary for nested menu/view
+helpers that still expose legacy render entry points.
+
+- **Interactive changes** (selection, menu entry/exit, settings, navigation) set
+  `immediate=true`: these bypass the background cadence, but remain serialized
+  with the main task and one shared present operation.
+- **Background changes** set `immediate=false`: repeated notifications
+  coalesce, with at most one active-app background render every **200 ms**
+  (5 Hz). The cap does **not** slow service polling or the independent 1 ms
+  encoder sampling callback.
+- Applications compare display-relevant snapshots, status generations, elapsed
+  seconds, or sensor-frame readiness *before requesting a frame* instead of
+  repainting an unchanged screen. Screens with genuinely live changing
+  information (Thermal, radio spectrum, moving capture graphs) may refresh at
+  the bounded rate while their inputs change. The System Events age view uses
+  second-level changes; Recorder refreshes only recording time/saving progress.
+- Reusable view files **only compose pixels**; they must not call
+  `display_present()` themselves. The shared status bar/battery overlay may
+  invalidate its own pixels. The dedicated power-transition and display-wake
+  paths retain synchronous presentation where needed to ensure safety feedback
+  and controller wakeup, rather than becoming app-owned flushes.
+
+The current ST7789 driver still transfers a full 320x170 RGB565 frame when
+dirty. Deferred frame scheduling is deliberately separate from future
+dirty-rectangle and asynchronous SPI transport improvements. Likewise,
+the original PR #149 TLS/network teardown timings remain available for
+isolating independent foreground stalls; a rendering refactor cannot
+guarantee nonblocking network teardown.
+
+
+
 The application-facing lifecycle is intentionally small:
 
 1. **Enter** — establish inexpensive app-local state against the assigned view.
@@ -248,9 +288,10 @@ per poll, with opposing movement cancelling rather than backlogging.
 Wake/lock consumption clears pending navigation. If it occurs at intermediate
 state `01` or `10`, PR #145 suppresses remaining movement until the next
 `00`/`11` latch and then rebases; this avoids the incomplete wake gesture
-leaking into subsequent UI navigation. The existing GPIO-ISR sampling remains
-different from LilyGO's roughly 1-ms polling, and no hardware glitch filter
-or per-edge SD trace is added. #145 is merged, but the hardware release
+leaking into subsequent UI navigation. PR #149 replaces quadrature GPIO edge interrupts with a dedicated 1 ms
+ESP timer task callback, following LilyGO's sampling style without changing
+the TWO03 decoder, center-button interrupt, or wake/lock rules. No hardware
+glitch filter or per-edge SD trace is added. #145 is merged, but the hardware release
 acceptance remains open: neither CI success nor software regression tests
 prove the full display-wake matrix on a physical device.
 

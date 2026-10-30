@@ -174,7 +174,6 @@ void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_menu_error 
                            a_menu_error ? "ACTION FAILED" : "TURN: SELECT  CENTER: CHANGE",
                            a_menu_error ? theme->warning : theme->secondary,
                            1U );
-        (void)display_present();
         return;
     }
 
@@ -261,5 +260,4 @@ void gps_view_render( bool a_menu_open, unsigned a_menu_item, bool a_menu_error 
         display_fill_rect(
             272 + offsets_x[ sector ], 120 + offsets_y[ sector ], 3, 3, theme->accent );
     }
-    (void)display_present();
 }

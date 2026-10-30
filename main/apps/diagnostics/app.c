@@ -6,6 +6,7 @@
 */
 
 #include "app_descriptor.h"
+#include "app_manager.h"
 
 #include "display.h"
 #include "ui_chrome.h"
@@ -33,6 +34,11 @@ static void draw_swatch( int a_index, const char *a_name, uint16_t a_color )
 
 static void diagnostics_render( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_DIAGNOSTICS, true );
+        return;
+    }
     /* The background and labels are literal RGB565 in the diagnostic view. */
     display_clear( 0x0000U );
     ui_chrome_draw( show_theme_palette ? "DIAG / THEME" : "DIAG / RGB565", 0xFFFFU );
@@ -69,7 +75,6 @@ static void diagnostics_render( void )
         }
     }
     display_draw_text( 6, 159, "CENTER: SWITCH TEST", 0xFFFFU, 1U );
-    (void)display_present();
 }
 
 static rfscout_app_runtime_result_t
@@ -78,6 +83,11 @@ diagnostics_runtime( const rfscout_app_runtime_event_t *a_event )
     if( NULL == a_event )
     {
         return RFSCOUT_APP_RUNTIME_IGNORED;
+    }
+    if( RFSCOUT_APP_RUNTIME_RENDER == a_event->type )
+    {
+        diagnostics_render();
+        return RFSCOUT_APP_RUNTIME_HANDLED;
     }
     if( RFSCOUT_APP_RUNTIME_ENTER == a_event->type )
     {

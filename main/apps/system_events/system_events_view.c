@@ -240,6 +240,11 @@ void system_events_view_scroll( int a_direction )
 
 void system_events_view_render( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_SYSTEM_EVENTS, true );
+        return;
+    }
     const ui_theme_palette_t *theme = ui_theme_get();
     const size_t count = browsing ? snapshot_count : system_events_history_count();
 
@@ -314,5 +319,4 @@ void system_events_view_render( void )
                   seconds );
     }
     display_draw_text( UI_LAYOUT_LEFT_X, UI_LAYOUT_FOOTER_Y, footer, theme->secondary, 1U );
-    (void)display_present();
 }

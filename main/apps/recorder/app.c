@@ -5,6 +5,7 @@
 */
 
 #include "app_descriptor.h"
+#include "app_manager.h"
 
 #include "app_framework.h"
 #include "audio_capture.h"
@@ -34,6 +35,8 @@ static char playback_name[ RFSCOUT_RECORDER_NAME_MAX ];
 static uint8_t playback_volume = 50U;
 static rfscout_recorder_state_t last_state = RFSCOUT_RECORDER_IDLE;
 static int64_t last_refresh_us;
+static uint32_t last_display_second;
+static uint64_t last_saving_frame;
 
 static void emit_event( rfscout_event_type_t a_type, int32_t a_value )
 {
@@ -51,6 +54,11 @@ static esp_err_t probe_recorder( void )
 
 static void render( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_AUDIO, true );
+        return;
+    }
     if( browser_active )
     {
         recorder_view_browser(
@@ -291,7 +299,24 @@ static void poll_recorder( int64_t a_now_us )
     if( a_now_us - last_refresh_us >= RECORDER_REFRESH_INTERVAL_US )
     {
         last_refresh_us = a_now_us;
-        render();
+        if( RFSCOUT_RECORDER_RECORDING == current )
+        {
+            const uint32_t seconds = recorder_recording_elapsed_seconds();
+            if( seconds != last_display_second )
+            {
+                last_display_second = seconds;
+                app_manager_request_render( RFSCOUT_APP_AUDIO, false );
+            }
+        }
+        else if( RFSCOUT_RECORDER_SAVING == current )
+        {
+            const uint64_t frame = (uint64_t)( a_now_us / 150000LL );
+            if( frame != last_saving_frame )
+            {
+                last_saving_frame = frame;
+                app_manager_request_render( RFSCOUT_APP_AUDIO, false );
+            }
+        }
     }
 }
 
@@ -312,10 +337,17 @@ static rfscout_app_runtime_result_t recorder_runtime( const rfscout_app_runtime_
         playback_volume = NULL != config ? config->recorder_volume_percent : 50U;
         last_state = RFSCOUT_RECORDER_IDLE;
         last_refresh_us = 0;
+        last_display_second = UINT32_MAX;
+        last_saving_frame = UINT64_MAX;
         if( ESP_OK != recorder_refresh() )
         {
             ESP_LOGW( TAG, "Recorder media unavailable" );
         }
+        render();
+        return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
+    if( RFSCOUT_APP_RUNTIME_RENDER == a_event->type )
+    {
         render();
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }

@@ -32,8 +32,9 @@
 #define THERMAL_CELL_HEIGHT ( THERMAL_IMAGE_HEIGHT / MLX90640_HEIGHT )
 #define THERMAL_RANGE_MARGIN_DENOMINATOR 16
 
-static const char *TAG = "thermal_view";
 static mlx90640_frame_t frame;
+static bool frame_available;
+static esp_err_t frame_result;
 
 /** @brief Convert one RGB888 triplet to the display's RGB565 representation. */
 static uint16_t rgb565( uint8_t a_red, uint8_t a_green, uint8_t a_blue )
@@ -162,17 +163,24 @@ void thermal_view_enter( void )
                        1U );
     display_draw_text(
         THERMAL_IMAGE_X + 30, THERMAL_IMAGE_Y + 52, "WAITING FOR FRAME", theme->secondary, 1U );
-    (void)display_present();
 }
 
-esp_err_t thermal_view_render( void )
+void thermal_view_reset( void )
+{
+    frame_available = false;
+    frame_result = ESP_ERR_NOT_FINISHED;
+}
+
+esp_err_t thermal_view_sample( void )
 {
     const esp_err_t result = mlx90640_read_frame( &frame );
     if( ESP_ERR_NOT_FINISHED == result )
     {
-        return ESP_OK;
+        return result;
     }
 
+    frame_result = result;
+    frame_available = true;
     if( ESP_OK == result )
     {
         app_framework_report_availability( RFSCOUT_APP_THERMAL,
@@ -180,13 +188,20 @@ esp_err_t thermal_view_render( void )
     }
     else if( !mlx90640_is_detected() )
     {
-        /* Periodic hot-plug probing intentionally skips the active app. Runtime
-           I/O failure is therefore authoritative for an active Thermal session
-           and must update the framework before app_manager navigates away. */
         app_framework_report_availability( RFSCOUT_APP_THERMAL,
                                            RFSCOUT_APP_AVAILABILITY_UNAVAILABLE );
     }
+    return result;
+}
 
+esp_err_t thermal_view_render( void )
+{
+    if( !frame_available )
+    {
+        thermal_view_enter();
+        return ESP_OK;
+    }
+    const esp_err_t result = frame_result;
     const ui_theme_palette_t *theme = ui_theme_get();
     display_clear( theme->background );
     ui_chrome_draw( "THERMAL", theme->secondary );
@@ -195,13 +210,12 @@ esp_err_t thermal_view_render( void )
     {
         display_draw_text( 56, 70, "MLX90640 NOT DETECTED", theme->error, 2 );
         display_draw_text( 73, 98, "I2C ADDRESS 0x33", theme->info, 1 );
-        return display_present();
+        return ESP_OK;
     }
 
     if( ESP_OK != result )
     {
         display_draw_text( 72, 76, "THERMAL READ ERROR", theme->error, 2 );
-        display_present();
         return result;
     }
 
@@ -256,12 +270,7 @@ esp_err_t thermal_view_render( void )
     display_draw_text( THERMAL_INFO_X, 128, "32x24 LIVE", theme->info, 1 );
     display_draw_text( THERMAL_INFO_X, 144, "RAW IR DATA", theme->secondary, 1 );
 
-    const esp_err_t present = display_present();
-    if( ESP_OK != present )
-    {
-        ESP_LOGW( TAG, "thermal LCD refresh failed" );
-    }
-    return present;
+    return ESP_OK;
 }
 
 void thermal_view_menu( unsigned a_selected, bool a_locked, bool a_keep_awake )
@@ -296,5 +305,4 @@ void thermal_view_menu( unsigned a_selected, bool a_locked, bool a_keep_awake )
                        a_keep_awake ? "ON" : "OFF",
                        theme->info,
                        1U );
-    (void)display_present();
 }

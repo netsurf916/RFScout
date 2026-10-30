@@ -92,5 +92,4 @@ void wifi_settings_view_render( unsigned a_selected,
                        a_editing ? "TURN: CHANGE  CENTER: DONE" : "TURN: SELECT  CENTER: ACT",
                        a_editing ? theme->selected : theme->secondary,
                        1U );
-    (void)display_present();
 }

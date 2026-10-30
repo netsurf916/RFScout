@@ -6,6 +6,7 @@
 */
 
 #include "connectivity_probe.h"
+#include "log_writer.h"
 #include "service_fingerprint.h"
 #include "probe_http_capture.h"
 
@@ -154,9 +155,50 @@ finish( rfscout_connectivity_probe_state_t a_state, esp_err_t a_error, int a_htt
     portEXIT_CRITICAL( &state_lock );
 }
 
+/* Temporary diagnostics only: measure before emitting asynchronous SD records. */
+static void log_probe_timing( const char *a_phase,
+                              probe_mode_t a_mode,
+                              int64_t a_elapsed_us,
+                              int64_t a_request_us,
+                              esp_err_t a_error,
+                              int a_http_status )
+{
+    rfscout_log_record_t record;
+    if( log_begin( &record, "connectivity_probe_timing" ) && log_str( &record, "phase", a_phase ) &&
+        log_str( &record, "mode", PROBE_MODE_CAMERA == a_mode ? "gateway" : "https" ) &&
+        log_int( &record, "elapsed_us", a_elapsed_us ) &&
+        log_int( &record, "request_us", a_request_us ) &&
+        log_str( &record, "error", esp_err_to_name( a_error ) ) &&
+        log_int( &record, "http_status", a_http_status ) )
+    {
+        (void)log_end( &record );
+    }
+}
+
+static void log_probe_stop_timing( probe_mode_t a_mode,
+                                   int64_t a_elapsed_us,
+                                   int64_t a_cancel_us,
+                                   int64_t a_join_us,
+                                   bool a_timeout )
+{
+    rfscout_log_record_t record;
+    if( log_begin( &record, "connectivity_probe_timing" ) && log_str( &record, "phase", "stop" ) &&
+        log_str( &record, "mode", PROBE_MODE_CAMERA == a_mode ? "gateway" : "https" ) &&
+        log_int( &record, "elapsed_us", a_elapsed_us ) &&
+        log_int( &record, "cancel_us", a_cancel_us ) && log_int( &record, "join_us", a_join_us ) &&
+        log_bool( &record, "timeout", a_timeout ) )
+    {
+        (void)log_end( &record );
+    }
+}
+
 static void probe_worker( void *a_context )
 {
     (void)a_context;
+
+    const int64_t worker_started_us = esp_timer_get_time();
+    const probe_mode_t worker_mode = mode;
+    log_probe_timing( "begin", worker_mode, 0, 0, ESP_OK, 0 );
 
     response_length = 0U;
     response[ 0 ] = '\0';
@@ -173,6 +215,13 @@ static void probe_worker( void *a_context )
     if( NULL == client )
     {
         finish( RFSCOUT_CONNECTIVITY_PROBE_FAILED, ESP_ERR_NO_MEM, 0 );
+        /* The begin record was already emitted; report allocation failure too. */
+        log_probe_timing( "complete",
+                          worker_mode,
+                          esp_timer_get_time() - worker_started_us,
+                          0,
+                          ESP_ERR_NO_MEM,
+                          0 );
         vTaskDelete( NULL );
         return;
     }
@@ -191,9 +240,12 @@ static void probe_worker( void *a_context )
 
     esp_err_t result = ESP_ERR_INVALID_STATE;
     int http_status = 0;
+    int64_t request_us = 0;
     if( !cancelled )
     {
+        const int64_t request_started_us = esp_timer_get_time();
         result = esp_http_client_perform( client );
+        request_us = esp_timer_get_time() - request_started_us;
         http_status = esp_http_client_get_status_code( client );
         if( ESP_OK != result )
         {
@@ -242,6 +294,14 @@ static void probe_worker( void *a_context )
                 ( ESP_OK == result ) ? ESP_FAIL : result,
                 http_status );
     }
+
+    /* Do not hold the worker-completion signal while the SD logger queues this record. */
+    log_probe_timing( "complete",
+                      worker_mode,
+                      esp_timer_get_time() - worker_started_us,
+                      request_us,
+                      result,
+                      http_status );
     vTaskDelete( NULL );
 }
 
@@ -384,8 +444,10 @@ bool connectivity_probe_is_active( void )
 
 esp_err_t connectivity_probe_stop( void )
 {
+    const int64_t stop_started_us = esp_timer_get_time();
     portENTER_CRITICAL( &state_lock );
     const bool running = ( RFSCOUT_CONNECTIVITY_PROBE_RUNNING == status.state );
+    const probe_mode_t stop_mode = mode;
     cancel_requested = running;
     portEXIT_CRITICAL( &state_lock );
 
@@ -399,17 +461,35 @@ esp_err_t connectivity_probe_stop( void )
         (void)xSemaphoreGive( client_mutex );
     }
 
+    const int64_t join_started_us = esp_timer_get_time();
+    const int64_t cancel_us = join_started_us - stop_started_us;
     const int64_t deadline_us =
-        esp_timer_get_time() + (int64_t)CONNECTIVITY_PROBE_STOP_TIMEOUT_MS * 1000LL;
+        join_started_us + (int64_t)CONNECTIVITY_PROBE_STOP_TIMEOUT_MS * 1000LL;
     while( connectivity_probe_is_active() )
     {
         if( esp_timer_get_time() >= deadline_us )
         {
             ESP_LOGW(
                 TAG, "probe worker did not stop within %u ms", CONNECTIVITY_PROBE_STOP_TIMEOUT_MS );
+            if( running )
+            {
+                const int64_t now_us = esp_timer_get_time();
+                log_probe_stop_timing( stop_mode,
+                                       now_us - stop_started_us,
+                                       cancel_us,
+                                       now_us - join_started_us,
+                                       true );
+            }
             return ESP_ERR_TIMEOUT;
         }
         vTaskDelay( pdMS_TO_TICKS( CONNECTIVITY_PROBE_STOP_POLL_MS ) );
+    }
+
+    if( running )
+    {
+        const int64_t now_us = esp_timer_get_time();
+        log_probe_stop_timing(
+            stop_mode, now_us - stop_started_us, cancel_us, now_us - join_started_us, false );
     }
 
     portENTER_CRITICAL( &state_lock );

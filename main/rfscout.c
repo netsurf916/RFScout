@@ -531,11 +531,75 @@ void app_main( void )
               "RFScout started: app-managed radio lifecycle, passive Wi-Fi channels=1-%u",
               (unsigned)RFSCOUT_WIFI_CHANNEL_MAX );
 
+    /* Temporary latency diagnostics, capped at one SD record/second on stalls. */
+    int64_t previous_loop_start_us = 0;
+    int64_t last_latency_report_us = 0;
+    int64_t peak_loop_gap_us = 0;
+    int64_t peak_input_to_app_us = 0;
+    int64_t peak_app_poll_us = 0;
+    int64_t peak_loop_work_us = 0;
+    int64_t previous_input_to_app_us = 0;
+    int64_t previous_app_poll_us = 0;
+    int64_t previous_loop_work_us = 0;
+    uint32_t slow_loop_count = 0U;
+
     while( true )
     {
+        const int64_t loop_start_us = esp_timer_get_time();
+        /* Pair each completed iteration's work with its actual start-to-start gap.
+           Reporting earlier would split one blocking poll into two misleading records. */
+        if( previous_loop_start_us > 0 )
+        {
+            const int64_t loop_gap_us = loop_start_us - previous_loop_start_us;
+            if( loop_gap_us >= 50000LL || previous_input_to_app_us >= 50000LL ||
+                previous_app_poll_us >= 50000LL || previous_loop_work_us >= 50000LL )
+            {
+                ++slow_loop_count;
+                if( loop_gap_us > peak_loop_gap_us )
+                {
+                    peak_loop_gap_us = loop_gap_us;
+                }
+                if( previous_input_to_app_us > peak_input_to_app_us )
+                {
+                    peak_input_to_app_us = previous_input_to_app_us;
+                }
+                if( previous_app_poll_us > peak_app_poll_us )
+                {
+                    peak_app_poll_us = previous_app_poll_us;
+                }
+                if( previous_loop_work_us > peak_loop_work_us )
+                {
+                    peak_loop_work_us = previous_loop_work_us;
+                }
+            }
+
+            if( slow_loop_count > 0U && loop_start_us - last_latency_report_us >= 1000000LL )
+            {
+                last_latency_report_us = loop_start_us;
+                rfscout_log_record_t latency;
+                if( log_begin( &latency, "ui_latency" ) &&
+                    log_uint( &latency, "slow_loops", slow_loop_count ) &&
+                    log_int( &latency, "loop_gap_us", peak_loop_gap_us ) &&
+                    log_int( &latency, "input_to_app_us", peak_input_to_app_us ) &&
+                    log_int( &latency, "app_poll_us", peak_app_poll_us ) &&
+                    log_int( &latency, "loop_work_us", peak_loop_work_us ) &&
+                    log_uint( &latency, "app", (uint32_t)app_manager_current() ) )
+                {
+                    (void)log_end( &latency );
+                }
+                slow_loop_count = 0U;
+                peak_loop_gap_us = 0;
+                peak_input_to_app_us = 0;
+                peak_app_poll_us = 0;
+                peak_loop_work_us = 0;
+            }
+        }
+        previous_loop_start_us = loop_start_us;
+
         /* Commit worker-requested service disables before any terminal power transition. */
         log_writer_process_disable_request();
         input_poll();
+        const int64_t input_done_us = esp_timer_get_time();
         display_idle_poll();
         gps_poll();
         gps_state_poll();
@@ -549,7 +613,9 @@ void app_main( void )
         }
 
         observation_store_housekeeping();
+        const int64_t app_poll_started_us = esp_timer_get_time();
         app_manager_poll();
+        const int64_t app_poll_us = esp_timer_get_time() - app_poll_started_us;
         storage_dispatch_events();
         system_lifecycle_poll();
         system_events_poll();
@@ -560,9 +626,15 @@ void app_main( void )
            retain the dirty record but retry at a bounded cadence rather than hammering flash. */
         persist_config_if_due();
 
+        app_manager_render_poll();
         (void)display_present();
 
         app_logging_poll();
+
+        previous_loop_work_us = esp_timer_get_time() - loop_start_us;
+        previous_input_to_app_us = app_poll_started_us - input_done_us;
+        previous_app_poll_us = app_poll_us;
+
         vTaskDelay( pdMS_TO_TICKS( 10 ) );
     }
 }

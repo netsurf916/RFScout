@@ -5,6 +5,7 @@
 */
 
 #include "app_descriptor.h"
+#include "app_manager.h"
 
 #include "breadcrumbs.h"
 #include "device_config.h"
@@ -17,6 +18,7 @@
 #include "esp_log.h"
 
 #include <stddef.h>
+#include <string.h>
 
 #define GPS_VIEW_REFRESH_INTERVAL_US 500000LL
 #define GPS_MENU_ITEMS GPS_SETTING_COUNT
@@ -29,9 +31,17 @@ static unsigned menu_item;
 static int last_led_sector = -1;
 static bool led_refresh_pending;
 static bool led_ready;
+static rfscout_gps_snapshot_t last_ui_gps;
+static bool last_ui_gps_valid;
+static bool last_ui_receiver_present;
 
 static void render( void )
 {
+    if( !app_manager_rendering() )
+    {
+        app_manager_request_render( RFSCOUT_APP_GPS, true );
+        return;
+    }
     gps_view_render( menu_open, menu_item, menu_error );
 }
 
@@ -224,6 +234,8 @@ static rfscout_app_runtime_result_t gps_runtime( const rfscout_app_runtime_event
     if( RFSCOUT_APP_RUNTIME_ENTER == a_event->type )
     {
         last_refresh_us = 0;
+        last_ui_gps_valid = false;
+        last_ui_receiver_present = false;
         menu_open = false;
         menu_item = 0U;
         menu_error = false;
@@ -243,6 +255,11 @@ static rfscout_app_runtime_result_t gps_runtime( const rfscout_app_runtime_event
         display_idle_set_keep_awake( false );
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }
+    if( RFSCOUT_APP_RUNTIME_RENDER == a_event->type )
+    {
+        render();
+        return RFSCOUT_APP_RUNTIME_HANDLED;
+    }
     if( RFSCOUT_APP_RUNTIME_POLL == a_event->type )
     {
         if( led_ready && !device_config_get()->gps_led_enabled )
@@ -253,11 +270,27 @@ static rfscout_app_runtime_result_t gps_runtime( const rfscout_app_runtime_event
             }
         }
         update_direction_led();
-        if( 0 == last_refresh_us ||
-            a_event->now_us - last_refresh_us >= GPS_VIEW_REFRESH_INTERVAL_US )
+        if( !menu_open && ( 0 == last_refresh_us ||
+                            a_event->now_us - last_refresh_us >= GPS_VIEW_REFRESH_INTERVAL_US ) )
         {
             last_refresh_us = a_event->now_us;
-            render();
+            rfscout_gps_snapshot_t current = { 0 };
+            const bool present = gps_snapshot_get( &current );
+            /* Unshown UTC/age fields cannot turn a static screen into a refresh loop. */
+            current.utc_epoch = 0;
+            current.time_age_ms = 0;
+            if( !gps_location_fresh( &current ) )
+            {
+                current.location_age_ms = 0;
+            }
+            if( !last_ui_gps_valid || present != last_ui_receiver_present ||
+                0 != memcmp( &current, &last_ui_gps, sizeof( current ) ) )
+            {
+                last_ui_gps = current;
+                last_ui_gps_valid = true;
+                last_ui_receiver_present = present;
+                app_manager_request_render( RFSCOUT_APP_GPS, false );
+            }
         }
         return RFSCOUT_APP_RUNTIME_HANDLED;
     }

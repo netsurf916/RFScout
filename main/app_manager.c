@@ -24,12 +24,17 @@
 #include <stddef.h>
 
 #define APP_ACTIVATION_DELAY_US 500000LL
+#define APP_BACKGROUND_RENDER_INTERVAL_US 200000LL
 
 static const char *TAG = "app_manager";
 static rfscout_app_id_t active_app;
 static int64_t app_entered_us;
 static bool app_activated;
 static bool app_locked;
+static bool render_pending;
+static bool render_immediate;
+static bool in_app_render;
+static int64_t last_render_us;
 
 static bool app_available( rfscout_app_id_t a_app )
 {
@@ -93,6 +98,9 @@ static rfscout_app_runtime_result_t dispatch_runtime( rfscout_app_id_t a_app,
 static void enter_app( rfscout_app_id_t a_app )
 {
     const rfscout_app_descriptor_t *descriptor = app_framework_descriptor( a_app );
+    render_pending = false;
+    render_immediate = false;
+    last_render_us = 0;
     app_entered_us = esp_timer_get_time();
     app_activated = ( NULL == descriptor ) || !descriptor->requires_activation;
     (void)dispatch_runtime( a_app, RFSCOUT_APP_RUNTIME_ENTER, NULL, app_entered_us, app_activated );
@@ -366,6 +374,8 @@ bool app_manager_set_locked( bool a_locked )
     rfscout_event_emit( app_locked ? RFSCOUT_EVENT_APP_LOCKED : RFSCOUT_EVENT_APP_UNLOCKED,
                         RFSCOUT_EVENT_SOURCE_SYSTEM,
                         app_locked ? 1 : 0 );
+    /* App menus may display the lock state even while all background redraws are paused. */
+    app_manager_request_render( active_app, true );
     return app_locked;
 }
 
@@ -383,6 +393,43 @@ bool app_manager_select( rfscout_app_id_t a_app )
     }
     rfscout_event_emit( RFSCOUT_EVENT_NAVIGATE, (uint8_t)active_app, 0 );
     return true;
+}
+
+bool app_manager_rendering( void )
+{
+    return in_app_render;
+}
+
+void app_manager_request_render( rfscout_app_id_t a_app, bool a_immediate )
+{
+    if( a_app != active_app )
+    {
+        return;
+    }
+    render_pending = true;
+    render_immediate = render_immediate || a_immediate;
+}
+
+void app_manager_render_poll( void )
+{
+    if( !render_pending )
+    {
+        return;
+    }
+    const int64_t now_us = esp_timer_get_time();
+    if( !render_immediate && last_render_us > 0 &&
+        now_us - last_render_us < APP_BACKGROUND_RENDER_INTERVAL_US )
+    {
+        return;
+    }
+    render_pending = false;
+    render_immediate = false;
+    last_render_us = now_us;
+    in_app_render = true;
+    const rfscout_app_runtime_result_t result =
+        dispatch_runtime( active_app, RFSCOUT_APP_RUNTIME_RENDER, NULL, now_us, app_activated );
+    in_app_render = false;
+    handle_runtime_result( result );
 }
 
 void app_manager_poll( void )
