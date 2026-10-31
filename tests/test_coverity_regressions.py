@@ -144,8 +144,10 @@ int main(void)
     assert(decode_rssi(255U) == -74);
     for(unsigned raw = 0U; raw <= 255U; ++raw)
     {
+        const int signed_raw = raw >= 128U ? (int)raw - 256 : (int)raw;
+        const int expected = signed_raw / 2 - 74;
         const int8_t decoded = decode_rssi((uint8_t)raw);
-        assert(decoded >= -128 && decoded <= -11);
+        assert(decoded == ( expected < -128 ? -128 : expected ));
     }
     return 0;
 }
@@ -168,6 +170,7 @@ int main(void)
 #define ESP_OK 0
 #define ESP_FAIL -1
 #define ESP_ERR_INVALID_STATE 0x103
+typedef int esp_err_t;
 """
                 + function
                 + r"""
