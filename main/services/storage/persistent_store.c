@@ -38,16 +38,21 @@ static SemaphoreHandle_t store_mutex;
 
 static esp_err_t ensure_directory( const char *a_path )
 {
-    struct stat info;
-    if( 0 == stat( a_path, &info ) )
-    {
-        return S_ISDIR( info.st_mode ) ? ESP_OK : ESP_ERR_INVALID_STATE;
-    }
-    if( 0 == mkdir( a_path, 0755 ) || EEXIST == errno )
+    /* Attempt creation first; EEXIST is only successful for a real directory. */
+    if( 0 == mkdir( a_path, 0755 ) )
     {
         return ESP_OK;
     }
-    return ESP_FAIL;
+    if( EEXIST != errno )
+    {
+        return ESP_FAIL;
+    }
+    struct stat info;
+    if( 0 != stat( a_path, &info ) )
+    {
+        return ESP_FAIL;
+    }
+    return S_ISDIR( info.st_mode ) ? ESP_OK : ESP_ERR_INVALID_STATE;
 }
 
 static bool temp_name( const char *a_name )
