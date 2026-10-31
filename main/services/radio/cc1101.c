@@ -17,6 +17,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include <stdint.h>
 #include <string.h>
 
 #define CC1101_SPI_HOST SPI2_HOST
