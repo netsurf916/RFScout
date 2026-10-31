@@ -366,9 +366,14 @@ static saved_network_bssid_t *append_bssid( saved_network_entry_t *a_entry )
         {
             return NULL;
         }
-        memmove( &a_entry->bssids[ index ],
-                 &a_entry->bssids[ index + 1U ],
-                 ( a_entry->bssid_count - index - 1U ) * sizeof( a_entry->bssids[ 0 ] ) );
+        /* Removing the last slot requires no copy. Avoid passing a one-past
+           array pointer to memmove even when its byte count would be zero. */
+        if( index + 1U < a_entry->bssid_count )
+        {
+            memmove( &a_entry->bssids[ index ],
+                     &a_entry->bssids[ index + 1U ],
+                     ( a_entry->bssid_count - index - 1U ) * sizeof( a_entry->bssids[ 0 ] ) );
+        }
         --a_entry->bssid_count;
     }
     return &a_entry->bssids[ a_entry->bssid_count++ ];
