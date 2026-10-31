@@ -44,12 +44,13 @@ def compile_and_run(source, *args):
         src = pathlib.Path(directory) / "test.c"
         executable = pathlib.Path(directory) / "test"
         src.write_text(source)
-        subprocess.run(
+        compile_result = subprocess.run(
             [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror", "-o", str(executable), str(src)],
-            check=True,
             capture_output=True,
             text=True,
         )
+        if compile_result.returncode:
+            raise AssertionError(compile_result.stderr)
         subprocess.run([str(executable), *map(str, args)], check=True, capture_output=True, text=True)
 
 
