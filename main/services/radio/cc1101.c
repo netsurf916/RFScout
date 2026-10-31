@@ -207,7 +207,9 @@ static void disable_rf_path( void )
 static int8_t decode_rssi( uint8_t a_raw )
 {
     const int16_t signed_raw = ( a_raw >= 128U ) ? ( (int16_t)a_raw - 256 ) : (int16_t)a_raw;
-    return (int8_t)( signed_raw / 2 - 74 );
+    const int16_t dbm = signed_raw / 2 - 74;
+    /* CC1101 values below -128 dBm must saturate, not wrap to a positive RSSI. */
+    return (int8_t)( dbm < INT8_MIN ? INT8_MIN : dbm );
 }
 
 static bool frequency_supported( uint32_t a_frequency_khz )
