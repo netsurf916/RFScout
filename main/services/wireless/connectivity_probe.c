@@ -57,6 +57,11 @@ static char camera_url[ 32 ];
 static void
 copy_trace_value( const char *a_trace, const char *a_key, char *a_destination, size_t a_capacity )
 {
+    /* A zero-length destination would underflow a_capacity - 1 below. */
+    if( NULL == a_trace || NULL == a_key || NULL == a_destination || 0U == a_capacity )
+    {
+        return;
+    }
     const size_t key_length = strlen( a_key );
     const char *line = a_trace;
     while( '\0' != *line )
