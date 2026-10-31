@@ -350,6 +350,10 @@ static saved_network_bssid_t *entry_bssid( saved_network_entry_t *a_entry,
 /** Make room by evicting the oldest rejected BSSID; associated BSSIDs are never evicted. */
 static saved_network_bssid_t *append_bssid( saved_network_entry_t *a_entry )
 {
+    if( a_entry->bssid_count > SAVED_NETWORK_BSSID_MAX_COUNT )
+    {
+        return NULL;
+    }
     if( a_entry->bssid_count == SAVED_NETWORK_BSSID_MAX_COUNT )
     {
         size_t index = 0U;
