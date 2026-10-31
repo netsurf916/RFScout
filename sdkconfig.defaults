@@ -10,10 +10,15 @@ CONFIG_BT_NIMBLE_ROLE_OBSERVER=y
 CONFIG_BT_NIMBLE_ROLE_BROADCASTER=n
 CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
 CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=n
+# RFScout observes advertisements; it does not pair, bond, or run GATT services.
+CONFIG_BT_NIMBLE_SECURITY_ENABLE=n
 
 # Hotspots supports Wi-Fi Enhanced Open (OWE) associations. Keep station-side
 # OWE support enabled so WIFI_AUTH_OWE records can be joined when selected.
 CONFIG_ESP_WIFI_ENABLE_WPA3_OWE_STA=y
+# RFScout is a station/monitor, not a SoftAP or enterprise EAP supplicant.
+CONFIG_ESP_WIFI_SOFTAP_SUPPORT=n
+CONFIG_ESP_WIFI_ENTERPRISE_SUPPORT=n
 
 # Supported RFScout ESP32-S3 boards provide external OPI PSRAM. Large working
 # sets such as observation history live there rather than consuming the SoC's
@@ -34,6 +39,8 @@ CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 # Mozilla-derived root certificate bundle. Hostname verification remains enabled.
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
 CONFIG_MBEDTLS_DEFAULT_CERTIFICATE_BUNDLE=y
+# HTTPS is only used as a client; do not compile TLS server support.
+CONFIG_MBEDTLS_TLS_CLIENT_ONLY=y
 
 # Favor external PSRAM for mbedTLS dynamic allocations so TLS certificate
 # verification does not compete with Wi-Fi and DMA for limited internal RAM.
