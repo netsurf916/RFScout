@@ -1338,7 +1338,7 @@ uint8_t device_config_gps_movement_step( uint8_t a_meters, int a_direction )
 {
     const int index = gps_movement_index( a_meters );
     const int count = (int)GPS_MOVEMENT_OPTION_COUNT;
-    if( index < 0 )
+    if( index < 0 || index >= count )
     {
         return RFSCOUT_GPS_MOVEMENT_DEFAULT_M;
     }
