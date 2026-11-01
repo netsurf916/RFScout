@@ -93,6 +93,7 @@ typedef struct
     double longitude;
     int64_t utc_epoch;
     uint32_t seen_ms;
+    int8_t rssi; /**< RSSI in dBm for the receive observation at this location. */
 } observation_location_event_t;
 
 /** @brief Borrowed packet event, valid only during callback invocation. */
