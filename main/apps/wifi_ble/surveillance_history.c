@@ -127,7 +127,7 @@ static int format_point( void *a_context, size_t a_index, char *a_line, size_t a
                                  a_capacity,
                                  length,
                                  ",\"lat\":%.7f,\"lon\":%.7f,\"mac\":\"%02X%02X%02X%02X%02X%02X\","
-                                 "\"address_type\":\"%s\",\"class\":\"%s\",\"seen_ms\":%lu}",
+                                 "\"address_type\":\"%s\",\"class\":\"%s\",\"seen_ms\":%lu,\"rssi\":%d}",
                                  point->latitude,
                                  point->longitude,
                                  point->address[ 0 ],
@@ -138,7 +138,8 @@ static int format_point( void *a_context, size_t a_index, char *a_line, size_t a
                                  point->address[ 5 ],
                                  address_type_name( point->address_type ),
                                  surveillance_name( point->classification ),
-                                 (unsigned long)point->seen_ms );
+                                 (unsigned long)point->seen_ms,
+                                 (int)point->rssi );
 }
 
 static bool surveillance_history_flush_one( void )
