@@ -124,6 +124,7 @@ static int format_point( void *a_context, size_t a_index, char *a_line, size_t a
         length = media_journal_printf(
             a_line, a_capacity, length, ",\"utc\":%lld", (long long)point->utc_epoch );
     return media_journal_printf(
+        a_line,
         a_capacity,
         length,
         ",\"lat\":%.7f,\"lon\":%.7f,\"mac\":\"%02X%02X%02X%02X%02X%02X\","
