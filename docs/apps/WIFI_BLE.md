@@ -240,11 +240,13 @@ queued when that identity's receiver position has moved by the shared **Movement
 since its previous record (the first qualified packet always records), so a stationary
 receiver does not repeat identical positions. Records are appended to the app's `locations`
 collection as `surveillance-*.jsonl` segments with full MAC, address type, classification,
-receiver latitude/longitude, trusted UTC when available, and observation time; `type` and
-`class` use readable labels (for example, `public_or_wifi` and `Camera / doorbell`). The
+receiver latitude/longitude, trusted UTC when available, observation time, and the
+received RSSI in dBm for that location sample; `type` and `class` use readable labels (for example, `public_or_wifi` and `Camera / doorbell`). The
 canonical store emits a compact event to an app-owned sink after releasing its lock. The sink
 only enqueues records into a preallocated PSRAM buffer; queue growth and batched SD writes
 happen from the app poll, never inside radio callbacks.
+RSSI is the latest signal measurement associated with the canonical device observation,
+not a range estimate or proof that every MAC inferred from a Wi-Fi frame transmitted it.
 The journal is retained for offline analysis. It is not replayed to populate the live UI. A
 failed append that was rolled back is retried while the app session remains active; an
 uncertain batch is discarded and later records continue in a fresh segment, following the

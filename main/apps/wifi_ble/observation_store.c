@@ -682,6 +682,7 @@ static bool record_receiver_location( rf_device_t *a_device,
     a_event->longitude = a_gps->longitude_deg;
     a_event->utc_epoch = a_gps->time_valid ? (int64_t)a_gps->utc_epoch : 0;
     a_event->seen_ms = a_device->last_seen_ms;
+    a_event->rssi = a_device->rssi;
     return true;
 }
 

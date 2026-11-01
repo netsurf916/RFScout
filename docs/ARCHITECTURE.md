@@ -735,7 +735,8 @@ when the identity's receiver position has moved by the shared movement trigger s
 identity's previous record (its first qualified packet always records). Records go to the
 app-owned `locations` collection through the shared `surveillance` journal (1 MiB segments,
 64 retained) and contain full MAC, address type, classification, receiver latitude/longitude,
-valid UTC when available, and last-seen milliseconds. The app poll batches SD writes outside
+valid UTC when available, last-seen milliseconds, and the observation RSSI in dBm.
+The app poll batches SD writes outside
 the observation-store lock; a rolled-back batch is retried during the current app session,
 and an uncertain batch is dropped rather than duplicated. App exit attempts a final flush.
 Insufficient memory or unavailable media can still result in loss; no cross-session queue
