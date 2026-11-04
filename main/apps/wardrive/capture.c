@@ -48,6 +48,7 @@ typedef struct
     uint32_t count;
     uint32_t oldest;
     uint32_t newest;
+    uint64_t bytes;
     bool found;
 } capture_files_t;
 
@@ -66,6 +67,9 @@ static rfscout_media_collection_t collection;
 static rfscout_media_file_t output;
 static bool output_open;
 static uint32_t next_segment;
+static uint32_t retained_oldest;
+static uint32_t retained_count;
+static uint64_t retained_bytes; /**< closed segments on the card */
 static uint32_t current_bytes;
 static int64_t capture_monotonic_origin_us;
 static uint64_t capture_epoch_origin_us;
@@ -199,31 +203,75 @@ static bool visit_capture( const rfscout_media_entry_t *a_entry, void *a_context
     }
     files->found = true;
     ++files->count;
+    files->bytes += a_entry->size_bytes;
     return true;
 }
 
-static bool prune_files( uint32_t a_allowed )
+/*
+ * Listing a collection stats every file while holding the card, which grows quadratically with
+ * the file count, so rotation works from the start-of-capture scan instead of listing again.
+ * A missing sequence number is a gap; only a removed file changes the totals.
+ */
+static bool remove_oldest( void )
 {
-    for( unsigned tries = 0U; tries < 512U; ++tries )
+    for( unsigned tries = 0U; tries < 512U && retained_count > 0U; ++tries )
     {
-        capture_files_t files = { 0 };
-        const esp_err_t result = media_list( &collection, visit_capture, &files );
+        char name[ 32 ];
+        segment_name( retained_oldest, name, sizeof( name ) );
+        rfscout_media_entry_t entry = { 0 };
+        esp_err_t result = media_stat( &collection, name, &entry );
+        if( ESP_OK == result )
+        {
+            result = media_remove( &collection, name );
+        }
         if( ESP_OK != result && ESP_ERR_NOT_FOUND != result )
         {
             return false;
         }
-        if( files.count <= a_allowed )
+        ++retained_oldest;
+        if( ESP_OK == result )
         {
+            --retained_count;
+            retained_bytes -= entry.size_bytes < retained_bytes ? entry.size_bytes : retained_bytes;
             return true;
         }
-        char name[ 32 ];
-        segment_name( files.oldest, name, sizeof( name ) );
-        if( ESP_OK != media_remove( &collection, name ) )
+    }
+    return false;
+}
+
+static bool prune_files( uint32_t a_allowed )
+{
+    while( retained_count > a_allowed )
+    {
+        if( !remove_oldest() )
         {
             return false;
         }
     }
-    return false;
+    return true;
+}
+
+/**
+ * Keep the reserve and room for a whole segment free, deleting the oldest captures when the card
+ * is what limits retention. When deleting every capture could not free enough, the card is full of
+ * other data, so nothing is deleted and the caller stops with a storage error.
+ */
+static bool make_room( void )
+{
+    const uint64_t needed = RFSCOUT_LOG_FREE_RESERVE + config.file_limit_bytes;
+    uint64_t free_bytes = 0U;
+    if( ESP_OK != media_store_space( NULL, &free_bytes ) || free_bytes + retained_bytes < needed )
+    {
+        return false;
+    }
+    while( free_bytes < needed )
+    {
+        if( !remove_oldest() || ESP_OK != media_store_space( NULL, &free_bytes ) )
+        {
+            return false;
+        }
+    }
+    return true;
 }
 
 static void close_segment( void )
@@ -239,28 +287,29 @@ static void close_segment( void )
             stats.storage_error = true;
         }
         output_open = false;
+        retained_bytes += current_bytes;
     }
 }
 
 static bool open_segment( void )
 {
-    /* Never discard previous recordings unless a replacement can be created.
-       The reserve must hold before creating and validating a new segment. */
-    uint64_t free_bytes = 0U;
-    if( ESP_OK != media_store_space( NULL, &free_bytes ) ||
-        free_bytes < RFSCOUT_LOG_FREE_RESERVE + config.file_limit_bytes )
+    /* The reserve must hold before creating and validating a new segment. */
+    if( !make_room() )
     {
         return false;
     }
     char name[ 32 ];
     for( unsigned attempts = 0U; attempts < 128U; ++attempts )
     {
-        segment_name( next_segment++, name, sizeof( name ) );
+        const uint32_t sequence = next_segment++;
+        segment_name( sequence, name, sizeof( name ) );
         const esp_err_t result =
             media_open( &collection, name, RFSCOUT_MEDIA_OPEN_CREATE_NEW, &output );
         if( ESP_OK == result )
         {
             output_open = true;
+            retained_oldest = 0U == retained_count ? sequence : retained_oldest;
+            ++retained_count;
             break;
         }
         if( ESP_ERR_NOT_ALLOWED != result )
@@ -537,7 +586,8 @@ esp_err_t wardrive_capture_start( const wardrive_config_t *a_config )
 {
     if( NULL == a_config || capture_task != NULL || packet_pool != NULL ||
         a_config->file_limit_bytes < CAPTURE_FILE_MIN ||
-        a_config->file_limit_bytes > CAPTURE_FILE_MAX || a_config->max_files == 0U )
+        a_config->file_limit_bytes > CAPTURE_FILE_MAX || a_config->max_files == 0U ||
+        a_config->max_files > WARDRIVE_CAPTURE_MAX_FILES )
     {
         return ESP_ERR_INVALID_ARG;
     }
@@ -563,9 +613,15 @@ esp_err_t wardrive_capture_start( const wardrive_config_t *a_config )
     stop_pending = false;
     accepting = false;
     capture_files_t files = { 0 };
+    retained_oldest = 0U;
+    retained_count = 0U;
+    retained_bytes = 0U;
     if( ESP_OK == media_list( &collection, visit_capture, &files ) )
     {
         next_segment = files.found ? files.newest + 1U : 0U;
+        retained_oldest = files.oldest;
+        retained_count = files.count;
+        retained_bytes = files.bytes;
     }
     const rfscout_memory_owner_t owner = memory_manager_app_owner( RFSCOUT_APP_WARDRIVE );
     packet_pool = memory_manager_calloc( owner, CAPTURE_QUEUE_COUNT, sizeof( *packet_pool ) );

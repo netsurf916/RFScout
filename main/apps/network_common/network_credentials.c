@@ -52,7 +52,8 @@ static unsigned selected;
 static char ssid[ SAVED_NETWORK_SSID_MAX_LENGTH + 1U ];
 /** Profile being viewed or replaced; 0 while entering a new profile. */
 static uint32_t profile_id;
-static saved_network_profile_t profile;
+static uint8_t profile_ordinal;
+static bool profile_has_password;
 /** Same-SSID candidates for the picker, in app-session memory. */
 static saved_network_profile_t *candidates;
 static size_t candidate_count;
@@ -108,7 +109,8 @@ void network_credentials_close( void )
     hide_password();
     app_text_entry_clear( &entry );
     release_candidates();
-    memset( &profile, 0, sizeof( profile ) );
+    profile_ordinal = 0U;
+    profile_has_password = false;
     screen = CREDENTIALS_CLOSED;
     profile_id = 0U;
     error_text[ 0 ] = '\0';
@@ -149,10 +151,23 @@ static esp_err_t load_candidates( int32_t a_auth_mode, bool a_filter_auth )
 void network_credentials_open_profile( uint32_t a_profile_id )
 {
     network_credentials_close();
-    const esp_err_t result = saved_networks_get( a_profile_id, &profile );
+    /* A whole snapshot is large, so it stays in app-session memory only while copying. */
+    saved_network_profile_t *loaded = app_session_calloc( 1U, sizeof( *loaded ) );
+    const esp_err_t result =
+        NULL == loaded ? ESP_ERR_NO_MEM : saved_networks_get( a_profile_id, loaded );
     set_error( result );
     profile_id = ESP_OK == result ? a_profile_id : 0U;
-    snprintf( ssid, sizeof( ssid ), "%s", profile.ssid );
+    ssid[ 0 ] = '\0';
+    if( ESP_OK == result )
+    {
+        snprintf( ssid, sizeof( ssid ), "%s", loaded->ssid );
+        profile_ordinal = loaded->ordinal;
+        profile_has_password = loaded->has_password;
+    }
+    if( NULL != loaded )
+    {
+        (void)app_session_free( loaded );
+    }
     selected = PROFILE_ROW_BACK;
     screen = CREDENTIALS_PROFILE;
 }
@@ -214,7 +229,7 @@ static void render_profile( void )
     const ui_theme_palette_t *theme = ui_theme_get();
     char label[ CREDENTIALS_LABEL_LENGTH ];
     network_credentials_label(
-        profile.ssid, profile.ordinal, profile.ordinal > 1U, label, sizeof( label ) );
+        ssid, profile_ordinal, profile_ordinal > 1U, label, sizeof( label ) );
     display_draw_text( UI_LAYOUT_LEFT_X, CREDENTIALS_INFO_Y, label, theme->accent, 1U );
 
     char masked[ SAVED_NETWORK_PASSWORD_MAX_LENGTH + 1U ] = "<none>";
@@ -222,7 +237,7 @@ static void render_profile( void )
     {
         snprintf( masked, sizeof( masked ), "%s", '\0' != password[ 0 ] ? password : "<none>" );
     }
-    else if( profile.has_password )
+    else if( profile_has_password )
     {
         snprintf( masked, sizeof( masked ), "********" );
     }
@@ -232,7 +247,7 @@ static void render_profile( void )
     const ui_menu_row_t rows[ PROFILE_ROW_COUNT ] = {
         { .label = "Back", .state.available = true },
         { .label = password_shown ? "Hide password" : "Show password",
-          .state.available = profile.has_password },
+          .state.available = profile_has_password },
         { .label = "Edit password", .state.available = 0U != profile_id },
         { .label = "Forget", .state.available = 0U != profile_id },
     };
@@ -386,7 +401,7 @@ static bool handle_profile_select( network_credentials_outcome_t *a_outcome )
     {
         return false;
     }
-    if( PROFILE_ROW_SHOW == selected && profile.has_password )
+    if( PROFILE_ROW_SHOW == selected && profile_has_password )
     {
         if( password_shown )
         {

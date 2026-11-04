@@ -96,8 +96,7 @@ int main(void)
 #include <stdint.h>
 #include <string.h>
 #define SAVED_NETWORK_BSSID_MAX_COUNT 3U
-#define SAVED_NETWORK_BSSID_REJECTED 2U
-typedef struct { uint8_t state; } saved_network_bssid_t;
+typedef struct { uint8_t id; } saved_network_bssid_t;
 typedef struct {
     size_t bssid_count;
     saved_network_bssid_t bssids[SAVED_NETWORK_BSSID_MAX_COUNT];
@@ -107,18 +106,16 @@ typedef struct {
             + r"""
 int main(void)
 {
-    saved_network_entry_t item = { .bssid_count = 3U, .bssids = {{1}, {1}, {2}} };
+    saved_network_entry_t item = { .bssid_count = 2U, .bssids = {{1}, {2}} };
     assert(append_bssid(&item) == &item.bssids[2]);
     assert(item.bssid_count == 3U);
 
-    item = (saved_network_entry_t){ .bssid_count = 3U, .bssids = {{1}, {2}, {1}} };
+    /* A full list forgets the oldest BSSID and keeps the rest in learned order. */
+    item = (saved_network_entry_t){ .bssid_count = 3U, .bssids = {{1}, {2}, {3}} };
     assert(append_bssid(&item) == &item.bssids[2]);
-    assert(item.bssids[1].state == 1U);
+    assert(item.bssids[0].id == 2U && item.bssids[1].id == 3U);
     assert(item.bssid_count == 3U);
 
-    item = (saved_network_entry_t){ .bssid_count = 3U, .bssids = {{1}, {1}, {1}} };
-    assert(NULL == append_bssid(&item));
-    assert(item.bssid_count == 3U);
     item.bssid_count = 4U;
     assert(NULL == append_bssid(&item));
     return 0;

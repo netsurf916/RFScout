@@ -24,10 +24,10 @@ On initial acquisition, the sensor's refresh-control register is set to **8 Hz a
 
 The shared I2C service imposes a **250-ms cooldown** after a hardware timeout. After **three consecutive failed sensor acquisitions at 400 kHz**, Thermal discards partial data, attempts to remove its existing handle, and reattaches at a **sticky 100 kHz** for the remainder of this boot. Refresh setup is repeated after downgrade. The old handle is retained if removal fails. If fallback cannot recover the sensor, it may be marked unavailable and probed again through the normal hot-plug path. Mixed-speed operation, cable/pull-up integrity and recovery remain hardware acceptance items.
 
-See the [per-device I2C clock policy](../design/PER_DEVICE_I2C_CLOCK_POLICY.md).
+The fallback is a reliability measure, not proof that 400 kHz is electrically safe for a given cable, pull-ups and supply. The system never exceeds 400 kHz, although the sensor supports up to 1 MHz. See the [shared I2C policy](../ARCHITECTURE.md#shared-i2c-per-device-transfer-policy).
 
-## Current limitations and v0.4.0 acceptance
+## Current limitations and hardware validation
 
 MLX90640 EEPROM calibration, absolute-temperature conversion, invalid-pixel compensation, user-lockable display range and retained image history are not implemented. Raw IR data and local spatial filtering must never be presented as absolute degrees Celsius.
 
-Before v0.4.0 publication, verify sensor-present and sensor-absent navigation, SD-absent operation, incremental frame updates, lock and keep-awake behavior, app transitions, battery telemetry coexistence and fallback/hot-plug handling on representative physical hardware. Passing CI does not establish optional sensor/electrical validation.
+Hardware validation covers sensor-present and sensor-absent navigation, SD-absent operation, incremental frame updates, lock and keep-awake behavior, app transitions, battery telemetry coexistence and fallback/hot-plug handling on representative physical hardware. Passing CI does not establish optional sensor/electrical validation; see [Release validation](../RELEASE_VALIDATION.md).

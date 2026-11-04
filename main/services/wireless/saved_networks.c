@@ -11,11 +11,16 @@
 #include "memory_manager.h"
 #include "persistent_store.h"
 
+#include "esp_log.h"
+
 #include <string.h>
 
 #define SAVED_NETWORK_RECORD_KEY "networks"
 #define SAVED_NETWORK_RECORD_MAGIC 0x4f54414eU
-#define SAVED_NETWORK_RECORD_VERSION 2U
+#define SAVED_NETWORK_RECORD_VERSION 3U
+#define SAVED_NETWORK_LEGACY_VERSION 2U
+#define SAVED_NETWORK_LEGACY_BSSID_COUNT 32U
+#define SAVED_NETWORK_LEGACY_ASSOCIATED 1U
 
 typedef struct
 {
@@ -39,6 +44,41 @@ typedef struct
    The transient credential record belongs to the platform, not either caller app. */
 static saved_network_record_t *record;
 
+/* Layout of version 2 records, written through firmware v0.4.0. Saved passwords must survive
+   the update, so this one layout is converted rather than rejected; its rejected BSSIDs are
+   dropped because nothing uses them. */
+typedef struct
+{
+    uint8_t address[ 6 ];
+    uint8_t state;
+    int32_t auth_mode;
+} saved_network_legacy_bssid_t;
+
+typedef struct
+{
+    uint32_t profile_id;
+    int32_t auth_mode;
+    uint8_t bssid_count;
+    saved_network_legacy_bssid_t bssids[ SAVED_NETWORK_LEGACY_BSSID_COUNT ];
+    char ssid[ SAVED_NETWORK_SSID_MAX_LENGTH + 1U ];
+    char password[ SAVED_NETWORK_PASSWORD_MAX_LENGTH + 1U ];
+} saved_network_legacy_entry_t;
+
+typedef struct
+{
+    uint32_t magic;
+    uint16_t version;
+    uint16_t count;
+    saved_network_legacy_entry_t entries[ SAVED_NETWORK_MAX_COUNT ];
+} saved_network_legacy_record_t;
+
+_Static_assert( 3976U == sizeof( saved_network_legacy_record_t ),
+                "version 2 layout must match records already on devices" );
+_Static_assert( sizeof( saved_network_record_t ) <= RFSCOUT_PERSISTENT_RECORD_MAX_BYTES,
+                "saved networks must fit one persistent record" );
+
+static const char *TAG = "saved_networks";
+
 static bool entry_valid( const saved_network_entry_t *a_entry )
 {
     const size_t ssid_length = strnlen( a_entry->ssid, sizeof( a_entry->ssid ) );
@@ -49,21 +89,90 @@ static bool entry_valid( const saved_network_entry_t *a_entry )
            a_entry->bssid_count <= SAVED_NETWORK_BSSID_MAX_COUNT;
 }
 
+/** Volatile writes ensure credentials are cleared before PSRAM is returned. */
+static void wipe_and_free( void *a_memory, size_t a_length )
+{
+    volatile uint8_t *bytes = a_memory;
+    for( size_t index = 0U; index < a_length; ++index )
+    {
+        bytes[ index ] = 0U;
+    }
+    (void)memory_manager_free(
+        ( rfscout_memory_owner_t ){ .owner_class = RFSCOUT_MEMORY_OWNER_PLATFORM }, a_memory );
+}
+
 static void release( void )
 {
     if( NULL == record )
     {
         return;
     }
-    /* Volatile writes ensure credentials are cleared before PSRAM is returned. */
-    volatile uint8_t *bytes = (volatile uint8_t *)record;
-    for( size_t index = 0U; index < sizeof( *record ); ++index )
-    {
-        bytes[ index ] = 0U;
-    }
-    (void)memory_manager_free(
-        ( rfscout_memory_owner_t ){ .owner_class = RFSCOUT_MEMORY_OWNER_PLATFORM }, record );
+    wipe_and_free( record, sizeof( *record ) );
     record = NULL;
+}
+
+/** Convert a version 2 record into the loaded record and store it; a bad one is deleted. */
+static esp_err_t convert_legacy_record( void )
+{
+    const rfscout_memory_owner_t owner = {
+        .owner_class = RFSCOUT_MEMORY_OWNER_PLATFORM,
+    };
+    saved_network_legacy_record_t *legacy = memory_manager_calloc( owner, 1U, sizeof( *legacy ) );
+    if( NULL == legacy )
+    {
+        return ESP_ERR_NO_MEM;
+    }
+    size_t length = 0U;
+    esp_err_t result = persistent_store_app_read(
+        RFSCOUT_APP_DEVICE, SAVED_NETWORK_RECORD_KEY, legacy, sizeof( *legacy ), &length );
+    bool valid = ESP_OK == result && sizeof( *legacy ) == length &&
+                 SAVED_NETWORK_RECORD_MAGIC == legacy->magic &&
+                 SAVED_NETWORK_LEGACY_VERSION == legacy->version &&
+                 legacy->count <= SAVED_NETWORK_MAX_COUNT;
+    if( ESP_OK == result && valid )
+    {
+        record->magic = SAVED_NETWORK_RECORD_MAGIC;
+        record->version = SAVED_NETWORK_RECORD_VERSION;
+        record->count = legacy->count;
+        for( size_t index = 0U; valid && index < legacy->count; ++index )
+        {
+            const saved_network_legacy_entry_t *source = &legacy->entries[ index ];
+            saved_network_entry_t *entry = &record->entries[ index ];
+            entry->profile_id = source->profile_id;
+            entry->auth_mode = source->auth_mode;
+            memcpy( entry->ssid, source->ssid, sizeof( entry->ssid ) );
+            memcpy( entry->password, source->password, sizeof( entry->password ) );
+            valid = source->bssid_count <= SAVED_NETWORK_LEGACY_BSSID_COUNT;
+            for( size_t bssid = 0U; valid && bssid < source->bssid_count; ++bssid )
+            {
+                if( SAVED_NETWORK_LEGACY_ASSOCIATED == source->bssids[ bssid ].state )
+                {
+                    saved_network_bssid_t *learned = &entry->bssids[ entry->bssid_count++ ];
+                    memcpy( learned->address, source->bssids[ bssid ].address, 6U );
+                    learned->auth_mode = (int16_t)source->bssids[ bssid ].auth_mode;
+                }
+            }
+            valid = valid && entry_valid( entry );
+        }
+    }
+    wipe_and_free( legacy, sizeof( *legacy ) );
+    if( ESP_OK != result )
+    {
+        return result;
+    }
+    if( !valid )
+    {
+        memset( record, 0, sizeof( *record ) );
+        return persistent_store_app_remove( RFSCOUT_APP_DEVICE, SAVED_NETWORK_RECORD_KEY );
+    }
+    /* A failed write keeps the old record, so the next load converts it again. */
+    result = persistent_store_app_write(
+        RFSCOUT_APP_DEVICE, SAVED_NETWORK_RECORD_KEY, record, sizeof( *record ) );
+    if( ESP_OK != result )
+    {
+        ESP_LOGW( TAG, "could not store converted record: %s", esp_err_to_name( result ) );
+    }
+    return ESP_OK;
 }
 
 static bool record_valid( const void *a_record )
@@ -90,6 +199,18 @@ static esp_err_t load( void )
     if( NULL == record )
     {
         return ESP_ERR_NO_MEM;
+    }
+    size_t stored_length = 0U;
+    if( ESP_OK == persistent_store_app_read(
+                      RFSCOUT_APP_DEVICE, SAVED_NETWORK_RECORD_KEY, NULL, 0U, &stored_length ) &&
+        sizeof( saved_network_legacy_record_t ) == stored_length )
+    {
+        const esp_err_t converted = convert_legacy_record();
+        if( ESP_OK != converted )
+        {
+            release();
+        }
+        return converted;
     }
     const esp_err_t result = persistent_store_app_load(
         RFSCOUT_APP_DEVICE, SAVED_NETWORK_RECORD_KEY, record, sizeof( *record ), record_valid );
@@ -347,7 +468,7 @@ static saved_network_bssid_t *entry_bssid( saved_network_entry_t *a_entry,
     return NULL;
 }
 
-/** Make room by evicting the oldest rejected BSSID; associated BSSIDs are never evicted. */
+/** Append a BSSID slot, forgetting the oldest learned BSSID when the list is full. */
 static saved_network_bssid_t *append_bssid( saved_network_entry_t *a_entry )
 {
     if( a_entry->bssid_count > SAVED_NETWORK_BSSID_MAX_COUNT )
@@ -356,24 +477,9 @@ static saved_network_bssid_t *append_bssid( saved_network_entry_t *a_entry )
     }
     if( a_entry->bssid_count == SAVED_NETWORK_BSSID_MAX_COUNT )
     {
-        size_t index = 0U;
-        while( index < a_entry->bssid_count &&
-               SAVED_NETWORK_BSSID_REJECTED != a_entry->bssids[ index ].state )
-        {
-            ++index;
-        }
-        if( index == a_entry->bssid_count )
-        {
-            return NULL;
-        }
-        /* Removing the last slot requires no copy. Avoid passing a one-past
-           array pointer to memmove even when its byte count would be zero. */
-        if( index + 1U < a_entry->bssid_count )
-        {
-            memmove( &a_entry->bssids[ index ],
-                     &a_entry->bssids[ index + 1U ],
-                     ( a_entry->bssid_count - index - 1U ) * sizeof( a_entry->bssids[ 0 ] ) );
-        }
+        memmove( &a_entry->bssids[ 0 ],
+                 &a_entry->bssids[ 1 ],
+                 ( a_entry->bssid_count - 1U ) * sizeof( a_entry->bssids[ 0 ] ) );
         --a_entry->bssid_count;
     }
     return &a_entry->bssids[ a_entry->bssid_count++ ];
@@ -381,11 +487,9 @@ static saved_network_bssid_t *append_bssid( saved_network_entry_t *a_entry )
 
 esp_err_t saved_networks_record_bssid( uint32_t a_profile_id,
                                        const uint8_t a_bssid[ 6 ],
-                                       int32_t a_auth_mode,
-                                       saved_network_bssid_state_t a_state )
+                                       int32_t a_auth_mode )
 {
-    if( NULL == a_bssid || SAVED_NETWORK_AUTH_UNKNOWN == a_auth_mode ||
-        ( SAVED_NETWORK_BSSID_ASSOCIATED != a_state && SAVED_NETWORK_BSSID_REJECTED != a_state ) )
+    if( NULL == a_bssid || SAVED_NETWORK_AUTH_UNKNOWN == a_auth_mode )
     {
         return ESP_ERR_INVALID_ARG;
     }
@@ -395,19 +499,18 @@ esp_err_t saved_networks_record_bssid( uint32_t a_profile_id,
     {
         result = ESP_ERR_NOT_FOUND;
     }
-    if( ESP_OK == result && SAVED_NETWORK_BSSID_ASSOCIATED == a_state )
+    if( ESP_OK == result )
     {
-        /* One BSSID is never trusted by two credentials, and a profile keeps one auth mode. */
+        /* One BSSID is never trusted by two credentials, and a profile never grows downward. */
         for( size_t index = 0U; index < record->count; ++index )
         {
             saved_network_entry_t *other = &record->entries[ index ];
-            const saved_network_bssid_t *known = entry_bssid( other, a_bssid );
-            if( other != entry && NULL != known && SAVED_NETWORK_BSSID_ASSOCIATED == known->state )
+            if( other != entry && NULL != entry_bssid( other, a_bssid ) )
             {
                 result = ESP_ERR_INVALID_STATE;
             }
         }
-        if( SAVED_NETWORK_AUTH_UNKNOWN != entry->auth_mode && entry->auth_mode != a_auth_mode )
+        if( !saved_network_auth_allowed( entry->auth_mode, a_auth_mode ) )
         {
             result = ESP_ERR_INVALID_STATE;
         }
@@ -416,13 +519,18 @@ esp_err_t saved_networks_record_bssid( uint32_t a_profile_id,
     if( ESP_OK == result )
     {
         bssid = entry_bssid( entry, a_bssid );
-        if( NULL != bssid && bssid->state == a_state && bssid->auth_mode == a_auth_mode )
+        if( NULL != bssid && bssid->auth_mode == a_auth_mode )
         {
             release();
             return ESP_OK;
         }
         if( NULL == bssid )
         {
+            if( SAVED_NETWORK_BSSID_MAX_COUNT == entry->bssid_count )
+            {
+                ESP_LOGI(
+                    TAG, "profile %lu forgot its oldest BSSID", (unsigned long)entry->profile_id );
+            }
             bssid = append_bssid( entry );
         }
         if( NULL == bssid )
@@ -436,9 +544,8 @@ esp_err_t saved_networks_record_bssid( uint32_t a_profile_id,
         return result;
     }
     memcpy( bssid->address, a_bssid, sizeof( bssid->address ) );
-    bssid->state = (uint8_t)a_state;
-    bssid->auth_mode = a_auth_mode;
-    if( SAVED_NETWORK_BSSID_ASSOCIATED == a_state )
+    bssid->auth_mode = (int16_t)a_auth_mode;
+    if( SAVED_NETWORK_AUTH_UNKNOWN == entry->auth_mode )
     {
         entry->auth_mode = a_auth_mode;
     }

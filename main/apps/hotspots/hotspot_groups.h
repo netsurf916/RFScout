@@ -46,7 +46,8 @@ typedef struct
  * @brief Partition inputs into networks.
  * @details @p a_preference lists every input index once, best first. Members of a network keep
  *          that order, and networks are ordered by their best member, so callers choose both
- *          orders with one ranking. Only network characterization evidence splits groups.
+ *          orders with one ranking. Only conflicting network evidence or different saved profiles
+ *          split groups.
  * @param a_order   Receives every input index, grouped by network (a_count entries).
  * @param a_groups  Receives the networks (up to a_count entries).
  * @return Number of networks written; 0 when a_count is 0 or an argument is invalid.

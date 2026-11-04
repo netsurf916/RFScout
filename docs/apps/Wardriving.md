@@ -72,17 +72,17 @@ In particular, packet-type filters should be opt-in and **must not silently drop
 
 | Control | Values / semantics |
 | --- | --- |
-| Maximum file size | Selectable cap per PCAPNG segment; suggested default **16 MiB**. |
-| Maximum files | Selectable count of retained capture segments; suggested default **16**. |
-| Maximum total usage | **Computed hard ceiling**: maximum file size times maximum files, displayed immediately as settings change. For the suggested defaults this is **256 MiB**. |
-| Free-space reserve | Maintain the platform's SD free-space reserve; never exhaust the card to fulfill a capture quota. |
+| Maximum file size | Selectable cap per PCAPNG segment: 4, 8, 16, 32, 64 or 128 MiB; default **16 MiB**. |
+| Maximum files | Selectable upper limit on retained capture segments: 4, 8, 16, 32, 64, 128 or 256; default **16**. A smaller card can hold fewer. |
+| Maximum total usage | **Computed ceiling**: maximum file size times maximum files, displayed immediately as settings change. For the defaults this is **256 MiB**; the largest is **32 GiB** (128 MiB × 256), and 64 MiB × 256 is 16 GiB. |
+| Free-space reserve | Maintain the platform's 64 MiB SD free-space reserve; never exhaust the card to fulfill a capture quota. A segment is only opened with the reserve plus a full segment free. When the card is the limit, the oldest Wardriving segments are deleted to make that room, including when capture starts. If deleting every segment could not free enough, because other data fills the card, nothing is deleted and capture stops with a storage error. |
 | Storage status | Show configured ceiling, actual capture usage, free SD capacity, and estimated additional headroom before starting. |
 
 These are **two primary rotation knobs**: per-file cap and retained-file count; the displayed total size is derived, not a third independently competing retention limit. The estimate is a **maximum allocation policy**, not predicted bytes recorded. Explain that real usage depends on radio traffic, capture duration, and losses; header/option overhead is included in the segment size limit.
 
-Rotation is by completed segment order: finalize and close the current PCAPNG file before opening the next, then delete the oldest **Wardriving-owned** segment if retaining the new segment would exceed the configured count. Never rotate or delete RFScout JSON logs, other applications' files, or unrelated SD contents. A new segment always begins with its own Section Header and interface descriptions; do not split a PCAPNG block across segments. If one packet cannot fit inside an otherwise empty segment, report a record-too-large error and drop it rather than bypassing the cap.
+Rotation is by completed segment order: finalize and close the current PCAPNG file before opening the next, then delete the oldest **Wardriving-owned** segment if retaining the new segment would exceed the configured count or the card's free space. Never rotate or delete RFScout JSON logs, other applications' files, or unrelated SD contents. A new segment always begins with its own Section Header and interface descriptions; do not split a PCAPNG block across segments. If one packet cannot fit inside an otherwise empty segment, report a record-too-large error and drop it rather than bypassing the cap.
 
-If the card is unavailable, below required reserve, read-only, or write/close fails, surface the problem prominently and stop capture without an unbounded RAM backlog. Capture currently requires an explicit restart after media recovery; automatic recovery with fresh-segment resume is still pending. Settings reductions should not indiscriminately delete files while browsing the menu; apply retention pruning on capture start or rotation with the user-visible policy clearly displayed.
+If the card is unavailable, below the required reserve with too few segments to delete, read-only, or write/close fails, surface the problem prominently and stop capture without an unbounded RAM backlog. Capture currently requires an explicit restart after media recovery; automatic recovery with fresh-segment resume is still pending. Settings reductions should not indiscriminately delete files while browsing the menu; apply retention pruning on capture start or rotation with the user-visible policy clearly displayed.
 
 ### Current menu presentation
 

@@ -14,13 +14,13 @@ Hotspots finds nearby Wi-Fi access points, checks whether each one provides Inte
 
 ## Services and lifecycle
 
-### Shared discovery implementation (PR #136)
+### Discovery
 
-Hotspots now uses the same framework-owned `radio_monitor` and channel scheduler as WiFi/BLE. The shared beacon/probe-response decoder provides BSSID, SSID, receiver channel, RSSI and conservatively validated authentication evidence. A **64-item bounded callback queue** coalesces AP identities on the Wi-Fi callback task; the app task drains it into the separate **128-BSSID Live table**, with no station scan-result array or 32-result upstream ceiling. Queue overflow is counted and surfaced as telemetry (`ap_queue_drops`); admission failures are counted (`ap_rejected`). This queue is not a population ceiling: it is drained repeatedly during a sweep. The monitor is stopped and its callbacks quiesced **before** station association, DHCP/NTP and TLS. After each check, Hotspots stops the connectivity probe, releases the network session, and retries failed teardown before allowing another monitor sweep. A failed driver stop, unfinished callback, TLS worker, or station event drain never counts as a successful handoff.
+Hotspots uses the same framework-owned `radio_monitor` and channel scheduler as WiFi/BLE. The shared beacon/probe-response decoder provides BSSID, SSID, receiver channel, RSSI and conservatively validated authentication evidence. A **64-item bounded callback queue** coalesces AP identities on the Wi-Fi callback task; the app task drains it into the separate **128-BSSID Live table**, with no station scan-result array or 32-result upstream ceiling. Queue overflow is counted and surfaced as telemetry (`ap_queue_drops`); admission failures are counted (`ap_rejected`). This queue is not a population ceiling: it is drained repeatedly during a sweep. The monitor is stopped and its callbacks quiesced **before** station association, DHCP/NTP and TLS. After each check, Hotspots stops the connectivity probe, releases the network session, and retries failed teardown before allowing another monitor sweep. A failed driver stop, unfinished callback, TLS worker, or station event drain never counts as a successful handoff.
 
-Hotspots now uses **Expire after** (30–300 s, default 60 s) measured on a logical clock that only advances while the monitor is receiving, so connection/TLS interruptions do not falsely age nearby BSSIDs. The location eviction rule remains optional, defaulting to 500 m beyond observed coverage bounds. Normal expiration removes overdue, unqueued entries not heard during the current sweep. At capacity, Hotspots first reuses that normal expiration, then admits new BSSIDs by the four-tier credential-aware policy described below. A current-sweep sighting is no longer absolutely protected from capacity eviction; queued manual work remains protected. Admission is rejected when no eligible victim exists. The app settings format version changes intentionally; old missed-scan settings are rejected and return to defaults.
+Live entries use **Expire after** (30–300 s, default 60 s) measured on a logical clock that only advances while the monitor is receiving, so connection/TLS interruptions do not falsely age nearby BSSIDs. The location eviction rule remains optional, defaulting to 500 m beyond observed coverage bounds. Normal expiration removes overdue, unqueued entries not heard during the current sweep. At capacity, Hotspots first reuses that normal expiration, then admits new BSSIDs by the four-tier credential-aware policy described below. A current-sweep sighting is no longer absolutely protected from capacity eviction; queued manual work remains protected. Admission is rejected when no eligible victim exists. The app settings format version changes intentionally; old missed-scan settings are rejected and return to defaults.
 
-**Still deferred:** bounded SD-backed History projections and broader shared observation journal use. WiFi/BLE's separately chosen policy uses geometric app-session PSRAM growth and independent source expiry; it does **not** implement the earlier proposed fixed memory budget, ranked victim selection or GPS-distance expiry. Hotspots characterization remains journaled through `media_journal`, and Live eviction never deletes History or saved credentials.
+Live eviction never deletes History or saved credentials. WiFi/BLE has its own retention policy (see [WiFi / BLE](WIFI_BLE.md)); the limits above apply only to Hotspots.
 
 The descriptor declares the shared Wi-Fi monitor, framework network-session and connectivity-probe services and requires delayed activation, so skipping through the app does not start the radio. The network session owns association, DHCP, NTP, MAC policy, timeout, and teardown; the app owns only candidate selection, credential resolution, and result interpretation. Both services are stopped by the app session before app memory is reclaimed. History opens on entry, replays in the background, and is flushed and closed when the app is left.
 
@@ -32,7 +32,7 @@ Hotspots alternates bounded **scan** and **check** phases, following Hotspotter'
 2. The app updates last-seen timestamps during the sweep without clearing existing visibility. After the monitor has stopped and callbacks have quiesced, it expires stale/distant records, resolves saved profiles and may perform bounded Open/OWE/credentialed checks in its check window. The radio is never in monitor mode during association or HTTPS/TLS.
 3. The next monitor sweep begins after the check window and successful connectivity-probe/station cleanup plus settling. Teardown failure enters a retry phase; result/history are recorded only once.
 
-**Observation pipeline (PR #137).** The shared radio monitor stamps each normalized AP
+**Observation pipeline.** The shared radio monitor stamps each normalized AP
 observation with monotonic receive time. On the app task, common metadata enrichment
 associates trusted device UTC and a fresh GPS position when available, without querying
 the GPS or SD card in the Wi-Fi receive callback. Hotspots resolves the existing
@@ -85,26 +85,36 @@ captures show whether churn is problematic.
 
 ## Credentials
 
-Secured networks use the shared saved-network profiles (see [Home](HOME.md) and [Architecture](../ARCHITECTURE.md#shared-network-profiles)). Several profiles may share an SSID; successful secured joins teach positive BSSID/profile associations. Historical rejected-BSSID records remain readable but no longer exclude a compatible profile. After every completed scan, and immediately after any credential change, each secured BSSID is resolved to one of these states:
+Secured networks use the shared saved-network profiles (see [Home](HOME.md) and [Architecture](../ARCHITECTURE.md#shared-network-profiles)). Several profiles may share an SSID; successful secured joins teach positive BSSID/profile associations. After every completed scan, and immediately after any credential change, each secured BSSID is resolved to one of these states:
 
 | State | Tag | Meaning |
 | --- | --- | --- |
-| Known | — | A profile already associated with this exact BSSID and auth mode. Automatic checks use it. |
-| Inferred | — | Exactly one same-SSID, auth-compatible profile has evidence: one of its known BSSIDs is in the same scan, or has history within the **Match distance** of the current fix. Automatic checks use it. |
+| Known | — | A profile already associated with this exact BSSID at its current auth mode. Automatic checks use it. |
+| Inferred | — | Exactly one same-SSID profile whose minimum security this BSSID meets has evidence: one of its known BSSIDs is currently visible in the Live table (heard within the last 8 seconds of monitor time), or has history within the **Match distance** of the current fix. Automatic checks use it. |
 | Ambiguous | `PICK` | Several profiles have evidence. Only a manual **Join with profile** checks it. |
 | Unmatched | `PICK` | Same-SSID profiles exist but none has evidence here. Only a manual join checks it. |
 | None | `KEY?` | No saved password for this SSID. |
 | Unsupported | `N/A` | WEP, WPA1, 802.1X or another mode the station cannot join. |
 
-A profile is never used with a BSSID whose observed auth mode differs from the one it learned, and a WPA3-only BSSID is never joined under a WPA2 minimum. A successful secured association records the BSSID as associated with that profile, so later visits resolve it as Known. Hotspots no longer learns persistent negative BSSID/credential associations:
+A profile's first association sets its minimum security, and it may be used or grow only at equal or greater security: WEP < WPA < WPA2 < WPA3. A mixed mode ranks as the weakest security it accepts, so WPA2/WPA3 transition counts as WPA2. A WPA2 profile can therefore grow to transition and WPA3 BSSIDs, while a WPA3 profile is never used with a transition or WPA2 BSSID, which still needs its own profile. The station itself joins only WPA2 and WPA3 personal, and a WPA3-only BSSID is never joined under a WPA2 minimum. A successful secured association records the BSSID as associated with that profile, so later visits resolve it as Known. Hotspots no longer learns persistent negative BSSID/credential associations:
 failed authentication, handshake timeout, DHCP, DNS, NTP, HTTPS, and network
-disconnection remain ordinary failed check outcomes, not an exclusion.
-All such failures use the existing retry scheduling and signal-strength
-improvement policy. Previously saved rejection records are ignored by the
-Hotspots resolver without changing the saved-profile binary format. A
-successful manual join may replace an old rejection with a positive match.
-Auto-checking still needs a Known or Inferred credential; a profile without
-positive matching evidence requires manual `Join with profile`.
+disconnection remain ordinary failed check outcomes, not an exclusion, because a
+failure can simply mean the receiver moved out of range. All such failures use the
+existing retry scheduling and signal-strength improvement policy. Auto-checking still
+needs a Known or Inferred credential; a profile without positive matching evidence requires
+manual `Join with profile`.
+
+### Growing a profile across BSSIDs
+
+A profile is a learned set of BSSIDs, which is how two unrelated networks using the same SSID stay apart:
+
+1. **Seed.** A new profile has no BSSIDs and is never used automatically. Its first BSSID comes from a Home connection or a manual **Add password** / **Join with profile** in Hotspots.
+2. **Grow.** A new same-SSID BSSID that meets a profile's minimum security becomes Inferred when exactly one profile has evidence for it: an associated BSSID of that profile is currently visible, or the current fix is within **Match distance** of an associated BSSID's History location range. Hotspots then checks it automatically, and a check that gets at least as far as DHCP (green or yellow) adds the BSSID to that profile, where it becomes Known and provides evidence for further BSSIDs.
+3. **Stay apart.** The same SSID somewhere else has no evidence, so it stays Unmatched and is never tried with that password. Where two profiles both have evidence the BSSID is Ambiguous and the user chooses. An exact Known BSSID always wins over evidence for another profile.
+
+A failed attempt teaches nothing, so it never removes a BSSID from consideration. A BSSID that belongs to a different network but sits in range of a profile's BSSIDs stays Inferred and is retried under the signal-improvement rule, until it is given its own profile with **Add password**. History evidence exists only for BSSIDs Hotspots has characterized; a BSSID learned from Home contributes same-visibility evidence until then.
+
+Profile membership decides which password may be tried, and [network grouping](#network-grouping) keeps BSSIDs of different profiles in separate rows.
 
 **Match distance** (Settings; Off, 50, 100, 200 or 500 m; default 100 m) controls how close the current fix must be to the history of a profile's known BSSID for it to count as evidence. It needs a GPS receiver and is shown unavailable without one. Profile resolution works without GPS through exact BSSIDs and same-scan overlap.
 
@@ -117,7 +127,7 @@ One check for one BSSID performs:
 1. **Network** — associate pinned to the selected BSSID and channel: without a password for Open/OWE (OWE remains required when advertised), or with the resolved shared profile for supported WPA2/WPA3 personal networks. Complete DHCP under the common framework policy. Association/DHCP failure marks the AP **red**.
 2. **Time** — once DHCP succeeds, the framework captures LAN attributes and checks whether GPS or NTP has already provided trusted UTC within the last hour. If so, it skips a redundant NTP request and advances to READY; otherwise it attempts NTP (up to 15 seconds). Failure of a required NTP check leaves the session LIMITED, marks the AP **yellow**, retains LAN attributes, and **skips HTTPS**. Time readiness does not prove that this specific AP supports NTP.
 3. **HTTPS** — only for READY sessions, perform one certificate-validated request to Cloudflare's `/cdn-cgi/trace`, bounded to **10 seconds**. HTTP 200 marks the AP **green** and records the public egress IP and Cloudflare colo; any other result marks it **yellow**.
-4. **Camera hint (experimental)** — only after either path yields LIMITED/yellow (NTP or HTTPS failure), and only if the DHCP gateway lies on the directly connected subnet, issue one cancellable HTTP `HEAD /` request to that gateway on port 80 (2.5-second request timeout, 3.5-second scheduler guard). Inspect bounded response headers for explicit camera/ONVIF banners. Generic HTTP, HTTP 401, or JPEG alone is not enough. When camera-specific evidence is present, **CAM** replaces **LTD** in Live and History; the stored connectivity outcome remains yellow/LIMITED. The detail view identifies this as *gateway camera metadata*, not verified camera or BSSID identity. The request sends no credentials, fetches no image/body, follows no redirects, and scans no subnet.
+4. **Camera hint (experimental)** — after a LIMITED/yellow result, one bounded HTTP `HEAD /` to the DHCP gateway; see [Gateway camera hint](#gateway-camera-hint-experimental).
 5. **Leave** — read the gateway's MAC address from the station's ARP cache (joined checks only), stop the probe, release the network session, and return to scanning.
 
 Each check inherits the platform-wide default of a fresh random, locally administered station MAC; the factory MAC is restored when the network session stops.
@@ -167,7 +177,7 @@ observations. Recording is best-effort, not an audit-grade guarantee.
 
 ## Network grouping
 
-Live and History group BSSIDs into networks with Hotspotter's evidence rule. Only BSSIDs with the same SSID and auth mode are compared. Within that group they are one network unless their evidence conflicts: different gateway/netmask, or different gateway MAC, between two BSSIDs that both have it. Missing evidence never splits a network. A BSSID without evidence joins the network whose evidence-bearing members have the nearest location center, or the network with the most evidence-bearing members when it has no location. Credential failures never split the Live group: only positive, conflicting gateway/netmask or gateway-MAC evidence does so.
+Live and History group BSSIDs into networks with Hotspotter's evidence rule. Only BSSIDs with the same SSID and auth mode are compared. Within that group they are one network unless their evidence conflicts: different gateway/netmask, different gateway MAC, or different saved profile, between two BSSIDs that both have it. A BSSID's profile is the one that learned it; in Live, a BSSID currently Inferred also counts as that profile's. Missing evidence never splits a network. A BSSID with a profile but no network evidence joins that profile's network, or starts one. A BSSID without evidence joins the network whose evidence-bearing members have the nearest location center, or the network with the most evidence-bearing members when it has no location. Failed checks never split a network, because only positive evidence does.
 
 When one SSID and auth mode splits into several networks, rows are labelled `SSID #1`, `SSID #2`, and so on, largest first. Individual BSSIDs always remain browsable under their network.
 
@@ -177,15 +187,11 @@ Hotspots has three views. **App lock** off: landing-level rotary changes RFScout
 
 - **Live** — networks currently observed this visit, ordered by their strongest visible BSSID. Each row shows the network label, a status tag summarizing its BSSIDs, the number of BSSIDs, and the strongest visible RSSI (`--` when none is visible). The footer shows the phase or running check and counts of open, OWE, and secured BSSIDs.
 - **History** — networks from durable history, nearest first when GPS has a fresh fix (then green first, newest first). Rows show the label, `OK`/`LTD`/`CAM` (when tentative camera evidence exists), the number of BSSIDs, and the distance and compass direction to the nearest member (`--` without a fix). The footer shows the BSSID count, fix state, and any `BAD` or `SD!` indicators. With no history the view says **No known hotspots**, or **SD history unavailable** when the card cannot be read.
-- **Saved** — the shared profiles, labelled `SSID #n` when several share an SSID, with the learned auth mode and the number of associated BSSIDs. Selecting one opens the shared profile screen: masked password with **Show**, **Edit password**, and **Forget**. Changes apply to Home immediately.
+- **Saved** — the shared profiles, labelled `SSID #n` when several share an SSID, with the minimum security and the number of associated BSSIDs. Selecting one opens the shared profile screen: masked password with **Show**, **Edit password**, and **Forget**. Changes apply to Home immediately.
 
 Each view's menu starts with **Back**, **App lock**, **Auto check**, and **Settings** (**Match distance**, **Expire after**, **Evict beyond**, and **Compact history**), followed by the view's rows. Selecting a Live or History network opens its BSSID list; selecting a BSSID opens its detail.
 
-PR #144 keeps the selected BSSID or saved profile identity stable when Live/History
-models reorder. Both input handling and rendering reconcile selection against
-the current model; if the selected group, member or profile disappears, the
-cursor selects **Back**, rather than applying the next event to a different
-numeric row. See [Live selection consistency](../HOTSPOTS_LIVE_SELECTION.md).
+Lists reorder as sightings, signal, expiry and characterization change, so selection follows an identity, never a row number: a member BSSID for networks and BSSID lists, or a profile ID for Saved. Input handling and rendering both reconcile selection against the current model before acting. If the selected network, BSSID or profile disappears, or a BSSID moves to another network, the cursor selects **Back**; a press is never redirected to a different row.
 
 **Live BSSID detail** shows the network label, BSSID and channel, RSSI or not-visible state with auth mode and check count, the credential state, status, the latest attempt's outcome (including a failed association), client IP, gateway, netmask, gateway MAC, DNS servers, and public IP with Cloudflare colo. LIMITED results keep the LAN attributes even though HTTPS was skipped. Actions:
 
@@ -210,6 +216,16 @@ Status tags carry their meaning as text, not only color:
 | `KEY?` / `PICK` / `N/A` | Secured BSSID that needs a password, a profile choice, or uses unsupported security |
 | `-` | Not yet checked |
 
+## Gateway camera hint (experimental)
+
+Green, yellow and red describe Internet connectivity only. Yellow does not imply a camera, and the DHCP gateway may simply be a router. As a separate, uncertain signal, a LIMITED check whose DHCP gateway is on the connected subnet makes one cancellable HTTP `HEAD /` request to that gateway on port 80 (2.5-second request timeout, 3.5-second scheduler guard). It sends no credentials, follows no redirects, downloads no body, and contacts no other host. The worker is the framework connectivity-probe worker, which the network session quiesces before stopping the station.
+
+`services/wireless/service_fingerprint` classifies the bounded status and headers into evidence flags, independently of the surveillance signature database. Only an explicit camera/ONVIF server or authentication banner, matched as a whole word, counts as camera evidence: `Server: ONVIF/1.0` qualifies, `Server: nonvif-proxy` does not, and generic HTTP, HTTP 401, RTSP or JPEG responses alone do not. The classifier's validated WS-Discovery device-type check is deliberately case-insensitive for nonstandard vendors, a documented exception in [Architecture](../ARCHITECTURE.md#shared-contracts-and-exceptions). Its current rules are illustrative, not a vendor database.
+
+With camera evidence, `CAM` replaces `LTD` in Live and History, and the numeric `camera_evidence` is saved in the history record. The stored outcome stays yellow/LIMITED, and the detail view reads `CAM - gateway camera hint (LTD)`. This is a hint about the gateway only: not proof of a camera, of surveillance, of ONVIF conformance, or of the BSSID's identity. A camera elsewhere on the LAN, an HTTPS-only camera, or one with unrecognized headers stays `LTD`.
+
+Each started probe also saves a debug report to `hotspots/gateway_probes/gw-<UTC>-<BSSID>-<uptime_us>.http` (a `u` prefix marks an uptime timestamp when UTC is untrusted). It holds the gateway address, transport error, HTTP status and headers as parsed by ESP-IDF, capped at 3072 bytes total and 1024 per field with truncation marked and control characters escaped. It is not a wire capture. Reports are written by the app task after the worker finishes or is cancelled, including a `completion=app_exit` report on leaving the app; link-loss teardown may leave only the failure. **Headers are stored unredacted** and can contain cookies, authentication challenges and internal hostnames, so review them before sharing a card. Nothing is uploaded, and SD problems never affect checks or classification.
+
 ## Logging
 
 **System event logs (when SD logging is enabled):** Each completed check emits a `type:"hotspot"` record with BSSID, channel, RSSI, security, outcome, failing stage, the `ntp` field (meaning the network session's time prerequisite was satisfied, **not** proof of an NTP response from that AP), HTTP status, and whether the check was manual. These event-log records omit SSIDs, client addresses, and public IPs. Periodic telemetry reports visible, green, yellow, red, and check counts.
@@ -220,18 +236,8 @@ Status tags carry their meaning as text, not only color:
 
 - Yellow does not distinguish captive portals, DNS filtering, or blocked NTP from other restrictions.
 - Failed attempts are not kept in history.
-- Grouping assumes same-SSID/auth BSSIDs are one network unless evidence conflicts, so unrelated networks can share a row until they are characterized. HESSID/802.11u and 802.11r mobility-domain evidence are not used.
-- A profile is matched to the exact auth mode it learned, so a profile learned on a WPA2 BSSID is not offered for a WPA2/WPA3 transition BSSID of the same SSID; that BSSID needs its own profile (**Add password** → New profile).
+- Grouping assumes same-SSID/auth BSSIDs are one network unless evidence conflicts, so unrelated networks can share a row until they are characterized or learned by different profiles. HESSID/802.11u and 802.11r mobility-domain evidence are not used.
+- Rows compare one auth mode at a time, so a profile that spans WPA2 and WPA3 BSSIDs appears as one row per auth mode.
+- A profile remembers its 128 most recently learned BSSIDs; learning another forgets the oldest, which is learned again if it is joined later. The Saved view shows each profile's count.
+- A BSSID can belong to only one profile. A Known BSSID offers no **Join with profile**; moving it requires forgetting that profile or changing its password.
 
-
-### Local gateway HEAD debug reports
-
-One file is saved per started gateway HEAD probe, under
-`hotspots/gateway_probes/`. Filenames include verified UTC (or a
-clearly marked monotonic fallback), the tested BSSID, and a unique uptime
-suffix. The file contains bounded response headers as delivered by ESP-IDF
-and the numeric HTTP status or an explicit transport failure. This is not
-a byte-for-byte wire capture and does not fetch any body. Header values
-are retained without redaction and may be sensitive; inspect files before
-sharing. SD unavailability has no effect on camera classification or
-Hotspots connectivity outcomes.

@@ -26,7 +26,7 @@
 #define ACTIVITY_SECONDS 74U
 #define CAPTURE_GPS_REFRESH_US 250000LL
 #define CAPTURE_SETTINGS_MAGIC 0x57445256U
-#define CAPTURE_SETTINGS_VERSION 1U
+#define CAPTURE_SETTINGS_VERSION 2U
 #define RADIO_SETTINGS_MAGIC 0x52575032U
 #define MENU_BACK 0U
 #define MENU_START 1U
@@ -262,7 +262,9 @@ static bool settings_valid( const void *a_record )
 {
     const saved_settings_t *stored = a_record;
     return stored->magic == CAPTURE_SETTINGS_MAGIC && stored->version == CAPTURE_SETTINGS_VERSION &&
-           stored->options.max_files > 0U && stored->options.file_limit_bytes >= 1024U * 1024U &&
+           stored->options.max_files > 0U &&
+           stored->options.max_files <= WARDRIVE_CAPTURE_MAX_FILES &&
+           stored->options.file_limit_bytes >= 1024U * 1024U &&
            stored->options.file_limit_bytes <= 128U * 1024U * 1024U &&
            stored->options.channel >= 1U && stored->options.channel <= 14U &&
            stored->options.dwell_ms >= 50U && stored->options.dwell_ms <= 5000U;
@@ -355,11 +357,14 @@ static bool usage_visitor( const rfscout_media_entry_t *a_entry, void *a_context
 
 static void refresh_space( void )
 {
-    stored_bytes = 0U;
     free_bytes = 0U;
+    /* Listing holds the card long enough to stall a recording's writer, so usage waits. */
+    wardrive_stats_t current;
+    wardrive_capture_stats( &current );
     rfscout_media_collection_t collection;
-    if( ESP_OK == media_app_collection( "captures", &collection ) )
+    if( !current.recording && ESP_OK == media_app_collection( "captures", &collection ) )
     {
+        stored_bytes = 0U;
         (void)media_list( &collection, usage_visitor, &stored_bytes );
     }
     (void)media_store_space( NULL, &free_bytes );
@@ -874,7 +879,8 @@ static esp_err_t apply_radio( void )
 static void modify_setting( unsigned a_item, int a_direction )
 {
     static const uint32_t sizes[] = { 4U, 8U, 16U, 32U, 64U, 128U };
-    static const uint8_t files[] = { 4U, 8U, 16U, 32U, 64U };
+    static const uint16_t files[] = { 4U, 8U, 16U, 32U, 64U, 128U, WARDRIVE_CAPTURE_MAX_FILES };
+    const unsigned file_choices = sizeof( files ) / sizeof( files[ 0 ] );
     if( a_item == MENU_PACKETS && options.wifi )
     {
         const uint8_t sequence[] = { 7U, 1U, 4U, 2U };
@@ -901,11 +907,12 @@ static void modify_setting( unsigned a_item, int a_direction )
     else if( a_item == MENU_FILES )
     {
         unsigned i = 0U;
-        while( i + 1U < 5U && files[ i ] != options.max_files )
+        while( i + 1U < file_choices && files[ i ] != options.max_files )
         {
             ++i;
         }
-        options.max_files = files[ ( i + ( a_direction > 0 ? 1U : 4U ) ) % 5U ];
+        options.max_files =
+            files[ ( i + ( a_direction > 0 ? 1U : file_choices - 1U ) ) % file_choices ];
     }
     save_settings();
 }
@@ -1151,7 +1158,6 @@ static void act_on_selection( void )
         {
             modify_setting( selected, 1 );
         }
-        refresh_space();
         draw_menu();
     }
 }

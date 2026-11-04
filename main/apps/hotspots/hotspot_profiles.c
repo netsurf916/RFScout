@@ -19,8 +19,7 @@ static bool profile_overlaps_scan( const hotspot_profiles_input_t *a_input,
         const hotspot_entry_t *other = &table->entries[ index ];
         const saved_network_bssid_t *known =
             saved_network_profile_bssid( a_profile, other->bss.bssid );
-        if( other->visible && 0 == strcmp( other->bss.ssid, a_ssid ) && NULL != known &&
-            SAVED_NETWORK_BSSID_ASSOCIATED == known->state )
+        if( other->visible && 0 == strcmp( other->bss.ssid, a_ssid ) && NULL != known )
         {
             return true;
         }
@@ -39,10 +38,6 @@ static bool profile_near( const hotspot_profiles_input_t *a_input,
     }
     for( size_t bssid = 0U; bssid < a_profile->bssid_count; ++bssid )
     {
-        if( SAVED_NETWORK_BSSID_ASSOCIATED != a_profile->bssids[ bssid ].state )
-        {
-            continue;
-        }
         const geo_bounds_t *bounds = a_input->history_bounds( a_profile->bssids[ bssid ].address );
         if( NULL == bounds )
         {
@@ -75,9 +70,7 @@ hotspot_credential_t hotspot_profiles_resolve( const hotspot_profiles_input_t *a
         }
         const saved_network_bssid_t *known =
             saved_network_profile_bssid( profile, a_entry->bss.bssid );
-        /* Existing saved REJECTED entries are no longer a credential veto. */
-        if( NULL != known && SAVED_NETWORK_BSSID_ASSOCIATED == known->state &&
-            known->auth_mode == a_entry->bss.auth_mode )
+        if( NULL != known && known->auth_mode == a_entry->bss.auth_mode )
         {
             *a_profile_id = profile->profile_id;
             return HOTSPOT_CREDENTIAL_KNOWN;
