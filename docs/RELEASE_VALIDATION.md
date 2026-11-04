@@ -13,6 +13,7 @@ This is a repeatable **validation procedure for implemented behavior**, not a fe
 | BLE discovery | Passive/Active, duplicate filter, duty presets; validate observed scan responses and Wi-Fi coexistence | Untested |
 | Wardriving | Start/stop PCAPNG capture, verify packet timestamps/Wireshark decoding and SD filenames | Untested |
 | Wardriving policy | Confirm radio settings cannot change during recording and resume correctly after stop | Untested |
+| Wardriving retention | With 256 retained segments on the card: rotation deletes the oldest without visible packet-drop spikes, Start and menu opening stay acceptably quick, and a ceiling larger than free space stops with a storage error instead of filling the card | Untested |
 | GPS | Detect NMEA without fix, acquire valid fix, invalidate stale fix, inspect trip distance/reset and position metadata | Untested |
 | GPS/nRF24 | Verify UART priority with GPS connected and nRF24 present; verify absent GPS fallback | Untested |
 | GPS LED ring | Leave GPS for Home and other apps repeatedly with guidance on and off: the ring goes dark at every exit and no app inherits a pixel. While moving with known course, record the lit index for N/NE/E/SE/S/SW/W/NW (ground track is direction of motion, not enclosure facing); stationary/no fix blanks the ring; check 0%/100% intensity and every color preset | Untested |

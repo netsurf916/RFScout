@@ -7,6 +7,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/** Most capture segments one recording may retain; the menu's largest choice. */
+#define WARDRIVE_CAPTURE_MAX_FILES 256U
+
 typedef struct
 {
     bool wifi;
@@ -15,7 +18,7 @@ typedef struct
     uint8_t channel;
     uint32_t dwell_ms;
     uint32_t file_limit_bytes;
-    uint8_t max_files;
+    uint16_t max_files;
     bool gps_metadata;
     uint8_t wifi_types; /* Bit 0 management, bit 1 control, bit 2 data. */
 } wardrive_config_t;
