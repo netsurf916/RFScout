@@ -478,10 +478,8 @@ static void record_profile_outcome( bool a_joined )
     }
     if( a_joined )
     {
-        const esp_err_t result = saved_networks_record_bssid( attempt_profile_id,
-                                                              attempt_bss.bssid,
-                                                              attempt_bss.auth_mode,
-                                                              SAVED_NETWORK_BSSID_ASSOCIATED );
+        const esp_err_t result = saved_networks_record_bssid(
+            attempt_profile_id, attempt_bss.bssid, attempt_bss.auth_mode );
         if( ESP_OK != result )
         {
             ESP_LOGW( TAG, "could not record BSSID association: %s", esp_err_to_name( result ) );

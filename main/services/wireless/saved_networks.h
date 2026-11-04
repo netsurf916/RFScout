@@ -21,20 +21,14 @@
 #define SAVED_NETWORK_MAX_COUNT 8U
 #define SAVED_NETWORK_SSID_MAX_LENGTH 32U
 #define SAVED_NETWORK_PASSWORD_MAX_LENGTH 64U
-#define SAVED_NETWORK_BSSID_MAX_COUNT 32U
+#define SAVED_NETWORK_BSSID_MAX_COUNT 128U
 #define SAVED_NETWORK_AUTH_UNKNOWN ( -1 )
 
-typedef enum
-{
-    SAVED_NETWORK_BSSID_ASSOCIATED = 1, /**< authenticated with this profile's passphrase */
-    SAVED_NETWORK_BSSID_REJECTED,       /**< legacy negative association; ignored by Hotspots */
-} saved_network_bssid_state_t;
-
+/** One BSSID that authenticated with a profile's passphrase. */
 typedef struct
 {
     uint8_t address[ 6 ];
-    uint8_t state; /**< saved_network_bssid_state_t */
-    int32_t auth_mode;
+    int16_t auth_mode;
 } saved_network_bssid_t;
 
 /** Non-secret view of one profile; passwords are only returned by saved_networks_password(). */
@@ -80,15 +74,14 @@ esp_err_t saved_networks_set_password( uint32_t a_profile_id, const char *a_pass
 esp_err_t saved_networks_forget( uint32_t a_profile_id );
 
 /**
- * @brief Record an association outcome for one BSSID.
- * @details ASSOCIATED fails with ESP_ERR_INVALID_STATE when another profile already
- *          associated with that BSSID or the profile learned a different auth mode. When the
- *          BSSID list is full, the oldest rejected BSSID is evicted.
+ * @brief Learn that one BSSID authenticated with a profile's passphrase.
+ * @details Fails with ESP_ERR_INVALID_STATE when another profile already associated with that
+ *          BSSID or the profile learned a different auth mode. When the BSSID list is full, the
+ *          oldest learned BSSID is forgotten; it is learned again if it is joined later.
  */
 esp_err_t saved_networks_record_bssid( uint32_t a_profile_id,
                                        const uint8_t a_bssid[ 6 ],
-                                       int32_t a_auth_mode,
-                                       saved_network_bssid_state_t a_state );
+                                       int32_t a_auth_mode );
 
 /* Pure profile-snapshot helpers; inline so host models and tests need no storage code. */
 

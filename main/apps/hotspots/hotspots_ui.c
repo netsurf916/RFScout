@@ -713,12 +713,6 @@ static size_t build_saved_rows( void )
     for( size_t index = 0U; index < count; ++index )
     {
         const saved_network_profile_t *profile = &profiles[ index ];
-        uint16_t associated = 0U;
-        for( size_t bssid = 0U; bssid < profile->bssid_count; ++bssid )
-        {
-            associated +=
-                SAVED_NETWORK_BSSID_ASSOCIATED == profile->bssids[ bssid ].state ? 1U : 0U;
-        }
         profile_label( profile->profile_id, scratch.labels[ index ], UI_LABEL_MAX );
         snprintf( scratch.values[ index ],
                   UI_VALUE_MAX,
@@ -731,7 +725,7 @@ static size_t build_saved_rows( void )
             .tag = profile->has_password ? "" : "OPEN",
             .tone = HOTSPOTS_TONE_NEUTRAL,
             .value = scratch.values[ index ],
-            .members = associated,
+            .members = profile->bssid_count,
             .visible = true,
         };
     }

@@ -36,8 +36,7 @@ typedef struct
 /**
  * @brief Resolve which saved profile, if any, automatic checks may use for a secured BSSID.
  * @details An exact associated BSSID wins. Otherwise a same-SSID, auth-compatible profile that
- *          qualifies only with evidence (historical rejected BSSIDs are ignored): one of its known BSSIDs is
- *          in the same scan, or has history within the match distance of a fresh fix. Several
+ *          qualifies only with evidence: one of its known BSSIDs is visible, or has history within the match distance of a fresh fix. Several
  *          qualifying profiles are ambiguous and need the user's choice.
  * @param a_profile_id Set to the profile for KNOWN and INFERRED; 0 otherwise.
  * @return KNOWN, INFERRED, AMBIGUOUS, UNMATCHED or NONE; never OPEN or UNSUPPORTED.

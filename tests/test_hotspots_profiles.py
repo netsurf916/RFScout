@@ -1,6 +1,6 @@
 """Host regression fixtures for Hotspots' saved-profile selection: which profile automatic checks
-may use for a secured BSSID, from exact BSSIDs, rejections, auth modes, same-scan overlap and
-GPS history evidence."""
+may use for a secured BSSID, from exact BSSIDs, auth modes, current visibility and GPS history
+evidence."""
 import pathlib
 import shutil
 import subprocess
@@ -41,13 +41,11 @@ static saved_network_profile_t profile( uint32_t a_id, const char *a_ssid, int32
     return value;
 }
 
-static void learn( saved_network_profile_t *a_profile, unsigned a_bssid, uint8_t a_state,
-                   int32_t a_auth )
+static void learn( saved_network_profile_t *a_profile, unsigned a_bssid, int32_t a_auth )
 {
     saved_network_bssid_t *learned = &a_profile->bssids[ a_profile->bssid_count++ ];
     mac( learned->address, a_bssid );
-    learned->state = a_state;
-    learned->auth_mode = a_auth;
+    learned->auth_mode = (int16_t)a_auth;
 }
 
 static hotspot_entry_t entry( unsigned a_bssid, const char *a_ssid, int32_t a_auth, bool a_visible )
@@ -111,49 +109,29 @@ int main( void )
     hotspot_profiles_input_t none = input( NULL, 0 );
     assert( resolve( &none, &id ) == HOTSPOT_CREDENTIAL_NONE && id == 0 );
     saved_network_profile_t other[ 1 ] = { profile( 1, "LIBRARY", WPA2 ) };
-    learn( &other[ 0 ], A, SAVED_NETWORK_BSSID_ASSOCIATED, WPA2 );
+    learn( &other[ 0 ], A, WPA2 );
     none = input( other, 1 );
     assert( resolve( &none, &id ) == HOTSPOT_CREDENTIAL_NONE && id == 0 );
 
     /* An empty credential or unassociated evidence must never promote a secured BSSID. */
     saved_network_profile_t no_password[ 1 ] = { profile( 21, "CAFE", WPA2 ) };
-    learn( &no_password[ 0 ], A, SAVED_NETWORK_BSSID_ASSOCIATED, WPA2 );
+    learn( &no_password[ 0 ], A, WPA2 );
     no_password[ 0 ].has_password = false;
     none = input( no_password, 1 );
     assert( resolve( &none, &id ) == HOTSPOT_CREDENTIAL_NONE && id == 0 );
     no_password[ 0 ].has_password = true;
-    no_password[ 0 ].bssids[ 0 ].state = 0U;
     assert( resolve( &none, &id ) != HOTSPOT_CREDENTIAL_KNOWN );
 
     /* Known: the exact associated BSSID with the same auth mode wins over earlier evidence. */
     saved_network_profile_t known[ 2 ] = { profile( 7, "CAFE", WPA2 ), profile( 9, "CAFE", WPA2 ) };
-    learn( &known[ 0 ], B, SAVED_NETWORK_BSSID_ASSOCIATED, WPA2 );
-    learn( &known[ 1 ], A, SAVED_NETWORK_BSSID_ASSOCIATED, WPA2 );
+    learn( &known[ 0 ], B, WPA2 );
+    learn( &known[ 1 ], A, WPA2 );
     hotspot_profiles_input_t pass = input( known, 2 );
     assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_KNOWN && id == 9 );
 
-    /* Legacy rejected BSSIDs never veto a compatible profile with positive evidence. */
-    saved_network_profile_t refused[ 2 ] = { profile( 4, "CAFE", WPA2 ), profile( 5, "CAFE", WPA2 ) };
-    learn( &refused[ 0 ], B, SAVED_NETWORK_BSSID_ASSOCIATED, WPA2 );
-    learn( &refused[ 0 ], A, SAVED_NETWORK_BSSID_REJECTED, WPA2 );
-    learn( &refused[ 1 ], B, SAVED_NETWORK_BSSID_ASSOCIATED, WPA2 );
-    pass = input( refused, 2 );
-    assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_AMBIGUOUS && id == 0 );
-
-    /* The profile with legacy rejected A is still inferred through associated B. */
-    pass = input( refused, 1 );
-    assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_INFERRED && id == 4 );
-
-    /* A legacy rejected-only BSSID has no positive evidence: manual PICK, not DENY. */
-    saved_network_profile_t rejected_only[ 1 ] = { profile( 34, "CAFE", WPA2 ) };
-    learn( &rejected_only[ 0 ], A, SAVED_NETWORK_BSSID_REJECTED, WPA2 );
-    pass = input( rejected_only, 1 );
-    assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_UNMATCHED && id == 0 );
-
     /* Auth mismatch: a profile that learned another auth mode is ignored entirely. */
     saved_network_profile_t mismatch[ 2 ] = { profile( 6, "CAFE", WPA3 ), profile( 8, "CAFE", WPA2 ) };
-    learn( &mismatch[ 0 ], B, SAVED_NETWORK_BSSID_ASSOCIATED, WPA3 );
-    learn( &mismatch[ 0 ], A, SAVED_NETWORK_BSSID_REJECTED, WPA2 );
+    learn( &mismatch[ 0 ], B, WPA3 );
     pass = input( mismatch, 1 );
     assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_NONE && id == 0 );
     pass = input( mismatch, 2 );
@@ -161,30 +139,28 @@ int main( void )
 
     /* Unknown-auth profile is compatible; scan overlap through B makes it inferred. */
     saved_network_profile_t fresh[ 1 ] = { profile( 2, "CAFE", SAVED_NETWORK_AUTH_UNKNOWN ) };
-    learn( &fresh[ 0 ], B, SAVED_NETWORK_BSSID_ASSOCIATED, WPA2 );
+    learn( &fresh[ 0 ], B, WPA2 );
     pass = input( fresh, 1 );
     assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_INFERRED && id == 2 );
 
-    /* Overlap needs B visible, with the same SSID, and associated (not rejected) for the profile. */
+    /* Overlap needs B visible with the same SSID. */
     scan[ 1 ].visible = false;
     assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_UNMATCHED && id == 0 );
     scan[ 1 ] = entry( B, "CAFE-5G", WPA2, true );
     assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_UNMATCHED && id == 0 );
     scan[ 1 ] = entry( B, "CAFE", WPA2, true );
-    fresh[ 0 ].bssids[ 0 ].state = SAVED_NETWORK_BSSID_REJECTED;
-    assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_UNMATCHED && id == 0 );
 
     /* Two profiles with evidence: AMBIGUOUS. */
     saved_network_profile_t both[ 2 ] = { profile( 10, "CAFE", WPA2 ), profile( 11, "CAFE", WPA2 ) };
-    learn( &both[ 0 ], B, SAVED_NETWORK_BSSID_ASSOCIATED, WPA2 );
-    learn( &both[ 1 ], B, SAVED_NETWORK_BSSID_ASSOCIATED, WPA2 );
+    learn( &both[ 0 ], B, WPA2 );
+    learn( &both[ 1 ], B, WPA2 );
     pass = input( both, 2 );
     assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_AMBIGUOUS && id == 0 );
 
     /* No evidence (known BSSIDs out of range, no fix): UNMATCHED. */
     saved_network_profile_t away[ 2 ] = { profile( 12, "CAFE", WPA2 ), profile( 13, "CAFE", WPA2 ) };
-    learn( &away[ 0 ], C, SAVED_NETWORK_BSSID_ASSOCIATED, WPA2 );
-    learn( &away[ 1 ], D, SAVED_NETWORK_BSSID_ASSOCIATED, WPA2 );
+    learn( &away[ 0 ], C, WPA2 );
+    learn( &away[ 1 ], D, WPA2 );
     pass = input( away, 2 );
     assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_UNMATCHED && id == 0 );
 
@@ -217,13 +193,9 @@ int main( void )
     assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_UNMATCHED && id == 0 );
     pass.history_bounds = history;
     assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_INFERRED && id == 12 );
-    /* A rejected BSSID's history is not evidence. */
-    away[ 0 ].bssids[ 0 ].state = SAVED_NETWORK_BSSID_REJECTED;
-    assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_UNMATCHED && id == 0 );
-    away[ 0 ].bssids[ 0 ].state = SAVED_NETWORK_BSSID_ASSOCIATED;
 
     /* GPS evidence for one profile plus scan overlap for another: AMBIGUOUS. */
-    learn( &away[ 1 ], B, SAVED_NETWORK_BSSID_ASSOCIATED, WPA2 );
+    learn( &away[ 1 ], B, WPA2 );
     assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_AMBIGUOUS && id == 0 );
     return 0;
 }

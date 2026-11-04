@@ -915,8 +915,8 @@ static void record_connected_bssid( const rfscout_network_session_status_t *a_ne
     connected_profile_recorded = true;
     if( ESP_OK == rfscout_wifi_station_ap_info( bssid, &auth_mode ) )
     {
-        const esp_err_t result = saved_networks_record_bssid(
-            connected_profile_id, bssid, auth_mode, SAVED_NETWORK_BSSID_ASSOCIATED );
+        const esp_err_t result =
+            saved_networks_record_bssid( connected_profile_id, bssid, auth_mode );
         if( ESP_OK != result )
         {
             ESP_LOGW( TAG, "could not record associated BSSID: %s", esp_err_to_name( result ) );

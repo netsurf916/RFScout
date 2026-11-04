@@ -100,9 +100,8 @@ A profile is never used with a BSSID whose observed auth mode differs from the o
 failed authentication, handshake timeout, DHCP, DNS, NTP, HTTPS, and network
 disconnection remain ordinary failed check outcomes, not an exclusion, because a
 failure can simply mean the receiver moved out of range. All such failures use the
-existing retry scheduling and signal-strength improvement policy. Rejection records
-saved by earlier firmware are ignored by the resolver. Auto-checking still needs a
-Known or Inferred credential; a profile without positive matching evidence requires
+existing retry scheduling and signal-strength improvement policy. Auto-checking still
+needs a Known or Inferred credential; a profile without positive matching evidence requires
 manual `Join with profile`.
 
 ### Growing a profile across BSSIDs
@@ -239,6 +238,6 @@ Each started probe also saves a debug report to `hotspots/gateway_probes/gw-<UTC
 - Failed attempts are not kept in history.
 - Grouping assumes same-SSID/auth BSSIDs are one network unless evidence conflicts, so unrelated networks can share a row until they are characterized. HESSID/802.11u and 802.11r mobility-domain evidence are not used.
 - A profile is matched to the exact auth mode it learned, so a profile learned on a WPA2 BSSID is not offered for a WPA2/WPA3 transition BSSID of the same SSID; that BSSID needs its own profile (**Add password** → New profile).
-- A profile stops learning at 32 associated BSSIDs. Further BSSIDs can still be Inferred and checked but are not remembered, and the only sign is a device log warning.
+- A profile remembers its 128 most recently learned BSSIDs; learning another forgets the oldest, which is learned again if it is joined later. The Saved view shows each profile's count.
 - A BSSID can belong to only one profile. A Known BSSID offers no **Join with profile**; moving it requires forgetting that profile or changing its password.
 
