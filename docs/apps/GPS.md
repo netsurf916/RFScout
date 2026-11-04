@@ -53,18 +53,26 @@ heartbeat. The recorder uses the GPS service's already low-pass-filtered speed
 between **60 seconds at 0 m/s** and **1 second at 10 m/s and faster**. A sample
 is queued once the interval passes **and** either the shared **Movement trigger**
 distance has been crossed or a **60-second stationary heartbeat** is due.
-There is at most one record per GPS UTC second. The movement anchor advances only
-after successful queueing. Details and speed knots are in
-[the breadcrumb policy](../BREADCRUMB_POLICY.md).
+There is at most one record per GPS UTC second, even above 10 m/s. The movement
+anchor and last-queued time advance only after successful queueing, and a larger
+movement trigger can still defer records at speed. If filtered speed is stale the
+recorder uses fresh raw speed, otherwise zero. The minimum interval is interpolated
+linearly between these points:
+
+| Speed (m/s) | 0 | 0.5 | 1 | 2 | 3 | 5 | 7 | 10+ |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Minimum interval (s) | 60 | 45 | 30 | 12 | 6 | 3 | 2 | 1 |
 
 Records are appended as JSONL to `system/breadcrumbs/breadcrumbs-YYYY-MM-DD.jsonl`
 using the record's GPS UTC date. **Breadcrumb retention** is editable in Home and
 GPS Settings: **1 day, 1 week, 1 month, Forever** (default). The existing breadcrumb
 On/Off preference survives upgrades; an old segment-count setting is ignored.
 Finite retention removes only recognized, fully expired UTC-day JSONL files in
-bounded background-worker steps when GPS/NTP-verified UTC is available. It never
-automatically removes old numbered or CSV formats, and does not delete a partial
-cutoff day. See the [architecture](../ARCHITECTURE.md#gps-movement-trigger).
+bounded background-worker steps when GPS/NTP-verified UTC is available, so less than
+one extra calendar day can remain. It runs after boot or recovery, UTC day rollover
+and retention edits, never from GPS polling, radio callbacks or menu handlers. It
+never automatically removes old numbered or CSV formats, unknown or future-dated
+names, or the open file. See the [movement trigger](../ARCHITECTURE.md#gps-movement-trigger).
 
 ## Receiver timepulse and LED ring
 

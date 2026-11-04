@@ -39,7 +39,7 @@ nonstandard vendor implementations. This exception applies **only** to
 the tentative service-fingerprint evidence flag, not XML parsing, endpoint
 authorization, surveillance classification, or camera verification. Reassess
 its evidence strength if strict ONVIF conformance or automatic decisions
-are ever introduced; see [service fingerprinting](SERVICE_FINGERPRINTING.md).
+are ever introduced; see [Hotspots](apps/HOTSPOTS.md#gateway-camera-hint-experimental).
 
 Every explicitly approved deviation **must be documented in this architecture
 page** before or alongside implementation, identifying the affected application
@@ -68,7 +68,7 @@ The current T-Embed fingerprint uses the early I2C path and onboard BQ25896/BQ27
 
 The runtime bus owns controller initialization and its 250-ms timeout cooldown, while each peripheral driver attaches an ESP-IDF **device handle with a configured transfer clock**. The default is 100 kHz, not a global bus frequency. BQ25896 charger (`0x6B`) and BQ27220 fuel gauge (`0x55`) always use explicit 100-kHz handles, including early power/configuration and recovery. The optional MLX90640 (`0x33`) uses 400-kHz transfers when supported by the wiring and downgrades to a 100-kHz handle after repeated acquisition failures; the downgrade is sticky for the boot session. Handle replacement is fail-closed: remove the old handle successfully before registering a replacement, and retain it if removal fails.
 
-Board identification and optional-device discovery use `i2c_master_probe()` before the corresponding runtime device handles are established. This is not a negotiated per-device transfer rate, and no global 100-to-400-kHz transition is performed. GPS currently uses UART rather than a shared I2C device. The full acceptance checklist, electrical assumptions and vendor references are in [Per-device I2C clock policy](design/PER_DEVICE_I2C_CLOCK_POLICY.md). The selected fast-mode clock must still be validated on representative hardware.
+Board identification and optional-device discovery use `i2c_master_probe()` before the corresponding runtime device handles are established. This is not a negotiated per-device transfer rate, and no global 100-to-400-kHz transition is performed. GPS currently uses UART rather than a shared I2C device. Distinct clocks do not imply simultaneous transactions: the ESP-IDF master arbitrates the shared bus. Power ICs stay at 100 kHz because that is the conservative baseline and the [BQ27220](https://www.ti.com/product/BQ27220) restricts some commands above it. `board_i2c_add_device_with_speed()` sets a handle's clock; `board_i2c_add_device()` remains a 100-kHz default. The selected fast-mode clock must still be validated on representative hardware; see [Thermal](apps/THERMAL.md#incremental-acquisition-and-i2c-clocks) for the [MLX90640](https://www.melexis.com/en/documents/documentation/datasheets/datasheet-mlx90640) fallback sequence.
 
 
 
@@ -137,7 +137,7 @@ navigation pixel. No additional LED ownership state machine exists.
 
 ## Shared network profiles
 
-`services/wireless/saved_networks` is the one credential store for Home/OTA and Hotspots. It holds up to eight profiles in Home's `networks` record. Each profile has a stable ID, SSID, password, the auth mode learned on its first association, and up to 32 BSSID associations. The record format still recognizes older **rejected** BSSID entries for compatibility, but Hotspots does not produce or act on those negative records. Several profiles may share an SSID; screens label them `SSID #n`.
+`services/wireless/saved_networks` is the one credential store for Home/OTA and Hotspots. It holds up to eight profiles in Home's `networks` record. Each profile has a stable ID, SSID, password, the auth mode learned on its first association, and up to 32 BSSID associations. The record format still recognizes **rejected** BSSID entries written by earlier firmware, but nothing produces or acts on them. Several profiles may share an SSID; screens label them `SSID #n`.
 
 - Every operation loads the record, applies one change, saves it, and erases its working copy, so a change made in either app is visible to the other at once. A failed save is returned to the caller and shown, never presented as saved.
 - `saved_networks_list()` returns a non-secret snapshot. `saved_networks_password()` copies one password for one association; callers erase it as soon as the association has started. Passwords are never copied into observation tables, SD journals, logs, or telemetry.
@@ -146,11 +146,11 @@ navigation pixel. No additional LED ownership state machine exists.
 
 Hotspots learns positive BSSID/profile associations from successful secured joins only, without persisting any new credential rejections. Previously saved `REJECTED` entries remain in the compatible storage layout but are ignored by Hotspots' resolver. Wi-Fi association, handshake and downstream connectivity failures are transient outcomes; a failed automatic attempt is eligible again on a later scan after its signal improves by at least 4 dB, subject to the existing -80 dBm RSSI floor and availability of a Known or Inferred credential. Manual Join remains available for ambiguous or unmatched profiles. Neither credential denial nor failure changes Hotspots' SSID grouping; only conflicting characterized gateway/subnet/MAC evidence can split a network. Home's credential management is unchanged.
 
-Hotspots resolves which profile a secured BSSID may use automatically: an exact associated BSSID with the same auth mode first; otherwise a same-SSID, auth-compatible profile, but only with evidence — one of the profile's associated BSSIDs in the same scan, or with history within the configured match distance of a fresh fix. One such profile is used; several, or same-SSID profiles without evidence, require the user to choose one for a manual join. GPS is supplementary evidence only; resolution, association, characterization, and history all work without it. Secured association is BSSID- and channel-pinned, accepts only WPA2/WPA3 personal, and never accepts a WPA3-only BSSID under a WPA2 minimum.
+Hotspots resolves which profile a secured BSSID may use automatically: an exact associated BSSID with the same auth mode first; otherwise a same-SSID, auth-compatible profile, but only with evidence — one of the profile's associated BSSIDs currently visible, or with history within the configured match distance of a fresh fix. One such profile is used; several, or same-SSID profiles without evidence, require the user to choose one for a manual join. GPS is supplementary evidence only; resolution, association, characterization, and history all work without it. Secured association is BSSID- and channel-pinned, accepts only WPA2/WPA3 personal, and never accepts a WPA3-only BSSID under a WPA2 minimum.
 
 The shared screens in `apps/network_common/network_credentials` give Home and Hotspots the same interaction: a profile view with the password masked until **Show**, **Edit password** and **Forget**; saving a password for an SSID with existing profiles as **Replace** or **New profile**; and picking an auth-compatible profile for one join.
 
-Profile selection is kept separate from Hotspots' network grouping, which uses its own characterization evidence (gateway, netmask, gateway MAC). Neither layer classifies rogue access points.
+Growing a profile this way is how same-SSID networks stay apart for credentials; [Hotspots](apps/HOTSPOTS.md#growing-a-profile-across-bssids) describes the sequence. Profile selection is kept separate from Hotspots' network grouping, which uses its own characterization evidence (gateway, netmask, gateway MAC). Neither layer classifies rogue access points.
 
 ## Application lifecycle, views, and resource sessions
 
@@ -334,14 +334,7 @@ Long Press remains an app-level semantic. In the shared rotary text-entry compon
 
 Application lock is transient runtime state. It is cleared when an application transition commits and is not a distinct persistence/resource-ownership domain. A shared status-bar indicator renders an **A-marked lock** for application lock, distinct from the ordinary input-lock symbol. When both locks are active, the stronger Input Lock symbol temporarily supersedes the A-lock; the app-lock indicator returns when input is unlocked.
 
-Interrupt-driven decoding retains accumulated input through temporary main-loop/display
-stalls. Input used only to wake a dimmed/off display is consumed before normal
-navigation or power handling.
-
-**Known wake follow-up:** Restoring the original decoder changes rotary behavior,
-but not the display's 200 ms wake guard or input-lock wake ordering. See
-[rotary wake and input-lock follow-up](INPUT_WAKE_REGRESSION.md) for the remaining
-race hypotheses and hardware verification matrix.
+The T-Embed rotary phases (GPIO4/GPIO5) are sampled by a dedicated **1-ms ESP timer callback**, not A/B edge interrupts, so input accumulates through main-loop and display stalls. The decoder follows LilyGO's `TWO03` rule: `A | (B << 1)` through a 16-entry Gray-code table, publishing only at the `00`/`11` latches, with the established direction inversion. Pending navigation coalesces, and the remainder of a partly consumed wake or lock detent is suppressed until the next latch. The center button keeps its GPIO interrupt. Input used only to wake a dimmed/off display is consumed before normal navigation or power handling, under a 200-ms wake guard that is independent of the sampling timer. The wake and lock gesture matrix is in [Release validation](RELEASE_VALIDATION.md#rotary-wake-and-lock-matrix).
 
 Common presentation overlays are platform-owned. Applications render their view, while power/system-event/app-modal presentation is composed by the shared display service so application lifecycle state is not replaced by a transient notification.
 
@@ -586,9 +579,7 @@ unrecognized, future-dated or active files, and suspends when UTC or SD media
 is unavailable. The old breadcrumb On/Off setting is migrated without
 reinterpreting its obsolete segment-count bytes.
 
-The full behavioral contract and test plan are in
-[breadcrumb policy](BREADCRUMB_POLICY.md). No new worker or shared retention
-framework is introduced.
+The speed table and retention details are in [GPS](apps/GPS.md#breadcrumb-sampling-and-storage).
 
 ### SD journals
 

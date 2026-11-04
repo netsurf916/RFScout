@@ -6,7 +6,7 @@ Statuses describe implementation state, not release state. Git history and pull 
 
 ## v0.4.0 — stabilize, clean up, validate and release
 
-**Status:** Preparing the next **v0.4.0 release candidate after documentation synchronization**. The latest published stable release is **v0.3.5**; no v0.4.0 tag or release build is created by this documentation work. Implementation scope is frozen to existing capability and corrective work; remaining feature expansion is deferred to v0.5.0. Exact-candidate hardware validation is still open.
+**Status:** Published on 2026-10-31 at tag `v0.4.0`. Remaining feature expansion is deferred to v0.5.0. The checklists below are kept as they stood: an unchecked item has no recorded result, which does not mean it failed.
 
 The goal is to deliver the substantial platform and application changes since
 v0.3.5 as a reliable release. The foundation is already present: owner-scoped
@@ -89,10 +89,11 @@ implemented behavior are **not** excused by deferring feature expansion.
 - [ ] Review performance and app-session memory usage with real logs,
   apply only targeted correctness/efficiency changes, and add regression
   tests for each behavior change.
-- [ ] Merge this documentation synchronization before preparing the
-  next release candidate. Then reconcile draft release notes with the
-  **exact candidate SHA**, migrated SD paths, user-visible changes,
-  supported hardware and known limitations.
+- [ ] Confirm two source-level hypotheses on hardware, neither a demonstrated
+  failure: a movement arriving between the display-idle input check and
+  app-manager polling may be cleared by the input-lock consumer before the next
+  wake check, and a very slow gesture crossing the 200-ms wake guard may expose a
+  later detent as navigation.
 
 ### 0.4.0 release acceptance
 
@@ -140,22 +141,18 @@ implemented behavior are **not** excused by deferring feature expansion.
   pass/fail/untested results in [RELEASE_VALIDATION.md](RELEASE_VALIDATION.md);
   obtain final owner approval before freeze completion and publish.
 
-This documentation PR does not generate a v0.4.0 build or tag. After it
-is merged, prepare a fresh draft release from the resulting `main` SHA,
-run exact-candidate CI and device checks, record Pass/Fail/Untested in
-[Release validation](RELEASE_VALIDATION.md), and publish only with
-explicit owner acceptance. Previous PR CI is insufficient.
+Record any results against a specific firmware SHA in [Release validation](RELEASE_VALIDATION.md).
 
 ## v0.5.0 — deferred implementation roadmap
 
-**Status:** Planned feature expansion, after 0.4.0 stabilization and release.
+**Status:** Planned feature expansion after the v0.4.0 release.
 
 The original 0.4.0 workstream detail is preserved below to avoid losing
 design choices. **Unchecked** feature-development items are now intended
 for 0.5.0. Checked rows describe already implemented prerequisites and
 should not be rebuilt. Validation of **already implemented** behavior
-remains a 0.4.0 requirement, even when an old validation row appears in
-the preserved planning matrix.
+remains open, even when an old validation row appears in the preserved
+planning matrix.
 
 **Prioritization:** CC1101's advanced receive/protocol work remains
 important but has been delayed by limited representative capture data.
@@ -464,9 +461,12 @@ Remaining:
 - [x] Wire a bounded, cancellable single-HTTP-HEAD metadata probe to the current DHCP gateway only for LIMITED checks; expose tentative CAM tags while retaining internal LIMITED outcomes.
 - [ ] Add explicit authorization/opt-in and constrained target selection before probing anything beyond the connected gateway.
 - [ ] Validate DNS-SD / WS-Discovery response parsing and build a separately curated fingerprint rule database with provenance and uncertainty.
-- [ ] Evaluate authenticated, explicitly requested snapshots for owned/authorized devices as a separate feature; do not silently collect third-party images.
+- [ ] Evaluate authenticated, explicitly requested snapshots for owned/authorized devices as a separate feature; do not silently collect third-party images. No default-credential trials or authentication bypass; image retention and preview need their own storage, privacy and performance limits.
+- [ ] Any local discovery must be a bounded, cancellable, framework-owned adapter that runs only during the existing station-session check window and stops before the next monitor sweep. Bound hosts, exchanges, deadlines, response bytes, redirects, memory and concurrency; never scan arbitrary subnets.
+- [ ] Keep results independent of connectivity status, history epochs, saved credentials and surveillance evidence. Preserve *unknown* and multiple possible categories, and test ambiguous and spoofed metadata.
+- [ ] Before image decoding, measure PSRAM/internal RAM headroom, task and packet budgets, and usefulness on the 320x170 display.
 
-See [Service fingerprinting design](SERVICE_FINGERPRINTING.md) for evidence semantics, lifecycle and acceptance gates.
+Current behavior and evidence semantics are in [Hotspots](apps/HOTSPOTS.md#gateway-camera-hint-experimental).
 
 #### Further framework isolation candidates
 
