@@ -20,6 +20,7 @@ HARNESS = r'''
 
 #define WPA2 3
 #define WPA3 6
+#define WPA2_WPA3 7
 
 /* BSSIDs in the fixtures: A is the BSSID being resolved; B is visible in the same scan; C is
    out of range with history; D has no history. */
@@ -129,7 +130,24 @@ int main( void )
     hotspot_profiles_input_t pass = input( known, 2 );
     assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_KNOWN && id == 9 );
 
-    /* Auth mismatch: a profile that learned another auth mode is ignored entirely. */
+    /* Growth reaches equal or greater security: WPA2 profile, WPA2/WPA3 or WPA3 BSSID. */
+    saved_network_profile_t grow[ 1 ] = { profile( 41, "CAFE", WPA2 ) };
+    learn( &grow[ 0 ], B, WPA2 );
+    pass = input( grow, 1 );
+    scan[ 0 ] = entry( A, "CAFE", WPA3, true );
+    assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_INFERRED && id == 41 );
+    scan[ 0 ] = entry( A, "CAFE", WPA2_WPA3, true );
+    assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_INFERRED && id == 41 );
+    /* A learned BSSID that raised its security can be joined again and relearned. */
+    learn( &grow[ 0 ], A, WPA2 );
+    assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_INFERRED && id == 41 );
+    /* A WPA3 minimum excludes a transition BSSID, which still accepts WPA2. */
+    grow[ 0 ] = profile( 42, "CAFE", WPA3 );
+    learn( &grow[ 0 ], B, WPA3 );
+    assert( resolve( &pass, &id ) == HOTSPOT_CREDENTIAL_NONE && id == 0 );
+    scan[ 0 ] = entry( A, "CAFE", WPA2, true );
+
+    /* Auth mismatch: a profile whose minimum is above this BSSID is ignored entirely. */
     saved_network_profile_t mismatch[ 2 ] = { profile( 6, "CAFE", WPA3 ), profile( 8, "CAFE", WPA2 ) };
     learn( &mismatch[ 0 ], B, WPA3 );
     pass = input( mismatch, 1 );
@@ -212,6 +230,19 @@ def compile_and_run(harness, sources):
         binary = temp / "harness"
         source.write_text(harness)
         (temp / "esp_err.h").write_text("typedef int esp_err_t;\n")
+        (temp / "esp_wifi_types.h").write_text("""#pragma once
+typedef enum
+{
+    WIFI_AUTH_OPEN = 0,
+    WIFI_AUTH_WEP,
+    WIFI_AUTH_WPA_PSK,
+    WIFI_AUTH_WPA2_PSK,
+    WIFI_AUTH_WPA_WPA2_PSK,
+    WIFI_AUTH_ENTERPRISE,
+    WIFI_AUTH_WPA3_PSK,
+    WIFI_AUTH_WPA2_WPA3_PSK,
+} wifi_auth_mode_t;
+""")
         subprocess.run(
             [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
              "-I", str(temp), "-I", str(HEADER_DIR), "-I", str(GEO.parent),

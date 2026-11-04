@@ -12,6 +12,7 @@
 #define _RFSCOUT_SAVED_NETWORKS_H_
 
 #include "esp_err.h"
+#include "esp_wifi_types.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -35,7 +36,8 @@ typedef struct
 typedef struct
 {
     uint32_t profile_id;
-    int32_t auth_mode; /**< learned on first association; SAVED_NETWORK_AUTH_UNKNOWN before */
+    /** Minimum security, learned on first association; SAVED_NETWORK_AUTH_UNKNOWN before. */
+    int32_t auth_mode;
     bool has_password;
     uint8_t ordinal; /**< 1-based position among profiles sharing this SSID */
     uint8_t bssid_count;
@@ -76,8 +78,9 @@ esp_err_t saved_networks_forget( uint32_t a_profile_id );
 /**
  * @brief Learn that one BSSID authenticated with a profile's passphrase.
  * @details Fails with ESP_ERR_INVALID_STATE when another profile already associated with that
- *          BSSID or the profile learned a different auth mode. When the BSSID list is full, the
- *          oldest learned BSSID is forgotten; it is learned again if it is joined later.
+ *          BSSID or its security is below the profile's minimum. The first association sets that
+ *          minimum. When the BSSID list is full, the oldest learned BSSID is forgotten; it is
+ *          learned again if it is joined later.
  */
 esp_err_t saved_networks_record_bssid( uint32_t a_profile_id,
                                        const uint8_t a_bssid[ 6 ],
@@ -100,12 +103,57 @@ saved_network_profile_bssid( const saved_network_profile_t *a_profile, const uin
     return NULL;
 }
 
+/** Security ranks for profile growth: WEP < WPA < WPA2 < WPA3. */
+typedef enum
+{
+    SAVED_NETWORK_SECURITY_UNRANKED = 0,
+    SAVED_NETWORK_SECURITY_WEP,
+    SAVED_NETWORK_SECURITY_WPA,
+    SAVED_NETWORK_SECURITY_WPA2,
+    SAVED_NETWORK_SECURITY_WPA3,
+} saved_network_security_t;
+
+/**
+ * @brief Rank of an auth mode.
+ * @details A mixed mode ranks as the weakest security it accepts, so WPA2/WPA3 transition is WPA2.
+ *          Modes a passphrase profile cannot use (open, OWE, enterprise) are unranked.
+ */
+static inline saved_network_security_t saved_network_security( int32_t a_auth_mode )
+{
+    switch( (wifi_auth_mode_t)a_auth_mode )
+    {
+        case WIFI_AUTH_WEP:
+            return SAVED_NETWORK_SECURITY_WEP;
+        case WIFI_AUTH_WPA_PSK:
+        case WIFI_AUTH_WPA_WPA2_PSK:
+            return SAVED_NETWORK_SECURITY_WPA;
+        case WIFI_AUTH_WPA2_PSK:
+        case WIFI_AUTH_WPA2_WPA3_PSK:
+            return SAVED_NETWORK_SECURITY_WPA2;
+        case WIFI_AUTH_WPA3_PSK:
+            return SAVED_NETWORK_SECURITY_WPA3;
+        default:
+            return SAVED_NETWORK_SECURITY_UNRANKED;
+    }
+}
+
+/** @brief Whether a mode meets a profile's minimum: equal or greater security, never lower. */
+static inline bool saved_network_auth_allowed( int32_t a_minimum, int32_t a_auth_mode )
+{
+    if( SAVED_NETWORK_AUTH_UNKNOWN == a_minimum || a_minimum == a_auth_mode )
+    {
+        return true;
+    }
+    const saved_network_security_t minimum = saved_network_security( a_minimum );
+    return SAVED_NETWORK_SECURITY_UNRANKED != minimum &&
+           saved_network_security( a_auth_mode ) >= minimum;
+}
+
 /** @brief Whether a profile may be used with an observed auth mode. */
 static inline bool saved_network_profile_auth_compatible( const saved_network_profile_t *a_profile,
                                                           int32_t a_auth_mode )
 {
-    return NULL != a_profile && ( SAVED_NETWORK_AUTH_UNKNOWN == a_profile->auth_mode ||
-                                  a_profile->auth_mode == a_auth_mode );
+    return NULL != a_profile && saved_network_auth_allowed( a_profile->auth_mode, a_auth_mode );
 }
 
 #endif // _RFSCOUT_SAVED_NETWORKS_H_

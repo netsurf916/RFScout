@@ -501,7 +501,7 @@ esp_err_t saved_networks_record_bssid( uint32_t a_profile_id,
     }
     if( ESP_OK == result )
     {
-        /* One BSSID is never trusted by two credentials, and a profile keeps one auth mode. */
+        /* One BSSID is never trusted by two credentials, and a profile never grows downward. */
         for( size_t index = 0U; index < record->count; ++index )
         {
             saved_network_entry_t *other = &record->entries[ index ];
@@ -510,7 +510,7 @@ esp_err_t saved_networks_record_bssid( uint32_t a_profile_id,
                 result = ESP_ERR_INVALID_STATE;
             }
         }
-        if( SAVED_NETWORK_AUTH_UNKNOWN != entry->auth_mode && entry->auth_mode != a_auth_mode )
+        if( !saved_network_auth_allowed( entry->auth_mode, a_auth_mode ) )
         {
             result = ESP_ERR_INVALID_STATE;
         }
@@ -545,6 +545,9 @@ esp_err_t saved_networks_record_bssid( uint32_t a_profile_id,
     }
     memcpy( bssid->address, a_bssid, sizeof( bssid->address ) );
     bssid->auth_mode = (int16_t)a_auth_mode;
-    entry->auth_mode = a_auth_mode;
+    if( SAVED_NETWORK_AUTH_UNKNOWN == entry->auth_mode )
+    {
+        entry->auth_mode = a_auth_mode;
+    }
     return save();
 }

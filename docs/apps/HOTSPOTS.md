@@ -89,14 +89,14 @@ Secured networks use the shared saved-network profiles (see [Home](HOME.md) and 
 
 | State | Tag | Meaning |
 | --- | --- | --- |
-| Known | — | A profile already associated with this exact BSSID and auth mode. Automatic checks use it. |
-| Inferred | — | Exactly one same-SSID, auth-compatible profile has evidence: one of its known BSSIDs is currently visible in the Live table (heard within the last 8 seconds of monitor time), or has history within the **Match distance** of the current fix. Automatic checks use it. |
+| Known | — | A profile already associated with this exact BSSID at its current auth mode. Automatic checks use it. |
+| Inferred | — | Exactly one same-SSID profile whose minimum security this BSSID meets has evidence: one of its known BSSIDs is currently visible in the Live table (heard within the last 8 seconds of monitor time), or has history within the **Match distance** of the current fix. Automatic checks use it. |
 | Ambiguous | `PICK` | Several profiles have evidence. Only a manual **Join with profile** checks it. |
 | Unmatched | `PICK` | Same-SSID profiles exist but none has evidence here. Only a manual join checks it. |
 | None | `KEY?` | No saved password for this SSID. |
 | Unsupported | `N/A` | WEP, WPA1, 802.1X or another mode the station cannot join. |
 
-A profile is never used with a BSSID whose observed auth mode differs from the one it learned, and a WPA3-only BSSID is never joined under a WPA2 minimum. A successful secured association records the BSSID as associated with that profile, so later visits resolve it as Known. Hotspots no longer learns persistent negative BSSID/credential associations:
+A profile's first association sets its minimum security, and it may be used or grow only at equal or greater security: WEP < WPA < WPA2 < WPA3. A mixed mode ranks as the weakest security it accepts, so WPA2/WPA3 transition counts as WPA2. A WPA2 profile can therefore grow to transition and WPA3 BSSIDs, while a WPA3 profile is never used with a transition or WPA2 BSSID, which still needs its own profile. The station itself joins only WPA2 and WPA3 personal, and a WPA3-only BSSID is never joined under a WPA2 minimum. A successful secured association records the BSSID as associated with that profile, so later visits resolve it as Known. Hotspots no longer learns persistent negative BSSID/credential associations:
 failed authentication, handshake timeout, DHCP, DNS, NTP, HTTPS, and network
 disconnection remain ordinary failed check outcomes, not an exclusion, because a
 failure can simply mean the receiver moved out of range. All such failures use the
@@ -109,7 +109,7 @@ manual `Join with profile`.
 A profile is a learned set of BSSIDs, which is how two unrelated networks using the same SSID stay apart:
 
 1. **Seed.** A new profile has no BSSIDs and is never used automatically. Its first BSSID comes from a Home connection or a manual **Add password** / **Join with profile** in Hotspots.
-2. **Grow.** A new same-SSID, auth-compatible BSSID becomes Inferred when exactly one profile has evidence for it: an associated BSSID of that profile is currently visible, or the current fix is within **Match distance** of an associated BSSID's History location range. Hotspots then checks it automatically, and a check that gets at least as far as DHCP (green or yellow) adds the BSSID to that profile, where it becomes Known and provides evidence for further BSSIDs.
+2. **Grow.** A new same-SSID BSSID that meets a profile's minimum security becomes Inferred when exactly one profile has evidence for it: an associated BSSID of that profile is currently visible, or the current fix is within **Match distance** of an associated BSSID's History location range. Hotspots then checks it automatically, and a check that gets at least as far as DHCP (green or yellow) adds the BSSID to that profile, where it becomes Known and provides evidence for further BSSIDs.
 3. **Stay apart.** The same SSID somewhere else has no evidence, so it stays Unmatched and is never tried with that password. Where two profiles both have evidence the BSSID is Ambiguous and the user chooses. An exact Known BSSID always wins over evidence for another profile.
 
 A failed attempt teaches nothing, so it never removes a BSSID from consideration. A BSSID that belongs to a different network but sits in range of a profile's BSSIDs stays Inferred and is retried under the signal-improvement rule, until it is given its own profile with **Add password**. History evidence exists only for BSSIDs Hotspots has characterized; a BSSID learned from Home contributes same-visibility evidence until then.
@@ -187,7 +187,7 @@ Hotspots has three views. **App lock** off: landing-level rotary changes RFScout
 
 - **Live** — networks currently observed this visit, ordered by their strongest visible BSSID. Each row shows the network label, a status tag summarizing its BSSIDs, the number of BSSIDs, and the strongest visible RSSI (`--` when none is visible). The footer shows the phase or running check and counts of open, OWE, and secured BSSIDs.
 - **History** — networks from durable history, nearest first when GPS has a fresh fix (then green first, newest first). Rows show the label, `OK`/`LTD`/`CAM` (when tentative camera evidence exists), the number of BSSIDs, and the distance and compass direction to the nearest member (`--` without a fix). The footer shows the BSSID count, fix state, and any `BAD` or `SD!` indicators. With no history the view says **No known hotspots**, or **SD history unavailable** when the card cannot be read.
-- **Saved** — the shared profiles, labelled `SSID #n` when several share an SSID, with the learned auth mode and the number of associated BSSIDs. Selecting one opens the shared profile screen: masked password with **Show**, **Edit password**, and **Forget**. Changes apply to Home immediately.
+- **Saved** — the shared profiles, labelled `SSID #n` when several share an SSID, with the minimum security and the number of associated BSSIDs. Selecting one opens the shared profile screen: masked password with **Show**, **Edit password**, and **Forget**. Changes apply to Home immediately.
 
 Each view's menu starts with **Back**, **App lock**, **Auto check**, and **Settings** (**Match distance**, **Expire after**, **Evict beyond**, and **Compact history**), followed by the view's rows. Selecting a Live or History network opens its BSSID list; selecting a BSSID opens its detail.
 
@@ -237,7 +237,6 @@ Each started probe also saves a debug report to `hotspots/gateway_probes/gw-<UTC
 - Yellow does not distinguish captive portals, DNS filtering, or blocked NTP from other restrictions.
 - Failed attempts are not kept in history.
 - Grouping assumes same-SSID/auth BSSIDs are one network unless evidence conflicts, so unrelated networks can share a row until they are characterized. HESSID/802.11u and 802.11r mobility-domain evidence are not used.
-- A profile is matched to the exact auth mode it learned, so a profile learned on a WPA2 BSSID is not offered for a WPA2/WPA3 transition BSSID of the same SSID; that BSSID needs its own profile (**Add password** → New profile).
 - A profile remembers its 128 most recently learned BSSIDs; learning another forgets the oldest, which is learned again if it is joined later. The Saved view shows each profile's count.
 - A BSSID can belong to only one profile. A Known BSSID offers no **Join with profile**; moving it requires forgetting that profile or changing its password.
 

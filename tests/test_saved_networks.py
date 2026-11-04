@@ -23,6 +23,19 @@ typedef int esp_err_t;
 #define ESP_ERR_INVALID_RESPONSE 0x108
 const char *esp_err_to_name( esp_err_t a_error );
 """,
+    "esp_wifi_types.h": """#pragma once
+typedef enum
+{
+    WIFI_AUTH_OPEN = 0,
+    WIFI_AUTH_WEP,
+    WIFI_AUTH_WPA_PSK,
+    WIFI_AUTH_WPA2_PSK,
+    WIFI_AUTH_WPA_WPA2_PSK,
+    WIFI_AUTH_ENTERPRISE,
+    WIFI_AUTH_WPA3_PSK,
+    WIFI_AUTH_WPA2_WPA3_PSK,
+} wifi_auth_mode_t;
+""",
     "esp_log.h": """#pragma once
 #define ESP_LOGW( tag, ... ) ( (void)( tag ) )
 #define ESP_LOGI( tag, ... ) ( (void)( tag ) )
@@ -68,6 +81,7 @@ HARNESS = r"""
 
 #define WPA2 3
 #define WPA3 6
+#define WPA2_WPA3 7
 
 /* ---- One-record in-memory store with the production load semantics. ---- */
 static unsigned char blob[ 16384 ];
@@ -292,6 +306,40 @@ static void learning( void )
     assert( 0U == profile.bssid_count && SAVED_NETWORK_AUTH_UNKNOWN == profile.auth_mode );
 }
 
+/** A profile may grow to equal or greater security, and its minimum never moves. */
+static void security_levels( void )
+{
+    uint32_t wpa2 = 0U;
+    assert( ESP_OK == saved_networks_create( "CAFE", "first-secret", &wpa2 ) );
+    assert( ESP_OK == saved_networks_record_bssid( wpa2, A, WPA2 ) );
+    assert( ESP_OK == saved_networks_record_bssid( wpa2, B, WPA2_WPA3 ) );
+    assert( ESP_OK == saved_networks_record_bssid( wpa2, C, WPA3 ) );
+    static saved_network_profile_t profile;
+    assert( ESP_OK == saved_networks_get( wpa2, &profile ) );
+    assert( 3U == profile.bssid_count && WPA2 == profile.auth_mode );
+    assert( WPA3 == saved_network_profile_bssid( &profile, C )->auth_mode );
+
+    const uint8_t next[ 6 ] = { 0xA0, 0, 0, 0, 0, 4 };
+    uint32_t wpa3 = 0U;
+    assert( ESP_OK == saved_networks_create( "LIB", "second-secret", &wpa3 ) );
+    assert( ESP_OK == saved_networks_record_bssid( wpa3, next, WPA3 ) );
+    const uint8_t lower[ 6 ] = { 0xA0, 0, 0, 0, 0, 5 };
+    assert( ESP_ERR_INVALID_STATE == saved_networks_record_bssid( wpa3, lower, WPA2 ) );
+    assert( ESP_ERR_INVALID_STATE == saved_networks_record_bssid( wpa3, lower, WPA2_WPA3 ) );
+
+    /* Ranks: WEP < WPA < WPA2 < WPA3; a mixed mode ranks as its weakest. */
+    assert( saved_network_auth_allowed( WIFI_AUTH_WEP, WIFI_AUTH_WPA_PSK ) );
+    assert( saved_network_auth_allowed( WIFI_AUTH_WPA_PSK, WIFI_AUTH_WPA2_PSK ) );
+    assert( saved_network_auth_allowed( WIFI_AUTH_WPA2_WPA3_PSK, WIFI_AUTH_WPA2_PSK ) );
+    assert( !saved_network_auth_allowed( WIFI_AUTH_WPA2_PSK, WIFI_AUTH_WPA_PSK ) );
+    assert( !saved_network_auth_allowed( WIFI_AUTH_WPA2_PSK, WIFI_AUTH_WPA_WPA2_PSK ) );
+    assert( !saved_network_auth_allowed( WIFI_AUTH_WPA_PSK, WIFI_AUTH_WEP ) );
+    /* Modes a passphrase cannot use never qualify. */
+    assert( !saved_network_auth_allowed( WIFI_AUTH_WPA2_PSK, WIFI_AUTH_ENTERPRISE ) );
+    assert( !saved_network_auth_allowed( WIFI_AUTH_WPA2_PSK, WIFI_AUTH_OPEN ) );
+    assert( !saved_network_auth_allowed( WIFI_AUTH_ENTERPRISE, WIFI_AUTH_WPA3_PSK ) );
+}
+
 int main( int argc, char **argv )
 {
     if( 2 != argc )
@@ -305,6 +353,10 @@ int main( int argc, char **argv )
     else if( 0 == strcmp( argv[ 1 ], "bad_legacy_record" ) )
     {
         bad_legacy_record();
+    }
+    else if( 0 == strcmp( argv[ 1 ], "security_levels" ) )
+    {
+        security_levels();
     }
     else if( 0 == strcmp( argv[ 1 ], "learning" ) )
     {
@@ -355,6 +407,9 @@ class SavedNetworksTests(unittest.TestCase):
 
     def test_invalid_legacy_record_is_deleted(self):
         self.run_scenario("bad_legacy_record")
+
+    def test_growth_requires_equal_or_greater_security(self):
+        self.run_scenario("security_levels")
 
     def test_full_profile_forgets_oldest_bssid(self):
         self.run_scenario("learning")
