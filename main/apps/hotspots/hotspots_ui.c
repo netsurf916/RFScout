@@ -407,6 +407,22 @@ static void member_location( const geo_bounds_t *a_bounds,
         geo_bounds_center( a_bounds, &a_member->latitude_deg, &a_member->longitude_deg );
 }
 
+/** Saved profile that learned a BSSID, or 0; only same-SSID profiles can hold it. */
+static uint32_t associated_profile( const char *a_ssid, const uint8_t a_bssid[ 6 ] )
+{
+    size_t count = 0U;
+    const saved_network_profile_t *profiles = hotspots_profiles( &count );
+    for( size_t index = 0U; index < count; ++index )
+    {
+        if( 0 == strcmp( profiles[ index ].ssid, a_ssid ) &&
+            NULL != saved_network_profile_bssid( &profiles[ index ], a_bssid ) )
+        {
+            return profiles[ index ].profile_id;
+        }
+    }
+    return 0U;
+}
+
 static bool build_live( void )
 {
     hotspot_table_t *table = hotspots_table();
@@ -443,6 +459,12 @@ static bool build_live( void )
         if( NULL != history )
         {
             member_location( &history->bounds, &input->member );
+        }
+        /* A BSSID belongs with its learned or inferred profile, never with another's. */
+        if( HOTSPOT_CREDENTIAL_KNOWN == entry->credential ||
+            HOTSPOT_CREDENTIAL_INFERRED == entry->credential )
+        {
+            input->member.evidence.profile_id = entry->profile_id;
         }
     }
     return build_groups();
@@ -533,6 +555,7 @@ static bool build_history( void )
         input->ssid = history->ssid;
         input->auth_mode = history->auth_mode;
         evidence_from_network( &history->network, &input->member.evidence );
+        input->member.evidence.profile_id = associated_profile( history->ssid, history->bssid );
         member_location( &history->bounds, &input->member );
         scratch.distance[ index ] = -1.0;
         scratch.bearing[ index ] = 0.0;

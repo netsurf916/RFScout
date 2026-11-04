@@ -102,6 +102,64 @@ int main( void )
     assert( mac_mixed[ 0 ].cluster == mac_mixed[ 1 ].cluster );
     assert( mac_mixed[ 0 ].cluster != mac_mixed[ 2 ].cluster );
 
+    /* Same network evidence, different saved profiles: separate networks. */
+    characterization_group_member_t profiles[ 3 ] = {
+        member( 1, 255, 1, 0.0, 0 ),
+        member( 1, 255, 1, 0.0, 0 ),
+        member( 1, 255, 1, 0.0, 0 )
+    };
+    profiles[ 0 ].evidence.profile_id = 7U;
+    profiles[ 1 ].evidence.profile_id = 9U;
+    profiles[ 2 ].evidence.profile_id = 7U;
+    group( profiles, 3, 2 );
+    assert( profiles[ 0 ].cluster == profiles[ 2 ].cluster );
+    assert( profiles[ 0 ].cluster != profiles[ 1 ].cluster );
+
+    /* Same profile with conflicting network evidence remains separate networks. */
+    characterization_group_member_t same_profile[ 2 ] = {
+        member( 1, 255, 1, 0.0, 0 ),
+        member( 2, 255, 2, 0.0, 0 )
+    };
+    same_profile[ 0 ].evidence.profile_id = 7U;
+    same_profile[ 1 ].evidence.profile_id = 7U;
+    group( same_profile, 2, 2 );
+
+    /* Profile without network evidence: with its profile, apart from another's. */
+    characterization_group_member_t profile_only[ 4 ] = {
+        member( 0, 0, 0, 0.0, 0 ),
+        member( 0, 0, 0, 0.0, 0 ),
+        member( 1, 255, 1, 0.0, 0 ),
+        member( 0, 0, 0, 0.0, 0 )
+    };
+    profile_only[ 0 ].evidence.profile_id = 9U;
+    profile_only[ 1 ].evidence.profile_id = 7U;
+    profile_only[ 2 ].evidence.profile_id = 7U;
+    group( profile_only, 4, 2 );
+    assert( profile_only[ 1 ].cluster == profile_only[ 2 ].cluster );
+    assert( profile_only[ 0 ].cluster != profile_only[ 1 ].cluster );
+    /* No profile and no evidence joins the network with the most evidence-bearing members. */
+    assert( profile_only[ 3 ].cluster == profile_only[ 1 ].cluster );
+
+    /* A missing profile is not a conflict, whichever member comes first. */
+    characterization_group_member_t unclaimed[ 3 ] = {
+        member( 1, 255, 1, 0.0, 0 ),
+        member( 1, 255, 1, 0.0, 0 ),
+        member( 1, 255, 1, 0.0, 0 )
+    };
+    unclaimed[ 1 ].evidence.profile_id = 7U;
+    unclaimed[ 2 ].evidence.profile_id = 9U;
+    group( unclaimed, 3, 2 );
+    assert( unclaimed[ 0 ].cluster == unclaimed[ 1 ].cluster );
+
+    /* Two profiles claim separate networks without evidence or an unclaimed network. */
+    characterization_group_member_t only_profiles[ 2 ] = {
+        member( 0, 0, 0, 0.0, 0 ),
+        member( 0, 0, 0, 0.0, 0 )
+    };
+    only_profiles[ 0 ].evidence.profile_id = 7U;
+    only_profiles[ 1 ].evidence.profile_id = 9U;
+    group( only_profiles, 2, 2 );
+
     characterization_group_member_t no_evidence[ 2 ] = {
         member( 0, 0, 0, 0.0, 1 ),
         member( 0, 0, 0, 50.0, 1 )

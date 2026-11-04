@@ -12,10 +12,10 @@
 #include <stdint.h>
 
 /**
- * Network-identity evidence captured by a completed characterization of one BSSID.
+ * Network-identity evidence for one BSSID: its characterization and its saved profile.
  *
- * Fields are only meaningful when their *_valid flag is set; absent evidence is never
- * treated as different from present evidence.
+ * Fields are only meaningful when their *_valid flag is set, or a nonzero profile ID; absent
+ * evidence is never treated as different from present evidence.
  */
 typedef struct
 {
@@ -24,6 +24,7 @@ typedef struct
     uint32_t netmask;  /**< IPv4 netmask, lwIP network byte order */
     bool gateway_mac_valid;
     uint8_t gateway_mac[ 6 ]; /**< gateway hardware address from the station's ARP cache */
+    uint32_t profile_id;      /**< saved profile this BSSID belongs to; 0 when none */
 } characterization_network_evidence_t;
 
 /** One BSSID participating in a grouping pass. */
@@ -53,13 +54,16 @@ typedef struct
  *
  * @details All members are assumed to be one network unless evidence conflicts:
  *          - different gateway/netmask between two members that both have it; or
- *          - different gateway MAC between two members that both have it.
+ *          - different gateway MAC between two members that both have it; or
+ *          - different saved profile between two members that both have one.
  *          Members without evidence join the existing network whose evidence-bearing
  *          members are geographically nearest (great-circle distance to the location
  *          centroid); without usable location they join the network with the most
  *          evidence-bearing members. A member with gateway/netmask but no gateway MAC is
- *          placed the same way among networks sharing its gateway/netmask. Cost is O(n * k)
- *          for n members and k networks.
+ *          placed the same way among networks sharing its gateway/netmask. A member with a
+ *          profile prefers a network with that profile, and evidence-bearing placement considers
+ *          profile members first so input order cannot decide which network a profile claims.
+ *          Cost is O(n * k) for n members and k networks.
  *
  * @param a_members  Members of exactly one SSID/security group; `cluster` is written.
  * @param a_count    Number of members.

@@ -114,7 +114,7 @@ A profile is a learned set of BSSIDs, which is how two unrelated networks using 
 
 A failed attempt teaches nothing, so it never removes a BSSID from consideration. A BSSID that belongs to a different network but sits in range of a profile's BSSIDs stays Inferred and is retried under the signal-improvement rule, until it is given its own profile with **Add password**. History evidence exists only for BSSIDs Hotspots has characterized; a BSSID learned from Home contributes same-visibility evidence until then.
 
-Profile membership decides which password may be tried. It does not affect [network grouping](#network-grouping), which uses only characterization evidence.
+Profile membership decides which password may be tried, and [network grouping](#network-grouping) keeps BSSIDs of different profiles in separate rows.
 
 **Match distance** (Settings; Off, 50, 100, 200 or 500 m; default 100 m) controls how close the current fix must be to the history of a profile's known BSSID for it to count as evidence. It needs a GPS receiver and is shown unavailable without one. Profile resolution works without GPS through exact BSSIDs and same-scan overlap.
 
@@ -177,7 +177,7 @@ observations. Recording is best-effort, not an audit-grade guarantee.
 
 ## Network grouping
 
-Live and History group BSSIDs into networks with Hotspotter's evidence rule. Only BSSIDs with the same SSID and auth mode are compared. Within that group they are one network unless their evidence conflicts: different gateway/netmask, or different gateway MAC, between two BSSIDs that both have it. Missing evidence never splits a network. A BSSID without evidence joins the network whose evidence-bearing members have the nearest location center, or the network with the most evidence-bearing members when it has no location. Credential failures never split the Live group: only positive, conflicting gateway/netmask or gateway-MAC evidence does so.
+Live and History group BSSIDs into networks with Hotspotter's evidence rule. Only BSSIDs with the same SSID and auth mode are compared. Within that group they are one network unless their evidence conflicts: different gateway/netmask, different gateway MAC, or different saved profile, between two BSSIDs that both have it. A BSSID's profile is the one that learned it; in Live, a BSSID currently Inferred also counts as that profile's. Missing evidence never splits a network. A BSSID with a profile but no network evidence joins that profile's network, or starts one. A BSSID without evidence joins the network whose evidence-bearing members have the nearest location center, or the network with the most evidence-bearing members when it has no location. Failed checks never split a network, because only positive evidence does.
 
 When one SSID and auth mode splits into several networks, rows are labelled `SSID #1`, `SSID #2`, and so on, largest first. Individual BSSIDs always remain browsable under their network.
 
@@ -236,7 +236,8 @@ Each started probe also saves a debug report to `hotspots/gateway_probes/gw-<UTC
 
 - Yellow does not distinguish captive portals, DNS filtering, or blocked NTP from other restrictions.
 - Failed attempts are not kept in history.
-- Grouping assumes same-SSID/auth BSSIDs are one network unless evidence conflicts, so unrelated networks can share a row until they are characterized. HESSID/802.11u and 802.11r mobility-domain evidence are not used.
+- Grouping assumes same-SSID/auth BSSIDs are one network unless evidence conflicts, so unrelated networks can share a row until they are characterized or learned by different profiles. HESSID/802.11u and 802.11r mobility-domain evidence are not used.
+- Rows compare one auth mode at a time, so a profile that spans WPA2 and WPA3 BSSIDs appears as one row per auth mode.
 - A profile remembers its 128 most recently learned BSSIDs; learning another forgets the oldest, which is learned again if it is joined later. The Saved view shows each profile's count.
 - A BSSID can belong to only one profile. A Known BSSID offers no **Join with profile**; moving it requires forgetting that profile or changing its password.
 
